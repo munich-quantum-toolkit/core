@@ -1,0 +1,3 @@
+BasedOnStyle: LLVM
+IncludeBlocks: Regroup
+PointerAlignment: Left
