@@ -1,3 +1,5 @@
+add_subdirectory(qir)
+
 if(NOT TARGET MQT::MLIR)
   # collect headers and source files
   file(GLOB_RECURSE MQT_MLIR_HEADERS ${MQT_MLIR_INCLUDE_BUILD_DIR}/*.hpp)

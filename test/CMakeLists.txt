@@ -1,3 +1,5 @@
+add_subdirectory(qir)
+
 # collect all test files
 file(GLOB_RECURSE TEST_FILES "*.cpp")
 
