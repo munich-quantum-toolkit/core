@@ -18,7 +18,7 @@ Result* __quantum__rt__result_get_one() {
 
 Bool __quantum__rt__result_equal(Result*, Result*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return FALSE;
+  return false;
 }
 
 void __quantum__rt__result_update_reference_count(Result*, long int) {
@@ -52,7 +52,7 @@ String* __quantum__rt__string_concatenate(String*, String*) {
 
 Bool __quantum__rt__string_equal(String*, String*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return FALSE;
+  return false;
 }
 
 String* __quantum__rt__int_to_string(Int) {
