@@ -1,14 +1,57 @@
 #include "qir/qir_dd_backend.hpp"
 
+#include "dd/Operations.hpp"
 #include "qir/qir.h"
 
 #include <cstdio>
 #include <cstdlib>
+#include <stdexcept>
 
-mqt::QIR_DD_Backend::QIR_DD_Backend() : addressMode(AddressMode::UNKNOWN) {
+namespace mqt {
+
+QIR_DD_Backend::QIR_DD_Backend() : addressMode(AddressMode::UNKNOWN) {
   qRegister = std::unordered_map<qc::Qubit, qc::Qubit>();
   qState = dd::vEdge::one();
 }
+
+auto QIR_DD_Backend::determineAddressMode() -> void {
+  if (addressMode == AddressMode::UNKNOWN) {
+    if (qRegister.empty()) {
+      addressMode = AddressMode::STATIC;
+    } else {
+      addressMode = AddressMode::DYNAMIC;
+    }
+  }
+}
+
+template <typename... Args>
+auto QIR_DD_Backend::apply(const qc::OpType op, Args... qubits) -> void {
+  determineAddressMode();
+  std::vector<qc::Qubit> addresses = {qubits...};
+  if (addressMode == AddressMode::DYNAMIC) {
+    std::transform(addresses.cbegin(), addresses.cend(), addresses.begin(),
+                   [&](const auto q) { return qRegister.at(q); });
+  }
+  int t = 0;
+  if (isSingleQubitGate(op)) {
+    t = 1;
+  } else if (isTwoQubitGate(op)) {
+    t = 2;
+  } else {
+    throw std::invalid_argument("Operation type is not known: " + toString(op));
+  }
+  const auto& controls = qc::Controls(addresses.cbegin(), addresses.cend() - t);
+  const auto& targets = qc::Targets(addresses.cbegin() - t, addresses.cend());
+  const auto& operation = qc::StandardOperation(controls, targets, op);
+  const auto& matrix = getDD(&operation, dd);
+  const auto& tmp = dd.multiply(matrix, qState);
+  dd.incRef(tmp);
+  dd.decRef(qState);
+  qState = tmp;
+  dd.garbageCollect();
+}
+
+} // namespace mqt
 
 extern "C" {
 
