@@ -11,6 +11,9 @@ namespace mqt {
  */
 class QIR_DD_Backend {
 private:
+  enum class AddressMode : uint8_t { UNKNOWN, DYNAMIC, STATIC };
+
+  AddressMode addressMode;
   std::unordered_map<qc::Qubit, qc::Qubit> qRegister;
   dd::vEdge qState{};
 

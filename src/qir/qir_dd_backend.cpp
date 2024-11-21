@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 
-mqt::QIR_DD_Backend::QIR_DD_Backend() {
+mqt::QIR_DD_Backend::QIR_DD_Backend() : addressMode(AddressMode::UNKNOWN) {
   qRegister = std::unordered_map<qc::Qubit, qc::Qubit>();
   qState = dd::vEdge::one();
 }
