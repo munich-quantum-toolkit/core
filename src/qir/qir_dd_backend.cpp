@@ -1,3 +1,5 @@
+#include "qir/qir_dd_backend.hpp"
+
 #include "qir/qir.h"
 
 #include <cstdio>
