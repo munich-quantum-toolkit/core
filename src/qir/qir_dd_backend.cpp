@@ -5,6 +5,11 @@
 #include <cstdio>
 #include <cstdlib>
 
+mqt::QIR_DD_Backend::QIR_DD_Backend() {
+  qRegister = std::unordered_map<qc::Qubit, qc::Qubit>();
+  qState = dd::vEdge::one();
+}
+
 extern "C" {
 
 // *** MEASUREMENT RESULTS ***
