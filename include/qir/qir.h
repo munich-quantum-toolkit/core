@@ -5,9 +5,16 @@
 
 // Instructions to wrap a C++ class with a C interface are taken from
 // [https://stackoverflow.com/a/11971205](https://stackoverflow.com/a/11971205)
-#include <stdbool.h>
 
 #pragma once
+
+// NOLINTBEGIN(bugprone-reserved-identifier)
+// NOLINTBEGIN(modernize-use-using)
+// NOLINTBEGIN(modernize-deprecated-headers)
+// NOLINTBEGIN(readability-identifier-naming)
+
+#include <stdint.h>
+#include <stdnoreturn.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,14 +23,14 @@ extern "C" {
 // *** SIMPLE TYPES ***
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/1_Data_Types.md#simple-types
-typedef signed long long int Int;
+typedef int64_t Int;
 typedef double Double;
 typedef bool Bool;
-typedef enum {
-  PauliId_I = 0,
-  PauliId_X = 1,
-  PauliId_Z = 2,
-  PauliId_Y = 3,
+typedef enum : uint8_t {
+  PauliI = 0,
+  PauliX = 1,
+  PauliZ = 2,
+  PauliY = 3,
 } Pauli;
 typedef struct {
   Int start;
@@ -53,7 +60,7 @@ Bool __quantum__rt__result_equal(Result*, Result*);
 
 // Adds the given integer value to the reference count for the result.
 // Deallocates the result if the reference count becomes 0.
-void __quantum__rt__result_update_reference_count(Result*, long int);
+void __quantum__rt__result_update_reference_count(Result*, int32_t);
 
 // *** QUBITS ***
 // cf.
@@ -73,11 +80,11 @@ String* __quantum__rt__string_create(const char*);
 const char* __quantum__rt__string_get_data(String*);
 
 // Returns the length of the byte array that contains the string data.
-long int __quantum__rt__string_get_length(String*);
+int32_t __quantum__rt__string_get_length(String*);
 
 // Adds the given integer value to the reference count for the string.
 // Deallocates the string if the reference count becomes 0.
-void __quantum__rt__string_update_reference_count(String*, long int);
+void __quantum__rt__string_update_reference_count(String*, int32_t);
 
 // Creates a new string that is the concatenation of the two argument strings.
 String* __quantum__rt__string_concatenate(String*, String*);
@@ -119,18 +126,18 @@ BigInt* __quantum__rt__bigint_create_i64(Int);
 // Creates a big integer with the initial value specified by the i8 array. The
 // 0-th element of the array is the highest-order byte, followed by the first
 // element, etc.
-BigInt* __quantum__rt__bigint_create_array(long int, char*);
+BigInt* __quantum__rt__bigint_create_array(int32_t, char*);
 
 // Returns a pointer to the i8 array containing the value of the big integer.
 char* __quantum__rt__bigint_get_data(BigInt*);
 
 // Returns the length of the i8 array that represents the big integer value.
-long int __quantum__rt__bigint_get_length(BigInt*);
+int32_t __quantum__rt__bigint_get_length(BigInt*);
 
 // Adds the given integer value to the reference count for the big integer.
 // Deallocates the big integer if the reference count becomes 0. The behavior is
 // undefined if the reference count becomes negative.
-void __quantum__rt__bigint_update_reference_count(BigInt*, long int);
+void __quantum__rt__bigint_update_reference_count(BigInt*, int32_t);
 
 // Returns the negative of the big integer.
 BigInt* __quantum__rt__bigint_negate(BigInt*);
@@ -151,7 +158,7 @@ BigInt* __quantum__rt__bigint_divide(BigInt*, BigInt*);
 BigInt* __quantum__rt__bigint_modulus(BigInt*, BigInt*);
 
 // Returns the big integer raised to the integer power.
-BigInt* __quantum__rt__bigint_power(BigInt*, long int);
+BigInt* __quantum__rt__bigint_power(BigInt*, int32_t);
 
 // Returns the bitwise-AND of two big integers.
 BigInt* __quantum__rt__bigint_bitand(BigInt*, BigInt*);
@@ -201,11 +208,11 @@ Tuple* __quantum__rt__tuple_copy(Tuple*, Bool force);
 // Adds the given integer value to the reference count for the tuple.
 // Deallocates the tuple if the reference count becomes 0. The behavior is
 // undefined if the reference count becomes negative.
-void __quantum__rt__tuple_update_reference_count(Tuple*, long int);
+void __quantum__rt__tuple_update_reference_count(Tuple*, int32_t);
 
 // Adds the given integer value to the alias count for the tuple. Fails if the
 // count becomes negative.
-void __quantum__rt__tuple_update_alias_count(Tuple*, long int);
+void __quantum__rt__tuple_update_alias_count(Tuple*, int32_t);
 
 // *** ARRAYS ***
 // cf.
@@ -216,7 +223,7 @@ typedef void Array;
 // Creates a new 1-dimensional array. The int is the size of each element in
 // bytes. The Int is the length of the array. The bytes of the new array should
 // be set to zero.
-Array* __quantum__rt__array_create_1d(long int, Int);
+Array* __quantum__rt__array_create_1d(int32_t, Int);
 
 // Creates a shallow copy of the array if the user count is larger than 0 or the
 // second argument is `true`.
@@ -242,26 +249,26 @@ char* __quantum__rt__array_get_element_ptr_1d(Array*, Int);
 // Adds the given integer value to the reference count for the array.
 // Deallocates the array if the reference count becomes 0. The behavior is
 // undefined if the reference count becomes negative.
-void __quantum__rt__array_update_reference_count(Array*, long int);
+void __quantum__rt__array_update_reference_count(Array*, int32_t);
 
 // Adds the given integer value to the alias count for the array. Fails if the
 // count becomes negative.
-void __quantum__rt__array_update_alias_count(Array*, long int);
+void __quantum__rt__array_update_alias_count(Array*, int32_t);
 
 // Creates a new array. The first i32 is the size of each element in bytes. The
 // second i32 is the dimension count. The i64* should point to an array of i64s
 // contains the length of each dimension. The bytes of the new array should be
 // set to zero. If any length is zero, the result should be an empty array with
 // the given number of dimensions.
-Array* __quantum__rt__array_create(long int, long int, Int*);
+Array* __quantum__rt__array_create(int32_t, int32_t, Int*);
 
 // Returns the number of dimensions in the array.
-long int __quantum__rt__array_get_dim(Array*);
+int32_t __quantum__rt__array_get_dim(Array*);
 
 // Returns the length of a dimension of the array. The i32 is the zero-based
 // dimension to return the length of; it must be smaller than the number of
 // dimensions in the array.
-Int __quantum__rt__array_get_size(Array*, long int);
+Int __quantum__rt__array_get_size(Array*, int32_t);
 
 // Returns a pointer to the indicated element of the array. The i64* should
 // point to an array of i64s that are the indices for each dimension.
@@ -274,7 +281,7 @@ char* __quantum__rt__array_get_element_ptr(Array*, Int*);
 // array. The %Range specifies the indices in that dimension that should be the
 // elements of the returned array. The reference count of the elements remains
 // unchanged.
-Array* __quantum__rt__array_slice(Array*, long int, Range, Bool);
+Array* __quantum__rt__array_slice(Array*, int32_t, Range, Bool);
 
 // Creates and returns an array that is a projection of an existing array. The
 // projection may be accessing the same memory as the given array unless its
@@ -283,7 +290,7 @@ Array* __quantum__rt__array_slice(Array*, long int, Range, Bool);
 // dimension to project. The reference count of all array elements remains
 // unchanged. If the existing array is one-dimensional then a runtime failure
 // should occur.
-Array* __quantum__rt__array_project(Array*, long int, Int, Bool);
+Array* __quantum__rt__array_project(Array*, int32_t, Int, Bool);
 
 // *** CALLABLES ***
 // cf.
@@ -315,19 +322,19 @@ void __quantum__rt__callable_make_controlled(Callable*);
 // Adds the given integer value to the reference count for the callable.
 // Deallocates the callable if the reference count becomes 0. The behavior is
 // undefined if the reference count becomes negative.
-void __quantum__rt__callable_update_reference_count(Callable*, long int);
+void __quantum__rt__callable_update_reference_count(Callable*, int32_t);
 
 // Adds the given integer value to the alias count for the callable. Fails if
 // the count becomes negative.
-void __quantum__rt__callable_update_alias_count(Callable*, long int);
+void __quantum__rt__callable_update_alias_count(Callable*, int32_t);
 
 // Invokes the function at index 0 in the memory management table of the
 // callable with the capture tuple and the given 32-bit integer.
-void __quantum__rt__capture_update_reference_count(Callable*, long int);
+void __quantum__rt__capture_update_reference_count(Callable*, int32_t);
 
 // Invokes the function at index 1 in the memory management table of the
 // callable with the capture tuple and the given 32-bit integer.
-void __quantum__rt__capture_update_alias_count(Callable*, long int);
+void __quantum__rt__capture_update_alias_count(Callable*, int32_t);
 
 // *** CLASSICAL RUNTIME ***
 // cf.
@@ -386,6 +393,11 @@ void __quantum__qis__ccz__body(Qubit*, Qubit*, Qubit*);
 void __quantum__qis__mz__body(Qubit*, Result*);
 void __quantum__qis__m__body(Qubit*, Result*);
 void __quantum__qis__reset__body(Qubit*);
+
+// NOLINTEND(readability-identifier-naming)
+// NOLINTEND(modernize-deprecated-headers)
+// NOLINTEND(modernize-use-using)
+// NOLINTEND(bugprone-reserved-identifier)
 
 #ifdef __cplusplus
 } // extern "C"
