@@ -19,9 +19,9 @@ struct TupleImpl {
   uint64_t refcount;
   // todo
 };
-struct ArrayImpl {
+template <typename T> struct ArrayImpl {
   uint64_t refcount;
-  // todo
+  T data[];
 };
 struct CallablImpl {
   uint64_t refcount;
@@ -61,7 +61,7 @@ public:
   QIR_DD_Backend& operator=(const QIR_DD_Backend&) = delete;
 
   template <typename... Args> auto apply(qc::OpType op, Args... qubits) -> void;
-  auto qAlloc(uint64_t n) -> Qubit*;
-  auto qFree(const Qubit* qubits) -> void;
+  auto qAlloc() -> Qubit*;
+  auto qFree(const Qubit* q) -> void;
 };
 } // namespace mqt

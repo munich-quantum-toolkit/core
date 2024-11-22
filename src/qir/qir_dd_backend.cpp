@@ -82,30 +82,24 @@ auto QIR_DD_Backend::apply(const qc::OpType op, Args... qubits) -> void {
   dd.garbageCollect();
 }
 
-auto QIR_DD_Backend::qAlloc(uint64_t n) -> Qubit* {
+auto QIR_DD_Backend::qAlloc() -> Qubit* {
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  auto* qubits = new Qubit[n];
-  for (uint64_t i = 0; i < n; ++i) {
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    qubits[i].id = currentMaxAddress + MIN_DYN_ADDRESS;
-    qRegister.emplace(qubits[i].id, currentMaxAddress);
-    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    ++currentMaxAddress;
-  }
-  return qubits;
+  auto* q = new Qubit;
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  q->id = currentMaxAddress + MIN_DYN_ADDRESS;
+  qRegister.emplace(q->id, currentMaxAddress);
+  // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  ++currentMaxAddress;
+  return q;
 }
 
-auto QIR_DD_Backend::qFree(const Qubit* qubits) -> void {
-  // NOLINTNEXTLINE(bugprone-sizeof-expression)
-  const auto n = sizeof(qubits) / sizeof(Qubit);
-  for (uint64_t i = 0; i < n; ++i) {
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    apply(qc::Reset, qubits[i]);
-    qRegister.erase(qubits[i].id);
-    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  }
+auto QIR_DD_Backend::qFree(const Qubit* q) -> void {
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  apply(qc::Reset, q);
+  qRegister.erase(q->id);
+  // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  delete[] qubits;
+  delete q;
 }
 
 } // namespace mqt
