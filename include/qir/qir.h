@@ -40,13 +40,13 @@ typedef struct {
 
 // moved up, because it is required for Strings already, see BigInt section for
 // more
-typedef struct BigIntImpl BigInt;
+typedef void BigInt;
 
 // *** MEASUREMENT RESULTS ***
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/1_Data_Types.md#measurement-results
 
-typedef struct ResultImpl Result;
+typedef void Result;
 
 // Returns a constant representing a measurement result zero.
 Result* __quantum__rt__result_get_zero();
@@ -65,7 +65,7 @@ void __quantum__rt__result_update_reference_count(Result*, int32_t);
 // *** QUBITS ***
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/1_Data_Types.md#qubits
-typedef struct QubitImpl Qubit;
+typedef void Qubit;
 
 // *** STRINGS ***
 // cf.

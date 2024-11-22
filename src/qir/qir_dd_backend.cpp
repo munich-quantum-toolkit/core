@@ -34,7 +34,7 @@ auto QIR_DD_Backend::apply(const qc::OpType op, Args... qubits) -> void {
   addresses.reserve(rawAddresses.size());
   std::transform(rawAddresses.cbegin(), rawAddresses.cend(),
                  std::back_inserter(addresses),
-                 [](const auto a) { return a->id; });
+                 [](const auto a) { return static_cast<qc::Qubit>(a); });
   // get hardware addresses if necessary
   determineAddressMode();
   if (addressMode == AddressMode::DYNAMIC) {
