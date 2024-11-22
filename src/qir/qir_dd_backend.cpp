@@ -28,9 +28,15 @@ auto QIR_DD_Backend::determineAddressMode() -> void {
 
 template <typename... Args>
 auto QIR_DD_Backend::apply(const qc::OpType op, Args... qubits) -> void {
+  // extract addresses from opaque qubit pointers
+  const std::vector<Qubit*> rawAddresses = {qubits...};
+  std::vector<qc::Qubit> addresses;
+  addresses.reserve(rawAddresses.size());
+  std::transform(rawAddresses.cbegin(), rawAddresses.cend(),
+                 std::back_inserter(addresses),
+                 [](const auto a) { return a->id; });
   // get hardware addresses if necessary
   determineAddressMode();
-  std::vector<qc::Qubit> addresses = {qubits...};
   if (addressMode == AddressMode::DYNAMIC) {
     std::transform(addresses.cbegin(), addresses.cend(), addresses.begin(),
                    [&](const auto q) {

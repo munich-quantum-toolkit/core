@@ -4,6 +4,17 @@
 #include "ir/QuantumComputation.hpp"
 
 namespace mqt {
+
+struct BigIntImpl {
+  int64_t i;
+};
+struct ResultImpl {
+  bool r;
+};
+struct QubitImpl {
+  qc::Qubit id;
+};
+
 /**
  * @note This class is implemented following the design pattern Singleton in
  * order to access an instance of this class from the C function without having
@@ -33,5 +44,6 @@ public:
   QIR_DD_Backend& operator=(const QIR_DD_Backend&) = delete;
 
   template <typename... Args> auto apply(qc::OpType op, Args... qubits) -> void;
+  auto qAlloc(uint64_t n) -> qc::Qubit;
 };
 } // namespace mqt
