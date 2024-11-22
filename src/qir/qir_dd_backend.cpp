@@ -114,17 +114,33 @@ extern "C" {
 
 // *** MEASUREMENT RESULTS ***
 Result* __quantum__rt__result_get_zero() {
-  return reinterpret_cast<Result*>(0);
+  static Result zero = {0, false};
+  return &zero;
 }
 
-Result* __quantum__rt__result_get_one() { return reinterpret_cast<Result*>(1); }
+Result* __quantum__rt__result_get_one() {
+  static Result one = {0, true};
+  return &one;
+}
 
 Bool __quantum__rt__result_equal(const Result* r1, const Result* r2) {
-  return r1 == r2;
+  if (r1 == nullptr) {
+    throw std::invalid_argument("First argument must not be null.");
+  }
+  if (r2 == nullptr) {
+    throw std::invalid_argument("Second argument must not be null.");
+  }
+  return r1->r == r2->r;
 }
 
-void __quantum__rt__result_update_reference_count(Result*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+void __quantum__rt__result_update_reference_count(Result* r, const int32_t k) {
+  if (r != nullptr) {
+    r->refcount += k;
+    if (r->refcount == 0) {
+      // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+      delete r;
+    }
+  }
 }
 
 // *** STRINGS ***
