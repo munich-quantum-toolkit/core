@@ -2,6 +2,32 @@
 
 #include "dd/Package.hpp"
 #include "ir/QuantumComputation.hpp"
+#include "qir.h"
+
+struct BigIntImpl {
+  uint64_t refcount;
+  int64_t i;
+};
+struct ResultImpl {
+  uint64_t refcount;
+  bool r;
+};
+struct QubitImpl {
+  uint64_t refcount;
+  qc::Qubit id;
+};
+struct TupleImpl {
+  uint64_t refcount;
+  // todo
+};
+struct ArrayImpl {
+  uint64_t refcount;
+  // todo
+};
+struct CallablImpl {
+  uint64_t refcount;
+  // todo
+};
 
 namespace mqt {
 
@@ -12,6 +38,7 @@ namespace mqt {
  */
 class QIR_DD_Backend {
 private:
+  static constexpr auto MIN_DYN_ADDRESS = 0x10000;
   enum class AddressMode : uint8_t { UNKNOWN, DYNAMIC, STATIC };
 
   AddressMode addressMode;

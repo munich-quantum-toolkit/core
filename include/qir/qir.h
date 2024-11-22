@@ -40,13 +40,13 @@ typedef struct {
 
 // moved up, because it is required for Strings already, see BigInt section for
 // more
-typedef void BigInt;
+typedef struct BigIntImpl BigInt;
 
 // *** MEASUREMENT RESULTS ***
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/1_Data_Types.md#measurement-results
 
-typedef void Result;
+typedef struct ResultImpl Result;
 
 // Returns a constant representing a measurement result zero.
 Result* __quantum__rt__result_get_zero();
@@ -56,7 +56,7 @@ Result* __quantum__rt__result_get_one();
 
 // Returns true if the two results are the same, and false if they are
 // different.
-Bool __quantum__rt__result_equal(Result*, Result*);
+Bool __quantum__rt__result_equal(const Result*, const Result*);
 
 // Adds the given integer value to the reference count for the result.
 // Deallocates the result if the reference count becomes 0.
@@ -65,7 +65,7 @@ void __quantum__rt__result_update_reference_count(Result*, int32_t);
 // *** QUBITS ***
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/1_Data_Types.md#qubits
-typedef void Qubit;
+typedef struct QubitImpl Qubit;
 
 // *** STRINGS ***
 // cf.
@@ -195,7 +195,7 @@ Bool __quantum__rt__bigint_greater_eq(BigInt*, BigInt*);
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/1_Data_Types.md#tuples-and-user-defined-types
 
-typedef void Tuple;
+typedef struct TupleImpl Tuple;
 
 // Allocates space for a tuple requiring the given number of bytes and sets the
 // reference count to 1.
@@ -218,7 +218,7 @@ void __quantum__rt__tuple_update_alias_count(Tuple*, int32_t);
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/1_Data_Types.md#arrays
 
-typedef void Array;
+typedef struct ArrayImpl Array;
 
 // Creates a new 1-dimensional array. The int is the size of each element in
 // bytes. The Int is the length of the array. The bytes of the new array should
@@ -296,7 +296,7 @@ Array* __quantum__rt__array_project(Array*, int32_t, Int, Bool);
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/2_Callables.md
 
-typedef void Callable;
+typedef struct CallablImpl Callable;
 
 // Initializes the callable with the provided function table and capture tuple.
 // The capture tuple pointer should be null if there is no capture.
