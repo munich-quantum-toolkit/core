@@ -14,9 +14,10 @@ private:
   enum class AddressMode : uint8_t { UNKNOWN, DYNAMIC, STATIC };
 
   AddressMode addressMode;
+  uint64_t numQubits;
   std::unordered_map<qc::Qubit, qc::Qubit> qRegister;
   dd::Package<> dd;
-  dd::vEdge qState{};
+  dd::vEdge qState;
 
   QIR_DD_Backend();
 

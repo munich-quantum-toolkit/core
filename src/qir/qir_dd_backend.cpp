@@ -5,13 +5,15 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <stdexcept>
 
 namespace mqt {
 
-QIR_DD_Backend::QIR_DD_Backend() : addressMode(AddressMode::UNKNOWN) {
+QIR_DD_Backend::QIR_DD_Backend()
+    : addressMode(AddressMode::UNKNOWN), numQubits(0),
+      qState(dd::vEdge::one()) {
   qRegister = std::unordered_map<qc::Qubit, qc::Qubit>();
-  qState = dd::vEdge::one();
 }
 
 auto QIR_DD_Backend::determineAddressMode() -> void {
@@ -26,13 +28,22 @@ auto QIR_DD_Backend::determineAddressMode() -> void {
 
 template <typename... Args>
 auto QIR_DD_Backend::apply(const qc::OpType op, Args... qubits) -> void {
+  // get hardware addresses if necessary
   determineAddressMode();
   std::vector<qc::Qubit> addresses = {qubits...};
   if (addressMode == AddressMode::DYNAMIC) {
     std::transform(addresses.cbegin(), addresses.cend(), addresses.begin(),
-                   [&](const auto q) { return qRegister.at(q); });
+                   [&](const auto q) {
+                     try {
+                       return qRegister.at(q);
+                     } catch (const std::out_of_range&) {
+                       std::throw_with_nested(
+                           std::invalid_argument("Qubit address not found: q"));
+                     }
+                   });
   }
-  int t = 0;
+  // split addresses into control and target
+  uint8_t t = 0;
   if (isSingleQubitGate(op)) {
     t = 1;
   } else if (isTwoQubitGate(op)) {
@@ -42,8 +53,17 @@ auto QIR_DD_Backend::apply(const qc::OpType op, Args... qubits) -> void {
   }
   const auto& controls = qc::Controls(addresses.cbegin(), addresses.cend() - t);
   const auto& targets = qc::Targets(addresses.cbegin() - t, addresses.cend());
+  // retrieve operation matrix
   const auto& operation = qc::StandardOperation(controls, targets, op);
   const auto& matrix = getDD(&operation, dd);
+  // enlarge quantum state if necessary
+  const auto maxTarget = *std::max_element(targets.cbegin(), targets.cend());
+  const auto d = maxTarget - numQubits + 1;
+  if (d > 0) {
+    qState = dd.kronecker(qState, dd.makeZeroState(d), d);
+    numQubits += d;
+  }
+  // apply operation
   const auto& tmp = dd.multiply(matrix, qState);
   dd.incRef(tmp);
   dd.decRef(qState);
@@ -71,7 +91,7 @@ Bool __quantum__rt__result_equal(Result*, Result*) {
   return false;
 }
 
-void __quantum__rt__result_update_reference_count(Result*, long int) {
+void __quantum__rt__result_update_reference_count(Result*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
@@ -86,12 +106,12 @@ const char* __quantum__rt__string_get_data(String*) {
   return NULL;
 }
 
-long int __quantum__rt__string_get_length(String*) {
+int32_t __quantum__rt__string_get_length(String*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return 0;
 }
 
-void __quantum__rt__string_update_reference_count(String*, long int) {
+void __quantum__rt__string_update_reference_count(String*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
@@ -151,7 +171,7 @@ BigInt* __quantum__rt__bigint_create_i64(Int) {
   return NULL;
 }
 
-BigInt* __quantum__rt__bigint_create_array(long int, char*) {
+BigInt* __quantum__rt__bigint_create_array(int32_t, char*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -161,12 +181,12 @@ char* __quantum__rt__bigint_get_data(BigInt*) {
   return NULL;
 }
 
-long int __quantum__rt__bigint_get_length(BigInt*) {
+int32_t __quantum__rt__bigint_get_length(BigInt*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return 0;
 }
 
-void __quantum__rt__bigint_update_reference_count(BigInt*, long int) {
+void __quantum__rt__bigint_update_reference_count(BigInt*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
@@ -200,7 +220,7 @@ BigInt* __quantum__rt__bigint_modulus(BigInt*, BigInt*) {
   return NULL;
 }
 
-BigInt* __quantum__rt__bigint_power(BigInt*, long int) {
+BigInt* __quantum__rt__bigint_power(BigInt*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -261,16 +281,16 @@ Tuple* __quantum__rt__tuple_copy(Tuple*, Bool force) {
   return NULL;
 }
 
-void __quantum__rt__tuple_update_reference_count(Tuple*, long int) {
+void __quantum__rt__tuple_update_reference_count(Tuple*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
-void __quantum__rt__tuple_update_alias_count(Tuple*, long int) {
+void __quantum__rt__tuple_update_alias_count(Tuple*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
 // *** ARRAYS ***
-Array* __quantum__rt__array_create_1d(long int size, Int n) {
+Array* __quantum__rt__array_create_1d(int32_t size, Int n) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   Array* a = malloc(size * n);
   for (Int i = 0; i < n; i++) {
@@ -304,25 +324,25 @@ char* __quantum__rt__array_get_element_ptr_1d(Array*, Int) {
   return NULL;
 }
 
-void __quantum__rt__array_update_reference_count(Array*, long int) {
+void __quantum__rt__array_update_reference_count(Array*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
-void __quantum__rt__array_update_alias_count(Array*, long int) {
+void __quantum__rt__array_update_alias_count(Array*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
-Array* __quantum__rt__array_create(long int, long int, Int*) {
+Array* __quantum__rt__array_create(int32_t, int32_t, Int*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-long int __quantum__rt__array_get_dim(Array*) {
+int32_t __quantum__rt__array_get_dim(Array*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return 0;
 }
 
-Int __quantum__rt__array_get_size(Array*, long int) {
+Int __quantum__rt__array_get_size(Array*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return 0;
 }
@@ -332,12 +352,12 @@ char* __quantum__rt__array_get_element_ptr(Array*, Int*) {
   return NULL;
 }
 
-Array* __quantum__rt__array_slice(Array*, long int, Range, Bool) {
+Array* __quantum__rt__array_slice(Array*, int32_t, Range, Bool) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-Array* __quantum__rt__array_project(Array*, long int, Int, Bool) {
+Array* __quantum__rt__array_project(Array*, int32_t, Int, Bool) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -367,19 +387,19 @@ void __quantum__rt__callable_make_controlled(Callable*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
-void __quantum__rt__callable_update_reference_count(Callable*, long int) {
+void __quantum__rt__callable_update_reference_count(Callable*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
-void __quantum__rt__callable_update_alias_count(Callable*, long int) {
+void __quantum__rt__callable_update_alias_count(Callable*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
-void __quantum__rt__capture_update_reference_count(Callable*, long int) {
+void __quantum__rt__capture_update_reference_count(Callable*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
-void __quantum__rt__capture_update_alias_count(Callable*, long int) {
+void __quantum__rt__capture_update_alias_count(Callable*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
