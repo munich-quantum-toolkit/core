@@ -13,7 +13,6 @@ struct ResultImpl {
   bool r;
 };
 struct QubitImpl {
-  uint64_t refcount;
   qc::Qubit id;
 };
 struct TupleImpl {
@@ -42,8 +41,9 @@ private:
   enum class AddressMode : uint8_t { UNKNOWN, DYNAMIC, STATIC };
 
   AddressMode addressMode;
-  uint64_t numQubits;
   std::unordered_map<qc::Qubit, qc::Qubit> qRegister;
+  uint64_t currentMaxAddress;
+  uint64_t numQubits;
   dd::Package<> dd;
   dd::vEdge qState;
 
@@ -62,5 +62,6 @@ public:
 
   template <typename... Args> auto apply(qc::OpType op, Args... qubits) -> void;
   auto qAlloc(uint64_t n) -> Qubit*;
+  auto qFree(const Qubit* qubits) -> void;
 };
 } // namespace mqt

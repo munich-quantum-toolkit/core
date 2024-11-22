@@ -11,7 +11,7 @@
 namespace mqt {
 
 QIR_DD_Backend::QIR_DD_Backend()
-    : addressMode(AddressMode::UNKNOWN), numQubits(0),
+    : addressMode(AddressMode::UNKNOWN), currentMaxAddress(0), numQubits(0),
       qState(dd::vEdge::one()) {
   qRegister = std::unordered_map<qc::Qubit, qc::Qubit>();
 }
@@ -85,16 +85,27 @@ auto QIR_DD_Backend::apply(const qc::OpType op, Args... qubits) -> void {
 auto QIR_DD_Backend::qAlloc(uint64_t n) -> Qubit* {
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   auto* qubits = new Qubit[n];
-  auto addr = qRegister.size();
   for (uint64_t i = 0; i < n; ++i) {
     // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    qubits[i].id = addr + MIN_DYN_ADDRESS;
-    qubits[i].refcount = 1;
-    qRegister.emplace(qubits[i].id, addr);
+    qubits[i].id = currentMaxAddress + MIN_DYN_ADDRESS;
+    qRegister.emplace(qubits[i].id, currentMaxAddress);
     // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    ++addr;
+    ++currentMaxAddress;
   }
   return qubits;
+}
+
+auto QIR_DD_Backend::qFree(const Qubit* qubits) -> void {
+  // NOLINTNEXTLINE(bugprone-sizeof-expression)
+  const auto n = sizeof(qubits) / sizeof(Qubit);
+  for (uint64_t i = 0; i < n; ++i) {
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    apply(qc::Reset, qubits[i]);
+    qRegister.erase(qubits[i].id);
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  }
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete[] qubits;
 }
 
 } // namespace mqt
