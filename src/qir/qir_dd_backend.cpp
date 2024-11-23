@@ -158,10 +158,16 @@ String* __quantum__rt__string_create(const char* utf8) {
 }
 
 const char* __quantum__rt__string_get_data(const String* string) {
+  if (string == nullptr) {
+    throw std::invalid_argument("The argument must not be null.");
+  }
   return string->content.c_str();
 }
 
 int32_t __quantum__rt__string_get_length(const String* string) {
+  if (string == nullptr) {
+    throw std::invalid_argument("The argument must not be null.");
+  }
   return static_cast<int32_t>(string->content.size());
 }
 
@@ -176,11 +182,28 @@ void __quantum__rt__string_update_reference_count(String* string,
   }
 }
 
-String* __quantum__rt__string_concatenate(String*, String*) {
-  throw std::bad_function_call();
+String* __quantum__rt__string_concatenate(const String* string1,
+                                          const String* string2) {
+  if (string1 == nullptr) {
+    throw std::invalid_argument("The first argument must not be null.");
+  }
+  if (string2 == nullptr) {
+    throw std::invalid_argument("The second argument must not be null.");
+  }
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* string = new String;
+  string->refcount = 1;
+  string->content = string1->content + string2->content;
+  return string;
 }
 
 bool __quantum__rt__string_equal(const String* string1, const String* string2) {
+  if (string1 == nullptr) {
+    throw std::invalid_argument("The first argument must not be null.");
+  }
+  if (string2 == nullptr) {
+    throw std::invalid_argument("The second argument must not be null.");
+  }
   return string1->content == string2->content;
 }
 
@@ -209,6 +232,9 @@ String* __quantum__rt__bool_to_string(const bool b) {
 }
 
 String* __quantum__rt__result_to_string(const Result* result) {
+  if (result == nullptr) {
+    throw std::invalid_argument("The argument must not be null.");
+  }
   return __quantum__rt__int_to_string(static_cast<int32_t>(result->r));
 }
 
@@ -230,6 +256,9 @@ String* __quantum__rt__pauli_to_string(const Pauli p) {
 }
 
 String* __quantum__rt__qubit_to_string(const Qubit* qubit) {
+  if (qubit == nullptr) {
+    throw std::invalid_argument("The argument must not be null.");
+  }
   return __quantum__rt__int_to_string(static_cast<int32_t>(qubit->id));
 }
 

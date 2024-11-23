@@ -84,7 +84,7 @@ int32_t __quantum__rt__string_get_length(const String*);
 void __quantum__rt__string_update_reference_count(String*, int32_t);
 
 // Creates a new string that is the concatenation of the two argument strings.
-String* __quantum__rt__string_concatenate(String*, String*);
+String* __quantum__rt__string_concatenate(const String*, const String*);
 
 // Returns true if the two strings are equal, false otherwise.
 bool __quantum__rt__string_equal(const String*, const String*);
