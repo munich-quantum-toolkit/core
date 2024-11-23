@@ -21,7 +21,10 @@ struct TupleImpl {
 };
 template <typename T> struct ArrayImpl {
   uint64_t refcount;
-  T data[];
+  std::vector<T> elements;
+};
+template <size_t size> struct ArrayElement {
+  std::array<uint8_t, size> data;
 };
 struct CallablImpl {
   uint64_t refcount;

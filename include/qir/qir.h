@@ -23,9 +23,6 @@ extern "C" {
 // *** SIMPLE TYPES ***
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/1_Data_Types.md#simple-types
-typedef int64_t Int;
-typedef double Double;
-typedef bool Bool;
 typedef enum : uint8_t {
   PauliI = 0,
   PauliX = 1,
@@ -33,9 +30,9 @@ typedef enum : uint8_t {
   PauliY = 3,
 } Pauli;
 typedef struct {
-  Int start;
-  Int step;
-  Int end;
+  int64_t start;
+  int64_t step;
+  int64_t end;
 } Range;
 
 // moved up, because it is required for Strings already, see BigInt section for
@@ -56,7 +53,7 @@ Result* __quantum__rt__result_get_one();
 
 // Returns true if the two results are the same, and false if they are
 // different.
-Bool __quantum__rt__result_equal(const Result*, const Result*);
+bool __quantum__rt__result_equal(const Result*, const Result*);
 
 // Adds the given integer value to the reference count for the result.
 // Deallocates the result if the reference count becomes 0.
@@ -90,16 +87,16 @@ void __quantum__rt__string_update_reference_count(String*, int32_t);
 String* __quantum__rt__string_concatenate(String*, String*);
 
 // Returns true if the two strings are equal, false otherwise.
-Bool __quantum__rt__string_equal(String*, String*);
+bool __quantum__rt__string_equal(String*, String*);
 
 // Returns a string representation of the integer.
-String* __quantum__rt__int_to_string(Int);
+String* __quantum__rt__int_to_string(int64_t);
 
 // Returns a string representation of the double.
-String* __quantum__rt__double_to_string(Double);
+String* __quantum__rt__double_to_string(double);
 
 // Returns a string representation of the Boolean.
-String* __quantum__rt__bool_to_string(Bool);
+String* __quantum__rt__bool_to_string(bool);
 
 // Returns a string representation of the result.
 String* __quantum__rt__result_to_string(Result*);
@@ -121,7 +118,7 @@ String* __quantum__rt__bigint_to_string(BigInt*);
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/1_Data_Types.md#big-integers
 
 // Creates a big integer with the specified initial value.
-BigInt* __quantum__rt__bigint_create_i64(Int);
+BigInt* __quantum__rt__bigint_create_i64(int64_t);
 
 // Creates a big integer with the initial value specified by the i8 array. The
 // 0-th element of the array is the highest-order byte, followed by the first
@@ -174,22 +171,22 @@ BigInt* __quantum__rt__bigint_bitnot(BigInt*);
 
 // Returns the big integer arithmetically shifted left by the (positive) integer
 // amount of bits.
-BigInt* __quantum__rt__bigint_shiftleft(BigInt*, Int);
+BigInt* __quantum__rt__bigint_shiftleft(BigInt*, int64_t);
 
 // Returns the big integer arithmetically shifted right by the (positive)
 // integer amount of bits.
-BigInt* __quantum__rt__bigint_shiftright(BigInt*, Int);
+BigInt* __quantum__rt__bigint_shiftright(BigInt*, int64_t);
 
 // Returns true if the two big integers are equal, false otherwise.
-Bool __quantum__rt__bigint_equal(BigInt*, BigInt*);
+bool __quantum__rt__bigint_equal(BigInt*, BigInt*);
 
 // Returns true if the first big integer is greater than the second, false
 // otherwise.
-Bool __quantum__rt__bigint_greater(BigInt*, BigInt*);
+bool __quantum__rt__bigint_greater(BigInt*, BigInt*);
 
 // Returns true if the first big integer is greater than or equal to the second,
 // false otherwise.
-Bool __quantum__rt__bigint_greater_eq(BigInt*, BigInt*);
+bool __quantum__rt__bigint_greater_eq(BigInt*, BigInt*);
 
 // *** TUPLES ***
 // cf.
@@ -199,11 +196,11 @@ typedef struct TupleImpl Tuple;
 
 // Allocates space for a tuple requiring the given number of bytes and sets the
 // reference count to 1.
-Tuple* __quantum__rt__tuple_create(Int);
+Tuple* __quantum__rt__tuple_create(int64_t);
 
 // Creates a shallow copy of the tuple if the user count is larger than 0 or the
 // second argument is `true`.
-Tuple* __quantum__rt__tuple_copy(Tuple*, Bool force);
+Tuple* __quantum__rt__tuple_copy(Tuple*, bool force);
 
 // Adds the given integer value to the reference count for the tuple.
 // Deallocates the tuple if the reference count becomes 0. The behavior is
@@ -220,14 +217,14 @@ void __quantum__rt__tuple_update_alias_count(Tuple*, int32_t);
 
 typedef struct ArrayImpl Array;
 
-// Creates a new 1-dimensional array. The int is the size of each element in
-// bytes. The Int is the length of the array. The bytes of the new array should
-// be set to zero.
-Array* __quantum__rt__array_create_1d(int32_t, Int);
+// Creates a new 1-dimensional array. The int64_t is the size of each element in
+// bytes. The int64_t is the length of the array. The bytes of the new array
+// should be set to zero.
+Array* __quantum__rt__array_create_1d(int32_t, int64_t);
 
 // Creates a shallow copy of the array if the user count is larger than 0 or the
 // second argument is `true`.
-Array* __quantum__rt__array_copy(Array*, Bool);
+Array* __quantum__rt__array_copy(Array*, bool);
 
 // Returns a new array which is the concatenation of the two passed-in arrays.
 Array* __quantum__rt__array_concatenate(Array*, Array*);
@@ -236,15 +233,15 @@ Array* __quantum__rt__array_concatenate(Array*, Array*);
 // array. The slice may be accessing the same memory as the given array unless
 // its alias count is larger than 0 or the last argument is true. The Range
 // specifies the indices that should be the elements of the returned array.
-Array* __quantum__rt__array_slice_1d(Array*, Range, Bool);
+Array* __quantum__rt__array_slice_1d(Array*, Range, bool);
 
-// Returns the length of a dimension of the array. The int is the zero-based
+// Returns the length of a dimension of the array. The int64_t is the zero-based
 // dimension to return the length of; it must be 0 for a 1-dimensional array.
-Int __quantum__rt__array_get_size_1d(Array*);
+int64_t __quantum__rt__array_get_size_1d(Array*);
 
 // Returns a pointer to the element of the array at the zero-based index given
-// by the Int.
-char* __quantum__rt__array_get_element_ptr_1d(Array*, Int);
+// by the int64_t.
+char* __quantum__rt__array_get_element_ptr_1d(Array*, int64_t);
 
 // Adds the given integer value to the reference count for the array.
 // Deallocates the array if the reference count becomes 0. The behavior is
@@ -260,7 +257,7 @@ void __quantum__rt__array_update_alias_count(Array*, int32_t);
 // contains the length of each dimension. The bytes of the new array should be
 // set to zero. If any length is zero, the result should be an empty array with
 // the given number of dimensions.
-Array* __quantum__rt__array_create(int32_t, int32_t, Int*);
+Array* __quantum__rt__array_create(int32_t, int32_t, int64_t*);
 
 // Returns the number of dimensions in the array.
 int32_t __quantum__rt__array_get_dim(Array*);
@@ -268,11 +265,11 @@ int32_t __quantum__rt__array_get_dim(Array*);
 // Returns the length of a dimension of the array. The i32 is the zero-based
 // dimension to return the length of; it must be smaller than the number of
 // dimensions in the array.
-Int __quantum__rt__array_get_size(Array*, int32_t);
+int64_t __quantum__rt__array_get_size(Array*, int32_t);
 
 // Returns a pointer to the indicated element of the array. The i64* should
 // point to an array of i64s that are the indices for each dimension.
-char* __quantum__rt__array_get_element_ptr(Array*, Int*);
+char* __quantum__rt__array_get_element_ptr(Array*, int64_t*);
 
 // Creates and returns an array that is a slice of an existing array. The slice
 // may be accessing the same memory as the given array unless its alias count is
@@ -281,7 +278,7 @@ char* __quantum__rt__array_get_element_ptr(Array*, Int*);
 // array. The %Range specifies the indices in that dimension that should be the
 // elements of the returned array. The reference count of the elements remains
 // unchanged.
-Array* __quantum__rt__array_slice(Array*, int32_t, Range, Bool);
+Array* __quantum__rt__array_slice(Array*, int32_t, Range, bool);
 
 // Creates and returns an array that is a projection of an existing array. The
 // projection may be accessing the same memory as the given array unless its
@@ -290,7 +287,7 @@ Array* __quantum__rt__array_slice(Array*, int32_t, Range, Bool);
 // dimension to project. The reference count of all array elements remains
 // unchanged. If the existing array is one-dimensional then a runtime failure
 // should occur.
-Array* __quantum__rt__array_project(Array*, int32_t, Int, Bool);
+Array* __quantum__rt__array_project(Array*, int32_t, int64_t, bool);
 
 // *** CALLABLES ***
 // cf.
@@ -307,7 +304,7 @@ Callable* __quantum__rt__callable_create(void (*f[4])(Tuple*, Tuple*, Tuple*),
 // Creates a shallow copy of the callable if the alias count is larger than 0 or
 // the second argument is `true`. Returns the given callable pointer otherwise,
 // after increasing its reference count by 1.
-Callable* __quantum__rt__callable_copy(Callable*, Bool);
+Callable* __quantum__rt__callable_copy(Callable*, bool);
 
 // Invokes the callable with the provided argument tuple and fills in the result
 // tuple.
@@ -355,7 +352,7 @@ Qubit* __quantum__rt__qubit_allocate();
 // Creates an array of the given size and populates it with newly-allocated
 // qubits.
 
-Array* __quantum__rt__qubit_allocate_array(Int);
+Array* __quantum__rt__qubit_allocate_array(int64_t);
 
 // Releases a single qubit. Passing a null pointer as argument should cause a
 // runtime failure.
@@ -382,9 +379,9 @@ void __quantum__qis__s__body(Qubit*);
 void __quantum__qis__sdg__body(Qubit*);
 void __quantum__qis__t__body(Qubit*);
 void __quantum__qis__tdg__body(Qubit*);
-void __quantum__qis__rx__body(Double, Qubit*);
-void __quantum__qis__ry__body(Double, Qubit*);
-void __quantum__qis__rz__body(Double, Qubit*);
+void __quantum__qis__rx__body(double, Qubit*);
+void __quantum__qis__ry__body(double, Qubit*);
+void __quantum__qis__rz__body(double, Qubit*);
 void __quantum__qis__cx__body(Qubit*, Qubit*);
 void __quantum__qis__cnot__body(Qubit*, Qubit*);
 void __quantum__qis__cz__body(Qubit*, Qubit*);

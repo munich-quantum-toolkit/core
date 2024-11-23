@@ -117,7 +117,7 @@ Result* __quantum__rt__result_get_one() {
   return &one;
 }
 
-Bool __quantum__rt__result_equal(const Result* r1, const Result* r2) {
+bool __quantum__rt__result_equal(const Result* r1, const Result* r2) {
   if (r1 == nullptr) {
     throw std::invalid_argument("First argument must not be null.");
   }
@@ -162,22 +162,22 @@ String* __quantum__rt__string_concatenate(String*, String*) {
   return NULL;
 }
 
-Bool __quantum__rt__string_equal(String*, String*) {
+bool __quantum__rt__string_equal(String*, String*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return false;
 }
 
-String* __quantum__rt__int_to_string(Int) {
+String* __quantum__rt__int_to_string(int64_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-String* __quantum__rt__double_to_string(Double) {
+String* __quantum__rt__double_to_string(double) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-String* __quantum__rt__bool_to_string(Bool) {
+String* __quantum__rt__bool_to_string(bool) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -208,7 +208,7 @@ String* __quantum__rt__bigint_to_string(BigInt*) {
 }
 
 // *** BIG INTEGERS ***
-BigInt* __quantum__rt__bigint_create_i64(Int) {
+BigInt* __quantum__rt__bigint_create_i64(int64_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -287,38 +287,38 @@ BigInt* __quantum__rt__bigint_bitnot(BigInt*) {
   return NULL;
 }
 
-BigInt* __quantum__rt__bigint_shiftleft(BigInt*, Int) {
+BigInt* __quantum__rt__bigint_shiftleft(BigInt*, int64_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-BigInt* __quantum__rt__bigint_shiftright(BigInt*, Int) {
+BigInt* __quantum__rt__bigint_shiftright(BigInt*, int64_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-Bool __quantum__rt__bigint_equal(BigInt*, BigInt*) {
+bool __quantum__rt__bigint_equal(BigInt*, BigInt*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-Bool __quantum__rt__bigint_greater(BigInt*, BigInt*) {
+bool __quantum__rt__bigint_greater(BigInt*, BigInt*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-Bool __quantum__rt__bigint_greater_eq(BigInt*, BigInt*) {
+bool __quantum__rt__bigint_greater_eq(BigInt*, BigInt*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
 // *** TUPLES ***
-Tuple* __quantum__rt__tuple_create(Int) {
+Tuple* __quantum__rt__tuple_create(int64_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-Tuple* __quantum__rt__tuple_copy(Tuple*, Bool force) {
+Tuple* __quantum__rt__tuple_copy(Tuple*, bool force) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -332,16 +332,16 @@ void __quantum__rt__tuple_update_alias_count(Tuple*, int32_t) {
 }
 
 // *** ARRAYS ***
-Array* __quantum__rt__array_create_1d(int32_t size, Int n) {
+Array* __quantum__rt__array_create_1d(int32_t size, int64_t n) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   Array* a = malloc(size * n);
-  for (Int i = 0; i < n; i++) {
+  for (int64_t i = 0; i < n; i++) {
     ((char*)a)[i] = '0';
   }
   return a;
 }
 
-Array* __quantum__rt__array_copy(Array*, Bool) {
+Array* __quantum__rt__array_copy(Array*, bool) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -351,17 +351,17 @@ Array* __quantum__rt__array_concatenate(Array*, Array*) {
   return NULL;
 }
 
-Array* __quantum__rt__array_slice_1d(Array*, Range, Bool) {
+Array* __quantum__rt__array_slice_1d(Array*, Range, bool) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-Int __quantum__rt__array_get_size_1d(Array*) {
+int64_t __quantum__rt__array_get_size_1d(Array*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return 0;
 }
 
-char* __quantum__rt__array_get_element_ptr_1d(Array*, Int) {
+char* __quantum__rt__array_get_element_ptr_1d(Array*, int64_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -374,7 +374,7 @@ void __quantum__rt__array_update_alias_count(Array*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
 }
 
-Array* __quantum__rt__array_create(int32_t, int32_t, Int*) {
+Array* __quantum__rt__array_create(int32_t, int32_t, int64_t*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -384,22 +384,22 @@ int32_t __quantum__rt__array_get_dim(Array*) {
   return 0;
 }
 
-Int __quantum__rt__array_get_size(Array*, int32_t) {
+int64_t __quantum__rt__array_get_size(Array*, int32_t) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return 0;
 }
 
-char* __quantum__rt__array_get_element_ptr(Array*, Int*) {
+char* __quantum__rt__array_get_element_ptr(Array*, int64_t*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-Array* __quantum__rt__array_slice(Array*, int32_t, Range, Bool) {
+Array* __quantum__rt__array_slice(Array*, int32_t, Range, bool) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-Array* __quantum__rt__array_project(Array*, int32_t, Int, Bool) {
+Array* __quantum__rt__array_project(Array*, int32_t, int64_t, bool) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -412,7 +412,7 @@ Callable* __quantum__rt__callable_create(void (*f[4])(Tuple*, Tuple*, Tuple*),
   return NULL;
 }
 
-Callable* __quantum__rt__callable_copy(Callable*, Bool) {
+Callable* __quantum__rt__callable_copy(Callable*, bool) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -461,7 +461,7 @@ Qubit* __quantum__rt__qubit_allocate() {
   return NULL;
 }
 
-Array* __quantum__rt__qubit_allocate_array(Int n) {
+Array* __quantum__rt__qubit_allocate_array(int64_t n) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return malloc(sizeof(Qubit*) * n);
 }
@@ -526,17 +526,17 @@ void __quantum__qis__tdg__body(Qubit* q) {
   // circ->tdg(reinterpret_cast<qc::Qubit>(q));
 }
 
-void __quantum__qis__rx__body(Double phi, Qubit* q) {
+void __quantum__qis__rx__body(double phi, Qubit* q) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   // circ->rx(phi, reinterpret_cast<qc::Qubit>(q));
 }
 
-void __quantum__qis__ry__body(Double phi, Qubit* q) {
+void __quantum__qis__ry__body(double phi, Qubit* q) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   // circ->ry(phi, reinterpret_cast<qc::Qubit>(q));
 }
 
-void __quantum__qis__rz__body(Double phi, Qubit* q) {
+void __quantum__qis__rz__body(double phi, Qubit* q) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   // circ->rz(phi, reinterpret_cast<qc::Qubit>(q));
 }
