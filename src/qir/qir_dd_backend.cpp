@@ -332,16 +332,17 @@ void __quantum__rt__tuple_update_alias_count(Tuple*, int32_t) {
 }
 
 // *** ARRAYS ***
-Array* __quantum__rt__array_create_1d(int32_t size, int64_t n) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  Array* a = malloc(size * n);
-  for (int64_t i = 0; i < n; i++) {
-    ((char*)a)[i] = '0';
-  }
-  return a;
+Array* __quantum__rt__array_create_1d(const int32_t size, const int64_t n) {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* array = new Array;
+  array->refcount = 1;
+  array->aliasCount = 0;
+  array->data = std::vector(size * n, static_cast<std::byte>(0));
+  array->elementSize = n;
+  return array;
 }
 
-Array* __quantum__rt__array_copy(Array*, bool) {
+Array* __quantum__rt__array_copy(Array* array, bool) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }

@@ -19,12 +19,11 @@ struct TupleImpl {
   uint64_t refcount;
   // todo
 };
-template <typename T> struct ArrayImpl {
+struct ArrayImpl {
   uint64_t refcount;
-  std::vector<T> elements;
-};
-template <size_t size> struct ArrayElement {
-  std::array<uint8_t, size> data;
+  uint64_t aliasCount;
+  std::vector<std::byte> data;
+  size_t elementSize;
 };
 struct CallablImpl {
   uint64_t refcount;
