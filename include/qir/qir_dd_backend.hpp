@@ -60,6 +60,12 @@ private:
   QIR_DD_Backend();
 
   auto determineAddressMode() -> void;
+  template <typename... Args>
+  auto translateAddresses(const Args... qubits) const -> std::vector<qc::Qubit>;
+  template <typename... Params, typename... Args>
+  auto createOperation(qc::OpType op, const Params... params,
+                       const Args... qubits) const -> qc::StandardOperation;
+  auto enlargeState(const qc::StandardOperation& operation) -> void;
 
 public:
   static QIR_DD_Backend& getInstance() {
@@ -70,8 +76,9 @@ public:
   QIR_DD_Backend(const QIR_DD_Backend&) = delete;
   QIR_DD_Backend& operator=(const QIR_DD_Backend&) = delete;
 
-  template <typename... Args>
-  auto apply(qc::OpType op, const Args... qubits) -> void;
+  template <typename... Params, typename... Args>
+  auto apply(qc::OpType op, const Params... params,
+             const Args... qubits) -> void;
   auto qAlloc() -> Qubit*;
   auto qFree(const Qubit* q) -> void;
 };

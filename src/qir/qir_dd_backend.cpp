@@ -25,8 +25,12 @@ auto QIR_DD_Backend::determineAddressMode() -> void {
 }
 
 template <typename... Args>
-auto QIR_DD_Backend::apply(const qc::OpType op, const Args... qubits) -> void {
-  determineAddressMode();
+auto QIR_DD_Backend::translateAddresses(const Args... qubits) const
+    -> std::vector<qc::Qubit> {
+  if (addressMode == AddressMode::UNKNOWN) {
+    throw std::logic_error(
+        "Address mode must be determined prior to a call of this function.");
+  }
   // extract addresses from opaque qubit pointers
   const std::vector<Qubit*> rawAddresses = {qubits...};
   std::vector<qc::Qubit> addresses;
@@ -51,6 +55,16 @@ auto QIR_DD_Backend::apply(const qc::OpType op, const Args... qubits) -> void {
           }
         });
   }
+  return addresses;
+}
+
+template <typename... Params, typename... Args>
+auto QIR_DD_Backend::createOperation(qc::OpType op, const Params... params,
+                                     const Args... qubits) const
+    -> qc::StandardOperation {
+  const auto& addresses = translateAddresses(qubits);
+  // store parameters into vector
+  const std::vector<qc::fp> paramVec = {params...};
   // split addresses into control and target
   uint8_t t = 0;
   if (isSingleQubitGate(op)) {
@@ -60,29 +74,39 @@ auto QIR_DD_Backend::apply(const qc::OpType op, const Args... qubits) -> void {
   } else {
     throw std::invalid_argument("Operation type is not known: " + toString(op));
   }
-  qc::StandardOperation operation;
+  const qc::StandardOperation operation;
   if (addresses.size() > t) { // create controlled operation
     const auto& controls =
         qc::Controls(addresses.cbegin(), addresses.cend() - t);
     const auto& targets = qc::Targets(addresses.cbegin() - t, addresses.cend());
-    operation = qc::StandardOperation(controls, targets, op);
+    operation = qc::StandardOperation(controls, targets, op, params);
   } else if (addresses.size() == t) { // create uncontrolled operation
-    operation = qc::StandardOperation(addresses, op);
+    operation = qc::StandardOperation(addresses, op, params);
   } else {
     throw std::invalid_argument("Operation requires more qubits than given (" +
-                                qc::toString(op) +
+                                toString(op) +
                                 "): " + std::to_string(addresses.size()));
   }
-  // retrieve operation matrix
-  const auto& matrix = getDD(&operation, dd);
-  // enlarge quantum state if necessary
-  const auto maxTarget =
-      *std::max_element(addresses.cbegin(), addresses.cend());
-  const auto d = maxTarget - numQubits + 1;
-  if (d > 0) {
+  return operation;
+}
+
+auto QIR_DD_Backend::enlargeState(const qc::StandardOperation& operation)
+    -> void {
+  const auto& qubits = operation.getUsedQubits();
+  const auto maxTarget = *std::max_element(qubits.cbegin(), qubits.cend());
+  if (const auto d = maxTarget - numQubits + 1; d > 0) {
     qState = dd.kronecker(qState, dd.makeZeroState(d), d);
     numQubits += d;
   }
+}
+
+template <typename... Params, typename... Args>
+auto QIR_DD_Backend::apply(const qc::OpType op, const Params... params,
+                           const Args... qubits) -> void {
+  determineAddressMode();
+  const auto& operation = createOperation(op, params, qubits);
+  const auto& matrix = getDD(&operation, dd);
+  enlargeState(operation);
   // apply operation
   const auto& tmp = dd.multiply(matrix, qState);
   dd.incRef(tmp);
@@ -614,16 +638,19 @@ void __quantum__qis__tdg__body(Qubit* qubit) {
   backend.apply(qc::Tdg, qubit);
 }
 
-void __quantum__qis__rx__body(double phi, Qubit* qubit) {
-  throw std::bad_function_call();
+void __quantum__qis__rx__body(const double phi, Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::RX, phi, qubit);
 }
 
 void __quantum__qis__ry__body(double phi, Qubit* qubit) {
-  throw std::bad_function_call();
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::RY, phi, qubit);
 }
 
 void __quantum__qis__rz__body(double phi, Qubit* qubit) {
-  throw std::bad_function_call();
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::RZ, phi, qubit);
 }
 
 void __quantum__qis__cnot__body(Qubit* control, Qubit* target) {
