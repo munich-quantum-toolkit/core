@@ -27,7 +27,7 @@ auto QIR_DD_Backend::determineAddressMode() -> void {
 }
 
 template <typename... Args>
-auto QIR_DD_Backend::apply(const qc::OpType op, Args... qubits) -> void {
+auto QIR_DD_Backend::apply(const qc::OpType op, const Args... qubits) -> void {
   determineAddressMode();
   // extract addresses from opaque qubit pointers
   const std::vector<Qubit*> rawAddresses = {qubits...};
@@ -42,13 +42,13 @@ auto QIR_DD_Backend::apply(const qc::OpType op, Args... qubits) -> void {
         rawAddresses.cbegin(), rawAddresses.cend(),
         std::back_inserter(addresses), [&](const auto a) {
           if (a < MIN_DYN_ADDRESS) {
-            std::invalid_argument("Qubit not allocated (out of range): " +
-                                  std::to_string(a));
+            std::out_of_range("Qubit not allocated (out of range): " +
+                              std::to_string(a));
           }
           try {
             return qRegister.at(a->id);
           } catch (const std::out_of_range&) {
-            std::throw_with_nested(std::invalid_argument(
+            std::throw_with_nested(std::out_of_range(
                 "Qubit not allocated (not found): " + std::to_string(a->id)));
           }
         });
@@ -62,13 +62,24 @@ auto QIR_DD_Backend::apply(const qc::OpType op, Args... qubits) -> void {
   } else {
     throw std::invalid_argument("Operation type is not known: " + toString(op));
   }
-  const auto& controls = qc::Controls(addresses.cbegin(), addresses.cend() - t);
-  const auto& targets = qc::Targets(addresses.cbegin() - t, addresses.cend());
+  qc::StandardOperation operation;
+  if (addresses.size() > t) { // create controlled operation
+    const auto& controls =
+        qc::Controls(addresses.cbegin(), addresses.cend() - t);
+    const auto& targets = qc::Targets(addresses.cbegin() - t, addresses.cend());
+    operation = qc::StandardOperation(controls, targets, op);
+  } else if (addresses.size() == t) { // create uncontrolled operation
+    operation = qc::StandardOperation(addresses, op);
+  } else {
+    throw std::invalid_argument("Operation requires more qubits than given (" +
+                                qc::toString(op) +
+                                "): " + std::to_string(addresses.size()));
+  }
   // retrieve operation matrix
-  const auto& operation = qc::StandardOperation(controls, targets, op);
   const auto& matrix = getDD(&operation, dd);
   // enlarge quantum state if necessary
-  const auto maxTarget = *std::max_element(targets.cbegin(), targets.cend());
+  const auto maxTarget =
+      *std::max_element(addresses.cbegin(), addresses.cend());
   const auto d = maxTarget - numQubits + 1;
   if (d > 0) {
     qState = dd.kronecker(qState, dd.makeZeroState(d), d);
@@ -138,12 +149,12 @@ void __quantum__rt__result_update_reference_count(Result* r, const int32_t k) {
 }
 
 // *** STRINGS ***
-String* __quantum__rt__string_create(const char*) {
+String* __quantum__rt__string_create(const int8_t*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-const char* __quantum__rt__string_get_data(String*) {
+const int8_t* __quantum__rt__string_get_data(String*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -213,12 +224,12 @@ BigInt* __quantum__rt__bigint_create_i64(int64_t) {
   return NULL;
 }
 
-BigInt* __quantum__rt__bigint_create_array(int32_t, char*) {
+BigInt* __quantum__rt__bigint_create_array(int32_t, int8_t*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
 
-char* __quantum__rt__bigint_get_data(BigInt*) {
+int8_t* __quantum__rt__bigint_get_data(BigInt*) {
   printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
   return NULL;
 }
@@ -342,9 +353,20 @@ Array* __quantum__rt__array_create_1d(const int32_t size, const int64_t n) {
   return array;
 }
 
-Array* __quantum__rt__array_copy(Array* array, bool) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+Array* __quantum__rt__array_copy(Array* array, bool shallow) {
+  if (array == nullptr) {
+    throw std::invalid_argument("The first argument must not be null.");
+  }
+  if (array->aliasCount > 0 || shallow) {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* copy = new Array;
+    copy->refcount = 1;
+    copy->aliasCount = 0;
+    copy->data = array->data;
+    copy->elementSize = array->elementSize;
+  }
+  array->refcount++;
+  return array;
 }
 
 Array* __quantum__rt__array_concatenate(Array*, Array*) {
@@ -357,231 +379,246 @@ Array* __quantum__rt__array_slice_1d(Array*, Range, bool) {
   return NULL;
 }
 
-int64_t __quantum__rt__array_get_size_1d(Array*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return 0;
+int64_t __quantum__rt__array_get_size_1d(const Array* array) {
+  return static_cast<int64_t>(array->data.size() / array->elementSize);
 }
 
-char* __quantum__rt__array_get_element_ptr_1d(Array*, int64_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+int8_t* __quantum__rt__array_get_element_ptr_1d(Array* array, const int64_t i) {
+  if (i < 0) {
+    throw std::out_of_range("Index out of bounds (negative): " +
+                            std::to_string(i));
+  }
+  if (const auto size = __quantum__rt__array_get_size_1d(array); i >= size) {
+    throw std::out_of_range("Index out of bounds (size: " +
+                            std::to_string(size) + "): " + std::to_string(i));
+  }
+  return &array->data[array->elementSize * i];
 }
 
-void __quantum__rt__array_update_reference_count(Array*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+void __quantum__rt__array_update_reference_count(Array* array,
+                                                 const int32_t k) {
+  if (array != nullptr) {
+    array->refcount += k;
+    if (array->refcount == 0) {
+      // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+      delete array;
+    }
+  }
 }
 
-void __quantum__rt__array_update_alias_count(Array*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+void __quantum__rt__array_update_alias_count(Array* array, const int32_t k) {
+  if (array != nullptr) {
+    array->aliasCount += k;
+    if (array->aliasCount < 0) {
+      throw std::invalid_argument("Alias count must be positive: " +
+                                  std::to_string(array->aliasCount));
+    }
+  }
 }
 
 Array* __quantum__rt__array_create(int32_t, int32_t, int64_t*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
-int32_t __quantum__rt__array_get_dim(Array*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return 0;
+int32_t __quantum__rt__array_get_dim(Array* array) {
+  throw std::bad_function_call();
 }
 
-int64_t __quantum__rt__array_get_size(Array*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return 0;
+int64_t __quantum__rt__array_get_size(Array* array, int32_t i) {
+  throw std::bad_function_call();
 }
 
-char* __quantum__rt__array_get_element_ptr(Array*, int64_t*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+int8_t* __quantum__rt__array_get_element_ptr(Array*, int64_t*) {
+  throw std::bad_function_call();
 }
 
 Array* __quantum__rt__array_slice(Array*, int32_t, Range, bool) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 Array* __quantum__rt__array_project(Array*, int32_t, int64_t, bool) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 // *** CALLABLES ***
 Callable* __quantum__rt__callable_create(void (*f[4])(Tuple*, Tuple*, Tuple*),
                                          void (*c[2])(Tuple*, Tuple*, Tuple*),
                                          Tuple*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
-Callable* __quantum__rt__callable_copy(Callable*, bool) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+Callable* __quantum__rt__callable_copy(Callable* f, bool) {
+  throw std::bad_function_call();
 }
 
-void __quantum__rt__callable_invoke(Callable*, Tuple*, Tuple*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+void __quantum__rt__callable_invoke(Callable* f, Tuple* input, Tuple*) {
+  throw std::bad_function_call();
 }
 
-void __quantum__rt__callable_make_adjoint(Callable*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+void __quantum__rt__callable_make_adjoint(Callable* f) {
+  throw std::bad_function_call();
 }
 
-void __quantum__rt__callable_make_controlled(Callable*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+void __quantum__rt__callable_make_controlled(Callable* f) {
+  throw std::bad_function_call();
 }
 
-void __quantum__rt__callable_update_reference_count(Callable*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+void __quantum__rt__callable_update_reference_count(Callable* f,
+                                                    const int32_t k) {
+  throw std::bad_function_call();
 }
 
-void __quantum__rt__callable_update_alias_count(Callable*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+void __quantum__rt__callable_update_alias_count(Callable* f, const int32_t k) {
+  throw std::bad_function_call();
 }
 
-void __quantum__rt__capture_update_reference_count(Callable*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+void __quantum__rt__capture_update_reference_count(Callable* f,
+                                                   const int32_t k) {
+  throw std::bad_function_call();
 }
 
-void __quantum__rt__capture_update_alias_count(Callable*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+void __quantum__rt__capture_update_alias_count(Callable* f, const int32_t k) {
+  throw std::bad_function_call();
 }
 
 // *** CLASSICAL RUNTIME ***
-void __quantum__rt__message(String* msg) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-}
+void __quantum__rt__message(const String* msg) { std::cout << *msg << "\n"; }
 
-void __quantum__rt__fail(String* msg) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  exit(1);
+void __quantum__rt__fail(const String* msg) {
+  throw std::runtime_error(msg->content);
 }
 
 // *** QUANTUM INSTRUCTION SET AND RUNTIME ***
 Qubit* __quantum__rt__qubit_allocate() {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  return backend.qAlloc();
 }
 
-Array* __quantum__rt__qubit_allocate_array(int64_t n) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return malloc(sizeof(Qubit*) * n);
+Array* __quantum__rt__qubit_allocate_array(const int64_t n) {
+  auto* array = __quantum__rt__array_create_1d(sizeof(Qubit*), n);
+  for (int64_t i = 0; i < n; ++i) {
+    *static_cast<Qubit**>(
+        // NOLINTNEXTLINE(bugprone-casting-through-void)
+        static_cast<void*>(__quantum__rt__array_get_element_ptr_1d(array, i))) =
+        __quantum__rt__qubit_allocate();
+  }
+  return array;
 }
 
-void __quantum__rt__qubit_release(Qubit*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+void __quantum__rt__qubit_release(const Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.qFree(qubit);
 }
 
-void __quantum__rt__qubit_release_array(Array* a) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  free(a);
+void __quantum__rt__qubit_release_array(Array* array) {
+  const auto size = __quantum__rt__array_get_size_1d(array);
+  // deallocate every qubit
+  for (int64_t i = 0; i < size; ++i) {
+    __quantum__rt__qubit_release(*static_cast<Qubit**>(
+        // NOLINTNEXTLINE(bugprone-casting-through-void)
+        static_cast<void*>(__quantum__rt__array_get_element_ptr_1d(array, i))));
+  }
+  // deallocate array
+  __quantum__rt__array_update_reference_count(array, -1);
 }
 
 // QUANTUM INSTRUCTION SET
-void __quantum__qis__x__body(Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->x(reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__x__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::X, qubit);
 }
 
-void __quantum__qis__y__body(Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->y(reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__y__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::Y, qubit);
 }
 
-void __quantum__qis__z__body(Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->z(reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__z__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::Z, qubit);
 }
 
-void __quantum__qis__h__body(Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->h(reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__h__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::H, qubit);
 }
 
-void __quantum__qis__sqrtx__body(Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->sx(reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__sqrtx__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::SX, qubit);
 }
 
-void __quantum__qis__sqrtxdg__body(Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->sxdg(reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__sqrtxdg__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::SXdg, qubit);
 }
 
-void __quantum__qis__s__body(Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->s(reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__s__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::S, qubit);
 }
 
-void __quantum__qis__sdg__body(Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->sdg(reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__sdg__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::Sdg, qubit);
 }
 
-void __quantum__qis__t__body(Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->t(reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__t__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::T, qubit);
 }
 
-void __quantum__qis__tdg__body(Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->tdg(reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__tdg__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::Tdg, qubit);
 }
 
-void __quantum__qis__rx__body(double phi, Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->rx(phi, reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__rx__body(double phi, Qubit* qubit) {
+  throw std::bad_function_call();
 }
 
-void __quantum__qis__ry__body(double phi, Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->ry(phi, reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__ry__body(double phi, Qubit* qubit) {
+  throw std::bad_function_call();
 }
 
-void __quantum__qis__rz__body(double phi, Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->rz(phi, reinterpret_cast<qc::Qubit>(q));
+void __quantum__qis__rz__body(double phi, Qubit* qubit) {
+  throw std::bad_function_call();
 }
 
-void __quantum__qis__cnot__body(Qubit* c, Qubit* t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->cx(reinterpret_cast<qc::Qubit>(c), reinterpret_cast<qc::Qubit>(t));
+void __quantum__qis__cnot__body(Qubit* control, Qubit* target) {
+  __quantum__qis__cx__body(control, target);
 }
 
-void __quantum__qis__cx__body(Qubit* c, Qubit* t) {
-  printf("%s:%s:%d \nredirects to: ", __FILE__, __FUNCTION__, __LINE__);
-  __quantum__qis__cnot__body(c, t);
+void __quantum__qis__cx__body(Qubit* control, Qubit* target) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::X, control, target);
 }
 
-void __quantum__qis__cz__body(Qubit* c, Qubit* t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->cz(reinterpret_cast<qc::Qubit>(c), reinterpret_cast<qc::Qubit>(t));
+void __quantum__qis__cz__body(Qubit* control, Qubit* target) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::Z, control, target);
 }
 
-void __quantum__qis__ccx__body(Qubit* c1, Qubit* c2, Qubit* t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->mcx({reinterpret_cast<qc::Qubit>(c1),
-  // reinterpret_cast<qc::Qubit>(c2)}, reinterpret_cast<qc::Qubit>(t));
+void __quantum__qis__ccx__body(Qubit* control1, Qubit* control2,
+                               Qubit* target) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::X, control1, control2, target);
 }
 
-void __quantum__qis__ccz__body(Qubit* c1, Qubit* c2, Qubit* t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->mcz({reinterpret_cast<qc::Qubit>(c1),
-  // reinterpret_cast<qc::Qubit>(c2)}, reinterpret_cast<qc::Qubit>(t));
+void __quantum__qis__ccz__body(Qubit* control1, Qubit* control2,
+                               Qubit* target) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::Z, control1, control2, target);
 }
 
-void __quantum__qis__mz__body(Qubit* q, Result* r) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // TODO
+void __quantum__qis__mz__body(Qubit* qubit, Result* result) {
+  throw std::bad_function_call();
 }
 
-void __quantum__qis__m__body(Qubit* q, Result* r) {
-  printf("%s:%s:%d \nredirects to: ", __FILE__, __FUNCTION__, __LINE__);
-  __quantum__qis__mz__body(q, r);
+void __quantum__qis__m__body(Qubit* qubit, Result* result) {
+  __quantum__qis__mz__body(qubit, result);
 }
 
-void __quantum__qis__reset__body(Qubit* q) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  // circ->reset(reinterpret_cast<qc::Qubit>(q));
-}
+void __quantum__qis__reset__body(Qubit* q) { throw std::bad_function_call(); }
 
 } // extern "C"

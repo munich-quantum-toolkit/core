@@ -15,6 +15,13 @@ struct ResultImpl {
 struct QubitImpl {
   qc::Qubit id;
 };
+struct StringImpl {
+  std::string content;
+  friend auto operator<<(std::ostream& os,
+                         const StringImpl& s) -> std::ostream& {
+    return os << s.content;
+  }
+};
 struct TupleImpl {
   uint64_t refcount;
   // todo
@@ -22,8 +29,8 @@ struct TupleImpl {
 struct ArrayImpl {
   uint64_t refcount;
   uint64_t aliasCount;
-  std::vector<std::byte> data;
-  size_t elementSize;
+  std::vector<int8_t> data;
+  uint32_t elementSize;
 };
 struct CallablImpl {
   uint64_t refcount;
@@ -62,7 +69,8 @@ public:
   QIR_DD_Backend(const QIR_DD_Backend&) = delete;
   QIR_DD_Backend& operator=(const QIR_DD_Backend&) = delete;
 
-  template <typename... Args> auto apply(qc::OpType op, Args... qubits) -> void;
+  template <typename... Args>
+  auto apply(qc::OpType op, const Args... qubits) -> void;
   auto qAlloc() -> Qubit*;
   auto qFree(const Qubit* q) -> void;
 };

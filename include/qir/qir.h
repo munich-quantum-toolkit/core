@@ -68,13 +68,13 @@ typedef struct QubitImpl Qubit;
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/1_Data_Types.md#strings
 
-typedef char String;
+typedef struct StringImpl String;
 
 // Creates a string from an array of UTF-8 bytes.
-String* __quantum__rt__string_create(const char*);
+String* __quantum__rt__string_create(const int8_t*);
 
 // Returns a pointer to the zero-terminated array of UTF-8 bytes.
-const char* __quantum__rt__string_get_data(String*);
+const int8_t* __quantum__rt__string_get_data(String*);
 
 // Returns the length of the byte array that contains the string data.
 int32_t __quantum__rt__string_get_length(String*);
@@ -123,10 +123,10 @@ BigInt* __quantum__rt__bigint_create_i64(int64_t);
 // Creates a big integer with the initial value specified by the i8 array. The
 // 0-th element of the array is the highest-order byte, followed by the first
 // element, etc.
-BigInt* __quantum__rt__bigint_create_array(int32_t, char*);
+BigInt* __quantum__rt__bigint_create_array(int32_t, int8_t*);
 
 // Returns a pointer to the i8 array containing the value of the big integer.
-char* __quantum__rt__bigint_get_data(BigInt*);
+int8_t* __quantum__rt__bigint_get_data(BigInt*);
 
 // Returns the length of the i8 array that represents the big integer value.
 int32_t __quantum__rt__bigint_get_length(BigInt*);
@@ -237,11 +237,11 @@ Array* __quantum__rt__array_slice_1d(Array*, Range, bool);
 
 // Returns the length of a dimension of the array. The int64_t is the zero-based
 // dimension to return the length of; it must be 0 for a 1-dimensional array.
-int64_t __quantum__rt__array_get_size_1d(Array*);
+int64_t __quantum__rt__array_get_size_1d(const Array*);
 
 // Returns a pointer to the element of the array at the zero-based index given
 // by the int64_t.
-char* __quantum__rt__array_get_element_ptr_1d(Array*, int64_t);
+int8_t* __quantum__rt__array_get_element_ptr_1d(Array*, int64_t);
 
 // Adds the given integer value to the reference count for the array.
 // Deallocates the array if the reference count becomes 0. The behavior is
@@ -269,7 +269,7 @@ int64_t __quantum__rt__array_get_size(Array*, int32_t);
 
 // Returns a pointer to the indicated element of the array. The i64* should
 // point to an array of i64s that are the indices for each dimension.
-char* __quantum__rt__array_get_element_ptr(Array*, int64_t*);
+int8_t* __quantum__rt__array_get_element_ptr(Array*, int64_t*);
 
 // Creates and returns an array that is a slice of an existing array. The slice
 // may be accessing the same memory as the given array unless its alias count is
@@ -338,10 +338,10 @@ void __quantum__rt__capture_update_alias_count(Callable*, int32_t);
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/v0.1/3_Classical_Runtime.md
 
 // Include the given message in the computation's execution log or equivalent.
-void __quantum__rt__message(String* msg);
+void __quantum__rt__message(const String* msg);
 
 // Fail the computation with the given error message.
-_Noreturn void __quantum__rt__fail(String* msg);
+_Noreturn void __quantum__rt__fail(const String* msg);
 
 // *** QUANTUM INSTRUCTIONSET AND RUNTIME ***
 // cf.
@@ -356,7 +356,7 @@ Array* __quantum__rt__qubit_allocate_array(int64_t);
 
 // Releases a single qubit. Passing a null pointer as argument should cause a
 // runtime failure.
-void __quantum__rt__qubit_release(Qubit*);
+void __quantum__rt__qubit_release(const Qubit*);
 
 // Releases an array of qubits; each qubit in the array is released, and the
 // array itself is unreferenced. Passing a null pointer as argument should cause
