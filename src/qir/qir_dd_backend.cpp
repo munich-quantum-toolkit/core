@@ -149,197 +149,196 @@ void __quantum__rt__result_update_reference_count(Result* r, const int32_t k) {
 }
 
 // *** STRINGS ***
-String* __quantum__rt__string_create(const int8_t*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+String* __quantum__rt__string_create(const char* utf8) {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* string = new String;
+  string->refcount = 1;
+  string->content = std::string(utf8);
+  return string;
 }
 
-const int8_t* __quantum__rt__string_get_data(String*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+const char* __quantum__rt__string_get_data(const String* string) {
+  return string->content.c_str();
 }
 
-int32_t __quantum__rt__string_get_length(String*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return 0;
+int32_t __quantum__rt__string_get_length(const String* string) {
+  return static_cast<int32_t>(string->content.size());
 }
 
-void __quantum__rt__string_update_reference_count(String*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+void __quantum__rt__string_update_reference_count(String* string,
+                                                  const int32_t k) {
+  if (string != nullptr) {
+    string->refcount += k;
+    if (string->refcount == 0) {
+      // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+      delete string;
+    }
+  }
 }
 
 String* __quantum__rt__string_concatenate(String*, String*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
-bool __quantum__rt__string_equal(String*, String*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return false;
+bool __quantum__rt__string_equal(const String* string1, const String* string2) {
+  return string1->content == string2->content;
 }
 
-String* __quantum__rt__int_to_string(int64_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+String* __quantum__rt__int_to_string(const int64_t z) {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* string = new String;
+  string->refcount = 1;
+  string->content = std::to_string(z);
+  return string;
 }
 
-String* __quantum__rt__double_to_string(double) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+String* __quantum__rt__double_to_string(const double d) {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* string = new String;
+  string->refcount = 1;
+  string->content = std::to_string(d);
+  return string;
 }
 
-String* __quantum__rt__bool_to_string(bool) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+String* __quantum__rt__bool_to_string(const bool b) {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* string = new String;
+  string->refcount = 1;
+  string->content = b ? "true" : "false";
+  return string;
 }
 
-String* __quantum__rt__result_to_string(Result*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+String* __quantum__rt__result_to_string(const Result* result) {
+  return __quantum__rt__int_to_string(static_cast<int32_t>(result->r));
 }
 
-String* __quantum__rt__pauli_to_string(Pauli) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+String* __quantum__rt__pauli_to_string(const Pauli p) {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* string = new String;
+  string->refcount = 1;
+  switch (p) {
+  case PauliI:
+    string->content = "PauliI";
+  case PauliX:
+    string->content = "PauliX";
+  case PauliZ:
+    string->content = "PauliZ";
+  case PauliY:
+    string->content = "PauliY";
+  }
+  return string;
 }
 
-String* __quantum__rt__qubit_to_string(Qubit*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+String* __quantum__rt__qubit_to_string(const Qubit* qubit) {
+  return __quantum__rt__int_to_string(static_cast<int32_t>(qubit->id));
 }
 
 String* __quantum__rt__range_to_string(Range) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 String* __quantum__rt__bigint_to_string(BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 // *** BIG INTEGERS ***
 BigInt* __quantum__rt__bigint_create_i64(int64_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_create_array(int32_t, int8_t*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 int8_t* __quantum__rt__bigint_get_data(BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 int32_t __quantum__rt__bigint_get_length(BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return 0;
+  throw std::bad_function_call();
 }
 
 void __quantum__rt__bigint_update_reference_count(BigInt*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_negate(BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_add(BigInt*, BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_subtract(BigInt*, BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_multiply(BigInt*, BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_divide(BigInt*, BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_modulus(BigInt*, BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_power(BigInt*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_bitand(BigInt*, BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_bitor(BigInt*, BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_bitxor(BigInt*, BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_bitnot(BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_shiftleft(BigInt*, int64_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 BigInt* __quantum__rt__bigint_shiftright(BigInt*, int64_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 bool __quantum__rt__bigint_equal(BigInt*, BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 bool __quantum__rt__bigint_greater(BigInt*, BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 bool __quantum__rt__bigint_greater_eq(BigInt*, BigInt*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 // *** TUPLES ***
-Tuple* __quantum__rt__tuple_create(int64_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
-}
+Tuple* __quantum__rt__tuple_create(int64_t) { throw std::bad_function_call(); }
 
 Tuple* __quantum__rt__tuple_copy(Tuple*, bool force) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 void __quantum__rt__tuple_update_reference_count(Tuple*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+  throw std::bad_function_call();
 }
 
 void __quantum__rt__tuple_update_alias_count(Tuple*, int32_t) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
+  throw std::bad_function_call();
 }
 
 // *** ARRAYS ***
@@ -370,13 +369,11 @@ Array* __quantum__rt__array_copy(Array* array, bool shallow) {
 }
 
 Array* __quantum__rt__array_concatenate(Array*, Array*) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 Array* __quantum__rt__array_slice_1d(Array*, Range, bool) {
-  printf("%s:%s:%d \n", __FILE__, __FUNCTION__, __LINE__);
-  return NULL;
+  throw std::bad_function_call();
 }
 
 int64_t __quantum__rt__array_get_size_1d(const Array* array) {

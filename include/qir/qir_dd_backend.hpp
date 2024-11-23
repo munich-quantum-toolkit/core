@@ -16,6 +16,7 @@ struct QubitImpl {
   qc::Qubit id;
 };
 struct StringImpl {
+  uint64_t refcount;
   std::string content;
   friend auto operator<<(std::ostream& os,
                          const StringImpl& s) -> std::ostream& {

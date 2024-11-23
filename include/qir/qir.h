@@ -71,13 +71,13 @@ typedef struct QubitImpl Qubit;
 typedef struct StringImpl String;
 
 // Creates a string from an array of UTF-8 bytes.
-String* __quantum__rt__string_create(const int8_t*);
+String* __quantum__rt__string_create(const char*);
 
 // Returns a pointer to the zero-terminated array of UTF-8 bytes.
-const int8_t* __quantum__rt__string_get_data(String*);
+const char* __quantum__rt__string_get_data(const String*);
 
 // Returns the length of the byte array that contains the string data.
-int32_t __quantum__rt__string_get_length(String*);
+int32_t __quantum__rt__string_get_length(const String*);
 
 // Adds the given integer value to the reference count for the string.
 // Deallocates the string if the reference count becomes 0.
@@ -87,7 +87,7 @@ void __quantum__rt__string_update_reference_count(String*, int32_t);
 String* __quantum__rt__string_concatenate(String*, String*);
 
 // Returns true if the two strings are equal, false otherwise.
-bool __quantum__rt__string_equal(String*, String*);
+bool __quantum__rt__string_equal(const String*, const String*);
 
 // Returns a string representation of the integer.
 String* __quantum__rt__int_to_string(int64_t);
@@ -99,13 +99,13 @@ String* __quantum__rt__double_to_string(double);
 String* __quantum__rt__bool_to_string(bool);
 
 // Returns a string representation of the result.
-String* __quantum__rt__result_to_string(Result*);
+String* __quantum__rt__result_to_string(const Result*);
 
 // Returns a string representation of the Pauli.
 String* __quantum__rt__pauli_to_string(Pauli);
 
 // Returns a string representation of the qubit.
-String* __quantum__rt__qubit_to_string(Qubit*);
+String* __quantum__rt__qubit_to_string(const Qubit*);
 
 // Returns a string representation of the range.
 String* __quantum__rt__range_to_string(Range);
