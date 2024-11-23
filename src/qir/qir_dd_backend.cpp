@@ -348,7 +348,7 @@ Array* __quantum__rt__array_create_1d(const int32_t size, const int64_t n) {
   auto* array = new Array;
   array->refcount = 1;
   array->aliasCount = 0;
-  array->data = std::vector(size * n, static_cast<std::byte>(0));
+  array->data = std::vector(size * n, static_cast<int8_t>(0));
   array->elementSize = n;
   return array;
 }
