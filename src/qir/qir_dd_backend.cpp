@@ -3,8 +3,6 @@
 #include "dd/Operations.hpp"
 #include "qir/qir.h"
 
-#include <cstdio>
-#include <cstdlib>
 #include <exception>
 #include <stdexcept>
 
@@ -262,111 +260,119 @@ String* __quantum__rt__qubit_to_string(const Qubit* qubit) {
   return __quantum__rt__int_to_string(static_cast<int32_t>(qubit->id));
 }
 
-String* __quantum__rt__range_to_string(Range) {
+String* __quantum__rt__range_to_string(Range /*unused*/) {
   throw std::bad_function_call();
 }
 
-String* __quantum__rt__bigint_to_string(BigInt*) {
+String* __quantum__rt__bigint_to_string(BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
 // *** BIG INTEGERS ***
-BigInt* __quantum__rt__bigint_create_i64(int64_t) {
+BigInt* __quantum__rt__bigint_create_i64(int64_t /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_create_array(int32_t, int8_t*) {
+BigInt* __quantum__rt__bigint_create_array(int32_t /*unused*/,
+                                           int8_t* /*unused*/) {
   throw std::bad_function_call();
 }
 
-int8_t* __quantum__rt__bigint_get_data(BigInt*) {
+int8_t* __quantum__rt__bigint_get_data(BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-int32_t __quantum__rt__bigint_get_length(BigInt*) {
+int32_t __quantum__rt__bigint_get_length(BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-void __quantum__rt__bigint_update_reference_count(BigInt*, int32_t) {
+void __quantum__rt__bigint_update_reference_count(BigInt* /*unused*/,
+                                                  int32_t /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_negate(BigInt*) {
+BigInt* __quantum__rt__bigint_negate(BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_add(BigInt*, BigInt*) {
+BigInt* __quantum__rt__bigint_add(BigInt* /*unused*/, BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_subtract(BigInt*, BigInt*) {
+BigInt* __quantum__rt__bigint_subtract(BigInt* /*unused*/, BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_multiply(BigInt*, BigInt*) {
+BigInt* __quantum__rt__bigint_multiply(BigInt* /*unused*/, BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_divide(BigInt*, BigInt*) {
+BigInt* __quantum__rt__bigint_divide(BigInt* /*unused*/, BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_modulus(BigInt*, BigInt*) {
+BigInt* __quantum__rt__bigint_modulus(BigInt* /*unused*/, BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_power(BigInt*, int32_t) {
+BigInt* __quantum__rt__bigint_power(BigInt* /*unused*/, int32_t /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_bitand(BigInt*, BigInt*) {
+BigInt* __quantum__rt__bigint_bitand(BigInt* /*unused*/, BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_bitor(BigInt*, BigInt*) {
+BigInt* __quantum__rt__bigint_bitor(BigInt* /*unused*/, BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_bitxor(BigInt*, BigInt*) {
+BigInt* __quantum__rt__bigint_bitxor(BigInt* /*unused*/, BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_bitnot(BigInt*) {
+BigInt* __quantum__rt__bigint_bitnot(BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_shiftleft(BigInt*, int64_t) {
+BigInt* __quantum__rt__bigint_shiftleft(BigInt* /*unused*/,
+                                        int64_t /*unused*/) {
   throw std::bad_function_call();
 }
 
-BigInt* __quantum__rt__bigint_shiftright(BigInt*, int64_t) {
+BigInt* __quantum__rt__bigint_shiftright(BigInt* /*unused*/,
+                                         int64_t /*unused*/) {
   throw std::bad_function_call();
 }
 
-bool __quantum__rt__bigint_equal(BigInt*, BigInt*) {
+bool __quantum__rt__bigint_equal(BigInt* /*unused*/, BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-bool __quantum__rt__bigint_greater(BigInt*, BigInt*) {
+bool __quantum__rt__bigint_greater(BigInt* /*unused*/, BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
-bool __quantum__rt__bigint_greater_eq(BigInt*, BigInt*) {
+bool __quantum__rt__bigint_greater_eq(BigInt* /*unused*/, BigInt* /*unused*/) {
   throw std::bad_function_call();
 }
 
 // *** TUPLES ***
-Tuple* __quantum__rt__tuple_create(int64_t) { throw std::bad_function_call(); }
-
-Tuple* __quantum__rt__tuple_copy(Tuple*, bool force) {
+Tuple* __quantum__rt__tuple_create(int64_t /*unused*/) {
   throw std::bad_function_call();
 }
 
-void __quantum__rt__tuple_update_reference_count(Tuple*, int32_t) {
+Tuple* __quantum__rt__tuple_copy(Tuple* /*unused*/, bool /*unused*/) {
   throw std::bad_function_call();
 }
 
-void __quantum__rt__tuple_update_alias_count(Tuple*, int32_t) {
+void __quantum__rt__tuple_update_reference_count(Tuple* /*unused*/,
+                                                 int32_t /*unused*/) {
+  throw std::bad_function_call();
+}
+
+void __quantum__rt__tuple_update_alias_count(Tuple* /*unused*/,
+                                             int32_t /*unused*/) {
   throw std::bad_function_call();
 }
 
@@ -397,11 +403,12 @@ Array* __quantum__rt__array_copy(Array* array, bool shallow) {
   return array;
 }
 
-Array* __quantum__rt__array_concatenate(Array*, Array*) {
+Array* __quantum__rt__array_concatenate(Array* /*unused*/, Array* /*unused*/) {
   throw std::bad_function_call();
 }
 
-Array* __quantum__rt__array_slice_1d(Array*, Range, bool) {
+Array* __quantum__rt__array_slice_1d(Array* /*unused*/, Range /*unused*/,
+                                     bool /*unused*/) {
   throw std::bad_function_call();
 }
 
@@ -442,68 +449,76 @@ void __quantum__rt__array_update_alias_count(Array* array, const int32_t k) {
   }
 }
 
-Array* __quantum__rt__array_create(int32_t, int32_t, int64_t*) {
+Array* __quantum__rt__array_create(int32_t /*unused*/, int32_t /*unused*/,
+                                   int64_t* /*unused*/) {
   throw std::bad_function_call();
 }
 
-int32_t __quantum__rt__array_get_dim(Array* array) {
+int32_t __quantum__rt__array_get_dim(Array* /*unused*/) {
   throw std::bad_function_call();
 }
 
-int64_t __quantum__rt__array_get_size(Array* array, int32_t i) {
+int64_t __quantum__rt__array_get_size(Array* /*unused*/, int32_t /*unused*/) {
   throw std::bad_function_call();
 }
 
-int8_t* __quantum__rt__array_get_element_ptr(Array*, int64_t*) {
+int8_t* __quantum__rt__array_get_element_ptr(Array* /*unused*/,
+                                             int64_t* /*unused*/) {
   throw std::bad_function_call();
 }
 
-Array* __quantum__rt__array_slice(Array*, int32_t, Range, bool) {
+Array* __quantum__rt__array_slice(Array* /*unused*/, int32_t /*unused*/,
+                                  Range /*unused*/, bool /*unused*/) {
   throw std::bad_function_call();
 }
 
-Array* __quantum__rt__array_project(Array*, int32_t, int64_t, bool) {
+Array* __quantum__rt__array_project(Array* /*unused*/, int32_t /*unused*/,
+                                    int64_t /*unused*/, bool /*unused*/) {
   throw std::bad_function_call();
 }
 
 // *** CALLABLES ***
-Callable* __quantum__rt__callable_create(void (*f[4])(Tuple*, Tuple*, Tuple*),
-                                         void (*c[2])(Tuple*, Tuple*, Tuple*),
-                                         Tuple*) {
+Callable*
+__quantum__rt__callable_create(void (* /*unused*/[4])(Tuple*, Tuple*, Tuple*),
+                               void (* /*unused*/[2])(Tuple*, Tuple*, Tuple*),
+                               Tuple* /*unused*/) {
   throw std::bad_function_call();
 }
 
-Callable* __quantum__rt__callable_copy(Callable* f, bool) {
+Callable* __quantum__rt__callable_copy(Callable* /*unused*/, bool /*unused*/) {
   throw std::bad_function_call();
 }
 
-void __quantum__rt__callable_invoke(Callable* f, Tuple* input, Tuple*) {
+void __quantum__rt__callable_invoke(Callable* /*unused*/, Tuple* /*unused*/,
+                                    Tuple* /*unused*/) {
   throw std::bad_function_call();
 }
 
-void __quantum__rt__callable_make_adjoint(Callable* f) {
+void __quantum__rt__callable_make_adjoint(Callable* /*unused*/) {
   throw std::bad_function_call();
 }
 
-void __quantum__rt__callable_make_controlled(Callable* f) {
+void __quantum__rt__callable_make_controlled(Callable* /*unused*/) {
   throw std::bad_function_call();
 }
 
-void __quantum__rt__callable_update_reference_count(Callable* f,
-                                                    const int32_t k) {
+void __quantum__rt__callable_update_reference_count(Callable* /*unused*/,
+                                                    const int32_t /*unused*/) {
   throw std::bad_function_call();
 }
 
-void __quantum__rt__callable_update_alias_count(Callable* f, const int32_t k) {
+void __quantum__rt__callable_update_alias_count(Callable* /*unused*/,
+                                                const int32_t /*unused*/) {
   throw std::bad_function_call();
 }
 
-void __quantum__rt__capture_update_reference_count(Callable* f,
-                                                   const int32_t k) {
+void __quantum__rt__capture_update_reference_count(Callable* /*unused*/,
+                                                   const int32_t /*unused*/) {
   throw std::bad_function_call();
 }
 
-void __quantum__rt__capture_update_alias_count(Callable* f, const int32_t k) {
+void __quantum__rt__capture_update_alias_count(Callable* /*unused*/,
+                                               const int32_t /*unused*/) {
   throw std::bad_function_call();
 }
 
@@ -645,6 +660,9 @@ void __quantum__qis__m__body(Qubit* qubit, Result* result) {
   __quantum__qis__mz__body(qubit, result);
 }
 
-void __quantum__qis__reset__body(Qubit* q) { throw std::bad_function_call(); }
+void __quantum__qis__reset__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::Reset, qubit);
+}
 
 } // extern "C"
