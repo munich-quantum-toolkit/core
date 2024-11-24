@@ -56,9 +56,12 @@ private:
   uint64_t numQubits;
   dd::Package<> dd;
   dd::vEdge qState;
+  std::mt19937_64 mt;
 
   QIR_DD_Backend();
+  explicit QIR_DD_Backend(uint64_t randomSeed);
 
+  [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
   auto determineAddressMode() -> void;
   template <typename... Args>
   auto translateAddresses(const Args... qubits) const -> std::vector<qc::Qubit>;
@@ -79,6 +82,8 @@ public:
   template <typename... Params, typename... Args>
   auto apply(qc::OpType op, const Params... params,
              const Args... qubits) -> void;
+  template <typename... Args, typename... Results>
+  auto measure(const Args... qubits, Results... results) -> void;
   auto qAlloc() -> Qubit*;
   auto qFree(const Qubit* q) -> void;
 };

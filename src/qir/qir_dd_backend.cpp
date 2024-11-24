@@ -8,9 +8,21 @@
 
 namespace mqt {
 
-QIR_DD_Backend::QIR_DD_Backend()
+auto QIR_DD_Backend::generateRandomSeed() -> uint64_t {
+  std::array<std::random_device::result_type, std::mt19937_64::state_size>
+      randomData{};
+  std::random_device rd;
+  std::generate(randomData.begin(), randomData.end(), std::ref(rd));
+  std::seed_seq seeds(randomData.begin(), randomData.end());
+  std::mt19937_64 rng(seeds);
+  return rng();
+}
+
+QIR_DD_Backend::QIR_DD_Backend() : QIR_DD_Backend(generateRandomSeed()) {}
+
+QIR_DD_Backend::QIR_DD_Backend(const uint64_t randomSeed)
     : addressMode(AddressMode::UNKNOWN), currentMaxAddress(0), numQubits(0),
-      qState(dd::vEdge::one()) {
+      qState(dd::vEdge::one()), mt(randomSeed) {
   qRegister = std::unordered_map<qc::Qubit, qc::Qubit>();
 }
 
@@ -113,6 +125,27 @@ auto QIR_DD_Backend::apply(const qc::OpType op, const Params... params,
   dd.decRef(qState);
   qState = tmp;
   dd.garbageCollect();
+}
+
+template <typename... Args, typename... Results>
+auto QIR_DD_Backend::measure(const Args... qubits, Results... results) -> void {
+  determineAddressMode();
+  const qc::StandardOperation& measure = createOperation(qc::Measure, qubits);
+  enlargeState(measure);
+  // measure qubits
+  const auto numQubits = measure.getTargets().size();
+  const std::vector<Result*> resultsVec = {results...};
+  if (resultsVec.size() != numQubits) {
+    throw std::invalid_argument("Number of results must match number of "
+                                "qubits to measure: " +
+                                std::to_string(resultsVec.size()) + " vs. " +
+                                std::to_string(numQubits));
+  }
+  for (size_t i = 0; i < numQubits; ++i) {
+    const auto& q = measure.getTargets()[i];
+    const auto& result = dd.measureOneCollapsing(qState, q, true, mt);
+    resultsVec[i]->r = result == '1';
+  }
 }
 
 auto QIR_DD_Backend::qAlloc() -> Qubit* {
@@ -680,7 +713,8 @@ void __quantum__qis__ccz__body(Qubit* control1, Qubit* control2,
 }
 
 void __quantum__qis__mz__body(Qubit* qubit, Result* result) {
-  throw std::bad_function_call();
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.measure(qubit, result);
 }
 
 void __quantum__qis__m__body(Qubit* qubit, Result* result) {
