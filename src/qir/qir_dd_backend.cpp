@@ -726,4 +726,26 @@ void __quantum__qis__reset__body(Qubit* qubit) {
   backend.apply(qc::Reset, qubit);
 }
 
+void __quantum__rt__initialize(char* /*unused*/) {
+  mqt::QIR_DD_Backend::getInstance();
+}
+
+bool __quantum__rt__read_result(const Result* result) { return result->r; }
+
+void __quantum__rt__tuple_record_output(int64_t /*unused*/, char* /*unused*/) {
+  throw std::bad_function_call();
+}
+
+void __quantum__rt__array_record_output(int64_t /*unused*/, char* /*unused*/) {
+  throw std::bad_function_call();
+}
+
+void __quantum__rt__result_record_output(Result* /*unused*/, char* /*unused*/) {
+  throw std::bad_function_call();
+}
+
+void __quantum__rt__bool_record_output(bool /*unused*/, char* /*unused*/) {
+  throw std::bad_function_call();
+}
+
 } // extern "C"
