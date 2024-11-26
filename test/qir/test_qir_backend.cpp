@@ -20,8 +20,8 @@ TEST_F(QIR_DD_BackendTest, BellPairStatic) {
   __quantum__rt__initialize(nullptr);
   __quantum__qis__h__body(q0);
   __quantum__qis__cx__body(q0, q1);
-  __quantum__qis__m__body(q0, r0);
-  __quantum__qis__m__body(q1, r1);
+  __quantum__qis__mz__body(q0, r0);
+  __quantum__qis__mz__body(q1, r1);
   const auto m1 = __quantum__rt__read_result(r0);
   const auto m2 = __quantum__rt__read_result(r1);
   EXPECT_EQ(m1, m2);
@@ -35,12 +35,10 @@ TEST_F(QIR_DD_BackendTest, BellPairDynamic) {
   __quantum__rt__initialize(nullptr);
   auto* q0 = __quantum__rt__qubit_allocate();
   auto* q1 = __quantum__rt__qubit_allocate();
-  auto* r0 = reinterpret_cast<Result*>(0UL);
-  auto* r1 = reinterpret_cast<Result*>(1UL);
   __quantum__qis__h__body(q0);
   __quantum__qis__cx__body(q0, q1);
-  __quantum__qis__m__body(q0, r0);
-  __quantum__qis__m__body(q1, r1);
+  auto* r0 = __quantum__qis__m__body(q0);
+  auto* r1 = __quantum__qis__m__body(q1);
   __quantum__rt__qubit_release(q0);
   __quantum__rt__qubit_release(q1);
   const auto m1 = __quantum__rt__read_result(r0);
@@ -50,6 +48,8 @@ TEST_F(QIR_DD_BackendTest, BellPairDynamic) {
   __quantum__rt__result_record_output(r1, "r1");
   EXPECT_TRUE(buffer.str() == "r0: 0\nr1: 0\n" ||
               buffer.str() == "r0: 1\nr1: 1\n");
+  __quantum__rt__result_update_reference_count(r0, -1);
+  __quantum__rt__result_update_reference_count(r1, -1);
 }
 
 } // namespace mqt

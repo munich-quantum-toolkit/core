@@ -395,8 +395,8 @@ void __quantum__qis__cnot__body(Qubit*, Qubit*);
 void __quantum__qis__cz__body(Qubit*, Qubit*);
 void __quantum__qis__ccx__body(Qubit*, Qubit*, Qubit*);
 void __quantum__qis__ccz__body(Qubit*, Qubit*, Qubit*);
+Result* __quantum__qis__m__body(Qubit*);
 void __quantum__qis__mz__body(Qubit*, Result*);
-void __quantum__qis__m__body(Qubit*, Result*);
 void __quantum__qis__reset__body(Qubit*);
 
 // cf.
