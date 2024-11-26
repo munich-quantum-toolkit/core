@@ -53,7 +53,7 @@ Result* __quantum__rt__result_get_one();
 
 /// Returns true if the two results are the same, and false if they are
 /// different.
-bool __quantum__rt__result_equal(const Result*, const Result*);
+bool __quantum__rt__result_equal(Result*, Result*);
 
 /// Adds the given integer value to the reference count for the result.
 /// Deallocates the result if the reference count becomes 0.
@@ -99,7 +99,7 @@ String* __quantum__rt__double_to_string(double);
 String* __quantum__rt__bool_to_string(bool);
 
 /// Returns a string representation of the result.
-String* __quantum__rt__result_to_string(const Result*);
+String* __quantum__rt__result_to_string(Result*);
 
 /// Returns a string representation of the Pauli.
 String* __quantum__rt__pauli_to_string(Pauli);
@@ -364,7 +364,7 @@ Array* __quantum__rt__qubit_allocate_array(int64_t);
 
 /// Releases a single qubit. Passing a null pointer as argument should cause a
 /// runtime failure.
-void __quantum__rt__qubit_release(const Qubit*);
+void __quantum__rt__qubit_release(Qubit*);
 
 /// Releases an array of qubits; each qubit in the array is released, and the
 /// array itself is unreferenced. Passing a null pointer as argument should
@@ -396,6 +396,7 @@ void __quantum__qis__cz__body(Qubit*, Qubit*);
 void __quantum__qis__ccx__body(Qubit*, Qubit*, Qubit*);
 void __quantum__qis__ccz__body(Qubit*, Qubit*, Qubit*);
 Result* __quantum__qis__m__body(Qubit*);
+Result* __quantum__qis__measure__body(Qubit*);
 void __quantum__qis__mz__body(Qubit*, Result*);
 void __quantum__qis__reset__body(Qubit*);
 
@@ -408,7 +409,7 @@ void __quantum__rt__initialize(char*);
 
 /// Reads the value of the given measurement result and converts it to a boolean
 /// value.
-bool __quantum__rt__read_result(const Result*);
+bool __quantum__rt__read_result(Result*);
 
 /**
  * Inserts a marker in the generated output that indicates the start of a tuple

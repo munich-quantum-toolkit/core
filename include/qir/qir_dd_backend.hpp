@@ -46,14 +46,26 @@ namespace mqt {
  * a handle to it.
  */
 class QIR_DD_Backend {
+public:
+  static constexpr auto* RESULT_ZERO_ADDRESS =
+      reinterpret_cast<Result*>(0x10000);
+  static constexpr auto* RESULT_ONE_ADDRESS =
+      reinterpret_cast<Result*>(0x10001);
+
 private:
-  static constexpr auto MIN_DYN_ADDRESS = 0x10000;
+  static constexpr auto MIN_DYN_QUBIT_ADDRESS =
+      reinterpret_cast<Qubit*>(0x10000);
   enum class AddressMode : uint8_t { UNKNOWN, DYNAMIC, STATIC };
 
   AddressMode addressMode;
-  std::unordered_map<qc::Qubit, qc::Qubit> qRegister;
-  uint64_t currentMaxAddress;
-  uint64_t numQubits;
+  std::unordered_map<Qubit*, qc::Qubit> qRegister;
+  static constexpr auto MIN_DYN_RESULT_ADDRESS =
+      reinterpret_cast<Result*>(0x10000);
+  std::unordered_map<Result*, Result> rRegister;
+  Qubit* currentMaxQubitAddress;
+  qc::Qubit currentMaxQubitId;
+  Result* currentMaxResultAddress;
+  uint64_t numQubitsInQState;
   dd::Package<> dd;
   dd::vEdge qState;
   std::mt19937_64 mt;
@@ -62,9 +74,8 @@ private:
   explicit QIR_DD_Backend(uint64_t randomSeed);
 
   [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
-  auto determineAddressMode() -> void;
   template <typename... Args>
-  auto translateAddresses(const Args... qubits) const -> std::vector<qc::Qubit>;
+  auto translateAddresses(const Args... qubits) -> std::vector<qc::Qubit>;
   template <typename... Params, typename... Args>
   auto createOperation(qc::OpType op, const Params... params,
                        const Args... qubits) const -> qc::StandardOperation;
@@ -85,6 +96,11 @@ public:
   template <typename... Args, typename... Results>
   auto measure(const Args... qubits, Results... results) -> void;
   auto qAlloc() -> Qubit*;
-  auto qFree(const Qubit* q) -> void;
+  auto qFree(Qubit* qubit) -> void;
+
+  auto rAlloc() -> Result*;
+  auto deref(Result* result) -> Result&;
+  auto rFree(Result* result) -> void;
+  auto equal(Result* result1, Result* result2) -> bool;
 };
 } // namespace mqt
