@@ -124,10 +124,22 @@ auto QIR_DD_Backend::apply(const qc::OpType op,
                            std::array<double, P_NUM> params,
                            std::array<const Qubit*, SIZE> qubits) -> void {
   const auto& operation = createOperation<P_NUM, SIZE>(op, params, qubits);
-  const auto& matrix = getDD(&operation, dd);
   enlargeState(operation);
-  // apply operation
-  const auto& tmp = dd.multiply(matrix, qState);
+  auto tmp = qState;
+  if (operation.getType() == qc::Reset) {
+    for (const auto qubit : operation.getUsedQubits()) {
+      // apply an X operation whenever the measured result is one
+      if (const auto bit = dd.measureOneCollapsing(
+              qState, static_cast<dd::Qubit>(qubit), true, mt);
+          bit == '1') {
+        const auto x = qc::StandardOperation(qubit, qc::X);
+        tmp = dd.multiply(getDD(&x, dd), tmp);
+      }
+    }
+  } else {
+    const auto& matrix = getDD(&operation, dd);
+    tmp = dd.multiply(matrix, tmp);
+  }
   dd.incRef(tmp);
   dd.decRef(qState);
   qState = tmp;
