@@ -1,9 +1,22 @@
 #include "qir/qir_dd_backend.hpp"
 
+#include "Definitions.hpp"
+#include "dd/Node.hpp"
 #include "dd/Operations.hpp"
+#include "ir/operations/Control.hpp"
+#include "ir/operations/OpType.hpp"
+#include "ir/operations/StandardOperation.hpp"
 #include "qir/qir.h"
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <random>
+#include <sstream>
 #include <stdexcept>
+#include <unordered_map>
+#include <vector>
 
 namespace mqt {
 
@@ -23,7 +36,7 @@ QIR_DD_Backend::QIR_DD_Backend(const uint64_t randomSeed)
     : addressMode(AddressMode::UNKNOWN),
       currentMaxQubitAddress(MIN_DYN_QUBIT_ADDRESS), currentMaxQubitId(0),
       currentMaxResultAddress(MIN_DYN_RESULT_ADDRESS), numQubitsInQState(0),
-      qState(dd::vEdge::one()), mt(randomSeed) {
+      dd(0), qState(dd::vEdge::one()), mt(randomSeed) {
   dd.incRef(qState);
   qRegister = std::unordered_map<const Qubit*, qc::Qubit>();
   rRegister = std::unordered_map<Result*, ResultStruct>();
@@ -39,7 +52,7 @@ template <size_t SIZE>
 auto QIR_DD_Backend::translateAddresses(std::array<const Qubit*, SIZE> qubits)
     -> std::array<qc::Qubit, SIZE> {
   // extract addresses from opaque qubit pointers
-  std::array<qc::Qubit, SIZE> qubitIds;
+  std::array<qc::Qubit, SIZE> qubitIds{};
   if (addressMode != AddressMode::STATIC) {
     // addressMode == AddressMode::DYNAMIC or AddressMode::UNKNOWN
     for (size_t i = 0; i < SIZE; ++i) {
@@ -61,8 +74,8 @@ auto QIR_DD_Backend::translateAddresses(std::array<const Qubit*, SIZE> qubits)
   // addressMode might have changed to STATIC
   if (addressMode == AddressMode::STATIC) {
     for (size_t i = 0; i < SIZE; ++i) {
-      qubitIds[i] =
-          static_cast<qc::Qubit>(reinterpret_cast<uintptr_t>(qubits[i]));
+      qubitIds.at(i) =
+          static_cast<qc::Qubit>(reinterpret_cast<uintptr_t>(qubits.at(i)));
     }
   }
   return qubitIds;
@@ -109,13 +122,15 @@ auto QIR_DD_Backend::createOperation(
 auto QIR_DD_Backend::enlargeState(const qc::StandardOperation& operation)
     -> void {
   const auto& qubits = operation.getUsedQubits();
-  const auto maxTarget = *std::max_element(qubits.cbegin(), qubits.cend());
-  if (maxTarget >= numQubitsInQState) {
+  if (const auto maxTarget = *std::max_element(qubits.cbegin(), qubits.cend());
+      maxTarget >= numQubitsInQState) {
     const auto d = maxTarget - numQubitsInQState + 1;
-    dd.decRef(qState);
-    qState = dd.kronecker(qState, dd.makeZeroState(d), d);
-    dd.incRef(qState);
     numQubitsInQState += d;
+    dd.resize(numQubitsInQState);
+    const auto tmp = dd.kronecker(qState, dd.makeZeroState(d), d);
+    dd.incRef(tmp);
+    dd.decRef(qState);
+    qState = tmp;
   }
 }
 

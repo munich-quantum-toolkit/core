@@ -1,8 +1,20 @@
 #pragma once
 
+#include "Definitions.hpp"
+#include "dd/Node.hpp"
 #include "dd/Package.hpp"
-#include "ir/QuantumComputation.hpp"
+#include "ir/operations/OpType.hpp"
+#include "ir/operations/StandardOperation.hpp"
 #include "qir.h"
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <ostream>
+#include <random>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 struct BigIntImpl {
   int32_t refcount;
@@ -68,7 +80,6 @@ private:
   QIR_DD_Backend();
   explicit QIR_DD_Backend(uint64_t randomSeed);
 
-  [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
   template <size_t P_NUM, size_t SIZE>
   auto createOperation(qc::OpType op, std::array<double, P_NUM> params,
                        std::array<const Qubit*, SIZE> qubits)
@@ -76,6 +87,7 @@ private:
   auto enlargeState(const qc::StandardOperation& operation) -> void;
 
 public:
+  [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
   static QIR_DD_Backend& getInstance(const bool reinitialized = false) {
     static QIR_DD_Backend instance;
     if (reinitialized) {
