@@ -8,12 +8,11 @@ struct BigIntImpl {
   int32_t refcount;
   int64_t i;
 };
-struct ResultImpl {
+/// @note this struct is purposefully not called ResultImpl to leave the Result
+/// pointer opaque such that it cannot be dereferenced
+struct ResultStruct {
   int32_t refcount;
   bool r;
-};
-struct QubitImpl {
-  qc::Qubit id;
 };
 struct StringImpl {
   int32_t refcount;
@@ -55,12 +54,12 @@ private:
   enum class AddressMode : uint8_t { UNKNOWN, DYNAMIC, STATIC };
 
   AddressMode addressMode;
-  std::unordered_map<Qubit*, qc::Qubit> qRegister;
+  std::unordered_map<const Qubit*, qc::Qubit> qRegister;
   static constexpr auto MIN_DYN_RESULT_ADDRESS = 0x10000;
-  std::unordered_map<Result*, Result> rRegister;
-  Qubit* currentMaxQubitAddress;
+  std::unordered_map<Result*, ResultStruct> rRegister;
+  uintptr_t currentMaxQubitAddress;
   qc::Qubit currentMaxQubitId;
-  Result* currentMaxResultAddress;
+  uintptr_t currentMaxResultAddress;
   uint64_t numQubitsInQState;
   dd::Package<> dd;
   dd::vEdge qState;
@@ -70,13 +69,10 @@ private:
   explicit QIR_DD_Backend(uint64_t randomSeed);
 
   [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
-  template <size_t SIZE>
-  auto translateAddresses(std::array<Qubit*, SIZE> qubits)
-      -> std::array<qc::Qubit, SIZE>;
   template <size_t P_NUM, size_t SIZE>
-  auto
-  createOperation(qc::OpType op, std::array<double, P_NUM> params,
-                  std::array<Qubit*, SIZE> qubits) -> qc::StandardOperation;
+  auto createOperation(qc::OpType op, std::array<double, P_NUM> params,
+                       std::array<const Qubit*, SIZE> qubits)
+      -> qc::StandardOperation;
   auto enlargeState(const qc::StandardOperation& operation) -> void;
 
 public:
@@ -90,19 +86,23 @@ public:
 
   template <size_t P_NUM, size_t SIZE>
   auto apply(qc::OpType op, std::array<double, P_NUM> params,
-             std::array<Qubit*, SIZE> qubits) -> void;
+             std::array<const Qubit*, SIZE> qubits) -> void;
   template <size_t SIZE>
-  auto apply(const qc::OpType op, std::array<Qubit*, SIZE> qubits) -> void {
+  auto apply(const qc::OpType op,
+             std::array<const Qubit*, SIZE> qubits) -> void {
     apply<0, SIZE>(op, {}, qubits);
   }
   template <size_t SIZE>
-  auto measure(std::array<Qubit*, SIZE> qubits,
+  auto measure(std::array<const Qubit*, SIZE> qubits,
                std::array<Result*, SIZE> results) -> void;
   auto qAlloc() -> Qubit*;
   auto qFree(Qubit* qubit) -> void;
+  template <size_t SIZE>
+  auto translateAddresses(std::array<const Qubit*, SIZE> qubits)
+      -> std::array<qc::Qubit, SIZE>;
 
   auto rAlloc() -> Result*;
-  auto deref(Result* result) -> Result&;
+  auto deref(Result* result) -> ResultStruct&;
   auto rFree(Result* result) -> void;
   auto equal(Result* result1, Result* result2) -> bool;
 };

@@ -2,8 +2,8 @@ add_subdirectory(qir)
 
 if(NOT TARGET MQT::MLIR)
   # collect headers and source files
-  file(GLOB_RECURSE MQT_MLIR_HEADERS ${MQT_MLIR_INCLUDE_BUILD_DIR}/*.hpp)
-  file(GLOB_RECURSE MQT_MLIR_SOURCES **.cpp)
+  file(GLOB MQT_MLIR_HEADERS ${MQT_MLIR_INCLUDE_BUILD_DIR}/*.hpp)
+  file(GLOB MQT_MLIR_SOURCES **.cpp)
 
   # add MLIR Package library
   add_library(${PROJECT_NAME} ${MQT_MLIR_HEADERS} ${MQT_MLIR_SOURCES})

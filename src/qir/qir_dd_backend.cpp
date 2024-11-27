@@ -19,24 +19,24 @@ auto QIR_DD_Backend::generateRandomSeed() -> uint64_t {
 
 QIR_DD_Backend::QIR_DD_Backend() : QIR_DD_Backend(generateRandomSeed()) {}
 
-// NOLINTBEGIN(performance-no-int-to-ptr)
 QIR_DD_Backend::QIR_DD_Backend(const uint64_t randomSeed)
     : addressMode(AddressMode::UNKNOWN),
-      currentMaxQubitAddress(reinterpret_cast<Qubit*>(MIN_DYN_QUBIT_ADDRESS)),
-      currentMaxQubitId(0), currentMaxResultAddress(reinterpret_cast<Result*>(
-                                MIN_DYN_RESULT_ADDRESS)),
-      numQubitsInQState(0), qState(dd::vEdge::one()), mt(randomSeed) {
-  qRegister = std::unordered_map<Qubit*, qc::Qubit>();
-  rRegister = std::unordered_map<Result*, Result>();
+      currentMaxQubitAddress(MIN_DYN_QUBIT_ADDRESS), currentMaxQubitId(0),
+      currentMaxResultAddress(MIN_DYN_RESULT_ADDRESS), numQubitsInQState(0),
+      qState(dd::vEdge::one()), mt(randomSeed) {
+  dd.incRef(qState);
+  qRegister = std::unordered_map<const Qubit*, qc::Qubit>();
+  rRegister = std::unordered_map<Result*, ResultStruct>();
+  // NOLINTBEGIN(performance-no-int-to-ptr)
   rRegister.emplace(reinterpret_cast<Result*>(RESULT_ZERO_ADDRESS),
-                    Result{0, false});
+                    ResultStruct{0, false});
   rRegister.emplace(reinterpret_cast<Result*>(RESULT_ONE_ADDRESS),
-                    Result{0, true});
+                    ResultStruct{0, true});
+  // NOLINTEND(performance-no-int-to-ptr)
 }
-// NOLINTEND(performance-no-int-to-ptr)
 
 template <size_t SIZE>
-auto QIR_DD_Backend::translateAddresses(std::array<Qubit*, SIZE> qubits)
+auto QIR_DD_Backend::translateAddresses(std::array<const Qubit*, SIZE> qubits)
     -> std::array<qc::Qubit, SIZE> {
   // extract addresses from opaque qubit pointers
   std::array<qc::Qubit, SIZE> qubitIds;
@@ -70,7 +70,7 @@ auto QIR_DD_Backend::translateAddresses(std::array<Qubit*, SIZE> qubits)
 template <size_t P_NUM, size_t SIZE>
 auto QIR_DD_Backend::createOperation(
     qc::OpType op, std::array<double, P_NUM> params,
-    std::array<Qubit*, SIZE> qubits) -> qc::StandardOperation {
+    std::array<const Qubit*, SIZE> qubits) -> qc::StandardOperation {
   const auto& addresses = translateAddresses(qubits);
   // store parameters into vector
   std::vector<qc::fp> paramVec(params.cbegin(), params.cend());
@@ -86,7 +86,7 @@ auto QIR_DD_Backend::createOperation(
   if (addresses.size() > t) { // create controlled operation
     const auto& controls =
         qc::Controls(addresses.cbegin(), addresses.cend() - t);
-    const auto& targets = qc::Targets(addresses.cbegin() - t, addresses.cend());
+    const auto& targets = qc::Targets(addresses.cbegin() + t, addresses.cend());
     return {controls, targets, op, paramVec};
   }
   if (addresses.size() == t) { // create uncontrolled operation
@@ -103,15 +103,18 @@ auto QIR_DD_Backend::enlargeState(const qc::StandardOperation& operation)
   const auto& qubits = operation.getUsedQubits();
   const auto maxTarget = *std::max_element(qubits.cbegin(), qubits.cend());
   if (const auto d = maxTarget - numQubitsInQState + 1; d > 0) {
+    dd.decRef(qState);
     qState = dd.kronecker(qState, dd.makeZeroState(d), d);
+    dd.incRef(qState);
     numQubitsInQState += d;
   }
 }
 
 template <size_t P_NUM, size_t SIZE>
-auto QIR_DD_Backend::apply(qc::OpType op, std::array<double, P_NUM> params,
-                           std::array<Qubit*, SIZE> qubits) -> void {
-  const auto& operation = createOperation(op, params, qubits);
+auto QIR_DD_Backend::apply(const qc::OpType op,
+                           std::array<double, P_NUM> params,
+                           std::array<const Qubit*, SIZE> qubits) -> void {
+  const auto& operation = createOperation<P_NUM, SIZE>(op, params, qubits);
   const auto& matrix = getDD(&operation, dd);
   enlargeState(operation);
   // apply operation
@@ -123,8 +126,9 @@ auto QIR_DD_Backend::apply(qc::OpType op, std::array<double, P_NUM> params,
 }
 
 template <size_t SIZE>
-auto QIR_DD_Backend::measure(std::array<Qubit*, SIZE> qubits,
+auto QIR_DD_Backend::measure(std::array<const Qubit*, SIZE> qubits,
                              std::array<Result*, SIZE> results) -> void {
+  auto& backend = QIR_DD_Backend::getInstance();
   const qc::StandardOperation& measure =
       createOperation<0, SIZE>(qc::Measure, {}, qubits);
   enlargeState(measure);
@@ -132,15 +136,14 @@ auto QIR_DD_Backend::measure(std::array<Qubit*, SIZE> qubits,
   for (size_t i = 0; i < SIZE; ++i) {
     const auto q = static_cast<dd::Qubit>(measure.getTargets()[i]);
     const auto& result = dd.measureOneCollapsing(qState, q, true, mt);
-    results[i]->r = result == '1';
+    backend.deref(results[i]).r = result == '1';
   }
 }
 
 auto QIR_DD_Backend::qAlloc() -> Qubit* {
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  Qubit* qubit = currentMaxQubitAddress++;
-  qubit->id = currentMaxQubitId++;
-  qRegister.emplace(qubit, qubit->id);
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  auto* qubit = reinterpret_cast<Qubit*>(currentMaxQubitAddress++);
+  qRegister.emplace(qubit, currentMaxQubitId++);
   return qubit;
 }
 
@@ -150,15 +153,15 @@ auto QIR_DD_Backend::qFree(Qubit* qubit) -> void {
 }
 
 auto QIR_DD_Backend::rAlloc() -> Result* {
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  Result* result = currentMaxResultAddress++;
-  rRegister.emplace(result, Result{1, false});
+  // NOLINTNEXTLINE(performance-no-int-to-ptr)
+  auto* result = reinterpret_cast<Result*>(currentMaxResultAddress++);
+  rRegister.emplace(result, ResultStruct{1, false});
   return result;
 }
 
 auto QIR_DD_Backend::rFree(Result* result) -> void { rRegister.erase(result); }
 
-auto QIR_DD_Backend::deref(Result* result) -> Result& {
+auto QIR_DD_Backend::deref(Result* result) -> ResultStruct& {
   auto it = rRegister.find(result);
   if (it == rRegister.end()) {
     if (addressMode != AddressMode::UNKNOWN) {
@@ -169,7 +172,7 @@ auto QIR_DD_Backend::deref(Result* result) -> Result& {
       ss << "Result not allocated (not found): " << result;
       throw std::out_of_range(ss.str());
     }
-    it = rRegister.emplace(result, Result{0, false}).first;
+    it = rRegister.emplace(result, ResultStruct{0, false}).first;
   }
   return it->second;
 }
@@ -202,8 +205,9 @@ void __quantum__rt__result_update_reference_count(Result* result,
                                                   const int32_t k) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
   if (result != nullptr) {
-    backend.deref(result).refcount += k;
-    if (result->refcount == 0) {
+    auto& refcount = backend.deref(result).refcount;
+    refcount += k;
+    if (refcount == 0) {
       backend.rFree(result);
     }
   }
@@ -318,10 +322,9 @@ String* __quantum__rt__pauli_to_string(const Pauli p) {
 }
 
 String* __quantum__rt__qubit_to_string(const Qubit* qubit) {
-  if (qubit == nullptr) {
-    throw std::invalid_argument("The argument must not be null.");
-  }
-  return __quantum__rt__int_to_string(static_cast<int32_t>(qubit->id));
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  return __quantum__rt__int_to_string(
+      static_cast<int32_t>(backend.translateAddresses<1>({qubit}).front()));
 }
 
 String* __quantum__rt__range_to_string(Range /*unused*/) {
