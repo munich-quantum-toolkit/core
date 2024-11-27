@@ -48,7 +48,8 @@ auto QIR_DD_Backend::translateAddresses(std::array<const Qubit*, SIZE> qubits)
       } catch (const std::out_of_range&) {
         if (addressMode == AddressMode::DYNAMIC) {
           std::stringstream ss;
-          ss << "Qubit not allocated (not found): " << qubits[i];
+          ss << __FILE__ << ":" << __LINE__
+             << ": Qubit not allocated (not found): " << qubits[i];
           throw std::out_of_range(ss.str());
         }
         // addressMode == AddressMode::UNKNOWN
@@ -80,22 +81,29 @@ auto QIR_DD_Backend::createOperation(
     t = 1;
   } else if (isTwoQubitGate(op)) {
     t = 2;
+  } else if (op == qc::Measure || op == qc::Reset) {
+    t = SIZE;
   } else {
-    throw std::invalid_argument("Operation type is not known: " + toString(op));
+    std::stringstream ss;
+    ss << __FILE__ << ":" << __LINE__
+       << ": Operation type is not known: " << toString(op);
+    throw std::invalid_argument(ss.str());
   }
-  if (addresses.size() > t) { // create controlled operation
+  if (SIZE > t) { // create controlled operation
     const auto& controls =
         qc::Controls(addresses.cbegin(), addresses.cend() - t);
     const auto& targets = qc::Targets(addresses.cbegin() + t, addresses.cend());
     return {controls, targets, op, paramVec};
   }
-  if (addresses.size() == t) { // create uncontrolled operation
+  if (SIZE == t) { // create uncontrolled operation
     const auto& targets = qc::Targets(addresses.cbegin(), addresses.cend());
     return {targets, op, paramVec};
   }
-  throw std::invalid_argument("Operation requires more qubits than given (" +
-                              toString(op) +
-                              "): " + std::to_string(addresses.size()));
+  std::stringstream ss;
+  ss << __FILE__ << ":" << __LINE__
+     << ": Operation requires more qubits than given (" << toString(op)
+     << "): " << SIZE;
+  throw std::invalid_argument(ss.str());
 }
 
 auto QIR_DD_Backend::enlargeState(const qc::StandardOperation& operation)
@@ -128,7 +136,6 @@ auto QIR_DD_Backend::apply(const qc::OpType op,
 template <size_t SIZE>
 auto QIR_DD_Backend::measure(std::array<const Qubit*, SIZE> qubits,
                              std::array<Result*, SIZE> results) -> void {
-  auto& backend = QIR_DD_Backend::getInstance();
   const qc::StandardOperation& measure =
       createOperation<0, SIZE>(qc::Measure, {}, qubits);
   enlargeState(measure);
@@ -136,7 +143,7 @@ auto QIR_DD_Backend::measure(std::array<const Qubit*, SIZE> qubits,
   for (size_t i = 0; i < SIZE; ++i) {
     const auto q = static_cast<dd::Qubit>(measure.getTargets()[i]);
     const auto& result = dd.measureOneCollapsing(qState, q, true, mt);
-    backend.deref(results[i]).r = result == '1';
+    deref(results[i]).r = result == '1';
   }
 }
 
@@ -169,7 +176,8 @@ auto QIR_DD_Backend::deref(Result* result) -> ResultStruct& {
     }
     if (addressMode == AddressMode::DYNAMIC) {
       std::stringstream ss;
-      ss << "Result not allocated (not found): " << result;
+      ss << __FILE__ << ":" << __LINE__
+         << ": Result not allocated (not found): " << result;
       throw std::out_of_range(ss.str());
     }
     it = rRegister.emplace(result, ResultStruct{0, false}).first;
