@@ -417,7 +417,7 @@ bool __quantum__rt__read_result(Result*);
  * label for the tuple. Depending on the output schema, the label is included
  * in the output or omitted.
  */
-void __quantum__rt__tuple_record_output(int64_t, char*);
+void __quantum__rt__tuple_record_output(int64_t, const char*);
 
 /**
  * Inserts a marker in the generated output that indicates the start of an
@@ -425,17 +425,17 @@ void __quantum__rt__tuple_record_output(int64_t, char*);
  * string label for the array. Depending on the output schema, the label is
  * included in the output or omitted.
  */
-void __quantum__rt__array_record_output(int64_t, char*);
+void __quantum__rt__array_record_output(int64_t, const char*);
 
 /// Adds a measurement result to the generated output. The second parameter
 /// defines a string label for the result value. Depending on the output schema,
 /// the label is included in the output or omitted.
-void __quantum__rt__result_record_output(Result*, char*);
+void __quantum__rt__result_record_output(Result*, const char*);
 
 /// Adds a boolean value to the generated output. The second parameter defines
 /// a string label for the result value. Depending on the output schema, the
 /// label is included in the output or omitted.
-void __quantum__rt__bool_record_output(bool, char*);
+void __quantum__rt__bool_record_output(bool, const char*);
 
 // NOLINTEND(readability-identifier-naming)
 // NOLINTEND(modernize-deprecated-headers)

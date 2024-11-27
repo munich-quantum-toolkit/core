@@ -13,7 +13,7 @@ if(NOT TARGET ${MQT_QIR_BACKEND_TARGET_NAME})
   # link to the MQT::Core libraries
   target_link_libraries(
     ${MQT_QIR_BACKEND_TARGET_NAME}
-    PUBLIC MQT::CoreIR
+    PUBLIC MQT::CoreIR MQT::CoreDD
     PRIVATE MQT::ProjectWarnings MQT::ProjectOptions)
 
   add_library(MQT::QIRBackend ALIAS ${MQT_QIR_BACKEND_TARGET_NAME})

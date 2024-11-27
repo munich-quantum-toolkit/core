@@ -20,13 +20,13 @@ option(BUILD_MQT_MLIR_TESTS "Also build tests for the MQT MLIR project" ${MQT_ML
 
 # Require C standard
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED True)
-set(CMAKE_C_EXTENSIONS False)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS ON)
 
 # Require C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_EXTENSIONS ON)
 
 include(cmake/ExternalDependencies.cmake)
 
