@@ -73,7 +73,7 @@ auto QIR_DD_Backend::createOperation(
     std::array<Qubit*, SIZE> qubits) -> qc::StandardOperation {
   const auto& addresses = translateAddresses(qubits);
   // store parameters into vector
-  std::vector<qc::fp> paramVec(params);
+  std::vector<qc::fp> paramVec(params.cbegin(), params.cend());
   // split addresses into control and target
   uint8_t t = 0;
   if (isSingleQubitGate(op)) {
@@ -90,7 +90,8 @@ auto QIR_DD_Backend::createOperation(
     return {controls, targets, op, paramVec};
   }
   if (addresses.size() == t) { // create uncontrolled operation
-    return {addresses, op, paramVec};
+    const auto& targets = qc::Targets(addresses.cbegin(), addresses.cend());
+    return {targets, op, paramVec};
   }
   throw std::invalid_argument("Operation requires more qubits than given (" +
                               toString(op) +
@@ -124,11 +125,12 @@ auto QIR_DD_Backend::apply(qc::OpType op, std::array<double, P_NUM> params,
 template <size_t SIZE>
 auto QIR_DD_Backend::measure(std::array<Qubit*, SIZE> qubits,
                              std::array<Result*, SIZE> results) -> void {
-  const qc::StandardOperation& measure = createOperation(qc::Measure, qubits);
+  const qc::StandardOperation& measure =
+      createOperation<0, SIZE>(qc::Measure, {}, qubits);
   enlargeState(measure);
   // measure qubits
   for (size_t i = 0; i < SIZE; ++i) {
-    const auto& q = qubits[i];
+    const auto q = static_cast<dd::Qubit>(measure.getTargets()[i]);
     const auto& result = dd.measureOneCollapsing(qState, q, true, mt);
     results[i]->r = result == '1';
   }

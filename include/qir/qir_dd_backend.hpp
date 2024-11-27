@@ -92,8 +92,8 @@ public:
   auto apply(qc::OpType op, std::array<double, P_NUM> params,
              std::array<Qubit*, SIZE> qubits) -> void;
   template <size_t SIZE>
-  auto apply(qc::OpType op, std::array<Qubit*, SIZE> qubits) -> void {
-    apply(op, {}, qubits);
+  auto apply(const qc::OpType op, std::array<Qubit*, SIZE> qubits) -> void {
+    apply<0, SIZE>(op, {}, qubits);
   }
   template <size_t SIZE>
   auto measure(std::array<Qubit*, SIZE> qubits,

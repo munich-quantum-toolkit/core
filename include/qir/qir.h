@@ -349,7 +349,7 @@ void __quantum__rt__capture_update_alias_count(Callable*, int32_t);
 void __quantum__rt__message(const String* msg);
 
 /// Fail the computation with the given error message.
-_Noreturn void __quantum__rt__fail(const String* msg);
+[[noreturn]] void __quantum__rt__fail(const String* msg);
 
 // *** QUANTUM INSTRUCTIONSET AND RUNTIME ***
 // cf.
