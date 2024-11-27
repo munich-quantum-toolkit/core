@@ -76,8 +76,28 @@ private:
   auto enlargeState(const qc::StandardOperation& operation) -> void;
 
 public:
-  static QIR_DD_Backend& getInstance() {
+  static QIR_DD_Backend& getInstance(bool reinitialized = false) {
     static QIR_DD_Backend instance;
+    if (reinitialized) {
+      instance.addressMode = AddressMode::UNKNOWN;
+      instance.currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
+      instance.currentMaxQubitId = 0;
+      instance.currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
+      instance.numQubitsInQState = 0;
+      instance.dd.decRef(instance.qState);
+      instance.qState = dd::vEdge::one();
+      instance.dd.incRef(instance.qState);
+      instance.dd.garbageCollect();
+      instance.mt.seed(generateRandomSeed());
+      instance.qRegister.clear();
+      instance.rRegister.clear();
+      // NOLINTBEGIN(performance-no-int-to-ptr)
+      instance.rRegister.emplace(reinterpret_cast<Result*>(RESULT_ZERO_ADDRESS),
+                                 ResultStruct{0, false});
+      instance.rRegister.emplace(reinterpret_cast<Result*>(RESULT_ONE_ADDRESS),
+                                 ResultStruct{0, true});
+      // NOLINTEND(performance-no-int-to-ptr)
+    }
     return instance;
   }
 
