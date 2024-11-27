@@ -14,10 +14,13 @@
 // NOLINTBEGIN(readability-identifier-naming)
 
 #include <stdint.h>
-#include <stdnoreturn.h>
 
 #ifdef __cplusplus
+#define NORETURN [[noreturn]]
 extern "C" {
+#else
+#include <stdnoreturn.h>
+#define NORETURN noreturn
 #endif
 
 // *** SIMPLE TYPES ***
@@ -349,7 +352,7 @@ void __quantum__rt__capture_update_alias_count(Callable*, int32_t);
 void __quantum__rt__message(const String* msg);
 
 /// Fail the computation with the given error message.
-[[noreturn]] void __quantum__rt__fail(const String* msg);
+NORETURN void __quantum__rt__fail(const String* msg);
 
 // *** QUANTUM INSTRUCTIONSET AND RUNTIME ***
 // cf.
