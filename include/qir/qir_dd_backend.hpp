@@ -76,7 +76,7 @@ private:
   auto enlargeState(const qc::StandardOperation& operation) -> void;
 
 public:
-  static QIR_DD_Backend& getInstance(bool reinitialized = false) {
+  static QIR_DD_Backend& getInstance(const bool reinitialized = false) {
     static QIR_DD_Backend instance;
     if (reinitialized) {
       instance.addressMode = AddressMode::UNKNOWN;

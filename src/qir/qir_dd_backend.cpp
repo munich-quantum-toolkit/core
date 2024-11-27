@@ -928,20 +928,13 @@ void __quantum__rt__array_record_output(int64_t /*unused*/,
   __quantum__rt__fail(__quantum__rt__string_create(ss.str().c_str()));
 }
 
-void __quantum__rt__result_record_output(Result* /*unused*/,
-                                         const char* /*unused*/) {
-  std::stringstream ss;
-  ss << __FILE__ << ":" << __LINE__ << ": " << __FUNCTION__
-     << " not implemented.";
-  __quantum__rt__fail(__quantum__rt__string_create(ss.str().c_str()));
+void __quantum__rt__result_record_output(Result* result, const char* label) {
+  std::cout << label << ": " << (__quantum__rt__read_result(result) ? 1 : 0)
+            << "\n";
 }
 
-void __quantum__rt__bool_record_output(bool /*unused*/,
-                                       const char* /*unused*/) {
-  std::stringstream ss;
-  ss << __FILE__ << ":" << __LINE__ << ": " << __FUNCTION__
-     << " not implemented.";
-  __quantum__rt__fail(__quantum__rt__string_create(ss.str().c_str()));
+void __quantum__rt__bool_record_output(bool value, const char* label) {
+  std::cout << label << ": " << (value ? "true" : "false") << "\n";
 }
 
 } // extern "C"
