@@ -115,6 +115,8 @@ public:
 
   QIR_DD_Backend(const QIR_DD_Backend&) = delete;
   QIR_DD_Backend& operator=(const QIR_DD_Backend&) = delete;
+  QIR_DD_Backend(QIR_DD_Backend&&) = delete;
+  QIR_DD_Backend& operator=(QIR_DD_Backend&&) = delete;
 
   template <size_t P_NUM, size_t SIZE>
   auto apply(qc::OpType op, std::array<double, P_NUM> params,
