@@ -1,6 +1,7 @@
 #include "qir/qir_dd_backend.hpp"
 
 #include "Definitions.hpp"
+#include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
 #include "ir/operations/Control.hpp"
@@ -12,9 +13,11 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -87,7 +90,7 @@ auto QIR_DD_Backend::createOperation(
     std::array<const Qubit*, SIZE> qubits) -> qc::StandardOperation {
   const auto& addresses = translateAddresses(qubits);
   // store parameters into vector
-  std::vector<qc::fp> paramVec(params.cbegin(), params.cend());
+  const std::vector<qc::fp> paramVec(params.cbegin(), params.cend());
   // split addresses into control and target
   uint8_t t = 0;
   if (isSingleQubitGate(op)) {
