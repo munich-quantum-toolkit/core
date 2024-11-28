@@ -128,6 +128,8 @@ public:
   template <size_t SIZE>
   auto measure(std::array<const Qubit*, SIZE> qubits,
                std::array<Result*, SIZE> results) -> void;
+  template <size_t SIZE>
+  auto reset(std::array<const Qubit*, SIZE> qubits) -> void;
   auto qAlloc() -> Qubit*;
   auto qFree(Qubit* qubit) -> void;
   template <size_t SIZE>

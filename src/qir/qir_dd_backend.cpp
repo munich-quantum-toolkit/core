@@ -5,6 +5,7 @@
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
 #include "ir/operations/Control.hpp"
+#include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
 #include "qir/qir.h"
@@ -96,8 +97,6 @@ auto QIR_DD_Backend::createOperation(
     t = 1;
   } else if (isTwoQubitGate(op)) {
     t = 2;
-  } else if (op == qc::Measure || op == qc::Reset) {
-    t = SIZE;
   } else {
     std::stringstream ss;
     ss << __FILE__ << ":" << __LINE__
@@ -141,11 +140,7 @@ auto QIR_DD_Backend::apply(const qc::OpType op,
   const auto& operation = createOperation<P_NUM, SIZE>(op, params, qubits);
   const auto& usedQubits = operation.getUsedQubits();
   enlargeState(*usedQubits.crbegin());
-  if (operation.getType() == qc::Reset) {
-    qState = dd::applyReset(&operation, qState, dd, mt);
-  } else {
-    qState = dd::applyUnitaryOperation(&operation, qState, dd);
-  }
+  qState = dd::applyUnitaryOperation(&operation, qState, dd);
 }
 
 template <size_t SIZE>
@@ -162,6 +157,16 @@ auto QIR_DD_Backend::measure(std::array<const Qubit*, SIZE> qubits,
   }
 }
 
+template <size_t SIZE>
+auto QIR_DD_Backend::reset(std::array<const Qubit*, SIZE> qubits) -> void {
+  const auto& targets = translateAddresses(qubits);
+  const auto maxQubit = *std::max_element(targets.cbegin(), targets.cend());
+  enlargeState(maxQubit);
+  const auto resetOp =
+      qc::NonUnitaryOperation({targets.cbegin(), targets.cend()}, qc::Reset);
+  qState = dd::applyReset(&resetOp, qState, dd, mt);
+}
+
 auto QIR_DD_Backend::qAlloc() -> Qubit* {
   // NOLINTNEXTLINE(performance-no-int-to-ptr)
   auto* qubit = reinterpret_cast<Qubit*>(currentMaxQubitAddress++);
@@ -170,7 +175,7 @@ auto QIR_DD_Backend::qAlloc() -> Qubit* {
 }
 
 auto QIR_DD_Backend::qFree(Qubit* qubit) -> void {
-  apply<1>(qc::Reset, {qubit});
+  reset<1>({qubit});
   qRegister.erase(qubit);
 }
 
@@ -902,7 +907,7 @@ Result* __quantum__qis__measure__body(Qubit* qubit) {
 
 void __quantum__qis__reset__body(Qubit* qubit) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
-  backend.apply<1>(qc::Reset, {qubit});
+  backend.reset<1>({qubit});
 }
 
 void __quantum__rt__initialize(char* /*unused*/) {
