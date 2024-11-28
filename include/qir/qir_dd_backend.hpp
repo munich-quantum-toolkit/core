@@ -55,12 +55,16 @@ namespace mqt {
 
 class Utils {
 private:
-  template <typename Func, typename S, typename R, std::size_t... I>
-  constexpr static void transformImpl(Func&& func,
-                                      const std::array<S, sizeof...(I)>& source,
-                                      std::array<R, sizeof...(I)>& result,
-                                      std::index_sequence<I...> /*anonymous*/) {
-    ((result[I] = std::forward<Func>(func)(source[I])), ...);
+  template <typename Func, typename Store, typename S, typename R,
+            std::size_t... I>
+  constexpr static void
+  transformStoreImpl(Func&& func, Store&& store,
+                     const std::array<S, sizeof...(I)>& source,
+                     std::array<R, sizeof...(I)>& result,
+                     std::index_sequence<I...> /*anonymous*/) {
+    ((std::forward<Store>(store)(result[I],
+                                 std::forward<Func>(func)(source[I]))),
+     ...);
   }
 
 public:
@@ -69,8 +73,21 @@ public:
   template <typename Func, typename S, typename R, std::size_t N>
   constexpr static void transform(Func&& func, const std::array<S, N>& source,
                                   std::array<R, N>& result) {
-    transformImpl(std::forward<Func>(func), source, result,
-                  std::make_index_sequence<N>{});
+    transformStoreImpl(
+        std::forward<Func>(func),
+        [](auto& container, const auto value) { container = value; }, source,
+        result, std::make_index_sequence<N>{});
+  }
+  /// Helper function to apply a function to each element of the array and store
+  /// the result with the help of the store function in another equally sized
+  /// array.
+  template <typename Func, typename Store, typename S, typename R,
+            std::size_t N>
+  constexpr static void transformStore(Func&& func, Store&& store,
+                                       const std::array<S, N>& source,
+                                       std::array<R, N>& result) {
+    transformStoreImpl(std::forward<Func>(func), std::forward<Store>(store),
+                       source, result, std::make_index_sequence<N>{});
   }
 };
 /**
