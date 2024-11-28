@@ -73,7 +73,7 @@ private:
   qc::Qubit currentMaxQubitId;
   uintptr_t currentMaxResultAddress;
   uint64_t numQubitsInQState;
-  dd::Package<> dd;
+  std::unique_ptr<dd::Package<>> dd;
   dd::vEdge qState;
   std::mt19937_64 mt;
 
@@ -96,9 +96,9 @@ public:
       instance.currentMaxQubitId = 0;
       instance.currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
       instance.numQubitsInQState = 0;
-      instance.dd.decRef(instance.qState);
+      instance.dd->decRef(instance.qState);
       instance.qState = dd::vEdge::one();
-      instance.dd.garbageCollect();
+      instance.dd->garbageCollect();
       instance.mt.seed(generateRandomSeed());
       instance.qRegister.clear();
       instance.rRegister.clear();

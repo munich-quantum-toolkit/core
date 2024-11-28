@@ -40,7 +40,8 @@ QIR_DD_Backend::QIR_DD_Backend(const uint64_t randomSeed)
     : addressMode(AddressMode::UNKNOWN),
       currentMaxQubitAddress(MIN_DYN_QUBIT_ADDRESS), currentMaxQubitId(0),
       currentMaxResultAddress(MIN_DYN_RESULT_ADDRESS), numQubitsInQState(0),
-      dd(0), qState(dd::vEdge::one()), mt(randomSeed) {
+      dd(std::make_unique<dd::Package<>>()), qState(dd::vEdge::one()),
+      mt(randomSeed) {
   qRegister = std::unordered_map<const Qubit*, qc::Qubit>();
   rRegister = std::unordered_map<Result*, ResultStruct>();
   // NOLINTBEGIN(performance-no-int-to-ptr)
@@ -124,11 +125,11 @@ auto QIR_DD_Backend::enlargeState(const std::uint64_t maxQubit) -> void {
   if (maxQubit >= numQubitsInQState) {
     const auto d = maxQubit - numQubitsInQState + 1;
     numQubitsInQState += d;
-    dd.resize(numQubitsInQState);
+    dd->resize(numQubitsInQState);
     const auto tmp =
-        dd.kronecker(dd.makeZeroState(d), qState, numQubitsInQState);
-    dd.incRef(tmp);
-    dd.decRef(qState);
+        dd->kronecker(dd->makeZeroState(d), qState, numQubitsInQState);
+    dd->incRef(tmp);
+    dd->decRef(qState);
     qState = tmp;
   }
 }
@@ -152,7 +153,7 @@ auto QIR_DD_Backend::measure(std::array<const Qubit*, SIZE> qubits,
   // measure qubits
   for (size_t i = 0; i < SIZE; ++i) {
     const auto q = static_cast<dd::Qubit>(targets[i]);
-    const auto& result = dd.measureOneCollapsing(qState, q, mt);
+    const auto& result = dd->measureOneCollapsing(qState, q, mt);
     deref(results[i]).r = result == '1';
   }
 }
@@ -164,7 +165,7 @@ auto QIR_DD_Backend::reset(std::array<const Qubit*, SIZE> qubits) -> void {
   enlargeState(maxQubit);
   const auto resetOp =
       qc::NonUnitaryOperation({targets.cbegin(), targets.cend()}, qc::Reset);
-  qState = dd::applyReset(&resetOp, qState, dd, mt);
+  qState = applyReset(&resetOp, qState, *dd, mt);
 }
 
 auto QIR_DD_Backend::qAlloc() -> Qubit* {

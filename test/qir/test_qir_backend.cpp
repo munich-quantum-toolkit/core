@@ -1,15 +1,8 @@
-#include "dd/Node.hpp"
-#include "dd/Operations.hpp"
-#include "dd/Package.hpp"
-#include "ir/operations/OpType.hpp"
-#include "ir/operations/StandardOperation.hpp"
 #include "qir/qir.h"
-#include "qir/qir_dd_backend.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <iostream>
-#include <random>
 #include <sstream>
 #include <streambuf>
 
