@@ -23,6 +23,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace mqt {
@@ -80,10 +81,11 @@ auto QIR_DD_Backend::translateAddresses(std::array<const Qubit*, SIZE> qubits)
   }
   // addressMode might have changed to STATIC
   if (addressMode == AddressMode::STATIC) {
-    for (size_t i = 0; i < SIZE; ++i) {
-      qubitIds.at(i) =
-          static_cast<qc::Qubit>(reinterpret_cast<uintptr_t>(qubits.at(i)));
-    }
+    Utils::transform(
+        [](auto q) {
+          return static_cast<qc::Qubit>(reinterpret_cast<uintptr_t>(q));
+        },
+        qubits, qubitIds);
   }
   return qubitIds;
 }
@@ -144,7 +146,20 @@ auto QIR_DD_Backend::apply(const qc::OpType op,
   const auto& operation = createOperation<P_NUM, SIZE>(op, params, qubits);
   const auto& usedQubits = operation.getUsedQubits();
   enlargeState(*usedQubits.crbegin());
-  qState = dd::applyUnitaryOperation(&operation, qState, dd);
+  qState = dd::applyUnitaryOperation(&operation, qState, *dd);
+}
+
+template <size_t... I>
+auto loop(const std::array<qc::Qubit, sizeof...(I)>& targets,
+          std::array<Result*, sizeof...(I)>& results, dd::vEdge& qState,
+          dd::Package<>& dd, std::mt19937_64& mt, QIR_DD_Backend& inst,
+          std::index_sequence<I...>) -> void {
+  dd::Qubit q;
+  char result;
+  ((q = static_cast<dd::Qubit>(targets[I]),
+    result = dd.measureOneCollapsing(qState, q, mt),
+    inst.deref(results[I]).r = result == '1'),
+   ...);
 }
 
 template <size_t SIZE>
@@ -154,11 +169,13 @@ auto QIR_DD_Backend::measure(std::array<const Qubit*, SIZE> qubits,
   const auto maxQubit = *std::max_element(targets.cbegin(), targets.cend());
   enlargeState(maxQubit);
   // measure qubits
-  for (size_t i = 0; i < SIZE; ++i) {
-    const auto q = static_cast<dd::Qubit>(targets[i]);
-    const auto& result = dd->measureOneCollapsing(qState, q, mt);
-    deref(results[i]).r = result == '1';
-  }
+  loop(targets, results, qState, *dd, mt, *this,
+       std::make_index_sequence<SIZE>{});
+  // for (size_t i = 0; i < SIZE; ++i) {
+  //   const auto q = static_cast<dd::Qubit>(targets[i]);
+  //   const auto& result = dd->measureOneCollapsing(qState, q, mt);
+  //   deref(results[i]).r = result == '1';
+  // }
 }
 
 template <size_t SIZE>

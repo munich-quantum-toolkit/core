@@ -15,6 +15,7 @@
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 struct BigIntImpl {
@@ -52,6 +53,26 @@ struct CallablImpl {
 
 namespace mqt {
 
+class Utils {
+private:
+  template <typename Func, typename S, typename R, std::size_t... I>
+  constexpr static void transformImpl(Func&& func,
+                                      const std::array<S, sizeof...(I)>& source,
+                                      std::array<R, sizeof...(I)>& result,
+                                      std::index_sequence<I...> /*anonymous*/) {
+    ((result[I] = std::forward<Func>(func)(source[I])), ...);
+  }
+
+public:
+  /// Helper function to apply a function to each element of the array and store
+  /// the result in another equally sized array.
+  template <typename Func, typename S, typename R, std::size_t N>
+  constexpr static void transform(Func&& func, const std::array<S, N>& source,
+                                  std::array<R, N>& result) {
+    transformImpl(std::forward<Func>(func), source, result,
+                  std::make_index_sequence<N>{});
+  }
+};
 /**
  * @note This class is implemented following the design pattern Singleton in
  * order to access an instance of this class from the C function without having
@@ -82,8 +103,8 @@ private:
   explicit QIR_DD_Backend(uint64_t randomSeed);
 
   template <size_t P_NUM, size_t SIZE>
-  static auto createOperation(qc::OpType op, std::array<double, P_NUM> params,
-                              std::array<const Qubit*, SIZE> qubits)
+  auto createOperation(qc::OpType op, std::array<double, P_NUM> params,
+                       std::array<const Qubit*, SIZE> qubits)
       -> qc::StandardOperation;
   auto enlargeState(std::uint64_t maxQubit) -> void;
 
