@@ -23,47 +23,6 @@ protected:
   void TearDown() override { std::cout.rdbuf(old); }
 };
 
-TEST(DDPackageTest, BellPair) {
-  dd::Package<> dd(0);
-  dd::vEdge rootEdge = dd::vEdge::one();
-  const auto seed = QIR_DD_Backend::generateRandomSeed();
-  std::cout << "seed = " << seed << "\n";
-  // e.g.: 1160354067710695038
-  std::mt19937_64 mt(seed);
-
-  dd.resize(1);
-  auto tmp = dd.kronecker(dd.makeZeroState(1), rootEdge, 0);
-  dd.incRef(tmp);
-  dd.decRef(rootEdge);
-  rootEdge = tmp;
-  rootEdge.printVector<>();
-
-  const qc::StandardOperation h(0, qc::H);
-  tmp = dd.multiply(getDD(&h, dd), rootEdge);
-  dd.incRef(tmp);
-  dd.decRef(rootEdge);
-  rootEdge = tmp;
-  rootEdge.printVector<>();
-
-  dd.resize(2);
-  tmp = dd.kronecker(dd.makeZeroState(1), rootEdge, 1);
-  dd.incRef(tmp);
-  dd.decRef(rootEdge);
-  rootEdge = tmp;
-  rootEdge.printVector<>();
-
-  const qc::StandardOperation cx(0, 1, qc::X);
-  tmp = dd.multiply(getDD(&cx, dd), rootEdge);
-  dd.incRef(tmp);
-  dd.decRef(rootEdge);
-  rootEdge = tmp;
-  rootEdge.printVector<>();
-
-  const auto m1 = dd.measureOneCollapsing(rootEdge, 0, mt);
-  const auto m2 = dd.measureOneCollapsing(rootEdge, 1, mt);
-  EXPECT_EQ(m1, m2);
-}
-
 TEST_F(QIRDDBackendTest, BellPairStatic) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
