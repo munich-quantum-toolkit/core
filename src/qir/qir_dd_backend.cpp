@@ -40,7 +40,6 @@ QIR_DD_Backend::QIR_DD_Backend(const uint64_t randomSeed)
       currentMaxQubitAddress(MIN_DYN_QUBIT_ADDRESS), currentMaxQubitId(0),
       currentMaxResultAddress(MIN_DYN_RESULT_ADDRESS), numQubitsInQState(0),
       dd(0), qState(dd::vEdge::one()), mt(randomSeed) {
-  dd.incRef(qState);
   qRegister = std::unordered_map<const Qubit*, qc::Qubit>();
   rRegister = std::unordered_map<Result*, ResultStruct>();
   // NOLINTBEGIN(performance-no-int-to-ptr)

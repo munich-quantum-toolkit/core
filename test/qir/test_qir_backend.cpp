@@ -26,7 +26,6 @@ protected:
 TEST(DDPackageTest, BellPair) {
   dd::Package<> dd(0);
   dd::vEdge rootEdge = dd::vEdge::one();
-  dd.incRef(rootEdge);
   const auto seed = QIR_DD_Backend::generateRandomSeed();
   std::cout << "seed = " << seed << "\n";
   // e.g.: 1160354067710695038
@@ -60,8 +59,8 @@ TEST(DDPackageTest, BellPair) {
   rootEdge = tmp;
   rootEdge.printVector<>();
 
-  const auto m1 = dd.measureOneCollapsing(rootEdge, 0, true, mt);
-  const auto m2 = dd.measureOneCollapsing(rootEdge, 1, true, mt);
+  const auto m1 = dd.measureOneCollapsing(rootEdge, 0, mt);
+  const auto m2 = dd.measureOneCollapsing(rootEdge, 1, mt);
   EXPECT_EQ(m1, m2);
 }
 

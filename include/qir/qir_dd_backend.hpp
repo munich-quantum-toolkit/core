@@ -98,7 +98,6 @@ public:
       instance.numQubitsInQState = 0;
       instance.dd.decRef(instance.qState);
       instance.qState = dd::vEdge::one();
-      instance.dd.incRef(instance.qState);
       instance.dd.garbageCollect();
       instance.mt.seed(generateRandomSeed());
       instance.qRegister.clear();
