@@ -121,15 +121,13 @@ auto QIR_DD_Backend::createOperation(
   throw std::invalid_argument(ss.str());
 }
 
-auto QIR_DD_Backend::enlargeState(const qc::StandardOperation& operation)
-    -> void {
-  const auto& qubits = operation.getUsedQubits();
-  if (const auto maxTarget = *std::max_element(qubits.cbegin(), qubits.cend());
-      maxTarget >= numQubitsInQState) {
-    const auto d = maxTarget - numQubitsInQState + 1;
+auto QIR_DD_Backend::enlargeState(const std::uint64_t maxQubit) -> void {
+  if (maxQubit >= numQubitsInQState) {
+    const auto d = maxQubit - numQubitsInQState + 1;
     numQubitsInQState += d;
     dd.resize(numQubitsInQState);
-    const auto tmp = dd.kronecker(qState, dd.makeZeroState(d), d);
+    const auto tmp =
+        dd.kronecker(dd.makeZeroState(d), qState, numQubitsInQState);
     dd.incRef(tmp);
     dd.decRef(qState);
     qState = tmp;
@@ -141,38 +139,25 @@ auto QIR_DD_Backend::apply(const qc::OpType op,
                            std::array<double, P_NUM> params,
                            std::array<const Qubit*, SIZE> qubits) -> void {
   const auto& operation = createOperation<P_NUM, SIZE>(op, params, qubits);
-  enlargeState(operation);
-  auto tmp = qState;
+  const auto& usedQubits = operation.getUsedQubits();
+  enlargeState(*usedQubits.crbegin());
   if (operation.getType() == qc::Reset) {
-    for (const auto qubit : operation.getUsedQubits()) {
-      // apply an X operation whenever the measured result is one
-      if (const auto bit = dd.measureOneCollapsing(
-              qState, static_cast<dd::Qubit>(qubit), true, mt);
-          bit == '1') {
-        const auto x = qc::StandardOperation(qubit, qc::X);
-        tmp = dd.multiply(getDD(&x, dd), tmp);
-      }
-    }
+    qState = dd::applyReset(&operation, qState, dd, mt);
   } else {
-    const auto& matrix = getDD(&operation, dd);
-    tmp = dd.multiply(matrix, tmp);
+    qState = dd::applyUnitaryOperation(&operation, qState, dd);
   }
-  dd.incRef(tmp);
-  dd.decRef(qState);
-  qState = tmp;
-  dd.garbageCollect();
 }
 
 template <size_t SIZE>
 auto QIR_DD_Backend::measure(std::array<const Qubit*, SIZE> qubits,
                              std::array<Result*, SIZE> results) -> void {
-  const qc::StandardOperation& measure =
-      createOperation<0, SIZE>(qc::Measure, {}, qubits);
-  enlargeState(measure);
+  const auto& targets = translateAddresses(qubits);
+  const auto maxQubit = *std::max_element(targets.cbegin(), targets.cend());
+  enlargeState(maxQubit);
   // measure qubits
   for (size_t i = 0; i < SIZE; ++i) {
-    const auto q = static_cast<dd::Qubit>(measure.getTargets()[i]);
-    const auto& result = dd.measureOneCollapsing(qState, q, true, mt);
+    const auto q = static_cast<dd::Qubit>(targets[i]);
+    const auto& result = dd.measureOneCollapsing(qState, q, mt);
     deref(results[i]).r = result == '1';
   }
 }

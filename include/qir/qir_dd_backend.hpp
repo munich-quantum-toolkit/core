@@ -84,7 +84,7 @@ private:
   auto createOperation(qc::OpType op, std::array<double, P_NUM> params,
                        std::array<const Qubit*, SIZE> qubits)
       -> qc::StandardOperation;
-  auto enlargeState(const qc::StandardOperation& operation) -> void;
+  auto enlargeState(std::uint64_t maxQubit) -> void;
 
 public:
   [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
