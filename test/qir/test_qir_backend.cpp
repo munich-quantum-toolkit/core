@@ -19,8 +19,8 @@ class QIRDDBackendTest : public ::testing::Test {
 protected:
   std::stringstream buffer;
   std::streambuf* old = nullptr;
-  // void SetUp() override { old = std::cout.rdbuf(buffer.rdbuf()); }
-  // void TearDown() override { std::cout.rdbuf(old); }
+  void SetUp() override { old = std::cout.rdbuf(buffer.rdbuf()); }
+  void TearDown() override { std::cout.rdbuf(old); }
 };
 
 TEST(DDPackageTest, BellPair) {
