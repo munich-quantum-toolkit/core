@@ -10,6 +10,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <ostream>
 #include <random>
 #include <string>
@@ -81,8 +82,8 @@ private:
   explicit QIR_DD_Backend(uint64_t randomSeed);
 
   template <size_t P_NUM, size_t SIZE>
-  auto createOperation(qc::OpType op, std::array<double, P_NUM> params,
-                       std::array<const Qubit*, SIZE> qubits)
+  static auto createOperation(qc::OpType op, std::array<double, P_NUM> params,
+                              std::array<const Qubit*, SIZE> qubits)
       -> qc::StandardOperation;
   auto enlargeState(std::uint64_t maxQubit) -> void;
 

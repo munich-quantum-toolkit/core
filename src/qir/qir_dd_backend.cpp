@@ -4,6 +4,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
+#include "dd/Package.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
@@ -15,6 +16,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <iostream>
+#include <memory>
 #include <random>
 #include <sstream>
 #include <stdexcept>
