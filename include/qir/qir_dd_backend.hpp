@@ -14,6 +14,7 @@
 #include <ostream>
 #include <random>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -55,39 +56,54 @@ namespace mqt {
 
 class Utils {
 private:
-  template <typename Func, typename S, typename T, std::size_t... I>
+  template <typename Func, typename S, typename T, size_t... I>
   constexpr static void apply2Impl(Func&& func,
                                    std::array<S, sizeof...(I)>& arg1,
                                    std::array<T, sizeof...(I)>& arg2,
                                    std::index_sequence<I...> /*anonymous*/) {
     ((std::forward<Func>(func)(arg1[I], arg2[I])), ...);
   }
-  template <typename Func, typename S, typename T, std::size_t... I>
+  template <typename Func, typename S, typename T, size_t... I>
   constexpr static void apply2Impl(Func&& func,
                                    const std::array<S, sizeof...(I)>& arg1,
                                    std::array<T, sizeof...(I)>& arg2,
                                    std::index_sequence<I...> /*anonymous*/) {
     ((std::forward<Func>(func)(arg1[I], arg2[I])), ...);
   }
-  template <typename Func, typename S, typename T, std::size_t... I>
+  template <typename Func, typename S, typename T, size_t... I>
   constexpr static void apply2Impl(Func&& func,
                                    std::array<S, sizeof...(I)>& arg1,
                                    const std::array<T, sizeof...(I)>& arg2,
                                    std::index_sequence<I...> /*anonymous*/) {
     ((std::forward<Func>(func)(arg1[I], arg2[I])), ...);
   }
-  template <typename Func, typename S, typename T, std::size_t... I>
+  template <typename Func, typename S, typename T, size_t... I>
   constexpr static void apply2Impl(Func&& func,
                                    const std::array<S, sizeof...(I)>& arg1,
                                    const std::array<T, sizeof...(I)>& arg2,
                                    std::index_sequence<I...> /*anonymous*/) {
     ((std::forward<Func>(func)(arg1[I], arg2[I])), ...);
+  }
+  template <size_t I, size_t N, typename T, typename... Args>
+  constexpr static void fillArray(std::array<T, N>& arr, T head, Args... tail) {
+    arr[I] = head;
+    if constexpr (N - I > 1) {
+      fillArray<I + 1>(arr, tail...);
+    }
+  }
+  template <size_t N, typename T, typename... Args>
+  constexpr static auto skipFirstNArgs(T head, Args... tail) {
+    if constexpr (N == 0) {
+      return std::make_tuple<>(head, tail...);
+    } else {
+      return skipFirstNArgs<N - 1>(tail...);
+    }
   }
 
 public:
   /// Helper function to apply a function to each element of the array and store
   /// the result in another equally sized array.
-  template <typename Func, typename S, typename R, std::size_t N>
+  template <typename Func, typename S, typename R, size_t N>
   constexpr static void transform(Func&& func, std::array<S, N>& source,
                                   std::array<R, N>& result) {
     apply2(
@@ -98,7 +114,7 @@ public:
   }
   /// Helper function to apply a function to each element of the array and store
   /// the result in another equally sized array.
-  template <typename Func, typename S, typename R, std::size_t N>
+  template <typename Func, typename S, typename R, size_t N>
   constexpr static void transform(Func&& func, const std::array<S, N>& source,
                                   std::array<R, N>& result) {
     apply2(
@@ -110,7 +126,7 @@ public:
   /// Helper function to apply a function to each element of the array and store
   /// the result with the help of the store function in another equally sized
   /// array.
-  template <typename Func, typename S, typename T, std::size_t N>
+  template <typename Func, typename S, typename T, size_t N>
   constexpr static void apply2(Func&& func, std::array<S, N>& arg1,
                                std::array<T, N>& arg2) {
     apply2Impl(std::forward<Func>(func), arg1, arg2,
@@ -119,7 +135,7 @@ public:
   /// Helper function to apply a function to each element of the array and store
   /// the result with the help of the store function in another equally sized
   /// array.
-  template <typename Func, typename S, typename T, std::size_t N>
+  template <typename Func, typename S, typename T, size_t N>
   constexpr static void apply2(Func&& func, const std::array<S, N>& arg1,
                                std::array<T, N>& arg2) {
     apply2Impl(std::forward<Func>(func), arg1, arg2,
@@ -128,7 +144,7 @@ public:
   /// Helper function to apply a function to each element of the array and store
   /// the result with the help of the store function in another equally sized
   /// array.
-  template <typename Func, typename S, typename T, std::size_t N>
+  template <typename Func, typename S, typename T, size_t N>
   constexpr static void apply2(Func&& func, std::array<S, N>& arg1,
                                const std::array<T, N>& arg2) {
     apply2Impl(std::forward<Func>(func), arg1, arg2,
@@ -137,11 +153,29 @@ public:
   /// Helper function to apply a function to each element of the array and store
   /// the result with the help of the store function in another equally sized
   /// array.
-  template <typename Func, typename S, typename T, std::size_t N>
+  template <typename Func, typename S, typename T, size_t N>
   constexpr static void apply2(Func&& func, const std::array<S, N>& arg1,
                                const std::array<T, N>& arg2) {
     apply2Impl(std::forward<Func>(func), arg1, arg2,
                std::make_index_sequence<N>{});
+  }
+
+  template <size_t N, typename T, typename... Args>
+  constexpr static std::array<T, N> getFirstNArgs(Args... args) {
+    static_assert(sizeof...(args) >= N, "Not enough arguments provided");
+    std::array<T, N> arr = {};
+    if constexpr (N > 0) {
+      fillArray<0>(arr, args...);
+    }
+    return arr;
+  }
+  template <size_t M, size_t N, typename T, typename... Args>
+  constexpr static std::array<T, N> getNAfterMArgs(Args... args) {
+    static_assert(sizeof...(args) >= M + N, "Not enough arguments provided");
+    std::array<T, N> arr = {};
+    auto argsAfterM = skipFirstNArgs<M>(args...);
+    std::apply([&](auto... args2) { fillArray<0>(arr, args2...); }, argsAfterM);
+    return arr;
   }
 };
 /**
@@ -174,9 +208,9 @@ private:
   explicit QIR_DD_Backend(uint64_t randomSeed);
 
   template <size_t P_NUM, size_t SIZE>
-  auto createOperation(qc::OpType op, std::array<double, P_NUM> params,
-                       std::array<const Qubit*, SIZE> qubits)
-      -> qc::StandardOperation;
+  auto
+  createOperation(qc::OpType op, std::array<double, P_NUM> params,
+                  std::array<Qubit*, SIZE> qubits) -> qc::StandardOperation;
   auto enlargeState(std::uint64_t maxQubit) -> void;
 
 public:
@@ -210,23 +244,15 @@ public:
   QIR_DD_Backend(QIR_DD_Backend&&) = delete;
   QIR_DD_Backend& operator=(QIR_DD_Backend&&) = delete;
 
-  template <size_t P_NUM, size_t SIZE>
-  auto apply(qc::OpType op, std::array<double, P_NUM> params,
-             std::array<const Qubit*, SIZE> qubits) -> void;
+  template <typename... Args> auto apply(qc::OpType op, Args... args) -> void;
   template <size_t SIZE>
-  auto apply(const qc::OpType op,
-             std::array<const Qubit*, SIZE> qubits) -> void {
-    apply<0, SIZE>(op, {}, qubits);
-  }
-  template <size_t SIZE>
-  auto measure(std::array<const Qubit*, SIZE> qubits,
+  auto measure(std::array<Qubit*, SIZE> qubits,
                std::array<Result*, SIZE> results) -> void;
-  template <size_t SIZE>
-  auto reset(std::array<const Qubit*, SIZE> qubits) -> void;
+  template <size_t SIZE> auto reset(std::array<Qubit*, SIZE> qubits) -> void;
   auto qAlloc() -> Qubit*;
   auto qFree(Qubit* qubit) -> void;
   template <size_t SIZE>
-  auto translateAddresses(std::array<const Qubit*, SIZE> qubits)
+  auto translateAddresses(std::array<Qubit*, SIZE> qubits)
       -> std::array<qc::Qubit, SIZE>;
 
   auto rAlloc() -> Result*;

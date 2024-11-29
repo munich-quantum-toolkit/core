@@ -108,7 +108,7 @@ String* __quantum__rt__result_to_string(Result*);
 String* __quantum__rt__pauli_to_string(Pauli);
 
 /// Returns a string representation of the qubit.
-String* __quantum__rt__qubit_to_string(const Qubit*);
+String* __quantum__rt__qubit_to_string(Qubit*);
 
 /// Returns a string representation of the range.
 String* __quantum__rt__range_to_string(Range);
