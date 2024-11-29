@@ -15,6 +15,7 @@
 #include <random>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -58,17 +59,11 @@ class Utils {
 private:
   template <typename Func, typename S, typename T, size_t... I>
   constexpr static void
-  apply2Impl(Func&& func, std::array<S, sizeof...(I)>& arg1,
-             std::array<T, sizeof...(I)>& arg2,
+  apply2Impl(Func&& func, S&& arg1, T&& arg2,
              [[maybe_unused]] std::index_sequence<I...> _) {
-    ((std::forward<Func>(func)(arg1[I], arg2[I])), ...);
-  }
-  template <typename Func, typename S, typename T, size_t... I>
-  constexpr static void
-  apply2Impl(Func&& func, const std::array<S, sizeof...(I)>& arg1,
-             std::array<T, sizeof...(I)>& arg2,
-             [[maybe_unused]] std::index_sequence<I...> _) {
-    ((std::forward<Func>(func)(arg1[I], arg2[I])), ...);
+    ((std::forward<Func>(func)(std::forward<S>(arg1)[I],
+                               std::forward<T>(arg2)[I])),
+     ...);
   }
   template <size_t I, size_t N, typename T, typename... Args>
   constexpr static void fillArray(std::array<T, N>& arr, T head, Args... tail) {
@@ -89,33 +84,30 @@ private:
 public:
   /// Helper function to apply a function to each element of the array and store
   /// the result in another equally sized array.
-  template <typename Func, typename S, typename R, size_t N>
-  constexpr static void transform(Func&& func, std::array<S, N>& source,
-                                  std::array<R, N>& result) {
+  template <typename Func, typename S, typename R>
+  constexpr static void transform(Func&& func, S&& source, R&& result) {
     apply2(
         [&func](auto value, auto&& container) {
           container =
               std::forward<Func>(func)(std::forward<decltype(value)>(value));
         },
-        source, result);
+        std::forward<S>(source), std::forward<R>(result));
   }
   /// Helper function to apply a function to each element of the array and store
   /// the result with the help of the store function in another equally sized
   /// array.
-  template <typename Func, typename S, typename T, size_t N>
-  constexpr static void apply2(Func&& func, std::array<S, N>& arg1,
-                               std::array<T, N>& arg2) {
-    apply2Impl(std::forward<Func>(func), arg1, arg2,
-               std::make_index_sequence<N>{});
+  template <typename Func, typename S, typename T>
+  constexpr static void apply2(Func&& func, S&& arg1, T&& arg2) {
+    static_assert(std::is_array_v<S>, "First argument must be an array");
+    static_assert(std::is_array_v<T>, "Second argument must be an array");
+    static_assert(std::extent_v<std::remove_reference_t<S>> ==
+                      std::extent_v<std::remove_reference_t<T>>,
+                  "Both arrays must have the same size");
+    constexpr auto n = std::extent_v<std::remove_reference_t<S>>;
+    apply2Impl(std::forward<Func>(func), std::forward<S>(arg1),
+               std::forward<T>(arg2), std::make_index_sequence<n>{});
   }
-
-  template <typename Func, typename S, typename T, size_t N>
-  constexpr static void apply2(Func&& func, const std::array<S, N>& arg1,
-                               std::array<T, N>& arg2) {
-    apply2Impl(std::forward<Func>(func), arg1, arg2,
-               std::make_index_sequence<N>{});
-  }
-  // todo: docstring
+  /// To retrieve the first N arguments of a variadic template pack as an array.
   template <size_t N, typename T, typename... Args>
   constexpr static std::array<T, N> getFirstNArgs(Args... args) {
     static_assert(sizeof...(args) >= N, "Not enough arguments provided");
@@ -125,7 +117,8 @@ public:
     }
     return arr;
   }
-  // todo: docstring
+  /// To skip the first M arguments of a variadic template pack and retrieve the
+  /// following N arguments as an array.
   template <size_t M, size_t N, typename T, typename... Args>
   constexpr static std::array<T, N> getNAfterMArgs(Args... args) {
     static_assert(sizeof...(args) >= M + N, "Not enough arguments provided");
