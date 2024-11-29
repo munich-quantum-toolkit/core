@@ -160,13 +160,13 @@ auto QIR_DD_Backend::measure(std::array<const Qubit*, SIZE> qubits,
   const auto maxQubit = *std::max_element(targets.cbegin(), targets.cend());
   enlargeState(maxQubit);
   // measure qubits
-  Utils::transformStore(
-      [&](const auto q) {
+  Utils::apply2(
+      [&](const auto q, auto& r) {
         const auto& result =
             dd->measureOneCollapsing(qState, static_cast<dd::Qubit>(q), mt);
-        return result == '1';
+        deref(r).r = result == '1';
       },
-      [&](auto& r, const auto v) { return deref(r).r = v; }, targets, results);
+      targets, results);
 }
 
 template <size_t SIZE>
