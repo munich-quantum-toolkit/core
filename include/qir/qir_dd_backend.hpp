@@ -57,31 +57,17 @@ namespace mqt {
 class Utils {
 private:
   template <typename Func, typename S, typename T, size_t... I>
-  constexpr static void apply2Impl(Func&& func,
-                                   std::array<S, sizeof...(I)>& arg1,
-                                   std::array<T, sizeof...(I)>& arg2,
-                                   std::index_sequence<I...> /*anonymous*/) {
+  constexpr static void
+  apply2Impl(Func&& func, std::array<S, sizeof...(I)>& arg1,
+             std::array<T, sizeof...(I)>& arg2,
+             [[maybe_unused]] std::index_sequence<I...> _) {
     ((std::forward<Func>(func)(arg1[I], arg2[I])), ...);
   }
   template <typename Func, typename S, typename T, size_t... I>
-  constexpr static void apply2Impl(Func&& func,
-                                   const std::array<S, sizeof...(I)>& arg1,
-                                   std::array<T, sizeof...(I)>& arg2,
-                                   std::index_sequence<I...> /*anonymous*/) {
-    ((std::forward<Func>(func)(arg1[I], arg2[I])), ...);
-  }
-  template <typename Func, typename S, typename T, size_t... I>
-  constexpr static void apply2Impl(Func&& func,
-                                   std::array<S, sizeof...(I)>& arg1,
-                                   const std::array<T, sizeof...(I)>& arg2,
-                                   std::index_sequence<I...> /*anonymous*/) {
-    ((std::forward<Func>(func)(arg1[I], arg2[I])), ...);
-  }
-  template <typename Func, typename S, typename T, size_t... I>
-  constexpr static void apply2Impl(Func&& func,
-                                   const std::array<S, sizeof...(I)>& arg1,
-                                   const std::array<T, sizeof...(I)>& arg2,
-                                   std::index_sequence<I...> /*anonymous*/) {
+  constexpr static void
+  apply2Impl(Func&& func, const std::array<S, sizeof...(I)>& arg1,
+             std::array<T, sizeof...(I)>& arg2,
+             [[maybe_unused]] std::index_sequence<I...> _) {
     ((std::forward<Func>(func)(arg1[I], arg2[I])), ...);
   }
   template <size_t I, size_t N, typename T, typename... Args>
@@ -107,19 +93,9 @@ public:
   constexpr static void transform(Func&& func, std::array<S, N>& source,
                                   std::array<R, N>& result) {
     apply2(
-        [&func](auto& value, auto& container) {
-          container = std::forward<Func>(func)(value);
-        },
-        source, result);
-  }
-  /// Helper function to apply a function to each element of the array and store
-  /// the result in another equally sized array.
-  template <typename Func, typename S, typename R, size_t N>
-  constexpr static void transform(Func&& func, const std::array<S, N>& source,
-                                  std::array<R, N>& result) {
-    apply2(
-        [&func](auto& value, auto& container) {
-          container = std::forward<Func>(func)(value);
+        [&func](auto value, auto&& container) {
+          container =
+              std::forward<Func>(func)(std::forward<decltype(value)>(value));
         },
         source, result);
   }
@@ -129,37 +105,17 @@ public:
   template <typename Func, typename S, typename T, size_t N>
   constexpr static void apply2(Func&& func, std::array<S, N>& arg1,
                                std::array<T, N>& arg2) {
-    apply2Impl(std::forward<Func>(func), arg1, arg2,
-               std::make_index_sequence<N>{});
-  }
-  /// Helper function to apply a function to each element of the array and store
-  /// the result with the help of the store function in another equally sized
-  /// array.
-  template <typename Func, typename S, typename T, size_t N>
-  constexpr static void apply2(Func&& func, const std::array<S, N>& arg1,
-                               std::array<T, N>& arg2) {
-    apply2Impl(std::forward<Func>(func), arg1, arg2,
-               std::make_index_sequence<N>{});
-  }
-  /// Helper function to apply a function to each element of the array and store
-  /// the result with the help of the store function in another equally sized
-  /// array.
-  template <typename Func, typename S, typename T, size_t N>
-  constexpr static void apply2(Func&& func, std::array<S, N>& arg1,
-                               const std::array<T, N>& arg2) {
-    apply2Impl(std::forward<Func>(func), arg1, arg2,
-               std::make_index_sequence<N>{});
-  }
-  /// Helper function to apply a function to each element of the array and store
-  /// the result with the help of the store function in another equally sized
-  /// array.
-  template <typename Func, typename S, typename T, size_t N>
-  constexpr static void apply2(Func&& func, const std::array<S, N>& arg1,
-                               const std::array<T, N>& arg2) {
     apply2Impl(std::forward<Func>(func), arg1, arg2,
                std::make_index_sequence<N>{});
   }
 
+  template <typename Func, typename S, typename T, size_t N>
+  constexpr static void apply2(Func&& func, const std::array<S, N>& arg1,
+                               std::array<T, N>& arg2) {
+    apply2Impl(std::forward<Func>(func), arg1, arg2,
+               std::make_index_sequence<N>{});
+  }
+  // todo: docstring
   template <size_t N, typename T, typename... Args>
   constexpr static std::array<T, N> getFirstNArgs(Args... args) {
     static_assert(sizeof...(args) >= N, "Not enough arguments provided");
@@ -169,6 +125,7 @@ public:
     }
     return arr;
   }
+  // todo: docstring
   template <size_t M, size_t N, typename T, typename... Args>
   constexpr static std::array<T, N> getNAfterMArgs(Args... args) {
     static_assert(sizeof...(args) >= M + N, "Not enough arguments provided");
