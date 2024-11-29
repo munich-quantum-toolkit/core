@@ -22,6 +22,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -75,9 +76,9 @@ auto QIR_DD_Backend::translateAddresses(std::array<Qubit*, SIZE> qubits)
             }
           },
           qubits, qubitIds);
-    } catch (std::out_of_range& e) {
+    } catch (std::out_of_range&) {
       if (addressMode == AddressMode::DYNAMIC) {
-        throw e; // rethrow
+        throw; // rethrow
       }
       // addressMode == AddressMode::UNKNOWN
       addressMode = AddressMode::STATIC;
@@ -94,10 +95,20 @@ auto QIR_DD_Backend::translateAddresses(std::array<Qubit*, SIZE> qubits)
   return qubitIds;
 }
 
-template <size_t P_NUM, size_t SIZE>
-auto QIR_DD_Backend::createOperation(
-    qc::OpType op, std::array<double, P_NUM> params,
-    std::array<Qubit*, SIZE> qubits) -> qc::StandardOperation {
+template <typename... Args>
+auto QIR_DD_Backend::createOperation(qc::OpType op,
+                                     Args&... args) -> qc::StandardOperation {
+  constexpr auto nParams =
+      (std::is_same_v<qc::fp,
+                      std::remove_const_t<std::remove_reference_t<Args>>> +
+       ...);
+  constexpr auto nQubits =
+      (std::is_same_v<Qubit*,
+                      std::remove_const_t<std::remove_reference_t<Args>>> +
+       ...);
+  const auto params = Utils::getFirstNArgs<nParams, qc::fp>(args...);
+  const auto qubits = Utils::getNAfterMArgs<nParams, nQubits, Qubit*>(args...);
+
   const auto& addresses = translateAddresses(qubits);
   // store parameters into vector
   const std::vector<qc::fp> paramVec(params.cbegin(), params.cend());
@@ -113,20 +124,20 @@ auto QIR_DD_Backend::createOperation(
        << ": Operation type is not known: " << toString(op);
     throw std::invalid_argument(ss.str());
   }
-  if (SIZE > t) { // create controlled operation
+  if (nQubits > t) { // create controlled operation
     const auto& controls =
         qc::Controls(addresses.cbegin(), addresses.cend() - t);
     const auto& targets = qc::Targets(addresses.cbegin() + t, addresses.cend());
     return {controls, targets, op, paramVec};
   }
-  if (SIZE == t) { // create uncontrolled operation
+  if (nQubits == t) { // create uncontrolled operation
     const auto& targets = qc::Targets(addresses.cbegin(), addresses.cend());
     return {targets, op, paramVec};
   }
   std::stringstream ss;
   ss << __FILE__ << ":" << __LINE__
      << ": Operation requires more qubits than given (" << toString(op)
-     << "): " << SIZE;
+     << "): " << nQubits;
   throw std::invalid_argument(ss.str());
 }
 
@@ -144,13 +155,8 @@ auto QIR_DD_Backend::enlargeState(const std::uint64_t maxQubit) -> void {
 }
 
 template <typename... Args>
-auto QIR_DD_Backend::apply(const qc::OpType op, Args... args) -> void {
-  constexpr auto nParams = (std::is_same_v<qc::fp, Args> + ...);
-  constexpr auto nQubits = (std::is_same_v<Qubit*, Args> + ...);
-  const auto params = Utils::getFirstNArgs<nParams, qc::fp>(args...);
-  const auto qubits = Utils::getNAfterMArgs<nParams, nQubits, Qubit*>(args...);
-
-  const auto& operation = createOperation<nParams, nQubits>(op, params, qubits);
+auto QIR_DD_Backend::apply(const qc::OpType op, Args&&... args) -> void {
+  const auto& operation = createOperation(op, std::forward<Args>(args)...);
   const auto& usedQubits = operation.getUsedQubits();
   enlargeState(*usedQubits.crbegin());
   qState = dd::applyUnitaryOperation(&operation, qState, *dd);

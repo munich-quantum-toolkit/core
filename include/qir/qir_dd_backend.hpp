@@ -57,6 +57,9 @@ namespace mqt {
 
 class Utils {
 private:
+  template <typename T> constexpr static bool is_std_array_v = false;
+  template <typename T, std::size_t N>
+  constexpr static bool is_std_array_v<std::array<T, N>> = true;
   template <typename Func, typename S, typename T, size_t... I>
   constexpr static void
   apply2Impl(Func&& func, S&& arg1, T&& arg2,
@@ -75,7 +78,7 @@ private:
   template <size_t N, typename T, typename... Args>
   constexpr static auto skipFirstNArgs(T head, Args... tail) {
     if constexpr (N == 0) {
-      return std::make_tuple<>(head, tail...);
+      return std::make_tuple(head, tail...);
     } else {
       return skipFirstNArgs<N - 1>(tail...);
     }
@@ -86,6 +89,7 @@ public:
   /// the result in another equally sized array.
   template <typename Func, typename S, typename R>
   constexpr static void transform(Func&& func, S&& source, R&& result) {
+    static_assert(!std::is_const_v<R>, "Result array must not be const");
     apply2(
         [&func](auto value, auto&& container) {
           container =
@@ -98,12 +102,18 @@ public:
   /// array.
   template <typename Func, typename S, typename T>
   constexpr static void apply2(Func&& func, S&& arg1, T&& arg2) {
-    static_assert(std::is_array_v<S>, "First argument must be an array");
-    static_assert(std::is_array_v<T>, "Second argument must be an array");
-    static_assert(std::extent_v<std::remove_reference_t<S>> ==
-                      std::extent_v<std::remove_reference_t<T>>,
-                  "Both arrays must have the same size");
-    constexpr auto n = std::extent_v<std::remove_reference_t<S>>;
+    static_assert(
+        is_std_array_v<std::remove_const_t<std::remove_reference_t<S>>>,
+        "Second argument must be an array");
+    static_assert(
+        is_std_array_v<std::remove_const_t<std::remove_reference_t<T>>>,
+        "Third argument must be an array");
+    static_assert(
+        std::extent_v<std::remove_const_t<std::remove_reference_t<S>>> ==
+            std::extent_v<std::remove_const_t<std::remove_reference_t<T>>>,
+        "Both arrays must have the same size");
+    constexpr auto n =
+        std::extent_v<std::remove_const_t<std::remove_reference_t<S>>>;
     apply2Impl(std::forward<Func>(func), std::forward<S>(arg1),
                std::forward<T>(arg2), std::make_index_sequence<n>{});
   }
@@ -157,10 +167,8 @@ private:
   QIR_DD_Backend();
   explicit QIR_DD_Backend(uint64_t randomSeed);
 
-  template <size_t P_NUM, size_t SIZE>
-  auto
-  createOperation(qc::OpType op, std::array<double, P_NUM> params,
-                  std::array<Qubit*, SIZE> qubits) -> qc::StandardOperation;
+  template <typename... Args>
+  auto createOperation(qc::OpType op, Args&... args) -> qc::StandardOperation;
   auto enlargeState(std::uint64_t maxQubit) -> void;
 
 public:
@@ -194,7 +202,7 @@ public:
   QIR_DD_Backend(QIR_DD_Backend&&) = delete;
   QIR_DD_Backend& operator=(QIR_DD_Backend&&) = delete;
 
-  template <typename... Args> auto apply(qc::OpType op, Args... args) -> void;
+  template <typename... Args> auto apply(qc::OpType op, Args&&... args) -> void;
   template <size_t SIZE>
   auto measure(std::array<Qubit*, SIZE> qubits,
                std::array<Result*, SIZE> results) -> void;
