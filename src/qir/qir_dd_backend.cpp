@@ -106,8 +106,8 @@ auto QIR_DD_Backend::createOperation(qc::OpType op,
       (std::is_same_v<Qubit*,
                       std::remove_const_t<std::remove_reference_t<Args>>> +
        ...);
-  const auto params = Utils::getFirstNArgs<nParams, qc::fp>(args...);
-  const auto qubits = Utils::getNAfterMArgs<nParams, nQubits, Qubit*>(args...);
+  const auto& params = Utils::getFirstNArgs<nParams, qc::fp>(args...);
+  const auto& qubits = Utils::getNAfterMArgs<nParams, nQubits, Qubit*>(args...);
 
   const auto& addresses = translateAddresses(qubits);
   // store parameters into vector
@@ -162,9 +162,20 @@ auto QIR_DD_Backend::apply(const qc::OpType op, Args&&... args) -> void {
   qState = dd::applyUnitaryOperation(&operation, qState, *dd);
 }
 
-template <size_t SIZE>
-auto QIR_DD_Backend::measure(std::array<Qubit*, SIZE> qubits,
-                             std::array<Result*, SIZE> results) -> void {
+template <typename... Args> auto QIR_DD_Backend::measure(Args... args) -> void {
+  constexpr auto nQubits =
+      (std::is_same_v<Qubit*,
+                      std::remove_const_t<std::remove_reference_t<Args>>> +
+       ...);
+  constexpr auto nResults =
+      (std::is_same_v<Result*,
+                      std::remove_const_t<std::remove_reference_t<Args>>> +
+       ...);
+  static_assert(nQubits == nResults,
+                "Number of qubits and results must match.");
+  const auto& qubits = Utils::getFirstNArgs<nQubits, Qubit*>(args...);
+  const auto& results =
+      Utils::getNAfterMArgs<nQubits, nResults, Result*>(args...);
   const auto& targets = translateAddresses(qubits);
   const auto maxQubit = *std::max_element(targets.cbegin(), targets.cend());
   enlargeState(maxQubit);
@@ -912,7 +923,7 @@ void __quantum__qis__ccz__body(Qubit* control1, Qubit* control2,
 
 void __quantum__qis__mz__body(Qubit* qubit, Result* result) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
-  backend.measure<1>({qubit}, {result});
+  backend.measure(qubit, result);
 }
 
 Result* __quantum__qis__m__body(Qubit* qubit) {

@@ -203,9 +203,7 @@ public:
   QIR_DD_Backend& operator=(QIR_DD_Backend&&) = delete;
 
   template <typename... Args> auto apply(qc::OpType op, Args&&... args) -> void;
-  template <size_t SIZE>
-  auto measure(std::array<Qubit*, SIZE> qubits,
-               std::array<Result*, SIZE> results) -> void;
+  template <typename... Args> auto measure(Args... args) -> void;
   template <size_t SIZE> auto reset(std::array<Qubit*, SIZE> qubits) -> void;
   auto qAlloc() -> Qubit*;
   auto qFree(Qubit* qubit) -> void;
