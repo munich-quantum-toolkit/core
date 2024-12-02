@@ -23,7 +23,7 @@
 
 struct BigIntImpl {
   int32_t refcount;
-  int64_t i;
+  // todo
 };
 /// @note this struct is purposefully not called ResultImpl to leave the Result
 /// pointer opaque such that it cannot be dereferenced
@@ -41,7 +41,8 @@ struct StringImpl {
 };
 struct TupleImpl {
   int32_t refcount;
-  // todo
+  int32_t aliasCount;
+  std::vector<int8_t> data;
 };
 struct ArrayImpl {
   int32_t refcount;

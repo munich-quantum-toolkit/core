@@ -559,34 +559,50 @@ bool __quantum__rt__bigint_greater_eq(BigInt* /*unused*/, BigInt* /*unused*/) {
 }
 
 // *** TUPLES ***
-Tuple* __quantum__rt__tuple_create(int64_t /*unused*/) {
-  std::stringstream ss;
-  ss << __FILE__ << ":" << __LINE__ << ": " << __FUNCTION__
-     << " not implemented.";
-  __quantum__rt__fail(__quantum__rt__string_create(ss.str().c_str()));
+Tuple* __quantum__rt__tuple_create(const int64_t size) {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* tuple = new Tuple;
+  tuple->refcount = 1;
+  tuple->aliasCount = 0;
+  tuple->data = std::vector<int8_t>(static_cast<size_t>(size), 0);
+  return tuple;
 }
 
-Tuple* __quantum__rt__tuple_copy(Tuple* /*unused*/, bool /*unused*/) {
-  std::stringstream ss;
-  ss << __FILE__ << ":" << __LINE__ << ": " << __FUNCTION__
-     << " not implemented.";
-  __quantum__rt__fail(__quantum__rt__string_create(ss.str().c_str()));
+Tuple* __quantum__rt__tuple_copy(Tuple* tuple, const bool shallow) {
+  if (tuple == nullptr) {
+    throw std::invalid_argument("The first argument must not be null.");
+  }
+  if (tuple->aliasCount > 0 || shallow) {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* copy = new Tuple;
+    copy->refcount = 1;
+    copy->aliasCount = 0;
+    copy->data = tuple->data;
+    return copy;
+  }
+  tuple->refcount++;
+  return tuple;
 }
 
-void __quantum__rt__tuple_update_reference_count(Tuple* /*unused*/,
-                                                 int32_t /*unused*/) {
-  std::stringstream ss;
-  ss << __FILE__ << ":" << __LINE__ << ": " << __FUNCTION__
-     << " not implemented.";
-  __quantum__rt__fail(__quantum__rt__string_create(ss.str().c_str()));
+void __quantum__rt__tuple_update_reference_count(Tuple* tuple,
+                                                 const int32_t k) {
+  if (tuple != nullptr) {
+    tuple->refcount += k;
+    if (tuple->refcount == 0) {
+      // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+      delete tuple;
+    }
+  }
 }
 
-void __quantum__rt__tuple_update_alias_count(Tuple* /*unused*/,
-                                             int32_t /*unused*/) {
-  std::stringstream ss;
-  ss << __FILE__ << ":" << __LINE__ << ": " << __FUNCTION__
-     << " not implemented.";
-  __quantum__rt__fail(__quantum__rt__string_create(ss.str().c_str()));
+void __quantum__rt__tuple_update_alias_count(Tuple* tuple, const int32_t k) {
+  if (tuple != nullptr) {
+    tuple->aliasCount += k;
+    if (tuple->aliasCount < 0) {
+      throw std::invalid_argument("Alias count must be positive: " +
+                                  std::to_string(tuple->aliasCount));
+    }
+  }
 }
 
 // *** ARRAYS ***
@@ -612,24 +628,74 @@ Array* __quantum__rt__array_copy(Array* array, const bool shallow) {
     copy->aliasCount = 0;
     copy->data = array->data;
     copy->elementSize = array->elementSize;
+    return copy;
   }
   array->refcount++;
   return array;
 }
 
-Array* __quantum__rt__array_concatenate(Array* /*unused*/, Array* /*unused*/) {
-  std::stringstream ss;
-  ss << __FILE__ << ":" << __LINE__ << ": " << __FUNCTION__
-     << " not implemented.";
-  __quantum__rt__fail(__quantum__rt__string_create(ss.str().c_str()));
+Array* __quantum__rt__array_concatenate(Array* left, Array* right) {
+  if (left == nullptr) {
+    throw std::invalid_argument("The first argument must not be null.");
+  }
+  if (right == nullptr) {
+    throw std::invalid_argument("The second argument must not be null.");
+  }
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* array = new Array;
+  array->refcount = 1;
+  array->aliasCount = 0;
+  array->data = std::vector<int8_t>();
+  array->data.reserve(left->data.size() + right->data.size());
+  std::copy(left->data.cbegin(), left->data.cend(), array->data.begin());
+  std::copy(
+      right->data.cbegin(), right->data.cend(),
+      array->data.begin() +
+          static_cast<std::vector<int8_t>::difference_type>(left->data.size()));
+  return array;
 }
 
-Array* __quantum__rt__array_slice_1d(Array* /*unused*/, Range /*unused*/,
-                                     bool /*unused*/) {
-  std::stringstream ss;
-  ss << __FILE__ << ":" << __LINE__ << ": " << __FUNCTION__
-     << " not implemented.";
-  __quantum__rt__fail(__quantum__rt__string_create(ss.str().c_str()));
+Array* __quantum__rt__array_slice_1d(Array* array, Range slice,
+                                     const bool /*unused*/) {
+  if (array == nullptr) {
+    throw std::invalid_argument("The first argument must not be null.");
+  }
+  if (slice.start < 0) {
+    throw std::out_of_range("Slice start out of bounds (negative): " +
+                            std::to_string(slice.start));
+  }
+  if (slice.end < 0) {
+    throw std::out_of_range("Slice end out of bounds (negative): " +
+                            std::to_string(slice.end));
+  }
+  if (slice.start >= slice.end) {
+    throw std::invalid_argument("Slice start must be less than slice end: " +
+                                std::to_string(slice.start) +
+                                " >= " + std::to_string(slice.end));
+  }
+  if (slice.start >= __quantum__rt__array_get_size_1d(array)) {
+    throw std::out_of_range(
+        "Slice start out of bounds (size: " +
+        std::to_string(__quantum__rt__array_get_size_1d(array)) +
+        "): " + std::to_string(slice.start));
+  }
+  if (slice.end > __quantum__rt__array_get_size_1d(array)) {
+    throw std::out_of_range(
+        "Slice end out of bounds (size: " +
+        std::to_string(__quantum__rt__array_get_size_1d(array)) +
+        "): " + std::to_string(slice.end));
+  }
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* sliced = new Array;
+  sliced->refcount = 1;
+  sliced->aliasCount = 0;
+  sliced->elementSize = array->elementSize;
+  sliced->data = std::vector<int8_t>(
+      array->data.cbegin() + static_cast<std::vector<int8_t>::difference_type>(
+                                 array->elementSize * slice.start),
+      array->data.cbegin() + static_cast<std::vector<int8_t>::difference_type>(
+                                 array->elementSize * slice.end));
+  return sliced;
 }
 
 int64_t __quantum__rt__array_get_size_1d(const Array* array) {
