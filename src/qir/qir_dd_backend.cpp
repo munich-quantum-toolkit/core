@@ -22,6 +22,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+// ReSharper disable once CppUnusedIncludeDirective
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -98,16 +99,14 @@ auto QIR_DD_Backend::translateAddresses(std::array<Qubit*, SIZE> qubits)
 template <typename... Args>
 auto QIR_DD_Backend::createOperation(qc::OpType op,
                                      Args&... args) -> qc::StandardOperation {
-  constexpr auto nParams =
-      (std::is_same_v<qc::fp,
-                      std::remove_const_t<std::remove_reference_t<Args>>> +
-       ...);
-  constexpr auto nQubits =
-      (std::is_same_v<Qubit*,
-                      std::remove_const_t<std::remove_reference_t<Args>>> +
-       ...);
-  const auto& params = Utils::getFirstNArgs<nParams, qc::fp>(args...);
-  const auto& qubits = Utils::getNAfterMArgs<nParams, nQubits, Qubit*>(args...);
+  const auto& params = Utils::packOfType<qc::fp>(args...);
+  const auto& qubits = Utils::packOfType<Qubit*>(args...);
+  static_assert(
+      std::tuple_size_v<std::remove_reference_t<decltype(params)>> +
+              std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> ==
+          sizeof...(Args),
+      "Number of parameters and qubits must match the number of "
+      "arguments. Parameters must come first followed by the qubits.");
 
   const auto& addresses = translateAddresses(qubits);
   // store parameters into vector
@@ -124,20 +123,20 @@ auto QIR_DD_Backend::createOperation(qc::OpType op,
        << ": Operation type is not known: " << toString(op);
     throw std::invalid_argument(ss.str());
   }
-  if (nQubits > t) { // create controlled operation
+  if (qubits.size() > t) { // create controlled operation
     const auto& controls =
         qc::Controls(addresses.cbegin(), addresses.cend() - t);
     const auto& targets = qc::Targets(addresses.cbegin() + t, addresses.cend());
     return {controls, targets, op, paramVec};
   }
-  if (nQubits == t) { // create uncontrolled operation
+  if (qubits.size() == t) { // create uncontrolled operation
     const auto& targets = qc::Targets(addresses.cbegin(), addresses.cend());
     return {targets, op, paramVec};
   }
   std::stringstream ss;
   ss << __FILE__ << ":" << __LINE__
      << ": Operation requires more qubits than given (" << toString(op)
-     << "): " << nQubits;
+     << "): " << qubits.size();
   throw std::invalid_argument(ss.str());
 }
 
@@ -163,19 +162,19 @@ auto QIR_DD_Backend::apply(const qc::OpType op, Args&&... args) -> void {
 }
 
 template <typename... Args> auto QIR_DD_Backend::measure(Args... args) -> void {
-  constexpr auto nQubits =
-      (std::is_same_v<Qubit*,
-                      std::remove_const_t<std::remove_reference_t<Args>>> +
-       ...);
-  constexpr auto nResults =
-      (std::is_same_v<Result*,
-                      std::remove_const_t<std::remove_reference_t<Args>>> +
-       ...);
-  static_assert(nQubits == nResults,
-                "Number of qubits and results must match.");
-  const auto& qubits = Utils::getFirstNArgs<nQubits, Qubit*>(args...);
-  const auto& results =
-      Utils::getNAfterMArgs<nQubits, nResults, Result*>(args...);
+  const auto& qubits = Utils::packOfType<Qubit*>(args...);
+  const auto& results = Utils::packOfType<Result*>(args...);
+  static_assert(
+      std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> ==
+          std::tuple_size_v<std::remove_reference_t<decltype(results)>>,
+      "Number of qubits and results must match. First, all qubits followed "
+      "then by all results.");
+  static_assert(
+      std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> +
+              std::tuple_size_v<std::remove_reference_t<decltype(results)>> ==
+          sizeof...(Args),
+      "Number of qubits and results must match the number of arguments. First, "
+      "all qubits followed then by all results.");
   const auto& targets = translateAddresses(qubits);
   const auto maxQubit = *std::max_element(targets.cbegin(), targets.cend());
   enlargeState(maxQubit);

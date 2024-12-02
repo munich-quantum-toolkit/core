@@ -15,6 +15,7 @@
 #include <random>
 #include <string>
 #include <tuple>
+// ReSharper disable once CppUnusedIncludeDirective
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -55,13 +56,63 @@ struct CallablImpl {
 
 namespace mqt {
 
+// Primary template
+template <typename T> static constexpr bool IS_STD_ARRAY_V = false;
+// Specialization for std::array
+template <typename T, std::size_t N>
+static constexpr bool IS_STD_ARRAY_V<std::array<T, N>> = true;
+
+// Primary template
+template <typename T, typename... Args> struct SizeOfPackOfType;
+// Base case: no matching types
+template <typename T> struct SizeOfPackOfType<T> {
+  static constexpr size_t VALUE = 0;
+};
+// Recursive case: first type does not match
+template <typename T, typename U, typename... Args>
+struct SizeOfPackOfType<T, U, Args...> {
+  static constexpr size_t VALUE = SizeOfPackOfType<T>::VALUE;
+};
+// Recursive case: first type matches
+template <typename T, typename... Args> struct SizeOfPackOfType<T, T, Args...> {
+  static constexpr size_t VALUE = 1 + SizeOfPackOfType<T, Args...>::VALUE;
+};
+// Helper variable template
+template <typename T, typename... Args>
+static inline constexpr size_t SIZE_OF_PACK_OF_TYPE_V =
+    SizeOfPackOfType<T, Args...>::VALUE;
+
+// Primary template
+template <template <typename, typename...> class V, typename T,
+          typename... Args>
+struct SkipUntilType;
+// Base case: no matching types
+template <template <typename, typename...> class V, typename T>
+struct SkipUntilType<V, T> {
+  static constexpr size_t VALUE = 0;
+};
+// Recursive case: skip until T is found
+template <template <typename, typename...> class V, typename T, typename U,
+          typename... Args>
+struct SkipUntilType<V, T, U, Args...> {
+  static constexpr size_t VALUE = SkipUntilType<V, T, Args...>::VALUE;
+};
+// Recursive case: T is found
+template <template <typename, typename...> class V, typename T,
+          typename... Args>
+struct SkipUntilType<V, T, T, Args...> {
+  static constexpr size_t VALUE = V<T, T, Args...>::VALUE;
+};
+// Helper type template
+template <template <typename, typename...> class V, typename T,
+          typename... Args>
+static inline constexpr size_t SKIP_UNTIL_TYPE_V =
+    SkipUntilType<V, T, Args...>::VALUE;
+
 class Utils {
 private:
-  template <typename T> constexpr static bool is_std_array_v = false;
-  template <typename T, std::size_t N>
-  constexpr static bool is_std_array_v<std::array<T, N>> = true;
   template <typename Func, typename S, typename T, size_t... I>
-  constexpr static void
+  static constexpr void
   apply2Impl(Func&& func, S&& arg1, T&& arg2,
              [[maybe_unused]] std::index_sequence<I...> _) {
     ((std::forward<Func>(func)(std::forward<S>(arg1)[I],
@@ -69,18 +120,27 @@ private:
      ...);
   }
   template <size_t I, size_t N, typename T, typename... Args>
-  constexpr static void fillArray(std::array<T, N>& arr, T head, Args... tail) {
+  static constexpr void fillArray(std::array<T, N>& arr, T head, Args... tail) {
     arr[I] = head;
     if constexpr (N - I > 1) {
       fillArray<I + 1>(arr, tail...);
     }
   }
   template <size_t N, typename T, typename... Args>
-  constexpr static auto skipFirstNArgs(T head, Args... tail) {
+  static constexpr auto skipNArgs(T head, Args... tail) {
     if constexpr (N == 0) {
       return std::make_tuple(head, tail...);
     } else {
-      return skipFirstNArgs<N - 1>(tail...);
+      return skipNArgs<N - 1>(tail...);
+    }
+  }
+  template <typename T, typename Func, typename S, typename... Args>
+  static constexpr auto skipUntilType(Func&& func, S head, Args... tail) {
+    if constexpr (std::is_same_v<S, T>) {
+      return std::forward<Func>(func)(head, tail...);
+    } else {
+      static_assert(sizeof...(Args) > 0, "There is no argument of given type.");
+      skipUntilType<T>(std::forward<Func>(func), tail...);
     }
   }
 
@@ -88,10 +148,10 @@ public:
   /// Helper function to apply a function to each element of the array and store
   /// the result in another equally sized array.
   template <typename Func, typename S, typename R>
-  constexpr static void transform(Func&& func, S&& source, R&& result) {
+  static constexpr void transform(Func&& func, S&& source, R&& result) {
     static_assert(!std::is_const_v<R>, "Result array must not be const");
     apply2(
-        [&func](auto value, auto&& container) {
+        [&func](auto&& value, auto&& container) {
           container =
               std::forward<Func>(func)(std::forward<decltype(value)>(value));
         },
@@ -101,41 +161,35 @@ public:
   /// the result with the help of the store function in another equally sized
   /// array.
   template <typename Func, typename S, typename T>
-  constexpr static void apply2(Func&& func, S&& arg1, T&& arg2) {
+  static constexpr void apply2(Func&& func, S&& arg1, T&& arg2) {
+    static_assert(IS_STD_ARRAY_V<std::remove_cv_t<std::remove_reference_t<S>>>,
+                  "Second argument must be an array");
+    static_assert(IS_STD_ARRAY_V<std::remove_cv_t<std::remove_reference_t<T>>>,
+                  "Third argument must be an array");
     static_assert(
-        is_std_array_v<std::remove_const_t<std::remove_reference_t<S>>>,
-        "Second argument must be an array");
-    static_assert(
-        is_std_array_v<std::remove_const_t<std::remove_reference_t<T>>>,
-        "Third argument must be an array");
-    static_assert(
-        std::extent_v<std::remove_const_t<std::remove_reference_t<S>>> ==
-            std::extent_v<std::remove_const_t<std::remove_reference_t<T>>>,
+        std::tuple_size_v<std::remove_const_t<std::remove_reference_t<S>>> ==
+            std::tuple_size_v<std::remove_const_t<std::remove_reference_t<T>>>,
         "Both arrays must have the same size");
     constexpr auto n =
-        std::extent_v<std::remove_const_t<std::remove_reference_t<S>>>;
+        std::tuple_size_v<std::remove_cv_t<std::remove_reference_t<S>>>;
     apply2Impl(std::forward<Func>(func), std::forward<S>(arg1),
                std::forward<T>(arg2), std::make_index_sequence<n>{});
   }
-  /// To retrieve the first N arguments of a variadic template pack as an array.
-  template <size_t N, typename T, typename... Args>
-  constexpr static std::array<T, N> getFirstNArgs(Args... args) {
-    static_assert(sizeof...(args) >= N, "Not enough arguments provided");
-    std::array<T, N> arr = {};
-    if constexpr (N > 0) {
-      fillArray<0>(arr, args...);
+  template <typename T, typename... Args>
+  static constexpr std::array<
+      T, SKIP_UNTIL_TYPE_V<SizeOfPackOfType, T,
+                           std::remove_cv_t<std::remove_reference_t<Args>>...>>
+  packOfType(Args&&... args) {
+    decltype(packOfType<T>(std::declval<Args>()...)) array{};
+    if constexpr (array.size()) {
+      skipUntilType<T>(
+          [&array](auto&&... skippedArgs) {
+            fillArray<0>(array,
+                         std::forward<decltype(skippedArgs)>(skippedArgs)...);
+          },
+          std::forward<Args>(args)...);
     }
-    return arr;
-  }
-  /// To skip the first M arguments of a variadic template pack and retrieve the
-  /// following N arguments as an array.
-  template <size_t M, size_t N, typename T, typename... Args>
-  constexpr static std::array<T, N> getNAfterMArgs(Args... args) {
-    static_assert(sizeof...(args) >= M + N, "Not enough arguments provided");
-    std::array<T, N> arr = {};
-    auto argsAfterM = skipFirstNArgs<M>(args...);
-    std::apply([&](auto... args2) { fillArray<0>(arr, args2...); }, argsAfterM);
-    return arr;
+    return array;
   }
 };
 /**
