@@ -10,12 +10,16 @@ source_filename = "bell"
 define i32 @main() #0 {
 entry:
   call void @__quantum__rt__initialize(i8* null)
-  call void @__quantum__qis__h__body(%Qubit* null)
-  call void @__quantum__qis__cnot__body(%Qubit* null, %Qubit* inttoptr (i64 1 to %Qubit*))
-  call void @__quantum__qis__mz__body(%Qubit* null, %Result* null)
-  call void @__quantum__qis__mz__body(%Qubit* inttoptr (i64 1 to %Qubit*), %Result* inttoptr (i64 1 to %Result*))
-  call void @__quantum__rt__result_record_output(%Result* null, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @0, i32 0, i32 0))
-  call void @__quantum__rt__result_record_output(%Result* inttoptr (i64 1 to %Result*), i8* getelementptr inbounds ([3 x i8], [3 x i8]* @1, i32 0, i32 0))
+  %q0 = call %Qubit* @__quantum__rt__qubit_allocate();
+  %q1 = call %Qubit* @__quantum__rt__qubit_allocate();
+  call void @__quantum__qis__h__body(%Qubit* %q0)
+  call void @__quantum__qis__cnot__body(%Qubit* %q0, %Qubit* %q1)
+  %r0 = call %Result* @__quantum__qis__m__body(%Qubit* %q0)
+  %r1 = call %Result* @__quantum__qis__m__body(%Qubit* %q1)
+  call void @__quantum__rt__qubit_release(%Qubit* %q0)
+  call void @__quantum__rt__qubit_release(%Qubit* %q1)
+  call void @__quantum__rt__result_record_output(%Result* %r0, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @0, i32 0, i32 0))
+  call void @__quantum__rt__result_record_output(%Result* %r1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @1, i32 0, i32 0))
   ret i32 0
 }
 
@@ -23,9 +27,13 @@ declare void @__quantum__qis__h__body(%Qubit*)
 
 declare void @__quantum__qis__cnot__body(%Qubit*, %Qubit*)
 
-declare void @__quantum__qis__mz__body(%Qubit*, %Result* writeonly) #1
+declare %Result* @__quantum__qis__m__body(%Qubit*) #1
 
 declare void @__quantum__rt__initialize(i8*)
+
+declare %Qubit* @__quantum__rt__qubit_allocate()
+
+declare void @__quantum__rt__qubit_release(%Qubit*)
 
 declare void @__quantum__rt__result_record_output(%Result*, i8*)
 
