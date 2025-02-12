@@ -158,7 +158,7 @@ auto QIR_DD_Backend::apply(const qc::OpType op, Args&&... args) -> void {
   const auto& operation = createOperation(op, std::forward<Args>(args)...);
   const auto& usedQubits = operation.getUsedQubits();
   enlargeState(*usedQubits.crbegin());
-  qState = dd::applyUnitaryOperation(&operation, qState, *dd);
+  qState = dd::applyUnitaryOperation(operation, qState, *dd);
 }
 
 template <typename... Args> auto QIR_DD_Backend::measure(Args... args) -> void {
@@ -195,7 +195,7 @@ auto QIR_DD_Backend::reset(std::array<Qubit*, SIZE> qubits) -> void {
   enlargeState(maxQubit);
   const auto resetOp =
       qc::NonUnitaryOperation({targets.cbegin(), targets.cend()}, qc::Reset);
-  qState = applyReset(&resetOp, qState, *dd, mt);
+  qState = applyReset(resetOp, qState, *dd, mt);
 }
 
 auto QIR_DD_Backend::qAlloc() -> Qubit* {
