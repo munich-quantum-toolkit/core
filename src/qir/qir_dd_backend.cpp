@@ -149,7 +149,8 @@ auto QIR_DD_Backend::createOperation(qc::OpType op,
   if (qubits.size() > t) { // create controlled operation
     const auto& controls =
         qc::Controls(addresses.cbegin(), addresses.cend() - t);
-    const auto& targets = qc::Targets(addresses.cbegin() + t, addresses.cend());
+    const auto& targets =
+        qc::Targets(addresses.cbegin() + (qubits.size() - t), addresses.cend());
     return {controls, targets, op, paramVec};
   }
   if (qubits.size() == t) { // create uncontrolled operation
