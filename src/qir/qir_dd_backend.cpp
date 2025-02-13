@@ -973,34 +973,35 @@ void __quantum__qis__rx__body(const double phi, Qubit* qubit) {
   backend.apply(qc::RX, phi, qubit);
 }
 
-void __quantum__qis__ry__body(double phi, Qubit* qubit) {
+void __quantum__qis__ry__body(const double phi, Qubit* qubit) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
   backend.apply(qc::RY, phi, qubit);
 }
 
-void __quantum__qis__rz__body(double phi, Qubit* qubit) {
+void __quantum__qis__rz__body(const double phi, Qubit* qubit) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
   backend.apply(qc::RZ, phi, qubit);
 }
 
-void __quantum__qis__p__body(double phi, Qubit* qubit) {
+void __quantum__qis__p__body(const double phi, Qubit* qubit) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
   backend.apply(qc::P, phi, qubit);
 }
 
-void __quantum__qis__u__body(double theta, double phi, double lambda,
-                             Qubit* qubit) {
+void __quantum__qis__u__body(const double theta, const double phi,
+                             const double lambda, Qubit* qubit) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
   backend.apply(qc::U, theta, phi, lambda, qubit);
 }
 
-void __quantum__qis__u3__body(double theta, double phi, double lambda,
+void __quantum__qis__u3__body(const double theta, const double phi,
+                              const double lambda, Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::U, theta, phi, lambda, qubit);
+}
+
+void __quantum__qis__u2__body(const double theta, const double phi,
                               Qubit* qubit) {
-  auto& backend = mqt::QIR_DD_Backend::getInstance();
-  backend.apply(qc::U, theta, phi, lambda, qubit);
-}
-
-void __quantum__qis__u2__body(double theta, double phi, Qubit* qubit) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
   backend.apply(qc::U2, theta, phi, qubit);
 }
@@ -1024,12 +1025,13 @@ void __quantum__qis__swap__body(Qubit* control, Qubit* target) {
   backend.apply(qc::SWAP, control, target);
 }
 
-void __quantum__qis__crz__body(double phi, Qubit* control, Qubit* target) {
+void __quantum__qis__crz__body(const double phi, Qubit* control,
+                               Qubit* target) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
   backend.apply(qc::RZ, phi, control, target);
 }
 
-void __quantum__qis__cp__body(double phi, Qubit* control, Qubit* target) {
+void __quantum__qis__cp__body(const double phi, Qubit* control, Qubit* target) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
   backend.apply(qc::P, phi, control, target);
 }
