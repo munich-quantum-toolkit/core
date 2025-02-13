@@ -38,6 +38,29 @@ auto QIR_DD_Backend::generateRandomSeed() -> uint64_t {
   std::mt19937_64 rng(seeds);
   return rng();
 }
+QIR_DD_Backend& QIR_DD_Backend::getInstance(const bool reinitialized) {
+  static QIR_DD_Backend instance;
+  if (reinitialized) {
+    instance.addressMode = AddressMode::UNKNOWN;
+    instance.currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
+    instance.currentMaxQubitId = 0;
+    instance.currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
+    instance.numQubitsInQState = 0;
+    instance.dd->decRef(instance.qState);
+    instance.qState = dd::vEdge::one();
+    instance.dd->garbageCollect();
+    instance.mt.seed(generateRandomSeed());
+    instance.qRegister.clear();
+    instance.rRegister.clear();
+    // NOLINTBEGIN(performance-no-int-to-ptr)
+    instance.rRegister.emplace(reinterpret_cast<Result*>(RESULT_ZERO_ADDRESS),
+                               ResultStruct{0, false});
+    instance.rRegister.emplace(reinterpret_cast<Result*>(RESULT_ONE_ADDRESS),
+                               ResultStruct{0, true});
+    // NOLINTEND(performance-no-int-to-ptr)
+  }
+  return instance;
+}
 
 QIR_DD_Backend::QIR_DD_Backend() : QIR_DD_Backend(generateRandomSeed()) {}
 

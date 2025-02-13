@@ -228,29 +228,7 @@ private:
 
 public:
   [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
-  static QIR_DD_Backend& getInstance(const bool reinitialized = false) {
-    static QIR_DD_Backend instance;
-    if (reinitialized) {
-      instance.addressMode = AddressMode::UNKNOWN;
-      instance.currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
-      instance.currentMaxQubitId = 0;
-      instance.currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
-      instance.numQubitsInQState = 0;
-      instance.dd->decRef(instance.qState);
-      instance.qState = dd::vEdge::one();
-      instance.dd->garbageCollect();
-      instance.mt.seed(generateRandomSeed());
-      instance.qRegister.clear();
-      instance.rRegister.clear();
-      // NOLINTBEGIN(performance-no-int-to-ptr)
-      instance.rRegister.emplace(reinterpret_cast<Result*>(RESULT_ZERO_ADDRESS),
-                                 ResultStruct{0, false});
-      instance.rRegister.emplace(reinterpret_cast<Result*>(RESULT_ONE_ADDRESS),
-                                 ResultStruct{0, true});
-      // NOLINTEND(performance-no-int-to-ptr)
-    }
-    return instance;
-  }
+  static QIR_DD_Backend& getInstance(const bool reinitialized = false);
 
   QIR_DD_Backend(const QIR_DD_Backend&) = delete;
   QIR_DD_Backend& operator=(const QIR_DD_Backend&) = delete;
