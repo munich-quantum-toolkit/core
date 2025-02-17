@@ -132,8 +132,9 @@ auto QIR_DD_Backend::createOperation(qc::OpType op,
       "arguments. Parameters must come first followed by the qubits.");
 
   const auto& addresses = translateAddresses(qubits);
-  // store parameters into vector
-  const std::vector<qc::fp> paramVec(params.cbegin(), params.cend());
+  // store parameters into vector (without copying)
+  const std::vector<qc::fp> paramVec(params.data(),
+                                     params.data() + params.size());
   // split addresses into control and target
   uint8_t t = 0;
   if (isSingleQubitGate(op)) {
@@ -149,12 +150,12 @@ auto QIR_DD_Backend::createOperation(qc::OpType op,
   if (qubits.size() > t) { // create controlled operation
     const auto& controls =
         qc::Controls(addresses.cbegin(), addresses.cend() - t);
-    const auto& targets =
-        qc::Targets(addresses.cbegin() + (qubits.size() - t), addresses.cend());
+    const auto& targets = qc::Targets(addresses.data() + (qubits.size() - t),
+                                      addresses.data() + qubits.size());
     return {controls, targets, op, paramVec};
   }
   if (qubits.size() == t) { // create uncontrolled operation
-    const auto& targets = qc::Targets(addresses.cbegin(), addresses.cend());
+    const auto targets = qc::Targets(addresses.data(), addresses.data() + t);
     return {targets, op, paramVec};
   }
   std::stringstream ss;
