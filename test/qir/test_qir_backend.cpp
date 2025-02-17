@@ -188,4 +188,42 @@ TEST_F(QIRDDBackendTest, GHZ4Dynamic) {
   __quantum__rt__result_update_reference_count(r3, -1);
 }
 
+TEST_F(QIRDDBackendTest, GHZ4DynamicReverse) {
+  __quantum__rt__initialize(nullptr);
+  auto* qArr = __quantum__rt__qubit_allocate_array(4);
+  const std::array<Qubit*, 4> q = {
+      *reinterpret_cast<Qubit**>(
+          __quantum__rt__array_get_element_ptr_1d(qArr, 0)),
+      *reinterpret_cast<Qubit**>(
+          __quantum__rt__array_get_element_ptr_1d(qArr, 1)),
+      *reinterpret_cast<Qubit**>(
+          __quantum__rt__array_get_element_ptr_1d(qArr, 2)),
+      *reinterpret_cast<Qubit**>(
+          __quantum__rt__array_get_element_ptr_1d(qArr, 3))};
+  __quantum__qis__h__body(q[3]);
+  __quantum__qis__cx__body(q[3], q[2]);
+  __quantum__qis__cx__body(q[2], q[1]);
+  __quantum__qis__cx__body(q[1], q[0]);
+  auto* r0 = __quantum__qis__m__body(q[0]);
+  auto* r1 = __quantum__qis__m__body(q[1]);
+  auto* r2 = __quantum__qis__m__body(q[2]);
+  auto* r3 = __quantum__qis__m__body(q[3]);
+  __quantum__rt__qubit_release_array(qArr);
+  const auto m0 = __quantum__rt__read_result(r0);
+  const auto m1 = __quantum__rt__read_result(r1);
+  const auto m2 = __quantum__rt__read_result(r2);
+  const auto m3 = __quantum__rt__read_result(r3);
+  EXPECT_EQ(m0, m1);
+  EXPECT_EQ(m1, m2);
+  EXPECT_EQ(m2, m3);
+  __quantum__rt__result_record_output(r0, "r0");
+  __quantum__rt__result_record_output(r1, "r1");
+  __quantum__rt__result_record_output(r2, "r2");
+  __quantum__rt__result_record_output(r3, "r3");
+  __quantum__rt__result_update_reference_count(r0, -1);
+  __quantum__rt__result_update_reference_count(r1, -1);
+  __quantum__rt__result_update_reference_count(r2, -1);
+  __quantum__rt__result_update_reference_count(r3, -1);
+}
+
 } // namespace mqt

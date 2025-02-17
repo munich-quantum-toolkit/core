@@ -168,7 +168,7 @@ auto QIR_DD_Backend::enlargeState(const std::uint64_t maxQubit) -> void {
   if (maxQubit >= numQubitsInQState) {
     const auto d = maxQubit - numQubitsInQState + 1;
     dd->resize(numQubitsInQState + d);
-    const auto tmp =
+    const auto& tmp =
         dd->kronecker(dd->makeZeroState(d), qState, numQubitsInQState);
     numQubitsInQState += d;
     dd->incRef(tmp);
@@ -220,8 +220,8 @@ auto QIR_DD_Backend::reset(std::array<Qubit*, SIZE> qubits) -> void {
   const auto& targets = translateAddresses(qubits);
   const auto maxQubit = *std::max_element(targets.cbegin(), targets.cend());
   enlargeState(maxQubit);
-  const auto resetOp =
-      qc::NonUnitaryOperation({targets.cbegin(), targets.cend()}, qc::Reset);
+  const qc::NonUnitaryOperation resetOp({targets.cbegin(), targets.cend()},
+                                        qc::Reset);
   qState = applyReset(resetOp, qState, *dd, mt);
 }
 
