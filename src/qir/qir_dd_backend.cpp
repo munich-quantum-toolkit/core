@@ -167,10 +167,10 @@ auto QIR_DD_Backend::createOperation(qc::OpType op,
 auto QIR_DD_Backend::enlargeState(const std::uint64_t maxQubit) -> void {
   if (maxQubit >= numQubitsInQState) {
     const auto d = maxQubit - numQubitsInQState + 1;
-    numQubitsInQState += d;
-    dd->resize(numQubitsInQState);
+    dd->resize(numQubitsInQState + d);
     const auto tmp =
         dd->kronecker(dd->makeZeroState(d), qState, numQubitsInQState);
+    numQubitsInQState += d;
     dd->incRef(tmp);
     dd->decRef(qState);
     qState = tmp;
@@ -640,7 +640,7 @@ Array* __quantum__rt__array_create_1d(const int32_t size, const int64_t n) {
   array->aliasCount = 0;
   array->data =
       std::vector(static_cast<size_t>(size * n), static_cast<int8_t>(0));
-  array->elementSize = n;
+  array->elementSize = size;
   return array;
 }
 
@@ -896,10 +896,9 @@ Qubit* __quantum__rt__qubit_allocate() {
 Array* __quantum__rt__qubit_allocate_array(const int64_t n) {
   auto* array = __quantum__rt__array_create_1d(sizeof(Qubit*), n);
   for (int64_t i = 0; i < n; ++i) {
-    *static_cast<Qubit**>(
-        // NOLINTNEXTLINE(bugprone-casting-through-void)
-        static_cast<void*>(__quantum__rt__array_get_element_ptr_1d(array, i))) =
-        __quantum__rt__qubit_allocate();
+    auto* const q = reinterpret_cast<Qubit**>(
+        __quantum__rt__array_get_element_ptr_1d(array, i));
+    *q = __quantum__rt__qubit_allocate();
   }
   return array;
 }
@@ -913,9 +912,9 @@ void __quantum__rt__qubit_release_array(Array* array) {
   const auto size = __quantum__rt__array_get_size_1d(array);
   // deallocate every qubit
   for (int64_t i = 0; i < size; ++i) {
-    __quantum__rt__qubit_release(*static_cast<Qubit**>(
-        // NOLINTNEXTLINE(bugprone-casting-through-void)
-        static_cast<void*>(__quantum__rt__array_get_element_ptr_1d(array, i))));
+    auto* const q = reinterpret_cast<Qubit**>(
+        __quantum__rt__array_get_element_ptr_1d(array, i));
+    __quantum__rt__qubit_release(*q);
   }
   // deallocate array
   __quantum__rt__array_update_reference_count(array, -1);

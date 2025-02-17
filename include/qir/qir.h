@@ -380,37 +380,37 @@ void __quantum__rt__qubit_release_array(Array*);
 // WARNING: This refers to the unstable version of the specification under
 // developments.
 
-inline void __quantum__qis__x__body(Qubit*);
-inline void __quantum__qis__y__body(Qubit*);
-inline void __quantum__qis__z__body(Qubit*);
-inline void __quantum__qis__h__body(Qubit*);
-inline void __quantum__qis__s__body(Qubit*);
-inline void __quantum__qis__sdg__body(Qubit*);
-inline void __quantum__qis__sqrtx__body(Qubit*);
-inline void __quantum__qis__sqrtxdg__body(Qubit*);
-inline void __quantum__qis__t__body(Qubit*);
-inline void __quantum__qis__tdg__body(Qubit*);
-inline void __quantum__qis__rx__body(double, Qubit*);
-inline void __quantum__qis__ry__body(double, Qubit*);
-inline void __quantum__qis__rz__body(double, Qubit*);
-inline void __quantum__qis__p__body(double, Qubit*);
-inline void __quantum__qis__u__body(double, double, double, Qubit*);
-inline void __quantum__qis__u3__body(double, double, double, Qubit*);
-inline void __quantum__qis__u2__body(double, double, Qubit*);
-inline void __quantum__qis__u1__body(double, Qubit*);
-inline void __quantum__qis__cnot__body(Qubit*, Qubit*);
-inline void __quantum__qis__cx__body(Qubit*, Qubit*);
-inline void __quantum__qis__cz__body(Qubit*, Qubit*);
-inline void __quantum__qis__swap__body(Qubit*, Qubit*);
-inline void __quantum__qis__crz__body(double, Qubit*, Qubit*);
-inline void __quantum__qis__cp__body(double, Qubit*, Qubit*);
-inline void __quantum__qis__rzz__body(double, Qubit*, Qubit*);
-inline void __quantum__qis__ccx__body(Qubit*, Qubit*, Qubit*);
-inline void __quantum__qis__ccz__body(Qubit*, Qubit*, Qubit*);
-inline Result* __quantum__qis__m__body(Qubit*);
-inline Result* __quantum__qis__measure__body(Qubit*);
-inline void __quantum__qis__mz__body(Qubit*, Result*);
-inline void __quantum__qis__reset__body(Qubit*);
+void __quantum__qis__x__body(Qubit*);
+void __quantum__qis__y__body(Qubit*);
+void __quantum__qis__z__body(Qubit*);
+void __quantum__qis__h__body(Qubit*);
+void __quantum__qis__s__body(Qubit*);
+void __quantum__qis__sdg__body(Qubit*);
+void __quantum__qis__sqrtx__body(Qubit*);
+void __quantum__qis__sqrtxdg__body(Qubit*);
+void __quantum__qis__t__body(Qubit*);
+void __quantum__qis__tdg__body(Qubit*);
+void __quantum__qis__rx__body(double, Qubit*);
+void __quantum__qis__ry__body(double, Qubit*);
+void __quantum__qis__rz__body(double, Qubit*);
+void __quantum__qis__p__body(double, Qubit*);
+void __quantum__qis__u__body(double, double, double, Qubit*);
+void __quantum__qis__u3__body(double, double, double, Qubit*);
+void __quantum__qis__u2__body(double, double, Qubit*);
+void __quantum__qis__u1__body(double, Qubit*);
+void __quantum__qis__cnot__body(Qubit*, Qubit*);
+void __quantum__qis__cx__body(Qubit*, Qubit*);
+void __quantum__qis__cz__body(Qubit*, Qubit*);
+void __quantum__qis__swap__body(Qubit*, Qubit*);
+void __quantum__qis__crz__body(double, Qubit*, Qubit*);
+void __quantum__qis__cp__body(double, Qubit*, Qubit*);
+void __quantum__qis__rzz__body(double, Qubit*, Qubit*);
+void __quantum__qis__ccx__body(Qubit*, Qubit*, Qubit*);
+void __quantum__qis__ccz__body(Qubit*, Qubit*, Qubit*);
+Result* __quantum__qis__m__body(Qubit*);
+Result* __quantum__qis__measure__body(Qubit*);
+void __quantum__qis__mz__body(Qubit*, Result*);
+void __quantum__qis__reset__body(Qubit*);
 
 // cf.
 // https://github.com/qir-alliance/qir-spec/blob/main/specification/under_development/profiles/Adaptive_Profile.md#runtime-functions
