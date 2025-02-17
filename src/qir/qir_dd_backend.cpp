@@ -237,7 +237,7 @@ auto QIR_DD_Backend::reset(std::array<Qubit*, SIZE> qubits) -> void {
   const auto& targets = translateAddresses(qubits);
   const auto maxQubit = *std::max_element(targets.cbegin(), targets.cend());
   enlargeState(maxQubit);
-  const qc::NonUnitaryOperation resetOp({targets.cbegin(), targets.cend()},
+  const qc::NonUnitaryOperation resetOp({targets.data(), targets.data() + SIZE},
                                         qc::Reset);
   qState = applyReset(resetOp, qState, *dd, mt);
 }
