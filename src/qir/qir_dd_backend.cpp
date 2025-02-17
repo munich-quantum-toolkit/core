@@ -38,28 +38,28 @@ auto QIR_DD_Backend::generateRandomSeed() -> uint64_t {
   std::mt19937_64 rng(seeds);
   return rng();
 }
-QIR_DD_Backend& QIR_DD_Backend::getInstance(const bool reinitialized) {
+QIR_DD_Backend& QIR_DD_Backend::getInstance() {
   static QIR_DD_Backend instance;
-  if (reinitialized) {
-    instance.addressMode = AddressMode::UNKNOWN;
-    instance.currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
-    instance.currentMaxQubitId = 0;
-    instance.currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
-    instance.numQubitsInQState = 0;
-    instance.dd->decRef(instance.qState);
-    instance.qState = dd::vEdge::one();
-    instance.dd->garbageCollect();
-    instance.mt.seed(generateRandomSeed());
-    instance.qRegister.clear();
-    instance.rRegister.clear();
-    // NOLINTBEGIN(performance-no-int-to-ptr)
-    instance.rRegister.emplace(reinterpret_cast<Result*>(RESULT_ZERO_ADDRESS),
-                               ResultStruct{0, false});
-    instance.rRegister.emplace(reinterpret_cast<Result*>(RESULT_ONE_ADDRESS),
-                               ResultStruct{0, true});
-    // NOLINTEND(performance-no-int-to-ptr)
-  }
   return instance;
+}
+auto QIR_DD_Backend::reset() -> void {
+  addressMode = AddressMode::UNKNOWN;
+  currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
+  currentMaxQubitId = 0;
+  currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
+  numQubitsInQState = 0;
+  dd->decRef(qState);
+  qState = dd::vEdge::one();
+  dd->garbageCollect();
+  mt.seed(generateRandomSeed());
+  qRegister.clear();
+  rRegister.clear();
+  // NOLINTBEGIN(performance-no-int-to-ptr)
+  rRegister.emplace(reinterpret_cast<Result*>(RESULT_ZERO_ADDRESS),
+                    ResultStruct{0, false});
+  rRegister.emplace(reinterpret_cast<Result*>(RESULT_ONE_ADDRESS),
+                    ResultStruct{0, true});
+  // NOLINTEND(performance-no-int-to-ptr)
 }
 
 QIR_DD_Backend::QIR_DD_Backend() : QIR_DD_Backend(generateRandomSeed()) {}
@@ -1085,7 +1085,7 @@ void __quantum__qis__reset__body(Qubit* qubit) {
 }
 
 void __quantum__rt__initialize(char* /*unused*/) {
-  mqt::QIR_DD_Backend::getInstance(true);
+  mqt::QIR_DD_Backend::getInstance().reset();
 }
 
 bool __quantum__rt__read_result(Result* result) {
