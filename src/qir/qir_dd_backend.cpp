@@ -168,13 +168,26 @@ auto QIR_DD_Backend::createOperation(qc::OpType op,
 auto QIR_DD_Backend::enlargeState(const std::uint64_t maxQubit) -> void {
   if (maxQubit >= numQubitsInQState) {
     const auto d = maxQubit - numQubitsInQState + 1;
-    dd->resize(numQubitsInQState + d);
-    const auto& tmp =
-        dd->kronecker(dd->makeZeroState(d), qState, numQubitsInQState);
     numQubitsInQState += d;
-    dd->incRef(tmp);
-    dd->decRef(qState);
-    qState = tmp;
+
+    // resize the DD package only if necessary
+    if (dd->qubits() < numQubitsInQState) {
+      dd->resize(numQubitsInQState);
+    }
+
+    if (qState.isTerminal()) {
+      qState = dd->makeZeroState(d);
+      dd->incRef(qState);
+      return;
+    }
+
+    // enlarge state
+    for (auto q = qState.p->v; q < numQubitsInQState; ++q) {
+      const auto tmp =
+          dd->makeDDNode(q + 1U, std::array{qState, dd::vEdge::zero()});
+      tmp.p->ref = 1;
+      qState = tmp;
+    }
   }
 }
 
