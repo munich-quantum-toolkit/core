@@ -194,10 +194,13 @@ auto QIR_DD_Backend::enlargeState(const std::uint64_t maxQubit) -> void {
 template <typename... Args>
 auto QIR_DD_Backend::apply(const qc::OpType op, Args&&... args) -> void {
   const auto& operation = createOperation(op, std::forward<Args>(args)...);
-  const auto& usedQubits = operation.getUsedQubits();
-  const auto maxQubit =
-      *std::max_element(usedQubits.cbegin(), usedQubits.cend(),
-                        [](const auto& a, const auto& b) { return a < b; });
+  qc::Qubit maxQubit = 0;
+  for (const auto& control : operation.getControls()) {
+    maxQubit = std::max(maxQubit, control.qubit);
+  }
+  for (const auto& target : operation.getTargets()) {
+    maxQubit = std::max(maxQubit, target);
+  }
   enlargeState(maxQubit);
   qState = dd::applyUnitaryOperation(operation, qState, *dd);
 }
