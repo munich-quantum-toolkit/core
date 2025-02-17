@@ -228,7 +228,7 @@ private:
 
 public:
   [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
-  static QIR_DD_Backend& getInstance(const bool reinitialized = false);
+  static QIR_DD_Backend& getInstance(bool reinitialized = false);
 
   QIR_DD_Backend(const QIR_DD_Backend&) = delete;
   QIR_DD_Backend& operator=(const QIR_DD_Backend&) = delete;
