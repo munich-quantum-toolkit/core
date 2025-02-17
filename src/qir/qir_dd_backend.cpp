@@ -1057,12 +1057,6 @@ void __quantum__qis__ccx__body(Qubit* control1, Qubit* control2,
   backend.apply(qc::X, control1, control2, target);
 }
 
-void __quantum__qis__rccx__body(const double phi, Qubit* control1,
-                                Qubit* control2, Qubit* target) {
-  auto& backend = mqt::QIR_DD_Backend::getInstance();
-  backend.apply(qc::RX, phi, control1, control2, target);
-}
-
 void __quantum__qis__ccz__body(Qubit* control1, Qubit* control2,
                                Qubit* target) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();

@@ -406,7 +406,6 @@ void __quantum__qis__crz__body(double, Qubit*, Qubit*);
 void __quantum__qis__cp__body(double, Qubit*, Qubit*);
 void __quantum__qis__rzz__body(double, Qubit*, Qubit*);
 void __quantum__qis__ccx__body(Qubit*, Qubit*, Qubit*);
-void __quantum__qis__rccx__body(double, Qubit*, Qubit*, Qubit*);
 void __quantum__qis__ccz__body(Qubit*, Qubit*, Qubit*);
 Result* __quantum__qis__m__body(Qubit*);
 Result* __quantum__qis__measure__body(Qubit*);
