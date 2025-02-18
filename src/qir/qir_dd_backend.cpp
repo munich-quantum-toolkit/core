@@ -42,7 +42,7 @@ QIR_DD_Backend& QIR_DD_Backend::getInstance() {
   static QIR_DD_Backend instance;
   return instance;
 }
-auto QIR_DD_Backend::reset() -> void {
+auto QIR_DD_Backend::resetBackend() -> void {
   addressMode = AddressMode::UNKNOWN;
   currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
   currentMaxQubitId = 0;
@@ -1101,7 +1101,7 @@ void __quantum__qis__reset__body(Qubit* qubit) {
 }
 
 void __quantum__rt__initialize(char* /*unused*/) {
-  mqt::QIR_DD_Backend::getInstance().reset();
+  mqt::QIR_DD_Backend::getInstance().resetBackend();
 }
 
 bool __quantum__rt__read_result(Result* result) {
