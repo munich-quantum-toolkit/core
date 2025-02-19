@@ -400,6 +400,7 @@ void __quantum__qis__u3__body(double, double, double, Qubit*);
 void __quantum__qis__u2__body(double, double, Qubit*);
 void __quantum__qis__u1__body(double, Qubit*);
 void __quantum__qis__cu1__body(double, Qubit*, Qubit*);
+void __quantum__qis__cu3__body(double, double, double, Qubit*, Qubit*);
 void __quantum__qis__cnot__body(Qubit*, Qubit*);
 void __quantum__qis__cx__body(Qubit*, Qubit*);
 void __quantum__qis__cy__body(Qubit*, Qubit*);
