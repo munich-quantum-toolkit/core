@@ -1031,6 +1031,12 @@ void __quantum__qis__u1__body(const double phi, Qubit* qubit) {
   backend.apply(qc::P, phi, qubit);
 }
 
+void __quantum__qis__cu1__body(const double phi, Qubit* control,
+                               Qubit* target) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::P, phi, control, target);
+}
+
 void __quantum__qis__cnot__body(Qubit* control, Qubit* target) {
   __quantum__qis__cx__body(control, target);
 }
