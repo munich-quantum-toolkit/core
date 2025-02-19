@@ -1,5 +1,8 @@
 #include "qir/qir.h"
 
+#include <algorithm>
+#include <cstdlib>
+#include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -8,7 +11,7 @@
 
 namespace mqt {
 
-class QIRDDBackendTest : public ::testing::Test {
+class QIRBackendTest : public ::testing::Test {
 protected:
   std::stringstream buffer;
   std::streambuf* old = nullptr;
@@ -16,7 +19,7 @@ protected:
   void TearDown() override { std::cout.rdbuf(old); }
 };
 
-TEST_F(QIRDDBackendTest, BellPairStatic) {
+TEST_F(QIRBackendTest, BellPairStatic) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   auto* r0 = reinterpret_cast<Result*>(0UL);
@@ -34,7 +37,7 @@ TEST_F(QIRDDBackendTest, BellPairStatic) {
   EXPECT_THAT(buffer.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
 }
 
-TEST_F(QIRDDBackendTest, BellPairDynamic) {
+TEST_F(QIRBackendTest, BellPairDynamic) {
   __quantum__rt__initialize(nullptr);
   auto* q0 = __quantum__rt__qubit_allocate();
   auto* q1 = __quantum__rt__qubit_allocate();
@@ -54,7 +57,7 @@ TEST_F(QIRDDBackendTest, BellPairDynamic) {
   __quantum__rt__result_update_reference_count(r1, -1);
 }
 
-TEST_F(QIRDDBackendTest, BellPairStaticReverse) {
+TEST_F(QIRBackendTest, BellPairStaticReverse) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   auto* r0 = reinterpret_cast<Result*>(0UL);
@@ -72,7 +75,7 @@ TEST_F(QIRDDBackendTest, BellPairStaticReverse) {
   EXPECT_THAT(buffer.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
 }
 
-TEST_F(QIRDDBackendTest, BellPairDynamicReverse) {
+TEST_F(QIRBackendTest, BellPairDynamicReverse) {
   __quantum__rt__initialize(nullptr);
   auto* q0 = __quantum__rt__qubit_allocate();
   auto* q1 = __quantum__rt__qubit_allocate();
@@ -92,7 +95,7 @@ TEST_F(QIRDDBackendTest, BellPairDynamicReverse) {
   __quantum__rt__result_update_reference_count(r1, -1);
 }
 
-TEST_F(QIRDDBackendTest, GHZ4Static) {
+TEST_F(QIRBackendTest, GHZ4Static) {
   const std::array<Qubit*, 4> q = {
       reinterpret_cast<Qubit*>(0UL), reinterpret_cast<Qubit*>(1UL),
       reinterpret_cast<Qubit*>(2UL), reinterpret_cast<Qubit*>(3UL)};
@@ -121,7 +124,7 @@ TEST_F(QIRDDBackendTest, GHZ4Static) {
   __quantum__rt__result_record_output(r[3], "r3");
 }
 
-TEST_F(QIRDDBackendTest, GHZ4StaticReverse) {
+TEST_F(QIRBackendTest, GHZ4StaticReverse) {
   const std::array<Qubit*, 4> q = {
       reinterpret_cast<Qubit*>(0UL), reinterpret_cast<Qubit*>(1UL),
       reinterpret_cast<Qubit*>(2UL), reinterpret_cast<Qubit*>(3UL)};
@@ -150,7 +153,7 @@ TEST_F(QIRDDBackendTest, GHZ4StaticReverse) {
   __quantum__rt__result_record_output(r[3], "r3");
 }
 
-TEST_F(QIRDDBackendTest, GHZ4Dynamic) {
+TEST_F(QIRBackendTest, GHZ4Dynamic) {
   __quantum__rt__initialize(nullptr);
   auto* qArr = __quantum__rt__qubit_allocate_array(4);
   const std::array<Qubit*, 4> q = {
@@ -188,7 +191,7 @@ TEST_F(QIRDDBackendTest, GHZ4Dynamic) {
   __quantum__rt__result_update_reference_count(r3, -1);
 }
 
-TEST_F(QIRDDBackendTest, GHZ4DynamicReverse) {
+TEST_F(QIRBackendTest, GHZ4DynamicReverse) {
   __quantum__rt__initialize(nullptr);
   auto* qArr = __quantum__rt__qubit_allocate_array(4);
   const std::array<Qubit*, 4> q = {
@@ -224,6 +227,28 @@ TEST_F(QIRDDBackendTest, GHZ4DynamicReverse) {
   __quantum__rt__result_update_reference_count(r1, -1);
   __quantum__rt__result_update_reference_count(r2, -1);
   __quantum__rt__result_update_reference_count(r3, -1);
+}
+
+class QIRFilesTest : public ::testing::TestWithParam<std::filesystem::path> {};
+
+// Instantiate the test suite with different parameters
+INSTANTIATE_TEST_SUITE_P(
+    QIRExecutablesTest, //< Custom instantiation name
+    QIRFilesTest,       //< Test suite name
+    // Parameters to test with
+    ::testing::Values(TEST_EXECUTABLES),
+    [](const testing::TestParamInfo<std::filesystem::path>& info) {
+      // Extract the last part of the file path
+      auto filename = info.param.filename().string();
+      // replace all '-' with '_'
+      std::replace(filename.begin(), filename.end(), '-', '_');
+      return filename;
+    });
+
+TEST_P(QIRFilesTest, Executables) {
+  const auto& path = GetParam();
+  const auto result = std::system(path.c_str());
+  EXPECT_EQ(result, 0);
 }
 
 } // namespace mqt
