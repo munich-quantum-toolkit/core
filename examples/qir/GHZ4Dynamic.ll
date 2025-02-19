@@ -31,10 +31,24 @@ entry:
   %r2 = call ptr @__quantum__qis__m__body(ptr %q2)
   %r3 = call ptr @__quantum__qis__m__body(ptr %q3)
   call void @__quantum__rt__qubit_release_array(ptr %q)
-  call void @__quantum__rt__result_record_output(ptr %r0, ptr @0)
-  call void @__quantum__rt__result_record_output(ptr %r1, ptr @1)
-  call void @__quantum__rt__result_record_output(ptr %r2, ptr @2)
-  call void @__quantum__rt__result_record_output(ptr %r3, ptr @3)
+  %r = call ptr @__quantum__rt__array_create_1d(i32 8, i64 4)
+  %b0 = call ptr @__quantum__rt__array_get_element_ptr_1d(ptr %r, i64 0)
+  store ptr %r0, ptr %b0, align 8
+  %b1 = call ptr @__quantum__rt__array_get_element_ptr_1d(ptr %r, i64 0)
+  store ptr %r1, ptr %b1, align 8
+  %b2 = call ptr @__quantum__rt__array_get_element_ptr_1d(ptr %r, i64 0)
+  store ptr %r2, ptr %b2, align 8
+  %b3 = call ptr @__quantum__rt__array_get_element_ptr_1d(ptr %r, i64 0)
+  store ptr %r3, ptr %b3, align 8
+  %o0 = load ptr, ptr %b0, align 8
+  call void @__quantum__rt__result_record_output(ptr %o0, ptr @0)
+  %o1 = load ptr, ptr %b1, align 8
+  call void @__quantum__rt__result_record_output(ptr %o1, ptr @1)
+  %o2 = load ptr, ptr %b2, align 8
+  call void @__quantum__rt__result_record_output(ptr %o2, ptr @2)
+  %o3 = load ptr, ptr %b3, align 8
+  call void @__quantum__rt__result_record_output(ptr %o3, ptr @3)
+  call void @__quantum__rt__array_update_reference_count(ptr %r, i32 -1)
   ret i32 0
 }
 
@@ -48,11 +62,16 @@ declare void @__quantum__rt__initialize(ptr)
 
 declare ptr @__quantum__rt__qubit_allocate_array(i64)
 
+declare ptr @__quantum__rt__array_create_1d(i32, i64)
+
 declare ptr @__quantum__rt__array_get_element_ptr_1d(ptr, i64)
 
 declare void @__quantum__rt__qubit_release_array(ptr)
 
+declare void @__quantum__rt__array_update_reference_count(ptr, i32)
+
 declare void @__quantum__rt__result_record_output(ptr, ptr)
+
 
 attributes #0 = { "entry_point" "output_labeling_schema" "qir_profiles"="custom" "required_num_qubits"="4" "required_num_results"="4" }
 attributes #1 = { "irreversible" }
