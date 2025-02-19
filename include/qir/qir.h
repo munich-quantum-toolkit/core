@@ -401,6 +401,7 @@ void __quantum__qis__u1__body(double, Qubit*);
 void __quantum__qis__cu1__body(double, Qubit*, Qubit*);
 void __quantum__qis__cnot__body(Qubit*, Qubit*);
 void __quantum__qis__cx__body(Qubit*, Qubit*);
+void __quantum__qis__cy__body(Qubit*, Qubit*);
 void __quantum__qis__cz__body(Qubit*, Qubit*);
 void __quantum__qis__swap__body(Qubit*, Qubit*);
 void __quantum__qis__cswap__body(Qubit*, Qubit*, Qubit*);
