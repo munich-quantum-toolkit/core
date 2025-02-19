@@ -973,6 +973,11 @@ void __quantum__qis__sx__body(Qubit* qubit) {
   backend.apply(qc::SX, qubit);
 }
 
+void __quantum__qis__sxdg__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::SXdg, qubit);
+}
+
 void __quantum__qis__sqrtx__body(Qubit* qubit) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
   backend.apply(qc::SX, qubit);
@@ -1011,6 +1016,12 @@ void __quantum__qis__rz__body(const double phi, Qubit* qubit) {
 void __quantum__qis__p__body(const double phi, Qubit* qubit) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
   backend.apply(qc::P, phi, qubit);
+}
+
+void __quantum__qis__rxx__body(const double theta, Qubit* target1,
+                               Qubit* target2) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::RXX, theta, target1, target2);
 }
 
 void __quantum__qis__u__body(const double theta, const double phi,
