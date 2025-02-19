@@ -968,6 +968,11 @@ void __quantum__qis__sdg__body(Qubit* qubit) {
   backend.apply(qc::Sdg, qubit);
 }
 
+void __quantum__qis__sx__body(Qubit* qubit) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::SX, qubit);
+}
+
 void __quantum__qis__sqrtx__body(Qubit* qubit) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
   backend.apply(qc::SX, qubit);
