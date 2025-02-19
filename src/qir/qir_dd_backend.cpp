@@ -1045,9 +1045,15 @@ void __quantum__qis__cz__body(Qubit* control, Qubit* target) {
   backend.apply(qc::Z, control, target);
 }
 
-void __quantum__qis__swap__body(Qubit* control, Qubit* target) {
+void __quantum__qis__swap__body(Qubit* target1, Qubit* target2) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
-  backend.apply(qc::SWAP, control, target);
+  backend.apply(qc::SWAP, target1, target2);
+}
+
+void __quantum__qis__cswap__body(Qubit* control, Qubit* target1,
+                                 Qubit* target2) {
+  auto& backend = mqt::QIR_DD_Backend::getInstance();
+  backend.apply(qc::SWAP, control, target1, target2);
 }
 
 void __quantum__qis__crz__body(const double phi, Qubit* control,
