@@ -207,6 +207,14 @@ auto QIR_DD_Backend::apply(const qc::OpType op, Args&&... args) -> void {
   const qc::StandardOperation& operation =
       createOperation(op, std::forward<Args>(args)...);
 
+  qc::QuantumRegister qreg{0, numQubitsInQState, "q"};
+  qc::QubitIndexToRegisterMap qmap{};
+  for (const auto q : operation.getUsedQubits()) {
+    qmap.emplace(q, std::pair{qreg, "q[" + std::to_string(q) + "]"});
+  }
+  qc::BitIndexToRegisterMap creg{};
+  operation.dumpOpenQASM(std::cout, qmap, creg, 0, true);
+
   qState = applyUnitaryOperation(operation, qState, *dd);
 }
 
