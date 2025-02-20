@@ -175,7 +175,9 @@ auto QIR_DD_Backend::enlargeState(const std::uint64_t maxQubit) -> void {
   if (maxQubit >= numQubitsInQState) {
     const auto d = maxQubit - numQubitsInQState + 1;
     qubitPermutation.resize(numQubitsInQState + d);
-    std::iota(qubitPermutation.begin() + numQubitsInQState,
+    std::iota(qubitPermutation.begin() +
+                  static_cast<std::vector<qc::Qubit>::difference_type>(
+                      numQubitsInQState),
               qubitPermutation.end(), numQubitsInQState);
     numQubitsInQState += d;
 
@@ -1099,7 +1101,7 @@ void __quantum__qis__ch__body(Qubit* control, Qubit* target) {
 
 void __quantum__qis__swap__body(Qubit* target1, Qubit* target2) {
   auto& backend = mqt::QIR_DD_Backend::getInstance();
-  backend.apply(qc::SWAP, target1, target2);
+  backend.swap(target1, target2);
 }
 
 void __quantum__qis__cswap__body(Qubit* control, Qubit* target1,
