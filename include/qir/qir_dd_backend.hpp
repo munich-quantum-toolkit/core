@@ -209,6 +209,8 @@ private:
 
   AddressMode addressMode;
   std::unordered_map<const Qubit*, qc::Qubit> qRegister;
+  // swap gates are not executed, they are tracked here
+  std::vector<qc::Qubit> qubitPermutation;
   static constexpr auto MIN_DYN_RESULT_ADDRESS = 0x10000;
   std::unordered_map<Result*, ResultStruct> rRegister;
   uintptr_t currentMaxQubitAddress;
@@ -239,6 +241,7 @@ public:
   template <typename... Args> auto apply(qc::OpType op, Args&&... args) -> void;
   template <typename... Args> auto measure(Args... args) -> void;
   template <size_t SIZE> auto reset(std::array<Qubit*, SIZE> qubits) -> void;
+  auto swap(Qubit* qubit1, Qubit* qubit2) -> void;
   auto qAlloc() -> Qubit*;
   auto qFree(Qubit* qubit) -> void;
   template <size_t SIZE>

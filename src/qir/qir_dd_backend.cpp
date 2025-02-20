@@ -18,6 +18,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <numeric>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -116,6 +117,8 @@ auto QIR_DD_Backend::translateAddresses(std::array<Qubit*, SIZE> qubits)
         },
         qubits, qubitIds);
   }
+  const auto maxQubit = *std::max_element(qubitIds.cbegin(), qubitIds.cend());
+  enlargeState(maxQubit);
   return qubitIds;
 }
 
@@ -131,7 +134,10 @@ auto QIR_DD_Backend::createOperation(qc::OpType op,
       "Number of parameters and qubits must match the number of "
       "arguments. Parameters must come first followed by the qubits.");
 
-  const auto& addresses = translateAddresses(qubits);
+  auto addresses = translateAddresses(qubits);
+  for (std::size_t i = 0; i < addresses.size(); ++i) {
+    addresses[i] = qubitPermutation[addresses[i]];
+  }
   // store parameters into vector (without copying)
   const std::vector<qc::fp> paramVec(params.data(),
                                      params.data() + params.size());
@@ -168,6 +174,9 @@ auto QIR_DD_Backend::createOperation(qc::OpType op,
 auto QIR_DD_Backend::enlargeState(const std::uint64_t maxQubit) -> void {
   if (maxQubit >= numQubitsInQState) {
     const auto d = maxQubit - numQubitsInQState + 1;
+    qubitPermutation.resize(numQubitsInQState + d);
+    std::iota(qubitPermutation.begin() + numQubitsInQState,
+              qubitPermutation.end(), numQubitsInQState);
     numQubitsInQState += d;
 
     // resize the DD package only if necessary
@@ -193,16 +202,10 @@ auto QIR_DD_Backend::enlargeState(const std::uint64_t maxQubit) -> void {
 
 template <typename... Args>
 auto QIR_DD_Backend::apply(const qc::OpType op, Args&&... args) -> void {
-  const auto& operation = createOperation(op, std::forward<Args>(args)...);
-  qc::Qubit maxQubit = 0;
-  for (const auto& control : operation.getControls()) {
-    maxQubit = std::max(maxQubit, control.qubit);
-  }
-  for (const auto& target : operation.getTargets()) {
-    maxQubit = std::max(maxQubit, target);
-  }
-  enlargeState(maxQubit);
-  qState = dd::applyUnitaryOperation(operation, qState, *dd);
+  const qc::StandardOperation& operation =
+      createOperation(op, std::forward<Args>(args)...);
+
+  qState = applyUnitaryOperation(operation, qState, *dd);
 }
 
 template <typename... Args> auto QIR_DD_Backend::measure(Args... args) -> void {
@@ -219,9 +222,10 @@ template <typename... Args> auto QIR_DD_Backend::measure(Args... args) -> void {
           sizeof...(Args),
       "Number of qubits and results must match the number of arguments. First, "
       "all qubits followed then by all results.");
-  const auto& targets = translateAddresses(qubits);
-  const auto maxQubit = *std::max_element(targets.cbegin(), targets.cend());
-  enlargeState(maxQubit);
+  auto targets = translateAddresses(qubits);
+  for (std::size_t i = 0; i < targets.size(); ++i) {
+    targets[i] = qubitPermutation[targets[i]];
+  }
   // measure qubits
   Utils::apply2(
       [&](const auto q, auto& r) {
@@ -234,12 +238,21 @@ template <typename... Args> auto QIR_DD_Backend::measure(Args... args) -> void {
 
 template <size_t SIZE>
 auto QIR_DD_Backend::reset(std::array<Qubit*, SIZE> qubits) -> void {
-  const auto& targets = translateAddresses(qubits);
-  const auto maxQubit = *std::max_element(targets.cbegin(), targets.cend());
-  enlargeState(maxQubit);
+  auto targets = translateAddresses(qubits);
+  for (std::size_t i = 0; i < targets.size(); ++i) {
+    targets[i] = qubitPermutation[targets[i]];
+  }
   const qc::NonUnitaryOperation resetOp({targets.data(), targets.data() + SIZE},
                                         qc::Reset);
   qState = applyReset(resetOp, qState, *dd, mt);
+}
+
+auto QIR_DD_Backend::swap(Qubit* qubit1, Qubit* qubit2) -> void {
+  const auto target1 = translateAddresses(std::array{qubit1})[0];
+  const auto target2 = translateAddresses(std::array{qubit2})[0];
+  const auto tmp = qubitPermutation[target1];
+  qubitPermutation[target1] = qubitPermutation[target2];
+  qubitPermutation[target2] = tmp;
 }
 
 auto QIR_DD_Backend::qAlloc() -> Qubit* {
