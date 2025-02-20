@@ -49,6 +49,10 @@ entry:
   %o3 = load ptr, ptr %b3, align 8
   call void @__quantum__rt__result_record_output(ptr %o3, ptr @3)
   call void @__quantum__rt__array_update_reference_count(ptr %r, i32 -1)
+  call void @__quantum__rt__result_update_reference_count(%Result* %o0, i32 -1)
+  call void @__quantum__rt__result_update_reference_count(%Result* %o1, i32 -1)
+  call void @__quantum__rt__result_update_reference_count(%Result* %o2, i32 -1)
+  call void @__quantum__rt__result_update_reference_count(%Result* %o3, i32 -1)
   ret i32 0
 }
 
@@ -71,6 +75,8 @@ declare void @__quantum__rt__qubit_release_array(ptr)
 declare void @__quantum__rt__array_update_reference_count(ptr, i32)
 
 declare void @__quantum__rt__result_record_output(ptr, ptr)
+
+declare void @__quantum__rt__result_update_reference_count(%Result*, i32)
 
 
 attributes #0 = { "entry_point" "output_labeling_schema" "qir_profiles"="custom" "required_num_qubits"="4" "required_num_results"="4" }

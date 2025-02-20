@@ -20,6 +20,8 @@ entry:
   call void @__quantum__rt__qubit_release(%Qubit* %q1)
   call void @__quantum__rt__result_record_output(%Result* %r0, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @0, i32 0, i32 0))
   call void @__quantum__rt__result_record_output(%Result* %r1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @1, i32 0, i32 0))
+  call void @__quantum__rt__result_update_reference_count(%Result* %r0, i32 -1)
+  call void @__quantum__rt__result_update_reference_count(%Result* %r1, i32 -1)
   ret i32 0
 }
 
@@ -36,6 +38,8 @@ declare %Qubit* @__quantum__rt__qubit_allocate()
 declare void @__quantum__rt__qubit_release(%Qubit*)
 
 declare void @__quantum__rt__result_record_output(%Result*, i8*)
+
+declare void @__quantum__rt__result_update_reference_count(%Result*, i32)
 
 attributes #0 = { "entry_point" "output_labeling_schema" "qir_profiles"="custom" "required_num_qubits"="2" "required_num_results"="2" }
 attributes #1 = { "irreversible" }
