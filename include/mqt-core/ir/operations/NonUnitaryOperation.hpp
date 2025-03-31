@@ -9,18 +9,19 @@
 
 #pragma once
 
-#include "Control.hpp"
-#include "Definitions.hpp"
-#include "OpType.hpp"
-#include "Operation.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/Register.hpp"
+#include "ir/operations/Control.hpp"
+#include "ir/operations/OpType.hpp"
+#include "ir/operations/Operation.hpp"
 
 #include <cstddef>
 #include <functional>
 #include <memory>
 #include <ostream>
 #include <set>
+#include <stdexcept>
 #include <vector>
 
 namespace qc {
@@ -50,19 +51,22 @@ public:
   void addDepthContribution(std::vector<std::size_t>& depths) const override;
 
   void addControl(const Control /*c*/) override {
-    throw QFRException("Cannot add control to non-unitary operation.");
+    throw std::runtime_error("Cannot add control to non-unitary operation.");
   }
 
   void clearControls() override {
-    throw QFRException("Cannot clear controls from non-unitary operation.");
+    throw std::runtime_error(
+        "Cannot clear controls from non-unitary operation.");
   }
 
   void removeControl(const Control /*c*/) override {
-    throw QFRException("Cannot remove controls from non-unitary operation.");
+    throw std::runtime_error(
+        "Cannot remove controls from non-unitary operation.");
   }
 
   Controls::iterator removeControl(const Controls::iterator /*it*/) override {
-    throw QFRException("Cannot remove controls from non-unitary operation.");
+    throw std::runtime_error(
+        "Cannot remove controls from non-unitary operation.");
   }
 
   [[nodiscard]] bool equals(const Operation& op, const Permutation& perm1,
@@ -80,7 +84,8 @@ public:
                     bool openQASM3) const override;
 
   void invert() override {
-    throw QFRException("Inverting a non-unitary operation is not supported.");
+    throw std::runtime_error(
+        "Inverting a non-unitary operation is not supported.");
   }
 
   void apply(const Permutation& permutation) override;

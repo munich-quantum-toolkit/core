@@ -13,7 +13,6 @@
 
 #pragma once
 
-#include "dd/DDDefinitions.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package_fwd.hpp"
 #include "ir/QuantumComputation.hpp"
@@ -130,21 +129,4 @@ template <class Config>
 std::map<std::string, std::size_t>
 sample(const QuantumComputation& qc, const VectorDD& in, Package<Config>& dd,
        std::size_t shots, std::size_t seed = 0U);
-
-/**
- * @brief Extract the probability vector from a dynamic quantum circuit.
- * @details This method allows one to reconstruct the probability vector of a
- * dynamic quantum circuit (a circuit that contains mid-circuit measurements
- * or resets) as if the circuit would not contain these dynamic circuit
- * primitives at all.
- * @see https://arxiv.org/abs/2106.01099 Section 5 for more details.
- * @tparam Config The configuration of the DD package
- * @param qc The quantum computation to extract the probability vector from
- * @param in The input state to use. Represented as a vector DD.
- * @param probVector The sparse probability vector to store the result in
- * @param dd The DD package to use for the extraction
- */
-template <class Config>
-void extractProbabilityVector(const QuantumComputation& qc, const VectorDD& in,
-                              SparsePVec& probVector, Package<Config>& dd);
 } // namespace dd

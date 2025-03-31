@@ -9,9 +9,9 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
-#include "mlir/IR/Operation.h"
 
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
@@ -37,7 +37,11 @@ struct MQTCoreRoundTrip : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
     populateFromQuantumComputationPatterns(patterns, circuit);
 
     // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(applyPatternsAndFoldGreedily(op, std::move(patterns)))) {
+    if (mlir::failed(
+            // This was deprecated in LLVM@20, but the alternative does not yet
+            // exist in LLVM@19.
+            // NOLINTNEXTLINE(clang-diagnostic-deprecated-declarations)
+            mlir::applyPatternsAndFoldGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }

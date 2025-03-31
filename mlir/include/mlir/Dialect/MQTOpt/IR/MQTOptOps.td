@@ -5,9 +5,6 @@
 //
 // Licensed under the MIT License
 
-#ifndef MQTOPT_OPS
-#define MQTOPT_OPS
-
 include "mlir/IR/OpBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/DialectBase.td"
@@ -681,5 +678,3 @@ def InsertOp : ResourceOp<"insertQubit"> {
     // .cpp file.
     let hasVerifier = 1;
 }
-
-#endif // MQTOPT_OPS

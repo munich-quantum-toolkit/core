@@ -7,7 +7,7 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
@@ -347,7 +347,7 @@ TEST_F(QFRFunctionality, cloningDifferentOperations) {
 TEST_F(QFRFunctionality, wrongRegisterSizes) {
   const std::size_t nqubits = 5;
   QuantumComputation qc(nqubits);
-  ASSERT_THROW(qc.measure({0}, {1, 2}), std::invalid_argument);
+  ASSERT_THROW(qc.measure({0}, {1, 2}), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, OperationEquality) {
@@ -448,12 +448,12 @@ TEST_F(QFRFunctionality, IndexOutOfRange) {
   qc.initialLayout = layout;
   qc.x(0);
 
-  EXPECT_THROW(qc.x(1), QFRException);
-  EXPECT_THROW(qc.cx(1_nc, 0), QFRException);
-  EXPECT_THROW(qc.mcx({2_nc, 1_nc}, 0), QFRException);
-  EXPECT_THROW(qc.swap(0, 1), QFRException);
-  EXPECT_THROW(qc.cswap(1_nc, 0, 2), QFRException);
-  EXPECT_THROW(qc.reset({0, 1, 2}), QFRException);
+  EXPECT_THROW(qc.x(1), std::out_of_range);
+  EXPECT_THROW(qc.cx(1_nc, 0), std::out_of_range);
+  EXPECT_THROW(qc.mcx({2_nc, 1_nc}, 0), std::out_of_range);
+  EXPECT_THROW(qc.swap(0, 1), std::out_of_range);
+  EXPECT_THROW(qc.cswap(1_nc, 0, 2), std::out_of_range);
+  EXPECT_THROW(qc.reset({0, 1, 2}), std::out_of_range);
 }
 
 TEST_F(QFRFunctionality, ContainsLogicalQubit) {
@@ -691,18 +691,6 @@ TEST_F(QFRFunctionality, OpNameToTypeSimple) {
                std::invalid_argument);
 }
 
-TEST_F(QFRFunctionality, dumpAndImportTeleportation) {
-  QuantumComputation qc(3);
-  qc.emplace_back<StandardOperation>(Targets{0, 1, 2}, OpType::Teleportation);
-  std::stringstream ss;
-  qc.dumpOpenQASM(ss, false);
-  EXPECT_TRUE(ss.str().find("teleport") != std::string::npos);
-
-  auto qcImported = qasm3::Importer::import(ss);
-  ASSERT_EQ(qcImported.size(), 1);
-  EXPECT_EQ(qcImported.at(0)->getType(), OpType::Teleportation);
-}
-
 TEST_F(QFRFunctionality, addControlStandardOperation) {
   auto op = StandardOperation(0, OpType::X);
   op.addControl(1);
@@ -715,7 +703,7 @@ TEST_F(QFRFunctionality, addControlStandardOperation) {
   EXPECT_EQ(op.getControls(), expectedControlsAfterRemove);
   op.clearControls();
   EXPECT_EQ(op.getNcontrols(), 0);
-  ASSERT_THROW(op.removeControl(1), QFRException);
+  ASSERT_THROW(op.removeControl(1), std::runtime_error);
 
   op.addControl(1);
   const auto& controls = op.getControls();
@@ -766,12 +754,13 @@ TEST_F(QFRFunctionality, addControlClassicControlledOperation) {
 TEST_F(QFRFunctionality, addControlNonUnitaryOperation) {
   auto op = NonUnitaryOperation(0U, Measure);
 
-  EXPECT_THROW(op.addControl(1), QFRException);
-  EXPECT_THROW(op.removeControl(1), QFRException);
-  EXPECT_THROW(op.clearControls(), QFRException);
+  EXPECT_THROW(op.addControl(1), std::runtime_error);
+  EXPECT_THROW(op.removeControl(1), std::runtime_error);
+  EXPECT_THROW(op.clearControls(), std::runtime_error);
   // we pass an invalid iterator to removeControl, which is fine, since the
   // function call should unconditionally trap
-  EXPECT_THROW(op.removeControl(Controls::const_iterator{}), QFRException);
+  EXPECT_THROW(op.removeControl(Controls::const_iterator{}),
+               std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, addControlCompoundOperation) {
@@ -797,7 +786,7 @@ TEST_F(QFRFunctionality, addControlCompoundOperation) {
   ASSERT_EQ(op.getOps()[0]->getNcontrols(), 0);
   ASSERT_EQ(op.getOps()[1]->getNcontrols(), 1);
   ASSERT_EQ(*op.getOps()[1]->getControls().begin(), control1);
-  EXPECT_THROW(op.removeControl(control0), QFRException);
+  EXPECT_THROW(op.removeControl(control0), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, addControlTwice) {
@@ -806,14 +795,14 @@ TEST_F(QFRFunctionality, addControlTwice) {
   std::unique_ptr<Operation> op =
       std::make_unique<StandardOperation>(Targets{1}, OpType::X);
   op->addControl(control);
-  EXPECT_THROW(op->addControl(control), QFRException);
+  EXPECT_THROW(op->addControl(control), std::runtime_error);
 
   auto classicControlledOp = ClassicControlledOperation(std::move(op), 0, 0U);
-  EXPECT_THROW(classicControlledOp.addControl(control), QFRException);
+  EXPECT_THROW(classicControlledOp.addControl(control), std::runtime_error);
 
   auto symbolicOp = SymbolicOperation(Targets{1}, OpType::X);
   symbolicOp.addControl(control);
-  EXPECT_THROW(symbolicOp.addControl(control), QFRException);
+  EXPECT_THROW(symbolicOp.addControl(control), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, addTargetAsControl) {
@@ -822,13 +811,13 @@ TEST_F(QFRFunctionality, addTargetAsControl) {
 
   std::unique_ptr<Operation> op =
       std::make_unique<StandardOperation>(Targets{1}, OpType::X);
-  EXPECT_THROW(op->addControl(control), QFRException);
+  EXPECT_THROW(op->addControl(control), std::runtime_error);
 
   auto classicControlledOp = ClassicControlledOperation(std::move(op), 0, 0U);
-  EXPECT_THROW(classicControlledOp.addControl(control), QFRException);
+  EXPECT_THROW(classicControlledOp.addControl(control), std::runtime_error);
 
   auto symbolicOp = SymbolicOperation(Targets{1}, OpType::X);
-  EXPECT_THROW(symbolicOp.addControl(control), QFRException);
+  EXPECT_THROW(symbolicOp.addControl(control), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, addControlCompoundOperationInvalid) {
@@ -843,14 +832,14 @@ TEST_F(QFRFunctionality, addControlCompoundOperationInvalid) {
   op.emplace_back(xOp);
   op.emplace_back(cxOp);
 
-  ASSERT_THROW(op.addControl(control1), QFRException);
-  ASSERT_THROW(op.addControl(Control{1}), QFRException);
+  ASSERT_THROW(op.addControl(control1), std::runtime_error);
+  ASSERT_THROW(op.addControl(Control{1}), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, invertUnsupportedOperation) {
   auto op = NonUnitaryOperation(0U, OpType::Measure);
 
-  ASSERT_THROW(op.invert(), QFRException);
+  ASSERT_THROW(op.invert(), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, invertStandardOpSelfInverting) {
@@ -993,12 +982,12 @@ TEST_F(QFRFunctionality, measureAllExistingRegister) {
 
 TEST_F(QFRFunctionality, measureAllInsufficientRegisterSize) {
   QuantumComputation qc(2U, 1U);
-  EXPECT_THROW(qc.measureAll(false), QFRException);
+  EXPECT_THROW(qc.measureAll(false), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, checkClassicalRegisters) {
   QuantumComputation qc(1U, 1U);
-  EXPECT_THROW(qc.classicControlled(X, 0U, {0U, 2U}), QFRException);
+  EXPECT_THROW(qc.classicControlled(X, 0U, {0U, 2U}), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, testSettingAncillariesProperlyCreatesRegisters) {
@@ -1444,46 +1433,46 @@ TEST_F(QFRFunctionality, InequalityDifferentAdditionalOperations) {
 TEST_F(QFRFunctionality, TryAddingExistingQuantumRegister) {
   QuantumComputation qc{};
   qc.addQubitRegister(2, "q");
-  EXPECT_THROW(qc.addQubitRegister(2, "q"), QFRException);
+  EXPECT_THROW(qc.addQubitRegister(2, "q"), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, TryAddingExistingAncillaryRegister) {
   QuantumComputation qc{};
   qc.addAncillaryRegister(2, "a");
-  EXPECT_THROW(qc.addAncillaryRegister(2, "a"), QFRException);
+  EXPECT_THROW(qc.addAncillaryRegister(2, "a"), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, TryAddingExistingClassicalRegister) {
   QuantumComputation qc{};
   qc.addClassicalRegister(2, "c");
-  EXPECT_THROW(qc.addClassicalRegister(2, "c"), QFRException);
+  EXPECT_THROW(qc.addClassicalRegister(2, "c"), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, TryAddingQubitRegisterAfterAncillaryRegister) {
   QuantumComputation qc{};
   qc.addAncillaryRegister(2, "a");
-  EXPECT_THROW(qc.addQubitRegister(2, "q"), QFRException);
+  EXPECT_THROW(qc.addQubitRegister(2, "q"), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, TryAddingZeroSizeQuantumRegister) {
   QuantumComputation qc{};
-  EXPECT_THROW(qc.addQubitRegister(0, "q"), QFRException);
+  EXPECT_THROW(qc.addQubitRegister(0, "q"), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, TryAddingZeroSizeAncillaryRegister) {
   QuantumComputation qc{};
-  EXPECT_THROW(qc.addAncillaryRegister(0, "a"), QFRException);
+  EXPECT_THROW(qc.addAncillaryRegister(0, "a"), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, TryAddingZeroSizeClassicalRegister) {
   QuantumComputation qc{};
-  EXPECT_THROW(qc.addClassicalRegister(0, "c"), QFRException);
+  EXPECT_THROW(qc.addClassicalRegister(0, "c"), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, TryGettingRegisterForQubitNotInRegister) {
   QuantumComputation qc{};
   qc.addQubitRegister(1, "q");
-  EXPECT_THROW(std::ignore = qc.getQubitRegister(2), QFRException);
+  EXPECT_THROW(std::ignore = qc.getQubitRegister(2), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, stripIdleQubits) {
@@ -1509,5 +1498,28 @@ TEST_F(QFRFunctionality, stripIdleQubits) {
   EXPECT_EQ(qc.toQASM(), expected);
   const auto qc2 = qasm3::Importer::imports(expected);
   EXPECT_EQ(qc2.toQASM(), expected);
+}
+
+TEST_F(QFRFunctionality, failOnAddingExistingQubit) {
+  QuantumComputation qc(1);
+  EXPECT_THROW(qc.addQubit(0, 0, 0);, std::runtime_error);
+  EXPECT_THROW(qc.addAncillaryQubit(0, 0);, std::runtime_error);
+}
+
+TEST_F(QFRFunctionality, failOnAddingNonConsecutiveQubit) {
+  QuantumComputation qc(1);
+  EXPECT_THROW(qc.addQubit(2, 2, 2);, std::runtime_error);
+}
+
+TEST_F(QFRFunctionality, failOnGettingIndexOfNonExistingQubit) {
+  const QuantumComputation qc(1);
+  EXPECT_THROW(std::ignore = qc.getPhysicalQubitIndex(1);, std::runtime_error);
+}
+
+TEST_F(QFRFunctionality, failOnRegisterMisconfigurationWithMeasurements) {
+  QuantumComputation qc(2);
+  qc.addClassicalRegister(1, "c");
+  EXPECT_THROW(qc.appendMeasurementsAccordingToOutputPermutation("c");
+               , std::runtime_error);
 }
 } // namespace qc

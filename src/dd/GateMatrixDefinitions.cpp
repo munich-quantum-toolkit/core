@@ -9,13 +9,13 @@
 
 #include "dd/GateMatrixDefinitions.hpp"
 
-#include "Definitions.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "ir/operations/OpType.hpp"
 
 #include <cassert>
 #include <cmath>
 #include <complex>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -182,7 +182,7 @@ GateMatrix opToSingleQubitGateMatrix(const qc::OpType t,
   case qc::RZ:
     return rzMat(params.at(0));
   default:
-    throw qc::QFRException("Invalid single-qubit gate type");
+    throw std::invalid_argument("Invalid single-qubit gate type");
   }
 }
 
@@ -220,7 +220,7 @@ TwoQubitGateMatrix opToTwoQubitGateMatrix(const qc::OpType t,
   case qc::XXplusYY:
     return xxPlusYYMat(params.at(0), params.at(1));
   default:
-    throw qc::QFRException("Invalid two-qubit gate type");
+    throw std::invalid_argument("Invalid two-qubit gate type");
   }
 }
 } // namespace dd

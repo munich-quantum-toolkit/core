@@ -9,7 +9,7 @@
 
 #include "qasm3/Scanner.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "qasm3/Token.hpp"
 
 #include <algorithm>

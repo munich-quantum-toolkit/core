@@ -17,10 +17,12 @@ concurrency:
 
 jobs:
   cpp-test-mlir:
-    name: 🇨‌ Test MLIR
+    name: 🇨‌ Test MLIR with LLVM@${{ matrix.llvm-version }}
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        llvm-version: [19, 20]
     env:
-      llvm-version: 19
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       CTEST_PARALLEL_LEVEL: 4
       FORCE_COLOR: 3
@@ -36,19 +38,19 @@ jobs:
           sudo apt-get update
           wget https://apt.llvm.org/llvm.sh -O ${{ runner.temp }}/llvm_install.sh
           chmod +x ${{ runner.temp }}/llvm_install.sh
-          if sudo ${{ runner.temp }}/llvm_install.sh ${{ env.llvm-version }}; then
-            sudo apt-get install -y libmlir-${{ env.llvm-version }}-dev \
-                                    mlir-${{ env.llvm-version }}-tools \
-                                    clang-${{ env.llvm-version}} \
+          if sudo ${{ runner.temp }}/llvm_install.sh ${{ matrix.llvm-version }}; then
+            sudo apt-get install -y libmlir-${{ matrix.llvm-version }}-dev \
+                                    mlir-${{ matrix.llvm-version }}-tools \
+                                    clang-${{ matrix.llvm-version}} \
              || exit 1
           else
             echo "Installation from script failed."
             exit 1
           fi
-          echo "CC=clang-${{ env.llvm-version }}" >> $GITHUB_ENV
-          echo "CXX=clang++-${{ env.llvm-version }}" >> $GITHUB_ENV
-          echo "MLIR_DIR=/usr/lib/llvm-${{ env.llvm-version }}/lib/cmake/mlir" >> $GITHUB_ENV
-          echo "LLVM_DIR=/usr/lib/llvm-${{ env.llvm-version }}/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "CC=clang-${{ matrix.llvm-version }}" >> $GITHUB_ENV
+          echo "CXX=clang++-${{ matrix.llvm-version }}" >> $GITHUB_ENV
+          echo "MLIR_DIR=/usr/lib/llvm-${{ matrix.llvm-version }}/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "LLVM_DIR=/usr/lib/llvm-${{ matrix.llvm-version }}/lib/cmake/llvm" >> $GITHUB_ENV
 
       # set up ccache for faster C++ builds
       - name: Setup ccache

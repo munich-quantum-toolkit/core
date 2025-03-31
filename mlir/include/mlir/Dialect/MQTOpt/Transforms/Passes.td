@@ -5,17 +5,6 @@
 //
 // Licensed under the MIT License
 
-//===-- Passes.td - Arith pass definition file --------*- tablegen -*-===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
-#ifndef MQTO_PASSES
-#define MQTO_PASSES
-
 include "mlir/Pass/PassBase.td"
 
 def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
@@ -42,5 +31,3 @@ def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
       /*description=*/"The device coupling map.">,
     ];
 }
-
-#endif // MQTO_PASSES

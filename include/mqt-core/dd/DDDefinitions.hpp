@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 
 #include <array>
 #include <cmath>
@@ -125,4 +125,21 @@ intToBinaryString(const std::size_t value, const std::size_t nbits) {
   }
   return ulps;
 }
+
+/**
+ * @brief 64bit mixing hash (from MurmurHash3)
+ * @details Hash function for 64bit integers adapted from MurmurHash3
+ * @param k the number to hash
+ * @returns the hash value
+ * @see https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
+ */
+[[nodiscard]] constexpr std::size_t murmur64(std::size_t k) noexcept {
+  k ^= k >> 33;
+  k *= 0xff51afd7ed558ccdULL;
+  k ^= k >> 33;
+  k *= 0xc4ceb9fe1a85ec53ULL;
+  k ^= k >> 33;
+  return k;
+}
+
 } // namespace dd

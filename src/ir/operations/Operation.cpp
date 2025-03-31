@@ -9,7 +9,7 @@
 
 #include "ir/operations/Operation.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"

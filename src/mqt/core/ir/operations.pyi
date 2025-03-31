@@ -293,10 +293,6 @@ class OpType:
     See Also:
         :meth:`mqt.core.ir.QuantumComputation.tdg`
     """
-    teleportation: ClassVar[OpType]
-    """
-    A teleportation operation.
-    """
     u2: ClassVar[OpType]
     """
     A U2 gate.

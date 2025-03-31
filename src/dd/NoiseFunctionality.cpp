@@ -9,13 +9,13 @@
 
 #include "dd/NoiseFunctionality.hpp"
 
-#include "Definitions.hpp"
 #include "dd/ComplexNumbers.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/DDpackageConfig.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 
@@ -35,19 +35,20 @@ namespace {
 std::vector<dd::NoiseOperations>
 initializeNoiseEffects(const std::string& cNoiseEffects) {
   std::vector<dd::NoiseOperations> noiseOperationVector{};
+  noiseOperationVector.reserve(cNoiseEffects.size());
   for (const auto noise : cNoiseEffects) {
     switch (noise) {
     case 'A':
-      noiseOperationVector.push_back(dd::AmplitudeDamping);
+      noiseOperationVector.emplace_back(dd::AmplitudeDamping);
       break;
     case 'P':
-      noiseOperationVector.push_back(dd::PhaseFlip);
+      noiseOperationVector.emplace_back(dd::PhaseFlip);
       break;
     case 'D':
-      noiseOperationVector.push_back(dd::Depolarization);
+      noiseOperationVector.emplace_back(dd::Depolarization);
       break;
     case 'I':
-      noiseOperationVector.push_back(dd::Identity);
+      noiseOperationVector.emplace_back(dd::Identity);
       break;
     default:
       throw std::runtime_error("Unknown noise operation '" + cNoiseEffects +
@@ -61,8 +62,8 @@ initializeNoiseEffects(const std::string& cNoiseEffects) {
 namespace dd {
 StochasticNoiseFunctionality::StochasticNoiseFunctionality(
     const std::unique_ptr<Package<StochasticNoiseSimulatorDDPackageConfig>>& dd,
-    const std::size_t nq, double gateNoiseProbability,
-    double amplitudeDampingProb, double multiQubitGateFactor,
+    const std::size_t nq, const double gateNoiseProbability,
+    const double amplitudeDampingProb, const double multiQubitGateFactor,
     const std::string& cNoiseEffects)
     : package(dd.get()), nQubits(nq), dist(0.0, 1.0L),
       noiseProbability(gateNoiseProbability),
@@ -73,7 +74,7 @@ StochasticNoiseFunctionality::StochasticNoiseFunctionality(
       sqrtAmplitudeDampingProbabilityMulti(std::sqrt(gateNoiseProbability) *
                                            multiQubitGateFactor),
       oneMinusSqrtAmplitudeDampingProbabilityMulti(
-          std::sqrt(1 - multiQubitGateFactor * amplitudeDampingProb)),
+          std::sqrt(1 - (multiQubitGateFactor * amplitudeDampingProb))),
       ampDampingTrue({0, sqrtAmplitudeDampingProbability, 0, 0}),
       ampDampingTrueMulti({0, sqrtAmplitudeDampingProbabilityMulti, 0, 0}),
       ampDampingFalse({1, 0, 0, oneMinusSqrtAmplitudeDampingProbability}),
@@ -87,7 +88,7 @@ StochasticNoiseFunctionality::StochasticNoiseFunctionality(
 }
 
 double StochasticNoiseFunctionality::getNoiseProbability(
-    bool multiQubitNoiseFlag) const {
+    const bool multiQubitNoiseFlag) const {
   return multiQubitNoiseFlag ? noiseProbabilityMulti : noiseProbability;
 }
 
@@ -139,8 +140,8 @@ void StochasticNoiseFunctionality::applyNoiseOperation(
 }
 
 mEdge StochasticNoiseFunctionality::stackOperation(
-    mEdge operation, const qc::Qubit target, const qc::OpType noiseOperation,
-    const GateMatrix matrix) {
+    const mEdge& operation, const qc::Qubit target,
+    const qc::OpType noiseOperation, const GateMatrix& matrix) const {
   if (const auto* op =
           package->stochasticNoiseOperationCache.lookup(noiseOperation, target);
       op != nullptr) {
@@ -152,7 +153,7 @@ mEdge StochasticNoiseFunctionality::stackOperation(
 }
 
 mEdge StochasticNoiseFunctionality::generateNoiseOperation(
-    mEdge operation, qc::Qubit target, std::mt19937_64& generator,
+    mEdge operation, const qc::Qubit target, std::mt19937_64& generator,
     const bool amplitudeDamping, const bool multiQubitOperation) {
   for (const auto& noiseType : noiseEffects) {
     const auto effect = noiseType == AmplitudeDamping
@@ -197,10 +198,10 @@ mEdge StochasticNoiseFunctionality::generateNoiseOperation(
 }
 
 qc::OpType StochasticNoiseFunctionality::returnNoiseOperation(
-    NoiseOperations noiseOperation, const double prob,
+    const NoiseOperations noiseOperation, const double prob,
     const bool multiQubitNoiseFlag) const {
   switch (noiseOperation) {
-  case NoiseOperations::Depolarization: {
+  case Depolarization: {
     if (prob >= (getNoiseProbability(multiQubitNoiseFlag) * 0.75)) {
       // prob > prob apply qc::I, also 25 % of the time when depolarization is
       // applied nothing happens
@@ -220,13 +221,13 @@ qc::OpType StochasticNoiseFunctionality::returnNoiseOperation(
     // apply qc::Z
     return qc::Z;
   }
-  case NoiseOperations::PhaseFlip: {
+  case PhaseFlip: {
     if (prob > getNoiseProbability(multiQubitNoiseFlag)) {
       return qc::I;
     }
     return qc::Z;
   }
-  case NoiseOperations::Identity: {
+  case Identity: {
     return qc::I;
   }
   default:
@@ -237,9 +238,10 @@ qc::OpType StochasticNoiseFunctionality::returnNoiseOperation(
 
 DeterministicNoiseFunctionality::DeterministicNoiseFunctionality(
     const std::unique_ptr<Package<DensityMatrixSimulatorDDPackageConfig>>& dd,
-    const std::size_t nq, double noiseProbabilitySingleQubit,
-    double noiseProbabilityMultiQubit, double ampDampProbSingleQubit,
-    double ampDampProbMultiQubit, const std::string& cNoiseEffects)
+    const std::size_t nq, const double noiseProbabilitySingleQubit,
+    const double noiseProbabilityMultiQubit,
+    const double ampDampProbSingleQubit, const double ampDampProbMultiQubit,
+    const std::string& cNoiseEffects)
     : package(dd.get()), nQubits(nq),
       noiseProbSingleQubit(noiseProbabilitySingleQubit),
       noiseProbMultiQubit(noiseProbabilityMultiQubit),
@@ -254,13 +256,13 @@ DeterministicNoiseFunctionality::DeterministicNoiseFunctionality(
 
 void DeterministicNoiseFunctionality::applyNoiseEffects(
     dEdge& originalEdge, const std::unique_ptr<qc::Operation>& qcOperation) {
-  auto usedQubits = qcOperation->getUsedQubits();
+  const auto usedQubits = qcOperation->getUsedQubits();
   dCachedEdge nodeAfterNoise = {};
   dEdge::applyDmChangesToEdge(originalEdge);
   nodeAfterNoise = applyNoiseEffects(originalEdge, usedQubits, false,
                                      static_cast<Qubit>(nQubits));
   dEdge::revertDmChangesToEdge(originalEdge);
-  auto r = dEdge{nodeAfterNoise.p, package->cn.lookup(nodeAfterNoise.w)};
+  const auto r = dEdge{nodeAfterNoise.p, package->cn.lookup(nodeAfterNoise.w)};
   package->incRef(r);
   dEdge::alignDensityEdge(originalEdge);
   package->decRef(originalEdge);
@@ -342,7 +344,7 @@ dCachedEdge DeterministicNoiseFunctionality::applyNoiseEffects(
 
 void DeterministicNoiseFunctionality::applyPhaseFlipToEdges(
     ArrayOfEdges& e, const double probability) {
-  const auto complexProb = 1. - 2. * probability;
+  const auto complexProb = 1. - (2. * probability);
 
   // e[0] = e[0]
   // e[1] = (1-2p)*e[1]
@@ -357,7 +359,7 @@ void DeterministicNoiseFunctionality::applyPhaseFlipToEdges(
 }
 
 void DeterministicNoiseFunctionality::applyAmplitudeDampingToEdges(
-    ArrayOfEdges& e, const double probability) {
+    ArrayOfEdges& e, const double probability) const {
   // e[0] = e[0] + p*e[3]
   if (!e[3].w.exactlyZero()) {
     if (!e[0].w.exactlyZero()) {
@@ -388,14 +390,14 @@ void DeterministicNoiseFunctionality::applyAmplitudeDampingToEdges(
 }
 
 void DeterministicNoiseFunctionality::applyDepolarisationToEdges(
-    ArrayOfEdges& e, const double probability) {
+    ArrayOfEdges& e, const double probability) const {
   std::array<dCachedEdge, 2> helperEdge{};
 
   const auto var = static_cast<Qubit>(std::max(
       {e[0].p != nullptr ? e[0].p->v : 0, e[1].p != nullptr ? e[1].p->v : 0,
        e[2].p != nullptr ? e[2].p->v : 0, e[3].p != nullptr ? e[3].p->v : 0}));
 
-  auto oldE0Edge = e[0];
+  const auto oldE0Edge = e[0];
 
   // e[0] = 0.5*((2-p)*e[0] + p*e[3])
   {

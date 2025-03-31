@@ -7,7 +7,6 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
 #include "algorithms/BernsteinVazirani.hpp"
 #include "algorithms/QFT.hpp"
 #include "algorithms/QPE.hpp"
@@ -15,7 +14,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
-#include "dd/Simulation.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
 #include <bitset>
@@ -181,41 +180,6 @@ TEST_P(DynamicCircuitEvalExactQPE, UnitaryTransformation) {
   std::cout << ss.str() << "\n";
 
   EXPECT_TRUE(e.isIdentity());
-}
-
-TEST_P(DynamicCircuitEvalExactQPE, ProbabilityExtraction) {
-  // generate DD of QPE circuit via simulation
-  const auto start = std::chrono::steady_clock::now();
-  const auto e = simulate(qpe, dd->makeZeroState(qpe.getNqubits()), *dd);
-  const auto simulationEnd = std::chrono::steady_clock::now();
-
-  // extract measurement probabilities from IQPE simulations
-  dd::SparsePVec probs{};
-  extractProbabilityVector(iqpe, dd->makeZeroState(iqpe.getNqubits()), probs,
-                           *dd);
-  const auto extractionEnd = std::chrono::steady_clock::now();
-
-  // compare outcomes
-  const auto fidelity = dd::Package<>::fidelityOfMeasurementOutcomes(
-      e, probs, qpe.outputPermutation);
-  const auto comparisonEnd = std::chrono::steady_clock::now();
-
-  const auto simulation =
-      std::chrono::duration<double>(simulationEnd - start).count();
-  const auto extraction =
-      std::chrono::duration<double>(extractionEnd - simulationEnd).count();
-  const auto comparison =
-      std::chrono::duration<double>(comparisonEnd - extractionEnd).count();
-  const auto total =
-      std::chrono::duration<double>(comparisonEnd - start).count();
-
-  std::stringstream ss{};
-  ss << "qpe_exact,extraction," << qpe.getNqubits() << "," << qpeNgates << ",2,"
-     << iqpeNgates << "," << simulation << "," << extraction << ","
-     << comparison << "," << total;
-  std::cout << ss.str() << "\n";
-
-  EXPECT_NEAR(fidelity, 1.0, 1e-4);
 }
 
 class DynamicCircuitEvalInexactQPE : public testing::TestWithParam<qc::Qubit> {
@@ -387,43 +351,6 @@ TEST_P(DynamicCircuitEvalInexactQPE, UnitaryTransformation) {
   EXPECT_TRUE(e.isIdentity());
 }
 
-TEST_P(DynamicCircuitEvalInexactQPE, ProbabilityExtraction) {
-  const auto start = std::chrono::steady_clock::now();
-  // extract measurement probabilities from IQPE simulations
-  dd::SparsePVec probs{};
-  extractProbabilityVector(iqpe, dd->makeZeroState(iqpe.getNqubits()), probs,
-                           *dd);
-  const auto extractionEnd = std::chrono::steady_clock::now();
-  std::cout << "---- extraction done ----\n";
-
-  // generate DD of QPE circuit via simulation
-  auto e = simulate(qpe, dd->makeZeroState(qpe.getNqubits()), *dd);
-  const auto simulationEnd = std::chrono::steady_clock::now();
-  std::cout << "---- sim done ----\n";
-
-  // compare outcomes
-  const auto fidelity = dd::Package<>::fidelityOfMeasurementOutcomes(
-      e, probs, qpe.outputPermutation);
-  const auto comparisonEnd = std::chrono::steady_clock::now();
-
-  const auto extraction =
-      std::chrono::duration<double>(extractionEnd - start).count();
-  const auto simulation =
-      std::chrono::duration<double>(simulationEnd - extractionEnd).count();
-  const auto comparison =
-      std::chrono::duration<double>(comparisonEnd - simulationEnd).count();
-  const auto total =
-      std::chrono::duration<double>(comparisonEnd - start).count();
-
-  std::stringstream ss{};
-  ss << "qpe_inexact,extraction," << qpe.getNqubits() << "," << qpeNgates
-     << ",2," << iqpeNgates << "," << simulation << "," << extraction << ","
-     << comparison << "," << total;
-  std::cout << ss.str() << "\n";
-
-  EXPECT_NEAR(fidelity, 1.0, 1e-4);
-}
-
 class DynamicCircuitEvalBV : public testing::TestWithParam<qc::Qubit> {
 protected:
   qc::Qubit bitwidth{};
@@ -537,41 +464,6 @@ TEST_P(DynamicCircuitEvalBV, UnitaryTransformation) {
   EXPECT_TRUE(e.isIdentity());
 }
 
-TEST_P(DynamicCircuitEvalBV, ProbabilityExtraction) {
-  // generate DD of QPE circuit via simulation
-  const auto start = std::chrono::steady_clock::now();
-  const auto e = simulate(bv, dd->makeZeroState(bv.getNqubits()), *dd);
-  const auto simulationEnd = std::chrono::steady_clock::now();
-
-  // extract measurement probabilities from IQPE simulations
-  dd::SparsePVec probs{};
-  extractProbabilityVector(dbv, dd->makeZeroState(dbv.getNqubits()), probs,
-                           *dd);
-  const auto extractionEnd = std::chrono::steady_clock::now();
-
-  // compare outcomes
-  const auto fidelity = dd::Package<>::fidelityOfMeasurementOutcomes(
-      e, probs, bv.outputPermutation);
-  const auto comparisonEnd = std::chrono::steady_clock::now();
-
-  const auto simulation =
-      std::chrono::duration<double>(simulationEnd - start).count();
-  const auto extraction =
-      std::chrono::duration<double>(extractionEnd - simulationEnd).count();
-  const auto comparison =
-      std::chrono::duration<double>(comparisonEnd - extractionEnd).count();
-  const auto total =
-      std::chrono::duration<double>(comparisonEnd - start).count();
-
-  std::stringstream ss{};
-  ss << "bv,extraction," << bv.getNqubits() << "," << bvNgates << ",2,"
-     << dbvNgates << "," << simulation << "," << extraction << "," << comparison
-     << "," << total;
-  std::cout << ss.str() << "\n";
-
-  EXPECT_NEAR(fidelity, 1.0, 1e-4);
-}
-
 class DynamicCircuitEvalQFT : public testing::TestWithParam<qc::Qubit> {
 protected:
   qc::Qubit precision{};
@@ -679,43 +571,4 @@ TEST_P(DynamicCircuitEvalQFT, UnitaryTransformation) {
   std::cout << ss.str() << "\n";
 
   EXPECT_TRUE(e.isIdentity());
-}
-
-TEST_P(DynamicCircuitEvalQFT, ProbabilityExtraction) {
-  // generate DD of QPE circuit via simulation
-  const auto start = std::chrono::steady_clock::now();
-  auto e = simulate(qft, dd->makeZeroState(qft.getNqubits()), *dd);
-  const auto simulationEnd = std::chrono::steady_clock::now();
-  const auto simulation =
-      std::chrono::duration<double>(simulationEnd - start).count();
-
-  std::stringstream ss{};
-  // extract measurement probabilities from IQPE simulations
-  if (qft.getNqubits() <= 15) {
-    dd::SparsePVec probs{};
-    extractProbabilityVector(dqft, dd->makeZeroState(dqft.getNqubits()), probs,
-                             *dd);
-    const auto extractionEnd = std::chrono::steady_clock::now();
-
-    // compare outcomes
-    const auto fidelity = dd::Package<>::fidelityOfMeasurementOutcomes(
-        e, probs, qft.outputPermutation);
-    const auto comparisonEnd = std::chrono::steady_clock::now();
-    const auto extraction =
-        std::chrono::duration<double>(extractionEnd - simulationEnd).count();
-    const auto comparison =
-        std::chrono::duration<double>(comparisonEnd - extractionEnd).count();
-    const auto total =
-        std::chrono::duration<double>(comparisonEnd - start).count();
-    EXPECT_NEAR(fidelity, 1.0, 1e-4);
-    ss << "qft,extraction," << qft.getNqubits() << "," << qftNgates << ",1,"
-       << dqftNgates << "," << extraction << "," << simulation << ","
-       << comparison << "," << total;
-    std::cout << ss.str() << "\n";
-
-  } else {
-    ss << "qft,extraction," << qft.getNqubits() << "," << qftNgates << ",1,"
-       << dqftNgates << ",," << simulation << ",,,";
-    std::cout << ss.str() << "\n";
-  }
 }

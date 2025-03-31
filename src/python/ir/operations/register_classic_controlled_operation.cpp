@@ -7,7 +7,7 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/Operation.hpp"
 #include "python/pybind11.hpp"

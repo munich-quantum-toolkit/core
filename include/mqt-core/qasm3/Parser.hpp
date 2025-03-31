@@ -20,7 +20,7 @@
 #include "Token.hpp"
 #include "Types_fwd.hpp"
 
-#include <iosfwd>
+#include <istream>
 #include <memory>
 #include <optional>
 #include <stack>

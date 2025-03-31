@@ -9,7 +9,7 @@
 
 #include "algorithms/QPE.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/OpType.hpp"
@@ -24,6 +24,7 @@
 
 namespace qc {
 
+namespace {
 // generate a random n-bit number and convert it to an appropriate phase
 [[nodiscard]] auto createExactPhase(const Qubit nq, std::mt19937_64& mt) -> fp {
   const std::uint64_t max = 1ULL << nq;
@@ -123,6 +124,7 @@ auto constructQPECircuit(QuantumComputation& qc, const fp lambda,
     qc.outputPermutation[i + 1] = i;
   }
 }
+} // namespace
 
 auto createQPE(const Qubit nq, const bool exact, const std::size_t seed)
     -> QuantumComputation {
@@ -140,6 +142,7 @@ auto createQPE(const fp lambda, const Qubit precision) -> QuantumComputation {
   return qc;
 }
 
+namespace {
 auto constructIterativeQPECircuit(QuantumComputation& qc, const fp lambda,
                                   const Qubit nq) -> void {
   qc.setName(getName(true, nq, lambda));
@@ -186,6 +189,7 @@ auto constructIterativeQPECircuit(QuantumComputation& qc, const fp lambda,
     }
   }
 }
+} // namespace
 
 auto createIterativeQPE(const Qubit nq, const bool exact,
                         const std::size_t seed) -> QuantumComputation {

@@ -15,7 +15,7 @@
 
 #include "ir/operations/NonUnitaryOperation.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/Register.hpp"
 #include "ir/operations/OpType.hpp"

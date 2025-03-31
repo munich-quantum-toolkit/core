@@ -22,7 +22,7 @@ class RewritePatternSet;
 namespace mqt::ir::opt {
 
 #define GEN_PASS_DECL
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
+#include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc" // IWYU pragma: export
 
 void populateThePassPatterns(mlir::RewritePatternSet& patterns);
 void populateToQuantumComputationPatterns(mlir::RewritePatternSet& patterns,
@@ -36,5 +36,5 @@ void populateFromQuantumComputationPatterns(mlir::RewritePatternSet& patterns,
 
 /// Generate the code for registering passes.
 #define GEN_PASS_REGISTRATION
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
+#include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc" // IWYU pragma: export
 } // namespace mqt::ir::opt

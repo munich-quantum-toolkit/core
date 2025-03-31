@@ -9,11 +9,11 @@
 
 #pragma once
 
-#include "Definitions.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Package.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
@@ -30,6 +30,7 @@
 #include <ostream>
 #include <random>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -58,7 +59,7 @@ qc::MatrixDD getStandardOperationDD(Package<Config>& dd, const qc::OpType type,
                                     const std::vector<qc::Qubit>& targets) {
   if (qc::isSingleQubitGate(type)) {
     if (targets.size() != 1) {
-      throw qc::QFRException(
+      throw std::invalid_argument(
           "Expected exactly one target qubit for single-qubit gate");
     }
     return dd.makeGateDD(opToSingleQubitGateMatrix(type, params), controls,
@@ -66,12 +67,13 @@ qc::MatrixDD getStandardOperationDD(Package<Config>& dd, const qc::OpType type,
   }
   if (qc::isTwoQubitGate(type)) {
     if (targets.size() != 2) {
-      throw qc::QFRException("Expected two target qubits for two-qubit gate");
+      throw std::invalid_argument(
+          "Expected two target qubits for two-qubit gate");
     }
     return dd.makeTwoQubitGateDD(opToTwoQubitGateMatrix(type, params), controls,
                                  targets[0U], targets[1U]);
   }
-  throw qc::QFRException("Unexpected operation type");
+  throw std::runtime_error("Unexpected operation type");
 }
 
 /**
@@ -147,7 +149,7 @@ qc::MatrixDD getStandardOperationDD(const qc::StandardOperation& op,
   // other special cases
   case qc::DCX:
     if (targetQubits.size() != 2) {
-      throw qc::QFRException("Invalid target qubits for DCX");
+      throw std::runtime_error("Invalid target qubits for DCX");
     }
     // DCX is not self-inverse, but the inverse is just swapping the targets
     std::swap(targetQubits[0], targetQubits[1]);
@@ -169,7 +171,7 @@ qc::MatrixDD getStandardOperationDD(const qc::StandardOperation& op,
   default:
     std::ostringstream oss{};
     oss << "negation for gate " << op.getName() << " not available!";
-    throw qc::QFRException(oss.str());
+    throw std::runtime_error(oss.str());
   }
   return getStandardOperationDD(dd, type, params, controls, targetQubits);
 }
@@ -235,7 +237,7 @@ qc::MatrixDD getDD(const qc::Operation& op, Package<Config>& dd,
   }
 
   assert(op.isNonUnitaryOperation());
-  throw qc::QFRException("DD for non-unitary operation not available!");
+  throw std::invalid_argument("DD for non-unitary operation not available!");
 }
 
 /**
@@ -458,7 +460,7 @@ void changePermutation(DDType& on, qc::Permutation& from,
     // search for key in the first map
     auto it = from.find(i);
     if (it == from.end()) {
-      throw qc::QFRException(
+      throw std::runtime_error(
           "[changePermutation] Key " + std::to_string(it->first) +
           " was not found in first permutation. This should never happen.");
     }

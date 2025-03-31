@@ -9,7 +9,7 @@
 
 #include "algorithms/Grover.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
 
@@ -68,14 +68,15 @@ auto computeNumberOfIterations(const Qubit nq) -> std::size_t {
     return 1;
   }
   if (nq % 2 == 1) {
-    return static_cast<std::size_t>(
-        std::round(PI_4 * std::pow(2., static_cast<double>(nq + 1) / 2. - 1.) *
-                   std::sqrt(2)));
+    return static_cast<std::size_t>(std::round(
+        PI_4 * std::pow(2., (static_cast<double>(nq + 1) / 2.) - 1.) *
+        std::sqrt(2)));
   }
   return static_cast<std::size_t>(
       std::round(PI_4 * std::pow(2., static_cast<double>(nq) / 2.)));
 }
 
+namespace {
 [[nodiscard]] auto generateTargetValue(const std::size_t nDataQubits,
                                        std::mt19937_64& mt) -> GroverBitString {
   GroverBitString targetValue;
@@ -121,6 +122,7 @@ auto constructGroverCircuit(QuantumComputation& qc, const Qubit nq,
     qc.measure(i, i);
   }
 }
+} // namespace
 
 auto createGrover(const Qubit nq, const std::size_t seed)
     -> QuantumComputation {

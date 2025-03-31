@@ -33,8 +33,6 @@ public:
   using DAGReverseIterators = std::vector<DAGReverseIterator>;
 
   static DAG constructDAG(QuantumComputation& qc);
-  static void printDAG(const DAG& dag);
-  static void printDAG(const DAG& dag, const DAGIterators& iterators);
 
   static void swapReconstruction(QuantumComputation& qc);
 
@@ -52,8 +50,6 @@ public:
 
   static void decomposeSWAP(QuantumComputation& qc,
                             bool isDirectedArchitecture);
-
-  static void decomposeTeleport(QuantumComputation& qc);
 
   static void eliminateResets(QuantumComputation& qc);
 

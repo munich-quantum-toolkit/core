@@ -11,13 +11,15 @@
 
 #include <cstddef>
 #include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/Support/LLVM.h>
 
 namespace mqt::ir::opt {
 template <size_t N> class TargetArity {
 public:
   template <typename ConcreteOp>
   class Impl : public mlir::OpTrait::TraitBase<ConcreteOp, Impl> {
-    static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
+    [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
       auto unitaryOp = mlir::cast<ConcreteOp>(op);
       if (const auto size = unitaryOp.getInQubits().size(); size != N) {
         return op->emitError()
@@ -32,7 +34,7 @@ template <size_t N> class ParameterArity {
 public:
   template <typename ConcreteOp>
   class Impl : public mlir::OpTrait::TraitBase<ConcreteOp, Impl> {
-    static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
+    [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
       auto paramOp = mlir::cast<ConcreteOp>(op);
       const auto& params = paramOp.getParams();
       const auto& staticParams = paramOp.getStaticParams();
@@ -54,19 +56,19 @@ public:
                                << paramsMask->size() << " entries";
       }
       if (paramsMask.has_value()) {
-        const auto true_entries = static_cast<std::size_t>(std::count_if(
+        const auto trueEntries = static_cast<std::size_t>(std::count_if(
             paramsMask->begin(), paramsMask->end(), [](bool b) { return b; }));
         if ((!staticParams.has_value() || staticParams->empty()) &&
-            true_entries != 0) {
+            trueEntries != 0) {
           return op->emitError() << "operation has no static parameter but has "
                                     "a parameter mask with "
-                                 << true_entries << " true entries";
+                                 << trueEntries << " true entries";
         }
-        if (const auto size = staticParams->size(); size != true_entries) {
+        if (const auto size = staticParams->size(); size != trueEntries) {
           return op->emitError()
                  << "operation has " << size
                  << " static parameter(s) but has a parameter mask with "
-                 << true_entries << " true entries";
+                 << trueEntries << " true entries";
         }
       }
       return mlir::success();

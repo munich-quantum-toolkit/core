@@ -9,7 +9,7 @@
 
 #include "na/operations/GlobalOp.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 
 #include <iomanip>
 #include <ios>

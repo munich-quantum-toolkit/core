@@ -9,8 +9,8 @@
 
 #include "algorithms/StatePreparation.hpp"
 
-#include "Definitions.hpp"
 #include "circuit_optimizer/CircuitOptimizer.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
@@ -29,6 +29,7 @@
 namespace qc {
 using Matrix = std::vector<std::vector<double>>;
 
+namespace {
 template <typename T>
 [[nodiscard]] auto twoNorm(const std::vector<T>& vec) -> double {
   double norm = 0;
@@ -63,7 +64,8 @@ template <typename T>
           // Each element of matrix A is
           // multiplied by whole Matrix B
           // resp and stored as Matrix C
-          newMatrix[i * rowB + k][j * colB + l] = matrixA[i][j] * matrixB[k][l];
+          newMatrix[(i * rowB) + k][(j * colB) + l] =
+              matrixA[i][j] * matrixB[k][l];
         }
       }
     }
@@ -267,6 +269,7 @@ gatesToUncompute(std::vector<std::complex<double>>& amplitudes,
   }
   return disentangler;
 }
+} // namespace
 
 auto createStatePreparationCircuit(
     const std::vector<std::complex<double>>& amplitudes, const double eps)

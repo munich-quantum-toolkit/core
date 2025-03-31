@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 
 #include <cmath>
 #include <cstddef>

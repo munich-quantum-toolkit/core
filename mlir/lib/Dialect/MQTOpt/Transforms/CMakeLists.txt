@@ -13,3 +13,11 @@ file(GLOB TRANSFORMS_SOURCES *.cpp)
 
 add_mlir_library(MLIRMQTOptTransforms ${TRANSFORMS_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
                  MLIRMQTOptTransformsIncGen)
+
+# collect header files
+file(GLOB_RECURSE TRANSFORMS_HEADERS
+     ${MQT_MLIR_INCLUDE_BUILD_DIR}/mlir/Dialect/MQTOpt/Transforms/*.h)
+
+# add public headers using file sets
+target_sources(MLIRMQTOptTransforms PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_INCLUDE_BUILD_DIR}
+                                           FILES ${TRANSFORMS_HEADERS})

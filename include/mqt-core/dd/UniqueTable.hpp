@@ -9,11 +9,11 @@
 
 #pragma once
 
-#include "Definitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
+#include "ir/Definitions.hpp"
 
 #include <cassert>
 #include <cstddef>

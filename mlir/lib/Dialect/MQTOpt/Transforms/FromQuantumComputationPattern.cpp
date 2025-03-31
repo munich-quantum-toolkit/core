@@ -8,31 +8,36 @@
  */
 
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
-#include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/ValueRange.h"
-#include "mlir/Support/LLVM.h"
 
-#include "llvm/Support/raw_ostream.h"
-
-#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <cstddef>
+#include <cstdint>
+#include <llvm/Support/raw_ostream.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LogicalResult.h>
+#include <stdexcept>
+#include <vector>
 
 namespace mqt::ir::opt {
 /// Analysis pattern that creates MLIR instructions from a given
 /// qc::QuantumComputation. These instructions replace an existing `AllocOp`
 /// that has the `to_replace` attribute set.
 struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
-  qc::QuantumComputation& circuit;
+  qc::QuantumComputation& circuit; // NOLINT(*-avoid-const-or-ref-data-members)
 
   explicit FromQuantumComputationPattern(mlir::MLIRContext* context,
                                          qc::QuantumComputation& qc)
       : OpRewritePattern(context), circuit(qc) {}
 
-  mlir::LogicalResult match(AllocOp op) const override {
+  // clang-tidy false positive
+  // NOLINTNEXTLINE(*-convert-member-functions-to-static)
+  [[nodiscard]] mlir::LogicalResult match(const AllocOp op) const override {
     return op->hasAttr("to_replace") ? mlir::success() : mlir::failure();
   }
 
@@ -46,13 +51,14 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    *
    * @return The created ExtractOp.
    */
-  ExtractOp createRegisterAccess(AllocOp& reg, size_t index,
-                                 mlir::PatternRewriter& rewriter) const {
+  static ExtractOp createRegisterAccess(AllocOp& reg, const size_t index,
+                                        mlir::PatternRewriter& rewriter) {
     return rewriter.create<ExtractOp>(
         reg.getLoc(),
         mlir::TypeRange{QubitRegisterType::get(rewriter.getContext()),
                         QubitType::get(rewriter.getContext())},
-        reg.getResult(), nullptr, rewriter.getI64IntegerAttr(index));
+        reg.getResult(), nullptr,
+        rewriter.getI64IntegerAttr(static_cast<std::int64_t>(index)));
   }
 
   /**
@@ -60,6 +66,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * positive or negative controls.
    *
    * @param loc The location of the operation.
+   * @param type The type of the unitary operation.
    * @param inQubit The qubit to apply the unitary operation to.
    * @param controlQubitsPositive The positive control qubits.
    * @param controlQubitsNegative The negative control qubits.
@@ -67,15 +74,14 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    *
    * @return The created UnitaryOp.
    */
-  UnitaryInterface createUnitaryOp(mlir::Location loc, qc::OpType type,
-                                   mlir::Value inQubit,
-                                   mlir::ValueRange controlQubitsPositive,
-                                   mlir::ValueRange controlQubitsNegative,
-                                   mlir::PatternRewriter& rewriter) const {
-    std::vector<mlir::Type> resultTypes(1 + controlQubitsPositive.size() +
-                                            controlQubitsNegative.size(),
-                                        inQubit.getType());
-    mlir::TypeRange outTypes(resultTypes);
+  static UnitaryInterface createUnitaryOp(
+      const mlir::Location loc, const qc::OpType type,
+      const mlir::Value inQubit, mlir::ValueRange controlQubitsPositive,
+      mlir::ValueRange controlQubitsNegative, mlir::PatternRewriter& rewriter) {
+    const std::vector resultTypes(1 + controlQubitsPositive.size() +
+                                      controlQubitsNegative.size(),
+                                  inQubit.getType());
+    const mlir::TypeRange outTypes(resultTypes);
 
     switch (type) {
     case qc::OpType::X:
@@ -102,8 +108,9 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    *
    * @return The created MeasureOp.
    */
-  MeasureOp createMeasureOp(mlir::Location loc, mlir::Value targetQubit,
-                            mlir::PatternRewriter& rewriter) const {
+  static MeasureOp createMeasureOp(const mlir::Location loc,
+                                   mlir::Value targetQubit,
+                                   mlir::PatternRewriter& rewriter) {
     return rewriter.create<MeasureOp>(
         loc,
         mlir::TypeRange{QubitType::get(rewriter.getContext()),
@@ -121,10 +128,11 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * @param measurementValues The values to use as the new return values.
    * @param rewriter The pattern rewriter to use.
    */
-  void updateReturnOperation(mlir::Operation* returnOperation,
-                             std::vector<mlir::Value>& measurementValues,
-                             mlir::PatternRewriter& rewriter) const {
-    const auto cloned = rewriter.clone(*returnOperation);
+  static void
+  updateReturnOperation(mlir::Operation* returnOperation,
+                        const std::vector<mlir::Value>& measurementValues,
+                        mlir::PatternRewriter& rewriter) {
+    auto* const cloned = rewriter.clone(*returnOperation);
     for (size_t i = 0; i < measurementValues.size(); i++) {
       cloned->setOperand(i + 1, measurementValues[i]);
     }
@@ -132,7 +140,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
   }
 
   void rewrite(AllocOp op, mlir::PatternRewriter& rewriter) const override {
-    std::size_t numQubits = circuit.getNqubits();
+    const std::size_t numQubits = circuit.getNqubits();
 
     // Prepare list of measurement results for later use.
     std::vector<mlir::Value> measurementValues(numQubits);
@@ -140,7 +148,8 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // Create a new qubit register with the correct number of qubits.
     auto newAlloc = rewriter.create<AllocOp>(
         op.getLoc(), QubitRegisterType::get(rewriter.getContext()), nullptr,
-        rewriter.getIntegerAttr(rewriter.getI64Type(), numQubits));
+        rewriter.getIntegerAttr(rewriter.getI64Type(),
+                                static_cast<std::int64_t>(numQubits)));
     newAlloc->setAttr("mqt_core", rewriter.getUnitAttr());
 
     // We start by first extracting each qubit from the register. The current
@@ -206,13 +215,11 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       }
     }
 
-    // Finally, check if the return operation needs to be updated with the
-    // measurement results and then replace the original `alloc` operation with
-    // the updated one.
-    if (measurementValues[0]) {
-      auto returnOperation = *op->getUsers().begin();
-      updateReturnOperation(returnOperation, measurementValues, rewriter);
-    }
+    // Finally, the return operation needs to be updated with the measurement
+    // results and then replace the original `alloc` operation with the updated
+    // one.
+    auto* const returnOperation = *op->getUsers().begin();
+    updateReturnOperation(returnOperation, measurementValues, rewriter);
     rewriter.replaceOp(op, newAlloc);
   }
 };

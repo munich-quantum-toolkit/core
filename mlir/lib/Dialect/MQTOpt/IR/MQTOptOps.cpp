@@ -7,12 +7,16 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h" // IWYU pragma: associated
 
+// The following headers are needed for some template instantiations.
+// IWYU pragma: begin_keep
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/DialectImplementation.h>
-#include <mlir/Support/LLVM.h>
+// IWYU pragma: end_keep
+
+#include <mlir/Support/LogicalResult.h>
 
 //===----------------------------------------------------------------------===//
 // Dialect
@@ -21,6 +25,7 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptOpsDialect.cpp.inc"
 
 void mqt::ir::opt::MQTOptDialect::initialize() {
+  // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   addTypes<
 #define GET_TYPEDEF_LIST
 #include "mlir/Dialect/MQTOpt/IR/MQTOptOpsTypes.cpp.inc"

@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "na/entities/Atom.hpp"
 #include "na/operations/LocalOp.hpp"
 

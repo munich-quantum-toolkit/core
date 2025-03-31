@@ -5,9 +5,6 @@
 //
 // Licensed under the MIT License
 
-#ifndef MQTOPT_INTERFACES
-#define MQTOPT_INTERFACES
-
 include "mlir/IR/OpBase.td"
 
 //===----------------------------------------------------------------------===//
@@ -15,7 +12,7 @@ include "mlir/IR/OpBase.td"
 //===----------------------------------------------------------------------===//
 
 def UnitaryInterface : OpInterface<"UnitaryInterface"> {
-    let description = [{
+    let description = [{.
         This interface provides a generic way to interact with unitary
         operations in the MQTOpt dialect. Unitary operations are quantum
         operations that are reversible and can be represented by a unitary
@@ -103,5 +100,3 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
         return mlir::success();
     }];
 }
-
-#endif // MQTOPT_INTERFACES

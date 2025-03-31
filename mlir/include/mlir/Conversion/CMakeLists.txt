@@ -5,5 +5,4 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(MQTOptToQuantum)
-add_subdirectory(QuantumToMQTOpt)
+add_subdirectory(Catalyst)

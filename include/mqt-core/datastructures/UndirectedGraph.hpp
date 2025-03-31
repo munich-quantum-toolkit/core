@@ -9,9 +9,8 @@
 
 #pragma once
 
-#include "Definitions.hpp"
-
 #include <cstddef>
+#include <functional>
 #include <numeric>
 #include <optional>
 #include <ostream>
@@ -24,6 +23,13 @@
 #include <vector>
 
 namespace qc {
+
+/// Pairs do not provide a hash function by default, this is the replacement
+template <class T, class U> struct PairHash {
+  size_t operator()(const std::pair<T, U>& x) const {
+    return combineHash(std::hash<T>{}(x.first), std::hash<U>{}(x.second));
+  }
+};
 
 /**
  * Class representing generic undirected directed graphs.

@@ -9,7 +9,7 @@
 
 #include "algorithms/GHZState.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
 #include <string>

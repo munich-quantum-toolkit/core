@@ -99,9 +99,6 @@ const std::map<std::string, std::shared_ptr<Gate>> STANDARD_GATES = {
     {"c3sqrtx",
      std::make_shared<StandardGate>(StandardGate({3, 1, 0, qc::SXdg}))},
 
-    {"teleport", std::make_shared<StandardGate>(
-                     StandardGate({0, 3, 0, qc::Teleportation}))},
-
     {"swap", std::make_shared<StandardGate>(StandardGate({0, 2, 0, qc::SWAP}))},
     {"cswap",
      std::make_shared<StandardGate>(StandardGate({1, 2, 0, qc::SWAP}))},

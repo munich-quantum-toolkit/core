@@ -123,7 +123,9 @@ jobs:
     if: fromJSON(needs.change-detection.outputs.run-cpp-linter)
     uses: cda-tum/mqt-workflows/.github/workflows/reusable-cpp-linter.yml@v1.7
     with:
-      cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON
+      cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_MLIR=ON
+      clang-version: 20
+      build-project: true
 
   python-tests:
     name: 🐍 Test

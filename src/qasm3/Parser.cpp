@@ -9,7 +9,7 @@
 
 #include "qasm3/Parser.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "qasm3/Exception.hpp"
 #include "qasm3/Statement.hpp"

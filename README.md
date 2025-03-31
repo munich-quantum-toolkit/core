@@ -54,7 +54,7 @@ print(qc)
 ## System Requirements
 
 Building (and running) is continuously tested under Linux, MacOS, and Windows using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
-However, the implementation should be compatible with any current C++ compiler supporting C++17 and a minimum CMake version of 3.19.
+However, the implementation should be compatible with any current C++ compiler supporting C++17 and a minimum CMake version of 3.24.
 
 MQT Core relies on some external dependencies:
 

@@ -9,7 +9,7 @@
 
 #include "ir/operations/CompoundOperation.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/Register.hpp"
@@ -25,6 +25,7 @@
 #include <memory>
 #include <ostream>
 #include <set>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -108,8 +109,9 @@ void CompoundOperation::removeControl(const Control c) {
   // first we iterate over our controls and check if we are actually allowed
   // to remove them
   if (controls.erase(c) == 0) {
-    throw QFRException("Cannot remove control from compound operation as it "
-                       "is not a control.");
+    throw std::runtime_error(
+        "Cannot remove control from compound operation as it "
+        "is not a control.");
   }
 
   for (const auto& op : ops) {
@@ -159,7 +161,7 @@ std::ostream& CompoundOperation::print(std::ostream& os,
     op->print(os, permutation, prefixWidth, nqubits);
     os << "\n";
   }
-  os << prefix << std::string(4 * nqubits + 1, '-');
+  os << prefix << std::string((4 * nqubits) + 1, '-');
   return os;
 }
 

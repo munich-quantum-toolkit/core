@@ -6,7 +6,7 @@
 # Licensed under the MIT License
 
 # set required cmake version
-cmake_minimum_required(VERSION 3.19...3.30)
+cmake_minimum_required(VERSION 3.24...3.31)
 
 project(
   mqt-core
@@ -71,6 +71,7 @@ project(
   VERSION ${MQT_CORE_VERSION}
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
+# to prevent `Targets Defined: nlohmann_json` error, but should eventually go in mlir/CMakeLists.txt
 find_package(Catalyst REQUIRED CONFIG)
 include(cmake/ExternalDependencies.cmake)
 

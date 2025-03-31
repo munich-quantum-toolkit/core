@@ -5,31 +5,28 @@
 #
 # Licensed under the MIT License
 
-#
-# This file is part of the MQT CORE library released under the MIT license. See README.md or go to
-# https://github.com/cda-tum/mqt-core for more information.
-#
-
 if(NOT TARGET ${MQT_CORE_TARGET_NAME}-circuit-optimizer)
   # collect headers and source files
   file(GLOB_RECURSE CIRCUIT_OPTIMIZER_HEADERS ${MQT_CORE_INCLUDE_BUILD_DIR}/circuit_optimizer/*.hpp)
   file(GLOB_RECURSE CIRCUIT_OPTIMIZER_SOURCES **.cpp)
 
-  # add circuit_optimizer Package library
-  add_library(${MQT_CORE_TARGET_NAME}-circuit-optimizer ${CIRCUIT_OPTIMIZER_HEADERS}
-                                                        ${CIRCUIT_OPTIMIZER_SOURCES})
+  # create the library target (initially empty)
+  add_library(${MQT_CORE_TARGET_NAME}-circuit-optimizer)
+
+  # add sources to target
+  target_sources(${MQT_CORE_TARGET_NAME}-circuit-optimizer PRIVATE ${CIRCUIT_OPTIMIZER_SOURCES})
+
+  # add headers using file sets
+  target_sources(
+    ${MQT_CORE_TARGET_NAME}-circuit-optimizer
+    PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES
+           ${CIRCUIT_OPTIMIZER_HEADERS})
 
   # add link libraries
   target_link_libraries(
     ${MQT_CORE_TARGET_NAME}-circuit-optimizer
     PUBLIC MQT::CoreIR
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
-
-  # add include directories
-  target_include_directories(
-    ${MQT_CORE_TARGET_NAME}-circuit-optimizer
-    PUBLIC $<BUILD_INTERFACE:${MQT_CORE_INCLUDE_BUILD_DIR}>
-           $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 
   # add MQT alias
   add_library(MQT::CoreCircuitOptimizer ALIAS ${MQT_CORE_TARGET_NAME}-circuit-optimizer)
@@ -45,15 +42,13 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-circuit-optimizer)
   include(GenerateExportHeader)
   generate_export_header(${MQT_CORE_TARGET_NAME}-circuit-optimizer BASE_NAME
                          mqt_core_circuit_optimizer)
+  target_sources(
+    ${MQT_CORE_TARGET_NAME}-circuit-optimizer
+    PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/.. FILES
+           ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_circuit_optimizer_export.h)
   if(NOT BUILD_SHARED_LIBS)
     target_compile_definitions(${MQT_CORE_TARGET_NAME}-circuit-optimizer
                                PUBLIC MQT_CORE_CIRCUIT_OPTIMIZER_STATIC_DEFINE)
-  endif()
-
-  # install export header
-  if(MQT_CORE_INSTALL)
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_circuit_optimizer_export.h
-            DESTINATION ${MQT_CORE_INCLUDE_INSTALL_DIR})
   endif()
 
   # add to list of MQT core targets

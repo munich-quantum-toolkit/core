@@ -7,7 +7,7 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "na/NAComputation.hpp"
 #include "na/entities/Atom.hpp"
 #include "na/entities/Location.hpp"

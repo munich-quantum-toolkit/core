@@ -76,8 +76,8 @@ public:
   ~QuantumComputation() = default;
 
   // physical qubits are used as keys, logical qubits as values
-  Permutation initialLayout{};
-  Permutation outputPermutation{};
+  Permutation initialLayout;
+  Permutation outputPermutation;
 
   /**
    * @brief Construct a QuantumComputation from CompoundOperation object
@@ -150,7 +150,7 @@ public:
    * @param logicalQubitIndex The logical qubit index to look for
    * @return The physical qubit index of the given logical qubit index
    */
-  [[nodiscard]] Qubit getPhysicalQubitIndex(Qubit logicalQubitIndex);
+  [[nodiscard]] Qubit getPhysicalQubitIndex(Qubit logicalQubitIndex) const;
   [[nodiscard]] bool isIdleQubit(Qubit physicalQubit) const;
   [[nodiscard]] bool isLastOperationOnQubit(const const_iterator& opIt,
                                             const const_iterator& end) const;
@@ -303,7 +303,9 @@ public:
   void mc##op(const SymbolOrNumber&(param0), const SymbolOrNumber&(param1),    \
               const Controls& controls, Qubit target0, Qubit target1);
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   DECLARE_TWO_TARGET_TWO_PARAMETER_OPERATION(xx_minus_yy, theta, beta)
+  // NOLINTNEXTLINE(readability-identifier-naming)
   DECLARE_TWO_TARGET_TWO_PARAMETER_OPERATION(xx_plus_yy, theta, beta)
 
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER_OPERATION

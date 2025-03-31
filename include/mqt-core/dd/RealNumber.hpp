@@ -11,7 +11,7 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/LinkedListBase.hpp"
-#include "mqt_core_dd_export.h"
+#include "dd/mqt_core_dd_export.h"
 
 #include <istream>
 #include <limits>

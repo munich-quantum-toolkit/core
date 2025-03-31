@@ -7,7 +7,6 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
 #include "algorithms/BernsteinVazirani.hpp"
 #include "algorithms/GHZState.hpp"
 #include "algorithms/Grover.hpp"
@@ -20,6 +19,7 @@
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
 #include "dd/statistics/PackageStatistics.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
 #include <array>

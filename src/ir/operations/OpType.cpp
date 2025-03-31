@@ -57,8 +57,6 @@ std::string shortName(const OpType opType) {
     return "msr";
   case Reset:
     return "rst";
-  case Teleportation:
-    return "tel";
   default:
     return toString(opType);
   }
@@ -130,7 +128,6 @@ OpType opTypeFromString(const std::string& opType) {
       {"measure", OpType::Measure},
       {"reset", OpType::Reset},
       {"barrier", OpType::Barrier},
-      {"teleportation", OpType::Teleportation},
       {"classic_controlled", OpType::ClassicControlled},
       {"compound", OpType::Compound},
       {"move", OpType::Move},

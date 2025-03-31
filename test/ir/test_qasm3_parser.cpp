@@ -665,27 +665,6 @@ TEST_F(Qasm3ParserTest, ImportQasm3Qelib1) {
   EXPECT_EQ(out, expected);
 }
 
-TEST_F(Qasm3ParserTest, ImportQasm3Teleportation) {
-  const std::string testfile = "OPENQASM 3.0;\n"
-                               "include \"stdgates.inc\";\n"
-                               "opaque teleport src, anc, tgt;\n"
-                               "qubit[3] q;\n"
-                               "teleport q[0], q[1], q[2];\n";
-  const auto qc = qasm3::Importer::imports(testfile);
-
-  const std::string out = qc.toQASM();
-  const std::string expected =
-      "// i 0 1 2\n"
-      "// o 0 1 2\n"
-      "OPENQASM 3.0;\n"
-      "include \"stdgates.inc\";\n"
-      "opaque teleport src, anc, tgt;\n"
-      "qubit[3] q;\n"
-      "// teleport q_0, a_0, a_1; q_0 --> a_1  via a_0\n"
-      "teleport q[0], q[1], q[2];\n";
-  EXPECT_EQ(out, expected);
-}
-
 TEST_F(Qasm3ParserTest, ImportQasm3NestedGates) {
   const std::string testfile = "OPENQASM 3.0;\n"
                                "include \"stdgates.inc\";\n"

@@ -7,7 +7,6 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
 #include "circuit_optimizer/CircuitOptimizer.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
@@ -15,6 +14,7 @@
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
@@ -30,6 +30,7 @@
 #include <iostream>
 #include <memory>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -335,10 +336,10 @@ TEST_F(DDFunctionality, nonUnitary) {
   auto dummyMap = Permutation{};
   auto op = qc::NonUnitaryOperation({0, 1, 2, 3}, {0, 1, 2, 3});
   EXPECT_FALSE(op.isUnitary());
-  EXPECT_THROW(getDD(op, *dd), qc::QFRException);
-  EXPECT_THROW(getInverseDD(op, *dd), qc::QFRException);
-  EXPECT_THROW(getDD(op, *dd, dummyMap), qc::QFRException);
-  EXPECT_THROW(getInverseDD(op, *dd, dummyMap), qc::QFRException);
+  EXPECT_THROW(getDD(op, *dd), std::invalid_argument);
+  EXPECT_THROW(getInverseDD(op, *dd), std::invalid_argument);
+  EXPECT_THROW(getDD(op, *dd, dummyMap), std::invalid_argument);
+  EXPECT_THROW(getInverseDD(op, *dd, dummyMap), std::invalid_argument);
   for (Qubit i = 0; i < nqubits; ++i) {
     EXPECT_TRUE(op.actsOn(i));
   }
@@ -510,21 +511,4 @@ TEST_F(DDFunctionality, dynamicCircuitSimulationWithSWAP) {
   const auto& [key, value] = *hist.begin();
   EXPECT_EQ(value, shots);
   EXPECT_EQ(key, "11");
-}
-
-TEST_F(DDFunctionality, dynamicCircuitProbabilityVectorExtractionWithSWAP) {
-  QuantumComputation qc(2, 2);
-  qc.x(0);
-  qc.swap(0, 1);
-  qc.measure(1, 0);
-  qc.reset(1);
-  qc.measure(1, 1);
-
-  const auto zeroState = dd->makeZeroState(2);
-  auto probVector = dd::SparsePVec{};
-  extractProbabilityVector(qc, zeroState, probVector, *dd);
-  EXPECT_EQ(probVector.size(), 1);
-  const auto& [key, value] = *probVector.begin();
-  EXPECT_EQ(value, 1.);
-  EXPECT_EQ(key, 0b01);
 }

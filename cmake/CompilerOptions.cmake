@@ -9,9 +9,6 @@
 function(enable_project_options target_name)
   include(CheckCXXCompilerFlag)
 
-  # set required C++ standard and disable compiler specific extensions
-  target_compile_features(${target_name} INTERFACE cxx_std_17)
-
   # Option to enable time tracing with clang
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
     option(ENABLE_BUILD_WITH_TIME_TRACE

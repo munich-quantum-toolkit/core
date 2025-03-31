@@ -7,19 +7,38 @@
  * Licensed under the MIT License
  */
 
+#include "Quantum/IR/QuantumDialect.h"
+#include "mlir/Conversion/Catalyst/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h"
+#include "mlir/Conversion/Catalyst/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h"
 #include "mlir/Dialect/Func/Extensions/AllExtensions.h"
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h" // IWYU pragma: keep
+#include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Passes.h" // IWYU pragma: keep
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 
-int main(int argc, char** argv) {
+#include <mlir/Dialect/Func/Extensions/AllExtensions.h>
+#include <mlir/IR/DialectRegistry.h>
+#include <mlir/InitAllDialects.h>
+#include <mlir/InitAllPasses.h>
+#include <mlir/Tools/mlir-opt/MlirOptMain.h>
+
+int main(const int argc, char** argv) {
   mlir::registerAllPasses();
 
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);
   mlir::func::registerAllExtensions(registry);
 
+  registry.insert<mqt::ir::opt::MQTOptDialect>();
+  registry.insert<catalyst::quantum::QuantumDialect>();
+
+  mlir::mqt::ir::conversions::registerMQTOptToCatalystQuantum();
+  mlir::mqt::ir::conversions::registerCatalystQuantumToMQTOpt();
+
   return mlir::asMainReturnCode(
-      mlir::MlirOptMain(argc, argv, "Quantum optimizer driver\n", registry));
+      MlirOptMain(argc, argv, "Quantum optimizer driver\n", registry));
 }

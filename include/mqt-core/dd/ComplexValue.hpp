@@ -127,20 +127,20 @@ struct ComplexValue {
   static std::string toString(const fp& real, const fp& imag,
                               bool formatted = true, int precision = -1);
 
-  /// Automatically convert to std::complex<dd::fp>
-  explicit operator auto() const noexcept { return std::complex<dd::fp>{r, i}; }
+  /// Automatically convert to std::complex<fp>
+  explicit operator auto() const noexcept { return std::complex<fp>{r, i}; }
 
   /**
    * @brief Compute the squared magnitude of the complex number.
    * @return The squared magnitude of the complex number.
    */
-  [[nodiscard]] fp mag2() const noexcept { return r * r + i * i; }
+  [[nodiscard]] fp mag2() const noexcept { return (r * r) + (i * i); }
 
   /**
    * @brief Compute the magnitude of the complex number.
    * @return The magnitude of the complex number.
    */
-  [[nodiscard]] fp mag() const noexcept { return std::sqrt(mag2()); }
+  [[nodiscard]] fp mag() const noexcept { return std::hypot(r, i); }
 
   /// In-place addition of two complex numbers
   ComplexValue& operator+=(const ComplexValue& rhs) noexcept;

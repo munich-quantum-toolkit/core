@@ -9,8 +9,8 @@
 
 #pragma once
 
-#include "Definitions.hpp"
 #include "dd/statistics/TableStatistics.hpp"
+#include "ir/Definitions.hpp"
 
 #include <array>
 #include <cassert>

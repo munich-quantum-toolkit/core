@@ -9,7 +9,7 @@
 
 #include "algorithms/RandomCliffordCircuit.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 
@@ -19,32 +19,32 @@
 #include <string>
 
 namespace qc {
-
-auto append1QClifford(QuantumComputation& circ, const std::uint16_t idx,
-                      const Qubit target) -> void {
+namespace {
+auto append1QClifford(QuantumComputation& circ, const std::uint16_t idx)
+    -> void {
   const auto id = static_cast<std::uint8_t>(idx % 24);
   auto qc = QuantumComputation(circ.getNqubits());
   // Hadamard
   if ((id / 12 % 2) != 0) {
-    qc.h(target);
+    qc.h(0);
   }
 
   // Rotation
   if (id / 4 % 3 == 1) {
-    qc.h(target);
-    qc.s(target);
+    qc.h(0);
+    qc.s(0);
   } else if (id / 4 % 3 == 2) {
-    qc.sdg(target);
-    qc.h(target);
+    qc.sdg(0);
+    qc.h(0);
   }
 
   // Pauli
   if (id % 4 == 1) {
-    qc.z(target);
+    qc.z(0);
   } else if (id % 4 == 2) {
-    qc.x(target);
+    qc.x(0);
   } else if (id % 4 == 3) {
-    qc.y(target);
+    qc.y(0);
   }
   circ.emplace_back<CompoundOperation>(qc.asCompoundOperation());
 }
@@ -201,6 +201,7 @@ auto append2QClifford(QuantumComputation& circ, const std::uint16_t idx,
 
   circ.emplace_back<CompoundOperation>(qc.asCompoundOperation());
 }
+} // namespace
 
 auto createRandomCliffordCircuit(const Qubit nq, const std::size_t depth,
                                  const std::size_t seed) -> QuantumComputation {
@@ -213,7 +214,7 @@ auto createRandomCliffordCircuit(const Qubit nq, const std::size_t depth,
 
   for (std::size_t l = 0; l < depth; ++l) {
     if (nq == 1) {
-      append1QClifford(qc, cliffordGenerator(), 0);
+      append1QClifford(qc, cliffordGenerator());
     } else if (nq == 2) {
       append2QClifford(qc, cliffordGenerator(), 0, 1);
     } else {

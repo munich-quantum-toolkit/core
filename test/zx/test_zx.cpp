@@ -20,9 +20,10 @@
 #include <sstream>
 #include <utility>
 
+namespace zx {
 class ZXDiagramTest : public ::testing::Test {
 public:
-  zx::ZXDiagram diag;
+  ZXDiagram diag;
 
   /*
    * Diagram should look like this:
@@ -36,13 +37,13 @@ public:
    */
 protected:
   void SetUp() override {
-    diag = zx::ZXDiagram();
+    diag = ZXDiagram();
     diag.addQubits(2);
-    diag.addVertex(0, 0, zx::PiExpression(), zx::VertexType::Z);
-    diag.addEdge(0, 4, zx::EdgeType::Hadamard);
-    diag.addVertex(0, 0, zx::PiExpression(), zx::VertexType::Z);
+    diag.addVertex(0, 0, PiExpression(), VertexType::Z);
+    diag.addEdge(0, 4, EdgeType::Hadamard);
+    diag.addVertex(0, 0, PiExpression(), VertexType::Z);
     diag.addEdge(4, 5);
-    diag.addVertex(0, 0, zx::PiExpression(), zx::VertexType::X);
+    diag.addVertex(0, 0, PiExpression(), VertexType::X);
     diag.addEdge(2, 6);
     diag.addEdge(5, 6);
     diag.addEdge(5, 1);
@@ -62,12 +63,12 @@ TEST_F(ZXDiagramTest, createDiagram) {
   EXPECT_EQ(outputs[0], 1);
   EXPECT_EQ(outputs[1], 3);
 
-  const auto edges =
+  constexpr auto edges =
       std::array{std::pair{0U, 4U}, std::pair{4U, 5U}, std::pair{2U, 6U},
                  std::pair{5U, 6U}, std::pair{5U, 1U}, std::pair{6U, 3U}};
-  const auto expectedEdgeTypes = std::array{
-      zx::EdgeType::Hadamard, zx::EdgeType::Simple, zx::EdgeType::Simple,
-      zx::EdgeType::Simple,   zx::EdgeType::Simple, zx::EdgeType::Simple};
+  constexpr auto expectedEdgeTypes =
+      std::array{EdgeType::Hadamard, EdgeType::Simple, EdgeType::Simple,
+                 EdgeType::Simple,   EdgeType::Simple, EdgeType::Simple};
   for (std::size_t i = 0; i < edges.size(); ++i) {
     const auto& [v1, v2] = edges[i];
     const auto& edge = diag.getEdge(v1, v2);
@@ -78,11 +79,10 @@ TEST_F(ZXDiagramTest, createDiagram) {
     }
   }
 
-  const auto expectedVertexTypes =
-      std::array{zx::VertexType::Boundary, zx::VertexType::Boundary,
-                 zx::VertexType::Boundary, zx::VertexType::Boundary,
-                 zx::VertexType::Z,        zx::VertexType::Z,
-                 zx::VertexType::X};
+  constexpr auto expectedVertexTypes = std::array{
+      VertexType::Boundary, VertexType::Boundary, VertexType::Boundary,
+      VertexType::Boundary, VertexType::Z,        VertexType::Z,
+      VertexType::X};
   const auto nVerts = diag.getNVertices();
   for (std::size_t i = 0; i < nVerts; ++i) {
     const auto& vData = diag.getVData(i);
@@ -109,12 +109,12 @@ TEST_F(ZXDiagramTest, deletions) {
 TEST_F(ZXDiagramTest, graphLike) {
   diag.toGraphlike();
 
-  const auto edges =
+  constexpr auto edges =
       std::array{std::pair{0U, 4U}, std::pair{4U, 5U}, std::pair{2U, 6U},
                  std::pair{5U, 6U}, std::pair{5U, 1U}, std::pair{6U, 3U}};
-  const auto expectedEdgeTypes = std::array{
-      zx::EdgeType::Hadamard, zx::EdgeType::Simple, zx::EdgeType::Hadamard,
-      zx::EdgeType::Hadamard, zx::EdgeType::Simple, zx::EdgeType::Hadamard};
+  constexpr auto expectedEdgeTypes =
+      std::array{EdgeType::Hadamard, EdgeType::Simple, EdgeType::Hadamard,
+                 EdgeType::Hadamard, EdgeType::Simple, EdgeType::Hadamard};
   for (std::size_t i = 0; i < edges.size(); ++i) {
     const auto& [v1, v2] = edges[i];
     const auto& edge = diag.getEdge(v1, v2);
@@ -125,11 +125,10 @@ TEST_F(ZXDiagramTest, graphLike) {
     }
   }
 
-  const auto expectedVertexTypes =
-      std::array{zx::VertexType::Boundary, zx::VertexType::Boundary,
-                 zx::VertexType::Boundary, zx::VertexType::Boundary,
-                 zx::VertexType::Z,        zx::VertexType::Z,
-                 zx::VertexType::Z};
+  constexpr auto expectedVertexTypes = std::array{
+      VertexType::Boundary, VertexType::Boundary, VertexType::Boundary,
+      VertexType::Boundary, VertexType::Z,        VertexType::Z,
+      VertexType::Z};
   const auto nVerts = diag.getNVertices();
   for (std::size_t i = 0; i < nVerts; ++i) {
     const auto& vData = diag.getVData(i);
@@ -145,12 +144,12 @@ TEST_F(ZXDiagramTest, graphLike) {
 TEST_F(ZXDiagramTest, adjoint) {
   diag = diag.adjoint();
 
-  const auto edges =
+  constexpr auto edges =
       std::array{std::pair{0U, 4U}, std::pair{4U, 5U}, std::pair{2U, 6U},
                  std::pair{5U, 6U}, std::pair{5U, 1U}, std::pair{6U, 3U}};
-  const auto expectedEdgeTypes = std::array{
-      zx::EdgeType::Hadamard, zx::EdgeType::Simple, zx::EdgeType::Simple,
-      zx::EdgeType::Simple,   zx::EdgeType::Simple, zx::EdgeType::Simple};
+  constexpr auto expectedEdgeTypes =
+      std::array{EdgeType::Hadamard, EdgeType::Simple, EdgeType::Simple,
+                 EdgeType::Simple,   EdgeType::Simple, EdgeType::Simple};
   for (std::size_t i = 0; i < edges.size(); ++i) {
     const auto& [v1, v2] = edges[i];
     const auto& edge = diag.getEdge(v1, v2);
@@ -161,11 +160,10 @@ TEST_F(ZXDiagramTest, adjoint) {
     }
   }
 
-  const auto expectedVertexTypes =
-      std::array{zx::VertexType::Boundary, zx::VertexType::Boundary,
-                 zx::VertexType::Boundary, zx::VertexType::Boundary,
-                 zx::VertexType::Z,        zx::VertexType::Z,
-                 zx::VertexType::X};
+  constexpr auto expectedVertexTypes = std::array{
+      VertexType::Boundary, VertexType::Boundary, VertexType::Boundary,
+      VertexType::Boundary, VertexType::Z,        VertexType::Z,
+      VertexType::X};
   const auto nVerts = diag.getNVertices();
   for (std::size_t i = 0; i < nVerts; ++i) {
     const auto& vData = diag.getVData(i);
@@ -179,11 +177,10 @@ TEST_F(ZXDiagramTest, adjoint) {
 }
 
 TEST_F(ZXDiagramTest, approximate) {
-  zx::ZXDiagram almostId(3);
+  ZXDiagram almostId(3);
 
   almostId.removeEdge(0, 3);
-  const auto v =
-      almostId.addVertex(0, 1, zx::PiExpression(zx::PiRational(1e-8)));
+  const auto v = almostId.addVertex(0, 1, PiExpression(PiRational(1e-8)));
   almostId.addEdge(0, v);
   almostId.addEdge(v, 3);
 
@@ -195,10 +192,10 @@ TEST_F(ZXDiagramTest, approximate) {
 }
 
 TEST_F(ZXDiagramTest, ancilla) {
-  zx::ZXDiagram cx(2);
+  ZXDiagram cx(2);
   cx.removeEdge(0, 2);
   cx.removeEdge(1, 3);
-  const auto tar = cx.addVertex(0, 0, zx::PiExpression{}, zx::VertexType::X);
+  const auto tar = cx.addVertex(0, 0, PiExpression{}, VertexType::X);
 
   const auto ctrl = cx.addVertex(1);
 
@@ -216,24 +213,24 @@ TEST_F(ZXDiagramTest, ancilla) {
   EXPECT_EQ(cx.getOutputs().size(), 1);
   EXPECT_EQ(cx.getNVertices(), 6);
 
-  zx::fullReduce(cx);
+  fullReduce(cx);
 
   EXPECT_EQ(cx.getNEdges(), 1);
   for (const auto& [v, data] : cx.getVertices()) {
-    std::cout << v << " " << (data.type == zx::VertexType::Boundary) << "\n";
+    std::cout << v << " " << (data.type == VertexType::Boundary) << "\n";
   }
   EXPECT_EQ(cx.getNVertices(), 2);
   EXPECT_TRUE(cx.isIdentity());
 }
 
 TEST_F(ZXDiagramTest, RemoveScalarSubDiagram) {
-  zx::ZXDiagram idWithScal(1);
+  ZXDiagram idWithScal(1);
 
   const auto v = idWithScal.addVertex(1);
   const auto w = idWithScal.addVertex(2);
   idWithScal.addEdge(v, w);
 
-  zx::fullReduce(idWithScal);
+  fullReduce(idWithScal);
 
   EXPECT_EQ(idWithScal.getNVertices(), 2);
   EXPECT_EQ(idWithScal.getNEdges(), 1);
@@ -242,7 +239,7 @@ TEST_F(ZXDiagramTest, RemoveScalarSubDiagram) {
 }
 
 TEST_F(ZXDiagramTest, AdjMat) {
-  diag = zx::ZXDiagram(3);
+  diag = ZXDiagram(3);
 
   const auto& adj = diag.getAdjMat();
 
@@ -260,7 +257,7 @@ TEST_F(ZXDiagramTest, AdjMat) {
 }
 
 TEST_F(ZXDiagramTest, ConnectedSet) {
-  diag = zx::ZXDiagram(3);
+  diag = ZXDiagram(3);
   auto connected = diag.getConnectedSet(diag.getInputs());
 
   for (const auto& v : connected) {
@@ -275,8 +272,8 @@ TEST_F(ZXDiagramTest, ConnectedSet) {
 }
 
 TEST_F(ZXDiagramTest, EdgeTypePrinting) {
-  diag = zx::ZXDiagram(3);
-  diag.addEdge(0, 1, zx::EdgeType::Simple);
+  diag = ZXDiagram(3);
+  diag.addEdge(0, 1, EdgeType::Simple);
 
   const auto& edge = diag.getEdge(0, 1);
   ASSERT_NE(edge, std::nullopt);
@@ -298,32 +295,33 @@ TEST_F(ZXDiagramTest, EdgeTypePrinting) {
 }
 
 TEST_F(ZXDiagramTest, VertexTypePrinting) {
-  diag = zx::ZXDiagram(1);
+  diag = ZXDiagram(1);
   const auto boundary = diag.getInput(0);
   const auto boundaryData = diag.getVData(boundary);
   ASSERT_NE(boundaryData, std::nullopt);
   if (boundaryData) {
-    EXPECT_EQ(boundaryData->type, zx::VertexType::Boundary);
+    EXPECT_EQ(boundaryData->type, VertexType::Boundary);
     std::stringstream ss;
     ss << boundaryData->type;
     EXPECT_EQ(ss.str(), "Boundary");
   }
-  const auto z = diag.addVertex(0, 0, zx::PiExpression(), zx::VertexType::Z);
+  const auto z = diag.addVertex(0, 0, PiExpression(), VertexType::Z);
   const auto zData = diag.getVData(z);
   ASSERT_NE(zData, std::nullopt);
   if (zData) {
-    EXPECT_EQ(zData->type, zx::VertexType::Z);
+    EXPECT_EQ(zData->type, VertexType::Z);
     std::stringstream ss;
     ss << zData->type;
     EXPECT_EQ(ss.str(), "Z");
   }
-  const auto x = diag.addVertex(0, 0, zx::PiExpression(), zx::VertexType::X);
+  const auto x = diag.addVertex(0, 0, PiExpression(), VertexType::X);
   const auto xData = diag.getVData(x);
   ASSERT_NE(xData, std::nullopt);
   if (xData) {
-    EXPECT_EQ(xData->type, zx::VertexType::X);
+    EXPECT_EQ(xData->type, VertexType::X);
     std::stringstream ss;
     ss << xData->type;
     EXPECT_EQ(ss.str(), "X");
   }
 }
+} // namespace zx
