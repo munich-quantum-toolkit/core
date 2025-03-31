@@ -21,8 +21,8 @@ add_llvm_library(
   LINK_LIBS
   MLIRMQTOpt
   MLIRMQTOptTransforms
-  MQTOptToQuantum
-  QuantumToMQTOpt
+  MQTOptToCatalystQuantum
+  CatalystQuantumToMQTOpt
   MLIRQuantum)
 
 # Set output directory for the plugin to be shipped with the wheel

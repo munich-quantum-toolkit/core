@@ -5,8 +5,8 @@
 #
 # Licensed under the MIT License
 
-set(LLVM_TARGET_DEFINITIONS QuantumToMQTOpt.td)
-mlir_tablegen(QuantumToMQTOpt.h.inc -gen-pass-decls -name QuantumToMQTOpt)
+set(LLVM_TARGET_DEFINITIONS CatalystQuantumToMQTOpt.td)
+mlir_tablegen(CatalystQuantumToMQTOpt.h.inc -gen-pass-decls -name CatalystQuantumToMQTOpt)
 add_public_tablegen_target(QuantumToMQTOptIncGen)
 
-add_mlir_doc(QuantumToMQTOpt QuantumToMQTOpt ./ -gen-pass-doc)
+add_mlir_doc(CatalystQuantumToMQTOpt CatalystQuantumToMQTOpt ./ -gen-pass-doc)

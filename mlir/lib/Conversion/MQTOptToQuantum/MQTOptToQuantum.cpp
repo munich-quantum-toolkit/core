@@ -7,10 +7,9 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/MQTOptToQuantum/MQTOptToQuantum.h"
-
 #include "Quantum/IR/QuantumDialect.h"
 #include "Quantum/IR/QuantumOps.h"
+#include "mlir/Conversion/Catalyst/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -39,7 +38,7 @@
 namespace mlir::mqt::ir::conversions {
 
 #define GEN_PASS_DEF_MQTOPTTOQUANTUM
-#include "mlir/Conversion/MQTOptToQuantum/MQTOptToQuantum.h.inc"
+#include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h.inc"
 
 using namespace mlir;
 
@@ -395,7 +394,8 @@ llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::POp>::getGateName(
   return "";
 }
 
-struct MQTOptToQuantum : impl::MQTOptToQuantumBase<MQTOptToQuantum> {
+struct MQTOptToCatalystQuantum
+    : impl::MQTOptToQuantumBase<MQTOptToCatalystQuantum> {
   using MQTOptToQuantumBase::MQTOptToQuantumBase;
 
   void runOnOperation() override {

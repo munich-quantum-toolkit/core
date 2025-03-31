@@ -13,12 +13,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LIB_CONVERSION_MQTOPTTOQUANTUM
-#define LIB_CONVERSION_MQTOPTTOQUANTUM
-
+#pragma once
 include "mlir/Pass/PassBase.td"
 
-def MQTOptToQuantum : Pass<"mqtopt-to-quantum"> {
+def MQTOptToCatalystQuantum : Pass<"mqtopt-to-quantum"> {
   let summary = "Lower `mqtopt` to `quantum` dialect.";
 
   let description = [{
@@ -29,5 +27,3 @@ def MQTOptToQuantum : Pass<"mqtopt-to-quantum"> {
     "::mqt::ir::opt::MQTOptDialect"
   ];
 }
-
-#endif  // LIB_CONVERSION_MQTOPTTOQUANTUM

@@ -9,5 +9,5 @@ file(GLOB CONVERSION_SOURCES *.cpp)
 
 set(LIBRARIES ${conversion_libs} MLIRIR MLIRPass MQT::CoreIR ${MLIRQuantum_LIB})
 
-add_mlir_library(MQTOptToQuantum ${CONVERSION_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
-                 MQTOptToQuantumIncGen)
+add_mlir_library(MQTOptToCatalystQuantum ${CONVERSION_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
+                 MQTOptToCatalystQuantumIncGen)

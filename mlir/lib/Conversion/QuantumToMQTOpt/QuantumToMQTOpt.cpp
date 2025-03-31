@@ -7,10 +7,9 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/QuantumToMQTOpt/QuantumToMQTOpt.h"
-
 #include "Quantum/IR/QuantumDialect.h"
 #include "Quantum/IR/QuantumOps.h"
+#include "mlir/Conversion/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -37,7 +36,7 @@
 namespace mlir::mqt::ir::conversions {
 
 #define GEN_PASS_DEF_QUANTUMTOMQTOPT
-#include "mlir/Conversion/QuantumToMQTOpt/QuantumToMQTOpt.h.inc"
+#include "mlir/Conversion/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h.inc"
 
 using namespace mlir;
 
@@ -349,7 +348,8 @@ struct ConvertQuantumCustomOp
   }
 };
 
-struct QuantumToMQTOpt : impl::QuantumToMQTOptBase<QuantumToMQTOpt> {
+struct CatalystQuantumToMQTOpt
+    : impl::QuantumToMQTOptBase<CatalystQuantumToMQTOpt> {
   using QuantumToMQTOptBase::QuantumToMQTOptBase;
 
   void runOnOperation() override {
