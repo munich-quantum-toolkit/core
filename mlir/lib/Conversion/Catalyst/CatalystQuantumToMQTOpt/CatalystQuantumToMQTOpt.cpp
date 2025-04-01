@@ -423,6 +423,9 @@ struct CatalystQuantumToMQTOpt
     MLIRContext* context = &getContext();
     auto* module = getOperation();
 
+    // Check if coupling map option is present
+    llvm::outs() << "Using following cmap: " << cMap << "\n";
+
     ConversionTarget target(*context);
     target.addLegalDialect<::mqt::ir::opt::MQTOptDialect>();
     target.addIllegalDialect<catalyst::quantum::QuantumDialect>();

@@ -14,6 +14,14 @@ def CatalystQuantumToMQTOpt : Pass<"quantum-to-mqtopt"> {
     This pass lowers the `quantum` to `mqtopt` dialect.
   }];
 
+  let options = [
+    Option<
+      /*C++ var name=*/"cMap",
+      /*CLI arg name=*/"cmap",
+      /*type=*/"std::string",
+      /*default=*/[{""}],
+      /*description=*/"The device coupling map.">,
+    ];
 
   // Define dependent dialects
   let dependentDialects = [
