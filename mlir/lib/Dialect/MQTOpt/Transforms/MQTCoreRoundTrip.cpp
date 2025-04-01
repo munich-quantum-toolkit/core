@@ -10,6 +10,8 @@
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -34,6 +36,7 @@ struct MQTCoreRoundTrip : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
     populateToQuantumComputationPatterns(patterns, circuit);
+    llvm::outs() << "Finished populating patterns\n";
     populateFromQuantumComputationPatterns(patterns, circuit);
 
     // Apply patterns in an iterative and greedy manner.

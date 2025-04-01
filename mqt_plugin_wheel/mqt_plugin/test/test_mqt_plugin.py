@@ -41,6 +41,75 @@ except ImportError:
     have_mqt_plugin = False
 
 
+from catalyst import pipeline
+from catalyst.debug import get_compilation_stage
+from catalyst.passes import apply_pass, cancel_inverses, merge_rotations
+
+
+def print_attr(f, attr, *args, aot: bool = False, **kwargs):
+    """Print function attribute"""
+    name = f"TEST {f.__name__}"
+    print("\n" + "-" * len(name))
+    print(f"{name}\n")
+    res = None
+    if not aot:
+        res = f(*args, **kwargs)
+    print(getattr(f, attr))
+    return res
+
+
+def print_mlir(f, *args, **kwargs):
+    """Print mlir code of a function"""
+    return print_attr(f, "mlir", *args, **kwargs)
+
+
+def flush_peephole_opted_mlir_to_iostream(QJIT):
+    """
+    The QJIT compiler does not offer a direct interface to access an intermediate mlir in the pipeline.
+    The `QJIT.mlir` is the mlir before any passes are run, i.e. the "0_<qnode_name>.mlir".
+    Since the QUANTUM_COMPILATION_PASS is located in the middle of the pipeline, we need
+    to retrieve it with keep_intermediate=True and manually access the "2_QuantumCompilationPass.mlir".
+    Then we delete the kept intermediates to avoid pollution of the workspace
+    """
+    print(get_compilation_stage(QJIT, "QuantumCompilationPass"))
+
+
+#
+# pipeline
+#
+
+
+def test_pipeline_lowering():
+    """
+    Basic pipeline lowering on one qnode.
+    """
+    my_pipeline = {"mqt.mqt-core-round-trip": {}}
+
+    @qml.qjit(keep_intermediate=True)
+    @pipeline(my_pipeline)
+    @qml.qnode(qml.device("lightning.qubit", wires=2))
+    def test_pipeline_lowering_workflow(x):
+        qml.Hadamard(wires=[1])
+        return
+
+    # CHECK: transform.named_sequence @__transform_main
+    # CHECK-NEXT: {{%.+}} = transform.apply_registered_pass "remove-chained-self-inverse" to {{%.+}}
+    # CHECK-NEXT: {{%.+}} = transform.apply_registered_pass "merge-rotations" to {{%.+}}
+    # CHECK-NEXT: transform.yield
+    print_mlir(test_pipeline_lowering_workflow, 1.2)
+
+    # CHECK: {{%.+}} = call @test_pipeline_lowering_workflow_0(
+    # CHECK: func.func public @test_pipeline_lowering_workflow_0(
+    # CHECK: {{%.+}} = quantum.custom "RX"({{%.+}}) {{%.+}} : !quantum.bit
+    # CHECK-NOT: {{%.+}} = quantum.custom "Hadamard"() {{%.+}} : !quantum.bit
+    # CHECK-NOT: {{%.+}} = quantum.custom "Hadamard"() {{%.+}} : !quantum.bit
+    test_pipeline_lowering_workflow(42.42)
+    flush_peephole_opted_mlir_to_iostream(test_pipeline_lowering_workflow)
+
+
+test_pipeline_lowering()
+
+
 @pytest.mark.skipif(not have_mqt_plugin, reason="MQT Plugin is not installed")
 def test_MQT_plugin() -> None:
     """Generate MLIR for the MQT plugin. Do not execute code.
