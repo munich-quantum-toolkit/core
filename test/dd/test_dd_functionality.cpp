@@ -36,7 +36,7 @@
 
 using namespace qc;
 
-class DDFunctionality : public testing::TestWithParam<qc::OpType> {
+class DDFunctionality : public testing::TestWithParam<OpType> {
 protected:
   void TearDown() override {
     if (!e.isTerminal()) {
@@ -51,11 +51,11 @@ protected:
 
   void SetUp() override {
     // dd
-    dd = std::make_unique<dd::Package<>>(nqubits);
+    dd = std::make_unique<dd::Package>(nqubits);
     initialComplexCount = dd->cn.realCount();
 
     // initial state preparation
-    e = ident = dd->makeIdent();
+    e = ident = dd::Package::makeIdent();
     dd->incRef(ident);
 
     std::array<std::mt19937_64::result_type, std::mt19937_64::state_size>
@@ -69,71 +69,66 @@ protected:
 
   std::size_t nqubits = 4U;
   std::size_t initialComplexCount = 0U;
-  qc::MatrixDD e{}, ident{};
-  std::unique_ptr<dd::Package<>> dd;
+  dd::MatrixDD e{}, ident{};
+  std::unique_ptr<dd::Package> dd;
   std::mt19937_64 mt;
   std::uniform_real_distribution<dd::fp> dist;
 };
 
 INSTANTIATE_TEST_SUITE_P(
     Parameters, DDFunctionality,
-    testing::Values(qc::GPhase, qc::I, qc::H, qc::X, qc::Y, qc::Z, qc::S,
-                    qc::Sdg, qc::T, qc::Tdg, qc::SX, qc::SXdg, qc::V, qc::Vdg,
-                    qc::U, qc::U2, qc::P, qc::RX, qc::RY, qc::RZ, qc::Peres,
-                    qc::Peresdg, qc::SWAP, qc::iSWAP, qc::iSWAPdg, qc::DCX,
-                    qc::ECR, qc::RXX, qc::RYY, qc::RZZ, qc::RZX, qc::XXminusYY,
-                    qc::XXplusYY),
+    testing::Values(GPhase, I, H, X, Y, Z, S, Sdg, T, Tdg, SX, SXdg, V, Vdg, U,
+                    U2, P, RX, RY, RZ, Peres, Peresdg, SWAP, iSWAP, iSWAPdg,
+                    DCX, ECR, RXX, RYY, RZZ, RZX, XXminusYY, XXplusYY),
     [](const testing::TestParamInfo<DDFunctionality::ParamType>& inf) {
       const auto gate = inf.param;
       return toString(gate);
     });
 
 TEST_P(DDFunctionality, standardOpBuildInverseBuild) {
-  using namespace qc::literals;
-  auto gate = static_cast<qc::OpType>(GetParam());
+  using namespace literals;
+  auto gate = static_cast<OpType>(GetParam());
 
-  qc::StandardOperation op;
+  StandardOperation op;
   switch (gate) {
-  case qc::GPhase:
-    op = qc::StandardOperation(Controls{}, Targets{}, gate,
-                               std::vector{dist(mt)});
+  case GPhase:
+    op = StandardOperation(Controls{}, Targets{}, gate, std::vector{dist(mt)});
     break;
-  case qc::U:
-    op = qc::StandardOperation(0, gate,
-                               std::vector{dist(mt), dist(mt), dist(mt)});
+  case U:
+    op = StandardOperation(0, gate, std::vector{dist(mt), dist(mt), dist(mt)});
     break;
-  case qc::U2:
-    op = qc::StandardOperation(0, gate, std::vector{dist(mt), dist(mt)});
+  case U2:
+    op = StandardOperation(0, gate, std::vector{dist(mt), dist(mt)});
     break;
-  case qc::RX:
-  case qc::RY:
-  case qc::RZ:
-  case qc::P:
-    op = qc::StandardOperation(0, gate, std::vector{dist(mt)});
+  case RX:
+  case RY:
+  case RZ:
+  case P:
+    op = StandardOperation(0, gate, std::vector{dist(mt)});
     break;
 
-  case qc::SWAP:
-  case qc::iSWAP:
-  case qc::iSWAPdg:
-  case qc::DCX:
-  case qc::ECR:
-  case qc::Peres:
-  case qc::Peresdg:
-    op = qc::StandardOperation({}, 0, 1, gate);
+  case SWAP:
+  case iSWAP:
+  case iSWAPdg:
+  case DCX:
+  case ECR:
+  case Peres:
+  case Peresdg:
+    op = StandardOperation({}, 0, 1, gate);
     break;
-  case qc::RXX:
-  case qc::RYY:
-  case qc::RZZ:
-  case qc::RZX:
-    op = qc::StandardOperation(Controls{}, 0, 1, gate, std::vector{dist(mt)});
+  case RXX:
+  case RYY:
+  case RZZ:
+  case RZX:
+    op = StandardOperation(Controls{}, 0, 1, gate, std::vector{dist(mt)});
     break;
-  case qc::XXminusYY:
-  case qc::XXplusYY:
-    op = qc::StandardOperation(Controls{}, 0, 1, gate,
-                               std::vector{dist(mt), dist(mt)});
+  case XXminusYY:
+  case XXplusYY:
+    op = StandardOperation(Controls{}, 0, 1, gate,
+                           std::vector{dist(mt), dist(mt)});
     break;
   default:
-    op = qc::StandardOperation(0, gate);
+    op = StandardOperation(0, gate);
   }
 
   ASSERT_NO_THROW({ e = dd->multiply(getDD(op, *dd), getInverseDD(op, *dd)); });
@@ -143,51 +138,50 @@ TEST_P(DDFunctionality, standardOpBuildInverseBuild) {
 }
 
 TEST_P(DDFunctionality, controlledStandardOpBuildInverseBuild) {
-  using namespace qc::literals;
-  auto gate = static_cast<qc::OpType>(GetParam());
+  using namespace literals;
+  auto gate = static_cast<OpType>(GetParam());
 
-  qc::StandardOperation op;
+  StandardOperation op;
   switch (gate) {
-  case qc::GPhase:
-    op = qc::StandardOperation(Controls{0}, Targets{}, gate,
-                               std::vector{dist(mt)});
+  case GPhase:
+    op = StandardOperation(Controls{0}, Targets{}, gate, std::vector{dist(mt)});
     break;
-  case qc::U:
-    op = qc::StandardOperation(0, 1, gate,
-                               std::vector{dist(mt), dist(mt), dist(mt)});
+  case U:
+    op = StandardOperation(0, 1, gate,
+                           std::vector{dist(mt), dist(mt), dist(mt)});
     break;
-  case qc::U2:
-    op = qc::StandardOperation(0, 1, gate, std::vector{dist(mt), dist(mt)});
+  case U2:
+    op = StandardOperation(0, 1, gate, std::vector{dist(mt), dist(mt)});
     break;
-  case qc::RX:
-  case qc::RY:
-  case qc::RZ:
-  case qc::P:
-    op = qc::StandardOperation(0, 1, gate, std::vector{dist(mt)});
+  case RX:
+  case RY:
+  case RZ:
+  case P:
+    op = StandardOperation(0, 1, gate, std::vector{dist(mt)});
     break;
 
-  case qc::SWAP:
-  case qc::iSWAP:
-  case qc::iSWAPdg:
-  case qc::DCX:
-  case qc::ECR:
-  case qc::Peres:
-  case qc::Peresdg:
-    op = qc::StandardOperation(Controls{0}, 1, 2, gate);
+  case SWAP:
+  case iSWAP:
+  case iSWAPdg:
+  case DCX:
+  case ECR:
+  case Peres:
+  case Peresdg:
+    op = StandardOperation(Controls{0}, 1, 2, gate);
     break;
-  case qc::RXX:
-  case qc::RYY:
-  case qc::RZZ:
-  case qc::RZX:
-    op = qc::StandardOperation(Controls{0}, 1, 2, gate, std::vector{dist(mt)});
+  case RXX:
+  case RYY:
+  case RZZ:
+  case RZX:
+    op = StandardOperation(Controls{0}, 1, 2, gate, std::vector{dist(mt)});
     break;
-  case qc::XXminusYY:
-  case qc::XXplusYY:
-    op = qc::StandardOperation(Controls{0}, 1, 2, gate,
-                               std::vector{dist(mt), dist(mt)});
+  case XXminusYY:
+  case XXplusYY:
+    op = StandardOperation(Controls{0}, 1, 2, gate,
+                           std::vector{dist(mt), dist(mt)});
     break;
   default:
-    op = qc::StandardOperation(0, 1, gate);
+    op = StandardOperation(0, 1, gate);
   }
 
   ASSERT_NO_THROW({ e = dd->multiply(getDD(op, *dd), getInverseDD(op, *dd)); });
@@ -197,53 +191,52 @@ TEST_P(DDFunctionality, controlledStandardOpBuildInverseBuild) {
 }
 
 TEST_P(DDFunctionality, controlledStandardNegOpBuildInverseBuild) {
-  using namespace qc::literals;
-  auto gate = static_cast<qc::OpType>(GetParam());
+  using namespace literals;
+  auto gate = static_cast<OpType>(GetParam());
 
-  qc::StandardOperation op;
+  StandardOperation op;
   switch (gate) {
-  case qc::GPhase:
-    op = qc::StandardOperation(Controls{0_nc}, Targets{}, gate,
-                               std::vector{dist(mt)});
+  case GPhase:
+    op = StandardOperation(Controls{0_nc}, Targets{}, gate,
+                           std::vector{dist(mt)});
     break;
-  case qc::U:
-    op = qc::StandardOperation(Controls{0_nc}, 1, gate,
-                               std::vector{dist(mt), dist(mt), dist(mt)});
+  case U:
+    op = StandardOperation(Controls{0_nc}, 1, gate,
+                           std::vector{dist(mt), dist(mt), dist(mt)});
     break;
-  case qc::U2:
-    op = qc::StandardOperation(Controls{0_nc}, 1, gate,
-                               std::vector{dist(mt), dist(mt)});
+  case U2:
+    op = StandardOperation(Controls{0_nc}, 1, gate,
+                           std::vector{dist(mt), dist(mt)});
     break;
-  case qc::RX:
-  case qc::RY:
-  case qc::RZ:
-  case qc::P:
-    op = qc::StandardOperation(Controls{0_nc}, 1, gate, std::vector{dist(mt)});
+  case RX:
+  case RY:
+  case RZ:
+  case P:
+    op = StandardOperation(Controls{0_nc}, 1, gate, std::vector{dist(mt)});
     break;
 
-  case qc::SWAP:
-  case qc::iSWAP:
-  case qc::iSWAPdg:
-  case qc::DCX:
-  case qc::ECR:
-  case qc::Peres:
-  case qc::Peresdg:
-    op = qc::StandardOperation(Controls{0_nc}, 1, 2, gate);
+  case SWAP:
+  case iSWAP:
+  case iSWAPdg:
+  case DCX:
+  case ECR:
+  case Peres:
+  case Peresdg:
+    op = StandardOperation(Controls{0_nc}, 1, 2, gate);
     break;
-  case qc::RXX:
-  case qc::RYY:
-  case qc::RZZ:
-  case qc::RZX:
-    op = qc::StandardOperation(Controls{0_nc}, 1, 2, gate,
-                               std::vector{dist(mt)});
+  case RXX:
+  case RYY:
+  case RZZ:
+  case RZX:
+    op = StandardOperation(Controls{0_nc}, 1, 2, gate, std::vector{dist(mt)});
     break;
-  case qc::XXminusYY:
-  case qc::XXplusYY:
-    op = qc::StandardOperation(Controls{0_nc}, 1, 2, gate,
-                               std::vector{dist(mt), dist(mt)});
+  case XXminusYY:
+  case XXplusYY:
+    op = StandardOperation(Controls{0_nc}, 1, 2, gate,
+                           std::vector{dist(mt), dist(mt)});
     break;
   default:
-    op = qc::StandardOperation(Controls{0_nc}, 1, gate);
+    op = StandardOperation(Controls{0_nc}, 1, gate);
   }
 
   ASSERT_NO_THROW({ e = dd->multiply(getDD(op, *dd), getInverseDD(op, *dd)); });
@@ -253,7 +246,7 @@ TEST_P(DDFunctionality, controlledStandardNegOpBuildInverseBuild) {
 }
 
 TEST_F(DDFunctionality, buildCircuit) {
-  qc::QuantumComputation qc(nqubits);
+  QuantumComputation qc(nqubits);
 
   qc.x(0);
   qc.swap(0, 1);
@@ -332,9 +325,9 @@ TEST_F(DDFunctionality, buildCircuit) {
 }
 
 TEST_F(DDFunctionality, nonUnitary) {
-  const qc::QuantumComputation qc{};
+  const QuantumComputation qc{};
   auto dummyMap = Permutation{};
-  auto op = qc::NonUnitaryOperation({0, 1, 2, 3}, {0, 1, 2, 3});
+  auto op = NonUnitaryOperation({0, 1, 2, 3}, {0, 1, 2, 3});
   EXPECT_FALSE(op.isUnitary());
   EXPECT_THROW(getDD(op, *dd), std::invalid_argument);
   EXPECT_THROW(getInverseDD(op, *dd), std::invalid_argument);
@@ -347,7 +340,7 @@ TEST_F(DDFunctionality, nonUnitary) {
   for (Qubit i = 0; i < nqubits; ++i) {
     dummyMap[i] = i;
   }
-  auto barrier = qc::StandardOperation({0, 1, 2, 3}, qc::OpType::Barrier);
+  auto barrier = StandardOperation({0, 1, 2, 3}, OpType::Barrier);
   EXPECT_TRUE(getDD(barrier, *dd).isIdentity());
   EXPECT_TRUE(getInverseDD(barrier, *dd).isIdentity());
   EXPECT_TRUE(getDD(barrier, *dd, dummyMap).isIdentity());
@@ -357,16 +350,16 @@ TEST_F(DDFunctionality, nonUnitary) {
 TEST_F(DDFunctionality, CircuitEquivalence) {
   // verify that the IBM decomposition of the H gate into RZ-SX-RZ works as
   // expected (i.e., realizes H up to a global phase)
-  qc::QuantumComputation qc1(1);
+  QuantumComputation qc1(1);
   qc1.h(0);
 
-  qc::QuantumComputation qc2(1);
+  QuantumComputation qc2(1);
   qc2.rz(PI_2, 0);
   qc2.sx(0);
   qc2.rz(PI_2, 0);
 
-  const qc::MatrixDD dd1 = buildFunctionality(qc1, *dd);
-  const qc::MatrixDD dd2 = buildFunctionality(qc2, *dd);
+  const dd::MatrixDD dd1 = buildFunctionality(qc1, *dd);
+  const dd::MatrixDD dd2 = buildFunctionality(qc2, *dd);
 
   EXPECT_EQ(dd1.p, dd2.p);
 }
@@ -472,7 +465,7 @@ TEST_F(DDFunctionality, classicControlledOperationConditions) {
     qc.measure(0, 0);
     // apply a classic-controlled X gate whenever the measured result compares
     // as specified by kind with the previously measured result.
-    qc.classicControlled(qc::X, 0, 0, 1U, kind);
+    qc.classicControlled(X, 0, 0, 1U, kind);
     // measure into the same register to check the result.
     qc.measure(0, 0);
 
@@ -491,7 +484,7 @@ TEST_F(DDFunctionality, classicControlledOperationConditions) {
 }
 
 TEST_F(DDFunctionality, vectorKroneckerWithTerminal) {
-  const auto root = dd::vEdge::one();
+  constexpr auto root = dd::vEdge::one();
   const auto zeroState = dd->makeZeroState(1);
   const auto extendedRoot = dd->kronecker(zeroState, root, 0);
   EXPECT_EQ(zeroState, extendedRoot);
@@ -502,7 +495,7 @@ TEST_F(DDFunctionality, dynamicCircuitSimulationWithSWAP) {
   qc.x(0);
   qc.swap(0, 1);
   qc.measure(1, 0);
-  qc.classicControlled(qc::X, 0, 0);
+  qc.classicControlled(X, 0, 0);
   qc.measure(0, 1);
 
   constexpr auto shots = 16U;

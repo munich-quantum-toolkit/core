@@ -20,8 +20,7 @@
 #include <utility>
 
 namespace dd {
-template <class Config>
-MatrixDD buildFunctionality(const QuantumComputation& qc, Package<Config>& dd) {
+MatrixDD buildFunctionality(const qc::QuantumComputation& qc, Package& dd) {
   if (qc.getNqubits() == 0U) {
     return MatrixDD::one();
   }
@@ -31,7 +30,7 @@ MatrixDD buildFunctionality(const QuantumComputation& qc, Package<Config>& dd) {
 
   for (const auto& op : qc) {
     // SWAP gates can be executed virtually by changing the permutation
-    if (op->getType() == OpType::SWAP && !op->isControlled()) {
+    if (op->getType() == qc::OpType::SWAP && !op->isControlled()) {
       const auto& targets = op->getTargets();
       std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
       continue;
@@ -48,17 +47,15 @@ MatrixDD buildFunctionality(const QuantumComputation& qc, Package<Config>& dd) {
 }
 
 namespace {
-template <class Config>
-bool buildFunctionalityRecursive(const QuantumComputation& qc,
-                                 std::size_t depth, std::size_t opIdx,
+bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
+                                 const size_t depth, size_t opIdx,
                                  std::stack<MatrixDD>& s,
-                                 Permutation& permutation,
-                                 Package<Config>& dd) {
+                                 qc::Permutation& permutation, Package& dd) {
   // base case
   if (depth == 1U) {
-    auto e = dd.makeIdent();
+    auto e = Package::makeIdent();
     if (const auto& op = qc.at(opIdx);
-        op->getType() == OpType::SWAP && !op->isControlled()) {
+        op->getType() == qc::OpType::SWAP && !op->isControlled()) {
       const auto& targets = op->getTargets();
       std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
     } else {
@@ -71,9 +68,9 @@ bool buildFunctionalityRecursive(const QuantumComputation& qc,
       dd.incRef(e);
       return false;
     }
-    auto f = dd.makeIdent();
+    auto f = Package::makeIdent();
     if (const auto& op = qc.at(opIdx);
-        op->getType() == OpType::SWAP && !op->isControlled()) {
+        op->getType() == qc::OpType::SWAP && !op->isControlled()) {
       const auto& targets = op->getTargets();
       std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
     } else {
@@ -115,9 +112,8 @@ bool buildFunctionalityRecursive(const QuantumComputation& qc,
 }
 } // namespace
 
-template <class Config>
-MatrixDD buildFunctionalityRecursive(const QuantumComputation& qc,
-                                     Package<Config>& dd) {
+MatrixDD buildFunctionalityRecursive(const qc::QuantumComputation& qc,
+                                     Package& dd) {
   if (qc.getNqubits() == 0U) {
     return MatrixDD::one();
   }
@@ -143,22 +139,5 @@ MatrixDD buildFunctionalityRecursive(const QuantumComputation& qc,
 
   return e;
 }
-
-template MatrixDD buildFunctionality(const QuantumComputation& qc,
-                                     Package<>& dd);
-template MatrixDD
-buildFunctionality(const QuantumComputation& qc,
-                   Package<DensityMatrixSimulatorDDPackageConfig>& dd);
-template MatrixDD
-buildFunctionality(const QuantumComputation& qc,
-                   Package<StochasticNoiseSimulatorDDPackageConfig>& dd);
-
-template MatrixDD buildFunctionality(const QuantumComputation& qc,
-                                     UnitarySimulatorDDPackage& dd);
-
-template MatrixDD buildFunctionalityRecursive(const QuantumComputation& qc,
-                                              Package<>& dd);
-template MatrixDD buildFunctionalityRecursive(const QuantumComputation& qc,
-                                              UnitarySimulatorDDPackage& dd);
 
 } // namespace dd

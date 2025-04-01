@@ -10,7 +10,6 @@
 #pragma once
 
 #include "dd/DDDefinitions.hpp"
-#include "dd/DDpackageConfig.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "ir/Definitions.hpp"
@@ -48,16 +47,16 @@ void sanityCheckOfNoiseProbabilities(double noiseProbability,
 
 class StochasticNoiseFunctionality {
 public:
-  StochasticNoiseFunctionality(
-      const std::unique_ptr<Package<StochasticNoiseSimulatorDDPackageConfig>>&
-          dd,
-      std::size_t nq, double gateNoiseProbability, double amplitudeDampingProb,
-      double multiQubitGateFactor, const std::string& cNoiseEffects);
+  StochasticNoiseFunctionality(Package& dd, std::size_t nq,
+                               double gateNoiseProbability,
+                               double amplitudeDampingProb,
+                               double multiQubitGateFactor,
+                               const std::string& cNoiseEffects);
 
   ~StochasticNoiseFunctionality() { package->decRef(identityDD); }
 
 protected:
-  Package<StochasticNoiseSimulatorDDPackageConfig>* package;
+  Package* package;
   std::size_t nQubits;
   std::uniform_real_distribution<fp> dist;
 
@@ -105,14 +104,15 @@ protected:
 
 class DeterministicNoiseFunctionality {
 public:
-  DeterministicNoiseFunctionality(
-      const std::unique_ptr<Package<DensityMatrixSimulatorDDPackageConfig>>& dd,
-      std::size_t nq, double noiseProbabilitySingleQubit,
-      double noiseProbabilityMultiQubit, double ampDampProbSingleQubit,
-      double ampDampProbMultiQubit, const std::string& cNoiseEffects);
+  DeterministicNoiseFunctionality(Package& dd, std::size_t nq,
+                                  double noiseProbabilitySingleQubit,
+                                  double noiseProbabilityMultiQubit,
+                                  double ampDampProbSingleQubit,
+                                  double ampDampProbMultiQubit,
+                                  const std::string& cNoiseEffects);
 
 protected:
-  Package<DensityMatrixSimulatorDDPackageConfig>* package;
+  Package* package;
   std::size_t nQubits;
 
   double noiseProbSingleQubit;

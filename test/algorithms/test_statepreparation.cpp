@@ -62,8 +62,8 @@ TEST_P(StatePreparation, StatePreparationCircuitSimulation) {
   const auto& expectedAmplitudes = GetParam();
   qc::QuantumComputation qc;
   ASSERT_NO_THROW({ qc = qc::createStatePreparationCircuit(amplitudes); });
-  auto dd = std::make_unique<dd::Package<>>(qc.getNqubits());
-  qc::VectorDD e{};
+  auto dd = std::make_unique<dd::Package>(qc.getNqubits());
+  dd::VectorDD e{};
   ASSERT_NO_THROW(
       { e = dd::simulate(qc, dd->makeZeroState(qc.getNqubits()), *dd); });
   auto result = e.getVector();

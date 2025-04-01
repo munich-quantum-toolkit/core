@@ -7,38 +7,51 @@
  * Licensed under the MIT License
  */
 
+/**
+ * @file DensityNoiseTable.hpp
+ * @brief Data structure for caching computed results of noise operations
+ */
+
 #pragma once
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
-#include <array>
-#include <bitset>
 #include <cstddef>
 #include <functional>
+#include <stdexcept>
 #include <vector>
 
 namespace dd {
 
-/// Data structure for caching computed results of noise operations
-/// \tparam OperandType type of the operation's operand
-/// \tparam ResultType type of the operation's result
-/// \tparam NBUCKET number of hash buckets to use (has to be a power of two)
-template <class OperandType, class ResultType, std::size_t NBUCKET = 32768>
+/**
+ * @brief Data structure for caching computed results of noise operations
+ * @tparam OperandType type of the operation's operand
+ * @tparam ResultType type of the operation's result
+ */
+template <class OperandType, class ResultType>
 class DensityNoiseTable { // todo: Inherit from UnaryComputerTable
 public:
-  DensityNoiseTable() {
+  /**
+   * Default constructor
+   * @param numBuckets Number of hash table buckets. Must be a power of two.
+   */
+  explicit DensityNoiseTable(const size_t numBuckets = 32768U) {
+    // numBuckets must be a power of two
+    if ((numBuckets & (numBuckets - 1)) != 0) {
+      throw std::invalid_argument("Number of buckets must be a power of two.");
+    }
     stats.entrySize = sizeof(Entry);
-    stats.numBuckets = NBUCKET;
+    stats.numBuckets = numBuckets;
+    valid = std::vector(numBuckets, false);
+    table = std::vector<Entry>(numBuckets);
   }
 
   struct Entry {
     OperandType operand;
     ResultType result;
-    std::vector<dd::Qubit> usedQubits;
+    std::vector<Qubit> usedQubits;
   };
-
-  static constexpr size_t MASK = NBUCKET - 1;
 
   /// Get a reference to the table
   [[nodiscard]] const auto& getTable() const { return table; }
@@ -46,14 +59,15 @@ public:
   /// Get a reference to the statistics
   [[nodiscard]] const auto& getStats() const noexcept { return stats; }
 
-  static std::size_t hash(const OperandType& a,
-                          const std::vector<Qubit>& usedQubits) {
+  [[nodiscard]] std::size_t hash(const OperandType& a,
+                                 const std::vector<Qubit>& usedQubits) const {
     std::size_t i = 0;
     for (const auto qubit : usedQubits) {
       i = (i << 3U) + i * static_cast<std::size_t>(qubit) +
           static_cast<std::size_t>(qubit);
     }
-    return (std::hash<OperandType>{}(a) + i) & MASK;
+    const size_t mask = stats.numBuckets - 1;
+    return (std::hash<OperandType>{}(a) + i) & mask;
   }
 
   void insert(const OperandType& operand, const ResultType& result,
@@ -63,7 +77,7 @@ public:
       ++stats.collisions;
     } else {
       stats.trackInsert();
-      valid.set(key);
+      valid[key] = true;
     }
     table[key] = {operand, result, usedQubits};
   }
@@ -89,14 +103,11 @@ public:
     return entry.result;
   }
 
-  void clear() {
-    valid.reset();
-    stats.reset();
-  }
+  void clear() { valid = std::vector(stats.numBuckets, false); }
 
 private:
-  std::array<Entry, NBUCKET> table{};
-  std::bitset<NBUCKET> valid{};
+  std::vector<Entry> table;
+  std::vector<bool> valid;
   TableStatistics stats{};
 };
 } // namespace dd

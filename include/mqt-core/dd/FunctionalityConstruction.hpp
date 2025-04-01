@@ -10,11 +10,12 @@
 #pragma once
 
 #include "dd/Package_fwd.hpp"
-#include "ir/QuantumComputation.hpp"
+
+namespace qc {
+class QuantumComputation;
+}
 
 namespace dd {
-using namespace qc;
-
 /**
  * @brief Sequentially build a decision diagram representation for the
  * functionality of a purely-quantum @ref qc::QuantumComputation.
@@ -45,12 +46,10 @@ using namespace qc;
  *
  * @param qc The quantum computation to construct the functionality for
  * @param dd The DD package to use for the construction
- * @tparam Config The configuration of the DD package
  * @return The matrix diagram representing the functionality of the quantum
  * computation
  */
-template <class Config>
-MatrixDD buildFunctionality(const QuantumComputation& qc, Package<Config>& dd);
+MatrixDD buildFunctionality(const qc::QuantumComputation& qc, Package& dd);
 
 /**
  * @brief Recursively build a decision diagram representation for the
@@ -66,12 +65,10 @@ MatrixDD buildFunctionality(const QuantumComputation& qc, Package<Config>& dd);
  *
  * @param qc The quantum computation to construct the functionality for
  * @param dd The DD package to use for the construction
- * @tparam Config The configuration of the DD package
  * @return The matrix diagram representing the functionality of the quantum
  * computation
  */
-template <class Config>
-MatrixDD buildFunctionalityRecursive(const QuantumComputation& qc,
-                                     Package<Config>& dd);
+MatrixDD buildFunctionalityRecursive(const qc::QuantumComputation& qc,
+                                     Package& dd);
 
 } // namespace dd

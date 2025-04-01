@@ -29,12 +29,6 @@
 
 using namespace qc;
 
-using StochasticNoiseTestPackage =
-    dd::Package<dd::StochasticNoiseSimulatorDDPackageConfig>;
-
-using DensityMatrixTestPackage =
-    dd::Package<dd::DensityMatrixSimulatorDDPackageConfig>;
-
 class DDNoiseFunctionalityTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -82,14 +76,15 @@ TEST_F(DDNoiseFunctionalityTest, DetSimulateAdder4TrackAPD) {
       {"0011", 0.0242454336917}, {"1011", 0.0262779844799},
       {"0111", 0.0239296920989}, {"1111", 0.0110373166627}};
 
-  auto dd = std::make_unique<DensityMatrixTestPackage>(qc.getNqubits());
+  auto dd = std::make_unique<dd::Package>(
+      qc.getNqubits(), dd::DENSITY_MATRIX_SIMULATOR_DD_PACKAGE_CONFIG);
 
   auto rootEdge = dd->makeZeroDensityOperator(qc.getNqubits());
 
   const auto* const noiseEffects = "APDI";
 
   auto deterministicNoiseFunctionality = dd::DeterministicNoiseFunctionality(
-      dd, qc.getNqubits(), 0.01, 0.02, 0.02, 0.04, noiseEffects);
+      *dd, qc.getNqubits(), 0.01, 0.02, 0.02, 0.04, noiseEffects);
 
   for (auto const& op : qc) {
     dd->applyOperationToDensity(rootEdge, dd::getDD(*op, *dd));
@@ -113,14 +108,15 @@ TEST_F(DDNoiseFunctionalityTest, DetSimulateAdder4TrackD) {
       {"1000", 0.0328434857577}, {"1001", 0.7370101351171},
       {"1011", 0.0186346925411}, {"1101", 0.0275086747656}};
 
-  auto dd = std::make_unique<DensityMatrixTestPackage>(qc.getNqubits());
+  auto dd = std::make_unique<dd::Package>(
+      qc.getNqubits(), dd::DENSITY_MATRIX_SIMULATOR_DD_PACKAGE_CONFIG);
 
   auto rootEdge = dd->makeZeroDensityOperator(qc.getNqubits());
 
   const auto* const noiseEffects = "D";
 
   auto deterministicNoiseFunctionality = dd::DeterministicNoiseFunctionality(
-      dd, qc.getNqubits(), 0.01, 0.02, 0.02, 0.04, noiseEffects);
+      *dd, qc.getNqubits(), 0.01, 0.02, 0.02, 0.04, noiseEffects);
 
   for (auto const& op : qc) {
     dd->applyOperationToDensity(rootEdge, dd::getDD(*op, *dd));
@@ -144,12 +140,13 @@ TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
   qcOp.h(1);
   qcOp.h(2);
 
-  auto dd = std::make_unique<DensityMatrixTestPackage>(qcOp.getNqubits());
+  auto dd = std::make_unique<dd::Package>(
+      qcOp.getNqubits(), dd::DENSITY_MATRIX_SIMULATOR_DD_PACKAGE_CONFIG);
 
   auto rootEdge = dd->makeZeroDensityOperator(qcOp.getNqubits());
 
   auto deterministicNoiseFunctionality = dd::DeterministicNoiseFunctionality(
-      dd, qcOp.getNqubits(), 0.01, 0.02, 0.02, 0.04, {});
+      *dd, qcOp.getNqubits(), 0.01, 0.02, 0.02, 0.04, {});
 
   for (auto const& op : qcOp) {
     dd->applyOperationToDensity(rootEdge, dd::getDD(*op, *dd));
@@ -198,7 +195,8 @@ TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
 }
 
 TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4TrackAPD) {
-  auto dd = std::make_unique<StochasticNoiseTestPackage>(qc.getNqubits());
+  auto dd = std::make_unique<dd::Package>(
+      qc.getNqubits(), dd::STOCHASTIC_NOISE_SIMULATOR_DD_PACKAGE_CONFIG);
 
   std::map<std::string, double, std::less<>> measSummary = {
       {"0000", 0.}, {"0001", 0.}, {"0010", 0.}, {"0011", 0.}, {"0100", 0.},
@@ -208,7 +206,7 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4TrackAPD) {
   const auto* const noiseEffects = "APDI";
 
   auto stochasticNoiseFunctionality = dd::StochasticNoiseFunctionality(
-      dd, qc.getNqubits(), 0.01, 0.02, 2., noiseEffects);
+      *dd, qc.getNqubits(), 0.01, 0.02, 2., noiseEffects);
 
   for (size_t i = 0U; i < stochRuns; i++) {
     auto rootEdge = dd->makeZeroState(qc.getNqubits());
@@ -250,7 +248,8 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4TrackAPD) {
 }
 
 TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4IdentityError) {
-  auto dd = std::make_unique<StochasticNoiseTestPackage>(qc.getNqubits());
+  auto dd = std::make_unique<dd::Package>(
+      qc.getNqubits(), dd::STOCHASTIC_NOISE_SIMULATOR_DD_PACKAGE_CONFIG);
 
   std::map<std::string, double, std::less<>> measSummary = {
       {"0000", 0.}, {"0001", 0.}, {"0010", 0.}, {"0011", 0.}, {"0100", 0.},
@@ -260,7 +259,7 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4IdentityError) {
   const auto* const noiseEffects = "I";
 
   auto stochasticNoiseFunctionality = dd::StochasticNoiseFunctionality(
-      dd, qc.getNqubits(), 0.01, 0.02, 2., noiseEffects);
+      *dd, qc.getNqubits(), 0.01, 0.02, 2., noiseEffects);
 
   for (size_t i = 0U; i < stochRuns; i++) {
     auto rootEdge = dd->makeZeroState(qc.getNqubits());
@@ -302,7 +301,7 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4IdentityError) {
 }
 
 TEST_F(DDNoiseFunctionalityTest, testingUsedQubits) {
-  const std::size_t nqubits = 1;
+  constexpr std::size_t nqubits = 1;
   auto standardOp = StandardOperation(1, qc::Z);
   EXPECT_EQ(standardOp.getUsedQubits().size(), 1);
   EXPECT_TRUE(standardOp.getUsedQubits().count(1));
@@ -326,15 +325,17 @@ TEST_F(DDNoiseFunctionalityTest, testingUsedQubits) {
 }
 
 TEST_F(DDNoiseFunctionalityTest, invalidNoiseEffect) {
-  auto dd = std::make_unique<StochasticNoiseTestPackage>(qc.getNqubits());
-  EXPECT_THROW(dd::StochasticNoiseFunctionality(dd, qc.getNqubits(), 0.01, 0.02,
-                                                2., "APK"),
+  auto dd = std::make_unique<dd::Package>(
+      qc.getNqubits(), dd::STOCHASTIC_NOISE_SIMULATOR_DD_PACKAGE_CONFIG);
+  EXPECT_THROW(dd::StochasticNoiseFunctionality(*dd, qc.getNqubits(), 0.01,
+                                                0.02, 2., "APK"),
                std::runtime_error);
 }
 
 TEST_F(DDNoiseFunctionalityTest, invalidNoiseProbabilities) {
-  auto dd = std::make_unique<StochasticNoiseTestPackage>(qc.getNqubits());
-  EXPECT_THROW(
-      dd::StochasticNoiseFunctionality(dd, qc.getNqubits(), 0.3, 0.6, 2, "APD"),
-      std::runtime_error);
+  auto dd = std::make_unique<dd::Package>(
+      qc.getNqubits(), dd::STOCHASTIC_NOISE_SIMULATOR_DD_PACKAGE_CONFIG);
+  EXPECT_THROW(dd::StochasticNoiseFunctionality(*dd, qc.getNqubits(), 0.3, 0.6,
+                                                2, "APD"),
+               std::runtime_error);
 }

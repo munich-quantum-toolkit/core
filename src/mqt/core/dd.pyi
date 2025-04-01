@@ -413,11 +413,9 @@ class DDPackage:
             The input DD must have a non-zero reference count.
         """
 
-    def identity(self) -> MatrixDD:
+    @staticmethod
+    def identity() -> MatrixDD:
         r"""Create the DD for the identity matrix :math:`I`.
-
-        Args:
-            dd_package: The DD package.
 
         Returns:
             The DD for the identity matrix.

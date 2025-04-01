@@ -116,7 +116,7 @@ TEST_P(BernsteinVazirani, DynamicEquivalenceSimulation) {
   // create standard BV circuit
   auto bv = qc::createBernsteinVazirani(s);
 
-  auto dd = std::make_unique<dd::Package<>>(bv.getNqubits());
+  auto dd = std::make_unique<dd::Package>(bv.getNqubits());
 
   // remove final measurements to obtain statevector
   qc::CircuitOptimizer::removeFinalMeasurements(bv);
