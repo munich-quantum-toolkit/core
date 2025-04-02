@@ -320,10 +320,10 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     // Update the inputs of all non-mqtopt operations that use mqtopt operations
     // as inputs, as these will be deleted later.
-    for (auto* operation : visited) {
+    for (auto* operation : llvm::make_early_inc_range(visited)) {
       if (operation->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
-        updateMQTOptInputs(operation, rewriter, newAlloc.getQureg(),
-                           measureCount);
+        visited.erase(operation); // safe deletion as op will be erased next
+        updateMQTOptInputs(operation, rewriter, newAlloc.getQureg(), measureCount);
       }
     }
 
