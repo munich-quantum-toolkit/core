@@ -62,7 +62,7 @@ public:
    * parallel edges.
    * @details In the ZX-calculus, parallel edges and self-loops can usually be
    * simplified. Two parallel Simple edges between two opposite-colored
-   * vertices cancel out for exampl. This function adds an edge to the diagram
+   * vertices cancel out for example. This function adds an edge to the diagram
    * and then simplifies the diagram if necessary.
    * @param from first vertex of the edge
    * @param to second vertex of the edge

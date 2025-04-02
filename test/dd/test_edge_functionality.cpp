@@ -39,7 +39,7 @@ TEST(VectorFunctionality, GetValueByIndexTerminal) {
 }
 
 TEST(VectorFunctionality, GetValueByIndexEndianness) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
   const auto stateDD = dd->makeStateFromVector(state);
@@ -55,7 +55,7 @@ TEST(VectorFunctionality, GetVectorTerminal) {
 }
 
 TEST(VectorFunctionality, GetVectorRoundtrip) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
   const auto stateDD = dd->makeStateFromVector(state);
@@ -64,7 +64,7 @@ TEST(VectorFunctionality, GetVectorRoundtrip) {
 }
 
 TEST(VectorFunctionality, GetVectorTolerance) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
   const auto stateDD = dd->makeStateFromVector(state);
@@ -83,7 +83,7 @@ TEST(VectorFunctionality, GetSparseVectorTerminal) {
 }
 
 TEST(VectorFunctionality, GetSparseVectorConsistency) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
   const auto stateDD = dd->makeStateFromVector(state);
@@ -95,7 +95,7 @@ TEST(VectorFunctionality, GetSparseVectorConsistency) {
 }
 
 TEST(VectorFunctionality, GetSparseVectorTolerance) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
   const auto stateDD = dd->makeStateFromVector(state);
@@ -121,7 +121,7 @@ TEST(VectorFunctionality, PrintVectorTerminal) {
 }
 
 TEST(VectorFunctionality, PrintVector) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
   const auto stateDD = dd->makeStateFromVector(state);
@@ -141,7 +141,7 @@ TEST(VectorFunctionality, AddToVectorTerminal) {
 TEST(VectorFunctionality, AddToVector) {
   CVec vec = {0., 0., 0., 0.};
 
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
   const auto stateDD = dd->makeStateFromVector(state);
@@ -155,8 +155,8 @@ TEST(VectorFunctionality, SizeTerminal) {
 }
 
 TEST(VectorFunctionality, SizeBellState) {
-  auto dd = std::make_unique<dd::Package<>>(2);
-  const CVec state = {dd::SQRT2_2, 0., 0., dd::SQRT2_2};
+  auto dd = std::make_unique<Package>(2);
+  const CVec state = {SQRT2_2, 0., 0., SQRT2_2};
   const auto bell = dd->makeStateFromVector(state);
   EXPECT_EQ(bell.size(), 4);
 }
@@ -176,7 +176,7 @@ TEST(MatrixFunctionality, GetValueByIndexTerminal) {
 }
 
 TEST(MatrixFunctionality, GetValueByIndexEndianness) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   // clang-format off
   const CMat mat = {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
@@ -203,7 +203,7 @@ TEST(MatrixFunctionality, GetMatrixTerminal) {
 }
 
 TEST(MatrixFunctionality, GetMatrixRoundtrip) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   // clang-format off
   const CMat mat = {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
@@ -225,7 +225,7 @@ TEST(MatrixFunctionality, GetMatrixRoundtrip) {
 }
 
 TEST(MatrixFunctionality, GetMatrixTolerance) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   // clang-format off
   const CMat mat = {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
@@ -261,7 +261,7 @@ TEST(MatrixFunctionality, GetSparseMatrixTerminal) {
 }
 
 TEST(MatrixFunctionality, GetSparseMatrixConsistency) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   // clang-format off
   const CMat mat = {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
@@ -281,7 +281,7 @@ TEST(MatrixFunctionality, GetSparseMatrixConsistency) {
 }
 
 TEST(MatrixFunctionality, GetSparseMatrixTolerance) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   // clang-format off
   const CMat mat = {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
@@ -319,7 +319,7 @@ TEST(MatrixFunctionality, PrintMatrixTerminal) {
 }
 
 TEST(MatrixFunctionality, PrintMatrix) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   // clang-format off
   const CMat mat = {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
@@ -344,13 +344,13 @@ TEST(MatrixFunctionality, SizeTerminal) {
 }
 
 TEST(MatrixFunctionality, SizeBellState) {
-  auto dd = std::make_unique<dd::Package<>>(2);
+  auto dd = std::make_unique<Package>(2);
   // clang-format off
   const CMat mat = {
-    {dd::SQRT2_2, 0., 0., dd::SQRT2_2},
-    {0., dd::SQRT2_2, dd::SQRT2_2, 0.},
-    {0., dd::SQRT2_2, -dd::SQRT2_2, 0.},
-    {dd::SQRT2_2, 0., 0., -dd::SQRT2_2}};
+    {SQRT2_2, 0., 0., SQRT2_2},
+    {0., SQRT2_2, SQRT2_2, 0.},
+    {0., SQRT2_2, -SQRT2_2, 0.},
+    {SQRT2_2, 0., 0., -SQRT2_2}};
   // clang-format on
 
   const auto bell = dd->makeDDFromMatrix(mat);
@@ -373,10 +373,10 @@ TEST(DensityMatrixFunctionality, GetValueByIndexTerminal) {
 
 TEST(DensityMatrixFunctionality, GetValueByIndexProperDensityMatrix) {
   const auto nqubits = 1U;
-  auto dd = std::make_unique<dd::Package<>>(nqubits);
+  auto dd = std::make_unique<Package>(nqubits);
   auto zero = dd->makeZeroDensityOperator(nqubits);
-  const auto op1 = dd::getDD(qc::StandardOperation(0U, qc::H), *dd);
-  const auto op2 = dd::getDD(qc::StandardOperation(0, qc::RZ, {dd::PI_4}), *dd);
+  const auto op1 = getDD(qc::StandardOperation(0U, qc::H), *dd);
+  const auto op2 = getDD(qc::StandardOperation(0, qc::RZ, {PI_4}), *dd);
   auto state = dd->applyOperationToDensity(zero, op1);
   state = dd->applyOperationToDensity(state, op2);
 
@@ -407,10 +407,10 @@ TEST(DensityMatrixFunctionality, GetSparseMatrixTerminal) {
 
 TEST(DensityMatrixFunctionality, GetSparseMatrixConsistency) {
   const auto nqubits = 1U;
-  auto dd = std::make_unique<dd::Package<>>(nqubits);
+  auto dd = std::make_unique<Package>(nqubits);
   auto zero = dd->makeZeroDensityOperator(nqubits);
-  const auto op1 = dd::getDD(qc::StandardOperation(0U, qc::H), *dd);
-  const auto op2 = dd::getDD(qc::StandardOperation(0, qc::RZ, {dd::PI_4}), *dd);
+  const auto op1 = getDD(qc::StandardOperation(0U, qc::H), *dd);
+  const auto op2 = getDD(qc::StandardOperation(0, qc::RZ, {PI_4}), *dd);
   auto state = dd->applyOperationToDensity(zero, op1);
   state = dd->applyOperationToDensity(state, op2);
 
@@ -437,10 +437,10 @@ TEST(DensityMatrixFunctionality, PrintMatrixTerminal) {
 
 TEST(DensityMatrixFunctionality, PrintMatrix) {
   const auto nqubits = 1U;
-  auto dd = std::make_unique<dd::Package<>>(nqubits);
+  auto dd = std::make_unique<Package>(nqubits);
   auto zero = dd->makeZeroDensityOperator(nqubits);
-  const auto op1 = dd::getDD(qc::StandardOperation(0U, qc::H), *dd);
-  const auto op2 = dd::getDD(qc::StandardOperation(0, qc::RZ, {dd::PI_4}), *dd);
+  const auto op1 = getDD(qc::StandardOperation(0U, qc::H), *dd);
+  const auto op2 = getDD(qc::StandardOperation(0, qc::RZ, {PI_4}), *dd);
   auto state = dd->applyOperationToDensity(zero, op1);
   state = dd->applyOperationToDensity(state, op2);
 

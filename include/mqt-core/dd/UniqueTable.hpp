@@ -7,6 +7,11 @@
  * Licensed under the MIT License
  */
 
+/**
+ * @file UniqueTable.hpp
+ * @brief Data structure for uniquely storing DD nodes
+ */
+
 #pragma once
 
 #include "dd/Edge.hpp"
@@ -15,7 +20,6 @@
 #include "dd/statistics/UniqueTableStatistics.hpp"
 #include "ir/Definitions.hpp"
 
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -70,7 +74,7 @@ public:
    * @param p The node to hash.
    * @returns The hash value of the node.
    */
-  template <class Node> [[nodiscard]] std::size_t hash(const Node& p) {
+  template <class Node> [[nodiscard]] std::size_t hash(const Node& p) const {
     static_assert(std::is_base_of_v<NodeBase, Node>,
                   "Node must be derived from NodeBase");
     const std::size_t mask = cfg.nBuckets - 1;

@@ -32,14 +32,14 @@ protected:
 
   void SetUp() override {
     nqubits = GetParam();
-    dd = std::make_unique<dd::Package<>>(nqubits);
+    dd = std::make_unique<dd::Package>(nqubits);
   }
 
   qc::Qubit nqubits = 0;
-  std::unique_ptr<dd::Package<>> dd;
+  std::unique_ptr<dd::Package> dd;
   qc::QuantumComputation qc;
-  qc::VectorDD sim{};
-  qc::MatrixDD func{};
+  dd::VectorDD sim{};
+  dd::MatrixDD func{};
 };
 
 /// Findings from the QFT Benchmarks:
@@ -207,7 +207,7 @@ TEST_P(QFT, FunctionalityRecursiveEquality) {
   ASSERT_NO_THROW({ func = buildFunctionalityRecursive(qc, *dd); });
 
   // there should be no error building the functionality regularly
-  qc::MatrixDD funcRec{};
+  dd::MatrixDD funcRec{};
   ASSERT_NO_THROW({ funcRec = buildFunctionality(qc, *dd); });
 
   ASSERT_EQ(func, funcRec);

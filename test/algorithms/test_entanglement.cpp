@@ -25,10 +25,10 @@ protected:
   void TearDown() override {}
   void SetUp() override {
     nq = GetParam();
-    dd = std::make_unique<dd::Package<>>(nq);
+    dd = std::make_unique<dd::Package>(nq);
   }
   qc::Qubit nq{};
-  std::unique_ptr<dd::Package<>> dd;
+  std::unique_ptr<dd::Package> dd;
 };
 
 INSTANTIATE_TEST_SUITE_P(
@@ -58,7 +58,7 @@ TEST_P(Entanglement, GHZRoutineFunctionTest) {
 }
 
 TEST(Entanglement, GHZStateEdgeCasesTest) {
-  auto dd = std::make_unique<dd::Package<>>(3);
+  auto dd = std::make_unique<dd::Package>(3);
 
   EXPECT_EQ(dd->makeGHZState(0),
             dd->makeBasisState(0, {dd::BasisStates::zero}));

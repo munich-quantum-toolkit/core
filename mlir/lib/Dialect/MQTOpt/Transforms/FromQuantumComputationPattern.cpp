@@ -51,13 +51,13 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    *
    * @return The created ExtractOp.
    */
-  static ExtractOp createRegisterAccess(AllocOp& reg, const size_t index,
+  static ExtractOp createRegisterAccess(mlir::Value reg, const size_t index,
                                         mlir::PatternRewriter& rewriter) {
     return rewriter.create<ExtractOp>(
         reg.getLoc(),
         mlir::TypeRange{QubitRegisterType::get(rewriter.getContext()),
                         QubitType::get(rewriter.getContext())},
-        reg.getResult(), nullptr,
+        reg, nullptr,
         rewriter.getI64IntegerAttr(static_cast<std::int64_t>(index)));
   }
 
@@ -120,14 +120,16 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * `i1`. After this update, the measurement results are used instead.
    *
    * @param returnOperation The `return` operation to update.
+   * @param register The register to use as the new return value.
    * @param measurementValues The values to use as the new return values.
    * @param rewriter The pattern rewriter to use.
    */
   static void
-  updateReturnOperation(mlir::Operation* returnOperation,
+  updateReturnOperation(mlir::Operation* returnOperation, mlir::Value reg,
                         const std::vector<mlir::Value>& measurementValues,
                         mlir::PatternRewriter& rewriter) {
     auto* const cloned = rewriter.clone(*returnOperation);
+    cloned->setOperand(0, reg);
     for (size_t i = 0; i < measurementValues.size(); i++) {
       cloned->setOperand(i + 1, measurementValues[i]);
     }
@@ -150,10 +152,13 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // We start by first extracting each qubit from the register. The current
     // `Value` representations of each qubit are stored in the
     // `currentQubitVariables` vector.
+    auto currentRegister = newAlloc.getResult();
     std::vector<mlir::Value> currentQubitVariables(numQubits);
     for (size_t i = 0; i < numQubits; i++) {
-      currentQubitVariables[i] =
-          createRegisterAccess(newAlloc, i, rewriter).getOutQubit();
+      auto newRegisterAccess =
+          createRegisterAccess(currentRegister, i, rewriter);
+      currentQubitVariables[i] = newRegisterAccess.getOutQubit();
+      currentRegister = newRegisterAccess.getOutQureg();
     }
 
     // Iterate over each operation in the circuit and create the corresponding
@@ -214,7 +219,8 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // results and then replace the original `alloc` operation with the updated
     // one.
     auto* const returnOperation = *op->getUsers().begin();
-    updateReturnOperation(returnOperation, measurementValues, rewriter);
+    updateReturnOperation(returnOperation, currentRegister, measurementValues,
+                          rewriter);
     rewriter.replaceOp(op, newAlloc);
   }
 };
