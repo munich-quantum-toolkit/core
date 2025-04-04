@@ -15,7 +15,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
 
-namespace mqt::ir::opt {
+namespace mqt::ir::common {
 template <size_t N> class TargetArity {
 public:
   template <typename ConcreteOp>
@@ -77,4 +77,4 @@ public:
   };
 };
 
-} // namespace mqt::ir::opt
+} // namespace mqt::ir::common

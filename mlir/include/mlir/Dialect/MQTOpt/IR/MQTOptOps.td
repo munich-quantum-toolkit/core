@@ -14,6 +14,7 @@ include "mlir/IR/EnumAttr.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
+include "mlir/Dialect/Common/IR/CommonTraits.td"
 include "mlir/Dialect/MQTOpt/IR/MQTOptInterfaces.td"
 
 //===----------------------------------------------------------------------===//
@@ -76,30 +77,6 @@ def QubitType : MQTOptType<"Qubit", "Qubit"> {
 def QuregType : MQTOptType<"QubitRegister", "QubitRegister"> {
     let summary = "An array of value-semantic qubits (i.e. quantum register).";
 }
-
-//===----------------------------------------------------------------------===//
-// Traits
-//===----------------------------------------------------------------------===//
-
-class TargetArity<int N>
-    : ParamNativeOpTrait<"TargetArity", !cast<string>(N)> {
-    let cppNamespace = "::mqt::ir::opt";
-}
-
-def NoTarget : TargetArity<0>;
-def OneTarget : TargetArity<1>;
-def TwoTarget : TargetArity<2>;
-
-class ParameterArity<int N>
-    : ParamNativeOpTrait<"ParameterArity", !cast<string>(N)> {
-    let cppNamespace = "::mqt::ir::opt";
-}
-
-def NoParameter : ParameterArity<0>;
-def OneParameter : ParameterArity<1>;
-def TwoParameters : ParameterArity<2>;
-def ThreeParameters : ParameterArity<3>;
-
 
 //===----------------------------------------------------------------------===//
 // Operations
