@@ -16,7 +16,6 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 
 class TargetArity<int N>
     : ParamNativeOpTrait<"TargetArity", !cast<string>(N)> {
-    list<Trait> dependentTraits = [];
     let cppNamespace = "::mqt::ir::common";
 }
 
