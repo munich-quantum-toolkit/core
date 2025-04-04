@@ -132,7 +132,7 @@ def UOp : UnitaryOp<"u", [OneTarget, ThreeParameters]> {
     let description = [{}]; // todo: add description
 }
 
-def MeasureOp : GateOp<"measure", [SameVariadicResultSize]> {
+def MeasureOp : GateOp<"measure"> {
     let summary = "A measure operation";
 
     let description = [{
