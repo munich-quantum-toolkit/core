@@ -124,10 +124,6 @@ def GPhaseOp : UnitaryOp<"GPhase", [NoTarget, OneParameter]> {
 
         An analogous example can be seen in the description of XOp.
     }];
-
-    // This operation has a verifier that checks if the gate has no input or output
-    // qubits. It is implemented in the corresponding .cpp file.
-    let hasVerifier = 1;
 }
 
 def IOp : UnitaryOp<"I", [OneTarget, NoParameter]> {

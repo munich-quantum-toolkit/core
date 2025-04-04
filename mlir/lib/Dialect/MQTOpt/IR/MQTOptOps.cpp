@@ -64,14 +64,6 @@ void mqt::ir::opt::MQTOptDialect::initialize() {
 
 namespace mqt::ir::opt {
 
-mlir::LogicalResult GPhaseOp::verify() {
-  if (!getInQubits().empty() || !getOutQubits().empty()) {
-    return emitOpError() << "GPhase gate should not have neither input nor "
-                         << "output qubits";
-  }
-  return mlir::success();
-}
-
 mlir::LogicalResult BarrierOp::verify() {
   if (!getPosCtrlQubits().empty() || !getNegCtrlQubits().empty()) {
     return emitOpError() << "Barrier gate should not have control qubits";
