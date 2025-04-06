@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -24,10 +25,10 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
-#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace mqt::ir::opt {
@@ -64,7 +65,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * variables.
    */
   static size_t
-  findQubitIndex(mlir::Value input,
+  findQubitIndex(const mlir::Value& input,
                  std::vector<mlir::Value>& currentQubitVariables) {
     size_t arrayIndex = 0;
     if (const auto opResult = llvm::dyn_cast<mlir::OpResult>(input)) {
@@ -100,7 +101,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * @param currentQubitVariables The list of previously defined qubit
    * variables.
    */
-  void handleMeasureOp(MeasureOp op,
+  void handleMeasureOp(MeasureOp& op,
                        std::vector<mlir::Value>& currentQubitVariables) const {
     const auto ins = op.getInQubits();
     const auto outs = op.getOutQubits();
@@ -125,7 +126,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * @param currentQubitVariables The list of previously defined qubit
    * variables.
    */
-  void handleUnitaryOp(UnitaryInterface op,
+  void handleUnitaryOp(UnitaryInterface& op,
                        std::vector<mlir::Value>& currentQubitVariables) const {
     const auto in = op.getInQubits()[0];
     const auto ctrlIns = op.getCtrlQubits();
@@ -165,19 +166,19 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * @param op The operation to delete.
    * @param rewriter The pattern rewriter to use for deleting the operation.
    */
-  static void deleteRecursively(mlir::Operation* op,
+  static void deleteRecursively(mlir::Operation& op,
                                 mlir::PatternRewriter& rewriter) {
     if (llvm::isa<AllocOp>(op)) {
       return; // Do not delete extract operations.
     }
-    if (!op->getUsers().empty()) {
+    if (!op.getUsers().empty()) {
       return; // Do not delete operations with users.
     }
 
-    rewriter.eraseOp(op);
-    for (auto operand : op->getOperands()) {
+    rewriter.eraseOp(&op);
+    for (auto operand : op.getOperands()) {
       if (auto* defOp = operand.getDefiningOp()) {
-        deleteRecursively(defOp, rewriter);
+        deleteRecursively(*defOp, rewriter);
       }
     }
   }
@@ -196,14 +197,14 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * @param qureg The new Qureg to replace old Qureg uses with.
    * @param measureCount The number of measurements in the quantum circuit.
    */
-  static void updateMQTOptInputs(mlir::Operation* op,
+  static void updateMQTOptInputs(mlir::Operation& op,
                                  mlir::PatternRewriter& rewriter,
-                                 const mlir::Value qureg,
+                                 const mlir::Value& qureg,
                                  const size_t measureCount) {
     size_t i = 0;
-    auto* const cloned = rewriter.clone(*op);
+    auto* const cloned = rewriter.clone(op);
     rewriter.setInsertionPoint(cloned);
-    for (auto operand : op->getOperands()) {
+    for (auto operand : op.getOperands()) {
       i++;
       const auto type = operand.getType();
       if (llvm::isa<QubitType>(type)) {
@@ -220,7 +221,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         // Operations that used `i1` values (i.e. classical measurement results)
         // will now use a constant value of `false`.
         auto newInput = rewriter.create<mlir::arith::ConstantOp>(
-            op->getLoc(), rewriter.getI1Type(), rewriter.getBoolAttr(false));
+            op.getLoc(), rewriter.getI1Type(), rewriter.getBoolAttr(false));
         cloned->setOperand(i - 1, newInput.getResult());
       }
     }
@@ -230,7 +231,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       throw std::runtime_error(
           "Measure count does not match number of return operands!");
     }
-    rewriter.replaceOp(op, cloned);
+    rewriter.replaceOp(&op, cloned);
   }
 
   void rewrite(AllocOp op, mlir::PatternRewriter& rewriter) const override {
@@ -265,7 +266,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     circuit.addQubitRegister(numQubits, regName);
     circuit.addClassicalRegister(numQubits);
 
-    std::set<mlir::Operation*> visited{};
+    std::unordered_set<mlir::Operation*> visited{};
 
     // Visit all operations in the AST using Breadth-First Search.
     while (!toVisit.empty()) {
@@ -277,8 +278,8 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       visited.insert(current);
 
       if (llvm::isa<XOp>(current)) {
-        auto xOp = llvm::dyn_cast<XOp>(current);
-        handleUnitaryOp(xOp, currentQubitVariables);
+        auto unitaryOp = llvm::dyn_cast<UnitaryInterface>(current);
+        handleUnitaryOp(unitaryOp, currentQubitVariables);
       } else if (llvm::isa<ExtractOp>(current)) {
         auto extractOp = llvm::dyn_cast<ExtractOp>(current);
         if (const auto indexAttr = extractOp.getIndexAttr();
@@ -320,18 +321,20 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     // Update the inputs of all non-mqtopt operations that use mqtopt operations
     // as inputs, as these will be deleted later.
+    // NOLINTNEXTLINE(bugprone-nondeterministic-pointer-iteration-order)
     for (auto* operation : visited) {
       if (operation->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
-        updateMQTOptInputs(operation, rewriter, newAlloc.getQureg(),
+        updateMQTOptInputs(*operation, rewriter, newAlloc.getQureg(),
                            measureCount);
       }
     }
 
     // Delete all operations that are part of the mqtopt dialect (except for
     // `AllocOp`).
+    // NOLINTNEXTLINE(bugprone-nondeterministic-pointer-iteration-order)
     for (auto* operation : visited) {
       if (operation->getDialect()->getNamespace() == DIALECT_NAME_MQTOPT) {
-        deleteRecursively(operation, rewriter);
+        deleteRecursively(*operation, rewriter);
       }
     }
 

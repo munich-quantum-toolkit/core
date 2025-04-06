@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -103,5 +104,5 @@ def test_cli_execute_module() -> None:
     """Test running the CLI by executing the mqt-core module."""
     from subprocess import check_output
 
-    output = check_output(["python", "-m", "mqt.core", "--version"])  # noqa: S603, S607
+    output = check_output(["python", "-m", "mqt.core", "--version"])  # noqa: S607
     assert mqt_core_version in output.decode()

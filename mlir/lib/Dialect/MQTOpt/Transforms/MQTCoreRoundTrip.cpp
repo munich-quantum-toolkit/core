@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -10,8 +11,6 @@
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
@@ -28,8 +27,8 @@ struct MQTCoreRoundTrip final : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
 
   void runOnOperation() override {
     // Get the current operation being operated on.
-    mlir::Operation* op = getOperation();
-    mlir::MLIRContext* ctx = &getContext();
+    auto op = getOperation();
+    auto* ctx = &getContext();
 
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
@@ -41,7 +40,7 @@ struct MQTCoreRoundTrip final : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
             // This was deprecated in LLVM@20, but the alternative does not yet
             // exist in LLVM@19.
             // NOLINTNEXTLINE(clang-diagnostic-deprecated-declarations)
-            mlir::applyPatternsAndFoldGreedily(op, std::move(patterns)))) {
+            mlir::applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }
