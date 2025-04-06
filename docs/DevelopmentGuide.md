@@ -13,7 +13,7 @@ Ready to contribute to the project? This guide will get you started.
    and clone your fork locally.
 
    ```console
-   $ git clone git@github.com:your_name_here/mqt-core.git
+   $ git clone git@github.com:your_name_here/core.git mqt-core
    ```
 
    :::
@@ -22,7 +22,7 @@ Ready to contribute to the project? This guide will get you started.
    clone the repository locally.
 
    ```console
-   $ git clone git@github.com/munich-quantum-toolkit/core.git
+   $ git clone git@github.com/munich-quantum-toolkit/core.git mqt-core
    ```
 
    :::
