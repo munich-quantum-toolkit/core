@@ -33,7 +33,7 @@ self
 ```
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 1
 :caption: User Guide
 
 installation
@@ -41,18 +41,20 @@ mqt_core_ir
 dd_package
 zx_package
 references
+CHANGELOG
+UPGRADING
 ```
 
 ````{only} not latex
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 1
 :caption: DD Package Evaluation
 
 dd_package_evaluation
 ```
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 1
 :titlesonly:
 :caption: Developers
 :glob:
@@ -64,16 +66,16 @@ DevelopmentGuide
 ````
 
 ```{toctree}
-:hidden:
 :caption: Python API Reference
+:maxdepth: 1
 
 api/mqt/core/index
 ```
 
 ```{toctree}
-:hidden:
 :glob:
 :caption: C++ API Reference
+:maxdepth: 1
 
 api/cpp/namespacelist
 ```
