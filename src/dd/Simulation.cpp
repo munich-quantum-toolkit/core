@@ -261,7 +261,7 @@ VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
 
       // TODO: this applies approximation after each operation.
       if constexpr (stgy != None) {
-        applyApproximation(out, approx);
+        applyApproximation(out, approx, dd);
       }
     }
   }
