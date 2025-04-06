@@ -43,7 +43,7 @@ template <> struct Approximation<MemoryDriven> {
 };
 
 struct NodeContributions {
-  struct Pair {
+  struct Pair { // TODO: Naming.
     const vNode* node;
     double contribution;
   };

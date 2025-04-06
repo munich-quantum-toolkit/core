@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include "dd/Approximation.hpp"
 #include "dd/Package_fwd.hpp"
 
 #include <cstddef>
@@ -46,8 +47,10 @@ namespace dd {
  * @param dd The DD package to use for the simulation
  * @return A vector DD representing the output state of the simulation
  */
+template <const ApproximationStrategy stgy = None>
 VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
-                  Package& dd);
+                  Package& dd,
+                  Approximation<stgy> approx = Approximation<stgy>{});
 
 /**
  * @brief Sample from the output distribution of a quantum computation

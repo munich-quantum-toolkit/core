@@ -9,13 +9,18 @@
 
 #include "dd/Simulation.hpp"
 
+#include "dd/Approximation.hpp"
+#include "dd/Complex.hpp"
+#include "dd/Node.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "ir/Definitions.hpp"
+#include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/Operation.hpp"
 
 #include <algorithm>
 #include <array>
@@ -30,6 +35,40 @@
 #include <vector>
 
 namespace dd {
+/**
+ * @brief Returns `true` if the operation is virtually swappable.
+ */
+bool isVirtuallySwappable(const qc::Operation& op) noexcept {
+  return op.getType() == qc::SWAP && !op.isControlled();
+}
+
+/**
+ * @brief Virtually SWAP by permuting the layout.
+ */
+void virtualSwap(const qc::Operation& op, qc::Permutation& perm) noexcept {
+  const auto& targets = op.getTargets();
+  std::swap(perm.at(targets[0U]), perm.at(targets[1U]));
+}
+
+/**
+ * @brief Returns `true` if the circuit has a global phase.
+ */
+bool hasGlobalPhase(const fp& phase) noexcept { return std::abs(phase) > 0; }
+
+/**
+ * @brief Apply global phase to `out.w`. Decreases reference count of old `w`
+ * value.
+ */
+void applyGlobalPhase(const fp& phase, VectorDD& out, Package& dd) {
+  const Complex oldW = out.w; // create a temporary copy for reference counting
+
+  out.w = dd.cn.lookup(out.w * ComplexValue{std::polar(1.0, phase)});
+
+  // adjust reference counts
+  dd.cn.incRef(out.w);
+  dd.cn.decRef(oldW);
+}
+
 std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
                                           const VectorDD& in, Package& dd,
                                           const std::size_t shots,
@@ -209,37 +248,40 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
   return counts;
 }
 
+template <const ApproximationStrategy stgy>
 VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
-                  Package& dd) {
-  auto permutation = qc.initialLayout;
-  auto e = in;
+                  Package& dd, Approximation<stgy> approx) {
+  qc::Permutation permutation = qc.initialLayout;
+  dd::VectorDD out = in;
   for (const auto& op : qc) {
-    // SWAP gates can be executed virtually by changing the permutation
-    if (op->getType() == qc::SWAP && !op->isControlled()) {
-      const auto& targets = op->getTargets();
-      std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
-      continue;
-    }
+    if (isVirtuallySwappable(*op)) {
+      virtualSwap(*op, permutation);
+    } else {
+      out = applyUnitaryOperation(*op, out, dd, permutation);
 
-    e = applyUnitaryOperation(*op, e, dd, permutation);
+      // TODO: this applies approximation after each operation.
+      if constexpr (stgy != None) {
+        applyApproximation(out, approx);
+      }
+    }
   }
-  changePermutation(e, permutation, qc.outputPermutation, dd);
-  e = dd.reduceGarbage(e, qc.getGarbage());
+
+  changePermutation(out, permutation, qc.outputPermutation, dd);
+  out = dd.reduceGarbage(out, qc.getGarbage());
 
   // properly account for the global phase of the circuit
-  if (std::abs(qc.getGlobalPhase()) > 0) {
-    // create a temporary copy for reference counting
-    auto oldW = e.w;
-    // adjust for global phase
-    const auto globalPhase = ComplexValue{std::polar(1.0, qc.getGlobalPhase())};
-    e.w = dd.cn.lookup(e.w * globalPhase);
-    // adjust reference count
-    dd.cn.incRef(e.w);
-    dd.cn.decRef(oldW);
+  if (fp phase = qc.getGlobalPhase(); hasGlobalPhase(phase)) {
+    applyGlobalPhase(phase, out, dd);
   }
 
-  return e;
+  return out;
 }
+template VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
+                           Package& dd, Approximation<None> approx);
+template VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
+                           Package& dd, Approximation<FidelityDriven> approx);
+template VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
+                           Package& dd, Approximation<MemoryDriven> approx);
 
 std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
                                           const std::size_t shots,
