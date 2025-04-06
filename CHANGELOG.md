@@ -27,6 +27,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#300)._
 
 ### Changed
 
+- **Breaking**: 🚚 MQT Core has moved to the [munich-quantum-toolkit](https://github.com/munich-quantum-toolkit) GitHub organization
 - **Breaking**: ✨ Adopt [PEP 735] dependency groups ([#762](https://github.com/munich-quantum-toolkit/core/issues/762)) ([**@burgholzer**](https://github.com/burgholzer))
 - **Breaking**: ♻️ Encapsulate the OpenQASM parser in its own library ([#822](https://github.com/munich-quantum-toolkit/core/issues/822)) ([**@burgholzer**](https://github.com/burgholzer))
 - **Breaking**: ♻️ Replace `Config` template from DD package with constructor argument ([#886](https://github.com/munich-quantum-toolkit/core/issues/886)) ([**@burgholzer**](https://github.com/burgholzer))

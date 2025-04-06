@@ -42,6 +42,10 @@ The `NAComputation` class hierarchy has been refactored to use an MLIR-inspired 
 
 ### General
 
+MQT Core has moved to the [munich-quantum-toolkit](https://github.com/munich-quantum-toolkit) GitHub organization under https://github.com/munich-quantum-toolkit/core.
+While most links should be automatically redirected, please update any links in your code to point to the new location.
+All links in the documentation have been updated accordingly.
+
 MQT Core now ships all its C++ libraries as shared libraries with the `mqt-core` Python package.
 Depending packages can now solely rely on the Python package for obtaining the C++ libraries.
 This is demonstrated in [MQT QCEC] `v3.0.0`, [MQT QMAP] `v3.0.0` and [MQT DDSIM] `v2.0.0`, which will be released in the near future.
