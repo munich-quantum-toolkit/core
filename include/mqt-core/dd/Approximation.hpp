@@ -14,62 +14,69 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <deque>
 
 namespace dd {
-enum ApproximationStrategy { FidelityDriven, MemoryDriven };
+enum ApproximationStrategy { None, FidelityDriven, MemoryDriven };
 
-template <const ApproximationStrategy strategy> struct Approximation {};
-
+template <const ApproximationStrategy stgy> struct Approximation {};
+template <> struct Approximation<None> {};
 template <> struct Approximation<FidelityDriven> {
-  explicit Approximation(double finalFidelity) noexcept
-      : finalFidelity(finalFidelity) {}
-  double finalFidelity;
+  explicit Approximation(double fidelity) noexcept : fidelity(fidelity) {}
+  double fidelity;
 };
-
 template <> struct Approximation<MemoryDriven> {
-  Approximation(std::size_t maxNodes, double roundFidelity,
+  Approximation(std::size_t maxNodes, double fidelity,
                 std::size_t factor = 2) noexcept
-      : maxNodes(maxNodes), roundFidelity(roundFidelity), factor(factor) {}
+      : maxNodes(maxNodes), fidelity(fidelity), factor(factor) {}
 
   /**
-   * @brief Multiplies `maxNodes` by `factor`.
-   * @details Used after each approx. round to increase `maxNodes` s.t. too many
-   * approximations are avoided.
+   * @brief   Multiplies `maxNodes` by `factor`.
+   * @details Used after each approx. round to increase `maxNodes` s.t. too
+   *          many approximations are avoided.
    */
   void increaseMaxNodes() noexcept { maxNodes *= factor; }
 
   std::size_t maxNodes;
-  double roundFidelity;
+  double fidelity;
   std::size_t factor;
 };
 
 struct NodeContributions {
-  using Map = std::unordered_map<const dd::vNode*, double>;
-  using Vector = std::vector<std::pair<const dd::vNode*, double>>;
+  struct Pair {
+    const vNode* node;
+    double contribution;
+  };
+
+  using Vector = std::vector<Pair>;
 
   /**
-   * @brief Recursively compute contributions for each node.
+   * @brief  Recursively compute contributions for each node.
    * @return Vector of node-contribution pairs with ascending contribution.
    */
-  Vector operator()(const dd::vEdge& root) {
-    compute(root, dd::ComplexValue{root.w});
-    return vectorize();
+  Vector operator()(const vEdge& root) {
+    compute(root, ComplexValue{root.w});
+    return vectorize(root.p);
   }
 
 private:
+  using Map = std::unordered_map<const vNode*, double>;
+
   /**
-   * @brief Recursively compute contributions for each node.
+   * @brief   Recursively compute contributions for each node.
    * @details Propagates downwards until it reaches a terminal. Then, return
    *          squared magnitude of amplitudes or 0. Sum these values for all
    *          edges of node. Since nodes can be visited multiple times by edges
    *          going inwards we add the sums to the value stored in the map for
    *          the respective node
    *
+   *          The accumulator computes the amplitude.
+   *
    *          Uses a lookup table to avoid computing the contributions of the
    *          same node twice.
-   * @return Vector of node-contribution pairs with ascending contribution.
+   * @return  Vector of node-contribution pairs with ascending contribution.
    */
-  double compute(const dd::vEdge& edge, const dd::ComplexValue acc) {
+  double compute(const vEdge& edge, const ComplexValue acc) {
     // Reached the end of a path. Either return 0 or squared magnitude.
     if (edge.isZeroTerminal()) {
       return 0.;
@@ -79,7 +86,7 @@ private:
     }
 
     double sum = 0.;
-    const dd::vNode* node = edge.p;
+    const vNode* node = edge.p;
 
     // If the node has already been visited once, reuse value from lookup table.
     //
@@ -100,17 +107,29 @@ private:
   }
 
   /**
-   * @brief Vectorize `contributions` map and sort ascendingly by contribution.
+   * @brief Vectorize `contributions` map breadth-first.
+   * @details Uses iterative deepening search.
    */
-  Vector vectorize() {
+  Vector vectorize(const vNode* node) {
     Vector v{};
-    v.reserve(contributions.size());
-    for (const auto& pair : contributions) {
-      v.emplace_back(pair);
-    }
+    v.reserve(contributions.size()); // The # of nodes.
+    v.push_back({node, contributions[node]});
 
-    const auto comp = [](auto& a, auto& b) { return a.second < b.second; };
-    std::sort(v.begin(), v.end(), comp);
+    std::deque<const vNode*> q;
+    q.push_back(node);
+    while (!q.empty()) {
+      const vNode* curr = q.front();
+      q.pop_front();
+
+      for (const auto& edge : curr->e) {
+        const vNode* nxt = edge.p;
+        if (!edge.isTerminal() &&
+            std::find(q.begin(), q.end(), nxt) == q.end()) {
+          v.push_back({nxt, contributions[nxt]});
+          q.push_back(nxt);
+        }
+      }
+    }
 
     return v;
   }
@@ -118,4 +137,7 @@ private:
   Map contributions{};
   Map lookup{};
 };
+
+template <const ApproximationStrategy stgy>
+void applyApproximation(VectorDD& v, Approximation<stgy>& approx);
 } // namespace dd
