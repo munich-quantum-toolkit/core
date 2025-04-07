@@ -1,7 +1,7 @@
 name-template: "MQT Core $RESOLVED_VERSION Release"
 tag-template: "v$RESOLVED_VERSION"
 categories:
-  - title: "⚛️ MQT Core"
+  - title: "⚛️ MQT Core IR"
     labels:
       - "Core"
   - title: "⚖️ MQT Core DD Package"
@@ -10,6 +10,9 @@ categories:
   - title: "🕸️ MQT Core ZX Package"
     labels:
       - "ZX"
+  - title: "🏼 MQT Core NA Package"
+    labels:
+      - "NA"
   - title: "🐉 MQT Core MLIR"
     labels:
       - "MLIR"
@@ -42,7 +45,7 @@ categories:
       - "submodules"
       - "github_actions"
       - "pre-commit"
-change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
+change-template: "- $TITLE ([#$NUMBER]($URL)) ([**@$AUTHOR**](https://github.com/$AUTHOR))"
 change-title-escapes: '\<*_&'
 version-resolver:
   major:
@@ -58,6 +61,8 @@ version-resolver:
 
 template: |
   ## 👀 What Changed
+
+  _Please refer to the [changelog](https://github.com/$OWNER/$REPOSITORY/blob/main/CHANGELOG.md) and the [upgrade guide](https://github.com/$OWNER/$REPOSITORY/blob/main/UPGRADING.md) for a structured overview of the changes._
 
   $CHANGES
 

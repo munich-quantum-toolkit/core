@@ -47,10 +47,12 @@ mqt-core-dd-compare = "mqt.core.dd_evaluation:main"
 mqt-core-cli = "mqt.core.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/cda-tum/mqt-core"
+Homepage = "https://github.com/munich-quantum-toolkit/core"
+Changelog = "https://github.com/munich-quantum-toolkit/core/blob/main/CHANGELOG.md"
 Documentation = "https://mqt.readthedocs.io/projects/core"
-Issues = "https://github.com/cda-tum/mqt-core/issues"
-Discussions = "https://github.com/cda-tum/mqt-core/discussions"
+Issues = "https://github.com/munich-quantum-toolkit/core/issues"
+Discussions = "https://github.com/munich-quantum-toolkit/core/discussions"
+PyPI = "https://pypi.org/project/mqt-core/"
 
 
 [tool.scikit-build]
