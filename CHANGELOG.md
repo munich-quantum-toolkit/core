@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [3.0.1] - 2025-04-07
+
+_Fix PyPI project metadata as well as doxygen build on RtD._
+
 ## [3.0.0] - 2025-04-06
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#300)._
@@ -64,6 +68,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 [PEP 639]: https://peps.python.org/pep-0639/
 [PEP 735]: https://peps.python.org/pep-0735/
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/munich-quantum-toolkit/core/compare/v2.7.0...v3.0.0
 [2.7.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v2.7.0
