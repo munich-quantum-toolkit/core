@@ -10,6 +10,7 @@
 
 #include "dd/Approximation.hpp"
 
+#include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
@@ -19,14 +20,13 @@
 namespace dd {
 namespace {
 /**
- * @brief Find next node to remove and delete its edge.
- * @details Traverses breadth-first with iterative deepening algorithm.
- * @return Fidelity lost due to removal of node.
+ * @brief Find next node to remove and return its ingoing edge.
+ * @details Traverses breadth-first using the iterative deepening algorithm.
+ * @return Edge to remove or nullptr.
  */
-double findAndRemoveNext(VectorDD& v, Package& dd,
-                         const Approximation<FidelityDriven>& approx,
-                         NodeContributions& contributions) {
-  std::deque<vNode*> q = {v.p};
+vEdge* findNext(const VectorDD& state, const double budget,
+                NodeContributions& contributions) {
+  std::deque<vNode*> q = {state.p};
   while (!q.empty()) {
     vNode* curr = q.front();
     q.pop_front();
@@ -39,36 +39,62 @@ double findAndRemoveNext(VectorDD& v, Package& dd,
 
       vNode* nxt = edge->p;
       if (std::find(q.begin(), q.end(), nxt) == q.end()) {
-        if (approx.fidelity < (1. - contributions[nxt])) {
-          v = dd.deleteEdge(*edge, curr->v, i);
-          return contributions[nxt];
+        if (budget > contributions[nxt]) {
+          return edge;
         }
         q.push_back(nxt);
       }
     }
   }
 
-  return 0;
+  return nullptr;
+}
+
+/**
+ * @brief Recursively rebuild `state` without `edge` edge.
+ * @return Edge to new `state`.
+ */
+vEdge rebuildWithout(const VectorDD& state, const vEdge& edge, Package& dd) {
+  if (state.isTerminal()) {
+    return state;
+  }
+
+  if (state == edge) {
+    return vEdge::zero();
+  }
+
+  std::array<vEdge, RADIX> edges{rebuildWithout(state.p->e[0], edge, dd),
+                                 rebuildWithout(state.p->e[1], edge, dd)};
+
+  return dd.makeDDNode(state.p->v, edges);
+  ;
 }
 }; // namespace
 
 template <>
 void applyApproximation<dd::FidelityDriven>(
-    VectorDD& v, const Approximation<FidelityDriven>& approx, Package& dd) {
-  if (v.isTerminal()) {
+    VectorDD& state, const Approximation<FidelityDriven>& approx, Package& dd) {
+  if (state.isTerminal()) {
     return;
   }
 
-  NodeContributions contributions(v);
+  double budget = 1 - approx.fidelity;
 
-  double fidelityBudget = 1 - approx.fidelity;
-  while (fidelityBudget > 0) {
-    double fidelityLost = findAndRemoveNext(v, dd, approx, contributions);
-    if (fidelityLost == 0) {
+  while (true) {
+    NodeContributions contributions(state);
+    vEdge* edge = findNext(state, budget, contributions);
+    if (edge == nullptr) {
       break;
     }
-    fidelityBudget -= fidelityLost;
+
+    state = rebuildWithout(state, *edge, dd);
+    dd.incRef(state);
+    dd.decRef(*edge);
+
+    budget -= contributions[edge->p];
   }
+
+  dd.garbageCollect();
 };
 
 /**
@@ -78,9 +104,9 @@ void applyApproximation<dd::FidelityDriven>(
  */
 template <>
 void applyApproximation<dd::MemoryDriven>(
-    VectorDD& v, const Approximation<MemoryDriven>& approx, Package& dd) {
-  if (v.size() > approx.threshold) {
-    applyApproximation<FidelityDriven>(v, approx, dd);
+    VectorDD& state, const Approximation<MemoryDriven>& approx, Package& dd) {
+  if (state.size() > approx.threshold) {
+    applyApproximation<FidelityDriven>(state, approx, dd);
   }
 };
 

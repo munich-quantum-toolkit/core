@@ -96,6 +96,6 @@ private:
 };
 
 template <const ApproximationStrategy stgy>
-void applyApproximation(VectorDD& v, const Approximation<stgy>& approx,
+void applyApproximation(VectorDD& state, const Approximation<stgy>& approx,
                         Package& dd);
 } // namespace dd

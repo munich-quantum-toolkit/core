@@ -18,6 +18,10 @@
 
 using namespace dd;
 
+///-----------------------------------------------------------------------------
+///                      \n compute node contributions \n
+///-----------------------------------------------------------------------------
+
 TEST(ApproximationTest, NodeContributionsSingleEdge) {
   constexpr std::size_t nq = 1;
   Package dd(nq);
@@ -102,7 +106,11 @@ TEST(ApproximationTest, NodeContributionsGrover) {
   EXPECT_NEAR(contributions[root.p->e[1].p->e[1].p], .5, 1e-8);
 }
 
-TEST(ApproximationTest, FidelityDrivenF1) {
+///-----------------------------------------------------------------------------
+///                      \n simulate with approximation \n
+///-----------------------------------------------------------------------------
+
+TEST(ApproximationTest, FidelityDrivenKeepAll) {
   constexpr std::size_t nq = 2;
 
   std::mt19937_64 mt;
@@ -134,6 +142,40 @@ TEST(ApproximationTest, FidelityDriven2Percent) {
 
   constexpr Approximation<FidelityDriven> approx(.98);
   VectorDD root = simulate(qc, dd.makeZeroState(nq), dd, approx);
+  NodeContributions contributions(root);
 
-  EXPECT_EQ(root.size(), 2);
+  EXPECT_EQ(root.size(), 3);
+  EXPECT_NEAR(contributions[root.p], 1., 1e-8);
+  EXPECT_NEAR(contributions[root.p->e[0].p], 1., 1e-8);
+}
+
+TEST(ApproximationTest, MemoryDriven2Percent) {
+  constexpr std::size_t nq = 2;
+  Package dd(nq);
+
+  qc::QuantumComputation qc(nq); // first qubit with prob < 2%.
+  qc.h(0);
+  qc.cry(qc::PI / 8, 0, 1);
+
+  constexpr Approximation<MemoryDriven> approx(3, 0.98);
+  VectorDD root = simulate(qc, dd.makeZeroState(nq), dd, approx);
+  NodeContributions contributions(root);
+
+  EXPECT_EQ(root.size(), 3);
+  EXPECT_NEAR(contributions[root.p], 1., 1e-8);
+  EXPECT_NEAR(contributions[root.p->e[0].p], 1., 1e-8);
+}
+
+TEST(ApproximationTest, MemoryDrivenKeepAll) {
+  constexpr std::size_t nq = 2;
+  Package dd(nq);
+
+  qc::QuantumComputation qc(nq); // first qubit with prob < 2%.
+  qc.h(0);
+  qc.cry(qc::PI / 8, 0, 1);
+
+  constexpr Approximation<MemoryDriven> approx(4, 0.98);
+  VectorDD root = simulate(qc, dd.makeZeroState(nq), dd, approx);
+
+  EXPECT_EQ(root.size(), 4);
 }
