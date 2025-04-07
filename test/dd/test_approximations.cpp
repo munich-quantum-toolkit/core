@@ -116,7 +116,7 @@ TEST(ApproximationTest, FidelityDrivenF1) {
   qc.x(0);
 
   // Call simulate.
-  Approximation<FidelityDriven> approx(1.);
+  constexpr Approximation<FidelityDriven> approx(1.);
   VectorDD res = simulate(qc, dd.makeZeroState(nq), dd, approx);
   const std::string m = dd.measureAll(res, false, mt, 0.001);
 
@@ -132,7 +132,7 @@ TEST(ApproximationTest, FidelityDriven2Percent) {
   qc.h(0);
   qc.cry(qc::PI / 8, 0, 1);
 
-  Approximation<FidelityDriven> approx(.98);
+  constexpr Approximation<FidelityDriven> approx(.98);
   VectorDD root = simulate(qc, dd.makeZeroState(nq), dd, approx);
 
   EXPECT_EQ(root.size(), 2);

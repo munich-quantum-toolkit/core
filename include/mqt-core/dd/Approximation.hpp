@@ -20,22 +20,19 @@ namespace dd {
 enum ApproximationStrategy { None, FidelityDriven, MemoryDriven };
 
 template <const ApproximationStrategy stgy> struct Approximation {};
+
 template <> struct Approximation<None> {};
+
 template <> struct Approximation<FidelityDriven> {
-  explicit Approximation(double fidelity) noexcept : fidelity(fidelity) {}
+  constexpr explicit Approximation(double fidelity) noexcept
+      : fidelity(fidelity) {}
   double fidelity;
 };
-template <> struct Approximation<MemoryDriven> {
-  Approximation(std::size_t maxNodes, double fidelity,
-                std::size_t factor = 2) noexcept
-      : maxNodes(maxNodes), fidelity(fidelity), factor(factor) {}
 
-  /**
-   * @brief   Multiplies `maxNodes` by `factor`.
-   * @details Used after each approx. round to increase `maxNodes` s.t. too
-   *          many approximations are avoided.
-   */
-  void increaseMaxNodes() noexcept { maxNodes *= factor; }
+template <> struct Approximation<MemoryDriven> {
+  constexpr Approximation(std::size_t maxNodes, double fidelity,
+                          std::size_t factor = 2) noexcept
+      : maxNodes(maxNodes), fidelity(fidelity), factor(factor) {}
 
   std::size_t maxNodes;
   double fidelity;
@@ -101,5 +98,6 @@ private:
 };
 
 template <const ApproximationStrategy stgy>
-void applyApproximation(VectorDD& v, Approximation<stgy>& approx, Package& dd);
+void applyApproximation(VectorDD& v, const Approximation<stgy>& approx,
+                        Package& dd);
 } // namespace dd

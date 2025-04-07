@@ -53,7 +53,7 @@ namespace dd {
 template <const ApproximationStrategy stgy = None>
 VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
                   Package& dd,
-                  Approximation<stgy> approx = Approximation<stgy>{});
+                  const Approximation<stgy>& approx = Approximation<stgy>{});
 
 /**
  * @brief Sample from the output distribution of a quantum computation

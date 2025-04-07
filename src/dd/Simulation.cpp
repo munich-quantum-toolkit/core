@@ -251,7 +251,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
 
 template <const ApproximationStrategy stgy>
 VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
-                  Package& dd, Approximation<stgy> approx) {
+                  Package& dd, const Approximation<stgy>& approx) {
   qc::Permutation permutation = qc.initialLayout;
   dd::VectorDD out = in;
   for (const auto& op : qc) {
@@ -278,11 +278,13 @@ VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
   return out;
 }
 template VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
-                           Package& dd, Approximation<None> approx);
+                           Package& dd, const Approximation<None>& approx);
 template VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
-                           Package& dd, Approximation<FidelityDriven> approx);
+                           Package& dd,
+                           const Approximation<FidelityDriven>& approx);
 template VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
-                           Package& dd, Approximation<MemoryDriven> approx);
+                           Package& dd,
+                           const Approximation<MemoryDriven>& approx);
 
 std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
                                           const std::size_t shots,

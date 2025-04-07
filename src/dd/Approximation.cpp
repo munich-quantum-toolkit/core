@@ -54,7 +54,7 @@ double findAndRemoveNext(VectorDD& v, Package& dd,
 
 template <>
 void applyApproximation<dd::FidelityDriven>(
-    VectorDD& v, Approximation<FidelityDriven>& approx, Package& dd) {
+    VectorDD& v, const Approximation<FidelityDriven>& approx, Package& dd) {
   if (v.isTerminal()) {
     return;
   }
@@ -72,13 +72,11 @@ void applyApproximation<dd::FidelityDriven>(
 };
 
 template <>
-void applyApproximation<dd::MemoryDriven>(VectorDD& v,
-                                          Approximation<MemoryDriven>& approx,
-                                          Package& dd) {
+void applyApproximation<dd::MemoryDriven>(
+    VectorDD& v, const Approximation<MemoryDriven>& approx, Package& dd) {
   Approximation<FidelityDriven> approxFidelity(approx.fidelity);
   if (v.size() > approx.maxNodes) {
     applyApproximation(v, approxFidelity, dd);
-    approx.increaseMaxNodes();
   }
 };
 
