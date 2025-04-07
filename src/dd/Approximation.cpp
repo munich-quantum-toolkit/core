@@ -71,12 +71,16 @@ void applyApproximation<dd::FidelityDriven>(
   }
 };
 
+/**
+ * @brief Apply Memory-Driven Approximation.
+ * @details If the threshold is exceeded, apply Fidelity-Driven approximation.
+ * Inheritance allows us to simply downcast the Memory-Driven object.
+ */
 template <>
 void applyApproximation<dd::MemoryDriven>(
     VectorDD& v, const Approximation<MemoryDriven>& approx, Package& dd) {
-  Approximation<FidelityDriven> approxFidelity(approx.fidelity);
-  if (v.size() > approx.maxNodes) {
-    applyApproximation(v, approxFidelity, dd);
+  if (v.size() > approx.threshold) {
+    applyApproximation<FidelityDriven>(v, approx, dd);
   }
 };
 

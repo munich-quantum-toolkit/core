@@ -29,14 +29,12 @@ template <> struct Approximation<FidelityDriven> {
   double fidelity;
 };
 
-template <> struct Approximation<MemoryDriven> {
-  constexpr Approximation(std::size_t maxNodes, double fidelity,
-                          std::size_t factor = 2) noexcept
-      : maxNodes(maxNodes), fidelity(fidelity), factor(factor) {}
+template <>
+struct Approximation<MemoryDriven> : public Approximation<FidelityDriven> {
+  constexpr Approximation(std::size_t threshold, double fidelity) noexcept
+      : Approximation<FidelityDriven>(fidelity), threshold(threshold) {}
 
-  std::size_t maxNodes;
-  double fidelity;
-  std::size_t factor;
+  std::size_t threshold;
 };
 
 class NodeContributions {
