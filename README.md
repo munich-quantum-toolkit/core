@@ -27,6 +27,23 @@ To this end, it consists of multiple components that are used throughout the MQT
   </a>
 </p>
 
+If you want to cite MQT Core, please use the following BibTeX entry:
+
+```bibtex
+@article{burgholzer2025MQTCore,
+    title     = {{{MQT Core}}: {{The}} Backbone of the {{Munich Quantum Toolkit (MQT)}}},
+    author    = {Lukas Burgholzer and Yannick Stade and Tom Peham and Robert Wille},
+    year      = {2025},
+    journal   = {Journal of Open Source Software},
+    publisher = {The Open Journal},
+    volume    = {10},
+    number    = {108},
+    pages     = {7478},
+    doi       = {10.21105/joss.07478},
+    url       = {https://doi.org/10.21105/joss.07478},
+}
+```
+
 If you have any questions, feel free to create a [discussion](https://github.com/munich-quantum-toolkit/core/discussions) or an [issue](https://github.com/munich-quantum-toolkit/core/issues) on [GitHub](https://github.com/munich-quantum-toolkit/core).
 
 ## Getting Started
