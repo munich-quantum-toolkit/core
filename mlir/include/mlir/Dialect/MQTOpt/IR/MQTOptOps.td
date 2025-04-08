@@ -137,7 +137,7 @@ def IOp : UnitaryOp<"I", [OneTarget, NoParameter]> {
     }];
 }
 
-def BarrierOp : UnitaryOp<"barrier", [NoParameter]> {
+def BarrierOp : UnitaryOp<"barrier", [NoParameter, NoControl]> {
     let summary = "Barrier operation";
 
     let description = [{
@@ -146,10 +146,6 @@ def BarrierOp : UnitaryOp<"barrier", [NoParameter]> {
 
         An analogous example can be seen in the description of XOp.
     }];
-
-    // This operation has a verifier that checks if the gate does not have any
-    // control qubits. It is implemented in the corresponding .cpp file.
-    let hasVerifier = 1;
 }
 
 def HOp : UnitaryOp<"H", [OneTarget, NoParameter]> {
@@ -510,7 +506,7 @@ def XXplusYY : UnitaryOp<"xxplusyy", [TwoTarget, TwoParameters]> {
     }];
 }
 
-def MeasureOp : GateOp<"measure", [SameVariadicResultSize]> {
+def MeasureOp : GateOp<"measure", [SameVariadicResultSize, MatchingMeasureInOuts]> {
     let summary = "A measure operation";
 
     let description = [{
@@ -533,11 +529,6 @@ def MeasureOp : GateOp<"measure", [SameVariadicResultSize]> {
         Variadic<QubitType>:$out_qubits,
         Variadic<I1>:$out_bits
     );
-
-    // This operation has a verifier that checks if the number of input qubits
-    // is equal to the number of output qubits. It is implemented in the
-    // corresponding .cpp file.
-    let hasVerifier = 1;
 }
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTOptOp<mnemonic, traits>;

@@ -64,22 +64,6 @@ void mqt::ir::opt::MQTOptDialect::initialize() {
 
 namespace mqt::ir::opt {
 
-mlir::LogicalResult BarrierOp::verify() {
-  if (!getPosCtrlQubits().empty() || !getNegCtrlQubits().empty()) {
-    return emitOpError() << "Barrier gate should not have control qubits";
-  }
-  return mlir::success();
-}
-
-mlir::LogicalResult MeasureOp::verify() {
-  if (getInQubits().size() != getOutQubits().size()) {
-    return emitOpError() << "number of input qubits (" << getInQubits().size()
-                         << ") " << "and output qubits ("
-                         << getOutQubits().size() << ") must be the same";
-  }
-  return mlir::success();
-}
-
 mlir::LogicalResult AllocOp::verify() {
   if (!getSize() && !getSizeAttr().has_value()) {
     return emitOpError() << "expected an operand or attribute for size";

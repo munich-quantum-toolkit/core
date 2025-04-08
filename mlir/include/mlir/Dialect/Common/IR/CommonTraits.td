@@ -33,4 +33,12 @@ def OneParameter : ParameterArity<1>;
 def TwoParameters : ParameterArity<2>;
 def ThreeParameters : ParameterArity<3>;
 
+def NoControl : NativeOpTrait<"NoControl"> {
+    let cppNamespace = "::mqt::ir::common";
+}
+
+def MatchingMeasureInOuts : NativeOpTrait<"MatchingMeasureInOuts"> {
+    let cppNamespace = "::mqt::ir::common";
+}
+
 #endif // MQTCOMMON_TRAITS

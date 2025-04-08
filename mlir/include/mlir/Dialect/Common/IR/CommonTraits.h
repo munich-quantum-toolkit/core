@@ -79,4 +79,34 @@ public:
   };
 };
 
+template <typename ConcreteOp>
+class NoControl : public mlir::OpTrait::TraitBase<ConcreteOp, NoControl> {
+public:
+  [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
+    auto unitaryOp = mlir::cast<ConcreteOp>(op);
+    if (!unitaryOp.getPosCtrlQubits().empty() ||
+        !unitaryOp.getNegCtrlQubits().empty()) {
+      return op->emitOpError()
+             << "Gate marked as NoControl should not have control qubits";
+    }
+    return mlir::success();
+  }
+};
+
+template <typename ConcreteOp>
+class MatchingMeasureInOuts
+    : public mlir::OpTrait::TraitBase<ConcreteOp, MatchingMeasureInOuts> {
+public:
+  [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
+    auto measureOp = mlir::cast<ConcreteOp>(op);
+    if (measureOp.getInQubits().size() != measureOp.getOutBits().size()) {
+      return measureOp->emitOpError()
+             << "number of input qubits (" << measureOp.getInQubits().size()
+             << ") " << "and output bits (" << measureOp.getOutBits().size()
+             << ") must be the same";
+    }
+    return mlir::success();
+  }
+};
+
 } // namespace mqt::ir::common

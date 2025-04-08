@@ -63,15 +63,6 @@ void mqt::ir::dyn::MQTDynDialect::initialize() {
 
 namespace mqt::ir::dyn {
 
-mlir::LogicalResult MeasureOp::verify() {
-  if (getInQubits().size() != getOutBits().size()) {
-    return emitOpError() << "number of input qubits (" << getInQubits().size()
-                         << ") " << "and output bits (" << getOutBits().size()
-                         << ") must be the same";
-  }
-  return mlir::success();
-}
-
 mlir::LogicalResult AllocOp::verify() {
   if (!getSize() && !getSizeAttr().has_value()) {
     return emitOpError() << "expected an operand or attribute for size";

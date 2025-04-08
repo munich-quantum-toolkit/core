@@ -110,7 +110,7 @@ def UOp : UnitaryOp<"u", [OneTarget, ThreeParameters]> {
     let description = [{}]; // todo: add description
 }
 
-def MeasureOp : GateOp<"measure"> {
+def MeasureOp : GateOp<"measure", [MatchingMeasureInOuts]> {
     let summary = "A measure operation";
 
     let description = [{
@@ -131,11 +131,6 @@ def MeasureOp : GateOp<"measure"> {
     let results = (outs
         Variadic<I1>:$out_bits
     );
-
-    // This operation has a verifier that checks if the number of input qubits
-    // is equal to the number of output bits. It is implemented in the
-    // corresponding .cpp file.
-    let hasVerifier = 1;
 }
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTDynOp<mnemonic, traits>;
