@@ -10,6 +10,7 @@
 
 #include "dd/Approximation.hpp"
 
+#include "dd/ComplexNumbers.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
@@ -67,7 +68,6 @@ vEdge rebuildWithout(const VectorDD& state, const vEdge& edge, Package& dd) {
                                  rebuildWithout(state.p->e[1], edge, dd)};
 
   return dd.makeDDNode(state.p->v, edges);
-  ;
 }
 }; // namespace
 
@@ -79,15 +79,17 @@ void applyApproximation<dd::FidelityDriven>(
   }
 
   double budget = 1 - approx.fidelity;
-
   while (true) {
     NodeContributions contributions(state);
+
     vEdge* edge = findNext(state, budget, contributions);
     if (edge == nullptr) {
       break;
     }
 
     state = rebuildWithout(state, *edge, dd);
+    state.w = dd.cn.lookup(state.w / std::sqrt(ComplexNumbers::mag2(state.w)));
+
     dd.incRef(state);
     dd.decRef(*edge);
 

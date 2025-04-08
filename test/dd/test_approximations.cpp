@@ -146,26 +146,6 @@ TEST(ApproximationTest, FidelityDrivenKeepAll) {
   EXPECT_EQ(root.size(), 3);
 }
 
-TEST(ApproximationTest, FidelityDriven2Percent) {
-  constexpr std::size_t nq = 2;
-  Package dd(nq);
-
-  qc::QuantumComputation qc(nq); // first qubit with prob < 2%.
-  qc.h(0);
-  qc.cry(qc::PI / 8, 0, 1);
-
-  VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
-
-  constexpr Approximation<FidelityDriven> approx(.98);
-  applyApproximation(root, approx, dd);
-
-  NodeContributions contributions(root);
-
-  EXPECT_EQ(root.size(), 3);
-  EXPECT_NEAR(contributions[root.p], 1., 1e-6);
-  EXPECT_NEAR(contributions[root.p->e[0].p], 1., 1e-6);
-}
-
 TEST(ApproximationTest, MemoryDriven2Percent) {
   constexpr std::size_t nq = 2;
   Package dd(nq);
@@ -179,14 +159,15 @@ TEST(ApproximationTest, MemoryDriven2Percent) {
   constexpr Approximation<MemoryDriven> approx(3, 0.98);
   applyApproximation(root, approx, dd);
 
-  NodeContributions contributions(root);
-
   EXPECT_EQ(root.size(), 3);
+  EXPECT_EQ(root.p->e[1], vEdge::zero());
+
+  NodeContributions contributions(root);
   EXPECT_NEAR(contributions[root.p], 1., 1e-6);
   EXPECT_NEAR(contributions[root.p->e[0].p], 1., 1e-6);
 }
 
-TEST(ApproximationTest, MemoryDriven3Qubits) {
+TEST(ApproximationTest, MemoryDrivenTwoCRY) {
   constexpr std::size_t nq = 3;
   Package dd(nq);
 
@@ -198,18 +179,14 @@ TEST(ApproximationTest, MemoryDriven3Qubits) {
 
   VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
 
-  constexpr Approximation<MemoryDriven> approx(2, 0.98);
+  constexpr Approximation<MemoryDriven> approx(5, 0.98);
   applyApproximation(root, approx, dd);
 
-  // NodeContributions contributions(root);
-
-  // std::cout << "contr: " << contributions[root.p] << '\n';
-  // std::cout << "contr: " << contributions[root.p->e[0].p] << '\n';
-  // std::cout << "contr: " << contributions[root.p->e[1].p] << '\n';
-
   EXPECT_EQ(root.size(), 5);
-  // EXPECT_NEAR(contributions[root.p], 1., 1e-6);
-  // EXPECT_NEAR(contributions[root.p->e[0].p], 1., 1e-6);
+  EXPECT_EQ(root.p->e[1], vEdge::zero());
+
+  NodeContributions contributions(root);
+  EXPECT_NEAR(contributions[root.p], 1., 1e-6);
 }
 
 TEST(ApproximationTest, MemoryDrivenKeepAll) {
