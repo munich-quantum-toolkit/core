@@ -113,7 +113,7 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
     }];
 }
 
-def GPhaseOp : UnitaryOp<"GPhase", [NoTarget, OneParameter]> {
+def GPhaseOp : UnitaryOp<"gphase", [NoTarget, OneParameter]> {
     let summary = "GPhase operation";
 
     let description = [{
@@ -126,7 +126,7 @@ def GPhaseOp : UnitaryOp<"GPhase", [NoTarget, OneParameter]> {
     }];
 }
 
-def IOp : UnitaryOp<"I", [OneTarget, NoParameter]> {
+def IOp : UnitaryOp<"i", [OneTarget, NoParameter]> {
     let summary = "I operation";
 
     let description = [{
@@ -148,7 +148,7 @@ def BarrierOp : UnitaryOp<"barrier", [NoParameter, NoControl]> {
     }];
 }
 
-def HOp : UnitaryOp<"H", [OneTarget, NoParameter]> {
+def HOp : UnitaryOp<"h", [OneTarget, NoParameter]> {
     let summary = "H operation";
 
     let description = [{
