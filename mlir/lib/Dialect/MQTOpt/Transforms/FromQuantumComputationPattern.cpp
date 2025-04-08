@@ -62,6 +62,34 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
   }
 
   /**
+   * @brief Creates an InsertOp that inserts the given qubit into the given
+   * register at the specified index.
+   *
+   * @param reg The register into which the qubit will be inserted.
+   * @param qubit The qubit to insert into the register.
+   * @param index The index at which to insert the qubit.
+   * @param rewriter The pattern rewriter to use.
+   *
+   * @return The created InsertOp.
+   */
+  static InsertOp createRegisterInsert(AllocOp& reg, mlir::Value qubit,
+                                       const size_t index,
+                                       mlir::PatternRewriter& rewriter) {
+    auto insert = rewriter.create<InsertOp>(
+        reg.getLoc(),
+        QubitRegisterType::get(rewriter.getContext()), // Result type
+        reg.getResult(), // The register to insert into
+        qubit, nullptr,  // The qubit to insert
+        rewriter.getI64IntegerAttr(static_cast<std::int64_t>(index)) // Index
+    );
+    return insert;
+  }
+
+  // rewriter.create<::mqt::ir::opt::InsertOp>(
+  //         op.getLoc(), resultType, inQregValue, qubitValue, idxValue,
+  //         idxIntegerAttr);
+
+  /**
    * @brief Creates a unitary operation on a given qubit with any number of
    * positive or negative controls.
    *
@@ -215,11 +243,17 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       }
     }
 
+    // Now insert all the qubits back into the registers they were extracted
+    // from.
+    for (size_t i = 0; i < numQubits; i++) {
+      createRegisterInsert(newAlloc, currentQubitVariables[i], i, rewriter);
+    }
+
     // Finally, the return operation needs to be updated with the measurement
     // results and then replace the original `alloc` operation with the updated
     // one.
-    auto* const returnOperation = *op->getUsers().begin();
-    updateReturnOperation(returnOperation, measurementValues, rewriter);
+    // auto const returnOperation = op->getUsers().begin();
+    // updateReturnOperation(returnOperation, measurementValues, rewriter);
     rewriter.replaceOp(op, newAlloc);
   }
 };

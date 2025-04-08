@@ -295,13 +295,29 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         handleUnitaryOp(hOp, currentQubitVariables);
       } else if (llvm::isa<ExtractOp>(current)) {
         auto extractOp = llvm::dyn_cast<ExtractOp>(current);
-        if (const auto indexAttr = extractOp.getIndexAttr();
-            indexAttr.has_value()) {
-          currentQubitVariables[*indexAttr] = extractOp.getOutQubit();
+        mlir::Value indexValue =
+            extractOp.getIndex(); // assuming getIndex() returns the Value
+
+        // Check if the index is defined by an arith.constant
+        if (auto constOp =
+                indexValue.getDefiningOp<mlir::arith::ConstantOp>()) {
+          if (auto intAttr =
+                  llvm::dyn_cast<mlir::IntegerAttr>(constOp.getValue())) {
+            size_t index = intAttr.getInt();
+            currentQubitVariables[index] = extractOp.getOutQubit();
+          } else {
+            extractOp.emitError("Expected integer constant for qubit index.");
+            throw std::runtime_error(
+                "Qubit extraction only supported with attr index!");
+          }
         } else {
+          extractOp.emitError("Qubit extraction index must be a constant.");
           throw std::runtime_error(
               "Qubit extraction only supported with attr index!");
         }
+      } else if (llvm::isa<InsertOp>(current)) {
+        auto insertOp = llvm::dyn_cast<InsertOp>(current);
+        llvm::outs() << *current << "\n";
       } else if (llvm::isa<AllocOp>(current)) {
         // Do nothing for now, may change later.
       } else if (llvm::isa<MeasureOp>(current)) {
@@ -335,8 +351,9 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     // Update the inputs of all non-mqtopt operations that use mqtopt operations
     // as inputs, as these will be deleted later.
-    for (auto* operation : visited) {
+    for (auto* operation : llvm::make_early_inc_range(visited)) {
       if (operation->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
+        visited.erase(operation); // safe deletion as op will be erased next
         updateMQTOptInputs(operation, rewriter, newAlloc.getQureg(),
                            measureCount);
       }
@@ -344,9 +361,17 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     // Delete all operations that are part of the mqtopt dialect (except for
     // `AllocOp`).
-    for (auto* operation : visited) {
-      if (operation->getDialect()->getNamespace() == DIALECT_NAME_MQTOPT) {
-        deleteRecursively(operation, rewriter);
+    visited.erase(op); // erase alloc op
+    while (!visited.empty()) {
+      for (auto* operation : llvm::make_early_inc_range(visited)) {
+        operation->emitRemark() << "HERE";
+        if (operation->getDialect()->getNamespace() == DIALECT_NAME_MQTOPT) {
+          if (operation->getUsers().empty()) {
+            visited.erase(operation);
+            rewriter.eraseOp(
+                operation); // deletes all definitions of defining OPs
+          }
+        }
       }
     }
 

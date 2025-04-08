@@ -33,11 +33,11 @@ int main(const int argc, char** argv) {
   mlir::registerAllDialects(registry);
   mlir::func::registerAllExtensions(registry);
 
-  registry.insert<mqt::ir::opt::MQTOptDialect>();
-  registry.insert<catalyst::quantum::QuantumDialect>();
+  // registry.insert<mqt::ir::opt::MQTOptDialect>();
+  // registry.insert<catalyst::quantum::QuantumDialect>();
 
-  mlir::mqt::ir::conversions::registerMQTOptToCatalystQuantum();
-  mlir::mqt::ir::conversions::registerCatalystQuantumToMQTOpt();
+  // mlir::mqt::ir::conversions::registerMQTOptToCatalystQuantum();
+  // mlir::mqt::ir::conversions::registerCatalystQuantumToMQTOpt();
 
   return mlir::asMainReturnCode(
       MlirOptMain(argc, argv, "Quantum optimizer driver\n", registry));

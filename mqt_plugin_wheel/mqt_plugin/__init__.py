@@ -38,7 +38,12 @@ def getMQTPluginAbsolutePath():
 
 def name2pass(_name):
     """Example entry point for MQT plugin."""
-    return getMQTPluginAbsolutePath(), "mqt-core-round-trip"
+    if _name == "mqt-core-round-trip":
+        return getMQTPluginAbsolutePath(), _name
+    if _name == "quantum-to-mqtopt":
+        return getMQTPluginAbsolutePath(), _name
+    if _name == "mqtopt-to-quantum":
+        return getMQTPluginAbsolutePath(), _name
 
 
 def MQTCoreRoundTrip(*flags, **valued_options):

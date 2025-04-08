@@ -38,7 +38,7 @@
 namespace mlir::mqt::ir::conversions {
 
 #define GEN_PASS_DEF_MQTOPTTOQUANTUM
-#include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h.inc"
+#include "mlir/Conversion/Catalyst/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h.inc"
 
 using namespace mlir;
 
@@ -92,9 +92,10 @@ struct ConvertMQTOptAlloc
     // Iterate over the users in reverse order
     for (auto* user : llvm::reverse(users)) {
       // Registers should only be used in Extract, Insert or Dealloc operations
-      if (mlir::isa<::mqt::ir::opt::ExtractOp>(user) ||
-          mlir::isa<::mqt::ir::opt::InsertOp>(user) ||
-          mlir::isa<::mqt::ir::opt::DeallocOp>(user)) {
+      // if (mlir::isa<::mqt::ir::opt::ExtractOp>(user) ||
+      //    mlir::isa<::mqt::ir::opt::InsertOp>(user) ||
+      //    mlir::isa<::mqt::ir::opt::DeallocOp>(user))
+      {
         // Update the operand of the user operation to the new qubit register
         user->setOperand(0, trgtQreg);
       }
@@ -170,9 +171,10 @@ struct ConvertMQTOptExtract
       if (!user->isBeforeInBlock(catalystOp) && user != catalystOp &&
           user != op) {
         // Update operands in the user operation
-        if (mlir::isa<::mqt::ir::opt::ExtractOp>(user) ||
-            mlir::isa<::mqt::ir::opt::InsertOp>(user) ||
-            mlir::isa<::mqt::ir::opt::DeallocOp>(user)) {
+        // if (mlir::isa<::mqt::ir::opt::ExtractOp>(user) ||
+        //    mlir::isa<::mqt::ir::opt::InsertOp>(user) ||
+        //    mlir::isa<::mqt::ir::opt::DeallocOp>(user))
+        {
           user->setOperand(0, catalystQreg);
         }
       }
@@ -232,8 +234,31 @@ struct ConvertMQTOptInsert
         op.getLoc(), resultType, inQregValue, idxValue, idxIntegerAttr,
         qubitValue);
 
-    // Replace the original with the new operation
-    rewriter.replaceOp(op, catalystOp);
+    auto mqtQreg = op->getResult(0);
+    auto catalystQreg = catalystOp.getOperand(0);
+
+    // Collect the users of the original input qubit register to update their
+    // operands
+    std::vector<mlir::Operation*> users(mqtQreg.getUsers().begin(),
+                                        mqtQreg.getUsers().end());
+
+    // Iterate over users in reverse order to update their operands properly
+    for (auto* user : llvm::reverse(users)) {
+
+      // Only consider operations after the current operation
+      if (!user->isBeforeInBlock(catalystOp) && user != catalystOp &&
+          user != op) {
+        // Update operands in the user operation
+        // if (mlir::isa<::mqt::ir::opt::ExtractOp>(user) ||
+        //    mlir::isa<::mqt::ir::opt::InsertOp>(user) ||
+        //    mlir::isa<::mqt::ir::opt::DeallocOp>(user))
+        {
+          user->replaceUsesOfWith(catalystQreg, mqtQreg);
+        }
+      }
+    }
+    // Erase the old operation
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -270,7 +295,8 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
       return failure();
     }
 
-    // TODO: This is an ugly HACK(?) but controlled gates expect runtime values.
+    // TODO: This is an ugly HACK(?) but controlled gates expect runtime
+    // values.
     llvm::SmallVector<mlir::Value> i1Values;
     if (!inCtrlQubits.empty()) {
       mlir::Type i1Type = rewriter.getI1Type();
@@ -395,8 +421,8 @@ llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::POp>::getGateName(
 }
 
 struct MQTOptToCatalystQuantum
-    : impl::MQTOptToQuantumBase<MQTOptToCatalystQuantum> {
-  using MQTOptToQuantumBase::MQTOptToQuantumBase;
+    : impl::MQTOptToCatalystQuantumBase<MQTOptToCatalystQuantum> {
+  using MQTOptToCatalystQuantumBase::MQTOptToCatalystQuantumBase;
 
   void runOnOperation() override {
     MLIRContext* context = &getContext();

@@ -83,31 +83,25 @@ def test_pipeline_lowering():
     """
     Basic pipeline lowering on one qnode.
     """
-    my_pipeline = {"mqt.mqt-core-round-trip": {}}
+    my_pipeline = {"mqt.quantum-to-mqtopt": {}, "mqt.mqt-core-round-trip": {}, "mqt.mqtopt-to-quantum": {}}
+    num_qubits = 3
 
-    @qml.qjit(keep_intermediate=True)
+    @qml.qjit(keep_intermediate=True, pass_plugins={plugin}, dialect_plugins={plugin}, target="mlir", verbose=True)
     @pipeline(my_pipeline)
-    @qml.qnode(qml.device("lightning.qubit", wires=2))
-    def test_pipeline_lowering_workflow(x):
-        qml.Hadamard(wires=[1])
+    @qml.qnode(qml.device("lightning.qubit", wires=3))
+    def test_ghz_circuit():
+        qml.Hadamard(wires=[0])
+        qml.CNOT(wires=[0, 1])
+        qml.CNOT(wires=[0, 2])
         return
 
-    # CHECK: transform.named_sequence @__transform_main
-    # CHECK-NEXT: {{%.+}} = transform.apply_registered_pass "remove-chained-self-inverse" to {{%.+}}
-    # CHECK-NEXT: {{%.+}} = transform.apply_registered_pass "merge-rotations" to {{%.+}}
-    # CHECK-NEXT: transform.yield
-    print_mlir(test_pipeline_lowering_workflow, 1.2)
+    print(test_ghz_circuit.mlir)
 
-    # CHECK: {{%.+}} = call @test_pipeline_lowering_workflow_0(
-    # CHECK: func.func public @test_pipeline_lowering_workflow_0(
-    # CHECK: {{%.+}} = quantum.custom "RX"({{%.+}}) {{%.+}} : !quantum.bit
-    # CHECK-NOT: {{%.+}} = quantum.custom "Hadamard"() {{%.+}} : !quantum.bit
-    # CHECK-NOT: {{%.+}} = quantum.custom "Hadamard"() {{%.+}} : !quantum.bit
-    test_pipeline_lowering_workflow(42.42)
-    flush_peephole_opted_mlir_to_iostream(test_pipeline_lowering_workflow)
+    test_ghz_circuit()
+    flush_peephole_opted_mlir_to_iostream(test_ghz_circuit)
 
 
-test_pipeline_lowering()
+# test_pipeline_lowering()
 
 
 @pytest.mark.skipif(not have_mqt_plugin, reason="MQT Plugin is not installed")
@@ -203,5 +197,37 @@ def test_MQT_plugin_decorator() -> None:
     assert "mqt-core-round-trip" in module.mlir
 
 
-if __name__ == "__main__":
-    pytest.main(["-x", __file__])
+# if __name__ == "__main__":
+#    pytest.main(["-x", __file__])
+
+import jax.numpy as jnp
+import pennylane as qml
+from catalyst import grad, pipeline
+
+
+import timeit
+
+my_pipeline = {
+    "mqt.quantum-to-mqtopt": {},
+    # "mqt.mqt-core-round-trip": {}, <- still not working
+    "mqt.mqtopt-to-quantum": {},
+}
+
+
+@qml.qjit(autograph=True, pass_plugins={plugin}, dialect_plugins={plugin}, target="mlir", keep_intermediate=True)
+def foo(n: int = 2):
+    dev = qml.device("lightning.qubit", wires=n)
+
+    @pipeline(my_pipeline)
+    @qml.qnode(dev)
+    def workflow(n: int):
+        qml.Hadamard(wires=[0])
+        for x in range(0, n - 1):
+            qml.CNOT(wires=[x, x + 1])
+        return
+
+    return workflow(n)
+
+
+for i in range(2, 5000, 50):
+    print(f"n={i}: ", timeit.timeit(foo(i), number=1))

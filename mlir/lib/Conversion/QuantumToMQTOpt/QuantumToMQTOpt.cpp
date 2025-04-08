@@ -9,7 +9,7 @@
 
 #include "Quantum/IR/QuantumDialect.h"
 #include "Quantum/IR/QuantumOps.h"
-#include "mlir/Conversion/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h"
+#include "mlir/Conversion/Catalyst/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -36,7 +36,7 @@
 namespace mlir::mqt::ir::conversions {
 
 #define GEN_PASS_DEF_QUANTUMTOMQTOPT
-#include "mlir/Conversion/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h.inc"
+#include "mlir/Conversion/Catalyst/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h.inc"
 
 using namespace mlir;
 
@@ -237,8 +237,28 @@ struct ConvertQuantumInsert
         op.getLoc(), resultType, inQregValue, qubitValue, idxValue,
         idxIntegerAttr);
 
-    // Replace the original with the new operation
-    rewriter.replaceOp(op, mqtoptOp);
+    auto inQreg = op->getOperand(0);
+    auto outQreg = mqtoptOp->getResult(0);
+
+    // Collect the users of the original input qubit register to update their
+    // operands
+    std::vector<mlir::Operation*> users(inQreg.getUsers().begin(),
+                                        inQreg.getUsers().end());
+
+    // Iterate over users in reverse order to update their operands properly
+    for (auto* user : llvm::reverse(users)) {
+
+      // Only consider operations after the current operation
+      if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
+        // Update operands in the user operation
+        {
+          user->setOperand(0, outQreg);
+        }
+      }
+    }
+
+    // Erase the old operation
+    rewriter.eraseOp(op);
     return success();
   }
 };
