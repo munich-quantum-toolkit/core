@@ -307,15 +307,10 @@ bool isExecutableVirtually(const qc::Operation& op) noexcept {
 
 void applyVirtualOperation(const qc::Operation& op,
                            qc::Permutation& permutation) noexcept {
-  switch (op.getType()) {
   // SWAP gates can be executed virtually by changing the permutation
-  case qc::SWAP: {
+  if (op.getType() == qc::SWAP) {
     const auto& targets = op.getTargets();
     std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
-    break;
-  }
-  default:
-    break;
   }
 }
 
