@@ -109,4 +109,42 @@ public:
   }
 };
 
+template <typename ConcreteOp>
+class HasOptionalSizeEitherOr
+    : public mlir::OpTrait::TraitBase<ConcreteOp, HasOptionalSizeEitherOr> {
+public:
+  [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
+    auto castOp = mlir::cast<ConcreteOp>(op);
+    const auto hasAttr = op->hasAttr("size_attr");
+    const auto hasOperand = castOp.getSize() != nullptr;
+    if (!hasAttr && !hasOperand) {
+      return op->emitOpError() << "expected an operand or attribute for size";
+    }
+    if (hasAttr && hasOperand) {
+      return op->emitOpError()
+             << "expected either an operand or attribute for size";
+    }
+    return mlir::success();
+  }
+};
+
+template <typename ConcreteOp>
+class HasOptionalIndexEitherOr
+    : public mlir::OpTrait::TraitBase<ConcreteOp, HasOptionalIndexEitherOr> {
+public:
+  [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
+    auto castOp = mlir::cast<ConcreteOp>(op);
+    const auto hasAttr = op->hasAttr("index_attr");
+    const auto hasOperand = castOp.getIndex() != nullptr;
+    if (!hasAttr && !hasOperand) {
+      return op->emitOpError() << "expected an operand or attribute for index";
+    }
+    if (hasAttr && hasOperand) {
+      return op->emitOpError()
+             << "expected either an operand or attribute for index";
+    }
+    return mlir::success();
+  }
+};
+
 } // namespace mqt::ir::common

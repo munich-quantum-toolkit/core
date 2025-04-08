@@ -533,7 +533,7 @@ def MeasureOp : GateOp<"measure", [SameVariadicResultSize, MatchingMeasureInOuts
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTOptOp<mnemonic, traits>;
 
-def AllocOp : ResourceOp<"allocQubitRegister"> {
+def AllocOp : ResourceOp<"allocQubitRegister", [HasOptionalSizeEitherOr]> {
     let summary = "Allocates a qubit register";
 
     let description = [{
@@ -560,11 +560,6 @@ def AllocOp : ResourceOp<"allocQubitRegister"> {
     let results = (outs
         QuregType:$qureg
     );
-
-    // This operation has a verifier that checks if the size is given either as
-    // operand or attribute and not both. It is implemented in the corresponding
-    // .cpp file.
-    let hasVerifier = 1;
 }
 
 def DeallocOp : ResourceOp<"deallocQubitRegister"> {
@@ -587,7 +582,7 @@ def DeallocOp : ResourceOp<"deallocQubitRegister"> {
     );
 }
 
-def ExtractOp : ResourceOp<"extractQubit"> {
+def ExtractOp : ResourceOp<"extractQubit", [HasOptionalIndexEitherOr]> {
     let summary = "Extract a specific qubit from a given register";
 
     let description = [{
@@ -613,11 +608,6 @@ def ExtractOp : ResourceOp<"extractQubit"> {
         QuregType:$out_qureg,
         QubitType:$out_qubit
     );
-
-    // This operation has a verifier that checks if the index is given either as
-    // operand or attribute and not both. It is implemented in the corresponding
-    // .cpp file.
-    let hasVerifier = 1;
 }
 
 def InsertOp : ResourceOp<"insertQubit"> {

@@ -64,26 +64,6 @@ void mqt::ir::opt::MQTOptDialect::initialize() {
 
 namespace mqt::ir::opt {
 
-mlir::LogicalResult AllocOp::verify() {
-  if (!getSize() && !getSizeAttr().has_value()) {
-    return emitOpError() << "expected an operand or attribute for size";
-  }
-  if (getSize() && getSizeAttr().has_value()) {
-    return emitOpError() << "expected either an operand or attribute for size";
-  }
-  return mlir::success();
-}
-
-mlir::LogicalResult ExtractOp::verify() {
-  if (!getIndex() && !getIndexAttr().has_value()) {
-    return emitOpError() << "expected an operand or attribute for index";
-  }
-  if (getIndex() && getIndexAttr().has_value()) {
-    return emitOpError() << "expected either an operand or attribute for index";
-  }
-  return mlir::success();
-}
-
 mlir::LogicalResult InsertOp::verify() {
   if (!getIndex() && !getIndexAttr().has_value()) {
     return emitOpError() << "expected an operand or attribute for index";
