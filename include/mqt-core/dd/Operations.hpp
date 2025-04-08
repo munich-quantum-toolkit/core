@@ -208,15 +208,15 @@ applyClassicControlledOperation(const qc::ClassicControlledOperation& op,
  * @brief Check whether @p op is virtually executable.
  *
  * @param op The operation in question.
- * @return Boolean that indicates whether @p op is virtually executable.
+ * @return Whether @p op is virtually executable.
  */
 bool isExecutableVirtually(const qc::Operation& op) noexcept;
 
 /**
- * @brief Apply virtual operation @p op by updating @p permutation.
+ * @brief Apply virtual operation @p op.
  *
  * @param op The virtual operation to apply.
- * @param permutation The to be updated permutation.
+ * @param permutation If suitable, the to be updated permutation.
  */
 void applyVirtualOperation(const qc::Operation& op,
                            qc::Permutation& permutation) noexcept;
