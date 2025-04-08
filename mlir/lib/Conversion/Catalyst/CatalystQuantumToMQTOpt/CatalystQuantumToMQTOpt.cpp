@@ -332,8 +332,49 @@ struct ConvertQuantumCustomOp
                                                allQubitsValues.end());
     llvm::SmallVector<mlir::Value> inCtrlQubitsVec;
 
-    auto staticParams = ::mlir::DenseF64ArrayAttr();
-    auto paramsMask = ::mlir::DenseBoolArrayAttr();
+    llvm::SmallVector<bool> paramsMaskVec;
+    llvm::SmallVector<double> staticParamsVec;
+    llvm::SmallVector<Value> finalParamValues;
+
+    // Read attributes
+    auto maskAttr = op->getAttrOfType<DenseBoolArrayAttr>("params_mask");
+    auto staticParamsAttr =
+        op->getAttrOfType<DenseF64ArrayAttr>("static_params");
+
+    // Total length of combined parameter list
+    size_t totalParams = 0;
+    if (maskAttr) {
+      totalParams = maskAttr.size();
+    } else {
+      totalParams = staticParamsAttr
+                        ? staticParamsAttr.size() + paramsValues.size()
+                        : paramsValues.size();
+    }
+
+    // Pointers to step through static/dynamic values
+    size_t staticIdx = 0;
+    size_t dynamicIdx = 0;
+
+    // Build final mask + values in order
+    for (size_t i = 0; i < totalParams; ++i) {
+      bool const isStatic = (maskAttr ? maskAttr[i] : false);
+
+      paramsMaskVec.emplace_back(isStatic);
+
+      if (isStatic) {
+        assert(staticParamsAttr && "Missing static_params for static mask");
+        staticParamsVec.emplace_back(staticParamsAttr[staticIdx++]);
+      } else {
+        assert(dynamicIdx < paramsValues.size() &&
+               "Too few dynamic parameters");
+        finalParamValues.emplace_back(paramsValues[dynamicIdx++]);
+      }
+    }
+
+    auto staticParams =
+        DenseF64ArrayAttr::get(rewriter.getContext(), staticParamsVec);
+    auto paramsMask =
+        DenseBoolArrayAttr::get(rewriter.getContext(), paramsMaskVec);
 
     if (gateName == "CNOT" || gateName == "CY" || gateName == "CZ" ||
         gateName == "CRX" || gateName == "CRY" || gateName == "CRZ" ||

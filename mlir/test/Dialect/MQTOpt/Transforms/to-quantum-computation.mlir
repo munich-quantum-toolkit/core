@@ -5,7 +5,7 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s | FileCheck %s
+// RUN: quantum-opt %s --mqt-core-round-trip | FileCheck %s
 
 module {
     // CHECK-LABEL: func @bell()
@@ -24,10 +24,10 @@ module {
         // CHECK: %[[Q01_2:.*]]:2 = mqtopt.x() %[[Q0_1]] ctrl %[[Q1_1]] : !mqtopt.Qubit, !mqtopt.Qubit
         %q0_2, %q1_2 = mqtopt.x() %q0_1 ctrl %q1_1 : !mqtopt.Qubit, !mqtopt.Qubit
 
+        // CHECK: %[[Q0_3:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q01_2]]#0)
         // CHECK: %[[Q1_3:.*]] = mqtopt.x() %[[Q01_2]]#1 : !mqtopt.Qubit
         %q1_3 = mqtopt.x() %q1_2 : !mqtopt.Qubit
 
-        // CHECK: %[[Q0_3:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q01_2]]#0)
         %q0_3, %c0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         // CHECK: %[[Q1_4:.*]], %[[C1_0:.*]] = "mqtopt.measure"(%[[Q1_3]])
         %q1_4, %c1_0 = "mqtopt.measure"(%q1_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)

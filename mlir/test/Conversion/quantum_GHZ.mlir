@@ -20,9 +20,9 @@ module {
     %2 = quantum.extract %0[ 1] : !quantum.reg -> !quantum.bit
     %3 = quantum.extract %0[ 2] : !quantum.reg -> !quantum.bit
 
-    // CHECK: %[[H:.*]] = mqtopt.H() %[[Q0]] : !mqtopt.Qubit
-    // CHECK: %[[CX1:.*]]:2 = mqtopt.x() %[[Q1]] ctrl %[[H]] : !mqtopt.Qubit, !mqtopt.Qubit
-    // CHECK: %[[CX2:.*]]:2 = mqtopt.x() %[[Q2]] ctrl %[[CX1]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[H:.*]] = mqtopt.H( static [] mask []) %[[Q0]] : !mqtopt.Qubit
+    // CHECK: %[[CX1:.*]]:2 = mqtopt.x( static [] mask []) %[[Q1]] ctrl %[[H]] : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[CX2:.*]]:2 = mqtopt.x( static [] mask []) %[[Q2]] ctrl %[[CX1]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
     %out_h = quantum.custom "Hadamard"() %1 : !quantum.bit
     %out_qubits:2 = quantum.custom "CNOT"() %out_h, %2 : !quantum.bit, !quantum.bit
     %out_qubits_0:2 = quantum.custom "CNOT"() %out_qubits#1, %3 : !quantum.bit, !quantum.bit

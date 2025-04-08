@@ -354,8 +354,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     for (auto* operation : llvm::make_early_inc_range(visited)) {
       if (operation->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
         visited.erase(operation); // safe deletion as op will be erased next
-        updateMQTOptInputs(operation, rewriter, newAlloc.getQureg(),
-                           measureCount);
+        updateMQTOptInputs(operation, rewriter, newAlloc.getQureg(), measureCount);
       }
     }
 
