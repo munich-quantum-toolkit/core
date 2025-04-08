@@ -610,7 +610,7 @@ def ExtractOp : ResourceOp<"extractQubit", [HasOptionalIndexEitherOr]> {
     );
 }
 
-def InsertOp : ResourceOp<"insertQubit"> {
+def InsertOp : ResourceOp<"insertQubit", [HasOptionalIndexEitherOr]> {
 
     let description = [{
         This class represents an operation that inserts a qubit back into a qubit
@@ -630,11 +630,6 @@ def InsertOp : ResourceOp<"insertQubit"> {
     let results = (outs
         QuregType:$out_qureg
     );
-
-    // This operation has a verifier that checks if the index is given either as
-    // operand or attribute and not both. It is implemented in the corresponding
-    // .cpp file.
-    let hasVerifier = 1;
 }
 
 #endif // MQTOPT_OPS

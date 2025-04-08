@@ -57,21 +57,3 @@ void mqt::ir::opt::MQTOptDialect::initialize() {
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/MQTOpt/IR/MQTOptOps.cpp.inc"
-
-//===----------------------------------------------------------------------===//
-// Verifier
-//===----------------------------------------------------------------------===//
-
-namespace mqt::ir::opt {
-
-mlir::LogicalResult InsertOp::verify() {
-  if (!getIndex() && !getIndexAttr().has_value()) {
-    return emitOpError() << "expected an operand or attribute for index";
-  }
-  if (getIndex() && getIndexAttr().has_value()) {
-    return emitOpError() << "expected either an operand or attribute for index";
-  }
-  return mlir::success();
-}
-
-} // namespace mqt::ir::opt

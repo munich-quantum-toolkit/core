@@ -56,9 +56,3 @@ void mqt::ir::dyn::MQTDynDialect::initialize() {
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/MQTDyn/IR/MQTDynOps.cpp.inc"
-
-//===----------------------------------------------------------------------===//
-// Verifier
-//===----------------------------------------------------------------------===//
-
-namespace mqt::ir::dyn {} // namespace mqt::ir::dyn
