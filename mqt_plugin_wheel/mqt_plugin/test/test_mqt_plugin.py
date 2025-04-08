@@ -77,6 +77,7 @@ def flush_peephole_opted_mlir_to_iostream(QJIT):
 #
 # pipeline
 #
+from catalyst import measure
 
 
 def test_pipeline_lowering():
@@ -91,9 +92,10 @@ def test_pipeline_lowering():
     @qml.qnode(qml.device("lightning.qubit", wires=3))
     def test_ghz_circuit():
         qml.Hadamard(wires=[0])
-        qml.CNOT(wires=[0, 1])
-        qml.CNOT(wires=[0, 2])
-        return
+        for i in range(1, num_qubits):
+            qml.CNOT(wires=[0, i])
+        measurements = [measure(wires=i) for i in range(num_qubits)]
+        return measurements
 
     print(test_ghz_circuit.mlir)
 
@@ -101,7 +103,7 @@ def test_pipeline_lowering():
     flush_peephole_opted_mlir_to_iostream(test_ghz_circuit)
 
 
-# test_pipeline_lowering()
+test_pipeline_lowering()
 
 
 @pytest.mark.skipif(not have_mqt_plugin, reason="MQT Plugin is not installed")
@@ -200,34 +202,36 @@ def test_MQT_plugin_decorator() -> None:
 # if __name__ == "__main__":
 #    pytest.main(["-x", __file__])
 
-import jax.numpy as jnp
+
 import pennylane as qml
-from catalyst import grad, pipeline
-
-
 import timeit
+from catalyst import measure
 
-my_pipeline = {
-    "mqt.quantum-to-mqtopt": {},
-    # "mqt.mqt-core-round-trip": {}, <- still not working
-    "mqt.mqtopt-to-quantum": {},
-}
+my_pipeline = {"mqt.quantum-to-mqtopt": {}, "mqt.mqt-core-round-trip": {}, "mqt.mqtopt-to-quantum": {}}
 
 
-@qml.qjit(autograph=True, pass_plugins={plugin}, dialect_plugins={plugin}, target="mlir", keep_intermediate=True)
-def foo(n: int = 2):
-    dev = qml.device("lightning.qubit", wires=n)
+def _compile(num_qubits: int):
+    custom_pipeline = [("run_only_plugin", ["builtin.module(apply-transform-sequence)"])]
 
-    @pipeline(my_pipeline)
-    @qml.qnode(dev)
-    def workflow(n: int):
-        qml.Hadamard(wires=[0])
-        for x in range(0, n - 1):
-            qml.CNOT(wires=[x, x + 1])
-        return
+    @qml.qjit(target="mlir", pipelines=custom_pipeline)
+    def foo():
+        dev = qml.device("lightning.qubit", wires=num_qubits)
 
-    return workflow(n)
+        @pipeline(my_pipeline)
+        @qml.qnode(dev)
+        def workflow():
+            qml.Hadamard(wires=[0])
+            for i in range(num_qubits - 1):
+                qml.CNOT(wires=[i, i + 1])
+            meas = [measure(wires=i) for i in range(num_qubits)]
+            return meas
+
+        return workflow()
+
+    _ = foo.mlir
+    return
 
 
-for i in range(2, 5000, 50):
-    print(f"n={i}: ", timeit.timeit(foo(i), number=1))
+for n in range(2, 5000, 50):
+    duration = timeit.timeit(lambda: _compile(n), number=10)
+    print(f"n={n}: {duration:.6f} seconds")

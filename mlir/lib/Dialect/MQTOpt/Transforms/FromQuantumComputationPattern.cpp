@@ -257,9 +257,10 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // Finally, the return operation needs to be updated with the measurement
     // results and then replace the original `alloc` operation with the updated
     // one.
-    auto* const returnOperation = *op->getUsers().begin();
-    updateReturnOperation(returnOperation, currentRegister, measurementValues,
-                          rewriter);
+    // auto* const returnOperation = *op->getUsers().begin();
+    // updateReturnOperation(returnOperation, currentRegister,
+    // measurementValues,
+    //                      rewriter);
     rewriter.replaceOp(op, newAlloc);
   }
 };

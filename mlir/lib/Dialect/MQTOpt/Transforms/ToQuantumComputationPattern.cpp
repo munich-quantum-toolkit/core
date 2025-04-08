@@ -237,10 +237,10 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     }
 
     // The return operation MUST use all measurement results as inputs.
-    if (i != measureCount + 1) {
-      throw std::runtime_error(
-          "Measure count does not match number of return operands!");
-    }
+    // if (i != measureCount + 1) {
+    //  throw std::runtime_error(
+    //      "Measure count does not match number of return operands!");
+    //}
     rewriter.replaceOp(op, cloned);
   }
 
@@ -354,7 +354,8 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     for (auto* operation : llvm::make_early_inc_range(visited)) {
       if (operation->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
         visited.erase(operation); // safe deletion as op will be erased next
-        updateMQTOptInputs(operation, rewriter, newAlloc.getQureg(), measureCount);
+        updateMQTOptInputs(operation, rewriter, newAlloc.getQureg(),
+                           measureCount);
       }
     }
 
@@ -363,7 +364,6 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     visited.erase(op); // erase alloc op
     while (!visited.empty()) {
       for (auto* operation : llvm::make_early_inc_range(visited)) {
-        operation->emitRemark() << "HERE";
         if (operation->getDialect()->getNamespace() == DIALECT_NAME_MQTOPT) {
           if (operation->getUsers().empty()) {
             visited.erase(operation);
