@@ -10,6 +10,7 @@
 
 #include "dd/Operations.hpp"
 
+#include "dd/Complex.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
