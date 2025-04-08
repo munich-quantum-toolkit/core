@@ -17,8 +17,6 @@
 #include <mlir/IR/DialectImplementation.h>
 // IWYU pragma: end_keep
 
-#include <mlir/Support/LogicalResult.h>
-
 //===----------------------------------------------------------------------===//
 // Dialect
 //===----------------------------------------------------------------------===//
