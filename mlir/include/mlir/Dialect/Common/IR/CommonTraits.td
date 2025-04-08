@@ -15,7 +15,7 @@ include "mlir/IR/DialectBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 class TargetArity<int N>
-    : ParamNativeOpTrait<"TargetArity", !cast<string>(N)> {
+    : ParamNativeOpTrait<"TargetArityTrait", !cast<string>(N)> {
     let cppNamespace = "::mqt::ir::common";
 }
 
@@ -24,7 +24,7 @@ def OneTarget : TargetArity<1>;
 def TwoTarget : TargetArity<2>;
 
 class ParameterArity<int N>
-    : ParamNativeOpTrait<"ParameterArity", !cast<string>(N)> {
+    : ParamNativeOpTrait<"ParameterArityTrait", !cast<string>(N)> {
     let cppNamespace = "::mqt::ir::common";
 }
 
@@ -33,19 +33,19 @@ def OneParameter : ParameterArity<1>;
 def TwoParameters : ParameterArity<2>;
 def ThreeParameters : ParameterArity<3>;
 
-def NoControl : NativeOpTrait<"NoControl"> {
+def NoControl : NativeOpTrait<"NoControlTrait"> {
     let cppNamespace = "::mqt::ir::common";
 }
 
-def MatchingMeasureInOuts : NativeOpTrait<"MatchingMeasureInOuts"> {
+def MatchingMeasureInOuts : NativeOpTrait<"MatchingMeasureInOutsTrait"> {
     let cppNamespace = "::mqt::ir::common";
 }
 
-def HasOptionalSizeEitherOr : NativeOpTrait<"HasOptionalSizeEitherOr"> {
+def HasOptionalSizeEitherOr : NativeOpTrait<"HasOptionalSizeEitherOrTrait"> {
     let cppNamespace = "::mqt::ir::common";
 }
 
-def HasOptionalIndexEitherOr : NativeOpTrait<"HasOptionalIndexEitherOr"> {
+def HasOptionalIndexEitherOr : NativeOpTrait<"HasOptionalIndexEitherOrTrait"> {
     let cppNamespace = "::mqt::ir::common";
 }
 

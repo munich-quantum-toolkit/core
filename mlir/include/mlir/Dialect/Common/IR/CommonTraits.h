@@ -16,7 +16,7 @@
 #include <mlir/Support/LLVM.h>
 
 namespace mqt::ir::common {
-template <size_t N> class TargetArity {
+template <size_t N> class TargetArityTrait {
 public:
   template <typename ConcreteOp>
   class Impl : public mlir::OpTrait::TraitBase<ConcreteOp, Impl> {
@@ -32,7 +32,7 @@ public:
   };
 };
 
-template <size_t N> class ParameterArity {
+template <size_t N> class ParameterArityTrait {
 public:
   template <typename ConcreteOp>
   class Impl : public mlir::OpTrait::TraitBase<ConcreteOp, Impl> {
@@ -80,7 +80,8 @@ public:
 };
 
 template <typename ConcreteOp>
-class NoControl : public mlir::OpTrait::TraitBase<ConcreteOp, NoControl> {
+class NoControlTrait
+    : public mlir::OpTrait::TraitBase<ConcreteOp, NoControlTrait> {
 public:
   [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
     auto unitaryOp = mlir::cast<ConcreteOp>(op);
@@ -94,8 +95,8 @@ public:
 };
 
 template <typename ConcreteOp>
-class MatchingMeasureInOuts
-    : public mlir::OpTrait::TraitBase<ConcreteOp, MatchingMeasureInOuts> {
+class MatchingMeasureInOutsTrait
+    : public mlir::OpTrait::TraitBase<ConcreteOp, MatchingMeasureInOutsTrait> {
 public:
   [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
     auto measureOp = mlir::cast<ConcreteOp>(op);
@@ -110,8 +111,9 @@ public:
 };
 
 template <typename ConcreteOp>
-class HasOptionalSizeEitherOr
-    : public mlir::OpTrait::TraitBase<ConcreteOp, HasOptionalSizeEitherOr> {
+class HasOptionalSizeEitherOrTrait
+    : public mlir::OpTrait::TraitBase<ConcreteOp,
+                                      HasOptionalSizeEitherOrTrait> {
 public:
   [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
     auto castOp = mlir::cast<ConcreteOp>(op);
@@ -129,8 +131,9 @@ public:
 };
 
 template <typename ConcreteOp>
-class HasOptionalIndexEitherOr
-    : public mlir::OpTrait::TraitBase<ConcreteOp, HasOptionalIndexEitherOr> {
+class HasOptionalIndexEitherOrTrait
+    : public mlir::OpTrait::TraitBase<ConcreteOp,
+                                      HasOptionalIndexEitherOrTrait> {
 public:
   [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
     auto castOp = mlir::cast<ConcreteOp>(op);
