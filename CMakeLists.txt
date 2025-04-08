@@ -7,11 +7,11 @@
 # Licensed under the MIT License
 
 # set required cmake version
-cmake_minimum_required(VERSION 3.24...3.31)
+cmake_minimum_required(VERSION 3.24...4.0)
 
 project(
   mqt-core
-  LANGUAGES CXX
+  LANGUAGES C CXX
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
 # Add path for custom modules
@@ -68,7 +68,7 @@ get_mqt_core_version()
 
 project(
   mqt-core
-  LANGUAGES CXX
+  LANGUAGES C CXX
   VERSION ${MQT_CORE_VERSION}
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 

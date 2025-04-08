@@ -28,4 +28,12 @@ if(NOT TARGET dd)
     TARGETS dd
     DESTINATION .
     COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+
+  # Install the Python stub file in editable mode for better IDE support
+  if(SKBUILD_STATE STREQUAL "editable")
+    install(
+      FILES ${CMAKE_CURRENT_SOURCE_DIR}/../../mqt/core/dd.pyi
+      DESTINATION .
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+  endif()
 endif()

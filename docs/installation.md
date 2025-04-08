@@ -162,12 +162,12 @@ set(MQT_CORE_VERSION 3.0.0
     CACHE STRING "MQT Core version")
 set(MQT_CORE_REV "2ccf532b66998af376c256ae94a39eed802b990c"
     CACHE STRING "MQT Core identifier (tag, branch or commit hash)")
-set(MQT_CORE_REPO_OWNER "cda-tum"
+set(MQT_CORE_REPO_OWNER "munich-quantum-toolkit"
     CACHE STRING "MQT Core repository owner (change when using a fork)")
 # cmake-format: on
 FetchContent_Declare(
   mqt-core
-  GIT_REPOSITORY https://github.com/${MQT_CORE_REPO_OWNER}/mqt-core.git
+  GIT_REPOSITORY https://github.com/${MQT_CORE_REPO_OWNER}/core.git
   GIT_TAG ${MQT_CORE_REV}
   FIND_PACKAGE_ARGS ${MQT_CORE_VERSION})
 list(APPEND FETCH_PACKAGES mqt-core)
@@ -203,7 +203,7 @@ concurrency:
 jobs:
   update-mqt-core:
     name: Update MQT Core
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-mqt-core-update.yml@v1.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-mqt-core-update.yml@v1.8
     with:
       update-to-head: ${{ github.event.inputs.update-to-head == 'true' }}
 ```

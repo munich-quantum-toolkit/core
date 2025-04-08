@@ -125,8 +125,8 @@ template <typename Node> struct CachedEdge {
    * @return the normalized vector DD
    */
   template <typename T = Node, isVector<T> = true>
-  static CachedEdge normalize(Node* p, const std::array<CachedEdge, RADIX>& e,
-                              MemoryManager& mm, ComplexNumbers& cn);
+  static auto normalize(Node* p, const std::array<CachedEdge, RADIX>& e,
+                        MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge;
 
   /**
    * @brief Get a normalized (density) matrix) DD from a fresh node and a list
@@ -140,8 +140,8 @@ template <typename Node> struct CachedEdge {
    * @return the normalized (density) matrix DD
    */
   template <typename T = Node, isMatrixVariant<T> = true>
-  static CachedEdge normalize(Node* p, const std::array<CachedEdge, NEDGE>& e,
-                              MemoryManager& mm, ComplexNumbers& cn);
+  static auto normalize(Node* p, const std::array<CachedEdge, NEDGE>& e,
+                        MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge;
 
   /**
    * @brief Check whether the matrix represented by the DD is the identity.
@@ -163,5 +163,5 @@ template <typename Node> struct CachedEdge {
 } // namespace dd
 
 template <class Node> struct std::hash<dd::CachedEdge<Node>> {
-  std::size_t operator()(dd::CachedEdge<Node> const& e) const noexcept;
+  auto operator()(dd::CachedEdge<Node> const& e) const noexcept -> std::size_t;
 };

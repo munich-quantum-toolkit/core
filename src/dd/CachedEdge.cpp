@@ -34,10 +34,10 @@ namespace dd {
 
 template <class Node>
 template <typename T, isVector<T>>
-CachedEdge<Node>
-CachedEdge<Node>::normalize(Node* p,
-                            const std::array<CachedEdge<Node>, RADIX>& e,
-                            MemoryManager& mm, ComplexNumbers& cn) {
+auto CachedEdge<Node>::normalize(Node* p,
+                                 const std::array<CachedEdge, RADIX>& e,
+                                 MemoryManager& mm, ComplexNumbers& cn)
+    -> CachedEdge {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero =
       std::array{e[0].w.approximatelyZero(), e[1].w.approximatelyZero()};
@@ -94,10 +94,10 @@ CachedEdge<Node>::normalize(Node* p,
 
 template <class Node>
 template <typename T, isMatrixVariant<T>>
-CachedEdge<Node>
-CachedEdge<Node>::normalize(Node* p,
-                            const std::array<CachedEdge<Node>, NEDGE>& e,
-                            MemoryManager& mm, ComplexNumbers& cn) {
+auto CachedEdge<Node>::normalize(Node* p,
+                                 const std::array<CachedEdge, NEDGE>& e,
+                                 MemoryManager& mm, ComplexNumbers& cn)
+    -> CachedEdge {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero =
       std::array{e[0].w.approximatelyZero(), e[1].w.approximatelyZero(),
@@ -148,7 +148,7 @@ CachedEdge<Node>::normalize(Node* p,
       p->e[i].p = Node::getTerminal();
     }
   }
-  return CachedEdge<Node>{p, maxVal};
+  return CachedEdge{p, maxVal};
 }
 
 ///-----------------------------------------------------------------------------
@@ -159,27 +159,27 @@ template struct CachedEdge<vNode>;
 template struct CachedEdge<mNode>;
 template struct CachedEdge<dNode>;
 
-template CachedEdge<vNode>
-CachedEdge<vNode>::normalize(vNode* p,
-                             const std::array<CachedEdge<vNode>, RADIX>& e,
-                             MemoryManager& mm, ComplexNumbers& cn);
+template auto
+CachedEdge<vNode>::normalize(vNode* p, const std::array<CachedEdge, RADIX>& e,
+                             MemoryManager& mm, ComplexNumbers& cn)
+    -> CachedEdge;
 
-template CachedEdge<mNode>
-CachedEdge<mNode>::normalize(mNode* p,
-                             const std::array<CachedEdge<mNode>, NEDGE>& e,
-                             MemoryManager& mm, ComplexNumbers& cn);
+template auto
+CachedEdge<mNode>::normalize(mNode* p, const std::array<CachedEdge, NEDGE>& e,
+                             MemoryManager& mm, ComplexNumbers& cn)
+    -> CachedEdge;
 
-template CachedEdge<dNode>
-CachedEdge<dNode>::normalize(dNode* p,
-                             const std::array<CachedEdge<dNode>, NEDGE>& e,
-                             MemoryManager& mm, ComplexNumbers& cn);
+template auto
+CachedEdge<dNode>::normalize(dNode* p, const std::array<CachedEdge, NEDGE>& e,
+                             MemoryManager& mm, ComplexNumbers& cn)
+    -> CachedEdge;
 
 } // namespace dd
 
 namespace std {
 template <class Node>
-std::size_t hash<dd::CachedEdge<Node>>::operator()(
-    const dd::CachedEdge<Node>& e) const noexcept {
+auto hash<dd::CachedEdge<Node>>::operator()(
+    const dd::CachedEdge<Node>& e) const noexcept -> std::size_t {
   const auto h1 = dd::murmur64(reinterpret_cast<std::size_t>(e.p));
   const auto h2 = std::hash<dd::ComplexValue>{}(e.w);
   return qc::combineHash(h1, h2);
