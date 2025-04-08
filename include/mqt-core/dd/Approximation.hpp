@@ -40,8 +40,7 @@ struct Approximation<MemoryDriven> : public Approximation<FidelityDriven> {
 class NodeContributions {
 public:
   explicit NodeContributions(const vEdge& root) {
-    Map lookup{};
-    compute(root, ComplexValue{root.w}, lookup);
+    compute(root, ComplexValue{root.w});
   }
 
   double operator[](const vNode* key) noexcept { return contributions[key]; }
@@ -58,11 +57,8 @@ private:
    *          the respective node
    *
    *          The accumulator computes the amplitude.
-   *
-   *          Uses a lookup table to avoid computing the contributions of the
-   *          same node twice.
    */
-  double compute(const vEdge& edge, const ComplexValue acc, Map& lookup) {
+  double compute(const vEdge& edge, const ComplexValue acc) {
     // Reached the end of a path. Either return 0 or squared magnitude.
     if (edge.isZeroTerminal()) {
       return 0.;
@@ -71,22 +67,13 @@ private:
       return acc.mag2();
     }
 
+    // Compute the contribution of each node, which is the sum of
+    // squared magnitudes of amplitudes for each path passing through that node.
     double sum = 0.;
     const vNode* node = edge.p;
-
-    // If the node has already been visited once, reuse value from lookup table.
-    //
-    // Otherwise compute the contribution of each node, which is the sum of
-    // squared magnitudes of amplitudes for each path passing through that node.
-    if (lookup.count(node) > 0) {
-      sum = lookup[node];
-    } else {
-      for (const auto& e : node->e) {
-        sum += compute(e, acc * e.w, lookup);
-      }
-      lookup[node] = sum;
+    for (const auto& e : node->e) {
+      sum += compute(e, acc * e.w);
     }
-
     contributions[node] += sum;
 
     return sum;

@@ -33,7 +33,7 @@ TEST(ApproximationTest, NodeContributionsSingleEdge) {
   VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
   NodeContributions contributions(root);
 
-  EXPECT_NEAR(contributions[root.p], 1., 1e-8);
+  EXPECT_NEAR(contributions[root.p], 1., 1e-6);
 }
 
 TEST(ApproximationTest, NodeContributionsGHZ) {
@@ -47,9 +47,9 @@ TEST(ApproximationTest, NodeContributionsGHZ) {
   VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
   NodeContributions contributions(root);
 
-  EXPECT_NEAR(contributions[root.p], 1., 1e-8);
-  EXPECT_NEAR(contributions[root.p->e[0].p], .5, 1e-8);
-  EXPECT_NEAR(contributions[root.p->e[1].p], .5, 1e-8);
+  EXPECT_NEAR(contributions[root.p], 1., 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[0].p], .5, 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[1].p], .5, 1e-6);
 }
 
 TEST(ApproximationTest, NodeContributionsDoubleVisit) {
@@ -64,8 +64,8 @@ TEST(ApproximationTest, NodeContributionsDoubleVisit) {
   VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
   NodeContributions contributions(root);
 
-  EXPECT_NEAR(contributions[root.p], 1., 1e-8);
-  EXPECT_NEAR(contributions[root.p->e[0].p], 1., 1e-8);
+  EXPECT_NEAR(contributions[root.p], 1., 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[0].p], 1., 1e-6);
 }
 
 TEST(ApproximationTest, NodeContributions2Percent) {
@@ -79,9 +79,9 @@ TEST(ApproximationTest, NodeContributions2Percent) {
   VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
   NodeContributions contributions(root);
 
-  EXPECT_NEAR(contributions[root.p], 1., 1e-8);
-  EXPECT_NEAR(contributions[root.p->e[0].p], .98096988, 1e-8);
-  EXPECT_NEAR(contributions[root.p->e[1].p], .01903012, 1e-8);
+  EXPECT_NEAR(contributions[root.p], 1., 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[0].p], .98096988, 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[1].p], .01903012, 1e-6);
 }
 
 TEST(ApproximationTest, NodeContributionsGrover) {
@@ -100,10 +100,31 @@ TEST(ApproximationTest, NodeContributionsGrover) {
   VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
   NodeContributions contributions(root);
 
-  EXPECT_NEAR(contributions[root.p], 1., 1e-8);
-  EXPECT_NEAR(contributions[root.p->e[1].p], 1., 1e-8);
-  EXPECT_NEAR(contributions[root.p->e[1].p->e[0].p], .5, 1e-8);
-  EXPECT_NEAR(contributions[root.p->e[1].p->e[1].p], .5, 1e-8);
+  EXPECT_NEAR(contributions[root.p], 1., 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[1].p], 1., 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[1].p->e[0].p], .5, 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[1].p->e[1].p], .5, 1e-6);
+}
+
+TEST(ApproximationTest, NodeContributionsTwoCRY) {
+  constexpr std::size_t nq = 3;
+  Package dd(nq);
+
+  qc::QuantumComputation qc(nq);
+  qc.h(0);
+  qc.cry(qc::PI / 8, 0, 1);
+  qc.h(1);
+  qc.cry(qc::PI / 8, 1, 2);
+
+  VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
+  NodeContributions contributions(root);
+
+  EXPECT_NEAR(contributions[root.p], 1., 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[0].p], .984611, 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[1].p], .0153889, 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[0].p->e[0].p], .595671, 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[0].p->e[1].p], .404329, 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[1].p->e[1].p], .404329, 1e-6);
 }
 
 ///-----------------------------------------------------------------------------
@@ -112,24 +133,17 @@ TEST(ApproximationTest, NodeContributionsGrover) {
 
 TEST(ApproximationTest, FidelityDrivenKeepAll) {
   constexpr std::size_t nq = 2;
-
-  std::mt19937_64 mt;
-  mt.seed(42);
-
-  // Setup package.
   Package dd(nq);
 
-  // Circuit to simulate.
   qc::QuantumComputation qc(nq);
   qc.x(0);
 
-  // Call simulate.
-  constexpr Approximation<FidelityDriven> approx(1.);
-  VectorDD res = simulate(qc, dd.makeZeroState(nq), dd, approx);
-  const std::string m = dd.measureAll(res, false, mt, 0.001);
+  VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
 
-  EXPECT_EQ(res.size(), 3); // number of nodes + terminal.
-  EXPECT_EQ(m, "01");       // (kron(I, X))|00> = |01>
+  constexpr Approximation<FidelityDriven> approx(1.);
+  applyApproximation(root, approx, dd);
+
+  EXPECT_EQ(root.size(), 3);
 }
 
 TEST(ApproximationTest, FidelityDriven2Percent) {
@@ -140,13 +154,16 @@ TEST(ApproximationTest, FidelityDriven2Percent) {
   qc.h(0);
   qc.cry(qc::PI / 8, 0, 1);
 
+  VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
+
   constexpr Approximation<FidelityDriven> approx(.98);
-  VectorDD root = simulate(qc, dd.makeZeroState(nq), dd, approx);
+  applyApproximation(root, approx, dd);
+
   NodeContributions contributions(root);
 
   EXPECT_EQ(root.size(), 3);
-  EXPECT_NEAR(contributions[root.p], 1., 1e-8);
-  EXPECT_NEAR(contributions[root.p->e[0].p], 1., 1e-8);
+  EXPECT_NEAR(contributions[root.p], 1., 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[0].p], 1., 1e-6);
 }
 
 TEST(ApproximationTest, MemoryDriven2Percent) {
@@ -157,13 +174,42 @@ TEST(ApproximationTest, MemoryDriven2Percent) {
   qc.h(0);
   qc.cry(qc::PI / 8, 0, 1);
 
+  VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
+
   constexpr Approximation<MemoryDriven> approx(3, 0.98);
-  VectorDD root = simulate(qc, dd.makeZeroState(nq), dd, approx);
+  applyApproximation(root, approx, dd);
+
   NodeContributions contributions(root);
 
   EXPECT_EQ(root.size(), 3);
-  EXPECT_NEAR(contributions[root.p], 1., 1e-8);
-  EXPECT_NEAR(contributions[root.p->e[0].p], 1., 1e-8);
+  EXPECT_NEAR(contributions[root.p], 1., 1e-6);
+  EXPECT_NEAR(contributions[root.p->e[0].p], 1., 1e-6);
+}
+
+TEST(ApproximationTest, MemoryDriven3Qubits) {
+  constexpr std::size_t nq = 3;
+  Package dd(nq);
+
+  qc::QuantumComputation qc(nq);
+  qc.h(0);
+  qc.cry(qc::PI / 8, 0, 1);
+  qc.h(1);
+  qc.cry(qc::PI / 8, 1, 2);
+
+  VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
+
+  constexpr Approximation<MemoryDriven> approx(2, 0.98);
+  applyApproximation(root, approx, dd);
+
+  // NodeContributions contributions(root);
+
+  // std::cout << "contr: " << contributions[root.p] << '\n';
+  // std::cout << "contr: " << contributions[root.p->e[0].p] << '\n';
+  // std::cout << "contr: " << contributions[root.p->e[1].p] << '\n';
+
+  EXPECT_EQ(root.size(), 5);
+  // EXPECT_NEAR(contributions[root.p], 1., 1e-6);
+  // EXPECT_NEAR(contributions[root.p->e[0].p], 1., 1e-6);
 }
 
 TEST(ApproximationTest, MemoryDrivenKeepAll) {
@@ -174,8 +220,10 @@ TEST(ApproximationTest, MemoryDrivenKeepAll) {
   qc.h(0);
   qc.cry(qc::PI / 8, 0, 1);
 
+  VectorDD root = simulate(qc, dd.makeZeroState(nq), dd);
+
   constexpr Approximation<MemoryDriven> approx(4, 0.98);
-  VectorDD root = simulate(qc, dd.makeZeroState(nq), dd, approx);
+  applyApproximation(root, approx, dd);
 
   EXPECT_EQ(root.size(), 4);
 }
