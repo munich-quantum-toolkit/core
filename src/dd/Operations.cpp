@@ -291,4 +291,42 @@ VectorDD applyClassicControlledOperation(
   return applyUnitaryOperation(op, in, dd, permutation);
 }
 
+bool isExecutableVirtually(const qc::Operation& op) noexcept {
+  switch (op.getType()) {
+  case qc::I:
+  case qc::Barrier:
+    return true;
+  case qc::SWAP:
+    return !op.isControlled();
+  default:
+    return false;
+  }
+}
+
+void applyVirtualOperation(const qc::Operation& op,
+                           qc::Permutation& permutation) noexcept {
+  switch (op.getType()) {
+  // SWAP gates can be executed virtually by changing the permutation
+  case qc::SWAP: {
+    const auto& targets = op.getTargets();
+    std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
+    break;
+  }
+  default:
+    break;
+  }
+}
+
+VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd) {
+  const Complex oldW = in.w; // create a temporary copy for reference counting
+
+  in.w = dd.cn.lookup(in.w * ComplexValue{std::polar(1.0, phase)});
+
+  // adjust reference counts
+  dd.cn.incRef(in.w);
+  dd.cn.decRef(oldW);
+
+  return in;
+}
+
 } // namespace dd

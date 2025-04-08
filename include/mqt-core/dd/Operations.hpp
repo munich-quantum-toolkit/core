@@ -205,6 +205,33 @@ applyClassicControlledOperation(const qc::ClassicControlledOperation& op,
                                 const qc::Permutation& permutation = {});
 
 /**
+ * @brief Check whether @p op is virtually executable.
+ *
+ * @param op The operation in question.
+ * @return Boolean that indicates whether @p op is virtually executable.
+ */
+bool isExecutableVirtually(const qc::Operation& op) noexcept;
+
+/**
+ * @brief Apply virtual operation @p op by updating @p permutation.
+ *
+ * @param op The virtual operation to apply.
+ * @param permutation The to be updated permutation.
+ */
+void applyVirtualOperation(const qc::Operation& op,
+                           qc::Permutation& permutation) noexcept;
+
+/**
+ * @brief Apply global phase to a given DD.
+ *
+ * @param in The input DD
+ * @param phase The phase to apply
+ * @param dd The DD package to use
+ * @return The output DD
+ */
+VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd);
+
+/**
  * @brief Change the permutation of a given DD.
  *
  * @details This function changes the permutation of the given DD @p on from
