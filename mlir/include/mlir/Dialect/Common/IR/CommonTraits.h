@@ -118,12 +118,15 @@ public:
     auto castOp = mlir::cast<ConcreteOp>(op);
     const auto hasAttr = op->hasAttr("size_attr");
     const auto hasOperand = castOp.getSize() != nullptr;
-    if (!hasAttr && !hasOperand) {
-      return op->emitOpError() << "expected an operand or attribute for size";
-    }
-    if (hasAttr && hasOperand) {
+    if (!(hasAttr ^ hasOperand)) {
       return op->emitOpError()
-             << "expected either an operand or attribute for size";
+             << "exactly one attribute ("
+             << (hasAttr ? std::to_string(
+                               op->getAttrOfType<mlir::IntegerAttr>("size_attr")
+                                   .getInt())
+                         : "undefined")
+             << ") or operand (" << castOp.getSize()
+             << ") must be provided for 'size'";
     }
     return mlir::success();
   }
@@ -137,12 +140,15 @@ public:
     auto castOp = mlir::cast<ConcreteOp>(op);
     const auto hasAttr = op->hasAttr("index_attr");
     const auto hasOperand = castOp.getIndex() != nullptr;
-    if (!hasAttr && !hasOperand) {
-      return op->emitOpError() << "expected an operand or attribute for index";
-    }
-    if (hasAttr && hasOperand) {
+    if (!(hasAttr ^ hasOperand)) {
       return op->emitOpError()
-             << "expected either an operand or attribute for index";
+             << "exactly one attribute ("
+             << (hasAttr ? std::to_string(op->getAttrOfType<mlir::IntegerAttr>(
+                                                "index_attr")
+                                              .getInt())
+                         : "undefined")
+             << ") or operand (" << castOp.getIndex()
+             << ") must be provided for 'index'";
     }
     return mlir::success();
   }
