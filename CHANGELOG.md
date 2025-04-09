@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- ✨ Initial implementation of the mqtdyn Dialect ([#900](https://github.com/munich-quantum-toolkit/core/pull/900)) ([**@DRovara**](https://github.com/DRovara), [**@ystade**](https://github.com/ystade))
+
 ## [3.0.2] - 2025-04-07
 
 ### Added

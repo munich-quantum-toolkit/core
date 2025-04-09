@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"  // IWYU pragma: keep
+#include "mlir/Dialect/MQTDyn/Transforms/Passes.h" // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"  // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h" // IWYU pragma: keep
 
@@ -20,11 +22,13 @@
 int main(const int argc, char** argv) {
   mlir::registerAllPasses();
   mqt::ir::opt::registerMQTOptPasses();
+  mqt::ir::dyn::registerMQTDynPasses();
 
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);
   mlir::func::registerAllExtensions(registry);
   registry.insert<mqt::ir::opt::MQTOptDialect>();
+  registry.insert<mqt::ir::dyn::MQTDynDialect>();
 
   return mlir::asMainReturnCode(
       MlirOptMain(argc, argv, "Quantum optimizer driver\n", registry));
