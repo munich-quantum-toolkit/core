@@ -23,9 +23,10 @@ namespace mqt::ir::dyn {
  * @brief This pattern attempts to fold constants of `mqtdyn.extractQubit`
  * operations.
  */
-struct FoldExtractQubitPattern final : mlir::OpRewritePattern<ExtractOp> {
+struct ConstantFoldExtractQubitPattern final
+    : mlir::OpRewritePattern<ExtractOp> {
 
-  explicit FoldExtractQubitPattern(mlir::MLIRContext* context)
+  explicit ConstantFoldExtractQubitPattern(mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
   mlir::LogicalResult match(ExtractOp op) const override {
@@ -53,12 +54,13 @@ struct FoldExtractQubitPattern final : mlir::OpRewritePattern<ExtractOp> {
 
 /**
  * @brief Populates the given pattern set with the
- * `FoldExtractQubitPattern`.
+ * `ConstantFoldExtractQubitPattern`.
  *
  * @param patterns The pattern set to populate.
  */
-void populateFoldExtractQubitPatterns(mlir::RewritePatternSet& patterns) {
-  patterns.add<FoldExtractQubitPattern>(patterns.getContext());
+void populateConstantFoldExtractQubitPatterns(
+    mlir::RewritePatternSet& patterns) {
+  patterns.add<ConstantFoldExtractQubitPattern>(patterns.getContext());
 }
 
 } // namespace mqt::ir::dyn

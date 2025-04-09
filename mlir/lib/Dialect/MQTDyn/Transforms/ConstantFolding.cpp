@@ -33,7 +33,7 @@ struct ConstantFolding final : impl::ConstantFoldingBase<ConstantFolding> {
 
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
-    populateFoldExtractQubitPatterns(patterns);
+    populateConstantFoldExtractQubitPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
     if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {

@@ -23,7 +23,8 @@ namespace mqt::ir::dyn {
 #define GEN_PASS_DECL
 #include "mlir/Dialect/MQTDyn/Transforms/Passes.h.inc" // IWYU pragma: export
 
-void populateFoldExtractQubitPatterns(mlir::RewritePatternSet& patterns);
+void populateConstantFoldExtractQubitPatterns(
+    mlir::RewritePatternSet& patterns);
 
 //===----------------------------------------------------------------------===//
 // Registration
