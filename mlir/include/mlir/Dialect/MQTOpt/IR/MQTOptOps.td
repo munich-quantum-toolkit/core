@@ -533,7 +533,7 @@ def MeasureOp : GateOp<"measure", [SameVariadicResultSize, MatchingMeasureInOuts
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTOptOp<mnemonic, traits>;
 
-def AllocOp : ResourceOp<"allocQubitRegister", [HasOptionalSizeEitherOr]> {
+def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
     let summary = "Allocates a qubit register";
 
     let description = [{
@@ -582,7 +582,7 @@ def DeallocOp : ResourceOp<"deallocQubitRegister"> {
     );
 }
 
-def ExtractOp : ResourceOp<"extractQubit", [HasOptionalIndexEitherOr]> {
+def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
     let summary = "Extract a specific qubit from a given register";
 
     let description = [{
@@ -610,7 +610,7 @@ def ExtractOp : ResourceOp<"extractQubit", [HasOptionalIndexEitherOr]> {
     );
 }
 
-def InsertOp : ResourceOp<"insertQubit", [HasOptionalIndexEitherOr]> {
+def InsertOp : ResourceOp<"insertQubit", [UniqueIndexDefinition]> {
 
     let description = [{
         This class represents an operation that inserts a qubit back into a qubit

@@ -135,7 +135,7 @@ def MeasureOp : GateOp<"measure", [MatchingMeasureInOuts]> {
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTDynOp<mnemonic, traits>;
 
-def AllocOp : ResourceOp<"allocQubitRegister", [HasOptionalSizeEitherOr]> {
+def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
     let summary = "Allocates a qubit register";
 
     let description = [{
@@ -182,7 +182,7 @@ def DeallocOp : ResourceOp<"deallocQubitRegister"> {
     );
 }
 
-def ExtractOp : ResourceOp<"extractQubit", [HasOptionalIndexEitherOr]> {
+def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
     let summary = "Extract a specific qubit reference from a given register";
 
     let description = [{

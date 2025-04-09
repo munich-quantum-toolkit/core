@@ -41,11 +41,11 @@ def MatchingMeasureInOuts : NativeOpTrait<"MatchingMeasureInOutsTrait"> {
     let cppNamespace = "::mqt::ir::common";
 }
 
-def HasOptionalSizeEitherOr : NativeOpTrait<"HasOptionalSizeEitherOrTrait"> {
+def UniqueSizeDefinition : NativeOpTrait<"UniqueSizeDefinitionTrait"> {
     let cppNamespace = "::mqt::ir::common";
 }
 
-def HasOptionalIndexEitherOr : NativeOpTrait<"HasOptionalIndexEitherOrTrait"> {
+def UniqueIndexDefinition : NativeOpTrait<"UniqueIndexDefinitionTrait"> {
     let cppNamespace = "::mqt::ir::common";
 }
 

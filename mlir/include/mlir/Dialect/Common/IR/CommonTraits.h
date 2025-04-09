@@ -111,9 +111,8 @@ public:
 };
 
 template <typename ConcreteOp>
-class HasOptionalSizeEitherOrTrait
-    : public mlir::OpTrait::TraitBase<ConcreteOp,
-                                      HasOptionalSizeEitherOrTrait> {
+class UniqueSizeDefinitionTrait
+    : public mlir::OpTrait::TraitBase<ConcreteOp, UniqueSizeDefinitionTrait> {
 public:
   [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
     auto castOp = mlir::cast<ConcreteOp>(op);
@@ -131,9 +130,8 @@ public:
 };
 
 template <typename ConcreteOp>
-class HasOptionalIndexEitherOrTrait
-    : public mlir::OpTrait::TraitBase<ConcreteOp,
-                                      HasOptionalIndexEitherOrTrait> {
+class UniqueIndexDefinitionTrait
+    : public mlir::OpTrait::TraitBase<ConcreteOp, UniqueIndexDefinitionTrait> {
 public:
   [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
     auto castOp = mlir::cast<ConcreteOp>(op);
