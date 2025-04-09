@@ -31,6 +31,12 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-zx)
                                  INTERFACE $<BUILD_INTERFACE:${MULTIPRECISION_INCLUDE_DIR}>)
       add_library(MQT::Multiprecision ALIAS multiprecision)
 
+      # add headers using file sets
+      file(GLOB_RECURSE MULTIPRECISION_HEADERS ${MULTIPRECISION_INCLUDE_DIR}/*.hpp)
+
+      target_sources(multiprecision PUBLIC FILE_SET HEADERS BASE_DIRS ${MULTIPRECISION_INCLUDE_DIR}
+                                           FILES ${MULTIPRECISION_HEADERS})
+
       set(MQT_CORE_ZX_SYSTEM_BOOST
           FALSE
           CACHE BOOL "Whether a system version of Boost was used")

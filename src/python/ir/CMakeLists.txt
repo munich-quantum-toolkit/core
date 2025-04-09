@@ -29,4 +29,13 @@ if(NOT TARGET ir)
     TARGETS ir
     DESTINATION .
     COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+
+  # Install the Python stub files in editable mode for better IDE support
+  if(SKBUILD_STATE STREQUAL "editable")
+    file(GLOB_RECURSE IR_PYI_FILES ${CMAKE_CURRENT_SOURCE_DIR}/../../mqt/core/ir/*.pyi)
+    install(
+      FILES ${IR_PYI_FILES}
+      DESTINATION ./ir
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+  endif()
 endif()

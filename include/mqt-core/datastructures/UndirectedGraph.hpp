@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "ir/Definitions.hpp"
+
 #include <cstddef>
 #include <functional>
 #include <numeric>

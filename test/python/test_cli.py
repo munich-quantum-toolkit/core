@@ -104,5 +104,5 @@ def test_cli_execute_module() -> None:
     """Test running the CLI by executing the mqt-core module."""
     from subprocess import check_output
 
-    output = check_output(["python", "-m", "mqt.core", "--version"])  # noqa: S603, S607
+    output = check_output(["python", "-m", "mqt.core", "--version"])  # noqa: S607
     assert mqt_core_version in output.decode()
