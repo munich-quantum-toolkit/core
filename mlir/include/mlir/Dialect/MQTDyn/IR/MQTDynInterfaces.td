@@ -62,6 +62,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
                 std::vector<mlir::Value> controls{};
+                controls.reserve($_op.getPosCtrlQubits().size() + $_op.getNegCtrlQubits().size());
                 const auto& posCtrlQubits = $_op.getPosCtrlQubits();
                 controls.insert(controls.end(), posCtrlQubits.begin(), posCtrlQubits.end());
                 const auto& negCtrlQubits = $_op.getNegCtrlQubits();
@@ -76,6 +77,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
                 std::vector<mlir::Value> operands{};
+                operands.reserve($_op.getInQubits().size() + $_op.getPosCtrlQubits().size() + $_op.getNegCtrlQubits().size());
                 const auto& inQubits = $_op.getInQubits();
                 operands.insert(operands.end(), inQubits.begin(), inQubits.end());
                 const auto& controls = $_op.getCtrlQubits();
