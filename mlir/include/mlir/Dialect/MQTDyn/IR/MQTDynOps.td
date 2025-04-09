@@ -28,7 +28,14 @@ def MQTDynDialect : Dialect {
     let summary = "The MQT dynamic qubit allocation (mqtdyn) dialect.";
 
     let description = [{
-        // todo: add description
+        This dialect uses memory semantics to represent and work with qubits.
+        Similar to many existing quantum programming languages, operations can
+        just be applied to qubits without needing to track state updates.
+
+        This dialect is designed as a 'compatibility' dialect that simplifies
+        translations from and to existing languages such as QASM or QIR.
+        Its optimization capabilities are more limited compared to the
+        `mqtopt` dialect, which is designed for optimization.
     }];
 
     // The C++ namespace that the dialect, and all sub-components, get placed
@@ -94,20 +101,40 @@ def XOp : UnitaryOp<"x", [OneTarget, NoParameter]> {
     let summary = "X operation";
 
     let description = [{
-        // todo: add description
+        This class represents a Pauli-X gate. It takes a qubit and a variadic
+        list of positive/negative controls as an input.
+
+        Example:
+        ```mlir
+        mqtopt.x() %0 : (!mqtopt.Qubit) -> (!mqtopt.Qubit)
+        mqtopt.x() %0 ctrl(%1) : (!mqtopt.Qubit, !mqtopt.Qubit) -> (!mqtopt.Qubit, !mqtopt.Qubit)
+        mqtopt.x() %0 ctrl(%1) nctrl(%2, %3) : (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit) -> (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit)
+        ```
     }];
 }
 
 def RZOp : UnitaryOp<"rz", [OneTarget, OneParameter]> {
     let summary = "RZ operation";
 
-    let description = [{}]; // todo: add description
+    let description = [{
+        This class represents an RZ gate. It takes a qubit and a variadic
+        list of positive/negative controls as input. Additionally, it accepts
+        a parameter indicating the degree of the rotation angle.
+
+        An analogous example can be seen in the description of XOp.
+    }];
 }
 
 def UOp : UnitaryOp<"u", [OneTarget, ThreeParameters]> {
     let summary = "U operation";
 
-    let description = [{}]; // todo: add description
+    let description = [{
+        This class represents a U gate. It takes a qubit and a variadic
+        list of positive/negative controls as an input. Additionally, it accepts
+        three parameters indicating the degree of the rotation angles.
+
+        An analogous example can be seen in the description of XOp.
+    }];
 }
 
 def MeasureOp : GateOp<"measure", [MatchingMeasureInOuts]> {
