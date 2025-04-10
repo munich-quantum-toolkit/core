@@ -25,8 +25,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
-#include <complex>
 #include <cstddef>
 #include <map>
 #include <memory>
@@ -36,39 +34,6 @@
 #include <vector>
 
 namespace dd {
-/**
- * @brief Returns `true` if the operation is virtually swappable.
- */
-bool isVirtuallySwappable(const qc::Operation& op) noexcept {
-  return op.getType() == qc::SWAP && !op.isControlled();
-}
-
-/**
- * @brief Virtually SWAP by permuting the layout.
- */
-void virtualSwap(const qc::Operation& op, qc::Permutation& perm) noexcept {
-  const auto& targets = op.getTargets();
-  std::swap(perm.at(targets[0U]), perm.at(targets[1U]));
-}
-
-/**
- * @brief Returns `true` if the circuit has a global phase.
- */
-bool hasGlobalPhase(const fp& phase) noexcept { return std::abs(phase) > 0; }
-
-/**
- * @brief Apply global phase to `out.w`. Decreases reference count of old `w`
- * value.
- */
-void applyGlobalPhase(const fp& phase, VectorDD& out, Package& dd) {
-  const Complex oldW = out.w; // create a temporary copy for reference counting
-
-  out.w = dd.cn.lookup(out.w * ComplexValue{std::polar(1.0, phase)});
-
-  // adjust reference counts
-  dd.cn.incRef(out.w);
-  dd.cn.decRef(oldW);
-}
 
 std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
                                           const VectorDD& in, Package& dd,
@@ -140,10 +105,8 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
         continue;
       }
 
-      // SWAP gates can be executed virtually by changing the permutation
-      if (op->getType() == qc::OpType::SWAP && !op->isControlled()) {
-        const auto& targets = op->getTargets();
-        std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
+      if (isExecutableVirtually(*op)) {
+        applyVirtualOperation(*op, permutation);
         continue;
       }
 
@@ -202,9 +165,8 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
     for (const auto& op : qc) {
       if (op->isUnitary()) {
         // SWAP gates can be executed virtually by changing the permutation
-        if (op->getType() == qc::OpType::SWAP && !op->isControlled()) {
-          const auto& targets = op->getTargets();
-          std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
+        if (isExecutableVirtually(*op)) {
+          applyVirtualOperation(*op, permutation);
           continue;
         }
 
@@ -251,19 +213,14 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
 
 template <const ApproximationStrategy stgy>
 VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
-                  Package& dd, const Approximation<stgy>& approx) {
-  qc::Permutation permutation = qc.initialLayout;
-  dd::VectorDD out = in;
+                  Package& dd) {
+  auto permutation = qc.initialLayout;
+  auto out = in;
   for (const auto& op : qc) {
-    if (isVirtuallySwappable(*op)) {
-      virtualSwap(*op, permutation);
+    if (isExecutableVirtually(*op)) {
+      applyVirtualOperation(*op, permutation);
     } else {
       out = applyUnitaryOperation(*op, out, dd, permutation);
-
-      // TODO: this applies approximation after each operation.
-      if constexpr (stgy != None) {
-        applyApproximation(out, approx, dd);
-      }
     }
   }
 
@@ -271,20 +228,12 @@ VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
   out = dd.reduceGarbage(out, qc.getGarbage());
 
   // properly account for the global phase of the circuit
-  if (fp phase = qc.getGlobalPhase(); hasGlobalPhase(phase)) {
-    applyGlobalPhase(phase, out, dd);
+  if (qc.hasGlobalPhase()) {
+    out = applyGlobalPhase(out, qc.getGlobalPhase(), dd);
   }
 
   return out;
 }
-template VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
-                           Package& dd, const Approximation<None>& approx);
-template VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
-                           Package& dd,
-                           const Approximation<FidelityDriven>& approx);
-template VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
-                           Package& dd,
-                           const Approximation<MemoryDriven>& approx);
 
 std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
                                           const std::size_t shots,

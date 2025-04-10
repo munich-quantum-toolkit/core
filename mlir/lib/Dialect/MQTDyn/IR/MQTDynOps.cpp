@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h" // IWYU pragma: associated
+#include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -21,18 +21,17 @@
 // Dialect
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/MQTOpt/IR/MQTOptOpsDialect.cpp.inc"
+#include "mlir/Dialect/MQTDyn/IR/MQTDynOpsDialect.cpp.inc"
 
-void mqt::ir::opt::MQTOptDialect::initialize() {
-  // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
+void mqt::ir::dyn::MQTDynDialect::initialize() {
   addTypes<
 #define GET_TYPEDEF_LIST
-#include "mlir/Dialect/MQTOpt/IR/MQTOptOpsTypes.cpp.inc"
+#include "mlir/Dialect/MQTDyn/IR/MQTDynOpsTypes.cpp.inc"
       >();
 
   addOperations<
 #define GET_OP_LIST
-#include "mlir/Dialect/MQTOpt/IR/MQTOptOps.cpp.inc"
+#include "mlir/Dialect/MQTDyn/IR/MQTDynOps.cpp.inc"
       >();
 }
 
@@ -41,17 +40,17 @@ void mqt::ir::opt::MQTOptDialect::initialize() {
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/MQTOpt/IR/MQTOptOpsTypes.cpp.inc"
+#include "mlir/Dialect/MQTDyn/IR/MQTDynOpsTypes.cpp.inc"
 
 //===----------------------------------------------------------------------===//
-// Interfaces
+// Types
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/MQTOpt/IR/MQTOptInterfaces.cpp.inc"
+#include "mlir/Dialect/MQTDyn/IR/MQTDynInterfaces.cpp.inc"
 
 //===----------------------------------------------------------------------===//
 // Operations
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/MQTOpt/IR/MQTOptOps.cpp.inc"
+#include "mlir/Dialect/MQTDyn/IR/MQTDynOps.cpp.inc"

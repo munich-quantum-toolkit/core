@@ -6,8 +6,8 @@
 //
 // Licensed under the MIT License
 
-#ifndef MQTOPT_INTERFACES
-#define MQTOPT_INTERFACES
+#ifndef MQTDYN_INTERFACES
+#define MQTDYN_INTERFACES
 
 include "mlir/IR/OpBase.td"
 
@@ -18,17 +18,17 @@ include "mlir/IR/OpBase.td"
 def UnitaryInterface : OpInterface<"UnitaryInterface"> {
     let description = [{
         This interface provides a generic way to interact with unitary
-        operations in the MQTOpt dialect. Unitary operations are quantum
+        operations in the MQTDyn dialect. Unitary operations are quantum
         operations that are reversible and can be represented by a unitary
         matrix. The interface provides methods to access the operands and
         results of the operation.
     }];
 
-    let cppNamespace = "::mqt::ir::opt";
+    let cppNamespace = "::mqt::ir::dyn";
 
     let methods = [
         InterfaceMethod<
-            /*desc=*/        "Returns all input qubits of the operation excl. control qubits.",
+            /*desc=*/        "Returns all input qubits of the operation excl. controlling qubits.",
             /*returnType=*/  "mlir::OperandRange",
             /*methodName=*/  "getInQubits",
             /*args=*/        (ins),
@@ -37,7 +37,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return $_op.getInQubits();
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all positively control qubits of the operation.",
+            /*desc=*/        "Returns all positively controlling qubits of the operation.",
             /*returnType=*/  "mlir::OperandRange",
             /*methodName=*/  "getPosCtrlQubits",
             /*args=*/        (ins),
@@ -46,7 +46,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return $_op.getPosCtrlQubits();
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all negatively control qubits of the operation.",
+            /*desc=*/        "Returns all negatively controlling qubits of the operation.",
             /*returnType=*/  "mlir::OperandRange",
             /*methodName=*/  "getNegCtrlQubits",
             /*args=*/        (ins),
@@ -55,16 +55,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return $_op.getNegCtrlQubits();
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all output qubits of the operation incl. all control qubits.",
-            /*returnType=*/  "mlir::ResultRange",
-            /*methodName=*/  "getOutQubits",
-            /*args=*/        (ins),
-            /*methodBody=*/  [{}],
-            /*defaultImpl=*/ [{
-                return $_op.getOutQubits();
-            }]>,
-        InterfaceMethod<
-            /*desc=*/        "Returns all control qubits of the operation incl. positive and negative controls.",
+            /*desc=*/        "Returns all controlling qubits of the operation incl. positive and negative controls.",
             /*returnType=*/  "std::vector<mlir::Value>",
             /*methodName=*/  "getCtrlQubits",
             /*args=*/        (ins),
@@ -79,7 +70,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return controls;
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all input qubits of the operation incl. all control qubits.",
+            /*desc=*/        "Returns all input qubits of the operation incl. all controlling qubits.",
             /*returnType=*/  "std::vector<mlir::Value>",
             /*methodName=*/  "getAllInQubits",
             /*args=*/        (ins),
@@ -94,17 +85,6 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return operands;
             }]>
     ];
-
-    let verify = [{
-        auto unitaryOp = mlir::cast<ConcreteOp>($_op);
-        if (const auto in_qubits = unitaryOp.getInQubits().size() + unitaryOp.getPosCtrlQubits().size() + unitaryOp.getNegCtrlQubits().size();
-            in_qubits != unitaryOp.getOutQubits().size()) {
-            return $_op->emitError() <<
-                "number of input qubits (" << in_qubits << ") " <<
-                "and output qubits (" << unitaryOp.getOutQubits().size() << ") must be the same";
-        }
-        return mlir::success();
-    }];
 }
 
-#endif // MQTOPT_INTERFACES
+#endif // MQTDYN_INTERFACES
