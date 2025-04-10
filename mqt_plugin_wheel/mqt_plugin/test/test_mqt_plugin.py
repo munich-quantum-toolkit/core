@@ -77,25 +77,26 @@ def flush_peephole_opted_mlir_to_iostream(QJIT):
 #
 # pipeline
 #
-from catalyst import measure
+
+import pennylane as qml
+from catalyst import measure, pipeline
 
 
 def test_pipeline_lowering():
     """
     Basic pipeline lowering on one qnode.
     """
-    my_pipeline = {"mqt.quantum-to-mqtopt": {}, "mqt.mqt-core-round-trip": {}, "mqt.mqtopt-to-quantum": {}}
-    num_qubits = 3
 
-    @qml.qjit(keep_intermediate=True, pass_plugins={plugin}, dialect_plugins={plugin}, target="mlir", verbose=True)
-    @pipeline(my_pipeline)
+    # @qml.qjit(pass_plugins={plugin}, dialect_plugins={plugin}, target="mlir")
+    # @pipeline({"mqt.qmap": {"cMap":"[(0,1),(1,0),(1,2),(2,1)]"}})
+    @qml.qjit(pass_plugins={plugin}, dialect_plugins={plugin}, target="mlir", keep_intermediate=True, verbose=True)
+    @pipeline({"mqt.quantum-to-mqtopt": {}, "mqt.mqt-core-round-trip": {}, "mqt.mqtopt-to-quantum": {}})
     @qml.qnode(qml.device("lightning.qubit", wires=3))
     def test_ghz_circuit():
         qml.Hadamard(wires=[0])
-        for i in range(1, num_qubits):
-            qml.CNOT(wires=[0, i])
-        measurements = [measure(wires=i) for i in range(num_qubits)]
-        return measurements
+        qml.CNOT(wires=[0, 1])
+        qml.CNOT(wires=[0, 2])
+        return [measure(i) for i in range(3)]
 
     print(test_ghz_circuit.mlir)
 

@@ -1,3 +1,10 @@
+# Copyright (c) 2025 Chair for Design Automation, TUM
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
 import timeit
 import numpy as np
 import pandas as pd
@@ -6,7 +13,9 @@ import pennylane as qml
 from pennylane.tape import QuantumTape
 from mqt.core import QuantumComputation
 from catalyst import measure, pipeline
-
+import catalyst
+from mqt_plugin import getMQTPluginAbsolutePath
+import jax
 
 # ================================================
 # CONFIGURATION
@@ -14,59 +23,117 @@ from catalyst import measure, pipeline
 
 NUM_REPS = 10
 MAX_QUBITS = 50
-QUBIT_RANGE = range(3, MAX_QUBITS + 1, 10)
+QUBIT_RANGE = range(3, MAX_QUBITS, 250)
 CSV_FILENAME = f"{MAX_QUBITS}_ghz_conversion_timings_avg.csv"
 
-CATALYST_PIPELINE = {
+MQT_PIPELINE = {
     "mqt.quantum-to-mqtopt": {},
-    "mqt.mqt-core-round-trip": {},
+    # "mqt.mqt-core-round-trip": {},
     "mqt.mqtopt-to-quantum": {},
 }
+
+MQT_PLUGIN = getMQTPluginAbsolutePath()
 
 # ================================================
 # CIRCUIT DEFINITIONS
 # ================================================
 
-def ghz_circuit(num_qubits):
-    qml.Hadamard(wires=0)
-    for i in range(num_qubits - 1):
-        qml.CNOT(wires=[0, i + 1])
 
-def ghz_tape_execution(num_qubits):
-    with QuantumTape() as tape:
-        ghz_circuit(num_qubits)
+def pennylane_roundtrip(num_qubits: int):
+    # NOTE: this IS the usual way to use PennyLane
+
+    @qml.qnode(qml.device("lightning.qubit", wires=num_qubits))
+    def ghz_circuit(num_qubits):
+        qml.Hadamard(wires=0)
+        for i in range(num_qubits - 1):
+            qml.CNOT(wires=[0, i + 1])
+        return [qml.expval(qml.PauliZ(wires=i)) for i in range(num_qubits)]
+
+    ghz_circuit(num_qubits)
+    tape = ghz_circuit._tape
     qasm = tape.to_openqasm()
     qc = QuantumComputation.from_qasm_str(qasm)
     qasm_str = QuantumComputation.qasm2_str(qc)
-    qml.from_qasm(qasm_str)
+    circ = qml.from_qasm(qasm_str)
+    return circ
 
 
-custom_pipeline = [("run_only_plugin", ["builtin.module(apply-transform-sequence)"])]
-def compile_with_catalyst(num_qubits: int):
+def qasm_roundtrip(num_qubits: int):
+    # NOTE: this is NOT the usual way to use PennyLane
 
-    @qml.qjit(target="mlir", pipelines=custom_pipeline)
+    def ghz_circuit(num_qubits):
+        qml.Hadamard(wires=0)
+        for i in range(num_qubits - 1):
+            qml.CNOT(wires=[0, i + 1])
+
+    # NOTE: automatically adds measurements
+    with QuantumTape() as tape:
+        ghz_circuit(num_qubits)
+    qasm = tape.to_openqasm()
+
+    qc = QuantumComputation.from_qasm_str(qasm)
+    qasm_str = QuantumComputation.qasm2_str(qc)
+
+    circ_fn = qml.from_qasm(qasm_str)
+    with QuantumTape() as tape:
+        circ_fn()
+
+    return tape
+
+
+def plugin_roundtrip(num_qubits: int):
+    # custom_pipeline = [("run_only_plugin", ["detensorize-scf",f"test-loop-unrolling{{unroll-factor={num_qubits-1}}}","builtin.module(apply-transform-sequence)"])]
+    custom_pipeline = [
+        (
+            "before_plugin",
+            ["detensorize-scf", f"test-loop-unrolling{{unroll-factor={num_qubits - 1}}}", "canonicalize"],
+        ),
+        ("plugin", ["builtin.module(apply-transform-sequence)"]),
+    ]
+
+    @qml.qjit(
+        target="mlir",
+        pipelines=custom_pipeline,
+        pass_plugins={MQT_PLUGIN},
+        dialect_plugins={MQT_PLUGIN},
+        autograph=True,
+        keep_intermediate=True,
+    )
     def foo():
-        dev = qml.device("lightning.qubit", wires=num_qubits)
-
-        @pipeline(CATALYST_PIPELINE)
-        @qml.qnode(dev)
-        def workflow():
+        @pipeline(MQT_PIPELINE)
+        @qml.qnode(qml.device("lightning.qubit", wires=num_qubits))
+        def circuit():
             qml.Hadamard(wires=[0])
-            for i in range(num_qubits-1):
+            for i in range(num_qubits - 1):
                 qml.CNOT(wires=[i, i + 1])
-            return [measure(wires=i) for i in range(num_qubits)]
 
-        return workflow()
-    
-    _ = foo.mlir
-    return
+            meas = jax.numpy.empty((num_qubits,), dtype=int)
+            for i in range(0, num_qubits):
+                meas = meas.at[i].set(catalyst.measure(i))
+            return meas
+
+            # return [measure(wires=i) for i in range(num_qubits)]
+
+        return circuit()
+
+    return foo.mlir_opt
+
 
 # ================================================
 # BENCHMARKS
 # ================================================
 
+
 def benchmark_with_timeit(fn, num_qubits):
     return timeit.timeit(lambda: fn(num_qubits), number=NUM_REPS) / NUM_REPS
+
+
+def debug_benchmark_with_timeit(fn, num_qubits):
+    # NOTE: this adds some overhead (e.g. when extracting programsize)
+    with catalyst.debug.instrumentation(f"session{num_qubits}", f"session{num_qubits}.yaml", detailed=True):
+        time = timeit.timeit(lambda: fn(num_qubits), number=NUM_REPS) / NUM_REPS
+    return time
+
 
 def run_benchmarks():
     qasm_timings = []
@@ -75,17 +142,19 @@ def run_benchmarks():
     for n in QUBIT_RANGE:
         print(f"Benchmarking {n} qubits...")
 
-        qasm_time = benchmark_with_timeit(ghz_tape_execution, n)
-        catalyst_time = benchmark_with_timeit(compile_with_catalyst, n)
+        qasm_time = benchmark_with_timeit(qasm_roundtrip, n)
+        catalyst_time = benchmark_with_timeit(plugin_roundtrip, n)
 
         qasm_timings.append((n, qasm_time))
         catalyst_timings.append((n, catalyst_time))
 
     return qasm_timings, catalyst_timings
 
+
 # ================================================
 # PLOTTING
 # ================================================
+
 
 def plot_results(qasm_data, catalyst_data):
     qasm_x, qasm_y = zip(*qasm_data)
@@ -103,6 +172,7 @@ def plot_results(qasm_data, catalyst_data):
     plt.tight_layout()
     plt.savefig("ghz_benchmark_plot.png")
     plt.show()
+
 
 # ================================================
 # MAIN

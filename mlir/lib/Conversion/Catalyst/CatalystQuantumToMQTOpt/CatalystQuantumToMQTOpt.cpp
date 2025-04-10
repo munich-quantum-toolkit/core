@@ -302,34 +302,6 @@ struct ConvertQuantumInsert
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
         user->replaceUsesOfWith(sourceQreg, targetQreg);
-        if (auto forOp = llvm::dyn_cast<scf::ForOp>(user)) {
-          // Check if the result type of the loop needs conversion
-          auto origType = forOp.getResult(0).getType();
-          auto targetType = typeConverter->convertType(origType);
-
-          if (targetType != origType) {
-            // Create new ForOp with updated result type
-            auto newForOp = rewriter.create<scf::ForOp>(
-                forOp.getLoc(), forOp.getLowerBound(), forOp.getUpperBound(),
-                forOp.getStep(), forOp.getInitArgs());
-
-            // Move and patch region
-            rewriter.inlineRegionBefore(forOp.getRegion(), newForOp.getRegion(),
-                                        newForOp.getRegion().end());
-
-            // Patch block argument types if needed
-            auto& block = newForOp.getRegion().front();
-            auto oldArg = block.getArgument(1);
-            if (oldArg.getType() != targetType) {
-              oldArg.setType(targetType);
-            }
-
-            // Replace all uses of old forOp result
-            rewriter.replaceOp(forOp, newForOp);
-            // Erase the old
-            rewriter.eraseOp(forOp);
-          }
-        }
       }
     }
     // Erase the old operation
