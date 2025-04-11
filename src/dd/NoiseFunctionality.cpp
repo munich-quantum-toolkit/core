@@ -80,7 +80,7 @@ StochasticNoiseFunctionality::StochasticNoiseFunctionality(
       ampDampingFalseMulti(
           {1, 0, 0, oneMinusSqrtAmplitudeDampingProbabilityMulti}),
       noiseEffects(initializeNoiseEffects(cNoiseEffects)),
-      identityDD(Package::makeIdent()) {
+      identityDD(MatrixDDContainer::makeIdent()) {
   sanityCheckOfNoiseProbabilities(gateNoiseProbability, amplitudeDampingProb,
                                   multiQubitGateFactor);
   package->incRef(identityDD);
@@ -146,7 +146,7 @@ mEdge StochasticNoiseFunctionality::stackOperation(
       op != nullptr) {
     return package->multiply(*op, operation);
   }
-  const auto gateDD = package->makeGateDD(matrix, target);
+  const auto gateDD = package->matrices().makeGateDD(matrix, target);
   package->stochasticNoiseOperationCache.insert(noiseOperation, target, gateDD);
   return package->multiply(gateDD, operation);
 }
@@ -365,7 +365,7 @@ void DeterministicNoiseFunctionality::applyAmplitudeDampingToEdges(
           {e[0].p != nullptr ? e[0].p->v : 0, e[1].p != nullptr ? e[1].p->v : 0,
            e[2].p != nullptr ? e[2].p->v : 0,
            e[3].p != nullptr ? e[3].p->v : 0}));
-      e[0] = package->add2(e[0], {e[3].p, e[3].w * probability}, var);
+      e[0] = package->add(e[0], {e[3].p, e[3].w * probability}, var);
     } else {
       e[0] = {e[3].p, e[3].w * probability};
     }
@@ -416,7 +416,7 @@ void DeterministicNoiseFunctionality::applyDepolarisationToEdges(
     }
 
     // e[0] = helperEdge[0] + helperEdge[1]
-    e[0] = package->add2(helperEdge[0], helperEdge[1], var);
+    e[0] = package->add(helperEdge[0], helperEdge[1], var);
   }
 
   // e[1]=(1-p)*e[1]
@@ -445,7 +445,7 @@ void DeterministicNoiseFunctionality::applyDepolarisationToEdges(
     } else {
       helperEdge[1].w = 0;
     }
-    e[3] = package->add2(helperEdge[0], helperEdge[1], var);
+    e[3] = package->add(helperEdge[0], helperEdge[1], var);
   }
 }
 

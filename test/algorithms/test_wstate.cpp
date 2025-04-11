@@ -66,8 +66,8 @@ TEST_P(WState, RoutineFunctionTest) {
   const auto qc = qc::createWState(nq);
   const auto dd = std::make_unique<dd::Package>(qc.getNqubits());
   const dd::VectorDD e =
-      dd::simulate(qc, dd->makeZeroState(qc.getNqubits()), *dd);
-  const auto f = dd->makeWState(nq);
+      dd::simulate(qc, dd->vectors().makeZeroState(qc.getNqubits()), *dd);
+  const auto f = dd->vectors().makeWState(nq);
 
   EXPECT_EQ(e, f);
 }
@@ -77,10 +77,13 @@ TEST(WState, WStateEdgeCasesTest) {
   const auto tolerance = dd::RealNumber::eps;
   dd::ComplexNumbers::setTolerance(0.1);
 
-  ASSERT_THROW(dd->makeWState(101), std::runtime_error);
-  EXPECT_EQ(dd->makeWState(0), dd->makeBasisState(0, {dd::BasisStates::zero}));
-  EXPECT_EQ(dd->makeWState(0), dd->makeBasisState(0, {dd::BasisStates::one}));
-  EXPECT_EQ(dd->makeWState(1), dd->makeBasisState(1, {dd::BasisStates::one}));
-  ASSERT_THROW(dd->makeWState(127), std::runtime_error);
+  ASSERT_THROW(dd->vectors().makeWState(101), std::runtime_error);
+  EXPECT_EQ(dd->vectors().makeWState(0),
+            dd->vectors().makeBasisState(0, {dd::BasisStates::zero}));
+  EXPECT_EQ(dd->vectors().makeWState(0),
+            dd->vectors().makeBasisState(0, {dd::BasisStates::one}));
+  EXPECT_EQ(dd->vectors().makeWState(1),
+            dd->vectors().makeBasisState(1, {dd::BasisStates::one}));
+  ASSERT_THROW(dd->vectors().makeWState(127), std::runtime_error);
   dd::ComplexNumbers::setTolerance(tolerance);
 }
