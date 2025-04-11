@@ -155,6 +155,33 @@ public:
 
   [[nodiscard]] virtual bool isControlled() const { return !controls.empty(); }
 
+  [[nodiscard]] virtual bool isClifford() const {
+    const OpType opType = this->getType();
+    const bool controlled = this->isControlled();
+    const std::size_t numberOfControls = this->getNcontrols();
+    if ((controlled) && ((numberOfControls >= 2))) {
+      return false;
+    }
+    switch (opType) {
+    case I:
+    case X:
+    case Y:
+    case Z:
+    case H:
+    case S:
+    case Sdg:
+    case SX:
+    case SXdg:
+    case DCX:
+    case SWAP:
+    case iSWAP:
+    case ECR:
+      return true;
+    default:
+      return false;
+    }
+  }
+
   /**
    * @brief Checks whether a gate is global.
    * @details A StandardOperation is global if it acts on all qubits.
