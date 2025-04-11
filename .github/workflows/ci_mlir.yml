@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        llvm-version: [19, 20]
+        llvm-version: [20]
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       CTEST_PARALLEL_LEVEL: 4

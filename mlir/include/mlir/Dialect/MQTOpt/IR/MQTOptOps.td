@@ -1,4 +1,5 @@
-// Copyright (c) 2025 Chair for Design Automation, TUM
+// Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+// Copyright (c) 2025 Munich Quantum Software Company GmbH
 // All rights reserved.
 //
 // SPDX-License-Identifier: MIT
@@ -10,6 +11,7 @@ include "mlir/IR/EnumAttr.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
+include "mlir/Dialect/Common/IR/CommonTraits.td"
 include "mlir/Dialect/MQTOpt/IR/MQTOptInterfaces.td"
 
 //===----------------------------------------------------------------------===//
@@ -74,30 +76,6 @@ def QuregType : MQTOptType<"QubitRegister", "QubitRegister"> {
 }
 
 //===----------------------------------------------------------------------===//
-// Traits
-//===----------------------------------------------------------------------===//
-
-class TargetArity<int N>
-    : ParamNativeOpTrait<"TargetArity", !cast<string>(N)> {
-    let cppNamespace = "::mqt::ir::opt";
-}
-
-def NoTarget : TargetArity<0>;
-def OneTarget : TargetArity<1>;
-def TwoTarget : TargetArity<2>;
-
-class ParameterArity<int N>
-    : ParamNativeOpTrait<"ParameterArity", !cast<string>(N)> {
-    let cppNamespace = "::mqt::ir::opt";
-}
-
-def NoParameter : ParameterArity<0>;
-def OneParameter : ParameterArity<1>;
-def TwoParameters : ParameterArity<2>;
-def ThreeParameters : ParameterArity<3>;
-
-
-//===----------------------------------------------------------------------===//
 // Operations
 //===----------------------------------------------------------------------===//
 
@@ -132,7 +110,7 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
     }];
 }
 
-def GPhaseOp : UnitaryOp<"GPhase", [NoTarget, OneParameter]> {
+def GPhaseOp : UnitaryOp<"gphase", [NoTarget, OneParameter]> {
     let summary = "GPhase operation";
 
     let description = [{
@@ -143,13 +121,9 @@ def GPhaseOp : UnitaryOp<"GPhase", [NoTarget, OneParameter]> {
 
         An analogous example can be seen in the description of XOp.
     }];
-
-    // This operation has a verifier that checks if the gate has no input or output
-    // qubits. It is implemented in the corresponding .cpp file.
-    let hasVerifier = 1;
 }
 
-def IOp : UnitaryOp<"I", [OneTarget, NoParameter]> {
+def IOp : UnitaryOp<"i", [OneTarget, NoParameter]> {
     let summary = "I operation";
 
     let description = [{
@@ -160,7 +134,7 @@ def IOp : UnitaryOp<"I", [OneTarget, NoParameter]> {
     }];
 }
 
-def BarrierOp : UnitaryOp<"barrier", [NoParameter]> {
+def BarrierOp : UnitaryOp<"barrier", [NoParameter, NoControl]> {
     let summary = "Barrier operation";
 
     let description = [{
@@ -169,13 +143,9 @@ def BarrierOp : UnitaryOp<"barrier", [NoParameter]> {
 
         An analogous example can be seen in the description of XOp.
     }];
-
-    // This operation has a verifier that checks if the gate does not have any
-    // control qubits. It is implemented in the corresponding .cpp file.
-    let hasVerifier = 1;
 }
 
-def HOp : UnitaryOp<"H", [OneTarget, NoParameter]> {
+def HOp : UnitaryOp<"h", [OneTarget, NoParameter]> {
     let summary = "H operation";
 
     let description = [{
@@ -533,7 +503,7 @@ def XXplusYY : UnitaryOp<"xxplusyy", [TwoTarget, TwoParameters]> {
     }];
 }
 
-def MeasureOp : GateOp<"measure", [SameVariadicResultSize]> {
+def MeasureOp : GateOp<"measure", [SameVariadicResultSize, MatchingMeasureInOuts]> {
     let summary = "A measure operation";
 
     let description = [{
@@ -556,16 +526,11 @@ def MeasureOp : GateOp<"measure", [SameVariadicResultSize]> {
         Variadic<QubitType>:$out_qubits,
         Variadic<I1>:$out_bits
     );
-
-    // This operation has a verifier that checks if the number of input qubits
-    // is equal to the number of output qubits. It is implemented in the
-    // corresponding .cpp file.
-    let hasVerifier = 1;
 }
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTOptOp<mnemonic, traits>;
 
-def AllocOp : ResourceOp<"allocQubitRegister"> {
+def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
     let summary = "Allocates a qubit register";
 
     let description = [{
@@ -592,11 +557,6 @@ def AllocOp : ResourceOp<"allocQubitRegister"> {
     let results = (outs
         QuregType:$qureg
     );
-
-    // This operation has a verifier that checks if the size is given either as
-    // operand or attribute and not both. It is implemented in the corresponding
-    // .cpp file.
-    let hasVerifier = 1;
 }
 
 def DeallocOp : ResourceOp<"deallocQubitRegister"> {
@@ -619,7 +579,7 @@ def DeallocOp : ResourceOp<"deallocQubitRegister"> {
     );
 }
 
-def ExtractOp : ResourceOp<"extractQubit"> {
+def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
     let summary = "Extract a specific qubit from a given register";
 
     let description = [{
@@ -645,14 +605,9 @@ def ExtractOp : ResourceOp<"extractQubit"> {
         QuregType:$out_qureg,
         QubitType:$out_qubit
     );
-
-    // This operation has a verifier that checks if the index is given either as
-    // operand or attribute and not both. It is implemented in the corresponding
-    // .cpp file.
-    let hasVerifier = 1;
 }
 
-def InsertOp : ResourceOp<"insertQubit"> {
+def InsertOp : ResourceOp<"insertQubit", [UniqueIndexDefinition]> {
 
     let description = [{
         This class represents an operation that inserts a qubit back into a qubit
@@ -672,9 +627,4 @@ def InsertOp : ResourceOp<"insertQubit"> {
     let results = (outs
         QuregType:$out_qureg
     );
-
-    // This operation has a verifier that checks if the index is given either as
-    // operand or attribute and not both. It is implemented in the corresponding
-    // .cpp file.
-    let hasVerifier = 1;
 }

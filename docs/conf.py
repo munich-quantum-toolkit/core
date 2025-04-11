@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -170,8 +171,11 @@ breathe_default_project = "mqt.core"
 
 read_the_docs_build = os.environ.get("READTHEDOCS", None) == "True"
 if read_the_docs_build:
-    subprocess.call("doxygen", shell=True)  # noqa: S602, S607
-    subprocess.call("mkdir api/cpp & breathe-apidoc -o api/cpp -m -f -T _build/doxygen/xml/", shell=True)  # noqa: S602, S607
+    subprocess.call("mkdir -p _build/doxygen && doxygen", shell=True)  # noqa: S602, S607
+    subprocess.call(  # noqa: S602
+        "mkdir -p api/cpp && breathe-apidoc -o api/cpp -m -f -g namespace _build/doxygen/xml/",  # noqa: S607
+        shell=True,
+    )
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = "furo"
@@ -179,7 +183,7 @@ html_static_path = ["_static"]
 html_theme_options = {
     "light_logo": "mqt_dark.png",
     "dark_logo": "mqt_light.png",
-    "source_repository": "https://github.com/cda-tum/mqt-core/",
+    "source_repository": "https://github.com/munich-quantum-toolkit/core/",
     "source_branch": "main",
     "source_directory": "docs/",
     "navigation_with_keys": True,
@@ -198,14 +202,16 @@ latex_documents = [
         master_doc,
         "mqt_core.tex",
         r"MQT Core\\{\Large The Backbone of the Munich Quantum Toolkit}",
-        r"Chair for Design Automation\\Technical University of Munich",
+        r"""Chair for Design Automation\\ Technical University of Munich, Germany\\
+        \href{mailto:quantum.cda@xcit.tum.de}{quantum.cda@xcit.tum.de}\\
+        Munich Quantum Software Company GmbH\\Garching near Munich, Germany""",
         "howto",
         False,
     ),
 ]
 latex_logo = "_static/mqt_dark.png"
 latex_elements = {
-    "papersize": "a4paper",
+    "papersize": "letterpaper",
     "releasename": "Version",
     "printindex": r"\footnotesize\raggedright\printindex",
     "tableofcontents": "",
@@ -217,6 +223,17 @@ latex_elements = {
 \DeclarePairedDelimiter\mket{\lvert}{\rangle}
 \DeclarePairedDelimiter\mbra{\langle}{\rvert}
 \DeclareUnicodeCharacter{03C0}{$\pi$}
+\DeclareUnicodeCharacter{2728}{\faicon{star}}
+\DeclareUnicodeCharacter{1F6B8}{\faicon{user-plus}}
+\DeclareUnicodeCharacter{1F4DD}{\faicon{book}}
+\DeclareUnicodeCharacter{1F69A}{\faicon{truck}}
+\DeclareUnicodeCharacter{267B}{\faicon{recycle}}
+\DeclareUnicodeCharacter{2B06}{\faicon{arrow-up}}
+\DeclareUnicodeCharacter{1F4C4}{\faicon{file-alt}}
+\DeclareUnicodeCharacter{1F525}{\faicon{fire}}
+\DeclareUnicodeCharacter{1F41B}{\faicon{bug}}
+\DeclareUnicodeCharacter{1F4DA}{\faicon{book-open}}
+\DeclareUnicodeCharacter{FE0F}{}
 
 \newcommand*{\ket}[1]{\ensuremath{\mket{\mkern1mu#1}}}
 \newcommand*{\bra}[1]{\ensuremath{\mbra{\mkern1mu#1}}}

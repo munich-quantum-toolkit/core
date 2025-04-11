@@ -1,4 +1,5 @@
-// Copyright (c) 2025 Chair for Design Automation, TUM
+// Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+// Copyright (c) 2025 Munich Quantum Software Company GmbH
 // All rights reserved.
 //
 // SPDX-License-Identifier: MIT
@@ -66,10 +67,11 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
-                std::vector<mlir::Value> controls{};
                 const auto& posCtrlQubits = $_op.getPosCtrlQubits();
-                controls.insert(controls.end(), posCtrlQubits.begin(), posCtrlQubits.end());
                 const auto& negCtrlQubits = $_op.getNegCtrlQubits();
+                std::vector<mlir::Value> controls{};
+                controls.reserve(posCtrlQubits.size() + negCtrlQubits.size());
+                controls.insert(controls.end(), posCtrlQubits.begin(), posCtrlQubits.end());
                 controls.insert(controls.end(), negCtrlQubits.begin(), negCtrlQubits.end());
                 return controls;
             }]>,
@@ -80,10 +82,11 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
-                std::vector<mlir::Value> operands{};
                 const auto& inQubits = $_op.getInQubits();
-                operands.insert(operands.end(), inQubits.begin(), inQubits.end());
                 const auto& controls = $_op.getCtrlQubits();
+                std::vector<mlir::Value> operands{};
+                operands.reserve(inQubits.size() + controls.size());
+                operands.insert(operands.end(), inQubits.begin(), inQubits.end());
                 operands.insert(operands.end(), controls.begin(), controls.end());
                 return operands;
             }]>

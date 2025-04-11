@@ -174,3 +174,7 @@ out/build
 
 node_modules/
 wheelhouse/
+
+# mlir
+
+**/.lit

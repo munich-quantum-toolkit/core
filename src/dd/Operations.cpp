@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,6 +10,7 @@
 
 #include "dd/Operations.hpp"
 
+#include "dd/Complex.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
@@ -25,6 +27,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <random>
 #include <sstream>
@@ -288,6 +291,39 @@ VectorDD applyClassicControlledOperation(
   }
 
   return applyUnitaryOperation(op, in, dd, permutation);
+}
+
+bool isExecutableVirtually(const qc::Operation& op) noexcept {
+  switch (op.getType()) {
+  case qc::I:
+  case qc::Barrier:
+    return true;
+  case qc::SWAP:
+    return !op.isControlled();
+  default:
+    return false;
+  }
+}
+
+void applyVirtualOperation(const qc::Operation& op,
+                           qc::Permutation& permutation) noexcept {
+  // SWAP gates can be executed virtually by changing the permutation
+  if (op.getType() == qc::SWAP) {
+    const auto& targets = op.getTargets();
+    std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
+  }
+}
+
+VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd) {
+  const Complex oldW = in.w; // create a temporary copy for reference counting
+
+  in.w = dd.cn.lookup(in.w * ComplexValue{std::polar(1.0, phase)});
+
+  // adjust reference counts
+  dd.cn.incRef(in.w);
+  dd.cn.decRef(oldW);
+
+  return in;
 }
 
 } // namespace dd

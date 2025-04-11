@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -24,7 +25,7 @@ if(BUILD_MQT_CORE_BINDINGS)
   message(STATUS "Python executable: ${Python_EXECUTABLE}")
 
   # add pybind11 library
-  find_package(pybind11 2.13.5 CONFIG REQUIRED)
+  find_package(pybind11 2.13.6 CONFIG REQUIRED)
 endif()
 
 set(JSON_VERSION

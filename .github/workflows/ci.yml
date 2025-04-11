@@ -14,13 +14,13 @@ concurrency:
 jobs:
   change-detection:
     name: 🔍 Change
-    uses: cda-tum/mqt-workflows/.github/workflows/reusable-change-detection.yml@v1.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@v1.8
 
   cpp-tests:
     name: 🇨‌ Test
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
-    uses: cda-tum/mqt-workflows/.github/workflows/reusable-cpp-ci.yml@v1.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@v1.8
     with:
       # Runs to enable
       enable-ubuntu2404-gcc-release: true
@@ -68,7 +68,7 @@ jobs:
     name: 🇨‌ Test (Extensive)
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
-    uses: cda-tum/mqt-workflows/.github/workflows/reusable-cpp-ci.yml@v1.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@v1.8
     with:
       # Runs to enable
       enable-ubuntu2404-gcc-debug: true
@@ -115,13 +115,16 @@ jobs:
     name: 🇨‌ Coverage
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
-    uses: cda-tum/mqt-workflows/.github/workflows/reusable-cpp-coverage.yml@v1.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@v1.8
+    permissions:
+      contents: read
+      id-token: write
 
   cpp-linter:
     name: 🇨‌ Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-linter)
-    uses: cda-tum/mqt-workflows/.github/workflows/reusable-cpp-linter.yml@v1.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@v1.8
     with:
       cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_MLIR=ON
       clang-version: 20
@@ -131,7 +134,7 @@ jobs:
     name: 🐍 Test
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
-    uses: cda-tum/mqt-workflows/.github/workflows/reusable-python-ci.yml@v1.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@v1.8
     with:
       # Runs to enable
       enable-ubuntu2404: true
@@ -144,13 +147,16 @@ jobs:
       enable-ubuntu2204-arm: false
       enable-macos15: false
       enable-windows2025: false
+    permissions:
+      contents: read
+      id-token: write
 
   # run extensive Python tests whenever this is on a PR and the PR has the `extensive-python-ci` label
   python-tests-extensive:
     name: 🐍 Test (Extensive)
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
-    uses: cda-tum/mqt-workflows/.github/workflows/reusable-python-ci.yml@v1.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@v1.8
     with:
       # Runs to enable
       enable-ubuntu2204: true
@@ -163,24 +169,27 @@ jobs:
       enable-macos13: false
       enable-macos14: false
       enable-windows2022: false
+    permissions:
+      contents: read
+      id-token: write
 
   python-linter:
     name: 🐍 Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
-    uses: cda-tum/mqt-workflows/.github/workflows/reusable-python-linter.yml@v1.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@v1.8
 
   code-ql:
     name: 📝 CodeQL
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-code-ql)
-    uses: cda-tum/mqt-workflows/.github/workflows/reusable-code-ql.yml@v1.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-code-ql.yml@v1.8
 
   cd:
     name: 🚀 CD
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cd)
-    uses: cda-tum/mqt-workflows/.github/workflows/reusable-python-packaging.yml@v1.7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging.yml@v1.8
 
   required-checks-pass: # This job does nothing and is only used for branch protection
     name: 🚦 Check
