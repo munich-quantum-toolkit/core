@@ -11,105 +11,52 @@
 #include "dd/Approximation.hpp"
 
 #include "dd/ComplexNumbers.hpp"
-#include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
-#include <algorithm>
-#include <deque>
-
 namespace dd {
 namespace {
-/**
- * @brief Find next node to remove and return its ingoing edge.
- * @details Traverses breadth-first using the iterative deepening algorithm.
- * @return Edge to remove or nullptr.
- */
-vEdge* findNext(const VectorDD& state, const double budget,
-                NodeContributions& contributions) {
-  std::deque<vNode*> q = {state.p};
-  while (!q.empty()) {
-    vNode* curr = q.front();
-    q.pop_front();
+struct Approx {
+  vEdge edge;
+  double contrib;
+};
+Approx approximate(const vEdge& curr, const ComplexValue& amplitude,
+                   double budget, Package& dd) {
+  if (curr.isTerminal()) {
+    return {curr, curr.w.exactlyZero() ? 0 : amplitude.mag2()};
+  }
 
-    for (std::size_t i = 0; i < 2; i++) {
-      vEdge* edge = &curr->e[i];
-      if (edge->isTerminal()) {
-        continue;
-      }
+  double sum{};
+  const vNode* node = curr.p;
 
-      vNode* nxt = edge->p;
-      if (std::find(q.begin(), q.end(), nxt) == q.end()) {
-        if (budget > contributions[nxt]) {
-          return edge;
-        }
-        q.push_back(nxt);
-      }
+  std::array<vEdge, RADIX> edges{};
+  for (std::size_t i = 0; i < edges.size(); i++) {
+    const auto& edge = node->e[i];
+
+    const auto& p = approximate(edge, amplitude * edge.w, budget, dd);
+    if (p.edge.isTerminal() || p.contrib > budget) {
+      edges[i] = p.edge;
+    } else {
+      edges[i] = vEdge::zero();
+      std::cout << "budget: " << budget << " contrib: " << p.contrib << '\n';
+      budget -= p.contrib;
     }
+    sum += p.contrib;
   }
 
-  return nullptr;
-}
-
-/**
- * @brief Recursively rebuild `state` without `edge` edge.
- * @return Edge to new `state`.
- */
-vEdge rebuildWithout(const VectorDD& state, const vEdge& edge, Package& dd) {
-  if (state.isTerminal()) {
-    return state;
-  }
-
-  if (state == edge) {
-    return vEdge::zero();
-  }
-
-  std::array<vEdge, RADIX> edges{rebuildWithout(state.p->e[0], edge, dd),
-                                 rebuildWithout(state.p->e[1], edge, dd)};
-
-  return dd.makeDDNode(state.p->v, edges);
+  return {dd.makeDDNode(node->v, edges), sum};
 }
 }; // namespace
 
-template <>
-void applyApproximation<dd::FidelityDriven>(
-    VectorDD& state, const Approximation<FidelityDriven>& approx, Package& dd) {
-  if (state.isTerminal()) {
-    return;
-  }
+VectorDD approximate(const VectorDD& state, const double fidelity,
+                     Package& dd) {
+  const ComplexValue amplitude{state.w};
+  const double budget = 1 - fidelity;
+  const Approx result = approximate(state, amplitude, budget, dd);
 
-  double budget = 1 - approx.fidelity;
-  while (true) {
-    NodeContributions contributions(state);
-
-    vEdge* edge = findNext(state, budget, contributions);
-    if (edge == nullptr) {
-      break;
-    }
-
-    state = rebuildWithout(state, *edge, dd);
-    state.w = dd.cn.lookup(state.w / std::sqrt(ComplexNumbers::mag2(state.w)));
-
-    dd.incRef(state);
-    dd.decRef(*edge);
-
-    budget -= contributions[edge->p];
-  }
-
-  dd.garbageCollect();
-};
-
-/**
- * @brief Apply Memory-Driven Approximation.
- * @details If the threshold is exceeded, apply Fidelity-Driven approximation.
- * Inheritance allows us to simply downcast the Memory-Driven object.
- */
-template <>
-void applyApproximation<dd::MemoryDriven>(
-    VectorDD& state, const Approximation<MemoryDriven>& approx, Package& dd) {
-  if (state.size() > approx.threshold) {
-    applyApproximation<FidelityDriven>(state, approx, dd);
-  }
+  VectorDD out = result.edge;
+  out.w = dd.cn.lookup(out.w / std::sqrt(ComplexNumbers::mag2(out.w)));
+  return out;
 };
 
 } // namespace dd

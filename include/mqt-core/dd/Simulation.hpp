@@ -43,17 +43,13 @@ namespace dd {
  * mid-circuit measurements, see @ref sample(const QuantumComputation&,
  * std::size_t, std::size_t).
  *
- * @tparam stgy The approximation strategy applied.
  * @param qc The quantum computation to simulate
  * @param in The input state to simulate. Represented as a vector DD.
  * @param dd The DD package to use for the simulation
- * @param approx The object describing the approximation strategy.
  * @return A vector DD representing the output state of the simulation
  */
-template <const ApproximationStrategy stgy = None>
 VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
-                  Package& dd,
-                  const Approximation<stgy>& approx = Approximation<stgy>{});
+                  Package& dd);
 
 /**
  * @brief Sample from the output distribution of a quantum computation

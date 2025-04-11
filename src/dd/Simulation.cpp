@@ -211,7 +211,6 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
   return counts;
 }
 
-template <const ApproximationStrategy stgy>
 VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
                   Package& dd) {
   auto permutation = qc.initialLayout;
