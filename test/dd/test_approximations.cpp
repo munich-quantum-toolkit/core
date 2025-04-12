@@ -13,9 +13,11 @@
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
 #include <complex>
+#include <cstddef>
 #include <gtest/gtest.h>
 #include <numeric>
 

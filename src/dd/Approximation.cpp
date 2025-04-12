@@ -11,8 +11,13 @@
 #include "dd/Approximation.hpp"
 
 #include "dd/ComplexNumbers.hpp"
+#include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
+
+#include <array>
+#include <cmath>
+#include <cstddef>
 
 namespace dd {
 namespace {
