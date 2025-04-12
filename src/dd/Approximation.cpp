@@ -26,25 +26,26 @@ Approx approximate(const vEdge& curr, const ComplexValue& amplitude,
     return {curr, curr.w.exactlyZero() ? 0 : amplitude.mag2()};
   }
 
-  double sum{};
   const vNode* node = curr.p;
 
+  double sum{};
   std::array<vEdge, RADIX> edges{};
   for (std::size_t i = 0; i < edges.size(); i++) {
-    const auto& edge = node->e[i];
+    const vEdge& edge = node->e[i];
 
-    const auto& p = approximate(edge, amplitude * edge.w, budget, dd);
-    if (p.edge.isTerminal() || p.contrib > budget) {
-      edges[i] = p.edge;
+    const Approx& ap = approximate(edge, amplitude * edge.w, budget, dd);
+    if (ap.edge.isTerminal() || ap.contrib > budget) {
+      edges[i] = ap.edge;
+      sum += ap.contrib;
     } else {
       edges[i] = vEdge::zero();
-      std::cout << "budget: " << budget << " contrib: " << p.contrib << '\n';
-      budget -= p.contrib;
+      budget -= ap.contrib;
     }
-    sum += p.contrib;
   }
 
-  return {dd.makeDDNode(node->v, edges), sum};
+  vEdge next = dd.makeDDNode(node->v, edges);
+  next.w = dd.cn.lookup(next.w * curr.w);
+  return {next, sum};
 }
 }; // namespace
 
@@ -52,11 +53,10 @@ VectorDD approximate(const VectorDD& state, const double fidelity,
                      Package& dd) {
   const ComplexValue amplitude{state.w};
   const double budget = 1 - fidelity;
-  const Approx result = approximate(state, amplitude, budget, dd);
-
-  VectorDD out = result.edge;
-  out.w = dd.cn.lookup(out.w / std::sqrt(ComplexNumbers::mag2(out.w)));
-  return out;
+  Approx ap = approximate(state, amplitude, budget, dd);
+  ap.edge.w =
+      dd.cn.lookup(ap.edge.w / std::sqrt(ComplexNumbers::mag2(ap.edge.w)));
+  return ap.edge;
 };
 
 } // namespace dd
