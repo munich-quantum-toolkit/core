@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include "dd/Approximation.hpp"
 #include "dd/Package_fwd.hpp"
 
 #include <cstddef>
