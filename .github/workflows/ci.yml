@@ -129,6 +129,8 @@ jobs:
       cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_MLIR=ON
       clang-version: 20
       build-project: true
+      cpp-linter-extra-args: "-std=c++20"
+      files-changed-only: false
 
   python-tests:
     name: 🐍 Test
