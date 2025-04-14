@@ -239,7 +239,9 @@ void registerDDPackage(const py::module& mod) {
       },
       "vec"_a, "collapse"_a = false);
 
-  dd.def_static("identity", &dd::Package::makeIdent);
+  dd.def("identity", &dd::MatrixDDContainer::makeIdent,
+         // keep the DD package alive while the returned matrix DD is alive.
+         py::keep_alive<0, 1>());
 
   using NumPyMatrix = py::array_t<std::complex<dd::fp>,
                                   py::array::c_style | py::array::forcecast>;

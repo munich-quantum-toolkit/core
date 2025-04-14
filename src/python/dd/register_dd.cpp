@@ -64,7 +64,7 @@ PYBIND11_MODULE(dd, mod, py::mod_gil_not_used()) {
       "simulate_statevector",
       [](const qc::QuantumComputation& qc) {
         auto dd = std::make_unique<dd::Package>(qc.getNqubits());
-        auto in = dd->makeZeroState(qc.getNqubits());
+        auto in = dd->vectors().makeZeroState(qc.getNqubits());
         const auto sim = dd::simulate(qc, in, *dd);
         return getVector(sim);
       },

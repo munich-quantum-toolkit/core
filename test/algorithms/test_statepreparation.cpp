@@ -65,8 +65,9 @@ TEST_P(StatePreparation, StatePreparationCircuitSimulation) {
   ASSERT_NO_THROW({ qc = qc::createStatePreparationCircuit(amplitudes); });
   auto dd = std::make_unique<dd::Package>(qc.getNqubits());
   dd::VectorDD e{};
-  ASSERT_NO_THROW(
-      { e = dd::simulate(qc, dd->makeZeroState(qc.getNqubits()), *dd); });
+  ASSERT_NO_THROW({
+    e = dd::simulate(qc, dd->vectors().makeZeroState(qc.getNqubits()), *dd);
+  });
   auto result = e.getVector();
   for (size_t i = 0; i < expectedAmplitudes.size(); ++i) {
     ASSERT_NEAR(expectedAmplitudes[i].real(), result[i].real(), EPS);
