@@ -270,7 +270,6 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }
 [tool.cibuildwheel.windows]
 before-build = "uv pip install delvewheel>=1.9.0"
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
-environment = { CMAKE_GENERATOR = "Ninja" }
 
 [[tool.cibuildwheel.overrides]]
 select = "*-macosx_arm64"
