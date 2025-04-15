@@ -150,12 +150,12 @@ jobs:
       enable-macos13: true
       enable-macos14: true
       enable-windows2022: true
-      enable-windows11-arm: true
       # Runs to disable
       enable-ubuntu2204: false
       enable-ubuntu2204-arm: false
       enable-macos15: false
       enable-windows2025: false
+      enable-windows11-arm: false # Testing on Windows 11 ARM is not supported yet
     permissions:
       contents: read
       id-token: write
