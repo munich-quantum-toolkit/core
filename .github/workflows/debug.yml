@@ -1,0 +1,22 @@
+name: UV Reproducer
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+jobs:
+  debug-uv:
+    name: Debug UV
+    runs-on: windows-11-arm
+    steps:
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v5
+      - name: Check the version of uv
+        run: uv version
+      - name: Instal Python with uv
+        run: uv python install 3.9
+      - name: Check the Python installations
+        run: uv python list
