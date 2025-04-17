@@ -278,10 +278,6 @@ repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg 
 select = "*-macosx_arm64"
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
-[[tool.cibuildwheel.overrides]]
-select = "cp*-win_arm64"
-environment = { CMAKE_ARGS = "-A arm64" }
-
 
 [tool.uv]
 required-version = ">=0.5.20"
