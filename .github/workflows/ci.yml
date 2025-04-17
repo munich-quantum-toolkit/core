@@ -20,14 +20,15 @@ jobs:
     name: 🇨‌ Test
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@v1.8
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@31269429d0fb299c255a15d1394b788345e174cf
     with:
       # Runs to enable
-      enable-ubuntu2404-gcc-release: true
-      enable-ubuntu2404-arm-gcc-release: true
-      enable-macos13-clang-release: true
-      enable-macos14-clang-release: true
+      enable-ubuntu2404-gcc-release: false
+      enable-ubuntu2404-arm-gcc-release: false
+      enable-macos13-clang-release: false
+      enable-macos14-clang-release: false
       enable-windows2022-msvc-release: true
+      enable-windows11-arm-msvc-release: true
       # Runs to disable
       enable-ubuntu2404-gcc-debug: false
       enable-ubuntu2404-clang-release: false
@@ -60,6 +61,9 @@ jobs:
       enable-windows2025-msvc-debug: false
       enable-windows2025-clang-release: false
       enable-windows2025-clang-debug: false
+      enable-windows11-arm-msvc-debug: false
+      enable-windows11-arm-clang-release: false
+      enable-windows11-arm-clang-debug: false
       # General settings
       cmake-args-macos: -DMQT_CORE_WITH_GMP=ON
 
@@ -68,33 +72,33 @@ jobs:
     name: 🇨‌ Test (Extensive)
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@v1.8
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@31269429d0fb299c255a15d1394b788345e174cf
     with:
       # Runs to enable
-      enable-ubuntu2404-gcc-debug: true
-      enable-ubuntu2404-clang-release: true
-      enable-ubuntu2404-clang-debug: true
-      enable-ubuntu2204-gcc-release: true
-      enable-ubuntu2204-gcc-debug: true
-      enable-ubuntu2204-clang-release: true
-      enable-ubuntu2204-clang-debug: true
-      enable-ubuntu2404-arm-gcc-debug: true
-      enable-ubuntu2404-arm-clang-release: true
-      enable-ubuntu2404-arm-clang-debug: true
-      enable-ubuntu2204-arm-gcc-release: true
-      enable-ubuntu2204-arm-gcc-debug: true
-      enable-ubuntu2204-arm-clang-release: true
-      enable-ubuntu2204-arm-clang-debug: true
-      enable-macos13-clang-debug: true
-      enable-macos13-gcc-release: true
-      enable-macos13-gcc-debug: true
-      enable-macos14-clang-debug: true
-      enable-macos14-gcc-release: true
-      enable-macos14-gcc-debug: true
-      enable-macos15-clang-release: true
-      enable-macos15-clang-debug: true
-      enable-macos15-gcc-release: true
-      enable-macos15-gcc-debug: true
+      enable-ubuntu2404-gcc-debug: false
+      enable-ubuntu2404-clang-release: false
+      enable-ubuntu2404-clang-debug: false
+      enable-ubuntu2204-gcc-release: false
+      enable-ubuntu2204-gcc-debug: false
+      enable-ubuntu2204-clang-release: false
+      enable-ubuntu2204-clang-debug: false
+      enable-ubuntu2404-arm-gcc-debug: false
+      enable-ubuntu2404-arm-clang-release: false
+      enable-ubuntu2404-arm-clang-debug: false
+      enable-ubuntu2204-arm-gcc-release: false
+      enable-ubuntu2204-arm-gcc-debug: false
+      enable-ubuntu2204-arm-clang-release: false
+      enable-ubuntu2204-arm-clang-debug: false
+      enable-macos13-clang-debug: false
+      enable-macos13-gcc-release: false
+      enable-macos13-gcc-debug: false
+      enable-macos14-clang-debug: false
+      enable-macos14-gcc-release: false
+      enable-macos14-gcc-debug: false
+      enable-macos15-clang-release: false
+      enable-macos15-clang-debug: false
+      enable-macos15-gcc-release: false
+      enable-macos15-gcc-debug: false
       enable-windows2022-msvc-debug: true
       enable-windows2022-clang-release: true
       enable-windows2022-clang-debug: true
@@ -102,12 +106,16 @@ jobs:
       enable-windows2025-msvc-debug: true
       enable-windows2025-clang-release: true
       enable-windows2025-clang-debug: true
+      enable-windows11-arm-msvc-debug: true
+      enable-windows11-arm-clang-release: true
+      enable-windows11-arm-clang-debug: true
       # Runs to disable (these are already enabled in the non-extensive run)
       enable-ubuntu2404-gcc-release: false
       enable-ubuntu2404-arm-gcc-release: false
       enable-macos13-clang-release: false
       enable-macos14-clang-release: false
       enable-windows2022-msvc-release: false
+      enable-windows11-arm-msvc-release: false
       # General settings
       cmake-args-macos: -DMQT_CORE_WITH_GMP=ON
 
@@ -134,19 +142,21 @@ jobs:
     name: 🐍 Test
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@v1.8
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@31269429d0fb299c255a15d1394b788345e174cf
     with:
       # Runs to enable
-      enable-ubuntu2404: true
-      enable-ubuntu2404-arm: true
-      enable-macos13: true
-      enable-macos14: true
+      enable-ubuntu2404: false
+      enable-ubuntu2404-arm: false
+      enable-macos13: false
+      enable-macos14: false
       enable-windows2022: true
       # Runs to disable
       enable-ubuntu2204: false
       enable-ubuntu2204-arm: false
       enable-macos15: false
       enable-windows2025: false
+      # Testing on Windows 11 ARM is not supported yet
+      enable-windows11-arm: false
     permissions:
       contents: read
       id-token: write
@@ -156,12 +166,12 @@ jobs:
     name: 🐍 Test (Extensive)
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@v1.8
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@31269429d0fb299c255a15d1394b788345e174cf
     with:
       # Runs to enable
-      enable-ubuntu2204: true
-      enable-ubuntu2204-arm: true
-      enable-macos15: true
+      enable-ubuntu2204: false
+      enable-ubuntu2204-arm: false
+      enable-macos15: false
       enable-windows2025: true
       # Runs to disable (these are already enabled in the non-extensive run)
       enable-ubuntu2404: false
@@ -169,6 +179,8 @@ jobs:
       enable-macos13: false
       enable-macos14: false
       enable-windows2022: false
+      # Testing on Windows 11 ARM is not supported yet
+      enable-windows11-arm: false
     permissions:
       contents: read
       id-token: write
@@ -189,7 +201,20 @@ jobs:
     name: 🚀 CD
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cd)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging.yml@v1.8
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging.yml@31269429d0fb299c255a15d1394b788345e174cf
+    with:
+      # Runs to enable
+      enable-ubuntu2404: false
+      enable-ubuntu2404-arm: false
+      enable-macos13: false
+      enable-macos14: false
+      enable-windows2022: true
+      enable-windows11-arm: true
+      # Runs to disable
+      enable-ubuntu2204: false
+      enable-ubuntu2204-arm: false
+      enable-macos15: false
+      enable-windows2025: false
 
   required-checks-pass: # This job does nothing and is only used for branch protection
     name: 🚦 Check
