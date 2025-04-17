@@ -20,7 +20,7 @@ jobs:
     name: 🇨‌ Test
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@c1a3dfa9decdebdfd0901d703937da48f7f3dbe2
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@b77ac89e8d12dc84acd2f6ac27321e95603d4d3c
     with:
       # Runs to enable
       enable-ubuntu2404-gcc-release: false
@@ -72,7 +72,7 @@ jobs:
     name: 🇨‌ Test (Extensive)
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@c1a3dfa9decdebdfd0901d703937da48f7f3dbe2
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@b77ac89e8d12dc84acd2f6ac27321e95603d4d3c
     with:
       # Runs to enable
       enable-ubuntu2404-gcc-debug: false
@@ -142,7 +142,7 @@ jobs:
     name: 🐍 Test
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@c1a3dfa9decdebdfd0901d703937da48f7f3dbe2
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@b77ac89e8d12dc84acd2f6ac27321e95603d4d3c
     with:
       # Runs to enable
       enable-ubuntu2404: false
@@ -166,7 +166,7 @@ jobs:
     name: 🐍 Test (Extensive)
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@c1a3dfa9decdebdfd0901d703937da48f7f3dbe2
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@b77ac89e8d12dc84acd2f6ac27321e95603d4d3c
     with:
       # Runs to enable
       enable-ubuntu2204: false
@@ -201,7 +201,7 @@ jobs:
     name: 🚀 CD
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cd)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging.yml@c1a3dfa9decdebdfd0901d703937da48f7f3dbe2
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging.yml@b77ac89e8d12dc84acd2f6ac27321e95603d4d3c
     with:
       # Runs to enable
       enable-ubuntu2404: false
