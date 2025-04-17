@@ -27,7 +27,7 @@ jobs:
       enable-ubuntu2404-arm-gcc-release: false
       enable-macos13-clang-release: false
       enable-macos14-clang-release: false
-      enable-windows2022-msvc-release: false
+      enable-windows2022-msvc-release: true
       enable-windows11-arm-msvc-release: false
       # Runs to disable
       enable-ubuntu2404-gcc-debug: false
@@ -99,16 +99,16 @@ jobs:
       enable-macos15-clang-debug: false
       enable-macos15-gcc-release: false
       enable-macos15-gcc-debug: false
-      enable-windows2022-msvc-debug: false
-      enable-windows2022-clang-release: false
-      enable-windows2022-clang-debug: false
-      enable-windows2025-msvc-release: false
-      enable-windows2025-msvc-debug: false
-      enable-windows2025-clang-release: false
-      enable-windows2025-clang-debug: false
-      enable-windows11-arm-msvc-debug: false
-      enable-windows11-arm-clang-release: false
-      enable-windows11-arm-clang-debug: false
+      enable-windows2022-msvc-debug: true
+      enable-windows2022-clang-release: true
+      enable-windows2022-clang-debug: true
+      enable-windows2025-msvc-release: true
+      enable-windows2025-msvc-debug: true
+      enable-windows2025-clang-release: true
+      enable-windows2025-clang-debug: true
+      enable-windows11-arm-msvc-debug: true
+      enable-windows11-arm-clang-release: true
+      enable-windows11-arm-clang-debug: true
       # Runs to disable (these are already enabled in the non-extensive run)
       enable-ubuntu2404-gcc-release: false
       enable-ubuntu2404-arm-gcc-release: false
@@ -149,13 +149,14 @@ jobs:
       enable-ubuntu2404-arm: false
       enable-macos13: false
       enable-macos14: false
-      enable-windows2022: false
+      enable-windows2022: true
       # Runs to disable
       enable-ubuntu2204: false
       enable-ubuntu2204-arm: false
       enable-macos15: false
       enable-windows2025: false
-      enable-windows11-arm: false # Testing on Windows 11 ARM is not supported yet
+      # Testing on Windows 11 ARM is not supported yet
+      enable-windows11-arm: false
     permissions:
       contents: read
       id-token: write
@@ -171,13 +172,14 @@ jobs:
       enable-ubuntu2204: false
       enable-ubuntu2204-arm: false
       enable-macos15: false
-      enable-windows2025: false
+      enable-windows2025: true
       # Runs to disable (these are already enabled in the non-extensive run)
       enable-ubuntu2404: false
       enable-ubuntu2404-arm: false
       enable-macos13: false
       enable-macos14: false
       enable-windows2022: false
+      # Testing on Windows 11 ARM is not supported yet
       enable-windows11-arm: false
     permissions:
       contents: read
@@ -206,7 +208,7 @@ jobs:
       enable-ubuntu2404-arm: false
       enable-macos13: false
       enable-macos14: false
-      enable-windows2022: false
+      enable-windows2022: true
       enable-windows11-arm: true
       # Runs to disable
       enable-ubuntu2204: false
