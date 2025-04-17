@@ -28,7 +28,7 @@ jobs:
       enable-macos13-clang-release: false
       enable-macos14-clang-release: false
       enable-windows2022-msvc-release: true
-      enable-windows11-arm-msvc-release: false
+      enable-windows11-arm-msvc-release: true
       # Runs to disable
       enable-ubuntu2404-gcc-debug: false
       enable-ubuntu2404-clang-release: false
