@@ -10,8 +10,6 @@
 
 #include "dd/Simulation.hpp"
 
-#include "dd/Approximation.hpp"
-#include "dd/Complex.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"

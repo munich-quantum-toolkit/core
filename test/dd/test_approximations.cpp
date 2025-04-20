@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <numeric>
+#include <vector>
 
 using namespace dd;
 

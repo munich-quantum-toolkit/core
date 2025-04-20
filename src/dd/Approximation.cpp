@@ -14,8 +14,10 @@
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
+#include <cmath>
 #include <deque>
 #include <unordered_map>
+#include <vector>
 
 namespace dd {
 
@@ -27,7 +29,7 @@ void approximate(VectorDD& state, const double fidelity, Package& dd) {
   std::unordered_map<const vEdge*, double> probs{{&state, mag2(state.w)}};
   std::deque<vEdge*> q{&state};
   while (!q.empty() && budget > 0) {
-    std::vector<vEdge*> layer(q.begin(), q.end());
+    const std::vector<vEdge*> layer(q.begin(), q.end());
 
     q.clear();
     for (vEdge* lEdge : layer) {
