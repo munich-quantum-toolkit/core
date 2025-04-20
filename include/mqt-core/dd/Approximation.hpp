@@ -15,7 +15,6 @@
 
 namespace dd {
 
-enum ApproximationStrategy { None, FidelityDriven, MemoryDriven };
+void approximate(VectorDD& state, double fidelity, Package& dd);
 
-VectorDD approximate(const VectorDD& state, double fidelity, Package& dd);
 } // namespace dd

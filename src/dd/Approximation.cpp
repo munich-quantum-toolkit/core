@@ -11,57 +11,50 @@
 #include "dd/Approximation.hpp"
 
 #include "dd/ComplexNumbers.hpp"
-#include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
-#include <array>
-#include <cmath>
-#include <cstddef>
+#include <deque>
+#include <unordered_map>
 
 namespace dd {
-namespace {
-struct Approx {
-  vEdge edge;
-  double contrib;
-};
-Approx approximate(const vEdge& curr, const ComplexValue& amplitude,
-                   double budget, Package& dd) {
-  if (curr.isTerminal()) {
-    return {curr, curr.w.exactlyZero() ? 0 : amplitude.mag2()};
-  }
 
-  const vNode* node = curr.p;
+void approximate(VectorDD& state, const double fidelity, Package& dd) {
+  constexpr auto mag2 = ComplexNumbers::mag2;
 
-  double sum{};
-  std::array<vEdge, RADIX> edges{};
-  for (std::size_t i = 0; i < edges.size(); i++) {
-    const vEdge& edge = node->e[i];
+  double budget = 1 - fidelity;
 
-    const Approx& ap = approximate(edge, amplitude * edge.w, budget, dd);
-    if (ap.edge.isTerminal() || ap.contrib > budget) {
-      edges[i] = ap.edge;
-      sum += ap.contrib;
-    } else {
-      edges[i] = vEdge::zero();
-      budget -= ap.contrib;
+  std::unordered_map<const vEdge*, double> probs{{&state, mag2(state.w)}};
+  std::deque<vEdge*> q{&state};
+  while (!q.empty() && budget > 0) {
+    std::vector<vEdge*> layer(q.begin(), q.end());
+
+    q.clear();
+    for (vEdge* lEdge : layer) {
+      vNode* node = lEdge->p;
+      const double parent = probs[lEdge];
+
+      if (parent <= budget) {
+        dd.decRef(*lEdge);
+        *lEdge = vEdge::zero();
+        budget -= parent;
+      } else {
+        for (auto& edge : node->e) {
+          if (!edge.isTerminal() && !edge.w.exactlyZero()) {
+            if (probs.find(&edge) == probs.end()) {
+              q.push_back(&edge);
+            }
+
+            probs[&edge] += parent * mag2(edge.w);
+          }
+        }
+      }
     }
   }
 
-  vEdge next = dd.makeDDNode(node->v, edges);
-  next.w = dd.cn.lookup(next.w * curr.w);
-  return {next, sum};
+  auto& mm = dd.getMemoryManager<vNode>();
+  state = vEdge::normalize(state.p, state.p->e, mm, dd.cn);
+  state.w = dd.cn.lookup(state.w / std::sqrt(mag2(state.w)));
 }
-}; // namespace
-
-VectorDD approximate(const VectorDD& state, const double fidelity,
-                     Package& dd) {
-  const ComplexValue amplitude{state.w};
-  const double budget = 1 - fidelity;
-  Approx ap = approximate(state, amplitude, budget, dd);
-  ap.edge.w =
-      dd.cn.lookup(ap.edge.w / std::sqrt(ComplexNumbers::mag2(ap.edge.w)));
-  return ap.edge;
-};
 
 } // namespace dd

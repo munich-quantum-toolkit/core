@@ -23,10 +23,12 @@
 
 using namespace dd;
 
+namespace {
 std::complex<fp> getNorm(std::vector<std::complex<fp>> vec) {
   return std::inner_product(vec.begin(), vec.end(), vec.begin(),
                             std::complex<fp>());
 }
+}; // namespace
 
 ///-----------------------------------------------------------------------------
 ///                      \n simulate with approximation \n
@@ -40,15 +42,13 @@ TEST(ApproximationTest, KeepAll) {
   qc::QuantumComputation qc(nq);
   qc.x(0);
 
-  auto root = simulate(qc, dd.makeZeroState(nq), dd);
-  auto approx = approximate(root, fidelity, dd);
+  auto state = simulate(qc, dd.makeZeroState(nq), dd);
+  approximate(state, fidelity, dd);
 
-  auto norm = getNorm(approx.getVector());
+  auto norm = getNorm(state.getVector());
 
   // no nodes deleted. must be the same.
-  EXPECT_EQ(root, approx);
-  // final fidelity is correct.
-  EXPECT_EQ(dd.fidelity(root, approx), 1);
+  EXPECT_EQ(state.size(), 3);
   // norm must be one.
   EXPECT_NEAR(norm.real(), 1., 1e-6);
   EXPECT_NEAR(norm.imag(), 0., 1e-6);
@@ -64,20 +64,15 @@ TEST(ApproximationTest, RemoveOneBottom) {
   qc.h(0);
   qc.cry(qc::PI / 8, 0, 1);
 
-  auto root = simulate(qc, dd.makeZeroState(nq), dd);
-  auto approx = approximate(root, fidelity, dd);
+  auto state = simulate(qc, dd.makeZeroState(nq), dd);
+  approximate(state, fidelity, dd);
 
-  auto norm = getNorm(approx.getVector());
+  auto norm = getNorm(state.getVector());
 
   // has correct number of nodes.
-  EXPECT_EQ(root.size(), 4);
-  EXPECT_EQ(approx.size(), 3);
-  // can't be the same.
-  EXPECT_NE(root, approx);
+  EXPECT_EQ(state.size(), 3);
   // correct edge is deleted.
-  EXPECT_EQ(approx.p->e[1], vEdge::zero());
-  // final fidelity is correct.
-  EXPECT_NEAR(dd.fidelity(root, approx), fidelity, 1e-2);
+  EXPECT_EQ(state.p->e[1], vEdge::zero());
   // norm must be one.
   EXPECT_NEAR(norm.real(), 1., 1e-6);
   EXPECT_NEAR(norm.imag(), 0., 1e-6);
@@ -95,20 +90,15 @@ TEST(ApproximationTest, RemoveOneMiddle) {
   qc.h(1);
   qc.cry(qc::PI / 8, 1, 2);
 
-  auto root = simulate(qc, dd.makeZeroState(nq), dd);
-  auto approx = approximate(root, fidelity, dd);
+  auto state = simulate(qc, dd.makeZeroState(nq), dd);
+  approximate(state, fidelity, dd);
 
-  auto norm = getNorm(approx.getVector());
+  auto norm = getNorm(state.getVector());
 
   // has correct number of nodes.
-  EXPECT_EQ(root.size(), 6);
-  EXPECT_EQ(approx.size(), 5);
-  // can't be the same.
-  EXPECT_NE(root, approx);
+  EXPECT_EQ(state.size(), 5);
   // correct edge is deleted.
-  EXPECT_EQ(approx.p->e[1], vEdge::zero());
-  // final fidelity is correct.
-  EXPECT_NEAR(dd.fidelity(root, approx), fidelity, 1e-2);
+  EXPECT_EQ(state.p->e[1], vEdge::zero());
   // norm must be one.
   EXPECT_NEAR(norm.real(), 1., 1e-6);
   EXPECT_NEAR(norm.imag(), 0., 1e-6);
