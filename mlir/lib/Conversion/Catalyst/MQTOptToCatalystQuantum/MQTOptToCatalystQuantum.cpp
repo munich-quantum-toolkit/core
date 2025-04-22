@@ -10,31 +10,24 @@
 
 #include "mlir/Conversion/Catalyst/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h"
 
-#include "Quantum/IR/QuantumDialect.h"
-#include "Quantum/IR/QuantumOps.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/Operation.h"
-#include "mlir/IR/OperationSupport.h"
-#include "mlir/IR/TypeRange.h"
-#include "mlir/IR/Value.h"
-#include "mlir/IR/ValueRange.h"
-#include "mlir/Transforms/DialectConversion.h"
 
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/Support/Casting.h"
-#include "llvm/Support/raw_ostream.h"
-
-#include <iostream>
+#include <Quantum/IR/QuantumDialect.h>
+#include <Quantum/IR/QuantumOps.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LLVM.h>
-#include <type_traits>
-#include <utility>
+#include <mlir/IR/TypeRange.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/Transforms/DialectConversion.h>
 #include <vector>
 
 namespace mlir::mqt::ir::conversions {
