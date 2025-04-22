@@ -40,7 +40,7 @@ struct MQTCoreRoundTrip final : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
             // This was deprecated in LLVM@20, but the alternative does not yet
             // exist in LLVM@19.
             // NOLINTNEXTLINE(clang-diagnostic-deprecated-declarations)
-            mlir::applyPatternsGreedily(op, std::move(patterns)))) {
+            mlir::applyPatternsAndFoldGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }

@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 
 import nox
 
+import catalyst
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
