@@ -346,10 +346,8 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         size_t index = *maybeIndex;
         currentQubitVariables[index] = extractOp.getOutQubit();
       } else if (llvm::isa<InsertOp>(current)) {
-        // llvm::outs() << "debugging \n";
         //  Do nothing for now, may change later.
       } else if (llvm::isa<AllocOp>(current)) {
-        // llvm::outs() << "debugging \n";
         //  Do nothing for now, may change later.
       } else if (llvm::isa<MeasureOp>(current)) {
         // We count the number of measurements and add a measurement operation
@@ -372,8 +370,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // as inputs, as these will be deleted later.
     for (auto* operation : llvm::make_early_inc_range(mqtUsers)) {
       mqtUsers.erase(operation); // safe deletion as op will be erased next
-      updateMQTOptInputs(*operation, rewriter, newAlloc.getQureg(),
-                         measureCount);
+      updateMQTOptInputs(*operation, rewriter, newAlloc.getQureg());
     }
 
     // Delete all operations that are part of the mqtopt dialect (except for
