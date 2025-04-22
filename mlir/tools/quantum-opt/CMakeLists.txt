@@ -19,6 +19,11 @@ set(LIBS
     MLIRMQTOptTransforms
     MLIRMQTDynTransforms)
 
+option(ENABLE_CATALYST "Enable Catalyst conversion passes" ON)
+if(ENABLE_CATALYST)
+  list(APPEND LIBS CatalystQuantumToMQTOpt MQTOptToCatalystQuantum MLIRQuantum)
+endif()
+
 add_mlir_tool(quantum-opt quantum-opt.cpp DEPENDS ${LIBS} SUPPORT_PLUGINS)
 target_compile_options(quantum-opt PRIVATE -fexceptions)
 target_link_libraries(quantum-opt PUBLIC ${LIBS})

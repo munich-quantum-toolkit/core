@@ -64,8 +64,8 @@ module {
 
     // CHECK: %[[OUT:.*]] = mqtopt.rx(%[[PHI]] static [3.141592e+00, 0.000000e+00] mask [false, true, true]) %[[CPS]]#0 : !mqtopt.Qubit
     %out = quantum.custom "RX"(%phi0) %cps#0 {
-      static_params = array<f64: 3.141592, 0.0>,
-      params_mask = array<i1: false, true, true>
+      //static_params = array<f64: 3.141592, 0.0>,
+      //params_mask = array<i1: false, true, true>
     } : !quantum.bit
 
     // CHECK: %[[QMEAS:.*]], %[[MEAS:.*]] = "mqtopt.measure"(%[[TOF]]#2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)

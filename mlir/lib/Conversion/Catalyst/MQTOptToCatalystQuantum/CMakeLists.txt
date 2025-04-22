@@ -12,3 +12,5 @@ set(LIBRARIES ${conversion_libs} MLIRIR MLIRPass MQT::CoreIR ${MLIRQuantum_LIB})
 
 add_mlir_library(MQTOptToCatalystQuantum ${CONVERSION_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
                  MQTOptToCatalystQuantumIncGen)
+
+target_link_libraries(MQTOptToCatalystQuantum PRIVATE MLIRQuantum)
