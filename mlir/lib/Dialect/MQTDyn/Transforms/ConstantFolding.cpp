@@ -36,7 +36,8 @@ struct ConstantFolding final : impl::ConstantFoldingBase<ConstantFolding> {
     populateConstantFoldExtractQubitPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(mlir::applyPatternsAndFoldGreedily(op, std::move(patterns)))) {
+    if (mlir::failed(
+            mlir::applyPatternsAndFoldGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }
