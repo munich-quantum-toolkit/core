@@ -106,20 +106,24 @@ struct CancelConsecutiveInversesPattern final
     const auto& userOutQubits = user.getAllOutQubits();
     // Also get the op's input qubits
     const auto& opInQubits = user.getAllInQubits();
+
+    // Note: There might be multiple users of an operation. The qubits itself
+    // can only be used once (linear typing). However, the user may output
+    // multiple qubits, e.g., a CX gate, that are used by different users.
+    // Hence, the user may have multiple clid users.
     const auto& childUsers = user->getUsers();
 
     for (const auto& childUser : childUsers) {
       for (size_t i = 0; i < childUser->getOperands().size(); i++) {
         const auto& operand = childUser->getOperand(i);
-        const auto found = std::find(userOutQubits.begin(),
-                                     userOutQubits.end(), operand);
+        const auto found =
+            std::find(userOutQubits.begin(), userOutQubits.end(), operand);
         if (found == userOutQubits.end()) {
           continue;
         }
         const auto idx = std::distance(userOutQubits.begin(), found);
-        rewriter.modifyOpInPlace(childUser, [&] {
-          childUser->setOperand(i, opInQubits[idx]);
-        });
+        rewriter.modifyOpInPlace(
+            childUser, [&] { childUser->setOperand(i, opInQubits[idx]); });
       }
     }
 
