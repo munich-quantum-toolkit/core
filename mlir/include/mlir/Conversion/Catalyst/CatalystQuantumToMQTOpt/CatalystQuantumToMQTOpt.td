@@ -12,8 +12,17 @@ def CatalystQuantumToMQTOpt : Pass<"quantum-to-mqtopt"> {
   let summary = "Lower `quantum` to `mqtopt` dialect.";
 
   let description = [{
-    This pass lowers the `quantum` to `mqtopt` dialect.
-  }];
+    This pass converts Catalyst's `quantum` to the `mqtopt` dialect.
+    The following operations are NOT converted:
+    - DeviceInitOp
+    - DeviceReleaseOp
+    - NamedObsOp
+    - ExpvalOp
+    - FinalizeOp
+    - ComputationalBasisOp
+    - StateOp
+    - InitializeOp
+   }];
 
   // Define dependent dialects
   let dependentDialects = [

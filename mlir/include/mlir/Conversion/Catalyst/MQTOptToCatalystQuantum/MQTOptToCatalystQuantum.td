@@ -9,10 +9,25 @@
 include "mlir/Pass/PassBase.td"
 
 def MQTOptToCatalystQuantum : Pass<"mqtopt-to-quantum"> {
-  let summary = "Lower `mqtopt` to `quantum` dialect.";
+  let summary = "Convert `mqtopt` to `quantum` dialect.";
 
   let description = [{
-    This pass lowers the `mqtopt` to `quantum` dialect.
+    This pass converts the `mqtopt` to Catalyst's `quantum` dialect.
+    The following operations are NOT converted:
+    - IOp
+    - GPhaseOp
+    - BarrierOp
+    - SOp, SdgOp
+    - TOp, TdgOp
+    - VOp, VdgOp
+    - UOp, U2Op
+    - SXOp, SXdgOp
+    - iSWAPOp, iSWAPdgOp
+    - PeresOp, PeresdgOp
+    - DCXOp
+    - ECROp
+    - RXXOp, RYYOp, RZZOp, RZXOp
+    - XXminusYY, XXplusYY
   }];
   let dependentDialects = [
     "catalyst::quantum::QuantumDialect",
