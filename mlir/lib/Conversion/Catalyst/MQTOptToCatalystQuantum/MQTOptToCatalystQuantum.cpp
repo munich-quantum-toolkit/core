@@ -330,6 +330,12 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
         inQubitsValues.size() + inCtrlQubits.size(), qubitType);
     auto outQubitTypes = mlir::TypeRange(qubitTypes);
 
+    // Merge inQubitsValues and inCtrlQubits to form the full qubit list
+    auto allQubitsValues = llvm::SmallVector<mlir::Value>();
+    allQubitsValues.append(inQubitsValues.begin(), inQubitsValues.end());
+    allQubitsValues.append(inCtrlQubits.begin(), inCtrlQubits.end());
+    auto inQubits = mlir::ValueRange(allQubitsValues);
+
     // Determine gate name depending on control count
     llvm::StringRef gateName = getGateName(inCtrlQubits.size());
     if (gateName.empty()) {
@@ -352,12 +358,19 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
 
     // Create the new operation
     auto catalystOp = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, paramsValues, inQubitsValues, gateName,
-        nullptr, inCtrlQubits, inCtrlQubitsValues);
+        op.getLoc(),
+        /*out_qubits=*/outQubitTypes,
+        /*out_ctrl_qubits=*/mlir::TypeRange({}),
+        /*params=*/paramsValues,
+        /*in_qubits=*/inQubits,
+        /*gate_name=*/gateName,
+        /*adjoint=*/nullptr,
+        /*in_ctrl_qubits=*/mlir::ValueRange({}),
+        /*in_ctrl_values=*/mlir::ValueRange());
 
-    catalystOp.getProperties().setResultSegmentSizes(
-        {static_cast<int>(inQubitsValues.size()),
-         static_cast<int>(inCtrlQubits.size())});
+    // catalystOp.getProperties().setResultSegmentSizes(
+    //     {static_cast<int>(inQubitsValues.size()),
+    //      static_cast<int>(inCtrlQubits.size())});
 
     // Replace the original with the new operation
     rewriter.replaceOp(op, catalystOp);

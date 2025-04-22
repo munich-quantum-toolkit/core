@@ -6,13 +6,15 @@
 #
 # Licensed under the MIT License
 
+# HACK
+cmake_policy(SET CMP0057 NEW)
+
 # set the include directory for the build tree
 set(MQT_MLIR_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(MQT_MLIR_MIN_VERSION 19.0) # Catalyst supports only 19
 
 # MLIR must be installed on the system
 find_package(MLIR REQUIRED CONFIG)
-find_package(Catalyst REQUIRED CONFIG)
 
 if(MLIR_VERSION VERSION_LESS MQT_MLIR_MIN_VERSION)
   message(FATAL_ERROR "MLIR version must be at least ${MQT_MLIR_MIN_VERSION}")
@@ -46,6 +48,11 @@ set(MLIR_BINARY_DIR ${CMAKE_BINARY_DIR})
 
 # add a compile feature for C++17
 set(CMAKE_CXX_STANDARD 17)
+
+option(ENABLE_CATALYST "Enable Catalyst conversion passes" OFF)
+if(ENABLE_CATALYST)
+  find_package(Catalyst REQUIRED CONFIG)
+endif()
 
 # add main library code
 add_subdirectory(include)

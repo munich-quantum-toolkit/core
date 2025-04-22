@@ -10,7 +10,10 @@
 
 #pragma once
 
+#include "llvm/ADT/SmallVector.h"
+
 #include <mlir/Bytecode/BytecodeOpInterface.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 
 #define DIALECT_NAME_MQTOPT "mqtopt"
 

@@ -27,6 +27,7 @@
 #include <iostream>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
@@ -92,13 +93,8 @@ struct ConvertQuantumAlloc
 
     // Iterate over the users in reverse order
     for (auto* user : llvm::reverse(users)) {
-      // Registers should only be used in Extract, Insert or Dealloc operations
-      if (mlir::isa<catalyst::quantum::ExtractOp>(user) ||
-          mlir::isa<catalyst::quantum::InsertOp>(user) ||
-          mlir::isa<catalyst::quantum::DeallocOp>(user)) {
-        // Update the operand of the user operation to the new qubit register
-        user->setOperand(0, trgtQreg);
-      }
+      // Update the operand of the user operation to the new qubit register
+      user->replaceUsesOfWith(op.getResult(), trgtQreg);
     }
 
     rewriter.eraseOp(op);
@@ -240,12 +236,7 @@ struct ConvertQuantumExtract
 
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
-        // Update operands in the user operation
-        if (mlir::isa<catalyst::quantum::ExtractOp>(user) ||
-            mlir::isa<catalyst::quantum::InsertOp>(user) ||
-            mlir::isa<catalyst::quantum::DeallocOp>(user)) {
-          user->setOperand(0, outQreg);
-        }
+        user->replaceUsesOfWith(inQreg, outQreg);
       }
     }
 
@@ -261,14 +252,7 @@ struct ConvertQuantumExtract
 
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
-
-        auto operandIdx = 0;
-        for (auto operand : user->getOperands()) {
-          if (operand == oldQubit) {
-            user->setOperand(operandIdx, newQubit);
-          }
-          operandIdx++;
-        }
+        user->replaceUsesOfWith(oldQubit, newQubit);
       }
     }
 
@@ -304,8 +288,24 @@ struct ConvertQuantumInsert
         op.getLoc(), resultType, inQregValue, qubitValue, idxValue,
         idxIntegerAttr);
 
-    // Replace the original with the new operation
-    rewriter.replaceOp(op, mqtoptOp);
+    auto targetQreg = mqtoptOp->getResult(0);
+    auto sourceQreg = op->getResult(0);
+
+    // Collect the users of the original out qubit register to update their
+    // operands
+    std::vector<mlir::Operation*> users(sourceQreg.getUsers().begin(),
+                                        sourceQreg.getUsers().end());
+
+    // Iterate over users in reverse order to update their operands properly
+    for (auto* user : llvm::reverse(users)) {
+
+      // Only consider operations after the current operation
+      if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
+        user->replaceUsesOfWith(sourceQreg, targetQreg);
+      }
+    }
+    // Erase the old operation
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -464,6 +464,8 @@ struct CatalystQuantumToMQTOpt
     MLIRContext* context = &getContext();
     auto* module = getOperation();
 
+    std::cout << "Cmap: " << cMap << "\n";
+
     ConversionTarget target(*context);
     target.addLegalDialect<::mqt::ir::opt::MQTOptDialect>();
     target.addIllegalDialect<catalyst::quantum::QuantumDialect>();
@@ -476,6 +478,7 @@ struct CatalystQuantumToMQTOpt
     target.addLegalOp<catalyst::quantum::FinalizeOp>();
     target.addLegalOp<catalyst::quantum::ComputationalBasisOp>();
     target.addLegalOp<catalyst::quantum::StateOp>();
+    target.addLegalOp<catalyst::quantum::InitializeOp>();
 
     RewritePatternSet patterns(context);
     CatalystQuantumToMQTOptTypeConverter typeConverter(context);

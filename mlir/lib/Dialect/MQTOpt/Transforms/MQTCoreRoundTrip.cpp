@@ -21,8 +21,8 @@ namespace mqt::ir::opt {
 #define GEN_PASS_DEF_MQTCOREROUNDTRIP
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
-struct MQTCoreRoundTrip final : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
-
+struct MQTCoreRoundTrip : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
+  using MQTCoreRoundTripBase::MQTCoreRoundTripBase;
   qc::QuantumComputation circuit;
 
   void runOnOperation() override {
@@ -33,6 +33,7 @@ struct MQTCoreRoundTrip final : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
     populateToQuantumComputationPatterns(patterns, circuit);
+    llvm::outs() << "Finished populating patterns\n";
     populateFromQuantumComputationPatterns(patterns, circuit);
 
     // Apply patterns in an iterative and greedy manner.
