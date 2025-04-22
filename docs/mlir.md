@@ -19,9 +19,9 @@ For example, the MQTopt dialect is designed for optimization of quantum programs
 Accompanying the dialects, we provide a set of transforms on each dialect and conversions between dialects.
 
 :::{note}
-This page is a work in progress. 
+This page is a work in progress.
 The content is not yet complete and may be subject to change.
-Contributions are welcome. 
+Contributions are welcome.
 See the [contribution guidelines](contributing.md) for more information.
 :::
 

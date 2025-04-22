@@ -199,7 +199,8 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         }
         for (size_t i = 0; i < controlQubitsNegative.size(); i++) {
           currentQubitVariables[controlQubitIndicesNegative[i]] =
-              newUnitaryOp.getAllOutQubits()[i + 1 + controlQubitsPositive.size()];
+              newUnitaryOp
+                  .getAllOutQubits()[i + 1 + controlQubitsPositive.size()];
         }
       } else if (o->getType() == qc::OpType::Measure) {
         // For measurement operations, we call the `createMeasureOp` function.
