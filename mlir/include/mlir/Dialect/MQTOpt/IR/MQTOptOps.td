@@ -6,6 +6,9 @@
 //
 // Licensed under the MIT License
 
+#ifndef MQTOPT_OPS
+#define MQTOPT_OPS
+
 include "mlir/IR/OpBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/DialectBase.td"
@@ -628,3 +631,5 @@ def InsertOp : ResourceOp<"insertQubit", [UniqueIndexDefinition]> {
         QuregType:$out_qureg
     );
 }
+
+#endif // MQTOPT_OPS

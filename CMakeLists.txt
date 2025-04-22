@@ -72,8 +72,6 @@ project(
   VERSION ${MQT_CORE_VERSION}
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
-# to prevent `Targets Defined: nlohmann_json` error, but should eventually go in mlir/CMakeLists.txt
-# find_package(Catalyst REQUIRED CONFIG)
 include(cmake/ExternalDependencies.cmake)
 
 # set the include directory for the build tree

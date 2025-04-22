@@ -6,9 +6,6 @@
 #
 # Licensed under the MIT License
 
-# HACK
-cmake_policy(SET CMP0057 NEW)
-
 # set the include directory for the build tree
 set(MQT_MLIR_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(MQT_MLIR_MIN_VERSION 19.0) # Catalyst supports only 19
