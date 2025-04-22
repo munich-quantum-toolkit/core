@@ -262,7 +262,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     //  throw std::runtime_error(
     //      "Measure count does not match number of return operands!");
     //}
-    rewriter.replaceOp(op, cloned);
+    rewriter.replaceOp(&op, cloned);
   }
 
   static std::optional<size_t> getExtractIndex(ExtractOp extractOp) {
@@ -386,7 +386,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // as inputs, as these will be deleted later.
     for (auto* operation : llvm::make_early_inc_range(mqtUsers)) {
       mqtUsers.erase(operation); // safe deletion as op will be erased next
-      updateMQTOptInputs(operation, rewriter, newAlloc.getQureg(),
+      updateMQTOptInputs(*operation, rewriter, newAlloc.getQureg(),
                          measureCount);
     }
 
