@@ -22,9 +22,13 @@ message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 # Add the paths to the MLIR and LLVM CMake modules.
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
-list(APPEND CMAKE_MODULE_PATH "${CATALYST_CMAKE_DIR}")
 
-set(MLIR_INCLUDE_DIRS "${MLIR_INCLUDE_DIRS};${CATALYST_INCLUDE_DIRS}")
+option(ENABLE_CATALYST "Enable Catalyst conversion passes" OFF)
+if(ENABLE_CATALYST)
+  find_package(Catalyst REQUIRED CONFIG)
+  list(APPEND CMAKE_MODULE_PATH "${CATALYST_CMAKE_DIR}")
+  set(MLIR_INCLUDE_DIRS "${MLIR_INCLUDE_DIRS};${CATALYST_INCLUDE_DIRS}")
+endif()
 
 # Include the TableGen, LLVM and MLIR CMake modules.
 include(TableGen)
@@ -45,11 +49,6 @@ set(MLIR_BINARY_DIR ${CMAKE_BINARY_DIR})
 
 # add a compile feature for C++17
 set(CMAKE_CXX_STANDARD 17)
-
-option(ENABLE_CATALYST "Enable Catalyst conversion passes" OFF)
-if(ENABLE_CATALYST)
-  find_package(Catalyst REQUIRED CONFIG)
-endif()
 
 # add main library code
 add_subdirectory(include)
