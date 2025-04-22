@@ -130,7 +130,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
                        std::vector<mlir::Value>& currentQubitVariables) const {
     const auto in = op.getInQubits()[0];
     const auto ctrlIns = op.getAllCtrlInQubits();
-    const auto outs = op.getOutQubits();
+    const auto outs = op.getAllOutQubits();
 
     // Get the qubit index of every control qubit.
     std::vector<size_t> ctrlInsIndices(ctrlIns.size());

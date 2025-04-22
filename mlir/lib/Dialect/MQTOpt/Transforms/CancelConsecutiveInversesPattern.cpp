@@ -82,7 +82,7 @@ struct CancelConsecutiveInversesPattern final
       return mlir::failure();
     }
     auto unitaryUser = mlir::dyn_cast<UnitaryInterface>(user);
-    if (op.getOutQubits() != unitaryUser.getAllInQubits()) {
+    if (op.getAllOutQubits() != unitaryUser.getAllInQubits()) {
       return mlir::failure();
     }
     if (op.getPosCtrlInQubits().size() !=
@@ -105,12 +105,12 @@ struct CancelConsecutiveInversesPattern final
     // fresh vector on every call.
     const auto& userOutQubits = user.getAllOutQubits();
     // Also get the op's input qubits
-    const auto& opInQubits = user.getAllInQubits();
+    const auto& opInQubits = op.getAllInQubits();
 
     // Note: There might be multiple users of an operation. The qubits itself
     // can only be used once (linear typing). However, the user may output
     // multiple qubits, e.g., a CX gate, that are used by different users.
-    // Hence, the user may have multiple clid users.
+    // Hence, the user may have multiple child users.
     const auto& childUsers = user->getUsers();
 
     for (const auto& childUser : childUsers) {

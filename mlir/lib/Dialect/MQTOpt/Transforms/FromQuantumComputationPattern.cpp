@@ -192,14 +192,14 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
             currentQubitVariables[o->getTargets()[0]], controlQubitsPositive,
             controlQubitsNegative, rewriter);
         currentQubitVariables[o->getTargets()[0]] =
-            newUnitaryOp.getOutQubits()[0];
+            newUnitaryOp.getAllOutQubits()[0];
         for (size_t i = 0; i < controlQubitsPositive.size(); i++) {
           currentQubitVariables[controlQubitIndicesPositive[i]] =
-              newUnitaryOp.getOutQubits()[i + 1];
+              newUnitaryOp.getAllOutQubits()[i + 1];
         }
         for (size_t i = 0; i < controlQubitsNegative.size(); i++) {
           currentQubitVariables[controlQubitIndicesNegative[i]] =
-              newUnitaryOp.getOutQubits()[i + 1 + controlQubitsPositive.size()];
+              newUnitaryOp.getAllOutQubits()[i + 1 + controlQubitsPositive.size()];
         }
       } else if (o->getType() == qc::OpType::Measure) {
         // For measurement operations, we call the `createMeasureOp` function.
