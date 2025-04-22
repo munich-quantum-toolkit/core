@@ -346,9 +346,9 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         size_t index = *maybeIndex;
         currentQubitVariables[index] = extractOp.getOutQubit();
       } else if (llvm::isa<InsertOp>(current)) {
-        //  Do nothing for now, may change later.
+        // Do nothing for now, may change later.
       } else if (llvm::isa<AllocOp>(current)) {
-        //  Do nothing for now, may change later.
+        // Do nothing for now, may change later.
       } else if (llvm::isa<MeasureOp>(current)) {
         // We count the number of measurements and add a measurement operation
         // to the QuantumComputation.
