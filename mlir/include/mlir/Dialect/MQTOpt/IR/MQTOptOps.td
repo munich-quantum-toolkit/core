@@ -93,7 +93,7 @@ class GateOp<string mnemonic, list<Trait> traits = [NoMemoryEffect]> :
 }
 
 class UnitaryOp<string mnemonic, list<Trait> traits = []> :
-    GateOp<mnemonic, traits # [AttrSizedOperandSegments, UnitaryInterface]> {
+    GateOp<mnemonic, traits # [AttrSizedOperandSegments, AttrSizedResultSegments, UnitaryInterface]> {
     let arguments = (ins
         OptionalAttr<DenseF64ArrayAttr>:$static_params,
         OptionalAttr<DenseBoolArrayAttr>:$params_mask,
@@ -110,8 +110,9 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
     );
 
     let assemblyFormat = [{
-        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict $in_qubits ( `ctrl` $pos_ctrl_qubits^ )? ( `nctrl` $neg_ctrl_qubits^ )?
-        `:` type($out_qubits)(, type($pos_ctrl_out_qubits^))?(, type($neg_ctrl_out_qubits^))?
+        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)`
+        attr-dict $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
+        `:` type($out_qubits)( `ctrl` type($pos_ctrl_out_qubits)^ )?( `nctrl` type($neg_ctrl_out_qubits)^ )?
     }];
 }
 
