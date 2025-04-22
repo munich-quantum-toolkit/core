@@ -86,6 +86,8 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
             opResult
                 .getResultNumber(); // e.g. is 1 if it comes from an extract op
       } else {
+        // Will be caught, so further ops can be collected until the qubit is
+        // available.
         throw std::runtime_error(
             "Qubit was not found in list of previously defined qubits");
       }
@@ -138,12 +140,12 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
                        std::vector<mlir::Value>& currentQubitVariables) const {
 
     // Add the operation to the QuantumComputation.
-    qc::OpType opType;
+    qc::OpType opType = qc::OpType::H; // init placeholder-"H" overwritten next
     if (llvm::isa<HOp>(op)) {
       opType = qc::OpType::H;
     } else if (llvm::isa<XOp>(op)) {
       opType = qc::OpType::X;
-    } else {
+    } else { // TODO: support for more operations
       throw std::runtime_error("Unsupported operation type!");
     }
 
@@ -179,7 +181,8 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
               "Qubit was not found in list of previously defined qubits")) {
         // Try again later when all qubits are available
         return false;
-      } else {
+      }
+      {
         throw; // Rethrow the exception if it's not the expected one.
       }
     }
@@ -226,12 +229,10 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * @param op The operation to update.
    * @param rewriter The pattern rewriter to use.
    * @param qureg The new Qureg to replace old Qureg uses with.
-   * @param measureCount The number of measurements in the quantum circuit.
    */
   static void updateMQTOptInputs(mlir::Operation& op,
                                  mlir::PatternRewriter& rewriter,
-                                 const mlir::Value& qureg,
-                                 const size_t measureCount) {
+                                 const mlir::Value& qureg) {
     size_t i = 0;
     auto* const cloned = rewriter.clone(op);
     rewriter.setInsertionPoint(cloned);
@@ -257,11 +258,6 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       }
     }
 
-    // The return operation MUST use all measurement results as inputs.
-    // if (i != measureCount + 1) {
-    //  throw std::runtime_error(
-    //      "Measure count does not match number of return operands!");
-    //}
     rewriter.replaceOp(&op, cloned);
   }
 
@@ -303,7 +299,6 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         rewriter.getIntegerAttr(rewriter.getI64Type(), 0));
     newAlloc->setAttr("to_replace", rewriter.getUnitAttr());
 
-    size_t measureCount = 0;
     const std::size_t numQubits = *sizeAttr;
     // `currentQubitVariables` holds the current `Value` representation of each
     // qubit from the original register.
@@ -359,7 +354,6 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       } else if (llvm::isa<MeasureOp>(current)) {
         // We count the number of measurements and add a measurement operation
         // to the QuantumComputation.
-        measureCount++;
         auto measureOp = llvm::dyn_cast<MeasureOp>(current);
         handleMeasureOp(measureOp, currentQubitVariables);
       } else {
@@ -368,14 +362,6 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       }
 
       current = current->getNextNode();
-      // for (mlir::Operation* user : current->getUsers()) {
-      //   if (visited.find(user) != visited.end() ||
-      //       toVisit.end() != std::find(toVisit.begin(), toVisit.end(), user))
-      //       {
-      //     continue;
-      //   }
-      //   toVisit.push_back(user);
-      // }
     }
 
     std::stringstream ss{};
