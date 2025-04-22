@@ -25,7 +25,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
   # add link libraries
   target_link_libraries(
     ${MQT_CORE_TARGET_NAME}-dd
-    PUBLIC MQT::CoreIR nlohmann_json
+    PUBLIC MQT::CoreIR nlohmann_json::nlohmann_json
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
 
   # add MQT alias

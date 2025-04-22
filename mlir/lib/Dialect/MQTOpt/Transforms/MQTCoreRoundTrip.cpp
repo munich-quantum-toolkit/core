@@ -21,8 +21,8 @@ namespace mqt::ir::opt {
 #define GEN_PASS_DEF_MQTCOREROUNDTRIP
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
-struct MQTCoreRoundTrip : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
-  using MQTCoreRoundTripBase::MQTCoreRoundTripBase;
+struct MQTCoreRoundTrip final : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
+
   qc::QuantumComputation circuit;
 
   void runOnOperation() override {
@@ -33,7 +33,6 @@ struct MQTCoreRoundTrip : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
     populateToQuantumComputationPatterns(patterns, circuit);
-    llvm::outs() << "Finished populating patterns\n";
     populateFromQuantumComputationPatterns(patterns, circuit);
 
     // Apply patterns in an iterative and greedy manner.
@@ -41,7 +40,7 @@ struct MQTCoreRoundTrip : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
             // This was deprecated in LLVM@20, but the alternative does not yet
             // exist in LLVM@19.
             // NOLINTNEXTLINE(clang-diagnostic-deprecated-declarations)
-            mlir::applyPatternsAndFoldGreedily(op, std::move(patterns)))) {
+            mlir::applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }
