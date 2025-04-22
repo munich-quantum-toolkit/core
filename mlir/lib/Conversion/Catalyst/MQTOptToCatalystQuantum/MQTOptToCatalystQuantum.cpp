@@ -345,18 +345,6 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
       return failure();
     }
 
-    // TODO: This is an ugly HACK(?) but controlled gates expect runtime values.
-    llvm::SmallVector<mlir::Value> i1Values;
-    if (!inCtrlQubits.empty()) {
-      mlir::Type i1Type = rewriter.getI1Type();
-      auto constTrue = rewriter.create<mlir::arith::ConstantOp>(
-          op.getLoc(), i1Type, rewriter.getBoolAttr(true));
-      for (size_t i = 0; i < inCtrlQubits.size(); ++i) {
-        i1Values.push_back(constTrue.getResult());
-      }
-    }
-    mlir::ValueRange inCtrlQubitsValues(i1Values);
-
     // Create the new operation
     auto catalystOp = rewriter.create<catalyst::quantum::CustomOp>(
         op.getLoc(),
