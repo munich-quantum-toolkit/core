@@ -25,6 +25,12 @@ if(ENABLE_CATALYST)
 endif()
 
 add_mlir_tool(quantum-opt quantum-opt.cpp DEPENDS ${LIBS} SUPPORT_PLUGINS)
+
+if(ENABLE_CATALYST)
+  # This makes ENABLE_CATALYST available as a macro in the C++ file.
+  target_compile_definitions(quantum-opt PRIVATE ENABLE_CATALYST)
+endif()
+
 target_compile_options(quantum-opt PRIVATE -fexceptions)
 target_link_libraries(quantum-opt PUBLIC ${LIBS})
 llvm_update_compile_flags(quantum-opt)

@@ -12,7 +12,6 @@ set(MQT_MLIR_MIN_VERSION 19.0) # Catalyst supports only 19
 
 # MLIR must be installed on the system
 find_package(MLIR REQUIRED CONFIG)
-
 if(MLIR_VERSION VERSION_LESS MQT_MLIR_MIN_VERSION)
   message(FATAL_ERROR "MLIR version must be at least ${MQT_MLIR_MIN_VERSION}")
 endif()

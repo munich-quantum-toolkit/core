@@ -13,9 +13,6 @@
 #include "mlir/Conversion/Catalyst/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h" // IWYU pragma: keep
 #include "mlir/Conversion/Catalyst/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h" // IWYU pragma: keep
 #endif
-// #include "Quantum/IR/QuantumDialect.h" // IWYU pragma: keep
-#include "mlir/Conversion/Catalyst/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h" // IWYU pragma: keep
-#include "mlir/Conversion/Catalyst/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h" // IWYU pragma: keep
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"  // IWYU pragma: keep
 #include "mlir/Dialect/MQTDyn/Transforms/Passes.h" // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"  // IWYU pragma: keep
@@ -47,10 +44,7 @@ int main(const int argc, char** argv) {
   registry.insert<mqt::ir::opt::MQTOptDialect>();
   registry.insert<mqt::ir::dyn::MQTDynDialect>();
 
-  mlir::mqt::ir::conversions::registerCatalystQuantumToMQTOptPasses();
-  mlir::mqt::ir::conversions::registerMQTOptToCatalystQuantumPasses();
-  registry.insert<catalyst::quantum::QuantumDialect>();
-  // registerCatalystIfEnabled(registry);
+  registerCatalystIfEnabled(registry);
 
   return mlir::asMainReturnCode(
       MlirOptMain(argc, argv, "Quantum optimizer driver\n", registry));
