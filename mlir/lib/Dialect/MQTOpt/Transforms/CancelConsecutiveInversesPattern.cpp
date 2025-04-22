@@ -100,19 +100,25 @@ struct CancelConsecutiveInversesPattern final
                mlir::PatternRewriter& rewriter) const override {
     auto user = mlir::dyn_cast<UnitaryInterface>(
         *op->getUsers().begin()); // We always have exactly one user.
+    // When iterating over the output qubits, it is important to call
+    // `getAllOutQubits()` only once, as the output qubits are combined into a
+    // fresh vector on every call.
+    const auto& userOutQubits = user.getAllOutQubits();
+    // Also get the op's input qubits
+    const auto& opInQubits = user.getAllInQubits();
     const auto& childUsers = user->getUsers();
 
     for (const auto& childUser : childUsers) {
       for (size_t i = 0; i < childUser->getOperands().size(); i++) {
         const auto& operand = childUser->getOperand(i);
-        const auto found = std::find(user.getOutQubits().begin(),
-                                     user.getOutQubits().end(), operand);
-        if (found == user.getOutQubits().end()) {
+        const auto found = std::find(userOutQubits.begin(),
+                                     userOutQubits.end(), operand);
+        if (found == userOutQubits.end()) {
           continue;
         }
-        const auto idx = std::distance(user.getOutQubits().begin(), found);
+        const auto idx = std::distance(userOutQubits.begin(), found);
         rewriter.modifyOpInPlace(childUser, [&] {
-          childUser->setOperand(i, op.getAllInQubits()[idx]);
+          childUser->setOperand(i, opInQubits[idx]);
         });
       }
     }
