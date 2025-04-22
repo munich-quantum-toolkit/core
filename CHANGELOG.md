@@ -11,6 +11,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - ✨ Initial implementation of the mqtdyn Dialect ([#900](https://github.com/munich-quantum-toolkit/core/pull/900)) ([**@DRovara**](https://github.com/DRovara), [**@ystade**](https://github.com/ystade))
 
+### Fixed
+
+- 🐛 Add missing support for `sxdg` gates in Qiskit circuit import ([#930](https://github.com/munich-quantum-toolkit/core/pull/930)) ([**@burgholzer**](https://github.com/burgholzer))
+
 ### Changed
 
 - ⬆️ Update nlohmann_json to `v3.12.0` ([#921](https://github.com/munich-quantum-toolkit/core/pull/921)) ([**@burgholzer**](https://github.com/burgholzer))
