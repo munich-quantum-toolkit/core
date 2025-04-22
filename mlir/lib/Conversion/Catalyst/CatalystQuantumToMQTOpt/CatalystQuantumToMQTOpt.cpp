@@ -464,6 +464,8 @@ struct CatalystQuantumToMQTOpt
     MLIRContext* context = &getContext();
     auto* module = getOperation();
 
+    std::cout << "Cmap: " << cMap << "\n";
+
     ConversionTarget target(*context);
     target.addLegalDialect<::mqt::ir::opt::MQTOptDialect>();
     target.addIllegalDialect<catalyst::quantum::QuantumDialect>();

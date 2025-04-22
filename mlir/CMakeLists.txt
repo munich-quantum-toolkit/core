@@ -14,7 +14,6 @@ set(MQT_MLIR_MIN_VERSION 19.0)
 
 # MLIR must be installed on the system
 find_package(MLIR REQUIRED CONFIG)
-find_package(Catalyst REQUIRED CONFIG)
 
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
@@ -45,6 +44,11 @@ set(MLIR_BINARY_DIR ${CMAKE_BINARY_DIR})
 
 # add a compile feature for C++17
 set(CMAKE_CXX_STANDARD 17)
+
+option(ENABLE_CATALYST "Enable Catalyst conversion passes" OFF)
+if(ENABLE_CATALYST)
+  find_package(Catalyst REQUIRED CONFIG)
+endif()
 
 # add main library code
 add_subdirectory(include)

@@ -36,7 +36,7 @@ set(JSON_SystemInclude
     CACHE INTERNAL "Treat the library headers like system headers")
 cmake_dependent_option(JSON_Install "Install nlohmann_json library" ON "MQT_CORE_INSTALL" OFF)
 FetchContent_Declare(nlohmann_json URL ${JSON_URL} FIND_PACKAGE_ARGS ${JSON_VERSION})
-# list(APPEND FETCH_PACKAGES nlohmann_json)
+list(APPEND FETCH_PACKAGES nlohmann_json)
 
 option(USE_SYSTEM_BOOST "Whether to try to use the system Boost installation" OFF)
 set(BOOST_MIN_VERSION

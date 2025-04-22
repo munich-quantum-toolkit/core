@@ -7,24 +7,11 @@
  * Licensed under the MIT License
  */
 
-#include "Quantum/IR/QuantumDialect.h"
-#include "mlir/Conversion/Catalyst/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h"
-#include "mlir/Conversion/Catalyst/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h"
 #include "mlir/Dialect/Func/Extensions/AllExtensions.h"
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h" // IWYU pragma: keep
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h" // IWYU pragma: keep
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
-
-#include <mlir/Dialect/Func/Extensions/AllExtensions.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/InitAllDialects.h>
-#include <mlir/InitAllPasses.h>
-#include <mlir/Tools/mlir-opt/MlirOptMain.h>
 
 int main(const int argc, char** argv) {
   mlir::registerAllPasses();

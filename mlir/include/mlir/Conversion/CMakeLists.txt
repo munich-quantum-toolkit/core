@@ -5,4 +5,6 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(Catalyst)
+if(ENABLE_CATALYST)
+  add_subdirectory(Catalyst)
+endif()
