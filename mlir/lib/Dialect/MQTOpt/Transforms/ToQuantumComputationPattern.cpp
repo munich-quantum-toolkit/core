@@ -172,8 +172,10 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       currentQubitVariables[targetIndex] = outs[0];
 
       // Add the operation to the QuantumComputation.
-      circuit.emplace_back<StandardOperation(qc::Controls{ctrlInsIndices.cbegin(), ctrlInsIndices.cend()},
-          targetIndex, opType);
+      circuit.emplace_back <
+          StandardOperation(
+              qc::Controls{ctrlInsIndices.cbegin(), ctrlInsIndices.cend()},
+              targetIndex, opType);
     } catch (const std::runtime_error& e) {
       if (e.what() ==
           std::string(
