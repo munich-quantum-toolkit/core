@@ -181,9 +181,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         // Try again later when all qubits are available
         return false;
       }
-      {
-        throw; // Rethrow the exception if it's not the expected one.
-      }
+      throw; // Rethrow the exception if it's not the expected one.
     }
     return true; // success
   }
