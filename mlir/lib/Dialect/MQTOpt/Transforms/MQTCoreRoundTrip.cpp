@@ -19,6 +19,7 @@
 namespace mqt::ir::opt {
 
 #define GEN_PASS_DEF_MQTCOREROUNDTRIP
+#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 struct MQTCoreRoundTrip final : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
@@ -37,10 +38,8 @@ struct MQTCoreRoundTrip final : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
 
     // Apply patterns in an iterative and greedy manner.
     if (mlir::failed(
-            // This was deprecated in LLVM@20, but the alternative does not yet
-            // exist in LLVM@19.
             // NOLINTNEXTLINE(clang-diagnostic-deprecated-declarations)
-            mlir::applyPatternsAndFoldGreedily(op, std::move(patterns)))) {
+            APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }

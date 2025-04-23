@@ -12,13 +12,15 @@
 #ifdef ENABLE_CATALYST
 #include "mlir/Conversion/Catalyst/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h" // IWYU pragma: keep
 #include "mlir/Conversion/Catalyst/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h" // IWYU pragma: keep
+
+#include <Quantum/IR/QuantumOpsDialect.h.inc>
 #endif
+
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"  // IWYU pragma: keep
 #include "mlir/Dialect/MQTDyn/Transforms/Passes.h" // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"  // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h" // IWYU pragma: keep
 
-#include <Quantum/IR/QuantumOpsDialect.h.inc>
 #include <mlir/Dialect/Func/Extensions/AllExtensions.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/InitAllDialects.h>

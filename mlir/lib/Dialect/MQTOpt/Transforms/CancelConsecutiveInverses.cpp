@@ -18,8 +18,8 @@
 namespace mqt::ir::opt {
 
 #define GEN_PASS_DEF_CANCELCONSECUTIVEINVERSES
+#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
-
 /**
  * @brief This pass attempts to cancel consecutive self-inverse operations.
  */
@@ -36,8 +36,7 @@ struct CancelConsecutiveInverses final
     populateCancelInversesPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(
-            mlir::applyPatternsAndFoldGreedily(op, std::move(patterns)))) {
+    if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }
