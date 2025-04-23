@@ -16,7 +16,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
 #include <algorithm>
-#include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
@@ -29,10 +28,10 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 #include <optional>
-#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace mqt::ir::opt {
@@ -165,7 +164,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       // Get the qubit index of the target qubit.
       targetIndex = findQubitIndex(in, currentQubitVariables);
     } catch (const std::runtime_error& e) {
-      if (e.what() ==
+      if (std::string_view(e.what()) ==
           "Qubit was not found in list of previously defined qubits") {
         // Try again later when all qubits are available
         return false;
