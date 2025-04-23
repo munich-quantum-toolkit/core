@@ -8,7 +8,7 @@
 
 # set the include directory for the build tree
 set(MQT_MLIR_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
-set(MQT_MLIR_MIN_VERSION 20.0)
+set(MQT_MLIR_MIN_VERSION 19.0)
 
 # MLIR must be installed on the system
 find_package(MLIR REQUIRED CONFIG)
@@ -21,6 +21,20 @@ message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 # Add the paths to the MLIR and LLVM CMake modules.
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+
+string(REPLACE "." ";" MLIR_VERSION_COMPONENTS ${MLIR_VERSION})
+list(GET MLIR_VERSION_COMPONENTS 0 MLIR_VERSION_MAJOR)
+add_compile_definitions(MLIR_VERSION_MAJOR=${MLIR_VERSION_MAJOR})
+
+option(ENABLE_CATALYST "Enable Catalyst conversion passes" OFF)
+if(ENABLE_CATALYST)
+  if(NOT MLIR_VERSION_MAJOR EQUAL 19)
+    message(FATAL_ERROR "Catalyst currently requires MLIR 19.x")
+  endif()
+  find_package(Catalyst REQUIRED CONFIG)
+  list(APPEND CMAKE_MODULE_PATH "${CATALYST_CMAKE_DIR}")
+  set(MLIR_INCLUDE_DIRS "${MLIR_INCLUDE_DIRS};${CATALYST_INCLUDE_DIRS}")
+endif()
 
 # Include the TableGen, LLVM and MLIR CMake modules.
 include(TableGen)

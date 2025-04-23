@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
 #include <mlir/IR/PatternMatch.h>
@@ -37,7 +38,7 @@ struct QuantumSinkPass final : impl::QuantumSinkPassBase<QuantumSinkPass> {
     populateQuantumSinkPushPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
+    if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }

@@ -14,6 +14,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <utility>
+#include "mlir/Dialect/Common/Compat.h"
 
 namespace mqt::ir::opt {
 
@@ -36,7 +37,7 @@ struct CancelConsecutiveInverses final
     populateCancelInversesPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
+    if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }

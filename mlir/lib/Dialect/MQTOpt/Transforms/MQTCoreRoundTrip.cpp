@@ -9,6 +9,7 @@
  */
 
 #include "ir/QuantumComputation.hpp"
+#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
 #include <mlir/IR/PatternMatch.h>
@@ -40,7 +41,7 @@ struct MQTCoreRoundTrip final : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
             // This was deprecated in LLVM@20, but the alternative does not yet
             // exist in LLVM@19.
             // NOLINTNEXTLINE(clang-diagnostic-deprecated-declarations)
-            mlir::applyPatternsGreedily(op, std::move(patterns)))) {
+            APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }
