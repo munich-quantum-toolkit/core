@@ -23,8 +23,8 @@ func.func @bar() {
   // CHECK: %[[H:.*]] = quantum.custom "Hadamard"() %[[Q0]] : !quantum.bit
   %1 = mqtopt.h() %out_qubit : !mqtopt.Qubit
 
-// CHECK: %[[CX1:.*]]:2 = quantum.custom "CNOT"() %[[H]], %[[Q1]] : !quantum.bit, !quantum.bit
-// CHECK: %[[CX2:.*]]:2 = quantum.custom "CNOT"() %[[CX1]]#1, %[[Q2]] : !quantum.bit, !quantum.bit
+  // CHECK: %[[CX1:.*]]:2 = quantum.custom "CNOT"() %[[H]], %[[Q1]] : !quantum.bit, !quantum.bit
+  // CHECK: %[[CX2:.*]]:2 = quantum.custom "CNOT"() %[[CX1]]#1, %[[Q2]] : !quantum.bit, !quantum.bit
   %2:2 = mqtopt.x() %1 ctrl %out_qubit_1 : !mqtopt.Qubit, !mqtopt.Qubit
   %3:2 = mqtopt.x() %2#1 ctrl %out_qubit_3 : !mqtopt.Qubit, !mqtopt.Qubit
 

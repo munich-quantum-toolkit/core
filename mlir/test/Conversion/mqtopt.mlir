@@ -32,21 +32,21 @@ func.func @bar() {
   %3 = mqtopt.y() %2 : !mqtopt.Qubit
   %4 = mqtopt.z() %3 : !mqtopt.Qubit
 
- // CHECK: %[[CNOT:.*]]:2 = quantum.custom "CNOT"() %[[Z]], %[[Q1]] : !quantum.bit, !quantum.bit
- // CHECK: %[[CY:.*]]:2 = quantum.custom "CY"() %[[CNOT]]#0, %[[CNOT]]#1 : !quantum.bit, !quantum.bit
- // CHECK: %[[CZ:.*]]:2 = quantum.custom "CZ"() %[[CY]]#0, %[[CY]]#1 : !quantum.bit, !quantum.bit
- // CHECK: %[[SW0:.*]]:2 = quantum.custom "SWAP"() %[[CZ]]#1, %[[CZ]]#0 : !quantum.bit, !quantum.bit
- // CHECK: %[[TOF:.*]]:3 = quantum.custom "Toffoli"() %[[SW0]]#0, %[[Q2]], %[[SW0]]#1 : !quantum.bit, !quantum.bit, !quantum.bit
- %5:2 = mqtopt.x() %4 ctrl %out_qubit_1 : !mqtopt.Qubit, !mqtopt.Qubit
+  // CHECK: %[[CNOT:.*]]:2 = quantum.custom "CNOT"() %[[Z]], %[[Q1]] : !quantum.bit, !quantum.bit
+  // CHECK: %[[CY:.*]]:2 = quantum.custom "CY"() %[[CNOT]]#0, %[[CNOT]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[CZ:.*]]:2 = quantum.custom "CZ"() %[[CY]]#0, %[[CY]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[SW0:.*]]:2 = quantum.custom "SWAP"() %[[CZ]]#1, %[[CZ]]#0 : !quantum.bit, !quantum.bit
+  // CHECK: %[[TOF:.*]]:3 = quantum.custom "Toffoli"() %[[SW0]]#0, %[[Q2]], %[[SW0]]#1 : !quantum.bit, !quantum.bit, !quantum.bit
+  %5:2 = mqtopt.x() %4 ctrl %out_qubit_1 : !mqtopt.Qubit, !mqtopt.Qubit
   %6:2 = mqtopt.y() %5#0 ctrl %5#1 : !mqtopt.Qubit, !mqtopt.Qubit
   %7:2 = mqtopt.z() %6#0 ctrl %6#1 : !mqtopt.Qubit, !mqtopt.Qubit
   %8:2 = mqtopt.swap() %7#1, %7#0 : !mqtopt.Qubit, !mqtopt.Qubit
   %9:3 = mqtopt.x() %8#0 ctrl %out_qubit_3, %8#1 : !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
 
-// CHECK: %[[RX:.*]] = quantum.custom "RX"(%cst) %[[TOF]]#0 : !quantum.bit
-// CHECK: %[[RY:.*]] = quantum.custom "RY"(%cst) %[[RX]] : !quantum.bit
-// CHECK: %[[RZ:.*]] = quantum.custom "RZ"(%cst) %[[RY]] : !quantum.bit
-// CHECK: %[[PS:.*]] = quantum.custom "PhaseShift"(%cst) %[[RZ]] : !quantum.bit
+  // CHECK: %[[RX:.*]] = quantum.custom "RX"(%cst) %[[TOF]]#0 : !quantum.bit
+  // CHECK: %[[RY:.*]] = quantum.custom "RY"(%cst) %[[RX]] : !quantum.bit
+  // CHECK: %[[RZ:.*]] = quantum.custom "RZ"(%cst) %[[RY]] : !quantum.bit
+  // CHECK: %[[PS:.*]] = quantum.custom "PhaseShift"(%cst) %[[RZ]] : !quantum.bit
   %10 = mqtopt.rx(%cst) %9#0 : !mqtopt.Qubit
   %11 = mqtopt.ry(%cst) %10 : !mqtopt.Qubit
   %12 = mqtopt.rz(%cst) %11 : !mqtopt.Qubit
