@@ -479,23 +479,53 @@ struct MQTOptToCatalystQuantum
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::POp>>(typeConverter,
                                                                context);
 
-    // Boilerplate code to prevent: unresolved materialization
+    // Boilerplate code to prevent "unresolved materialization" errors when the
+    // IR contains ops with signature or operand/result types not yet rewritten:
+    // https://www.jeremykun.com/2023/10/23/mlir-dialect-conversion
+
+    // Rewrites func.func signatures to use the converted types.
+    // Needed so that the converted argument/result types match expectations
+    // in callers, bodies, and return ops.
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
         patterns, typeConverter);
+
+    // Mark func.func as dynamically legal if:
+    // - the signature types are legal under the type converter
+    // - all block arguments in the function body are type-converted
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
       return typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
     });
 
+    // Converts return ops (func.return) to match the new function result types.
+    // Required when the function result types are changed by the converter.
     populateReturnOpTypeConversionPattern(patterns, typeConverter);
+
+    // Legal only if the return operand types match the converted function
+    // result types.
     target.addDynamicallyLegalOp<func::ReturnOp>(
         [&](func::ReturnOp op) { return typeConverter.isLegal(op); });
 
+    // Rewrites call sites (func.call) to use the converted argument and result
+    // types. Needed so that calls into rewritten functions pass/receive correct
+    // types.
     populateCallOpTypeConversionPattern(patterns, typeConverter);
+
+    // Legal only if operand/result types are all type-converted correctly.
     target.addDynamicallyLegalOp<func::CallOp>(
         [&](func::CallOp op) { return typeConverter.isLegal(op); });
 
+    // Rewrites control-flow ops like cf.br, cf.cond_br, etc.
+    // Ensures block argument types are consistent after conversion.
+    // Required for any dialects or passes that use CFG-based control flow.
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
+
+    // Fallback: mark any unhandled op as dynamically legal if:
+    // - it's not a return or branch-like op (i.e., doesn't require special
+    // handling), or
+    // - it passes the legality checks for branch ops or return ops
+    // This is crucial to avoid blocking conversion for unknown ops that don't
+    // require specific operand type handling.
     target.markUnknownOpDynamicallyLegal([&](Operation* op) {
       return isNotBranchOpInterfaceOrReturnLikeOp(op) ||
              isLegalForBranchOpInterfaceTypeConversionPattern(op,
