@@ -317,8 +317,6 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     mlir::Operation* current = op;
     while (current != nullptr) {
-      llvm::outs() << current->getName().getStringRef() << "\n";
-
       // no need to visit non-mqtopt operations
       if (visited.find(current) != visited.end() ||
           current->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
