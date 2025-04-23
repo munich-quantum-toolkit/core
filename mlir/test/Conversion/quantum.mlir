@@ -24,7 +24,7 @@ module {
     %q1 = quantum.extract %r0[ 1] : !quantum.reg -> !quantum.bit
     %q2 = quantum.extract %r0[ 2] : !quantum.reg -> !quantum.bit
 
-    // CHECK: %[[H:.*]] = mqtopt.H( static [] mask []) %[[Q0]] : !mqtopt.Qubit
+    // CHECK: %[[H:.*]] = mqtopt.h( static [] mask []) %[[Q0]] : !mqtopt.Qubit
     // CHECK: %[[X:.*]] = mqtopt.x( static [] mask []) %[[H]] : !mqtopt.Qubit
     // CHECK: %[[Y:.*]] = mqtopt.y( static [] mask []) %[[X]] : !mqtopt.Qubit
     // CHECK: %[[Z:.*]] = mqtopt.z( static [] mask []) %[[Y]] : !mqtopt.Qubit
@@ -62,7 +62,7 @@ module {
     %crz:2 = quantum.custom "CRY"(%phi0) %cry#1, %cry#0 : !quantum.bit, !quantum.bit
     %cps:2 = quantum.custom "ControlledPhaseShift"(%phi0) %crz#1, %crz#0 : !quantum.bit, !quantum.bit
 
-    // CHECK: %[[OUT:.*]] = mqtopt.rx(%[[PHI]] static [3.141592e+00, 0.000000e+00] mask [false, true, true]) %[[CPS]]#0 : !mqtopt.Qubit
+    // CHECK: %[[OUT:.*]] = mqtopt.rx(%[[PHI]] static [] mask [false]) %[[CPS]]#0 : !mqtopt.Qubit
     %out = quantum.custom "RX"(%phi0) %cps#0 {
       //static_params = array<f64: 3.141592, 0.0>,
       //params_mask = array<i1: false, true, true>
