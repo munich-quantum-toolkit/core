@@ -19,6 +19,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - ⏪️ Restore support for (MLIR and) LLVM v19 ([#934](https://github.com/munich-quantum-toolkit/core/pull/934)) ([**@flowerthrower**](https://github.com/flowerthrower)), [**@ystade**](https://github.com/ystade))
 - ⬆️ Update nlohmann_json to `v3.12.0` ([#921](https://github.com/munich-quantum-toolkit/core/pull/921)) ([**@burgholzer**](https://github.com/burgholzer))
+- ♻️ Unify operands and results in MLIR dialects and add Page for MLIR in docs ([#931](https://github.com/munich-quantum-toolkit/core/pull/931)) ([**@ystade**](https://github.com/ystade))
 
 ## [3.0.2] - 2025-04-07
 
