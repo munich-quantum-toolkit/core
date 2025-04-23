@@ -135,7 +135,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * @param currentQubitVariables The list of previously defined qubit
    * variables.
    *
-   * return if the operation was successfully handled
+   * @returns if the operation was successfully handled
    */
   bool handleUnitaryOp(UnitaryInterface op,
                        std::vector<mlir::Value>& currentQubitVariables) const {
