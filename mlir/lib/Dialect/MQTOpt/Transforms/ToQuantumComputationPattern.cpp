@@ -178,8 +178,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
               targetIndex, opType);
     } catch (const std::runtime_error& e) {
       if (e.what() ==
-          std::string(
-              "Qubit was not found in list of previously defined qubits")) {
+          "Qubit was not found in list of previously defined qubits") {
         // Try again later when all qubits are available
         return false;
       }
@@ -319,8 +318,6 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     mlir::Operation* current = op;
     while (current != nullptr) {
-      llvm::outs() << current->getName().getStringRef() << "\n";
-
       // no need to visit non-mqtopt operations
       if (visited.find(current) != visited.end() ||
           current->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
