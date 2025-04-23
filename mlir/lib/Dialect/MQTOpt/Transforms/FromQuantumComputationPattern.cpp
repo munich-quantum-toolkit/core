@@ -86,10 +86,6 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     return insert;
   }
 
-  // rewriter.create<::mqt::ir::opt::InsertOp>(
-  //         op.getLoc(), resultType, inQregValue, qubitValue, idxValue,
-  //         idxIntegerAttr);
-
   /**
    * @brief Creates a unitary operation on a given qubit with any number of
    * positive or negative controls.
