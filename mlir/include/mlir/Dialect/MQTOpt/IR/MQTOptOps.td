@@ -74,7 +74,7 @@ def QubitType : MQTOptType<"Qubit", "Qubit"> {
     let summary = "A value-semantic qubit (state).";
 }
 
-def QuregType : MQTOptType<"QubitRegister", "QubitRegister"> {
+def QregType : MQTOptType<"QubitRegister", "QubitRegister"> {
     let summary = "An array of value-semantic qubits (i.e. quantum register).";
 }
 
@@ -558,7 +558,7 @@ def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
     );
 
     let results = (outs
-        QuregType:$qureg
+        QregType:$qreg
     );
 }
 
@@ -578,7 +578,7 @@ def DeallocOp : ResourceOp<"deallocQubitRegister"> {
     }];
 
     let arguments = (ins
-        QuregType:$qureg
+        QregType:$qreg
     );
 }
 
@@ -594,18 +594,18 @@ def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
 
         Extract:
 
-        %out_qureg, %out_qubit = "mqtopt.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %out_qreg, %out_qubit = "mqtopt.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
     }];
 
     let arguments = (ins
-        QuregType:$in_qureg,
+        QregType:$in_qreg,
         Optional<I64>:$index,
         OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index_attr
     );
 
     let results = (outs
-        QuregType:$out_qureg,
+        QregType:$out_qreg,
         QubitType:$out_qubit
     );
 }
@@ -621,14 +621,14 @@ def InsertOp : ResourceOp<"insertQubit", [UniqueIndexDefinition]> {
     }];
 
     let arguments = (ins
-        QuregType:$in_qureg,
+        QregType:$in_qreg,
         QubitType:$in_qubit,
         Optional<I64>:$index,
         OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index_attr
     );
 
     let results = (outs
-        QuregType:$out_qureg
+        QregType:$out_qreg
     );
 }
 

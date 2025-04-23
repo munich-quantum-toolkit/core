@@ -61,7 +61,7 @@ def QubitType : MQTDynType<"Qubit", "Qubit"> {
     let summary = "A qubit reference.";
 }
 
-def QuregType : MQTDynType<"QubitRegister", "QubitRegister"> {
+def QregType : MQTDynType<"QubitRegister", "QubitRegister"> {
     let summary = "An array of qubit references.";
 }
 
@@ -187,7 +187,7 @@ def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
     );
 
     let results = (outs
-        QuregType:$qureg
+        QregType:$qreg
     );
 }
 
@@ -205,7 +205,7 @@ def DeallocOp : ResourceOp<"deallocQubitRegister"> {
     }];
 
     let arguments = (ins
-        QuregType:$qureg
+        QregType:$qreg
     );
 }
 
@@ -226,7 +226,7 @@ def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
     }];
 
     let arguments = (ins
-        QuregType:$in_qureg,
+        QregType:$in_qreg,
         Optional<I64>:$index,
         OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index_attr
     );

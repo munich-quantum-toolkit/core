@@ -324,7 +324,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // NOLINTNEXTLINE(bugprone-nondeterministic-pointer-iteration-order)
     for (auto* operation : visited) {
       if (operation->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
-        updateMQTOptInputs(*operation, rewriter, newAlloc.getQureg(),
+        updateMQTOptInputs(*operation, rewriter, newAlloc.getQreg(),
                            measureCount);
       }
     }

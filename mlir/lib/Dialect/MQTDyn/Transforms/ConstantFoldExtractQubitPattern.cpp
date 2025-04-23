@@ -47,7 +47,7 @@ struct ConstantFoldExtractQubitPattern final
         mlir::cast<mlir::arith::ConstantOp>(index.getDefiningOp());
     auto value = mlir::cast<mlir::IntegerAttr>(definition.getValue()).getInt();
     rewriter.replaceOpWithNewOp<ExtractOp>(op, op.getOutQubit().getType(),
-                                           op.getInQureg(), mlir::Value(),
+                                           op.getInQreg(), mlir::Value(),
                                            rewriter.getI64IntegerAttr(value));
   }
 };
