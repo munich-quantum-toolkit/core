@@ -469,6 +469,19 @@ struct MQTOptToCatalystQuantum
     target.addLegalDialect<catalyst::quantum::QuantumDialect>();
     target.addIllegalDialect<::mqt::ir::opt::MQTOptDialect>();
 
+    // Mark operations legal, that have no equivalent in the target dialect
+    target.addLegalOp<
+        ::mqt::ir::opt::IOp, ::mqt::ir::opt::GPhaseOp,
+        ::mqt::ir::opt::BarrierOp, ::mqt::ir::opt::SOp, ::mqt::ir::opt::SdgOp,
+        ::mqt::ir::opt::TOp, ::mqt::ir::opt::TdgOp, ::mqt::ir::opt::VOp,
+        ::mqt::ir::opt::VdgOp, ::mqt::ir::opt::UOp, ::mqt::ir::opt::U2Op,
+        ::mqt::ir::opt::SXOp, ::mqt::ir::opt::SXdgOp, ::mqt::ir::opt::iSWAPOp,
+        ::mqt::ir::opt::iSWAPdgOp, ::mqt::ir::opt::PeresOp,
+        ::mqt::ir::opt::PeresdgOp, ::mqt::ir::opt::DCXOp, ::mqt::ir::opt::ECROp,
+        ::mqt::ir::opt::RXXOp, ::mqt::ir::opt::RYYOp, ::mqt::ir::opt::RZZOp,
+        ::mqt::ir::opt::RZXOp, ::mqt::ir::opt::XXminusYY,
+        ::mqt::ir::opt::XXplusYY>();
+
     RewritePatternSet patterns(context);
     MQTOptToCatalystQuantumTypeConverter typeConverter(context);
 

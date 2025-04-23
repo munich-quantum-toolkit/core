@@ -13,7 +13,7 @@ def CatalystQuantumToMQTOpt : Pass<"quantum-to-mqtopt"> {
 
   let description = [{
     This pass converts Catalyst's `quantum` to the `mqtopt` dialect.
-    The following operations are NOT converted:
+    The following operations are currently NOT converted (and instead marked legal):
     - DeviceInitOp
     - DeviceReleaseOp
     - NamedObsOp
