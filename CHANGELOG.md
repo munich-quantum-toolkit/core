@@ -13,6 +13,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- 🐛 Fixed a bug on macOS, caused by accessing an invalidated iterator after erasure in a loop ([#932](https://github.com/munich-quantum-toolkit/core/pull/932)) ([**@flowerthrower**](https://github.com/flowerthrower))
 - 🐛 Add missing support for `sxdg` gates in Qiskit circuit import ([#930](https://github.com/munich-quantum-toolkit/core/pull/930)) ([**@burgholzer**](https://github.com/burgholzer))
 
 ### Changed
