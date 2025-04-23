@@ -154,37 +154,35 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     const auto ctrlIns = op.getCtrlQubits();
     const auto outs = op.getOutQubits();
 
+    // Get the qubit index of every control qubit.
+    std::vector<size_t> ctrlInsIndices(ctrlIns.size());
+    size_t targetIndex = 0; // Placeholder
     try {
-      // Get the qubit index of every control qubit.
-      std::vector<size_t> ctrlInsIndices(ctrlIns.size());
       std::transform(ctrlIns.begin(), ctrlIns.end(), ctrlInsIndices.begin(),
                      [&currentQubitVariables](const mlir::Value val) {
                        return findQubitIndex(val, currentQubitVariables);
                      });
-
       // Get the qubit index of the target qubit.
-      const size_t targetIndex = findQubitIndex(in, currentQubitVariables);
-
-      // Update `currentQubitVariables` with the new qubit values.
-      for (size_t i = 0; i < ctrlInsIndices.size(); i++) {
-        currentQubitVariables[ctrlInsIndices[i]] = outs[i + 1];
-      }
-      currentQubitVariables[targetIndex] = outs[0];
-
-      // Add the operation to the QuantumComputation.
-      circuit.emplace_back <
-          StandardOperation(
-              qc::Controls{ctrlInsIndices.cbegin(), ctrlInsIndices.cend()},
-              targetIndex, opType);
+      targetIndex = findQubitIndex(in, currentQubitVariables);
     } catch (const std::runtime_error& e) {
       if (e.what() ==
-          std::string(
-              "Qubit was not found in list of previously defined qubits")) {
+          "Qubit was not found in list of previously defined qubits") {
         // Try again later when all qubits are available
         return false;
       }
       throw; // Rethrow the exception if it's not the expected one.
     }
+    // Update `currentQubitVariables` with the new qubit values.
+    for (size_t i = 0; i < ctrlInsIndices.size(); i++) {
+      currentQubitVariables[ctrlInsIndices[i]] = outs[i + 1];
+    }
+    currentQubitVariables[targetIndex] = outs[0];
+
+    // Add the operation to the QuantumComputation.
+    circuit.emplace_back<qc::StandardOperation>(
+        qc::Controls{ctrlInsIndices.cbegin(), ctrlInsIndices.cend()},
+        targetIndex, opType);
+
     return true; // success
   }
 
@@ -314,8 +312,8 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     circuit.addQubitRegister(numQubits, regName);
     circuit.addClassicalRegister(numQubits);
 
-    std::set<mlir::Operation*> visited{};
-    std::set<mlir::Operation*> mqtUsers{};
+    std::unordered_set<mlir::Operation*> visited;
+    std::unordered_set<mlir::Operation*> mqtUsers;
 
     mlir::Operation* current = op;
     while (current != nullptr) {
@@ -372,23 +370,34 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     // Update the inputs of all non-mqtopt operations that use mqtopt operations
     // as inputs, as these will be deleted later.
-    for (auto* operation : llvm::make_early_inc_range(mqtUsers)) {
-      mqtUsers.erase(operation); // safe deletion as op will be erased next
+    for (auto it = mqtUsers.begin(); it != mqtUsers.end(); /* no increment */) {
+      auto* operation = *it;
+      it = mqtUsers.erase(it); // erase returns the next valid iterator
       updateMQTOptInputs(*operation, rewriter, newAlloc.getQureg());
     }
 
-    // Delete all operations that are part of the mqtopt dialect (except for
-    // `AllocOp`).
-    visited.erase(op); // erase alloc op
-    while (!visited.empty()) {
-      // Enable updates of `visited` set in the loop.
-      for (auto* operation : llvm::make_early_inc_range(visited)) {
-        if (operation->getDialect()->getNamespace() == DIALECT_NAME_MQTOPT) {
-          if (operation->getUsers().empty()) {
-            visited.erase(operation);
-            rewriter.eraseOp(
-                operation); // deletes all definitions of defining OPs
-          }
+    // Remove all dead mqtopt operations except AllocOp.
+    visited.erase(op); // Skip the original AllocOp
+    bool progress = true;
+    while (progress) {
+      progress = false;
+
+      for (auto it = visited.begin(); it != visited.end(); /* no increment */) {
+        mlir::Operation* operation = *it;
+
+        // Skip if not part of the mqtopt dialect
+        if (operation->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
+          ++it;
+          continue;
+        }
+
+        // Only erase ops with no remaining users
+        if (operation->getUsers().empty()) {
+          it = visited.erase(it);      // remove from visited
+          rewriter.eraseOp(operation); // erase from IR
+          progress = true;
+        } else {
+          ++it;
         }
       }
     }
