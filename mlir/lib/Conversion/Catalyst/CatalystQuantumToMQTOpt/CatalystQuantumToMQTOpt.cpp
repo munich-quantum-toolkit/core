@@ -327,14 +327,14 @@ struct ConvertQuantumCustomOp
         gateName == "ControlledPhaseShift") {
 
       assert(inQubitsVec.size() == 2 && "Expected 1 control + 1 target qubit");
-      inCtrlQubitsVec.push_back(inQubitsVec[0]);
+      inCtrlQubitsVec.emplace_back(inQubitsVec[0]);
       inQubitsVec = {inQubitsVec[1]};
 
     } else if (gateName == "Toffoli") {
 
       assert(inQubitsVec.size() == 3 && "Expected 2 controls + 1 target qubit");
-      inCtrlQubitsVec.push_back(inQubitsVec[0]);
-      inCtrlQubitsVec.push_back(inQubitsVec[1]);
+      inCtrlQubitsVec.emplace_back(inQubitsVec[0]);
+      inCtrlQubitsVec.emplace_back(inQubitsVec[1]);
       inQubitsVec = {inQubitsVec[2]};
     }
 
