@@ -58,24 +58,17 @@ public:
 
 struct ConvertMQTOptAlloc
     : public OpConversionPattern<::mqt::ir::opt::AllocOp> {
-
-  ConvertMQTOptAlloc(const TypeConverter& typeConverter, MLIRContext* context)
-      : OpConversionPattern<::mqt::ir::opt::AllocOp>(typeConverter, context) {}
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(::mqt::ir::opt::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-
-    // Extract operand(s) and attribute(s)
-    auto const nQubitsValue = adaptor.getSize();
-    auto const nQubitsIntegerAttr = adaptor.getSizeAttrAttr();
-
     // Prepare the result type(s)
     auto resultType = catalyst::quantum::QuregType::get(rewriter.getContext());
 
     // Create the new operation
     auto catalystOp = rewriter.create<catalyst::quantum::AllocOp>(
-        op.getLoc(), resultType, nQubitsValue, nQubitsIntegerAttr);
+        op.getLoc(), resultType, adaptor.getSize(), adaptor.getSizeAttrAttr());
 
     // Get the result of the new operation, which represents the qubit register
     auto trgtQreg = catalystOp->getResult(0);
@@ -102,24 +95,14 @@ struct ConvertMQTOptAlloc
 
 struct ConvertMQTOptDealloc
     : public OpConversionPattern<::mqt::ir::opt::DeallocOp> {
-
-  ConvertMQTOptDealloc(const TypeConverter& typeConverter, MLIRContext* context)
-      : OpConversionPattern<::mqt::ir::opt::DeallocOp>(typeConverter, context) {
-  }
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(::mqt::ir::opt::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-
-    // Extract operand(s)
-    auto qregValue = adaptor.getQureg();
-
-    // Prepare the result type(s)
-    auto resultTypes = ::mlir::TypeRange({});
-
     // Create the new operation
     auto catalystOp = rewriter.create<catalyst::quantum::DeallocOp>(
-        op.getLoc(), resultTypes, qregValue);
+        op.getLoc(), ::mlir::TypeRange({}), adaptor.getQureg());
 
     // Replace the original with the new operation
     rewriter.replaceOp(op, catalystOp);
@@ -129,10 +112,7 @@ struct ConvertMQTOptDealloc
 
 struct ConvertMQTOptMeasure
     : public OpConversionPattern<::mqt::ir::opt::MeasureOp> {
-
-  ConvertMQTOptMeasure(const TypeConverter& typeConverter, MLIRContext* context)
-      : OpConversionPattern<::mqt::ir::opt::MeasureOp>(typeConverter, context) {
-  }
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(::mqt::ir::opt::MeasureOp op, OpAdaptor adaptor,
@@ -196,26 +176,18 @@ struct ConvertMQTOptMeasure
 
 struct ConvertMQTOptExtract
     : public OpConversionPattern<::mqt::ir::opt::ExtractOp> {
-
-  ConvertMQTOptExtract(const TypeConverter& typeConverter, MLIRContext* context)
-      : OpConversionPattern<::mqt::ir::opt::ExtractOp>(typeConverter, context) {
-  }
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(::mqt::ir::opt::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-
-    // Extract operand(s), and attribute(s)
-    auto qregValue = adaptor.getInQureg();
-    auto idxValue = adaptor.getIndex();
-    auto idxIntegerAttr = adaptor.getIndexAttrAttr();
-
     // Prepare the result type(s)
     auto resultType = catalyst::quantum::QubitType::get(rewriter.getContext());
 
     // Create the new operation
     auto catalystOp = rewriter.create<catalyst::quantum::ExtractOp>(
-        op.getLoc(), resultType, qregValue, idxValue, idxIntegerAttr);
+        op.getLoc(), resultType, adaptor.getInQureg(), adaptor.getIndex(),
+        adaptor.getIndexAttrAttr());
 
     auto mqtQreg = op->getResult(0);
     auto catalystQreg = catalystOp.getOperand(0);
@@ -272,9 +244,7 @@ struct ConvertMQTOptExtract
 
 struct ConvertMQTOptInsert
     : public OpConversionPattern<::mqt::ir::opt::InsertOp> {
-
-  ConvertMQTOptInsert(const TypeConverter& typeConverter, MLIRContext* context)
-      : OpConversionPattern<::mqt::ir::opt::InsertOp>(typeConverter, context) {}
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(::mqt::ir::opt::InsertOp op, OpAdaptor adaptor,
@@ -308,7 +278,6 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
   matchAndRewrite(MQTGateOp op, typename MQTGateOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Extract operand(s) and attribute(s)
-    auto paramsValues = adaptor.getParams();
     auto inQubitsValues = adaptor.getInQubits(); // excl. controls
     auto posCtrlQubitsValues = adaptor.getPosCtrlQubits();
     auto negCtrlQubitsValues = adaptor.getNegCtrlQubits();
@@ -343,7 +312,7 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
         op.getLoc(),
         /*out_qubits=*/outQubitTypes,
         /*out_ctrl_qubits=*/mlir::TypeRange({}),
-        /*params=*/paramsValues,
+        /*params=*/adaptor.getParams(),
         /*in_qubits=*/inQubits,
         /*gate_name=*/gateName,
         /*adjoint=*/nullptr,
