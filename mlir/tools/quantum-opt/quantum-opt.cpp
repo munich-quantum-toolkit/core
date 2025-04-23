@@ -13,7 +13,7 @@
 #include "mlir/Conversion/Catalyst/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h" // IWYU pragma: keep
 #include "mlir/Conversion/Catalyst/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h" // IWYU pragma: keep
 
-#include <Quantum/IR/QuantumOpsDialect.h.inc>
+#include <Quantum/IR/QuantumDialect.h>
 #endif
 
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"  // IWYU pragma: keep
