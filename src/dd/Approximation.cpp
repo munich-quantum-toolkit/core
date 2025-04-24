@@ -19,14 +19,39 @@
 #include <unordered_map>
 
 namespace dd {
+namespace {
+/**
+ * @brief Recursively rebuild @p state. Exclude edges contained in @p exclude.
+ * @return Rebuilt VectorDD.
+ */
+VectorDD rebuild(const VectorDD& state,
+                 const std::forward_list<vEdge*>& exclude, Package& dd) {
+  const auto it = std::find(exclude.begin(), exclude.end(), &state);
+  if (it != exclude.end()) {
+    return vEdge::zero();
+  }
 
-void approximate(VectorDD& state, const double fidelity, Package& dd) {
+  if (state.isTerminal()) {
+    return state;
+  }
+
+  std::array<vEdge, RADIX> edges{rebuild(state.p->e[0], exclude, dd),
+                                 rebuild(state.p->e[1], exclude, dd)};
+
+  auto e = dd.makeDDNode(state.p->v, edges);
+  e.w = dd.cn.lookup(e.w * state.w);
+  return e;
+}
+}; // namespace
+
+VectorDD approximate(VectorDD& state, const double fidelity, Package& dd) {
   using ContributionMap = std::unordered_map<const vEdge*, double>;
   using Layer = std::forward_list<vEdge*>;
 
   constexpr auto mag2 = ComplexNumbers::mag2;
 
   Layer l{&state};
+  Layer exclude{};
   ContributionMap m{{&state, mag2(state.w)}};
 
   double budget = 1 - fidelity;
@@ -36,10 +61,8 @@ void approximate(VectorDD& state, const double fidelity, Package& dd) {
 
     for (vEdge* edge : l) {
       const double contribution = m[edge];
-
       if (contribution <= budget) {
-        dd.decRef(*edge);
-        *edge = vEdge::zero();
+        exclude.emplace_front(edge);
         budget -= contribution;
       } else if (!edge->isTerminal()) {
         vNode* node = edge->p;
@@ -60,9 +83,14 @@ void approximate(VectorDD& state, const double fidelity, Package& dd) {
     m = std::move(nextM);
   }
 
-  auto& mm = dd.getMemoryManager<vNode>();
-  state = vEdge::normalize(state.p, state.p->e, mm, dd.cn);
-  state.w = dd.cn.lookup(state.w / std::sqrt(mag2(state.w)));
+  auto approx = rebuild(state, exclude, dd);
+  approx.w = dd.cn.lookup(approx.w / std::sqrt(mag2(approx.w)));
+
+  dd.incRef(approx);
+  dd.decRef(state);
+  dd.garbageCollect();
+
+  return approx;
 }
 
 } // namespace dd

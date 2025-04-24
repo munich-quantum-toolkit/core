@@ -25,6 +25,6 @@ namespace dd {
  * @param fidelity The desired final fidelity after approximation.
  * @param dd The DD package to use for the simulation
  */
-void approximate(VectorDD& state, double fidelity, Package& dd);
+VectorDD approximate(VectorDD& state, double fidelity, Package& dd);
 
 } // namespace dd
