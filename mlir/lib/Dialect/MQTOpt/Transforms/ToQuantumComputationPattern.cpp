@@ -66,28 +66,31 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * variables.
    *
    * @return The index of the qubit in the list of previously defined qubit
-   * variables.
+   * variables. Throws an exception if the qubit is not found.
    */
   static size_t
   findQubitIndex(const mlir::Value& input,
                  std::vector<mlir::Value>& currentQubitVariables) {
     size_t arrayIndex = 0;
+
+    // Check if the input is an operation result
     if (const auto opResult = llvm::dyn_cast<mlir::OpResult>(input)) {
       arrayIndex = opResult.getResultNumber();
     } else {
       throw std::runtime_error(
           "Operand is not an operation result. This should never happen!");
     }
+
+    // Find the qubit in the list of previously defined qubit variables
     for (size_t i = 0; i < currentQubitVariables.size(); i++) {
       size_t qubitArrayIndex = 0;
       if (currentQubitVariables[i] != nullptr) {
         auto opResult =
             llvm::dyn_cast<mlir::OpResult>(currentQubitVariables[i]);
-        // e.g. is 1 if it comes from an extract op
-        qubitArrayIndex = opResult.getResultNumber(); 
+        // E.g., index `1` if it comes from an extract op
+        qubitArrayIndex = opResult.getResultNumber();
       } else {
-        // Will be caught, so further ops can be collected until the qubit is
-        // available.
+        // Qubit is not (yet) in currentQubitVariables
         throw std::runtime_error(
             "Qubit was not found in list of previously defined qubits");
       }
@@ -97,6 +100,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       }
     }
 
+    // Qubit is not (yet) in currentQubitVariables
     throw std::runtime_error(
         "Qubit was not found in list of previously defined qubits");
   }
@@ -108,22 +112,39 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * @param op The operation to convert.
    * @param currentQubitVariables The list of previously defined qubit
    * variables.
+   *
+   * @return True if the operation was successfully handled, false if the
+   * operation defining the qubit operand was not yet added to the
+   * currentQubitVariables.
    */
-  void handleMeasureOp(MeasureOp& op,
+  bool handleMeasureOp(MeasureOp& op,
                        std::vector<mlir::Value>& currentQubitVariables) const {
     const auto ins = op.getInQubits();
     const auto outs = op.getOutQubits();
 
     std::vector<size_t> insIndices(ins.size());
-    std::transform(ins.begin(), ins.end(), insIndices.begin(),
-                   [&currentQubitVariables](const mlir::Value val) {
-                     return findQubitIndex(val, currentQubitVariables);
-                   });
+
+    try {
+      std::transform(ins.begin(), ins.end(), insIndices.begin(),
+                     [&currentQubitVariables](const mlir::Value val) {
+                       return findQubitIndex(val, currentQubitVariables);
+                     });
+    } catch (const std::runtime_error& e) {
+      if (strcmp(e.what(),
+                 "Qubit was not found in list of previously defined qubits") ==
+          0) {
+        // Try again later when all qubits are available
+        return false;
+      }
+      throw; // Rethrow the exception if it's not the expected one.
+    }
 
     for (size_t i = 0; i < insIndices.size(); i++) {
       currentQubitVariables[insIndices[i]] = outs[i];
       circuit.measure(insIndices[i], insIndices[i]);
     }
+
+    return true;
   }
 
   /**
@@ -134,7 +155,9 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * @param currentQubitVariables The list of previously defined qubit
    * variables.
    *
-   * @returns if the operation was successfully handled
+   * @return True if the operation was successfully handled, false if the
+   * operation defining the qubit operand was not yet added to the
+   * currentQubitVariables.
    */
   bool handleUnitaryOp(UnitaryInterface op,
                        std::vector<mlir::Value>& currentQubitVariables) const {
@@ -161,11 +184,12 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
                      [&currentQubitVariables](const mlir::Value val) {
                        return findQubitIndex(val, currentQubitVariables);
                      });
-      // Get the qubit index of the target qubit.
+      // Get the qubit index of the target qubit (if already collected).
       targetIndex = findQubitIndex(in, currentQubitVariables);
     } catch (const std::runtime_error& e) {
-      if (std::string_view(e.what()) ==
-          "Qubit was not found in list of previously defined qubits") {
+      if (strcmp(e.what(),
+                 "Qubit was not found in list of previously defined qubits") ==
+          0) {
         // Try again later when all qubits are available
         return false;
       }
@@ -182,7 +206,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         qc::Controls{ctrlInsIndices.cbegin(), ctrlInsIndices.cend()},
         targetIndex, opType);
 
-    return true; // success
+    return true;
   }
 
   /**
@@ -367,7 +391,8 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     // Update the inputs of all non-mqtopt operations that use mqtopt operations
     // as inputs, as these will be deleted later.
-    for (auto& operation: mqtUsers) {
+    // NOLINTNEXTLINE(readability-qualified-auto)
+    for (auto* operation : mqtUsers) {
       updateMQTOptInputs(*operation, rewriter, newAlloc.getQureg());
     }
 
@@ -379,12 +404,6 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
       for (auto it = visited.begin(); it != visited.end(); /* no increment */) {
         mlir::Operation* operation = *it;
-
-        // Skip if not part of the mqtopt dialect
-        if (operation->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
-          ++it;
-          continue;
-        }
 
         // Only erase ops with no remaining users
         if (operation->getUsers().empty()) {
