@@ -13,6 +13,7 @@
 #include "na/entities/Atom.hpp"
 #include "na/entities/Location.hpp"
 #include "na/entities/Zone.hpp"
+#include "na/operations/Barrier.hpp"
 #include "na/operations/GlobalCZOp.hpp"
 #include "na/operations/GlobalRYOp.hpp"
 #include "na/operations/LoadOp.hpp"
@@ -60,6 +61,15 @@ TEST(NAComputation, Location) {
   EXPECT_DOUBLE_EQ((Location{0, 0}).getEuclideanDistance(loc), 5.0);
   EXPECT_DOUBLE_EQ((Location{0, 0}).getManhattanDistanceX(loc), 3);
   EXPECT_DOUBLE_EQ((Location{0, 0}).getManhattanDistanceY(loc), 4);
+}
+
+TEST(NAComputation, Barrier) {
+  const Barrier barrier{};
+  EXPECT_EQ(barrier.toString(), "// barrier");
+  auto qc = NAComputation();
+  qc.emplaceInitialLocation(qc.emplaceBackAtom("atom0"), 0, 0);
+  qc.emplaceBack<Barrier>();
+  EXPECT_EQ(qc.toString(), "atom (0.000, 0.000) atom0\n// barrier\n");
 }
 
 TEST(NAComputation, LocalRXOp) {
