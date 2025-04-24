@@ -9,6 +9,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- 📝 Add documentation page for MLIR ([#931](https://github.com/munich-quantum-toolkit/core/pull/931)) ([**@ystade**](https://github.com/ystade))
 - ✨ Initial implementation of the mqtdyn Dialect ([#900](https://github.com/munich-quantum-toolkit/core/pull/900)) ([**@DRovara**](https://github.com/DRovara), [**@ystade**](https://github.com/ystade))
 
 ### Fixed
@@ -17,7 +18,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
-- ♻️ Unify operands and results in MLIR dialects and add Page for MLIR in docs ([#931](https://github.com/munich-quantum-toolkit/core/pull/931)) ([**@ystade**](https://github.com/ystade))
+- ♻️ Unify operands and results in MLIR dialects ([#931](https://github.com/munich-quantum-toolkit/core/pull/931)) ([**@ystade**](https://github.com/ystade))
 - ⏪️ Restore support for (MLIR and) LLVM v19 ([#934](https://github.com/munich-quantum-toolkit/core/pull/934)) ([**@flowerthrower**](https://github.com/flowerthrower)), [**@ystade**](https://github.com/ystade))
 - ⬆️ Update nlohmann_json to `v3.12.0` ([#921](https://github.com/munich-quantum-toolkit/core/pull/921)) ([**@burgholzer**](https://github.com/burgholzer))
 
