@@ -26,7 +26,7 @@ module {
         %q0_2, %q1_2 = mqtopt.x() %q0_1 ctrl %q1_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
         // CHECK: %[[Q0_3:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_2]])
-        // CHECK: %[[Q1_3:.*]] = mqtopt.x() %[[Q1_2]]#1 : !mqtopt.Qubit
+        // CHECK: %[[Q1_3:.*]] = mqtopt.x() %[[Q1_2]] : !mqtopt.Qubit
         %q1_3 = mqtopt.x() %q1_2 : !mqtopt.Qubit
 
         %q0_3, %c0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
