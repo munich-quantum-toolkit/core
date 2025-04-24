@@ -13,8 +13,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
-- ⬆️ Update nlohmann_json to `v3.12.0` ([#921](https://github.com/munich-quantum-toolkit/core/pull/921)) ([**@burgholzer**](https://github.com/burgholzer))
 - ♻️ Outsource definition of standard operations from MLIR dialects to reduce redundancy ([#933](https://github.com/munich-quantum-toolkit/core/pull/933)) ([**@ystade**](https://github.com/ystade))
+- ⬆️ Update nlohmann_json to `v3.12.0` ([#921](https://github.com/munich-quantum-toolkit/core/pull/921)) ([**@burgholzer**](https://github.com/burgholzer))
 
 ## [3.0.2] - 2025-04-07
 

@@ -13,7 +13,7 @@ def GPhaseOp : UnitaryOp<"gphase", [NoTarget, OneParameter]> {
     let summary = "GPhase operation";
 
     let description = [{
-        This class represents a general phase gate. It accepts a parameter indicating
+        This class represents a global phase gate. It accepts a parameter indicating
         the degree of the rotation angle. The global phase gate does not have
         any input and output qubits. It might still be controlled by arbitrarily
         many qubits.
