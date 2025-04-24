@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
@@ -336,7 +337,8 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     circuit.addClassicalRegister(numQubits);
 
     std::unordered_set<mlir::Operation*> visited;
-    std::unordered_set<mlir::Operation*> mqtUsers;
+    // `set` to prevent 'nondeterministic iteration of pointers'
+    std::set<mlir::Operation*> mqtUsers;
 
     mlir::Operation* current = op;
     while (current != nullptr) {
