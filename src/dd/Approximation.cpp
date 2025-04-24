@@ -15,43 +15,44 @@
 #include "dd/Package.hpp"
 
 #include <cmath>
-#include <deque>
+#include <forward_list>
 #include <unordered_map>
-#include <vector>
 
 namespace dd {
 
 void approximate(VectorDD& state, const double fidelity, Package& dd) {
   constexpr auto mag2 = ComplexNumbers::mag2;
 
+  std::unordered_map<const vEdge*, double> contributions{
+      {&state, mag2(state.w)}};
+  std::forward_list<vEdge*> layer{&state};
+
   double budget = 1 - fidelity;
+  while (!layer.empty() && budget > 0) {
+    std::forward_list<vEdge*> nextLayer{};
 
-  std::unordered_map<const vEdge*, double> probs{{&state, mag2(state.w)}};
-  std::deque<vEdge*> q{&state};
-  while (!q.empty() && budget > 0) {
-    const std::vector<vEdge*> layer(q.begin(), q.end());
-
-    q.clear();
     for (vEdge* lEdge : layer) {
       vNode* node = lEdge->p;
-      const double parent = probs[lEdge];
+      const double contribution = contributions[lEdge];
 
-      if (parent <= budget) {
+      if (contribution <= budget) {
         dd.decRef(*lEdge);
         *lEdge = vEdge::zero();
-        budget -= parent;
+        budget -= contribution;
       } else {
         for (auto& edge : node->e) {
           if (!edge.isTerminal() && !edge.w.exactlyZero()) {
-            if (probs.find(&edge) == probs.end()) {
-              q.push_back(&edge);
+            if (contributions.find(&edge) == contributions.end()) {
+              nextLayer.emplace_front(&edge);
             }
 
-            probs[&edge] += parent * mag2(edge.w);
+            contributions[&edge] += contribution * mag2(edge.w);
           }
         }
       }
     }
+
+    layer = std::move(nextLayer);
   }
 
   auto& mm = dd.getMemoryManager<vNode>();
