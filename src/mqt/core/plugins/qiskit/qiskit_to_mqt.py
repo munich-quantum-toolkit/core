@@ -234,6 +234,9 @@ def _emplace_operation(
     if name in {"sx", "csx"}:
         return _add_operation(qc, OpType.sx, qargs, params, qubit_map)
 
+    if name == "sxdg":
+        return _add_operation(qc, OpType.sxdg, qargs, params, qubit_map)
+
     if name == "mcx_recursive":
         if len(qargs) <= 5:
             return _add_operation(qc, OpType.x, qargs, params, qubit_map)
