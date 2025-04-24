@@ -28,12 +28,17 @@ module {
         // CHECK: %[[Q1_3:.*]] = mqtopt.x() %[[Q01_2]]#1 : !mqtopt.Qubit
         %q1_3 = mqtopt.x() %q1_2 : !mqtopt.Qubit
 
-        // CHECK: %[[Q0_3:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q01_2]]#0)
+        // CHECK: %[[Q0_3:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q01_2]]#0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         %q0_3, %c0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-        // CHECK: %[[Q1_4:.*]], %[[C1_0:.*]] = "mqtopt.measure"(%[[Q1_3]])
+        // CHECK: %[[Q1_4:.*]], %[[C1_0:.*]] = "mqtopt.measure"(%[[Q1_3]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         %q1_4, %c1_0 = "mqtopt.measure"(%q1_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-        // CHECK: return %[[Reg_2]], %[[C0_0]], %[[C1_0]]
-        return %reg_2, %c0_0, %c1_0 : !mqtopt.QubitRegister, i1, i1
+        // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q0_3]]) <{index_attr = 0 : i64}>
+        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_3) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q1_4]]) <{index_attr = 1 : i64}>
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_4) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: return %[[Reg_4]], %[[C0_0]], %[[C1_0]]
+        return %reg_4, %c0_0, %c1_0 : !mqtopt.QubitRegister, i1, i1
     }
 }
