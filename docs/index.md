@@ -40,6 +40,7 @@ installation
 mqt_core_ir
 dd_package
 zx_package
+mlir
 references
 CHANGELOG
 UPGRADING
