@@ -105,22 +105,20 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       const mlir::Location loc, const qc::OpType type,
       const mlir::Value inQubit, mlir::ValueRange controlQubitsPositive,
       mlir::ValueRange controlQubitsNegative, mlir::PatternRewriter& rewriter) {
-    const std::vector resultTypes(1 + controlQubitsPositive.size() +
-                                      controlQubitsNegative.size(),
-                                  inQubit.getType());
-    const mlir::TypeRange outTypes(resultTypes);
-
     switch (type) {
     case qc::OpType::X:
-      return rewriter.create<XOp>(loc, outTypes, mlir::DenseF64ArrayAttr{},
-                                  mlir::DenseBoolArrayAttr{},
-                                  mlir::ValueRange{}, mlir::ValueRange{inQubit},
-                                  controlQubitsPositive, controlQubitsNegative);
+      return rewriter.create<XOp>(
+          loc, inQubit.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubit}, controlQubitsPositive,
+          controlQubitsNegative);
     case qc::OpType::H:
-      return rewriter.create<HOp>(loc, outTypes, mlir::DenseF64ArrayAttr{},
-                                  mlir::DenseBoolArrayAttr{},
-                                  mlir::ValueRange{}, mlir::ValueRange{inQubit},
-                                  controlQubitsPositive, controlQubitsNegative);
+            return rewriter.create<HOp>(loc, inQubit.getType(), controlQubitsPositive.getType(),
+              controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+                                        mlir::DenseBoolArrayAttr{},
+                                        mlir::ValueRange{}, mlir::ValueRange{inQubit},
+                                        controlQubitsPositive, controlQubitsNegative);
     default:
       throw std::runtime_error("Unsupported operation type");
     }
@@ -223,14 +221,15 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
             currentQubitVariables[o->getTargets()[0]], controlQubitsPositive,
             controlQubitsNegative, rewriter);
         currentQubitVariables[o->getTargets()[0]] =
-            newUnitaryOp.getOutQubits()[0];
+            newUnitaryOp.getAllOutQubits()[0];
         for (size_t i = 0; i < controlQubitsPositive.size(); i++) {
           currentQubitVariables[controlQubitIndicesPositive[i]] =
-              newUnitaryOp.getOutQubits()[i + 1];
+              newUnitaryOp.getAllOutQubits()[i + 1];
         }
         for (size_t i = 0; i < controlQubitsNegative.size(); i++) {
           currentQubitVariables[controlQubitIndicesNegative[i]] =
-              newUnitaryOp.getOutQubits()[i + 1 + controlQubitsPositive.size()];
+              newUnitaryOp
+                  .getAllOutQubits()[i + 1 + controlQubitsPositive.size()];
         }
       } else if (o->getType() == qc::OpType::Measure) {
         // For measurement operations, we call the `createMeasureOp` function.

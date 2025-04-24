@@ -37,7 +37,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return $_op.getInQubits();
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all positively controlling qubits of the operation.",
+            /*desc=*/        "Returns all positively-controlling qubits of the operation.",
             /*returnType=*/  "mlir::OperandRange",
             /*methodName=*/  "getPosCtrlQubits",
             /*args=*/        (ins),
@@ -46,7 +46,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return $_op.getPosCtrlQubits();
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all negatively controlling qubits of the operation.",
+            /*desc=*/        "Returns all negatively-controlling qubits of the operation.",
             /*returnType=*/  "mlir::OperandRange",
             /*methodName=*/  "getNegCtrlQubits",
             /*args=*/        (ins),

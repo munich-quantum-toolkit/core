@@ -82,11 +82,13 @@ struct CancelConsecutiveInversesPattern final
       return mlir::failure();
     }
     auto unitaryUser = mlir::dyn_cast<UnitaryInterface>(user);
-    if (op.getOutQubits() != unitaryUser.getAllInQubits()) {
+    if (op.getAllOutQubits() != unitaryUser.getAllInQubits()) {
       return mlir::failure();
     }
-    if (op.getPosCtrlQubits().size() != unitaryUser.getPosCtrlQubits().size() ||
-        op.getNegCtrlQubits().size() != unitaryUser.getNegCtrlQubits().size()) {
+    if (op.getPosCtrlInQubits().size() !=
+            unitaryUser.getPosCtrlInQubits().size() ||
+        op.getNegCtrlInQubits().size() !=
+            unitaryUser.getNegCtrlInQubits().size()) {
       // We only need to check the sizes, because the order of the controls was
       // already checked by the previous condition.
       return mlir::failure();
@@ -98,20 +100,30 @@ struct CancelConsecutiveInversesPattern final
                mlir::PatternRewriter& rewriter) const override {
     auto user = mlir::dyn_cast<UnitaryInterface>(
         *op->getUsers().begin()); // We always have exactly one user.
+    // When iterating over the output qubits, it is important to call
+    // `getAllOutQubits()` only once, as the output qubits are combined into a
+    // fresh vector on every call.
+    const auto& userOutQubits = user.getAllOutQubits();
+    // Also get the op's input qubits
+    const auto& opInQubits = op.getAllInQubits();
+
+    // Note: There might be multiple users of an operation. The qubits itself
+    // can only be used once (linear typing). However, the user may output
+    // multiple qubits, e.g., a CX gate, that are used by different users.
+    // Hence, the user may have multiple child users.
     const auto& childUsers = user->getUsers();
 
     for (const auto& childUser : childUsers) {
       for (size_t i = 0; i < childUser->getOperands().size(); i++) {
         const auto& operand = childUser->getOperand(i);
-        const auto found = std::find(user.getOutQubits().begin(),
-                                     user.getOutQubits().end(), operand);
-        if (found == user.getOutQubits().end()) {
+        const auto found =
+            std::find(userOutQubits.begin(), userOutQubits.end(), operand);
+        if (found == userOutQubits.end()) {
           continue;
         }
-        const auto idx = std::distance(user.getOutQubits().begin(), found);
-        rewriter.modifyOpInPlace(childUser, [&] {
-          childUser->setOperand(i, op.getAllInQubits()[idx]);
-        });
+        const auto idx = std::distance(userOutQubits.begin(), found);
+        rewriter.modifyOpInPlace(
+            childUser, [&] { childUser->setOperand(i, opInQubits[idx]); });
       }
     }
 
