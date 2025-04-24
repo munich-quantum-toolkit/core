@@ -21,38 +21,43 @@
 namespace dd {
 
 void approximate(VectorDD& state, const double fidelity, Package& dd) {
+  using ContributionMap = std::unordered_map<const vEdge*, double>;
+  using Layer = std::forward_list<vEdge*>;
+
   constexpr auto mag2 = ComplexNumbers::mag2;
 
-  std::unordered_map<const vEdge*, double> contributions{
-      {&state, mag2(state.w)}};
-  std::forward_list<vEdge*> layer{&state};
+  Layer l{&state};
+  ContributionMap m{{&state, mag2(state.w)}};
 
   double budget = 1 - fidelity;
-  while (!layer.empty() && budget > 0) {
-    std::forward_list<vEdge*> nextLayer{};
+  while (!l.empty() && budget > 0) {
+    Layer nextL{};
+    ContributionMap nextM{};
 
-    for (vEdge* lEdge : layer) {
-      vNode* node = lEdge->p;
-      const double contribution = contributions[lEdge];
+    for (vEdge* edge : l) {
+      const double contribution = m[edge];
 
       if (contribution <= budget) {
-        dd.decRef(*lEdge);
-        *lEdge = vEdge::zero();
+        dd.decRef(*edge);
+        *edge = vEdge::zero();
         budget -= contribution;
-      } else {
-        for (auto& edge : node->e) {
-          if (!edge.isTerminal() && !edge.w.exactlyZero()) {
-            if (contributions.find(&edge) == contributions.end()) {
-              nextLayer.emplace_front(&edge);
+      } else if (!edge->isTerminal()) {
+        vNode* node = edge->p;
+        for (auto& nextEdge : node->e) {
+          if (!nextEdge.w.exactlyZero()) {
+
+            if (nextM.find(&nextEdge) == nextM.end()) {
+              nextL.emplace_front(&nextEdge);
             }
 
-            contributions[&edge] += contribution * mag2(edge.w);
+            nextM[&nextEdge] += contribution * mag2(nextEdge.w);
           }
         }
       }
     }
 
-    layer = std::move(nextLayer);
+    l = std::move(nextL);
+    m = std::move(nextM);
   }
 
   auto& mm = dd.getMemoryManager<vNode>();

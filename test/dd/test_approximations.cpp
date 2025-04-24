@@ -35,24 +35,43 @@ std::complex<fp> getNorm(std::vector<std::complex<fp>> vec) {
 ///                      \n simulate with approximation \n
 ///-----------------------------------------------------------------------------
 
-TEST(ApproximationTest, KeepAll) {
-  constexpr std::size_t nq = 2;
+TEST(ApproximationTest, OneQubitKeepAll) {
+  constexpr std::size_t nq = 1;
   constexpr double fidelity = 1;
+
   Package dd(nq);
 
   qc::QuantumComputation qc(nq);
   qc.x(0);
 
+  // |state⟩ = |1⟩
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
+  // fidelity is 1 → keep all nodes: |1⟩
   approximate(state, fidelity, dd);
 
-  auto norm = getNorm(state.getVector());
+  CVec expected{{0}, {1}}; // expected state vector for |1⟩: [0, 1]
+  EXPECT_EQ(state.getVector(), expected);
+  EXPECT_EQ(state.size(), 2); // no nodes deleted: root node + terminal.
+}
 
-  // no nodes deleted. must be the same.
-  EXPECT_EQ(state.size(), 3);
-  // norm must be one.
-  EXPECT_NEAR(norm.real(), 1., 1e-6);
-  EXPECT_NEAR(norm.imag(), 0., 1e-6);
+TEST(ApproximationTest, OneQubitApproximation) {
+  constexpr std::size_t nq = 1;
+  constexpr double fidelity = 1 - 0.25;
+
+  Package dd(nq);
+
+  qc::QuantumComputation qc(nq);
+  qc.ry(qc::PI / 3, 0);
+
+  // |state⟩ = 0.866|0⟩ + 0.5|1⟩
+  auto state = simulate(qc, dd.makeZeroState(nq), dd);
+
+  // eliminate |1⟩ with contrib 0.25 → |0⟩
+  approximate(state, fidelity, dd);
+
+  CVec expected{{1}, {0}}; // expected state vector for |0⟩: [1, 0]
+  EXPECT_EQ(state.getVector(), expected);
+  EXPECT_EQ(state.size(), 2); // no nodes deleted: root node + terminal.
 }
 
 TEST(ApproximationTest, RemoveOneBottom) {
