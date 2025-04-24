@@ -18,9 +18,9 @@ module {
         %c0_i64 = arith.constant 0 : i64
         %out_qreg_0, %out_qubit_1 = "mqtopt.extractQubit"(%1, %c0_i64) : (!mqtopt.QubitRegister, i64) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
         %2 = mqtopt.x() %out_qubit : !mqtopt.Qubit
-        %3:2 = mqtopt.x() %2 ctrl %out_qubit_1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %3:2 = mqtopt.x() %2 ctrl %out_qubit_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
         %cst = arith.constant 3.000000e-01 : f64
-        %4:2 = mqtopt.rz(%cst) %3#0 nctrl %3#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %4:2 = mqtopt.rz(%cst) %3#0 nctrl %3#1 : !mqtopt.Qubit nctrl !mqtopt.Qubit
         %5 = mqtopt.u(%cst, %cst static [3.000000e-01] mask [false, true, false]) %4#0 : !mqtopt.Qubit
         %out_qubits, %out_bits = "mqtopt.measure"(%5) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         %out_qubits_2, %out_bits_3 = "mqtopt.measure"(%4#1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)

@@ -84,7 +84,7 @@ struct QuantumSinkShiftPattern final
 
   mlir::LogicalResult match(UnitaryInterface op) const override {
     // We only consider 1-qubit gates.
-    if (op.getOutQubits().size() != 1) {
+    if (op.getAllOutQubits().size() != 1) {
       return mlir::failure();
     }
 
