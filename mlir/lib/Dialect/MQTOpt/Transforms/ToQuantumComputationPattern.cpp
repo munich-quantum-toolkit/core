@@ -30,6 +30,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>

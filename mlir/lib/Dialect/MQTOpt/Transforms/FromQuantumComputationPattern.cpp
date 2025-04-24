@@ -114,11 +114,12 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
           mlir::ValueRange{inQubit}, controlQubitsPositive,
           controlQubitsNegative);
     case qc::OpType::H:
-            return rewriter.create<HOp>(loc, inQubit.getType(), controlQubitsPositive.getType(),
-              controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-                                        mlir::DenseBoolArrayAttr{},
-                                        mlir::ValueRange{}, mlir::ValueRange{inQubit},
-                                        controlQubitsPositive, controlQubitsNegative);
+      return rewriter.create<HOp>(
+          loc, inQubit.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubit}, controlQubitsPositive,
+          controlQubitsNegative);
     default:
       throw std::runtime_error("Unsupported operation type");
     }
