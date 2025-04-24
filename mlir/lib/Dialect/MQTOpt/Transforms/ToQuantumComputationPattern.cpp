@@ -83,7 +83,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         auto opResult =
             llvm::dyn_cast<mlir::OpResult>(currentQubitVariables[i]);
         // e.g. is 1 if it comes from an extract op
-        qubitArrayIndex = opResult.getResultNumber(); 
+        qubitArrayIndex = opResult.getResultNumber();
       } else {
         // Will be caught, so further ops can be collected until the qubit is
         // available.
@@ -366,7 +366,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     // Update the inputs of all non-mqtopt operations that use mqtopt operations
     // as inputs, as these will be deleted later.
-    for (auto& operation: mqtUsers) {
+    for (auto& operation : mqtUsers) {
       updateMQTOptInputs(*operation, rewriter, newAlloc.getQureg());
     }
 
