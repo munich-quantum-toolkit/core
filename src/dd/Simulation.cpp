@@ -10,11 +10,9 @@
 
 #include "dd/Simulation.hpp"
 
-#include "dd/Node.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "ir/Definitions.hpp"
-#include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
