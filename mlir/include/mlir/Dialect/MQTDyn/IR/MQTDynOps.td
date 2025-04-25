@@ -86,14 +86,14 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
         OptionalAttr<DenseBoolArrayAttr>:$params_mask,
         Variadic<F64>:$params,
         Variadic<QubitType>:$in_qubits,
-        Variadic<QubitType>:$pos_ctrl_qubits,
-        Variadic<QubitType>:$neg_ctrl_qubits
+        Variadic<QubitType>:$pos_ctrl_in_qubits,
+        Variadic<QubitType>:$neg_ctrl_in_qubits
     );
 
     let results = (outs);
 
     let assemblyFormat = [{
-        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict $in_qubits ( `ctrl` $pos_ctrl_qubits^ )? ( `nctrl` $neg_ctrl_qubits^ )?
+        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
     }];
 }
 
