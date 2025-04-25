@@ -216,7 +216,7 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
 TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
 
   // Test: Remove node that has a subtree attached (i.e. has children).
-  //       Use exponential source state without redundancies.
+  //
   // |state⟩ = 0+0.866j|000⟩ + 0-0.096j|100⟩ + 0+0.166j|101⟩ + 0+0.231j|110⟩ +
   //           + 0-0.4j|111⟩
   //
