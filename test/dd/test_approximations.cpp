@@ -18,7 +18,6 @@
 #include <cmath>
 #include <cstddef>
 #include <gtest/gtest.h>
-#include <vector>
 
 using namespace dd;
 
@@ -52,7 +51,7 @@ TEST(ApproximationTest, OneQubitKeepAll) {
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
   auto approx = approximate(state, fidelity, dd);
 
-  CVec expected{{0}, {1}};
+  const CVec expected{{0}, {1}};
 
   EXPECT_EQ(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 2);
@@ -75,7 +74,7 @@ TEST(ApproximationTest, OneQubitApproximation) {
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
   auto approx = approximate(state, fidelity, dd);
 
-  CVec expected{{1}, {0}};
+  const CVec expected{{1}, {0}};
 
   EXPECT_EQ(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 2);
@@ -105,7 +104,7 @@ TEST(ApproximationTest, TwoQubitApproximation) {
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
   auto approx = approximate(state, fidelity, dd);
 
-  CVec expected{{0.755929}, {0.654654}, {0}, {0}};
+  const CVec expected{{0.755929}, {0.654654}, {0}, {0}};
 
   vecNear(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 3);
@@ -140,7 +139,7 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   auto approx = approximate(state, fidelity, dd);
   auto ref = simulate(qcRef, dd.makeZeroState(nq), dd);
 
-  CVec expected{{0}, {1 / std::sqrt(2)}, {0}, {1 / std::sqrt(2)}};
+  const CVec expected{{0}, {1 / std::sqrt(2)}, {0}, {1 / std::sqrt(2)}};
 
   vecNear(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 3);
@@ -169,8 +168,8 @@ TEST(ApproximationTest, ThreeQubitApproximation) {
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
   auto approx = approximate(state, fidelity, dd);
 
-  CVec expected{{0.503892}, {0.592515}, {0.49421}, {0.388298},
-                {0},        {0},        {0},       {0}};
+  const CVec expected{{0.503892}, {0.592515}, {0.49421}, {0.388298},
+                      {0},        {0},        {0},       {0}};
 
   vecNear(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 5);

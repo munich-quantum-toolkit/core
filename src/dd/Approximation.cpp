@@ -11,9 +11,12 @@
 #include "dd/Approximation.hpp"
 
 #include "dd/ComplexNumbers.hpp"
+#include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <forward_list>
 #include <unordered_map>
@@ -35,8 +38,8 @@ VectorDD rebuild(const VectorDD& state,
     return state;
   }
 
-  std::array<vEdge, RADIX> edges{rebuild(state.p->e[0], exclude, dd),
-                                 rebuild(state.p->e[1], exclude, dd)};
+  const std::array<vEdge, RADIX> edges{rebuild(state.p->e[0], exclude, dd),
+                                       rebuild(state.p->e[1], exclude, dd)};
 
   auto e = dd.makeDDNode(state.p->v, edges);
   e.w = dd.cn.lookup(e.w * state.w);
