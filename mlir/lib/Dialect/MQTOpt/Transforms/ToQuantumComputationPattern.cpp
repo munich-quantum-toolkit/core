@@ -68,7 +68,9 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * variables.
    *
    * @return The index of the qubit in the list of previously defined qubit
-   * variables. Throws an exception if the qubit is not found.
+   * variables. 
+   *
+   * @throws `std::runtime_error` if the qubit is not found.
    */
   static size_t
   findQubitIndex(const mlir::Value& input,
@@ -394,7 +396,6 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     // Update the inputs of all non-mqtopt operations that use mqtopt operations
     // as inputs, as these will be deleted later.
-    // NOLINTNEXTLINE(readability-qualified-auto)
     for (auto* operation : mqtUsers) {
       updateMQTOptInputs(*operation, rewriter, newAlloc.getQureg());
     }

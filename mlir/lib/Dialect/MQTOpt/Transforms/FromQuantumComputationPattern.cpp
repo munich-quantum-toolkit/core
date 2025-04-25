@@ -253,7 +253,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       auto insertOp = createRegisterInsert(
           newAlloc, currentRegister, currentQubitVariables[i], i, rewriter);
       // Keep track of qubit register access
-      currentRegister = insertOp.getOutQureg();
+      currentRegister = insertOp.getOutQreg();
     }
 
     // Finally, the return operation needs to be updated with the measurement
