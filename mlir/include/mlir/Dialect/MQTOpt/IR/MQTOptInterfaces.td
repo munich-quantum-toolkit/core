@@ -82,7 +82,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return $_op.getNegCtrlOutQubits();
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all control input qubits of the operation incl. positive and negative controls.",
+            /*desc=*/        "Returns all controlling input qubits of the operation.",
             /*returnType=*/  "std::vector<mlir::Value>",
             /*methodName=*/  "getAllCtrlInQubits",
             /*args=*/        (ins),
@@ -112,7 +112,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return controls;
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all input qubits of the operation incl. all control qubits.",
+            /*desc=*/        "Returns all input qubits of the operation incl. all controlling qubits.",
             /*returnType=*/  "std::vector<mlir::Value>",
             /*methodName=*/  "getAllInQubits",
             /*args=*/        (ins),
@@ -127,7 +127,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return operands;
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all output qubits of the operation incl. all control qubits.",
+            /*desc=*/        "Returns all output qubits of the operation incl. all controlling qubits.",
             /*returnType=*/  "std::vector<mlir::Value>",
             /*methodName=*/  "getAllOutQubits",
             /*args=*/        (ins),

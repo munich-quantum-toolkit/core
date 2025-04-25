@@ -61,7 +61,7 @@ def QubitType : MQTDynType<"Qubit", "Qubit"> {
     let summary = "A qubit reference.";
 }
 
-def QuregType : MQTDynType<"QubitRegister", "QubitRegister"> {
+def QregType : MQTDynType<"QubitRegister", "QubitRegister"> {
     let summary = "An array of qubit references.";
 }
 
@@ -86,56 +86,18 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
         OptionalAttr<DenseBoolArrayAttr>:$params_mask,
         Variadic<F64>:$params,
         Variadic<QubitType>:$in_qubits,
-        Variadic<QubitType>:$pos_ctrl_qubits,
-        Variadic<QubitType>:$neg_ctrl_qubits
+        Variadic<QubitType>:$pos_ctrl_in_qubits,
+        Variadic<QubitType>:$neg_ctrl_in_qubits
     );
 
     let results = (outs);
 
     let assemblyFormat = [{
-        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict $in_qubits ( `ctrl` $pos_ctrl_qubits^ )? ( `nctrl` $neg_ctrl_qubits^ )?
+        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
     }];
 }
 
-def XOp : UnitaryOp<"x", [OneTarget, NoParameter]> {
-    let summary = "X operation";
-
-    let description = [{
-        This class represents a Pauli-X gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input.
-
-        Example:
-        ```mlir
-        mqtopt.x() %0 : (!mqtopt.Qubit) -> (!mqtopt.Qubit)
-        mqtopt.x() %0 ctrl(%1) : (!mqtopt.Qubit, !mqtopt.Qubit) -> (!mqtopt.Qubit, !mqtopt.Qubit)
-        mqtopt.x() %0 ctrl(%1) nctrl(%2, %3) : (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit) -> (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit)
-        ```
-    }];
-}
-
-def RZOp : UnitaryOp<"rz", [OneTarget, OneParameter]> {
-    let summary = "RZ operation";
-
-    let description = [{
-        This class represents an RZ gate. It takes a qubit and a variadic
-        list of positive/negative controls as input. Additionally, it accepts
-        a parameter indicating the degree of the rotation angle.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def UOp : UnitaryOp<"u", [OneTarget, ThreeParameters]> {
-    let summary = "U operation";
-
-    let description = [{
-        This class represents a U gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input. Additionally, it accepts
-        three parameters indicating the degree of the rotation angles.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
+include "mlir/Dialect/MQTDyn/IR/MQTDynStdOps.td"
 
 def MeasureOp : GateOp<"measure", [MatchingMeasureInOuts]> {
     let summary = "A measure operation";
@@ -187,7 +149,7 @@ def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
     );
 
     let results = (outs
-        QuregType:$qureg
+        QregType:$qreg
     );
 }
 
@@ -205,7 +167,7 @@ def DeallocOp : ResourceOp<"deallocQubitRegister"> {
     }];
 
     let arguments = (ins
-        QuregType:$qureg
+        QregType:$qreg
     );
 }
 
@@ -226,7 +188,7 @@ def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
     }];
 
     let arguments = (ins
-        QuregType:$in_qureg,
+        QregType:$in_qreg,
         Optional<I64>:$index,
         OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index_attr
     );

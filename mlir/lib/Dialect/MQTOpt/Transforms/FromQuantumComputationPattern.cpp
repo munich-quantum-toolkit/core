@@ -189,7 +189,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       auto newRegisterAccess =
           createRegisterAccess(currentRegister, i, rewriter);
       currentQubitVariables[i] = newRegisterAccess.getOutQubit();
-      currentRegister = newRegisterAccess.getOutQureg();
+      currentRegister = newRegisterAccess.getOutQreg();
     }
 
     // Iterate over each operation in the circuit and create the corresponding
