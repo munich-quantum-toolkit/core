@@ -63,6 +63,32 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
   }
 
   /**
+   * @brief Creates an InsertOp that inserts the given qubit into the given
+   * register at the specified index.
+   *
+   * @param allocOp The AllocOp that defined the original register.
+   * @param reg The register into which the qubit will be inserted.
+   * @param qubit The qubit to insert into the register.
+   * @param index The index at which to insert the qubit.
+   * @param rewriter The pattern rewriter to use.
+   *
+   * @return The created InsertOp.
+   */
+  static InsertOp createRegisterInsert(AllocOp allocOp,
+                                       mlir::TypedValue<QubitRegisterType> reg,
+                                       mlir::Value qubit, const size_t index,
+                                       mlir::PatternRewriter& rewriter) {
+    auto insert = rewriter.create<InsertOp>(
+        allocOp.getLoc(),
+        QubitRegisterType::get(rewriter.getContext()), // Result type
+        reg,            // The register to insert into
+        qubit, nullptr, // The qubit to insert
+        rewriter.getI64IntegerAttr(static_cast<std::int64_t>(index)) // Index
+    );
+    return insert;
+  }
+
+  /**
    * @brief Creates a unitary operation on a given qubit with any number of
    * positive or negative controls.
    *
@@ -82,6 +108,13 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     switch (type) {
     case qc::OpType::X:
       return rewriter.create<XOp>(
+          loc, inQubit.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubit}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::H:
+      return rewriter.create<HOp>(
           loc, inQubit.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
           mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
@@ -180,7 +213,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         }
       }
 
-      if (o->getType() == qc::OpType::X) {
+      if (o->getType() == qc::OpType::X || o->getType() == qc::OpType::H) {
         // For unitary operations, we call the `createUnitaryOp` function. We
         // then have to update the `currentQubitVariables` vector with the new
         // qubit values.
@@ -212,6 +245,15 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         llvm::outs() << "ERROR: Unsupported operation type " << o->getType()
                      << "\n";
       }
+    }
+
+    // Now insert all the qubits back into the registers they were extracted
+    // from.
+    for (size_t i = 0; i < numQubits; i++) {
+      auto insertOp = createRegisterInsert(
+          newAlloc, currentRegister, currentQubitVariables[i], i, rewriter);
+      // Keep track of qubit register access
+      currentRegister = insertOp.getOutQreg();
     }
 
     // Finally, the return operation needs to be updated with the measurement
