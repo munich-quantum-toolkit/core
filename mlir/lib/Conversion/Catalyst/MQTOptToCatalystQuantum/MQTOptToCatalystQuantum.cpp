@@ -102,7 +102,7 @@ struct ConvertMQTOptDealloc
                   ConversionPatternRewriter& rewriter) const override {
     // Create the new operation
     auto catalystOp = rewriter.create<catalyst::quantum::DeallocOp>(
-        op.getLoc(), ::mlir::TypeRange({}), adaptor.getQureg());
+        op.getLoc(), ::mlir::TypeRange({}), adaptor.getQreg());
 
     // Replace the original with the new operation
     rewriter.replaceOp(op, catalystOp);
@@ -186,7 +186,7 @@ struct ConvertMQTOptExtract
 
     // Create the new operation
     auto catalystOp = rewriter.create<catalyst::quantum::ExtractOp>(
-        op.getLoc(), resultType, adaptor.getInQureg(), adaptor.getIndex(),
+        op.getLoc(), resultType, adaptor.getInQreg(), adaptor.getIndex(),
         adaptor.getIndexAttrAttr());
 
     auto mqtQreg = op->getResult(0);
@@ -251,7 +251,7 @@ struct ConvertMQTOptInsert
                   ConversionPatternRewriter& rewriter) const override {
 
     // Extract operand(s) and attribute(s)
-    auto inQregValue = adaptor.getInQureg();
+    auto inQregValue = adaptor.getInQreg();
     auto qubitValue = adaptor.getInQubit();
     auto idxValue = adaptor.getIndex();
     auto idxIntegerAttr = adaptor.getIndexAttrAttr();
@@ -279,8 +279,8 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
                   ConversionPatternRewriter& rewriter) const override {
     // Extract operand(s) and attribute(s)
     auto inQubitsValues = adaptor.getInQubits(); // excl. controls
-    auto posCtrlQubitsValues = adaptor.getPosCtrlQubits();
-    auto negCtrlQubitsValues = adaptor.getNegCtrlQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
     llvm::SmallVector<mlir::Value> inCtrlQubits;
     inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());

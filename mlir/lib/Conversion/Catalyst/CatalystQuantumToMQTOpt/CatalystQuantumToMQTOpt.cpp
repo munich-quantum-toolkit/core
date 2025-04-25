@@ -340,55 +340,66 @@ struct ConvertQuantumCustomOp
     mlir::ValueRange inQubitsValues(inQubitsVec);
     mlir::ValueRange inCtrlQubitsValues(inCtrlQubitsVec);
 
-    // Prepare the result type(s)
-    mlir::Type qubitType =
-        ::mqt::ir::opt::QubitType::get(rewriter.getContext());
-    std::vector<mlir::Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubitsValues.size(), qubitType);
-    auto outQubitTypes = mlir::TypeRange(qubitTypes);
-
     // Create the new operation
     Operation* mqtoptOp = nullptr;
 
     if (gateName.compare("Hadamard") == 0) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::HOp>(
-          op.getLoc(), outQubitTypes, staticParams, paramsMask, paramsValues,
-          inQubitsValues, inCtrlQubitsValues, inNegCtrlQubitsValues);
+          op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
+          inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
+          paramsValues, inQubitsValues, inCtrlQubitsValues,
+          inNegCtrlQubitsValues);
     } else if (gateName.compare("PauliX") == 0 ||
                gateName.compare("CNOT") == 0 ||
                gateName.compare("Toffoli") == 0) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::XOp>(
-          op.getLoc(), outQubitTypes, staticParams, paramsMask, paramsValues,
-          inQubitsValues, inCtrlQubitsValues, inNegCtrlQubitsValues);
+          op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
+          inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
+          paramsValues, inQubitsValues, inCtrlQubitsValues,
+          inNegCtrlQubitsValues);
     } else if (gateName.compare("PauliY") == 0 || gateName.compare("CY") == 0) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::YOp>(
-          op.getLoc(), outQubitTypes, staticParams, paramsMask, paramsValues,
-          inQubitsValues, inCtrlQubitsValues, inNegCtrlQubitsValues);
+          op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
+          inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
+          paramsValues, inQubitsValues, inCtrlQubitsValues,
+          inNegCtrlQubitsValues);
     } else if (gateName.compare("PauliZ") == 0 || gateName.compare("CZ") == 0) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::ZOp>(
-          op.getLoc(), outQubitTypes, staticParams, paramsMask, paramsValues,
-          inQubitsValues, inCtrlQubitsValues, inNegCtrlQubitsValues);
+          op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
+          inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
+          paramsValues, inQubitsValues, inCtrlQubitsValues,
+          inNegCtrlQubitsValues);
     } else if (gateName.compare("SWAP") == 0) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::SWAPOp>(
-          op.getLoc(), outQubitTypes, staticParams, paramsMask, paramsValues,
-          inQubitsValues, inCtrlQubitsValues, inNegCtrlQubitsValues);
+          op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
+          inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
+          paramsValues, inQubitsValues, inCtrlQubitsValues,
+          inNegCtrlQubitsValues);
     } else if (gateName.compare("RX") == 0 || gateName.compare("CRX") == 0) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::RXOp>(
-          op.getLoc(), outQubitTypes, staticParams, paramsMask, paramsValues,
-          inQubitsValues, inCtrlQubitsValues, inNegCtrlQubitsValues);
+          op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
+          inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
+          paramsValues, inQubitsValues, inCtrlQubitsValues,
+          inNegCtrlQubitsValues);
     } else if (gateName.compare("RY") == 0 || gateName.compare("CRY") == 0) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::RYOp>(
-          op.getLoc(), outQubitTypes, staticParams, paramsMask, paramsValues,
-          inQubitsValues, inCtrlQubitsValues, inNegCtrlQubitsValues);
+          op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
+          inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
+          paramsValues, inQubitsValues, inCtrlQubitsValues,
+          inNegCtrlQubitsValues);
     } else if (gateName.compare("RZ") == 0 || gateName.compare("CRZ") == 0) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::RZOp>(
-          op.getLoc(), outQubitTypes, staticParams, paramsMask, paramsValues,
-          inQubitsValues, inCtrlQubitsValues, inNegCtrlQubitsValues);
+          op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
+          inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
+          paramsValues, inQubitsValues, inCtrlQubitsValues,
+          inNegCtrlQubitsValues);
     } else if (gateName.compare("PhaseShift") == 0 ||
                gateName.compare("ControlledPhaseShift") == 0) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::POp>(
-          op.getLoc(), outQubitTypes, staticParams, paramsMask, paramsValues,
-          inQubitsValues, inCtrlQubitsValues, inNegCtrlQubitsValues);
+          op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
+          inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
+          paramsValues, inQubitsValues, inCtrlQubitsValues,
+          inNegCtrlQubitsValues);
     } else {
       llvm::errs() << "Unsupported gate: " << gateName << "\n";
       return failure();
