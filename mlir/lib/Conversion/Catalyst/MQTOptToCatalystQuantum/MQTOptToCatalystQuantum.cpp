@@ -14,7 +14,6 @@
 
 #include <Quantum/IR/QuantumDialect.h>
 #include <Quantum/IR/QuantumOps.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -28,7 +27,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Transforms/DialectConversion.h>
-#include <vector>
 
 namespace mlir::mqt::ir::conversions {
 
@@ -318,10 +316,6 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
         /*adjoint=*/nullptr,
         /*in_ctrl_qubits=*/mlir::ValueRange({}),
         /*in_ctrl_values=*/mlir::ValueRange());
-
-    // catalystOp.getProperties().setResultSegmentSizes(
-    //     {static_cast<int>(inQubitsValues.size()),
-    //      static_cast<int>(inCtrlQubits.size())});
 
     // Replace the original with the new operation
     rewriter.replaceOp(op, catalystOp);
