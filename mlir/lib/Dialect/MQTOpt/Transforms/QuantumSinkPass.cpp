@@ -8,11 +8,11 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <utility>
 
 namespace mqt::ir::opt {
