@@ -34,7 +34,15 @@ void vecNear(CVec a, CVec b, double delta = 1e-6) {
 ///                      \n simulate with approximation \n
 ///-----------------------------------------------------------------------------
 
-TEST(ApproximationTest, OneQubitKeepAll) {
+TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
+
+  // Test: If the budget is 0, no approximation will be applied.
+  //
+  // |state⟩ = 0.866|0⟩ + 0.5|1⟩
+  //
+  // Eliminate nothing (fidelity = 1).
+  //     → |approx⟩ = |state⟩
+
   constexpr std::size_t nq = 1;
   constexpr double fidelity = 1;
 
@@ -43,10 +51,32 @@ TEST(ApproximationTest, OneQubitKeepAll) {
   qc::QuantumComputation qc(nq);
   qc.x(0);
 
+  auto state = simulate(qc, dd.makeZeroState(nq), dd);
+  auto approx = approximate(state, fidelity, dd);
+
+  const CVec expected{{0}, {1}};
+
+  EXPECT_EQ(approx.getVector(), expected);
+  EXPECT_EQ(approx.size(), 2);
+  EXPECT_EQ(state, approx);
+}
+
+TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
+
+  // Test: If the budget is too small, no approximation will be applied.
+  //
   // |state⟩ = 0.866|0⟩ + 0.5|1⟩
   //
-  // Eliminate nothing (fidelity = 1).
+  // Eliminate nothing:
   //     → |approx⟩ = |state⟩
+
+  constexpr std::size_t nq = 1;
+  constexpr double fidelity = 0.9;
+
+  Package dd(nq);
+
+  qc::QuantumComputation qc(nq);
+  qc.x(0);
 
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
   auto approx = approximate(state, fidelity, dd);
@@ -55,9 +85,18 @@ TEST(ApproximationTest, OneQubitKeepAll) {
 
   EXPECT_EQ(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 2);
+  EXPECT_EQ(state, approx);
 }
 
-TEST(ApproximationTest, OneQubitApproximation) {
+TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
+
+  // Test: Terminal edges can be removed (set to vEdge::zero) also.
+  //
+  // |state⟩ = 0.866|0⟩ + 0.5|1⟩
+  //
+  // Eliminate |1⟩ with contribution 0.25
+  //     → |approx⟩ = |0⟩
+
   constexpr std::size_t nq = 1;
   constexpr double fidelity = 1 - 0.25;
 
@@ -65,11 +104,6 @@ TEST(ApproximationTest, OneQubitApproximation) {
 
   qc::QuantumComputation qc(nq);
   qc.ry(qc::PI / 3, 0);
-
-  // |state⟩ = 0.866|0⟩ + 0.5|1⟩
-  //
-  // Eliminate |1⟩ with contribution 0.25
-  //     → |approx⟩ = |0⟩
 
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
   auto approx = approximate(state, fidelity, dd);
@@ -79,14 +113,44 @@ TEST(ApproximationTest, OneQubitApproximation) {
   EXPECT_EQ(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 2);
   EXPECT_NEAR(dd.fidelity(state, approx), 0.75, 1e-3);
+  EXPECT_NE(state, approx);
+}
+
+TEST(ApproximationTest, OneQubitCorrectRefCount) {
+
+  // Test: Correctly increase and decrease ref counts.
+  //
+  // |state⟩ = 0.866|0⟩ + 0.5|1⟩
+  //
+  // Eliminate |1⟩ with contribution 0.25
+  //     → |approx⟩ = |0⟩
+
+  constexpr std::size_t nq = 1;
+  constexpr double fidelity = 1 - 0.25;
+
+  Package dd(nq);
+
+  qc::QuantumComputation qc(nq);
+  qc.ry(qc::PI / 3, 0);
+
+  auto state = simulate(qc, dd.makeZeroState(nq), dd);
+  auto approx = approximate(state, fidelity, dd);
 
   dd.decRef(approx);
   dd.garbageCollect(true);
 
-  EXPECT_EQ(dd.vUniqueTable.getNumEntries(), 0); // correct ref counts.
+  EXPECT_EQ(dd.vUniqueTable.getNumEntries(), 0);
 }
 
-TEST(ApproximationTest, TwoQubitApproximation) {
+TEST(ApproximationTest, TwoQubitRemoveNode) {
+
+  // Test: Remove node (its in-going edge) from decision diagram.
+  //
+  // |state⟩ = 0.707|00⟩ + 0.612|01⟩ + 0.354|11⟩
+  //
+  // Eliminate |11⟩ with contribution 0.125
+  //     → |approx⟩ = 0.756|00⟩ + 0.654|01⟩
+
   constexpr std::size_t nq = 2;
   constexpr double fidelity = 1 - 0.2;
 
@@ -96,22 +160,31 @@ TEST(ApproximationTest, TwoQubitApproximation) {
   qc.h(0);
   qc.cry(qc::PI / 3, 0, 1);
 
-  // |state⟩ = 0.707|00⟩ + 0.612|01⟩ + 0.354|11⟩
-  //
-  // Eliminate |11⟩ with contribution 0.125
-  //     → |approx⟩ = 0.756|00⟩ + 0.654|01⟩
-
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
   auto approx = approximate(state, fidelity, dd);
 
   const CVec expected{{0.755929}, {0.654654}, {0}, {0}};
 
   vecNear(approx.getVector(), expected);
+  EXPECT_EQ(state.size(), 4);
   EXPECT_EQ(approx.size(), 3);
   EXPECT_NEAR(dd.fidelity(state, approx), 0.875, 1e-3);
+  EXPECT_NE(state, approx);
 }
 
 TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
+
+  // Test: Compare the approximated source state with an equal constructed
+  //       state. The root edge must point to the same node and have the same
+  //       edge weight.
+  //
+  // |state⟩ = 0.183|00⟩ + 0.683|01⟩ + 0.183|10⟩ + 0.683|11⟩
+  //
+  // Eliminate |00⟩ and |10⟩ with contributions ~ 0.0335.
+  //     → |approx⟩ = (1/sqrt(2))(|01⟩ + |11⟩)
+  //
+  // |ref⟩ = (1/sqrt(2))(|01⟩ + |11⟩)
+
   constexpr std::size_t nq = 2;
   constexpr double fidelity = 1 - 0.1;
 
@@ -128,13 +201,6 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   qcRef.cx(0, 1);
   qcRef.cx(1, 0);
 
-  // |state⟩ = 0.183|00⟩ + 0.683|01⟩ + 0.183|10⟩ + 0.683|11⟩
-  //
-  // Eliminate |00⟩ and |10⟩ with contributions ~ 0.0335.
-  //     → |approx⟩ = (1/sqrt(2))(|01⟩ + |11⟩)
-  //
-  // |ref⟩ = (1/sqrt(2))(|01⟩ + |11⟩)
-
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
   auto approx = approximate(state, fidelity, dd);
   auto ref = simulate(qcRef, dd.makeZeroState(nq), dd);
@@ -144,34 +210,40 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   vecNear(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 3);
   EXPECT_NEAR(dd.fidelity(state, approx), 0.933, 1e-3);
-  EXPECT_EQ(ref, approx); // points to same node and same edge weight
+  EXPECT_EQ(ref, approx); // implicit: utilize `==` operator.
 }
 
-TEST(ApproximationTest, ThreeQubitApproximation) {
+TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
+
+  // Test: Remove node that has a subtree attached (i.e. has children).
+  //       Use exponential source state without redundancies.
+  // |state⟩ = 0+0.866j|000⟩ + 0-0.096j|100⟩ + 0+0.166j|101⟩ + 0+0.231j|110⟩ +
+  //           + 0-0.4j|111⟩
+  //
+  // Eliminate parent of |1xx⟩ with contribution ~ 0.25.
+  //     → |approx⟩ = i|000⟩
+
   constexpr std::size_t nq = 3;
-  constexpr double fidelity = 0.98;
+  constexpr double fidelity = 1 - 0.25;
 
   Package dd(nq);
 
   qc::QuantumComputation qc(nq);
-  qc.h(0);
-  qc.cry(qc::PI / 8, 0, 1);
-  qc.h(1);
-  qc.cry(qc::PI / 8, 1, 2);
-
-  // |state⟩ =   0.5|000⟩ + 0.588|001⟩ +  0.49|010⟩
-  //         + 0.385|011⟩ + 0.098|110⟩ + 0.077|111⟩
-  //
-  // Eliminate parent of |110⟩ and |111> with contribution ~ 0.016.
-  //     → |approx⟩ = 0.504|000⟩ + 0.593|001⟩ +  0.494|010⟩ + 0.388|011⟩
+  qc.rx(qc::PI, 0);
+  qc.ry(2 * qc::PI / 3, 0);
+  qc.cx(0, 1);
+  qc.cx(1, 2);
+  qc.cry(qc::PI / 3, 2, 0);
+  qc.cry(qc::PI / 4, 2, 1);
 
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
   auto approx = approximate(state, fidelity, dd);
 
-  const CVec expected{{0.503892}, {0.592515}, {0.49421}, {0.388298},
-                      {0},        {0},        {0},       {0}};
+  const CVec expected{{0, 1}, {0}, {0}, {0}, {0}, {0}, {0}, {0}};
 
   vecNear(approx.getVector(), expected);
-  EXPECT_EQ(approx.size(), 5);
-  EXPECT_NEAR(dd.fidelity(state, approx), 0.984, 1e-3);
+  EXPECT_EQ(state.size(), 6);
+  EXPECT_EQ(approx.size(), 4);
+  EXPECT_NEAR(dd.fidelity(state, approx), 0.75, 1e-3);
+  EXPECT_NE(state, approx);
 }
