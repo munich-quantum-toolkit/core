@@ -189,17 +189,17 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    *
    * Currently, such an operation should only be the return operation, but this
    * function is compatible with any operation that uses MQTOpt-operations as
-   * inputs. Only Quregs and classical values may be used as inputs to non
+   * inputs. Only qregs and classical values may be used as inputs to non
    * MQTOpt-operations, Qubits are not supported!
    *
    * @param op The operation to update.
    * @param rewriter The pattern rewriter to use.
-   * @param qureg The new Qureg to replace old Qureg uses with.
+   * @param qreg The new qreg to replace old qreg uses with.
    * @param measureCount The number of measurements in the quantum circuit.
    */
   static void updateMQTOptInputs(mlir::Operation& op,
                                  mlir::PatternRewriter& rewriter,
-                                 const mlir::Value& qureg,
+                                 const mlir::Value& qreg,
                                  const size_t measureCount) {
     size_t i = 0;
     auto* const cloned = rewriter.clone(op);
@@ -213,9 +213,9 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
             "by round-trip pass!");
       }
       if (llvm::isa<QubitRegisterType>(type)) {
-        // Operations that used the old `qureg` will now use the new one
+        // Operations that used the old `qreg` will now use the new one
         // instead.
-        cloned->setOperand(i - 1, qureg);
+        cloned->setOperand(i - 1, qreg);
       }
       if (llvm::isa<mlir::IntegerType>(type)) {
         // Operations that used `i1` values (i.e. classical measurement results)
@@ -324,7 +324,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // NOLINTNEXTLINE(bugprone-nondeterministic-pointer-iteration-order)
     for (auto* operation : visited) {
       if (operation->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
-        updateMQTOptInputs(*operation, rewriter, newAlloc.getQureg(),
+        updateMQTOptInputs(*operation, rewriter, newAlloc.getQreg(),
                            measureCount);
       }
     }
