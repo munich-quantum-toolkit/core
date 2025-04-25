@@ -16,14 +16,16 @@
 namespace dd {
 
 /**
- * @brief Approximate the input state to a given final fidelity.
+ * @brief Approximate the @p state based on fidelity. The fidelity of the
+ * approximated state will be at least @p fidelity.
  *
  * @details Traverses the decision diagram layer by layer in a breadth-first
- * manner and eliminates edges greedily until the budget is exhausted.
+ * manner (iterative deepening algorithm) and eliminates edges greedily until
+ * the budget (1 - @p fidelity) is exhausted.
  *
  * @param state The DD to approximate.
- * @param fidelity The desired final fidelity after approximation.
- * @param dd The DD package to use for the simulation
+ * @param fidelity The desired minimum fidelity after approximation.
+ * @param dd The DD package to use for the approximation.
  */
 VectorDD approximate(VectorDD& state, double fidelity, Package& dd);
 
