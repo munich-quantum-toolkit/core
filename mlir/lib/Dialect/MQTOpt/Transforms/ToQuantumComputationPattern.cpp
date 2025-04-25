@@ -68,7 +68,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * variables.
    *
    * @return The index of the qubit in the list of previously defined qubit
-   * variables. 
+   * variables.
    *
    * @throws `std::runtime_error` if the qubit is not found.
    */
