@@ -9,6 +9,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- 📦 Add Windows ARM64 wheels ([#926](https://github.com/munich-quantum-toolkit/core/pull/926)) ([**@burgholzer**](https://github.com/burgholzer))
 - 📝 Add documentation page for MLIR ([#931](https://github.com/munich-quantum-toolkit/core/pull/931)) ([**@ystade**](https://github.com/ystade))
 - ✨ Initial implementation of the mqtdyn Dialect ([#900](https://github.com/munich-quantum-toolkit/core/pull/900)) ([**@DRovara**](https://github.com/DRovara), [**@ystade**](https://github.com/ystade))
 

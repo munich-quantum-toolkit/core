@@ -264,6 +264,10 @@ manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 manylinux-ppc64le-image = "manylinux_2_28"
 manylinux-s390x-image = "manylinux_2_28"
+test-skip = [
+  "cp3*t-*", # no freethreading qiskit wheels
+  "cp*-win_arm64", # no numpy, qiskit, ... wheels
+]
 
 [tool.cibuildwheel.linux]
 environment = { DEPLOY = "ON" }
@@ -274,17 +278,10 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }
 [tool.cibuildwheel.windows]
 before-build = "uv pip install delvewheel>=1.9.0"
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
-environment = { CMAKE_GENERATOR = "Ninja" }
 
 [[tool.cibuildwheel.overrides]]
 select = "*-macosx_arm64"
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
-
-# Some of our extra dependencies do not support free-threading yet.
-[[tool.cibuildwheel.overrides]]
-select = "cp3*t-*"
-test-groups = []
-test-command = "python -c \"from mqt import core\""
 
 
 [tool.uv]
