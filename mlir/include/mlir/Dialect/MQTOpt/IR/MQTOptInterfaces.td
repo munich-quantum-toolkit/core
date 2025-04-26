@@ -37,25 +37,25 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return $_op.getInQubits();
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all positively control qubits of the operation.",
+            /*desc=*/        "Returns all positively-controlling input qubits of the operation.",
             /*returnType=*/  "mlir::OperandRange",
-            /*methodName=*/  "getPosCtrlQubits",
+            /*methodName=*/  "getPosCtrlInQubits",
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
-                return $_op.getPosCtrlQubits();
+                return $_op.getPosCtrlInQubits();
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all negatively control qubits of the operation.",
+            /*desc=*/        "Returns all negatively-controlling input qubits of the operation.",
             /*returnType=*/  "mlir::OperandRange",
-            /*methodName=*/  "getNegCtrlQubits",
+            /*methodName=*/  "getNegCtrlInQubits",
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
-                return $_op.getNegCtrlQubits();
+                return $_op.getNegCtrlInQubits();
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all output qubits of the operation incl. all control qubits.",
+            /*desc=*/        "Returns all output qubits of the operation excl. control qubits.",
             /*returnType=*/  "mlir::ResultRange",
             /*methodName=*/  "getOutQubits",
             /*args=*/        (ins),
@@ -64,14 +64,32 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return $_op.getOutQubits();
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all control qubits of the operation incl. positive and negative controls.",
-            /*returnType=*/  "std::vector<mlir::Value>",
-            /*methodName=*/  "getCtrlQubits",
+            /*desc=*/        "Returns all positively-controlling output qubits of the operation.",
+            /*returnType=*/  "mlir::ResultRange",
+            /*methodName=*/  "getPosCtrlOutQubits",
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
-                const auto& posCtrlQubits = $_op.getPosCtrlQubits();
-                const auto& negCtrlQubits = $_op.getNegCtrlQubits();
+                return $_op.getPosCtrlOutQubits();
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Returns all negatively-controlling output qubits of the operation.",
+            /*returnType=*/  "mlir::ResultRange",
+            /*methodName=*/  "getNegCtrlOutQubits",
+            /*args=*/        (ins),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                return $_op.getNegCtrlOutQubits();
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Returns all controlling input qubits of the operation.",
+            /*returnType=*/  "std::vector<mlir::Value>",
+            /*methodName=*/  "getAllCtrlInQubits",
+            /*args=*/        (ins),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                const auto& posCtrlQubits = $_op.getPosCtrlInQubits();
+                const auto& negCtrlQubits = $_op.getNegCtrlInQubits();
                 std::vector<mlir::Value> controls{};
                 controls.reserve(posCtrlQubits.size() + negCtrlQubits.size());
                 controls.insert(controls.end(), posCtrlQubits.begin(), posCtrlQubits.end());
@@ -79,17 +97,47 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return controls;
             }]>,
         InterfaceMethod<
-            /*desc=*/        "Returns all input qubits of the operation incl. all control qubits.",
+            /*desc=*/        "Returns all control output qubits of the operation.",
+            /*returnType=*/  "std::vector<mlir::Value>",
+            /*methodName=*/  "getAllCtrlOutQubits",
+            /*args=*/        (ins),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                const auto& posCtrlQubits = $_op.getPosCtrlOutQubits();
+                const auto& negCtrlQubits = $_op.getNegCtrlOutQubits();
+                std::vector<mlir::Value> controls{};
+                controls.reserve(posCtrlQubits.size() + negCtrlQubits.size());
+                controls.insert(controls.end(), posCtrlQubits.begin(), posCtrlQubits.end());
+                controls.insert(controls.end(), negCtrlQubits.begin(), negCtrlQubits.end());
+                return controls;
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Returns all input qubits of the operation incl. all controlling qubits.",
             /*returnType=*/  "std::vector<mlir::Value>",
             /*methodName=*/  "getAllInQubits",
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
                 const auto& inQubits = $_op.getInQubits();
-                const auto& controls = $_op.getCtrlQubits();
+                const auto& controls = $_op.getAllCtrlInQubits();
                 std::vector<mlir::Value> operands{};
                 operands.reserve(inQubits.size() + controls.size());
                 operands.insert(operands.end(), inQubits.begin(), inQubits.end());
+                operands.insert(operands.end(), controls.begin(), controls.end());
+                return operands;
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Returns all output qubits of the operation incl. all controlling qubits.",
+            /*returnType=*/  "std::vector<mlir::Value>",
+            /*methodName=*/  "getAllOutQubits",
+            /*args=*/        (ins),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                const auto& outQubits = $_op.getOutQubits();
+                const auto& controls = $_op.getAllCtrlOutQubits();
+                std::vector<mlir::Value> operands{};
+                operands.reserve(outQubits.size() + controls.size());
+                operands.insert(operands.end(), outQubits.begin(), outQubits.end());
                 operands.insert(operands.end(), controls.begin(), controls.end());
                 return operands;
             }]>
@@ -97,11 +145,20 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
 
     let verify = [{
         auto unitaryOp = mlir::cast<ConcreteOp>($_op);
-        if (const auto in_qubits = unitaryOp.getInQubits().size() + unitaryOp.getPosCtrlQubits().size() + unitaryOp.getNegCtrlQubits().size();
-            in_qubits != unitaryOp.getOutQubits().size()) {
+        if (unitaryOp.getInQubits().size() != unitaryOp.getOutQubits().size()) {
             return $_op->emitError() <<
-                "number of input qubits (" << in_qubits << ") " <<
-                "and output qubits (" << unitaryOp.getOutQubits().size() << ") must be the same";
+                "number of input qubits (" << unitaryOp.getInQubits().size() << ") "
+                << "and output qubits (" << unitaryOp.getOutQubits().size() << ") must be the same";
+        } else if (unitaryOp.getPosCtrlInQubits().size() != unitaryOp.getPosCtrlOutQubits().size()) {
+            return $_op->emitError() <<
+                "number of positively-controlling input qubits (" << unitaryOp.getPosCtrlInQubits().size() << ") "
+                << "and positively-controlling output qubits (" << unitaryOp.getPosCtrlOutQubits().size()
+                << ") must be the same";
+        } else if (unitaryOp.getNegCtrlInQubits().size() != unitaryOp.getNegCtrlOutQubits().size()) {
+            return $_op->emitError() <<
+                "number of negatively-controlling input qubits (" << unitaryOp.getNegCtrlInQubits().size() << ") "
+                << "and negatively-controlling output qubits (" << unitaryOp.getNegCtrlOutQubits().size()
+                << ") must be the same";
         }
         return mlir::success();
     }];

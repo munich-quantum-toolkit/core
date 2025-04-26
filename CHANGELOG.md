@@ -9,10 +9,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- 📝 Add documentation page for MLIR ([#931](https://github.com/munich-quantum-toolkit/core/pull/931)) ([**@ystade**](https://github.com/ystade))
 - ✨ Initial implementation of the mqtdyn Dialect ([#900](https://github.com/munich-quantum-toolkit/core/pull/900)) ([**@DRovara**](https://github.com/DRovara), [**@ystade**](https://github.com/ystade))
+
+### Fixed
+
+- 🐛 Fix bug in MLIR roundtrip passes caused by accessing an invalidated iterator after erasure in a loop ([#932](https://github.com/munich-quantum-toolkit/core/pull/932)) ([**@flowerthrower**](https://github.com/flowerthrower))
+- 🐛 Add missing support for `sxdg` gates in Qiskit circuit import ([#930](https://github.com/munich-quantum-toolkit/core/pull/930)) ([**@burgholzer**](https://github.com/burgholzer))
 
 ### Changed
 
+- ♻️ Outsource definition of standard operations from MLIR dialects to reduce redundancy ([#933](https://github.com/munich-quantum-toolkit/core/pull/933)) ([**@ystade**](https://github.com/ystade))
+- ♻️ Unify operands and results in MLIR dialects ([#931](https://github.com/munich-quantum-toolkit/core/pull/931)) ([**@ystade**](https://github.com/ystade))
+- ⏪️ Restore support for (MLIR and) LLVM v19 ([#934](https://github.com/munich-quantum-toolkit/core/pull/934)) ([**@flowerthrower**](https://github.com/flowerthrower)), [**@ystade**](https://github.com/ystade))
 - ⬆️ Update nlohmann_json to `v3.12.0` ([#921](https://github.com/munich-quantum-toolkit/core/pull/921)) ([**@burgholzer**](https://github.com/burgholzer))
 
 ## [3.0.2] - 2025-04-07
