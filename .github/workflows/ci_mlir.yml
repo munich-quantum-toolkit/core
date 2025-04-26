@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - "mlir/**"
+      - ".github/workflows/ci_mlir.yml"
   merge_group:
   workflow_dispatch:
 
@@ -68,6 +69,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           python-version: 3.13
+          activate-environment: true
 
       # make sure ninja is installed
       - name: Install Ninja
