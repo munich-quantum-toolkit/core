@@ -68,6 +68,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           python-version: 3.13
+          activate-environment: true
 
       # make sure ninja is installed
       - name: Install Ninja
