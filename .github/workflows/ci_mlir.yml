@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - "mlir/**"
+      - ".github/workflows/ci_mlir.yml"
   merge_group:
   workflow_dispatch:
 
