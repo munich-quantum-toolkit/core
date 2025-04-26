@@ -79,9 +79,6 @@ ninja.version = ">=1.10"
 # Setuptools-style build caching in a local directory
 build-dir = "build/{wheel_tag}/{build_type}"
 
-build.verbose = true
-logging.level = "DEBUG"
-
 # All the targets to build
 build.targets = [
   "mqt-core-ir",

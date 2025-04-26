@@ -46,10 +46,6 @@ if(BUILD_MQT_CORE_BINDINGS)
 
   # top-level call to find Python
   find_package(Python 3.9 REQUIRED COMPONENTS Interpreter Development.Module)
-  message(STATUS "Python executable: ${Python_EXECUTABLE}")
-  message(STATUS "Python libraries: ${Python_LIBRARIES}")
-  message(STATUS "Python include directory: ${Python_INCLUDE_DIR}")
-  message(STATUS "Python library directories: ${Python_LIBRARY_DIRS}")
 endif()
 
 # check if this is the master project or used via add_subdirectory
