@@ -72,9 +72,9 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
                 nextLayer.end()) {
               nextLayer.emplace_front(&nextEdge);
             }
-            contributions[&nextEdge] =
-                contributions[&nextEdge] +
-                contribution * ComplexNumbers::mag2(nextEdge.w);
+            // contributions[&nextEdge] =
+            //     contributions[&nextEdge] +
+            //     contribution * ComplexNumbers::mag2(nextEdge.w);
           }
         }
       }
