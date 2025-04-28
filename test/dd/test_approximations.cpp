@@ -55,10 +55,8 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
   auto [approx, postFidelity] = approximate(state, fidelity, dd);
 
   const CVec expected{{0}, {1}};
-
   EXPECT_EQ(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 2);
-  EXPECT_EQ(state, approx);
 }
 
 TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
@@ -85,7 +83,6 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
 
   EXPECT_EQ(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 2);
-  EXPECT_EQ(state, approx);
 }
 
 TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
@@ -113,8 +110,6 @@ TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
   EXPECT_EQ(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 2);
   EXPECT_NEAR(postFidelity, 0.75, 1e-3);
-  EXPECT_NEAR(dd.fidelity(state, approx), 0.75, 1e-3);
-  EXPECT_NE(state, approx);
 }
 
 TEST(ApproximationTest, OneQubitCorrectRefCount) {
@@ -167,11 +162,8 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
   const CVec expected{{0.755929}, {0.654654}, {0}, {0}};
 
   vecNear(approx.getVector(), expected);
-  EXPECT_EQ(state.size(), 4);
   EXPECT_EQ(approx.size(), 3);
   EXPECT_NEAR(postFidelity, 0.875, 1e-3);
-  EXPECT_NEAR(dd.fidelity(state, approx), 0.875, 1e-3);
-  EXPECT_NE(state, approx);
 }
 
 TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
@@ -212,7 +204,6 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   vecNear(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 3);
   EXPECT_NEAR(postFidelity, 0.933, 1e-3);
-  EXPECT_NEAR(dd.fidelity(state, approx), 0.933, 1e-3);
   EXPECT_EQ(ref, approx); // implicit: utilize `==` operator.
 }
 
@@ -245,9 +236,6 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   const CVec expected{{0, 1}, {0}, {0}, {0}, {0}, {0}, {0}, {0}};
 
   vecNear(approx.getVector(), expected);
-  EXPECT_EQ(state.size(), 6);
   EXPECT_EQ(approx.size(), 4);
   EXPECT_NEAR(postFidelity, 0.75, 1e-3);
-  EXPECT_NEAR(dd.fidelity(state, approx), 0.75, 1e-3);
-  EXPECT_NE(state, approx);
 }

@@ -72,7 +72,8 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
                 nextLayer.end()) {
               nextLayer.emplace_front(&nextEdge);
             }
-            contributions[&nextEdge] +=
+            contributions[&nextEdge] =
+                contributions[&nextEdge] +
                 contribution * ComplexNumbers::mag2(nextEdge.w);
           }
         }
@@ -82,7 +83,7 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
     layer = std::move(nextLayer);
   }
 
-  auto approx = rebuild(state, exclude, dd);
+  VectorDD approx = rebuild(state, exclude, dd);
   approx.w = dd.cn.lookup(approx.w / std::sqrt(ComplexNumbers::mag2(approx.w)));
 
   dd.incRef(approx);
