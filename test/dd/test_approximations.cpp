@@ -52,7 +52,8 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
   qc.x(0);
 
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, dd);
+  auto p = approximate(state, fidelity, dd);
+  auto approx = p.first;
 
   const CVec expected{{0}, {1}};
   EXPECT_EQ(approx.getVector(), expected);
@@ -77,7 +78,8 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
   qc.x(0);
 
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, dd);
+  auto p = approximate(state, fidelity, dd);
+  auto approx = p.first;
 
   const CVec expected{{0}, {1}};
 
@@ -130,9 +132,9 @@ TEST(ApproximationTest, OneQubitCorrectRefCount) {
   qc.ry(qc::PI / 3, 0);
 
   auto state = simulate(qc, dd.makeZeroState(nq), dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, dd);
+  auto p = approximate(state, fidelity, dd);
 
-  dd.decRef(approx);
+  dd.decRef(p.first);
   dd.garbageCollect(true);
 
   EXPECT_EQ(dd.vUniqueTable.getNumEntries(), 0);

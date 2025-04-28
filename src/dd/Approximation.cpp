@@ -86,9 +86,9 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
   VectorDD approx = rebuild(state, exclude, dd);
   approx.w = dd.cn.lookup(approx.w / std::sqrt(ComplexNumbers::mag2(approx.w)));
 
-  dd.incRef(approx);
-  dd.decRef(state);
-  dd.garbageCollect();
+  // dd.incRef(approx);
+  // dd.decRef(state);
+  // dd.garbageCollect();
 
   return {approx, fidelity + budget};
 }
