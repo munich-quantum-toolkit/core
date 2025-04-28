@@ -42,30 +42,25 @@ VectorDD rebuild(const VectorDD& state,
   const std::array<vEdge, RADIX> edges{rebuild(state.p->e[0], exclude, dd),
                                        rebuild(state.p->e[1], exclude, dd)};
 
-  auto e = dd.makeDDNode(state.p->v, edges);
-  e.w = dd.cn.lookup(e.w * state.w);
-  return e;
+  VectorDD edge = dd.makeDDNode(state.p->v, edges);
+  edge.w = dd.cn.lookup(edge.w * state.w);
+  return edge;
 }
 }; // namespace
 
 std::pair<VectorDD, double> approximate(const VectorDD& state,
                                         const double fidelity, Package& dd) {
-  using ContributionMap = std::unordered_map<const vEdge*, double>;
-  using Layer = std::forward_list<const vEdge*>;
-
-  constexpr auto mag2 = ComplexNumbers::mag2;
-
-  Layer l{&state};
-  Layer exclude{};
-  ContributionMap m{{&state, mag2(state.w)}};
+  std::forward_list<const vEdge*> exclude{};
+  std::forward_list<const vEdge*> layer{&state};
+  std::unordered_map<const vEdge*, double> contributions{
+      {&state, ComplexNumbers::mag2(state.w)}};
 
   double budget = 1 - fidelity;
-  while (!l.empty() && budget > 0) {
-    Layer nextL{};
-    ContributionMap nextM{};
+  while (!layer.empty() && budget > 0) {
+    std::forward_list<const vEdge*> nextLayer{};
 
-    for (const vEdge* edge : l) {
-      const double contribution = m[edge];
+    for (const vEdge* edge : layer) {
+      const double contribution = contributions[edge];
       if (contribution <= budget) {
         exclude.emplace_front(edge);
         budget -= contribution;
@@ -73,21 +68,21 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
         const vNode* node = edge->p;
         for (const auto& nextEdge : node->e) {
           if (!nextEdge.w.exactlyZero()) {
-            if (nextM.find(&nextEdge) == nextM.end()) {
-              nextL.emplace_front(&nextEdge);
+            if (contributions.find(&nextEdge) == contributions.end()) {
+              nextLayer.emplace_front(&nextEdge);
             }
-            nextM[&nextEdge] += contribution * mag2(nextEdge.w);
+            contributions[&nextEdge] +=
+                contribution * ComplexNumbers::mag2(nextEdge.w);
           }
         }
       }
     }
 
-    l = std::move(nextL);
-    m = std::move(nextM);
+    layer = std::move(nextLayer);
   }
 
   auto approx = rebuild(state, exclude, dd);
-  approx.w = dd.cn.lookup(approx.w / std::sqrt(mag2(approx.w)));
+  approx.w = dd.cn.lookup(approx.w / std::sqrt(ComplexNumbers::mag2(approx.w)));
 
   dd.incRef(approx);
   dd.decRef(state);
