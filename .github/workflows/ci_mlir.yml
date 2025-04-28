@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - "mlir/**"
+      - ".github/workflows/ci_mlir.yml"
   merge_group:
   workflow_dispatch:
 
@@ -21,7 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        llvm-version: [20]
+        llvm-version: [19, 20]
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       CTEST_PARALLEL_LEVEL: 4
@@ -65,9 +66,10 @@ jobs:
 
       # set up uv for faster Python package management
       - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: 3.13
+          activate-environment: true
 
       # make sure ninja is installed
       - name: Install Ninja

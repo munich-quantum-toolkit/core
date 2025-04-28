@@ -233,6 +233,8 @@ latex_elements = {
 \DeclareUnicodeCharacter{1F525}{\faicon{fire}}
 \DeclareUnicodeCharacter{1F41B}{\faicon{bug}}
 \DeclareUnicodeCharacter{1F4DA}{\faicon{book-open}}
+\DeclareUnicodeCharacter{1F4E6}{\faicon{archive}}
+\DeclareUnicodeCharacter{23EA}{\faicon{angle-double-left}}
 \DeclareUnicodeCharacter{FE0F}{}
 
 \newcommand*{\ket}[1]{\ensuremath{\mket{\mkern1mu#1}}}
