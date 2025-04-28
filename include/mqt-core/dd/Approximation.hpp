@@ -13,6 +13,8 @@
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
+#include <utility>
+
 namespace dd {
 
 /**
@@ -27,6 +29,7 @@ namespace dd {
  * @param fidelity The desired minimum fidelity after approximation.
  * @param dd The DD package to use for the approximation.
  */
-VectorDD approximate(VectorDD& state, double fidelity, Package& dd);
+std::pair<VectorDD, double> approximate(const VectorDD& state, double fidelity,
+                                        Package& dd);
 
 } // namespace dd

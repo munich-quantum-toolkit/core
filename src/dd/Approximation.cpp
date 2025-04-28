@@ -29,7 +29,7 @@ namespace {
  * @return Rebuilt VectorDD.
  */
 VectorDD rebuild(const VectorDD& state,
-                 const std::forward_list<vEdge*>& exclude, Package& dd) {
+                 const std::forward_list<const vEdge*>& exclude, Package& dd) {
   const auto it = std::find(exclude.begin(), exclude.end(), &state);
   if (it != exclude.end()) {
     return vEdge::zero();
@@ -48,9 +48,10 @@ VectorDD rebuild(const VectorDD& state,
 }
 }; // namespace
 
-VectorDD approximate(VectorDD& state, const double fidelity, Package& dd) {
+std::pair<VectorDD, double> approximate(const VectorDD& state,
+                                        const double fidelity, Package& dd) {
   using ContributionMap = std::unordered_map<const vEdge*, double>;
-  using Layer = std::forward_list<vEdge*>;
+  using Layer = std::forward_list<const vEdge*>;
 
   constexpr auto mag2 = ComplexNumbers::mag2;
 
@@ -63,20 +64,18 @@ VectorDD approximate(VectorDD& state, const double fidelity, Package& dd) {
     Layer nextL{};
     ContributionMap nextM{};
 
-    for (vEdge* edge : l) {
+    for (const vEdge* edge : l) {
       const double contribution = m[edge];
       if (contribution <= budget) {
         exclude.emplace_front(edge);
         budget -= contribution;
       } else if (!edge->isTerminal()) {
-        vNode* node = edge->p;
-        for (auto& nextEdge : node->e) {
+        const vNode* node = edge->p;
+        for (const auto& nextEdge : node->e) {
           if (!nextEdge.w.exactlyZero()) {
-
             if (nextM.find(&nextEdge) == nextM.end()) {
               nextL.emplace_front(&nextEdge);
             }
-
             nextM[&nextEdge] += contribution * mag2(nextEdge.w);
           }
         }
@@ -94,7 +93,7 @@ VectorDD approximate(VectorDD& state, const double fidelity, Package& dd) {
   dd.decRef(state);
   dd.garbageCollect();
 
-  return approx;
+  return {approx, fidelity + budget};
 }
 
 } // namespace dd
