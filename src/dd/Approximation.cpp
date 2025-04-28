@@ -83,14 +83,15 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
     layer = std::move(nextLayer);
   }
 
-  VectorDD approx = rebuild(state, exclude, dd);
-  approx.w = dd.cn.lookup(approx.w / std::sqrt(ComplexNumbers::mag2(approx.w)));
+  // VectorDD approx = rebuild(state, exclude, dd);
+  // approx.w = dd.cn.lookup(approx.w /
+  // std::sqrt(ComplexNumbers::mag2(approx.w)));
 
   // dd.incRef(approx);
   // dd.decRef(state);
   // dd.garbageCollect();
 
-  return {approx, fidelity + budget};
+  return {state, fidelity + budget};
 }
 
 } // namespace dd
