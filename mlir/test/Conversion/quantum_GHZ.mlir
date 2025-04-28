@@ -22,15 +22,15 @@ module {
     %3 = quantum.extract %0[ 2] : !quantum.reg -> !quantum.bit
 
     // CHECK: %[[H:.*]] = mqtopt.h( static [] mask []) %[[Q0]] : !mqtopt.Qubit
-    // CHECK: %[[CX1:.*]]:2 = mqtopt.x( static [] mask []) %[[Q1]] ctrl %[[H]] : !mqtopt.Qubit, !mqtopt.Qubit
-    // CHECK: %[[CX2:.*]]:2 = mqtopt.x( static [] mask []) %[[Q2]] ctrl %[[CX1]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[CX1:.*]], %[[CX1_0:.*]] = mqtopt.x( static [] mask []) %[[Q1]] ctrl %[[H]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[CX2:.*]], %[[CX2_0:.*]] = mqtopt.x( static [] mask []) %[[Q2]] ctrl %[[CX1_0]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     %out_h = quantum.custom "Hadamard"() %1 : !quantum.bit
     %out_qubits:2 = quantum.custom "CNOT"() %out_h, %2 : !quantum.bit, !quantum.bit
     %out_qubits_0:2 = quantum.custom "CNOT"() %out_qubits#1, %3 : !quantum.bit, !quantum.bit
 
-    // CHECK: %[[R0:.*]] = "mqtopt.insertQubit"(%[[QR3]], %[[CX1]]#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    // CHECK: %[[R1:.*]] = "mqtopt.insertQubit"(%[[R0]], %[[CX2]]#0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    // CHECK: %[[R2:.*]] = "mqtopt.insertQubit"(%[[R1]], %[[CX2]]#1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    // CHECK: %[[R0:.*]] = "mqtopt.insertQubit"(%[[QR3]], %[[CX1]]) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    // CHECK: %[[R1:.*]] = "mqtopt.insertQubit"(%[[R0]], %[[CX2]]) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    // CHECK: %[[R2:.*]] = "mqtopt.insertQubit"(%[[R1]], %[[CX2_0]]) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
     %4 = quantum.insert %0[ 0], %out_qubits#0 : !quantum.reg, !quantum.bit
     %5 = quantum.insert %4[ 1], %out_qubits_0#0 : !quantum.reg, !quantum.bit
     %6 = quantum.insert %5[ 2], %out_qubits_0#1 : !quantum.reg, !quantum.bit

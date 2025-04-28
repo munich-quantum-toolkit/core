@@ -37,46 +37,42 @@ func.func @bar() {
   // CHECK: %[[CZ:.*]]:2 = quantum.custom "CZ"() %[[CY]]#0, %[[CY]]#1 : !quantum.bit, !quantum.bit
   // CHECK: %[[SW0:.*]]:2 = quantum.custom "SWAP"() %[[CZ]]#1, %[[CZ]]#0 : !quantum.bit, !quantum.bit
   // CHECK: %[[TOF:.*]]:3 = quantum.custom "Toffoli"() %[[SW0]]#0, %[[Q2]], %[[SW0]]#1 : !quantum.bit, !quantum.bit, !quantum.bit
-  %5:2 = mqtopt.x() %4 ctrl %out_qubit_1 : !mqtopt.Qubit, !mqtopt.Qubit
-  %6:2 = mqtopt.y() %5#0 ctrl %5#1 : !mqtopt.Qubit, !mqtopt.Qubit
-  %7:2 = mqtopt.z() %6#0 ctrl %6#1 : !mqtopt.Qubit, !mqtopt.Qubit
-  %8:2 = mqtopt.swap() %7#1, %7#0 : !mqtopt.Qubit, !mqtopt.Qubit
-  %9:3 = mqtopt.x() %8#0 ctrl %out_qubit_3, %8#1 : !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
+    %5, %6 = mqtopt.x() %4 ctrl %out_qubit_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %7, %8 = mqtopt.y() %5 ctrl %6 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %9, %10 = mqtopt.z() %7 ctrl %8 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %11, %12 = mqtopt.swap() %10, %9 : !mqtopt.Qubit, !mqtopt.Qubit
+    %13, %14, %15 = mqtopt.x() %11 ctrl %out_qubit_3, %12 : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
 
   // CHECK: %[[RX:.*]] = quantum.custom "RX"(%cst) %[[TOF]]#0 : !quantum.bit
   // CHECK: %[[RY:.*]] = quantum.custom "RY"(%cst) %[[RX]] : !quantum.bit
   // CHECK: %[[RZ:.*]] = quantum.custom "RZ"(%cst) %[[RY]] : !quantum.bit
   // CHECK: %[[PS:.*]] = quantum.custom "PhaseShift"(%cst) %[[RZ]] : !quantum.bit
-  %10 = mqtopt.rx(%cst) %9#0 : !mqtopt.Qubit
-  %11 = mqtopt.ry(%cst) %10 : !mqtopt.Qubit
-  %12 = mqtopt.rz(%cst) %11 : !mqtopt.Qubit
-  %13 = mqtopt.p(%cst) %12 : !mqtopt.Qubit
+  %16 = mqtopt.rx(%cst) %13 : !mqtopt.Qubit
+  %17 = mqtopt.ry(%cst) %16 : !mqtopt.Qubit
+  %18 = mqtopt.rz(%cst) %17 : !mqtopt.Qubit
+  %19 = mqtopt.p(%cst) %18 : !mqtopt.Qubit
 
-  // CHECK: %[[T5:.*]] = arith.constant true
-  // CHECK: %[[CRX:.*]], %[[CR1:.*]] = quantum.custom "CRX"(%cst) %[[PS]] ctrls(%[[CT1]]#0) ctrlvals(%[[T5]]) : !quantum.bit ctrls !quantum.bit
-  // CHECK: %[[T6:.*]] = arith.constant true
-  // CHECK: %[[CRY:.*]], %[[CR2:.*]] = quantum.custom "CRY"(%cst) %[[CRX]] ctrls(%[[CR1]]) ctrlvals(%[[T6]]) : !quantum.bit ctrls !quantum.bit
-  // CHECK: %[[T7:.*]] = arith.constant true
-  // CHECK: %[[CRY2:.*]], %[[CR3:.*]] = quantum.custom "CRY"(%cst) %[[CRY]] ctrls(%[[CR2]]) ctrlvals(%[[T7]]) : !quantum.bit ctrls !quantum.bit
-  // CHECK: %[[T8:.*]] = arith.constant true
-  // CHECK: %[[CPS:.*]], %[[CR4:.*]] = quantum.custom "ControlledPhaseShift"(%cst) %[[CRY2]] ctrls(%[[CR3]]) ctrlvals(%[[T8]]) : !quantum.bit ctrls !quantum.bit
-  %14:2 = mqtopt.rx(%cst) %13 ctrl %9#1 : !mqtopt.Qubit, !mqtopt.Qubit
-  %15:2 = mqtopt.ry(%cst) %14#0 ctrl %14#1 : !mqtopt.Qubit, !mqtopt.Qubit
-  %16:2 = mqtopt.ry(%cst) %15#0 ctrl %15#1 : !mqtopt.Qubit, !mqtopt.Qubit
-  %17:2 = mqtopt.p(%cst) %16#0 ctrl %16#1 : !mqtopt.Qubit, !mqtopt.Qubit
+  // CHECK: %[[CRX:.*]]:2 = quantum.custom "CRX"(%cst) %[[PS]], %[[TOF]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[CRY:.*]]:2 = quantum.custom "CRY"(%cst) %[[CRX]]#0, %[[CRX]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[CRZ:.*]]:2 = quantum.custom "CRZ"(%cst) %[[CRY]]#0, %[[CRY]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[CPS:.*]]:2 = quantum.custom "ControlledPhaseShift"(%cst) %[[CRZ]]#0, %[[CRZ]]#1 : !quantum.bit, !quantum.bit
+  %200, %201 = mqtopt.rx(%cst) %19 ctrl %14 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+  %210, %211 = mqtopt.ry(%cst) %200 ctrl %201 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+  %220, %221 = mqtopt.rz(%cst) %210 ctrl %211 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+  %230, %231 = mqtopt.p(%cst) %220 ctrl %221 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-  // CHECK: %[[MRES:.*]], %[[QMEAS:.*]] = quantum.measure %[[CT1]]#1 : i1, !quantum.bit
-  %q_meas, %c0_0 = "mqtopt.measure"(%9#2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+  // CHECK: %[[MRES:.*]], %[[QMEAS:.*]] = quantum.measure %[[TOF]]#2 : i1, !quantum.bit
+  %q_meas, %c0_0 = "mqtopt.measure"(%15) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
   // CHECK: %[[R1:.*]] = quantum.insert %[[QREG]][ 2], %[[QMEAS]] : !quantum.reg, !quantum.bit
-  // CHECK: %[[R2:.*]] = quantum.insert %[[R1]][ 1], %[[CR4]] : !quantum.reg, !quantum.bit
-  // CHECK: %[[R3:.*]] = quantum.insert %[[R2]][ 0], %[[CPS]] : !quantum.reg, !quantum.bit
-  %18 = "mqtopt.insertQubit"(%out_qureg_2, %q_meas) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-  %19 = "mqtopt.insertQubit"(%18, %17#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-  %20 = "mqtopt.insertQubit"(%19, %17#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+  // CHECK: %[[R2:.*]] = quantum.insert %[[R1]][ 1], %[[CPS]]#0 : !quantum.reg, !quantum.bit
+  // CHECK: %[[R3:.*]] = quantum.insert %[[R2]][ 0], %[[CPS]]#1 : !quantum.reg, !quantum.bit
+  %240 = "mqtopt.insertQubit"(%out_qureg_2, %q_meas) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+  %250 = "mqtopt.insertQubit"(%240, %230) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+  %260 = "mqtopt.insertQubit"(%250, %231) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
 
   // CHECK: quantum.dealloc %[[R3]] : !quantum.reg
-  "mqtopt.deallocQubitRegister"(%20) : (!mqtopt.QubitRegister) -> ()
+  "mqtopt.deallocQubitRegister"(%260) : (!mqtopt.QubitRegister) -> ()
 
   return
 }
