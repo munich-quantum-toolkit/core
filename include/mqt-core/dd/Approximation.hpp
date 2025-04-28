@@ -28,6 +28,8 @@ namespace dd {
  * @param state The DD to approximate.
  * @param fidelity The desired minimum fidelity after approximation.
  * @param dd The DD package to use for the approximation.
+ * @return Pair of approximated state and the fidelity between the source and
+ * approximated state.
  */
 std::pair<VectorDD, double> approximate(const VectorDD& state, double fidelity,
                                         Package& dd);
