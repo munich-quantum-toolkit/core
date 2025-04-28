@@ -68,7 +68,8 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
         const vNode* node = edge->p;
         for (const auto& nextEdge : node->e) {
           if (!nextEdge.w.exactlyZero()) {
-            if (contributions.find(&nextEdge) == contributions.end()) {
+            if (std::find(nextLayer.begin(), nextLayer.end(), &nextEdge) ==
+                nextLayer.end()) {
               nextLayer.emplace_front(&nextEdge);
             }
             contributions[&nextEdge] +=
