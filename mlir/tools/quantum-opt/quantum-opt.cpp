@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-// At the top of quantum-opt.cpp:
 #ifdef ENABLE_CATALYST
 #include "mlir/Conversion/Catalyst/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h" // IWYU pragma: keep
 #include "mlir/Conversion/Catalyst/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h" // IWYU pragma: keep

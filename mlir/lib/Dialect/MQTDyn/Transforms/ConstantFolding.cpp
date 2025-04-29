@@ -18,7 +18,6 @@
 namespace mqt::ir::dyn {
 
 #define GEN_PASS_DEF_CONSTANTFOLDING
-#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTDyn/Transforms/Passes.h.inc"
 
 /**

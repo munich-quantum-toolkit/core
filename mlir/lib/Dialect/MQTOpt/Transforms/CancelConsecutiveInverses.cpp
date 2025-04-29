@@ -18,7 +18,6 @@
 namespace mqt::ir::opt {
 
 #define GEN_PASS_DEF_CANCELCONSECUTIVEINVERSES
-#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 /**
  * @brief This pass attempts to cancel consecutive self-inverse operations.

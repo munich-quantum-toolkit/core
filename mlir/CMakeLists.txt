@@ -37,7 +37,7 @@ if(ENABLE_CATALYST)
   endif()
   find_package(Catalyst REQUIRED CONFIG)
   list(APPEND CMAKE_MODULE_PATH "${CATALYST_CMAKE_DIR}")
-  set(MLIR_INCLUDE_DIRS "${MLIR_INCLUDE_DIRS};${CATALYST_INCLUDE_DIRS}")
+  list(APPEND MLIR_INCLUDE_DIRS "${CATALYST_INCLUDE_DIRS}")
 endif()
 
 # Include the TableGen, LLVM and MLIR CMake modules.
