@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -62,7 +63,7 @@ PYBIND11_MODULE(dd, mod, py::mod_gil_not_used()) {
   mod.def(
       "simulate_statevector",
       [](const qc::QuantumComputation& qc) {
-        auto dd = std::make_unique<dd::Package<>>(qc.getNqubits());
+        auto dd = std::make_unique<dd::Package>(qc.getNqubits());
         auto in = dd->makeZeroState(qc.getNqubits());
         const auto sim = dd::simulate(qc, in, *dd);
         return getVector(sim);
@@ -72,19 +73,18 @@ PYBIND11_MODULE(dd, mod, py::mod_gil_not_used()) {
   mod.def(
       "build_unitary",
       [](const qc::QuantumComputation& qc, const bool recursive = false) {
-        auto dd = std::make_unique<dd::Package<>>(qc.getNqubits());
+        auto dd = std::make_unique<dd::Package>(qc.getNqubits());
         auto u = recursive ? dd::buildFunctionalityRecursive(qc, *dd)
                            : dd::buildFunctionality(qc, *dd);
         return getMatrix(u, qc.getNqubits());
       },
       "qc"_a, "recursive"_a = false);
 
-  mod.def("simulate", &dd::simulate<dd::DDPackageConfig>, "qc"_a,
-          "initial_state"_a, "dd_package"_a);
+  mod.def("simulate", &dd::simulate, "qc"_a, "initial_state"_a, "dd_package"_a);
 
   mod.def(
       "build_functionality",
-      [](const qc::QuantumComputation& qc, dd::Package<>& p,
+      [](const qc::QuantumComputation& qc, dd::Package& p,
          const bool recursive = false) {
         if (recursive) {
           return dd::buildFunctionalityRecursive(qc, p);

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -37,7 +38,7 @@ using namespace pybind11::literals;
 namespace {
 /// Recursive helper function to create a vector DD from a numpy array
 dd::vCachedEdge makeDDFromVector(
-    dd::Package<>& p,
+    dd::Package& p,
     const py::detail::unchecked_reference<std::complex<dd::fp>, 1>& v,
     const size_t startIdx, const size_t endIdx, const dd::Qubit level) {
   if (level == 0U) {
@@ -56,7 +57,7 @@ dd::vCachedEdge makeDDFromVector(
 
 /// Recursive helper function to create a matrix DD from a numpy array
 dd::mCachedEdge makeDDFromMatrix(
-    dd::Package<>& p,
+    dd::Package& p,
     const py::detail::unchecked_reference<std::complex<dd::fp>, 2>& m,
     const size_t rowStart, const size_t rowEnd, const size_t colStart,
     const size_t colEnd, const dd::Qubit level) {
@@ -84,17 +85,17 @@ dd::mCachedEdge makeDDFromMatrix(
 } // namespace
 
 void registerDDPackage(const py::module& mod) {
-  auto dd = py::class_<dd::Package<>, std::unique_ptr<dd::Package<>>>(
-      mod, "DDPackage");
+  auto dd =
+      py::class_<dd::Package, std::unique_ptr<dd::Package>>(mod, "DDPackage");
 
   // Constructor
-  dd.def(py::init<size_t>(), "num_qubits"_a = dd::Package<>::DEFAULT_QUBITS);
+  dd.def(py::init<size_t>(), "num_qubits"_a = dd::Package::DEFAULT_QUBITS);
 
   // Resizing the package
-  dd.def("resize", &dd::Package<>::resize, "num_qubits"_a);
+  dd.def("resize", &dd::Package::resize, "num_qubits"_a);
 
   // Getting the number of qubits the package is configured for
-  dd.def_property_readonly("max_qubits", &dd::Package<>::qubits);
+  dd.def_property_readonly("max_qubits", &dd::Package::qubits);
 
   ///------------------------------------------------------------------------///
   /// Vector DD Generation
@@ -102,7 +103,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "zero_state",
-      [](dd::Package<>& p, const size_t numQubits) {
+      [](dd::Package& p, const size_t numQubits) {
         return p.makeZeroState(numQubits);
       },
       "num_qubits"_a,
@@ -111,7 +112,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "computational_basis_state",
-      [](dd::Package<>& p, const size_t numQubits,
+      [](dd::Package& p, const size_t numQubits,
          const std::vector<bool>& state) {
         return p.makeBasisState(numQubits, state);
       },
@@ -129,7 +130,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "basis_state",
-      [](dd::Package<>& p, const size_t numQubits,
+      [](dd::Package& p, const size_t numQubits,
          const std::vector<dd::BasisStates>& state) {
         return p.makeBasisState(numQubits, state);
       },
@@ -137,17 +138,17 @@ void registerDDPackage(const py::module& mod) {
       // keep the DD package alive while the returned vector DD is alive.
       py::keep_alive<0, 1>());
 
-  dd.def("ghz_state", &dd::Package<>::makeGHZState, "num_qubits"_a,
+  dd.def("ghz_state", &dd::Package::makeGHZState, "num_qubits"_a,
          // keep the DD package alive while the returned vector DD is alive.
          py::keep_alive<0, 1>());
 
-  dd.def("w_state", &dd::Package<>::makeWState, "num_qubits"_a,
+  dd.def("w_state", &dd::Package::makeWState, "num_qubits"_a,
          // keep the DD package alive while the returned vector DD is alive.
          py::keep_alive<0, 1>());
 
   dd.def(
       "from_vector",
-      [](dd::Package<>& p, const py::array_t<std::complex<dd::fp>>& v) {
+      [](dd::Package& p, const py::array_t<std::complex<dd::fp>>& v) {
         const auto data = v.unchecked<1>();
         const auto length = static_cast<size_t>(data.shape(0));
         if (length == 0) {
@@ -173,7 +174,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "apply_unitary_operation",
-      [](dd::Package<>& p, const dd::vEdge& v, const qc::Operation& op,
+      [](dd::Package& p, const dd::vEdge& v, const qc::Operation& op,
          const qc::Permutation& perm = {}) {
         return dd::applyUnitaryOperation(op, v, p, perm);
       },
@@ -183,8 +184,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "apply_measurement",
-      [](dd::Package<>& p, const dd::vEdge& v,
-         const qc::NonUnitaryOperation& op,
+      [](dd::Package& p, const dd::vEdge& v, const qc::NonUnitaryOperation& op,
          const std::vector<bool>& measurements,
          const qc::Permutation& perm = {}) {
         static std::mt19937_64 rng(std::random_device{}());
@@ -200,8 +200,8 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "apply_reset",
-      [](dd::Package<>& p, const dd::vEdge& v,
-         const qc::NonUnitaryOperation& op, const qc::Permutation& perm = {}) {
+      [](dd::Package& p, const dd::vEdge& v, const qc::NonUnitaryOperation& op,
+         const qc::Permutation& perm = {}) {
         static std::mt19937_64 rng(std::random_device{}());
         return dd::applyReset(op, v, p, rng, perm);
       },
@@ -211,7 +211,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "apply_classic_controlled_operation",
-      [](dd::Package<>& p, const dd::vEdge& v,
+      [](dd::Package& p, const dd::vEdge& v,
          const qc::ClassicControlledOperation& op,
          const std::vector<bool>& measurements,
          const qc::Permutation& perm = {}) {
@@ -225,7 +225,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "measure_collapsing",
-      [](dd::Package<>& p, dd::vEdge& v, const dd::Qubit q) {
+      [](dd::Package& p, dd::vEdge& v, const dd::Qubit q) {
         static std::mt19937_64 rng(std::random_device{}());
         return p.measureOneCollapsing(v, q, rng);
       },
@@ -233,21 +233,19 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "measure_all",
-      [](dd::Package<>& p, dd::vEdge& v, const bool collapse = false) {
+      [](dd::Package& p, dd::vEdge& v, const bool collapse = false) {
         static std::mt19937_64 rng(std::random_device{}());
         return p.measureAll(v, collapse, rng);
       },
       "vec"_a, "collapse"_a = false);
 
-  dd.def("identity", &dd::Package<>::makeIdent,
-         // keep the DD package alive while the returned matrix DD is alive.
-         py::keep_alive<0, 1>());
+  dd.def_static("identity", &dd::Package::makeIdent);
 
   using NumPyMatrix = py::array_t<std::complex<dd::fp>,
                                   py::array::c_style | py::array::forcecast>;
   dd.def(
       "single_qubit_gate",
-      [](dd::Package<>& p, const NumPyMatrix& m, const dd::Qubit target) {
+      [](dd::Package& p, const NumPyMatrix& m, const dd::Qubit target) {
         if (m.ndim() != 2 || m.shape(0) != 2 || m.shape(1) != 2) {
           throw std::invalid_argument("Matrix must be 2x2.");
         }
@@ -261,7 +259,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "controlled_single_qubit_gate",
-      [](dd::Package<>& p, const NumPyMatrix& m, const qc::Control& control,
+      [](dd::Package& p, const NumPyMatrix& m, const qc::Control& control,
          const dd::Qubit target) {
         if (m.ndim() != 2 || m.shape(0) != 2 || m.shape(1) != 2) {
           throw std::invalid_argument("Matrix must be 2x2.");
@@ -276,7 +274,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "multi_controlled_single_qubit_gate",
-      [](dd::Package<>& p, const NumPyMatrix& m, const qc::Controls& controls,
+      [](dd::Package& p, const NumPyMatrix& m, const qc::Controls& controls,
          const dd::Qubit target) {
         if (m.ndim() != 2 || m.shape(0) != 2 || m.shape(1) != 2) {
           throw std::invalid_argument("Matrix must be 2x2.");
@@ -291,7 +289,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "two_qubit_gate",
-      [](dd::Package<>& p, const NumPyMatrix& m, const dd::Qubit target0,
+      [](dd::Package& p, const NumPyMatrix& m, const dd::Qubit target0,
          const dd::Qubit target1) {
         if (m.ndim() != 2 || m.shape(0) != 4 || m.shape(1) != 4) {
           throw std::invalid_argument("Matrix must be 4x4.");
@@ -310,7 +308,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "controlled_two_qubit_gate",
-      [](dd::Package<>& p, const NumPyMatrix& m, const qc::Control& control,
+      [](dd::Package& p, const NumPyMatrix& m, const qc::Control& control,
          const dd::Qubit target0, const dd::Qubit target1) {
         if (m.ndim() != 2 || m.shape(0) != 4 || m.shape(1) != 4) {
           throw std::invalid_argument("Matrix must be 4x4.");
@@ -329,7 +327,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "multi_controlled_two_qubit_gate",
-      [](dd::Package<>& p, const NumPyMatrix& m, const qc::Controls& controls,
+      [](dd::Package& p, const NumPyMatrix& m, const qc::Controls& controls,
          const dd::Qubit target0, const dd::Qubit target1) {
         if (m.ndim() != 2 || m.shape(0) != 4 || m.shape(1) != 4) {
           throw std::invalid_argument("Matrix must be 4x4.");
@@ -348,7 +346,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "from_matrix",
-      [](dd::Package<>& p, const NumPyMatrix& m) {
+      [](dd::Package& p, const NumPyMatrix& m) {
         const auto data = m.unchecked<2>();
         const auto rows = static_cast<size_t>(data.shape(0));
         const auto cols = static_cast<size_t>(data.shape(1));
@@ -376,7 +374,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "from_operation",
-      [](dd::Package<>& p, const qc::Operation& op, const bool invert = false) {
+      [](dd::Package& p, const qc::Operation& op, const bool invert = false) {
         if (invert) {
           return dd::getInverseDD(op, p);
         }
@@ -387,38 +385,38 @@ void registerDDPackage(const py::module& mod) {
       py::keep_alive<0, 1>());
 
   // Reference counting and garbage collection
-  dd.def("inc_ref_vec", &dd::Package<>::incRef<dd::vNode>, "vec"_a);
-  dd.def("inc_ref_mat", &dd::Package<>::incRef<dd::mNode>, "mat"_a);
-  dd.def("dec_ref_vec", &dd::Package<>::decRef<dd::vNode>, "vec"_a);
-  dd.def("dec_ref_mat", &dd::Package<>::decRef<dd::mNode>, "mat"_a);
-  dd.def("garbage_collect", &dd::Package<>::garbageCollect, "force"_a = false);
+  dd.def("inc_ref_vec", &dd::Package::incRef<dd::vNode>, "vec"_a);
+  dd.def("inc_ref_mat", &dd::Package::incRef<dd::mNode>, "mat"_a);
+  dd.def("dec_ref_vec", &dd::Package::decRef<dd::vNode>, "vec"_a);
+  dd.def("dec_ref_mat", &dd::Package::decRef<dd::mNode>, "mat"_a);
+  dd.def("garbage_collect", &dd::Package::garbageCollect, "force"_a = false);
 
   // Operations on DDs
   dd.def("vector_add",
-         static_cast<dd::vEdge (dd::Package<>::*)(
-             const dd::vEdge&, const dd::vEdge&)>(&dd::Package<>::add),
+         static_cast<dd::vEdge (dd::Package::*)(
+             const dd::vEdge&, const dd::vEdge&)>(&dd::Package::add),
          "lhs"_a, "rhs"_a,
          // keep the DD package alive while the returned vector DD is alive.
          py::keep_alive<0, 1>());
 
   dd.def("matrix_add",
-         static_cast<dd::mEdge (dd::Package<>::*)(
-             const dd::mEdge&, const dd::mEdge&)>(&dd::Package<>::add),
+         static_cast<dd::mEdge (dd::Package::*)(
+             const dd::mEdge&, const dd::mEdge&)>(&dd::Package::add),
          "lhs"_a, "rhs"_a,
          // keep the DD package alive while the returned matrix DD is alive.
          py::keep_alive<0, 1>());
 
-  dd.def("conjugate", &dd::Package<>::conjugate, "vec"_a,
+  dd.def("conjugate", &dd::Package::conjugate, "vec"_a,
          // keep the DD package alive while the returned vector DD is alive.
          py::keep_alive<0, 1>());
 
-  dd.def("conjugate_transpose", &dd::Package<>::conjugateTranspose, "mat"_a,
+  dd.def("conjugate_transpose", &dd::Package::conjugateTranspose, "mat"_a,
          // keep the DD package alive while the returned matrix DD is alive.
          py::keep_alive<0, 1>());
 
   dd.def(
       "matrix_vector_multiply",
-      [](dd::Package<>& p, const dd::mEdge& mat, const dd::vEdge& vec) {
+      [](dd::Package& p, const dd::mEdge& mat, const dd::vEdge& vec) {
         return p.multiply(mat, vec);
       },
       "mat"_a, "vec"_a,
@@ -427,7 +425,7 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "matrix_multiply",
-      [](dd::Package<>& p, const dd::mEdge& lhs, const dd::mEdge& rhs) {
+      [](dd::Package& p, const dd::mEdge& lhs, const dd::mEdge& rhs) {
         return p.multiply(lhs, rhs);
       },
       "lhs"_a, "rhs"_a,
@@ -436,39 +434,39 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def(
       "inner_product",
-      [](dd::Package<>& p, const dd::vEdge& lhs, const dd::vEdge& rhs) {
+      [](dd::Package& p, const dd::vEdge& lhs, const dd::vEdge& rhs) {
         return std::complex<dd::fp>{p.innerProduct(lhs, rhs)};
       },
       "lhs"_a, "rhs"_a);
 
-  dd.def("fidelity", &dd::Package<>::fidelity, "lhs"_a, "rhs"_a);
+  dd.def("fidelity", &dd::Package::fidelity, "lhs"_a, "rhs"_a);
 
-  dd.def("expectation_value", &dd::Package<>::expectationValue, "observable"_a,
+  dd.def("expectation_value", &dd::Package::expectationValue, "observable"_a,
          "state"_a);
 
   dd.def("vector_kronecker",
-         static_cast<dd::vEdge (dd::Package<>::*)(
+         static_cast<dd::vEdge (dd::Package::*)(
              const dd::vEdge&, const dd::vEdge&, size_t, bool)>(
-             &dd::Package<>::kronecker),
+             &dd::Package::kronecker),
          "top"_a, "bottom"_a, "bottom_num_qubits"_a, "increment_index"_a = true,
          // keep the DD package alive while the returned vector DD is alive.
          py::keep_alive<0, 1>());
 
   dd.def("matrix_kronecker",
-         static_cast<dd::mEdge (dd::Package<>::*)(
+         static_cast<dd::mEdge (dd::Package::*)(
              const dd::mEdge&, const dd::mEdge&, size_t, bool)>(
-             &dd::Package<>::kronecker),
+             &dd::Package::kronecker),
          "top"_a, "bottom"_a, "bottom_num_qubits"_a, "increment_index"_a = true,
          // keep the DD package alive while the returned matrix DD is alive.
          py::keep_alive<0, 1>());
 
-  dd.def("partial_trace", &dd::Package<>::partialTrace, "mat"_a, "eliminate"_a,
+  dd.def("partial_trace", &dd::Package::partialTrace, "mat"_a, "eliminate"_a,
          // keep the DD package alive while the returned matrix DD is alive.
          py::keep_alive<0, 1>());
 
   dd.def(
       "trace",
-      [](dd::Package<>& p, const dd::mEdge& mat, const size_t numQubits) {
+      [](dd::Package& p, const dd::mEdge& mat, const size_t numQubits) {
         return std::complex<dd::fp>{p.trace(mat, numQubits)};
       },
       "mat"_a, "num_qubits"_a);

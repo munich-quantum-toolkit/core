@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -29,6 +30,12 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-zx)
       target_include_directories(multiprecision SYSTEM
                                  INTERFACE $<BUILD_INTERFACE:${MULTIPRECISION_INCLUDE_DIR}>)
       add_library(MQT::Multiprecision ALIAS multiprecision)
+
+      # add headers using file sets
+      file(GLOB_RECURSE MULTIPRECISION_HEADERS ${MULTIPRECISION_INCLUDE_DIR}/*.hpp)
+
+      target_sources(multiprecision PUBLIC FILE_SET HEADERS BASE_DIRS ${MULTIPRECISION_INCLUDE_DIR}
+                                           FILES ${MULTIPRECISION_HEADERS})
 
       set(MQT_CORE_ZX_SYSTEM_BOOST
           FALSE

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -116,7 +117,7 @@ TEST_P(BernsteinVazirani, DynamicEquivalenceSimulation) {
   // create standard BV circuit
   auto bv = qc::createBernsteinVazirani(s);
 
-  auto dd = std::make_unique<dd::Package<>>(bv.getNqubits());
+  auto dd = std::make_unique<dd::Package>(bv.getNqubits());
 
   // remove final measurements to obtain statevector
   qc::CircuitOptimizer::removeFinalMeasurements(bv);

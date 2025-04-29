@@ -1,10 +1,16 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
  *
  * Licensed under the MIT License
+ */
+
+/**
+ * @file ComputeTable.hpp
+ * @brief Data structure for caching computed results of binary operations
  */
 
 #pragma once
@@ -13,11 +19,11 @@
 #include "dd/statistics/TableStatistics.hpp"
 #include "ir/Definitions.hpp"
 
-#include <array>
-#include <bitset>
 #include <cstddef>
 #include <functional>
 #include <iostream>
+#include <stdexcept>
+#include <vector>
 
 namespace dd {
 
@@ -26,16 +32,23 @@ namespace dd {
  * @tparam LeftOperandType type of the operation's left operand
  * @tparam RightOperandType type of the operation's right operand
  * @tparam ResultType type of the operation's result
- * @tparam NBUCKET number of hash buckets to use (has to be a power of two)
  */
-template <class LeftOperandType, class RightOperandType, class ResultType,
-          std::size_t NBUCKET = 16384>
+template <class LeftOperandType, class RightOperandType, class ResultType>
 class ComputeTable {
 public:
-  /// Default constructor
-  ComputeTable() {
+  /**
+   * Default constructor
+   * @param numBuckets Number of hash table buckets. Must be a power of two.
+   */
+  explicit ComputeTable(const size_t numBuckets = 16384U) {
+    // numBuckets must be a power of two
+    if ((numBuckets & (numBuckets - 1)) != 0) {
+      throw std::invalid_argument("Number of buckets must be a power of two.");
+    }
     stats.entrySize = sizeof(Entry);
-    stats.numBuckets = NBUCKET;
+    stats.numBuckets = numBuckets;
+    valid = std::vector(numBuckets, false);
+    table = std::vector<Entry>(numBuckets);
   }
 
   /**
@@ -49,17 +62,14 @@ public:
     ResultType result;
   };
 
-  /// Bitmask used in the hash function
-  static constexpr std::size_t MASK = NBUCKET - 1;
-
   /**
    * @brief Compute the hash value for a given pair of operands
    * @param leftOperand The left operand
    * @param rightOperand The right operand
    * @return The hash value
    */
-  static std::size_t hash(const LeftOperandType& leftOperand,
-                          const RightOperandType& rightOperand) {
+  [[nodiscard]] std::size_t hash(const LeftOperandType& leftOperand,
+                                 const RightOperandType& rightOperand) const {
     auto h1 = std::hash<LeftOperandType>{}(leftOperand);
     if constexpr (std::is_same_v<LeftOperandType, dNode*>) {
       if (!dNode::isTerminal(leftOperand)) {
@@ -75,7 +85,8 @@ public:
       }
     }
     const auto hash = qc::combineHash(h1, h2);
-    return hash & MASK;
+    const auto mask = stats.numBuckets - 1;
+    return hash & mask;
   }
 
   /// Get a reference to the underlying table
@@ -98,7 +109,7 @@ public:
       ++stats.collisions;
     } else {
       stats.trackInsert();
-      valid.set(key);
+      valid[key] = true;
     }
     table[key] = {leftOperand, rightOperand, result};
   }
@@ -147,7 +158,7 @@ public:
    * @brief Clear the compute table
    * @details Sets all entries to invalid.
    */
-  void clear() { valid.reset(); }
+  void clear() { valid = std::vector(stats.numBuckets, false); }
 
   /**
    * @brief Print the statistics of the compute table
@@ -160,9 +171,9 @@ public:
 
 private:
   /// The actual table storing the entries
-  std::array<Entry, NBUCKET> table{};
-  /// Bitset to mark valid entries
-  std::bitset<NBUCKET> valid{};
+  std::vector<Entry> table;
+  /// Dynamic bitset to mark valid entries
+  std::vector<bool> valid;
   /// Statistics of the compute table
   TableStatistics stats{};
 };

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -128,13 +129,13 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST_P(QPE, QPETest) {
-  auto dd = std::make_unique<dd::Package<>>(precision + 1);
+  auto dd = std::make_unique<dd::Package>(precision + 1);
   auto qc = qc::createQPE(lambda, precision);
   qc.printStatistics(std::cout);
   ASSERT_EQ(qc.getNqubits(), precision + 1);
   ASSERT_NO_THROW({ qc::CircuitOptimizer::removeFinalMeasurements(qc); });
 
-  qc::VectorDD e{};
+  dd::VectorDD e{};
   ASSERT_NO_THROW(
       { e = dd::simulate(qc, dd->makeZeroState(qc.getNqubits()), *dd); });
 
@@ -164,7 +165,7 @@ TEST_P(QPE, QPETest) {
 }
 
 TEST_P(QPE, IQPETest) {
-  auto dd = std::make_unique<dd::Package<>>(precision + 1);
+  auto dd = std::make_unique<dd::Package>(precision + 1);
   auto qc = qc::createIterativeQPE(lambda, precision);
   ASSERT_EQ(qc.getNqubits(), 2U);
 
@@ -209,7 +210,7 @@ TEST_P(QPE, IQPETest) {
 }
 
 TEST_P(QPE, DynamicEquivalenceSimulation) {
-  auto dd = std::make_unique<dd::Package<>>(precision + 1);
+  auto dd = std::make_unique<dd::Package>(precision + 1);
 
   // create standard QPE circuit
   auto qpe = qc::createQPE(lambda, precision);
@@ -242,7 +243,7 @@ TEST_P(QPE, DynamicEquivalenceSimulation) {
 }
 
 TEST_P(QPE, DynamicEquivalenceFunctionality) {
-  auto dd = std::make_unique<dd::Package<>>(precision + 1);
+  auto dd = std::make_unique<dd::Package>(precision + 1);
 
   // create standard QPE circuit
   auto qpe = qc::createQPE(lambda, precision);

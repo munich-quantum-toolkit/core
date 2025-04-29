@@ -59,7 +59,7 @@ repos:
 
   # Python linting using ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.2
+    rev: v0.11.7
     hooks:
       - id: ruff
         args: ["--fix", "--show-fixes"]
@@ -115,7 +115,7 @@ repos:
 
   # Check for spelling
   - repo: https://github.com/crate-ci/typos
-    rev: v1.30.2
+    rev: v1.31.1
     hooks:
       - id: typos
 
@@ -125,7 +125,7 @@ repos:
       - id: disallow-caps
         name: Disallow improper capitalization
         language: pygrep
-        entry: PyBind|Numpy|Cmake|CCache|Github|PyTest|Mqt|Tum
+        entry: PyBind|Numpy|Cmake|CCache|Github|PyTest|Mqt|Tum|MQTopt|MQTdyn
         exclude: .pre-commit-config.yaml
 
   # Check best practices for scientific Python code
@@ -137,7 +137,7 @@ repos:
 
   # Check JSON schemata
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.31.3
+    rev: 0.33.0
     hooks:
       - id: check-dependabot
       - id: check-github-workflows
@@ -145,7 +145,7 @@ repos:
 
   # Check the pyproject.toml file
   - repo: https://github.com/henryiii/validate-pyproject-schema-store
-    rev: 2025.03.10
+    rev: 2025.04.07
     hooks:
       - id: validate-pyproject
 

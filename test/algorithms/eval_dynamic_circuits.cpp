@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -37,14 +38,14 @@ protected:
   qc::QuantumComputation iqpe;
   std::size_t qpeNgates{};
   std::size_t iqpeNgates{};
-  std::unique_ptr<dd::Package<>> dd;
+  std::unique_ptr<dd::Package> dd;
   std::ofstream ofs;
 
   void TearDown() override {}
   void SetUp() override {
     precision = GetParam();
 
-    dd = std::make_unique<dd::Package<>>(precision + 1);
+    dd = std::make_unique<dd::Package>(precision + 1);
 
     qpe = qc::createQPE(precision);
     // remove final measurements so that the functionality is unitary
@@ -126,7 +127,7 @@ TEST_P(DynamicCircuitEvalExactQPE, UnitaryTransformation) {
   iqpe.reorderOperations();
   const auto finishedTransformation = std::chrono::steady_clock::now();
 
-  qc::MatrixDD e = dd->makeIdent();
+  dd::MatrixDD e = dd::Package::makeIdent();
   dd->incRef(e);
 
   auto leftIt = qpe.begin();
@@ -194,14 +195,14 @@ protected:
   qc::QuantumComputation iqpe;
   std::size_t qpeNgates{};
   std::size_t iqpeNgates{};
-  std::unique_ptr<dd::Package<>> dd;
+  std::unique_ptr<dd::Package> dd;
   std::ofstream ofs;
 
   void TearDown() override {}
   void SetUp() override {
     precision = GetParam();
 
-    dd = std::make_unique<dd::Package<>>(precision + 1);
+    dd = std::make_unique<dd::Package>(precision + 1);
 
     qpe = qc::createQPE(precision, false);
     // remove final measurements so that the functionality is unitary
@@ -295,7 +296,7 @@ TEST_P(DynamicCircuitEvalInexactQPE, UnitaryTransformation) {
   iqpe.reorderOperations();
   const auto finishedTransformation = std::chrono::steady_clock::now();
 
-  qc::MatrixDD e = dd->makeIdent();
+  dd::MatrixDD e = dd::Package::makeIdent();
   dd->incRef(e);
 
   auto leftIt = qpe.begin();
@@ -358,14 +359,14 @@ protected:
   qc::QuantumComputation dbv;
   std::size_t bvNgates{};
   std::size_t dbvNgates{};
-  std::unique_ptr<dd::Package<>> dd;
+  std::unique_ptr<dd::Package> dd;
   std::ofstream ofs;
 
   void TearDown() override {}
   void SetUp() override {
     bitwidth = GetParam();
 
-    dd = std::make_unique<dd::Package<>>(bitwidth + 1);
+    dd = std::make_unique<dd::Package>(bitwidth + 1);
 
     bv = qc::createBernsteinVazirani(bitwidth);
     // remove final measurements so that the functionality is unitary
@@ -408,7 +409,7 @@ TEST_P(DynamicCircuitEvalBV, UnitaryTransformation) {
   dbv.reorderOperations();
   const auto finishedTransformation = std::chrono::steady_clock::now();
 
-  qc::MatrixDD e = dd->makeIdent();
+  dd::MatrixDD e = dd::Package::makeIdent();
   dd->incRef(e);
 
   auto leftIt = bv.begin();
@@ -471,14 +472,14 @@ protected:
   qc::QuantumComputation dqft;
   std::size_t qftNgates{};
   std::size_t dqftNgates{};
-  std::unique_ptr<dd::Package<>> dd;
+  std::unique_ptr<dd::Package> dd;
   std::ofstream ofs;
 
   void TearDown() override {}
   void SetUp() override {
     precision = GetParam();
 
-    dd = std::make_unique<dd::Package<>>(precision);
+    dd = std::make_unique<dd::Package>(precision);
 
     qft = qc::createQFT(precision);
     // remove final measurements so that the functionality is unitary
@@ -517,7 +518,7 @@ TEST_P(DynamicCircuitEvalQFT, UnitaryTransformation) {
   dqft.reorderOperations();
   const auto finishedTransformation = std::chrono::steady_clock::now();
 
-  qc::MatrixDD e = dd->makeIdent();
+  dd::MatrixDD e = dd::Package::makeIdent();
   dd->incRef(e);
 
   auto leftIt = qft.begin();
