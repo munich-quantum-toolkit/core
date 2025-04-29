@@ -89,9 +89,10 @@ public:
    * gates and fusing single-qubit gates.
    * @param qc the quantum circuit
    * @param maxBlockSize the maximum size of a block
+   * @param onlyCollectCliffords whether to collect only Clifford operations within a block, non-Clifford operations are a single block
    */
   static void collectBlocks(QuantumComputation& qc, std::size_t maxBlockSize,
-                            bool collectCliffords);
+                            bool onlyCollectCliffords);
 
   /**
    * @brief Elide permutations by propagating them through the circuit.
