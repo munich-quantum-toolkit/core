@@ -19,7 +19,6 @@
 #include <array>
 #include <cmath>
 #include <forward_list>
-#include <unordered_map>
 #include <utility>
 
 namespace dd {
