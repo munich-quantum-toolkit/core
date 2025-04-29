@@ -155,18 +155,29 @@ public:
 
   [[nodiscard]] virtual bool isControlled() const { return !controls.empty(); }
 
+  /**
+   * @brief Checks whether a gate is a Clifford gate.
+   * @details 
+   */
   [[nodiscard]] virtual bool isClifford() const {
-    const OpType opType = this->getType();
-    const bool controlled = this->isControlled();
-    const std::size_t numberOfControls = this->getNcontrols();
-    if ((controlled) && ((numberOfControls >= 2))) {
-      return false;
-    }
+    const OpType opType = getType();
+    const bool controlled = isControlled();
+    const std::size_t numberOfControls = getNcontrols();
+    
     switch (opType) {
     case I:
     case X:
+      if ((controlled) && ((numberOfControls >= 2))) {
+        return false;
+      }
     case Y:
+      if ((controlled) && ((numberOfControls >= 2))) {
+        return false;
+      }
     case Z:
+      if ((controlled) && ((numberOfControls >= 2))) {
+        return false;
+      }
     case H:
     case S:
     case Sdg:

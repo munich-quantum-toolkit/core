@@ -17,35 +17,21 @@
 namespace qc {
 TEST(CollectBlocks, emptyCircuit) {
   QuantumComputation qc(1);
-  qc::CircuitOptimizer::collectBlocks(qc, 1, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 1);
   EXPECT_EQ(qc.getNindividualOps(), 0);
 }
 
-TEST(CollectBlocks, emptyCliffordCircuit) {
-  QuantumComputation qc(1);
-  qc::CircuitOptimizer::collectBlocks(qc, 1, true);
-  EXPECT_EQ(qc.getNindividualOps(), 0);
-}
 
 TEST(CollectBlocks, singleGate) {
   QuantumComputation qc(1);
   qc.h(0);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 1, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 1);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 1);
   EXPECT_TRUE(qc.front()->isStandardOperation());
 }
 
-TEST(CollectBlocks, singleCliffordGate) {
-  QuantumComputation qc(1);
-  qc.t(0);
-  std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 1, true);
-  std::cout << qc << "\n";
-  EXPECT_EQ(qc.size(), 1);
-  EXPECT_TRUE(qc.front()->isStandardOperation());
-}
 
 TEST(CollectBlocks, collectMultipleSingleQubitGates) {
   QuantumComputation qc(2);
@@ -54,7 +40,7 @@ TEST(CollectBlocks, collectMultipleSingleQubitGates) {
   qc.x(0);
   qc.x(1);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 1, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 1);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 2);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -110,7 +96,7 @@ TEST(CollectBlocks, mergeBlocks) {
   qc.h(1);
   qc.cx(0, 1);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 2, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 2);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 1);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -125,7 +111,7 @@ TEST(CollectBlocks, mergeBlocks2) {
   qc.z(0);
   qc.cx(0, 1);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 2, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 2);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 1);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -137,7 +123,7 @@ TEST(CollectBlocks, addToMultiQubitBlock) {
   qc.cx(0, 1);
   qc.cz(0, 1);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 2, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 2);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 1);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -150,7 +136,7 @@ TEST(CollectBlocks, gateTooBig) {
   qc.h(1);
   qc.mcx({0, 1}, 2);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 2, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 2);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 2);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -163,7 +149,7 @@ TEST(CollectBlocks, gateTooBig2) {
   qc.h(1);
   qc.mcx({0, 1}, 2);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 1, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 1);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isStandardOperation());
@@ -177,7 +163,7 @@ TEST(CollectBlocks, gateTooBig3) {
   qc.h(4);
   qc.mcx({0, 1, 2, 3}, 4);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 3, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 3);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.back()->isStandardOperation());
@@ -189,7 +175,7 @@ TEST(CollectBlocks, endingBlocks) {
   qc.cx(1, 2);
   qc.cx(0, 1);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 2, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 2);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 2);
   EXPECT_TRUE(qc.front()->isStandardOperation());
@@ -202,7 +188,7 @@ TEST(CollectBlocks, endingBlocks2) {
   qc.cx(1, 2);
   qc.mcx({0, 1}, 3);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 3, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 3);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 2);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -215,7 +201,7 @@ TEST(CollectBlocks, interruptBlock) {
   qc.reset(0);
   qc.h(0);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 2, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 2);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isStandardOperation());
@@ -227,7 +213,7 @@ TEST(CollectBlocks, unprocessableAtBegin) {
   qc.reset(0);
   qc.h(0);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 1, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 1);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 2);
   EXPECT_TRUE(qc.front()->isNonUnitaryOperation());
@@ -241,7 +227,7 @@ TEST(CollectBlocks, handleCompoundOperation) {
   qc.emplace_back(op.asCompoundOperation());
   qc.x(1);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 1, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 1);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 2);
   EXPECT_TRUE(qc.front()->isStandardOperation());
@@ -256,7 +242,7 @@ TEST(CollectBlocks, handleCompoundOperation2) {
   qc.emplace_back(op.asCompoundOperation());
   qc.x(0);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 1, false);
+  qc::CircuitOptimizer::collectBlocks(qc, 1);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 1);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
