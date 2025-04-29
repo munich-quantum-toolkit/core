@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstddef>
 #include <gtest/gtest.h>
+#include <memory>
 
 using namespace dd;
 
@@ -47,13 +48,13 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
   constexpr std::size_t nq = 1;
   constexpr double fidelity = 1;
 
-  Package dd(nq);
+  auto dd = std::make_unique<dd::Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.x(0);
 
-  auto state = simulate(qc, dd.makeZeroState(nq), dd);
-  auto p = approximate(state, fidelity, dd);
+  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto p = approximate(state, fidelity, *dd);
   auto approx = p.first;
 
   const CVec expected{{0}, {1}};
@@ -73,13 +74,13 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
   constexpr std::size_t nq = 1;
   constexpr double fidelity = 0.9;
 
-  Package dd(nq);
+  auto dd = std::make_unique<dd::Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.x(0);
 
-  auto state = simulate(qc, dd.makeZeroState(nq), dd);
-  auto p = approximate(state, fidelity, dd);
+  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto p = approximate(state, fidelity, *dd);
   auto approx = p.first;
 
   const CVec expected{{0}, {1}};
@@ -100,13 +101,13 @@ TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
   constexpr std::size_t nq = 1;
   constexpr double fidelity = 1 - 0.25;
 
-  Package dd(nq);
+  auto dd = std::make_unique<dd::Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.ry(qc::PI / 3, 0);
 
-  auto state = simulate(qc, dd.makeZeroState(nq), dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, dd);
+  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto [approx, postFidelity] = approximate(state, fidelity, *dd);
 
   const CVec expected{{1}, {0}};
 
@@ -127,18 +128,18 @@ TEST(ApproximationTest, OneQubitCorrectRefCount) {
   constexpr std::size_t nq = 1;
   constexpr double fidelity = 1 - 0.25;
 
-  Package dd(nq);
+  auto dd = std::make_unique<dd::Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.ry(qc::PI / 3, 0);
 
-  auto state = simulate(qc, dd.makeZeroState(nq), dd);
-  auto p = approximate(state, fidelity, dd);
+  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto p = approximate(state, fidelity, *dd);
 
-  dd.decRef(p.first);
-  dd.garbageCollect(true);
+  dd->decRef(p.first);
+  dd->garbageCollect(true);
 
-  EXPECT_EQ(dd.vUniqueTable.getNumEntries(), 0);
+  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
 }
 
 TEST(ApproximationTest, TwoQubitRemoveNode) {
@@ -153,14 +154,14 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
   constexpr std::size_t nq = 2;
   constexpr double fidelity = 1 - 0.2;
 
-  Package dd(nq);
+  auto dd = std::make_unique<dd::Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.h(0);
   qc.cry(qc::PI / 3, 0, 1);
 
-  auto state = simulate(qc, dd.makeZeroState(nq), dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, dd);
+  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto [approx, postFidelity] = approximate(state, fidelity, *dd);
 
   const CVec expected{{0.755929}, {0.654654}, {0}, {0}};
 
@@ -185,7 +186,7 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   constexpr std::size_t nq = 2;
   constexpr double fidelity = 1 - 0.1;
 
-  Package dd(nq);
+  auto dd = std::make_unique<dd::Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.h(0);
@@ -198,9 +199,9 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   qcRef.cx(0, 1);
   qcRef.cx(1, 0);
 
-  auto state = simulate(qc, dd.makeZeroState(nq), dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, dd);
-  auto ref = simulate(qcRef, dd.makeZeroState(nq), dd);
+  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto [approx, postFidelity] = approximate(state, fidelity, *dd);
+  auto ref = simulate(qcRef, dd->makeZeroState(nq), *dd);
 
   const CVec expected{{0}, {1 / std::sqrt(2)}, {0}, {1 / std::sqrt(2)}};
 
@@ -223,7 +224,7 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   constexpr std::size_t nq = 3;
   constexpr double fidelity = 1 - 0.25;
 
-  Package dd(nq);
+  auto dd = std::make_unique<dd::Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.rx(qc::PI, 0);
@@ -233,8 +234,8 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   qc.cry(qc::PI / 3, 2, 0);
   qc.cry(qc::PI / 4, 2, 1);
 
-  auto state = simulate(qc, dd.makeZeroState(nq), dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, dd);
+  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto [approx, postFidelity] = approximate(state, fidelity, *dd);
 
   const CVec expected{{0, 1}, {0}, {0}, {0}, {0}, {0}, {0}, {0}};
 
