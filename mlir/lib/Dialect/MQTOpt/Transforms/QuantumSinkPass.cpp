@@ -19,6 +19,7 @@ namespace mqt::ir::opt {
 
 #define GEN_PASS_DEF_QUANTUMSINKPASS
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
+
 /**
  * @brief This pass attempty to sink quantum operations into the block where
  * their results are used.

@@ -10,9 +10,7 @@
 
 #pragma once
 
-#include <llvm/ADT/SmallVector.h>
 #include <mlir/Bytecode/BytecodeOpInterface.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
 
 #define DIALECT_NAME_MQTOPT "mqtopt"
 
@@ -33,9 +31,8 @@
 // Interfaces
 //===----------------------------------------------------------------------===//
 
+#include "mlir/Dialect/Common/IR/CommonTraits.h"         // IWYU pragma: export
 #include "mlir/Dialect/MQTOpt/IR/MQTOptInterfaces.h.inc" // IWYU pragma: export
-
-#include <mlir/Dialect/Common/IR/CommonTraits.h> // IWYU pragma: export
 
 //===----------------------------------------------------------------------===//
 // Operations
