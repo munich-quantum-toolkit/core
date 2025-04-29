@@ -50,19 +50,19 @@ VectorDD rebuild(const VectorDD& state,
 
 std::pair<VectorDD, double> approximate(const VectorDD& state,
                                         const double fidelity, Package& dd) {
-  std::forward_list<const vEdge*> exclude{};
+  std::forward_list<const vEdge*> exclude;
   std::forward_list<const vEdge*> layer{&state};
   std::unordered_map<const vEdge*, double> contributions{
       {&state, ComplexNumbers::mag2(state.w)}};
 
   double budget = 1 - fidelity;
   while (!layer.empty() && budget > 0) {
-    std::forward_list<const vEdge*> nextLayer{};
+    std::forward_list<const vEdge*> nextLayer;
 
     for (const vEdge* edge : layer) {
       const double contribution = contributions[edge];
       if (contribution <= budget) {
-        exclude.emplace_front(edge);
+        exclude.push_front(edge);
         budget -= contribution;
       } else if (!edge->isTerminal()) {
         assert(edge != nullptr);
@@ -72,7 +72,8 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
           if (!nextEdge.w.exactlyZero()) {
             if (std::find(nextLayer.begin(), nextLayer.end(), &nextEdge) ==
                 nextLayer.end()) {
-              nextLayer.emplace_front(&nextEdge);
+              nextLayer.push_front(&nextEdge);
+              contributions[&nextEdge] = 0.;
             }
             // contributions[&nextEdge] =
             //     contributions[&nextEdge] +
