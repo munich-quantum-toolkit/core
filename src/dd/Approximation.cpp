@@ -50,34 +50,30 @@ VectorDD rebuild(const VectorDD& state,
 
 std::pair<VectorDD, double> approximate(const VectorDD& state,
                                         const double fidelity, Package& dd) {
-  std::forward_list<const vEdge*> exclude;
+  std::forward_list<const vEdge*> exclude{};
   std::forward_list<const vEdge*> layer{&state};
   std::unordered_map<const vEdge*, double> contributions{
       {&state, ComplexNumbers::mag2(state.w)}};
 
   double budget = 1 - fidelity;
   while (!layer.empty() && budget > 0) {
-    std::forward_list<const vEdge*> nextLayer;
+    std::forward_list<const vEdge*> nextLayer{};
 
     for (const vEdge* edge : layer) {
       const double contribution = contributions[edge];
       if (contribution <= budget) {
-        exclude.push_front(edge);
+        exclude.emplace_front(edge);
         budget -= contribution;
       } else if (!edge->isTerminal()) {
-        assert(edge != nullptr);
         const vNode* node = edge->p;
-        assert(node != nullptr);
         for (const auto& nextEdge : node->e) {
           if (!nextEdge.w.exactlyZero()) {
             if (std::find(nextLayer.begin(), nextLayer.end(), &nextEdge) ==
                 nextLayer.end()) {
-              nextLayer.push_front(&nextEdge);
-              contributions[&nextEdge] = 0.;
+              nextLayer.emplace_front(&nextEdge);
             }
-            // contributions[&nextEdge] =
-            //     contributions[&nextEdge] +
-            //     contribution * ComplexNumbers::mag2(nextEdge.w);
+            contributions[&nextEdge] +=
+                contribution * ComplexNumbers::mag2(nextEdge.w);
           }
         }
       }
@@ -86,15 +82,14 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
     layer = std::move(nextLayer);
   }
 
-  // VectorDD approx = rebuild(state, exclude, dd);
-  // approx.w = dd.cn.lookup(approx.w /
-  // std::sqrt(ComplexNumbers::mag2(approx.w)));
+  VectorDD approx = rebuild(state, exclude, dd);
+  approx.w = dd.cn.lookup(approx.w / std::sqrt(ComplexNumbers::mag2(approx.w)));
 
-  // dd.incRef(approx);
-  // dd.decRef(state);
-  // dd.garbageCollect();
+  dd.incRef(approx);
+  dd.decRef(state);
+  dd.garbageCollect();
 
-  return {state, fidelity + budget};
+  return {approx, fidelity + budget};
 }
 
 } // namespace dd
