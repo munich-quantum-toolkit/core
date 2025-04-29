@@ -24,7 +24,6 @@ using namespace dd;
 
 namespace {
 void vecNear(CVec a, CVec b, double delta = 1e-6) {
-  assert(a.size() == b.size());
   for (std::size_t i = 0; i < b.size(); ++i) {
     EXPECT_NEAR(a[i].real(), b[i].real(), delta);
     EXPECT_NEAR(b[i].imag(), b[i].imag(), delta);

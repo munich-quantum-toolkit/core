@@ -50,36 +50,42 @@ VectorDD rebuild(const VectorDD& state,
 
 std::pair<VectorDD, double> approximate(const VectorDD& state,
                                         const double fidelity, Package& dd) {
-  std::forward_list<const vEdge*> exclude{};
-  std::forward_list<const vEdge*> layer{&state};
-  std::unordered_map<const vEdge*, double> contributions{
-      {&state, ComplexNumbers::mag2(state.w)}};
+  using Layer = std::forward_list<std::pair<const vEdge*, double>>;
 
   double budget = 1 - fidelity;
-  while (!layer.empty() && budget > 0) {
-    std::forward_list<const vEdge*> nextLayer{};
+  std::forward_list<const vEdge*> exclude{};
 
-    for (const vEdge* edge : layer) {
-      const double contribution = contributions[edge];
+  Layer curr{{&state, ComplexNumbers::mag2(state.w)}};
+  while (!curr.empty() && budget > 0) {
+    Layer next{};
+
+    for (const auto& [e, contribution] : curr) {
       if (contribution <= budget) {
-        exclude.emplace_front(edge);
+        exclude.emplace_front(e);
         budget -= contribution;
-      } else if (!edge->isTerminal()) {
-        const vNode* node = edge->p;
-        for (const auto& nextEdge : node->e) {
-          if (!nextEdge.w.exactlyZero()) {
-            if (std::find(nextLayer.begin(), nextLayer.end(), &nextEdge) ==
-                nextLayer.end()) {
-              nextLayer.emplace_front(&nextEdge);
+      } else if (!e->isTerminal()) {
+        const vNode* n = e->p;
+
+        for (const vEdge& eChildRef : n->e) {
+          const vEdge* eChild = &eChildRef;
+
+          if (!eChild->w.exactlyZero()) {
+            const double childContribution =
+                contribution * ComplexNumbers::mag2(eChild->w);
+            const auto it = std::find_if(
+                next.begin(), next.end(),
+                [&eChild](const auto& p) { return p.first == eChild; });
+            if (it == next.end()) {
+              next.emplace_front(eChild, childContribution);
+            } else {
+              (*it).second += childContribution;
             }
-            contributions[&nextEdge] +=
-                contribution * ComplexNumbers::mag2(nextEdge.w);
           }
         }
       }
     }
 
-    layer = std::move(nextLayer);
+    curr = std::move(next);
   }
 
   VectorDD approx = rebuild(state, exclude, dd);
