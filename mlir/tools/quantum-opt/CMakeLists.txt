@@ -19,16 +19,15 @@ set(LIBS
     MLIRMQTOptTransforms
     MLIRMQTDynTransforms)
 
-option(ENABLE_CATALYST "Enable Catalyst conversion passes" ON)
-if(ENABLE_CATALYST)
+if(ENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN)
   list(APPEND LIBS CatalystQuantumToMQTOpt MQTOptToCatalystQuantum MLIRQuantum)
 endif()
 
 add_mlir_tool(quantum-opt quantum-opt.cpp DEPENDS ${LIBS} SUPPORT_PLUGINS)
 
-if(ENABLE_CATALYST)
-  # This makes ENABLE_CATALYST available as a macro in the C++ file.
-  target_compile_definitions(quantum-opt PRIVATE ENABLE_CATALYST)
+if(ENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN)
+  # This makes ENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN available as a macro in the C++ file.
+  target_compile_definitions(quantum-opt PRIVATE ENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN)
 endif()
 
 target_compile_options(quantum-opt PRIVATE -fexceptions)

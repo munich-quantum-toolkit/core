@@ -6,6 +6,6 @@
 #
 # Licensed under the MIT License
 
-if(ENABLE_CATALYST)
+if(ENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN)
   add_subdirectory(Catalyst)
 endif()
