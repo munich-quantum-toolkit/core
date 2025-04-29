@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -232,6 +233,9 @@ def _emplace_operation(
 
     if name in {"sx", "csx"}:
         return _add_operation(qc, OpType.sx, qargs, params, qubit_map)
+
+    if name == "sxdg":
+        return _add_operation(qc, OpType.sxdg, qargs, params, qubit_map)
 
     if name == "mcx_recursive":
         if len(qargs) <= 5:

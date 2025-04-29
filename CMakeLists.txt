@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -6,11 +7,11 @@
 # Licensed under the MIT License
 
 # set required cmake version
-cmake_minimum_required(VERSION 3.24...3.31)
+cmake_minimum_required(VERSION 3.24...4.0)
 
 project(
   mqt-core
-  LANGUAGES CXX
+  LANGUAGES C CXX
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
 # Add path for custom modules
@@ -44,10 +45,7 @@ if(BUILD_MQT_CORE_BINDINGS)
   endif()
 
   # top-level call to find Python
-  find_package(
-    Python 3.9 REQUIRED
-    COMPONENTS Interpreter Development.Module
-    OPTIONAL_COMPONENTS Development.SABIModule)
+  find_package(Python 3.9 REQUIRED COMPONENTS Interpreter Development.Module)
 endif()
 
 # check if this is the master project or used via add_subdirectory
@@ -67,7 +65,7 @@ get_mqt_core_version()
 
 project(
   mqt-core
-  LANGUAGES CXX
+  LANGUAGES C CXX
   VERSION ${MQT_CORE_VERSION}
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 

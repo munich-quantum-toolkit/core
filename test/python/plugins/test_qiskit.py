@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -325,6 +326,9 @@ def test_operations() -> None:
     qc.csdg(0, 1)
     qc.t(0)
     qc.tdg(0)
+    qc.sx(0)
+    qc.csx(0, 1)
+    qc.sxdg(0)
     qc.rx(0.5, 0)
     qc.crx(0.5, 0, 1)
     qc.ry(0.5, 0)

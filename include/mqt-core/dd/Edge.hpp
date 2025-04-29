@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -39,11 +40,10 @@ using isMatrixVariant =
     std::enable_if_t<std::is_same_v<T, mNode> || std::is_same_v<T, dNode>,
                      bool>;
 
-using AmplitudeFunc =
-    std::function<void(const std::size_t, const std::complex<fp>&)>;
-using ProbabilityFunc = std::function<void(const std::size_t, const fp&)>;
-using MatrixEntryFunc = std::function<void(const std::size_t, const std::size_t,
-                                           const std::complex<fp>&)>;
+using AmplitudeFunc = std::function<void(std::size_t, const std::complex<fp>&)>;
+using ProbabilityFunc = std::function<void(std::size_t, const fp&)>;
+using MatrixEntryFunc =
+    std::function<void(std::size_t, std::size_t, const std::complex<fp>&)>;
 
 /**
  * @brief A weighted edge pointing to a DD node
@@ -152,8 +152,8 @@ public:
    * @return the normalized vector DD
    */
   template <typename T = Node, isVector<T> = true>
-  static Edge<Node> normalize(Node* p, const std::array<Edge<Node>, RADIX>& e,
-                              MemoryManager& mm, ComplexNumbers& cn);
+  static auto normalize(Node* p, const std::array<Edge, RADIX>& e,
+                        MemoryManager& mm, ComplexNumbers& cn) -> Edge;
 
   /**
    * @brief Get a single element of the vector represented by the DD
@@ -229,8 +229,8 @@ public:
    * @return the normalized (density) matrix DD
    */
   template <typename T = Node, isMatrixVariant<T> = true>
-  static Edge<Node> normalize(Node* p, const std::array<Edge<Node>, NEDGE>& e,
-                              MemoryManager& mm, ComplexNumbers& cn);
+  static auto normalize(Node* p, const std::array<Edge, NEDGE>& e,
+                        MemoryManager& mm, ComplexNumbers& cn) -> Edge;
 
   /**
    * @brief Check whether the matrix represented by the DD is the identity

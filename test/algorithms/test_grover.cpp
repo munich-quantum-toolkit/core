@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -39,7 +40,7 @@ protected:
 
   void SetUp() override {
     std::tie(nqubits, seed) = GetParam();
-    dd = std::make_unique<dd::Package<>>(nqubits + 1);
+    dd = std::make_unique<dd::Package>(nqubits + 1);
     qc = qc::createGrover(nqubits, seed);
     qc.printStatistics(std::cout);
 
@@ -51,10 +52,10 @@ protected:
 
   qc::Qubit nqubits = 0;
   std::size_t seed = 0;
-  std::unique_ptr<dd::Package<>> dd;
+  std::unique_ptr<dd::Package> dd;
   qc::QuantumComputation qc;
-  qc::VectorDD sim{};
-  qc::MatrixDD func{};
+  dd::VectorDD sim{};
+  dd::MatrixDD func{};
   std::string expected;
   qc::GroverBitString targetValue;
 };

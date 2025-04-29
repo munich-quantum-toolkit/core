@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,13 +10,16 @@
 
 #include "dd/Simulation.hpp"
 
+#include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/Operation.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <map>
@@ -26,10 +30,11 @@
 #include <vector>
 
 namespace dd {
-template <class Config>
-std::map<std::string, std::size_t>
-sample(const QuantumComputation& qc, const VectorDD& in, Package<Config>& dd,
-       const std::size_t shots, const std::size_t seed) {
+
+std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
+                                          const VectorDD& in, Package& dd,
+                                          const std::size_t shots,
+                                          const std::size_t seed) {
   auto isDynamicCircuit = false;
   auto hasMeasurements = false;
   auto measurementsLast = true;
@@ -96,10 +101,8 @@ sample(const QuantumComputation& qc, const VectorDD& in, Package<Config>& dd,
         continue;
       }
 
-      // SWAP gates can be executed virtually by changing the permutation
-      if (op->getType() == OpType::SWAP && !op->isControlled()) {
-        const auto& targets = op->getTargets();
-        std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
+      if (isExecutableVirtually(*op)) {
+        applyVirtualOperation(*op, permutation);
         continue;
       }
 
@@ -158,9 +161,8 @@ sample(const QuantumComputation& qc, const VectorDD& in, Package<Config>& dd,
     for (const auto& op : qc) {
       if (op->isUnitary()) {
         // SWAP gates can be executed virtually by changing the permutation
-        if (op->getType() == OpType::SWAP && !op->isControlled()) {
-          const auto& targets = op->getTargets();
-          std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
+        if (isExecutableVirtually(*op)) {
+          applyVirtualOperation(*op, permutation);
           continue;
         }
 
@@ -168,21 +170,21 @@ sample(const QuantumComputation& qc, const VectorDD& in, Package<Config>& dd,
         continue;
       }
 
-      if (op->getType() == Measure) {
-        const auto& measure = dynamic_cast<const NonUnitaryOperation&>(*op);
+      if (op->getType() == qc::OpType::Measure) {
+        const auto& measure = dynamic_cast<const qc::NonUnitaryOperation&>(*op);
         e = applyMeasurement(measure, e, dd, mt, measurements, permutation);
         continue;
       }
 
-      if (op->getType() == Reset) {
-        const auto& reset = dynamic_cast<const NonUnitaryOperation&>(*op);
+      if (op->getType() == qc::OpType::Reset) {
+        const auto& reset = dynamic_cast<const qc::NonUnitaryOperation&>(*op);
         e = applyReset(reset, e, dd, mt, permutation);
         continue;
       }
 
       if (op->isClassicControlledOperation()) {
         const auto& classic =
-            dynamic_cast<const ClassicControlledOperation&>(*op);
+            dynamic_cast<const qc::ClassicControlledOperation&>(*op);
         e = applyClassicControlledOperation(classic, e, dd, measurements,
                                             permutation);
         continue;
@@ -205,15 +207,34 @@ sample(const QuantumComputation& qc, const VectorDD& in, Package<Config>& dd,
   return counts;
 }
 
-std::map<std::string, std::size_t> sample(const QuantumComputation& qc,
+VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
+                  Package& dd) {
+  auto permutation = qc.initialLayout;
+  auto out = in;
+  for (const auto& op : qc) {
+    if (isExecutableVirtually(*op)) {
+      applyVirtualOperation(*op, permutation);
+    } else {
+      out = applyUnitaryOperation(*op, out, dd, permutation);
+    }
+  }
+
+  changePermutation(out, permutation, qc.outputPermutation, dd);
+  out = dd.reduceGarbage(out, qc.getGarbage());
+
+  // properly account for the global phase of the circuit
+  if (qc.hasGlobalPhase()) {
+    out = applyGlobalPhase(out, qc.getGlobalPhase(), dd);
+  }
+
+  return out;
+}
+
+std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
                                           const std::size_t shots,
                                           const std::size_t seed) {
   const auto nqubits = qc.getNqubits();
-  auto dd = std::make_unique<dd::Package<>>(nqubits);
+  const auto dd = std::make_unique<Package>(nqubits);
   return sample(qc, dd->makeZeroState(nqubits), *dd, shots, seed);
 }
-
-template std::map<std::string, std::size_t>
-sample<DDPackageConfig>(const QuantumComputation& qc, const VectorDD& in,
-                        Package<>& dd, std::size_t shots, std::size_t seed);
 } // namespace dd

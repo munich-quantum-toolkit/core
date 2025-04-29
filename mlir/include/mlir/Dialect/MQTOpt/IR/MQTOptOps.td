@@ -1,4 +1,5 @@
-// Copyright (c) 2025 Chair for Design Automation, TUM
+// Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+// Copyright (c) 2025 Munich Quantum Software Company GmbH
 // All rights reserved.
 //
 // SPDX-License-Identifier: MIT
@@ -13,6 +14,7 @@ include "mlir/IR/EnumAttr.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
+include "mlir/Dialect/Common/IR/CommonTraits.td"
 include "mlir/Dialect/MQTOpt/IR/MQTOptInterfaces.td"
 
 //===----------------------------------------------------------------------===//
@@ -72,33 +74,9 @@ def QubitType : MQTOptType<"Qubit", "Qubit"> {
     let summary = "A value-semantic qubit (state).";
 }
 
-def QuregType : MQTOptType<"QubitRegister", "QubitRegister"> {
+def QregType : MQTOptType<"QubitRegister", "QubitRegister"> {
     let summary = "An array of value-semantic qubits (i.e. quantum register).";
 }
-
-//===----------------------------------------------------------------------===//
-// Traits
-//===----------------------------------------------------------------------===//
-
-class TargetArity<int N>
-    : ParamNativeOpTrait<"TargetArity", !cast<string>(N)> {
-    let cppNamespace = "::mqt::ir::opt";
-}
-
-def NoTarget : TargetArity<0>;
-def OneTarget : TargetArity<1>;
-def TwoTarget : TargetArity<2>;
-
-class ParameterArity<int N>
-    : ParamNativeOpTrait<"ParameterArity", !cast<string>(N)> {
-    let cppNamespace = "::mqt::ir::opt";
-}
-
-def NoParameter : ParameterArity<0>;
-def OneParameter : ParameterArity<1>;
-def TwoParameters : ParameterArity<2>;
-def ThreeParameters : ParameterArity<3>;
-
 
 //===----------------------------------------------------------------------===//
 // Operations
@@ -115,428 +93,32 @@ class GateOp<string mnemonic, list<Trait> traits = [NoMemoryEffect]> :
 }
 
 class UnitaryOp<string mnemonic, list<Trait> traits = []> :
-    GateOp<mnemonic, traits # [AttrSizedOperandSegments, UnitaryInterface]> {
+    GateOp<mnemonic, traits # [AttrSizedOperandSegments, AttrSizedResultSegments, UnitaryInterface]> {
     let arguments = (ins
         OptionalAttr<DenseF64ArrayAttr>:$static_params,
         OptionalAttr<DenseBoolArrayAttr>:$params_mask,
         Variadic<F64>:$params,
         Variadic<QubitType>:$in_qubits,
-        Variadic<QubitType>:$pos_ctrl_qubits,
-        Variadic<QubitType>:$neg_ctrl_qubits
+        Variadic<QubitType>:$pos_ctrl_in_qubits,
+        Variadic<QubitType>:$neg_ctrl_in_qubits
     );
 
     let results = (outs
-        Variadic<QubitType>:$out_qubits
+        Variadic<QubitType>:$out_qubits,
+        Variadic<QubitType>:$pos_ctrl_out_qubits,
+        Variadic<QubitType>:$neg_ctrl_out_qubits
     );
 
     let assemblyFormat = [{
-        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict $in_qubits ( `ctrl` $pos_ctrl_qubits^ )? ( `nctrl` $neg_ctrl_qubits^ )?
-        `:` type($out_qubits)
+        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)`
+        attr-dict $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
+        `:` type($out_qubits)( `ctrl` type($pos_ctrl_out_qubits)^ )?( `nctrl` type($neg_ctrl_out_qubits)^ )?
     }];
 }
 
-def GPhaseOp : UnitaryOp<"GPhase", [NoTarget, OneParameter]> {
-    let summary = "GPhase operation";
+include "mlir/Dialect/MQTOpt/IR/MQTOptStdOps.td"
 
-    let description = [{
-        This class represents a general phase gate. It accepts a parameter indicating
-        the degree of the rotation angle. The global phase gate does not have
-        any input and output qubits. It might still be controlled by arbitrarily
-        many qubits.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-
-    // This operation has a verifier that checks if the gate has no input or output
-    // qubits. It is implemented in the corresponding .cpp file.
-    let hasVerifier = 1;
-}
-
-def IOp : UnitaryOp<"I", [OneTarget, NoParameter]> {
-    let summary = "I operation";
-
-    let description = [{
-        This class represents an identity gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def BarrierOp : UnitaryOp<"barrier", [NoParameter]> {
-    let summary = "Barrier operation";
-
-    let description = [{
-        This class represents the barrier operation. It has a variadic number
-        of input qubits and no control qubits.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-
-    // This operation has a verifier that checks if the gate does not have any
-    // control qubits. It is implemented in the corresponding .cpp file.
-    let hasVerifier = 1;
-}
-
-def HOp : UnitaryOp<"H", [OneTarget, NoParameter]> {
-    let summary = "H operation";
-
-    let description = [{
-        This class represents a Hadamard gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def XOp : UnitaryOp<"x", [OneTarget, NoParameter]> {
-    let summary = "X operation";
-
-    let description = [{
-        This class represents a Pauli-X gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input.
-
-        Example:
-        ```mlir
-        %1 = mqtopt.x() %0 : (!mqtopt.Qubit) -> (!mqtopt.Qubit)
-        %3, %4 = mqtopt.x() %1 ctrl(%2) : (!mqtopt.Qubit, !mqtopt.Qubit) -> (!mqtopt.Qubit, !mqtopt.Qubit)
-        %7, %8, %9, %10 = mqtopt.x() %3 ctrl(%4) nctrl(%5, %6) : (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit) -> (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit)
-        ```
-    }];
-}
-
-def YOp : UnitaryOp<"y", [OneTarget, NoParameter]> {
-    let summary = "Y operation";
-
-    let description = [{
-        This class represents a Pauli-Y gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def ZOp : UnitaryOp<"z", [OneTarget, NoParameter]> {
-    let summary = "Z operation";
-
-    let description = [{
-        This class represents a Pauli-Z gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def SOp : UnitaryOp<"s", [OneTarget, NoParameter]> {
-    let summary = "S operation";
-
-    let description = [{
-        This class represents an S gate. It takes a qubit as an input and a
-        variadic list of positive/negative controls.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def SdgOp : UnitaryOp<"sdg", [OneTarget, NoParameter]> {
-    let summary = "Sdg operation";
-
-    let description = [{
-        This class represents an inverse S gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def TOp : UnitaryOp<"t", [OneTarget, NoParameter]> {
-    let summary = "T operation";
-
-    let description = [{
-        This class represents a T gate. It takes a qubit and a variadic list of
-        positive/negative controls as an input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def TdgOp : UnitaryOp<"tdg", [OneTarget, NoParameter]> {
-    let summary = "Tdg operation";
-
-    let description = [{
-        This class represents an inverse T gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def VOp : UnitaryOp<"v", [OneTarget, NoParameter]> {
-    let summary = "V operation";
-
-    let description = [{
-        This class represents a V gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def VdgOp : UnitaryOp<"vdg", [OneTarget, NoParameter]> {
-    let summary = "Vdg operation";
-
-    let description = [{
-        This class represents an inverse V gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def UOp : UnitaryOp<"u", [OneTarget, ThreeParameters]> {
-    let summary = "U operation";
-
-    let description = [{
-        This class represents a U gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input. Additionally, it accepts
-        three parameters indicating the degree of the rotation angles.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def U2Op : UnitaryOp<"u2", [OneTarget, TwoParameters]> {
-    let summary = "U2 operation";
-
-    let description = [{
-        This class represents a U2 gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input. Additionally, it accepts
-        two parameters indicating the degree of the rotation angles.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def POp : UnitaryOp<"p", [OneTarget, OneParameter]> {
-    let summary = "P operation";
-
-    let description = [{
-        This class represents a phase gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input. Additionally, it accepts
-        a parameter indicating the degree of the rotation angle.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def SXOp : UnitaryOp<"sx", [OneTarget, NoParameter]> {
-    let summary = "SX operation";
-
-    let description = [{
-        This class represents an SX gate. It takes a qubit and a variadic
-        list of positive/negative controls as an input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def SXdgOp : UnitaryOp<"sxdg", [OneTarget, NoParameter]> {
-    let summary = "SXdg operation";
-
-    let description = [{
-        This class represents an inverse SX gate. It takes a qubit and a
-        variadic list of positive/negative controls as an input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def RXOp : UnitaryOp<"rx", [OneTarget, OneParameter]> {
-    let summary = "RX operation";
-
-    let description = [{
-        This class represents an RX gate. It takes a qubit and a variadic
-        list of positive/negative controls as input. Additionally, it accepts
-        a parameter indicating the degree of the rotation angle.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def RYOp : UnitaryOp<"ry", [OneTarget, OneParameter]> {
-    let summary = "RY operation";
-
-    let description = [{
-        This class represents an RY gate. It takes a qubit and a variadic
-        list of positive/negative controls as input. Additionally, it accepts
-        a parameter indicating the degree of the rotation angle.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def RZOp : UnitaryOp<"rz", [OneTarget, OneParameter]> {
-    let summary = "RZ operation";
-
-    let description = [{
-        This class represents an RZ gate. It takes a qubit and a variadic
-        list of positive/negative controls as input. Additionally, it accepts
-        a parameter indicating the degree of the rotation angle.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def SWAPOp : UnitaryOp<"swap", [TwoTarget, NoParameter]> {
-    let summary = "SWAP operation";
-
-    let description = [{
-        This class represents a SWAP gate. It takes two qubits and a variadic
-        list of positive/negative controls as input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def iSWAPOp : UnitaryOp<"iswap", [TwoTarget, NoParameter]> {
-    let summary = "iSWAP operation";
-
-    let description = [{
-        This class represents an iSWAP gate. It takes two qubits and a variadic
-        list of positive/negative controls as input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def iSWAPdgOp : UnitaryOp<"iswapdg", [TwoTarget, NoParameter]> {
-    let summary = "iSWAPdg operation";
-
-    let description = [{
-        This class represents an inverse iSWAP gate. It takes two qubits and a
-        variadic list of positive/negative controls as input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def PeresOp : UnitaryOp<"peres", [TwoTarget, NoParameter]> {
-    let summary = "Peres operation";
-
-    let description = [{
-        This class represents a Peres gate. It takes two qubits and a variadic
-        list of positive/negative controls as input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def PeresdgOp : UnitaryOp<"peresdg", [TwoTarget, NoParameter]> {
-    let summary = "Peresdg operation";
-
-    let description = [{
-        This class represents an inverse Peres gate. It takes two qubits and a
-        variadic list of positive/negative controls as input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def DCXOp : UnitaryOp<"dcx", [TwoTarget, NoParameter]> {
-    let summary = "DCX operation";
-
-    let description = [{
-        This class represents a DCX gate. It takes two qubits and a variadic
-        list of positive/negative controls as input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def ECROp : UnitaryOp<"ecr", [TwoTarget, NoParameter]> {
-    let summary = "DCX operation";
-
-    let description = [{
-        This class represents an ECR gate. It takes two qubits and a variadic
-        list of positive/negative controls as input.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def RXXOp : UnitaryOp<"rxx", [TwoTarget, OneParameter]> {
-    let summary = "RXX operation";
-
-    let description = [{
-        This class represents an RXX gate. It takes two qubits and a variadic
-        list of positive/negative controls as input. Additionally, it accepts a
-        parameter indicating the degree of the rotation angle.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def RYYOp : UnitaryOp<"ryy", [TwoTarget, OneParameter]> {
-    let summary = "RYY operation";
-
-    let description = [{
-        This class represents an RYY gate. It takes two qubits and a variadic
-        list of positive/negative controls as input. Additionally, it accepts a
-        parameter indicating the degree of the rotation angle.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def RZZOp : UnitaryOp<"rzz", [TwoTarget, OneParameter]> {
-    let summary = "RZZ operation";
-
-    let description = [{
-        This class represents an RZZ gate. It takes two qubits and a variadic
-        list of positive/negative controls as input. Additionally, it accepts a
-        parameter indicating the degree of the rotation angle.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def RZXOp : UnitaryOp<"rzx", [TwoTarget, OneParameter]> {
-    let summary = "RZX operation";
-
-    let description = [{
-        This class represents an RZX gate. It takes two qubits and a variadic
-        list of positive/negative controls as input. Additionally, it accepts a
-        parameter indicating the degree of the rotation angle.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def XXminusYY : UnitaryOp<"xxminusyy", [TwoTarget, TwoParameters]> {
-    let summary = "XXminusYY operation";
-
-    let description = [{
-        This class represents an XXminusYY gate. It takes two qubits and a
-        variadic list of positive/negative controls as input. Additionally, it
-        accepts two parameters indicating the degree of the rotation angles.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def XXplusYY : UnitaryOp<"xxplusyy", [TwoTarget, TwoParameters]> {
-    let summary = "XXplusYY operation";
-
-    let description = [{
-        This class represents an XXplusYY gate. It takes two qubits and a
-        variadic list of positive/negative controls as input. Additionally, it
-        accepts two parameters indicating the degree of the rotation angles.
-
-        An analogous example can be seen in the description of XOp.
-    }];
-}
-
-def MeasureOp : GateOp<"measure", [SameVariadicResultSize]> {
+def MeasureOp : GateOp<"measure", [SameVariadicResultSize, MatchingMeasureInOuts]> {
     let summary = "A measure operation";
 
     let description = [{
@@ -559,16 +141,11 @@ def MeasureOp : GateOp<"measure", [SameVariadicResultSize]> {
         Variadic<QubitType>:$out_qubits,
         Variadic<I1>:$out_bits
     );
-
-    // This operation has a verifier that checks if the number of input qubits
-    // is equal to the number of output qubits. It is implemented in the
-    // corresponding .cpp file.
-    let hasVerifier = 1;
 }
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTOptOp<mnemonic, traits>;
 
-def AllocOp : ResourceOp<"allocQubitRegister"> {
+def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
     let summary = "Allocates a qubit register";
 
     let description = [{
@@ -593,13 +170,8 @@ def AllocOp : ResourceOp<"allocQubitRegister"> {
     );
 
     let results = (outs
-        QuregType:$qureg
+        QregType:$qreg
     );
-
-    // This operation has a verifier that checks if the size is given either as
-    // operand or attribute and not both. It is implemented in the corresponding
-    // .cpp file.
-    let hasVerifier = 1;
 }
 
 def DeallocOp : ResourceOp<"deallocQubitRegister"> {
@@ -618,11 +190,11 @@ def DeallocOp : ResourceOp<"deallocQubitRegister"> {
     }];
 
     let arguments = (ins
-        QuregType:$qureg
+        QregType:$qreg
     );
 }
 
-def ExtractOp : ResourceOp<"extractQubit"> {
+def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
     let summary = "Extract a specific qubit from a given register";
 
     let description = [{
@@ -634,28 +206,23 @@ def ExtractOp : ResourceOp<"extractQubit"> {
 
         Extract:
 
-        %out_qureg, %out_qubit = "mqtopt.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %out_qreg, %out_qubit = "mqtopt.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
     }];
 
     let arguments = (ins
-        QuregType:$in_qureg,
+        QregType:$in_qreg,
         Optional<I64>:$index,
         OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index_attr
     );
 
     let results = (outs
-        QuregType:$out_qureg,
+        QregType:$out_qreg,
         QubitType:$out_qubit
     );
-
-    // This operation has a verifier that checks if the index is given either as
-    // operand or attribute and not both. It is implemented in the corresponding
-    // .cpp file.
-    let hasVerifier = 1;
 }
 
-def InsertOp : ResourceOp<"insertQubit"> {
+def InsertOp : ResourceOp<"insertQubit", [UniqueIndexDefinition]> {
 
     let description = [{
         This class represents an operation that inserts a qubit back into a qubit
@@ -666,20 +233,15 @@ def InsertOp : ResourceOp<"insertQubit"> {
     }];
 
     let arguments = (ins
-        QuregType:$in_qureg,
+        QregType:$in_qreg,
         QubitType:$in_qubit,
         Optional<I64>:$index,
         OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index_attr
     );
 
     let results = (outs
-        QuregType:$out_qureg
+        QregType:$out_qreg
     );
-
-    // This operation has a verifier that checks if the index is given either as
-    // operand or attribute and not both. It is implemented in the corresponding
-    // .cpp file.
-    let hasVerifier = 1;
 }
 
 #endif // MQTOPT_OPS

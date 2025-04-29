@@ -5,7 +5,7 @@ We value contributions from people with all levels of experience.
 In particular if this is your first pull request not everything has to be perfect.
 We will guide you through the process.
 
-We use GitHub to [host code](https://github.com/cda-tum/mqt-core), to [track issues and feature requests](https://github.com/cda-tum/mqt-core/issues), as well as accept [pull requests](https://github.com/cda-tum/mqt-core/pulls).
+We use GitHub to [host code](https://github.com/munich-quantum-toolkit/core), to [track issues and feature requests](https://github.com/munich-quantum-toolkit/core/issues), as well as accept [pull requests](https://github.com/munich-quantum-toolkit/core/pulls).
 See <https://docs.github.com/en/get-started/quickstart> for a general introduction to working with GitHub and contributing to projects.
 
 ## Types of Contributions
@@ -13,16 +13,16 @@ See <https://docs.github.com/en/get-started/quickstart> for a general introducti
 You can contribute in several ways:
 
 - 🐛 Report Bugs
-  : Report bugs at <https://github.com/cda-tum/mqt-core/issues> using the _🐛 Bug report_ issue template. Please make sure to fill out all relevant information in the respective issue form.
+  : Report bugs at <https://github.com/munich-quantum-toolkit/core/issues> using the _🐛 Bug report_ issue template. Please make sure to fill out all relevant information in the respective issue form.
 
 - 🐛 Fix Bugs
-  : Look through the [GitHub Issues](https://github.com/cda-tum/mqt-core/issues) for bugs. Anything tagged with "bug" is open to whoever wants to try and fix it.
+  : Look through the [GitHub Issues](https://github.com/munich-quantum-toolkit/core/issues) for bugs. Anything tagged with "bug" is open to whoever wants to try and fix it.
 
 - ✨ Propose New Features
-  : Propose new features at <https://github.com/cda-tum/mqt-core/issues> using the _✨ Feature request_ issue template. Please make sure to fill out all relevant information in the respective issue form.
+  : Propose new features at <https://github.com/munich-quantum-toolkit/core/issues> using the _✨ Feature request_ issue template. Please make sure to fill out all relevant information in the respective issue form.
 
 - ✨ Implement New Features
-  : Look through the [GitHub Issues](https://github.com/cda-tum/mqt-core/issues) for features. Anything tagged with "feature" or "enhancement" is open to whoever wants to implement it. We highly appreciate external contributions to the project.
+  : Look through the [GitHub Issues](https://github.com/munich-quantum-toolkit/core/issues) for features. Anything tagged with "feature" or "enhancement" is open to whoever wants to implement it. We highly appreciate external contributions to the project.
 
 - 📝 Write Documentation
   : MQT Core could always use some more documentation, and we appreciate any help with that.
@@ -41,7 +41,8 @@ Nevertheless, please try to follow the guidelines below as well as you can to he
 - ["Commit early and push often"](https://www.worklytics.co/blog/commit-early-push-often).
 - Write meaningful commit messages, preferably using [gitmoji](https://gitmoji.dev) for additional context.
 - Focus on a single feature or bug at a time and only touch relevant files. Split multiple features into separate contributions.
-- Add tests for new features to ensure they work as intended. Document new features appropriately.
+- Add tests for new features to ensure they work as intended.
+- Document new features appropriately. For user-facing changes, add an entry to the `CHANGELOG.md` file. In case of breaking changes, please also update the `UPGRADING.md` file.
 - Add tests for bug fixes to demonstrate that the bug has been resolved.
 - Document your code thoroughly and ensure it is readable.
 - Keep your code clean by removing debug statements, leftover comments, and unrelated code.
