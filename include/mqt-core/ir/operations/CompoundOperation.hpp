@@ -58,6 +58,8 @@ public:
 
   [[nodiscard]] bool isGlobal(size_t nQubits) const noexcept override;
 
+  [[nodiscard]] bool isClifford() const override;
+
   void addControl(Control c) override;
 
   void clearControls() override;
