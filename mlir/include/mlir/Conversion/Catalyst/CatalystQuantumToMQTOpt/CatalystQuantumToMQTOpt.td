@@ -9,10 +9,10 @@
 include "mlir/Pass/PassBase.td"
 
 def CatalystQuantumToMQTOpt : Pass<"catalystquantum-to-mqtopt"> {
-  let summary = "Lower `quantum` to `mqtopt` dialect.";
+  let summary = "Convert Catalyst's `Quantum` to MQT's `MQTOpt` dialect.";
 
   let description = [{
-    This pass converts Catalyst's `quantum` to the `mqtopt` dialect.
+    This pass converts Catalyst's `Quantum` to MQT's `MQTOpt` dialect.
     The following operations are currently NOT converted (and instead marked legal):
     - DeviceInitOp
     - DeviceReleaseOp

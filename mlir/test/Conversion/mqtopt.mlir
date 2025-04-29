@@ -6,7 +6,7 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s --mqtopt-to-quantum | FileCheck %s
+// RUN: quantum-opt %s --mqtopt-to-catalystquantum | FileCheck %s
 
 // CHECK-LABEL: func @bar()
 func.func @bar() {
