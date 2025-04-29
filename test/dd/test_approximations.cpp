@@ -52,8 +52,8 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
   qc::QuantumComputation qc(nq);
   qc.x(0);
 
-  auto state = simulate(qc, dd.makeZeroState(nq), dd);
-  [[maybe_unused]] auto p = approximate(state, fidelity, dd);
+  [[maybe_unused]] auto state = simulate(qc, dd.makeZeroState(nq), dd);
+  // [[maybe_unused]] auto p = approximate(state, fidelity, dd);
   // auto approx = p.first;
 
   // const CVec expected{{0}, {1}};
