@@ -8,7 +8,7 @@
 
 include "mlir/Pass/PassBase.td"
 
-def CatalystQuantumToMQTOpt : Pass<"quantum-to-mqtopt"> {
+def CatalystQuantumToMQTOpt : Pass<"catalystquantum-to-mqtopt"> {
   let summary = "Lower `quantum` to `mqtopt` dialect.";
 
   let description = [{
