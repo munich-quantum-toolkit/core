@@ -155,7 +155,7 @@ public:
 
   [[nodiscard]] virtual bool isControlled() const { return !controls.empty(); }
 
-  [[nodiscard]] virtual bool isClifford() const {return false;}
+  [[nodiscard]] virtual bool isClifford() const { return false; }
 
   /**
    * @brief Checks whether a gate is global.
