@@ -65,7 +65,9 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
         exclude.emplace_front(edge);
         budget -= contribution;
       } else if (!edge->isTerminal()) {
+        assert(edge != nullptr);
         const vNode* node = edge->p;
+        assert(node != nullptr);
         for (const auto& nextEdge : node->e) {
           if (!nextEdge.w.exactlyZero()) {
             if (std::find(nextLayer.begin(), nextLayer.end(), &nextEdge) ==
