@@ -21,7 +21,6 @@ TEST(CollectBlocks, emptyCircuit) {
   EXPECT_EQ(qc.getNindividualOps(), 0);
 }
 
-
 TEST(CollectBlocks, singleGate) {
   QuantumComputation qc(1);
   qc.h(0);
@@ -31,7 +30,6 @@ TEST(CollectBlocks, singleGate) {
   EXPECT_EQ(qc.size(), 1);
   EXPECT_TRUE(qc.front()->isStandardOperation());
 }
-
 
 TEST(CollectBlocks, collectMultipleSingleQubitGates) {
   QuantumComputation qc(2);

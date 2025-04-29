@@ -157,13 +157,13 @@ public:
 
   /**
    * @brief Checks whether a gate is a Clifford gate.
-   * @details 
+   * @details
    */
   [[nodiscard]] virtual bool isClifford() const {
     const OpType opType = getType();
     const bool controlled = isControlled();
     const std::size_t numberOfControls = getNcontrols();
-    
+
     switch (opType) {
     case I:
     case X:
