@@ -275,7 +275,6 @@ bool StandardOperation::isClifford() const {
   }
 }
 
-
 void StandardOperation::dumpOpenQASM(
     std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
     [[maybe_unused]] const BitIndexToRegisterMap& bitMap, size_t indent,
