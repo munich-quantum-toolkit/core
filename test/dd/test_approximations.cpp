@@ -83,7 +83,6 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
   auto approx = p.first;
 
   const CVec expected{{0}, {1}};
-
   EXPECT_EQ(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 2);
 }
@@ -109,7 +108,6 @@ TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
   auto [approx, postFidelity] = approximate(state, fidelity, *dd);
 
   const CVec expected{{1}, {0}};
-
   EXPECT_EQ(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 2);
   EXPECT_NEAR(postFidelity, 0.75, 1e-3);
@@ -163,7 +161,6 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
   auto [approx, postFidelity] = approximate(state, fidelity, *dd);
 
   const CVec expected{{0.755929}, {0.654654}, {0}, {0}};
-
   vecNear(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 3);
   EXPECT_NEAR(postFidelity, 0.875, 1e-3);
@@ -203,7 +200,6 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   auto ref = simulate(qcRef, dd->makeZeroState(nq), *dd);
 
   const CVec expected{{0}, {1 / std::sqrt(2)}, {0}, {1 / std::sqrt(2)}};
-
   vecNear(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 3);
   EXPECT_NEAR(postFidelity, 0.933, 1e-3);
@@ -237,7 +233,6 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   auto [approx, postFidelity] = approximate(state, fidelity, *dd);
 
   const CVec expected{{0, 1}, {0}, {0}, {0}, {0}, {0}, {0}, {0}};
-
   vecNear(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 4);
   EXPECT_NEAR(postFidelity, 0.75, 1e-3);
