@@ -1419,7 +1419,7 @@ struct DSU {
 
 void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
                                      const std::size_t maxBlockSize,
-                                     bool onlyCollectCliffords = false) {
+                                     bool onlyCollectCliffords) {
   if (qc.size() <= 1) {
     return;
   }
@@ -1434,7 +1434,6 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
     auto& op = *opIt;
     bool canProcess = true;
     bool makesTooBig = false;
-    bool isClifford = false;
 
     // check whether the operation is a Clifford operation
     if (!op->isUnitary() || (onlyCollectCliffords && !op->isClifford())) {
