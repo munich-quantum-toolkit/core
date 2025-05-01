@@ -39,10 +39,17 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
 
   // Test: If the budget is 0, no approximation will be applied.
   //
-  // |state⟩ = 0.866|0⟩ + 0.5|1⟩
+  // |state⟩ = |1⟩
   //
   // Eliminate nothing (fidelity = 1).
   //     → |approx⟩ = |state⟩
+  //
+  //    1│                     1│
+  //   ┌─┴─┐                  ┌─┴─┐
+  // ┌─│ q0│─┐  -(approx)→  ┌─│ q0│─┐
+  // 0 └───┘ │1             0 └───┘ │1
+  //         □                      □
+  //
 
   constexpr std::size_t nq = 1;
   constexpr double fidelity = 1;
@@ -53,22 +60,29 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
   qc.x(0);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto p = approximate(state, fidelity, *dd);
-  auto approx = p.first;
+  auto [approx, postFidelity] = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {1}};
   EXPECT_EQ(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 2);
+  EXPECT_EQ(postFidelity, 1);
 }
 
 TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
 
   // Test: If the budget is too small, no approximation will be applied.
   //
-  // |state⟩ = 0.866|0⟩ + 0.5|1⟩
+  // |state⟩ = |1⟩
   //
   // Eliminate nothing:
   //     → |approx⟩ = |state⟩
+  //
+  //    1│                     1│
+  //   ┌─┴─┐                  ┌─┴─┐
+  // ┌─│ q0│─┐  -(approx)→  ┌─│ q0│─┐
+  // 0 └───┘ │1             0 └───┘ │1
+  //         □                      □
+  //
 
   constexpr std::size_t nq = 1;
   constexpr double fidelity = 0.9;
@@ -79,12 +93,12 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
   qc.x(0);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto p = approximate(state, fidelity, *dd);
-  auto approx = p.first;
+  auto [approx, postFidelity] = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {1}};
   EXPECT_EQ(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 2);
+  EXPECT_EQ(postFidelity, 1);
 }
 
 TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
@@ -95,6 +109,13 @@ TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
   //
   // Eliminate |1⟩ with contribution 0.25
   //     → |approx⟩ = |0⟩
+  //
+  //        1│                     1│
+  //       ┌─┴─┐                  ┌─┴─┐
+  //     ┌─│ q0│─┐  -(approx)→  ┌─│ q0│─┐
+  // .866│ └───┘ │.5           1| └───┘ 0
+  //     □       □              □
+  //
 
   constexpr std::size_t nq = 1;
   constexpr double fidelity = 1 - 0.25;
@@ -111,29 +132,10 @@ TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
   EXPECT_EQ(approx.getVector(), expected);
   EXPECT_EQ(approx.size(), 2);
   EXPECT_NEAR(postFidelity, 0.75, 1e-3);
-}
-
-TEST(ApproximationTest, OneQubitCorrectRefCount) {
 
   // Test: Correctly increase and decrease ref counts.
-  //
-  // |state⟩ = 0.866|0⟩ + 0.5|1⟩
-  //
-  // Eliminate |1⟩ with contribution 0.25
-  //     → |approx⟩ = |0⟩
 
-  constexpr std::size_t nq = 1;
-  constexpr double fidelity = 1 - 0.25;
-
-  auto dd = std::make_unique<dd::Package>(nq);
-
-  qc::QuantumComputation qc(nq);
-  qc.ry(qc::PI / 3, 0);
-
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto p = approximate(state, fidelity, *dd);
-
-  dd->decRef(p.first);
+  dd->decRef(approx);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -147,6 +149,17 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
   //
   // Eliminate |11⟩ with contribution 0.125
   //     → |approx⟩ = 0.756|00⟩ + 0.654|01⟩
+  //
+  //          1│                                 1│
+  //         ┌─┴─┐                              ┌─┴─┐
+  //     ┌───│ q1│───┐                        ┌─│ q1│─┐
+  //  .94│   └───┘   │1/(2√2)                1| └───┘ 0
+  //   ┌─┴─┐       ┌─┴─┐      -(approx)→    ┌─┴─┐
+  // ┌─│ q0│─┐   ┌─│ q0│─┐                ┌─│ q0│─┐
+  // | └───┘ |   0 └───┘ |1           .756| └───┘ |.654
+  // |.76    |.65       |                 □       □
+  // □       □           □
+  //
 
   constexpr std::size_t nq = 2;
   constexpr double fidelity = 1 - 0.2;
@@ -178,6 +191,17 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   //     → |approx⟩ = (1/sqrt(2))(|01⟩ + |11⟩)
   //
   // |ref⟩ = (1/sqrt(2))(|01⟩ + |11⟩)
+  //
+  //         1│                       1│
+  //        ┌─┴─┐                    ┌─┴─┐
+  //      ┌─│ q1│─┐                ┌─│ q1│─┐
+  //  1/√2│ └───┘ │1/√2        1/√2│ └───┘ │1/√2
+  //      └───┬───┘                └───┬───┘
+  //        ┌─┴─┐     -(approx)→     ┌─┴─┐
+  //      ┌─│ q0│─┐                ┌─│ q0│─┐
+  //   .26│ └───┘ │.97             0 └───┘ │1
+  //      □       □                        □
+  //
 
   constexpr std::size_t nq = 2;
   constexpr double fidelity = 1 - 0.1;
@@ -190,10 +214,8 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   qc.ry(qc::PI / 3, 0);
 
   qc::QuantumComputation qcRef(nq);
-  qcRef.h(0);
-  qcRef.x(1);
-  qcRef.cx(0, 1);
-  qcRef.cx(1, 0);
+  qcRef.x(0);
+  qcRef.h(1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
   auto [approx, postFidelity] = approximate(state, fidelity, *dd);
@@ -215,6 +237,20 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   //
   // Eliminate parent of |1xx⟩ with contribution ~ 0.25.
   //     → |approx⟩ = i|000⟩
+  //
+  //               i│                              i│
+  //              ┌─┴─┐                           ┌─┴─┐
+  //          ┌───│ q2│───┐                     ┌─│ q2│─┐
+  //      0.87│   └───┘   │-1/2                1| └───┘ 0
+  //        ┌─┴─┐       ┌─┴─┐    -(approx)→   ┌─┴─┐
+  //      ┌─│ q1│─┐   ┌─│ q1│─┐             ┌─│ q1│─┐
+  //      | └───┘ 0   | └───┘ |            1| └───┘ 0
+  //      |1     -0.38└───┬───┘0.92         |
+  //    ┌─┴─┐           ┌─┴─┐             ┌─┴─┐
+  //  ┌─│ q0│─┐       ┌─│ q0│─┐         ┌─│ q0│─┐
+  // 1| └───┘ 0   -1/2| └───┘ |0.87    1| └───┘ 0
+  //  □               □       □         □
+  //
 
   constexpr std::size_t nq = 3;
   constexpr double fidelity = 1 - 0.25;
