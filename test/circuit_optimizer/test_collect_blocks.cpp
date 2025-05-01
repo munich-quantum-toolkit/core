@@ -78,7 +78,7 @@ TEST(CollectBlocks, collectTwoQubitCliffordGates) {
   qc.h(0);
   qc.s(1);
   qc.cx(0, 1);
-  qc.rx(0.1,0);
+  qc.rx(0.1, 0);
   qc.x(0);
   qc.y(1);
   std::cout << qc << "\n";
@@ -92,7 +92,7 @@ TEST(CollectBlocks, TwoQubitnonClifford) {
   QuantumComputation qc(2);
   qc.h(0);
   qc.s(1);
-  qc.rxx(0.1,0, 1);
+  qc.rxx(0.1, 0, 1);
   qc.i(0);
   qc.y(1);
   std::cout << qc << "\n";
