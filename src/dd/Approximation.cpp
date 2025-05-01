@@ -17,8 +17,8 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <forward_list>
+#include <unordered_map>
 #include <utility>
 
 namespace dd {
@@ -49,7 +49,7 @@ VectorDD rebuild(const VectorDD& state,
 
 std::pair<VectorDD, double> approximate(const VectorDD& state,
                                         const double fidelity, Package& dd) {
-  using Layer = std::forward_list<std::pair<const vEdge*, double>>;
+  using Layer = std::unordered_map<const vEdge*, double>;
 
   const Complex phase = state.w; // global phase to apply after approximation.
 
@@ -75,21 +75,14 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
       for (const vEdge& eChildRef : n->e) {
         const vEdge* eChild = &eChildRef;
 
+        // Don't add zero contribution children.
         if (eChild->w.exactlyZero()) {
           continue;
         }
 
-        const double childContribution =
-            contribution * ComplexNumbers::mag2(eChild->w);
-        const auto it =
-            std::find_if(next.begin(), next.end(), [&eChild](const auto& p) {
-              return p.first == eChild;
-            });
-        if (it == next.end()) {
-          next.emplace_front(eChild, childContribution);
-        } else {
-          (*it).second += childContribution;
-        }
+        // Implicit: If `next` doesn't contain `eChild`, it will be initialized
+        // with 0. See `operator[]`.
+        next[eChild] += contribution * ComplexNumbers::mag2(eChild->w);
       }
     }
 
