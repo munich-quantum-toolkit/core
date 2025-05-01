@@ -62,24 +62,31 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
       if (contribution <= budget) {
         exclude.emplace_front(e);
         budget -= contribution;
-      } else if (!e->isTerminal()) {
-        const vNode* n = e->p;
+        continue;
+      }
 
-        for (const vEdge& eChildRef : n->e) {
-          const vEdge* eChild = &eChildRef;
+      if (e->isTerminal()) {
+        continue;
+      }
 
-          if (!eChild->w.exactlyZero()) {
-            const double childContribution =
-                contribution * ComplexNumbers::mag2(eChild->w);
-            const auto it = std::find_if(
-                next.begin(), next.end(),
-                [&eChild](const auto& p) { return p.first == eChild; });
-            if (it == next.end()) {
-              next.emplace_front(eChild, childContribution);
-            } else {
-              (*it).second += childContribution;
-            }
-          }
+      const vNode* n = e->p;
+      for (const vEdge& eChildRef : n->e) {
+        const vEdge* eChild = &eChildRef;
+
+        if (eChild->w.exactlyZero()) {
+          continue;
+        }
+
+        const double childContribution =
+            contribution * ComplexNumbers::mag2(eChild->w);
+        const auto it =
+            std::find_if(next.begin(), next.end(), [&eChild](const auto& p) {
+              return p.first == eChild;
+            });
+        if (it == next.end()) {
+          next.emplace_front(eChild, childContribution);
+        } else {
+          (*it).second += childContribution;
         }
       }
     }
