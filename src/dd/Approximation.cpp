@@ -51,6 +51,8 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
                                         const double fidelity, Package& dd) {
   using Layer = std::forward_list<std::pair<const vEdge*, double>>;
 
+  const Complex phase = state.w; // global phase to apply after approximation.
+
   double budget = 1 - fidelity;
   std::forward_list<const vEdge*> exclude{};
 
@@ -95,7 +97,7 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
   }
 
   VectorDD approx = rebuild(state, exclude, dd);
-  approx.w = dd.cn.lookup(approx.w / std::sqrt(ComplexNumbers::mag2(approx.w)));
+  approx.w = phase;
 
   dd.incRef(approx);
   dd.decRef(state);
