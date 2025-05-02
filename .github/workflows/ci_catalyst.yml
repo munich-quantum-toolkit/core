@@ -19,7 +19,7 @@ concurrency:
 jobs:
   cpp-test-catalyst:
     name: 🇨‌ Test MLIR with LLVM@${{ matrix.llvm-version }}
-    runs-on: macos-latest
+    runs-on: macos-14
     strategy:
       matrix:
         llvm-version: [19]
@@ -82,7 +82,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DMLIR_DIR=$MLIR_DIR \
             -DLLVM_DIR=$LLVM_DIR \
-            -DCATALYST_BUILD_TOOLS=OFF
+            -DCATALYST_BUILD_TOOLS=OFF \
+            -DEnzyme_DIR="none"
 
       # build MLIRQuantum
       - name: Build MLIRQuantum dialect
