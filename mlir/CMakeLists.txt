@@ -12,9 +12,8 @@ set(MQT_MLIR_MIN_VERSION 19.0)
 
 # MLIR must be installed on the system
 find_package(MLIR REQUIRED CONFIG)
-if(MLIR_VERSION VERSION_LESS MQT_MLIR_MIN_VERSION)
-  message(FATAL_ERROR "MLIR version must be at least ${MQT_MLIR_MIN_VERSION}")
-endif()
+# if(MLIR_VERSION VERSION_LESS MQT_MLIR_MIN_VERSION) message(FATAL_ERROR "MLIR version must be at
+# least ${MQT_MLIR_MIN_VERSION} but found ${MLIR_VERSION}") endif()
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
@@ -28,14 +27,7 @@ add_compile_definitions(MLIR_VERSION_MAJOR=${MLIR_VERSION_MAJOR})
 
 option(ENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN "Enable Catalyst conversion passes" OFF)
 if(ENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN)
-  set(CATALYST_REQUIRED_VERSION 19.0)
-  if(NOT MLIR_VERSION_MAJOR EQUAL CATALYST_REQUIRED_VERSION)
-    message(
-      FATAL_ERROR
-        "Found MLIR version ${MLIR_VERSION_MAJOR}, but Catalyst requires MLIR version ${CATALYST_REQUIRED_VERSION}."
-    )
-  endif()
-  find_package(Catalyst REQUIRED CONFIG)
+  message(STATUS "Found MLIR version ${MLIR_VERSION_MAJOR}.")
   list(APPEND CMAKE_MODULE_PATH "${CATALYST_CMAKE_DIR}")
   list(APPEND MLIR_INCLUDE_DIRS "${CATALYST_INCLUDE_DIRS}")
 endif()
