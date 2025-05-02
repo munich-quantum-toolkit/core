@@ -105,6 +105,18 @@ jobs:
             -DENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN=ON \
             -DCatalyst_DIR="$PWD/catalyst/mlir/build/lib/cmake/catalyst"
 
-      # build the project and run the tests
-      - name: Build MLIR components and directly run lit tests
-        run: cmake --build build --config Release --target check-quantum-opt
+      # build the project
+      - name: Build MLIR quantum-opt
+        run: cmake --build build --config Release --target quantum-opt
+
+      # run conversion pipeline
+      - name: Run conversion -> catalystquantum-to-mqtopt
+        run: |
+          ./build/mlir/tools/quantum-opt/quantum-opt \
+            --pass-pipeline="builtin.module(catalystquantum-to-mqtopt)" \
+            mlir/test/Conversion/quantum.mlir
+      - name: Run conversion -> mqtopt-to-catalystquantum
+        run: |
+          ./build/mlir/tools/quantum-opt/quantum-opt \
+            --pass-pipeline="builtin.module(mqtopt-to-catalystquantum)" \
+            mlir/test/Conversion/mqtopt.mlir
