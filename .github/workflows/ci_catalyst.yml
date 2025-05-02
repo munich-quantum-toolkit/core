@@ -98,6 +98,7 @@ jobs:
         run: |
           cmake -G Ninja -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
             -DBUILD_MQT_CORE_MLIR=ON \
             -DENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN=ON \
             -DCatalyst_DIR="$PWD/catalyst/mlir/build/lib/cmake/catalyst"
