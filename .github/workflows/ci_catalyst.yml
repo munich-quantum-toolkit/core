@@ -59,30 +59,16 @@ jobs:
       - name: Install lit
         run: uv pip install lit
 
-      # install a specific version of the LLVM toolchain
-      - name: Clone and build LLVM + MLIR from source
+      # install LLVM 19 and MLIR via Homebrew and set up environment variables
+      - name: Install LLVM and MLIR via Homebrew
         run: |
-          git clone --depth=1 --branch llvmorg-${{ matrix.llvm-version }}.1.7 https://github.com/llvm/llvm-project.git
-          cd llvm-project
-          rm -rf build install
-          cmake -G Ninja -S llvm -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DLLVM_ENABLE_PROJECTS="mlir" \
-            -DLLVM_ENABLE_ASSERTIONS=ON \
-            -DLLVM_BUILD_UTILS=ON \
-            -DLLVM_INCLUDE_UTILS=ON \
-            -DLLVM_INSTALL_UTILS=ON \
-            -DCMAKE_INSTALL_PREFIX=$(pwd)/install
-          ninja -C build FileCheck count not
-          ninja -C build install
-
-      - name: Export LLVM/MLIR dirs
-        run: |
-          echo "CC=clang" >> $GITHUB_ENV
-          echo "CXX=clang++" >> $GITHUB_ENV
-          echo "MLIR_DIR=$PWD/llvm-project/install/lib/cmake/mlir" >> $GITHUB_ENV
-          echo "LLVM_DIR=$PWD/llvm-project/install/lib/cmake/llvm" >> $GITHUB_ENV
-          echo "$PWD/llvm-project/install/bin" >> $GITHUB_PATH
+          brew install llvm@19
+          brew link --force --overwrite llvm@19
+          echo "CC=$(brew --prefix llvm@19)/bin/clang" >> $GITHUB_ENV
+          echo "CXX=$(brew --prefix llvm@19)/bin/clang++" >> $GITHUB_ENV
+          echo "MLIR_DIR=$(brew --prefix llvm@19)/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "LLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "$(brew --prefix llvm@19)/bin" >> $GITHUB_PATH
 
       # clone PennyLane Catalyst (from patched branch)
       - name: Clone PennyLane Catalyst
