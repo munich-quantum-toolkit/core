@@ -70,12 +70,10 @@ jobs:
           echo "LLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm" >> $GITHUB_ENV
           echo "$(brew --prefix llvm@19)/bin" >> $GITHUB_PATH
 
-      # clone PennyLane Catalyst (from patched branch)
+      # clone PennyLane Catalyst (from patched branch) - excl. submodules
       - name: Clone PennyLane Catalyst
         run: |
           git clone --branch mqt_integration --depth=1 https://github.com/flowerthrower/catalyst.git catalyst
-          cd catalyst
-          git submodule update --init --recursive
 
       # configure only MLIRQuantum dialect (skip building tools)
       - name: Configure MLIRQuantum dialect
