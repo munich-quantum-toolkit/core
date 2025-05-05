@@ -45,6 +45,85 @@ TEST(CollectBlocks, collectMultipleSingleQubitGates) {
   EXPECT_TRUE(qc.back()->isCompoundOperation());
 }
 
+TEST(CollectBlocks, nonCliffordOnAll) {
+  QuantumComputation qc(2);
+  qc.sx(0);
+  qc.sxdg(1);
+  qc.t(0);
+  qc.t(1);
+  qc.x(0);
+  qc.x(1);
+  std::cout << qc << "\n";
+  qc::CircuitOptimizer::collectBlocks(qc, 2, true);
+  std::cout << qc << "\n";
+  EXPECT_EQ(qc.size(), 4);
+}
+
+TEST(CollectBlocks, nonCliffordonTop) {
+  QuantumComputation qc(2);
+  qc.sdg(0);
+  qc.h(1);
+  qc.t(0);
+  qc.x(0);
+  qc.z(1);
+  std::cout << qc << "\n";
+  qc::CircuitOptimizer::collectBlocks(qc, 2, true);
+  std::cout << qc << "\n";
+  EXPECT_EQ(qc.size(), 3);
+  EXPECT_TRUE(qc.front()->isCompoundOperation());
+}
+
+TEST(CollectBlocks, collectTwoQubitCliffordGates) {
+  QuantumComputation qc(2);
+  qc.h(0);
+  qc.s(1);
+  qc.cx(0, 1);
+  qc.rx(0.1, 0);
+  qc.x(0);
+  qc.y(1);
+  std::cout << qc << "\n";
+  qc::CircuitOptimizer::collectBlocks(qc, 2, true);
+  std::cout << qc << "\n";
+  EXPECT_EQ(qc.size(), 3);
+  EXPECT_TRUE(qc.front()->isCompoundOperation());
+}
+
+TEST(CollectBlocks, TwoQubitnonClifford) {
+  QuantumComputation qc(2);
+  qc.h(0);
+  qc.s(1);
+  qc.rxx(0.1, 0, 1);
+  qc.i(0);
+  qc.y(1);
+  std::cout << qc << "\n";
+  qc::CircuitOptimizer::collectBlocks(qc, 2, true);
+  std::cout << qc << "\n";
+  EXPECT_EQ(qc.size(), 3);
+  EXPECT_TRUE(qc.front()->isCompoundOperation());
+}
+
+TEST(CollectBlocks, nonCliffordBeginning) {
+  QuantumComputation qc(2);
+  qc.t(0);
+  qc.t(1);
+  qc.ecr(0, 1);
+  std::cout << qc << "\n";
+  qc::CircuitOptimizer::collectBlocks(qc, 2, true);
+  std::cout << qc << "\n";
+  EXPECT_EQ(qc.size(), 2);
+}
+
+TEST(CollectBlocks, threeQubitnonClifford) {
+  QuantumComputation qc(3);
+  qc.mcx({0, 1}, 2);
+  qc.mcz({0, 2}, 1);
+  qc.dcx(0, 1);
+  std::cout << qc << "\n";
+  qc::CircuitOptimizer::collectBlocks(qc, 2, true);
+  std::cout << qc << "\n";
+  EXPECT_EQ(qc.size(), 2);
+}
+
 TEST(CollectBlocks, mergeBlocks) {
   QuantumComputation qc(2);
   qc.h(0);
