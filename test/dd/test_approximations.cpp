@@ -60,12 +60,12 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
   qc.x(0);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, *dd);
+  auto fidelityToSource = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {1}};
-  EXPECT_EQ(approx.getVector(), expected);
-  EXPECT_EQ(approx.size(), 2);
-  EXPECT_EQ(postFidelity, 1);
+  EXPECT_EQ(state.getVector(), expected);
+  EXPECT_EQ(state.size(), 2);
+  EXPECT_EQ(fidelityToSource, 1);
 }
 
 TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
@@ -93,12 +93,12 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
   qc.x(0);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, *dd);
+  auto fidelityToSource = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {1}};
-  EXPECT_EQ(approx.getVector(), expected);
-  EXPECT_EQ(approx.size(), 2);
-  EXPECT_EQ(postFidelity, 1);
+  EXPECT_EQ(state.getVector(), expected);
+  EXPECT_EQ(state.size(), 2);
+  EXPECT_EQ(fidelityToSource, 1);
 }
 
 TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
@@ -126,16 +126,16 @@ TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
   qc.ry(qc::PI / 3, 0);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, *dd);
+  auto fidelityToSource = approximate(state, fidelity, *dd);
 
   const CVec expected{{1}, {0}};
-  EXPECT_EQ(approx.getVector(), expected);
-  EXPECT_EQ(approx.size(), 2);
-  EXPECT_NEAR(postFidelity, 0.75, 1e-3);
+  EXPECT_EQ(state.getVector(), expected);
+  EXPECT_EQ(state.size(), 2);
+  EXPECT_NEAR(fidelityToSource, 0.75, 1e-3);
 
   // Test: Correctly increase and decrease ref counts.
 
-  dd->decRef(approx);
+  dd->decRef(state);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -157,7 +157,7 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
   //   ┌─┴─┐       ┌─┴─┐      -(approx)→    ┌─┴─┐
   // ┌─│ q0│─┐   ┌─│ q0│─┐                ┌─│ q0│─┐
   // | └───┘ |   0 └───┘ |1           .756| └───┘ |.654
-  // |.76    |.65       |                 □       □
+  // |.76    |.65        |                □       □
   // □       □           □
   //
 
@@ -171,12 +171,13 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
   qc.cry(qc::PI / 3, 0, 1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, *dd);
+  auto fidelityToSource = approximate(state, fidelity, *dd);
 
   const CVec expected{{0.755929}, {0.654654}, {0}, {0}};
-  vecNear(approx.getVector(), expected);
-  EXPECT_EQ(approx.size(), 3);
-  EXPECT_NEAR(postFidelity, 0.875, 1e-3);
+
+  vecNear(state.getVector(), expected);
+  EXPECT_EQ(state.size(), 3);
+  EXPECT_NEAR(fidelityToSource, 0.875, 1e-3);
 }
 
 TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
@@ -218,14 +219,14 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   qcRef.h(1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, *dd);
+  auto fidelityToSource = approximate(state, fidelity, *dd);
   auto ref = simulate(qcRef, dd->makeZeroState(nq), *dd);
 
   const CVec expected{{0}, {1 / std::sqrt(2)}, {0}, {1 / std::sqrt(2)}};
-  vecNear(approx.getVector(), expected);
-  EXPECT_EQ(approx.size(), 3);
-  EXPECT_NEAR(postFidelity, 0.933, 1e-3);
-  EXPECT_EQ(ref, approx); // implicit: utilize `==` operator.
+  vecNear(state.getVector(), expected);
+  EXPECT_EQ(state.size(), 3);
+  EXPECT_NEAR(fidelityToSource, 0.933, 1e-3);
+  EXPECT_EQ(ref, state); // implicit: utilize `==` operator.
 }
 
 TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
@@ -266,10 +267,10 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   qc.cry(qc::PI / 4, 2, 1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto [approx, postFidelity] = approximate(state, fidelity, *dd);
+  auto fidelityToSource = approximate(state, fidelity, *dd);
 
   const CVec expected{{0, 1}, {0}, {0}, {0}, {0}, {0}, {0}, {0}};
-  vecNear(approx.getVector(), expected);
-  EXPECT_EQ(approx.size(), 4);
-  EXPECT_NEAR(postFidelity, 0.75, 1e-3);
+  vecNear(state.getVector(), expected);
+  EXPECT_EQ(state.size(), 4);
+  EXPECT_NEAR(fidelityToSource, 0.75, 1e-3);
 }

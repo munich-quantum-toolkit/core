@@ -15,7 +15,6 @@
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
-#include <algorithm>
 #include <array>
 #include <forward_list>
 #include <unordered_map>
@@ -23,59 +22,60 @@
 
 namespace dd {
 namespace {
+using UpwardsItem = std::pair<std::forward_list<vEdge*>, std::size_t>;
+using Upwards = std::unordered_map<vEdge*, UpwardsItem>;
+using Layer = std::unordered_map<vEdge*, double>;
+
 /**
- * @brief Recursively rebuild @p state. Exclude edges contained in @p exclude.
- * @return Rebuilt VectorDD.
+ * @brief Sets the edge specified by the @p item to `vEdge::zero()` and
+ * multiplies the weights of the parent's edges with the weight of the
+ * new edge.
+ * @note The resulting DD is not normalized.
  */
-VectorDD rebuild(const VectorDD& state,
-                 const std::forward_list<const vEdge*>& exclude, Package& dd) {
-  const auto it = std::find(exclude.begin(), exclude.end(), &state);
-  if (it != exclude.end()) {
-    return vEdge::zero();
+void zeroEdge(UpwardsItem& item, Package& dd) {
+  const auto& [parents, i] = item;
+  const vNode* parentNode = parents.front()->p;
+
+  std::array<vEdge, RADIX> edges = parentNode->e;
+  edges[i] = vEdge::zero();
+
+  vEdge newEdge = dd.makeDDNode(parentNode->v, edges);
+  Complex w = newEdge.w;
+
+  for (const auto& edge : parents) {
+    newEdge.w = dd.cn.lookup(w * edge->w);
+
+    dd.decRef(*edge);
+    dd.incRef(newEdge);
+    *edge = newEdge;
   }
-
-  if (state.isTerminal()) {
-    return state;
-  }
-
-  const std::array<vEdge, RADIX> edges{rebuild(state.p->e[0], exclude, dd),
-                                       rebuild(state.p->e[1], exclude, dd)};
-
-  VectorDD edge = dd.makeDDNode(state.p->v, edges);
-  edge.w = dd.cn.lookup(edge.w * state.w);
-  return edge;
 }
 }; // namespace
 
-std::pair<VectorDD, double> approximate(const VectorDD& state,
-                                        const double fidelity, Package& dd) {
-  using Layer = std::unordered_map<const vEdge*, double>;
+double approximate(VectorDD& state, const double fidelity, Package& dd) {
+  const Complex phase = state.w;
 
-  const Complex phase = state.w; // global phase to apply after approximation.
+  Upwards upwards{};
+  Layer curr{{&state, ComplexNumbers::mag2(state.w)}};
 
   double budget = 1 - fidelity;
-  std::forward_list<const vEdge*> exclude{};
-
-  Layer curr{{&state, ComplexNumbers::mag2(state.w)}};
   while (!curr.empty() && budget > 0) {
     Layer next{};
+    Upwards upwardsNext{};
 
-    for (const auto& [e, contribution] : curr) {
+    for (const auto& [edge, contribution] : curr) {
       if (contribution <= budget) {
-        exclude.emplace_front(e);
+        zeroEdge(upwards[edge], dd);
         budget -= contribution;
         continue;
       }
 
-      if (e->isTerminal()) {
+      if (edge->isTerminal()) {
         continue;
       }
 
-      const vNode* n = e->p;
-      for (const vEdge& eChildRef : n->e) {
-        const vEdge* eChild = &eChildRef;
-
-        // Don't add zero contribution children.
+      for (std::size_t i = 0; i < RADIX; ++i) {
+        vEdge* eChild = &edge->p->e[i];
         if (eChild->w.exactlyZero()) {
           continue;
         }
@@ -83,20 +83,34 @@ std::pair<VectorDD, double> approximate(const VectorDD& state,
         // Implicit: If `next` doesn't contain `eChild`, it will be initialized
         // with 0. See `operator[]`.
         next[eChild] += contribution * ComplexNumbers::mag2(eChild->w);
+
+        // Link the child with the parent's edge and its associated index.
+        if (upwardsNext.find(eChild) == upwardsNext.end()) {
+          upwardsNext[eChild] = {{edge}, i};
+          continue;
+        }
+        upwardsNext[eChild].first.emplace_front(edge);
       }
     }
 
     curr = std::move(next);
+    upwards = std::move(upwardsNext);
   }
 
-  VectorDD approx = rebuild(state, exclude, dd);
+  // Rebuild only the root state to normalize all nodes of the DD.
+  // Then: Apply global phase.
+  VectorDD approx = dd.makeDDNode(state.p->v, state.p->e);
   approx.w = phase;
 
+  // Make sure to correctly update the reference counts and clean up.
   dd.incRef(approx);
   dd.decRef(state);
   dd.garbageCollect();
 
-  return {approx, fidelity + budget};
+  // Finally, apply approximation to source state.
+  state = approx;
+
+  return fidelity + budget;
 }
 
 } // namespace dd
