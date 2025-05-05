@@ -8,12 +8,6 @@
 
 // RUN: quantum-opt %s -split-input-file | FileCheck %s
 
-// TODO test traits and interfaces of the dialect (how? --> check how catalyst does it and testing guide??)
-
-// TODO test every single-qubit gate
-// TODO test every two-qubit gates
-// TODO test controlled single qubit gates
-
 // -----
 // This test checks if a qubit register is allocated correctly
 module {
