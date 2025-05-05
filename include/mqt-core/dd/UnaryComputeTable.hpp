@@ -32,6 +32,8 @@ namespace dd {
 template <class OperandType, class ResultType, std::size_t NBUCKET = 32768>
 class UnaryComputeTable {
 public:
+  static constexpr std::size_t DEFAULT_NUM_BUCKETS = NBUCKET;
+
   /// Default constructor
   explicit UnaryComputeTable(const size_t numBuckets = 32768U) {
     // numBuckets must be a power of two

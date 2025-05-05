@@ -117,7 +117,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
     std::map<std::string, std::size_t> counts{};
     for (std::size_t i = 0U; i < shots; ++i) {
       // measure all returns a string of the form "q(n-1) ... q(0)"
-      auto measurement = dd.measureAll(e, false, mt);
+      auto measurement = dd.vectors().measureAll(e, false, mt);
       counts.operator[](measurement) += 1U;
     }
     // reduce reference count of measured state
@@ -235,6 +235,6 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
                                           const std::size_t seed) {
   const auto nqubits = qc.getNqubits();
   const auto dd = std::make_unique<Package>(nqubits);
-  return sample(qc, dd->makeZeroState(nqubits), *dd, shots, seed);
+  return sample(qc, dd->vectors().makeZeroState(nqubits), *dd, shots, seed);
 }
 } // namespace dd
