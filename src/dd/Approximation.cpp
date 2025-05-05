@@ -10,12 +10,14 @@
 
 #include "dd/Approximation.hpp"
 
+#include "dd/Complex.hpp"
 #include "dd/ComplexNumbers.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
 #include <array>
+#include <cstddef>
 #include <forward_list>
 #include <unordered_map>
 #include <utility>
@@ -40,7 +42,7 @@ void zeroEdge(UpwardsItem& item, Package& dd) {
   edges[i] = vEdge::zero();
 
   vEdge newEdge = dd.makeDDNode(parentNode->v, edges);
-  Complex w = newEdge.w;
+  const Complex w = newEdge.w;
 
   for (const auto& edge : parents) {
     newEdge.w = dd.cn.lookup(w * edge->w);
