@@ -191,8 +191,8 @@ module {
 // -----
 // This test checks if a negative CX gate is parsed and handled correctly
 module {
-    // CHECK-LABEL: func.func @testCXOp
-    func.func @testCXOp() -> (!mqtopt.Qubit, !mqtopt.Qubit) {
+    // CHECK-LABEL: func.func @testNegativeCXOp
+    func.func @testNegativeCXOp() -> (!mqtopt.Qubit, !mqtopt.Qubit) {
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
         %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
 
@@ -250,8 +250,8 @@ module {
 // -----
 // This test checks if a negative MCX gate is parsed and handled correctly
 module {
-    // CHECK-LABEL: func.func @testMCXOp
-    func.func @testMCXOp() -> (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit) {
+    // CHECK-LABEL: func.func @testNegativeMCXOp
+    func.func @testNegativeMCXOp() -> (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit) {
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
         %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
 
