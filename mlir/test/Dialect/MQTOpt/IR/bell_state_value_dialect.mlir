@@ -9,7 +9,7 @@
 // RUN: quantum-opt %s -split-input-file | FileCheck %s
 
 // -----
-// This test checks if a qubit register is allocated correctly
+// This test checks if the AllocOp is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testAllocOp
     func.func @testAllocOp() -> (!mqtopt.QubitRegister) {
@@ -24,7 +24,7 @@ module {
 }
 
 // -----
-// This test checks if a qubit register is deallocated correctly
+// This test checks if the DeallocOp is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testDeallocOp
     func.func @testDeallocOp() -> () {
@@ -42,7 +42,7 @@ module {
 }
 
 // -----
-// This test checks if a qubit is extracted correctly from a register
+// This test checks if the ExtractOp is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testExtractOp
     func.func @testExtractOp() -> (!mqtopt.QubitRegister, !mqtopt.Qubit) {
@@ -60,7 +60,7 @@ module {
 }
 
 // -----
-// This test checks if a qubit is inserted back into its register correctly
+// This test checks if the InsertOp is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testInsertOp
     func.func @testInsertOp() -> (!mqtopt.QubitRegister) {
@@ -81,7 +81,7 @@ module {
 }
 
 // -----
-// This test checks if a measurement is performed correctly
+// This test checks if the MeasureOp is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testMeasureOp
     func.func @testMeasureOp() -> (!mqtopt.Qubit, i1) {
@@ -102,7 +102,7 @@ module {
 }
 
 // -----
-// This test checks if an identity gate is applied to a single qubit correctly
+// This test checks if an identity gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testIOp
     func.func @testIOp() -> (!mqtopt.Qubit) {
@@ -123,7 +123,7 @@ module {
 }
 
 // -----
-// This test checks if a Hadamard gate is applied to a single qubit correctly
+// This test checks if a Hadamard gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testHOp
     func.func @testHOp() -> (!mqtopt.Qubit) {
@@ -144,7 +144,7 @@ module {
 }
 
 // -----
-// This test checks if an X gate is applied to a single qubit correctly
+// This test checks if an X gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testXOp
     func.func @testXOp() -> (!mqtopt.Qubit) {
@@ -165,7 +165,7 @@ module {
 }
 
 // -----
-// This test checks if an CX gate is applied correctly
+// This test checks if an CX gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testCXOp
     func.func @testCXOp() -> (!mqtopt.Qubit, !mqtopt.Qubit) {
@@ -189,7 +189,7 @@ module {
 }
 
 // -----
-// This test checks if a negative CX gate is applied correctly
+// This test checks if a negative CX gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testCXOp
     func.func @testCXOp() -> (!mqtopt.Qubit, !mqtopt.Qubit) {
@@ -213,7 +213,7 @@ module {
 }
 
 // -----
-// This test checks if an MCX gate is applied correctly
+// This test checks if an MCX gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testMCXOp
     func.func @testMCXOp() -> (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit) {
@@ -248,7 +248,7 @@ module {
 }
 
 // -----
-// This test checks if a negative MCX gate is applied correctly
+// This test checks if a negative MCX gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testMCXOp
     func.func @testMCXOp() -> (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit) {
@@ -283,7 +283,7 @@ module {
 }
 
 // -----
-// This test checks if an Y gate is applied to a single qubit correctly
+// This test checks if an Y gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testYOp
     func.func @testYOp() -> (!mqtopt.Qubit) {
@@ -304,7 +304,7 @@ module {
 }
 
 // -----
-// This test checks if an Z gate is applied to a single qubit correctly
+// This test checks if an Z gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testZOp
     func.func @testZOp() -> (!mqtopt.Qubit) {
@@ -325,7 +325,7 @@ module {
 }
 
 // -----
-// This test checks if an S gate is applied to a single qubit correctly
+// This test checks if an S gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testSOp
     func.func @testSOp() -> (!mqtopt.Qubit) {
@@ -346,7 +346,7 @@ module {
 }
 
 // -----
-// This test checks if an Sdg gate is applied to a single qubit correctly
+// This test checks if an Sdg gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testSdgOp
     func.func @testSdgOp() -> (!mqtopt.Qubit) {
@@ -367,7 +367,7 @@ module {
 }
 
 // -----
-// This test checks if an T gate is applied to a single qubit correctly
+// This test checks if an T gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testTOp
     func.func @testTOp() -> (!mqtopt.Qubit) {
@@ -388,7 +388,7 @@ module {
 }
 
 // -----
-// This test checks if an Tdg gate is applied to a single qubit correctly
+// This test checks if an Tdg gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testTdgOp
     func.func @testTdgOp() -> (!mqtopt.Qubit) {
@@ -409,7 +409,7 @@ module {
 }
 
 // -----
-// This test checks if an V gate is applied to a single qubit correctly
+// This test checks if an V gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testVOp
     func.func @testVOp() -> (!mqtopt.Qubit) {
@@ -430,7 +430,7 @@ module {
 }
 
 // -----
-// This test checks if an Vdg gate is applied to a single qubit correctly
+// This test checks if an Vdg gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testVdgOp
     func.func @testVdgOp() -> (!mqtopt.Qubit) {
@@ -451,7 +451,7 @@ module {
 }
 
 // -----
-// This test checks if an SX gate is applied to a single qubit correctly
+// This test checks if an SX gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testSXOp
     func.func @testSXOp() -> (!mqtopt.Qubit) {
@@ -472,7 +472,7 @@ module {
 }
 
 // -----
-// This test checks if an SXdg gate is applied to a single qubit correctly
+// This test checks if an SXdg gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testSXdgOp
     func.func @testSXdgOp() -> (!mqtopt.Qubit) {
@@ -493,7 +493,7 @@ module {
 }
 
 // -----
-// This test checks if an SWAP gate is applied to two qubits correctly
+// This test checks if an SWAP gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testSWAPOp
     func.func @testSWAPOp() -> (!mqtopt.Qubit, !mqtopt.Qubit) {
@@ -517,7 +517,7 @@ module {
 }
 
 // -----
-// This test checks if an iSWAP gate is applied to two qubits correctly
+// This test checks if an iSWAP gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testiSWAPOp
     func.func @testiSWAPOp() -> (!mqtopt.Qubit, !mqtopt.Qubit) {
@@ -541,7 +541,7 @@ module {
 }
 
 // -----
-// This test checks if an Peres gate is applied to two qubits correctly
+// This test checks if an Peres gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testPeresOp
     func.func @testPeresOp() -> (!mqtopt.Qubit, !mqtopt.Qubit) {
@@ -565,7 +565,7 @@ module {
 }
 
 // -----
-// This test checks if an Peresdg gate is applied to two qubits correctly
+// This test checks if an Peresdg gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testPeresdgOp
     func.func @testPeresdgOp() -> (!mqtopt.Qubit, !mqtopt.Qubit) {
@@ -589,7 +589,7 @@ module {
 }
 
 // -----
-// This test checks if an DCX gate is applied to two qubits correctly
+// This test checks if an DCX gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testDCXOp
     func.func @testDCXOp() -> (!mqtopt.Qubit, !mqtopt.Qubit) {
@@ -613,7 +613,7 @@ module {
 }
 
 // -----
-// This test checks if an ECR gate is applied to two qubits correctly
+// This test checks if an ECR gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testECROp
     func.func @testECROp() -> (!mqtopt.Qubit, !mqtopt.Qubit) {
