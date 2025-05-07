@@ -13,7 +13,7 @@
 module {
     // CHECK-LABEL: func.func @testAllocOp
     func.func @testAllocOp() -> (!mqtopt.QubitRegister) {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}>
         %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
 
         // ========================== Check that there are no further allocations ==============================
