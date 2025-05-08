@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,9 +10,9 @@
 
 #include "dd/ComplexValue.hpp"
 
-#include "Definitions.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
+#include "ir/Definitions.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -251,7 +252,8 @@ ComplexValue operator*(fp r, const ComplexValue& c1) {
 }
 
 /// Computes an approximation of ac+bd
-inline fp kahan(const fp a, const fp b, const fp c, const fp d) {
+namespace {
+fp kahan(const fp a, const fp b, const fp c, const fp d) {
   // w = RN(b * d)
   const auto w = b * d;
   // e = RN(b * d - w)
@@ -261,6 +263,7 @@ inline fp kahan(const fp a, const fp b, const fp c, const fp d) {
   // g = RN(f + e)
   return f + e;
 }
+} // namespace
 
 ComplexValue operator*(const ComplexValue& c1, const ComplexValue& c2) {
   // Implements the CMulKahan algorithm from https://hal.science/hal-01512760v2
@@ -301,9 +304,9 @@ std::ostream& operator<<(std::ostream& os, const ComplexValue& c) {
 namespace std {
 std::size_t
 hash<dd::ComplexValue>::operator()(const dd::ComplexValue& c) const noexcept {
-  const auto h1 = qc::murmur64(
+  const auto h1 = dd::murmur64(
       static_cast<std::size_t>(std::round(c.r / dd::RealNumber::eps)));
-  const auto h2 = qc::murmur64(
+  const auto h2 = dd::murmur64(
       static_cast<std::size_t>(std::round(c.i / dd::RealNumber::eps)));
   return qc::combineHash(h1, h2);
 }

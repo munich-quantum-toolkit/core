@@ -1,33 +1,32 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
 #
 # Licensed under the MIT License
 
-#
-# This file is part of the MQT CORE library released under the MIT license. See README.md or go to
-# https://github.com/cda-tum/mqt-core for more information.
-#
-
 if(NOT TARGET ${MQT_CORE_TARGET_NAME}-algorithms)
   # collect headers and source files
   file(GLOB_RECURSE ALGO_HEADERS ${MQT_CORE_INCLUDE_BUILD_DIR}/algorithms/**.hpp)
   file(GLOB_RECURSE ALGO_SOURCES **.cpp)
 
-  # add algo package library
-  add_library(${MQT_CORE_TARGET_NAME}-algorithms ${ALGO_HEADERS} ${ALGO_SOURCES})
+  # create the library target (initially empty)
+  add_library(${MQT_CORE_TARGET_NAME}-algorithms)
+
+  # add sources to target
+  target_sources(${MQT_CORE_TARGET_NAME}-algorithms PRIVATE ${ALGO_SOURCES})
+
+  # add headers using file sets
+  target_sources(
+    ${MQT_CORE_TARGET_NAME}-algorithms PUBLIC FILE_SET HEADERS BASE_DIRS
+                                              ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${ALGO_HEADERS})
 
   # add link libraries
   target_link_libraries(
     ${MQT_CORE_TARGET_NAME}-algorithms
     PUBLIC MQT::CoreIR
     PRIVATE MQT::CoreCircuitOptimizer MQT::ProjectOptions MQT::ProjectWarnings)
-
-  # set include directories
-  target_include_directories(
-    ${MQT_CORE_TARGET_NAME}-algorithms PUBLIC $<BUILD_INTERFACE:${MQT_CORE_INCLUDE_BUILD_DIR}>
-                                              $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 
   # add MQT alias
   add_library(MQT::CoreAlgorithms ALIAS ${MQT_CORE_TARGET_NAME}-algorithms)
@@ -42,15 +41,13 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-algorithms)
   # generate export header
   include(GenerateExportHeader)
   generate_export_header(${MQT_CORE_TARGET_NAME}-algorithms BASE_NAME mqt_core_algorithms)
+  target_sources(
+    ${MQT_CORE_TARGET_NAME}-algorithms
+    PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/.. FILES
+           ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_algorithms_export.h)
   if(NOT BUILD_SHARED_LIBS)
     target_compile_definitions(${MQT_CORE_TARGET_NAME}-algorithms
                                PUBLIC MQT_CORE_ALGO_STATIC_DEFINE)
-  endif()
-
-  # install export header
-  if(MQT_CORE_INSTALL)
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_algorithms_export.h
-            DESTINATION ${MQT_CORE_INCLUDE_INSTALL_DIR})
   endif()
 
   # add to list of MQT core targets

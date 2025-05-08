@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -15,26 +16,9 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
-#include <stdexcept>
-#include <string>
-#include <utility>
 #include <vector>
 
 namespace qc {
-/// A dedicated exception type for the library.
-class QFRException final : public std::invalid_argument {
-  std::string msg;
-
-public:
-  explicit QFRException(std::string m)
-      : std::invalid_argument("QFR Exception"), msg(std::move(m)) {}
-
-  [[nodiscard]] const char* what() const noexcept override {
-    return msg.c_str();
-  }
-};
-
 /**
  * @brief Type alias for qubit indices.
  * @details This type (alias) is used to represent qubit indices in the library.
@@ -86,22 +70,6 @@ enum class Format : uint8_t {
 };
 
 /**
- * @brief 64bit mixing hash (from MurmurHash3)
- * @details Hash function for 64bit integers adapted from MurmurHash3
- * @param k the number to hash
- * @returns the hash value
- * @see https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
- */
-[[nodiscard]] constexpr std::size_t murmur64(std::size_t k) noexcept {
-  k ^= k >> 33;
-  k *= 0xff51afd7ed558ccdULL;
-  k ^= k >> 33;
-  k *= 0xc4ceb9fe1a85ec53ULL;
-  k ^= k >> 33;
-  return k;
-}
-
-/**
  * @brief Combine two 64bit hashes into one 64bit hash
  * @details Combines two 64bit hashes into one 64bit hash based on
  * boost::hash_combine (https://www.boost.org/LICENSE_1_0.txt)
@@ -123,13 +91,6 @@ combineHash(const std::size_t lhs, const std::size_t rhs) noexcept {
 constexpr void hashCombine(std::size_t& hash, const std::size_t with) noexcept {
   hash = combineHash(hash, with);
 }
-
-/// Pairs do not provide a hash function by default, this is the replacement
-template <class T, class U> struct PairHash {
-  size_t operator()(const std::pair<T, U>& x) const {
-    return combineHash(std::hash<T>{}(x.first), std::hash<U>{}(x.second));
-  }
-};
 
 /**
  * @brief Function used to mark unreachable code

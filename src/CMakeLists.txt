@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -11,7 +12,6 @@ set(MQT_CORE_TARGETS "")
 if(MQT_CORE_INSTALL)
   include(GNUInstallDirs)
   set(MQT_CORE_CONFIG_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/cmake/mqt-core")
-  set(MQT_CORE_INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}/mqt-core")
   set(MQT_CORE_TARGETS_EXPORT_NAME "mqt-core-targets")
   set(MQT_CORE_CMAKE_CONFIG_TEMPLATE "${PROJECT_SOURCE_DIR}/cmake/mqt-core-config.cmake.in")
   set(MQT_CORE_CMAKE_CONFIG_DIR "${CMAKE_CURRENT_BINARY_DIR}")
@@ -117,11 +117,10 @@ if(MQT_CORE_INSTALL)
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
             COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
             NAMELINK_COMPONENT ${MQT_CORE_TARGET_NAME}_Development
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Development
-    INCLUDES
-    DESTINATION ${MQT_CORE_INCLUDE_INSTALL_DIR})
-
-  install(DIRECTORY ${MQT_CORE_INCLUDE_BUILD_DIR}/ DESTINATION ${MQT_CORE_INCLUDE_INSTALL_DIR})
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            COMPONENT ${MQT_CORE_TARGET_NAME}_Development
+            FILE_SET HEADERS
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mqt-core)
 
   install(
     EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}

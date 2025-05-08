@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -8,9 +9,6 @@
 # set common compiler options for projects
 function(enable_project_options target_name)
   include(CheckCXXCompilerFlag)
-
-  # set required C++ standard and disable compiler specific extensions
-  target_compile_features(${target_name} INTERFACE cxx_std_17)
 
   # Option to enable time tracing with clang
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")

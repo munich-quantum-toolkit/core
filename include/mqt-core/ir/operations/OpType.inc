@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -51,24 +52,23 @@ HANDLE_OP_TYPE(29, Compound, OpTypeNone, "compound")
 // Non Unitary Operations
 HANDLE_OP_TYPE(30, Measure, OpTypeNone, "measure")
 HANDLE_OP_TYPE(31, Reset, OpTypeNone, "reset")
-HANDLE_OP_TYPE(32, Teleportation, OpTypeNone, "teleportation")
 
 // Classically-controlled Operation
-HANDLE_OP_TYPE(33, ClassicControlled, OpTypeNone, "classic_controlled")
+HANDLE_OP_TYPE(32, ClassicControlled, OpTypeNone, "classic_controlled")
 
 // Noise operations
-HANDLE_OP_TYPE(34, ATrue, 0, "a_true")
-HANDLE_OP_TYPE(35, AFalse, 0, "a_false")
-HANDLE_OP_TYPE(36, MultiATrue, 0, "multi_a_true")
-HANDLE_OP_TYPE(37, MultiAFalse, 0, "multi_a_false")
+HANDLE_OP_TYPE(33, ATrue, 0, "a_true")
+HANDLE_OP_TYPE(34, AFalse, 0, "a_false")
+HANDLE_OP_TYPE(35, MultiATrue, 0, "multi_a_true")
+HANDLE_OP_TYPE(36, MultiAFalse, 0, "multi_a_false")
 
 // Neutral atom shuttling operations
-HANDLE_OP_TYPE(38, Move, 0, "move")
-HANDLE_OP_TYPE(39, AodActivate, 0, "aod_activate")
-HANDLE_OP_TYPE(40, AodDeactivate, 0, "aod_deactivate")
-HANDLE_OP_TYPE(41, AodMove, 0, "aod_move")
+HANDLE_OP_TYPE(37, Move, 0, "move")
+HANDLE_OP_TYPE(38, AodActivate, 0, "aod_activate")
+HANDLE_OP_TYPE(39, AodDeactivate, 0, "aod_deactivate")
+HANDLE_OP_TYPE(40, AodMove, 0, "aod_move")
 
-LAST_OP_TYPE(42)
+LAST_OP_TYPE(41)
 
 
 #undef OpTypeInv

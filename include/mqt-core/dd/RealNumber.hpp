@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -11,7 +12,7 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/LinkedListBase.hpp"
-#include "mqt_core_dd_export.h"
+#include "dd/mqt_core_dd_export.h"
 
 #include <istream>
 #include <limits>

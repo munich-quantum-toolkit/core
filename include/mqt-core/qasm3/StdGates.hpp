@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -98,9 +99,6 @@ const std::map<std::string, std::shared_ptr<Gate>> STANDARD_GATES = {
     {"sxdg", std::make_shared<StandardGate>(StandardGate({0, 1, 0, qc::SXdg}))},
     {"c3sqrtx",
      std::make_shared<StandardGate>(StandardGate({3, 1, 0, qc::SXdg}))},
-
-    {"teleport", std::make_shared<StandardGate>(
-                     StandardGate({0, 3, 0, qc::Teleportation}))},
 
     {"swap", std::make_shared<StandardGate>(StandardGate({0, 2, 0, qc::SWAP}))},
     {"cswap",

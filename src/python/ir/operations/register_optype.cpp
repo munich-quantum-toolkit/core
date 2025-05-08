@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -54,7 +55,6 @@ void registerOptype(const py::module& m) {
       .value("measure", qc::OpType::Measure)
       .value("reset", qc::OpType::Reset)
       .value("barrier", qc::OpType::Barrier)
-      .value("teleportation", qc::OpType::Teleportation)
       .value("classic_controlled", qc::OpType::ClassicControlled)
       .export_values()
       .def("__str__", [](const qc::OpType& op) { return qc::toString(op); })

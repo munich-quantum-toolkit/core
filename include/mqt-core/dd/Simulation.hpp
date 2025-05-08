@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -13,21 +14,17 @@
 
 #pragma once
 
-#include "dd/DDDefinitions.hpp"
-#include "dd/Operations.hpp"
 #include "dd/Package_fwd.hpp"
-#include "ir/QuantumComputation.hpp"
-#include "ir/operations/OpType.hpp"
 
-#include <cmath>
-#include <complex>
 #include <cstddef>
 #include <map>
 #include <string>
-#include <utility>
+
+namespace qc {
+class QuantumComputation;
+}
 
 namespace dd {
-using namespace qc;
 
 /**
  * @brief Simulate a purely-quantum @ref qc::QuantumComputation on a given input
@@ -48,41 +45,10 @@ using namespace qc;
  * @param qc The quantum computation to simulate
  * @param in The input state to simulate. Represented as a vector DD.
  * @param dd The DD package to use for the simulation
- * @tparam Config The configuration of the DD package
  * @return A vector DD representing the output state of the simulation
  */
-template <class Config>
-VectorDD simulate(const QuantumComputation& qc, const VectorDD& in,
-                  Package<Config>& dd) {
-  auto permutation = qc.initialLayout;
-  auto e = in;
-  for (const auto& op : qc) {
-    // SWAP gates can be executed virtually by changing the permutation
-    if (op->getType() == SWAP && !op->isControlled()) {
-      const auto& targets = op->getTargets();
-      std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
-      continue;
-    }
-
-    e = applyUnitaryOperation(*op, e, dd, permutation);
-  }
-  changePermutation(e, permutation, qc.outputPermutation, dd);
-  e = dd.reduceGarbage(e, qc.getGarbage());
-
-  // properly account for the global phase of the circuit
-  if (std::abs(qc.getGlobalPhase()) > 0) {
-    // create a temporary copy for reference counting
-    auto oldW = e.w;
-    // adjust for global phase
-    const auto globalPhase = ComplexValue{std::polar(1.0, qc.getGlobalPhase())};
-    e.w = dd.cn.lookup(e.w * globalPhase);
-    // adjust reference count
-    dd.cn.incRef(e.w);
-    dd.cn.decRef(oldW);
-  }
-
-  return e;
-}
+VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
+                  Package& dd);
 
 /**
  * @brief Sample from the output distribution of a quantum computation
@@ -107,7 +73,7 @@ VectorDD simulate(const QuantumComputation& qc, const VectorDD& in,
  * @param seed The seed for the random number generator
  * @return A histogram of the measurement results
  */
-std::map<std::string, std::size_t> sample(const QuantumComputation& qc,
+std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
                                           std::size_t shots = 1024U,
                                           std::size_t seed = 0U);
 
@@ -118,7 +84,6 @@ std::map<std::string, std::size_t> sample(const QuantumComputation& qc,
  * choosing the input state to simulate as well as the DD package to use for the
  * simulation.
  *
- * @tparam Config The configuration of the DD package
  * @param qc The quantum computation to simulate
  * @param in The input state to simulate. Represented as a vector DD.
  * @param dd The DD package to use for the simulation
@@ -126,25 +91,8 @@ std::map<std::string, std::size_t> sample(const QuantumComputation& qc,
  * @param seed The seed for the random number generator
  * @return A histogram of the measurement results
  */
-template <class Config>
-std::map<std::string, std::size_t>
-sample(const QuantumComputation& qc, const VectorDD& in, Package<Config>& dd,
-       std::size_t shots, std::size_t seed = 0U);
-
-/**
- * @brief Extract the probability vector from a dynamic quantum circuit.
- * @details This method allows one to reconstruct the probability vector of a
- * dynamic quantum circuit (a circuit that contains mid-circuit measurements
- * or resets) as if the circuit would not contain these dynamic circuit
- * primitives at all.
- * @see https://arxiv.org/abs/2106.01099 Section 5 for more details.
- * @tparam Config The configuration of the DD package
- * @param qc The quantum computation to extract the probability vector from
- * @param in The input state to use. Represented as a vector DD.
- * @param probVector The sparse probability vector to store the result in
- * @param dd The DD package to use for the extraction
- */
-template <class Config>
-void extractProbabilityVector(const QuantumComputation& qc, const VectorDD& in,
-                              SparsePVec& probVector, Package<Config>& dd);
+std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
+                                          const VectorDD& in, Package& dd,
+                                          std::size_t shots,
+                                          std::size_t seed = 0U);
 } // namespace dd

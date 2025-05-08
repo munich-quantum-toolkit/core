@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,14 +8,19 @@
  * Licensed under the MIT License
  */
 
+/**
+ * @file UnaryComputeTable.hpp
+ * @brief Data structure for caching computed results of unary operations
+ */
+
 #pragma once
 
 #include "dd/statistics/TableStatistics.hpp"
 
-#include <array>
-#include <bitset>
 #include <cstddef>
 #include <functional>
+#include <stdexcept>
+#include <vector>
 
 namespace dd {
 
@@ -22,15 +28,20 @@ namespace dd {
  * @brief Data structure for caching computed results of unary operations
  * @tparam OperandType type of the operation's operand
  * @tparam ResultType type of the operation's result
- * @tparam NBUCKET number of hash buckets to use (has to be a power of two)
  */
 template <class OperandType, class ResultType, std::size_t NBUCKET = 32768>
 class UnaryComputeTable {
 public:
   /// Default constructor
-  UnaryComputeTable() {
+  explicit UnaryComputeTable(const size_t numBuckets = 32768U) {
+    // numBuckets must be a power of two
+    if ((numBuckets & (numBuckets - 1)) != 0) {
+      throw std::invalid_argument("Number of buckets must be a power of two.");
+    }
     stats.entrySize = sizeof(Entry);
-    stats.numBuckets = NBUCKET;
+    stats.numBuckets = numBuckets;
+    valid = std::vector(numBuckets, false);
+    table = std::vector<Entry>(numBuckets);
   }
 
   /// An entry in the compute table
@@ -39,9 +50,6 @@ public:
     ResultType result;
   };
 
-  /// Bitmask used in the hash function
-  static constexpr size_t MASK = NBUCKET - 1;
-
   /// Get a reference to the underlying table
   [[nodiscard]] const auto& getTable() const { return table; }
 
@@ -49,8 +57,9 @@ public:
   [[nodiscard]] const auto& getStats() const noexcept { return stats; }
 
   /// Compute the hash value for a given operand
-  static std::size_t hash(const OperandType& a) {
-    return std::hash<OperandType>{}(a)&MASK;
+  [[nodiscard]] std::size_t hash(const OperandType& a) const {
+    const auto mask = stats.numBuckets - 1;
+    return std::hash<OperandType>{}(a)&mask;
   }
 
   /**
@@ -65,7 +74,7 @@ public:
       ++stats.collisions;
     } else {
       stats.trackInsert();
-      valid.set(key);
+      valid[key] = true;
     }
     table[key] = {operand, result};
   }
@@ -97,13 +106,13 @@ public:
    * @brief Clear the compute table
    * @details Sets all entries to invalid.
    */
-  void clear() { valid.reset(); }
+  void clear() { valid = std::vector(NBUCKET, false); }
 
 private:
   /// The actual table storing the entries
-  std::array<Entry, NBUCKET> table{};
-  /// Bitset to mark valid entries
-  std::bitset<NBUCKET> valid{};
+  std::vector<Entry> table;
+  /// Dynamic bitset to mark valid entries
+  std::vector<bool> valid;
   /// Statistics of the compute table
   TableStatistics stats{};
 };

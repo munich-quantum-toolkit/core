@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -20,7 +21,7 @@
 #include "Token.hpp"
 #include "Types_fwd.hpp"
 
-#include <iosfwd>
+#include <istream>
 #include <memory>
 #include <optional>
 #include <stack>

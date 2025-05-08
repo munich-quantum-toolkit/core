@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -59,11 +60,11 @@ INSTANTIATE_TEST_SUITE_P(
             std::complex<double>{1. / 4}, std::complex<double>{3. / 4}}));
 
 TEST_P(StatePreparation, StatePreparationCircuitSimulation) {
-  const auto expectedAmplitudes = GetParam();
+  const auto& expectedAmplitudes = GetParam();
   qc::QuantumComputation qc;
   ASSERT_NO_THROW({ qc = qc::createStatePreparationCircuit(amplitudes); });
-  auto dd = std::make_unique<dd::Package<>>(qc.getNqubits());
-  qc::VectorDD e{};
+  auto dd = std::make_unique<dd::Package>(qc.getNqubits());
+  dd::VectorDD e{};
   ASSERT_NO_THROW(
       { e = dd::simulate(qc, dd->makeZeroState(qc.getNqubits()), *dd); });
   auto result = e.getVector();

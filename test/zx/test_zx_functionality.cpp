@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
@@ -28,6 +29,7 @@
 #include <string>
 #include <utility>
 
+namespace zx {
 class ZXFunctionalityTest : public ::testing::Test {
 public:
   qc::QuantumComputation qc;
@@ -40,26 +42,25 @@ TEST_F(ZXFunctionalityTest, parseQasm) {
                                "h q[0];"
                                "cx q[0],q[1];\n";
   qc = qasm3::Importer::imports(testfile);
-  EXPECT_TRUE(zx::FunctionalityConstruction::transformableToZX(&qc));
-  const zx::ZXDiagram diag =
-      zx::FunctionalityConstruction::buildFunctionality(&qc);
+  EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc));
+  const ZXDiagram diag = FunctionalityConstruction::buildFunctionality(&qc);
   EXPECT_EQ(diag.getNVertices(), 7);
   EXPECT_EQ(diag.getNEdges(), 6);
 
-  auto inputs = diag.getInputs();
+  const auto& inputs = diag.getInputs();
   EXPECT_EQ(inputs[0], 0);
   EXPECT_EQ(inputs[1], 1);
 
-  auto outputs = diag.getOutputs();
+  const auto& outputs = diag.getOutputs();
   EXPECT_EQ(outputs[0], 2);
   EXPECT_EQ(outputs[1], 3);
 
-  const auto edges =
+  constexpr auto edges =
       std::array{std::pair{0U, 4U}, std::pair{5U, 6U}, std::pair{6U, 1U},
                  std::pair{3U, 6U}, std::pair{4U, 5U}, std::pair{5U, 2U}};
-  const auto expectedEdgeTypes = std::array{
-      zx::EdgeType::Hadamard, zx::EdgeType::Simple, zx::EdgeType::Simple,
-      zx::EdgeType::Simple,   zx::EdgeType::Simple, zx::EdgeType::Simple};
+  constexpr auto expectedEdgeTypes =
+      std::array{EdgeType::Hadamard, EdgeType::Simple, EdgeType::Simple,
+                 EdgeType::Simple,   EdgeType::Simple, EdgeType::Simple};
   for (std::size_t i = 0; i < edges.size(); ++i) {
     const auto& [v1, v2] = edges[i];
     const auto& edge = diag.getEdge(v1, v2);
@@ -70,11 +71,10 @@ TEST_F(ZXFunctionalityTest, parseQasm) {
     }
   }
 
-  const auto expectedVertexTypes =
-      std::array{zx::VertexType::Boundary, zx::VertexType::Boundary,
-                 zx::VertexType::Boundary, zx::VertexType::Boundary,
-                 zx::VertexType::Z,        zx::VertexType::Z,
-                 zx::VertexType::X};
+  constexpr auto expectedVertexTypes = std::array{
+      VertexType::Boundary, VertexType::Boundary, VertexType::Boundary,
+      VertexType::Boundary, VertexType::Z,        VertexType::Z,
+      VertexType::X};
   const auto nVerts = diag.getNVertices();
   for (std::size_t i = 0; i < nVerts; ++i) {
     const auto& vData = diag.getVData(i);
@@ -155,9 +155,9 @@ TEST_F(ZXFunctionalityTest, complexCircuit) {
      << "h q[0];\n";
   qc = qasm3::Importer::import(ss);
 
-  EXPECT_TRUE(zx::FunctionalityConstruction::transformableToZX(&qc));
-  zx::ZXDiagram diag = zx::FunctionalityConstruction::buildFunctionality(&qc);
-  zx::fullReduce(diag);
+  EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc));
+  ZXDiagram diag = FunctionalityConstruction::buildFunctionality(&qc);
+  fullReduce(diag);
   EXPECT_EQ(diag.getNVertices(), 6);
   EXPECT_EQ(diag.getNEdges(), 3);
   EXPECT_TRUE(diag.connected(diag.getInput(0), diag.getOutput(0)));
@@ -177,9 +177,9 @@ TEST_F(ZXFunctionalityTest, nestedCompoundGate) {
   qc.emplace_back<qc::CompoundOperation>(std::move(compound2));
   qc.x(0);
 
-  EXPECT_TRUE(zx::FunctionalityConstruction::transformableToZX(&qc));
-  zx::ZXDiagram diag = zx::FunctionalityConstruction::buildFunctionality(&qc);
-  zx::fullReduce(diag);
+  EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc));
+  ZXDiagram diag = FunctionalityConstruction::buildFunctionality(&qc);
+  fullReduce(diag);
 
   EXPECT_TRUE(diag.isIdentity());
 }
@@ -187,14 +187,14 @@ TEST_F(ZXFunctionalityTest, nestedCompoundGate) {
 TEST_F(ZXFunctionalityTest, Phase) {
   using namespace qc::literals;
   qc = qc::QuantumComputation(2);
-  qc.p(zx::PI / 4, 0);
-  qc.cp(zx::PI / 4, 1, 0);
-  qc.cp(-zx::PI / 4, 1, 0);
-  qc.p(-zx::PI / 4, 0);
+  qc.p(PI / 4, 0);
+  qc.cp(PI / 4, 1, 0);
+  qc.cp(-PI / 4, 1, 0);
+  qc.p(-PI / 4, 0);
 
-  EXPECT_TRUE(zx::FunctionalityConstruction::transformableToZX(&qc));
-  zx::ZXDiagram diag = zx::FunctionalityConstruction::buildFunctionality(&qc);
-  zx::fullReduce(diag);
+  EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc));
+  ZXDiagram diag = FunctionalityConstruction::buildFunctionality(&qc);
+  fullReduce(diag);
 
   EXPECT_TRUE(diag.isIdentity());
 }
@@ -210,9 +210,9 @@ TEST_F(ZXFunctionalityTest, Compound) {
       "toff q[0],q[1],q[2];"
       "ccx q[0],q[1],q[2];\n";
   qc = qasm3::Importer::imports(testfile);
-  EXPECT_TRUE(zx::FunctionalityConstruction::transformableToZX(&qc));
-  zx::ZXDiagram diag = zx::FunctionalityConstruction::buildFunctionality(&qc);
-  zx::fullReduce(diag);
+  EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc));
+  ZXDiagram diag = FunctionalityConstruction::buildFunctionality(&qc);
+  fullReduce(diag);
 
   EXPECT_TRUE(diag.isIdentity());
 }
@@ -221,30 +221,30 @@ TEST_F(ZXFunctionalityTest, UnsupportedMultiControl) {
   using namespace qc::literals;
   qc = qc::QuantumComputation(4);
   qc.mcx({1, 2, 3}, 0);
-  EXPECT_FALSE(zx::FunctionalityConstruction::transformableToZX(&qc));
-  EXPECT_THROW(const zx::ZXDiagram diag =
-                   zx::FunctionalityConstruction::buildFunctionality(&qc),
-               zx::ZXException);
+  EXPECT_FALSE(FunctionalityConstruction::transformableToZX(&qc));
+  EXPECT_THROW(const ZXDiagram diag =
+                   FunctionalityConstruction::buildFunctionality(&qc),
+               ZXException);
 }
 
 TEST_F(ZXFunctionalityTest, UnsupportedControl) {
   using namespace qc::literals;
   qc = qc::QuantumComputation(2);
   qc.cy(1, 0);
-  EXPECT_FALSE(zx::FunctionalityConstruction::transformableToZX(&qc));
-  EXPECT_THROW(const zx::ZXDiagram diag =
-                   zx::FunctionalityConstruction::buildFunctionality(&qc),
-               zx::ZXException);
+  EXPECT_FALSE(FunctionalityConstruction::transformableToZX(&qc));
+  EXPECT_THROW(const ZXDiagram diag =
+                   FunctionalityConstruction::buildFunctionality(&qc),
+               ZXException);
 }
 
 TEST_F(ZXFunctionalityTest, UnsupportedControl2) {
   using namespace qc::literals;
   qc = qc::QuantumComputation(3);
   qc.mcy({1, 2}, 0);
-  EXPECT_FALSE(zx::FunctionalityConstruction::transformableToZX(&qc));
-  EXPECT_THROW(const zx::ZXDiagram diag =
-                   zx::FunctionalityConstruction::buildFunctionality(&qc),
-               zx::ZXException);
+  EXPECT_FALSE(FunctionalityConstruction::transformableToZX(&qc));
+  EXPECT_THROW(const ZXDiagram diag =
+                   FunctionalityConstruction::buildFunctionality(&qc),
+               ZXException);
 }
 
 TEST_F(ZXFunctionalityTest, InitialLayout) {
@@ -260,12 +260,12 @@ TEST_F(ZXFunctionalityTest, InitialLayout) {
   qcPrime.x(1);
   qcPrime.z(0);
 
-  auto d = zx::FunctionalityConstruction::buildFunctionality(&qc);
-  auto dPrime = zx::FunctionalityConstruction::buildFunctionality(&qcPrime);
+  auto d = FunctionalityConstruction::buildFunctionality(&qc);
+  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
 
   d.concat(dPrime);
 
-  zx::fullReduce(d);
+  fullReduce(d);
   EXPECT_TRUE(d.isIdentity());
 }
 
@@ -276,25 +276,25 @@ TEST_F(ZXFunctionalityTest, FromSymbolic) {
   qc.rz(qc::Symbolic(xTerm), 0);
   qc.rz(-qc::Symbolic(xTerm), 0);
 
-  zx::ZXDiagram diag = zx::FunctionalityConstruction::buildFunctionality(&qc);
+  ZXDiagram diag = FunctionalityConstruction::buildFunctionality(&qc);
 
-  zx::fullReduce(diag);
+  fullReduce(diag);
   EXPECT_TRUE(diag.isIdentity());
 }
 
 TEST_F(ZXFunctionalityTest, RZ) {
   qc = qc::QuantumComputation(1);
-  qc.rz(zx::PI / 8, 0);
+  qc.rz(PI / 8, 0);
 
   auto qcPrime = qc::QuantumComputation(1);
-  qcPrime.p(zx::PI / 8, 0);
+  qcPrime.p(PI / 8, 0);
 
-  auto d = zx::FunctionalityConstruction::buildFunctionality(&qc);
-  auto dPrime = zx::FunctionalityConstruction::buildFunctionality(&qcPrime);
+  auto d = FunctionalityConstruction::buildFunctionality(&qc);
+  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
 
   d.concat(dPrime.invert());
 
-  zx::fullReduce(d);
+  fullReduce(d);
   EXPECT_FALSE(d.isIdentity());
   EXPECT_FALSE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
@@ -313,20 +313,20 @@ TEST_F(ZXFunctionalityTest, ISWAP) {
   qcPrime.cx(1, 0);
   qc.h(1);
 
-  auto d = zx::FunctionalityConstruction::buildFunctionality(&qc);
-  auto dPrime = zx::FunctionalityConstruction::buildFunctionality(&qcPrime);
+  auto d = FunctionalityConstruction::buildFunctionality(&qc);
+  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
 
   d.concat(dPrime.invert());
 
-  zx::fullReduce(d);
+  fullReduce(d);
   EXPECT_TRUE(d.isIdentity());
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
 }
 
 TEST_F(ZXFunctionalityTest, XXplusYY) {
-  const auto theta = zx::PI / 4.;
-  const auto beta = zx::PI / 2.;
+  constexpr auto theta = PI / 4.;
+  constexpr auto beta = PI / 2.;
 
   qc = qc::QuantumComputation(2);
   qc.xx_plus_yy(theta, beta, 0, 1);
@@ -347,13 +347,13 @@ TEST_F(ZXFunctionalityTest, XXplusYY) {
   qcPrime.rz(qc::PI_2, 0);
   qcPrime.rz(-beta, 1);
 
-  auto d = zx::FunctionalityConstruction::buildFunctionality(&qc);
+  auto d = FunctionalityConstruction::buildFunctionality(&qc);
 
-  auto dPrime = zx::FunctionalityConstruction::buildFunctionality(&qcPrime);
+  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
 
   d.concat(dPrime.invert());
 
-  zx::fullReduce(d);
+  fullReduce(d);
 
   EXPECT_TRUE(d.isIdentity());
   EXPECT_TRUE(d.globalPhaseIsZero());
@@ -361,8 +361,8 @@ TEST_F(ZXFunctionalityTest, XXplusYY) {
 }
 
 TEST_F(ZXFunctionalityTest, XXminusYY) {
-  const auto theta = zx::PI / 4.;
-  const auto beta = -zx::PI / 2.;
+  constexpr auto theta = PI / 4.;
+  constexpr auto beta = -PI / 2.;
 
   qc = qc::QuantumComputation(2);
   qc.xx_minus_yy(theta, beta, 0, 1);
@@ -383,15 +383,16 @@ TEST_F(ZXFunctionalityTest, XXminusYY) {
   qcPrime.rz(qc::PI_2, 0);
   qcPrime.rz(beta, 1);
 
-  auto d = zx::FunctionalityConstruction::buildFunctionality(&qc);
+  auto d = FunctionalityConstruction::buildFunctionality(&qc);
 
-  auto dPrime = zx::FunctionalityConstruction::buildFunctionality(&qcPrime);
+  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
 
   d.concat(dPrime.invert());
 
-  zx::fullReduce(d);
+  fullReduce(d);
 
   EXPECT_TRUE(d.isIdentity());
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
 }
+} // namespace zx

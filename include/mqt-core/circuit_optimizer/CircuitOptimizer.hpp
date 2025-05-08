@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -33,8 +34,6 @@ public:
   using DAGReverseIterators = std::vector<DAGReverseIterator>;
 
   static DAG constructDAG(QuantumComputation& qc);
-  static void printDAG(const DAG& dag);
-  static void printDAG(const DAG& dag, const DAGIterators& iterators);
 
   static void swapReconstruction(QuantumComputation& qc);
 
@@ -52,8 +51,6 @@ public:
 
   static void decomposeSWAP(QuantumComputation& qc,
                             bool isDirectedArchitecture);
-
-  static void decomposeTeleport(QuantumComputation& qc);
 
   static void eliminateResets(QuantumComputation& qc);
 

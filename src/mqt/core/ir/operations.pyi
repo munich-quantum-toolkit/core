@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -292,10 +293,6 @@ class OpType:
 
     See Also:
         :meth:`mqt.core.ir.QuantumComputation.tdg`
-    """
-    teleportation: ClassVar[OpType]
-    """
-    A teleportation operation.
     """
     u2: ClassVar[OpType]
     """

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -57,8 +58,6 @@ std::string shortName(const OpType opType) {
     return "msr";
   case Reset:
     return "rst";
-  case Teleportation:
-    return "tel";
   default:
     return toString(opType);
   }
@@ -130,7 +129,6 @@ OpType opTypeFromString(const std::string& opType) {
       {"measure", OpType::Measure},
       {"reset", OpType::Reset},
       {"barrier", OpType::Barrier},
-      {"teleportation", OpType::Teleportation},
       {"classic_controlled", OpType::ClassicControlled},
       {"compound", OpType::Compound},
       {"move", OpType::Move},

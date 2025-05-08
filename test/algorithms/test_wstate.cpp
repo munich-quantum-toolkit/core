@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,13 +8,13 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
 #include "algorithms/WState.hpp"
 #include "dd/ComplexNumbers.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/Simulation.hpp"
+#include "ir/Definitions.hpp"
 
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -62,8 +63,8 @@ TEST_P(WState, FunctionTest) {
 TEST_P(WState, RoutineFunctionTest) {
   const auto nq = GetParam();
 
-  auto qc = qc::createWState(nq);
-  auto dd = std::make_unique<dd::Package<>>(qc.getNqubits());
+  const auto qc = qc::createWState(nq);
+  const auto dd = std::make_unique<dd::Package>(qc.getNqubits());
   const dd::VectorDD e =
       dd::simulate(qc, dd->makeZeroState(qc.getNqubits()), *dd);
   const auto f = dd->makeWState(nq);
@@ -72,7 +73,7 @@ TEST_P(WState, RoutineFunctionTest) {
 }
 
 TEST(WState, WStateEdgeCasesTest) {
-  auto dd = std::make_unique<dd::Package<>>(101);
+  auto dd = std::make_unique<dd::Package>(101);
   const auto tolerance = dd::RealNumber::eps;
   dd::ComplexNumbers::setTolerance(0.1);
 

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -74,16 +75,16 @@ TEST_F(CNTest, NearZeroLookup) {
 }
 
 TEST_F(CNTest, SortedBuckets) {
-  const fp num = 0.25;
+  constexpr fp num = 0.25;
 
-  const std::array<dd::fp, 7> numbers = {
-      num + 2. * RealNumber::eps, num - 2. * RealNumber::eps,
-      num + 4. * RealNumber::eps, num,
-      num - 4. * RealNumber::eps, num + 6. * RealNumber::eps,
-      num + 8. * RealNumber::eps};
+  const std::array<fp, 7> numbers = {
+      num + (2. * RealNumber::eps), num - (2. * RealNumber::eps),
+      num + (4. * RealNumber::eps), num,
+      num - (4. * RealNumber::eps), num + (6. * RealNumber::eps),
+      num + (8. * RealNumber::eps)};
 
   const auto theBucket =
-      static_cast<std::size_t>(dd::RealNumberUniqueTable::hash(num));
+      static_cast<std::size_t>(RealNumberUniqueTable::hash(num));
 
   for (auto const& number : numbers) {
     ASSERT_EQ(theBucket, ut.hash(number));
@@ -94,7 +95,7 @@ TEST_F(CNTest, SortedBuckets) {
   RealNumber* p = ut.getTable().at(theBucket);
   ASSERT_NE(p, nullptr);
 
-  const dd::fp last = std::numeric_limits<dd::fp>::min();
+  constexpr fp last = std::numeric_limits<fp>::min();
   std::size_t counter = 0;
   while (p != nullptr) {
     ASSERT_LT(last, p->value);
@@ -108,12 +109,12 @@ TEST_F(CNTest, SortedBuckets) {
 TEST_F(CNTest, GarbageCollectSomeInBucket) {
   EXPECT_EQ(ut.garbageCollect(), 0);
 
-  const fp num = 0.25;
-  const auto lookup = cn.lookup(num, 0.0);
-  ASSERT_NE(lookup.r, nullptr);
-  ASSERT_NE(lookup.i, nullptr);
+  constexpr auto num = 0.25;
+  const auto [r, i] = cn.lookup(num, 0.0);
+  ASSERT_NE(r, nullptr);
+  ASSERT_NE(i, nullptr);
 
-  const fp num2 = num + 2. * RealNumber::eps;
+  const fp num2 = num + (2. * RealNumber::eps);
   const auto lookup2 = cn.lookup(num2, 0.0);
   ASSERT_NE(lookup2.r, nullptr);
   ASSERT_NE(lookup2.i, nullptr);
@@ -160,7 +161,7 @@ TEST_F(CNTest, LookupInNeighbouringBuckets) {
   EXPECT_EQ(hashBucketBorder, nbucket / 4);
 
   // insert a number slightly away from the border
-  const fp numAbove = numBucketBorder + 2 * RealNumber::eps;
+  const fp numAbove = numBucketBorder + (2 * RealNumber::eps);
   const auto lookupAbove = cn.lookup(numAbove, 0.0);
   ASSERT_NE(lookupAbove.r, nullptr);
   ASSERT_NE(lookupAbove.i, nullptr);
@@ -168,7 +169,7 @@ TEST_F(CNTest, LookupInNeighbouringBuckets) {
   EXPECT_EQ(key, nbucket / 4);
 
   // insert a number barely in the bucket below
-  const fp numBarelyBelow = numBucketBorder - RealNumber::eps / 10;
+  const fp numBarelyBelow = numBucketBorder - (RealNumber::eps / 10);
   const auto lookupBarelyBelow = cn.lookup(numBarelyBelow, 0.0);
   ASSERT_NE(lookupBarelyBelow.r, nullptr);
   ASSERT_NE(lookupBarelyBelow.i, nullptr);
@@ -178,11 +179,11 @@ TEST_F(CNTest, LookupInNeighbouringBuckets) {
             << numBarelyBelow << "\n";
   std::clog << "preHash(numBarelyBelow) = " << preHash(numBarelyBelow) << "\n";
   std::clog << "hashBarelyBelow         = " << hashBarelyBelow << "\n";
-  EXPECT_EQ(hashBarelyBelow, nbucket / 4 - 1);
+  EXPECT_EQ(hashBarelyBelow, (nbucket / 4) - 1);
 
   // insert another number in the bucket below a bit farther away from the
   // border
-  const fp numBelow = numBucketBorder - 2 * RealNumber::eps;
+  const fp numBelow = numBucketBorder - (2 * RealNumber::eps);
   const auto lookupBelow = cn.lookup(numBelow, 0.0);
   ASSERT_NE(lookupBelow.r, nullptr);
   ASSERT_NE(lookupBelow.i, nullptr);
@@ -192,7 +193,7 @@ TEST_F(CNTest, LookupInNeighbouringBuckets) {
             << numBelow << "\n";
   std::clog << "preHash(numBelow) = " << preHash(numBelow) << "\n";
   std::clog << "hashBelow         = " << hashBelow << "\n";
-  EXPECT_EQ(hashBelow, nbucket / 4 - 1);
+  EXPECT_EQ(hashBelow, (nbucket / 4) - 1);
 
   // insert border number that is too far away from the number in the bucket,
   // but is close enough to a number in the bucket below
@@ -204,7 +205,7 @@ TEST_F(CNTest, LookupInNeighbouringBuckets) {
 
   // insert a number in the higher bucket
   const fp numNextBorder = numBucketBorder +
-                           1.0 / static_cast<double>(nbucket - 1) +
+                           (1.0 / static_cast<double>(nbucket - 1)) +
                            RealNumber::eps;
   const auto lookupNextBorder = cn.lookup(numNextBorder, 0.0);
   ASSERT_NE(lookupNextBorder.r, nullptr);
@@ -215,11 +216,11 @@ TEST_F(CNTest, LookupInNeighbouringBuckets) {
             << numNextBorder << "\n";
   std::clog << "preHash(numNextBorder) = " << preHash(numNextBorder) << "\n";
   std::clog << "hashNextBorder         = " << hashNextBorder << "\n";
-  EXPECT_EQ(hashNextBorder, nbucket / 4 + 1);
+  EXPECT_EQ(hashNextBorder, (nbucket / 4) + 1);
 
   // search for a number in the lower bucket that is ultimately close enough to
   // a number in the upper bucket
-  const fp num6 = numNextBorder - RealNumber::eps / 10;
+  const fp num6 = numNextBorder - (RealNumber::eps / 10);
   const auto d = cn.lookup(num6, 0.0);
   const auto key6 = RealNumberUniqueTable::hash(num6 + RealNumber::eps);
   EXPECT_EQ(hashNextBorder, key6);
@@ -245,12 +246,12 @@ TEST_F(CNTest, NumberPrintingToString) {
   auto imagStrFormatted = imag.toString(true);
   EXPECT_STREQ(imagStrFormatted.c_str(), "+i");
 
-  auto superposition = cn.lookup(dd::SQRT2_2, dd::SQRT2_2);
+  auto superposition = cn.lookup(SQRT2_2, SQRT2_2);
   auto superpositionStr = superposition.toString(false, 3);
   EXPECT_STREQ(superpositionStr.c_str(), "0.707+0.707i");
   auto superpositionStrFormatted = superposition.toString(true, 3);
   EXPECT_STREQ(superpositionStrFormatted.c_str(), "1/√2(1+i)");
-  auto negSuperposition = cn.lookup(dd::SQRT2_2, -dd::SQRT2_2);
+  auto negSuperposition = cn.lookup(SQRT2_2, -SQRT2_2);
   auto negSuperpositionStrFormatted = negSuperposition.toString(true, 3);
   EXPECT_STREQ(negSuperpositionStrFormatted.c_str(), "1/√2(1-i)");
 }
@@ -318,45 +319,45 @@ TEST(DDComplexTest, NumberPrintingFormattedFractions) {
 TEST(DDComplexTest, NumberPrintingFormattedFractionsSqrt) {
   std::stringstream ss{};
 
-  ComplexValue::printFormatted(ss, 0.25 * dd::SQRT2_2, false);
+  ComplexValue::printFormatted(ss, 0.25 * SQRT2_2, false);
   EXPECT_STREQ(ss.str().c_str(), "1/(4√2)");
   ss.str("");
-  ComplexValue::printFormatted(ss, 0.25 * dd::SQRT2_2, true);
+  ComplexValue::printFormatted(ss, 0.25 * SQRT2_2, true);
   EXPECT_STREQ(ss.str().c_str(), "+i/(4√2)");
   ss.str("");
 
-  ComplexValue::printFormatted(ss, 0.5 * dd::SQRT2_2, false);
+  ComplexValue::printFormatted(ss, 0.5 * SQRT2_2, false);
   EXPECT_STREQ(ss.str().c_str(), "1/(2√2)");
   ss.str("");
-  ComplexValue::printFormatted(ss, 0.5 * dd::SQRT2_2, true);
+  ComplexValue::printFormatted(ss, 0.5 * SQRT2_2, true);
   EXPECT_STREQ(ss.str().c_str(), "+i/(2√2)");
   ss.str("");
 
-  ComplexValue::printFormatted(ss, 0.75 * dd::SQRT2_2, false);
+  ComplexValue::printFormatted(ss, 0.75 * SQRT2_2, false);
   EXPECT_STREQ(ss.str().c_str(), "3/(4√2)");
   ss.str("");
-  ComplexValue::printFormatted(ss, 0.75 * dd::SQRT2_2, true);
+  ComplexValue::printFormatted(ss, 0.75 * SQRT2_2, true);
   EXPECT_STREQ(ss.str().c_str(), "+3i/(4√2)");
   ss.str("");
 
-  ComplexValue::printFormatted(ss, dd::SQRT2_2, false);
+  ComplexValue::printFormatted(ss, SQRT2_2, false);
   EXPECT_STREQ(ss.str().c_str(), "1/√2");
   ss.str("");
-  ComplexValue::printFormatted(ss, dd::SQRT2_2, true);
+  ComplexValue::printFormatted(ss, SQRT2_2, true);
   EXPECT_STREQ(ss.str().c_str(), "+i/√2");
   ss.str("");
 
-  ComplexValue::printFormatted(ss, 1.5 * dd::SQRT2_2, false);
+  ComplexValue::printFormatted(ss, 1.5 * SQRT2_2, false);
   EXPECT_STREQ(ss.str().c_str(), "3/(2√2)");
   ss.str("");
-  ComplexValue::printFormatted(ss, 1.5 * dd::SQRT2_2, true);
+  ComplexValue::printFormatted(ss, 1.5 * SQRT2_2, true);
   EXPECT_STREQ(ss.str().c_str(), "+3i/(2√2)");
   ss.str("");
 
-  ComplexValue::printFormatted(ss, 2 * dd::SQRT2_2, false);
+  ComplexValue::printFormatted(ss, 2 * SQRT2_2, false);
   EXPECT_STREQ(ss.str().c_str(), "2/√2");
   ss.str("");
-  ComplexValue::printFormatted(ss, 2 * dd::SQRT2_2, true);
+  ComplexValue::printFormatted(ss, 2 * SQRT2_2, true);
   EXPECT_STREQ(ss.str().c_str(), "+2i/√2");
   ss.str("");
 }
@@ -364,45 +365,45 @@ TEST(DDComplexTest, NumberPrintingFormattedFractionsSqrt) {
 TEST(DDComplexTest, NumberPrintingFormattedFractionsPi) {
   std::stringstream ss{};
 
-  ComplexValue::printFormatted(ss, 0.25 * dd::PI, false);
+  ComplexValue::printFormatted(ss, 0.25 * PI, false);
   EXPECT_STREQ(ss.str().c_str(), "π/4");
   ss.str("");
-  ComplexValue::printFormatted(ss, 0.25 * dd::PI, true);
+  ComplexValue::printFormatted(ss, 0.25 * PI, true);
   EXPECT_STREQ(ss.str().c_str(), "+πi/4");
   ss.str("");
 
-  ComplexValue::printFormatted(ss, 0.5 * dd::PI, false);
+  ComplexValue::printFormatted(ss, 0.5 * PI, false);
   EXPECT_STREQ(ss.str().c_str(), "π/2");
   ss.str("");
-  ComplexValue::printFormatted(ss, 0.5 * dd::PI, true);
+  ComplexValue::printFormatted(ss, 0.5 * PI, true);
   EXPECT_STREQ(ss.str().c_str(), "+πi/2");
   ss.str("");
 
-  ComplexValue::printFormatted(ss, 0.75 * dd::PI, false);
+  ComplexValue::printFormatted(ss, 0.75 * PI, false);
   EXPECT_STREQ(ss.str().c_str(), "3π/4");
   ss.str("");
-  ComplexValue::printFormatted(ss, 0.75 * dd::PI, true);
+  ComplexValue::printFormatted(ss, 0.75 * PI, true);
   EXPECT_STREQ(ss.str().c_str(), "+3πi/4");
   ss.str("");
 
-  ComplexValue::printFormatted(ss, dd::PI, false);
+  ComplexValue::printFormatted(ss, PI, false);
   EXPECT_STREQ(ss.str().c_str(), "π");
   ss.str("");
-  ComplexValue::printFormatted(ss, dd::PI, true);
+  ComplexValue::printFormatted(ss, PI, true);
   EXPECT_STREQ(ss.str().c_str(), "+πi");
   ss.str("");
 
-  ComplexValue::printFormatted(ss, 1.5 * dd::PI, false);
+  ComplexValue::printFormatted(ss, 1.5 * PI, false);
   EXPECT_STREQ(ss.str().c_str(), "3π/2");
   ss.str("");
-  ComplexValue::printFormatted(ss, 1.5 * dd::PI, true);
+  ComplexValue::printFormatted(ss, 1.5 * PI, true);
   EXPECT_STREQ(ss.str().c_str(), "+3πi/2");
   ss.str("");
 
-  ComplexValue::printFormatted(ss, 2 * dd::PI, false);
+  ComplexValue::printFormatted(ss, 2 * PI, false);
   EXPECT_STREQ(ss.str().c_str(), "2π");
   ss.str("");
-  ComplexValue::printFormatted(ss, 2 * dd::PI, true);
+  ComplexValue::printFormatted(ss, 2 * PI, true);
   EXPECT_STREQ(ss.str().c_str(), "+2πi");
   ss.str("");
 }
@@ -418,8 +419,8 @@ TEST(DDComplexTest, NumberPrintingFormattedFloating) {
 }
 
 TEST_F(CNTest, MaxRefCountReached) {
-  auto c = cn.lookup(SQRT2_2 / 2, SQRT2_2 / 2);
-  const auto max = std::numeric_limits<RefCount>::max();
+  const auto c = cn.lookup(SQRT2_2 / 2, SQRT2_2 / 2);
+  constexpr auto max = std::numeric_limits<RefCount>::max();
   c.r->ref = max - 1;
   cn.incRef(c);
   cn.incRef(c);
@@ -432,7 +433,7 @@ TEST_F(CNTest, MaxRefCountReached) {
 
 TEST_F(CNTest, ComplexTableAllocation) {
   auto mem = MemoryManager::create<RealNumber>();
-  auto allocs = mem.getStats().numAllocated;
+  const auto allocs = mem.getStats().numAllocated;
   std::cout << allocs << "\n";
   std::vector<RealNumber*> nums{allocs};
   // get all the numbers that are pre-allocated
@@ -464,52 +465,52 @@ TEST_F(CNTest, ComplexTableAllocation) {
 
 TEST_F(CNTest, DoubleHitInFindOrInsert) {
   // insert a number somewhere in a bucket
-  const fp num1 = 0.5;
-  auto* tnum1 = ut.lookup(num1);
+  constexpr fp num1 = 0.5;
+  const auto* tnum1 = ut.lookup(num1);
   EXPECT_EQ(tnum1->value, num1);
 
   // insert a second number that is farther away than the tolerance, but closer
   // than twice the tolerance
-  const fp num2 = num1 + 2.1 * dd::RealNumber::eps;
-  auto* tnum2 = ut.lookup(num2);
+  const fp num2 = num1 + (2.1 * RealNumber::eps);
+  const auto* tnum2 = ut.lookup(num2);
   EXPECT_EQ(tnum2->value, num2);
 
   // insert a third number that is close to both previously inserted numbers,
   // but closer to the second
-  const fp num3 = num1 + 2.2 * dd::RealNumber::eps;
-  auto* tnum3 = ut.lookup(num3);
+  const fp num3 = num1 + (2.2 * RealNumber::eps);
+  const auto* tnum3 = ut.lookup(num3);
   EXPECT_EQ(tnum3->value, num2);
 }
 
 TEST_F(CNTest, DoubleHitAcrossBuckets) {
-  std::cout << std::setprecision(std::numeric_limits<dd::fp>::max_digits10);
+  std::cout << std::setprecision(std::numeric_limits<fp>::max_digits10);
 
   // insert a number at a lower bucket border
-  const fp num1 = 8191.5 / (static_cast<dd::fp>(ut.getTable().size()) - 1);
-  auto* tnum1 = ut.lookup(num1);
+  const fp num1 = 8191.5 / (static_cast<fp>(ut.getTable().size()) - 1);
+  const auto* tnum1 = ut.lookup(num1);
   EXPECT_EQ(tnum1->value, num1);
 
   // insert a second number that is farther away than the tolerance towards the
   // lower bucket, but closer than twice the tolerance
-  const fp num2 = num1 - 1.5 * dd::RealNumber::eps;
-  auto* tnum2 = ut.lookup(num2);
+  const fp num2 = num1 - (1.5 * RealNumber::eps);
+  const auto* tnum2 = ut.lookup(num2);
   EXPECT_EQ(tnum2->value, num2);
 
   // insert a third number that is close to both previously inserted numbers,
   // but closer to the second
-  const fp num3 = num1 - 0.9 * dd::RealNumber::eps;
-  auto* tnum3 = ut.lookup(num3);
+  const fp num3 = num1 - (0.9 * RealNumber::eps);
+  const auto* tnum3 = ut.lookup(num3);
   EXPECT_EQ(tnum3->value, num2);
 
   // insert a third number that is close to both previously inserted numbers,
   // but closer to the first
-  const fp num4 = num1 - 0.6 * dd::RealNumber::eps;
-  auto* tnum4 = ut.lookup(num4);
+  const fp num4 = num1 - (0.6 * RealNumber::eps);
+  const auto* tnum4 = ut.lookup(num4);
   EXPECT_EQ(tnum4->value, num1);
 }
 
 TEST_F(CNTest, complexRefCount) {
-  auto value = cn.lookup(0.2, 0.2);
+  const auto value = cn.lookup(0.2, 0.2);
   EXPECT_EQ(value.r->ref, 0);
   EXPECT_EQ(value.i->ref, 0);
   cn.incRef(value);
@@ -518,47 +519,45 @@ TEST_F(CNTest, complexRefCount) {
 }
 
 TEST_F(CNTest, exactlyZeroComparison) {
-  const auto notZero = cn.lookup(0, 2 * dd::RealNumber::eps);
+  const auto notZero = cn.lookup(0, 2 * RealNumber::eps);
   const auto zero = cn.lookup(0, 0);
   EXPECT_TRUE(!notZero.exactlyZero());
   EXPECT_TRUE(zero.exactlyZero());
 }
 
 TEST_F(CNTest, exactlyOneComparison) {
-  const auto notOne = cn.lookup(1 + 2 * dd::RealNumber::eps, 0);
+  const auto notOne = cn.lookup(1 + (2 * RealNumber::eps), 0);
   const auto one = cn.lookup(1, 0);
   EXPECT_TRUE(!notOne.exactlyOne());
   EXPECT_TRUE(one.exactlyOne());
 }
 
 TEST_F(CNTest, ExportConditionalFormat1) {
-  EXPECT_STREQ(dd::conditionalFormat(cn.lookup(1, 0)).c_str(), "1");
+  EXPECT_STREQ(conditionalFormat(cn.lookup(1, 0)).c_str(), "1");
 }
 
 TEST_F(CNTest, ExportConditionalFormat2) {
-  EXPECT_STREQ(dd::conditionalFormat(cn.lookup(0, 1)).c_str(), "i");
+  EXPECT_STREQ(conditionalFormat(cn.lookup(0, 1)).c_str(), "i");
 }
 
 TEST_F(CNTest, ExportConditionalFormat3) {
-  EXPECT_STREQ(dd::conditionalFormat(cn.lookup(-1, 0)).c_str(), "-1");
+  EXPECT_STREQ(conditionalFormat(cn.lookup(-1, 0)).c_str(), "-1");
 }
 
 TEST_F(CNTest, ExportConditionalFormat4) {
-  EXPECT_STREQ(dd::conditionalFormat(cn.lookup(0, -1)).c_str(), "-i");
+  EXPECT_STREQ(conditionalFormat(cn.lookup(0, -1)).c_str(), "-i");
 }
 
 TEST_F(CNTest, ExportConditionalFormat5) {
-  const auto num = cn.lookup(-dd::SQRT2_2, -dd::SQRT2_2);
-  EXPECT_STREQ(dd::conditionalFormat(num).c_str(), "ℯ(-iπ 3/4)");
-  EXPECT_STREQ(dd::conditionalFormat(num, false).c_str(), "-1/√2(1+i)");
+  const auto num = cn.lookup(-SQRT2_2, -SQRT2_2);
+  EXPECT_STREQ(conditionalFormat(num).c_str(), "ℯ(-iπ 3/4)");
+  EXPECT_STREQ(conditionalFormat(num, false).c_str(), "-1/√2(1+i)");
 }
 
 TEST_F(CNTest, ExportConditionalFormat6) {
-  EXPECT_STREQ(dd::conditionalFormat(cn.lookup(-1, -1)).c_str(),
-               "2/√2 ℯ(-iπ 3/4)");
+  EXPECT_STREQ(conditionalFormat(cn.lookup(-1, -1)).c_str(), "2/√2 ℯ(-iπ 3/4)");
 }
 
 TEST_F(CNTest, ExportConditionalFormat7) {
-  EXPECT_STREQ(dd::conditionalFormat(cn.lookup(-dd::SQRT2_2, 0)).c_str(),
-               "-1/√2");
+  EXPECT_STREQ(conditionalFormat(cn.lookup(-SQRT2_2, 0)).c_str(), "-1/√2");
 }

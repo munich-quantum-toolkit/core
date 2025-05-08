@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,13 +8,13 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
 #include "algorithms/QFT.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/Simulation.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
 #include <algorithm>
@@ -32,14 +33,14 @@ protected:
 
   void SetUp() override {
     nqubits = GetParam();
-    dd = std::make_unique<dd::Package<>>(nqubits);
+    dd = std::make_unique<dd::Package>(nqubits);
   }
 
   qc::Qubit nqubits = 0;
-  std::unique_ptr<dd::Package<>> dd;
+  std::unique_ptr<dd::Package> dd;
   qc::QuantumComputation qc;
-  qc::VectorDD sim{};
-  qc::MatrixDD func{};
+  dd::VectorDD sim{};
+  dd::MatrixDD func{};
 };
 
 /// Findings from the QFT Benchmarks:
@@ -207,7 +208,7 @@ TEST_P(QFT, FunctionalityRecursiveEquality) {
   ASSERT_NO_THROW({ func = buildFunctionalityRecursive(qc, *dd); });
 
   // there should be no error building the functionality regularly
-  qc::MatrixDD funcRec{};
+  dd::MatrixDD funcRec{};
   ASSERT_NO_THROW({ funcRec = buildFunctionality(qc, *dd); });
 
   ASSERT_EQ(func, funcRec);

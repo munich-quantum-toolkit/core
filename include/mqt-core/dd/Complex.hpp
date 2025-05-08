@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,9 +10,9 @@
 
 #pragma once
 
-#include "Definitions.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
+#include "ir/Definitions.hpp"
 
 #include <complex>
 #include <cstddef>
@@ -151,8 +152,8 @@ template <> struct std::hash<dd::Complex> {
    * @see dd::combineHash
    */
   std::size_t operator()(dd::Complex const& c) const noexcept {
-    const auto h1 = qc::murmur64(reinterpret_cast<std::size_t>(c.r));
-    const auto h2 = qc::murmur64(reinterpret_cast<std::size_t>(c.i));
+    const auto h1 = dd::murmur64(reinterpret_cast<std::size_t>(c.r));
+    const auto h2 = dd::murmur64(reinterpret_cast<std::size_t>(c.i));
     return qc::combineHash(h1, h2);
   }
 };

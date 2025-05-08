@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,9 +10,10 @@
 
 #pragma once
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <numeric>
 #include <optional>
 #include <ostream>
@@ -24,6 +26,13 @@
 #include <vector>
 
 namespace qc {
+
+/// Pairs do not provide a hash function by default, this is the replacement
+template <class T, class U> struct PairHash {
+  size_t operator()(const std::pair<T, U>& x) const {
+    return combineHash(std::hash<T>{}(x.first), std::hash<U>{}(x.second));
+  }
+};
 
 /**
  * Class representing generic undirected directed graphs.

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,7 +10,7 @@
 
 #include "ir/QuantumComputation.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Register.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
@@ -39,6 +40,7 @@
 #include <random>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -333,17 +335,17 @@ const QuantumRegister&
 QuantumComputation::addQubitRegister(std::size_t nq,
                                      const std::string& regName) {
   if (quantumRegisters.count(regName) != 0) {
-    throw QFRException("[addQubitRegister] Register " + regName +
-                       " already exists");
+    throw std::runtime_error("[addQubitRegister] Register " + regName +
+                             " already exists");
   }
 
   if (nq == 0) {
-    throw QFRException(
+    throw std::runtime_error(
         "[addQubitRegister] New register size must be larger than 0");
   }
 
   if (nancillae != 0) {
-    throw QFRException(
+    throw std::runtime_error(
         "[addQubitRegister] Cannot add qubit register after ancillary "
         "qubits have been added");
   }
@@ -365,11 +367,11 @@ const ClassicalRegister&
 QuantumComputation::addClassicalRegister(std::size_t nc,
                                          const std::string& regName) {
   if (classicalRegisters.count(regName) != 0) {
-    throw QFRException("[addClassicalRegister] Register " + regName +
-                       " already exists");
+    throw std::runtime_error("[addClassicalRegister] Register " + regName +
+                             " already exists");
   }
   if (nc == 0) {
-    throw QFRException(
+    throw std::runtime_error(
         "[addClassicalRegister] New register size must be larger than 0");
   }
 
@@ -384,12 +386,12 @@ const QuantumRegister&
 QuantumComputation::addAncillaryRegister(std::size_t nq,
                                          const std::string& regName) {
   if (ancillaRegisters.count(regName) != 0) {
-    throw QFRException("[addAncillaryRegister] Register " + regName +
-                       " already exists");
+    throw std::runtime_error("[addAncillaryRegister] Register " + regName +
+                             " already exists");
   }
 
   if (nq == 0) {
-    throw QFRException(
+    throw std::runtime_error(
         "[addAncillaryRegister] New register size must be larger than 0");
   }
 
@@ -462,8 +464,9 @@ void QuantumComputation::addAncillaryQubit(
     Qubit physicalQubitIndex, std::optional<Qubit> outputQubitIndex) {
   if (initialLayout.count(physicalQubitIndex) > 0 ||
       outputPermutation.count(physicalQubitIndex) > 0) {
-    throw QFRException("[addAncillaryQubit] Attempting to insert physical "
-                       "qubit that is already assigned");
+    throw std::runtime_error(
+        "[addAncillaryQubit] Attempting to insert physical "
+        "qubit that is already assigned");
   }
 
   addQubitToQubitRegister(ancillaRegisters, physicalQubitIndex, "anc");
@@ -497,12 +500,13 @@ void QuantumComputation::addQubit(const Qubit logicalQubitIndex,
                                   const std::optional<Qubit> outputQubitIndex) {
   if (initialLayout.count(physicalQubitIndex) > 0 ||
       outputPermutation.count(physicalQubitIndex) > 0) {
-    throw QFRException("[addQubit] Attempting to insert physical qubit that is "
-                       "already assigned");
+    throw std::runtime_error(
+        "[addQubit] Attempting to insert physical qubit that is "
+        "already assigned");
   }
 
   if (logicalQubitIndex > nqubits) {
-    throw QFRException(
+    throw std::runtime_error(
         "[addQubit] There are currently only " + std::to_string(nqubits) +
         " qubits in the circuit. Adding " + std::to_string(logicalQubitIndex) +
         " is therefore not possible at the moment.");
@@ -663,11 +667,6 @@ void QuantumComputation::dumpOpenQASM(std::ostream& of, bool openQASM3) const {
     of << "OPENQASM 2.0;\n";
     of << "include \"qelib1.inc\";\n";
   }
-  if (std::any_of(std::begin(ops), std::end(ops), [](const auto& op) {
-        return op->getType() == OpType::Teleportation;
-      })) {
-    of << "opaque teleport src, anc, tgt;\n";
-  }
 
   // combine qregs and ancregs
   auto combinedRegs = quantumRegisters;
@@ -734,7 +733,7 @@ void QuantumComputation::dump(const std::string& filename,
                               const Format format) const {
   auto of = std::ofstream(filename);
   if (!of.good()) {
-    throw QFRException("[dump] Error opening file: " + filename);
+    throw std::runtime_error("[dump] Error opening file: " + filename);
   }
   if (format == Format::OpenQASM3) {
     dumpOpenQASM(of, true);
@@ -807,20 +806,21 @@ QuantumComputation::getQubitRegister(const Qubit physicalQubitIndex) {
     }
   }
 
-  throw QFRException("[getQubitRegister] Qubit index " +
-                     std::to_string(physicalQubitIndex) +
-                     " not found in any register");
+  throw std::runtime_error("[getQubitRegister] Qubit index " +
+                           std::to_string(physicalQubitIndex) +
+                           " not found in any register");
 }
 
-Qubit QuantumComputation::getPhysicalQubitIndex(const Qubit logicalQubitIndex) {
+Qubit QuantumComputation::getPhysicalQubitIndex(
+    const Qubit logicalQubitIndex) const {
   for (const auto& [physical, logical] : initialLayout) {
     if (logical == logicalQubitIndex) {
       return physical;
     }
   }
-  throw QFRException("[getPhysicalQubitIndex] Logical qubit index " +
-                     std::to_string(logicalQubitIndex) +
-                     " not found in initial layout");
+  throw std::runtime_error("[getPhysicalQubitIndex] Logical qubit index " +
+                           std::to_string(logicalQubitIndex) +
+                           " not found in initial layout");
 }
 
 std::ostream&
@@ -945,7 +945,7 @@ void QuantumComputation::appendMeasurementsAccordingToOutputPermutation(
     addClassicalRegister(outputPermutation.size(), registerName);
   } else if (nclassics < outputPermutation.size()) {
     if (classicalRegisters.find(registerName) != classicalRegisters.end()) {
-      throw QFRException(
+      throw std::runtime_error(
           "[appendMeasurementsAccordingToOutputPermutation] Register " +
           registerName + " already exists but is too small");
     }
@@ -961,7 +961,8 @@ void QuantumComputation::appendMeasurementsAccordingToOutputPermutation(
 void QuantumComputation::checkQubitRange(const Qubit qubit) const {
   if (const auto it = initialLayout.find(qubit);
       it == initialLayout.end() || it->second >= getNqubits()) {
-    throw QFRException("Qubit index out of range: " + std::to_string(qubit));
+    throw std::out_of_range("Qubit index out of range: " +
+                            std::to_string(qubit));
   }
 }
 void QuantumComputation::checkQubitRange(const Qubit qubit,
@@ -989,7 +990,7 @@ void QuantumComputation::checkBitRange(const Bit bit) const {
   if (bit >= nclassics) {
     std::stringstream ss{};
     ss << "Classical bit index " << bit << " not found in any register";
-    throw QFRException(ss.str());
+    throw std::runtime_error(ss.str());
   }
 }
 
@@ -1006,7 +1007,7 @@ void QuantumComputation::checkClassicalRegister(
     ss << "Classical register starting at index " << creg.getStartIndex()
        << " with " << creg.getSize() << " bits is too large! The circuit has "
        << nclassics << " classical bits.";
-    throw QFRException(ss.str());
+    throw std::runtime_error(ss.str());
   }
 }
 
@@ -1212,6 +1213,7 @@ void QuantumComputation::reorderOperations() {
   std::move(newOps.begin(), newOps.end(), std::back_inserter(ops));
 }
 
+namespace {
 bool isDynamicCircuit(const std::unique_ptr<Operation>* op,
                       std::vector<bool>& measured) {
   assert(op != nullptr);
@@ -1242,6 +1244,7 @@ bool isDynamicCircuit(const std::unique_ptr<Operation>* op,
       compOp.cbegin(), compOp.cend(),
       [&measured](const auto& g) { return isDynamicCircuit(&g, measured); });
 }
+} // namespace
 
 bool QuantumComputation::isDynamic() const {
   // marks whether a qubit in the DAG has been measured
@@ -1546,7 +1549,7 @@ void QuantumComputation::measureAll(const bool addBits) {
     std::stringstream ss{};
     ss << "The number of classical bits (" << nclassics
        << ") is smaller than the number of qubits (" << getNqubits() << ")!";
-    throw QFRException(ss.str());
+    throw std::runtime_error(ss.str());
   }
 
   barrier();

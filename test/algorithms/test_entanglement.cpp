@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,12 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
 #include "algorithms/GHZState.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "ir/Definitions.hpp"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -25,10 +26,10 @@ protected:
   void TearDown() override {}
   void SetUp() override {
     nq = GetParam();
-    dd = std::make_unique<dd::Package<>>(nq);
+    dd = std::make_unique<dd::Package>(nq);
   }
   qc::Qubit nq{};
-  std::unique_ptr<dd::Package<>> dd;
+  std::unique_ptr<dd::Package> dd;
 };
 
 INSTANTIATE_TEST_SUITE_P(
@@ -58,7 +59,7 @@ TEST_P(Entanglement, GHZRoutineFunctionTest) {
 }
 
 TEST(Entanglement, GHZStateEdgeCasesTest) {
-  auto dd = std::make_unique<dd::Package<>>(3);
+  auto dd = std::make_unique<dd::Package>(3);
 
   EXPECT_EQ(dd->makeGHZState(0),
             dd->makeBasisState(0, {dd::BasisStates::zero}));

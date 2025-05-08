@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,7 +10,7 @@
 
 #pragma once
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "qasm3/InstVisitor.hpp"
 #include "qasm3/NestedEnvironment.hpp"
@@ -92,8 +93,8 @@ private:
 
   bool openQASM2CompatMode{false};
 
-  qc::Permutation initialLayout{};
-  qc::Permutation outputPermutation{};
+  qc::Permutation initialLayout;
+  qc::Permutation outputPermutation;
 
   static std::map<std::string, std::pair<const_eval::ConstEvalValue,
                                          type_checking::InferredType>>

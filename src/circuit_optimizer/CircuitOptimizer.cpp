@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,9 +10,10 @@
 
 #include "circuit_optimizer/CircuitOptimizer.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
+#include "ir/operations/Control.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
@@ -22,29 +24,30 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <ios>
-#include <iostream>
 #include <iterator>
 #include <map>
 #include <memory>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace qc {
+namespace {
 void addToDag(CircuitOptimizer::DAG& dag, std::unique_ptr<Operation>* op) {
   const auto usedQubits = (*op)->getUsedQubits();
   for (const auto q : usedQubits) {
     dag.at(q).push_back(op);
   }
 }
+} // namespace
 
 void CircuitOptimizer::removeIdentities(QuantumComputation& qc) {
   // delete the identities from circuit
-  CircuitOptimizer::removeOperation(qc, {I}, 0);
+  removeOperation(qc, {I}, 0);
 }
 
 void CircuitOptimizer::removeOperation(
@@ -268,6 +271,7 @@ void CircuitOptimizer::singleQubitGateFusion(QuantumComputation& qc) {
   removeIdentities(qc);
 }
 
+namespace {
 bool removeDiagonalGate(CircuitOptimizer::DAG& dag,
                         CircuitOptimizer::DAGReverseIterators& dagIterators,
                         Qubit idx, CircuitOptimizer::DAGReverseIterator& it,
@@ -321,7 +325,7 @@ void removeDiagonalGatesBeforeMeasureRecursive(
       bool onlyDiagonalGates = true;
       auto cit = compOp->rbegin();
       while (cit != compOp->rend()) {
-        auto* cop = (*cit).get();
+        auto* cop = cit->get();
         onlyDiagonalGates = removeDiagonalGate(dag, dagIterators, idx, it, cop);
         if (!onlyDiagonalGates) {
           break;
@@ -353,7 +357,7 @@ void removeDiagonalGatesBeforeMeasureRecursive(
       // non-unitary operation is not diagonal
       it = dag.at(idx).rend();
     } else {
-      throw QFRException("Unexpected operation encountered");
+      throw std::runtime_error("Unexpected operation encountered");
     }
   }
 
@@ -433,6 +437,7 @@ bool removeDiagonalGate(CircuitOptimizer::DAG& dag,
   op->setGate(I);
   return true;
 }
+} // namespace
 
 void CircuitOptimizer::removeDiagonalGatesBeforeMeasure(
     QuantumComputation& qc) {
@@ -456,9 +461,11 @@ void CircuitOptimizer::removeDiagonalGatesBeforeMeasure(
   removeIdentities(qc);
 }
 
+namespace {
 bool removeFinalMeasurement(CircuitOptimizer::DAG& dag,
                             CircuitOptimizer::DAGReverseIterators& dagIterators,
-                            Qubit idx, CircuitOptimizer::DAGReverseIterator& it,
+                            Qubit idx,
+                            const CircuitOptimizer::DAGReverseIterator& it,
                             Operation* op);
 
 void removeFinalMeasurementsRecursive(
@@ -503,7 +510,7 @@ void removeFinalMeasurementsRecursive(
       bool onlyMeasurement = true;
       auto cit = compOp->rbegin();
       while (cit != compOp->rend()) {
-        auto* cop = (*cit).get();
+        auto* cop = cit->get();
         if (cop->getNtargets() > 0 && cop->getTargets()[0] != idx) {
           ++cit;
           continue;
@@ -532,7 +539,8 @@ void removeFinalMeasurementsRecursive(
 
 bool removeFinalMeasurement(CircuitOptimizer::DAG& dag,
                             CircuitOptimizer::DAGReverseIterators& dagIterators,
-                            Qubit idx, CircuitOptimizer::DAGReverseIterator& it,
+                            const Qubit idx,
+                            const CircuitOptimizer::DAGReverseIterator& it,
                             Operation* op) {
   if (op->getNtargets() != 0) {
     // need to check all targets
@@ -566,6 +574,7 @@ bool removeFinalMeasurement(CircuitOptimizer::DAG& dag,
   }
   return false;
 }
+} // namespace
 
 void CircuitOptimizer::removeFinalMeasurements(QuantumComputation& qc) {
   auto dag = constructDAG(qc);
@@ -643,9 +652,7 @@ void CircuitOptimizer::decomposeSWAP(QuantumComputation& qc,
   }
 }
 
-void CircuitOptimizer::decomposeTeleport(
-    [[maybe_unused]] QuantumComputation& qc) {}
-
+namespace {
 void changeTargets(Targets& targets,
                    const std::map<Qubit, Qubit>& replacementMap) {
   for (auto& target : targets) {
@@ -672,6 +679,7 @@ void changeControls(Controls& controls,
     }
   }
 }
+} // namespace
 
 void CircuitOptimizer::eliminateResets(QuantumComputation& qc) {
   //      ┌───┐┌─┐     ┌───┐┌─┐            ┌───┐┌─┐ ░
@@ -763,7 +771,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
       const auto classics = measurement->getClassics();
 
       if (targets.size() != 1 && classics.size() != 1) {
-        throw QFRException(
+        throw std::runtime_error(
             "Deferring measurements with more than 1 target is not yet "
             "supported. Try decomposing your measurements.");
       }
@@ -801,13 +809,13 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
         }
 
         if (operation->getType() == Reset) {
-          throw QFRException(
+          throw std::runtime_error(
               "Reset encountered in deferMeasurements routine. Please use the "
               "eliminateResets method before deferring measurements.");
         }
 
         if (const auto* measurement2 =
-                dynamic_cast<NonUnitaryOperation*>((*opIt).get());
+                dynamic_cast<NonUnitaryOperation*>(opIt->get());
             measurement2 != nullptr && operation->getType() == Measure) {
           const auto& targets2 = measurement2->getTargets();
           const auto& classics2 = measurement2->getClassics();
@@ -832,7 +840,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
               controlRegister.has_value()) {
             assert(!classicOp->getControlBit().has_value());
             if (controlRegister->getSize() != 1) {
-              throw QFRException(
+              throw std::runtime_error(
                   "Classic-controlled operations targeted at more than one bit "
                   "are currently not supported. Try decomposing the operation "
                   "into individual contributions.");
@@ -862,7 +870,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
             ss << "Underlying operation of classic-controlled operation is "
                   "not a StandardOperation.\n";
             classicOp->print(ss, qc.getNqubits());
-            throw QFRException(ss.str());
+            throw std::runtime_error(ss.str());
           }
 
           // get all the necessary information for reconstructing the
@@ -871,7 +879,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
           const auto targs = standardOp->getTargets();
           for (const auto& target : targs) {
             if (target == measurementQubit) {
-              throw QFRException(
+              throw std::runtime_error(
                   "Implicit reset operation in circuit detected. Measuring a "
                   "qubit and then targeting the same qubit with a "
                   "classic-controlled operation is not allowed at the "
@@ -935,27 +943,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
   qc.initializeIOMapping();
 }
 
-void CircuitOptimizer::printDAG(const DAG& dag) {
-  for (const auto& qubitDag : dag) {
-    std::cout << " - ";
-    for (const auto& op : qubitDag) {
-      std::cout << std::hex << (*op).get() << std::dec << "("
-                << toString((*op)->getType()) << ") - ";
-    }
-    std::cout << "\n";
-  }
-}
-void CircuitOptimizer::printDAG(const DAG& dag, const DAGIterators& iterators) {
-  for (std::size_t i = 0; i < dag.size(); ++i) {
-    std::cout << " - ";
-    for (auto it = iterators.at(i); it != dag.at(i).end(); ++it) {
-      std::cout << std::hex << (**it).get() << std::dec << "("
-                << toString((**it)->getType()) << ") - ";
-    }
-    std::cout << "\n";
-  }
-}
-
+namespace {
 using Iterator = QuantumComputation::iterator;
 void flattenCompoundOperation(QuantumComputation& qc, Iterator& it) {
   assert((*it)->isCompoundOperation());
@@ -982,6 +970,7 @@ void flattenCompoundOperation(QuantumComputation& qc, Iterator& it) {
   // move the general iterator back to the position of the last moved operation
   std::advance(it, -movedOperations);
 }
+} // namespace
 
 void CircuitOptimizer::flattenOperations(QuantumComputation& qc,
                                          bool customGatesOnly) {
@@ -1161,6 +1150,7 @@ void CircuitOptimizer::cancelCNOTs(QuantumComputation& qc) {
   removeIdentities(qc);
 }
 
+namespace {
 void replaceMCXWithMCZ(
     Iterator begin, const std::function<Iterator()>& end,
     const std::function<Iterator(Iterator, std::unique_ptr<Operation>&&)>&
@@ -1195,6 +1185,7 @@ void replaceMCXWithMCZ(
     }
   }
 }
+} // namespace
 
 void CircuitOptimizer::replaceMCXWithMCZ(QuantumComputation& qc) {
   ::qc::replaceMCXWithMCZ(
@@ -1205,6 +1196,7 @@ void CircuitOptimizer::replaceMCXWithMCZ(QuantumComputation& qc) {
       [&qc](auto it) { return qc.erase(it); });
 }
 
+namespace {
 using ConstReverseIterator = QuantumComputation::const_reverse_iterator;
 void backpropagateOutputPermutation(
     const ConstReverseIterator& rbegin, const ConstReverseIterator& rend,
@@ -1273,6 +1265,7 @@ void backpropagateOutputPermutation(
     }
   }
 }
+} // namespace
 
 void CircuitOptimizer::backpropagateOutputPermutation(QuantumComputation& qc) {
   auto permutation = qc.outputPermutation;
@@ -1579,6 +1572,7 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
   removeIdentities(qc);
 }
 
+namespace {
 void elidePermutations(Iterator begin, const std::function<Iterator()>& end,
                        const std::function<Iterator(Iterator)>& erase,
                        Permutation& permutation) {
@@ -1618,6 +1612,7 @@ void elidePermutations(Iterator begin, const std::function<Iterator()>& end,
     ++it;
   }
 }
+} // namespace
 
 void CircuitOptimizer::elidePermutations(QuantumComputation& qc) {
   if (qc.empty()) {

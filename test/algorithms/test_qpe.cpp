@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,13 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
 #include "algorithms/QPE.hpp"
 #include "circuit_optimizer/CircuitOptimizer.hpp"
-#include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
 #include <bitset>
@@ -129,13 +129,13 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST_P(QPE, QPETest) {
-  auto dd = std::make_unique<dd::Package<>>(precision + 1);
+  auto dd = std::make_unique<dd::Package>(precision + 1);
   auto qc = qc::createQPE(lambda, precision);
   qc.printStatistics(std::cout);
   ASSERT_EQ(qc.getNqubits(), precision + 1);
   ASSERT_NO_THROW({ qc::CircuitOptimizer::removeFinalMeasurements(qc); });
 
-  qc::VectorDD e{};
+  dd::VectorDD e{};
   ASSERT_NO_THROW(
       { e = dd::simulate(qc, dd->makeZeroState(qc.getNqubits()), *dd); });
 
@@ -165,7 +165,7 @@ TEST_P(QPE, QPETest) {
 }
 
 TEST_P(QPE, IQPETest) {
-  auto dd = std::make_unique<dd::Package<>>(precision + 1);
+  auto dd = std::make_unique<dd::Package>(precision + 1);
   auto qc = qc::createIterativeQPE(lambda, precision);
   ASSERT_EQ(qc.getNqubits(), 2U);
 
@@ -210,7 +210,7 @@ TEST_P(QPE, IQPETest) {
 }
 
 TEST_P(QPE, DynamicEquivalenceSimulation) {
-  auto dd = std::make_unique<dd::Package<>>(precision + 1);
+  auto dd = std::make_unique<dd::Package>(precision + 1);
 
   // create standard QPE circuit
   auto qpe = qc::createQPE(lambda, precision);
@@ -243,7 +243,7 @@ TEST_P(QPE, DynamicEquivalenceSimulation) {
 }
 
 TEST_P(QPE, DynamicEquivalenceFunctionality) {
-  auto dd = std::make_unique<dd::Package<>>(precision + 1);
+  auto dd = std::make_unique<dd::Package>(precision + 1);
 
   // create standard QPE circuit
   auto qpe = qc::createQPE(lambda, precision);
@@ -270,79 +270,4 @@ TEST_P(QPE, DynamicEquivalenceFunctionality) {
   auto f = dd::buildFunctionality(iqpe, *dd);
 
   EXPECT_EQ(e, f);
-}
-
-namespace {
-void printBin(const std::size_t n, std::stringstream& ss) {
-  if (n > 1) {
-    printBin(n / 2, ss);
-  }
-  ss << n % 2;
-}
-} // namespace
-
-TEST_P(QPE, ProbabilityExtraction) {
-  auto dd = std::make_unique<dd::Package<>>(precision + 1);
-
-  // create standard QPE circuit
-  auto iqpe = qc::createIterativeQPE(lambda, precision);
-
-  dd::SparsePVec probs{};
-  dd::extractProbabilityVector(iqpe, dd->makeZeroState(iqpe.getNqubits()),
-                               probs, *dd);
-
-  for (const auto& [state, prob] : probs) {
-    std::stringstream ss{};
-    printBin(state, ss);
-    std::cout << ss.str() << ": " << prob << "\n";
-  }
-
-  if (exactlyRepresentable) {
-    EXPECT_NEAR(probs.at(expectedResult), 1.0, 1e-6);
-  } else {
-    constexpr auto threshold = 4. / (qc::PI * qc::PI);
-    EXPECT_NEAR(probs.at(expectedResult), threshold, 0.02);
-    EXPECT_NEAR(probs.at(secondExpectedResult), threshold, 0.02);
-  }
-}
-
-TEST_P(QPE, DynamicEquivalenceSimulationProbabilityExtraction) {
-  auto dd = std::make_unique<dd::Package<>>(precision + 1);
-
-  // create standard QPE circuit
-  auto qpe = qc::createQPE(lambda, precision);
-
-  // remove final measurements to obtain statevector
-  qc::CircuitOptimizer::removeFinalMeasurements(qpe);
-
-  // simulate circuit
-  auto e = dd::simulate(qpe, dd->makeZeroState(qpe.getNqubits()), *dd);
-  const auto vec = e.getVector();
-  std::cout << "QPE:\n";
-  for (const auto& amp : vec) {
-    std::cout << std::norm(amp) << "\n";
-  }
-
-  // create standard IQPE circuit
-  auto iqpe = qc::createIterativeQPE(lambda, precision);
-
-  // extract measurement probabilities from IQPE simulations
-  dd::SparsePVec probs{};
-  dd::extractProbabilityVector(iqpe, dd->makeZeroState(iqpe.getNqubits()),
-                               probs, *dd);
-
-  std::cout << "IQPE:\n";
-  for (const auto& [state, prob] : probs) {
-    std::stringstream ss{};
-    printBin(state, ss);
-    std::cout << ss.str() << ": " << prob << "\n";
-  }
-
-  // calculate fidelity between both results
-  const auto fidelity = dd::Package<>::fidelityOfMeasurementOutcomes(
-      e, probs, qpe.outputPermutation);
-  std::cout << "Fidelity of both circuits' measurement outcomes: " << fidelity
-            << "\n";
-
-  EXPECT_NEAR(fidelity, 1.0, 1e-4);
 }

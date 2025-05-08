@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -27,6 +28,10 @@ set_property(GLOBAL PROPERTY CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS
     ON
     CACHE BOOL "Export compile commands" FORCE)
+
+set(CMAKE_VERIFY_INTERFACE_HEADER_SETS
+    ON
+    CACHE BOOL "Verify interface header sets" FORCE)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
   add_compile_options(-fcolor-diagnostics)

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,14 +8,15 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
 #include "circuit_optimizer/CircuitOptimizer.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 
 #include <gtest/gtest.h>
 #include <iostream>
+#include <stdexcept>
 
 namespace qc {
 TEST(DeferMeasurements, basicTest) {
@@ -412,7 +414,7 @@ TEST(DeferMeasurements, errorOnImplicitReset) {
 
   EXPECT_TRUE(qc.isDynamic());
 
-  EXPECT_THROW(CircuitOptimizer::deferMeasurements(qc), qc::QFRException);
+  EXPECT_THROW(CircuitOptimizer::deferMeasurements(qc), std::runtime_error);
 }
 
 TEST(DeferMeasurements, errorOnMultiQubitRegister) {
@@ -441,7 +443,7 @@ TEST(DeferMeasurements, errorOnMultiQubitRegister) {
 
   EXPECT_TRUE(qc.isDynamic());
 
-  EXPECT_THROW(CircuitOptimizer::deferMeasurements(qc), qc::QFRException);
+  EXPECT_THROW(CircuitOptimizer::deferMeasurements(qc), std::runtime_error);
 }
 
 TEST(DeferMeasurements, preserveOutputPermutationWithoutMeasurements) {
