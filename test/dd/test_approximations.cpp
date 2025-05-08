@@ -223,6 +223,7 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   auto ref = simulate(qcRef, dd->makeZeroState(nq), *dd);
 
   const CVec expected{{0}, {1 / std::sqrt(2)}, {0}, {1 / std::sqrt(2)}};
+  state.printVector();
   vecNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 3);
   EXPECT_NEAR(fidelityToSource, 0.933, 1e-3);
@@ -273,4 +274,50 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   vecNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 4);
   EXPECT_NEAR(fidelityToSource, 0.75, 1e-3);
+}
+
+TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
+
+  // Test: Remove multiple edges.
+  // |state⟩ = 0+0.131j|000⟩ + 0-0.190j|100⟩ + 0+0.329j|101⟩ + 0+0.458j|110⟩
+  //           + 0-0.793j|111⟩
+  //
+  // Eliminate |000⟩ and |1x0⟩ with contributions ~0.017 and ~0.144.
+  //     → |approx⟩ = 0-0.5j|110⟩ + 0+0.87j|111⟩
+  //
+  //               i│                           i│
+  //              ┌─┴─┐                        ┌─┴─┐
+  //          ┌───│ q2│───┐                  ┌─│ q2│─┐
+  //      -.13│   └───┘   │.99               0 └───┘ |1
+  //        ┌─┴─┐       ┌─┴─┐    -(approx)→        ┌─┴─┐
+  //      ┌─│ q1│─┐   ┌─│ q1│─┐                  ┌─│ q1│─┐
+  //      | └───┘ 0   | └───┘ |                  0 └───┘ |1
+  //      |1      -.38└───┬───┘.9                    ┌───┘
+  //    ┌─┴─┐           ┌─┴─┐                      ┌─┴─┐
+  //  ┌─│ q0│─┐       ┌─│ q0│─┐                  ┌─│ q0│─┐
+  // 1| └───┘ 0   -1/2| └───┘ |.87           -1/2| └───┘ |.87
+  //  □               □       □                  □       □
+  //
+
+  constexpr std::size_t nq = 3;
+  constexpr double fidelity = 1 - 0.17;
+
+  auto dd = std::make_unique<dd::Package>(nq);
+
+  qc::QuantumComputation qc(nq);
+  qc.rx(qc::PI, 0);
+  qc.ry(qc::PI / 12, 0);
+  qc.cx(0, 1);
+  qc.cx(1, 2);
+  qc.cry(qc::PI / 3, 2, 0);
+  qc.cry(qc::PI / 4, 2, 1);
+
+  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto fidelityToSource = approximate(state, fidelity, *dd);
+
+  const CVec expected{{0}, {0},           {0},       {0},
+                      {0}, {0, 0.337652}, {0, -0.5}, {0, 0.866025}};
+  vecNear(state.getVector(), expected);
+  EXPECT_EQ(state.size(), 4);
+  EXPECT_NEAR(fidelityToSource, 0.8390109, 1e-3);
 }
