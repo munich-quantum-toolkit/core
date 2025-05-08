@@ -7,8 +7,8 @@
 // Licensed under the MIT License
 
 // RUN: quantum-opt %s \
-// RUN: --load-pass-plugin=/Users/patrickhopf/Code/mqt/mqt-core/mqt_plugin_wheel/mqt_plugin/MQTPlugin.dylib \
-// RUN: --load-dialect-plugin=/Users/patrickhopf/Code/mqt/mqt-core/mqt_plugin_wheel/mqt_plugin/MQTPlugin.dylib \
+// RUN: --load-pass-plugin=/Users/patrickhopf/Code/mqt/mqt-core/mqt_plugin_wheel/mqt_plugin/mqt-catalyst-plugin.dylib \
+// RUN: --load-dialect-plugin=/Users/patrickhopf/Code/mqt/mqt-core/mqt_plugin_wheel/mqt_plugin/mqt-catalyst-plugin.dylib \
 // RUN: --pass-pipeline='builtin.module(mqt-core-round-trip)' | FileCheck %s
 
 // CHECK-LABEL: func @bar()

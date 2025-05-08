@@ -7,4 +7,6 @@
 # Licensed under the MIT License
 
 add_subdirectory(quantum-opt)
-add_subdirectory(mqt-plugin)
+if(BUILD_MQT_CORE_CATALYST_PLUGIN)
+  add_subdirectory(catalyst-plugin)
+endif()
