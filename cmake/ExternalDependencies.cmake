@@ -86,10 +86,5 @@ if(ENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN)
 
   # TODO: once the Catalyst Python package provides the necessary files set(Catalyst_DIR
   # "${Python_Catalyst_DIR}/mlir/build/lib/cmake/catalyst")
-  if(Catalyst_DIR)
-    list(APPEND CMAKE_PREFIX_PATH "${Catalyst_DIR}")
-    find_package(Catalyst REQUIRED)
-  else()
-    message(STATUS "Could not detect Catalyst CMake directory")
-  endif()
+  find_package(Catalyst REQUIRED)
 endif()

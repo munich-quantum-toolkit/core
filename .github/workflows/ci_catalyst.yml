@@ -38,7 +38,7 @@ jobs:
         uses: Chocobo1/setup-ccache-action@v1
         with:
           prepend_symlinks_to_path: false
-          override_cache_key: c++-tests-mlir
+          override_cache_key: c++-tests-mlir-catalyst
 
       # set up mold as linker for faster C++ builds
       - name: Set up mold as linker
@@ -91,7 +91,7 @@ jobs:
       # build MLIRQuantum
       - name: Build MLIRQuantum dialect
         run: |
-          ninja -C catalyst/mlir/build MLIRQuantum
+          cmake --build catalyst/mlir/build --target MLIRQuantum
 
       - name: Check Catalyst CMake config
         run: test -f catalyst/mlir/build/lib/cmake/catalyst/CatalystConfig.cmake
