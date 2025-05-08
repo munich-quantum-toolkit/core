@@ -17,101 +17,89 @@
 #include "dd/Package.hpp"
 
 #include <array>
-#include <cstddef>
+#include <forward_list>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 namespace dd {
 namespace {
-using Layer = std::unordered_map<vEdge*, double>;
-
-/**
- * @brief Given the l-th layer, compute the contributions for the (l-1)-th
- * layer.
- * @return The (l-1)-th layer.
- */
-Layer computeLayer(const Layer& l) {
-  Layer lNext;
-  for (const auto& [edge, contribution] : l) {
-    if (edge->isTerminal()) {
-      continue;
-    }
-
-    for (std::size_t i = 0; i < RADIX; ++i) {
-      vEdge* eChild = &edge->p->e[i];
-      if (eChild->w.exactlyZero()) {
-        continue;
-      }
-
-      lNext[eChild] += contribution * ComplexNumbers::mag2(eChild->w);
-    }
+vEdge rebuild(const vEdge& curr,
+              std::unordered_map<const vEdge*, bool>& removables, Package& dd) {
+  if (removables.find(&curr) == removables.end()) {
+    return curr;
   }
 
-  return lNext;
+  if (removables[&curr]) {
+    return vEdge::zero();
+  }
+
+  std::array<vEdge, RADIX> edges{
+      rebuild(curr.p->e[0], removables, dd),
+      rebuild(curr.p->e[1], removables, dd),
+  };
+
+  vEdge e = dd.makeDDNode(curr.p->v, edges);
+  e.w = curr.w;
+
+  return e;
 }
 }; // namespace
 
 double approximate(VectorDD& state, const double fidelity, Package& dd) {
-  Layer curr{{&state, 1.}};
+  using Path = std::forward_list<const vEdge*>;
+  using Paths = std::forward_list<Path>;
+  using Queue = std::unordered_map<const vEdge*, std::pair<double, Paths>>;
+
+  std::unordered_map<const vEdge*, bool> removables{};
 
   double budget = 1 - fidelity;
-  while (!curr.empty() && budget > 0) {
-    Layer candidates = computeLayer(curr);
 
-    std::unordered_set<vEdge*> m{};
-    for (const auto& [edge, contribution] : candidates) {
+  Queue l{{&state, {1., {{}}}}};
+  while (!l.empty() && budget > 0) {
+    Queue lNext{};
+
+    for (const auto& [edge, pair] : l) {
+      const auto [contribution, paths] = pair;
+
       if (contribution <= budget) {
+        for (const auto& path : paths) {
+          for (const auto& e : path) {
+            removables[e] = false;
+          }
+        }
+        removables[edge] = true;
         budget -= contribution;
-        m.emplace(edge);
+        continue;
       }
-    }
 
-    Layer next{};
-    for (const auto& [edge, _] : curr) {
       if (edge->isTerminal()) {
         continue;
       }
 
-      vNode* node = edge->p;
-      std::array<vEdge, RADIX> edges{};
-      for (std::size_t i = 0; i < RADIX; ++i) {
-        vEdge* eChild = &(node->e[i]);
-        if (m.find(eChild) != m.end()) {
-          edges[i] = vEdge::zero();
+      for (const auto& eRef : edge->p->e) {
+        if (eRef.w.exactlyZero()) {
           continue;
         }
 
-        edges[i] = *eChild;
-      }
-      vEdge replacement = dd.makeDDNode(node->v, edges);
-      replacement.w = edge->w;
-      dd.incRef(replacement);
-      dd.decRef(*edge);
-      *edge = replacement;
+        lNext[&eRef].first += contribution * ComplexNumbers::mag2(eRef.w);
 
-      for (std::size_t i = 0; i < RADIX; ++i) {
-        next[&replacement.p->e[i]] = candidates[&(node->e[i])];
+        Paths extended{paths};
+        for (auto& path : extended) {
+          path.emplace_front(edge);
+          lNext[&eRef].second.emplace_front(path);
+        }
       }
     }
 
-    curr = std::move(next);
+    l = std::move(lNext);
   }
 
-  // Rebuild only the root state to normalize all nodes of the DD.
-  // TODO: Necessary?
-  VectorDD approx = dd.makeDDNode(state.p->v, state.p->e);
-  approx.w = state.w;
-
-  // Make sure to correctly update the reference counts and clean up.
-  // Finally, apply approximation to source state.
-  if (approx != state) {
-    dd.incRef(approx);
-    dd.decRef(state);
-    state = approx;
-  }
-
+  vEdge approx = rebuild(state, removables, dd);
+  dd.incRef(approx);
+  dd.decRef(state);
   dd.garbageCollect();
+
+  state = approx;
 
   return fidelity + budget;
 }

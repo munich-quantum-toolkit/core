@@ -223,7 +223,6 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   auto ref = simulate(qcRef, dd->makeZeroState(nq), *dd);
 
   const CVec expected{{0}, {1 / std::sqrt(2)}, {0}, {1 / std::sqrt(2)}};
-  state.printVector();
   vecNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 3);
   EXPECT_NEAR(fidelityToSource, 0.933, 1e-3);
