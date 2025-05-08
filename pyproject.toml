@@ -90,6 +90,7 @@ build.targets = [
   "mqt-core-na",
   "ir",
   "dd",
+  "mqt-catalyst-plugin",
 ]
 
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
