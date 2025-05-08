@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -202,6 +203,33 @@ applyClassicControlledOperation(const qc::ClassicControlledOperation& op,
                                 const VectorDD& in, Package& dd,
                                 const std::vector<bool>& measurements,
                                 const qc::Permutation& permutation = {});
+
+/**
+ * @brief Check whether @p op is virtually executable.
+ *
+ * @param op The operation in question.
+ * @return Whether @p op is virtually executable.
+ */
+bool isExecutableVirtually(const qc::Operation& op) noexcept;
+
+/**
+ * @brief Apply virtual operation @p op.
+ *
+ * @param op The virtual operation to apply.
+ * @param permutation If suitable, the to be updated permutation.
+ */
+void applyVirtualOperation(const qc::Operation& op,
+                           qc::Permutation& permutation) noexcept;
+
+/**
+ * @brief Apply global phase to a given DD.
+ *
+ * @param in The input DD
+ * @param phase The phase to apply
+ * @param dd The DD package to use
+ * @return The output DD
+ */
+VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd);
 
 /**
  * @brief Change the permutation of a given DD.

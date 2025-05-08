@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -33,8 +34,8 @@
 // Interfaces
 //===----------------------------------------------------------------------===//
 
+#include "mlir/Dialect/Common/IR/CommonTraits.h"         // IWYU pragma: export
 #include "mlir/Dialect/MQTOpt/IR/MQTOptInterfaces.h.inc" // IWYU pragma: export
-#include "mlir/Dialect/MQTOpt/IR/MQTOptTraits.h"         // IWYU pragma: export
 
 //===----------------------------------------------------------------------===//
 // Operations

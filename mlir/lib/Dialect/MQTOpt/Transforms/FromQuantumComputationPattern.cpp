@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -65,6 +66,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * @brief Creates an InsertOp that inserts the given qubit into the given
    * register at the specified index.
    *
+   * @param allocOp The AllocOp that defined the original register.
    * @param reg The register into which the qubit will be inserted.
    * @param qubit The qubit to insert into the register.
    * @param index The index at which to insert the qubit.
@@ -72,22 +74,19 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    *
    * @return The created InsertOp.
    */
-  static InsertOp createRegisterInsert(AllocOp& reg, mlir::Value qubit,
-                                       const size_t index,
+  static InsertOp createRegisterInsert(AllocOp allocOp,
+                                       mlir::TypedValue<QubitRegisterType> reg,
+                                       mlir::Value qubit, const size_t index,
                                        mlir::PatternRewriter& rewriter) {
     auto insert = rewriter.create<InsertOp>(
-        reg.getLoc(),
+        allocOp.getLoc(),
         QubitRegisterType::get(rewriter.getContext()), // Result type
-        reg.getResult(), // The register to insert into
-        qubit, nullptr,  // The qubit to insert
+        reg,            // The register to insert into
+        qubit, nullptr, // The qubit to insert
         rewriter.getI64IntegerAttr(static_cast<std::int64_t>(index)) // Index
     );
     return insert;
   }
-
-  // rewriter.create<::mqt::ir::opt::InsertOp>(
-  //         op.getLoc(), resultType, inQregValue, qubitValue, idxValue,
-  //         idxIntegerAttr);
 
   /**
    * @brief Creates a unitary operation on a given qubit with any number of
@@ -106,22 +105,21 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       const mlir::Location loc, const qc::OpType type,
       const mlir::Value inQubit, mlir::ValueRange controlQubitsPositive,
       mlir::ValueRange controlQubitsNegative, mlir::PatternRewriter& rewriter) {
-    const std::vector resultTypes(1 + controlQubitsPositive.size() +
-                                      controlQubitsNegative.size(),
-                                  inQubit.getType());
-    const mlir::TypeRange outTypes(resultTypes);
-
     switch (type) {
     case qc::OpType::X:
-      return rewriter.create<XOp>(loc, outTypes, mlir::DenseF64ArrayAttr{},
-                                  mlir::DenseBoolArrayAttr{},
-                                  mlir::ValueRange{}, mlir::ValueRange{inQubit},
-                                  controlQubitsPositive, controlQubitsNegative);
+      return rewriter.create<XOp>(
+          loc, inQubit.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubit}, controlQubitsPositive,
+          controlQubitsNegative);
     case qc::OpType::H:
-      return rewriter.create<HOp>(loc, outTypes, mlir::DenseF64ArrayAttr{},
-                                  mlir::DenseBoolArrayAttr{},
-                                  mlir::ValueRange{}, mlir::ValueRange{inQubit},
-                                  controlQubitsPositive, controlQubitsNegative);
+      return rewriter.create<HOp>(
+          loc, inQubit.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubit}, controlQubitsPositive,
+          controlQubitsNegative);
     default:
       throw std::runtime_error("Unsupported operation type");
     }
@@ -191,7 +189,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       auto newRegisterAccess =
           createRegisterAccess(currentRegister, i, rewriter);
       currentQubitVariables[i] = newRegisterAccess.getOutQubit();
-      currentRegister = newRegisterAccess.getOutQureg();
+      currentRegister = newRegisterAccess.getOutQreg();
     }
 
     // Iterate over each operation in the circuit and create the corresponding
@@ -224,14 +222,15 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
             currentQubitVariables[o->getTargets()[0]], controlQubitsPositive,
             controlQubitsNegative, rewriter);
         currentQubitVariables[o->getTargets()[0]] =
-            newUnitaryOp.getOutQubits()[0];
+            newUnitaryOp.getAllOutQubits()[0];
         for (size_t i = 0; i < controlQubitsPositive.size(); i++) {
           currentQubitVariables[controlQubitIndicesPositive[i]] =
-              newUnitaryOp.getOutQubits()[i + 1];
+              newUnitaryOp.getAllOutQubits()[i + 1];
         }
         for (size_t i = 0; i < controlQubitsNegative.size(); i++) {
           currentQubitVariables[controlQubitIndicesNegative[i]] =
-              newUnitaryOp.getOutQubits()[i + 1 + controlQubitsPositive.size()];
+              newUnitaryOp
+                  .getAllOutQubits()[i + 1 + controlQubitsPositive.size()];
         }
       } else if (o->getType() == qc::OpType::Measure) {
         // For measurement operations, we call the `createMeasureOp` function.
@@ -251,16 +250,18 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // Now insert all the qubits back into the registers they were extracted
     // from.
     for (size_t i = 0; i < numQubits; i++) {
-      createRegisterInsert(newAlloc, currentQubitVariables[i], i, rewriter);
+      auto insertOp = createRegisterInsert(
+          newAlloc, currentRegister, currentQubitVariables[i], i, rewriter);
+      // Keep track of qubit register access
+      currentRegister = insertOp.getOutQreg();
     }
 
     // Finally, the return operation needs to be updated with the measurement
     // results and then replace the original `alloc` operation with the updated
     // one.
-    // auto* const returnOperation = *op->getUsers().begin();
-    // updateReturnOperation(returnOperation, currentRegister,
-    // measurementValues,
-    //                      rewriter);
+    auto* const returnOperation = *op->getUsers().begin();
+    updateReturnOperation(returnOperation, currentRegister, measurementValues,
+                          rewriter);
     rewriter.replaceOp(op, newAlloc);
   }
 };

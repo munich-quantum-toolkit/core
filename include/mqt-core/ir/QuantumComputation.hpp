@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -123,6 +124,9 @@ public:
   [[nodiscard]] decltype(mt)& getGenerator() noexcept { return mt; }
 
   [[nodiscard]] fp getGlobalPhase() const noexcept { return globalPhase; }
+  [[nodiscard]] bool hasGlobalPhase() const noexcept {
+    return std::abs(getGlobalPhase()) > 0;
+  }
 
   [[nodiscard]] const std::unordered_set<sym::Variable>&
   getVariables() const noexcept {

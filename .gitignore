@@ -175,5 +175,8 @@ out/build
 node_modules/
 wheelhouse/
 
+# mlir
+
+**/.lit
 mqt_plugin_wheel/mqt_plugin/MQTPlugin.dylib
 mqt_plugin_wheel/mqt_plugin/MQTPlugin.so
