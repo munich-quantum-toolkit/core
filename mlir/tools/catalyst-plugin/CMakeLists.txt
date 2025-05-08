@@ -55,10 +55,3 @@ add_llvm_library(
 
 # add MQT alias
 add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)
-
-# set versioning information
-set_target_properties(
-  mqt-catalyst-plugin
-  PROPERTIES VERSION ${PROJECT_VERSION}
-             SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-             EXPORT_NAME CatalystPlugin)
