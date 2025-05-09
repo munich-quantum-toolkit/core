@@ -45,7 +45,6 @@ add_compile_options(-fexceptions)
 add_llvm_library(
   mqt-catalyst-plugin
   MODULE
-  BUILDTREE_ONLY
   mqt-plugin.cpp
   PLUGIN_TOOL
   LINK_LIBS
@@ -55,6 +54,3 @@ add_llvm_library(
 
 # add MQT alias
 add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)
-
-# install the plugin
-install(FILES $<TARGET_FILE:mqt-catalyst-plugin> DESTINATION ${CMAKE_INSTALL_LIBDIR})
