@@ -6,10 +6,11 @@
 #
 # Licensed under the MIT License
 
-add_mlir_dialect_library(MLIRMQTOpt MQTOptOps.cpp DEPENDS MLIRMQTOptOpsIncGen
+add_mlir_dialect_library(MLIRMQTOpt DISABLE_INSTALL MQTOptOps.cpp DEPENDS MLIRMQTOptOpsIncGen
                          MLIRMQTOptInterfacesIncGen)
 
-# collect header files
+# collect header files todo: Does that really include all necessary headers, also the auto-generated
+# ones?
 file(GLOB_RECURSE IR_HEADERS ${MQT_MLIR_INCLUDE_BUILD_DIR}/mlir/Dialect/MQTOpt/IR/*.h)
 
 # add public headers using file sets

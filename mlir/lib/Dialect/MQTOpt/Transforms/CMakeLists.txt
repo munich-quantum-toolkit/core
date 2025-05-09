@@ -12,8 +12,14 @@ add_compile_options(-fexceptions)
 
 file(GLOB TRANSFORMS_SOURCES *.cpp)
 
-add_mlir_library(MLIRMQTOptTransforms ${TRANSFORMS_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
-                 MLIRMQTOptTransformsIncGen)
+add_mlir_library(
+  MLIRMQTOptTransforms
+  DISABLE_INSTALL
+  ${TRANSFORMS_SOURCES}
+  LINK_LIBS
+  ${LIBRARIES}
+  DEPENDS
+  MLIRMQTOptTransformsIncGen)
 
 # collect header files
 file(GLOB_RECURSE TRANSFORMS_HEADERS

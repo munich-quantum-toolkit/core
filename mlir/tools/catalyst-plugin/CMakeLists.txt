@@ -41,13 +41,12 @@ endif()
 
 add_compile_options(-fexceptions)
 
+# todo: Why is it add_llvm_library and not add_mlir_library?
 add_llvm_library(
   mqt-catalyst-plugin
   MODULE
+  BUILDTREE_ONLY
   mqt-plugin.cpp
-  DEPENDS
-  MLIRMQTOpt
-  MLIRMQTOptTransforms
   PLUGIN_TOOL
   LINK_LIBS
   MLIRMQTOpt
@@ -57,7 +56,5 @@ add_llvm_library(
 # add MQT alias
 add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)
 
-# add to list of MQT core target
-set(MQT_CORE_TARGETS
-    ${MQT_CORE_TARGETS} mqt-catalyst-plugin
-    PARENT_SCOPE)
+# install the plugin
+install(FILES $<TARGET_FILE:mqt-catalyst-plugin> DESTINATION ${CMAKE_INSTALL_LIBDIR})
