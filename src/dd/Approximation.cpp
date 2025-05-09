@@ -18,87 +18,114 @@
 
 #include <array>
 #include <forward_list>
+#include <queue>
 #include <unordered_map>
-#include <utility>
 
 namespace dd {
 namespace {
-vEdge rebuild(const vEdge& curr,
-              std::unordered_map<const vEdge*, bool>& removables, Package& dd) {
-  if (removables.find(&curr) == removables.end()) {
-    return curr;
+// Queue for iterative-deepening search.
+using Queue = std::queue<const vEdge*>;
+// Map that holds edges required for rebuilding the DD.
+// If the value of an edge is true it will be deleted.
+using PathFlags = std::unordered_map<const vEdge*, bool>;
+// Maps edges to their respective contribution.
+using Contributions = std::unordered_map<const vEdge*, double>;
+// Maps edges to their respective parent edges.
+using Parents =
+    std::unordered_map<const vEdge*, std::forward_list<const vEdge*>>;
+
+vEdge rebuild(const vEdge& e, PathFlags& f, Package& dd) {
+  // If the edge isn't contained in the pathflags,
+  // we keep the edge as it is.
+  if (f.find(&e) == f.end()) {
+    return e;
   }
 
-  if (removables[&curr]) {
+  // If the pathflag is true, delete the edge.
+  if (f[&e]) {
     return vEdge::zero();
   }
 
+  // Otherwise, if the pathflag is false, traverse down.
   std::array<vEdge, RADIX> edges{
-      rebuild(curr.p->e[0], removables, dd),
-      rebuild(curr.p->e[1], removables, dd),
+      rebuild(e.p->e[0], f, dd),
+      rebuild(e.p->e[1], f, dd),
   };
 
-  vEdge e = dd.makeDDNode(curr.p->v, edges);
-  e.w = curr.w;
+  vEdge eNew = dd.makeDDNode(e.p->v, edges);
+  eNew.w = e.w;
 
-  return e;
+  return eNew;
+}
+
+/**
+ * @brief Flag (or mark) the path from edge @p e to the root node.
+ */
+void markParentEdges(const vEdge* e, Parents& m, PathFlags& f) {
+  Queue q{};
+  q.emplace(e);
+  while (!q.empty()) {
+    const vEdge* eX = q.front();
+    q.pop();
+    for (const vEdge* eP : m[eX]) {
+      f[eP];
+      q.emplace(eP);
+    }
+  }
 }
 }; // namespace
 
 double approximate(VectorDD& state, const double fidelity, Package& dd) {
-  using Path = std::forward_list<const vEdge*>;
-  using Paths = std::forward_list<Path>;
-  using Queue = std::unordered_map<const vEdge*, std::pair<double, Paths>>;
+  Queue q{};
+  q.emplace(&state);
 
-  std::unordered_map<const vEdge*, bool> removables{};
+  PathFlags f{};
+  Contributions c{{&state, 1.}};
+  Parents m{{&state, {}}};
 
   double budget = 1 - fidelity;
+  while (!q.empty() && budget > 0) {
+    const vEdge* e = q.front();
+    const double contribution = c[e];
+    q.pop();
 
-  Queue l{{&state, {1., {{}}}}};
-  while (!l.empty() && budget > 0) {
-    Queue lNext{};
-
-    for (const auto& [edge, pair] : l) {
-      const auto [contribution, paths] = pair;
-
-      if (contribution <= budget) {
-        for (const auto& path : paths) {
-          for (const auto& e : path) {
-            removables[e] = false;
-          }
-        }
-        removables[edge] = true;
-        budget -= contribution;
-        continue;
-      }
-
-      if (edge->isTerminal()) {
-        continue;
-      }
-
-      for (const auto& eRef : edge->p->e) {
-        if (eRef.w.exactlyZero()) {
-          continue;
-        }
-
-        lNext[&eRef].first += contribution * ComplexNumbers::mag2(eRef.w);
-
-        Paths extended{paths};
-        for (auto& path : extended) {
-          path.emplace_front(edge);
-          lNext[&eRef].second.emplace_front(path);
-        }
-      }
+    if (contribution <= budget) {
+      f[e] = true;
+      markParentEdges(e, m, f);
+      budget -= contribution;
+      continue;
     }
 
-    l = std::move(lNext);
+    if (e->isTerminal()) {
+      continue;
+    }
+
+    const vNode* n = e->p;
+    for (const auto& eChildRef : n->e) {
+      const vEdge* eChild = &eChildRef;
+
+      if (eChild->w.exactlyZero()) { // Don't add zero terminals.
+        continue;
+      }
+
+      if (c.find(eChild) == c.cend()) {
+        q.emplace(eChild); // Add to queue.
+        c[eChild] = 0.;    // Not necessary, but better than implicit.
+      }
+
+      // An edge may have multiple parent edges, and hence, add instead of
+      // assign the full contribution.
+      const double childContribution = ComplexNumbers::mag2(eChild->w);
+      c[eChild] += contribution * childContribution;
+
+      m[eChild].emplace_front(e); // Map child to parent.
+    }
   }
 
-  vEdge approx = rebuild(state, removables, dd);
+  vEdge approx = rebuild(state, f, dd);
   dd.incRef(approx);
   dd.decRef(state);
   dd.garbageCollect();
-
   state = approx;
 
   return fidelity + budget;
