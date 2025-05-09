@@ -34,7 +34,13 @@ using Contributions = std::unordered_map<const vEdge*, double>;
 using Parents =
     std::unordered_map<const vEdge*, std::forward_list<const vEdge*>>;
 
-vEdge rebuild(const vEdge& e, PathFlags& f, Package& dd) {
+/**
+ * @brief Recursively rebuild DD depth-first.
+
+ * @details Only visits the paths from the root edge
+ * to ∀e ∈ {e | f[e] = true} by using @p f.
+ */
+vEdge rebuild(const vEdge& e, const PathFlags& f, Package& dd) {
   // If the edge isn't contained in the pathflags,
   // we keep the edge as it is.
   if (f.find(&e) == f.end()) {
@@ -42,7 +48,7 @@ vEdge rebuild(const vEdge& e, PathFlags& f, Package& dd) {
   }
 
   // If the pathflag is true, delete the edge.
-  if (f[&e]) {
+  if (f.at(&e)) {
     return vEdge::zero();
   }
 
@@ -61,14 +67,14 @@ vEdge rebuild(const vEdge& e, PathFlags& f, Package& dd) {
 /**
  * @brief Flag (or mark) the path from edge @p e to the root node.
  */
-void markParentEdges(const vEdge* e, Parents& m, PathFlags& f) {
+void markParentEdges(const vEdge* e, const Parents& m, PathFlags& f) {
   Queue q{};
   q.emplace(e);
   while (!q.empty()) {
     const vEdge* eX = q.front();
     q.pop();
-    for (const vEdge* eP : m[eX]) {
-      f[eP];
+    for (const vEdge* eP : m.at(eX)) {
+      f[eP] = false;
       q.emplace(eP);
     }
   }
@@ -80,8 +86,8 @@ double approximate(VectorDD& state, const double fidelity, Package& dd) {
   q.emplace(&state);
 
   PathFlags f{};
-  Contributions c{{&state, 1.}};
   Parents m{{&state, {}}};
+  Contributions c{{&state, 1.}};
 
   double budget = 1 - fidelity;
   while (!q.empty() && budget > 0) {
@@ -113,8 +119,8 @@ double approximate(VectorDD& state, const double fidelity, Package& dd) {
         c[eChild] = 0.;    // Not necessary, but better than implicit.
       }
 
-      // An edge may have multiple parent edges, and hence, add instead of
-      // assign the full contribution.
+      // An edge may have multiple parent edges, and hence, add (instead of
+      // assign) the full contribution.
       const double childContribution = ComplexNumbers::mag2(eChild->w);
       c[eChild] += contribution * childContribution;
 
