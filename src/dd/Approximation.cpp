@@ -53,7 +53,7 @@ vEdge rebuild(const vEdge& e, const PathFlags& f, Package& dd) {
   }
 
   // Otherwise, if the pathflag is false, traverse down.
-  std::array<vEdge, RADIX> edges{
+  const std::array<vEdge, RADIX> edges{
       rebuild(e.p->e[0], f, dd),
       rebuild(e.p->e[1], f, dd),
   };
@@ -128,7 +128,7 @@ double approximate(VectorDD& state, const double fidelity, Package& dd) {
     }
   }
 
-  vEdge approx = rebuild(state, f, dd);
+  const vEdge approx = rebuild(state, f, dd);
   dd.incRef(approx);
   dd.decRef(state);
   dd.garbageCollect();
