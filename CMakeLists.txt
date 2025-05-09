@@ -94,11 +94,10 @@ if(BUILD_MQT_CORE_MLIR)
   add_subdirectory(mlir)
 endif()
 
-option(BUILD_MQT_CORE_CATALYST_PLUGIN "Build the catalyst plugin to be used from pennylane" OFF)
-# Enforce this option is only ON if `BUILD_MQT_CORE_MLIR` is also ON
-if(BUILD_MQT_CORE_CATALYST_PLUGIN AND NOT BUILD_MQT_CORE_MLIR)
-  message(FATAL_ERROR "The catalyst plugin requires the MLIR submodule to be built")
-endif()
+# only build the MLIR plugin if the MLIR submodule is enabled
+cmake_dependent_option(
+  BUILD_MQT_CORE_CATALYST_PLUGIN "Build the catalyst plugin to be used from pennylane" OFF
+  "BUILD_MQT_CORE_MLIR" OFF)
 
 if(MQT_CORE_MASTER_PROJECT)
   if(NOT TARGET mqt-core-uninstall)
