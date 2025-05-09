@@ -36,15 +36,15 @@ def get_catalyst_plugin_abs_path() -> Path:
     try:
         dist = distribution("mqt-core")
         # Check for the plugin in the mqt-core package on Linux
-        catalyst_plugin_abs_path = Path(dist.locate_file("mqt/core/???/mqt-catalyst-plugin.so"))
+        catalyst_plugin_abs_path = Path(dist.locate_file("mqt/core/lib/mqt-catalyst-plugin.so"))
         if catalyst_plugin_abs_path.exists() and catalyst_plugin_abs_path.is_file():
             return catalyst_plugin_abs_path
         # Check for the plugin in the mqt-core package on macOS
-        catalyst_plugin_abs_path = Path(dist.locate_file("mqt/core/???/mqt-catalyst-plugin.dylib"))
+        catalyst_plugin_abs_path = Path(dist.locate_file("mqt/core/lib/mqt-catalyst-plugin.dylib"))
         if catalyst_plugin_abs_path.exists() and catalyst_plugin_abs_path.is_file():
             return catalyst_plugin_abs_path
         # Check for the plugin in the mqt-core package on Windows
-        catalyst_plugin_abs_path = Path(dist.locate_file("mqt/core/???/mqt-catalyst-plugin.dll"))
+        catalyst_plugin_abs_path = Path(dist.locate_file("mqt/core/lib/mqt-catalyst-plugin.dll"))
         if catalyst_plugin_abs_path.exists() and catalyst_plugin_abs_path.is_file():
             return catalyst_plugin_abs_path
         msg = "mqt-catalyst-plugin library not found."

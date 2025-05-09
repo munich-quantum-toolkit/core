@@ -32,17 +32,16 @@ import pytest
 from catalyst import pipeline
 from catalyst.passes import apply_pass, apply_pass_plugin
 
-have_mqt_plugin = True
+from mqt.core.plugins.catalyst import MQTCoreRoundTrip, get_catalyst_plugin_abs_path
 
+plugin_available = True
 try:
-    from mqt_plugin import MQTCoreRoundTrip, getMQTPluginAbsolutePath
-
-    plugin = getMQTPluginAbsolutePath()
+    plugin_path = get_catalyst_plugin_abs_path()
 except ImportError:
-    have_mqt_plugin = False
+    plugin_available = False
 
 
-@pytest.mark.skipif(not have_mqt_plugin, reason="MQT Plugin is not installed")
+@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
 def test_MQT_plugin() -> None:
     """Generate MLIR for the MQT plugin. Do not execute code.
     The code execution test is in the lit test. See that test
@@ -54,7 +53,7 @@ def test_MQT_plugin() -> None:
     def qnode():
         return qml.state()
 
-    @qml.qjit(pass_plugins={plugin}, dialect_plugins={plugin}, target="mlir")
+    @qml.qjit(pass_plugins={plugin_path}, dialect_plugins={plugin_path}, target="mlir")
     def module():
         return qnode()
 
@@ -62,13 +61,13 @@ def test_MQT_plugin() -> None:
     assert "mqt-core-round-trip" in module.mlir
 
 
-@pytest.mark.skipif(not have_mqt_plugin, reason="MQT Plugin is not installed")
+@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
 def test_MQT_plugin_no_preregistration() -> None:
     """Generate MLIR for the MQT plugin, no need to register the
     plugin ahead of time in the qjit decorator.
     """
 
-    @apply_pass_plugin(plugin, "mqt-core-round-trip")
+    @apply_pass_plugin(plugin_path, "mqt-core-round-trip")
     @qml.qnode(qml.device("lightning.qubit", wires=0))
     def qnode():
         return qml.state()
@@ -82,7 +81,7 @@ def test_MQT_plugin_no_preregistration() -> None:
     assert "mqt-core-round-trip" in module.mlir
 
 
-@pytest.mark.skipif(not have_mqt_plugin, reason="MQT Plugin is not installed")
+@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
 def test_MQT_entry_point() -> None:
     """Generate MLIR for the MQT plugin via entry-point."""
 
@@ -100,7 +99,7 @@ def test_MQT_entry_point() -> None:
     assert "mqt-core-round-trip" in module.mlir
 
 
-@pytest.mark.skipif(not have_mqt_plugin, reason="MQT Plugin is not installed")
+@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
 def test_MQT_dictionary() -> None:
     """Generate MLIR for the MQT plugin via entry-point."""
 
@@ -119,7 +118,7 @@ def test_MQT_dictionary() -> None:
     assert "mqt-core-round-trip" in module.mlir
 
 
-@pytest.mark.skipif(not have_mqt_plugin, reason="MQT Plugin is not installed")
+@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
 def test_MQT_plugin_decorator() -> None:
     """Generate MLIR for the MQT plugin."""
 
@@ -133,7 +132,3 @@ def test_MQT_plugin_decorator() -> None:
         return qnode()
 
     assert "mqt-core-round-trip" in module.mlir
-
-
-if __name__ == "__main__":
-    pytest.main(["-x", __file__])
