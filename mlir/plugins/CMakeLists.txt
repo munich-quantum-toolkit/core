@@ -6,4 +6,6 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(quantum-opt)
+if(BUILD_MQT_CORE_CATALYST_PLUGIN)
+  add_subdirectory(catalyst)
+endif()
