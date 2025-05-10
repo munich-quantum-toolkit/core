@@ -9,12 +9,30 @@
 // RUN: quantum-opt %s -split-input-file | FileCheck %s
 
 // -----
-// This test checks if the AllocOp is parsed and handled correctly
+// This test checks if the AllocOp is parsed and handled correctly using a static attribute
 module {
     // CHECK-LABEL: func.func @testAllocOp
     func.func @testAllocOp() {
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}>
         %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+
+        // ========================== Check that there are no further allocations ==============================
+        // CHECK-NOT: "mqtopt.allocQubitRegister"
+
+        return
+    }
+}
+
+// -----
+// This test checks if the AllocOp is parsed and handled correctly using a dynamic operand
+module {
+    // CHECK-LABEL: func.func @testAllocOp
+    func.func @testAllocOp() {
+        // CHECK: %[[Size:.*]] = arith.constant 2 : i64
+        %size = arith.constant 2 : i64
+
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"(%[[Size]]) : (i64) -> !mqtopt.QubitRegister
+        %reg_0 = "mqtopt.allocQubitRegister"(%size) : (i64) -> !mqtopt.QubitRegister
 
         // ========================== Check that there are no further allocations ==============================
         // CHECK-NOT: "mqtopt.allocQubitRegister"
@@ -42,7 +60,7 @@ module {
 }
 
 // -----
-// This test checks if the ExtractOp is parsed and handled correctly
+// This test checks if the ExtractOp is parsed and handled correctly using a static attribute
 module {
     // CHECK-LABEL: func.func @testExtractOp
     func.func @testExtractOp() {
@@ -60,7 +78,28 @@ module {
 }
 
 // -----
-// This test checks if the InsertOp is parsed and handled correctly
+// This test checks if the ExtractOp is parsed and handled correctly using a dynamic operand
+module {
+    // CHECK-LABEL: func.func @testExtractOp
+    func.func @testExtractOp() {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Index:.*]] = arith.constant 0 : i64
+        %index = arith.constant 0 : i64
+
+        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]], %[[Index]]) : (!mqtopt.QubitRegister, i64) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0, %index) : (!mqtopt.QubitRegister, i64) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // ==========================  Check that there are no further extractions ==============================
+        // CHECK-NOT: "mqtopt.extractQubit"([[ANY:.*]])
+
+        return
+    }
+}
+
+// -----
+// This test checks if the InsertOp is parsed and handled correctly using a static attribute
 module {
     // CHECK-LABEL: func.func @testInsertOp
     func.func @testInsertOp() {
@@ -72,6 +111,30 @@ module {
 
         // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q_0]])  <{index_attr = 0 : i64}>
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // ==========================  Check that there are no further insertions ==============================
+        // CHECK-NOT: "mqtopt.insertQubit"([[ANY:.*]], [[ANY:.*]])
+
+        return
+    }
+}
+
+// -----
+// This test checks if the InsertOp is parsed and handled correctly using a dynamic operand
+module {
+    // CHECK-LABEL: func.func @testInsertOp
+    func.func @testInsertOp() {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Index:.*]] = arith.constant 0 : i64
+        %index = arith.constant 0 : i64
+
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q_0]], %[[Index]])  : (!mqtopt.QubitRegister, !mqtopt.Qubit, i64) -> !mqtopt.QubitRegister
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_0, %index) : (!mqtopt.QubitRegister, !mqtopt.Qubit, i64) -> !mqtopt.QubitRegister
 
         // ==========================  Check that there are no further insertions ==============================
         // CHECK-NOT: "mqtopt.insertQubit"([[ANY:.*]], [[ANY:.*]])
