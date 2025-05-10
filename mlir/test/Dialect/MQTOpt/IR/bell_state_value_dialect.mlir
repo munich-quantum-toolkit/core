@@ -346,6 +346,41 @@ module {
 }
 
 // -----
+// This test checks if an MCX gate is parsed and handled correctly using different types of controls
+module {
+    // CHECK-LABEL: func.func @testMixedMCXOp
+    func.func @testMixedMCXOp() {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Reg_3:.*]], %[[Q2_0:.*]] = "mqtopt.extractQubit"(%[[Reg_2]]) <{index_attr = 2 : i64}>
+        %reg_3, %q2_0 = "mqtopt.extractQubit"(%reg_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        //===------------------------------------------------------------------===//
+        // q0_0: ──■── q0_1
+        //       ┌─┴─┐
+        // q1_0: ┤ X ├ q1_1
+        //       └─┬─┘
+        // q2_0: ──■── q2_1
+        //===----------------------------------------------------------------===//
+
+        // CHECK: %[[Q1_1:.*]], %[[Q0_1:.*]], %[[Q2_1:.*]] = mqtopt.x() %[[Q1_0]] ctrl %[[Q0_0]] nctrl %[[Q2_0]] : !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+        %q1_1, %q0_1, %q2_1 = mqtopt.x() %q1_0 ctrl %q0_0 nctrl %q2_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        // ==========================  Check that there are no further MCX operations ==============================
+        // CHECK-NOT: mqtopt.x() [[ANY:.*]] ctrl %[[ANY:.*]] nctrl %[[ANY:.*]]
+
+        return
+    }
+}
+
+// -----
 // This test checks if an Y gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testYOp
