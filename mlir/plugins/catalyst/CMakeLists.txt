@@ -45,14 +45,13 @@ endif()
 add_compile_options(-fexceptions)
 
 # todo: Why is it add_llvm_library and not add_mlir_library?
-add_llvm_library(
-  mqt-catalyst-plugin
-  MODULE
-  mqt-plugin.cpp
-  PLUGIN_TOOL
-  LINK_LIBS
-  MLIRMQTOpt
-  MLIRMQTOptTransforms)
+#
+# todo: On DLL platforms, the tool that will use this plugin must be linked, see
+# https://github.com/llvm/llvm-project/blob/2acecfe65397c162958ab305dc44614ff51e748c/llvm/cmake/modules/AddLLVM.cmake#L770
+# and
+# https://github.com/llvm/llvm-project/blob/2acecfe65397c162958ab305dc44614ff51e748c/llvm/cmake/modules/AddLLVM.cmake#L517
+add_llvm_library(mqt-catalyst-plugin MODULE mqt-plugin.cpp LINK_LIBS MLIRMQTOpt
+                 MLIRMQTOptTransforms)
 
 # add MQT alias
 add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)
