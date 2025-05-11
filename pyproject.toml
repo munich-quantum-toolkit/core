@@ -340,7 +340,10 @@ test = [
   "pandas[output-formatting]>=2.2.3; python_version >= '3.13'",
   "qiskit[qasm3-import]>=1.0.0",
   "numpy>=2.1; python_version >= '3.13'",
-  "pennylane-catalyst>=0.12.0-dev22",
+  "pennylane @ https://test-files.pythonhosted.org/packages/1d/98/77b1216322c6cb65f5e01896912d40bf2ec47ef059db90e009fde22d7100/pennylane-0.42.0.dev19-py3-none-any.whl",
+  "pennylane-lightning @ https://test-files.pythonhosted.org/packages/c4/4e/ee935f9bfebddb29f23b59fa213e22d48df55aa330eb77d2e3ad992a4256/pennylane_lightning-0.42.0.dev11-cp312-cp312-macosx_13_0_arm64.whl",
+  "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/76/75/6ca3384f9cffd5ac87b2a443aafa5d6759e1bf9794f0a13cd6513a7ebb5e/pennylane_lightning_kokkos-0.42.0.dev11-cp312-cp312-macosx_13_0_arm64.whl",
+  "pennylane-catalyst @ file:///Users/yannick/Documents/TUM/CDA/Research/playgrounds/Catalyst/catalyst/dist/pennylane_catalyst-0.12.0.dev22-cp312-abi3-macosx_15_0_universal2.whl",
 ]
 dev = [
   {include-group = "build"},

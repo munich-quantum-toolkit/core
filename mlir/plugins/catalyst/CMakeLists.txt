@@ -52,8 +52,7 @@ add_llvm_library(
   PLUGIN_TOOL
   LINK_LIBS
   MLIRMQTOpt
-  MLIRMQTOptTransforms
-  MQT::CoreIR)
+  MLIRMQTOptTransforms)
 
 # add MQT alias
 add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)

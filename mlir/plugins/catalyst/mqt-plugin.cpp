@@ -18,17 +18,16 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/Tools/Plugins/DialectPlugin.h"
-#include "mlir/Tools/Plugins/PassPlugin.h"
 
-#include "llvm/Config/llvm-config.h"
-#include "llvm/Support/Compiler.h"
+#include <llvm/Config/llvm-config.h>
+#include <llvm/Support/Compiler.h>
+#include <mlir/Tools/Plugins/DialectPlugin.h>
+#include <mlir/Tools/Plugins/PassPlugin.h>
 
 using namespace mlir;
 
 /// Dialect plugin registration mechanism.
-/// Observe that it also allows to register passes.
+/// Observe that it also allows registering passes.
 /// Necessary symbol to register the dialect plugin.
 extern "C" LLVM_ATTRIBUTE_WEAK DialectPluginLibraryInfo
 mlirGetDialectPluginInfo() {
