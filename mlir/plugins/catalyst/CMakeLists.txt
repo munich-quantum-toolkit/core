@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-# Check if the pennylane-catalyst package is installed.
+# Check if the pennylane-catalyst package is installed in the python environment.
 execute_process(
   COMMAND "${Python_EXECUTABLE}" -m catalyst --version
   OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -20,18 +20,21 @@ if(CATALYST_VERSION)
         "pennylane-catalyst version ${CATALYST_VERSION} is not compatible. Please install version 0.12.0-dev22 or higher."
     )
   endif()
+  # Detect the installed catalyst include files.
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m catalyst --include_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE CATALYST_INCLUDE_DIRS)
 else()
+  # todo: Add option to get catalyst via fetch_content. Note that catlyst should not be built
+  # completely to avoid building entire llvm. Note further that some the headers are only generated
+  # during build time.
   message(
     FATAL_ERROR
       "The pennylane-catalyst package was not found. Please install it using, e.g., `pip install pennylane-catalyst`."
   )
 endif()
 
-# Detect the installed pennylane-catalyst package.
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" -m catalyst --include_dir
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-  OUTPUT_VARIABLE CATALYST_INCLUDE_DIRS)
 if(NOT CATALYST_INCLUDE_DIRS)
   message(
     FATAL_ERROR
