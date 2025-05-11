@@ -92,8 +92,10 @@ double approximate(VectorDD& state, const double fidelity, Package& dd) {
   double budget = 1 - fidelity;
   while (!q.empty() && budget > 0) {
     const vEdge* e = q.front();
-    const double contribution = c[e];
     q.pop();
+
+    const double contribution = c[e];
+    c.erase(e); // Won't be needed anymore.
 
     if (contribution <= budget) {
       f[e] = true;
@@ -121,9 +123,7 @@ double approximate(VectorDD& state, const double fidelity, Package& dd) {
 
       // An edge may have multiple parent edges, and hence, add (instead of
       // assign) the full contribution.
-      const double childContribution = ComplexNumbers::mag2(eChild->w);
-      c[eChild] += contribution * childContribution;
-
+      c[eChild] += contribution * ComplexNumbers::mag2(eChild->w);
       m[eChild].emplace_front(e); // Map child to parent.
     }
   }

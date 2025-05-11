@@ -10,25 +10,54 @@
 
 #include "dd/Approximation.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
-#include <cmath>
+#include <chrono>
 #include <cstddef>
+#include <cstdlib>
 #include <gtest/gtest.h>
 #include <memory>
+#include <numeric>
+#include <random>
+#include <ratio>
 
 using namespace dd;
 
 namespace {
+/**
+ * @brief Compare the elements of @p a and @p b with precision @p delta.
+ */
 void vecNear(CVec a, CVec b, double delta = 1e-6) {
   for (std::size_t i = 0; i < b.size(); ++i) {
     EXPECT_NEAR(a[i].real(), b[i].real(), delta);
     EXPECT_NEAR(b[i].imag(), b[i].imag(), delta);
   }
 }
+
+vEdge buildExponentialDD(Qubit v, std::size_t height, Package& dd,
+                         std::uniform_real_distribution<float>& dis,
+                         std::mt19937& gen) {
+  if (v == static_cast<Qubit>(height)) {
+    auto e = vEdge::one();
+    e.w = dd.cn.lookup(static_cast<fp>(dis(gen)));
+    return e;
+  }
+
+  const std::array<vEdge, RADIX> edges{
+      buildExponentialDD(v + 1, height, dd, dis, gen),
+      buildExponentialDD(v + 1, height, dd, dis, gen),
+  };
+
+  vEdge eNew = dd.makeDDNode(v, edges);
+  eNew.w = dd.cn.lookup(static_cast<fp>(dis(gen)));
+
+  return eNew;
+}
+
 }; // namespace
 
 ///-----------------------------------------------------------------------------
@@ -319,4 +348,41 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
   vecNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 4);
   EXPECT_NEAR(fidelityToSource, 0.8390109, 1e-3);
+}
+
+TEST(ApproximationTest, Runtime) {
+  {
+    constexpr std::size_t n = 15;         // Up to 16 qubits.
+    constexpr double fidelity = 1 - 0.25; // Reasonable budget of .75;
+
+    std::array<std::size_t, n> qubits{}; // Qubit counts: [2, 16]
+    std::iota(qubits.begin(), qubits.end(), 2);
+
+    // Setup random distribution for edge weights.
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> dis(0., 1.0);
+
+    for (std::size_t i = 0; i < n; ++i) {
+      const std::size_t nq = qubits[i];
+
+      auto dd = std::make_unique<dd::Package>(nq);
+
+      // Build exponentially large DD and increase its reference count.
+      auto state = buildExponentialDD(0, nq, *dd, dis, gen);
+      dd->incRef(state);
+
+      // Each state has two outgoing edges + root edge.
+      const std::size_t numEdges = (state.size() * 2) + 1;
+
+      const auto t1 = std::chrono::high_resolution_clock::now();
+      approximate(state, fidelity, *dd);
+      const auto t2 = std::chrono::high_resolution_clock::now();
+      const std::chrono::duration<double, std::micro> runtime = t2 - t1;
+
+      // Runtime should be sub-linear in terms of edges.
+      // 500μs is an "acceptable" difference.
+      EXPECT_TRUE(runtime.count() - static_cast<double>(numEdges) < 500);
+    }
+  }
 }
