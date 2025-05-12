@@ -1,0 +1,122 @@
+name: Catalyst CI
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "mlir/**"
+  pull_request:
+    paths:
+      - "mlir/**"
+      - ".github/workflows/ci_catalyst.yml"
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  cpp-test-catalyst:
+    name: 🇨‌ Test MLIR with LLVM@${{ matrix.llvm-version }}
+    runs-on: macos-14
+    strategy:
+      matrix:
+        llvm-version: [19]
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      CTEST_PARALLEL_LEVEL: 4
+      FORCE_COLOR: 3
+    steps:
+      # check out the repository
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # set up ccache for faster C++ builds
+      - name: Setup ccache
+        uses: Chocobo1/setup-ccache-action@v1
+        with:
+          prepend_symlinks_to_path: false
+          override_cache_key: c++-tests-mlir-catalyst
+
+      # set up mold as linker for faster C++ builds
+      - name: Set up mold as linker
+        uses: rui314/setup-mold@v1
+
+      # set up uv for faster Python package management
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      # make sure ninja is installed
+      - name: Install Ninja
+        run: uv tool install ninja
+
+      # make sure the lit test runner is installed
+      - name: Install lit
+        run: uv pip install lit
+
+      # install LLVM 19 and MLIR via Homebrew and set up environment variables
+      - name: Install LLVM and MLIR via Homebrew
+        run: |
+          brew install llvm@19
+          brew link --force --overwrite llvm@19
+          echo "CC=$(brew --prefix llvm@19)/bin/clang" >> $GITHUB_ENV
+          echo "CXX=$(brew --prefix llvm@19)/bin/clang++" >> $GITHUB_ENV
+          echo "MLIR_DIR=$(brew --prefix llvm@19)/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "LLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "$(brew --prefix llvm@19)/bin" >> $GITHUB_PATH
+
+      # clone PennyLane Catalyst (from patched branch) - excl. submodules
+      - name: Clone PennyLane Catalyst
+        run: |
+          git clone --branch mqt_integration --depth=1 https://github.com/flowerthrower/catalyst.git catalyst
+
+      - name: Set macOS deployment target for linker
+        run: echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
+
+      # configure only MLIRQuantum dialect (skip building tools)
+      - name: Configure MLIRQuantum dialect
+        run: |
+          cmake -G Ninja -S catalyst/mlir -B catalyst/mlir/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMLIR_DIR=$MLIR_DIR \
+            -DLLVM_DIR=$LLVM_DIR \
+            -DCATALYST_BUILD_TOOLS=OFF \
+            -DEnzyme_DIR="none"
+
+      # build MLIRQuantum
+      - name: Build MLIRQuantum dialect
+        run: |
+          cmake --build catalyst/mlir/build --target MLIRQuantum
+
+      - name: Check Catalyst CMake config
+        run: test -f catalyst/mlir/build/lib/cmake/catalyst/CatalystConfig.cmake
+
+      # configure the project with CMake
+      - name: Configure CMake for MLIR
+        run: |
+          cmake -G Ninja -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_MQT_CORE_MLIR=ON \
+            -DENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN=ON \
+            -DCatalyst_DIR="$PWD/catalyst/mlir/build/lib/cmake/catalyst"
+
+      # build the project
+      - name: Build MLIR quantum-opt
+        run: cmake --build build --config Release --target quantum-opt
+
+      # run conversion pipeline
+      - name: Run conversion -> catalystquantum-to-mqtopt
+        run: |
+          ./build/mlir/tools/quantum-opt/quantum-opt \
+            --pass-pipeline="builtin.module(catalystquantum-to-mqtopt)" \
+            mlir/test/Conversion/quantum.mlir
+      - name: Run conversion -> mqtopt-to-catalystquantum
+        run: |
+          ./build/mlir/tools/quantum-opt/quantum-opt \
+            --pass-pipeline="builtin.module(mqtopt-to-catalystquantum)" \
+            mlir/test/Conversion/mqtopt.mlir

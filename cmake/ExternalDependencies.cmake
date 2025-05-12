@@ -73,3 +73,18 @@ endif()
 
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
+
+if(ENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN)
+  # Manually detect the installed Catalyst Python and get its cmake directory.
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -c
+            "import catalyst, os; print(os.path.dirname(catalyst.__file__))"
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE Python_Catalyst_DIR
+    ERROR_QUIET)
+  message(STATUS "Found Catalyst package: ${Python_Catalyst_DIR}")
+
+  # TODO: once the Catalyst Python package provides the necessary files set(Catalyst_DIR
+  # "${Python_Catalyst_DIR}/mlir/build/lib/cmake/catalyst")
+  find_package(Catalyst REQUIRED)
+endif()
