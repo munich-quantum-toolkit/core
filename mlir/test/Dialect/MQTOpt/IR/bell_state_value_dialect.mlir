@@ -275,6 +275,58 @@ module {
 }
 
 // -----
+// This test checks if controlled parameterized single qubit gates are parsed and handled correctly
+module {
+    // CHECK-LABEL: func.func @testControlledSingleQubitRotationOp
+    func.func @testControlledSingleQubitRotationOp() {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01 : f64
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+
+        // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.u(%[[C0_F64]], %[[C0_F64]], %[[C0_F64]]) %[[Q0_0]] ctrl %[[Q1_0]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[Q1_2:.*]] = mqtopt.u2(%[[C0_F64]], %[[C0_F64]]) %[[Q0_1]] ctrl %[[Q1_1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q0_3:.*]], %[[Q1_3:.*]] = mqtopt.p(%[[C0_F64]]) %[[Q0_2]] ctrl %[[Q1_2]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q0_4:.*]], %[[Q1_4:.*]] = mqtopt.rx(%[[C0_F64]]) %[[Q0_3]] ctrl %[[Q1_3]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q0_5:.*]], %[[Q1_5:.*]] = mqtopt.ry(%[[C0_F64]]) %[[Q0_4]] ctrl %[[Q1_4]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q0_6:.*]], %[[Q1_6:.*]] = mqtopt.rz(%[[C0_F64]]) %[[Q0_5]] ctrl %[[Q1_5]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        %q0_1, %q1_1 = mqtopt.u(%c0_f64, %c0_f64, %c0_f64) %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_2, %q1_2 = mqtopt.u2(%c0_f64, %c0_f64) %q0_1 ctrl %q1_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_3, %q1_3 = mqtopt.p(%c0_f64) %q0_2 ctrl %q1_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_4, %q1_4 = mqtopt.rx(%c0_f64) %q0_3 ctrl %q1_3 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_5, %q1_5 = mqtopt.ry(%c0_f64) %q0_4 ctrl %q1_4 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_6, %q1_6 = mqtopt.rz(%c0_f64) %q0_5 ctrl %q1_5 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        // ==========================  Check that there are no further single qubit rotation operations ==============================
+        // CHECK-NOT: mqtopt.u(%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.u2(%[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.p(%[[ANY:.*]]) %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.rx(%[[ANY:.*]]) %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.ry(%[[ANY:.*]]) %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.rz(%[[ANY:.*]]) %[[ANY:.*]]
+
+        // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q0_6]])  <{index_attr = 0 : i64}>
+        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_6) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q1_0]])  <{index_attr = 1 : i64}>
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_3]])
+        "mqtopt.deallocQubitRegister"(%reg_3) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
 // This test checks if an CX gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testCXOp
@@ -510,7 +562,7 @@ module {
 // This test checks if a mixed controlled SWAP gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testMixedControlledSWAPOp
-    func.func @testNegativeControlledSWAPOp() {
+    func.func @testMixedControlledSWAPOp() {
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
         %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 4 : i64}> : () -> !mqtopt.QubitRegister
 
