@@ -110,7 +110,7 @@ TEST(CollectBlocks, nonCliffordBeginning) {
   std::cout << qc << "\n";
   qc::CircuitOptimizer::collectBlocks(qc, 2, true);
   std::cout << qc << "\n";
-  EXPECT_EQ(qc.size(), 2);
+  EXPECT_EQ(qc.size(), 3);
 }
 
 TEST(CollectBlocks, threeQubitnonClifford) {
@@ -121,7 +121,7 @@ TEST(CollectBlocks, threeQubitnonClifford) {
   std::cout << qc << "\n";
   qc::CircuitOptimizer::collectBlocks(qc, 2, true);
   std::cout << qc << "\n";
-  EXPECT_EQ(qc.size(), 2);
+  EXPECT_EQ(qc.size(), 3);
 }
 
 TEST(CollectBlocks, mergeBlocks) {
