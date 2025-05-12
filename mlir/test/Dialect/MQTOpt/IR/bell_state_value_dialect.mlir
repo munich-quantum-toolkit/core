@@ -229,6 +229,52 @@ module {
 }
 
 // -----
+// This test checks if parameterized single qubit gates are parsed and handled correctly
+module {
+    // CHECK-LABEL: func.func @testSingleQubitRotationOp
+    func.func @testSingleQubitRotationOp() {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01 : f64
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+
+        // CHECK: %[[Q_1:.*]] = mqtopt.u(%[[C0_F64]], %[[C0_F64]], %[[C0_F64]]) %[[Q_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q_2:.*]] = mqtopt.u2(%[[C0_F64]], %[[C0_F64]]) %[[Q_1]] : !mqtopt.Qubit
+        // CHECK: %[[Q_3:.*]] = mqtopt.p(%[[C0_F64]]) %[[Q_2]] : !mqtopt.Qubit
+        // CHECK: %[[Q_4:.*]] = mqtopt.rx(%[[C0_F64]]) %[[Q_3]] : !mqtopt.Qubit
+        // CHECK: %[[Q_5:.*]] = mqtopt.ry(%[[C0_F64]]) %[[Q_4]] : !mqtopt.Qubit
+        // CHECK: %[[Q_6:.*]] = mqtopt.rz(%[[C0_F64]]) %[[Q_5]] : !mqtopt.Qubit
+
+        %q_1 = mqtopt.u(%c0_f64, %c0_f64, %c0_f64) %q_0 : !mqtopt.Qubit
+        %q_2 = mqtopt.u2(%c0_f64, %c0_f64) %q_1 : !mqtopt.Qubit
+        %q_3 = mqtopt.p(%c0_f64) %q_2 : !mqtopt.Qubit
+        %q_4 = mqtopt.rx(%c0_f64) %q_3 : !mqtopt.Qubit
+        %q_5 = mqtopt.ry(%c0_f64) %q_4 : !mqtopt.Qubit
+        %q_6 = mqtopt.rz(%c0_f64) %q_5 : !mqtopt.Qubit
+
+        // ==========================  Check that there are no further single qubit rotation operations ==============================
+        // CHECK-NOT: mqtopt.u(%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.u2(%[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.p(%[[ANY:.*]]) %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.rx(%[[ANY:.*]]) %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.ry(%[[ANY:.*]]) %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.rz(%[[ANY:.*]]) %[[ANY:.*]]
+
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q_6]])  <{index_attr = 0 : i64}>
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_6) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_2]])
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
 // This test checks if an CX gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testCXOp
@@ -521,6 +567,58 @@ module {
 
         // ==========================  Check that there are no further ECR operations ==============================
         // CHECK-NOT: mqtopt.ecr() [[ANY:.*]], [[ANY:.*]]
+
+        return
+    }
+}
+
+// -----
+// This test checks if parameterized single qubit gates are parsed and handled correctly
+module {
+    // CHECK-LABEL: func.func @testMultipleQubitRotationOp
+    func.func @testMultipleQubitRotationOp() {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01 : f64
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+
+        // CHECK: %[[Q01_1:.*]]:2 = mqtopt.rxx(%[[C0_F64]]) %[[Q0_0]], %[[Q1_0]] : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_2:.*]]:2 = mqtopt.ryy(%[[C0_F64]]) %[[Q01_1]]#0, %[[Q01_1]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_3:.*]]:2 = mqtopt.rzz(%[[C0_F64]]) %[[Q01_2]]#0, %[[Q01_2]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_4:.*]]:2 = mqtopt.rzx(%[[C0_F64]]) %[[Q01_3]]#0, %[[Q01_3]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_5:.*]]:2 = mqtopt.xxminusyy(%[[C0_F64]], %[[C0_F64]]) %[[Q01_4]]#0, %[[Q01_4]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_6:.*]]:2 = mqtopt.xxplusyy(%[[C0_F64]], %[[C0_F64]]) %[[Q01_5]]#0, %[[Q01_5]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+        %q01_1:2 = mqtopt.rxx(%c0_f64) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q01_2:2 = mqtopt.ryy(%c0_f64) %q01_1#0, %q01_1#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q01_3:2 = mqtopt.rzz(%c0_f64) %q01_2#0, %q01_2#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q01_4:2 = mqtopt.rzx(%c0_f64) %q01_3#0, %q01_3#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q01_5:2 = mqtopt.xxminusyy(%c0_f64, %c0_f64) %q01_4#0, %q01_4#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q01_6:2 = mqtopt.xxplusyy(%c0_f64, %c0_f64) %q01_5#0, %q01_5#1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+        // ==========================  Check that there are no further single qubit rotation operations ==============================
+        // CHECK-NOT: mqtopt.rxx(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.ryy(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.rzz(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.rzx(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.xxminusyy(%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.xxplusyy(%[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
+
+        // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q01_6]]#0)  <{index_attr = 0 : i64}>
+        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q01_6#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q01_6]]#1)  <{index_attr = 1 : i64}>
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_6#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
+        "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
 
         return
     }
