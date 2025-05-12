@@ -453,6 +453,90 @@ module {
 }
 
 // -----
+// This test checks if a controlled SWAP gate is parsed and handled correctly
+module {
+    // CHECK-LABEL: func.func @testControlledSWAPOp
+    func.func @testControlledSWAPOp() {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Reg_3:.*]], %[[Q2_0:.*]] = "mqtopt.extractQubit"(%[[Reg_2]]) <{index_attr = 2 : i64}>
+        %reg_3, %q2_0 = "mqtopt.extractQubit"(%reg_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Q01_1:.*]]:2, %[[Q2_1:.*]] = mqtopt.swap() %[[Q0_0]], %[[Q1_0]] ctrl %[[Q2_0]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_1, %q1_1, %q2_1 = mqtopt.swap() %q0_0, %q1_0 ctrl %q2_0 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        // ==========================  Check that there are no further SWAP operations ==============================
+        // CHECK-NOT: mqtopt.swap() [[ANY:.*]], [[ANY:.*]] ctrl [[ANY:.*]]
+
+        return
+    }
+}
+
+// -----
+// This test checks if a negative controlled SWAP gate is parsed and handled correctly
+module {
+    // CHECK-LABEL: func.func @testNegativeControlledSWAPOp
+    func.func @testNegativeControlledSWAPOp() {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Reg_3:.*]], %[[Q2_0:.*]] = "mqtopt.extractQubit"(%[[Reg_2]]) <{index_attr = 2 : i64}>
+        %reg_3, %q2_0 = "mqtopt.extractQubit"(%reg_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Q01_1:.*]]:2, %[[Q2_1:.*]] = mqtopt.swap() %[[Q0_0]], %[[Q1_0]] nctrl %[[Q2_0]] : !mqtopt.Qubit, !mqtopt.Qubit nctrl !mqtopt.Qubit
+        %q0_1, %q1_1, %q2_1 = mqtopt.swap() %q0_0, %q1_0 nctrl %q2_0 : !mqtopt.Qubit, !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        // ==========================  Check that there are no further SWAP operations ==============================
+        // CHECK-NOT: mqtopt.swap() [[ANY:.*]], [[ANY:.*]] nctrl [[ANY:.*]]
+
+        return
+    }
+}
+
+// -----
+// This test checks if a mixed controlled SWAP gate is parsed and handled correctly
+module {
+    // CHECK-LABEL: func.func @testMixedControlledSWAPOp
+    func.func @testNegativeControlledSWAPOp() {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 4 : i64}> : () -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Reg_3:.*]], %[[Q2_0:.*]] = "mqtopt.extractQubit"(%[[Reg_2]]) <{index_attr = 2 : i64}>
+        %reg_3, %q2_0 = "mqtopt.extractQubit"(%reg_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Reg_4:.*]], %[[Q3_0:.*]] = "mqtopt.extractQubit"(%[[Reg_3]]) <{index_attr = 3 : i64}>
+        %reg_4, %q3_0 = "mqtopt.extractQubit"(%reg_3) <{index_attr = 3 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Q01_1:.*]]:2, %[[Q2_1:.*]], %[[Q3_1:.*]] = mqtopt.swap() %[[Q0_0]], %[[Q1_0]] ctrl %[[Q2_0]] nctrl %[[Q3_0]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+        %q0_1, %q1_1, %q2_1, %q3_1 = mqtopt.swap() %q0_0, %q1_0 ctrl %q2_0 nctrl %q3_0 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        // ==========================  Check that there are no further SWAP operations ==============================
+        // CHECK-NOT: mqtopt.swap() [[ANY:.*]], [[ANY:.*]] ctrl [[ANY:.*]] nctrl [[ANY:.*]]
+
+        return
+    }
+}
+
+// -----
 // This test checks if an iSWAP gate is parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testiSWAPOp
