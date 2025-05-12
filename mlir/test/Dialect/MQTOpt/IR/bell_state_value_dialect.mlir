@@ -165,10 +165,10 @@ module {
 }
 
 // -----
-// This test checks if an identity gate is parsed and handled correctly
+// This test checks if single qubit  gate is parsed and handled correctly
 module {
-    // CHECK-LABEL: func.func @testIOp
-    func.func @testIOp() {
+    // CHECK-LABEL: func.func @testSingleQubitOp
+    func.func @testSingleQubitOp() {
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
         %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
 
@@ -176,52 +176,53 @@ module {
         %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
         // CHECK: %[[Q_1:.*]] = mqtopt.i() %[[Q_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q_2:.*]] = mqtopt.h() %[[Q_1]] : !mqtopt.Qubit
+        // CHECK: %[[Q_3:.*]] = mqtopt.x() %[[Q_2]] : !mqtopt.Qubit
+        // CHECK: %[[Q_4:.*]] = mqtopt.y() %[[Q_3]] : !mqtopt.Qubit
+        // CHECK: %[[Q_5:.*]] = mqtopt.z() %[[Q_4]] : !mqtopt.Qubit
+        // CHECK: %[[Q_6:.*]] = mqtopt.s() %[[Q_5]] : !mqtopt.Qubit
+        // CHECK: %[[Q_7:.*]] = mqtopt.sdg() %[[Q_6]] : !mqtopt.Qubit
+        // CHECK: %[[Q_8:.*]] = mqtopt.t() %[[Q_7]] : !mqtopt.Qubit
+        // CHECK: %[[Q_9:.*]] = mqtopt.tdg() %[[Q_8]] : !mqtopt.Qubit
+        // CHECK: %[[Q_10:.*]] = mqtopt.v() %[[Q_9]] : !mqtopt.Qubit
+        // CHECK: %[[Q_11:.*]] = mqtopt.vdg() %[[Q_10]] : !mqtopt.Qubit
+        // CHECK: %[[Q_12:.*]] = mqtopt.sx() %[[Q_11]] : !mqtopt.Qubit
+        // CHECK: %[[Q_13:.*]] = mqtopt.sxdg() %[[Q_12]] : !mqtopt.Qubit
+
         %q_1 = mqtopt.i() %q_0 : !mqtopt.Qubit
+        %q_2 = mqtopt.h() %q_1 : !mqtopt.Qubit
+        %q_3 = mqtopt.x() %q_2 : !mqtopt.Qubit
+        %q_4 = mqtopt.y() %q_3 : !mqtopt.Qubit
+        %q_5 = mqtopt.z() %q_4 : !mqtopt.Qubit
+        %q_6 = mqtopt.s() %q_5 : !mqtopt.Qubit
+        %q_7 = mqtopt.sdg() %q_6 : !mqtopt.Qubit
+        %q_8 = mqtopt.t() %q_7 : !mqtopt.Qubit
+        %q_9 = mqtopt.tdg() %q_8 : !mqtopt.Qubit
+        %q_10 = mqtopt.v() %q_9 : !mqtopt.Qubit
+        %q_11 = mqtopt.vdg() %q_10 : !mqtopt.Qubit
+        %q_12 = mqtopt.sx() %q_11 : !mqtopt.Qubit
+        %q_13 = mqtopt.sxdg() %q_12 : !mqtopt.Qubit
 
-        // ==========================  Check that there are no further I operations ==============================
+        // ==========================  Check that there are no further single qubit operations ==============================
         // CHECK-NOT: mqtopt.i() [[ANY:.*]]
-
-        return
-    }
-}
-
-// -----
-// This test checks if a Hadamard gate is parsed and handled correctly
-module {
-    // CHECK-LABEL: func.func @testHOp
-    func.func @testHOp() {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // CHECK: %[[Q_1:.*]] = mqtopt.h() %[[Q_0]] : !mqtopt.Qubit
-        %q_1 = mqtopt.h() %q_0 : !mqtopt.Qubit
-
-        // ==========================  Check that there are no further H operations ==============================
         // CHECK-NOT: mqtopt.h() [[ANY:.*]]
-
-        return
-    }
-}
-
-// -----
-// This test checks if an X gate is parsed and handled correctly
-module {
-    // CHECK-LABEL: func.func @testXOp
-    func.func @testXOp() {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // CHECK: %[[Q_1:.*]] = mqtopt.x() %[[Q_0]] : !mqtopt.Qubit
-        %q_1 = mqtopt.x() %q_0 : !mqtopt.Qubit
-
-        // ==========================  Check that there are no further X operations ==============================
         // CHECK-NOT: mqtopt.x() [[ANY:.*]]
+        // CHECK-NOT: mqtopt.y() [[ANY:.*]]
+        // CHECK-NOT: mqtopt.z() [[ANY:.*]]
+        // CHECK-NOT: mqtopt.s() [[ANY:.*]]
+        // CHECK-NOT: mqtopt.sdg() [[ANY:.*]]
+        // CHECK-NOT: mqtopt.t() [[ANY:.*]]
+        // CHECK-NOT: mqtopt.tdg() [[ANY:.*]]
+        // CHECK-NOT: mqtopt.v() [[ANY:.*]]
+        // CHECK-NOT: mqtopt.vdg() [[ANY:.*]]
+        // CHECK-NOT: mqtopt.sx() [[ANY:.*]]
+        // CHECK-NOT: mqtopt.sxdg() [[ANY:.*]]
+
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q_13]])  <{index_attr = 0 : i64}>
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_13) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_2]])
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
 
         return
     }
@@ -380,215 +381,6 @@ module {
     }
 }
 
-// -----
-// This test checks if an Y gate is parsed and handled correctly
-module {
-    // CHECK-LABEL: func.func @testYOp
-    func.func @testYOp() {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // CHECK: %[[Q_1:.*]] = mqtopt.y() %[[Q_0]] : !mqtopt.Qubit
-        %q_1 = mqtopt.y() %q_0 : !mqtopt.Qubit
-
-        // ==========================  Check that there are no further Y operations ==============================
-        // CHECK-NOT: mqtopt.y() [[ANY:.*]]
-
-        return
-    }
-}
-
-// -----
-// This test checks if an Z gate is parsed and handled correctly
-module {
-    // CHECK-LABEL: func.func @testZOp
-    func.func @testZOp() {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // CHECK: %[[Q_1:.*]] = mqtopt.z() %[[Q_0]] : !mqtopt.Qubit
-        %q_1 = mqtopt.z() %q_0 : !mqtopt.Qubit
-
-        // ==========================  Check that there are no further Z operations ==============================
-        // CHECK-NOT: mqtopt.z() [[ANY:.*]]
-
-        return
-    }
-}
-
-// -----
-// This test checks if an S gate is parsed and handled correctly
-module {
-    // CHECK-LABEL: func.func @testSOp
-    func.func @testSOp() {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // CHECK: %[[Q_1:.*]] = mqtopt.s() %[[Q_0]] : !mqtopt.Qubit
-        %q_1 = mqtopt.s() %q_0 : !mqtopt.Qubit
-
-        // ==========================  Check that there are no further S operations ==============================
-        // CHECK-NOT: mqtopt.s() [[ANY:.*]]
-
-        return
-    }
-}
-
-// -----
-// This test checks if an Sdg gate is parsed and handled correctly
-module {
-    // CHECK-LABEL: func.func @testSdgOp
-    func.func @testSdgOp() {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // CHECK: %[[Q_1:.*]] = mqtopt.sdg() %[[Q_0]] : !mqtopt.Qubit
-        %q_1 = mqtopt.sdg() %q_0 : !mqtopt.Qubit
-
-        // ==========================  Check that there are no further Sdg operations ==============================
-        // CHECK-NOT: mqtopt.sdg() [[ANY:.*]]
-
-        return
-    }
-}
-
-// -----
-// This test checks if an T gate is parsed and handled correctly
-module {
-    // CHECK-LABEL: func.func @testTOp
-    func.func @testTOp() {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // CHECK: %[[Q_1:.*]] = mqtopt.t() %[[Q_0]] : !mqtopt.Qubit
-        %q_1 = mqtopt.t() %q_0 : !mqtopt.Qubit
-
-        // ==========================  Check that there are no further T operations ==============================
-        // CHECK-NOT: mqtopt.t() [[ANY:.*]]
-
-        return
-    }
-}
-
-// -----
-// This test checks if an Tdg gate is parsed and handled correctly
-module {
-    // CHECK-LABEL: func.func @testTdgOp
-    func.func @testTdgOp() {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // CHECK: %[[Q_1:.*]] = mqtopt.tdg() %[[Q_0]] : !mqtopt.Qubit
-        %q_1 = mqtopt.tdg() %q_0 : !mqtopt.Qubit
-
-        // ==========================  Check that there are no further Tdg operations ==============================
-        // CHECK-NOT: mqtopt.tdg() [[ANY:.*]]
-
-        return
-    }
-}
-
-// -----
-// This test checks if an V gate is parsed and handled correctly
-module {
-    // CHECK-LABEL: func.func @testVOp
-    func.func @testVOp() {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // CHECK: %[[Q_1:.*]] = mqtopt.v() %[[Q_0]] : !mqtopt.Qubit
-        %q_1 = mqtopt.v() %q_0 : !mqtopt.Qubit
-
-        // ==========================  Check that there are no further V operations ==============================
-        // CHECK-NOT: mqtopt.v() [[ANY:.*]]
-
-        return
-    }
-}
-
-// -----
-// This test checks if an Vdg gate is parsed and handled correctly
-module {
-    // CHECK-LABEL: func.func @testVdgOp
-    func.func @testVdgOp() {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // CHECK: %[[Q_1:.*]] = mqtopt.vdg() %[[Q_0]] : !mqtopt.Qubit
-        %q_1 = mqtopt.vdg() %q_0 : !mqtopt.Qubit
-
-        // ==========================  Check that there are no further Vdg operations ==============================
-        // CHECK-NOT: mqtopt.vdg() [[ANY:.*]]
-
-        return
-    }
-}
-
-// -----
-// This test checks if an SX gate is parsed and handled correctly
-module {
-    // CHECK-LABEL: func.func @testSXOp
-    func.func @testSXOp() {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // CHECK: %[[Q_1:.*]] = mqtopt.sx() %[[Q_0]] : !mqtopt.Qubit
-        %q_1 = mqtopt.sx() %q_0 : !mqtopt.Qubit
-
-        // ==========================  Check that there are no further SX operations ==============================
-        // CHECK-NOT: mqtopt.sx() [[ANY:.*]]
-
-        return
-    }
-}
-
-// -----
-// This test checks if an SXdg gate is parsed and handled correctly
-module {
-    // CHECK-LABEL: func.func @testSXdgOp
-    func.func @testSXdgOp() {
-        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // CHECK: %[[Q_1:.*]] = mqtopt.sxdg() %[[Q_0]] : !mqtopt.Qubit
-        %q_1 = mqtopt.sxdg() %q_0 : !mqtopt.Qubit
-
-        // ==========================  Check that there are no further SXdg operations ==============================
-        // CHECK-NOT: mqtopt.sxdg() [[ANY:.*]]
-
-        return
-    }
-}
 
 // -----
 // This test checks if an SWAP gate is parsed and handled correctly
