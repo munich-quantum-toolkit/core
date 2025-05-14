@@ -165,7 +165,7 @@ module {
 }
 
 // -----
-// This test checks if single qubit  gate is parsed and handled correctly
+// This test checks if single qubit gates are parsed and handled correctly
 module {
     // CHECK-LABEL: func.func @testSingleQubitOp
     func.func @testSingleQubitOp() {
@@ -257,12 +257,7 @@ module {
         %q_6 = mqtopt.rz(%c0_f64) %q_5 : !mqtopt.Qubit
 
         // ==========================  Check that there are no further single qubit rotation operations ==============================
-        // CHECK-NOT: mqtopt.u(%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.u2(%[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.p(%[[ANY:.*]]) %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.rx(%[[ANY:.*]]) %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.ry(%[[ANY:.*]]) %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.rz(%[[ANY:.*]]) %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.[[ANY:.*]]([[ANY:.*]]) %[[ANY:.*]] : !mqtopt.Qubit
 
         // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q_6]])  <{index_attr = 0 : i64}>
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_6) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
@@ -306,12 +301,7 @@ module {
         %q0_6, %q1_6 = mqtopt.rz(%c0_f64) %q0_5 ctrl %q1_5 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
         // ==========================  Check that there are no further single qubit rotation operations ==============================
-        // CHECK-NOT: mqtopt.u(%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.u2(%[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.p(%[[ANY:.*]]) %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.rx(%[[ANY:.*]]) %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.ry(%[[ANY:.*]]) %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.rz(%[[ANY:.*]]) %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.[[ANY:.*]]([[ANY:.*]]) %[[ANY:.*]] : !mqtopt.Qubit
 
         // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q0_6]])  <{index_attr = 0 : i64}>
         %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_6) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
@@ -510,13 +500,7 @@ module {
         %q0_7, %q1_7 = mqtopt.ecr() %q0_6, %q1_6 : !mqtopt.Qubit, !mqtopt.Qubit
 
         // ==========================  Check that there are no further multiple qubit operations ==============================
-        // CHECK-NOT: mqtopt.swap() [[ANY:.*]], [[ANY:.*]]
-        // CHECK-NOT: mqtopt.iswap() [[ANY:.*]], [[ANY:.*]]
-        // CHECK-NOT: mqtopt.iswapdg() [[ANY:.*]], [[ANY:.*]]
-        // CHECK-NOT: mqtopt.peres() [[ANY:.*]], [[ANY:.*]]
-        // CHECK-NOT: mqtopt.peresdg() [[ANY:.*]], [[ANY:.*]]
-        // CHECK-NOT: mqtopt.dcx() [[ANY:.*]], [[ANY:.*]]
-        // CHECK-NOT: mqtopt.ecr() [[ANY:.*]], [[ANY:.*]]
+        // CHECK-NOT: mqtopt.[[ANY:.*]]() %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
 
         return
     }
