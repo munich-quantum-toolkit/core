@@ -144,6 +144,33 @@ module {
 }
 
 // -----
+// This test checks that all resources defined in the MQTOpt dialect are parsed and handled correctly using dynamic operands.
+module {
+    // CHECK-LABEL: func.func @testAllResourcesUsingOperands
+    func.func @testAllResourcesUsingOperands() {
+        // CHECK: %[[Size:.*]] = arith.constant 2 : i64
+        %size = arith.constant 2 : i64
+
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"(%[[Size]]) : (i64) -> !mqtopt.QubitRegister
+        %reg_0 = "mqtopt.allocQubitRegister"(%size) : (i64) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Index:.*]] = arith.constant 0 : i64
+        %index = arith.constant 0 : i64
+
+        // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]], %[[Index]]) : (!mqtopt.QubitRegister, i64) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0, %index) : (!mqtopt.QubitRegister, i64) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q_0]], %[[Index]])  : (!mqtopt.QubitRegister, !mqtopt.Qubit, i64) -> !mqtopt.QubitRegister
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_0, %index) : (!mqtopt.QubitRegister, !mqtopt.Qubit, i64) -> !mqtopt.QubitRegister
+
+        // ==========================  Check that there are no further insertions ==============================
+        // CHECK-NOT: "mqtopt.insertQubit"([[ANY:.*]], [[ANY:.*]])
+
+        return
+    }
+}
+
+// -----
 // This test checks if the MeasureOp is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMeasureOp
@@ -189,7 +216,7 @@ module {
 }
 
 // -----
-// This test checks if single qubit gates are parsed and handled correctly
+// This test checks if single qubit gates are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testSingleQubitOp
     func.func @testSingleQubitOp() {
@@ -241,7 +268,7 @@ module {
 }
 
 // -----
-// This test checks if parameterized single qubit gates are parsed and handled correctly
+// This test checks if parameterized single qubit gates are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testSingleQubitRotationOp
     func.func @testSingleQubitRotationOp() {
@@ -282,7 +309,7 @@ module {
 }
 
 // -----
-// This test checks if controlled parameterized single qubit gates are parsed and handled correctly
+// This test checks if controlled parameterized single qubit gates are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testControlledSingleQubitRotationOp
     func.func @testControlledSingleQubitRotationOp() {
@@ -329,7 +356,7 @@ module {
 }
 
 // -----
-// This test checks if an CX gate is parsed and handled correctly
+// This test checks if an CX gate is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testCXOp
     func.func @testCXOp() {
@@ -353,7 +380,7 @@ module {
 }
 
 // -----
-// This test checks if a negative CX gate is parsed and handled correctly
+// This test checks if a negative CX gate is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testNegativeCXOp
     func.func @testNegativeCXOp() {
@@ -377,7 +404,7 @@ module {
 }
 
 // -----
-// This test checks if an MCX gate is parsed and handled correctly
+// This test checks if an MCX gate is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMCXOp
     func.func @testMCXOp() {
@@ -412,7 +439,7 @@ module {
 }
 
 // -----
-// This test checks if a negative MCX gate is parsed and handled correctly
+// This test checks if a negative MCX gate is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testNegativeMCXOp
     func.func @testNegativeMCXOp() {
@@ -447,7 +474,7 @@ module {
 }
 
 // -----
-// This test checks if an MCX gate is parsed and handled correctly using different types of controls
+// This test checks if an MCX gate is parsed and handled correctly using different types of controls.
 module {
     // CHECK-LABEL: func.func @testMixedMCXOp
     func.func @testMixedMCXOp() {
@@ -482,7 +509,7 @@ module {
 }
 
 // -----
-// This test checks if two target gates are parsed and handled correctly
+// This test checks if two target gates are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testTwoTargetOp
     func.func @testTwoTargetOp() {
@@ -519,7 +546,7 @@ module {
 }
 
 // -----
-// This test checks if a controlled SWAP gate is parsed and handled correctly
+// This test checks if a controlled SWAP gate is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testControlledSWAPOp
     func.func @testControlledSWAPOp() {
@@ -546,7 +573,7 @@ module {
 }
 
 // -----
-// This test checks if a negative controlled SWAP gate is parsed and handled correctly
+// This test checks if a negative controlled SWAP gate is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testNegativeControlledSWAPOp
     func.func @testNegativeControlledSWAPOp() {
@@ -573,7 +600,7 @@ module {
 }
 
 // -----
-// This test checks if a mixed controlled SWAP gate is parsed and handled correctly
+// This test checks if a mixed controlled SWAP gate is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMixedControlledSWAPOp
     func.func @testMixedControlledSWAPOp() {
@@ -592,6 +619,18 @@ module {
         // CHECK: %[[Reg_4:.*]], %[[Q3_0:.*]] = "mqtopt.extractQubit"(%[[Reg_3]]) <{index_attr = 3 : i64}>
         %reg_4, %q3_0 = "mqtopt.extractQubit"(%reg_3) <{index_attr = 3 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
+        //===------------------------------------------------------------------===//
+        //       ┌──────┐
+        // q0_0: ┤ SWAP ├ q0_1
+        //       └───┬──┘
+        //       ┌───┴──┐
+        // q1_0: ┤ SWAP ├ q1_1
+        //       └───┬──┘
+        // q2_0: ────■─── q2_1
+        //           |
+        // q3_0: ────■─── q3_1
+        //===----------------------------------------------------------------===//
+
         // CHECK: %[[Q01_1:.*]]:2, %[[Q2_1:.*]], %[[Q3_1:.*]] = mqtopt.swap() %[[Q0_0]], %[[Q1_0]] ctrl %[[Q2_0]] nctrl %[[Q3_0]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
         %q0_1, %q1_1, %q2_1, %q3_1 = mqtopt.swap() %q0_0, %q1_0 ctrl %q2_0 nctrl %q3_0 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
 
@@ -602,7 +641,7 @@ module {
     }
 }
 // -----
-// This test checks if parameterized multiple qubit gates are parsed and handled correctly
+// This test checks if parameterized multiple qubit gates are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMultipleQubitRotationOp
     func.func @testMultipleQubitRotationOp() {
@@ -633,12 +672,7 @@ module {
         %q01_6:2 = mqtopt.xxplusyy(%c0_f64, %c0_f64) %q01_5#0, %q01_5#1 : !mqtopt.Qubit, !mqtopt.Qubit
 
         // ==========================  Check that there are no further single qubit rotation operations ==============================
-        // CHECK-NOT: mqtopt.rxx(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.ryy(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.rzz(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.rzx(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.xxminusyy(%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.xxplusyy(%[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.[[ANY:.*]]([[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
 
         // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q01_6]]#0)  <{index_attr = 0 : i64}>
         %reg_3 = "mqtopt.insertQubit"(%reg_2, %q01_6#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
@@ -654,7 +688,7 @@ module {
 }
 
 // -----
-// This test checks if parameterized multiple qubit gates are parsed and handled correctly
+// This test checks if parameterized multiple qubit gates are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testControlledMultipleQubitRotationOp
     func.func @testControlledMultipleQubitRotationOp() {
@@ -688,12 +722,7 @@ module {
         %q01_6:2, %q2_6 = mqtopt.xxplusyy(%c0_f64, %c0_f64) %q01_5#0, %q01_5#1 ctrl %q2_5 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
 
         // ==========================  Check that there are no further single qubit rotation operations ==============================
-        // CHECK-NOT: mqtopt.rxx(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.ryy(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.rzz(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.rzx(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.xxminusyy(%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
-        // CHECK-NOT: mqtopt.xxplusyy(%[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
+        // CHECK-NOT: mqtopt.[[ANY:.*]]([[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]] ctrl %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
 
         // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q01_6]]#0)  <{index_attr = 0 : i64}>
         %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_6#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
@@ -712,7 +741,7 @@ module {
 }
 
 // -----
-// This test checks if a Bell state is parsed and handled correctly by using many instructions tested above
+// This test checks if a Bell state is parsed and handled correctly by using many instructions tested above.
 module {
     // CHECK-LABEL: func.func @bellState()
     func.func @bellState() {
@@ -725,7 +754,7 @@ module {
         // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 1 : i64}>
         %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
-        // CHECK: %[[Q0_1:.*]] = mqtopt.x() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_1:.*]] = mqtopt.h() %[[Q0_0]] : !mqtopt.Qubit
         %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
 
         // CHECK: %[[Q1_1:.*]], %[[Q0_2:.*]] = mqtopt.x() %[[Q1_0:.*]] ctrl %[[Q0_1:.*]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
