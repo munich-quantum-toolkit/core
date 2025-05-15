@@ -100,6 +100,14 @@ which is being developed as part of the [Munich Quantum Valley (MQV)](https://ww
 </div>
 </div>
 
+Thank you to all the contributors who have helped make MQT Core a reality!
+
+<p align="center">
+<a href="https://github.com/munich-quantum-toolkit/core/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=munich-quantum-toolkit/core" />
+</a>
+</p>
+
 ## Cite This
 
 If you want to cite MQT Core, please use the following BibTeX entry:

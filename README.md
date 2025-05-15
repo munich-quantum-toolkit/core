@@ -46,6 +46,14 @@ Among others, it is part of the [Munich Quantum Software Stack (MQSS)](https://w
   </picture>
 </p>
 
+Thank you to all the contributors who have helped make MQT Core a reality!
+
+<p align="center">
+<a href="https://github.com/munich-quantum-toolkit/core/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=munich-quantum-toolkit/core" />
+</a>
+</p>
+
 ## Getting Started
 
 `mqt.core` is available via [PyPI](https://pypi.org/project/mqt.core/) for all major operating systems and supports Python 3.9 to 3.13.
