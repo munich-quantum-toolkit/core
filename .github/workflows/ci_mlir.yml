@@ -151,7 +151,6 @@ jobs:
           cd llvm-project
           git fetch llvmorg-${{ steps.get-latest.outputs.latest }}
           git checkout llvmorg-${{ steps.get-latest.outputs.latest }}
-          cd llvm-project
           cmake -S llvm -B build_llvm `
             -DLLVM_ENABLE_PROJECTS=mlir `
             -DLLVM_BUILD_EXAMPLES=OFF `
