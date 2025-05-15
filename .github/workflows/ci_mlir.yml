@@ -126,7 +126,7 @@ jobs:
                   }
                 } |
                 Where-Object { $_ -ne $null }
-          echo "Latest version: $latest"
+          echo "Latest tag: $tag"
           echo "latest=$latest" >> $env:GITHUB_OUTPUT
 
       - name: Try to get MLIR from cache
