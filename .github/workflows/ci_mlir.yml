@@ -109,9 +109,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Clone the llvm-project repository so we can search its tags
+      - name: Clone llvm-project
+        run: |
+          git clone --depth 1 https://github.com/llvm/llvm-project.git
+
       - name: Find latest release of llvm-project
         id: get-latest
         run: |
+          cd llvm-project
           $tag = git ls-remote --tags origin "llvmorg-${{ matrix.llvm-version }}.*" |
                   Where-Object { $_ -match "llvmorg-\d+\.\d+\.\d+" } |
                   Sort-Object -Property {
@@ -142,7 +148,9 @@ jobs:
       - name: Install llvm and mlir
         if: steps.mlir-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 https://github.com/llvm/llvm-project.git --branch llvmorg-${{ steps.get-latest.outputs.latest }}
+          cd llvm-project
+          git fetch llvmorg-${{ steps.get-latest.outputs.latest }}
+          git checkout llvmorg-${{ steps.get-latest.outputs.latest }}
           cd llvm-project
           cmake -S llvm -B build_llvm `
             -DLLVM_ENABLE_PROJECTS=mlir `
