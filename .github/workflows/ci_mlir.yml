@@ -101,26 +101,47 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       CTEST_PARALLEL_LEVEL: 4
       FORCE_COLOR: 3
+    outputs:
+      llvm-latest-tag: ${{ steps.get-latest.outputs.latest }}
     steps:
       # check out the repository
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Find latest release of llvm-project
+        id: get-latest
+        run: |
+          $tag = git ls-remote --tags origin "llvmorg-${{ matrix.llvm-version }}.*" |
+                  Where-Object { $_ -match "llvmorg-\d+\.\d+\.\d+" } |
+                  Sort-Object -Property {
+                    if ($_ -match "llvmorg-(\d+)\.(\d+)\.(\d+)") {
+                      [int]$Matches[1]*10000 + [int]$Matches[2]*100 + [int]$Matches[3]
+                    }
+                  } |
+                  Select-Object -Last 1
+          $latest = $tag | ForEach-Object {
+                  if ($_ -match "refs/tags/llvmorg-(\d+\.\d+\.\d+)") {
+                    $Matches[1]  # Extract just the version number (e.g., "20.1.0")
+                  }
+                } |
+                Where-Object { $_ -ne $null }
+          echo "latest=$latest" >> $env:GITHUB_OUTPUT
+
       - name: Try to get MLIR from cache
         uses: actions/cache@v4
         id: mlir-cache
         with:
           path: ${{ github.workspace }}/llvm-install
-          key: ${{ runner.os }}-llvm-${{ matrix.llvm-version }}
+          key: ${{ runner.os }}-llvm-${{ steps.get-latest.outputs.latest }}
           restore-keys: |
-            ${{ runner.os }}-llvm-${{ matrix.llvm-version }}
+            ${{ runner.os }}-llvm-${{ steps.get-latest.outputs.latest }}
 
       # build the llvm-project from source
       - name: Install llvm and mlir
         if: steps.mlir-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 https://github.com/llvm/llvm-project.git --branch llvmorg-${{ matrix.llvm-version }}.1.0
+          git clone --depth 1 https://github.com/llvm/llvm-project.git --branch llvmorg-${{ steps.get-latest.outputs.latest }}
           cd llvm-project
           cmake -S llvm -B build_llvm `
             -DLLVM_ENABLE_PROJECTS=mlir `
