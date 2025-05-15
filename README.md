@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://mqt.readthedocs.io">
    <picture>
-     <source media="(prefers-color-scheme: dark)" srcset="docs/_static/mqt-logo-dark.svg" width="90%">
+     <source media="(prefers-color-scheme: dark)" srcset="docs/_static/mqt-logo-dark.svg" width="40%">
      <img src="docs/_static/mqt-logo-dark.svg" width="40%" alt="MQT Logo">
    </picture>
   </a>
@@ -26,13 +26,13 @@ MQT Core is an open-source C++17 and Python library for quantum computing that f
   </a>
 </p>
 
-If you have any questions, feel free to create a [discussion](https://github.com/munich-quantum-toolkit/core/discussions) or an [issue](https://github.com/munich-quantum-toolkit/core/issues) on [GitHub](https://github.com/munich-quantum-toolkit/core).
-
 ## Key Features
 
 - Fully fledged intermediate representation (IR) for quantum computations.
 - A state-of-the-art decision diagram (DD) package for quantum computing.
 - A dedicated ZX-diagram package for working with the ZX-calculus.
+
+If you have any questions, feel free to create a [discussion](https://github.com/munich-quantum-toolkit/core/discussions) or an [issue](https://github.com/munich-quantum-toolkit/core/issues) on [GitHub](https://github.com/munich-quantum-toolkit/core).
 
 ## Contributors and Partners
 
@@ -42,8 +42,8 @@ Among others, it is part of the [Munich Quantum Software Stack (MQSS)](https://w
 <p align="center">
   <a href="https://mqt.readthedocs.io">
    <picture>
-     <source media="(prefers-color-scheme: dark)" srcset="docs/_static/mqt-logo-dark.svg" width="90%">
-     <img src="docs/_static/mqt-logo-dark.svg" width="40%" alt="MQT Logo">
+     <source media="(prefers-color-scheme: dark)" srcset="docs/_static/mqt-logo-banner-dark.svg" width="90%">
+     <img src="docs/_static/mqt-logo-banner-dark.svg" width="40%" alt="MQT Partner Logos">
    </picture>
   </a>
 </p>
