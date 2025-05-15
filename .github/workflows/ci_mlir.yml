@@ -108,7 +108,7 @@ jobs:
           fetch-depth: 0
 
       - name: Try to get MLIR from cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         id: mlir-cache
         with:
           path: ${{ github.workspace }}/llvm-install
