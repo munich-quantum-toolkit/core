@@ -122,7 +122,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/llvm/llvm-project.git --branch llvmorg-${{ matrix.llvm-version }}.1.0
           cd llvm-project
-          cmake -S llvm -B build_llvm -G "Ninja" `
+          cmake -S llvm -B build_llvm `
             -DLLVM_ENABLE_PROJECTS=mlir `
             -DLLVM_BUILD_EXAMPLES=OFF `
             -DLLVM_TARGETS_TO_BUILD="X86" `
@@ -143,10 +143,6 @@ jobs:
           python-version: 3.13
           activate-environment: true
 
-      # make sure ninja is installed
-      - name: Install Ninja
-        run: uv tool install ninja
-
       # make sure the lit test runner is installed
       - name: Install lit
         run: |
@@ -155,7 +151,7 @@ jobs:
       # configure the project with CMake
       - name: Configure CMake for MLIR
         run: |
-          cmake -G Ninja -S . -B build `
+          cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_MQT_CORE_MLIR=ON `
             -DCMAKE_PREFIX_PATH=${{ github.workspace }}\llvm-install `
