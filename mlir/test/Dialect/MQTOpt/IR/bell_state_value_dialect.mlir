@@ -166,6 +166,9 @@ module {
         // ==========================  Check that there are no further insertions ==============================
         // CHECK-NOT: "mqtopt.insertQubit"([[ANY:.*]], [[ANY:.*]])
 
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_2]])
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
         return
     }
 }
@@ -186,6 +189,12 @@ module {
 
         // ==========================  Check that there are no further measurements ==============================
         // CHECK-NOT: "mqtopt.measure"([[ANY:.*]])
+
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q_1]])  <{index_attr = 0 : i64}>
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_2]])
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
 
         return
     }
@@ -210,6 +219,15 @@ module {
 
         // ==========================  Check that there are no further measurements ==============================
         // CHECK-NOT: "mqtopt.measure"([[ANY:.*]])
+
+        // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q01_1]]#0)  <{index_attr = 0 : i64}>
+        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q01_1#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q01_1]]#1)  <{index_attr = 1 : i64}>
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_1#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
+        "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
 
         return
     }
@@ -348,8 +366,8 @@ module {
         // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q1_0]])  <{index_attr = 1 : i64}>
         %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
 
-        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_3]])
-        "mqtopt.deallocQubitRegister"(%reg_3) : (!mqtopt.QubitRegister) -> ()
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
+        "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
 
         return
     }
@@ -375,6 +393,15 @@ module {
         // ==========================  Check that there are no further CX operations ==============================
         // CHECK-NOT: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
 
+        // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q0_1]])  <{index_attr = 0 : i64}>
+        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q1_1]])  <{index_attr = 1 : i64}>
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
+        "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+
         return
     }
 }
@@ -398,6 +425,15 @@ module {
 
         // ==========================  Check that there are no further negative CX operations ==============================
         // CHECK-NOT: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] nctrl %[[ANY:.*]]
+
+        // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q0_1]])  <{index_attr = 0 : i64}>
+        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q1_1]])  <{index_attr = 1 : i64}>
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
+        "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
 
         return
     }
@@ -428,11 +464,23 @@ module {
         // q2_0: ──■── q02_1#1
         //===----------------------------------------------------------------===//
 
-        // CHECK: %[[Q1_1:.*]], %[[Q02_2:.*]]:2 = mqtopt.x() %[[Q1_0]] ctrl %[[Q0_0]], %[[Q2_0]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q1_1:.*]], %[[Q02_1:.*]]:2 = mqtopt.x() %[[Q1_0]] ctrl %[[Q0_0]], %[[Q2_0]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
         %q1_1, %q02_1:2 = mqtopt.x() %q1_0 ctrl %q0_0, %q2_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
 
         // ==========================  Check that there are no further MCX operations ==============================
         // CHECK-NOT: mqtopt.x() [[ANY:.*]] ctrl %[[ANY:.*]]:2
+
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q02_1]]#0)  <{index_attr = 0 : i64}>
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q02_1#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_5:.*]] = "mqtopt.insertQubit"(%[[Reg_4]], %[[Q1_1]])  <{index_attr = 1 : i64}>
+        %reg_5 = "mqtopt.insertQubit"(%reg_4, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_6:.*]] = "mqtopt.insertQubit"(%[[Reg_5]], %[[Q02_1]]#1)  <{index_attr = 2 : i64}>
+        %reg_6 = "mqtopt.insertQubit"(%reg_5, %q02_1#1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_6]])
+        "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
 
         return
     }
@@ -463,11 +511,23 @@ module {
         // q2_0: ──■── q02_1#1
         //===----------------------------------------------------------------===//
 
-        // CHECK: %[[Q1_1:.*]], %[[Q02_2:.*]]:2 = mqtopt.x() %[[Q1_0]] nctrl %[[Q0_0]], %[[Q2_0]] : !mqtopt.Qubit nctrl !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q1_1:.*]], %[[Q02_1:.*]]:2 = mqtopt.x() %[[Q1_0]] nctrl %[[Q0_0]], %[[Q2_0]] : !mqtopt.Qubit nctrl !mqtopt.Qubit, !mqtopt.Qubit
         %q1_1, %q02_1:2 = mqtopt.x() %q1_0 nctrl %q0_0, %q2_0 : !mqtopt.Qubit nctrl !mqtopt.Qubit, !mqtopt.Qubit
 
         // ==========================  Check that there are no further MCX operations ==============================
         // CHECK-NOT: mqtopt.x() [[ANY:.*]] nctrl %[[ANY:.*]]:2
+
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q02_1]]#0)  <{index_attr = 0 : i64}>
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q02_1#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_5:.*]] = "mqtopt.insertQubit"(%[[Reg_4]], %[[Q1_1]])  <{index_attr = 1 : i64}>
+        %reg_5 = "mqtopt.insertQubit"(%reg_4, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_6:.*]] = "mqtopt.insertQubit"(%[[Reg_5]], %[[Q02_1]]#1)  <{index_attr = 2 : i64}>
+        %reg_6 = "mqtopt.insertQubit"(%reg_5, %q02_1#1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_6]])
+        "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
 
         return
     }
@@ -503,6 +563,18 @@ module {
 
         // ==========================  Check that there are no further MCX operations ==============================
         // CHECK-NOT: mqtopt.x() [[ANY:.*]] ctrl %[[ANY:.*]] nctrl %[[ANY:.*]]
+
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q0_1]])  <{index_attr = 0 : i64}>
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_5:.*]] = "mqtopt.insertQubit"(%[[Reg_4]], %[[Q1_1]])  <{index_attr = 1 : i64}>
+        %reg_5 = "mqtopt.insertQubit"(%reg_4, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_6:.*]] = "mqtopt.insertQubit"(%[[Reg_5]], %[[Q2_1]])  <{index_attr = 2 : i64}>
+        %reg_6 = "mqtopt.insertQubit"(%reg_5, %q2_1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_6]])
+        "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
 
         return
     }
@@ -541,6 +613,15 @@ module {
         // ==========================  Check that there are no further multiple qubit operations ==============================
         // CHECK-NOT: mqtopt.[[ANY:.*]]() %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
 
+        // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q01_7]]#0)  <{index_attr = 0 : i64}>
+        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_7) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q01_7]]#1)  <{index_attr = 1 : i64}>
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_7) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
+        "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+
         return
     }
 }
@@ -568,6 +649,18 @@ module {
         // ==========================  Check that there are no further SWAP operations ==============================
         // CHECK-NOT: mqtopt.swap() [[ANY:.*]], [[ANY:.*]] ctrl [[ANY:.*]]
 
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q01_1]]#0)  <{index_attr = 0 : i64}>
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_5:.*]] = "mqtopt.insertQubit"(%[[Reg_4]], %[[Q01_1]]#1)  <{index_attr = 1 : i64}>
+        %reg_5 = "mqtopt.insertQubit"(%reg_4, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_6:.*]] = "mqtopt.insertQubit"(%[[Reg_5]], %[[Q2_1]])  <{index_attr = 2 : i64}>
+        %reg_6 = "mqtopt.insertQubit"(%reg_5, %q2_1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_6]])
+        "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
+
         return
     }
 }
@@ -594,6 +687,18 @@ module {
 
         // ==========================  Check that there are no further SWAP operations ==============================
         // CHECK-NOT: mqtopt.swap() [[ANY:.*]], [[ANY:.*]] nctrl [[ANY:.*]]
+
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q01_1]]#0)  <{index_attr = 0 : i64}>
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_5:.*]] = "mqtopt.insertQubit"(%[[Reg_4]], %[[Q01_1]]#1)  <{index_attr = 1 : i64}>
+        %reg_5 = "mqtopt.insertQubit"(%reg_4, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_6:.*]] = "mqtopt.insertQubit"(%[[Reg_5]], %[[Q2_1]])  <{index_attr = 2 : i64}>
+        %reg_6 = "mqtopt.insertQubit"(%reg_5, %q2_1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_6]])
+        "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
 
         return
     }
@@ -636,6 +741,21 @@ module {
 
         // ==========================  Check that there are no further SWAP operations ==============================
         // CHECK-NOT: mqtopt.swap() [[ANY:.*]], [[ANY:.*]] ctrl [[ANY:.*]] nctrl [[ANY:.*]]
+
+        // CHECK: %[[Reg_5:.*]] = "mqtopt.insertQubit"(%[[Reg_4]], %[[Q01_1]]#0)  <{index_attr = 0 : i64}>
+        %reg_5 = "mqtopt.insertQubit"(%reg_4, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_6:.*]] = "mqtopt.insertQubit"(%[[Reg_5]], %[[Q01_1]]#1)  <{index_attr = 1 : i64}>
+        %reg_6 = "mqtopt.insertQubit"(%reg_5, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_7:.*]] = "mqtopt.insertQubit"(%[[Reg_6]], %[[Q2_1]])  <{index_attr = 2 : i64}>
+        %reg_7 = "mqtopt.insertQubit"(%reg_6, %q2_1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_8:.*]] = "mqtopt.insertQubit"(%[[Reg_7]], %[[Q3_1]])  <{index_attr = 3 : i64}>
+        %reg_8 = "mqtopt.insertQubit"(%reg_7, %q3_1) <{index_attr = 3 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_8]])
+        "mqtopt.deallocQubitRegister"(%reg_8) : (!mqtopt.QubitRegister) -> ()
 
         return
     }
