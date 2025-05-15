@@ -122,7 +122,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/llvm/llvm-project.git --branch llvmorg-${{ matrix.llvm-version }}.1.0
           cd llvm-project
-          cmake -S llvm -B build -G "Ninja" `
+          cmake -S llvm -B build_llvm -G "Ninja" `
             -DLLVM_ENABLE_PROJECTS=mlir `
             -DLLVM_BUILD_EXAMPLES=OFF `
             -DLLVM_TARGETS_TO_BUILD="X86" `
@@ -134,7 +134,7 @@ jobs:
             -DLLVM_ENABLE_UTILS=ON `
             -DLLVM_INSTALL_UTILS=ON `
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}\llvm-install
-          cmake --build build --target install --config Release
+          cmake --build build_llvm --target install --config Release
 
       # set up uv for faster Python package management
       - name: Install the latest version of uv
