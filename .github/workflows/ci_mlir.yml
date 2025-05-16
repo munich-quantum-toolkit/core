@@ -189,10 +189,10 @@ jobs:
           "{0}" %*' -f $targetPath
 
           # Write to a directory that's definitely in PATH
-          $batchContent | Out-File -FilePath "C:\Windows\quantum-opt.cmd" -Encoding ascii
+          $batchContent | Out-File -FilePath "C:\Windows\quantum-opt" -Encoding ascii
 
           # Verify the batch file
-          Get-Content "C:\Windows\quantum-opt.cmd"
-          Write-Output "Batch file created at C:\Windows\quantum-opt.cmd pointing to $targetPath"
+          Get-Content "C:\Windows\quantum-opt"
+          Write-Output "Batch file created at C:\Windows\quantum-opt pointing to $targetPath"
 
           cmake --build build --config Release --target check-quantum-opt
