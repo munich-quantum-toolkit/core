@@ -183,4 +183,5 @@ jobs:
       - name: Build MLIR components and directly run lit tests
         run: |
           cmake --build build --config Release --target quantum-opt
+          tree build
       #    cmake --build build --config Release --target check-quantum-opt
