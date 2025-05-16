@@ -184,5 +184,5 @@ jobs:
         run: |
           cmake --build build --config Release --target quantum-opt
           tree build /F /A
-          echo "$env:{{ github.workspace }}\\build\\mlir\\tools\\quantum-opt" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
+          echo "{{ github.workspace }}\\build\\mlir\\tools\\quantum-opt" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           cmake --build build --config Release --target check-quantum-opt
