@@ -183,9 +183,6 @@ jobs:
       - name: Build MLIR components and directly run lit tests
         run: |
           cmake --build build --config Release --target quantum-opt
-          tree build /F /A
-          #echo "${{ github.workspace }}\\build\\mlir\\tools\\quantum-opt\\Release" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          echo "PATH=${{ github.workspace }}\\build\\mlir\\tools\\quantum-opt\\Release;$env:PATH" >> $env:GITHUB_ENV
-          Rename-Item -Path "${{ github.workspace }}\\build\\mlir\\tools\\quantum-opt\\Release\\quantum-opt.exe" -NewName "quantum-opt"
-          dir "${{ github.workspace }}\\build\\mlir\\tools\\quantum-opt\\Release"
+          New-Alias -Name "quantum-opt" -Value "${{ github.workspace }}\\build\\mlir\\tools\\quantum-opt\\Release\\quantum-opt.exe" -Scope Global
+          Get-Alias -Name "quantum-opt"
           cmake --build build --config Release --target check-quantum-opt
