@@ -185,8 +185,7 @@ jobs:
           cmake --build build --config Release --target quantum-opt
 
           $targetPath = "${{ github.workspace }}\\build\\mlir\\tools\\quantum-opt\\Release\\quantum-opt.exe"
-          $batchContent = '@echo off
-          "{0}" %*' -f $targetPath
+          $batchContent = '"{0}" "$@"' -f $targetPath
 
           # Write to a directory that's definitely in PATH
           $batchContent | Out-File -FilePath "C:\Windows\quantum-opt" -Encoding ascii
