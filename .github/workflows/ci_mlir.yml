@@ -184,5 +184,6 @@ jobs:
         run: |
           cmake --build build --config Release --target quantum-opt
           New-Alias -Name "quantum-opt" -Value "${{ github.workspace }}\\build\\mlir\\tools\\quantum-opt\\Release\\quantum-opt.exe" -Scope Global
-          Get-Alias -Name "quantum-opt"
+          $aliasDef = (Get-Alias -Name "quantum-opt").Definition
+          Write-Output "The alias 'quantum-opt' points to: $aliasDef"
           cmake --build build --config Release --target check-quantum-opt
