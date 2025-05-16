@@ -181,4 +181,6 @@ jobs:
 
       # build the project and run the tests
       - name: Build MLIR components and directly run lit tests
-        run: cmake --build build --config Release --target check-quantum-opt
+        run: |
+          cmake --build build --config Release --target quantum-opt
+          cmake --build build --config Release --target check-quantum-opt
