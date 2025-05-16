@@ -187,10 +187,10 @@ jobs:
           $targetPath = "${{ github.workspace }}\\build\\mlir\\tools\\quantum-opt\\Release\\quantum-opt.exe"
           $batchContent = '@echo off
           "{0}" %*' -f $targetPath
-          
+
           # Write to a directory that's definitely in PATH
           $batchContent | Out-File -FilePath "C:\Windows\quantum-opt.cmd" -Encoding ascii
-          
+
           # Verify the batch file
           Get-Content "C:\Windows\quantum-opt.cmd"
           Write-Output "Batch file created at C:\Windows\quantum-opt.cmd pointing to $targetPath"
