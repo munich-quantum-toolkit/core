@@ -16,125 +16,163 @@
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
+#include <algorithm>
 #include <array>
-#include <forward_list>
+#include <limits>
 #include <queue>
 #include <unordered_map>
 
 namespace dd {
 namespace {
-// Queue for iterative-deepening search.
-using Queue = std::queue<const vEdge*>;
-// Map that holds edges required for rebuilding the DD.
-// If the value of an edge is true it will be deleted.
-using PathFlags = std::unordered_map<const vEdge*, bool>;
-// Maps edges to their respective contribution.
-using Contributions = std::unordered_map<const vEdge*, double>;
-// Maps edges to their respective parent edges.
-using Parents =
-    std::unordered_map<const vEdge*, std::forward_list<const vEdge*>>;
-
 /**
- * @brief Recursively rebuild DD depth-first.
-
- * @details Only visits the paths from the root edge
- * to ∀e ∈ {e | f[e] = true} by using @p f.
+ * @brief Holds a node-contribution pair and distance value for
+ * prioritization.
  */
-vEdge rebuild(const vEdge& e, const PathFlags& f, Package& dd) {
-  // If the edge isn't contained in the pathflags,
-  // we keep the edge as it is.
-  if (f.find(&e) == f.end()) {
-    return e;
+struct LayerNode {
+  explicit LayerNode(vNode* node)
+      : ptr(node), contribution(1.),
+        distance(std::numeric_limits<double>::max()) {}
+
+  LayerNode(vNode* node, double contribution, double budget)
+      : ptr(node), contribution(contribution),
+        distance(std::max<double>(0, contribution - budget)) {}
+
+  bool operator<(const LayerNode& other) const {
+    if (distance == 0 && other.distance == 0) {
+      return contribution < other.contribution;
+    }
+    return distance > other.distance;
   }
 
-  // If the pathflag is true, delete the edge.
-  if (f.at(&e)) {
+  vNode* ptr;
+  double contribution;
+
+private:
+  double distance;
+};
+
+/// @brief Priority queue of nodes, sorted by their distance to a given budget.
+using Layer = std::priority_queue<LayerNode>;
+/// @brief Maps nodes to their respective contribution.
+using Contributions = std::unordered_map<vNode*, double>;
+///  @brief Maps old nodes to rebuilt edges.
+using Lookup = std::unordered_map<const vNode*, vEdge>;
+
+/**
+ * @brief Search and mark nodes for deletion until the budget 1 - @p fidelity is
+ * exhausted.
+ * @details Uses a prioritized iterative-deepening search.
+ * Iterating layer by layer ensures that each node is only visited once.
+ */
+std::pair<double, Qubit> mark(VectorDD& state, const double fidelity) {
+  Layer curr{};
+  curr.emplace(state.p);
+
+  double budget = 1 - fidelity;
+  Qubit min{std::numeric_limits<Qubit>::max()};
+
+  while (budget > 0) {
+    Contributions c; // Contributions of the next layer.
+    while (!curr.empty()) {
+      LayerNode n = curr.top();
+      curr.pop();
+
+      // If possible, flag a node for deletion and decrease the budget
+      // accordingly.
+      // If necessary, reset the lowest qubit number effected.
+      if (budget >= n.contribution) {
+        n.ptr->flags = 1U;
+        budget -= n.contribution;
+        min = std::min(min, n.ptr->v);
+        continue;
+      }
+
+      for (const vEdge& eRef : n.ptr->e) {
+        if (eRef.isTerminal()) {
+          continue;
+        }
+        c[eRef.p] += n.contribution * ComplexNumbers::mag2(eRef.w);
+      }
+    }
+
+    Layer next{}; // Prioritize nodes for next iteration.
+    for (auto& [n, contribution] : c) {
+      next.emplace(n, contribution, budget);
+    }
+
+    if (next.empty()) { // Break early. Avoid std::move.
+      break;
+    }
+
+    curr = std::move(next);
+  }
+
+  // The final fidelity is the desired fidelity plus the unused budget.
+  return {fidelity + budget, min};
+}
+
+vEdge sweep(const vEdge& curr, const Qubit min, Lookup& l, Package& dd) {
+  vNode* n = curr.p;
+
+  // Nodes below v_{min} don't require rebuilding.
+  if (n->v < min) {
+    return curr;
+  }
+
+  // If a node is flagged, reset the flag and return a zero edge.
+  if (n->flags == 1U) {
+    n->flags = 0U;
     return vEdge::zero();
   }
 
-  // Otherwise, if the pathflag is false, traverse down.
-  const std::array<vEdge, RADIX> edges{
-      rebuild(e.p->e[0], f, dd),
-      rebuild(e.p->e[1], f, dd),
-  };
+  // If a node has been visited once, return the already rebuilt node
+  // and set the edge weight accordingly.
+  if (l.find(n) != l.end()) {
+    vEdge eR = l.at(n);
+    eR.w = curr.w;
+    return eR;
+  }
 
-  vEdge eNew = dd.makeDDNode(e.p->v, edges);
-  eNew.w = e.w;
+  // Otherwise traverse down to rebuild each non-terminal edge.
+  std::array<vEdge, RADIX> edges{};
+  for (std::size_t i = 0; i < RADIX; ++i) {
+    vEdge& eRef = n->e[i];
+    if (eRef.isTerminal()) {
+      edges[i] = eRef;
+      continue;
+    }
 
-  return eNew;
+    edges[i] = sweep(eRef, min, l, dd);
+  }
+
+  // Rebuild node and set its edge weight accordingly.
+  vEdge eR = dd.makeDDNode(n->v, edges);
+  eR.w = curr.w;
+  l[n] = eR;
+  return eR;
 }
 
 /**
- * @brief Flag (or mark) the path from edge @p e to the root node.
+ * @brief Recursively rebuild DD depth-first.
+ * @details A lookup table ensures that each node is only visited once.
  */
-void markParentEdges(const vEdge* e, const Parents& m, PathFlags& f) {
-  Queue q{};
-  q.emplace(e);
-  while (!q.empty()) {
-    const vEdge* eX = q.front();
-    q.pop();
-    for (const vEdge* eP : m.at(eX)) {
-      f[eP] = false;
-      q.emplace(eP);
-    }
-  }
+vEdge sweep(const vEdge& e, const Qubit min, Package& dd) {
+  Lookup l{};
+  return sweep(e, min, l, dd);
 }
 }; // namespace
 
 double approximate(VectorDD& state, const double fidelity, Package& dd) {
-  Queue q{};
-  q.emplace(&state);
+  const auto& [finalFidelity, min] = mark(state, fidelity);
+  const vEdge& approx = sweep(state, min, dd);
 
-  PathFlags f{};
-  Parents m{{&state, {}}};
-  Contributions c{{&state, 1.}};
-
-  double budget = 1 - fidelity;
-  while (!q.empty() && budget > 0) {
-    const vEdge* e = q.front();
-    q.pop();
-
-    const double contribution = c[e];
-    c.erase(e); // Won't be needed anymore.
-
-    if (contribution <= budget) {
-      f[e] = true;
-      markParentEdges(e, m, f);
-      budget -= contribution;
-      continue;
-    }
-
-    if (e->isTerminal()) {
-      continue;
-    }
-
-    const vNode* n = e->p;
-    for (const auto& eChildRef : n->e) {
-      const vEdge* eChild = &eChildRef;
-
-      if (eChild->w.exactlyZero()) { // Don't add zero terminals.
-        continue;
-      }
-
-      if (c.find(eChild) == c.cend()) {
-        q.emplace(eChild); // Add to queue.
-        c[eChild] = 0.;    // Not necessary, but better than implicit.
-      }
-
-      // An edge may have multiple parent edges, and hence, add (instead of
-      // assign) the full contribution.
-      c[eChild] += contribution * ComplexNumbers::mag2(eChild->w);
-      m[eChild].emplace_front(e); // Map child to parent.
-    }
-  }
-
-  const vEdge approx = rebuild(state, f, dd);
   dd.incRef(approx);
   dd.decRef(state);
   dd.garbageCollect();
+
   state = approx;
 
-  return fidelity + budget;
+  return finalFidelity;
 }
 
 } // namespace dd

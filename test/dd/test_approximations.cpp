@@ -36,7 +36,7 @@ namespace {
 void vecNear(CVec a, CVec b, double delta = 1e-6) {
   for (std::size_t i = 0; i < b.size(); ++i) {
     EXPECT_NEAR(a[i].real(), b[i].real(), delta);
-    EXPECT_NEAR(b[i].imag(), b[i].imag(), delta);
+    EXPECT_NEAR(a[i].imag(), b[i].imag(), delta);
   }
 }
 
@@ -91,12 +91,12 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
   qc.x(0);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto fidelityToSource = approximate(state, fidelity, *dd);
+  auto finalFidelity = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {1}};
   EXPECT_EQ(state.getVector(), expected);
   EXPECT_EQ(state.size(), 2);
-  EXPECT_EQ(fidelityToSource, 1);
+  EXPECT_EQ(finalFidelity, 1);
 }
 
 TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
@@ -124,52 +124,12 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
   qc.x(0);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto fidelityToSource = approximate(state, fidelity, *dd);
+  auto finalFidelity = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {1}};
   EXPECT_EQ(state.getVector(), expected);
   EXPECT_EQ(state.size(), 2);
-  EXPECT_EQ(fidelityToSource, 1);
-}
-
-TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
-
-  // Test: Terminal edges can be removed (set to vEdge::zero) also.
-  //
-  // |state⟩ = 0.866|0⟩ + 0.5|1⟩
-  //
-  // Eliminate |1⟩ with contribution 0.25
-  //     → |approx⟩ = |0⟩
-  //
-  //        1│                     1│
-  //       ┌─┴─┐                  ┌─┴─┐
-  //     ┌─│ q0│─┐  -(approx)→  ┌─│ q0│─┐
-  // .866│ └───┘ │.5           1| └───┘ 0
-  //     □       □              □
-  //
-
-  constexpr std::size_t nq = 1;
-  constexpr double fidelity = 1 - 0.25;
-
-  auto dd = std::make_unique<dd::Package>(nq);
-
-  qc::QuantumComputation qc(nq);
-  qc.ry(qc::PI / 3, 0);
-
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto fidelityToSource = approximate(state, fidelity, *dd);
-
-  const CVec expected{{1}, {0}};
-  EXPECT_EQ(state.getVector(), expected);
-  EXPECT_EQ(state.size(), 2);
-  EXPECT_NEAR(fidelityToSource, 0.75, 1e-3);
-
-  // Test: Correctly increase and decrease ref counts.
-
-  dd->decRef(state);
-  dd->garbageCollect(true);
-
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
+  EXPECT_EQ(finalFidelity, 1);
 }
 
 TEST(ApproximationTest, TwoQubitRemoveNode) {
@@ -202,13 +162,20 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
   qc.cry(qc::PI / 3, 0, 1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto fidelityToSource = approximate(state, fidelity, *dd);
+  auto finalFidelity = approximate(state, fidelity, *dd);
 
   const CVec expected{{0.755929}, {0.654654}, {0}, {0}};
 
   vecNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 3);
-  EXPECT_NEAR(fidelityToSource, 0.875, 1e-3);
+  EXPECT_NEAR(finalFidelity, 0.875, 1e-3);
+
+  // Test: Correctly increase and decrease ref counts.
+
+  dd->decRef(state);
+  dd->garbageCollect(true);
+
+  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
 }
 
 TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
@@ -217,46 +184,48 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   //       state. The root edge must point to the same node and have the same
   //       edge weight.
   //
-  // |state⟩ = 0.183|00⟩ + 0.683|01⟩ + 0.183|10⟩ + 0.683|11⟩
+  // |state⟩ = i(0.5|00⟩ + 0.866|11⟩)
   //
-  // Eliminate |00⟩ and |10⟩ with contributions ~ 0.0335.
+  // Eliminate |00⟩ with contribution ~ 0.25.
   //     → |approx⟩ = (1/sqrt(2))(|01⟩ + |11⟩)
   //
-  // |ref⟩ = (1/sqrt(2))(|01⟩ + |11⟩)
+  // |ref⟩ = |11⟩
   //
-  //         1│                       1│
-  //        ┌─┴─┐                    ┌─┴─┐
-  //      ┌─│ q1│─┐                ┌─│ q1│─┐
-  //  1/√2│ └───┘ │1/√2        1/√2│ └───┘ │1/√2
-  //      └───┬───┘                └───┬───┘
-  //        ┌─┴─┐     -(approx)→     ┌─┴─┐
-  //      ┌─│ q0│─┐                ┌─│ q0│─┐
-  //   .26│ └───┘ │.97             0 └───┘ │1
-  //      □       □                        □
-  //
+  //           i│                           i│
+  //          ┌─┴─┐                        ┌─┴─┐
+  //      ┌───│ q1│───┐                  ┌─│ q1│─┐
+  //  -1/2│   └───┘   │.87               0 └───┘ |1
+  //    ┌─┴─┐       ┌─┴─┐     -(approx)→       ┌─┴─┐
+  //  ┌─│ q0│─┐   ┌─│ q0│─┐                  ┌─│ q0│─┐
+  // 1| └───┘ 0   0 └───┘ |1                 0 └───┘ |1
+  //  □                   □                          □
 
   constexpr std::size_t nq = 2;
-  constexpr double fidelity = 1 - 0.1;
+  constexpr double fidelity = 1 - 0.25;
 
   auto dd = std::make_unique<dd::Package>(nq);
 
   qc::QuantumComputation qc(nq);
-  qc.h(0);
-  qc.h(1);
-  qc.ry(qc::PI / 3, 0);
+  qc.rx(qc::PI, 0);
+  qc.ry(2 * qc::PI / 3, 0);
+  qc.cx(0, 1);
+  qc.x(0);
+  qc.x(1);
 
   qc::QuantumComputation qcRef(nq);
   qcRef.x(0);
-  qcRef.h(1);
+  qcRef.s(0);
+  qcRef.x(1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto fidelityToSource = approximate(state, fidelity, *dd);
+  auto finalFidelity = approximate(state, fidelity, *dd);
   auto ref = simulate(qcRef, dd->makeZeroState(nq), *dd);
 
-  const CVec expected{{0}, {1 / std::sqrt(2)}, {0}, {1 / std::sqrt(2)}};
+  const CVec expected{{0}, {0}, {0}, {0, 1}};
   vecNear(state.getVector(), expected);
+  state.printVector();
   EXPECT_EQ(state.size(), 3);
-  EXPECT_NEAR(fidelityToSource, 0.933, 1e-3);
+  EXPECT_NEAR(finalFidelity, 0.75, 1e-3);
   EXPECT_EQ(ref, state); // implicit: utilize `==` operator.
 }
 
@@ -298,64 +267,64 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   qc.cry(qc::PI / 4, 2, 1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto fidelityToSource = approximate(state, fidelity, *dd);
+  auto finalFidelity = approximate(state, fidelity, *dd);
 
   const CVec expected{{0, 1}, {0}, {0}, {0}, {0}, {0}, {0}, {0}};
   vecNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 4);
-  EXPECT_NEAR(fidelityToSource, 0.75, 1e-3);
+  EXPECT_NEAR(finalFidelity, 0.75, 1e-3);
 }
 
 TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
 
-  // Test: Remove multiple edges.
-  // |state⟩ = 0+0.131j|000⟩ + 0-0.190j|100⟩ + 0+0.329j|101⟩ + 0+0.458j|110⟩
-  //           + 0-0.793j|111⟩
+  // Test: Remove multiple nodes.
   //
-  // Eliminate |000⟩ and |1x0⟩ with contributions ~0.017 and ~0.144.
-  //     → |approx⟩ = 0-0.5j|110⟩ + 0+0.87j|111⟩
+  // |state⟩ = 0+0.866j|000⟩ + 0-0.096j|100⟩ + 0+0.166j|101⟩ + 0+0.231j|110⟩
+  //           + 0-0.4j|111⟩
   //
-  //               i│                           i│
-  //              ┌─┴─┐                        ┌─┴─┐
-  //          ┌───│ q2│───┐                  ┌─│ q2│─┐
-  //      -.13│   └───┘   │.99               0 └───┘ |1
-  //        ┌─┴─┐       ┌─┴─┐    -(approx)→        ┌─┴─┐
-  //      ┌─│ q1│─┐   ┌─│ q1│─┐                  ┌─│ q1│─┐
-  //      | └───┘ 0   | └───┘ |                  0 └───┘ |1
-  //      |1      -.38└───┬───┘.9                    ┌───┘
-  //    ┌─┴─┐           ┌─┴─┐                      ┌─┴─┐
-  //  ┌─│ q0│─┐       ┌─│ q0│─┐                  ┌─│ q0│─┐
-  // 1| └───┘ 0   -1/2| └───┘ |.87           -1/2| └───┘ |.87
-  //  □               □       □                  □       □
+  // Eliminate parent of |1xx⟩ and |0xx⟩ with contributions ~ 0.25 and ~ 0.75.
+  //     → |approx⟩ = 0
+  //
+  //               i│                              i│
+  //              ┌─┴─┐                           ┌─┴─┐
+  //          ┌───│ q2│───┐                     ┌─│ q2│─┐
+  //       .87│   └───┘   │-1/2                1| └───┘ 0
+  //        ┌─┴─┐       ┌─┴─┐    -(approx)→   ┌─┴─┐
+  //      ┌─│ q1│─┐   ┌─│ q1│─┐             ┌─│ q1│─┐
+  //      | └───┘ 0   | └───┘ |            1| └───┘ 0
+  //      |1      -.38└───┬───┘.92          |
+  //    ┌─┴─┐           ┌─┴─┐             ┌─┴─┐
+  //  ┌─│ q0│─┐       ┌─│ q0│─┐         ┌─│ q0│─┐
+  // 1| └───┘ 0   -1/2| └───┘ |.87     1| └───┘ 0
+  //  □               □       □         □
   //
 
   constexpr std::size_t nq = 3;
-  constexpr double fidelity = 1 - 0.17;
+  constexpr double fidelity = 0; // Eliminate all.
 
   auto dd = std::make_unique<dd::Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.rx(qc::PI, 0);
-  qc.ry(qc::PI / 12, 0);
+  qc.ry(2 * qc::PI / 3, 0);
   qc.cx(0, 1);
   qc.cx(1, 2);
   qc.cry(qc::PI / 3, 2, 0);
   qc.cry(qc::PI / 4, 2, 1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto fidelityToSource = approximate(state, fidelity, *dd);
+  auto finalFidelity = approximate(state, fidelity, *dd);
 
-  const CVec expected{{0}, {0},           {0},       {0},
-                      {0}, {0, 0.337652}, {0, -0.5}, {0, 0.866025}};
+  const CVec expected{{0, 0}};
   vecNear(state.getVector(), expected);
-  EXPECT_EQ(state.size(), 4);
-  EXPECT_NEAR(fidelityToSource, 0.8390109, 1e-3);
+  EXPECT_EQ(state.size(), 1);
+  EXPECT_EQ(finalFidelity, 0);
 }
 
 TEST(ApproximationTest, Runtime) {
   {
     constexpr std::size_t n = 15;         // Up to 16 qubits.
-    constexpr double fidelity = 1 - 0.25; // Reasonable budget of .75;
+    constexpr double fidelity = 1 - 0.01; // Budget of .02
 
     std::array<std::size_t, n> qubits{}; // Qubit counts: [2, 16]
     std::iota(qubits.begin(), qubits.end(), 2);
@@ -374,17 +343,19 @@ TEST(ApproximationTest, Runtime) {
       auto state = buildExponentialDD(0, nq, *dd, dis, gen);
       dd->incRef(state);
 
-      // Each state has two outgoing edges + root edge.
-      const std::size_t numEdges = (state.size() * 2) + 1;
+      const std::size_t numNodes =
+          state.size() - 1; // Subtract 1 due to terminal.
 
       const auto t1 = std::chrono::high_resolution_clock::now();
       approximate(state, fidelity, *dd);
       const auto t2 = std::chrono::high_resolution_clock::now();
       const std::chrono::duration<double, std::micro> runtime = t2 - t1;
 
-      // Runtime should be sub-linear in terms of edges.
-      // 500μs is an "acceptable" difference.
-      EXPECT_TRUE(runtime.count() - static_cast<double>(numEdges) < 500);
+      const double q = runtime.count() /
+                       (static_cast<double>(numNodes) * std::log2(numNodes));
+
+      std::cout << nq << " | " << q << '\n';
     }
+    EXPECT_FALSE(true);
   }
 }
