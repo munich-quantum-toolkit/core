@@ -72,7 +72,7 @@ std::pair<double, Qubit> mark(VectorDD& state, const double fidelity) {
   Qubit min{std::numeric_limits<Qubit>::max()};
 
   while (budget > 0) {
-    Contributions c; // Contributions of the next layer.
+    Contributions c; // Stores contributions of the next layer.
     while (!curr.empty()) {
       LayerNode n = curr.top();
       curr.pop();
@@ -87,6 +87,7 @@ std::pair<double, Qubit> mark(VectorDD& state, const double fidelity) {
         continue;
       }
 
+      // Compute contributions of the next layer.
       for (const vEdge& eRef : n.ptr->e) {
         if (eRef.isTerminal()) {
           continue;

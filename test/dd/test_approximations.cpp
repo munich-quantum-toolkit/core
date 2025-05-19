@@ -40,26 +40,32 @@ void vecNear(CVec a, CVec b, double delta = 1e-6) {
   }
 }
 
-vEdge buildExponentialDD(Qubit v, std::size_t height, Package& dd,
-                         std::uniform_real_distribution<float>& dis,
-                         std::mt19937& gen) {
-  if (v == static_cast<Qubit>(height)) {
-    auto e = vEdge::one();
-    e.w = dd.cn.lookup(static_cast<fp>(dis(gen)));
-    return e;
+/**
+ * @brief Generate (most-likely) exponentially large DD.
+ */
+vEdge generateExponentialDD(const std::size_t nq, Package& dd) {
+  // Setup random distribution for edge weights.
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_real_distribution<double> dis(0., 1.0);
+
+  // Generate random state vector.
+  CVec v(static_cast<std::size_t>(std::pow(2, nq)));
+  for (auto& vi : v) {
+    vi = dis(gen);
   }
 
-  const std::array<vEdge, RADIX> edges{
-      buildExponentialDD(v + 1, height, dd, dis, gen),
-      buildExponentialDD(v + 1, height, dd, dis, gen),
-  };
+  // Normalize to norm 1.
+  constexpr auto zero = std::complex<double>{0.};
+  const auto inner = std::inner_product(v.begin(), v.end(), v.begin(), zero);
+  const auto norm = std::sqrt(inner);
+  for (auto& vi : v) {
+    vi /= norm;
+  }
 
-  vEdge eNew = dd.makeDDNode(v, edges);
-  eNew.w = dd.cn.lookup(static_cast<fp>(dis(gen)));
-
-  return eNew;
+  // Return as DD.
+  return dd.makeStateFromVector(v);
 }
-
 }; // namespace
 
 ///-----------------------------------------------------------------------------
@@ -279,46 +285,45 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
 
   // Test: Remove multiple nodes.
   //
-  // |state⟩ = 0+0.866j|000⟩ + 0-0.096j|100⟩ + 0+0.166j|101⟩ + 0+0.231j|110⟩
-  //           + 0-0.4j|111⟩
+  // |state⟩ = 0.069|000⟩ - 0.601|001⟩ - 0.069|010⟩ - 0.601|011⟩
+  //         - 0.347|100⟩ - 0.119|101⟩ + 0.347|110⟩ - 0.119|111⟩
   //
-  // Eliminate parent of |1xx⟩ and |0xx⟩ with contributions ~ 0.25 and ~ 0.75.
-  //     → |approx⟩ = 0
+  // Eliminate |1xx⟩ and |01x⟩ with contribution ~0.27 and ~0.36
+  //     → |approx⟩ = 0.114|000⟩ - 0.993|001⟩
   //
-  //               i│                              i│
-  //              ┌─┴─┐                           ┌─┴─┐
-  //          ┌───│ q2│───┐                     ┌─│ q2│─┐
-  //       .87│   └───┘   │-1/2                1| └───┘ 0
-  //        ┌─┴─┐       ┌─┴─┐    -(approx)→   ┌─┴─┐
-  //      ┌─│ q1│─┐   ┌─│ q1│─┐             ┌─│ q1│─┐
-  //      | └───┘ 0   | └───┘ |            1| └───┘ 0
-  //      |1      -.38└───┬───┘.92          |
-  //    ┌─┴─┐           ┌─┴─┐             ┌─┴─┐
-  //  ┌─│ q0│─┐       ┌─│ q0│─┐         ┌─│ q0│─┐
-  // 1| └───┘ 0   -1/2| └───┘ |.87     1| └───┘ 0
-  //  □               □       □         □
+  //  * = 1/sqrt(2)   -1│                                  1│
+  //                  ┌─┴─┐                               ┌─┴─┐
+  //           ┌──────│ q2│──────┐                      ┌─│ q2│─┐
+  //        .85│      └───┘      │.52                  1| └───┘ 0
+  //         ┌─┴─┐             ┌─┴─┐    -(approx)→    ┌─┴─┐
+  //      ┌──│ q1│──┐       ┌──│ q1│──┐             ┌─│ q1│──┐
+  //     *|  └───┘  |*     *|  └───┘  |*           1| └───┘  0
+  //    ┌─┴─┐     ┌─┴─┐   ┌─┴─┐     ┌─┴─┐         ┌─┴─┐
+  //   ┌│ q0│┐   ┌│ q0│┐ ┌│ q0│┐   ┌│ q0│┐      ┌─│ q0│─┐
+  //   |└───┘|   |└───┘| |└───┘|   |└───┘|   .11| └───┘ |-0.99
+  //   □     □   □     □ □     □   □     □      □       □
   //
 
   constexpr std::size_t nq = 3;
-  constexpr double fidelity = 0; // Eliminate all.
+  constexpr double fidelity = 1 - 0.64;
 
   auto dd = std::make_unique<dd::Package>(nq);
 
   qc::QuantumComputation qc(nq);
-  qc.rx(qc::PI, 0);
   qc.ry(2 * qc::PI / 3, 0);
   qc.cx(0, 1);
+  qc.ry(qc::PI, 1);
   qc.cx(1, 2);
-  qc.cry(qc::PI / 3, 2, 0);
-  qc.cry(qc::PI / 4, 2, 1);
+  qc.ry(qc::PI / 8, 2);
+  qc.ry(qc::PI / 2, 1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
   auto finalFidelity = approximate(state, fidelity, *dd);
 
-  const CVec expected{{0, 0}};
+  const CVec expected{{0.114092}, {-0.99347}, {0}, {0}, {0}, {0}, {0}, {0}};
   vecNear(state.getVector(), expected);
-  EXPECT_EQ(state.size(), 1);
-  EXPECT_EQ(finalFidelity, 0);
+  EXPECT_EQ(state.size(), 4);
+  EXPECT_NEAR(finalFidelity, 0.365, 1e-3);
 }
 
 TEST(ApproximationTest, Runtime) {
@@ -329,32 +334,23 @@ TEST(ApproximationTest, Runtime) {
     std::array<std::size_t, n> qubits{}; // Qubit counts: [2, 16]
     std::iota(qubits.begin(), qubits.end(), 2);
 
-    // Setup random distribution for edge weights.
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dis(0., 1.0);
-
     for (std::size_t i = 0; i < n; ++i) {
       const std::size_t nq = qubits[i];
 
       auto dd = std::make_unique<dd::Package>(nq);
 
-      // Build exponentially large DD and increase its reference count.
-      auto state = buildExponentialDD(0, nq, *dd, dis, gen);
-      dd->incRef(state);
-
-      const std::size_t numNodes =
-          state.size() - 1; // Subtract 1 due to terminal.
+      auto state = generateExponentialDD(nq, *dd);
+      const std::size_t numNodes = state.size() - 1; // Minus terminal.
 
       const auto t1 = std::chrono::high_resolution_clock::now();
       approximate(state, fidelity, *dd);
       const auto t2 = std::chrono::high_resolution_clock::now();
       const std::chrono::duration<double, std::micro> runtime = t2 - t1;
 
-      const double q = runtime.count() /
-                       (static_cast<double>(numNodes) * std::log2(numNodes));
-
-      std::cout << nq << " | " << q << '\n';
+      std::cout << numNodes << ";" << runtime.count() << ";"
+                << runtime.count() /
+                       (static_cast<double>(numNodes) * std::log2(numNodes))
+                << '\n';
     }
     EXPECT_FALSE(true);
   }
