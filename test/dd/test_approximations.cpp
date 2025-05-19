@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <gtest/gtest.h>
+#include <iostream>
 #include <memory>
 #include <numeric>
 #include <random>

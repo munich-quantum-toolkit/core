@@ -18,9 +18,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <limits>
 #include <queue>
 #include <unordered_map>
+#include <utility>
 
 namespace dd {
 namespace {
@@ -55,7 +57,7 @@ private:
 using Layer = std::priority_queue<LayerNode>;
 /// @brief Maps nodes to their respective contribution.
 using Contributions = std::unordered_map<vNode*, double>;
-///  @brief Maps old nodes to rebuilt edges.
+/// @brief Maps old nodes to rebuilt edges.
 using Lookup = std::unordered_map<const vNode*, vEdge>;
 
 /**
@@ -74,7 +76,7 @@ std::pair<double, Qubit> mark(VectorDD& state, const double fidelity) {
   while (budget > 0) {
     Contributions c; // Stores contributions of the next layer.
     while (!curr.empty()) {
-      LayerNode n = curr.top();
+      const LayerNode n = curr.top();
       curr.pop();
 
       // If possible, flag a node for deletion and decrease the budget
@@ -137,7 +139,7 @@ vEdge sweep(const vEdge& curr, const Qubit min, Lookup& l, Package& dd) {
   // Otherwise traverse down to rebuild each non-terminal edge.
   std::array<vEdge, RADIX> edges{};
   for (std::size_t i = 0; i < RADIX; ++i) {
-    vEdge& eRef = n->e[i];
+    const vEdge& eRef = n->e[i];
     if (eRef.isTerminal()) {
       edges[i] = eRef;
       continue;
