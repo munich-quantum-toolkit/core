@@ -6,50 +6,19 @@
 #
 # Licensed under the MIT License
 
-# Check if the pennylane-catalyst package is installed in the python environment.
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" -m catalyst --version
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-  OUTPUT_VARIABLE CATALYST_VERSION)
-if(CATALYST_VERSION)
-  message(STATUS "Found pennylane-catalyst ${CATALYST_VERSION}")
-  # Check if the version is compatible.
-  if(CATALYST_VERSION VERSION_LESS 0.12.0-dev22)
-    message(
-      FATAL_ERROR
-        "pennylane-catalyst version ${CATALYST_VERSION} is not compatible. Please install version 0.12.0-dev22 or higher."
-    )
-  endif()
-  # Detect the installed catalyst include files.
-  execute_process(
-    COMMAND "${Python_EXECUTABLE}" -m catalyst --include_dir
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    OUTPUT_VARIABLE CATALYST_INCLUDE_DIRS)
-else()
-  # todo: Add option to get catalyst via fetch_content. Note that catlyst should not be built
-  # completely to avoid building entire llvm. Note further that some the headers are only generated
-  # during build time.
-  message(
-    FATAL_ERROR
-      "The pennylane-catalyst package was not found. Please install it using, e.g., `pip install pennylane-catalyst`."
-  )
-endif()
-
-if(NOT CATALYST_INCLUDE_DIRS)
-  message(
-    FATAL_ERROR
-      "The include directory of the pennylane-catalyst package could not be retrieved. Please ensure that the package is installed correctly."
-  )
-endif()
-
 add_compile_options(-fexceptions)
 
-# todo: Why is it add_llvm_library and not add_mlir_library?
+# Q: Why is it add_llvm_library and not add_mlir_library? A: According to Erick from Xanadu, who
+# talked with the MLIR team, the reason is probably, that the MLIR plugin uses the same
+# infrastructure as the LLVM plugins. Probably due to laziness, the appropriate MLIR macros were not
+# adopted yet.
 #
-# todo: On DLL platforms, the tool that will use this plugin must be linked, see
+# Note: On DLL platforms, the tool that will use this plugin must be linked, see
 # https://github.com/llvm/llvm-project/blob/2acecfe65397c162958ab305dc44614ff51e748c/llvm/cmake/modules/AddLLVM.cmake#L770
 # and
 # https://github.com/llvm/llvm-project/blob/2acecfe65397c162958ab305dc44614ff51e748c/llvm/cmake/modules/AddLLVM.cmake#L517
+# This would mean that it is not enough to have the corresponding header at hand, we would need to
+# have the catalyst target available to link against it.
 add_llvm_library(mqt-catalyst-plugin MODULE mqt-plugin.cpp LINK_LIBS MLIRMQTOpt
                  MLIRMQTOptTransforms)
 
