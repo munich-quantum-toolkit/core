@@ -99,6 +99,7 @@ git-only = []
 source-dir = "../../.."
 
 [tool.scikit-build.cmake.define]
+BUILD_MQT_CORE_TESTS = "OFF"
 BUILD_MQT_CORE_SHARED_LIBS = "ON"
 BUILD_MQT_CORE_MLIR = "ON"
 BUILD_MQT_CORE_CATALYST_PLUGIN = "ON"

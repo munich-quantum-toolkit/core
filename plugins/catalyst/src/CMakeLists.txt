@@ -19,19 +19,13 @@ add_compile_options(-fexceptions)
 # https://github.com/llvm/llvm-project/blob/2acecfe65397c162958ab305dc44614ff51e748c/llvm/cmake/modules/AddLLVM.cmake#L517
 # This would mean that it is not enough to have the corresponding header at hand, we would need to
 # have the catalyst target available to link against it.
-add_llvm_library(
-  mqt-catalyst-plugin
-  MODULE
-  mqt-plugin.cpp
-  PLUGIN_TOOL
-  catalyst-cli
-  LINK_LIBS
-  MLIRMQTOpt
-  MLIRMQTOptTransforms)
 
 # Previously we included the option `MODULE` as the second argument to `add_llvm_library`, but those
 # targets are ignored by the scikit-build-core. Hence, we build a shared library instead and set the
-# properties to emulate the behavior of `MODULE`. add_llvm_library(mqt-catalyst-plugin
-# mqt-plugin.cpp LINK_LIBS MLIRMQTOpt MLIRMQTOptTransforms) set the properties to emulate the
-# behavior of `MODULE` set_target_properties(mqt-catalyst-plugin PROPERTIES OUTPUT_NAME
-# "mqt-catalyst-plugin" PREFIX "")
+# properties to emulate the behavior of `MODULE`.
+add_llvm_library(mqt-catalyst-plugin mqt-plugin.cpp LINK_LIBS MLIRMQTOpt MLIRMQTOptTransforms)
+# set the properties to emulate the behavior of `MODULE`
+set_target_properties(mqt-catalyst-plugin PROPERTIES OUTPUT_NAME "mqt-catalyst-plugin" PREFIX "")
+
+# add MQT alias
+add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)
