@@ -184,9 +184,9 @@ isort.required-imports = ["from __future__ import annotations"]
 "typing.assert_never".msg = "Use mqt.core._compat.typing.assert_never instead."
 
 [tool.ruff.lint.per-file-ignores]
-# todo: remove the following lines and fix the python files
-"__init__.py" = ["ALL"]
-"test/python/**" = ["ALL"]
+# todo: remove the following lines and fix the python files themselves
+"src/mqt/catalyst/__init__.py" = ["ALL"]
+"test/**" = ["ALL"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
