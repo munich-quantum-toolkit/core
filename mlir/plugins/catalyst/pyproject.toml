@@ -7,26 +7,36 @@
 # Licensed under the MIT License
 
 [build-system]
-requires = ["scikit-build-core>=0.11.1", "setuptools-scm>=8.2", "pybind11>=2.13.6"]
+requires = [
+  "scikit-build-core>=0.11.1",
+  "setuptools-scm>=8.2",
+  "pybind11>=2.13.6",
+  "mqt-core>=3.0.0",
+  "pennylane @ https://test-files.pythonhosted.org/packages/1d/98/77b1216322c6cb65f5e01896912d40bf2ec47ef059db90e009fde22d7100/pennylane-0.42.0.dev19-py3-none-any.whl",
+  "pennylane-lightning @ https://test-files.pythonhosted.org/packages/c4/4e/ee935f9bfebddb29f23b59fa213e22d48df55aa330eb77d2e3ad992a4256/pennylane_lightning-0.42.0.dev11-cp312-cp312-macosx_13_0_arm64.whl",
+  "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/76/75/6ca3384f9cffd5ac87b2a443aafa5d6759e1bf9794f0a13cd6513a7ebb5e/pennylane_lightning_kokkos-0.42.0.dev11-cp312-cp312-macosx_13_0_arm64.whl",
+  "pennylane-catalyst @ file:///Users/yannick/Documents/TUM/CDA/Research/playgrounds/Catalyst/catalyst/dist/pennylane_catalyst-0.12.0.dev22-cp312-abi3-macosx_15_0_universal2.whl",
+]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "mqt-core"
-description = "The Backbone of the Munich Quantum Toolkit"
+name = "mqt-catalyst-plugin"
+description = "The Munich Quantum Toolkit's Catalyst Plugin"
 readme = "README.md"
 authors = [
+    { name = "Patrick Hopf", email = "patrick.hopf@tum.de" },
+    { name = "Yannick Stade", email = "yannick.stade@tum.de" },
     { name = "Lukas Burgholzer", email = "burgholzer@me.com" }
 ]
-keywords = ["MQT", "quantum-computing", "design-automation", "decision-diagrams", "zx-calculus"]
+keywords = ["MQT", "quantum-computing", "design-automation", "catalyst", "MLIR", "plugin"]
 license = "MIT"
-license-files = ["LICENSE.md"]
+license-files = ["../../../LICENSE.md"]
 
 classifiers = [
-  "Development Status :: 5 - Production/Stable",
+  "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "Natural Language :: English",
   "Operating System :: MacOS",
-  "Operating System :: Microsoft :: Windows",
   "Operating System :: POSIX :: Linux",
   "Programming Language :: C++",
   "Programming Language :: Python",
@@ -42,20 +52,8 @@ classifiers = [
 requires-python = ">=3.9"
 dynamic = ["version"]
 
-[project.optional-dependencies]
-evaluation = [
-  "pandas[output-formatting]>=2.1.2",
-]
-qiskit = [
-  "qiskit[qasm3-import]>=1.0.0",
-]
-catalyst = [
-    "pennylane-catalyst>=0.12.0",
-]
-
 [project.scripts]
-mqt-core-dd-compare = "mqt.core.dd_evaluation:main"
-mqt-core-cli = "mqt.core.__main__:main"
+mqt-catalyst-cli = "mqt.catalyst.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/munich-quantum-toolkit/core"
@@ -71,10 +69,10 @@ PyPI = "https://pypi.org/project/mqt-core/"
 minimum-version = "build-system.requires"
 
 # Set the wheel install directory
-wheel.install-dir = "mqt/core"
+wheel.install-dir = "mqt/catalyst"
 
 # Explicitly set the package directory
-wheel.packages = ["src/mqt"]
+wheel.packages = [".."]
 
 # Set required Ninja version
 ninja.version = ">=1.10"
@@ -84,62 +82,33 @@ build-dir = "build/{wheel_tag}/{build_type}"
 
 # All the targets to build
 build.targets = [
-  "mqt-core-ir",
-  "mqt-core-algorithms",
-  "mqt-core-circuit-optimizer",
-  "mqt-core-dd",
-  "mqt-core-zx",
-  "mqt-core-ds",
-  "mqt-core-na",
-  "ir",
-  "dd",
+  "mqt-catalyst-plugin",
 ]
 
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
-sdist.include = ["src/mqt/core/_version.py"]
-sdist.exclude = [
-    "**/.github",
-    "**/doc",
-    "**/docs",
-    "**/eval",
-    "**/meta",
-    "**/paper",
-    "**/plots",
-    "**/test",
-    "**/tests",
-]
+sdist.include = ["_version.py"]
+sdist.exclude = []
 
 [tool.check-sdist]
-sdist-only = ["src/mqt/core/_version.py"]
-git-only = [
-    "docs/*",
-    "test/*",
-    "mlir/*",
-]
+sdist-only = ["_version.py"]
+git-only = []
 
 [tool.scikit-build.cmake.define]
 BUILD_MQT_CORE_BINDINGS = "ON"
 BUILD_MQT_CORE_TESTS = "OFF"
 BUILD_SHARED_LIBS = "ON"
-
-[[tool.scikit-build.overrides]]
-if.python-version = ">=3.13"
-if.abi-flags = "t"
-if.platform-system = "win32"
-inherit.cmake.define = "append"
-cmake.define.DISABLE_GIL = "1"
-
+BUILD_MQT_CORE_MLIR = "ON"
+BUILD_MQT_CORE_CATALYST_PLUGIN = "ON"
+MLIR_DIR = "/opt/homebrew/opt/llvm@19/lib/cmake/mlir"
 
 [tool.setuptools_scm]
-write_to = "src/mqt/core/_version.py"
-
+write_to = "_version.py"
 
 [tool.check-wheel-contents]
 ignore = [
   "W002", # Wheel contains duplicate files (.so symlinks)
   "W004", # Module is not located at importable path (/lib/mqt-core-*.so)
 ]
-
 
 [tool.pytest.ini_options]
 minversion = "7.2"
@@ -159,12 +128,9 @@ filterwarnings = [
 log_cli_level = "INFO"
 testpaths = ["test/python"]
 
-
 [tool.coverage]
-run.source = ["mqt.core"]
-run.omit = [
-    '*/_compat/*',
-]
+run.source = ["mqt.catalyst"]
+run.omit = []
 report.exclude_also = [
   '\.\.\.',
   'if TYPE_CHECKING:',
@@ -174,10 +140,9 @@ report.exclude_also = [
   '@overload'  # Overloads are only for static typing
 ]
 
-
 [tool.mypy]
-files = ["src/mqt", "test/python", "noxfile.py"]
-mypy_path = ["$MYPY_CONFIG_FILE_DIR/src"]
+files = ["."]
+mypy_path = ["$MYPY_CONFIG_FILE_DIR/mlir/include/plugin/catalyst"]
 python_version = "3.9"
 warn_unused_configs = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
@@ -187,7 +152,7 @@ explicit_package_bases = true
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = ["qiskit.*", "matplotlib.*", "pytest_console_scripts.*"]
+module = []
 ignore_missing_imports = true
 
 [tool.ruff]
@@ -222,38 +187,25 @@ isort.required-imports = ["from __future__ import annotations"]
 "typing.assert_never".msg = "Use mqt.core._compat.typing.assert_never instead."
 
 [tool.ruff.lint.per-file-ignores]
-"test/python/**" = ["T20", "INP001"]
-"docs/**" = ["T20", "INP001"]
-"noxfile.py" = ["T20", "TID251"]
-"*.pyi" = ["D418", "DOC202", "PYI011", "PYI021"]
-"*.ipynb" = [
-    "D",    # pydocstyle
-    "E402", # Allow imports to appear anywhere in Jupyter notebooks
-    "I002", # Allow missing `from __future__ import annotations` import
-]
-"src/mqt/core/_compat/**.py" = ["TID251", "A005"]
-"src/mqt/core/dd_evaluation.py" = ["T201"]
-"src/mqt/core/__main__.py" = ["T201"]
+
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
 
 [tool.typos]
 default.extend-ignore-re = [
   "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",  # ignore line
   "(?s)(#|//)\\s*spellchecker:off.*?\\n\\s*(#|//)\\s*spellchecker:on" # ignore block
 ]
+
 [tool.typos.default.extend-words]
 wille = "wille"
 anc = "anc"
 mch = "mch"
 ket = "ket"
 
-
 [tool.repo-review]
 ignore = ["GH200"]
-
 
 [tool.cibuildwheel]
 build = "cp3*"
@@ -278,18 +230,13 @@ environment = { DEPLOY = "ON" }
 [tool.cibuildwheel.macos]
 environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }
 
-[tool.cibuildwheel.windows]
-before-build = "uv pip install delvewheel>=1.9.0"
-repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
-
 [[tool.cibuildwheel.overrides]]
 select = "*-macosx_arm64"
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
-
 [tool.uv]
 required-version = ">=0.5.20"
-reinstall-package = ["mqt-core"]
+reinstall-package = ["mqt-catalyst-plugin"]
 
 [tool.uv.sources]
 mqt-core = { workspace = true }
@@ -299,6 +246,11 @@ build = [
   "pybind11>=2.13.6",
   "scikit-build-core>=0.11.1",
   "setuptools-scm>=8.2",
+  "mqt-core>=3.0.0",
+  "pennylane @ https://test-files.pythonhosted.org/packages/1d/98/77b1216322c6cb65f5e01896912d40bf2ec47ef059db90e009fde22d7100/pennylane-0.42.0.dev19-py3-none-any.whl",
+  "pennylane-lightning @ https://test-files.pythonhosted.org/packages/c4/4e/ee935f9bfebddb29f23b59fa213e22d48df55aa330eb77d2e3ad992a4256/pennylane_lightning-0.42.0.dev11-cp312-cp312-macosx_13_0_arm64.whl",
+  "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/76/75/6ca3384f9cffd5ac87b2a443aafa5d6759e1bf9794f0a13cd6513a7ebb5e/pennylane_lightning_kokkos-0.42.0.dev11-cp312-cp312-macosx_13_0_arm64.whl",
+  "pennylane-catalyst @ file:///Users/yannick/Documents/TUM/CDA/Research/playgrounds/Catalyst/catalyst/dist/pennylane_catalyst-0.12.0.dev22-cp312-abi3-macosx_15_0_universal2.whl",
 ]
 docs = [
   "furo>=2024.8.6",
@@ -327,6 +279,11 @@ test = [
   "pandas[output-formatting]>=2.2.3; python_version >= '3.13'",
   "qiskit[qasm3-import]>=1.0.0",
   "numpy>=2.1; python_version >= '3.13'",
+  "mqt-core>=3.0.0",
+  "pennylane @ https://test-files.pythonhosted.org/packages/1d/98/77b1216322c6cb65f5e01896912d40bf2ec47ef059db90e009fde22d7100/pennylane-0.42.0.dev19-py3-none-any.whl",
+  "pennylane-lightning @ https://test-files.pythonhosted.org/packages/c4/4e/ee935f9bfebddb29f23b59fa213e22d48df55aa330eb77d2e3ad992a4256/pennylane_lightning-0.42.0.dev11-cp312-cp312-macosx_13_0_arm64.whl",
+  "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/76/75/6ca3384f9cffd5ac87b2a443aafa5d6759e1bf9794f0a13cd6513a7ebb5e/pennylane_lightning_kokkos-0.42.0.dev11-cp312-cp312-macosx_13_0_arm64.whl",
+  "pennylane-catalyst @ file:///Users/yannick/Documents/TUM/CDA/Research/playgrounds/Catalyst/catalyst/dist/pennylane_catalyst-0.12.0.dev22-cp312-abi3-macosx_15_0_universal2.whl",
 ]
 dev = [
   {include-group = "build"},

@@ -131,7 +131,7 @@ dmypy.json
 cython_debug/
 
 # setuptools_scm
-src/*/_version.py
+_version.py
 
 # SKBuild cache dir
 _skbuild/
