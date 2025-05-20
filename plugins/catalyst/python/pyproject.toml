@@ -22,7 +22,7 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "mqt-catalyst-plugin"
 description = "The Munich Quantum Toolkit's Catalyst Plugin"
-readme = "../../README.md"
+readme = "../../../README.md"
 authors = [
     { name = "Patrick Hopf", email = "patrick.hopf@tum.de" },
     { name = "Yannick Stade", email = "yannick.stade@tum.de" },
@@ -80,7 +80,7 @@ wheel.packages = ["python/src/mqt"]
 ninja.version = ">=1.10"
 
 # Setuptools-style build caching in a local directory
-build-dir = "../../../build/{wheel_tag}/{build_type}"
+build-dir = "../../../build/mqt-catalyst-plugin/{wheel_tag}/{build_type}"
 
 # All the targets to build
 build.targets = [
@@ -95,16 +95,20 @@ sdist.exclude = []
 sdist-only = ["python/src/mqt/catalyst/_version.py"]
 git-only = []
 
+[tool.scikit-build.cmake]
+source-dir = "../../.."
+
 [tool.scikit-build.cmake.define]
-BUILD_SHARED_LIBS = "ON"
+BUILD_MQT_CORE_SHARED_LIBS = "ON"
+BUILD_MQT_CORE_MLIR = "ON"
+BUILD_MQT_CORE_CATALYST_PLUGIN = "ON"
 # todo: How can that be done such that it works locally and in CI?
 MLIR_DIR = "/opt/homebrew/opt/llvm@19/lib/cmake/mlir"
-LLVM_EXTERNAL_LIT = "/opt/homebrew/opt/llvm/bin/lit"
+LLVM_EXTERNAL_LIT = "/opt/homebrew/opt/lit/bin/lit"
 
 [tool.setuptools_scm]
 write_to = "plugins/catalyst/python/src/mqt/catalyst/_version.py"
-root = "../.."
-relative_to = "plugins/catalyst/pyproject.toml"
+root = "../../.."
 
 [tool.check-wheel-contents]
 ignore = [

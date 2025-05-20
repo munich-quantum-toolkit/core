@@ -46,11 +46,6 @@ set(MLIR_BINARY_DIR ${CMAKE_BINARY_DIR})
 # add a compile feature for C++17
 set(CMAKE_CXX_STANDARD 17)
 
-# Always build all MLIR libraries as static libraries Save the original value
-set(ORIGINAL_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
-# Modify the value in for all subdirectories
-set(BUILD_SHARED_LIBS OFF)
-
 # add main library code
 add_subdirectory(include)
 add_subdirectory(lib)
@@ -58,6 +53,3 @@ add_subdirectory(tools)
 
 # add test code
 add_subdirectory(test)
-
-# Restore the original value
-set(BUILD_SHARED_LIBS ${ORIGINAL_BUILD_SHARED_LIBS})

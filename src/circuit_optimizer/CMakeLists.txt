@@ -12,7 +12,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-circuit-optimizer)
   file(GLOB_RECURSE CIRCUIT_OPTIMIZER_SOURCES **.cpp)
 
   # create the library target (initially empty)
-  add_library(${MQT_CORE_TARGET_NAME}-circuit-optimizer)
+  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-circuit-optimizer)
 
   # add sources to target
   target_sources(${MQT_CORE_TARGET_NAME}-circuit-optimizer PRIVATE ${CIRCUIT_OPTIMIZER_SOURCES})
@@ -29,9 +29,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-circuit-optimizer)
     PUBLIC MQT::CoreIR
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
 
-  # add MQT alias
-  add_library(MQT::CoreCircuitOptimizer ALIAS ${MQT_CORE_TARGET_NAME}-circuit-optimizer)
-
   # set versioning information
   set_target_properties(
     ${MQT_CORE_TARGET_NAME}-circuit-optimizer
@@ -47,7 +44,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-circuit-optimizer)
     ${MQT_CORE_TARGET_NAME}-circuit-optimizer
     PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/.. FILES
            ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_circuit_optimizer_export.h)
-  if(NOT BUILD_SHARED_LIBS)
+  if(NOT BUILD_MQT_CORE_SHARED_LIBS)
     target_compile_definitions(${MQT_CORE_TARGET_NAME}-circuit-optimizer
                                PUBLIC MQT_CORE_CIRCUIT_OPTIMIZER_STATIC_DEFINE)
   endif()

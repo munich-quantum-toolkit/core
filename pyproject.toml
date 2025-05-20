@@ -77,7 +77,7 @@ wheel.packages = ["src/mqt"]
 ninja.version = ">=1.10"
 
 # Setuptools-style build caching in a local directory
-build-dir = "build/{wheel_tag}/{build_type}"
+build-dir = "build/mqt-core/{wheel_tag}/{build_type}"
 
 # All the targets to build
 build.targets = [
@@ -117,7 +117,7 @@ git-only = [
 [tool.scikit-build.cmake.define]
 BUILD_MQT_CORE_BINDINGS = "ON"
 BUILD_MQT_CORE_TESTS = "OFF"
-BUILD_SHARED_LIBS = "ON"
+BUILD_MQT_CORE_SHARED_LIBS = "ON"
 
 [[tool.scikit-build.overrides]]
 if.python-version = ">=3.13"

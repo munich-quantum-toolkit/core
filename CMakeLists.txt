@@ -21,6 +21,7 @@ include(cmake/StandardProjectSettings.cmake)
 include(cmake/PreventInSourceBuilds.cmake)
 include(cmake/PackageAddTest.cmake)
 include(cmake/Cache.cmake)
+include(cmake/AddMQTCore.cmake)
 
 option(BUILD_MQT_CORE_BINDINGS "Build the MQT Core Python bindings" OFF)
 if(BUILD_MQT_CORE_BINDINGS)
