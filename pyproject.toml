@@ -49,9 +49,6 @@ evaluation = [
 qiskit = [
   "qiskit[qasm3-import]>=1.0.0",
 ]
-catalyst = [
-    "pennylane-catalyst>=0.12.0",
-]
 
 [project.scripts]
 mqt-core-dd-compare = "mqt.core.dd_evaluation:main"
@@ -234,6 +231,8 @@ isort.required-imports = ["from __future__ import annotations"]
 "src/mqt/core/_compat/**.py" = ["TID251", "A005"]
 "src/mqt/core/dd_evaluation.py" = ["T201"]
 "src/mqt/core/__main__.py" = ["T201"]
+# Errors in plugin directories is checked by the plugin
+"plugins/**" = ["ALL"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
