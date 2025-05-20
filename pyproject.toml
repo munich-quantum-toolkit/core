@@ -231,7 +231,7 @@ isort.required-imports = ["from __future__ import annotations"]
 "src/mqt/core/_compat/**.py" = ["TID251", "A005"]
 "src/mqt/core/dd_evaluation.py" = ["T201"]
 "src/mqt/core/__main__.py" = ["T201"]
-# Errors in plugin directories is checked by the plugin
+# The plugin checks errors in plugin directories itself, hence, we ignore all warnings for them here
 "plugins/**" = ["ALL"]
 
 [tool.ruff.lint.pydocstyle]

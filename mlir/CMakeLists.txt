@@ -54,7 +54,6 @@ set(BUILD_SHARED_LIBS OFF)
 # add main library code
 add_subdirectory(include)
 add_subdirectory(lib)
-add_subdirectory(plugins)
 add_subdirectory(tools)
 
 # add test code

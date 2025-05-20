@@ -12,17 +12,17 @@ requires = [
   "setuptools-scm>=8.2",
   "pybind11>=2.13.6",
   "mqt-core>=3.0.0",
-  "pennylane @ https://test-files.pythonhosted.org/packages/1d/98/77b1216322c6cb65f5e01896912d40bf2ec47ef059db90e009fde22d7100/pennylane-0.42.0.dev19-py3-none-any.whl",
-  "pennylane-lightning @ https://test-files.pythonhosted.org/packages/c4/4e/ee935f9bfebddb29f23b59fa213e22d48df55aa330eb77d2e3ad992a4256/pennylane_lightning-0.42.0.dev11-cp312-cp312-macosx_13_0_arm64.whl",
-  "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/76/75/6ca3384f9cffd5ac87b2a443aafa5d6759e1bf9794f0a13cd6513a7ebb5e/pennylane_lightning_kokkos-0.42.0.dev11-cp312-cp312-macosx_13_0_arm64.whl",
-  "pennylane-catalyst @ file:///Users/yannick/Documents/TUM/CDA/Research/playgrounds/Catalyst/catalyst/dist/pennylane_catalyst-0.12.0.dev22-cp312-abi3-macosx_15_0_universal2.whl",
+  "pennylane @ https://test-files.pythonhosted.org/packages/a4/ae/b8b0fdcd91fe0e87d699d46938cfee0531e8093042dd9eff11abc247c02f/pennylane-0.42.0.dev27-py3-none-any.whl",
+  "pennylane-lightning @ https://test-files.pythonhosted.org/packages/4d/99/1cab1348e3b839f0c8df515dc6b2d347c5e913361ff65e6fa1f197c0a67a/pennylane_lightning-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
+  "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/25/97/9707f73d2ed6e2549e4e099d0083481c144e984227e147b44cd2838535e6/pennylane_lightning_kokkos-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
+  "pennylane-catalyst @ file:///Users/yannick/Documents/TUM/CDA/Research/playgrounds/Catalyst/catalyst/dist/pennylane_catalyst-0.12.0.dev36-cp312-abi3-macosx_15_0_universal2.whl",
 ]
 build-backend = "scikit_build_core.build"
 
 [project]
 name = "mqt-catalyst-plugin"
 description = "The Munich Quantum Toolkit's Catalyst Plugin"
-readme = "README.md"
+readme = "../../README.md"
 authors = [
     { name = "Patrick Hopf", email = "patrick.hopf@tum.de" },
     { name = "Yannick Stade", email = "yannick.stade@tum.de" },
@@ -30,7 +30,9 @@ authors = [
 ]
 keywords = ["MQT", "quantum-computing", "design-automation", "catalyst", "MLIR", "plugin"]
 license = "MIT"
-license-files = ["../../../LICENSE.md"]
+# we have to duplicate the license file here because scikit_build_core requires
+# "the pattern [specifying the license file] must match files within the project directory"
+license-files = ["LICENSE.md"]
 
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -72,13 +74,13 @@ minimum-version = "build-system.requires"
 wheel.install-dir = "mqt/catalyst"
 
 # Explicitly set the package directory
-wheel.packages = [".."]
+wheel.packages = ["python/src/mqt"]
 
 # Set required Ninja version
 ninja.version = ">=1.10"
 
 # Setuptools-style build caching in a local directory
-build-dir = "build/{wheel_tag}/{build_type}"
+build-dir = "../../../build/{wheel_tag}/{build_type}"
 
 # All the targets to build
 build.targets = [
@@ -86,23 +88,23 @@ build.targets = [
 ]
 
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
-sdist.include = ["_version.py"]
+sdist.include = ["python/src/mqt/catalyst/_version.py"]
 sdist.exclude = []
 
 [tool.check-sdist]
-sdist-only = ["_version.py"]
+sdist-only = ["python/src/mqt/catalyst/_version.py"]
 git-only = []
 
 [tool.scikit-build.cmake.define]
-BUILD_MQT_CORE_BINDINGS = "ON"
-BUILD_MQT_CORE_TESTS = "OFF"
 BUILD_SHARED_LIBS = "ON"
-BUILD_MQT_CORE_MLIR = "ON"
-BUILD_MQT_CORE_CATALYST_PLUGIN = "ON"
+# todo: How can that be done such that it works locally and in CI?
 MLIR_DIR = "/opt/homebrew/opt/llvm@19/lib/cmake/mlir"
+LLVM_EXTERNAL_LIT = "/opt/homebrew/opt/llvm/bin/lit"
 
 [tool.setuptools_scm]
-write_to = "_version.py"
+write_to = "plugins/catalyst/python/src/mqt/catalyst/_version.py"
+root = "../.."
+relative_to = "plugins/catalyst/pyproject.toml"
 
 [tool.check-wheel-contents]
 ignore = [
@@ -118,12 +120,6 @@ filterwarnings = [
   "error",
   'ignore:\s.*Pyarrow.*:DeprecationWarning:',
   'ignore:.*datetime\.datetime\.utcfromtimestamp.*:DeprecationWarning:',
-  # Qiskit 1.2 deprecations
-  'ignore:.*no need for these schema-conformant objects.*:DeprecationWarning:',
-  # Qiskit 1.3 deprecations
-  'ignore:.*``qiskit.dagcircuit.dagcircuit.DAGCircuit.*`` is deprecated as of qiskit 1.3.0.*:DeprecationWarning:',
-  'ignore:.*``qiskit.circuit.library.standard_gates.x.*`` is pending deprecation as of qiskit 1.3.*:PendingDeprecationWarning:',
-  'ignore:.*``qiskit.circuit.instruction.Instruction.condition`` is deprecated as of qiskit 1.3.0.*:DeprecationWarning:',
 ]
 log_cli_level = "INFO"
 testpaths = ["test/python"]
@@ -141,8 +137,8 @@ report.exclude_also = [
 ]
 
 [tool.mypy]
-files = ["."]
-mypy_path = ["$MYPY_CONFIG_FILE_DIR/mlir/include/plugin/catalyst"]
+files = ["python"]
+mypy_path = ["$MYPY_CONFIG_FILE_DIR/python"]
 python_version = "3.9"
 warn_unused_configs = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
@@ -175,6 +171,7 @@ ignore = [
     "S404",    # `subprocess` module is possibly insecure
     "TID252"   # Prefer absolute imports over relative imports from parent modules
 ]
+# todo: can the module be used from mqt-core?
 typing-modules = ["mqt.core._compat.typing"]
 isort.required-imports = ["from __future__ import annotations"]
 
@@ -187,7 +184,9 @@ isort.required-imports = ["from __future__ import annotations"]
 "typing.assert_never".msg = "Use mqt.core._compat.typing.assert_never instead."
 
 [tool.ruff.lint.per-file-ignores]
-
+# todo: remove the following lines and fix the python files
+"__init__.py" = ["ALL"]
+"test/python/**" = ["ALL"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -239,7 +238,7 @@ required-version = ">=0.5.20"
 reinstall-package = ["mqt-catalyst-plugin"]
 
 [tool.uv.sources]
-mqt-core = { workspace = true }
+mqt-catalyst-plugin = { workspace = true }
 
 [dependency-groups]
 build = [
@@ -262,8 +261,6 @@ docs = [
   "sphinxcontrib-bibtex>=2.6.3",
   "sphinxcontrib-svg2pdfconverter>=1.3.0",
   "sphinxext-opengraph>=0.10.0",
-  "pandas[output-formatting]>=2.1.2",
-  "qiskit[qasm3-import,visualization]>=1.0.0",
   "openqasm-pygments>=0.1.2",
   "breathe>=4.36.0",
   "graphviz>=0.20.3",
@@ -275,9 +272,6 @@ test = [
   "pytest>=8.3.5",
   "pytest-console-scripts>=1.4.1",
   "pytest-cov>=6.1.1",
-  "pandas[output-formatting]>=2.1.2",
-  "pandas[output-formatting]>=2.2.3; python_version >= '3.13'",
-  "qiskit[qasm3-import]>=1.0.0",
   "numpy>=2.1; python_version >= '3.13'",
   "mqt-core>=3.0.0",
   "pennylane @ https://test-files.pythonhosted.org/packages/1d/98/77b1216322c6cb65f5e01896912d40bf2ec47ef059db90e009fde22d7100/pennylane-0.42.0.dev19-py3-none-any.whl",

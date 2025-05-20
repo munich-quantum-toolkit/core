@@ -71,44 +71,5 @@ if(BUILD_MQT_CORE_TESTS)
   list(APPEND FETCH_PACKAGES googletest)
 endif()
 
-if(BUILD_MQT_CORE_CATALYST_PLUGIN)
-  set(CATALYST_VERSION 0.12.0)
-  # Check if the pennylane-catalyst package is installed in the python environment.
-  execute_process(
-    COMMAND "${Python_EXECUTABLE}" -m catalyst --version
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    OUTPUT_VARIABLE FOUND_CATALYST_VERSION)
-  if(FOUND_CATALYST_VERSION)
-    message(STATUS "Found pennylane-catalyst ${CATALYST_VERSION} in python environment.")
-    # Check if the version is compatible.
-    if(FOUND_CATALYST_VERSION VERSION_LESS ${CATALYST_VERSION})
-      message(
-        WARNING
-          "pennylane-catalyst version ${FOUND_CATALYST_VERSION} in python environment is not compatible."
-      )
-    else()
-      # Detect the installed catalyst include files.
-      execute_process(
-        COMMAND "${Python_EXECUTABLE}" -m catalyst --include_dir
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        OUTPUT_VARIABLE CATALYST_INCLUDE_DIRS)
-    endif()
-  else()
-    set(CATALYST_URL
-        https://github.com/PennyLaneAI/catalyst/archive/refs/tags/v${CATALYST_VERSION}.tar.gz)
-    FetchContent_Declare(catalyst URL ${CATALYST_URL} FIND_PACKAGE_ARGS ${CATALYST_VERSION})
-    # todo: Find the include directory, generate header via TableGen if needed (at build time)
-    # Catalyst is purposely not added to the list of fetch packages, because it is not meant to be
-    # built or linked. We only need the include files. list(APPEND FETCH_PACKAGES catalyst)
-  endif()
-
-  if(NOT CATALYST_INCLUDE_DIRS)
-    message(
-      FATAL_ERROR
-        "The include directory of the pennylane-catalyst package could not be retrieved. Please ensure that the catalyst is installed correctly."
-    )
-  endif()
-endif()
-
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})

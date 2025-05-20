@@ -6,21 +6,7 @@
 #
 # Licensed under the MIT License
 
-# Copyright 2024 Xanadu Quantum Technologies Inc.
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-"""MQT Plugin interface."""
+"""MQT Catalyst Plugin."""
 
 from __future__ import annotations
 
@@ -28,11 +14,14 @@ from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
 import pennylane as qml
+
 from catalyst.passes import PassPlugin
+
+from ._version import version as __version__
+from ._version import version_tuple as version_info
 
 
 def get_catalyst_plugin_abs_path() -> Path:
-    """Returns the absolute path to the MQT plugin."""
     try:
         dist = distribution("mqt-core")
         # Check for the plugin in the mqt-core package on Linux
@@ -43,25 +32,18 @@ def get_catalyst_plugin_abs_path() -> Path:
         catalyst_plugin_abs_path = Path(dist.locate_file("mqt/core/lib/mqt-catalyst-plugin.dylib"))
         if catalyst_plugin_abs_path.exists() and catalyst_plugin_abs_path.is_file():
             return catalyst_plugin_abs_path
-        # Check for the plugin in the mqt-core package on Windows
-        catalyst_plugin_abs_path = Path(dist.locate_file("mqt/core/lib/mqt-catalyst-plugin.dll"))
-        if catalyst_plugin_abs_path.exists() and catalyst_plugin_abs_path.is_file():
-            return catalyst_plugin_abs_path
         msg = "mqt-catalyst-plugin library not found."
         raise FileNotFoundError(msg)
     except PackageNotFoundError:
-        msg = "mqt-core not installed, installation required to access the mqt-catalyst-plugin library."
+        msg = "mqt-catalyst-plugin not installed, installation required to access the MQT Catalyst Plugin library."
         raise ImportError(msg) from None
 
 
 def name2pass(_name: str) -> tuple[Path, str]:
-    """Example entry point for MQT plugin."""
     return get_catalyst_plugin_abs_path(), "mqt-core-round-trip"
 
 
 def MQTCoreRoundTrip(*flags, **valued_options):
-    """Applies the "mqt-core-round-trip" pass."""
-
     def add_pass_to_pipeline(**kwargs):
         pass_pipeline = kwargs.get("pass_pipeline", [])
         pass_pipeline.append(
@@ -100,3 +82,6 @@ def MQTCoreRoundTrip(*flags, **valued_options):
 
     # When the decorator is used with ()
     return decorator
+
+
+__all__ = ["MQTCoreRoundTrip", "__version__", "get_catalyst_plugin_abs_path", "name2pass", "version_info"]
