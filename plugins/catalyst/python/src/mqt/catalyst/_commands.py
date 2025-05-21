@@ -23,7 +23,7 @@ def include_dir() -> Path:
     """
     try:
         dist = distribution("mqt-catalyst-plugin")
-        located_include_dir = Path(dist.locate_file("mqt/catalyst/include/mqt-catalyst-plugin"))
+        located_include_dir = Path(dist.locate_file("mqt/catalyst/include"))
         if located_include_dir.exists() and located_include_dir.is_dir():
             return located_include_dir
         msg = "mqt-catalyst-plugin include files not found."

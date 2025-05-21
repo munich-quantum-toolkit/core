@@ -10,28 +10,39 @@
 
 from __future__ import annotations
 
-import importlib.resources as resources
+from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
 import pennylane as qml
 
 from catalyst.passes import PassPlugin
 
-from ._version import version as __version__
-from ._version import version_tuple as version_info
-
 
 def get_catalyst_plugin_abs_path() -> Path:
-    # Check for the plugin in the mqt-core package on Linux
-    catalyst_plugin_abs_path = resources.path("mqt.catalyst", "lib/mqt-catalyst-plugin.so")
-    if catalyst_plugin_abs_path.exists() and catalyst_plugin_abs_path.is_file():
-        return catalyst_plugin_abs_path
-    # Check for the plugin in the mqt-core package on macOS
-    catalyst_plugin_abs_path = resources.path("mqt.catalyst", "lib/mqt-catalyst-plugin.dylib")
-    if catalyst_plugin_abs_path.exists() and catalyst_plugin_abs_path.is_file():
-        return catalyst_plugin_abs_path
-    msg = "mqt-catalyst-plugin library not found."
-    raise FileNotFoundError(msg)
+    """Locate the mqt-catalyst-plugin library.
+
+    Returns:
+        The absolute path to the mqt-catalyst-plugin library.
+
+    Raises:
+        FileNotFoundError: If the include directory is not found.
+        ImportError: If mqt-catalyst-plugin is not installed.
+    """
+    try:
+        dist = distribution("mqt-catalyst-plugin")
+        # Check for the plugin in the mqt-core package on Linux
+        catalyst_plugin_abs_path = Path(dist.locate_file("mqt/catalyst/lib/mqt-catalyst-plugin.so"))
+        if catalyst_plugin_abs_path.exists() and catalyst_plugin_abs_path.is_file():
+            return catalyst_plugin_abs_path
+        # Check for the plugin in the mqt-core package on macOS
+        catalyst_plugin_abs_path = Path(dist.locate_file("mqt/catalyst/lib/mqt-catalyst-plugin.dylib"))
+        if catalyst_plugin_abs_path.exists() and catalyst_plugin_abs_path.is_file():
+            return catalyst_plugin_abs_path
+        msg = "mqt-catalyst-plugin library not found."
+        raise FileNotFoundError(msg)
+    except PackageNotFoundError:
+        msg = "mqt-catalyst-plugin not installed, installation required to access the include files."
+        raise ImportError(msg) from None
 
 
 def name2pass(_name: str) -> tuple[Path, str]:
