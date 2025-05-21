@@ -1046,19 +1046,17 @@ module {
 // -----
 // This test checks if a measurement op with a mismatch between in-qubits and out-bits throws an error as expected.
 module {
-  func.func @testMeasureMismatchInOutBits() {
-    %reg = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+    func.func @testMeasureMismatchInOutBits() {
+        %reg = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
 
-    %reg1, %q0 = "mqtopt.extractQubit"(%reg)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %reg1, %q0 = "mqtopt.extractQubit"(%reg)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
-    %reg2, %q1 = "mqtopt.extractQubit"(%reg1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %reg2, %q1 = "mqtopt.extractQubit"(%reg1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
-    // expected-error@+1 {{'mqtopt.measure' op number of input qubits (2) and output bits (0) must be the same}}
-    %reg_out = "mqtopt.measure"(%q0, %q1) : (!mqtopt.Qubit, !mqtopt.Qubit) -> (!mqtopt.Qubit)
-  }
+        // expected-error@+1 {{'mqtopt.measure' op number of input qubits (2) and output bits (0) must be the same}}
+        %reg_out = "mqtopt.measure"(%q0, %q1) : (!mqtopt.Qubit, !mqtopt.Qubit) -> (!mqtopt.Qubit)
+    }
 }
-
-
 
 // -----
 // This test checks if a Bell state is parsed and handled correctly by using many instructions tested above.
