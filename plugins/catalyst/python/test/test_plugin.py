@@ -31,7 +31,7 @@ import pennylane as qml
 import pytest
 from catalyst import pipeline
 from catalyst.passes import apply_pass, apply_pass_plugin
-from mqt.core.plugins.catalyst import MQTCoreRoundTrip, get_catalyst_plugin_abs_path
+from mqt.catalyst import MQTCoreRoundTrip, get_catalyst_plugin_abs_path
 
 plugin_available = True
 try:
