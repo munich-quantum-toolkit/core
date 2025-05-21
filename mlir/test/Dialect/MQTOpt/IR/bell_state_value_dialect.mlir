@@ -6,7 +6,7 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file | FileCheck %s
+// RUN: quantum-opt %s -split-input-file -verify-diagnostics | FileCheck %s
 
 // -----
 // This test checks if the AllocOp is parsed and handled correctly using a static attribute.
@@ -906,6 +906,159 @@ module {
         return
     }
 }
+
+// -----
+// This test expects an error to be thrown when an alloc op defines size operands and attributes.
+module {
+    func.func @testAllocOperandAndAttribute() {
+        %reg_size = arith.constant 3 : i64
+
+        // expected-error-re@+1 {{'mqtopt.allocQubitRegister' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'size'}}
+        %reg = "mqtopt.allocQubitRegister"(%reg_size) <{size_attr = 3 : i64}> : (i64) -> !mqtopt.QubitRegister
+    }
+}
+
+// -----
+// This test expects an error to be thrown when an alloc op does not define size operands nor attributes.
+module {
+    func.func @testAllocMissingSize() {
+        // expected-error-re@+1 {{'mqtopt.allocQubitRegister' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'size'}}
+        %reg = "mqtopt.allocQubitRegister"() : () -> !mqtopt.QubitRegister
+    }
+}
+
+// -----
+// This test expects an error to be thrown when an extract op defines index operands and attributes.
+module {
+    func.func @testExtractOperandAndAttribute() {
+        %reg = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+
+        %idx = arith.constant 0 : i64
+
+        // expected-error-re@+1 {{'mqtopt.extractQubit' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'index'}}
+        %reg2, %q_0 = "mqtopt.extractQubit"(%reg, %idx) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, i64) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+  }
+}
+
+// -----
+// This test expects an error to be thrown when an extract op does not define index operands nor attributes.
+module {
+    func.func @testExtractMissingIndex() {
+        %reg = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+
+        %idx = arith.constant 0 : i64
+
+        // expected-error-re@+1 {{'mqtopt.extractQubit' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'index'}}
+        %reg2, %q_0 = "mqtopt.extractQubit"(%reg) : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+  }
+}
+
+// -----
+// This test expects an error to be thrown when an insert op defines index operands and attributes.
+module {
+    func.func @testInsertOperandAndAttribute() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+
+        %reg_1, %q_0  = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %idx = arith.constant 0 : i64
+
+        // expected-error-re@+1 {{'mqtopt.insertQubit' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'index'}}
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_0, %idx) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit, i64) -> !mqtopt.QubitRegister
+    }
+}
+
+// -----
+// This test expects an error to be thrown when an insert op does not define index operands nor attributes.
+module {
+    func.func @testInsertMissingIndex() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+
+        %reg_1, %q_0  = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %idx = arith.constant 0 : i64
+
+        // expected-error-re@+1 {{'mqtopt.insertQubit' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'index'}}
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_0) : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    }
+}
+
+// -----
+// This test expects an error to be thrown when parsing a controlled operation.
+module {
+    func.func @testCtrlOpMismatchInOutputs() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // expected-error@+1 {{operation defines 2 results but was provided 1 to bind}}
+        %q1_1 = mqtopt.x() %q1_0 ctrl %q0_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    }
+}
+
+// -----
+// This test expects an error to be thrown when parsing a controlled operation using an invalid format.
+module {
+    func.func @testCtrlOpInvalidFormat() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // expected-error@+1 {{number of positively-controlling input qubits (0) and positively-controlling output qubits (1) must be the same}}
+        %q1_1, %q0_1 = mqtopt.x() %q1_0 ctrl : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    }
+}
+
+// -----
+// This test expects an error to be thrown when parsing a controlled operation using an invalid format.
+module {
+    func.func @testNegCtrlOpInvalidFormat() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // expected-error@+1 {{number of negatively-controlling input qubits (0) and negatively-controlling output qubits (1) must be the same}}
+        %q1_1, %q0_1 = mqtopt.x() %q1_0 nctrl : !mqtopt.Qubit nctrl !mqtopt.Qubit
+    }
+}
+
+// -----
+// This test expects an error to be thrown when parsing a parameterised operation.
+module {
+    func.func @testParamOpInvalidFormat() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+
+        // expected-error@+1 {{operation expects exactly 3 parameters but got 2}}
+        %q_1 = mqtopt.u(%c0_f64, %c0_f64) %q_0 : !mqtopt.Qubit
+    }
+}
+
+// -----
+// This test checks if a measurement op with a mismatch between in-qubits and out-bits throws an error as expected.
+module {
+  func.func @testMeasureMismatchInOutBits() {
+    %reg = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+
+    %reg1, %q0 = "mqtopt.extractQubit"(%reg)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    %reg2, %q1 = "mqtopt.extractQubit"(%reg1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    // expected-error@+1 {{'mqtopt.measure' op number of input qubits (2) and output bits (0) must be the same}}
+    %reg_out = "mqtopt.measure"(%q0, %q1) : (!mqtopt.Qubit, !mqtopt.Qubit) -> (!mqtopt.Qubit)
+  }
+}
+
+
 
 // -----
 // This test checks if a Bell state is parsed and handled correctly by using many instructions tested above.
