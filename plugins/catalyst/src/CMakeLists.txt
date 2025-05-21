@@ -46,11 +46,19 @@ else()
   # set the properties to emulate the behavior of `MODULE`
   set_target_properties(mqt-catalyst-plugin PROPERTIES OUTPUT_NAME "mqt-catalyst-plugin" PREFIX "")
 endif()
-# add catalyst include directories
-target_include_directories(mqt-catalyst-plugin PRIVATE ${CATALYST_INCLUDE_DIRS})
 
-# add MQT alias
-add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)
+# set required C++ standard
+target_compile_features(mqt-catalyst-plugin PUBLIC cxx_std_17)
+
+# generate export header
+include(GenerateExportHeader)
+generate_export_header(mqt-catalyst-plugin BASE_NAME mqt_catalyst_plugin)
+target_sources(
+  mqt-catalyst-plugin PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/.. FILES
+                             ${CMAKE_CURRENT_BINARY_DIR}/mqt_catalyst_plugin_export.h)
+if(NOT BUILD_MQT_CORE_SHARED_LIBS)
+  target_compile_definitions(mqt-catalyst-plugin PUBLIC MQT_CATALYST_PLUGIN_STATIC_DEFINE)
+endif()
 
 # Install directive for scikit-build-core
 install(
@@ -66,3 +74,6 @@ if(SKBUILD_STATE STREQUAL "editable")
     DESTINATION .
     COMPONENT mqt-catalyst_Plugin)
 endif()
+
+# add MQT alias
+add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)
