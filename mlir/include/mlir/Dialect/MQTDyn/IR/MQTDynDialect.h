@@ -12,6 +12,7 @@
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Dialect.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
