@@ -6,4 +6,6 @@
 #
 # Licensed under the MIT License
 
+include(cmake/ExternalDependencies.cmake)
+
 add_subdirectory(src)

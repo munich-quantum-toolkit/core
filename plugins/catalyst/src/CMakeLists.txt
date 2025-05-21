@@ -30,6 +30,8 @@ else()
   # set the properties to emulate the behavior of `MODULE`
   set_target_properties(mqt-catalyst-plugin PROPERTIES OUTPUT_NAME "mqt-catalyst-plugin" PREFIX "")
 endif()
+# add catalyst include directories
+target_include_directories(mqt-catalyst-plugin PRIVATE ${CATALYST_INCLUDE_DIRS})
 
 # add MQT alias
 add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)
