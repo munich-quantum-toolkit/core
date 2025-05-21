@@ -39,8 +39,8 @@ add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)
 # Install directive for scikit-build-core
 install(
   TARGETS mqt-catalyst-plugin
-  DESTINATION .
-  COMPONENT mqt-catalyst-plugin)
+  DESTINATION lib
+  COMPONENT mqt-catalyst_Plugin)
 
 # Install the Python stub files in editable mode for better IDE support
 if(SKBUILD_STATE STREQUAL "editable")
@@ -48,5 +48,5 @@ if(SKBUILD_STATE STREQUAL "editable")
   install(
     FILES ${IR_PYI_FILES}
     DESTINATION .
-    COMPONENT mqt-catalyst-plugin)
+    COMPONENT mqt-catalyst_Plugin)
 endif()
