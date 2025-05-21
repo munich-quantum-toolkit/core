@@ -11,7 +11,7 @@
 set(CATALYST_VERSION 0.12.0)
 # Check if the pennylane-catalyst package is installed in the python environment.
 execute_process(
-  COMMAND "${Python_EXECUTABLE}" -m catalyst --version
+  COMMAND "${Python_EXECUTABLE}" -c "import catalyst; print(catalyst.__version__)"
   OUTPUT_STRIP_TRAILING_WHITESPACE
   OUTPUT_VARIABLE FOUND_CATALYST_VERSION)
 if(FOUND_CATALYST_VERSION)
@@ -25,7 +25,8 @@ if(FOUND_CATALYST_VERSION)
   else()
     # Detect the installed catalyst include files.
     execute_process(
-      COMMAND "${Python_EXECUTABLE}" -m catalyst --include_dir
+      COMMAND "${Python_EXECUTABLE}" -c
+              "import catalyst.utils.runtime_environment as c; print(c.get_include_path())"
       OUTPUT_STRIP_TRAILING_WHITESPACE
       OUTPUT_VARIABLE CATALYST_INCLUDE_DIRS)
   endif()
