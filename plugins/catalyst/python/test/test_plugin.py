@@ -48,7 +48,7 @@ def test_MQT_plugin() -> None:
     """
 
     @apply_pass("mqt-core-round-trip")
-    @qml.qnode(qml.device("lightning.qubit", wires=0))
+    @qml.qnode(qml.device("null.qubit", wires=0))
     def qnode():
         return qml.state()
 
@@ -67,7 +67,7 @@ def test_MQT_plugin_no_preregistration() -> None:
     """
 
     @apply_pass_plugin(plugin_path, "mqt-core-round-trip")
-    @qml.qnode(qml.device("lightning.qubit", wires=0))
+    @qml.qnode(qml.device("null.qubit", wires=0))
     def qnode():
         return qml.state()
 
@@ -85,7 +85,7 @@ def test_MQT_entry_point() -> None:
     """Generate MLIR for the MQT plugin via entry-point."""
 
     @apply_pass("mqt.mqt-core-round-trip")
-    @qml.qnode(qml.device("lightning.qubit", wires=0))
+    @qml.qnode(qml.device("null.qubit", wires=0))
     def qnode():
         return qml.state()
 
@@ -104,7 +104,7 @@ def test_MQT_dictionary() -> None:
 
     # @qjit(keep_intermediate=True)
     @pipeline({"mqt.mqt-core-round-trip": {}})
-    @qml.qnode(qml.device("lightning.qubit", wires=0))
+    @qml.qnode(qml.device("null.qubit", wires=0))
     def qnode():
         return qml.state()
 
@@ -122,7 +122,7 @@ def test_MQT_plugin_decorator() -> None:
     """Generate MLIR for the MQT plugin."""
 
     @MQTCoreRoundTrip
-    @qml.qnode(qml.device("lightning.qubit", wires=0))
+    @qml.qnode(qml.device("null.qubit", wires=0))
     def qnode():
         return qml.state()
 
