@@ -30,8 +30,8 @@ if(LLVM_ENABLE_PLUGINS)
     LINK_LIBS
     MLIRMQTOpt
     MLIRMQTOptTransforms
-    QuantumToMQTOpt
-    MQTOptToQuantum)
+    CatalystQuantumToMQTOpt
+    MQTOptToCatalystQuantum)
 else()
   # `MODULE` targets are ignored by the scikit-build-core. Hence, we build a shared library instead
   # and set the properties to emulate the behavior of `MODULE`.
@@ -41,8 +41,8 @@ else()
     LINK_LIBS
     MLIRMQTOpt
     MLIRMQTOptTransforms
-    QuantumToMQTOpt
-    MQTOptToQuantum)
+    CatalystQuantumToMQTOpt
+    MQTOptToCatalystQuantum)
   # set the properties to emulate the behavior of `MODULE`
   set_target_properties(mqt-catalyst-plugin PROPERTIES OUTPUT_NAME "mqt-catalyst-plugin" PREFIX "")
 endif()

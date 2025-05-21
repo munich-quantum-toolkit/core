@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/MQTOptToQuantum/MQTOptToQuantum.h"
+#include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h"
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
@@ -31,13 +31,13 @@
 namespace mqt::ir::conversions {
 
 #define GEN_PASS_DEF_MQTOPTTOCATALYSTQUANTUM
-#include "mlir/Conversion/MQTOptToQuantum/MQTOptToQuantum.h.inc"
+#include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h.inc"
 
 using namespace mlir;
 
-class MQTOptToQuantumTypeConverter : public TypeConverter {
+class MQTOptToCatalystQuantumTypeConverter : public TypeConverter {
 public:
-  explicit MQTOptToQuantumTypeConverter(MLIRContext* ctx) {
+  explicit MQTOptToCatalystQuantumTypeConverter(MLIRContext* ctx) {
     // Identity conversion: Allow all types to pass through unmodified if
     // needed.
     addConversion([](Type type) { return type; });
@@ -298,7 +298,8 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
     auto inQubits = mlir::ValueRange(allQubitsValues);
 
     // Determine gate name depending on control count
-    llvm::StringRef gateName = getGateName(inCtrlQubits.size());
+    mlir::StringAttr gateName =
+        getGateName(rewriter.getContext(), inCtrlQubits.size());
     if (gateName.empty()) {
       llvm::errs() << "Unsupported controlled gate for op: " << op->getName()
                    << "\n";
@@ -324,104 +325,106 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
 
 private:
   // Is specialized for each gate type
-  static llvm::StringRef getGateName(std::size_t numControls);
+  static mlir::StringAttr getGateName(::mlir::MLIRContext* context,
+                                      std::size_t numControls);
 };
 
 // -- XOp (PauliX, CNOT, Toffoli)
 template <>
-llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::XOp>::getGateName(
-    std::size_t numControls) {
+mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::XOp>::getGateName(
+    ::mlir::MLIRContext* context, std::size_t numControls) {
   if (numControls == 0)
-    return "PauliX";
+    return mlir::StringAttr::get(context, "PauliX");
   if (numControls == 1)
-    return "CNOT";
+    return mlir::StringAttr::get(context, "CNOT");
   if (numControls == 2)
-    return "Toffoli";
-  return "";
+    return mlir::StringAttr::get(context, "Toffoli");
+  return mlir::StringAttr::get(context, "");
 }
 
 // -- YOp (PauliY, CY)
 template <>
-llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::YOp>::getGateName(
-    std::size_t numControls) {
+mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::YOp>::getGateName(
+    ::mlir::MLIRContext* context, std::size_t numControls) {
   if (numControls == 0)
-    return "PauliY";
+    return mlir::StringAttr::get(context, "PauliY");
   if (numControls == 1)
-    return "CY";
-  return "";
+    return mlir::StringAttr::get(context, "CY");
+  return mlir::StringAttr::get(context, "");
 }
 
 // -- ZOp (PauliZ, CZ)
 template <>
-llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::ZOp>::getGateName(
-    std::size_t numControls) {
+mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::ZOp>::getGateName(
+    ::mlir::MLIRContext* context, std::size_t numControls) {
   if (numControls == 0)
-    return "PauliZ";
+    return mlir::StringAttr::get(context, "PauliZ");
   if (numControls == 1)
-    return "CZ";
-  return "";
+    return mlir::StringAttr::get(context, "CZ");
+  return mlir::StringAttr::get(context, "");
 }
 
 // -- HOp (Hadamard)
 template <>
-llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::HOp>::getGateName(
-    std::size_t numControls) {
-  return "Hadamard";
+mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::HOp>::getGateName(
+    ::mlir::MLIRContext* context, std::size_t numControls) {
+  return mlir::StringAttr::get(context, "Hadamard");
 }
 
 // -- SWAPOp (SWAP)
 template <>
-llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::SWAPOp>::getGateName(
-    std::size_t numControls) {
-  return "SWAP";
+mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::SWAPOp>::getGateName(
+    ::mlir::MLIRContext* context, std::size_t numControls) {
+  return mlir::StringAttr::get(context, "SWAP");
 }
 
 // -- RXOp (RX, CRX)
 template <>
-llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RXOp>::getGateName(
-    std::size_t numControls) {
+mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::RXOp>::getGateName(
+    ::mlir::MLIRContext* context, std::size_t numControls) {
   if (numControls == 0)
-    return "RX";
+    return mlir::StringAttr::get(context, "RX");
   if (numControls == 1)
-    return "CRX";
-  return "";
+    return mlir::StringAttr::get(context, "CRX");
+  return mlir::StringAttr::get(context, "");
 }
 
 // -- RYOp (RY, CRY)
 template <>
-llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RYOp>::getGateName(
-    std::size_t numControls) {
+mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::RYOp>::getGateName(
+    ::mlir::MLIRContext* context, std::size_t numControls) {
   if (numControls == 0)
-    return "RY";
+    return mlir::StringAttr::get(context, "RY");
   if (numControls == 1)
-    return "CRY";
-  return "";
+    return mlir::StringAttr::get(context, "CRY");
+  return mlir::StringAttr::get(context, "");
 }
 
 // -- RZOp (RZ, CRZ)
 template <>
-llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RZOp>::getGateName(
-    std::size_t numControls) {
+mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::RZOp>::getGateName(
+    ::mlir::MLIRContext* context, std::size_t numControls) {
   if (numControls == 0)
-    return "RZ";
+    return mlir::StringAttr::get(context, "RZ");
   if (numControls == 1)
-    return "CRZ";
-  return "";
+    return mlir::StringAttr::get(context, "CRZ");
+  return mlir::StringAttr::get(context, "");
 }
 
 // -- POp (PhaseShift, ControlledPhaseShift)
 template <>
-llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::POp>::getGateName(
-    std::size_t numControls) {
+mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::POp>::getGateName(
+    ::mlir::MLIRContext* context, std::size_t numControls) {
   if (numControls == 0)
-    return "PhaseShift";
+    return mlir::StringAttr::get(context, "PhaseShift");
   if (numControls == 1)
-    return "ControlledPhaseShift";
-  return "";
+    return mlir::StringAttr::get(context, "ControlledPhaseShift");
+  return mlir::StringAttr::get(context, "");
 }
 
-struct MQTOptToQuantum : impl::MQTOptToQuantumBase<MQTOptToQuantum> {
-  using MQTOptToQuantumBase::MQTOptToQuantumBase;
+struct MQTOptToCatalystQuantum
+    : impl::MQTOptToCatalystQuantumBase<MQTOptToCatalystQuantum> {
+  using MQTOptToCatalystQuantumBase::MQTOptToCatalystQuantumBase;
 
   void runOnOperation() override {
     MLIRContext* context = &getContext();
@@ -445,7 +448,7 @@ struct MQTOptToQuantum : impl::MQTOptToQuantumBase<MQTOptToQuantum> {
         ::mqt::ir::opt::XXplusYY>();
 
     RewritePatternSet patterns(context);
-    MQTOptToQuantumTypeConverter typeConverter(context);
+    MQTOptToCatalystQuantumTypeConverter typeConverter(context);
 
     patterns.add<ConvertMQTOptAlloc, ConvertMQTOptDealloc, ConvertMQTOptExtract,
                  ConvertMQTOptMeasure, ConvertMQTOptInsert>(typeConverter,

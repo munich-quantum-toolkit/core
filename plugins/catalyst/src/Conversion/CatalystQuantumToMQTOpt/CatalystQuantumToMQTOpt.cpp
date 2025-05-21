@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/QuantumToMQTOpt/QuantumToMQTOpt.h"
+#include "mlir/Conversion/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h"
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
@@ -34,13 +34,13 @@
 namespace mqt::ir::conversions {
 
 #define GEN_PASS_DEF_CATALYSTQUANTUMTOMQTOPT
-#include "mlir/Conversion/QuantumToMQTOpt/QuantumToMQTOpt.h.inc"
+#include "mlir/Conversion/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h.inc"
 
 using namespace mlir;
 
-class QuantumToMQTOptTypeConverter : public TypeConverter {
+class CatalystQuantumToMQTOptTypeConverter : public TypeConverter {
 public:
-  explicit QuantumToMQTOptTypeConverter(MLIRContext* ctx) {
+  explicit CatalystQuantumToMQTOptTypeConverter(MLIRContext* ctx) {
     // Identity conversion: Allow all types to pass through unmodified if
     // needed.
     addConversion([](Type type) { return type; });
@@ -413,8 +413,9 @@ struct ConvertQuantumCustomOp
   }
 };
 
-struct QuantumToMQTOpt : impl::QuantumToMQTOptBase<QuantumToMQTOpt> {
-  using QuantumToMQTOptBase::QuantumToMQTOptBase;
+struct CatalystQuantumToMQTOpt
+    : impl::CatalystQuantumToMQTOptBase<CatalystQuantumToMQTOpt> {
+  using CatalystQuantumToMQTOptBase::CatalystQuantumToMQTOptBase;
 
   void runOnOperation() override {
     MLIRContext* context = &getContext();
@@ -432,7 +433,7 @@ struct QuantumToMQTOpt : impl::QuantumToMQTOptBase<QuantumToMQTOpt> {
         catalyst::quantum::StateOp, catalyst::quantum::InitializeOp>();
 
     RewritePatternSet patterns(context);
-    QuantumToMQTOptTypeConverter typeConverter(context);
+    CatalystQuantumToMQTOptTypeConverter typeConverter(context);
 
     patterns.add<ConvertQuantumAlloc, ConvertQuantumDealloc,
                  ConvertQuantumExtract, ConvertQuantumMeasure,

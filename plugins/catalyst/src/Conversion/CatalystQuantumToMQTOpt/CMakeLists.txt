@@ -8,7 +8,5 @@
 
 file(GLOB CONVERSION_SOURCES *.cpp)
 
-add_mlir_library(MQTOptToQuantum ${CONVERSION_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
-                 MQTOptToQuantumIncGen)
-
-target_link_libraries(MQTOptToQuantum PRIVATE MLIRQuantum)
+add_mlir_library(CatalystQuantumToMQTOpt ${CONVERSION_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
+                 CatalystQuantumToMQTOptIncGen)
