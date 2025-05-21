@@ -35,3 +35,18 @@ target_include_directories(mqt-catalyst-plugin PRIVATE ${CATALYST_INCLUDE_DIRS})
 
 # add MQT alias
 add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)
+
+# Install directive for scikit-build-core
+install(
+  TARGETS mqt-catalyst-plugin
+  DESTINATION .
+  COMPONENT mqt-catalyst-plugin)
+
+# Install the Python stub files in editable mode for better IDE support
+if(SKBUILD_STATE STREQUAL "editable")
+  file(GLOB IR_PYI_FILES ${CMAKE_CURRENT_SOURCE_DIR}/../python/mqt/catalyst/*.pyi)
+  install(
+    FILES ${IR_PYI_FILES}
+    DESTINATION .
+    COMPONENT mqt-catalyst-plugin)
+endif()
