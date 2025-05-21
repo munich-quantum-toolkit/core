@@ -65,7 +65,7 @@ module {
     // CHECK-LABEL: func.func @testExtractOpAttribute
     func.func @testExtractOpAttribute() {
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
 
         // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
         %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -83,7 +83,7 @@ module {
     // CHECK-LABEL: func.func @testExtractOpOperand
     func.func @testExtractOpOperand() {
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
 
         // CHECK: %[[Index:.*]] = arith.constant 0 : i64
         %index = arith.constant 0 : i64
@@ -104,7 +104,7 @@ module {
     // CHECK-LABEL: func.func @testInsertOpAttribute
     func.func @testInsertOpAttribute() {
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
 
         // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
         %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -125,7 +125,7 @@ module {
     // CHECK-LABEL: func.func @testInsertOpOperand
     func.func @testInsertOpOperand() {
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
 
         // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
         %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -148,8 +148,8 @@ module {
 module {
     // CHECK-LABEL: func.func @testAllResourcesUsingOperands
     func.func @testAllResourcesUsingOperands() {
-        // CHECK: %[[Size:.*]] = arith.constant 2 : i64
-        %size = arith.constant 2 : i64
+        // CHECK: %[[Size:.*]] = arith.constant 1 : i64
+        %size = arith.constant 1 : i64
 
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"(%[[Size]]) : (i64) -> !mqtopt.QubitRegister
         %reg_0 = "mqtopt.allocQubitRegister"(%size) : (i64) -> !mqtopt.QubitRegister
@@ -179,7 +179,7 @@ module {
     // CHECK-LABEL: func.func @testMeasureOp
     func.func @testMeasureOp() {
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
 
         // CHECK: %[[Reg_1:.*]], %[[Q_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
         %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -773,13 +773,12 @@ module {
 
         //===------------------------------------------------------------------===//
         //       ┌──────┐
-        // q0_0: ┤ SWAP ├ q0_1
-        //       └───┬──┘
-        //       ┌───┴──┐
-        // q1_0: ┤ SWAP ├ q1_1
+        // q0_0: ┤      ├ q0_1
+        //       │ SWAP │
+        // q1_0: ┤      ├ q1_1
         //       └───┬──┘
         // q2_0: ────■─── q2_1
-        //           |
+        //           │
         // q3_0: ────■─── q3_1
         //===----------------------------------------------------------------===//
 
