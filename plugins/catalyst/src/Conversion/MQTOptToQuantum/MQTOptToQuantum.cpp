@@ -28,7 +28,7 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Transforms/DialectConversion.h>
 
-namespace mlir::mqt::ir::conversions {
+namespace mqt::ir::conversions {
 
 #define GEN_PASS_DEF_MQTOPTTOCATALYSTQUANTUM
 #include "mlir/Conversion/MQTOptToQuantum/MQTOptToQuantum.h.inc"
@@ -532,4 +532,4 @@ struct MQTOptToQuantum : impl::MQTOptToQuantumBase<MQTOptToQuantum> {
   }
 };
 
-} // namespace mlir::mqt::ir::conversions
+} // namespace mqt::ir::conversions

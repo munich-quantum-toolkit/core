@@ -12,7 +12,7 @@
 
 #include <mlir/Pass/Pass.h> // from @llvm-project
 
-namespace mlir::mqt::ir::conversions {
+namespace mqt::ir::conversions {
 
 #define GEN_PASS_DECL
 #include "mlir/Conversion/MQTOptToQuantum/MQTOptToQuantum.h.inc"
@@ -20,4 +20,4 @@ namespace mlir::mqt::ir::conversions {
 #define GEN_PASS_REGISTRATION
 #include "mlir/Conversion/MQTOptToQuantum/MQTOptToQuantum.h.inc"
 
-} // namespace mlir::mqt::ir::conversions
+} // namespace mqt::ir::conversions
