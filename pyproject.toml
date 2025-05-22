@@ -77,7 +77,7 @@ wheel.packages = ["src/mqt"]
 ninja.version = ">=1.10"
 
 # Setuptools-style build caching in a local directory
-build-dir = "build/mqt-core/{wheel_tag}/{build_type}"
+build-dir = "build/{wheel_tag}/{build_type}"
 
 # All the targets to build
 build.targets = [
