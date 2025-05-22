@@ -22,10 +22,6 @@ message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 
-string(REPLACE "." ";" MLIR_VERSION_COMPONENTS ${MLIR_VERSION})
-list(GET MLIR_VERSION_COMPONENTS 0 MLIR_VERSION_MAJOR)
-add_compile_definitions(MLIR_VERSION_MAJOR=${MLIR_VERSION_MAJOR})
-
 # Include the TableGen, LLVM and MLIR CMake modules.
 include(TableGen)
 include(AddLLVM)
@@ -38,6 +34,10 @@ include_directories(${MQT_MLIR_INCLUDE_BUILD_DIR})
 include_directories(${CMAKE_BINARY_DIR}/mlir/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
+
+string(REPLACE "." ";" MLIR_VERSION_COMPONENTS ${MLIR_VERSION})
+list(GET MLIR_VERSION_COMPONENTS 0 MLIR_VERSION_MAJOR)
+add_compile_definitions(MLIR_VERSION_MAJOR=${MLIR_VERSION_MAJOR})
 
 # set the binary directory for the build tree such that, e.g., docs can be generated in the build
 # tree
