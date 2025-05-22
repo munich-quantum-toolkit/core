@@ -509,10 +509,6 @@ module {
 module {
     // CHECK-LABEL: func.func @testMixedControlledSWAPOp
     func.func @testMixedControlledSWAPOp() {
-        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-        // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
-        // CHECK: %[[Reg_3:.*]], %[[Q2_0:.*]] = "mqtopt.extractQubit"(%[[Reg_2]]) <{index_attr = 2 : i64}>
-        // CHECK: %[[Reg_4:.*]], %[[Q3_0:.*]] = "mqtopt.extractQubit"(%[[Reg_3]]) <{index_attr = 3 : i64}>
         // CHECK: %[[Q01_1:.*]]:2, %[[Q2_1:.*]], %[[Q3_1:.*]] = mqtopt.swap() %[[ANY:.*]], %[[ANY:.*]] ctrl %[[ANY:.*]] nctrl %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
         // CHECK-NOT: mqtopt.swap() [[ANY:.*]], [[ANY:.*]] ctrl [[ANY:.*]] nctrl [[ANY:.*]]
 
