@@ -22,30 +22,15 @@ add_compile_options(-fexceptions)
 
 add_subdirectory(Conversion)
 
-if(LLVM_ENABLE_PLUGINS)
-  add_llvm_library(
-    mqt-catalyst-plugin
-    MODULE
-    mqt-plugin.cpp
-    LINK_LIBS
-    MLIRMQTOpt
-    MLIRMQTOptTransforms
-    CatalystQuantumToMQTOpt
-    MQTOptToCatalystQuantum)
-else()
-  # `MODULE` targets are ignored by the scikit-build-core. Hence, we build a shared library instead
-  # and set the properties to emulate the behavior of `MODULE`.
-  add_llvm_library(
-    mqt-catalyst-plugin
-    mqt-plugin.cpp
-    LINK_LIBS
-    MLIRMQTOpt
-    MLIRMQTOptTransforms
-    CatalystQuantumToMQTOpt
-    MQTOptToCatalystQuantum)
-  # set the properties to emulate the behavior of `MODULE`
-  set_target_properties(mqt-catalyst-plugin PROPERTIES OUTPUT_NAME "mqt-catalyst-plugin" PREFIX "")
-endif()
+add_llvm_library(
+  mqt-catalyst-plugin
+  MODULE
+  mqt-plugin.cpp
+  LINK_LIBS
+  MLIRMQTOpt
+  MLIRMQTOptTransforms
+  CatalystQuantumToMQTOpt
+  MQTOptToCatalystQuantum)
 
 # set required C++ standard
 target_compile_features(mqt-catalyst-plugin PUBLIC cxx_std_17)
