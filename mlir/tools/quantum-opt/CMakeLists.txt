@@ -26,7 +26,3 @@ target_link_libraries(quantum-opt PUBLIC ${LIBS})
 llvm_update_compile_flags(quantum-opt)
 mlir_check_all_link_libraries(quantum-opt)
 export_executable_symbols_for_plugins(quantum-opt)
-# Set the RPATH for the quantum-opt executable so far the executable quantum-opt is nowhere
-# installed but the project is built with CMAKE_BUILD_WITH_INSTALL_RPATH=ON, hence, we set the
-# INSTALL_RPATH instead of the BUILD_RPATH fixme: fix for other platforms than macOS
-set_target_properties(quantum-opt PROPERTIES INSTALL_RPATH "@loader_path/../../../src/ir")
