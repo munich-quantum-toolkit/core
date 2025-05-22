@@ -48,7 +48,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-zx)
   file(GLOB_RECURSE ZX_SOURCES **.cpp)
 
   # create the library target (initially empty)
-  add_library(${MQT_CORE_TARGET_NAME}-zx)
+  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-zx ALIAS_NAME ZX)
 
   # add sources to target
   target_sources(${MQT_CORE_TARGET_NAME}-zx PRIVATE ${ZX_SOURCES})
@@ -71,9 +71,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-zx)
     target_compile_definitions(${MQT_CORE_TARGET_NAME}-zx PUBLIC GMP)
     target_link_libraries(${MQT_CORE_TARGET_NAME}-zx PUBLIC GMP::gmp GMP::gmpxx)
   endif()
-
-  # add MQT alias
-  add_library(MQT::CoreZX ALIAS ${MQT_CORE_TARGET_NAME}-zx)
 
   # set versioning information
   set_target_properties(

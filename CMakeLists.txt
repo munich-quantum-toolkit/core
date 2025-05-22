@@ -17,10 +17,11 @@ project(
 # Add path for custom modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-include(cmake/StandardProjectSettings.cmake)
-include(cmake/PreventInSourceBuilds.cmake)
-include(cmake/PackageAddTest.cmake)
-include(cmake/Cache.cmake)
+include(StandardProjectSettings)
+include(PreventInSourceBuilds)
+include(PackageAddTest)
+include(Cache)
+include(AddMQTCoreLibrary)
 
 option(BUILD_MQT_CORE_BINDINGS "Build the MQT Core Python bindings" OFF)
 if(BUILD_MQT_CORE_BINDINGS)
@@ -60,7 +61,7 @@ option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core"
 option(BUILD_MQT_CORE_TESTS "Also build tests for the MQT Core project" ${MQT_CORE_MASTER_PROJECT})
 
 # try to determine the project version
-include(cmake/GetVersion.cmake)
+include(GetVersion)
 get_mqt_core_version()
 
 project(
@@ -69,7 +70,7 @@ project(
   VERSION ${MQT_CORE_VERSION}
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
-include(cmake/ExternalDependencies.cmake)
+include(ExternalDependencies)
 
 # set the include directory for the build tree
 set(MQT_CORE_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/mqt-core")

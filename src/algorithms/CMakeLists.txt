@@ -12,7 +12,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-algorithms)
   file(GLOB_RECURSE ALGO_SOURCES **.cpp)
 
   # create the library target (initially empty)
-  add_library(${MQT_CORE_TARGET_NAME}-algorithms)
+  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-algorithms)
 
   # add sources to target
   target_sources(${MQT_CORE_TARGET_NAME}-algorithms PRIVATE ${ALGO_SOURCES})
@@ -27,9 +27,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-algorithms)
     ${MQT_CORE_TARGET_NAME}-algorithms
     PUBLIC MQT::CoreIR
     PRIVATE MQT::CoreCircuitOptimizer MQT::ProjectOptions MQT::ProjectWarnings)
-
-  # add MQT alias
-  add_library(MQT::CoreAlgorithms ALIAS ${MQT_CORE_TARGET_NAME}-algorithms)
 
   # set versioning information
   set_target_properties(

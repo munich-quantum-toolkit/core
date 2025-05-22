@@ -12,7 +12,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-na)
   file(GLOB_RECURSE NA_SOURCES **.cpp)
 
   # create the library target (initially empty)
-  add_library(${MQT_CORE_TARGET_NAME}-na)
+  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-na ALIAS_NAME NA)
 
   # add sources to target
   target_sources(${MQT_CORE_TARGET_NAME}-na PRIVATE ${NA_SOURCES})
@@ -27,9 +27,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-na)
     ${MQT_CORE_TARGET_NAME}-na
     PUBLIC MQT::CoreIR
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
-
-  # add MQT alias
-  add_library(MQT::CoreNA ALIAS ${MQT_CORE_TARGET_NAME}-na)
 
   # set versioning information
   set_target_properties(
