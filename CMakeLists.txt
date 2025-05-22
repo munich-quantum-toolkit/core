@@ -59,6 +59,8 @@ endif()
 option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core"
        ${MQT_CORE_MASTER_PROJECT})
 option(BUILD_MQT_CORE_TESTS "Also build tests for the MQT Core project" ${MQT_CORE_MASTER_PROJECT})
+option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
+       ${BUILD_SHARED_LIBS})
 
 # try to determine the project version
 include(GetVersion)

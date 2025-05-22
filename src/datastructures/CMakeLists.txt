@@ -41,7 +41,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-ds)
   target_sources(
     ${MQT_CORE_TARGET_NAME}-ds PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
                                       FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_ds_export.h)
-  if(NOT BUILD_SHARED_LIBS)
+  if(NOT BUILD_MQT_CORE_SHARED_LIBS)
     target_compile_definitions(${MQT_CORE_TARGET_NAME}-ds PUBLIC MQT_CORE_DS_STATIC_DEFINE)
   endif()
 
