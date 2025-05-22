@@ -22,11 +22,7 @@ endfunction()
 
 function(add_mqt_core_library name)
   cmake_parse_arguments(ARG "" "ALIAS_NAME" "" ${ARGN})
-  if(BUILD_MQT_CORE_SHARED_LIBS)
-    add_library(${name} SHARED ${ARG_UNPARSED_ARGUMENTS})
-  else()
-    add_library(${name} ${ARG_UNPARSED_ARGUMENTS})
-  endif()
+  add_library(${name} $<$<BOOL:${BUILD_MQT_CORE_SHARED_LIBS}>:SHARED> ${ARG_UNPARSED_ARGUMENTS})
   if(NOT ARG_ALIAS_NAME)
     # remove prefix 'mqt-' from target name if exists
     string(REGEX REPLACE "^${MQT_CORE_TARGET_NAME}" "" ALIAS_NAME_ARG ${name})
