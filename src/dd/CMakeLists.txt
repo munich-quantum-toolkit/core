@@ -12,7 +12,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
   file(GLOB_RECURSE DD_SOURCES **.cpp)
 
   # create the library target (initially empty)
-  add_library(${MQT_CORE_TARGET_NAME}-dd)
+  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-dd ALIAS_NAME DD)
 
   # add sources to target
   target_sources(${MQT_CORE_TARGET_NAME}-dd PRIVATE ${DD_SOURCES})
@@ -27,9 +27,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
     ${MQT_CORE_TARGET_NAME}-dd
     PUBLIC MQT::CoreIR nlohmann_json::nlohmann_json
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
-
-  # add MQT alias
-  add_library(MQT::CoreDD ALIAS ${MQT_CORE_TARGET_NAME}-dd)
 
   # set versioning information
   set_target_properties(

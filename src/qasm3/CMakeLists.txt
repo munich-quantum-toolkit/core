@@ -12,7 +12,7 @@ if(NOT TARGET MQT::CoreQASM)
   file(GLOB_RECURSE QASM_SOURCES **.cpp)
 
   # create the library target (initially empty)
-  add_library(${MQT_CORE_TARGET_NAME}-qasm)
+  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-qasm ALIAS_NAME QASM)
 
   # add sources to target
   target_sources(${MQT_CORE_TARGET_NAME}-qasm PRIVATE ${QASM_SOURCES})
@@ -27,9 +27,6 @@ if(NOT TARGET MQT::CoreQASM)
     ${MQT_CORE_TARGET_NAME}-qasm
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings
     PUBLIC MQT::CoreIR)
-
-  # add MQT alias
-  add_library(MQT::CoreQASM ALIAS ${MQT_CORE_TARGET_NAME}-qasm)
 
   # set versioning information
   set_target_properties(

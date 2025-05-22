@@ -12,7 +12,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-circuit-optimizer)
   file(GLOB_RECURSE CIRCUIT_OPTIMIZER_SOURCES **.cpp)
 
   # create the library target (initially empty)
-  add_library(${MQT_CORE_TARGET_NAME}-circuit-optimizer)
+  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-circuit-optimizer)
 
   # add sources to target
   target_sources(${MQT_CORE_TARGET_NAME}-circuit-optimizer PRIVATE ${CIRCUIT_OPTIMIZER_SOURCES})
@@ -28,9 +28,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-circuit-optimizer)
     ${MQT_CORE_TARGET_NAME}-circuit-optimizer
     PUBLIC MQT::CoreIR
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
-
-  # add MQT alias
-  add_library(MQT::CoreCircuitOptimizer ALIAS ${MQT_CORE_TARGET_NAME}-circuit-optimizer)
 
   # set versioning information
   set_target_properties(
