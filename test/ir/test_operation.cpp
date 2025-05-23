@@ -39,6 +39,13 @@ TEST(StandardOperation, CommutesAtQubit) {
   EXPECT_TRUE(op1.commutesAtQubit(op2, 2));
 }
 
+TEST(StandardOperation, DuplicateQubitThrowsError) {
+  qc::QuantumComputation qc(2);
+  EXPECT_THROW(qc.cx(0, 0), std::runtime_error);
+  EXPECT_THROW(qc.mcx({0, 1}, 0), std::runtime_error);
+  EXPECT_THROW(qc.mcx({0, 0}, 1), std::runtime_error);
+}
+
 TEST(CompoundOperation, CommutesAtQubit) {
   qc::CompoundOperation op1;
   op1.emplace_back<qc::StandardOperation>(0, qc::OpType::RY,
