@@ -170,7 +170,7 @@ TEST_P(QFT, Simulation) {
 
   // there should be no error simulating the circuit
   ASSERT_NO_THROW({
-    auto in = dd->makeZeroState(nqubits);
+    auto in = dd->vectors().makeZeroState(nqubits);
     sim = simulate(qc, in, *dd);
   });
   qc.printStatistics(std::cout);

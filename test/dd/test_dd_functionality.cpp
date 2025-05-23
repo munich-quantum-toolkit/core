@@ -56,7 +56,7 @@ protected:
     initialComplexCount = dd->cn.realCount();
 
     // initial state preparation
-    e = ident = dd::Package::makeIdent();
+    e = ident = dd::MatrixDDContainer::makeIdent();
     dd->incRef(ident);
 
     std::array<std::mt19937_64::result_type, std::mt19937_64::state_size>
@@ -372,7 +372,8 @@ TEST_F(DDFunctionality, changePermutation) {
                                "qreg q[2];"
                                "x q[0];\n";
   const auto qc = qasm3::Importer::imports(testfile);
-  const auto sim = simulate(qc, dd->makeZeroState(qc.getNqubits()), *dd);
+  const auto sim =
+      simulate(qc, dd->vectors().makeZeroState(qc.getNqubits()), *dd);
   EXPECT_TRUE(sim.p->e[0].isZeroTerminal());
   EXPECT_TRUE(sim.p->e[1].w.exactlyOne());
   EXPECT_TRUE(sim.p->e[1].p->e[1].isZeroTerminal());
@@ -486,8 +487,8 @@ TEST_F(DDFunctionality, classicControlledOperationConditions) {
 
 TEST_F(DDFunctionality, vectorKroneckerWithTerminal) {
   constexpr auto root = dd::vEdge::one();
-  const auto zeroState = dd->makeZeroState(1);
-  const auto extendedRoot = dd->kronecker(zeroState, root, 0);
+  const auto zeroState = dd->vectors().makeZeroState(1);
+  const auto extendedRoot = dd->vectors().kronecker(zeroState, root, 0);
   EXPECT_EQ(zeroState, extendedRoot);
 }
 

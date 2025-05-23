@@ -44,7 +44,7 @@ TEST_P(RandomClifford, simulate) {
   for (size_t i = 0; i < numReps; ++i) {
     auto qc =
         qc::createRandomCliffordCircuit(nq, static_cast<std::size_t>(nq) * nq);
-    auto in = dd->makeZeroState(nq);
+    auto in = dd->vectors().makeZeroState(nq);
     ASSERT_NO_THROW({ dd::simulate(qc, in, *dd); });
     qc.printStatistics(std::cout);
   }

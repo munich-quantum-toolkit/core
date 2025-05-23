@@ -17,14 +17,13 @@
 
 namespace dd {
 
-MemoryManager::MemoryManager(size_t entrySize,
-                             const std::size_t initialAllocationSize)
-    : entrySize_(entrySize), available(nullptr),
-      chunks(1, Chunk(initialAllocationSize * entrySize)),
+MemoryManager::MemoryManager(const Config& config)
+    : entrySize_(config.entrySize), available(nullptr),
+      chunks(1, Chunk(config.initialAllocationSize * config.entrySize)),
       chunkIt(chunks[0].begin()), chunkEndIt(chunks[0].end()),
-      stats(entrySize) {
+      stats(config.entrySize) {
   stats.numAllocations = 1U;
-  stats.numAllocated = initialAllocationSize;
+  stats.numAllocated = config.initialAllocationSize;
 }
 
 LLBase* MemoryManager::get() {
