@@ -69,7 +69,7 @@ TEST(RemoveOperation, removeMoves) {
   QuantumComputation qc(nqubits);
   qc.x(0);
   qc.move(0, 1);
-  qc.cy(1, 1);
+  qc.cy(0, 1);
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
   CircuitOptimizer::removeOperation(qc, {Move}, 0);
