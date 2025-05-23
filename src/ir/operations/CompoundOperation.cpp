@@ -66,6 +66,10 @@ std::unique_ptr<Operation> CompoundOperation::clone() const {
   return std::make_unique<CompoundOperation>(*this);
 }
 
+std::size_t CompoundOperation::getNqubits() const {
+  return getUsedQubits().size();
+}
+
 bool CompoundOperation::isNonUnitaryOperation() const {
   return std::any_of(ops.cbegin(), ops.cend(), [](const auto& op) {
     return op->isNonUnitaryOperation();
