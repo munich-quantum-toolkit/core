@@ -54,7 +54,8 @@ TEST(RemoveOperation, removeMultiQubitGates) {
   QuantumComputation qc(nqubits);
   qc.x(0);
   qc.cx(0, 1);
-  qc.cy(1, 1);
+  qc.cy(0, 1);
+  qc.cz(0, 1);
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
   CircuitOptimizer::removeOperation(qc, {X, Y}, 2);
