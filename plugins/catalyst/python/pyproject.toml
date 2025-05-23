@@ -54,6 +54,9 @@ classifiers = [
 requires-python = ">=3.10"
 dynamic = ["version"]
 
+[project.entry-points."catalyst.passes_resolution"]
+"mqt.passes" = "mqt.catalyst"
+
 [project.scripts]
 mqt-catalyst-cli = "mqt.catalyst.__main__:main"
 
@@ -132,6 +135,7 @@ filterwarnings = [
   'ignore:\s.*Pyarrow.*:DeprecationWarning:',
   'ignore:.*datetime\.datetime\.utcfromtimestamp.*:DeprecationWarning:',
   'ignore:.*jax\.interpreters\.mlir.*:DeprecationWarning:',
+  'ignore:.*The jaxlib\\.hlo_helpers submodule is deprecated.*:DeprecationWarning'
 ]
 log_cli_level = "INFO"
 testpaths = ["test"]
