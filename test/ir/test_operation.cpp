@@ -28,6 +28,7 @@
 #include <string>
 #include <tuple>
 #include <vector>
+#include <stdexcept>
 
 TEST(StandardOperation, CommutesAtQubit) {
   const qc::StandardOperation op1(0, 1, qc::OpType::RY, std::vector{qc::PI_2});
