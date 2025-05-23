@@ -213,28 +213,28 @@ StandardOperation::StandardOperation(const Control control, const Qubit target,
                                      const OpType g,
                                      const std::vector<fp>& params)
     : StandardOperation(target, g, params) {
-  controls.insert(control);
+  StandardOperation::addControl(control);
 }
 
 StandardOperation::StandardOperation(const Control control, const Targets& targ,
                                      const OpType g,
                                      const std::vector<fp>& params)
     : StandardOperation(targ, g, params) {
-  controls.insert(control);
+  StandardOperation::addControl(control);
 }
 
 StandardOperation::StandardOperation(const Controls& c, const Qubit target,
                                      const OpType g,
                                      const std::vector<fp>& params)
     : StandardOperation(target, g, params) {
-  controls = c;
+  addControls(c);
 }
 
 StandardOperation::StandardOperation(const Controls& c, const Targets& targ,
                                      const OpType g,
                                      const std::vector<fp>& params)
     : StandardOperation(targ, g, params) {
-  controls = c;
+  addControls(c);
 }
 
 // MCF (cSWAP), Peres, parameterized two target Constructor

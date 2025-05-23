@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -37,6 +38,13 @@ TEST(StandardOperation, CommutesAtQubit) {
   EXPECT_TRUE(op1.commutesAtQubit(op2, 0));
   EXPECT_FALSE(op1.commutesAtQubit(op3, 0));
   EXPECT_TRUE(op1.commutesAtQubit(op2, 2));
+}
+
+TEST(StandardOperation, DuplicateQubitThrowsError) {
+  qc::QuantumComputation qc(2);
+  EXPECT_THROW(qc.cx(0, 0), std::runtime_error);
+  EXPECT_THROW(qc.mcx({0, 1}, 0), std::runtime_error);
+  EXPECT_THROW(qc.mcx({0, 0}, 1), std::runtime_error);
 }
 
 TEST(CompoundOperation, CommutesAtQubit) {
