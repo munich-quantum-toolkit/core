@@ -93,10 +93,10 @@ which is being developed as part of the [Munich Quantum Valley (MQV)](https://ww
 
 <div style="margin-top: 0.5em">
 <div class="only-light" align="center">
-  <img src="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/logo-banner/docs/_static/mqt-logo-banner-light.svg" width="90%" alt="MQT Banner">
+  <img src="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/mqt-logo-banner-light.svg" width="90%" alt="MQT Banner">
 </div>
 <div class="only-dark" align="center">
-  <img src="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/logo-banner/docs/_static/mqt-logo-banner-dark.svg" width="90%" alt="MQT Banner">
+  <img src="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/mqt-logo-banner-dark.svg" width="90%" alt="MQT Banner">
 </div>
 </div>
 
