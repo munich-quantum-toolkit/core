@@ -17,16 +17,13 @@
 #include "ir/QuantumComputation.hpp"
 
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <gtest/gtest.h>
-#include <iostream>
 #include <memory>
 #include <numeric>
 #include <random>
-#include <ratio>
 
 using namespace dd;
 
