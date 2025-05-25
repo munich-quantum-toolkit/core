@@ -39,6 +39,6 @@ endif()
 if(NOT CATALYST_INCLUDE_DIRS)
   message(
     FATAL_ERROR
-      "The include directory of the pennylane-catalyst package could not be retrieved. Please ensure that the catalyst is installed correctly."
+      "The include directory of the pennylane-catalyst package could not be retrieved. Please ensure that catalyst is installed correctly."
   )
 endif()
