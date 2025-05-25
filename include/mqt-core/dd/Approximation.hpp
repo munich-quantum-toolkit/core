@@ -16,6 +16,18 @@
 namespace dd {
 
 /**
+ * @brief Useful metadata of an approximation run.
+ */
+struct ApproxMeta {
+  /// @brief The number of nodes visited during the mark stage.
+  std::size_t nodesVisited;
+  /// @brief The amount of budget left after approximation.
+  double budgetLeft;
+  /// @brief The lowest qubit number that requires rebuilding.
+  Qubit min;
+};
+
+/**
  * @brief Approximate the @p state based on fidelity. The fidelity of the
  * approximated state will be at least @p fidelity.
  *
@@ -26,8 +38,10 @@ namespace dd {
  * @param state The DD to approximate.
  * @param fidelity The desired minimum fidelity after approximation.
  * @param dd The DD package to use for the approximation.
+ * @param meta An optional struct which will be filled with meta information.
  * @return The fidelity between the source and the approximated state.
  */
-double approximate(VectorDD& state, double fidelity, Package& dd);
+double approximate(VectorDD& state, double fidelity, Package& dd,
+                   struct ApproxMeta* meta = nullptr);
 
 } // namespace dd

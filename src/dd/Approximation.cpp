@@ -89,7 +89,8 @@ TerminalList removeAbove(const TerminalList& old, const double budget) {
  * @details Uses a prioritized iterative-deepening search.
  * Iterating layer by layer ensures that each node is only visited once.
  */
-std::pair<double, Qubit> mark(VectorDD& state, const double fidelity) {
+std::pair<double, Qubit> mark(VectorDD& state, const double fidelity,
+                              struct ApproxMeta* meta) {
   Layer curr{};
   curr.emplace(state.p);
 
@@ -98,11 +99,14 @@ std::pair<double, Qubit> mark(VectorDD& state, const double fidelity) {
 
   TerminalList candidates{};
 
+  ApproxMeta rmeta{};
+
   while (budget > 0) {
     Contributions c; // Stores contributions of the next layer.
     while (!curr.empty()) {
       const LayerNode n = curr.top();
       curr.pop();
+      rmeta.nodesVisited++;
 
       // If possible, flag a node for deletion and decrease the budget.
       // If necessary, reset the lowest qubit number effected.
@@ -153,6 +157,12 @@ std::pair<double, Qubit> mark(VectorDD& state, const double fidelity) {
       budget -= contribution;
       min = std::min(min, n->v);
     }
+  }
+
+  if (meta != nullptr) {
+    rmeta.min = min;
+    rmeta.budgetLeft = budget;
+    *meta = rmeta;
   }
 
   // The final fidelity is the desired fidelity plus the unused budget.
@@ -218,8 +228,9 @@ vEdge sweep(const vEdge& e, const Qubit min, Package& dd) {
 }
 }; // namespace
 
-double approximate(VectorDD& state, const double fidelity, Package& dd) {
-  const auto& [finalFidelity, min] = mark(state, fidelity);
+double approximate(VectorDD& state, const double fidelity, Package& dd,
+                   struct ApproxMeta* meta) {
+  const auto& [finalFidelity, min] = mark(state, fidelity, meta);
   const vEdge& approx = sweep(state, min, dd);
 
   dd.incRef(approx);

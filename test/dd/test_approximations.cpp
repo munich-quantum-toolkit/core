@@ -361,35 +361,21 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
   EXPECT_NEAR(finalFidelity, 0.361, 1e-3);
 }
 
-TEST(ApproximationTest, Runtime) {
-  {
-    constexpr std::size_t n = 15;         // Up to 16 qubits.
-    constexpr std::size_t repeats = 10;   // Repeat benchmark 10 times.
-    constexpr double fidelity = 1 - 0.01; // Budget of .02
+TEST(ApproximationTest, NodesVisited) {
+  constexpr std::size_t n = 15;        // Up to 16 qubits.
+  constexpr double fidelity = 1 - 0.1; // Budget of .1
 
-    std::array<std::size_t, n> qubits{}; // Qubit counts: [2, 16]
-    std::iota(qubits.begin(), qubits.end(), 2);
+  std::array<std::size_t, n> qubits{}; // Qubit counts: [2, 16]
+  std::iota(qubits.begin(), qubits.end(), 2);
 
-    for (std::size_t i = 0; i < n; ++i) {
-      std::size_t nodes{};
-      double rt{};
+  for (std::size_t i = 0; i < n; ++i) {
+    struct ApproxMeta meta{};
+    const std::size_t nq = qubits[i];
+    auto dd = std::make_unique<dd::Package>(nq);
+    auto state = generateExponentialDD(nq, *dd);
 
-      const std::size_t nq = qubits[i];
-      auto dd = std::make_unique<dd::Package>(nq);
-
-      for (std::size_t r = 0; r < repeats; ++r) {
-        auto state = generateExponentialDD(nq, *dd);
-        nodes += state.size() - 1; // Minus terminal.
-
-        const auto t1 = std::chrono::high_resolution_clock::now();
-        approximate(state, fidelity, *dd);
-        const auto t2 = std::chrono::high_resolution_clock::now();
-        const std::chrono::duration<double, std::micro> runtime = t2 - t1;
-
-        rt += runtime.count();
-      }
-
-      std::cout << nodes / repeats << " | " << rt / repeats << '\n';
-    }
+    const std::size_t preSize = state.size() - 1; // Minus terminal.
+    approximate(state, fidelity, *dd, &meta);
+    EXPECT_LE(meta.nodesVisited, preSize);
   }
 }
