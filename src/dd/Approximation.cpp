@@ -33,10 +33,10 @@ constexpr uint16_t FLAG_LEFT = 0b010;
 constexpr uint16_t FLAG_RIGHT = 0b001;
 
 /**
- * @brief Holds a node-contribution pair and distance value for
- * prioritization.
+ * @brief A node-contribution pair and distance value for prioritization.
  */
-struct LayerNode {
+class LayerNode {
+public:
   explicit LayerNode(vNode* node)
       : ptr(node), contribution(1.),
         distance(std::numeric_limits<double>::max()) {}
@@ -65,6 +65,23 @@ using Layer = std::priority_queue<LayerNode>;
 using Contributions = std::unordered_map<vNode*, double>;
 /// @brief Maps old nodes to rebuilt edges.
 using Lookup = std::unordered_map<const vNode*, vEdge>;
+/// @brief A node, a flag indicating left or right, and its contribution.
+using Terminal = std::tuple<vNode*, uint16_t, double>;
+/// @brief List of potentially deletable terminal edges.
+using TerminalList = std::forward_list<Terminal>;
+
+/**
+ * @brief Remove terminals with a contribution above the new budget.
+ */
+TerminalList removeAbove(const TerminalList& old, const double budget) {
+  TerminalList upd{};
+  for (const auto& candidate : old) {
+    if (budget >= std::get<2>(candidate)) {
+      upd.emplace_front(candidate);
+    }
+  }
+  return upd;
+}
 
 /**
  * @brief Search and mark nodes for deletion until the budget 1 - @p fidelity is
@@ -79,7 +96,7 @@ std::pair<double, Qubit> mark(VectorDD& state, const double fidelity) {
   double budget = 1 - fidelity;
   Qubit min{std::numeric_limits<Qubit>::max()};
 
-  std::forward_list<std::tuple<vNode*, uint16_t, double>> candidates{};
+  TerminalList candidates{};
 
   while (budget > 0) {
     Contributions c; // Stores contributions of the next layer.
@@ -93,6 +110,7 @@ std::pair<double, Qubit> mark(VectorDD& state, const double fidelity) {
         n.ptr->flags = FLAG_DELETE;
         budget -= n.contribution;
         min = std::min(min, n.ptr->v);
+        removeAbove(candidates, budget);
         continue;
       }
 
@@ -168,6 +186,7 @@ vEdge sweep(const vEdge& curr, const Qubit min, Lookup& l, Package& dd) {
     const vEdge& eRef = n->e[i];
 
     if (eRef.isTerminal()) {
+      // Use zero edge for marked terminals.
       const uint16_t flag = (i == 0 ? FLAG_LEFT : FLAG_RIGHT);
       if (n->flags == FLAG_DELETE + flag) {
         edges[i] = vEdge::zero();
