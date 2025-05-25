@@ -10,8 +10,7 @@
 requires = [
   "scikit-build-core>=0.11.1",
   "setuptools-scm>=8.2",
-  "pybind11>=2.13.6",
-  "mqt-core>=3.0.0",
+  "mqt-core~=3.0.0",
   "pennylane @ https://test-files.pythonhosted.org/packages/a4/ae/b8b0fdcd91fe0e87d699d46938cfee0531e8093042dd9eff11abc247c02f/pennylane-0.42.0.dev27-py3-none-any.whl",
   "pennylane-lightning @ https://test-files.pythonhosted.org/packages/4d/99/1cab1348e3b839f0c8df515dc6b2d347c5e913361ff65e6fa1f197c0a67a/pennylane_lightning-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
   "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/25/97/9707f73d2ed6e2549e4e099d0083481c144e984227e147b44cd2838535e6/pennylane_lightning_kokkos-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
@@ -20,7 +19,7 @@ requires = [
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "mqt-catalyst-plugin"
+name = "mqt-catalyst_plugin"
 description = "The Munich Quantum Toolkit's Catalyst Plugin"
 readme = "../../../README.md"
 authors = [
@@ -43,7 +42,6 @@ classifiers = [
   "Programming Language :: C++",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -74,7 +72,7 @@ PyPI = "https://pypi.org/project/mqt-core/"
 minimum-version = "build-system.requires"
 
 # Set the wheel install directory
-wheel.install-dir = "mqt/catalyst"
+wheel.install-dir = "mqt/catalyst_plugin"
 
 # Explicitly set the package directory
 wheel.packages = ["src/mqt"]
@@ -83,7 +81,7 @@ wheel.packages = ["src/mqt"]
 ninja.version = ">=1.10"
 
 # Setuptools-style build caching in a local directory
-build-dir = "../../../build/mqt-catalyst-plugin/{wheel_tag}/{build_type}"
+build-dir = "build/{wheel_tag}/{build_type}"
 
 # All components to install
 install.components = [
@@ -141,7 +139,7 @@ log_cli_level = "INFO"
 testpaths = ["test"]
 
 [tool.coverage]
-run.source = ["mqt.catalyst"]
+run.source = ["mqt.catalyst_plugin"]
 run.omit = []
 report.exclude_also = [
   '\.\.\.',
@@ -155,17 +153,13 @@ report.exclude_also = [
 [tool.mypy]
 files = ["src", "test"]
 mypy_path = ["$MYPY_CONFIG_FILE_DIR/src"]
-python_version = "3.9"
+python_version = "3.10"
 warn_unused_configs = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 strict = true
 disallow_untyped_defs = false
 explicit_package_bases = true
 warn_unreachable = true
-
-[[tool.mypy.overrides]]
-module = []
-ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 120
@@ -232,12 +226,6 @@ build-frontend = "build[uv]"
 enable = ["cpython-freethreading"]
 manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
-manylinux-ppc64le-image = "manylinux_2_28"
-manylinux-s390x-image = "manylinux_2_28"
-test-skip = [
-  "cp3*t-*", # no freethreading qiskit wheels
-  "cp*-win_arm64", # no numpy, qiskit, ... wheels
-]
 
 [tool.cibuildwheel.linux]
 environment = { DEPLOY = "ON" }
@@ -286,9 +274,7 @@ docs = [
 ]
 test = [
   "pytest>=8.3.5",
-  "pytest-console-scripts>=1.4.1",
   "pytest-cov>=6.1.1",
-  "numpy>=2.1; python_version >= '3.13'",
   "mqt-core>=3.0.0",
   "pennylane @ https://test-files.pythonhosted.org/packages/a4/ae/b8b0fdcd91fe0e87d699d46938cfee0531e8093042dd9eff11abc247c02f/pennylane-0.42.0.dev27-py3-none-any.whl",
   "pennylane-lightning @ https://test-files.pythonhosted.org/packages/4d/99/1cab1348e3b839f0c8df515dc6b2d347c5e913361ff65e6fa1f197c0a67a/pennylane_lightning-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
