@@ -139,6 +139,39 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
   EXPECT_EQ(finalFidelity, 1);
 }
 
+TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
+
+  // Test: Terminal edges can be removed (set to vEdge::zero) also.
+  //
+  // |state⟩ = 0.866|0⟩ + 0.5|1⟩
+  //
+  // Eliminate |1⟩ with contribution 0.25
+  //     → |approx⟩ = |0⟩
+  //
+  //        1│                     1│
+  //       ┌─┴─┐                  ┌─┴─┐
+  //     ┌─│ q0│─┐  -(approx)→  ┌─│ q0│─┐
+  // .866│ └───┘ │.5           1| └───┘ 0
+  //     □       □              □
+  //
+
+  constexpr std::size_t nq = 1;
+  constexpr double fidelity = 1 - 0.25;
+
+  auto dd = std::make_unique<dd::Package>(nq);
+
+  qc::QuantumComputation qc(nq);
+  qc.ry(qc::PI / 3, 0);
+
+  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto fidelityToSource = approximate(state, fidelity, *dd);
+
+  const CVec expected{{1}, {0}};
+  EXPECT_EQ(state.getVector(), expected);
+  EXPECT_EQ(state.size(), 2);
+  EXPECT_NEAR(fidelityToSource, 0.75, 1e-3);
+}
+
 TEST(ApproximationTest, TwoQubitRemoveNode) {
 
   // Test: Remove node (its in-going edge) from decision diagram.

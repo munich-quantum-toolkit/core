@@ -151,6 +151,7 @@ std::pair<double, Qubit> mark(VectorDD& state, const double fidelity) {
     if (budget >= contribution) {
       n->flags = FLAG_DELETE + flag;
       budget -= contribution;
+      min = std::min(min, n->v);
     }
   }
 
