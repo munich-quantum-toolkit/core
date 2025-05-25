@@ -35,7 +35,6 @@ add_llvm_library(
 # set required C++ standard
 target_compile_features(mqt-catalyst-plugin PUBLIC cxx_std_17)
 
-
 # Install directive for scikit-build-core
 install(
   TARGETS mqt-catalyst-plugin
