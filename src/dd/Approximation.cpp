@@ -19,6 +19,8 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <forward_list>
 #include <limits>
 #include <queue>
 #include <unordered_map>
@@ -26,6 +28,10 @@
 
 namespace dd {
 namespace {
+constexpr uint16_t FLAG_DELETE = 0b100;
+constexpr uint16_t FLAG_LEFT = 0b010;
+constexpr uint16_t FLAG_RIGHT = 0b001;
+
 /**
  * @brief Holds a node-contribution pair and distance value for
  * prioritization.
@@ -73,28 +79,38 @@ std::pair<double, Qubit> mark(VectorDD& state, const double fidelity) {
   double budget = 1 - fidelity;
   Qubit min{std::numeric_limits<Qubit>::max()};
 
+  std::forward_list<std::tuple<vNode*, uint16_t, double>> candidates{};
+
   while (budget > 0) {
     Contributions c; // Stores contributions of the next layer.
     while (!curr.empty()) {
       const LayerNode n = curr.top();
       curr.pop();
 
-      // If possible, flag a node for deletion and decrease the budget
-      // accordingly.
+      // If possible, flag a node for deletion and decrease the budget.
       // If necessary, reset the lowest qubit number effected.
       if (budget >= n.contribution) {
-        n.ptr->flags = 1U;
+        n.ptr->flags = FLAG_DELETE;
         budget -= n.contribution;
         min = std::min(min, n.ptr->v);
         continue;
       }
 
-      // Compute contributions of the next layer.
-      for (const vEdge& eRef : n.ptr->e) {
-        if (eRef.isTerminal()) {
+      // Compute the contributions of the next layer.
+      for (std::size_t i = 0; i < RADIX; ++i) {
+        const vEdge& eRef = n.ptr->e[i];
+        const double contribution =
+            n.contribution * ComplexNumbers::mag2(eRef.w);
+
+        if (eRef.isTerminal()) {        // Don't add terminals to the queue.
+          if (budget >= contribution) { // They (potentially) can be deleted.
+            const uint16_t flag = (i == 0 ? FLAG_LEFT : FLAG_RIGHT);
+            candidates.emplace_front(n.ptr, flag, contribution);
+          }
           continue;
         }
-        c[eRef.p] += n.contribution * ComplexNumbers::mag2(eRef.w);
+
+        c[eRef.p] += contribution;
       }
     }
 
@@ -110,6 +126,16 @@ std::pair<double, Qubit> mark(VectorDD& state, const double fidelity) {
     curr = std::move(next);
   }
 
+  // Lastly, check if any terminals can be deleted.
+  while (!candidates.empty()) {
+    const auto [n, flag, contribution] = candidates.front();
+    candidates.pop_front();
+    if (budget >= contribution) {
+      n->flags = FLAG_DELETE + flag;
+      budget -= contribution;
+    }
+  }
+
   // The final fidelity is the desired fidelity plus the unused budget.
   return {fidelity + budget, min};
 }
@@ -123,7 +149,7 @@ vEdge sweep(const vEdge& curr, const Qubit min, Lookup& l, Package& dd) {
   }
 
   // If a node is flagged, reset the flag and return a zero edge.
-  if (n->flags == 1U) {
+  if (n->flags == FLAG_DELETE) {
     n->flags = 0U;
     return vEdge::zero();
   }
@@ -140,7 +166,14 @@ vEdge sweep(const vEdge& curr, const Qubit min, Lookup& l, Package& dd) {
   std::array<vEdge, RADIX> edges{};
   for (std::size_t i = 0; i < RADIX; ++i) {
     const vEdge& eRef = n->e[i];
+
     if (eRef.isTerminal()) {
+      const uint16_t flag = (i == 0 ? FLAG_LEFT : FLAG_RIGHT);
+      if (n->flags == FLAG_DELETE + flag) {
+        edges[i] = vEdge::zero();
+        continue;
+      }
+
       edges[i] = eRef;
       continue;
     }

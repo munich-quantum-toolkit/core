@@ -290,19 +290,20 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
   //         - 0.347|100⟩ - 0.119|101⟩ + 0.347|110⟩ - 0.119|111⟩
   //
   // Eliminate |1xx⟩ and |01x⟩ with contribution ~0.27 and ~0.36
-  //     → |approx⟩ = 0.114|000⟩ - 0.993|001⟩
+  //         & terminal |000⟩ with contribution ~0.005
+  //     → |approx⟩ = -|001⟩
   //
-  //  * = 1/sqrt(2)   -1│                                  1│
-  //                  ┌─┴─┐                               ┌─┴─┐
-  //           ┌──────│ q2│──────┐                      ┌─│ q2│─┐
-  //        .85│      └───┘      │.52                  1| └───┘ 0
-  //         ┌─┴─┐             ┌─┴─┐    -(approx)→    ┌─┴─┐
-  //      ┌──│ q1│──┐       ┌──│ q1│──┐             ┌─│ q1│──┐
-  //     *|  └───┘  |*     *|  └───┘  |*           1| └───┘  0
-  //    ┌─┴─┐     ┌─┴─┐   ┌─┴─┐     ┌─┴─┐         ┌─┴─┐
-  //   ┌│ q0│┐   ┌│ q0│┐ ┌│ q0│┐   ┌│ q0│┐      ┌─│ q0│─┐
-  //   |└───┘|   |└───┘| |└───┘|   |└───┘|   .11| └───┘ |-0.99
-  //   □     □   □     □ □     □   □     □      □       □
+  //  * = 1/sqrt(2)     -1│                                 -1│
+  //                    ┌─┴─┐                               ┌─┴─┐
+  //             ┌──────│ q2│──────┐                      ┌─│ q2│─┐
+  //          .85│      └───┘      │.52                  1| └───┘ 0
+  //           ┌─┴─┐             ┌─┴─┐    -(approx)→    ┌─┴─┐
+  //        ┌──│ q1│──┐       ┌──│ q1│──┐             ┌─│ q1│──┐
+  //       *|  └───┘  |*     *|  └───┘  |*           1| └───┘  0
+  //      ┌─┴─┐     ┌─┴─┐   ┌─┴─┐     ┌─┴─┐         ┌─┴─┐
+  //     ┌│ q0│┐   ┌│ q0│┐ ┌│ q0│┐   ┌│ q0│┐      ┌─│ q0│─┐
+  //-0.11|└───┘|   |└───┘| |└───┘|   |└───┘|      0 └───┘ |1
+  //     □     □   □     □ □     □   □     □              □
   //
 
   constexpr std::size_t nq = 3;
@@ -321,10 +322,10 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
   auto finalFidelity = approximate(state, fidelity, *dd);
 
-  const CVec expected{{0.114092}, {-0.99347}, {0}, {0}, {0}, {0}, {0}, {0}};
+  const CVec expected{{0}, {-1}, {0}, {0}, {0}, {0}, {0}, {0}};
   vecNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 4);
-  EXPECT_NEAR(finalFidelity, 0.365, 1e-3);
+  EXPECT_NEAR(finalFidelity, 0.361, 1e-3);
 }
 
 TEST(ApproximationTest, Runtime) {
