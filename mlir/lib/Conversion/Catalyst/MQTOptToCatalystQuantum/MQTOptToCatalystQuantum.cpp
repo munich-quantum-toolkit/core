@@ -333,6 +333,13 @@ llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::GPhaseOp>::getGateName(
   return "gphase";
 }
 
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::IOp>::getGateName(
+    std::size_t numControls) {
+  return "Identity";
+}
+
+
 // -- XOp (PauliX, CNOT, Toffoli)
 template <>
 llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::XOp>::getGateName(
@@ -440,7 +447,6 @@ struct MQTOptToCatalystQuantum
 
     // Mark operations legal, that have no equivalent in the target dialect
     target.addLegalOp<
-        ::mqt::ir::opt::IOp, ::mqt::ir::opt::GPhaseOp,
         ::mqt::ir::opt::BarrierOp, ::mqt::ir::opt::SOp, ::mqt::ir::opt::SdgOp,
         ::mqt::ir::opt::TOp, ::mqt::ir::opt::TdgOp, ::mqt::ir::opt::VOp,
         ::mqt::ir::opt::VdgOp, ::mqt::ir::opt::UOp, ::mqt::ir::opt::U2Op,
