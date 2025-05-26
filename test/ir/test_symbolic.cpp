@@ -15,7 +15,7 @@
 #include "ir/operations/OpType.hpp"
 
 #include <gtest/gtest.h>
-#include <ir/operations/SymbolicOperation.hpp>
+#include "ir/operations/SymbolicOperation.hpp"
 #include <memory>
 #include <stdexcept>
 #include <tuple>
