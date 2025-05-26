@@ -327,6 +327,12 @@ private:
   static llvm::StringRef getGateName(std::size_t numControls);
 };
 
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::GPhaseOp>::getGateName(
+    std::size_t numControls) {
+  return "gphase";
+}
+
 // -- XOp (PauliX, CNOT, Toffoli)
 template <>
 llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::XOp>::getGateName(
