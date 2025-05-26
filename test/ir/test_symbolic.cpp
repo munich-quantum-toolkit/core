@@ -15,6 +15,7 @@
 #include "ir/operations/OpType.hpp"
 
 #include <gtest/gtest.h>
+#include <ir/operations/SymbolicOperation.hpp>
 #include <memory>
 #include <stdexcept>
 #include <tuple>
@@ -257,4 +258,8 @@ TEST_F(SymbolicTest, failPrintingQASM2) {
 TEST_F(SymbolicTest, failPrintingQASM3) {
   symQc.u(xMonom, yMonom, zMonom, 0);
   EXPECT_THROW(std::ignore = symQc.toQASM(true), std::runtime_error);
+}
+
+TEST_F(SymbolicTest, Constructor) {
+  EXPECT_NO_THROW(std::ignore = qc::SymbolicOperation(0, {1, 2}, qc::OpType::P, {xMonom}));
 }
