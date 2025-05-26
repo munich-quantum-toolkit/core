@@ -9,7 +9,6 @@
 [build-system]
 requires = [
   "scikit-build-core>=0.11.1",
-  "setuptools-scm>=8.2",
   "mqt-core~=3.0.0",
   "pennylane @ https://test-files.pythonhosted.org/packages/a4/ae/b8b0fdcd91fe0e87d699d46938cfee0531e8093042dd9eff11abc247c02f/pennylane-0.42.0.dev27-py3-none-any.whl",
   "pennylane-lightning @ https://test-files.pythonhosted.org/packages/4d/99/1cab1348e3b839f0c8df515dc6b2d347c5e913361ff65e6fa1f197c0a67a/pennylane_lightning-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
@@ -20,6 +19,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "mqt-catalyst_plugin"
+version = "0.1.0"
 description = "The Munich Quantum Toolkit's Catalyst Plugin"
 readme = "../../../README.md"
 authors = [
@@ -50,7 +50,6 @@ classifiers = [
   "Typing :: Typed",
 ]
 requires-python = ">=3.10"
-dynamic = ["version"]
 
 [project.entry-points."catalyst.passes_resolution"]
 "mqt.passes" = "mqt.catalyst"
@@ -88,7 +87,6 @@ install.components = [
   "mqt-catalyst_Plugin",
 ]
 
-metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
 sdist.include = ["src/mqt/catalyst/_version.py"]
 sdist.exclude = [
   "**/docs",
@@ -96,7 +94,6 @@ sdist.exclude = [
 ]
 
 [tool.check-sdist]
-sdist-only = ["src/mqt/catalyst/_version.py"]
 git-only = [
   "docs/*",
   "test/*",
@@ -113,10 +110,6 @@ BUILD_MQT_CORE_CATALYST_PLUGIN = "ON"
 # todo: How can that be done such that it works locally and in CI?
 MLIR_DIR = "/opt/homebrew/opt/llvm@19/lib/cmake/mlir"
 LLVM_EXTERNAL_LIT = "/opt/homebrew/opt/lit/bin/lit"
-
-[tool.setuptools_scm]
-write_to = "plugins/catalyst/python/src/mqt/catalyst/_version.py"
-root = "../../.."
 
 [tool.check-wheel-contents]
 ignore = [
@@ -161,45 +154,9 @@ disallow_untyped_defs = false
 explicit_package_bases = true
 warn_unreachable = true
 
-[tool.ruff]
-line-length = 120
-namespace-packages = ["mqt"]
-preview = true
-unsafe-fixes = true
-
-[tool.ruff.lint]
-select = ["ALL"]
-ignore = [
-    "C90",     # <...> too complex
-    "COM812",  # Conflicts with formatter
-    "CPY001",  # Missing copyright notice at top of file
-    "ISC001",  # Conflicts with formatter
-    "PLR09",   # Too many <...>
-    "PLR2004", # Magic value used in comparison
-    "PLC0415", # Import should be at top of file
-    "S101",    # Use of assert detected
-    "S404",    # `subprocess` module is possibly insecure
-    "TID252"   # Prefer absolute imports over relative imports from parent modules
-]
 # todo: can the module be used from mqt-core?
 typing-modules = ["mqt.core._compat.typing"]
 isort.required-imports = ["from __future__ import annotations"]
-
-[tool.ruff.lint.flake8-tidy-imports.banned-api]
-"typing.Callable".msg = "Use collections.abc.Callable instead."
-"typing.Iterator".msg = "Use collections.abc.Iterator instead."
-"typing.Mapping".msg = "Use collections.abc.Mapping instead."
-"typing.Sequence".msg = "Use collections.abc.Sequence instead."
-"typing.Set".msg = "Use collections.abc.Set instead."
-"typing.assert_never".msg = "Use mqt.core._compat.typing.assert_never instead."
-
-[tool.ruff.lint.per-file-ignores]
-# todo: remove the following lines and fix the python files themselves
-"src/mqt/catalyst/__init__.py" = ["ALL"]
-"test/**" = ["ALL"]
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
 
 [tool.typos]
 default.extend-ignore-re = [
@@ -218,17 +175,11 @@ ignore = ["GH200"]
 
 [tool.cibuildwheel]
 build = "cp3*"
-skip = "*-musllinux_*"
+skip = "*-manylinux* *-linux* *-musllinux*"
 archs = "auto64"
 test-groups = ["test"]
 test-command = "pytest {project}/test"
 build-frontend = "build[uv]"
-enable = ["cpython-freethreading"]
-manylinux-x86_64-image = "manylinux_2_28"
-manylinux-aarch64-image = "manylinux_2_28"
-
-[tool.cibuildwheel.linux]
-environment = { DEPLOY = "ON" }
 
 [tool.cibuildwheel.macos]
 environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }
@@ -255,34 +206,11 @@ build = [
   "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/25/97/9707f73d2ed6e2549e4e099d0083481c144e984227e147b44cd2838535e6/pennylane_lightning_kokkos-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
   "pennylane-catalyst @ https://test-files.pythonhosted.org/packages/00/1f/791910226d7363ba8272add71529c637426d1ac225a4e582ef8612b7ecee/pennylane_catalyst-0.12.0.dev37-cp312-abi3-macosx_13_0_arm64.whl",
 ]
-docs = [
-  "furo>=2024.8.6",
-  "myst-nb>=1.2.0",
-  "setuptools-scm>=8.2",
-  "sphinx-autoapi>=3.6.0",
-  "sphinx-copybutton>=0.5.2",
-  "sphinx-design>=0.6.1",
-  "sphinxcontrib-bibtex>=2.6.3",
-  "sphinxcontrib-svg2pdfconverter>=1.3.0",
-  "sphinxext-opengraph>=0.10.0",
-  "openqasm-pygments>=0.1.2",
-  "breathe>=4.36.0",
-  "graphviz>=0.20.3",
-  "sphinx>=7.4.7",
-  "sphinx>=8.1.3; python_version >= '3.10'",
-  "sphinx>=8.2.3; python_version >= '3.11'",
-]
 test = [
   "pytest>=8.3.5",
-  "pytest-cov>=6.1.1",
-  "mqt-core>=3.0.0",
-  "pennylane @ https://test-files.pythonhosted.org/packages/a4/ae/b8b0fdcd91fe0e87d699d46938cfee0531e8093042dd9eff11abc247c02f/pennylane-0.42.0.dev27-py3-none-any.whl",
-  "pennylane-lightning @ https://test-files.pythonhosted.org/packages/4d/99/1cab1348e3b839f0c8df515dc6b2d347c5e913361ff65e6fa1f197c0a67a/pennylane_lightning-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
-  "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/25/97/9707f73d2ed6e2549e4e099d0083481c144e984227e147b44cd2838535e6/pennylane_lightning_kokkos-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
-  "pennylane-catalyst @ https://test-files.pythonhosted.org/packages/00/1f/791910226d7363ba8272add71529c637426d1ac225a4e582ef8612b7ecee/pennylane_catalyst-0.12.0.dev37-cp312-abi3-macosx_13_0_arm64.whl",
+  "pytest-cov>=6.1.1"
 ]
 dev = [
   {include-group = "build"},
-  {include-group = "docs"},
   {include-group = "test"},
 ]
