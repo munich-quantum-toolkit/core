@@ -117,7 +117,7 @@ git-only = [
 [tool.scikit-build.cmake.define]
 BUILD_MQT_CORE_BINDINGS = "ON"
 BUILD_MQT_CORE_TESTS = "OFF"
-BUILD_SHARED_LIBS = "ON"
+BUILD_MQT_CORE_SHARED_LIBS = "ON"
 
 [[tool.scikit-build.overrides]]
 if.python-version = ">=3.13"

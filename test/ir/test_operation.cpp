@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -284,4 +285,24 @@ TEST(AodOperation, Invert) {
                               {na::Dimension::X}, {0.0}, {1.0});
   deactivate.invert();
   EXPECT_EQ(deactivate.getType(), qc::OpType::AodActivate);
+}
+
+TEST(StandardOperation, Constructor) {
+  EXPECT_NO_THROW(std::ignore =
+                      qc::StandardOperation(0, 1, qc::OpType::P, {qc::PI}));
+  EXPECT_NO_THROW(
+      std::ignore = qc::StandardOperation(0, {1, 2}, qc::OpType::P, {qc::PI}));
+}
+
+TEST(StandardOperation, DuplicateQubitThrowsError) {
+  EXPECT_THROW(std::ignore =
+                   qc::StandardOperation(0, {0, 1}, qc::OpType::P, {qc::PI}),
+               std::runtime_error);
+  EXPECT_THROW(std::ignore =
+                   qc::StandardOperation(0, 0, qc::OpType::P, {qc::PI}),
+               std::runtime_error);
+
+  qc::QuantumComputation qc(2);
+  EXPECT_THROW(qc.cx(0, 0), std::runtime_error);
+  EXPECT_THROW(qc.mcx({0, 1}, 0), std::runtime_error);
 }
