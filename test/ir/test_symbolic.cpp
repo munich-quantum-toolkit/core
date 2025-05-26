@@ -261,6 +261,8 @@ TEST_F(SymbolicTest, failPrintingQASM3) {
 }
 
 TEST_F(SymbolicTest, Constructor) {
+  EXPECT_NO_THROW(std::ignore =
+                      qc::SymbolicOperation(0, 1, qc::OpType::P, {xMonom}));
   EXPECT_NO_THROW(
       std::ignore = qc::SymbolicOperation(0, {1, 2}, qc::OpType::P, {xMonom}));
 }
