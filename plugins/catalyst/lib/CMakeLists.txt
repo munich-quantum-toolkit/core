@@ -6,6 +6,25 @@
 #
 # Licensed under the MIT License
 
+if(APPLE)
+  set(BASEPOINT @loader_path)
+else()
+  set(BASEPOINT $ORIGIN)
+endif()
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+list(
+  APPEND
+  CMAKE_INSTALL_RPATH
+  ${BASEPOINT}
+  ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR}
+  ${BASEPOINT}/../core/${CMAKE_INSTALL_LIBDIR}
+  ${BASEPOINT}/../core/lib
+  ${BASEPOINT}/../core/lib64
+  ${BASEPOINT}/../../core/${CMAKE_INSTALL_LIBDIR}
+  ${BASEPOINT}/../../core/lib
+  ${BASEPOINT}/../../core/lib64)
+
 add_compile_options(-fexceptions)
 
 # Q: Why is it add_llvm_library and not add_mlir_library? A: According to Erick from Xanadu, who
@@ -35,20 +54,17 @@ add_llvm_library(
 # set required C++ standard
 target_compile_features(mqt-catalyst-plugin PUBLIC cxx_std_17)
 
+include(GNUInstallDirs)
 # Install directive for scikit-build-core
 install(
   TARGETS mqt-catalyst-plugin
-  DESTINATION lib
-  COMPONENT mqt-catalyst_Plugin)
-
-# Install the Python stub files in editable mode for better IDE support
-if(SKBUILD_STATE STREQUAL "editable")
-  file(GLOB IR_PYI_FILES ${CMAKE_CURRENT_SOURCE_DIR}/../python/mqt/catalyst/*.pyi)
-  install(
-    FILES ${IR_PYI_FILES}
-    DESTINATION .
-    COMPONENT mqt-catalyst_Plugin)
-endif()
+  EXPORT mqt-catalyst-plugin-targets
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+          FILE_SET HEADERS
+          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mqt/catalyst
+          COMPONENT mqt-catalyst_Plugin)
 
 # add MQT alias
 add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)
