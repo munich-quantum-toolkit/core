@@ -95,12 +95,12 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
   qc.x(0);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto finalFidelity = approximate(state, fidelity, *dd);
+  const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {1}};
   EXPECT_EQ(state.getVector(), expected);
   EXPECT_EQ(state.size(), 2);
-  EXPECT_EQ(finalFidelity, 1);
+  EXPECT_EQ(meta.fidelity, 1);
 }
 
 TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
@@ -128,12 +128,12 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
   qc.x(0);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto finalFidelity = approximate(state, fidelity, *dd);
+  const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {1}};
   EXPECT_EQ(state.getVector(), expected);
   EXPECT_EQ(state.size(), 2);
-  EXPECT_EQ(finalFidelity, 1);
+  EXPECT_EQ(meta.fidelity, 1);
 }
 
 TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
@@ -161,12 +161,12 @@ TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
   qc.ry(qc::PI / 3, 0);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto fidelityToSource = approximate(state, fidelity, *dd);
+  const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{1}, {0}};
   EXPECT_EQ(state.getVector(), expected);
   EXPECT_EQ(state.size(), 2);
-  EXPECT_NEAR(fidelityToSource, 0.75, 1e-3);
+  EXPECT_NEAR(meta.fidelity, 0.75, 1e-3);
 }
 
 TEST(ApproximationTest, TwoQubitRemoveNode) {
@@ -199,13 +199,13 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
   qc.cry(qc::PI / 3, 0, 1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto finalFidelity = approximate(state, fidelity, *dd);
+  const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0.755929}, {0.654654}, {0}, {0}};
 
   vecNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 3);
-  EXPECT_NEAR(finalFidelity, 0.875, 1e-3);
+  EXPECT_NEAR(meta.fidelity, 0.875, 1e-3);
 
   // Test: Correctly increase and decrease ref counts.
 
@@ -255,14 +255,14 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   qcRef.x(1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto finalFidelity = approximate(state, fidelity, *dd);
+  const auto meta = approximate(state, fidelity, *dd);
   auto ref = simulate(qcRef, dd->makeZeroState(nq), *dd);
 
   const CVec expected{{0}, {0}, {0}, {0, 1}};
   vecNear(state.getVector(), expected);
   state.printVector();
   EXPECT_EQ(state.size(), 3);
-  EXPECT_NEAR(finalFidelity, 0.75, 1e-3);
+  EXPECT_NEAR(meta.fidelity, 0.75, 1e-3);
   EXPECT_EQ(ref, state); // implicit: utilize `==` operator.
 }
 
@@ -304,12 +304,12 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   qc.cry(qc::PI / 4, 2, 1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto finalFidelity = approximate(state, fidelity, *dd);
+  const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0, 1}, {0}, {0}, {0}, {0}, {0}, {0}, {0}};
   vecNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 4);
-  EXPECT_NEAR(finalFidelity, 0.75, 1e-3);
+  EXPECT_NEAR(meta.fidelity, 0.75, 1e-3);
 }
 
 TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
@@ -350,12 +350,12 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
   qc.ry(qc::PI / 2, 1);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
-  auto finalFidelity = approximate(state, fidelity, *dd);
+  auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {-1}, {0}, {0}, {0}, {0}, {0}, {0}};
   vecNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 4);
-  EXPECT_NEAR(finalFidelity, 0.361, 1e-3);
+  EXPECT_NEAR(meta.fidelity, 0.361, 1e-3);
 }
 
 TEST(ApproximationTest, NodesVisited) {
@@ -366,13 +366,12 @@ TEST(ApproximationTest, NodesVisited) {
   std::iota(qubits.begin(), qubits.end(), 2);
 
   for (std::size_t i = 0; i < n; ++i) {
-    struct ApproxMeta meta{};
     const std::size_t nq = qubits[i];
     auto dd = std::make_unique<dd::Package>(nq);
     auto state = generateExponentialDD(nq, *dd);
 
     const std::size_t preSize = state.size() - 1; // Minus terminal.
-    approximate(state, fidelity, *dd, &meta);
+    const auto meta = approximate(state, fidelity, *dd);
     EXPECT_LE(meta.nodesVisited, preSize);
   }
 }

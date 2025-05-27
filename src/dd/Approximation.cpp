@@ -68,21 +68,6 @@ using Contributions = std::unordered_map<vNode*, double>;
 using Lookup = std::unordered_map<const vNode*, vEdge>;
 /// @brief A node, a flag indicating left or right, and its contribution.
 using Terminal = std::tuple<vNode*, uint16_t, double>;
-/// @brief List of potentially deletable terminal edges.
-using TerminalList = std::forward_list<Terminal>;
-
-/**
- * @brief Remove terminals with a contribution above the new budget.
- */
-TerminalList removeAbove(const TerminalList& old, const double budget) {
-  TerminalList upd{};
-  for (const auto& candidate : old) {
-    if (budget >= std::get<2>(candidate)) {
-      upd.emplace_front(candidate);
-    }
-  }
-  return upd;
-}
 
 /**
  * @brief Search and mark nodes for deletion until the budget 1 - @p fidelity is
@@ -90,32 +75,31 @@ TerminalList removeAbove(const TerminalList& old, const double budget) {
  * @details Uses a prioritized iterative-deepening search.
  * Iterating layer by layer ensures that each node is only visited once.
  */
-std::pair<double, Qubit> mark(VectorDD& state, const double fidelity,
-                              struct ApproxMeta* meta) {
+ApproximationMetadata mark(VectorDD& state, const double fidelity) {
   Layer curr{};
   curr.emplace(state.p);
 
+  std::forward_list<Terminal> candidates{};
+
+  ApproximationMetadata meta{.fidelity = fidelity,
+                             .nodesVisited = 0,
+                             .min = std::numeric_limits<Qubit>::max()};
+
   double budget = 1 - fidelity;
-  Qubit min{std::numeric_limits<Qubit>::max()};
-
-  TerminalList candidates{};
-
-  ApproxMeta rmeta{};
-
   while (budget > 0) {
     Contributions c; // Stores contributions of the next layer.
     while (!curr.empty()) {
       const LayerNode n = curr.top();
       curr.pop();
-      rmeta.nodesVisited++;
+
+      meta.nodesVisited++;
 
       // If possible, flag a node for deletion and decrease the budget.
       // If necessary, reset the lowest qubit number effected.
-      if (budget >= n.contribution) {
+      if (n.contribution <= budget) {
         n.ptr->flags = FLAG_DELETE;
         budget -= n.contribution;
-        min = std::min(min, n.ptr->v);
-        removeAbove(candidates, budget);
+        meta.min = std::min(meta.min, n.ptr->v);
         continue;
       }
 
@@ -125,8 +109,9 @@ std::pair<double, Qubit> mark(VectorDD& state, const double fidelity,
         const double contribution =
             n.contribution * ComplexNumbers::mag2(eRef.w);
 
-        if (eRef.isTerminal()) {        // Don't add terminals to the queue.
-          if (budget >= contribution) { // They (potentially) can be deleted.
+        if (eRef.isTerminal()) { // Don't add terminals to the queue.
+          // Non-Zero Terminals can (potentially) be deleted.
+          if (!eRef.isZeroTerminal() && budget >= contribution) {
             const uint16_t flag = (i == 0 ? FLAG_LEFT : FLAG_RIGHT);
             candidates.emplace_front(n.ptr, flag, contribution);
           }
@@ -137,37 +122,31 @@ std::pair<double, Qubit> mark(VectorDD& state, const double fidelity,
       }
     }
 
+    if (c.empty()) { // Break early. Avoid next construction.
+      break;
+    }
+
     Layer next{}; // Prioritize nodes for next iteration.
     for (auto& [n, contribution] : c) {
       next.emplace(n, contribution, budget);
-    }
-
-    if (next.empty()) { // Break early. Avoid std::move.
-      break;
     }
 
     curr = std::move(next);
   }
 
   // Lastly, check if any terminals can be deleted.
-  while (!candidates.empty()) {
-    const auto [n, flag, contribution] = candidates.front();
-    candidates.pop_front();
-    if (budget >= contribution) {
+  for (const auto& [n, flag, contribution] : candidates) {
+    if (contribution <= budget) {
       n->flags = FLAG_DELETE + flag;
       budget -= contribution;
-      min = std::min(min, n->v);
+      meta.min = std::min(meta.min, n->v);
     }
   }
 
-  if (meta != nullptr) {
-    rmeta.min = min;
-    rmeta.budgetLeft = budget;
-    *meta = rmeta;
-  }
-
   // The final fidelity is the desired fidelity plus the unused budget.
-  return {fidelity + budget, min};
+  meta.fidelity += budget;
+
+  return meta;
 }
 
 vEdge sweep(const vEdge& curr, const Qubit min, Lookup& l, Package& dd) {
@@ -186,8 +165,8 @@ vEdge sweep(const vEdge& curr, const Qubit min, Lookup& l, Package& dd) {
 
   // If a node has been visited once, return the already rebuilt node
   // and set the edge weight accordingly.
-  if (l.find(n) != l.end()) {
-    vEdge eR = l.at(n);
+  if (auto it = l.find(n); it != l.end()) {
+    vEdge eR = it->second;
     eR.w = curr.w;
     return eR;
   }
@@ -196,6 +175,11 @@ vEdge sweep(const vEdge& curr, const Qubit min, Lookup& l, Package& dd) {
   std::array<vEdge, RADIX> edges{};
   for (std::size_t i = 0; i < RADIX; ++i) {
     const vEdge& eRef = n->e[i];
+
+    if (eRef.isZeroTerminal()) {
+      edges[i] = vEdge::zero();
+      continue;
+    }
 
     if (eRef.isTerminal()) {
       // Use zero edge for marked terminals.
@@ -229,10 +213,10 @@ vEdge sweep(const vEdge& e, const Qubit min, Package& dd) {
 }
 }; // namespace
 
-double approximate(VectorDD& state, const double fidelity, Package& dd,
-                   struct ApproxMeta* meta) {
-  const auto& [finalFidelity, min] = mark(state, fidelity, meta);
-  const vEdge& approx = sweep(state, min, dd);
+ApproximationMetadata approximate(VectorDD& state, const double fidelity,
+                                  Package& dd) {
+  const ApproximationMetadata& meta = mark(state, fidelity);
+  const vEdge& approx = sweep(state, meta.min, dd);
 
   dd.incRef(approx);
   dd.decRef(state);
@@ -240,7 +224,7 @@ double approximate(VectorDD& state, const double fidelity, Package& dd,
 
   state = approx;
 
-  return finalFidelity;
+  return meta;
 }
 
 } // namespace dd
