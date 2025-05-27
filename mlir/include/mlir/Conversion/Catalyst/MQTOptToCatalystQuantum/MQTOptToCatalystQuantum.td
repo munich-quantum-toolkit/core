@@ -14,19 +14,17 @@ def MQTOptToCatalystQuantum : Pass<"mqtopt-to-catalystquantum"> {
   let description = [{
     This pass converts MQT's `MQTOpt` to Catalyst's `Quantum` dialect.
     The following operations are currently NOT converted (and instead marked legal):
-    - IOp
-    - GPhaseOp
     - BarrierOp
-    - SOp, SdgOp
-    - TOp, TdgOp
+    - SdgOp
+    - TdgOp
     - VOp, VdgOp
     - UOp, U2Op
     - SXOp, SXdgOp
-    - iSWAPOp, iSWAPdgOp
+    - iSWAPdgOp
     - PeresOp, PeresdgOp
     - DCXOp
     - ECROp
-    - RXXOp, RYYOp, RZZOp, RZXOp
+    - RZXOp
     - XXminusYY, XXplusYY
   }];
   let dependentDialects = [
