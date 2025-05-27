@@ -327,18 +327,19 @@ private:
   static llvm::StringRef getGateName(std::size_t numControls);
 };
 
+// -- GPhaseOp (gphase)
 template <>
 llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::GPhaseOp>::getGateName(
     std::size_t numControls) {
   return "gphase";
 }
 
+// -- IOp (Identity)
 template <>
 llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::IOp>::getGateName(
     std::size_t numControls) {
   return "Identity";
 }
-
 
 // -- XOp (PauliX, CNOT, Toffoli)
 template <>
@@ -382,11 +383,32 @@ llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::HOp>::getGateName(
   return "Hadamard";
 }
 
+// -- SOP (S)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::SOp>::getGateName(
+    std::size_t numControls) {
+  return "S";
+}
+
+// -- TOP (T)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::TOp>::getGateName(
+    std::size_t numControls) {
+  return "T";
+}
+
 // -- SWAPOp (SWAP)
 template <>
 llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::SWAPOp>::getGateName(
     std::size_t numControls) {
   return "SWAP";
+}
+
+// -- iSWAPOp (iSWAP)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::iSWAPOp>::getGateName(
+    std::size_t numControls) {
+  return "ISWAP";
 }
 
 // -- RXOp (RX, CRX)
@@ -433,6 +455,27 @@ llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::POp>::getGateName(
   return "";
 }
 
+// -- RXXOp (IsingXX)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RXXOp>::getGateName(
+    std::size_t numControls) {
+  return "IsingXX";
+}
+
+// -- RYYOp (IsingYY)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RYYOp>::getGateName(
+    std::size_t numControls) {
+  return "IsingYY";
+}
+
+// -- RZZ (IsingZZ)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RZZOp>::getGateName(
+    std::size_t numControls) {
+  return "IsingZZ";
+}
+
 struct MQTOptToCatalystQuantum
     : impl::MQTOptToCatalystQuantumBase<MQTOptToCatalystQuantum> {
   using MQTOptToCatalystQuantumBase::MQTOptToCatalystQuantumBase;
@@ -447,13 +490,11 @@ struct MQTOptToCatalystQuantum
 
     // Mark operations legal, that have no equivalent in the target dialect
     target.addLegalOp<
-        ::mqt::ir::opt::BarrierOp, ::mqt::ir::opt::SOp, ::mqt::ir::opt::SdgOp,
-        ::mqt::ir::opt::TOp, ::mqt::ir::opt::TdgOp, ::mqt::ir::opt::VOp,
-        ::mqt::ir::opt::VdgOp, ::mqt::ir::opt::UOp, ::mqt::ir::opt::U2Op,
-        ::mqt::ir::opt::SXOp, ::mqt::ir::opt::SXdgOp, ::mqt::ir::opt::iSWAPOp,
+        ::mqt::ir::opt::BarrierOp, ::mqt::ir::opt::SdgOp, ::mqt::ir::opt::TdgOp,
+        ::mqt::ir::opt::VOp, ::mqt::ir::opt::VdgOp, ::mqt::ir::opt::UOp,
+        ::mqt::ir::opt::U2Op, ::mqt::ir::opt::SXOp, ::mqt::ir::opt::SXdgOp,
         ::mqt::ir::opt::iSWAPdgOp, ::mqt::ir::opt::PeresOp,
         ::mqt::ir::opt::PeresdgOp, ::mqt::ir::opt::DCXOp, ::mqt::ir::opt::ECROp,
-        ::mqt::ir::opt::RXXOp, ::mqt::ir::opt::RYYOp, ::mqt::ir::opt::RZZOp,
         ::mqt::ir::opt::RZXOp, ::mqt::ir::opt::XXminusYY,
         ::mqt::ir::opt::XXplusYY>();
 
@@ -464,11 +505,19 @@ struct MQTOptToCatalystQuantum
                  ConvertMQTOptMeasure, ConvertMQTOptInsert>(typeConverter,
                                                             context);
 
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::GPhaseOp>>(typeConverter,
+                                                               context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::IOp>>(typeConverter,
+                                                               context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::XOp>>(typeConverter,
                                                                context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::YOp>>(typeConverter,
                                                                context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::ZOp>>(typeConverter,
+                                                               context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::SOp>>(typeConverter,
+                                                               context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::TOp>>(typeConverter,
                                                                context);
 
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::RXOp>>(typeConverter,
@@ -482,8 +531,17 @@ struct MQTOptToCatalystQuantum
                                                                context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::SWAPOp>>(typeConverter,
                                                                   context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::iSWAPOp>>(typeConverter,
+                                                                  context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::POp>>(typeConverter,
                                                                context);
+
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::RXXOp>>(typeConverter,
+                                                                context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::RYYOp>>(typeConverter,
+                                                                context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::RZZOp>>(typeConverter,
+                                                                context);
 
     // Boilerplate code to prevent "unresolved materialization" errors when the
     // IR contains ops with signature or operand/result types not yet rewritten:
