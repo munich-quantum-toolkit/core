@@ -33,8 +33,8 @@ if(DEFINED Python_EXECUTABLE AND Python_EXECUTABLE)
         OUTPUT_VARIABLE CATALYST_INCLUDE_DIRS)
     endif()
   else()
-  # Unfortunately, the download for an individual package cannot be turned off. To avoid downloading
-  # the entire package, we use `find_package` instead.
+    # Unfortunately, the download for an individual package cannot be turned off. To avoid
+    # downloading the entire package, we use `find_package` instead.
     find_package(Catalyst ${CATALYST_VERSION} REQUIRED)
   endif()
 
