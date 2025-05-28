@@ -603,6 +603,13 @@ struct MQTOptToCatalystQuantum
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::RZZOp>>(typeConverter,
                                                                  context);
 
+    patterns.add<ConvertMQTOptAdjointGate<::mqt::ir::opt::SdgOp>>(typeConverter,
+                                                                  context);
+    patterns.add<ConvertMQTOptAdjointGate<::mqt::ir::opt::TdgOp>>(typeConverter,
+                                                                  context);
+    patterns.add<ConvertMQTOptAdjointGate<::mqt::ir::opt::iSWAPdgOp>>(
+        typeConverter, context);
+
     // Boilerplate code to prevent "unresolved materialization" errors when the
     // IR contains ops with signature or operand/result types not yet rewritten:
     // https://www.jeremykun.com/2023/10/23/mlir-dialect-conversion
