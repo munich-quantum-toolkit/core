@@ -81,9 +81,7 @@ ApproximationMetadata mark(VectorDD& state, const double fidelity) {
 
   std::forward_list<Terminal> candidates{};
 
-  ApproximationMetadata meta{.fidelity = fidelity,
-                             .nodesVisited = 0,
-                             .min = std::numeric_limits<Qubit>::max()};
+  ApproximationMetadata meta{fidelity, 0, std::numeric_limits<Qubit>::max()};
 
   double budget = 1 - fidelity;
   while (budget > 0) {
