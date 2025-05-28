@@ -197,8 +197,8 @@ vEdge sweep(const vEdge& curr, const Qubit min, Lookup& l, Package& dd) {
   // Rebuild the node and set its ingoing edge weight to the one of curr.
   //
   // The latter ensures the following:
-  //   If we keep all outgoing edges (non set to `zero()`), copy the node as is.
-  //   Otherwise, the assignment overwrites (or eliminates) the resulting
+  //   If we keep all outgoing edges (none set to `zero()`), copy the node as
+  //   is. Otherwise, the assignment overwrites (or eliminates) the resulting
   //   normalization factor, ensuring that the probability of the parent's node
   //   edge isn't changed.
 

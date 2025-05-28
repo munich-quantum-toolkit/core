@@ -19,7 +19,7 @@ namespace dd {
  * @brief Useful metadata of an approximation run.
  */
 struct ApproximationMetadata {
-  /// @brief The fidelity between the source and the approximated state
+  /// @brief The fidelity between the source and the approximated state.
   double fidelity;
   /// @brief The number of nodes visited during the mark stage.
   std::size_t nodesVisited;
