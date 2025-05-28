@@ -18,6 +18,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - 🐛 Fix bug in MLIR roundtrip passes caused by accessing an invalidated iterator after erasure in a loop ([#932]) ([**@flowerthrower**])
 - 🐛 Add missing support for `sxdg` gates in Qiskit circuit import ([#930]) ([**@burgholzer**])
 - 🐛 Fix bug initialization of operations with duplicate operands ([#964]) ([**@ystade**])
+- 🐛 Open issue for Qiskit upstream test only when the test is actually failing not when it was cancelled ([#973]) ([**@ystade**])
 
 ### Changed
 
@@ -108,6 +109,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#973]: https://github.com/munich-quantum-toolkit/core/pull/973
 [#964]: https://github.com/munich-quantum-toolkit/core/pull/964
 [#934]: https://github.com/munich-quantum-toolkit/core/pull/934
 [#933]: https://github.com/munich-quantum-toolkit/core/pull/933
