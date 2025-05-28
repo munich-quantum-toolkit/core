@@ -133,10 +133,12 @@ jobs:
     needs: change-detection
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@v1.10
     with:
-      cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_MLIR=ON
+      cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_MLIR=ON -DBUILD_MQT_QMAP_BINDINGS=ON
       clang-version: 20
       build-project: true
       files-changed-only: false
+      setup-python: true
+      install-pkgs: "pybind11==2.13.6"
 
   python-tests:
     name: 🐍 Test
