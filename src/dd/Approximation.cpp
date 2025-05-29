@@ -77,7 +77,7 @@ using Terminal = std::tuple<vNode*, uint16_t, double>;
  *
  * @param state The DD to approximate.
  * @param fidelity The desired minimum fidelity after approximation.
- * @return Metadata about the marking state.
+ * @return Metadata about the marking stage.
  */
 ApproximationMetadata mark(VectorDD& state, const double fidelity) {
   Layer curr{};
@@ -220,7 +220,7 @@ vEdge sweep(const vEdge& curr, const Qubit min, Lookup& l, Package& dd) {
  * @param e The DD to rebuild.
  * @param min The lowest qubit number that requires rebuilding.
  * @param dd The DD package to use for rebuilding.
- * @return Metadata about the marking state.
+ * @return The rebuilt DD.
  */
 vEdge sweep(const vEdge& e, const Qubit min, Package& dd) {
   Lookup l{};
