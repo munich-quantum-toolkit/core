@@ -74,18 +74,22 @@ using Terminal = std::tuple<vNode*, uint16_t, double>;
  * exhausted.
  * @details Uses a prioritized iterative-deepening search.
  * Iterating layer by layer ensures that each node is only visited once.
+ *
+ * @param state The DD to approximate.
+ * @param fidelity The desired minimum fidelity after approximation.
+ * @return Metadata about the marking state.
  */
 ApproximationMetadata mark(VectorDD& state, const double fidelity) {
   Layer curr{};
   curr.emplace(state.p);
 
-  std::forward_list<Terminal> candidates{};
+  Contributions c; // Stores contributions of the next layer.
+  std::forward_list<Terminal> candidates{}; // Terminals that may be removed.
 
   ApproximationMetadata meta{fidelity, 0, std::numeric_limits<Qubit>::max()};
 
   double budget = 1 - fidelity;
   while (budget > 0) {
-    Contributions c; // Stores contributions of the next layer.
     while (!curr.empty()) {
       const LayerNode n = curr.top();
       curr.pop();
@@ -130,6 +134,7 @@ ApproximationMetadata mark(VectorDD& state, const double fidelity) {
     }
 
     curr = std::move(next);
+    c.clear(); // Contributions are computed for each layer.
   }
 
   // Lastly, check if any terminals can be deleted.
@@ -211,6 +216,11 @@ vEdge sweep(const vEdge& curr, const Qubit min, Lookup& l, Package& dd) {
 /**
  * @brief Recursively rebuild DD depth-first.
  * @details A lookup table ensures that each node is only visited once.
+ *
+ * @param e The DD to rebuild.
+ * @param min The lowest qubit number that requires rebuilding.
+ * @param dd The DD package to use for rebuilding.
+ * @return Metadata about the marking state.
  */
 vEdge sweep(const vEdge& e, const Qubit min, Package& dd) {
   Lookup l{};

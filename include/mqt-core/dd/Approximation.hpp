@@ -30,7 +30,6 @@ struct ApproximationMetadata {
 /**
  * @brief Approximate the @p state based on fidelity. The fidelity of the
  * approximated state will be at least @p fidelity.
- *
  * @details Traverses the decision diagram layer by layer in a breadth-first
  * manner (iterative deepening algorithm) and eliminates edges greedily until
  * the budget (1 - @p fidelity) is exhausted.
@@ -38,8 +37,7 @@ struct ApproximationMetadata {
  * @param state The DD to approximate.
  * @param fidelity The desired minimum fidelity after approximation.
  * @param dd The DD package to use for the approximation.
- * @param meta An optional struct which will be filled with meta information.
- * @return An ApproximationMetadata object.
+ * @return Metadata about the approximation.
  */
 ApproximationMetadata approximate(VectorDD& state, double fidelity,
                                   Package& dd);
