@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - 📦 Add Windows ARM64 wheels ([#926]) ([**@burgholzer**])
 - 📝 Add documentation page for MLIR ([#931]) ([**@ystade**])
 - ✨ Initial implementation of the mqtdyn Dialect ([#900]) ([**@DRovara**], [**@ystade**])
+- ✨ Add function to approximate decision diagrams ([#908]) ([**@MatthiasReumann**])
 
 ### Fixed
 
@@ -117,6 +118,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#913]: https://github.com/munich-quantum-toolkit/core/pull/913
 [#912]: https://github.com/munich-quantum-toolkit/core/pull/912
 [#911]: https://github.com/munich-quantum-toolkit/core/pull/911
+[#908]: https://github.com/munich-quantum-toolkit/core/pull/908
 [#900]: https://github.com/munich-quantum-toolkit/core/pull/900
 [#895]: https://github.com/munich-quantum-toolkit/core/pull/895
 [#893]: https://github.com/munich-quantum-toolkit/core/pull/893
@@ -165,6 +167,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@M-J-Hochreiter**]: https://github.com/M-J-Hochreiter
 [**@rotmanjanez**]: https://github.com/rotmanjanez
 [**@pehamTom**]: https://github.com/pehamTom
+[**@MatthiasReumann**]: https://github.com/MatthiasReumann
 
 <!-- General links -->
 
