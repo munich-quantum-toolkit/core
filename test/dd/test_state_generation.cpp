@@ -32,6 +32,12 @@ double norm(const std::vector<std::complex<double>>& v) {
 ///-----------------------------------------------------------------------------
 
 TEST(StateGenerationTest, OneQubit) {
+
+  // Test: Generate a random single qubit vector DD.
+  // Expect: The norm of the resulting vector DD must be 1.
+  // Expect: The size of the resulting vector DD must be 2 (node + terminal).
+  // Expect: Properly increase and decrease the ref counts.
+
   constexpr std::size_t nq = 1;
 
   const std::vector<std::size_t> nodesPerLevel{};
@@ -49,6 +55,12 @@ TEST(StateGenerationTest, OneQubit) {
 }
 
 TEST(StateGenerationTest, ExponentialState) {
+
+  // Test: Generate a random exponentially large vector DD with a random seed.
+  // Expect: The norm of the resulting vector DD must be 1.
+  // Expect: The size of the resulting vector DD must be exponentially large.
+  // Expect: Properly increase and decrease the ref counts.
+
   constexpr std::size_t nq = 3;
 
   auto dd = std::make_unique<Package>(nq);
@@ -64,6 +76,12 @@ TEST(StateGenerationTest, ExponentialState) {
 }
 
 TEST(StateGenerationTest, ExponentialStateWithSeed) {
+
+  // Test: Generate a random exponentially large vector DD with a given seed.
+  // Expect: The norm of the resulting vector DD must be 1.
+  // Expect: The size of the resulting vector DD must be exponentially large.
+  // Expect: Properly increase and decrease the ref counts.
+
   constexpr std::size_t nq = 3;
 
   auto dd = std::make_unique<Package>(nq);
@@ -78,6 +96,13 @@ TEST(StateGenerationTest, ExponentialStateWithSeed) {
 }
 
 TEST(StateGenerationTest, RandomStateStateRoundRobin) {
+
+  // Test: Generate a random vector DD using the round-robin strategy.
+  // Expect: The norm of the resulting vector DD must be 1.
+  // Expect: The size of the resulting vector DD must be the sum of the
+  //         specified nodes.
+  // Expect: Properly increase and decrease the ref counts.
+
   constexpr std::size_t nq = 5;
 
   const std::vector<std::size_t> nodesPerLevel{2, 3, 4, 5};
@@ -96,6 +121,11 @@ TEST(StateGenerationTest, RandomStateStateRoundRobin) {
 }
 
 TEST(StateGenerationTest, RandomStateStateRandom) {
+
+  // Test: Generate a random vector DD using the random strategy.
+  // Expect: The norm of the resulting vector DD must be 1.
+  // Expect: Properly increase and decrease the ref counts.
+
   constexpr std::size_t nq = 6;
 
   const std::vector<std::size_t> nodesPerLevel{2, 4, 8, 10, 12};
@@ -112,6 +142,12 @@ TEST(StateGenerationTest, RandomStateStateRandom) {
 }
 
 TEST(StateGenerationTest, RandomStateStateRandomWithSeed) {
+
+  // Test: Generate a random vector DD using the random strategy with a given
+  //       seed.
+  // Expect: The norm of the resulting vector DD must be 1.
+  // Expect: Properly increase and decrease the ref counts.
+
   constexpr std::size_t nq = 8;
 
   const std::vector<std::size_t> nodesPerLevel{2, 2, 2, 2, 2, 2, 2};

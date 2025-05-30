@@ -131,7 +131,7 @@ VectorDD generateRandomState(const std::size_t levels,
     prev = std::move(curr);
   }
 
-  vEdge ret = {root.p, Complex::one()};
+  vEdge ret{root.p, Complex::one()};
   dd.incRef(ret);
   return ret;
 }
