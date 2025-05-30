@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
 namespace dd {
 /// @brief The strategy to use to wire two layers.
 enum GenerationLinkStrategy : std::uint8_t {

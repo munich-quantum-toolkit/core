@@ -13,7 +13,10 @@
 
 #include <cmath>
 #include <complex>
+#include <cstddef>
 #include <gtest/gtest.h>
+#include <memory>
+#include <vector>
 
 using namespace dd;
 

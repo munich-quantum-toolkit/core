@@ -10,16 +10,21 @@
 
 #include "dd/StateGeneration.hpp"
 
+#include "dd/Complex.hpp"
 #include "dd/ComplexNumbers.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
+#include "ir/Definitions.hpp"
 
 #include <array>
+#include <cassert>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <random>
+#include <utility>
 #include <vector>
 
 namespace dd {
@@ -92,10 +97,10 @@ VectorDD generateRandomState(const std::size_t levels,
          "Number of levels - 1 must match nodesPerLevel size");
 
   AngleGenerator generator(seed);
-  AngleDistribution dist{0, 2. * M_PI};
+  AngleDistribution dist{0, 2. * qc::PI};
 
   auto v = static_cast<Qubit>(levels - 1);
-  vEdge root = randomNode(v, generator, dist, dd);
+  const vEdge root = randomNode(v, generator, dist, dd);
 
   std::vector<vEdge> prev{root};
   for (const std::size_t n : nodesPerLevel) {
