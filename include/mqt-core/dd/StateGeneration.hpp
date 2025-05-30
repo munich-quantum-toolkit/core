@@ -47,7 +47,7 @@ VectorDD generateExponentialState(std::size_t levels, std::size_t seed,
  * (the root node) as first element.
  * @param strategy The strategy to use to wire two layers.
  * @param dd The DD package to use for generating the vector DD.
- * @return The exponentially large VectorDD.
+ * @return The random vector DD.
  */
 VectorDD generateRandomState(std::size_t levels,
                              const std::vector<std::size_t>& nodesPerLevel,
@@ -61,7 +61,7 @@ VectorDD generateRandomState(std::size_t levels,
  * @param strategy The strategy to use to wire two layers.
  * @param seed The seed used for randomization.
  * @param dd The DD package to use for generating the vector DD.
- * @return The exponentially large VectorDD.
+ * @return The random vector DD.
  */
 VectorDD generateRandomState(std::size_t levels,
                              const std::vector<std::size_t>& nodesPerLevel,
