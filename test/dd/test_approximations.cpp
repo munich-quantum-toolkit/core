@@ -320,7 +320,7 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
   //         - 0.347|100⟩ - 0.119|101⟩ + 0.294|110⟩ -  0.34|111⟩
   //
   // Eliminate |1xx⟩ and |01x⟩ with contribution ~0.34 and ~0.25
-  //         & terminal |000⟩ with contribution ~0.005
+  //          & terminal |000⟩ with contribution ~0.005
   //     → |approx⟩ = -|001⟩
   //
   //                    -1│                                 -1│
