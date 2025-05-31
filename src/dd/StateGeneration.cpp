@@ -30,7 +30,7 @@
 
 namespace dd {
 namespace {
-using AngleGenerator = std::mt19937_64;
+using Generator = std::mt19937_64;
 using AngleDistribution = std::uniform_real_distribution<double>;
 using IndexDistribution = std::uniform_int_distribution<std::size_t>;
 
@@ -38,9 +38,9 @@ using IndexDistribution = std::uniform_int_distribution<std::size_t>;
  * @brief Return random double-precision complex number `alpha` on the unit
  * circle. This ensures that `abs(alpha)^2 = 1`.
  */
-std::complex<double> randomComplexOnUnitCircle(AngleGenerator& generator,
+std::complex<double> randomComplexOnUnitCircle(Generator& gen,
                                                AngleDistribution& dist) {
-  const double angle = dist(generator);
+  const double angle = dist(gen);
   return {std::cos(angle), std::sin(angle)};
 }
 
@@ -48,12 +48,12 @@ std::complex<double> randomComplexOnUnitCircle(AngleGenerator& generator,
  * @brief Generate random node with terminal edges initialized with random
  * weights. The function ensures that the norm of the edge weights is 1.
  */
-vEdge randomNode(Qubit v, AngleGenerator& generator, AngleDistribution& dist,
+vEdge randomNode(Qubit v, Generator& gen, AngleDistribution& dist,
                  Package& dd) {
   constexpr double eps = std::numeric_limits<double>::epsilon();
 
-  const auto alpha = randomComplexOnUnitCircle(generator, dist);
-  const auto beta = randomComplexOnUnitCircle(generator, dist);
+  const auto alpha = randomComplexOnUnitCircle(gen, dist);
+  const auto beta = randomComplexOnUnitCircle(gen, dist);
   const auto norm = std::sqrt(2);
 
   const std::array<vEdge, RADIX> edges{
@@ -99,11 +99,11 @@ VectorDD generateRandomState(const std::size_t levels,
   assert(nodesPerLevel.size() == levels - 1 &&
          "Number of levels - 1 must match nodesPerLevel size");
 
-  AngleGenerator generator(seed);
+  Generator gen(seed);
   AngleDistribution dist{0, 2. * qc::PI};
 
   auto v = static_cast<Qubit>(levels - 1);
-  const vEdge root = randomNode(v, generator, dist, dd);
+  const vEdge root = randomNode(v, gen, dist, dd);
 
   std::vector<vEdge> prev{root};
   for (const std::size_t n : nodesPerLevel) {
@@ -112,7 +112,7 @@ VectorDD generateRandomState(const std::size_t levels,
     // Generate nodes of layer.
     std::vector<vEdge> curr(n);
     for (std::size_t j = 0; j < n; ++j) {
-      curr[j] = randomNode(v, generator, dist, dd);
+      curr[j] = randomNode(v, gen, dist, dd);
     }
 
     // Connect to previous layer based on the given strategy.
@@ -129,8 +129,8 @@ VectorDD generateRandomState(const std::size_t levels,
     case RANDOM: {
       IndexDistribution indexDist{0, curr.size() - 1};
       for (auto& ePrev : prev) {
-        ePrev.p->e[0].p = curr[indexDist(generator)].p;
-        ePrev.p->e[1].p = curr[indexDist(generator)].p;
+        ePrev.p->e[0].p = curr[indexDist(gen)].p;
+        ePrev.p->e[1].p = curr[indexDist(gen)].p;
       }
       break;
     }
