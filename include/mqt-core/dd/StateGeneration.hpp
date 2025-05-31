@@ -16,7 +16,7 @@
 #include <vector>
 
 namespace dd {
-/// @brief The strategy to use to wire two layers.
+/// @brief The strategy to wire two layers.
 enum GenerationLinkStrategy : std::uint8_t {
   ROUNDROBIN, // Choose nodes in the next layer in a round-robin fashion.
   RANDOM      // Randomly choose nodes in the next layer.
@@ -45,7 +45,7 @@ VectorDD generateExponentialState(std::size_t levels, std::size_t seed,
  * @param levels The number of levels in the vector DD.
  * @param nodesPerLevel The number of nodes per level. Implicitly, contains `1`
  * (the root node) as first element.
- * @param strategy The strategy to use to wire two layers.
+ * @param strategy The strategy to wire two layers.
  * @param dd The DD package to use for generating the vector DD.
  * @return The random vector DD.
  */
@@ -58,7 +58,7 @@ VectorDD generateRandomState(std::size_t levels,
  * @param levels The number of levels in the vector DD.
  * @param nodesPerLevel The number of nodes per level. Implicitly, contains `1`
  * (the root node) as first element.
- * @param strategy The strategy to use to wire two layers.
+ * @param strategy The strategy to wire two layers.
  * @param seed The seed used for randomization.
  * @param dd The DD package to use for generating the vector DD.
  * @return The random vector DD.
