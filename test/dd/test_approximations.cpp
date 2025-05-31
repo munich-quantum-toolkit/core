@@ -316,28 +316,28 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
 
   // Test: Remove multiple nodes.
   //
-  // |state⟩ = 0.069|000⟩ - 0.601|001⟩ - 0.069|010⟩ - 0.601|011⟩
-  //         - 0.347|100⟩ - 0.119|101⟩ + 0.347|110⟩ - 0.119|111⟩
+  // |state⟩ = 0.069|000⟩ - 0.601|001⟩ - 0.196|010⟩ - 0.509|011⟩
+  //         - 0.347|100⟩ - 0.119|101⟩ + 0.294|110⟩ -  0.34|111⟩
   //
-  // Eliminate |1xx⟩ and |01x⟩ with contribution ~0.27 and ~0.36
+  // Eliminate |1xx⟩ and |01x⟩ with contribution ~0.34 and ~0.25
   //         & terminal |000⟩ with contribution ~0.005
   //     → |approx⟩ = -|001⟩
   //
-  //  * = 1/sqrt(2)     -1│                                 -1│
+  //                    -1│                                 -1│
   //                    ┌─┴─┐                               ┌─┴─┐
   //             ┌──────│ q2│──────┐                      ┌─│ q2│─┐
-  //          .85│      └───┘      │.52                  1| └───┘ 0
+  //          .81│      └───┘      │.58                  1| └───┘ 0
   //           ┌─┴─┐             ┌─┴─┐    -(approx)→    ┌─┴─┐
   //        ┌──│ q1│──┐       ┌──│ q1│──┐             ┌─│ q1│──┐
-  //       *|  └───┘  |*     *|  └───┘  |*           1| └───┘  0
+  //     .74|  └───┘  |.67 .63|  └───┘  |.77         1| └───┘  0
   //      ┌─┴─┐     ┌─┴─┐   ┌─┴─┐     ┌─┴─┐         ┌─┴─┐
   //     ┌│ q0│┐   ┌│ q0│┐ ┌│ q0│┐   ┌│ q0│┐      ┌─│ q0│─┐
-  //-0.11|└───┘|   |└───┘| |└───┘|   |└───┘|      0 └───┘ |1
+  // -.11|└───┘|   |└───┘| |└───┘|   |└───┘|      0 └───┘ |1
   //     □     □   □     □ □     □   □     □              □
   //
 
   constexpr std::size_t nq = 3;
-  constexpr double fidelity = 1 - 0.64;
+  constexpr double fidelity = 1 - 0.65;
 
   auto dd = std::make_unique<dd::Package>(nq);
 
@@ -348,6 +348,7 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
   qc.cx(1, 2);
   qc.ry(qc::PI / 8, 2);
   qc.ry(qc::PI / 2, 1);
+  qc.cry(qc::PI / 4, 1, 2);
 
   auto state = simulate(qc, dd->makeZeroState(nq), *dd);
   auto meta = approximate(state, fidelity, *dd);
