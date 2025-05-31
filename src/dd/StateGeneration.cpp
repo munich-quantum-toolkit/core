@@ -23,6 +23,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <limits>
 #include <random>
 #include <utility>
 #include <vector>
@@ -49,6 +50,8 @@ std::complex<double> randomComplexOnUnitCircle(AngleGenerator& generator,
  */
 vEdge randomNode(Qubit v, AngleGenerator& generator, AngleDistribution& dist,
                  Package& dd) {
+  constexpr double eps = std::numeric_limits<double>::epsilon();
+
   const auto alpha = randomComplexOnUnitCircle(generator, dist);
   const auto beta = randomComplexOnUnitCircle(generator, dist);
   const auto norm = std::sqrt(2);
@@ -60,7 +63,7 @@ vEdge randomNode(Qubit v, AngleGenerator& generator, AngleDistribution& dist,
 
   // Check: Properly normalized.
   assert(std::sqrt(ComplexNumbers::mag2(edges[0].w) +
-                   ComplexNumbers::mag2(edges[1].w)) < 1 + 1e-6);
+                   ComplexNumbers::mag2(edges[1].w)) < 1 + eps);
 
   return dd.makeDDNode(v, edges);
 }
