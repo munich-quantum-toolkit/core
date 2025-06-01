@@ -24,7 +24,6 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <limits>
 #include <random>
 #include <utility>
 #include <vector>
@@ -51,20 +50,12 @@ std::complex<double> randomComplexOnUnitCircle(Generator& gen,
  */
 vEdge randomNode(Qubit v, Generator& gen, AngleDistribution& dist,
                  Package& dd) {
-  constexpr double eps = std::numeric_limits<double>::epsilon();
-
   const auto alpha = randomComplexOnUnitCircle(gen, dist);
   const auto beta = randomComplexOnUnitCircle(gen, dist);
-  const auto norm = std::sqrt(2);
-
   const std::array<vEdge, RADIX> edges{
-      vEdge::terminal(dd.cn.lookup(alpha / norm)),
-      vEdge::terminal(dd.cn.lookup(beta / norm)),
+      vEdge::terminal(dd.cn.lookup(alpha / SQRT2_2)),
+      vEdge::terminal(dd.cn.lookup(beta / SQRT2_2)),
   };
-
-  // Check: Properly normalized.
-  assert(std::sqrt(ComplexNumbers::mag2(edges[0].w) +
-                   ComplexNumbers::mag2(edges[1].w)) < 1 + eps);
 
   return dd.makeDDNode(v, edges);
 }
@@ -72,15 +63,15 @@ vEdge randomNode(Qubit v, Generator& gen, AngleDistribution& dist,
 
 VectorDD generateExponentialState(const std::size_t levels, Package& dd) {
   std::random_device rd;
-  return generateExponentialState(levels, rd(), dd);
+  return generateExponentialState(levels, dd, rd());
 }
 
-VectorDD generateExponentialState(const std::size_t levels,
-                                  const std::size_t seed, Package& dd) {
+VectorDD generateExponentialState(const std::size_t levels, Package& dd,
+                                  const std::size_t seed) {
   std::vector<std::size_t> nodesPerLevel(levels - 1); // [2, 4, 8, ...]
   std::generate(nodesPerLevel.begin(), nodesPerLevel.end(),
-                [exp = 1]() mutable { return std::pow(2, exp++); });
-  return generateRandomState(levels, nodesPerLevel, ROUNDROBIN, seed, dd);
+                [exp = 1]() mutable { return 1ULL << exp++; });
+  return generateRandomState(levels, nodesPerLevel, ROUNDROBIN, dd, seed);
 }
 
 VectorDD generateRandomState(const std::size_t levels,
@@ -88,13 +79,13 @@ VectorDD generateRandomState(const std::size_t levels,
                              const GenerationWireStrategy strategy,
                              Package& dd) {
   std::random_device rd;
-  return generateRandomState(levels, nodesPerLevel, strategy, rd(), dd);
+  return generateRandomState(levels, nodesPerLevel, strategy, dd, rd());
 }
 
 VectorDD generateRandomState(const std::size_t levels,
                              const std::vector<std::size_t>& nodesPerLevel,
-                             const GenerationWireStrategy strategy,
-                             const std::size_t seed, Package& dd) {
+                             const GenerationWireStrategy strategy, Package& dd,
+                             const std::size_t seed) {
   assert(levels > 0U && "Number of levels must be greater than zero");
   assert(nodesPerLevel.size() == levels - 1 &&
          "Number of levels - 1 must match nodesPerLevel size");
@@ -104,27 +95,26 @@ VectorDD generateRandomState(const std::size_t levels,
 
   auto v = static_cast<Qubit>(levels - 1);
   const vEdge root = randomNode(v, gen, dist, dd);
-
   std::vector<vEdge> prev{root};
   for (const std::size_t n : nodesPerLevel) {
+    assert(n <= 2UL * prev.size() &&
+           "Number of nodes per level must not exceed twice the number of "
+           "nodes in the level above");
     --v;
 
     std::vector<vEdge> curr(n); // Random nodes on layer v.
+    std::vector<std::size_t> indices(2 * prev.size()); // Indices for wireing.
+
     std::generate(curr.begin(), curr.end(),
                   [&] { return randomNode(v, gen, dist, dd); });
-
-    std::vector<std::size_t> indices(2 * prev.size()); // Indices for wireing.
     switch (strategy) {
     case ROUNDROBIN: {
       std::generate(indices.begin(), indices.end(),
-                    [&n, r = std::size_t{0}]() mutable { return (r++) % n; });
-      break;
+                    [&n, r = 0UL]() mutable { return (r++) % n; });
+      [[fallthrough]];
     }
     case RANDOM: {
-      IndexDistribution indexDist{0, curr.size() - 1};
-      std::generate(indices.begin(), indices.end(),
-                    [&indexDist, &gen]() { return indexDist(gen); });
-      break;
+      std::shuffle(indices.begin(), indices.end(), gen);
     }
     }
 
@@ -138,8 +128,8 @@ VectorDD generateRandomState(const std::size_t levels,
     prev = std::move(curr);
   }
 
-  vEdge ret{root.p, Complex::one()};
-  dd.incRef(ret);
-  return ret;
+  vEdge e{root.p, Complex::one()};
+  dd.incRef(e);
+  return e;
 }
 } // namespace dd

@@ -11,11 +11,11 @@
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 
-#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <memory>
+#include <numeric>
 #include <vector>
 
 using namespace dd;
@@ -24,7 +24,7 @@ namespace {
 double norm(const std::vector<std::complex<double>>& v) {
   double sum{};
   for (const auto& entry : v) {
-    sum += std::pow(std::abs(entry), 2);
+    sum += std::norm(entry);
   }
   return sum;
 }
@@ -50,6 +50,7 @@ TEST(StateGenerationTest, OneQubit) {
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), 2); // Node plus Terminal.
+  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 1);
 
   dd->decRef(state);
   dd->garbageCollect(true);
@@ -68,9 +69,11 @@ TEST(StateGenerationTest, ExponentialState) {
 
   auto dd = std::make_unique<Package>(nq);
   auto state = generateExponentialState(nq, *dd);
+  const std::size_t size = 1ULL << nq;
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
-  EXPECT_EQ(state.size(), std::pow(2, nq));
+  EXPECT_EQ(state.size(), size);
+  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size - 1);
 
   dd->decRef(state);
   dd->garbageCollect(true);
@@ -88,9 +91,12 @@ TEST(StateGenerationTest, ExponentialStateWithSeed) {
   constexpr std::size_t nq = 3;
 
   auto dd = std::make_unique<Package>(nq);
-  auto state = generateExponentialState(nq, 42U, *dd);
+  auto state = generateExponentialState(nq, *dd, 42U);
+  const std::size_t size = 1ULL << nq;
+
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
-  EXPECT_EQ(state.size(), std::pow(2, nq));
+  EXPECT_EQ(state.size(), size);
+  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size - 1);
 
   dd->decRef(state);
   dd->garbageCollect(true);
@@ -98,7 +104,7 @@ TEST(StateGenerationTest, ExponentialStateWithSeed) {
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
 }
 
-TEST(StateGenerationTest, RandomStateStateRoundRobin) {
+TEST(StateGenerationTest, RandomStateRoundRobin) {
 
   // Test: Generate a random vector DD using the round-robin strategy.
   // Expect: The norm of the resulting vector DD must be 1.
@@ -109,13 +115,15 @@ TEST(StateGenerationTest, RandomStateStateRoundRobin) {
   constexpr std::size_t nq = 5;
 
   const std::vector<std::size_t> nodesPerLevel{2, 3, 4, 5};
-  const std::size_t numNodes = (2 + 3 + 4 + 5) + 1; // plus root node.
+  const std::size_t size =
+      1 + std::accumulate(nodesPerLevel.begin(), nodesPerLevel.end(), 0UL);
 
   auto dd = std::make_unique<Package>(nq);
   auto state = generateRandomState(nq, nodesPerLevel, ROUNDROBIN, *dd);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
-  EXPECT_EQ(state.size(), numNodes + 1); // plus terminal.
+  EXPECT_EQ(state.size(), size + 1); // plus terminal.
+  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
 
   dd->decRef(state);
   dd->garbageCollect(true);
@@ -123,7 +131,7 @@ TEST(StateGenerationTest, RandomStateStateRoundRobin) {
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
 }
 
-TEST(StateGenerationTest, RandomStateStateRandom) {
+TEST(StateGenerationTest, RandomStateRandom) {
 
   // Test: Generate a random vector DD using the random strategy.
   // Expect: The norm of the resulting vector DD must be 1.
@@ -132,11 +140,14 @@ TEST(StateGenerationTest, RandomStateStateRandom) {
   constexpr std::size_t nq = 6;
 
   const std::vector<std::size_t> nodesPerLevel{2, 4, 8, 10, 12};
+  const std::size_t size =
+      1 + std::accumulate(nodesPerLevel.begin(), nodesPerLevel.end(), 0UL);
 
   auto dd = std::make_unique<Package>(nq);
   auto state = generateRandomState(nq, nodesPerLevel, RANDOM, *dd);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
+  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
 
   dd->decRef(state);
   dd->garbageCollect(true);
@@ -144,7 +155,7 @@ TEST(StateGenerationTest, RandomStateStateRandom) {
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
 }
 
-TEST(StateGenerationTest, RandomStateStateRandomWithSeed) {
+TEST(StateGenerationTest, RandomStateRandomWithSeed) {
 
   // Test: Generate a random vector DD using the random strategy with a given
   //       seed.
@@ -154,14 +165,56 @@ TEST(StateGenerationTest, RandomStateStateRandomWithSeed) {
   constexpr std::size_t nq = 8;
 
   const std::vector<std::size_t> nodesPerLevel{2, 2, 2, 2, 2, 2, 2};
+  const std::size_t size =
+      1 + std::accumulate(nodesPerLevel.begin(), nodesPerLevel.end(), 0UL);
 
   auto dd = std::make_unique<Package>(nq);
-  auto state = generateRandomState(nq, nodesPerLevel, RANDOM, 1337U, *dd);
+  auto state = generateRandomState(nq, nodesPerLevel, RANDOM, *dd, 1337U);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
+  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
 
   dd->decRef(state);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
+}
+
+TEST(StateGenerationTest, InvalidLevels) {
+
+  // Test: Number of levels must be greater than zero.
+
+  constexpr std::size_t nq = 0;
+
+  const std::vector<std::size_t> nodesPerLevel{};
+  auto dd = std::make_unique<Package>(nq);
+  EXPECT_DEATH(
+      { generateRandomState(nq, nodesPerLevel, RANDOM, *dd, 1337U); },
+      "Number of levels must be greater than zero");
+}
+
+TEST(StateGenerationTest, InvalidNodesPerLevelSize) {
+
+  // Test: Invalid size of nodesPerLevel.
+
+  constexpr std::size_t nq = 3;
+
+  const std::vector<std::size_t> nodesPerLevel{1, 2, 3};
+  auto dd = std::make_unique<Package>(nq);
+  EXPECT_DEATH(
+      { generateRandomState(nq, nodesPerLevel, RANDOM, *dd, 1337U); },
+      "Number of levels - 1 must match nodesPerLevel size");
+}
+
+TEST(StateGenerationTest, InvalidNodesPerLevel) {
+
+  // Test: Invalid nodesPerLevel.
+
+  constexpr std::size_t nq = 4;
+
+  const std::vector<std::size_t> nodesPerLevel{2, 4, 9};
+  auto dd = std::make_unique<Package>(nq);
+  EXPECT_DEATH(
+      { generateRandomState(nq, nodesPerLevel, RANDOM, *dd, 1337U); },
+      "Number of nodes per level must not exceed twice.*");
 }
