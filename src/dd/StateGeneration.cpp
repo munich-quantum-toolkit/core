@@ -130,7 +130,7 @@ VectorDD generateRandomState(const std::size_t levels,
 
     // Wire previous layer with the current.
     for (std::size_t i = 0; i < prev.size(); ++i) {
-      vEdge& e = prev[i];
+      const vEdge& e = prev[i];
       e.p->e[0].p = curr[indices[2 * i]].p;
       e.p->e[1].p = curr[indices[(2 * i) + 1]].p;
     }
