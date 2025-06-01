@@ -18,6 +18,7 @@
 #include "dd/Package.hpp"
 #include "ir/Definitions.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -35,8 +36,8 @@ using AngleDistribution = std::uniform_real_distribution<double>;
 using IndexDistribution = std::uniform_int_distribution<std::size_t>;
 
 /**
- * @brief Return random double-precision complex number `alpha` on the unit
- * circle. This ensures that `abs(alpha)^2 = 1`.
+ * @brief Return random complex number on the unit circle, such that,
+ *        its squared magnitude is one.
  */
 std::complex<double> randomComplexOnUnitCircle(Generator& gen,
                                                AngleDistribution& dist) {
@@ -76,16 +77,15 @@ VectorDD generateExponentialState(const std::size_t levels, Package& dd) {
 
 VectorDD generateExponentialState(const std::size_t levels,
                                   const std::size_t seed, Package& dd) {
-  std::vector<std::size_t> nodesPerLevel(levels - 1);
-  for (std::size_t i = 1; i < levels; ++i) { // [2, 4, 8, ...]
-    nodesPerLevel[i - 1] = static_cast<std::size_t>(std::pow(2, i));
-  }
+  std::vector<std::size_t> nodesPerLevel(levels - 1); // [2, 4, 8, ...]
+  std::generate(nodesPerLevel.begin(), nodesPerLevel.end(),
+                [exp = 1]() mutable { return std::pow(2, exp++); });
   return generateRandomState(levels, nodesPerLevel, ROUNDROBIN, seed, dd);
 }
 
 VectorDD generateRandomState(const std::size_t levels,
                              const std::vector<std::size_t>& nodesPerLevel,
-                             const GenerationLinkStrategy strategy,
+                             const GenerationWireStrategy strategy,
                              Package& dd) {
   std::random_device rd;
   return generateRandomState(levels, nodesPerLevel, strategy, rd(), dd);
@@ -93,7 +93,7 @@ VectorDD generateRandomState(const std::size_t levels,
 
 VectorDD generateRandomState(const std::size_t levels,
                              const std::vector<std::size_t>& nodesPerLevel,
-                             const GenerationLinkStrategy strategy,
+                             const GenerationWireStrategy strategy,
                              const std::size_t seed, Package& dd) {
   assert(levels > 0U && "Number of levels must be greater than zero");
   assert(nodesPerLevel.size() == levels - 1 &&
@@ -109,31 +109,30 @@ VectorDD generateRandomState(const std::size_t levels,
   for (const std::size_t n : nodesPerLevel) {
     --v;
 
-    // Generate nodes of layer.
-    std::vector<vEdge> curr(n);
-    for (std::size_t j = 0; j < n; ++j) {
-      curr[j] = randomNode(v, gen, dist, dd);
-    }
+    std::vector<vEdge> curr(n); // Random nodes on layer v.
+    std::generate(curr.begin(), curr.end(),
+                  [&] { return randomNode(v, gen, dist, dd); });
 
-    // Connect to previous layer based on the given strategy.
+    std::vector<std::size_t> indices(2 * prev.size()); // Indices for wireing.
     switch (strategy) {
     case ROUNDROBIN: {
-      std::size_t r = 0;
-      for (auto& ePrev : prev) {
-        ePrev.p->e[0].p = curr[r % n].p;
-        ePrev.p->e[1].p = curr[(r + 1) % n].p;
-        r += 2;
-      }
+      std::generate(indices.begin(), indices.end(),
+                    [&n, r = std::size_t{0}]() mutable { return (r++) % n; });
       break;
     }
     case RANDOM: {
       IndexDistribution indexDist{0, curr.size() - 1};
-      for (auto& ePrev : prev) {
-        ePrev.p->e[0].p = curr[indexDist(gen)].p;
-        ePrev.p->e[1].p = curr[indexDist(gen)].p;
-      }
+      std::generate(indices.begin(), indices.end(),
+                    [&indexDist, &gen]() { return indexDist(gen); });
       break;
     }
+    }
+
+    // Wire previous layer with the current.
+    for (std::size_t i = 0; i < prev.size(); ++i) {
+      vEdge& e = prev[i];
+      e.p->e[0].p = curr[indices[2 * i]].p;
+      e.p->e[1].p = curr[indices[(2 * i) + 1]].p;
     }
 
     prev = std::move(curr);

@@ -17,7 +17,7 @@
 
 namespace dd {
 /// @brief The strategy to wire two layers.
-enum GenerationLinkStrategy : std::uint8_t {
+enum GenerationWireStrategy : std::uint8_t {
   ROUNDROBIN, // Choose nodes in the next layer in a round-robin fashion.
   RANDOM      // Randomly choose nodes in the next layer.
 };
@@ -41,9 +41,9 @@ VectorDD generateExponentialState(std::size_t levels, std::size_t seed,
                                   Package& dd);
 
 /**
- * @brief Generate random large vector DD.
+ * @brief Generate random vector DD.
  * @param levels The number of levels in the vector DD.
- * @param nodesPerLevel The number of nodes per level. Implicitly, contains `1`
+ * @param nodesPerLevel The number of nodes per level. Implicitly contains `1`
  * (the root node) as first element.
  * @param strategy The strategy to wire two layers.
  * @param dd The DD package to use for generating the vector DD.
@@ -51,12 +51,12 @@ VectorDD generateExponentialState(std::size_t levels, std::size_t seed,
  */
 VectorDD generateRandomState(std::size_t levels,
                              const std::vector<std::size_t>& nodesPerLevel,
-                             GenerationLinkStrategy strategy, Package& dd);
+                             GenerationWireStrategy strategy, Package& dd);
 
 /**
  * @brief Generate random vector DD. Use @p seed for randomization.
  * @param levels The number of levels in the vector DD.
- * @param nodesPerLevel The number of nodes per level. Implicitly, contains `1`
+ * @param nodesPerLevel The number of nodes per level. Implicitly contains `1`
  * (the root node) as first element.
  * @param strategy The strategy to wire two layers.
  * @param seed The seed used for randomization.
@@ -65,6 +65,6 @@ VectorDD generateRandomState(std::size_t levels,
  */
 VectorDD generateRandomState(std::size_t levels,
                              const std::vector<std::size_t>& nodesPerLevel,
-                             GenerationLinkStrategy strategy, std::size_t seed,
+                             GenerationWireStrategy strategy, std::size_t seed,
                              Package& dd);
 }; // namespace dd
