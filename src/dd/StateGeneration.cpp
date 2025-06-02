@@ -50,8 +50,7 @@ std::complex<double> randomComplexOnUnitCircle(Generator& gen,
 /**
  * @brief Generate node with terminal edges initialized with random weights.
  *        The norm of the node's edge weights is one.
- * @note  Increase the ref counts of the node's outgoing edge weights.
- *        Due to the use of cached edges, the weight of the returned edge is not
+ * @note  Due to the use of cached edges, the weight of the returned edge is not
  *        stored in the lookup table.
  */
 vCachedEdge randomNode(Qubit v, vNode* left, vNode* right, Generator& gen,
@@ -63,18 +62,7 @@ vCachedEdge randomNode(Qubit v, vNode* left, vNode* right, Generator& gen,
       vCachedEdge(left, ComplexValue(alpha)),
       vCachedEdge(right, ComplexValue(beta))};
 
-  const vCachedEdge ret = dd.makeDDNode(v, edges);
-
-  // const auto leftSuccessor = ret.p->e[0];
-  // const auto rightSuccessor = ret.p->e[1];
-
-  // leftSuccessor.p->ref++;
-  // rightSuccessor.p->ref++;
-
-  // dd.cn.incRef(leftSuccessor.w);
-  // dd.cn.incRef(rightSuccessor.w);
-
-  return ret;
+  return dd.makeDDNode(v, edges);
 }
 } // namespace
 
