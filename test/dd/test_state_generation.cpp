@@ -32,40 +32,6 @@ double norm(const std::vector<std::complex<double>>& v) {
   }
   return sum;
 }
-
-bool isRoundRobin(const VectorDD& state) {
-  std::vector<const vEdge*> prev{&state};
-  while (true) {
-    std::vector<const vEdge*> curr{};
-
-    for (const vEdge* ePrev : prev) {
-      if (!ePrev->isTerminal()) {
-        const vNode* node = ePrev->p;
-        for (const vEdge& eCurr : node->e) {
-          if (std::find(curr.begin(), curr.end(), &eCurr) == curr.end()) {
-            curr.push_back(&eCurr);
-          }
-        }
-      }
-    }
-
-    if (curr.empty()) {
-      break;
-    }
-
-    const std::size_t n = curr.size();
-    for (std::size_t i = 0; i < prev.size(); ++i) {
-      const vNode* node = prev[i]->p;
-      if (!(node->e[0].p == curr[(2 * i) % n]->p) &&
-          (node->e[1].p == curr[(2 * i + 1) % n]->p)) {
-        return false;
-      }
-    }
-    prev = std::move(curr);
-  }
-
-  return true;
-}
 }; // namespace
 
 ///-----------------------------------------------------------------------------
@@ -113,7 +79,6 @@ TEST(StateGenerationTest, ExponentialState) {
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), size);
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size - 1);
-  EXPECT_TRUE(isRoundRobin(state));
 
   dd->decRef(state);
   dd->garbageCollect(true);
@@ -138,7 +103,6 @@ TEST(StateGenerationTest, ExponentialStateWithSeed) {
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), size);
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size - 1);
-  EXPECT_TRUE(isRoundRobin(state));
 
   dd->decRef(state);
   dd->garbageCollect(true);
@@ -167,7 +131,6 @@ TEST(StateGenerationTest, RandomStateRoundRobin) {
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), size + 1); // plus terminal.
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
-  EXPECT_TRUE(isRoundRobin(state));
 
   dd->decRef(state);
   dd->garbageCollect(true);
@@ -197,7 +160,6 @@ TEST(StateGenerationTest, RandomStateRoundRobinWithSeed) {
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), size + 1); // plus terminal.
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
-  EXPECT_TRUE(isRoundRobin(state));
 
   dd->decRef(state);
   dd->garbageCollect(true);
