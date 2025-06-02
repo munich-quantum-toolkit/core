@@ -105,20 +105,19 @@ bool Package::garbageCollect(bool force) {
   }
 
   // mark all nodes reachable from the current roots
-  for (const auto& e : vectorRoots) {
-    markNodes(e.p);
+  for (auto* p : vectorRoots) {
+    markNodes(p);
   }
-  for (const auto& e : matrixRoots) {
-    markNodes(e.p);
+  for (auto* p : matrixRoots) {
+    markNodes(p);
   }
-  for (const auto& e : densityRoots) {
-    markNodes(e.p);
+  for (auto* p : densityRoots) {
+    markNodes(p);
   }
 
   const auto cCollect = cUniqueTable.garbageCollect(force);
-  if (cCollect > 0) {
-    force = true;
-  }
+  // Collecting complex numbers forces collection of the node tables. The
+  // following calls explicitly use `true` to enforce this.
   const auto vCollect = vUniqueTable.garbageCollect(true);
   const auto mCollect = mUniqueTable.garbageCollect(true);
   const auto dCollect = dUniqueTable.garbageCollect(true);

@@ -170,9 +170,9 @@ public:
   ComplexNumbers cn{cUniqueTable};
 
   // Root sets for mark-and-sweep garbage collection
-  std::vector<vEdge> vectorRoots{};
-  std::vector<mEdge> matrixRoots{};
-  std::vector<dEdge> densityRoots{};
+  std::unordered_set<vNode*> vectorRoots{};
+  std::unordered_set<mNode*> matrixRoots{};
+  std::unordered_set<dNode*> densityRoots{};
 
   /**
    * @brief Get the unique table for a given type
@@ -259,31 +259,21 @@ private:
 
   template <class Node> void addRoot(const Edge<Node>& e) {
     if constexpr (std::is_same_v<Node, vNode>) {
-      vectorRoots.push_back(e);
+      vectorRoots.insert(e.p);
     } else if constexpr (std::is_same_v<Node, mNode>) {
-      matrixRoots.push_back(e);
+      matrixRoots.insert(e.p);
     } else if constexpr (std::is_same_v<Node, dNode>) {
-      densityRoots.push_back(e);
+      densityRoots.insert(e.p);
     }
   }
 
   template <class Node> void removeRoot(const Edge<Node>& e) {
-    auto pred = [&](const Edge<Node>& r) { return r.p == e.p; };
     if constexpr (std::is_same_v<Node, vNode>) {
-      auto it = std::find_if(vectorRoots.begin(), vectorRoots.end(), pred);
-      if (it != vectorRoots.end()) {
-        vectorRoots.erase(it);
-      }
+      vectorRoots.erase(e.p);
     } else if constexpr (std::is_same_v<Node, mNode>) {
-      auto it = std::find_if(matrixRoots.begin(), matrixRoots.end(), pred);
-      if (it != matrixRoots.end()) {
-        matrixRoots.erase(it);
-      }
+      matrixRoots.erase(e.p);
     } else if constexpr (std::is_same_v<Node, dNode>) {
-      auto it = std::find_if(densityRoots.begin(), densityRoots.end(), pred);
-      if (it != densityRoots.end()) {
-        densityRoots.erase(it);
-      }
+      densityRoots.erase(e.p);
     }
   }
 

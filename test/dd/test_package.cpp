@@ -973,6 +973,35 @@ TEST(DDPackageTest, ResetClearsRoots) {
   EXPECT_TRUE(dd->densityRoots.empty());
 }
 
+TEST(DDPackageTest, DuplicateIncRefDoesNotLeaveStaleRoot) {
+  auto dd = std::make_unique<Package>(1);
+
+  // vector root
+  auto vec = dd->makeZeroState(1);
+  dd->incRef(vec);
+  EXPECT_EQ(dd->vectorRoots.size(), 1U);
+  dd->decRef(vec);
+  EXPECT_TRUE(dd->vectorRoots.empty());
+  dd->decRef(vec);
+
+  // matrix root
+  auto mat = getDD(qc::StandardOperation(0, qc::X), *dd);
+  dd->incRef(mat);
+  dd->incRef(mat);
+  EXPECT_EQ(dd->matrixRoots.size(), 1U);
+  dd->decRef(mat);
+  EXPECT_TRUE(dd->matrixRoots.empty());
+  dd->decRef(mat);
+
+  // density root
+  auto dens = dd->makeZeroDensityOperator(1);
+  dd->incRef(dens);
+  EXPECT_EQ(dd->densityRoots.size(), 1U);
+  dd->decRef(dens);
+  EXPECT_TRUE(dd->densityRoots.empty());
+  dd->decRef(dens);
+}
+
 TEST(DDPackageTest, Inverse) {
   auto dd = std::make_unique<Package>(1);
   auto x = getDD(qc::StandardOperation(0, qc::X), *dd);
@@ -989,6 +1018,30 @@ TEST(DDPackageTest, Inverse) {
   dd->decRef(x);
   dd->garbageCollect(true);
   // After removing the node from the root set it is reclaimed
+  EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 0);
+}
+
+TEST(DDPackageTest, IncRefTwiceThenDecRefTwice) {
+  auto dd = std::make_unique<Package>(1);
+
+  auto x = getDD(qc::StandardOperation(0, qc::X), *dd);
+
+  // add the same edge twice
+  dd->incRef(x);
+  dd->incRef(x);
+
+  dd->garbageCollect(true);
+
+  // node should survive collection since it is still in the root set
+  EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 1);
+
+  // remove the edge twice
+  dd->decRef(x);
+  dd->decRef(x);
+
+  dd->garbageCollect(true);
+
+  // node should now be reclaimed
   EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 0);
 }
 
