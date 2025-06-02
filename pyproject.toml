@@ -71,7 +71,7 @@ minimum-version = "build-system.requires"
 wheel.install-dir = "mqt/core"
 
 # Explicitly set the package directory
-wheel.packages = ["src/mqt"]
+wheel.packages = ["python/mqt"]
 
 # Set required Ninja version
 ninja.version = ">=1.10"
@@ -93,7 +93,7 @@ build.targets = [
 ]
 
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
-sdist.include = ["src/mqt/core/_version.py"]
+sdist.include = ["python/mqt/core/_version.py"]
 sdist.exclude = [
     "**/.github",
     "**/doc",
@@ -107,7 +107,7 @@ sdist.exclude = [
 ]
 
 [tool.check-sdist]
-sdist-only = ["src/mqt/core/_version.py"]
+sdist-only = ["python/mqt/core/_version.py"]
 git-only = [
     "docs/*",
     "test/*",
@@ -128,7 +128,7 @@ cmake.define.DISABLE_GIL = "1"
 
 
 [tool.setuptools_scm]
-write_to = "src/mqt/core/_version.py"
+write_to = "python/mqt/core/_version.py"
 
 
 [tool.check-wheel-contents]
@@ -176,7 +176,7 @@ report.exclude_also = [
 
 
 [tool.mypy]
-files = ["src/mqt", "test/python", "noxfile.py"]
+files = ["python/mqt", "test/python", "noxfile.py"]
 mypy_path = ["$MYPY_CONFIG_FILE_DIR/src"]
 python_version = "3.9"
 warn_unused_configs = true
@@ -195,6 +195,7 @@ line-length = 120
 namespace-packages = ["mqt"]
 preview = true
 unsafe-fixes = true
+src = ["python"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -231,9 +232,9 @@ isort.required-imports = ["from __future__ import annotations"]
     "E402", # Allow imports to appear anywhere in Jupyter notebooks
     "I002", # Allow missing `from __future__ import annotations` import
 ]
-"src/mqt/core/_compat/**.py" = ["TID251", "A005"]
-"src/mqt/core/dd_evaluation.py" = ["T201"]
-"src/mqt/core/__main__.py" = ["T201"]
+"python/mqt/core/_compat/**.py" = ["TID251", "A005"]
+"python/mqt/core/dd_evaluation.py" = ["T201"]
+"python/mqt/core/__main__.py" = ["T201"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
