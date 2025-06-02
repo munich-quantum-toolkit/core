@@ -148,6 +148,7 @@ TEST(StateGenerationTest, RandomStateRandom) {
   auto state = generateRandomState(nq, nodesPerLevel, RANDOM, *dd);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
+  EXPECT_EQ(state.size(), size + 1); // plus terminal.
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
 
   dd->decRef(state);
@@ -173,6 +174,7 @@ TEST(StateGenerationTest, RandomStateRandomWithSeed) {
   auto state = generateRandomState(nq, nodesPerLevel, RANDOM, *dd, 1337U);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
+  EXPECT_EQ(state.size(), size + 1); // plus terminal.
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
 
   dd->decRef(state);

@@ -122,19 +122,18 @@ VectorDD generateRandomState(const std::size_t levels,
       break;
     }
     case RANDOM: {
-      // First make sure that each successor node is connected to the previous
-      // layer.
+      IndexDistribution idxDist{0, n - 1};
+
+      // Make sure that each successor is connected to the previous layer.
       auto lastOfN = indices.begin();
       std::advance(lastOfN, n);
       std::iota(indices.begin(), lastOfN, 0);
-      std::shuffle(indices.begin(), lastOfN, gen);
 
       // Choose the rest randomly.
-      IndexDistribution idxDist{0, n};
       std::generate(lastOfN, indices.end(),
                     [&idxDist, &gen]() { return idxDist(gen); });
 
-      // Shuffle one last time to interleave the resulting indices.
+      // Shuffle to randomly interleave the resulting indices.
       std::shuffle(indices.begin(), indices.end(), gen);
       break;
     }
