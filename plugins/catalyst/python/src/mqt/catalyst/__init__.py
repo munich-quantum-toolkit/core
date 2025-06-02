@@ -18,6 +18,9 @@ import pennylane as qml
 
 from catalyst.passes import PassPlugin
 
+from ._version import version as __version__
+from ._version import version_tuple as version_info
+
 
 def get_catalyst_plugin_abs_path() -> Path:
     """Locate the mqt-catalyst-plugin shared library.
@@ -66,11 +69,32 @@ def get_catalyst_plugin_abs_path() -> Path:
 
 
 def name2pass(_name: str) -> tuple[Path, str]:
+    """Convert a pass name to its plugin path and pass name (required by Catalyst).
+
+    Args:
+        _name: The name of the pass, e.g., "mqt-core-round-trip".
+
+    Returns:
+        A tuple containing the absolute path to the plugin and the pass name.
+    """
     return get_catalyst_plugin_abs_path(), "mqt-core-round-trip"
 
 
-def MQTCoreRoundTrip(*flags, **valued_options):
-    def add_pass_to_pipeline(**kwargs):
+def mqt_core_roundtrip(*flags: any, **valued_options: any) -> qml.QNode:
+    """Decorator to apply the MQT Core Round Trip pass to a QNode.
+
+    This pass ensures that the QNode can be processed in a round-trip
+    fashion with the MQT Catalyst plugin.
+
+    Args:
+        *flags: Optional flags to pass to the pass.
+        **valued_options: Optional keyword arguments to pass to the pass.
+
+    Returns:
+        A decorator that applies the MQT Core Round Trip pass to a QNode.
+    """
+
+    def add_pass_to_pipeline(**kwargs: any) -> list[PassPlugin]:
         pass_pipeline = kwargs.get("pass_pipeline", [])
         pass_pipeline.append(
             PassPlugin(
@@ -82,7 +106,7 @@ def MQTCoreRoundTrip(*flags, **valued_options):
         )
         return pass_pipeline
 
-    def decorator(qnode):
+    def decorator(qnode: qml.QNode) -> qml.QNode:
         if not isinstance(qnode, qml.QNode):
             # Technically, this apply pass is general enough that it can apply to
             # classical functions too. However, since we lack the current infrastructure
@@ -90,7 +114,7 @@ def MQTCoreRoundTrip(*flags, **valued_options):
             msg = f"A QNode is expected, got the classical function {qnode}"
             raise TypeError(msg)
 
-        def qnode_call(*args, **kwargs):
+        def qnode_call(*args: any, **kwargs: any) -> qml.QNode:
             kwargs["pass_pipeline"] = add_pass_to_pipeline(**kwargs)
             return qnode(*args, **kwargs)
 
@@ -100,7 +124,7 @@ def MQTCoreRoundTrip(*flags, **valued_options):
     if len(flags) == 1 and isinstance(flags[0], qml.QNode):
         qnode = flags[0]
 
-        def qnode_call(*args, **kwargs):
+        def qnode_call(*args: any, **kwargs: any) -> qml.QNode:
             kwargs["pass_pipeline"] = add_pass_to_pipeline(**kwargs)
             return qnode(*args, **kwargs)
 
@@ -110,4 +134,4 @@ def MQTCoreRoundTrip(*flags, **valued_options):
     return decorator
 
 
-__all__ = ["MQTCoreRoundTrip", "__version__", "get_catalyst_plugin_abs_path", "name2pass", "version_info"]
+__all__ = ["__version__", "get_catalyst_plugin_abs_path", "mqt_core_roundtrip", "name2pass", "version_info"]

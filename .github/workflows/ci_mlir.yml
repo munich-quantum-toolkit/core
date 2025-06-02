@@ -248,7 +248,7 @@ jobs:
         run: |
           cmake --build build --config Release --target check-quantum-opt
 
-      - name: Test Python mqt-catalyst-plugin
+      - name: Prepare Python environment
         run: |
           source .venv/bin/activate
           uv sync
@@ -256,6 +256,11 @@ jobs:
             PennyLane-Catalyst==0.12.0.dev42 \
             --index-strategy unsafe-best-match --prerelease=allow
 
+      - name: Install the Catalyst plugin
+        run: |
           cd plugins/catalyst/python
           uv sync --inexact --no-dev --no-build-isolation-package mqt-catalyst-plugin --active
+
+      - name: Run plugin Python tests
+        run: |
           pytest
