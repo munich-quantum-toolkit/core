@@ -24,6 +24,8 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <iterator>
+#include <numeric>
 #include <random>
 #include <stdexcept>
 #include <utility>
