@@ -43,7 +43,7 @@ VectorDD generateExponentialState(std::size_t levels, Package& dd,
 /**
  * @brief Generate random vector DD.
  * @param levels The number of levels in the vector DD.
- * @param nodesPerLevel The number of nodes per level. Implicitly contains `1`
+ * @param nodesPerLevel The number of nodes per level.
  * (the root node) as first element.
  * @param strategy The strategy to wire two layers.
  * @param dd The DD package to use for generating the vector DD.
@@ -56,7 +56,7 @@ VectorDD generateRandomState(std::size_t levels,
 /**
  * @brief Generate random vector DD. Use @p seed for randomization.
  * @param levels The number of levels in the vector DD.
- * @param nodesPerLevel The number of nodes per level. Implicitly contains `1`
+ * @param nodesPerLevel The number of nodes per level.
  * (the root node) as first element.
  * @param strategy The strategy to wire two layers.
  * @param dd The DD package to use for generating the vector DD.

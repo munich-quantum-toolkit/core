@@ -54,17 +54,25 @@ std::complex<double> randomComplexOnUnitCircle(Generator& gen,
  *        Due to the use of cached edges, the weight of the returned edge is not
  *        stored in the lookup table.
  */
-vCachedEdge randomNode(Qubit v, Generator& gen, AngleDistribution& dist,
-                       Package& dd) {
-  const auto alpha = randomComplexOnUnitCircle(gen, dist);
-  const auto beta = randomComplexOnUnitCircle(gen, dist);
+vCachedEdge randomNode(Qubit v, vNode* left, vNode* right, Generator& gen,
+                       AngleDistribution& dist, Package& dd) {
+  const auto alpha = randomComplexOnUnitCircle(gen, dist) * SQRT2_2;
+  const auto beta = randomComplexOnUnitCircle(gen, dist) * SQRT2_2;
+
   const std::array<vCachedEdge, RADIX> edges{
-      vCachedEdge::terminal(alpha * SQRT2_2),
-      vCachedEdge::terminal(beta * SQRT2_2)};
+      vCachedEdge(left, ComplexValue(alpha)),
+      vCachedEdge(right, ComplexValue(beta))};
+
   const vCachedEdge ret = dd.makeDDNode(v, edges);
 
-  dd.cn.incRef(ret.p->e[0].w);
-  dd.cn.incRef(ret.p->e[1].w);
+  // const auto leftSuccessor = ret.p->e[0];
+  // const auto rightSuccessor = ret.p->e[1];
+
+  // leftSuccessor.p->ref++;
+  // rightSuccessor.p->ref++;
+
+  // dd.cn.incRef(leftSuccessor.w);
+  // dd.cn.incRef(rightSuccessor.w);
 
   return ret;
 }
@@ -77,9 +85,9 @@ VectorDD generateExponentialState(const std::size_t levels, Package& dd) {
 
 VectorDD generateExponentialState(const std::size_t levels, Package& dd,
                                   const std::size_t seed) {
-  std::vector<std::size_t> nodesPerLevel(levels - 1); // [2, 4, 8, ...]
+  std::vector<std::size_t> nodesPerLevel(levels); // [1, 2, 4, 8, ...]
   std::generate(nodesPerLevel.begin(), nodesPerLevel.end(),
-                [exp = 1]() mutable { return 1ULL << exp++; });
+                [exp = 0]() mutable { return 1ULL << exp++; });
   return generateRandomState(levels, nodesPerLevel, ROUNDROBIN, dd, seed);
 }
 
@@ -98,85 +106,70 @@ VectorDD generateRandomState(const std::size_t levels,
   if (levels <= 0U) {
     throw std::invalid_argument("Number of levels must be greater than zero");
   }
-  if (nodesPerLevel.size() != levels - 1) {
+  if (nodesPerLevel.size() != levels) {
     throw std::invalid_argument(
-        "Number of levels - 1 must match nodesPerLevel size");
+        "Number of levels must match nodesPerLevel size");
   }
-
-  [[maybe_unused]] bool inc{};
 
   Generator gen(seed);
   AngleDistribution dist{0, 2. * qc::PI};
 
-  std::size_t v = levels - 1;
-  const vCachedEdge root = randomNode(static_cast<Qubit>(v), gen, dist, dd);
+  // Generate terminal nodes.
+  constexpr vNode* terminal = vNode::getTerminal();
+  std::vector<vCachedEdge> below(nodesPerLevel.back());
+  std::generate(below.begin(), below.end(), [&] {
+    return randomNode(0, terminal, terminal, gen, dist, dd);
+  });
 
-  std::vector<vCachedEdge> prev{root};
-  for (const std::size_t n : nodesPerLevel) {
-    if (n > 2UL * prev.size()) {
+  Qubit v{1};
+  auto it = nodesPerLevel.rbegin();
+  std::advance(it, 1); // Dealt with terminals above.
+  for (; it != nodesPerLevel.rend(); ++it, ++v) {
+    const std::size_t n = *it;
+
+    if (2UL * n < below.size()) {
       throw std::invalid_argument(
           "Number of nodes per level must not exceed twice the number of "
           "nodes in the level above");
     }
 
-    --v;
-
-    std::vector<vCachedEdge> curr(n); // Random nodes on layer v.
-    std::generate(curr.begin(), curr.end(), [&] {
-      return randomNode(static_cast<Qubit>(v), gen, dist, dd);
-    });
-
-    std::vector<std::size_t> indices(2 * prev.size()); // Indices for wireing.
+    const std::size_t m = below.size();
+    std::vector<std::size_t> indices(2 * n); // Indices for wireing.
     switch (strategy) {
     case ROUNDROBIN: {
       std::generate(indices.begin(), indices.end(),
-                    [&n, r = 0UL]() mutable { return (r++) % n; });
+                    [&m, r = 0UL]() mutable { return (r++) % m; });
       break;
     }
     case RANDOM: {
-      IndexDistribution idxDist{0, n - 1};
+      IndexDistribution idxDist{0, below.size() - 1};
 
-      // Make sure that each successor is connected to the previous layer.
-      auto lastOfN = indices.begin();
-      std::advance(lastOfN, n);
-      std::iota(indices.begin(), lastOfN, 0);
+      // Make sure that each node below is connected.
+      auto pivot = indices.begin();
+      std::advance(pivot, below.size());
+      std::iota(indices.begin(), pivot, 0);
 
       // Choose the rest randomly.
-      std::generate(lastOfN, indices.end(),
+      std::generate(pivot, indices.end(),
                     [&idxDist, &gen]() { return idxDist(gen); });
 
       // Shuffle to randomly interleave the resulting indices.
       std::shuffle(indices.begin(), indices.end(), gen);
-      break;
     }
     }
 
-    // Wire previous layer with the current.
-    for (std::size_t i = 0; i < prev.size(); ++i) {
-      const vCachedEdge& e = prev[i];
-
-      vEdge& left = e.p->e[0];
-      vEdge& right = e.p->e[1];
-
-      // Note that the following assignments ignore the edge weights of the
-      // current layer. Since these aren't in the lookup table, we can
-      // safely do so.
-
-      left.p = curr[indices[2 * i]].p;
-      right.p = curr[indices[(2 * i) + 1]].p;
-
-      inc = dd.getUniqueTable<vNode>().incRef(left.p) &&
-            dd.getUniqueTable<vNode>().incRef(right.p);
+    std::vector<vCachedEdge> curr(n); // Random nodes on layer v.
+    for (std::size_t i = 0; i < n; ++i) {
+      vNode* left = below[indices[2 * i]].p;
+      vNode* right = below[indices[(2 * i) + 1]].p;
+      curr[i] = randomNode(v, left, right, gen, dist, dd);
     }
 
-    prev = std::move(curr);
+    below = std::move(curr);
   }
 
-  vEdge ret{root.p, Complex::one()};
-
-  dd.cn.incRef(ret.w);
-  inc = dd.getUniqueTable<vNode>().incRef(ret.p);
-
+  vEdge ret{below[0].p, Complex::one()};
+  dd.incRef(ret);
   return ret;
 }
 } // namespace dd
