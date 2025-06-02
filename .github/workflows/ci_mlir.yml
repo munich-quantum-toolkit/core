@@ -198,7 +198,7 @@ jobs:
 
   cpp-test-mlir-macos:
     name: 🍎 Test MLIR with LLVM@${{ matrix.llvm-version }}
-    runs-on: macos-13
+    runs-on: macos-14
     strategy:
       matrix:
         llvm-version: [19]
