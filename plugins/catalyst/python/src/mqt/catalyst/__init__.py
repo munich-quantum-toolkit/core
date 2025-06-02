@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import platform
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
@@ -19,30 +20,49 @@ from catalyst.passes import PassPlugin
 
 
 def get_catalyst_plugin_abs_path() -> Path:
-    """Locate the mqt-catalyst-plugin library.
+    """Locate the mqt-catalyst-plugin shared library.
 
     Returns:
-        The absolute path to the mqt-catalyst-plugin library.
+        The absolute path to the plugin shared library.
 
     Raises:
-        FileNotFoundError: If the include directory is not found.
-        ImportError: If mqt-catalyst-plugin is not installed.
+        FileNotFoundError: If the plugin library is not found.
     """
+    ext = {"Darwin": ".dylib", "Linux": ".so", "Windows": ".dll"}.get(platform.system(), ".so")
+
+    # 0. Allow override via env variable
+    from os import getenv
+
+    override = getenv("MQT_CATALYST_PLUGIN_PATH")
+    if override:
+        override_path = Path(override)
+        if override_path.exists():
+            return override_path.resolve()
+        msg = f"Environment override MQT_CATALYST_PLUGIN_PATH is set but not valid: {override_path}"
+        raise FileNotFoundError(msg)
+
+    # 1. Try site-packages from distribution metadata (wheel install)
     try:
         dist = distribution("mqt-catalyst-plugin")
-        # Check for the plugin in the mqt-core package on Linux
-        catalyst_plugin_abs_path = Path(dist.locate_file("mqt/catalyst/lib/mqt-catalyst-plugin.so"))
-        if catalyst_plugin_abs_path.exists() and catalyst_plugin_abs_path.is_file():
-            return catalyst_plugin_abs_path
-        # Check for the plugin in the mqt-core package on macOS
-        catalyst_plugin_abs_path = Path(dist.locate_file("mqt/catalyst/lib/mqt-catalyst-plugin.dylib"))
-        if catalyst_plugin_abs_path.exists() and catalyst_plugin_abs_path.is_file():
-            return catalyst_plugin_abs_path
-        msg = "mqt-catalyst-plugin library not found."
-        raise FileNotFoundError(msg)
+        lib_base = Path(dist.locate_file("mqt/catalyst/lib"))
+        for path in lib_base.glob(f"**/mqt-catalyst-plugin{ext}"):
+            if path.is_file():
+                return path.resolve()
     except PackageNotFoundError:
-        msg = "mqt-catalyst-plugin not installed, installation required to access the include files."
-        raise ImportError(msg) from None
+        pass
+
+    # 2. Fallback: search in editable build directory under the repo root
+    current = Path(__file__).resolve()
+    for up in [2, 3, 4]:  # src/, src/mqt/, plugins/catalyst/python/src etc.
+        candidate_root = current.parents[up] / "build"
+        if candidate_root.exists():
+            matches = list(candidate_root.glob(f"**/plugins/catalyst/lib/mqt-catalyst-plugin{ext}"))
+            if matches:
+                return matches[0].resolve()
+
+    # 3. Give up
+    msg = f"mqt-catalyst-plugin{ext} not found in site-packages or build directories."
+    raise FileNotFoundError(msg)
 
 
 def name2pass(_name: str) -> tuple[Path, str]:
