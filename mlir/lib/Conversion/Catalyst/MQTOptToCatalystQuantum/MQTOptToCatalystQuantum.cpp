@@ -537,6 +537,13 @@ llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RZZOp>::getGateName(
   return "IsingZZ";
 }
 
+// -- XXplusYY (IsingXY)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::XXplusYY>::getGateName(
+    std::size_t numControls) {
+  return "IsingXY";
+}
+
 struct MQTOptToCatalystQuantum
     : impl::MQTOptToCatalystQuantumBase<MQTOptToCatalystQuantum> {
   using MQTOptToCatalystQuantumBase::MQTOptToCatalystQuantumBase;
@@ -608,6 +615,9 @@ struct MQTOptToCatalystQuantum
     patterns.add<ConvertMQTOptAdjointGate<::mqt::ir::opt::TdgOp>>(typeConverter,
                                                                   context);
     patterns.add<ConvertMQTOptAdjointGate<::mqt::ir::opt::iSWAPdgOp>>(
+        typeConverter, context);
+
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::XXplusYY>>(
         typeConverter, context);
 
     // Boilerplate code to prevent "unresolved materialization" errors when the
