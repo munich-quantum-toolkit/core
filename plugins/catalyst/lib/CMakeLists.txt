@@ -51,6 +51,11 @@ add_llvm_library(
   CatalystQuantumToMQTOpt
   MQTOptToCatalystQuantum)
 
+# where to find the MQT-core library
+list(APPEND CMAKE_INSTALL_RPATH ${BASEPOINT}/../../src/ir)
+set_target_properties(mqt-catalyst-plugin PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_RPATH}"
+                                                     BUILD_RPATH "${CMAKE_INSTALL_RPATH}")
+
 # set required C++ standard
 target_compile_features(mqt-catalyst-plugin PUBLIC cxx_std_17)
 

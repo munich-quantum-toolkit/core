@@ -11,9 +11,9 @@ requires = [
   "scikit-build-core>=0.11.1",
   "mqt-core~=3.0.0",
   "pennylane @ https://test-files.pythonhosted.org/packages/a4/ae/b8b0fdcd91fe0e87d699d46938cfee0531e8093042dd9eff11abc247c02f/pennylane-0.42.0.dev27-py3-none-any.whl",
-  "pennylane-lightning @ https://test-files.pythonhosted.org/packages/4d/99/1cab1348e3b839f0c8df515dc6b2d347c5e913361ff65e6fa1f197c0a67a/pennylane_lightning-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl ; sys_platform == "darwin" and platform_machine == "arm64"',
-  "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/25/97/9707f73d2ed6e2549e4e099d0083481c144e984227e147b44cd2838535e6/pennylane_lightning_kokkos-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl ; sys_platform == "darwin" and platform_machine == "arm64"',
-  "pennylane-catalyst @ https://test-files.pythonhosted.org/packages/00/1f/791910226d7363ba8272add71529c637426d1ac225a4e582ef8612b7ecee/pennylane_catalyst-0.12.0.dev37-cp312-abi3-macosx_13_0_arm64.whl ; sys_platform == "darwin" and platform_machine == "arm64"',
+  "pennylane-lightning @ https://test-files.pythonhosted.org/packages/4d/99/1cab1348e3b839f0c8df515dc6b2d347c5e913361ff65e6fa1f197c0a67a/pennylane_lightning-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
+  "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/25/97/9707f73d2ed6e2549e4e099d0083481c144e984227e147b44cd2838535e6/pennylane_lightning_kokkos-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
+  "pennylane-catalyst @ https://test-files.pythonhosted.org/packages/00/1f/791910226d7363ba8272add71529c637426d1ac225a4e582ef8612b7ecee/pennylane_catalyst-0.12.0.dev37-cp312-abi3-macosx_13_0_arm64.whl",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -29,9 +29,6 @@ authors = [
 ]
 keywords = ["MQT", "quantum-computing", "design-automation", "catalyst", "MLIR", "plugin"]
 license = "MIT"
-# we have to duplicate the license file here because scikit_build_core requires
-# "the pattern [specifying the license file] must match files within the project directory"
-license-files = ["LICENSE.md"]
 
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -107,9 +104,6 @@ BUILD_MQT_CORE_TESTS = "OFF"
 BUILD_MQT_CORE_SHARED_LIBS = "ON"
 BUILD_MQT_CORE_MLIR = "ON"
 BUILD_MQT_CORE_CATALYST_PLUGIN = "ON"
-# todo: How can that be done such that it works locally and in CI?
-MLIR_DIR = "/opt/homebrew/opt/llvm@19/lib/cmake/mlir"
-LLVM_EXTERNAL_LIT = "/opt/homebrew/opt/lit/bin/lit"
 
 [tool.check-wheel-contents]
 ignore = [

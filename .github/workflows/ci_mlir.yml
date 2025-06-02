@@ -195,3 +195,66 @@ jobs:
           Write-Output "Batch file created at C:\Windows\quantum-opt pointing to $targetPath"
 
           cmake --build build --config Release --target check-quantum-opt
+
+  cpp-test-mlir-macos:
+    name: 🍎 Test MLIR with LLVM@${{ matrix.llvm-version }}
+    runs-on: macos-13
+    strategy:
+      matrix:
+        llvm-version: [19]
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      CTEST_PARALLEL_LEVEL: 4
+      FORCE_COLOR: 3
+      MLIR_DIR: /opt/homebrew/opt/llvm@${{ matrix.llvm-version }}/lib/cmake/mlir
+      LLVM_DIR: /opt/homebrew/opt/llvm@${{ matrix.llvm-version }}/lib/cmake/llvm
+      LLVM_EXTERNAL_LIT: /opt/homebrew/opt/lit/bin/lit
+    steps:
+      # check out the repository
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # install llvm and mlir
+      - name: Install llvm and mlir
+        run: |
+          brew install llvm@${{ matrix.llvm-version }} lit ninja
+          echo "/opt/homebrew/opt/llvm@${{ matrix.llvm-version }}/bin" >> $GITHUB_PATH
+
+      # install uv
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      # install lit (redundant but mirrors other jobs)
+      - name: Install lit
+        run: uv pip install lit
+
+      # configure the project with CMake
+      - name: Configure CMake for MLIR
+        run: |
+          cmake -G Ninja -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_MQT_CORE_MLIR=ON \
+            -DBUILD_MQT_CORE_CATALYST_PLUGIN=ON \
+            -DMLIR_DIR=$MLIR_DIR \
+            -DLLVM_DIR=$LLVM_DIR \
+            -DLLVM_EXTERNAL_LIT=$LLVM_EXTERNAL_LIT
+
+      # build the project and run the tests
+      - name: Build MLIR components and directly run lit tests
+        run: |
+          cmake --build build --config Release --target check-quantum-opt
+
+      - name: Test Python mqt-catalyst-plugin
+        run: |
+          source .venv/bin/activate
+          uv pip install --extra-index-url https://test.pypi.org/simple \
+            PennyLane-Catalyst==0.12.0.dev42 \
+            --index-strategy unsafe-best-match --prerelease=allow
+
+          cd plugins/catalyst/python
+          uv sync --inexact --no-dev --no-build-isolation-package mqt-catalyst-plugin --active
+          pytest
