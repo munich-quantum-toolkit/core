@@ -90,10 +90,6 @@ add_subdirectory(zx)
 # add NA library
 add_subdirectory(na)
 
-if(BUILD_MQT_CORE_BINDINGS)
-  add_subdirectory(python)
-endif()
-
 # Installation instructions for the main library
 if(MQT_CORE_INSTALL)
   include(CMakePackageConfigHelpers)
