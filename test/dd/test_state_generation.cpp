@@ -12,12 +12,14 @@
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 
+#include <algorithm>
 #include <complex>
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <memory>
 #include <numeric>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 using namespace dd;
