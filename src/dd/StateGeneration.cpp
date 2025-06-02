@@ -59,9 +59,8 @@ vCachedEdge randomNode(Qubit v, Generator& gen, AngleDistribution& dist,
   const auto alpha = randomComplexOnUnitCircle(gen, dist);
   const auto beta = randomComplexOnUnitCircle(gen, dist);
   const std::array<vCachedEdge, RADIX> edges{
-      vCachedEdge::terminal(alpha / SQRT2_2),
-      vCachedEdge::terminal(beta / SQRT2_2),
-  };
+      vCachedEdge::terminal(alpha * SQRT2_2),
+      vCachedEdge::terminal(beta * SQRT2_2)};
   const vCachedEdge ret = dd.makeDDNode(v, edges);
 
   dd.cn.incRef(ret.p->e[0].w);
