@@ -238,7 +238,6 @@ jobs:
           cmake -G Ninja -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_MQT_CORE_MLIR=ON \
-            -DBUILD_MQT_CORE_CATALYST_PLUGIN=ON \
             -DMLIR_DIR=$MLIR_DIR \
             -DLLVM_DIR=$LLVM_DIR \
             -DLLVM_EXTERNAL_LIT=$LLVM_EXTERNAL_LIT \
