@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <numeric>
+#include <stdexcept>
 #include <vector>
 
 using namespace dd;
@@ -188,9 +189,9 @@ TEST(StateGenerationTest, InvalidLevels) {
 
   const std::vector<std::size_t> nodesPerLevel{};
   auto dd = std::make_unique<Package>(nq);
-  EXPECT_DEATH(
+  EXPECT_THROW(
       { generateRandomState(nq, nodesPerLevel, RANDOM, *dd, 1337U); },
-      "Number of levels must be greater than zero");
+      std::invalid_argument);
 }
 
 TEST(StateGenerationTest, InvalidNodesPerLevelSize) {
@@ -201,9 +202,9 @@ TEST(StateGenerationTest, InvalidNodesPerLevelSize) {
 
   const std::vector<std::size_t> nodesPerLevel{1, 2, 3};
   auto dd = std::make_unique<Package>(nq);
-  EXPECT_DEATH(
+  EXPECT_THROW(
       { generateRandomState(nq, nodesPerLevel, RANDOM, *dd, 1337U); },
-      "Number of levels - 1 must match nodesPerLevel size");
+      std::invalid_argument);
 }
 
 TEST(StateGenerationTest, InvalidNodesPerLevel) {
@@ -214,7 +215,7 @@ TEST(StateGenerationTest, InvalidNodesPerLevel) {
 
   const std::vector<std::size_t> nodesPerLevel{2, 4, 9};
   auto dd = std::make_unique<Package>(nq);
-  EXPECT_DEATH(
+  EXPECT_THROW(
       { generateRandomState(nq, nodesPerLevel, RANDOM, *dd, 1337U); },
-      "Number of nodes per level must not exceed twice.*");
+      std::invalid_argument);
 }

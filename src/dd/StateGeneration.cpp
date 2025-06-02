@@ -25,6 +25,7 @@
 #include <complex>
 #include <cstddef>
 #include <random>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -86,9 +87,13 @@ VectorDD generateRandomState(const std::size_t levels,
                              const std::vector<std::size_t>& nodesPerLevel,
                              const GenerationWireStrategy strategy, Package& dd,
                              const std::size_t seed) {
-  assert(levels > 0U && "Number of levels must be greater than zero");
-  assert(nodesPerLevel.size() == levels - 1 &&
-         "Number of levels - 1 must match nodesPerLevel size");
+  if (levels <= 0U) {
+    throw std::invalid_argument("Number of levels must be greater than zero");
+  }
+  if (nodesPerLevel.size() != levels - 1) {
+    throw std::invalid_argument(
+        "Number of levels - 1 must match nodesPerLevel size");
+  }
 
   Generator gen(seed);
   AngleDistribution dist{0, 2. * qc::PI};
@@ -97,24 +102,46 @@ VectorDD generateRandomState(const std::size_t levels,
   const vEdge root = randomNode(v, gen, dist, dd);
   std::vector<vEdge> prev{root};
   for (const std::size_t n : nodesPerLevel) {
-    assert(n <= 2UL * prev.size() &&
-           "Number of nodes per level must not exceed twice the number of "
-           "nodes in the level above");
+    if (n > 2UL * prev.size()) {
+      throw std::invalid_argument(
+          "Number of nodes per level must not exceed twice the number of "
+          "nodes in the level above");
+    }
+
     --v;
 
     std::vector<vEdge> curr(n); // Random nodes on layer v.
-    std::vector<std::size_t> indices(2 * prev.size()); // Indices for wireing.
-
     std::generate(curr.begin(), curr.end(),
                   [&] { return randomNode(v, gen, dist, dd); });
+
+    std::vector<std::size_t> indices(2 * prev.size()); // Indices for wireing.
     switch (strategy) {
     case ROUNDROBIN: {
       std::generate(indices.begin(), indices.end(),
                     [&n, r = 0UL]() mutable { return (r++) % n; });
-      [[fallthrough]];
+      break;
     }
     case RANDOM: {
+      // First make sure that each successor node is connected to the previous
+      // layer.
+      auto lastOfN = indices.begin();
+      std::advance(lastOfN, n);
+      std::iota(indices.begin(), lastOfN, 0);
+      std::shuffle(indices.begin(), lastOfN, gen);
+
+      // Choose the rest randomly.
+      IndexDistribution idxDist{0, n};
+      std::generate(lastOfN, indices.end(),
+                    [&idxDist, &gen]() { return idxDist(gen); });
+
+      // Shuffle one last time to interleave the resulting indices.
       std::shuffle(indices.begin(), indices.end(), gen);
+
+      for (auto i : indices) {
+        std::cout << i << ' ';
+      }
+      std::cout << '\n';
+      break;
     }
     }
 
