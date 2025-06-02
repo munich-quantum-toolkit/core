@@ -30,8 +30,6 @@ namespace dd {
  * Data Layout (8)|(4|2|2) = 16B.
  */
 struct NodeBase : LLBase {
-  /// Reference count
-  RefCount ref = 0;
   /// Variable index
   Qubit v{};
 
@@ -40,12 +38,22 @@ struct NodeBase : LLBase {
    * @details Not required for all node types, but padding is required either
    * way.
    *
-   * 0b1000 = marks a reduced dm node,
-   *  0b100 = marks a dm (tmp flag),
-   *   0b10 = mark first path edge (tmp flag),
-   *    0b1 = mark path is conjugated (tmp flag)
+   * 0b10000 = mark flag used for mark-and-sweep garbage collection,
+   *  0b1000 = marks a reduced dm node,
+   *   0b100 = marks a dm (tmp flag),
+   *    0b10 = mark first path edge (tmp flag),
+   *     0b1 = mark path is conjugated (tmp flag)
    */
   std::uint16_t flags = 0;
+
+  /// Mark flag used for mark-and-sweep garbage collection
+  static constexpr std::uint16_t MARK_FLAG = 0x10U;
+
+  [[nodiscard]] bool marked() const noexcept {
+    return (flags & MARK_FLAG) != 0U;
+  }
+  void mark() noexcept { flags |= MARK_FLAG; }
+  void unmark() noexcept { flags &= static_cast<std::uint16_t>(~MARK_FLAG); }
 
   /// Getter for the next object.
   [[nodiscard]] NodeBase* next() const noexcept {
@@ -203,44 +211,6 @@ using DensityMatrixDD = dEdge;
 
 static inline dEdge densityFromMatrixEdge(const mEdge& e) {
   return dEdge{reinterpret_cast<dNode*>(e.p), e.w};
-}
-
-/**
- * @brief Increment the reference count of a node.
- * @details This function increments the reference count of a node. If the
- * reference count has saturated (i.e. reached the maximum value of RefCount)
- * the reference count is not incremented.
- * @param p A pointer to the node to increment the reference count of.
- * @returns Whether the reference count was incremented.
- * @note Typically, you do not want to call this function directly. Instead,
- * use the UniqueTable::incRef(Node*) function.
- */
-[[nodiscard]] static constexpr bool incRef(NodeBase* p) noexcept {
-  if (p == nullptr || p->ref == std::numeric_limits<RefCount>::max()) {
-    return false;
-  }
-  ++p->ref;
-  return true;
-}
-
-/**
- * @brief Decrement the reference count of a node.
- * @details This function decrements the reference count of a node. If the
- * reference count has saturated (i.e. reached the maximum value of RefCount)
- * the reference count is not decremented.
- * @param p A pointer to the node to decrement the reference count of.
- * @returns Whether the reference count was decremented.
- * @note Typically, you do not want to call this function directly. Instead,
- * use the UniqueTable::decRef(Node*) function.
- */
-[[nodiscard]] static constexpr bool decRef(NodeBase* p) noexcept {
-  if (p == nullptr || p->ref == std::numeric_limits<RefCount>::max()) {
-    return false;
-  }
-  assert(p->ref != 0 &&
-         "Reference count of Node must not be zero before decrement");
-  --p->ref;
-  return true;
 }
 
 } // namespace dd

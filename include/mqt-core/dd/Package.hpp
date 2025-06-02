@@ -169,6 +169,11 @@ public:
   RealNumberUniqueTable cUniqueTable{cMemoryManager};
   ComplexNumbers cn{cUniqueTable};
 
+  // Root sets for mark-and-sweep garbage collection
+  std::vector<vEdge> vectorRoots{};
+  std::vector<mEdge> matrixRoots{};
+  std::vector<dEdge> densityRoots{};
+
   /**
    * @brief Get the unique table for a given type
    * @tparam T The type to get the unique table for
@@ -194,60 +199,110 @@ public:
   void clearUniqueTables();
 
   /**
-   * @brief Increment the reference count of an edge
-   * @details This is the main function for increasing reference counts within
-   * the DD package. It increases the reference count of the complex edge weight
-   * as well as the DD node itself. If the node newly becomes active, meaning
-   * that it had a reference count of zero beforehand, the reference count of
-   * all children is recursively increased.
+   * @brief Mark an edge and add it to the root set
+   *
+   * @details The complex edge weight and all complex numbers reachable from the
+   * node are marked. The edge itself is added to the appropriate root set so it
+   * is considered live for the mark phase of garbage collection.
+   *
    * @tparam Node The node type of the edge.
-   * @param e The edge to increase the reference count of
+   * @param e The edge to mark and add to the root set
    */
   template <class Node> void incRef(const Edge<Node>& e) noexcept {
     cn.incRef(e.w);
-    const auto& p = e.p;
-    const auto inc = getUniqueTable<Node>().incRef(p);
-    if (inc && p->ref == 1U) {
-      for (const auto& child : p->e) {
-        incRef(child);
-      }
-    }
+    markComplexRec(e.p, true);
+    addRoot(e);
   }
 
   /**
-   * @brief Decrement the reference count of an edge
-   * @details This is the main function for decreasing reference counts within
-   * the DD package. It decreases the reference count of the complex edge weight
-   * as well as the DD node itself. If the node newly becomes dead, meaning
-   * that its reference count hit zero, the reference count of all children is
-   * recursively decreased.
+   * @brief Unmark an edge and remove it from the root set
+   *
+   * @details The complex weight of the edge and all complex numbers reachable
+   * from the node are unmarked. The edge is removed from the root set so it can
+   * be reclaimed during the next sweep if it is no longer reachable from any
+   * other root.
+   *
    * @tparam Node The node type of the edge.
-   * @param e The edge to decrease the reference count of
+   * @param e The edge to unmark and remove from the root set
    */
   template <class Node> void decRef(const Edge<Node>& e) noexcept {
     cn.decRef(e.w);
-    const auto& p = e.p;
-    const auto dec = getUniqueTable<Node>().decRef(p);
-    if (dec && p->ref == 0U) {
-      for (const auto& child : p->e) {
-        decRef(child);
+    markComplexRec(e.p, false);
+    removeRoot(e);
+  }
+
+private:
+  // helper to track complex number references recursively
+  template <class Node> void markComplexRec(Node* p, bool inc) noexcept {
+    if (Node::isTerminal(p)) {
+      return;
+    }
+    for (const auto& child : p->e) {
+      if (inc) {
+        cn.incRef(child.w);
+      } else {
+        cn.decRef(child.w);
+      }
+      markComplexRec(child.p, inc);
+    }
+  }
+
+  template <class Node> void markNodes(Node* p) noexcept {
+    if (Node::isTerminal(p) || p->marked()) {
+      return;
+    }
+    p->mark();
+    for (const auto& child : p->e) {
+      markNodes(child.p);
+    }
+  }
+
+  template <class Node> void addRoot(const Edge<Node>& e) {
+    if constexpr (std::is_same_v<Node, vNode>) {
+      vectorRoots.push_back(e);
+    } else if constexpr (std::is_same_v<Node, mNode>) {
+      matrixRoots.push_back(e);
+    } else if constexpr (std::is_same_v<Node, dNode>) {
+      densityRoots.push_back(e);
+    }
+  }
+
+  template <class Node> void removeRoot(const Edge<Node>& e) {
+    auto pred = [&](const Edge<Node>& r) { return r.p == e.p; };
+    if constexpr (std::is_same_v<Node, vNode>) {
+      auto it = std::find_if(vectorRoots.begin(), vectorRoots.end(), pred);
+      if (it != vectorRoots.end()) {
+        vectorRoots.erase(it);
+      }
+    } else if constexpr (std::is_same_v<Node, mNode>) {
+      auto it = std::find_if(matrixRoots.begin(), matrixRoots.end(), pred);
+      if (it != matrixRoots.end()) {
+        matrixRoots.erase(it);
+      }
+    } else if constexpr (std::is_same_v<Node, dNode>) {
+      auto it = std::find_if(densityRoots.begin(), densityRoots.end(), pred);
+      if (it != densityRoots.end()) {
+        densityRoots.erase(it);
       }
     }
   }
 
+public:
   /**
    * @brief Trigger garbage collection in all unique tables
    *
-   * @details Garbage collection is the process of removing all nodes from the
-   * unique tables that have a reference count of zero.
-   * Such nodes are considered "dead" and they can be safely removed from the
-   * unique tables. This process is necessary to free up memory that is no
-   * longer needed. By default, garbage collection is only triggered if the
-   * unique table indicates that it possibly needs collection. Whenever some
-   * nodes are recollected, some compute tables need to be invalidated as well.
+   * @details Garbage collection uses a mark-and-sweep algorithm. During the
+   * mark phase all nodes reachable from the root sets are marked. In the sweep
+   * phase unmarked nodes are removed from the unique tables and the associated
+   * compute tables are cleared. By default, garbage collection is only
+   * triggered if the unique tables report that a collection might be
+   * necessary.
    *
-   * @param force
-   * @return
+   * @param force If `true`, perform a collection regardless of whether any
+   *              table reports that it may need collecting.
+   * @returns `true` if at least one vector or matrix node, or a complex number,
+   *          was reclaimed. Collections of density-matrix nodes do not affect
+   *          the return value.
    */
   bool garbageCollect(bool force = false);
 
@@ -477,7 +532,6 @@ public:
              [[maybe_unused]] const bool generateDensityMatrix = false) {
     auto& memoryManager = getMemoryManager<Node>();
     auto p = memoryManager.template get<Node>();
-    assert(p->ref == 0U);
 
     p->v = var;
     if constexpr (std::is_same_v<Node, mNode> || std::is_same_v<Node, dNode>) {
@@ -1009,28 +1063,28 @@ public:
   /**
    * @brief Applies a matrix operation to a vector.
    *
-   * @details The reference count of the input vector is decreased,
-   * while the reference count of the result is increased. After the operation,
-   * garbage collection is triggered.
+   * @details The input vector is removed from the root set and the resulting
+   * vector is marked and added back. Garbage collection is triggered
+   * afterwards.
    *
    * @param operation Matrix operation to apply
    * @param e Vector to apply the operation to
-   * @return The appropriately reference-counted result.
+   * @return The resulting edge with updated root-set membership.
    */
   VectorDD applyOperation(const MatrixDD& operation, const VectorDD& e);
 
   /**
    * @brief Applies a matrix operation to a matrix.
    *
-   * @details The reference count of the input matrix is decreased,
-   * while the reference count of the result is increased. After the operation,
-   * garbage collection is triggered.
+   * @details The input matrix is removed from the root set and the resulting
+   * matrix is marked and added back. Garbage collection is triggered after the
+   * operation.
    *
    * @param operation Matrix operation to apply
    * @param e Matrix to apply the operation to
    * @param applyFromLeft Flag to indicate if the operation should be applied
    * from the left (default) or right.
-   * @return The appropriately reference-counted result.
+   * @return The resulting edge with updated root-set membership.
    */
   MatrixDD applyOperation(const MatrixDD& operation, const MatrixDD& e,
                           bool applyFromLeft = true);
@@ -1704,9 +1758,8 @@ public:
    * 4. Recursively reducing nodes starting from the lowest ancillary qubit
    * 5. Adding zero nodes for any remaining higher ancillary qubits
    *
-   * The function maintains proper reference counting by incrementing the
-   * reference count of the result and decrementing the reference count of the
-   * input edge.
+   * The result is marked and added to the root set while the input edge is
+   * unmarked and removed.
    */
   mEdge reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
                        bool regular = true);
@@ -1730,7 +1783,8 @@ public:
    * partial equivalence of circuits. For partial equivalence, only the
    *                         measurement probabilities are considered, so we
    * need to consider only the magnitudes of each entry.
-   * @return DD representing the reduced matrix/vector.
+   * @return DD representing the reduced matrix/vector. The result is added to
+   * the root set while the input edge is removed.
    */
   vEdge reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
                       bool normalizeWeights = false);
@@ -1755,8 +1809,8 @@ public:
    * q=0 and q=1, setting the entry for q=0 to the sum and the entry for q=1 to
    * zero. To maintain proper probabilities, the function computes sqrt(|a|^2 +
    * |b|^2) for two entries a and b. The function handles special cases like
-   * zero terminals and identity matrices separately and maintains proper
-   * reference counting throughout the reduction process.
+   * zero terminals and identity matrices separately. The result is marked and
+   * added to the root set while the input edge is unmarked and removed.
    */
   mEdge reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
                       bool regular = true, bool normalizeWeights = false);

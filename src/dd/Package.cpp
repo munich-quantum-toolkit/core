@@ -76,6 +76,9 @@ void Package::reset() {
   clearUniqueTables();
   resetMemoryManagers();
   clearComputeTables();
+  vectorRoots.clear();
+  matrixRoots.clear();
+  densityRoots.clear();
 }
 
 void Package::resetMemoryManagers(const bool resizeToTotal) {
@@ -101,15 +104,24 @@ bool Package::garbageCollect(bool force) {
     return false;
   }
 
+  // mark all nodes reachable from the current roots
+  for (const auto& e : vectorRoots) {
+    markNodes(e.p);
+  }
+  for (const auto& e : matrixRoots) {
+    markNodes(e.p);
+  }
+  for (const auto& e : densityRoots) {
+    markNodes(e.p);
+  }
+
   const auto cCollect = cUniqueTable.garbageCollect(force);
   if (cCollect > 0) {
-    // Collecting garbage in the complex numbers table requires collecting the
-    // node tables as well
     force = true;
   }
-  const auto vCollect = vUniqueTable.garbageCollect(force);
-  const auto mCollect = mUniqueTable.garbageCollect(force);
-  const auto dCollect = dUniqueTable.garbageCollect(force);
+  const auto vCollect = vUniqueTable.garbageCollect(true);
+  const auto mCollect = mUniqueTable.garbageCollect(true);
+  const auto dCollect = dUniqueTable.garbageCollect(true);
 
   // invalidate all compute tables involving vectors if any vector node has
   // been collected
