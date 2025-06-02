@@ -18,9 +18,6 @@ import pennylane as qml
 
 from catalyst.passes import PassPlugin
 
-from ._version import version as __version__
-from ._version import version_tuple as version_info
-
 
 def get_catalyst_plugin_abs_path() -> Path:
     """Locate the mqt-catalyst-plugin shared library.
@@ -134,4 +131,4 @@ def mqt_core_roundtrip(*flags: any, **valued_options: any) -> qml.QNode:
     return decorator
 
 
-__all__ = ["__version__", "get_catalyst_plugin_abs_path", "mqt_core_roundtrip", "name2pass", "version_info"]
+__all__ = ["get_catalyst_plugin_abs_path", "mqt_core_roundtrip", "name2pass"]

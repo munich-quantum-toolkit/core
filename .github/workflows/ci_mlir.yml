@@ -263,4 +263,5 @@ jobs:
 
       - name: Run plugin Python tests
         run: |
+          cd plugins/catalyst/python
           pytest
