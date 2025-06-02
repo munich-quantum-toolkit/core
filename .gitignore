@@ -138,7 +138,7 @@ _skbuild/
 
 # Any build dirs in the tests
 test/**/build/
-/src/mqt/core/_version.py
+/python/mqt/core/_version.py
 
 # Common editor files
 *~
