@@ -251,6 +251,7 @@ jobs:
       - name: Test Python mqt-catalyst-plugin
         run: |
           source .venv/bin/activate
+          uv sync
           uv pip install --extra-index-url https://test.pypi.org/simple \
             PennyLane-Catalyst==0.12.0.dev42 \
             --index-strategy unsafe-best-match --prerelease=allow
