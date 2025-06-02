@@ -136,11 +136,6 @@ VectorDD generateRandomState(const std::size_t levels,
 
       // Shuffle one last time to interleave the resulting indices.
       std::shuffle(indices.begin(), indices.end(), gen);
-
-      for (auto i : indices) {
-        std::cout << i << ' ';
-      }
-      std::cout << '\n';
       break;
     }
     }
