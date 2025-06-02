@@ -79,6 +79,8 @@ include(AddMQTCoreBinding)
 # set the include directory for the build tree
 set(MQT_CORE_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/mqt-core")
 
+set(MQT_CORE_TARGET_NAME "mqt-core")
+
 # add main library code
 add_subdirectory(src)
 

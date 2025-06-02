@@ -6,7 +6,6 @@
 #
 # Licensed under the MIT License
 
-set(MQT_CORE_TARGET_NAME "mqt-core")
 set(MQT_CORE_TARGETS "")
 
 if(MQT_CORE_INSTALL)
@@ -23,7 +22,7 @@ if(MQT_CORE_INSTALL)
   if(APPLE)
     set(BASEPOINT @loader_path)
   else()
-    set(BASEPOINT $ORIGIN)
+    set(BASEPOINT ${ORIGIN})
   endif()
   set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR})
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
