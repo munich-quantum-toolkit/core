@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 
@@ -28,6 +29,40 @@ double norm(const std::vector<std::complex<double>>& v) {
     sum += std::norm(entry);
   }
   return sum;
+}
+
+bool isRoundRobin(const VectorDD& state) {
+  std::vector<const vEdge*> prev{&state};
+  while (true) {
+    std::vector<const vEdge*> curr{};
+
+    for (const vEdge* ePrev : prev) {
+      if (!ePrev->isTerminal()) {
+        const vNode* node = ePrev->p;
+        for (const vEdge& eCurr : node->e) {
+          if (std::find(curr.begin(), curr.end(), &eCurr) == curr.end()) {
+            curr.push_back(&eCurr);
+          }
+        }
+      }
+    }
+
+    if (curr.empty()) {
+      break;
+    }
+
+    const std::size_t n = curr.size();
+    for (std::size_t i = 0; i < prev.size(); ++i) {
+      const vNode* node = prev[i]->p;
+      if (!(node->e[0].p == curr[(2 * i) % n]->p) &&
+          (node->e[1].p == curr[(2 * i + 1) % n]->p)) {
+        return false;
+      }
+    }
+    prev = std::move(curr);
+  }
+
+  return true;
 }
 }; // namespace
 
@@ -64,6 +99,7 @@ TEST(StateGenerationTest, ExponentialState) {
   // Test: Generate a random exponentially large vector DD with a random seed.
   // Expect: The norm of the resulting vector DD must be 1.
   // Expect: The size of the resulting vector DD must be exponentially large.
+  // Expect: Valid Round Robin Wireing.
   // Expect: Properly increase and decrease the ref counts.
 
   constexpr std::size_t nq = 3;
@@ -75,6 +111,7 @@ TEST(StateGenerationTest, ExponentialState) {
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), size);
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size - 1);
+  EXPECT_TRUE(isRoundRobin(state));
 
   dd->decRef(state);
   dd->garbageCollect(true);
@@ -87,6 +124,7 @@ TEST(StateGenerationTest, ExponentialStateWithSeed) {
   // Test: Generate a random exponentially large vector DD with a given seed.
   // Expect: The norm of the resulting vector DD must be 1.
   // Expect: The size of the resulting vector DD must be exponentially large.
+  // Expect: Valid Round Robin Wireing.
   // Expect: Properly increase and decrease the ref counts.
 
   constexpr std::size_t nq = 3;
@@ -98,6 +136,7 @@ TEST(StateGenerationTest, ExponentialStateWithSeed) {
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), size);
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size - 1);
+  EXPECT_TRUE(isRoundRobin(state));
 
   dd->decRef(state);
   dd->garbageCollect(true);
@@ -111,6 +150,7 @@ TEST(StateGenerationTest, RandomStateRoundRobin) {
   // Expect: The norm of the resulting vector DD must be 1.
   // Expect: The size of the resulting vector DD must be the sum of the
   //         specified nodes.
+  // Expect: Valid Round Robin Wireing.
   // Expect: Properly increase and decrease the ref counts.
 
   constexpr std::size_t nq = 5;
@@ -125,6 +165,37 @@ TEST(StateGenerationTest, RandomStateRoundRobin) {
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), size + 1); // plus terminal.
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
+  EXPECT_TRUE(isRoundRobin(state));
+
+  dd->decRef(state);
+  dd->garbageCollect(true);
+
+  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
+}
+
+TEST(StateGenerationTest, RandomStateRoundRobinWithSeed) {
+
+  // Test: Generate a random vector DD using the round-robin strategy with a
+  //       given seed.
+  // Expect: The norm of the resulting vector DD must be 1.
+  // Expect: The size of the resulting vector DD must be the sum of the
+  //         specified nodes.
+  // Expect: Valid Round Robin Wireing.
+  // Expect: Properly increase and decrease the ref counts.
+
+  constexpr std::size_t nq = 5;
+
+  const std::vector<std::size_t> nodesPerLevel{2, 3, 4, 5};
+  const std::size_t size =
+      1 + std::accumulate(nodesPerLevel.begin(), nodesPerLevel.end(), 0UL);
+
+  auto dd = std::make_unique<Package>(nq);
+  auto state = generateRandomState(nq, nodesPerLevel, ROUNDROBIN, *dd, 72U);
+
+  EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
+  EXPECT_EQ(state.size(), size + 1); // plus terminal.
+  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
+  EXPECT_TRUE(isRoundRobin(state));
 
   dd->decRef(state);
   dd->garbageCollect(true);
