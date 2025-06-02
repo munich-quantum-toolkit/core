@@ -241,7 +241,8 @@ jobs:
             -DBUILD_MQT_CORE_CATALYST_PLUGIN=ON \
             -DMLIR_DIR=$MLIR_DIR \
             -DLLVM_DIR=$LLVM_DIR \
-            -DLLVM_EXTERNAL_LIT=$LLVM_EXTERNAL_LIT
+            -DLLVM_EXTERNAL_LIT=$LLVM_EXTERNAL_LIT \
+            -DPython_EXECUTABLE=.venv/bin/python
 
       # build the project and run the tests
       - name: Build MLIR components and directly run lit tests
