@@ -81,6 +81,17 @@ set(MQT_CORE_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/mqt-core")
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
+if(MQT_CORE_INSTALL)
+  if(APPLE)
+    set(BASEPOINT @loader_path)
+  else()
+    set(BASEPOINT $ORIGIN)
+  endif()
+  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR})
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+endif()
+
 # add main library code
 add_subdirectory(src)
 
