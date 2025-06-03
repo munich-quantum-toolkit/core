@@ -11,13 +11,17 @@
 // These includes must be the first includes for any bindings code
 // clang-format off
 #include <pybind11/pybind11.h>
+<<<<<<< HEAD
 #include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+=======
+#include <pybind11/stl.h>
+>>>>>>> 59e09070 (Remove pybind11.hpp)
 // clang-format on
 
 namespace mqt {
 
 namespace py = pybind11;
-using namespace pybind11::literals;
+using namespace py::literals;
 
 // forward declarations
 void registerRegisters(py::module& m);

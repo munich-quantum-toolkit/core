@@ -19,6 +19,16 @@
 #include "ir/operations/Control.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/Operation.hpp"
+<<<<<<< HEAD
+=======
+
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+// clang-format on
+>>>>>>> 59e09070 (Remove pybind11.hpp)
 
 // These includes must be the first includes for any bindings code
 // clang-format off
@@ -43,7 +53,7 @@
 namespace mqt {
 
 namespace py = pybind11;
-using namespace pybind11::literals;
+using namespace py::literals;
 
 namespace {
 /// Recursive helper function to create a vector DD from a numpy array
