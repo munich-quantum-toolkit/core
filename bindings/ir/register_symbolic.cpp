@@ -8,9 +8,16 @@
  * Licensed under the MIT License
  */
 
-#include "python/pybind11.hpp"
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+// clang-format on
 
 namespace mqt {
+
+namespace py = pybind11;
+using namespace py::literals;
 
 // forward declarations
 void registerVariable(py::module& m);

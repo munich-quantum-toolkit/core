@@ -25,7 +25,6 @@ function(add_mqt_core_binding target_name)
     # optimize the bindings for size
     OPT_SIZE
     # source code goes here
-    ${MQT_CORE_INCLUDE_BUILD_DIR}/python/pybind11.hpp
     ${SOURCES})
 
   if(ARG_MODULE_NAME)

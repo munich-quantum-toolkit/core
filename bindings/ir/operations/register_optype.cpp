@@ -9,11 +9,19 @@
  */
 
 #include "ir/operations/OpType.hpp"
-#include "python/pybind11.hpp"
+
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+// clang-format on
 
 #include <string>
 
 namespace mqt {
+
+namespace py = pybind11;
+using namespace py::literals;
 
 void registerOptype(const py::module& m) {
   py::enum_<qc::OpType>(m, "OpType")
