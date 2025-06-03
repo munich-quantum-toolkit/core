@@ -272,7 +272,7 @@ TEST(StateGenerationTest, InvalidNodesPerLevel) {
 
   constexpr std::size_t nq = 4;
 
-  const std::vector<std::size_t> nodesPerLevel{2, 4, 9};
+  const std::vector<std::size_t> nodesPerLevel{1, 2, 4, 9};
   auto dd = std::make_unique<Package>(nq);
   EXPECT_THROW(
       { generateRandomState(nq, nodesPerLevel, RANDOM, *dd, 1337U); },
