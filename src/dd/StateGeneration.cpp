@@ -39,7 +39,7 @@ using IndexDistribution = std::uniform_int_distribution<std::size_t>;
 
 /**
  * @brief Return random complex number on the unit circle, such that,
- *        its squared magnitude is one.
+ * its squared magnitude is one.
  */
 std::complex<double> randomComplexOnUnitCircle(Generator& gen,
                                                AngleDistribution& dist) {
@@ -48,10 +48,10 @@ std::complex<double> randomComplexOnUnitCircle(Generator& gen,
 }
 
 /**
- * @brief Generate node with terminal edges initialized with random weights.
- *        The norm of the node's edge weights is one.
- * @note  Due to the use of cached edges, the weight of the returned edge is not
- *        stored in the lookup table.
+ * @brief Generate node with edges pointing at @p left and @p right.
+ * Initialize edge weights randomly with the constraint that their norm is one.
+ * @note The CachedEdge ensures that the weight of the resulting edge is not
+ * stored in the lookup table.
  */
 vCachedEdge randomNode(Qubit v, vNode* left, vNode* right, Generator& gen,
                        AngleDistribution& dist, Package& dd) {
@@ -114,14 +114,14 @@ VectorDD generateRandomState(const std::size_t levels,
   std::advance(it, 1); // Dealt with terminals above.
   for (; it != nodesPerLevel.rend(); ++it, ++v) {
     const std::size_t n = *it;
+    const std::size_t m = below.size();
 
-    if (2UL * n < below.size()) {
+    if (2UL * n < m) {
       throw std::invalid_argument(
           "Number of nodes per level must not exceed twice the number of "
           "nodes in the level above");
     }
 
-    const std::size_t m = below.size();
     std::vector<std::size_t> indices(2 * n); // Indices for wireing.
     switch (strategy) {
     case ROUNDROBIN: {
@@ -130,11 +130,11 @@ VectorDD generateRandomState(const std::size_t levels,
       break;
     }
     case RANDOM: {
-      IndexDistribution idxDist{0, below.size() - 1};
+      IndexDistribution idxDist{0, m - 1};
 
-      // Make sure that each node below is connected.
+      // Ensure that all the nodes below have a connection upwards.
       auto pivot = indices.begin();
-      std::advance(pivot, below.size());
+      std::advance(pivot, m);
       std::iota(indices.begin(), pivot, 0);
 
       // Choose the rest randomly.
@@ -156,7 +156,8 @@ VectorDD generateRandomState(const std::size_t levels,
     below = std::move(curr);
   }
 
-  vEdge ret{below[0].p, Complex::one()};
+  // Below only contains one element: the root.
+  vEdge ret{below.at(0).p, Complex::one()};
   dd.incRef(ret);
   return ret;
 }
