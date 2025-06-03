@@ -275,6 +275,12 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
   LogicalResult
   matchAndRewrite(MQTGateOp op, typename MQTGateOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    // BarrierOp has no semantic effect on the circuit. Therefore, we erase it.
+    if (std::is_same_v<MQTGateOp, ::mqt::ir::opt::BarrierOp>) {
+      rewriter.eraseOp(op);
+      return success();
+    }
+
     // Extract operand(s) and attribute(s)
     auto inQubitsValues = adaptor.getInQubits(); // excl. controls
     auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();

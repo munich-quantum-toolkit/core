@@ -14,7 +14,6 @@ def MQTOptToCatalystQuantum : Pass<"mqtopt-to-catalystquantum"> {
   let description = [{
     This pass converts MQT's `MQTOpt` to Catalyst's `Quantum` dialect.
     The following operations are currently NOT converted (and instead marked legal):
-    - BarrierOp
     - UOp, U2Op
     - SXOp, SXdgOp
     - PeresOp, PeresdgOp
