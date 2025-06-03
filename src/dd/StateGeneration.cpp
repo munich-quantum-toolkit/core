@@ -41,7 +41,7 @@ using IndexDistribution = std::uniform_int_distribution<std::size_t>;
  * @brief Return random complex number on the unit circle, such that,
  * its squared magnitude is one.
  */
-std::complex<double> randomComplexOnUnitCircle(Generator& gen,
+ComplexValue randomComplexOnUnitCircle(Generator& gen,
                                                AngleDistribution& dist) {
   const double angle = dist(gen);
   return {std::cos(angle), std::sin(angle)};
@@ -59,8 +59,8 @@ vCachedEdge randomNode(Qubit v, vNode* left, vNode* right, Generator& gen,
   const auto beta = randomComplexOnUnitCircle(gen, dist) * SQRT2_2;
 
   const std::array<vCachedEdge, RADIX> edges{
-      vCachedEdge(left, ComplexValue(alpha)),
-      vCachedEdge(right, ComplexValue(beta))};
+      vCachedEdge(left, alpha),
+      vCachedEdge(right, beta)};
 
   return dd.makeDDNode(v, edges);
 }
