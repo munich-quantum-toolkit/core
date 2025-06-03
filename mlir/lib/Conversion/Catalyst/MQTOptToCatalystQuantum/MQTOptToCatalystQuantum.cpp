@@ -824,10 +824,10 @@ struct MQTOptToCatalystQuantum
     target.addIllegalDialect<::mqt::ir::opt::MQTOptDialect>();
 
     // Mark operations legal, that have no equivalent in the target dialect
-    target.addLegalOp<::mqt::ir::opt::BarrierOp, ::mqt::ir::opt::UOp,
-                      ::mqt::ir::opt::U2Op, ::mqt::ir::opt::SXOp,
-                      ::mqt::ir::opt::SXdgOp, ::mqt::ir::opt::PeresOp,
-                      ::mqt::ir::opt::PeresdgOp, ::mqt::ir::opt::ECROp>();
+    target.addLegalOp<::mqt::ir::opt::UOp, ::mqt::ir::opt::U2Op,
+                      ::mqt::ir::opt::SXOp, ::mqt::ir::opt::SXdgOp,
+                      ::mqt::ir::opt::PeresOp, ::mqt::ir::opt::PeresdgOp,
+                      ::mqt::ir::opt::ECROp>();
 
     RewritePatternSet patterns(context);
     MQTOptToCatalystQuantumTypeConverter typeConverter(context);
@@ -836,6 +836,8 @@ struct MQTOptToCatalystQuantum
                  ConvertMQTOptMeasure, ConvertMQTOptInsert>(typeConverter,
                                                             context);
 
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::BarrierOp>>(
+        typeConverter, context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::GPhaseOp>>(
         typeConverter, context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::IOp>>(typeConverter,
