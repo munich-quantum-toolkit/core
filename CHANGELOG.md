@@ -13,6 +13,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - 📝 Add documentation page for MLIR ([#931]) ([**@ystade**])
 - ✨ Initial implementation of the mqtdyn Dialect ([#900]) ([**@DRovara**], [**@ystade**])
 - ✨ Add function to approximate decision diagrams ([#908]) ([**@MatthiasReumann**])
+- ✨ Add functions to generate random vector DDs ([#975]) ([**@MatthiasReumann**])
 
 ### Fixed
 
@@ -110,6 +111,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#975]: https://github.com/munich-quantum-toolkit/core/pull/975
 [#973]: https://github.com/munich-quantum-toolkit/core/pull/973
 [#964]: https://github.com/munich-quantum-toolkit/core/pull/964
 [#934]: https://github.com/munich-quantum-toolkit/core/pull/934
