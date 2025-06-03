@@ -42,7 +42,7 @@ using IndexDistribution = std::uniform_int_distribution<std::size_t>;
  * its squared magnitude is one.
  */
 ComplexValue randomComplexOnUnitCircle(Generator& gen,
-                                               AngleDistribution& dist) {
+                                       AngleDistribution& dist) {
   const double angle = dist(gen);
   return {std::cos(angle), std::sin(angle)};
 }
@@ -58,9 +58,8 @@ vCachedEdge randomNode(Qubit v, vNode* left, vNode* right, Generator& gen,
   const auto alpha = randomComplexOnUnitCircle(gen, dist) * SQRT2_2;
   const auto beta = randomComplexOnUnitCircle(gen, dist) * SQRT2_2;
 
-  const std::array<vCachedEdge, RADIX> edges{
-      vCachedEdge(left, alpha),
-      vCachedEdge(right, beta)};
+  const std::array<vCachedEdge, RADIX> edges{vCachedEdge(left, alpha),
+                                             vCachedEdge(right, beta)};
 
   return dd.makeDDNode(v, edges);
 }
