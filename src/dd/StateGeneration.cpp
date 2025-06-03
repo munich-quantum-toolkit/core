@@ -22,7 +22,6 @@
 #include <array>
 #include <cassert>
 #include <cmath>
-#include <complex>
 #include <cstddef>
 #include <iterator>
 #include <numeric>
