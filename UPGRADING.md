@@ -4,6 +4,9 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+Even tough this is not a breaking change, it is worth mentioning to developers of MQT Core that all Python code (except tests) has been moved to the top-level `python` directory.
+Furthermore, the C++ code for the Python bindings has been moved to the top-level `bindings` directory.
+
 ### DD Package
 
 The `makeZeroState`, `makeBasisState`, `makeGHZState`, `makeWState`, and `makeStateFromVector` methods have been refactored to functions taking the DD package as an argument. These functions reside in the `StateGeneration` header. Any existing code that uses these methods must replace the respective calls with their function counterpart.

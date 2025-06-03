@@ -14,6 +14,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ✨ Initial implementation of the mqtdyn Dialect ([#900]) ([**@DRovara**], [**@ystade**])
 - ✨ Add function to approximate decision diagrams ([#908]) ([**@MatthiasReumann**])
 - ✨ Add functions to generate random vector DDs ([#975]) ([**@MatthiasReumann**])
+- ✨ Add a new CMake function `add_mqt_core_binding` to add a Python binding library ([#982]) ([**@denialhaag**])
 
 ### Fixed
 
@@ -27,8 +28,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ♻️ Improve performance of getNqubits for StandardOperations ([#959]) ([**@ystade**])
 - ♻️ Outsource definition of standard operations from MLIR dialects to reduce redundancy ([#933]) ([**@ystade**])
 - ♻️ Unify operands and results in MLIR dialects ([#931]) ([**@ystade**])
-- ⏪️ Restore support for (MLIR and) LLVM v19 ([#934]) ([**@flowerthrower**]), [**@ystade**])
+- ⏪️ Restore support for (MLIR and) LLVM v19 ([#934]) ([**@flowerthrower**], [**@ystade**])
 - ⬆️ Update nlohmann_json to `v3.12.0` ([#921]) ([**@burgholzer**])
+- ♻️ Move the C++ code for the Python bindings to the top-level `bindings` directory ([#982]) ([**@denialhaag**])
+- ♻️ Move all Python code (no tests) to the top-level `python` directory ([#982]) ([**@denialhaag**])
 - ♻️ Move Make-State Functionality To StateGeneration ([#984]) ([**@MatthiasReumann**])
 
 ## [3.0.2] - 2025-04-07
