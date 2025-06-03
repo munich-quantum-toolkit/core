@@ -8,15 +8,23 @@
  * Licensed under the MIT License
  */
 
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/operators.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+// clang-format on
+
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/operations/Control.hpp"
-#include "python/pybind11.hpp"
 
-#include <pybind11/operators.h>
 #include <sstream>
 
 namespace mqt {
+
+namespace py = pybind11;
+using namespace py::literals;
 
 void registerPermutation(py::module& m) {
   py::class_<qc::Permutation>(m, "Permutation")

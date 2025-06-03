@@ -12,19 +12,24 @@
 #include "dd/Edge.hpp"
 #include "dd/Export.hpp"
 #include "dd/Node.hpp"
-#include "python/pybind11.hpp"
+
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+// clang-format on
 
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <pybind11/numpy.h>
 #include <sstream>
 #include <string>
 
 namespace mqt {
 
 namespace py = pybind11;
-using namespace pybind11::literals;
+using namespace py::literals;
 
 struct Vector {
   dd::CVec v;
