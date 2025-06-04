@@ -71,16 +71,6 @@ TEST_F(QDMIImplementationTest, JobSetParameterImplemented) {
   MQT_NA_QDMI_device_job_free(job);
 }
 
-TEST_F(QDMIImplementationTest, JobQueryPropertyImplemented) {
-  MQT_NA_QDMI_Device_Job job = nullptr;
-  ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_SUCCESS);
-  ASSERT_EQ(MQT_NA_QDMI_device_job_query_property(
-                job, QDMI_DEVICE_JOB_PROPERTY_MAX, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
-  MQT_NA_QDMI_device_job_free(job);
-}
-
 TEST_F(QDMIImplementationTest, JobSubmitImplemented) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
@@ -111,7 +101,7 @@ TEST_F(QDMIImplementationTest, JobWaitImplemented) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
             QDMI_SUCCESS);
-  ASSERT_NE(MQT_NA_QDMI_device_job_wait(job, 0), QDMI_ERROR_NOTIMPLEMENTED);
+  ASSERT_NE(MQT_NA_QDMI_device_job_wait(job), QDMI_ERROR_NOTIMPLEMENTED);
   MQT_NA_QDMI_device_job_free(job);
 }
 
@@ -204,10 +194,10 @@ TEST_F(QDMIImplementationTest, QuerySiteIndexImplemented) {
       << "Devices must provide a list of sites";
   size_t id = 0;
   for (auto* site : sites) {
-    ASSERT_EQ(MQT_NA_QDMI_device_session_query_site_property(
-                  session, site, QDMI_SITE_PROPERTY_INDEX, sizeof(size_t), &id,
-                  nullptr),
-              QDMI_SUCCESS)
+    ASSERT_EQ(
+        MQT_NA_QDMI_device_session_query_site_property(
+            session, site, QDMI_SITE_PROPERTY_ID, sizeof(size_t), &id, nullptr),
+        QDMI_SUCCESS)
         << "Devices must provide a site id";
   }
 }
