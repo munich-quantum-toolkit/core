@@ -9,6 +9,7 @@
  */
 
 #include "ir/Definitions.hpp"
+#include "ir/Register.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/Operation.hpp"
 

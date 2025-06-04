@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "ir/Register.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/Operation.hpp"
 
