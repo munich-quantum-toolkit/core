@@ -1,3 +1,11 @@
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
 include(FindProtobuf)
 
 # Set target name
@@ -6,8 +14,8 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device)
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
-  # todo: This seems wrong to me, does MQT Core not already set the C++ standard?
-  # Set the C++ standard
+  # todo: This seems wrong to me, does MQT Core not already set the C++ standard? Set the C++
+  # standard
   set(CMAKE_CXX_STANDARD 17)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
