@@ -55,7 +55,10 @@ namespace {
  * @brief Returns a reference to the device singleton.
  * @details This function initializes the device singleton on the first call
  * and returns a reference to it.
- * @return A reference to the device singleton.
+ * @returns A reference to the device singleton.
+ * @throws std::runtime_error if the environment variable
+ * MQT_CORE_NA_QDMI_DEVICE_JSON_FILE is not set, the JSON file does not exist,
+ * or the JSON file cannot be parsed.
  */
 auto getDevice() -> const na::Device& {
   static na::Device device;
@@ -69,6 +72,10 @@ auto getDevice() -> const na::Device& {
     }
     // Read the device configuration from a JSON file
     std::ifstream ifs(path);
+    if (!ifs.is_open()) {
+      throw std::runtime_error("Failed to open JSON file: " +
+                               std::string(path));
+    }
     std::stringstream buffer;
     buffer << ifs.rdbuf();
     const std::string json = buffer.str();
@@ -79,7 +86,7 @@ auto getDevice() -> const na::Device& {
     const auto status =
         google::protobuf::util::JsonStringToMessage(json, &device);
     if (!status.ok()) {
-      throw std::runtime_error("Failed to parse device JSON: " +
+      throw std::runtime_error("Failed to parse JSON file: " +
                                status.ToString());
     }
     // Set initialized to true to avoid re-initialization
