@@ -9,14 +9,25 @@
  */
 
 #include "ir/operations/Expression.hpp"
-#include "python/pybind11.hpp"
+
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+
+#include <pybind11/attr.h>
+#include <pybind11/cast.h>
+#include <pybind11/operators.h>
+// clang-format on
 
 #include <cstddef>
-#include <pybind11/operators.h>
 #include <sstream>
 #include <vector>
 
 namespace mqt {
+
+namespace py = pybind11;
+using namespace pybind11::literals;
 
 void registerExpression(py::module& m) {
   py::class_<sym::Expression<double, double>>(m, "Expression")
@@ -82,8 +93,8 @@ void registerExpression(py::module& m) {
       .def("__rtruediv__", [](const sym::Expression<double, double>& rhs,
                               double lhs) { return rhs / lhs; })
       // comparison operators
-      .def(py::self == py::self)
-      .def(py::self != py::self)
+      .def(py::self == py::self) // NOLINT(misc-redundant-expression)
+      .def(py::self != py::self) // NOLINT(misc-redundant-expression)
       .def(hash(py::self))
       .def("__str__",
            [](const sym::Expression<double, double>& expr) {

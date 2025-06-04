@@ -8,13 +8,24 @@
  * Licensed under the MIT License
  */
 
+#include "ir/Register.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/Operation.hpp"
-#include "python/pybind11.hpp"
+
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+
+#include <pybind11/cast.h>
+// clang-format on
 
 #include <sstream>
 
 namespace mqt {
+
+namespace py = pybind11;
+using namespace pybind11::literals;
 
 void registerOperation(const py::module& m) {
   py::class_<qc::Operation>(m, "Operation")

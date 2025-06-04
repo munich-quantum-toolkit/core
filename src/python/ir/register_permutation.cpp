@@ -11,12 +11,25 @@
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/operations/Control.hpp"
-#include "python/pybind11.hpp"
 
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+
+#include <pybind11/attr.h>
+#include <pybind11/cast.h>
 #include <pybind11/operators.h>
+#include <pybind11/pytypes.h>
+// clang-format on
+
+#include <iterator>
 #include <sstream>
 
 namespace mqt {
+
+namespace py = pybind11;
+using namespace pybind11::literals;
 
 void registerPermutation(py::module& m) {
   py::class_<qc::Permutation>(m, "Permutation")
@@ -55,8 +68,8 @@ void registerPermutation(py::module& m) {
             return py::make_iterator(p.begin(), p.end());
           },
           py::keep_alive<0, 1>())
-      .def(py::self == py::self)
-      .def(py::self != py::self)
+      .def(py::self == py::self) // NOLINT(misc-redundant-expression)
+      .def(py::self != py::self) // NOLINT(misc-redundant-expression)
       .def(hash(py::self))
       .def("__str__",
            [](const qc::Permutation& p) {

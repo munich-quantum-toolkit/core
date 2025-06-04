@@ -15,8 +15,16 @@
 #include "ir/operations/Expression.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
-#include "python/pybind11.hpp"
 #include "qasm3/Importer.hpp"
+
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+
+#include <pybind11/cast.h>
+#include <pybind11/pytypes.h>
+// clang-format on
 
 #include <cstddef>
 #include <cstdint>
@@ -27,6 +35,9 @@
 #include <vector>
 
 namespace mqt {
+
+namespace py = pybind11;
+using namespace pybind11::literals;
 
 using DiffType = std::vector<std::unique_ptr<qc::Operation>>::difference_type;
 using SizeType = std::vector<std::unique_ptr<qc::Operation>>::size_type;
@@ -161,7 +172,7 @@ void registerQuantumComputation(py::module& m) {
         // delete in reverse order to not invalidate indices
         for (std::size_t i = sliceLength; i > 0; --i) {
           circ.erase(circ.begin() +
-                     static_cast<int64_t>(start + (i - 1) * step));
+                     static_cast<int64_t>(start + ((i - 1) * step)));
         }
       },
       "slice"_a);
