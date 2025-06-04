@@ -62,7 +62,193 @@ vCachedEdge randomNode(Qubit v, vNode* left, vNode* right, Generator& gen,
 
   return dd.makeDDNode(v, edges);
 }
+
+/**
+ * @brief Validate that the package is suitable for the use with up to @p n
+ * qubits.
+ * @throw `std::invalid_argument`, if not suitable.
+ */
+void suitablePackage(const std::size_t n, Package& dd) {
+  const std::size_t nqubits = dd.qubits();
+  if (n > nqubits) {
+    throw std::invalid_argument{
+        "Requested state with " + std::to_string(n) +
+        " qubits, but current package configuration only supports up to " +
+        std::to_string(nqubits) +
+        " qubits. Please allocate a larger package instance."};
+  }
+}
 } // namespace
+
+VectorDD makeZeroState(const std::size_t n, Package& dd,
+                       const std::size_t start) {
+  std::vector<BasisStates> state(n - start, BasisStates::zero);
+  return makeBasisState(n, state, dd, start);
+}
+
+VectorDD makeBasisState(const std::size_t n, const std::vector<bool>& state,
+                        Package& dd, const std::size_t start) {
+  const auto op = [](bool b) {
+    return b ? BasisStates::one : BasisStates::zero;
+  };
+  std::vector<BasisStates> bState(state.size());
+  std::transform(state.begin(), state.end(), bState.begin(), op);
+  return makeBasisState(n, bState, dd, start);
+}
+
+VectorDD makeBasisState(const std::size_t n,
+                        const std::vector<BasisStates>& state, Package& dd,
+                        const std::size_t start) {
+  suitablePackage(n + start, dd);
+
+  if (state.size() < n) {
+    throw std::invalid_argument(
+        "Insufficient qubit states provided. Requested " + std::to_string(n) +
+        ", but received " + std::to_string(state.size()));
+  }
+
+  vCachedEdge f = vCachedEdge::one();
+  for (std::size_t p = start; p < n + start; ++p) {
+    switch (state[p]) {
+    case BasisStates::zero:
+      f = dd.makeDDNode(static_cast<Qubit>(p),
+                        std::array{f, vCachedEdge::zero()});
+      break;
+    case BasisStates::one:
+      f = dd.makeDDNode(static_cast<Qubit>(p),
+                        std::array{vCachedEdge::zero(), f});
+      break;
+    case BasisStates::plus:
+      f = dd.makeDDNode(static_cast<Qubit>(p),
+                        std::array<vCachedEdge, RADIX>{
+                            {{f.p, dd::SQRT2_2}, {f.p, dd::SQRT2_2}}});
+      break;
+    case BasisStates::minus:
+      f = dd.makeDDNode(static_cast<Qubit>(p),
+                        std::array<vCachedEdge, RADIX>{
+                            {{f.p, dd::SQRT2_2}, {f.p, -dd::SQRT2_2}}});
+      break;
+    case BasisStates::right:
+      f = dd.makeDDNode(static_cast<Qubit>(p),
+                        std::array<vCachedEdge, RADIX>{
+                            {{f.p, dd::SQRT2_2}, {f.p, {0, dd::SQRT2_2}}}});
+      break;
+    case BasisStates::left:
+      f = dd.makeDDNode(static_cast<Qubit>(p),
+                        std::array<vCachedEdge, RADIX>{
+                            {{f.p, dd::SQRT2_2}, {f.p, {0, -dd::SQRT2_2}}}});
+      break;
+    }
+  }
+  const vEdge e{f.p, dd.cn.lookup(f.w)};
+  dd.incRef(e);
+  return e;
+}
+
+VectorDD makeGHZState(const std::size_t n, Package& dd) {
+  suitablePackage(n, dd);
+
+  if (n == 0U) {
+    return vEdge::one();
+  }
+
+  auto leftSubtree = vEdge::one();
+  auto rightSubtree = vEdge::one();
+
+  for (std::size_t p = 0; p < n - 1; ++p) {
+    leftSubtree = dd.makeDDNode(static_cast<Qubit>(p),
+                                std::array{leftSubtree, vEdge::zero()});
+    rightSubtree = dd.makeDDNode(static_cast<Qubit>(p),
+                                 std::array{vEdge::zero(), rightSubtree});
+  }
+
+  const vEdge e = dd.makeDDNode(
+      static_cast<Qubit>(n - 1),
+      std::array<vEdge, RADIX>{
+          {{leftSubtree.p, {&constants::sqrt2over2, &constants::zero}},
+           {rightSubtree.p, {&constants::sqrt2over2, &constants::zero}}}});
+
+  dd.incRef(e);
+
+  return e;
+}
+
+VectorDD makeWState(const std::size_t n, Package& dd) {
+  suitablePackage(n, dd);
+
+  if (n == 0U) {
+    return vEdge::one();
+  }
+
+  auto leftSubtree = vEdge::zero();
+  if ((1. / sqrt(static_cast<double>(n))) < RealNumber::eps) {
+    throw std::runtime_error(
+        "Requested qubit size for generating W-state would lead to an "
+        "underflow due to 1 / sqrt(n) being smaller than the currently set "
+        "tolerance " +
+        std::to_string(RealNumber::eps) +
+        ". If you still wanna run the computation, please lower "
+        "the tolerance accordingly.");
+  }
+
+  auto rightSubtree = vEdge::terminal(dd.cn.lookup(1. / std::sqrt(n)));
+  for (size_t p = 0; p < n; ++p) {
+    leftSubtree = dd.makeDDNode(static_cast<Qubit>(p),
+                                std::array{leftSubtree, rightSubtree});
+    if (p != n - 1U) {
+      rightSubtree = dd.makeDDNode(static_cast<Qubit>(p),
+                                   std::array{rightSubtree, vEdge::zero()});
+    }
+  }
+
+  dd.incRef(leftSubtree);
+
+  return leftSubtree;
+}
+
+VectorDD makeStateFromVector(const CVec& stateVector, Package& dd) {
+  const std::size_t sz = stateVector.size();
+
+  if ((sz & (sz - 1)) != 0) {
+    throw std::invalid_argument(
+        "State vector must have a length of a power of two.");
+  }
+
+  if (sz == 0) {
+    return vEdge::one();
+  }
+
+  if (sz == 1) {
+    return vEdge::terminal(dd.cn.lookup(stateVector[0]));
+  }
+
+  // Generate leaf nodes.
+  std::size_t layerSize{sz / 2};
+  std::vector<vCachedEdge> curr(layerSize);
+  std::generate(curr.begin(), curr.end(), [&, i = 0UL]() mutable {
+    const auto edges = std::array{vCachedEdge::terminal(stateVector[i++]),
+                                  vCachedEdge::terminal(stateVector[i++])};
+    return dd.makeDDNode(0, edges);
+  });
+
+  // Generate nodes above the leaves.
+  for (Qubit v{1}; v < std::log2(sz) - 1; ++v) {
+    layerSize /= 2;
+    std::vector<vCachedEdge> next(layerSize);
+    std::generate(next.begin(), next.end(), [&, i = 0UL]() mutable {
+      const auto edges = std::array{next[i++], next[i++]};
+      return dd.makeDDNode(v, edges);
+    });
+
+    curr = std::move(next);
+  }
+
+  const vCachedEdge state = curr.at(0);
+  const vEdge e{state.p, dd.cn.lookup(state.w)};
+  dd.incRef(e);
+
+  return e;
+}
 
 VectorDD generateExponentialState(const std::size_t levels, Package& dd) {
   std::random_device rd;
@@ -102,8 +288,8 @@ VectorDD generateRandomState(const std::size_t levels,
 
   // Generate terminal nodes.
   constexpr vNode* terminal = vNode::getTerminal();
-  std::vector<vCachedEdge> below(nodesPerLevel.back());
-  std::generate(below.begin(), below.end(), [&] {
+  std::vector<vCachedEdge> curr(nodesPerLevel.back());
+  std::generate(curr.begin(), curr.end(), [&] {
     return randomNode(0, terminal, terminal, gen, dist, dd);
   });
 
@@ -112,7 +298,7 @@ VectorDD generateRandomState(const std::size_t levels,
   std::advance(it, 1); // Dealt with terminals above.
   for (; it != nodesPerLevel.rend(); ++it, ++v) {
     const std::size_t n = *it;
-    const std::size_t m = below.size();
+    const std::size_t m = curr.size();
 
     if (2UL * n < m) {
       throw std::invalid_argument(
@@ -144,18 +330,18 @@ VectorDD generateRandomState(const std::size_t levels,
     }
     }
 
-    std::vector<vCachedEdge> curr(n); // Random nodes on layer v.
+    std::vector<vCachedEdge> next(n); // Random nodes on layer v.
     for (std::size_t i = 0; i < n; ++i) {
-      vNode* left = below[indices[2 * i]].p;
-      vNode* right = below[indices[(2 * i) + 1]].p;
-      curr[i] = randomNode(v, left, right, gen, dist, dd);
+      vNode* left = curr[indices[2 * i]].p;
+      vNode* right = curr[indices[(2 * i) + 1]].p;
+      next[i] = randomNode(v, left, right, gen, dist, dd);
     }
 
-    below = std::move(curr);
+    curr = std::move(next);
   }
 
   // Below only contains one element: the root.
-  vEdge ret{below.at(0).p, Complex::one()};
+  vEdge ret{curr.at(0).p, Complex::one()};
   dd.incRef(ret);
   return ret;
 }
