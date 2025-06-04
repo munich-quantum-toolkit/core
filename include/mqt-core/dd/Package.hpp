@@ -171,15 +171,9 @@ public:
 
   // Root sets for mark-and-sweep garbage collection with explicit
   // reference counting for externally tracked DDs
-  std::unordered_map<vEdge, std::size_t, EdgePtrHash<vNode>,
-                     EdgePtrEqual<vNode>>
-      vectorRoots{};
-  std::unordered_map<mEdge, std::size_t, EdgePtrHash<mNode>,
-                     EdgePtrEqual<mNode>>
-      matrixRoots{};
-  std::unordered_map<dEdge, std::size_t, EdgePtrHash<dNode>,
-                     EdgePtrEqual<dNode>>
-      densityRoots{};
+  std::unordered_map<vEdge, std::size_t> vectorRoots{};
+  std::unordered_map<mEdge, std::size_t> matrixRoots{};
+  std::unordered_map<dEdge, std::size_t> densityRoots{};
 
   /**
    * @brief Get the unique table for a given type
