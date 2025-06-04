@@ -39,9 +39,10 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/include
                            ${Protobuf_INCLUDE_DIRS})
 
-  # Link Protobuf, QDMI
-  target_link_libraries(${TARGET_NAME} PRIVATE ${Protobuf_LIBRARIES} qdmi::qdmi
-                                               qdmi::project_warnings)
+  # Link Protobuf, QDMI, spdlog, and project warnings
+  target_link_libraries(
+    ${TARGET_NAME} PRIVATE ${Protobuf_LIBRARIES} qdmi::qdmi qdmi::project_warnings spdlog::spdlog
+                           MQT::ProjectOptions MQT::ProjectWarnings)
 
   # Generate alias for the target
   add_library(MQT::CoreNaQDMI ALIAS ${TARGET_NAME})
