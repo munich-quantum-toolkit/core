@@ -71,5 +71,12 @@ if(BUILD_MQT_CORE_TESTS)
   list(APPEND FETCH_PACKAGES googletest)
 endif()
 
+set(Protobuf_VERSION
+        31.1
+        CACHE STRING "protobuf version")
+set(Protobuf_URL https://github.com/protocolbuffers/protobuf/releases/download/v${Protobuf_VERSION}/protobuf-${Protobuf_VERSION}.tar.gz)
+FetchContent_Declare(protobuf URL ${Protobuf_URL} SOURCE_SUBDIR cmake FIND_PACKAGE_ARGS ${Protobuf_VERSION} NAMES protobuf)
+list(APPEND FETCH_PACKAGES protobuf)
+
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
