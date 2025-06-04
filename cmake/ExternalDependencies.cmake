@@ -107,5 +107,14 @@ FetchContent_Declare(
   FIND_PACKAGE_ARGS ${QDMI_VERSION})
 list(APPEND FETCH_PACKAGES qdmi)
 
+set(SPDLOG_VERSION
+    1.15.3
+    CACHE STRING "spdlog version")
+set(SPDLOG_URL https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz)
+# Add position independent code for spdlog, this is required for python bindings on linux
+set(SPDLOG_BUILD_PIC ON)
+FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
+list(APPEND FETCH_PACKAGES spdlog)
+
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
