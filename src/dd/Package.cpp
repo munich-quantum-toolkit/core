@@ -854,9 +854,7 @@ char Package::measureOneCollapsing(dEdge& e, const Qubit index,
 
   // Normalize density matrix
   auto result = e.w / densityMatrixTrace;
-  cn.decRef(e.w);
   e.w = cn.lookup(result);
-  cn.incRef(e.w);
   return measuredResult;
 }
 void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
