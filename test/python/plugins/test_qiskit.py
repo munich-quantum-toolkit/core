@@ -150,7 +150,7 @@ def test_two_qubit_gate() -> None:
     assert qc == qiskit_qc
 
 
-def test_mcx() -> None:
+def test_ccx() -> None:
     """Test roundtrip of ccx gate."""
     qc = QuantumCircuit(3)
     qc.ccx(0, 1, 2)
@@ -170,10 +170,10 @@ def test_mcx() -> None:
     assert qiskit_qc[0].operation.name == "ccx"
 
 
-def test_mcx_recursive() -> None:
+def test_large_mcx() -> None:
     """Test roundtrip of large mcx gate."""
     qc = QuantumCircuit(9)
-    qc.mcx(control_qubits=list(range(7)), target_qubit=7, ancilla_qubits=list(range(8, 9)), mode="recursion")
+    qc.mcx(control_qubits=list(range(7)), target_qubit=7, ancilla_qubits=list(range(8, 9)))
     print(qc)
 
     mqt_qc = qiskit_to_mqt(qc)
@@ -191,10 +191,10 @@ def test_mcx_recursive() -> None:
     assert qiskit_qc[0].operation.name == "mcx"
 
 
-def test_small_mcx_recursive() -> None:
-    """Test roundtrip of small mcx_recursive gate."""
+def test_small_mcx() -> None:
+    """Test roundtrip of small mcx gate."""
     qc = QuantumCircuit(5)
-    qc.mcx(target_qubit=4, control_qubits=list(range(4)), mode="recursion")
+    qc.mcx(target_qubit=4, control_qubits=list(range(4)))
     print(qc)
 
     mqt_qc = qiskit_to_mqt(qc)
@@ -207,28 +207,6 @@ def test_small_mcx_recursive() -> None:
     qiskit_qc = mqt_to_qiskit(mqt_qc)
     print(qiskit_qc)
     assert qiskit_qc.num_qubits == 5
-    assert len(qiskit_qc) == 1
-    assert qiskit_qc[0].operation.name == "mcx"
-
-
-def test_mcx_vchain() -> None:
-    """Test roundtrip of mcx gate with v-chain."""
-    qc = QuantumCircuit(9)
-    qc.mcx(target_qubit=5, control_qubits=list(range(5)), ancilla_qubits=list(range(6, 9)), mode="v-chain")
-    print(qc)
-
-    mqt_qc = qiskit_to_mqt(qc)
-    print(mqt_qc)
-    assert mqt_qc.num_qubits == 9
-    assert mqt_qc.num_ops == 1
-    assert mqt_qc[0].name.strip() == "x"
-    assert {control.qubit for control in mqt_qc[0].controls} == {0, 1, 2, 3, 4}
-    for i in range(6, 9):
-        assert not mqt_qc[0].acts_on(i)
-
-    qiskit_qc = mqt_to_qiskit(mqt_qc)
-    print(qiskit_qc)
-    assert qiskit_qc.num_qubits == 9
     assert len(qiskit_qc) == 1
     assert qiskit_qc[0].operation.name == "mcx"
 
