@@ -13,6 +13,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - 📝 Add documentation page for MLIR ([#931]) ([**@ystade**])
 - ✨ Initial implementation of the mqtdyn Dialect ([#900]) ([**@DRovara**], [**@ystade**])
 - ✨ Add function to approximate decision diagrams ([#908]) ([**@MatthiasReumann**])
+- ✨ Add functions to generate random vector DDs ([#975]) ([**@MatthiasReumann**])
 
 ### Fixed
 
@@ -23,6 +24,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ♻️ Improve performance of getNqubits for StandardOperations ([#959]) ([**@ystade**])
 - ♻️ Outsource definition of standard operations from MLIR dialects to reduce redundancy ([#933]) ([**@ystade**])
 - ♻️ Unify operands and results in MLIR dialects ([#931]) ([**@ystade**])
 - ⏪️ Restore support for (MLIR and) LLVM v19 ([#934]) ([**@flowerthrower**]), [**@ystade**])
@@ -110,8 +112,10 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#975]: https://github.com/munich-quantum-toolkit/core/pull/975
 [#973]: https://github.com/munich-quantum-toolkit/core/pull/973
 [#964]: https://github.com/munich-quantum-toolkit/core/pull/964
+[#959]: https://github.com/munich-quantum-toolkit/core/pull/959
 [#934]: https://github.com/munich-quantum-toolkit/core/pull/934
 [#933]: https://github.com/munich-quantum-toolkit/core/pull/933
 [#932]: https://github.com/munich-quantum-toolkit/core/pull/932
