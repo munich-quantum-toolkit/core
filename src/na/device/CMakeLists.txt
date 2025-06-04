@@ -36,14 +36,18 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Add include directories
   target_include_directories(
-    ${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/include
-                           ${Protobuf_INCLUDE_DIRS})
+    ${TARGET_NAME}
+    PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${Protobuf_INCLUDE_DIRS})
 
   # Link Protobuf, QDMI, spdlog, and project warnings
   target_link_libraries(
-    ${TARGET_NAME} PRIVATE ${Protobuf_LIBRARIES} qdmi::qdmi qdmi::project_warnings spdlog::spdlog
-                           MQT::ProjectOptions MQT::ProjectWarnings)
+    ${TARGET_NAME}
+    PUBLIC qdmi::qdmi
+    PRIVATE ${Protobuf_LIBRARIES} qdmi::project_warnings spdlog::spdlog MQT::ProjectOptions
+            MQT::ProjectWarnings)
 
   # Generate alias for the target
   add_library(MQT::CoreNaQDMI ALIAS ${TARGET_NAME})
+  add_library(qdmi::mqt_na_device ALIAS ${TARGET_NAME})
 endif()
