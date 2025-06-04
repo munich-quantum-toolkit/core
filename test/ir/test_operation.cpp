@@ -114,6 +114,14 @@ TEST(CompoundOperation, IsInverseOf) {
   EXPECT_TRUE(op1.isInverseOf(op2));
 }
 
+TEST(CompoundOperation, GetNqubits) {
+  qc::CompoundOperation op;
+  op.emplace_back<qc::StandardOperation>(0, qc::OpType::X);
+  op.emplace_back<qc::StandardOperation>(1, qc::OpType::X);
+  op.emplace_back<qc::StandardOperation>(3, qc::OpType::X);
+  EXPECT_EQ(op.getNqubits(), 3);
+}
+
 TEST(OpType, General) {
   EXPECT_EQ(qc::toString(qc::RZ), "rz");
   std::stringstream ss;
