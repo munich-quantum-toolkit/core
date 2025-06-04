@@ -15,6 +15,10 @@
 #include "mqt_na_qdmi/device.h"
 
 #include "device.pb.h"
+#include "spdlog/spdlog.h"
+
+#include <fstream>
+#include <google/protobuf/util/json_util.h>
 
 #ifdef __cplusplus
 #include <cstddef>
@@ -46,9 +50,56 @@ struct MQT_NA_QDMI_Device_Site_impl_d {};
  */
 struct MQT_NA_QDMI_Device_Operation_impl_d {};
 
-int MQT_NA_QDMI_device_initialize() { return QDMI_ERROR_NOTIMPLEMENTED; }
+namespace {
+/**
+ * @brief Returns a reference to the device singleton.
+ * @details This function initializes the device singleton on the first call
+ * and returns a reference to it.
+ * @return A reference to the device singleton.
+ */
+auto getDevice() -> const na::Device& {
+  static na::Device device;
+  static bool initialized = false;
+  if (!initialized) {
+    // Get the path to the JSON file from the environment variable
+    const char* path = std::getenv("MQT_CORE_NA_QDMI_DEVICE_JSON_FILE");
+    if (path == nullptr) {
+      throw std::runtime_error(
+          "Environment variable MQT_CORE_NA_QDMI_DEVICE_JSON_FILE is not set.");
+    }
+    // Read the device configuration from a JSON file
+    std::ifstream ifs(path);
+    std::stringstream buffer;
+    buffer << ifs.rdbuf();
+    const std::string json = buffer.str();
+    ifs.close();
+    // Parse the JSON string into the protobuf message
+    google::protobuf::util::JsonParseOptions options;
+    options.ignore_unknown_fields = true;
+    const auto status =
+        google::protobuf::util::JsonStringToMessage(json, &device);
+    if (!status.ok()) {
+      throw std::runtime_error("Failed to parse device JSON: " +
+                               status.ToString());
+    }
+    // Set initialized to true to avoid re-initialization
+    initialized = true;
+  }
+  return device;
+}
+} // namespace
 
-int MQT_NA_QDMI_device_finalize() { return QDMI_ERROR_NOTIMPLEMENTED; }
+int MQT_NA_QDMI_device_initialize() {
+  try {
+    getDevice();
+  } catch (const std::runtime_error& e) {
+    SPDLOG_ERROR(e);
+    return QDMI_ERROR_FATAL;
+  }
+  return QDMI_SUCCESS;
+}
+
+int MQT_NA_QDMI_device_finalize() { return QDMI_SUCCESS; }
 
 int MQT_NA_QDMI_device_session_alloc(MQT_NA_QDMI_Device_Session* session) {
   return QDMI_ERROR_NOTIMPLEMENTED;
