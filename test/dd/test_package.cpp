@@ -989,17 +989,22 @@ TEST(DDPackageTest, DuplicateIncRefDoesNotLeaveStaleRoot) {
   dd->incRef(mat);
   dd->incRef(mat);
   EXPECT_EQ(dd->matrixRoots.size(), 1U);
+  EXPECT_EQ(dd->matrixRoots.at(mat), 2U);
+  dd->decRef(mat);
+  EXPECT_EQ(dd->matrixRoots.at(mat), 1U);
   dd->decRef(mat);
   EXPECT_TRUE(dd->matrixRoots.empty());
-  dd->decRef(mat);
 
   // density root
   auto dens = dd->makeZeroDensityOperator(1);
   dd->incRef(dens);
+  dd->incRef(dens);
   EXPECT_EQ(dd->densityRoots.size(), 1U);
+  EXPECT_EQ(dd->densityRoots.at(dens), 2U);
+  dd->decRef(dens);
+  EXPECT_EQ(dd->densityRoots.at(dens), 1U);
   dd->decRef(dens);
   EXPECT_TRUE(dd->densityRoots.empty());
-  dd->decRef(dens);
 }
 
 TEST(DDPackageTest, Inverse) {
@@ -1029,6 +1034,8 @@ TEST(DDPackageTest, IncRefTwiceThenDecRefTwice) {
   // add the same edge twice
   dd->incRef(x);
   dd->incRef(x);
+  EXPECT_EQ(dd->matrixRoots.size(), 1U);
+  EXPECT_EQ(dd->matrixRoots.at(x), 2U);
 
   dd->garbageCollect(true);
 
@@ -1037,6 +1044,7 @@ TEST(DDPackageTest, IncRefTwiceThenDecRefTwice) {
 
   // remove the edge twice
   dd->decRef(x);
+  EXPECT_EQ(dd->matrixRoots.at(x), 1U);
   dd->decRef(x);
 
   dd->garbageCollect(true);

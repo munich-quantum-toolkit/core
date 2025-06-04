@@ -213,12 +213,11 @@ private:
   std::vector<UniqueTableStatistics> stats;
 
   /**
-  Searches for a node in the hash table with the given key.
-  @param p The node to search for.
-  @param key The hashed value used to search the table.
-  @return The Edge<Node> found in the hash table or Edge<Node>::zero if not
-  found.
-  **/
+   * @brief Search for a node in the hash table with the given key.
+   * @param p The node to search for.
+   * @param key The hashed value used to search the table.
+   * @returns A pointer to the node if found or Node::getTerminal() otherwise.
+   */
   template <class Node>
   [[nodiscard]] Node* searchTable(Node& p, const std::size_t& key) {
     static_assert(std::is_base_of_v<NodeBase, Node>,

@@ -27,7 +27,7 @@ namespace dd {
  * @details This class is used to store common information for all DD nodes.
  * The `flags` makes the implicit padding explicit and can be used for storing
  * node properties.
- * Data Layout (8)|(4|2|2) = 16B.
+ * Data Layout (8)|(2|2|4) = 16B.
  */
 struct NodeBase : LLBase {
   /// Variable index
@@ -78,7 +78,7 @@ struct NodeBase : LLBase {
 
 /**
  * @brief A vector DD node
- * @details Data Layout (8)|(4|2|2)|(24|24) = 64B
+ * @details Data Layout (8)|(2|2|4)|(24|24) = 64B
  */
 struct vNode final : NodeBase {       // NOLINT(readability-identifier-naming)
   std::array<Edge<vNode>, RADIX> e{}; // edges out of this node
@@ -97,7 +97,7 @@ using VectorDD = vEdge;
 
 /**
  * @brief A matrix DD node
- * @details Data Layout (8)|(4|2|2)|(24|24|24|24) = 112B
+ * @details Data Layout (8)|(2|2|4)|(24|24|24|24) = 112B
  */
 struct mNode final : NodeBase {       // NOLINT(readability-identifier-naming)
   std::array<Edge<mNode>, NEDGE> e{}; // edges out of this node
@@ -116,7 +116,7 @@ using MatrixDD = mEdge;
 
 /**
  * @brief A density matrix DD node
- * @details Data Layout (8)|(4|2|2)|(24|24|24|24) = 112B
+ * @details Data Layout (8)|(2|2|4)|(24|24|24|24) = 112B
  */
 struct dNode final : NodeBase {       // NOLINT(readability-identifier-naming)
   std::array<Edge<dNode>, NEDGE> e{}; // edges out of this node

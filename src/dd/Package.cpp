@@ -104,23 +104,53 @@ bool Package::garbageCollect(bool force) {
     return false;
   }
 
-  // mark all nodes reachable from the current roots
-  for (auto* p : vectorRoots) {
-    markNodes(p);
+  // mark all nodes reachable from the current roots and count the referenced
+  // complex numbers
+  for (const auto& [edge, _] : vectorRoots) {
+    cn.incRef(edge.w);
+    markNodes(edge.p);
   }
-  for (auto* p : matrixRoots) {
-    markNodes(p);
+  for (const auto& [edge, _] : matrixRoots) {
+    cn.incRef(edge.w);
+    markNodes(edge.p);
   }
-  for (auto* p : densityRoots) {
-    markNodes(p);
+  for (const auto& [edge, _] : densityRoots) {
+    cn.incRef(edge.w);
+    markNodes(edge.p);
   }
 
-  const auto cCollect = cUniqueTable.garbageCollect(force);
-  // Collecting complex numbers forces collection of the node tables. The
-  // following calls explicitly use `true` to enforce this.
+  // first sweep all node tables
   const auto vCollect = vUniqueTable.garbageCollect(true);
   const auto mCollect = mUniqueTable.garbageCollect(true);
   const auto dCollect = dUniqueTable.garbageCollect(true);
+
+  // then collect unused complex numbers based on the reference counts gathered
+  // during the mark phase
+  const auto cCollect = cUniqueTable.garbageCollect(force);
+
+  // unmark all complex numbers again so reference counts are reset for the next
+  // collection cycle
+  {
+    std::unordered_set<vNode*> visited{};
+    for (const auto& [edge, _] : vectorRoots) {
+      cn.decRef(edge.w);
+      markComplexNumbersRec(edge.p, false, &visited);
+    }
+  }
+  {
+    std::unordered_set<mNode*> visited{};
+    for (const auto& [edge, _] : matrixRoots) {
+      cn.decRef(edge.w);
+      markComplexNumbersRec(edge.p, false, &visited);
+    }
+  }
+  {
+    std::unordered_set<dNode*> visited{};
+    for (const auto& [edge, _] : densityRoots) {
+      cn.decRef(edge.w);
+      markComplexNumbersRec(edge.p, false, &visited);
+    }
+  }
 
   // invalidate all compute tables involving vectors if any vector node has
   // been collected
@@ -174,7 +204,6 @@ dEdge Package::makeZeroDensityOperator(const std::size_t n) {
     f = makeDDNode(static_cast<Qubit>(p),
                    std::array{f, dEdge::zero(), dEdge::zero(), dEdge::zero()});
   }
-  incRef(f);
   return f;
 }
 
@@ -190,7 +219,6 @@ vEdge Package::makeZeroState(const std::size_t n, const std::size_t start) {
   for (std::size_t p = start; p < n + start; p++) {
     f = makeDDNode(static_cast<Qubit>(p), std::array{f, vEdge::zero()});
   }
-  incRef(f);
   return f;
 }
 

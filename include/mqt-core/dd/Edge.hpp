@@ -395,6 +395,23 @@ private:
 };
 } // namespace dd
 
+namespace dd {
+template <class Node> struct EdgePtrHash {
+  std::size_t operator()(const Edge<Node>& e) const noexcept {
+    const auto h1 = murmur64(reinterpret_cast<std::size_t>(e.p));
+    const auto h2 = murmur64(reinterpret_cast<std::size_t>(e.w.r));
+    const auto h3 = murmur64(reinterpret_cast<std::size_t>(e.w.i));
+    return qc::combineHash(qc::combineHash(h1, h2), h3);
+  }
+};
+
+template <class Node> struct EdgePtrEqual {
+  bool operator()(const Edge<Node>& lhs, const Edge<Node>& rhs) const noexcept {
+    return lhs.p == rhs.p && lhs.w.r == rhs.w.r && lhs.w.i == rhs.w.i;
+  }
+};
+} // namespace dd
+
 template <class Node> struct std::hash<dd::Edge<Node>> {
   std::size_t operator()(dd::Edge<Node> const& e) const noexcept;
 };

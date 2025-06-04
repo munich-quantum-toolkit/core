@@ -169,10 +169,17 @@ public:
   RealNumberUniqueTable cUniqueTable{cMemoryManager};
   ComplexNumbers cn{cUniqueTable};
 
-  // Root sets for mark-and-sweep garbage collection
-  std::unordered_set<vNode*> vectorRoots{};
-  std::unordered_set<mNode*> matrixRoots{};
-  std::unordered_set<dNode*> densityRoots{};
+  // Root sets for mark-and-sweep garbage collection with explicit
+  // reference counting for externally tracked DDs
+  std::unordered_map<vEdge, std::size_t, EdgePtrHash<vNode>,
+                     EdgePtrEqual<vNode>>
+      vectorRoots{};
+  std::unordered_map<mEdge, std::size_t, EdgePtrHash<mNode>,
+                     EdgePtrEqual<mNode>>
+      matrixRoots{};
+  std::unordered_map<dEdge, std::size_t, EdgePtrHash<dNode>,
+                     EdgePtrEqual<dNode>>
+      densityRoots{};
 
   /**
    * @brief Get the unique table for a given type
@@ -201,41 +208,46 @@ public:
   /**
    * @brief Mark an edge and add it to the root set
    *
-   * @details The complex edge weight and all complex numbers reachable from the
-   * node are marked. The edge itself is added to the appropriate root set so it
-   * is considered live for the mark phase of garbage collection.
+   * @details The edge is inserted into the appropriate root set so it is
+   * considered live for the mark phase of garbage collection.  Complex-number
+   * reference counts are only updated during garbage collection and therefore
+   * remain unaffected by this call.
    *
    * @tparam Node The node type of the edge.
    * @param e The edge to mark and add to the root set
    */
   template <class Node> void incRef(const Edge<Node>& e) noexcept {
-    cn.incRef(e.w);
-    markComplexRec(e.p, true);
-    addRoot(e);
+    static_cast<void>(addRoot(e));
   }
 
   /**
    * @brief Unmark an edge and remove it from the root set
    *
-   * @details The complex weight of the edge and all complex numbers reachable
-   * from the node are unmarked. The edge is removed from the root set so it can
-   * be reclaimed during the next sweep if it is no longer reachable from any
-   * other root.
+   * @details The edge is removed from the root set so it can be reclaimed
+   * during the next sweep if it is no longer reachable from any other root.
+   * Reference counts of complex numbers are not adjusted here.
    *
    * @tparam Node The node type of the edge.
    * @param e The edge to unmark and remove from the root set
    */
   template <class Node> void decRef(const Edge<Node>& e) noexcept {
-    cn.decRef(e.w);
-    markComplexRec(e.p, false);
-    removeRoot(e);
+    static_cast<void>(removeRoot(e));
   }
 
 private:
-  // helper to track complex number references recursively
-  template <class Node> void markComplexRec(Node* p, bool inc) noexcept {
+  // helper to mark/unmark complex numbers referenced by a node recursively
+  template <class Node>
+  void
+  markComplexNumbersRec(Node* p, bool inc,
+                        std::unordered_set<Node*>* visited = nullptr) noexcept {
     if (Node::isTerminal(p)) {
       return;
+    }
+    if (!inc && visited != nullptr) {
+      if (visited->find(p) != visited->end()) {
+        return;
+      }
+      visited->insert(p);
     }
     for (const auto& child : p->e) {
       if (inc) {
@@ -243,7 +255,7 @@ private:
       } else {
         cn.decRef(child.w);
       }
-      markComplexRec(child.p, inc);
+      markComplexNumbersRec(child.p, inc, visited);
     }
   }
 
@@ -253,28 +265,70 @@ private:
     }
     p->mark();
     for (const auto& child : p->e) {
+      cn.incRef(child.w);
       markNodes(child.p);
     }
   }
 
-  template <class Node> void addRoot(const Edge<Node>& e) {
+  template <class Node> bool addRoot(const Edge<Node>& e) {
     if constexpr (std::is_same_v<Node, vNode>) {
-      vectorRoots.insert(e.p);
+      auto it = vectorRoots.find(e);
+      if (it == vectorRoots.end()) {
+        vectorRoots.emplace(e, 1U);
+        return true;
+      }
+      ++it->second;
+      return false;
     } else if constexpr (std::is_same_v<Node, mNode>) {
-      matrixRoots.insert(e.p);
+      auto it = matrixRoots.find(e);
+      if (it == matrixRoots.end()) {
+        matrixRoots.emplace(e, 1U);
+        return true;
+      }
+      ++it->second;
+      return false;
     } else if constexpr (std::is_same_v<Node, dNode>) {
-      densityRoots.insert(e.p);
+      auto it = densityRoots.find(e);
+      if (it == densityRoots.end()) {
+        densityRoots.emplace(e, 1U);
+        return true;
+      }
+      ++it->second;
+      return false;
     }
+    return false;
   }
 
-  template <class Node> void removeRoot(const Edge<Node>& e) {
+  template <class Node> bool removeRoot(const Edge<Node>& e) {
     if constexpr (std::is_same_v<Node, vNode>) {
-      vectorRoots.erase(e.p);
+      auto it = vectorRoots.find(e);
+      if (it != vectorRoots.end()) {
+        if (--it->second == 0U) {
+          vectorRoots.erase(it);
+          return true;
+        }
+        return false;
+      }
     } else if constexpr (std::is_same_v<Node, mNode>) {
-      matrixRoots.erase(e.p);
+      auto it = matrixRoots.find(e);
+      if (it != matrixRoots.end()) {
+        if (--it->second == 0U) {
+          matrixRoots.erase(it);
+          return true;
+        }
+        return false;
+      }
     } else if constexpr (std::is_same_v<Node, dNode>) {
-      densityRoots.erase(e.p);
+      auto it = densityRoots.find(e);
+      if (it != densityRoots.end()) {
+        if (--it->second == 0U) {
+          densityRoots.erase(it);
+          return true;
+        }
+        return false;
+      }
     }
+    return false;
   }
 
 public:
