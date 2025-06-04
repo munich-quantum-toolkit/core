@@ -92,5 +92,20 @@ FetchContent_Declare(
       protobuf)
 list(APPEND FETCH_PACKAGES protobuf)
 
+# cmake-format: off
+set(QDMI_VERSION 1.1.0
+        CACHE STRING "QDMI version")
+set(QDMI_REV "v${QDMI_VERSION}"
+        CACHE STRING "QDMI identifier (tag, branch or commit hash)")
+set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
+        CACHE STRING "QDMI repository owner (change when using a fork)")
+# cmake-format: on
+FetchContent_Declare(
+  qdmi
+  GIT_REPOSITORY https://github.com/${QDMI_REPO_OWNER}/qdmi.git
+  GIT_TAG ${QDMI_REV}
+  FIND_PACKAGE_ARGS ${QDMI_VERSION})
+list(APPEND FETCH_PACKAGES qdmi)
+
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
