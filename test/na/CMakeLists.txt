@@ -11,3 +11,5 @@ if(TARGET MQT::CoreNA)
   package_add_test(mqt-core-na-test MQT::CoreNA ${NA_TEST_SOURCES})
   target_link_libraries(mqt-core-na-test PRIVATE MQT::CoreQASM)
 endif()
+
+add_subdirectory(device)
