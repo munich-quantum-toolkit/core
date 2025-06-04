@@ -81,16 +81,8 @@ set(Protobuf_VERSION
 set(Protobuf_URL
     https://github.com/protocolbuffers/protobuf/releases/download/v${Protobuf_VERSION}/protobuf-${Protobuf_VERSION}.tar.gz
 )
-FetchContent_Declare(
-  protobuf
-  URL ${Protobuf_URL}
-      SOURCE_SUBDIR
-      cmake
-      FIND_PACKAGE_ARGS
-      ${Protobuf_VERSION}
-      CONFIG
-      NAMES
-      protobuf)
+FetchContent_Declare(protobuf URL ${Protobuf_URL} FIND_PACKAGE_ARGS ${Protobuf_VERSION} CONFIG
+                                  NAMES protobuf)
 list(APPEND FETCH_PACKAGES protobuf)
 
 # cmake-format: off
