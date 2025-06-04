@@ -88,6 +88,7 @@ FetchContent_Declare(
       cmake
       FIND_PACKAGE_ARGS
       ${Protobuf_VERSION}
+      CONFIG
       NAMES
       protobuf)
 list(APPEND FETCH_PACKAGES protobuf)

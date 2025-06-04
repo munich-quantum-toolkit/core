@@ -24,7 +24,6 @@ if(TARGET qdmi::mqt_na_device)
   # ------------------------------------------------------------------------------
 
   package_add_test(${TARGET_NAME} qdmi::mqt_na_device test_interface.cpp)
-
   add_dependencies(${TARGET_NAME} qdmi_test_mqt_na_device_defs)
 
 endif()

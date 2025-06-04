@@ -17,11 +17,6 @@ set(QDMI_PREFIX "MQT_NA")
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
-  # todo: This seems wrong to me, does MQT Core not already set the C++ standard? Set the C++
-  # standard
-  set(CMAKE_CXX_STANDARD 17)
-  set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
   # Proto files
   set(PROTO_FILES ${PROJECT_SOURCE_DIR}/proto/na/device.proto)
 
@@ -36,9 +31,8 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Add include directories
   target_include_directories(
-    ${TARGET_NAME}
-    PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/include
-    PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${Protobuf_INCLUDE_DIRS})
+    ${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}
+                          ${Protobuf_INCLUDE_DIRS})
 
   # Link Protobuf, QDMI, spdlog, and project warnings
   target_link_libraries(
