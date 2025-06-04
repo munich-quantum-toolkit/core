@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package na;
+
+message Device {
+  string name = 1;
+
+  message Vector {
+    int32 x = 1;
+    int32 y = 2;
+  }
+  message Trap {
+    Vector lattice_origin = 1;
+    message LatticeVector {
+      Vector vector = 1;
+      uint32 repeat = 2;
+    }
+    repeated LatticeVector lattice_vectors = 2;
+    repeated Vector sublattice_offsets = 3;
+  }
+  repeated Trap traps = 2;
+  uint32 min_atom_distance = 3;
+
+  message Region {
+    Vector origin = 1;
+
+    message Size {
+      int32 width = 1;
+      int32 height = 2;
+    }
+    Size size = 2;
+  }
+  message GlobalSingleQubitOperation {
+    string name = 1;
+    Region region = 2;
+    double duration = 3;
+    double fidelity = 4;
+    uint32 num_parameters = 5;
+  }
+  repeated GlobalSingleQubitOperation global_single_qubit_operations = 4;
+
+  message GlobalMultiQubitOperation {
+    string name = 1;
+    Region region = 2;
+    double interaction_radius = 3;
+    double blocking_radius = 4;
+    double duration = 5;
+    double fidelity = 6;
+    double idling_fidelity = 7;
+    uint32 num_qubits = 8;
+    uint32 num_parameters = 9;
+  }
+  repeated GlobalMultiQubitOperation global_multi_qubit_operations = 5;
+
+  message LocalSingleQubitOperation {
+    string name = 1;
+    Region region = 2;
+    uint32 num_rows = 3;
+    uint32 num_columns = 4;
+    double duration = 5;
+    double fidelity = 6;
+    uint32 num_parameters = 7;
+  }
+  repeated LocalSingleQubitOperation local_single_qubit_operations = 6;
+
+  message LocalMultiQubitOperation {
+    string name = 1;
+    Region region = 2;
+    double interaction_radius = 3;
+    double blocking_radius = 4;
+    uint32 num_rows = 5;
+    uint32 num_columns = 6;
+    double duration = 7;
+    double fidelity = 8;
+    uint32 num_qubits = 9;
+    uint32 num_parameters = 10;
+  }
+  repeated LocalMultiQubitOperation local_multi_qubit_operations = 7;
+
+  message ShuttlingUnit {
+    string name = 1;
+    Region region = 2;
+    uint32 num_rows = 3;
+    uint32 num_columns = 4;
+    double moving_speed = 5;
+    double load_duration = 6;
+    double store_duration = 7;
+    double load_fidelity = 8;
+    double store_fidelity = 9;
+    uint32 num_parameters = 10;
+  }
+  repeated ShuttlingUnit shuttling_units = 8;
+
+  message DecoherenceTimes {
+    uint32 t1 = 1;
+    uint32 t2 = 2;
+  }
+  DecoherenceTimes decoherence_times = 9;
+
+  message Unit {
+    uint32 value = 1;
+    string unit = 2;
+  }
+  Unit length_unit = 10;
+  Unit time_unit = 11;
+}
