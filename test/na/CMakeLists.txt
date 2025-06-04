@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 if(TARGET MQT::CoreNA)
-  file(GLOB_RECURSE NA_TEST_SOURCES *.cpp)
+  file(GLOB NA_TEST_SOURCES *.cpp)
   package_add_test(mqt-core-na-test MQT::CoreNA ${NA_TEST_SOURCES})
   target_link_libraries(mqt-core-na-test PRIVATE MQT::CoreQASM)
 endif()
