@@ -14,6 +14,10 @@ project(
   LANGUAGES C CXX
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 # Add path for custom modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 

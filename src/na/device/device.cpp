@@ -15,10 +15,11 @@
 #include "mqt_na_qdmi/device.h"
 
 #include "device.pb.h"
-#include "spdlog/spdlog.h"
 
 #include <fstream>
 #include <google/protobuf/util/json_util.h>
+#include <spdlog/spdlog.h>
+#include <sstream>
 
 #ifdef __cplusplus
 #include <cstddef>
@@ -100,7 +101,7 @@ int MQT_NA_QDMI_device_initialize() {
   try {
     getDevice();
   } catch (const std::runtime_error& e) {
-    SPDLOG_ERROR(e);
+    SPDLOG_ERROR(e.what());
     return QDMI_ERROR_FATAL;
   }
   return QDMI_SUCCESS;
@@ -150,8 +151,7 @@ int MQT_NA_QDMI_device_job_check(MQT_NA_QDMI_Device_Job job,
   return QDMI_ERROR_NOTIMPLEMENTED;
 }
 
-int MQT_NA_QDMI_device_job_wait(MQT_NA_QDMI_Device_Job job,
-                                const size_t timeout) {
+int MQT_NA_QDMI_device_job_wait(MQT_NA_QDMI_Device_Job job) {
   return QDMI_ERROR_NOTIMPLEMENTED;
 }
 
