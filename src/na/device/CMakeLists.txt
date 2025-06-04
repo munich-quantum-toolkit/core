@@ -11,6 +11,9 @@ include(FindProtobuf)
 # Set target name
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device)
 
+# Set prefix for QDMI
+set(QDMI_PREFIX "MQT_NA")
+
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
@@ -28,11 +31,18 @@ if(NOT TARGET ${TARGET_NAME})
   # Add executable
   add_library(${TARGET_NAME} device.cpp ${PROTO_SRCS} ${PROTO_HDRS})
 
+  # Generate prefixed QDMI headers
+  generate_prefixed_qdmi_headers(${QDMI_PREFIX})
+
   # Add include directories
-  target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-  target_include_directories(${TARGET_NAME} PRIVATE ${Protobuf_INCLUDE_DIRS})
+  target_include_directories(
+    ${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/include
+                           ${Protobuf_INCLUDE_DIRS})
 
-  # Link Protobuf
-  target_link_libraries(${TARGET_NAME} PRIVATE ${Protobuf_LIBRARIES})
+  # Link Protobuf, QDMI
+  target_link_libraries(${TARGET_NAME} PRIVATE ${Protobuf_LIBRARIES} qdmi::qdmi
+                                               qdmi::project_warnings)
 
+  # Generate alias for the target
+  add_library(MQT::CoreNaQDMI ALIAS ${TARGET_NAME})
 endif()
