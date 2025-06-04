@@ -10,7 +10,12 @@
 
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Operation.hpp"
-#include "python/pybind11.hpp"
+
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+// clang-format on
 
 #include <cstddef>
 #include <memory>
@@ -19,6 +24,9 @@
 #include <vector>
 
 namespace mqt {
+
+namespace py = pybind11;
+using namespace py::literals;
 
 using DiffType = std::vector<std::unique_ptr<qc::Operation>>::difference_type;
 using SizeType = std::vector<std::unique_ptr<qc::Operation>>::size_type;

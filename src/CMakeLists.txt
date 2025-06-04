@@ -6,7 +6,6 @@
 #
 # Licensed under the MIT License
 
-set(MQT_CORE_TARGET_NAME "mqt-core")
 set(MQT_CORE_TARGETS "")
 
 if(MQT_CORE_INSTALL)
@@ -19,15 +18,6 @@ if(MQT_CORE_INSTALL)
       "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-config-version.cmake")
   set(MQT_CORE_CMAKE_PROJECT_CONFIG_FILE "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-config.cmake")
   set(MQT_CORE_CMAKE_PROJECT_TARGETS_FILE "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-targets.cmake")
-
-  if(APPLE)
-    set(BASEPOINT @loader_path)
-  else()
-    set(BASEPOINT $ORIGIN)
-  endif()
-  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR})
-  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
 
 if(NOT TARGET MQT::ProjectWarnings)
@@ -89,10 +79,6 @@ add_subdirectory(zx)
 
 # add NA library
 add_subdirectory(na)
-
-if(BUILD_MQT_CORE_BINDINGS)
-  add_subdirectory(python)
-endif()
 
 # Installation instructions for the main library
 if(MQT_CORE_INSTALL)

@@ -9,12 +9,20 @@
  */
 
 #include "ir/operations/Expression.hpp"
-#include "python/pybind11.hpp"
 
+// These includes must be the first includes for any bindings code
+// clang-format off
 #include <pybind11/operators.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+// clang-format on
+
 #include <string>
 
 namespace mqt {
+
+namespace py = pybind11;
+using namespace py::literals;
 
 void registerVariable(py::module& m) {
   py::class_<sym::Variable>(m, "Variable")
