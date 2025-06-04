@@ -137,13 +137,6 @@ int MQT_NA_QDMI_device_job_set_parameter(MQT_NA_QDMI_Device_Job job,
   return QDMI_ERROR_NOTIMPLEMENTED;
 }
 
-int MQT_NA_QDMI_device_job_query_property(MQT_NA_QDMI_Device_Job job,
-                                          const QDMI_Device_Job_Property prop,
-                                          const size_t size, void* value,
-                                          size_t* size_ret) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
-}
-
 int MQT_NA_QDMI_device_job_submit(MQT_NA_QDMI_Device_Job job) {
   return QDMI_ERROR_NOTIMPLEMENTED;
 }

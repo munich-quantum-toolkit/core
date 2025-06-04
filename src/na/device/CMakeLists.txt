@@ -43,9 +43,8 @@ if(NOT TARGET ${TARGET_NAME})
   # Link Protobuf, QDMI, spdlog, and project warnings
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC qdmi::qdmi
-    PRIVATE ${Protobuf_LIBRARIES} qdmi::project_warnings spdlog::spdlog MQT::ProjectOptions
-            MQT::ProjectWarnings)
+    PUBLIC qdmi::qdmi ${Protobuf_LIBRARIES} spdlog::spdlog
+    PRIVATE qdmi::project_warnings MQT::ProjectOptions MQT::ProjectWarnings)
 
   # Generate alias for the target
   add_library(MQT::CoreNaQDMI ALIAS ${TARGET_NAME})
