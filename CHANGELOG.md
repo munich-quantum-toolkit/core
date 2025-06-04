@@ -17,7 +17,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
-- 🐛 Ignore Qiskit 2.1 deprecation warnings related to MXC gates ([#983]) ([**@ystade**])
+- 🐛 Prevent Qiskit 2.1 deprecation warnings by removing mode for mcx gates ([#983]) ([**@ystade**])
 - 🐛 Fix bug in MLIR roundtrip passes caused by accessing an invalidated iterator after erasure in a loop ([#932]) ([**@flowerthrower**])
 - 🐛 Add missing support for `sxdg` gates in Qiskit circuit import ([#930]) ([**@burgholzer**])
 - 🐛 Fix bug initialization of operations with duplicate operands ([#964]) ([**@ystade**])
