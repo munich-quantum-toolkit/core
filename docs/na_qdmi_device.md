@@ -11,14 +11,118 @@ mystnb:
 ## Objective
 
 Compilation passes throughout MQT need information about the target device.
-The Neutral Atom QDMI device provides a uniform way to provide the necessary information for neutral atom-based quantum devices.
-It defines a representation to easily provide static information in the form of a JSON file.
+The Neutral Atom QDMI device provides a uniform way to provide the necessary information.
+It defines a representation to easily provide static information in the form of a file.
 
-## Describing a Device
+## File Format
 
-The basis of a such device implementation is a specification in a JSON file.
-The structure of this JSON file is defined by the {cpp:class}`na::Device` struct.
-The struct defines functions to serialize and deserialize the data using the [nlohmann/json](https://json.nlohmann.me) library.
-During compilation, this JSON file is parsed and the corresponding C++ code is produced by an application (see `src/na/device/App.cpp`) for the actual QDMI device implementation.
-The C++ code is then compiled to a library that can be used by the QDMI driver.
-An example instance of a device JSON file can be found in `json/na/device.json`.
+```yaml
+name: <str>
+decoherence_times:
+  t1: <uint>
+  t2: <uint>
+min_atom_distance: <uint>
+length_unit:
+  value: <uint>
+  unit: <str>
+time_unit:
+  value: <uint>
+  unit: <str>
+traps:
+  - lattice_origin:
+      x: <int>
+      y: <int>
+    lattice_vectors:
+      - x: <int>
+        y: <int>
+        repeat: <uint>
+      - x: <int>
+        y: <int>
+        repeat: <uint>
+    sublattice_offsets:
+      - x: <int>
+        y: <int>
+      ...
+  ...
+global_single_qubit_operations:
+  - name: <str>
+    num_parameters: <uint>
+    duration: <float>
+    fidelity: <float>
+    region:
+      origin:
+        x: <int>
+        y: <int>
+      size:
+        width: <int>
+        height: <int>
+  ...
+global_multi_qubit_operations:
+  - name: <str>
+    num_qubits: <num>
+    num_parameters: <num>
+    duration: <duration>
+    fidelity: <fidelity>
+    idling_fidelity: <fidelity>
+    interaction_radius: <radius>
+    blocking_radius: <radius>
+    region:
+      origin:
+        x: <int>
+        y: <int>
+      size:
+        width: <int>
+        height: <int>
+  ...
+local_single_qubit_operations:
+  - name: <name>
+    num_parameters: <num>
+    duration: <duration>
+    fidelity: <fidelity>
+    num_rows: <num>
+    num_columns: <num>
+    region:
+      origin:
+        x: <int>
+        y: <int>
+      size:
+        width: <int>
+        height: <int>
+  ...
+local_multi_qubit_operations:
+  - name: <name>
+    num_qubits: <num>
+    num_parameters: <num>
+    duration: <duration>
+    fidelity: <fidelity>
+    interaction_radius: <radius>
+    blocking_radius: <radius>
+    num_rows: <num>
+    num_columns: <num>
+    region:
+      origin:
+        x: <int>
+        y: <int>
+      size:
+        width: <int>
+        height: <int>
+  ...
+shuttling_units:
+  - name: <name>
+    num_parameters: <num>
+    load_duration: <duration>
+    load_fidelity: <fidelity>
+    moving_speed: <duration>
+    store_duration: <duration>
+    store_fidelity: <fidelity>
+    num_rows: <num>
+    num_columns: <num>
+    region:
+      origin:
+        x: <int>
+        y: <int>
+      size:
+        width: <int>
+        height: <int>
+  ...
+```
