@@ -152,6 +152,11 @@ filterwarnings = [
   'ignore:.*``qiskit.dagcircuit.dagcircuit.DAGCircuit.*`` is deprecated as of qiskit 1.3.0.*:DeprecationWarning:',
   'ignore:.*``qiskit.circuit.library.standard_gates.x.*`` is pending deprecation as of qiskit 1.3.*:PendingDeprecationWarning:',
   'ignore:.*``qiskit.circuit.instruction.Instruction.condition`` is deprecated as of qiskit 1.3.0.*:DeprecationWarning:',
+  # Qiskit 2.1 deprecations
+  "ignore:.*``qiskit.circuit.quantumcircuit.QuantumCircuit.mcx.*``'s argument ``mode`` is deprecated as of Qiskit 2.1.*:DeprecationWarning:",
+  "ignore:.*``qiskit.circuit.library.standard_gates.x.MCXRecursive.__new__.*`` is deprecated as of Qiskit 2.1.*:DeprecationWarning:",
+  "ignore:.*``qiskit.circuit.library.standard_gates.x.MCXGate.get_num_ancilla_qubits.*`` is deprecated as of Qiskit 2.1.*:DeprecationWarning:",
+  "ignore:.*``qiskit.circuit.library.standard_gates.x.MCXVChain.__new__.*`` is deprecated as of Qiskit 2.1.*:DeprecationWarning:",
 ]
 log_cli_level = "INFO"
 testpaths = ["test/python"]
