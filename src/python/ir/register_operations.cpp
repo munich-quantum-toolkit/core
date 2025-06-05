@@ -29,6 +29,7 @@ void registerNonUnitaryOperation(const py::module& m);
 void registerSymbolicOperation(const py::module& m);
 void registerClassicControlledOperation(const py::module& m);
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerOperations(py::module& m) {
   registerOptype(m);
   registerControl(m);

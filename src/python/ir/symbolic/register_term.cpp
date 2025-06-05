@@ -26,6 +26,7 @@ namespace mqt {
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerTerm(py::module& m) {
   py::class_<sym::Term<double>>(m, "Term")
       .def(py::init<sym::Variable, double>(), "variable"_a,

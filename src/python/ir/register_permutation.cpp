@@ -31,6 +31,7 @@ namespace mqt {
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerPermutation(py::module& m) {
   py::class_<qc::Permutation>(m, "Permutation")
       .def(py::init<>())

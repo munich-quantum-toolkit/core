@@ -41,6 +41,7 @@ using namespace pybind11::literals;
 using DiffType = std::vector<std::unique_ptr<qc::Operation>>::difference_type;
 using SizeType = std::vector<std::unique_ptr<qc::Operation>>::size_type;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerQuantumComputation(py::module& m) {
   auto wrap = [](DiffType i, const SizeType size) {
     if (i < 0) {

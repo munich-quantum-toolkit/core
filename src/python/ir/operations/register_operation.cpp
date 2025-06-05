@@ -26,6 +26,7 @@ namespace mqt {
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerOperation(const py::module& m) {
   py::class_<qc::Operation>(m, "Operation")
       .def_property_readonly("name", &qc::Operation::getName)

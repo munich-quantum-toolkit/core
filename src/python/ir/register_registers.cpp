@@ -28,6 +28,7 @@ namespace mqt {
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerRegisters(py::module& m) {
   py::class_<qc::QuantumRegister>(m, "QuantumRegister")
       .def(py::init<const qc::Qubit, const std::size_t, const std::string&>(),

@@ -30,6 +30,7 @@ namespace mqt {
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerSymbolicOperation(const py::module& m) {
   py::class_<qc::SymbolicOperation, qc::StandardOperation>(
       m, "SymbolicOperation",

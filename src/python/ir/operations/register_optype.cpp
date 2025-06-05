@@ -25,6 +25,7 @@ namespace mqt {
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerOptype(const py::module& m) {
   py::enum_<qc::OpType>(m, "OpType")
       .value("none", qc::OpType::None)

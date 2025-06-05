@@ -93,6 +93,7 @@ dd::mCachedEdge makeDDFromMatrix(
 }
 } // namespace
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerDDPackage(const py::module& mod) {
   auto dd =
       py::class_<dd::Package, std::unique_ptr<dd::Package>>(mod, "DDPackage");

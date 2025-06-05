@@ -30,6 +30,7 @@ namespace mqt {
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerClassicControlledOperation(const py::module& m) {
   py::enum_<qc::ComparisonKind>(m, "ComparisonKind")
       .value("eq", qc::ComparisonKind::Eq)

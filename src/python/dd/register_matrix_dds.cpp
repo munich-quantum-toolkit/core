@@ -40,6 +40,7 @@ struct Matrix {
   size_t n;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
                  const dd::fp threshold = 0.) {
   if (numQubits == 0U) {
@@ -55,6 +56,7 @@ Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
   return Matrix{data, dim};
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerMatrixDDs(const py::module& mod) {
   auto mat = py::class_<dd::mEdge>(mod, "MatrixDD");
 
@@ -74,6 +76,7 @@ void registerMatrixDDs(const py::module& mod) {
       .def_buffer([](Matrix& matrix) -> py::buffer_info {
         return py::buffer_info(
             matrix.data.data(), sizeof(std::complex<dd::fp>),
+            // NOLINTNEXTLINE(misc-include-cleaner)
             py::format_descriptor<std::complex<dd::fp>>::format(), 2,
             {matrix.n, matrix.n},
             {sizeof(std::complex<dd::fp>) * matrix.n,

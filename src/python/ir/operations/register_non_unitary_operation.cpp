@@ -29,6 +29,7 @@ namespace mqt {
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerNonUnitaryOperation(const py::module& m) {
   py::class_<qc::NonUnitaryOperation, qc::Operation>(m, "NonUnitaryOperation")
       .def(py::init<std::vector<qc::Qubit>, std::vector<qc::Bit>>(),

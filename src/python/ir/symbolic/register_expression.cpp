@@ -29,6 +29,7 @@ namespace mqt {
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerExpression(py::module& m) {
   py::class_<sym::Expression<double, double>>(m, "Expression")
       .def(py::init([](const std::vector<sym::Term<double>>& terms,
@@ -78,7 +79,7 @@ void registerExpression(py::module& m) {
       .def("__radd__", [](const sym::Expression<double, double>& rhs,
                           const double lhs) { return rhs + lhs; })
       // subtraction operators
-      .def(py::self - py::self)
+      .def(py::self - py::self) // NOLINT(misc-redundant-expression)
       .def(py::self - double())
       .def(double() - py::self)
       .def("__sub__", [](const sym::Expression<double, double>& lhs,

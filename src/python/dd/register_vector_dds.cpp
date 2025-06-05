@@ -38,10 +38,12 @@ struct Vector {
   dd::CVec v;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 Vector getVector(const dd::vEdge& v, const dd::fp threshold = 0.) {
   return {v.getVector(threshold)};
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerVectorDDs(const py::module& mod) {
   auto vec = py::class_<dd::vEdge>(mod, "VectorDD");
 
@@ -69,6 +71,7 @@ void registerVectorDDs(const py::module& mod) {
       .def_buffer([](Vector& vector) -> py::buffer_info {
         return py::buffer_info(
             vector.v.data(), sizeof(std::complex<dd::fp>),
+            // NOLINTNEXTLINE(misc-include-cleaner)
             py::format_descriptor<std::complex<dd::fp>>::format(), 1,
             {vector.v.size()}, {sizeof(std::complex<dd::fp>)});
       });

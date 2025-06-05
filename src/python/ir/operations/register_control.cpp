@@ -26,6 +26,7 @@ namespace mqt {
 namespace py = pybind11;
 using namespace pybind11::literals;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerControl(const py::module& m) {
 
   auto control = py::class_<qc::Control>(m, "Control");
