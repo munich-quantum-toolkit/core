@@ -17,6 +17,8 @@
 #include "device.pb.h"
 
 #include <fstream>
+#include <google/protobuf/descriptor.h>
+#include <google/protobuf/message.h>
 #include <google/protobuf/util/json_util.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -52,6 +54,83 @@ struct MQT_NA_QDMI_Device_Site_impl_d {};
 struct MQT_NA_QDMI_Device_Operation_impl_d {};
 
 namespace {
+
+/**
+ * @brief Populates all repeated fields of the message type in the given
+ * Protobuf message with empty messages.
+ * @param message The Protobuf message to populate.
+ * @throws std::runtime_error if a repeated field has an unsupported type, i.e.,
+ * not a message type.
+ * @note This is a recursive auxiliary function used by @ref writeJsonSchema
+ */
+auto populateRepeatedFields(google::protobuf::Message* message) -> void {
+  const google::protobuf::Descriptor* descriptor = message->GetDescriptor();
+  const google::protobuf::Reflection* reflection = message->GetReflection();
+
+  for (int i = 0; i < descriptor->field_count(); ++i) {
+    const google::protobuf::FieldDescriptor* field = descriptor->field(i);
+    if (field->is_repeated()) {
+      switch (field->cpp_type()) {
+      case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE:
+        populateRepeatedFields(reflection->AddMessage(message, field));
+        break;
+      default:
+        std::stringstream ss;
+        ss << "Unsupported repeated field type in device configuration: "
+           << field->cpp_type();
+        throw std::runtime_error(ss.str());
+      }
+    }
+  }
+}
+
+// todo: Should this function be exposed and how because it is not part of the
+//  public QDMI API?
+/**
+ * @brief Writes a JSON schema with default values for the device configuration
+ * to the specified path.
+ * @param path The path to write the JSON schema to.
+ * @throws std::runtime_error if the JSON conversion fails or the file cannot be
+ * opened.
+ */
+auto writeJsonSchema(const std::string& path) -> void {
+  // Create a default device configuration
+  na::Device device;
+
+  // Fill each repeated field with an empty message
+  populateRepeatedFields(&device);
+
+  // Set print options
+  google::protobuf::util::JsonPrintOptions options;
+  options.always_print_fields_with_no_presence = true;
+
+  // Convert to JSON
+  std::string json;
+  const auto status =
+      google::protobuf::util::MessageToJsonString(device, &json, options);
+  if (!status.ok()) {
+    std::stringstream ss;
+    ss << "Failed to convert Protobuf message to JSON: " << status.ToString();
+    throw std::runtime_error(ss.str());
+  }
+
+  // Write to file
+  std::ofstream ofs(path);
+  if (ofs.is_open()) {
+    ofs << json;
+    ofs.close();
+#if SPDLOG_ACTIVE_LEVEL <= SPDLOG_LEVEL_INFO
+    std::stringstream ss;
+    ss << "JSON template written to " << path;
+    SPDLOG_INFO(ss.str());
+#endif
+  } else {
+    std::stringstream ss;
+    ss << "Failed to open file for writing: " << path;
+    throw std::runtime_error(ss.str());
+  }
+}
+
 /**
  * @brief Returns a reference to the device singleton.
  * @details This function initializes the device singleton on the first call
@@ -87,8 +166,10 @@ auto getDevice() -> const na::Device& {
     const auto status =
         google::protobuf::util::JsonStringToMessage(json, &device);
     if (!status.ok()) {
-      throw std::runtime_error("Failed to parse JSON file: " +
-                               status.ToString());
+      std::stringstream ss;
+      ss << "Failed to parse JSON string into Protobuf message: "
+         << status.ToString();
+      throw std::runtime_error(ss.str());
     }
     // Set initialized to true to avoid re-initialization
     initialized = true;
