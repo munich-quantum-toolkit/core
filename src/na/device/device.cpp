@@ -49,8 +49,9 @@ struct MQT_NA_QDMI_Device_Job_impl_d {};
  * @brief Implementation of the MQT_NA_QDMI_Device_Site structure.
  */
 struct MQT_NA_QDMI_Site_impl_d {
-  int64_t x = 0; ///< X coordinate of the site in the lattice
-  int64_t y = 0; ///< Y coordinate of the site in the lattice
+  size_t id; ///< Unique identifier of the site
+  int64_t x; ///< X coordinate of the site in the lattice
+  int64_t y; ///< Y coordinate of the site in the lattice
 };
 
 /**
@@ -186,6 +187,24 @@ auto writeJsonSchema(const std::string& path) -> void {
   return operations;
 }
 
+/// Collects decoherence times for the device.
+struct DecoherenceTimes {
+  double t1; ///< T1 time in microseconds
+  double t2; ///< T2 time in microseconds
+};
+
+/**
+ * @brief Provides access to the decoherence times of the device.
+ * @details This function returns a reference to a static instance of
+ * @ref DecoherenceTimes, which is used to store the decoherence times for the
+ * device.
+ * @returns A reference to a static instance of @ref DecoherenceTimes.
+ */
+[[nodiscard]] auto decoherence() -> DecoherenceTimes& {
+  static DecoherenceTimes decoherenceTimes;
+  return decoherenceTimes;
+}
+
 /**
  * @brief Parses the device configuration from a JSON file specified by the
  * environment variable MQT_CORE_NA_QDMI_DEVICE_JSON_FILE.
@@ -269,6 +288,7 @@ auto importName(const na::Device& device) -> void { name() = device.name(); }
  * @param device The Protobuf message containing the device configuration.
  */
 auto importSites(const na::Device& device) -> void {
+  size_t count = 0;
   for (const auto& lattice : device.traps()) {
     const auto originX = lattice.lattice_origin().x();
     const auto originY = lattice.lattice_origin().y();
@@ -282,6 +302,7 @@ auto importSites(const na::Device& device) -> void {
       for (const auto& offset : lattice.sublattice_offsets()) {
         auto& site =
             sites().emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>());
+        site->id = count++;
         site->x = originX + offset.x();
         site->y = originY + offset.y();
         for (size_t i = 0; i < lattice.lattice_vectors_size(); ++i) {
@@ -298,7 +319,48 @@ auto importSites(const na::Device& device) -> void {
  * @brief Imports the operations from the Protobuf message into the device.
  * @param device The Protobuf message containing the device configuration.
  */
-auto importOperations(const na::Device& device) -> void {}
+auto importOperations(const na::Device& device) -> void {
+  for (const auto& operation : device.global_single_qubit_operations()) {
+    auto& op = operations().emplace_back(
+        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
+    op->name = operation.name();
+  }
+  for (const auto& operation : device.global_multi_qubit_operations()) {
+    auto& op = operations().emplace_back(
+        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
+    op->name = operation.name();
+  }
+  for (const auto& operation : device.local_single_qubit_operations()) {
+    auto& op = operations().emplace_back(
+        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
+    op->name = operation.name();
+  }
+  for (const auto& operation : device.local_multi_qubit_operations()) {
+    auto& op = operations().emplace_back(
+        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
+    op->name = operation.name();
+  }
+}
+
+/**
+ * @brief Imports the decoherence times from the Protobuf message into the
+ * device.
+ * @param device The Protobuf message containing the device configuration.
+ */
+auto importDecoherenceTimes(const na::Device& device) -> void {
+  double factor = device.time_unit().value();
+  if (device.time_unit().unit() == "ns") {
+    factor *= 1e-3;
+  } else if (device.time_unit().unit() == "ms") {
+    factor *= 1e3;
+  } else if (device.time_unit().unit() != "us") {
+    std::stringstream ss;
+    ss << "Unsupported time unit: " << device.time_unit().unit();
+    throw std::runtime_error(ss.str());
+  }
+  decoherence().t1 = device.decoherence_times().t1() * factor;
+  decoherence().t2 = device.decoherence_times().t2() * factor;
+}
 
 /**
  * @brief Initializes the device with the configuration parsed from the JSON
@@ -317,6 +379,7 @@ auto initialize() -> void {
   importName(device);
   importSites(device);
   importOperations(device);
+  importDecoherenceTimes(device);
   // Set initialized to true to avoid re-initialization
   initialized() = true;
 }
@@ -522,7 +585,17 @@ int MQT_NA_QDMI_device_session_query_site_property(
     MQT_NA_QDMI_Device_Session session, MQT_NA_QDMI_Site site,
     const QDMI_Site_Property prop, const size_t size, void* value,
     size_t* size_ret) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (session == nullptr || site == nullptr ||
+      (value != nullptr && size == 0) || prop >= QDMI_SITE_PROPERTY_MAX) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_ID, uint64_t, site->id, prop,
+                            size, value, size_ret)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T1, double, decoherence().t1,
+                            prop, size, value, size_ret)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T2, double, decoherence().t2,
+                            prop, size, value, size_ret)
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_NA_QDMI_device_session_query_operation_property(
