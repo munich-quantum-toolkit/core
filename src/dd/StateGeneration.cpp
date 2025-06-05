@@ -184,7 +184,7 @@ VectorDD makeWState(const std::size_t n, Package& dd) {
 
   auto leftSubtree = vEdge::zero();
   if ((1. / sqrt(static_cast<double>(n))) < RealNumber::eps) {
-    throw std::runtime_error(
+    throw std::invalid_argument(
         "Requested qubit size for generating W-state would lead to an "
         "underflow due to 1 / sqrt(n) being smaller than the currently set "
         "tolerance " +

@@ -296,10 +296,15 @@ TEST(StateGenerationTest, MakeWInvalidArguments) {
 
   // Test: Misconfigured package (# of qubits).
 
-  constexpr std::size_t nq = 2;
+  constexpr std::size_t nq = 100;
 
   auto dd = std::make_unique<Package>(nq);
   EXPECT_THROW({ makeWState(nq + 1, *dd); }, std::invalid_argument);
+
+  const auto tol = dd::RealNumber::eps;
+  dd::ComplexNumbers::setTolerance(1);
+  EXPECT_THROW({ makeWState(nq, *dd); }, std::invalid_argument);
+  dd::ComplexNumbers::setTolerance(tol); // Reset tolerance.
 }
 
 TEST(StateGenerationTest, FromVectorInvalidArguments) {
@@ -329,7 +334,7 @@ TEST(StateGenerationTest, GenerateExponential) {
 
   const auto dd = std::make_unique<Package>(nq);
   const auto state = generateExponentialState(nq, *dd);
-  const auto rebuild = dd->makeStateFromVector(state.getVector());
+  const auto rebuild = makeStateFromVector(state.getVector(), *dd);
   const std::size_t size = 1ULL << nq;
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
@@ -356,7 +361,7 @@ TEST(StateGenerationTest, GenerateExponentialWithSeed) {
 
   const auto dd = std::make_unique<Package>(nq);
   const auto state = generateExponentialState(nq, *dd, 42U);
-  const auto rebuild = dd->makeStateFromVector(state.getVector());
+  const auto rebuild = makeStateFromVector(state.getVector(), *dd);
   const std::size_t size = 1ULL << nq;
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
@@ -412,7 +417,7 @@ TEST(StateGenerationTest, GenerateRandomRoundRobin) {
 
   const auto dd = std::make_unique<Package>(nq);
   const auto state = generateRandomState(nq, nodesPerLevel, ROUNDROBIN, *dd);
-  const auto rebuild = dd->makeStateFromVector(state.getVector());
+  const auto rebuild = makeStateFromVector(state.getVector(), *dd);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), size + 1); // plus terminal.
@@ -445,7 +450,7 @@ TEST(StateGenerationTest, GenerateRandomRoundRobinWithSeed) {
   const auto dd = std::make_unique<Package>(nq);
   const auto state =
       generateRandomState(nq, nodesPerLevel, ROUNDROBIN, *dd, 72U);
-  const auto rebuild = dd->makeStateFromVector(state.getVector());
+  const auto rebuild = makeStateFromVector(state.getVector(), *dd);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), size + 1); // plus terminal.
@@ -476,7 +481,7 @@ TEST(StateGenerationTest, GenerateRandomRandom) {
 
   const auto dd = std::make_unique<Package>(nq);
   const auto state = generateRandomState(nq, nodesPerLevel, RANDOM, *dd);
-  const auto rebuild = dd->makeStateFromVector(state.getVector());
+  const auto rebuild = makeStateFromVector(state.getVector(), *dd);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), size + 1); // plus terminal.
@@ -508,7 +513,7 @@ TEST(StateGenerationTest, GenerateRandomRandomWithSeed) {
 
   const auto dd = std::make_unique<Package>(nq);
   const auto state = generateRandomState(nq, nodesPerLevel, RANDOM, *dd, 1337U);
-  const auto rebuild = dd->makeStateFromVector(state.getVector());
+  const auto rebuild = makeStateFromVector(state.getVector(), *dd);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), size + 1); // plus terminal.
