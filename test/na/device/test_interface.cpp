@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-class QDMIImplementationTest : public ::testing::Test {
+class QDMISpecificationTest : public ::testing::Test {
 protected:
   MQT_NA_QDMI_Device_Session session = nullptr;
 
@@ -40,20 +40,20 @@ protected:
   void TearDown() override { MQT_NA_QDMI_device_finalize(); }
 };
 
-TEST_F(QDMIImplementationTest, SessionSetParameterImplemented) {
+TEST_F(QDMISpecificationTest, SessionSetParameter) {
   ASSERT_EQ(MQT_NA_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMIImplementationTest, JobCreateImplemented) {
+TEST_F(QDMISpecificationTest, JobCreate) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_NE(MQT_NA_QDMI_device_session_create_device_job(session, &job),
             QDMI_ERROR_NOTIMPLEMENTED);
   MQT_NA_QDMI_device_job_free(job);
 }
 
-TEST_F(QDMIImplementationTest, JobSetParameterImplemented) {
+TEST_F(QDMISpecificationTest, JobSetParameter) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
             QDMI_ERROR_PERMISSIONDENIED);
@@ -63,7 +63,7 @@ TEST_F(QDMIImplementationTest, JobSetParameterImplemented) {
   MQT_NA_QDMI_device_job_free(job);
 }
 
-TEST_F(QDMIImplementationTest, JobSubmitImplemented) {
+TEST_F(QDMISpecificationTest, JobSubmit) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
             QDMI_ERROR_PERMISSIONDENIED);
@@ -71,7 +71,7 @@ TEST_F(QDMIImplementationTest, JobSubmitImplemented) {
   MQT_NA_QDMI_device_job_free(job);
 }
 
-TEST_F(QDMIImplementationTest, JobCancelImplemented) {
+TEST_F(QDMISpecificationTest, JobCancel) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
             QDMI_ERROR_PERMISSIONDENIED);
@@ -79,7 +79,7 @@ TEST_F(QDMIImplementationTest, JobCancelImplemented) {
   MQT_NA_QDMI_device_job_free(job);
 }
 
-TEST_F(QDMIImplementationTest, JobCheckImplemented) {
+TEST_F(QDMISpecificationTest, JobCheck) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   QDMI_Job_Status status = QDMI_JOB_STATUS_RUNNING;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
@@ -89,7 +89,7 @@ TEST_F(QDMIImplementationTest, JobCheckImplemented) {
   MQT_NA_QDMI_device_job_free(job);
 }
 
-TEST_F(QDMIImplementationTest, JobWaitImplemented) {
+TEST_F(QDMISpecificationTest, JobWait) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
             QDMI_ERROR_PERMISSIONDENIED);
@@ -97,7 +97,7 @@ TEST_F(QDMIImplementationTest, JobWaitImplemented) {
   MQT_NA_QDMI_device_job_free(job);
 }
 
-TEST_F(QDMIImplementationTest, JobGetResultsImplemented) {
+TEST_F(QDMISpecificationTest, JobGetResults) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
             QDMI_ERROR_PERMISSIONDENIED);
@@ -107,26 +107,26 @@ TEST_F(QDMIImplementationTest, JobGetResultsImplemented) {
   MQT_NA_QDMI_device_job_free(job);
 }
 
-TEST_F(QDMIImplementationTest, QueryDevicePropertyImplemented) {
+TEST_F(QDMISpecificationTest, QueryDeviceProperty) {
   ASSERT_EQ(MQT_NA_QDMI_device_session_query_device_property(
                 nullptr, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMIImplementationTest, QuerySitePropertyImplemented) {
+TEST_F(QDMISpecificationTest, QuerySiteProperty) {
   ASSERT_EQ(MQT_NA_QDMI_device_session_query_site_property(
                 nullptr, nullptr, QDMI_SITE_PROPERTY_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMIImplementationTest, QueryOperationPropertyImplemented) {
+TEST_F(QDMISpecificationTest, QueryOperationProperty) {
   ASSERT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                 nullptr, nullptr, 0, nullptr, 0, nullptr,
                 QDMI_OPERATION_PROPERTY_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMIImplementationTest, QueryDeviceNameImplemented) {
+TEST_F(QDMISpecificationTest, QueryDeviceName) {
   size_t size = 0;
   ASSERT_EQ(MQT_NA_QDMI_device_session_query_device_property(
                 session, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, &size),
@@ -141,7 +141,7 @@ TEST_F(QDMIImplementationTest, QueryDeviceNameImplemented) {
   ASSERT_FALSE(value.empty()) << "Devices must provide a name";
 }
 
-TEST_F(QDMIImplementationTest, QueryDeviceVersionImplemented) {
+TEST_F(QDMISpecificationTest, QueryDeviceVersion) {
   size_t size = 0;
   ASSERT_EQ(MQT_NA_QDMI_device_session_query_device_property(
                 session, QDMI_DEVICE_PROPERTY_VERSION, 0, nullptr, &size),
@@ -156,7 +156,7 @@ TEST_F(QDMIImplementationTest, QueryDeviceVersionImplemented) {
   ASSERT_FALSE(value.empty()) << "Devices must provide a version";
 }
 
-TEST_F(QDMIImplementationTest, QueryDeviceLibraryVersionImplemented) {
+TEST_F(QDMISpecificationTest, QueryDeviceLibraryVersion) {
   size_t size = 0;
   ASSERT_EQ(
       MQT_NA_QDMI_device_session_query_device_property(
@@ -172,7 +172,7 @@ TEST_F(QDMIImplementationTest, QueryDeviceLibraryVersionImplemented) {
   ASSERT_FALSE(value.empty()) << "Devices must provide a library version";
 }
 
-TEST_F(QDMIImplementationTest, QuerySiteIndexImplemented) {
+TEST_F(QDMISpecificationTest, QuerySiteIndex) {
   size_t size = 0;
   ASSERT_EQ(MQT_NA_QDMI_device_session_query_device_property(
                 session, QDMI_DEVICE_PROPERTY_SITES, 0, nullptr, &size),
@@ -194,7 +194,7 @@ TEST_F(QDMIImplementationTest, QuerySiteIndexImplemented) {
   }
 }
 
-TEST_F(QDMIImplementationTest, QueryDeviceQubitNum) {
+TEST_F(QDMISpecificationTest, QueryDeviceQubitNum) {
   size_t num_qubits = 0;
   EXPECT_EQ(MQT_NA_QDMI_device_session_query_device_property(
                 session, QDMI_DEVICE_PROPERTY_QUBITSNUM, sizeof(size_t),
