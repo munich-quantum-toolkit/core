@@ -168,7 +168,8 @@ TEST(StateGenerationTest, MakeW) {
 
   constexpr std::size_t nq = 3;
 
-  CVec vec{0, 1 / std::sqrt(3), 1 / std::sqrt(3), 0, 1 / std::sqrt(3), 0, 0, 0};
+  const CVec vec{
+      0, 1 / std::sqrt(3), 1 / std::sqrt(3), 0, 1 / std::sqrt(3), 0, 0, 0};
 
   auto dd = std::make_unique<Package>(nq);
   auto w = makeWState(nq, *dd);
@@ -201,9 +202,9 @@ TEST(StateGenerationTest, FromVectorZero) {
 
   constexpr std::size_t nq = 1;
 
-  auto dd = std::make_unique<Package>(nq);
+  const CVec vec{};
 
-  CVec vec{};
+  auto dd = std::make_unique<Package>(nq);
   auto psi = makeStateFromVector(vec, *dd);
 
   EXPECT_EQ(psi, vEdge::one());
@@ -217,9 +218,9 @@ TEST(StateGenerationTest, FromVectorScalar) {
   constexpr std::size_t nq = 1;
   constexpr std::complex<double> alpha{92., 2.};
 
-  auto dd = std::make_unique<Package>(nq);
+  const CVec vec{alpha};
 
-  CVec vec{alpha};
+  auto dd = std::make_unique<Package>(nq);
   auto psi = makeStateFromVector(vec, *dd);
 
   EXPECT_TRUE(psi.isTerminal());
@@ -235,17 +236,17 @@ TEST(StateGenerationTest, FromVector) {
 
   constexpr std::size_t nq = 4;
 
-  auto dd = std::make_unique<Package>(nq);
-
-  const std::vector<BasisStates> state{BasisStates::plus, BasisStates::minus,
-                                       BasisStates::right, BasisStates::left};
-  auto ref = makeBasisState(nq, state, *dd);
-
-  CVec vec{
+  const CVec vec{
       {.25, 0},  {.25, 0},  {-.25, 0}, {-.25, 0}, {0, .25}, {0, .25},
       {0, -.25}, {0, -.25}, {0, -.25}, {0, -.25}, {0, .25}, {0, .25},
       {.25, 0},  {.25, 0},  {-.25, 0}, {-.25, 0},
   };
+
+  const std::vector<BasisStates> state{BasisStates::plus, BasisStates::minus,
+                                       BasisStates::right, BasisStates::left};
+
+  auto dd = std::make_unique<Package>(nq);
+  auto ref = makeBasisState(nq, state, *dd);
   auto psi = makeStateFromVector(vec, *dd);
 
   EXPECT_EQ(psi, ref);

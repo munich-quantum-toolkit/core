@@ -16,6 +16,7 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
+#include "dd/RealNumber.hpp"
 #include "ir/Definitions.hpp"
 
 #include <algorithm>
@@ -27,6 +28,7 @@
 #include <numeric>
 #include <random>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -82,7 +84,7 @@ void suitablePackage(const std::size_t n, Package& dd) {
 
 VectorDD makeZeroState(const std::size_t n, Package& dd,
                        const std::size_t start) {
-  std::vector<BasisStates> state(n - start, BasisStates::zero);
+  const std::vector<BasisStates> state(n - start, BasisStates::zero);
   return makeBasisState(n, state, dd, start);
 }
 
