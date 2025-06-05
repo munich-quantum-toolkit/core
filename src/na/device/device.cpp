@@ -70,16 +70,17 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
   for (int i = 0; i < descriptor->field_count(); ++i) {
     const google::protobuf::FieldDescriptor* field = descriptor->field(i);
     if (field->is_repeated()) {
-      switch (field->cpp_type()) {
-      case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE:
+      if (field->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE) {
         populateRepeatedFields(reflection->AddMessage(message, field));
-        break;
-      default:
+      } else {
         std::stringstream ss;
         ss << "Unsupported repeated field type in device configuration: "
            << field->cpp_type();
         throw std::runtime_error(ss.str());
       }
+    } else if (field->type() ==
+               google::protobuf::FieldDescriptor::TYPE_MESSAGE) {
+      reflection->MutableMessage(message, field);
     }
   }
 }
