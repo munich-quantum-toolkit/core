@@ -8,9 +8,16 @@
  * Licensed under the MIT License
  */
 
-#include "python/pybind11.hpp"
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+// clang-format on
 
 namespace mqt {
+
+namespace py = pybind11;
+using namespace pybind11::literals;
 
 // forward declarations
 void registerOptype(const py::module& m);
@@ -22,6 +29,7 @@ void registerNonUnitaryOperation(const py::module& m);
 void registerSymbolicOperation(const py::module& m);
 void registerClassicControlledOperation(const py::module& m);
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerOperations(py::module& m) {
   registerOptype(m);
   registerControl(m);

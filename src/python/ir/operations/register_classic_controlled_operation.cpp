@@ -9,9 +9,17 @@
  */
 
 #include "ir/Definitions.hpp"
+#include "ir/Register.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/Operation.hpp"
-#include "python/pybind11.hpp"
+
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+
+#include <pybind11/cast.h>
+// clang-format on
 
 #include <cstdint>
 #include <memory>
@@ -19,6 +27,10 @@
 
 namespace mqt {
 
+namespace py = pybind11;
+using namespace pybind11::literals;
+
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerClassicControlledOperation(const py::module& m) {
   py::enum_<qc::ComparisonKind>(m, "ComparisonKind")
       .value("eq", qc::ComparisonKind::Eq)
