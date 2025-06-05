@@ -109,7 +109,7 @@ TEST_F(QDMIImplementationTest, JobGetResultsImplemented) {
 
 TEST_F(QDMIImplementationTest, QueryDevicePropertyImplemented) {
   ASSERT_EQ(MQT_NA_QDMI_device_session_query_device_property(
-                session, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, nullptr),
+                nullptr, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
