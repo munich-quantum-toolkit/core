@@ -80,6 +80,9 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
       }
     } else if (field->type() ==
                google::protobuf::FieldDescriptor::TYPE_MESSAGE) {
+      // Message fields must be explicitly initialized such that they appear in
+      // the written JSON schema, primitive fields are automatically
+      // initialized
       reflection->MutableMessage(message, field);
     }
   }
