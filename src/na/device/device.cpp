@@ -30,14 +30,58 @@
 #endif
 
 namespace {
-enum class DeviceSessionStatus : uint8_t { ALLOCATED, INITIALIZED };
+/// The status of the session.
+enum class SessionStatus : uint8_t {
+  ALLOCATED,   ///< The session has been allocated but not initialized
+  INITIALIZED, ///< The session has been initialized and is ready for use
+};
+
+/// The type of an operation.
+enum class OperationType : uint8_t {
+  GLOBAL_SINGLE_QUBIT, ///< Global single-qubit operation
+  GLOBAL_MULTI_QUBIT,  ///< Global multi-qubit operation
+  LOCAL_SINGLE_QUBIT,  ///< Local single-qubit operation
+  LOCAL_MULTI_QUBIT,   ///< Local multi-qubit operation
+};
+
+/**
+ * @brief Checks if the operation type is a single-qubit operation.
+ * @param type The operation type to check.
+ * @return true if the operation type is a single-qubit operation, false
+ * otherwise.
+ */
+[[nodiscard]] auto isSingleQubit(const OperationType type) -> bool {
+  switch (type) {
+  case OperationType::GLOBAL_SINGLE_QUBIT:
+  case OperationType::LOCAL_SINGLE_QUBIT:
+    return true;
+  default:
+    return false;
+  }
+}
+
+/**
+ * @brief Checks if the operation type is a local operation.
+ * @param type The operation type to check.
+ * @return true if the operation type is a local operation, false
+ * otherwise.
+ */
+[[nodiscard]] auto isLocal(const OperationType type) -> bool {
+  switch (type) {
+  case OperationType::LOCAL_SINGLE_QUBIT:
+  case OperationType::LOCAL_MULTI_QUBIT:
+    return true;
+  default:
+    return false;
+  }
+}
 } // namespace
 
 /**
  * @brief Implementation of the MQT_NA_QDMI_Device_Session structure.
  */
 struct MQT_NA_QDMI_Device_Session_impl_d {
-  DeviceSessionStatus status = DeviceSessionStatus::ALLOCATED;
+  SessionStatus status = SessionStatus::ALLOCATED;
 };
 
 /**
@@ -58,7 +102,17 @@ struct MQT_NA_QDMI_Site_impl_d {
  * @brief Implementation of the MQT_NA_QDMI_Device_Operation structure.
  */
 struct MQT_NA_QDMI_Operation_impl_d {
-  std::string name; ///< Name of the operation
+  std::string name;     ///< Name of the operation
+  OperationType type;   ///< Type of the operation
+  size_t numParameters; ///< Number of parameters for the operation
+  /**
+   * @brief Number of qubits involved in the operation
+   * @note This number is only valid if the operation is a multi-qubit
+   * operation.
+   */
+  size_t numQubits;
+  double duration; ///< Duration of the operation in microseconds
+  double fidelity; ///< Fidelity of the operation
 };
 
 namespace {
@@ -324,21 +378,41 @@ auto importOperations(const na::Device& device) -> void {
     auto& op = operations().emplace_back(
         std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
     op->name = operation.name();
+    op->type = OperationType::GLOBAL_SINGLE_QUBIT;
+    op->numParameters = operation.num_parameters();
+    op->numQubits = 1;
+    op->duration = operation.duration();
+    op->fidelity = operation.fidelity();
   }
   for (const auto& operation : device.global_multi_qubit_operations()) {
     auto& op = operations().emplace_back(
         std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
     op->name = operation.name();
+    op->type = OperationType::GLOBAL_MULTI_QUBIT;
+    op->numParameters = operation.num_parameters();
+    op->numQubits = operation.num_qubits();
+    op->duration = operation.duration();
+    op->fidelity = operation.fidelity();
   }
   for (const auto& operation : device.local_single_qubit_operations()) {
     auto& op = operations().emplace_back(
         std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
     op->name = operation.name();
+    op->type = OperationType::LOCAL_SINGLE_QUBIT;
+    op->numParameters = operation.num_parameters();
+    op->numQubits = 1;
+    op->duration = operation.duration();
+    op->fidelity = operation.fidelity();
   }
   for (const auto& operation : device.local_multi_qubit_operations()) {
     auto& op = operations().emplace_back(
         std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
     op->name = operation.name();
+    op->type = OperationType::LOCAL_MULTI_QUBIT;
+    op->numParameters = operation.num_parameters();
+    op->numQubits = operation.num_qubits();
+    op->duration = operation.duration();
+    op->fidelity = operation.fidelity();
   }
 }
 
@@ -409,10 +483,10 @@ int MQT_NA_QDMI_device_session_init(MQT_NA_QDMI_Device_Session session) {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (session->status != DeviceSessionStatus::ALLOCATED) {
+  if (session->status != SessionStatus::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
-  session->status = DeviceSessionStatus::INITIALIZED;
+  session->status = SessionStatus::INITIALIZED;
   return QDMI_SUCCESS;
 }
 
@@ -427,7 +501,7 @@ int MQT_NA_QDMI_device_session_set_parameter(
       param >= QDMI_DEVICE_SESSION_PARAMETER_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (session->status != DeviceSessionStatus::ALLOCATED) {
+  if (session->status != SessionStatus::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
   return QDMI_ERROR_NOTSUPPORTED;
@@ -438,7 +512,7 @@ int MQT_NA_QDMI_device_session_create_device_job(
   if (session == nullptr || job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (session->status != DeviceSessionStatus::INITIALIZED) {
+  if (session->status != SessionStatus::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
   return QDMI_ERROR_PERMISSIONDENIED;
@@ -559,7 +633,7 @@ int MQT_NA_QDMI_device_session_query_device_property(
       prop >= QDMI_DEVICE_PROPERTY_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (session->status != DeviceSessionStatus::INITIALIZED) {
+  if (session->status != SessionStatus::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name().c_str(), prop, size,
@@ -604,5 +678,27 @@ int MQT_NA_QDMI_device_session_query_operation_property(
     const size_t num_params, const double* params,
     const QDMI_Operation_Property prop, const size_t size, void* value,
     size_t* size_ret) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (session == nullptr || operation == nullptr ||
+      (sites != nullptr && num_sites == 0) ||
+      (params != nullptr && num_params == 0) ||
+      (value != nullptr && size == 0) || prop >= QDMI_OPERATION_PROPERTY_MAX) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, operation->name.c_str(),
+                      prop, size, value, size_ret)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, size_t,
+                            operation->numParameters, prop, size, value,
+                            size_ret)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_DURATION, double,
+                            operation->duration, prop, size, value, size_ret)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double,
+                            operation->fidelity, prop, size, value, size_ret)
+  if (isSingleQubit(operation->type)) {
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t, 1UL,
+                              prop, size, value, size_ret)
+  } else {
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
+                              operation->numQubits, prop, size, value, size_ret)
+  }
+  return QDMI_ERROR_NOTSUPPORTED;
 }
