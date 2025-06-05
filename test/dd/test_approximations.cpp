@@ -13,6 +13,7 @@
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
@@ -36,33 +37,6 @@ void vecNear(CVec a, CVec b, double delta = 1e-6) {
     EXPECT_NEAR(a[i].real(), b[i].real(), delta);
     EXPECT_NEAR(a[i].imag(), b[i].imag(), delta);
   }
-}
-
-/**
- * @brief Generate (most-likely) exponentially large DD.
- */
-vEdge generateExponentialDD(const std::size_t nq, Package& dd) {
-  // Setup random distribution for edge weights.
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_real_distribution<double> dis(0., 1.0);
-
-  // Generate random state vector.
-  CVec v(static_cast<std::size_t>(std::pow(2, nq)));
-  for (auto& vi : v) {
-    vi = dis(gen);
-  }
-
-  // Normalize to norm 1.
-  constexpr auto zero = std::complex<double>{0.};
-  const auto inner = std::inner_product(v.begin(), v.end(), v.begin(), zero);
-  const auto norm = std::sqrt(inner);
-  for (auto& vi : v) {
-    vi /= norm;
-  }
-
-  // Return as DD.
-  return dd.makeStateFromVector(v);
 }
 }; // namespace
 
@@ -369,7 +343,7 @@ TEST(ApproximationTest, NodesVisited) {
   for (std::size_t i = 0; i < n; ++i) {
     const std::size_t nq = qubits[i];
     auto dd = std::make_unique<dd::Package>(nq);
-    auto state = generateExponentialDD(nq, *dd);
+    auto state = generateExponentialState(nq, *dd);
 
     const std::size_t preSize = state.size() - 1; // Minus terminal.
     const auto meta = approximate(state, fidelity, *dd);
