@@ -599,7 +599,10 @@ int MQT_NA_QDMI_device_initialize() {
   return QDMI_SUCCESS;
 }
 
-int MQT_NA_QDMI_device_finalize() { return QDMI_SUCCESS; }
+int MQT_NA_QDMI_device_finalize() {
+  initialized() = false;
+  return QDMI_SUCCESS;
+}
 
 int MQT_NA_QDMI_device_session_alloc(MQT_NA_QDMI_Device_Session* session) {
   if (session == nullptr) {
