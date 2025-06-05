@@ -42,6 +42,9 @@ enum class OperationType : uint8_t {
   GLOBAL_MULTI_QUBIT,  ///< Global multi-qubit operation
   LOCAL_SINGLE_QUBIT,  ///< Local single-qubit operation
   LOCAL_MULTI_QUBIT,   ///< Local multi-qubit operation
+  SHUTTLING_LOAD,      ///< Shuttling load operation
+  SHUTTLING_MOVE,      ///< Shuttling move operation
+  SHUTTLING_STORE,     ///< Shuttling store operation
 };
 
 /**
@@ -70,6 +73,23 @@ enum class OperationType : uint8_t {
   switch (type) {
   case OperationType::LOCAL_SINGLE_QUBIT:
   case OperationType::LOCAL_MULTI_QUBIT:
+    return true;
+  default:
+    return false;
+  }
+}
+
+/**
+ * @brief Checks if the operation type is a shuttling operation.
+ * @param type The operation type to check.
+ * @return true if the operation type is a shuttling operation, false
+ * otherwise.
+ */
+[[nodiscard]] auto isShuttling(const OperationType type) -> bool {
+  switch (type) {
+  case OperationType::SHUTTLING_LOAD:
+  case OperationType::SHUTTLING_MOVE:
+  case OperationType::SHUTTLING_STORE:
     return true;
   default:
     return false;
@@ -414,6 +434,27 @@ auto importOperations(const na::Device& device) -> void {
     op->duration = operation.duration();
     op->fidelity = operation.fidelity();
   }
+  for (const auto& operation : device.shuttling_units()) {
+    auto& load = operations().emplace_back(
+        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
+    load->name = operation.name();
+    load->type = OperationType::SHUTTLING_LOAD;
+    load->numParameters = operation.num_parameters();
+    load->duration = operation.load_duration();
+    load->fidelity = operation.load_fidelity();
+    auto& move = operations().emplace_back(
+        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
+    move->name = operation.name();
+    move->type = OperationType::SHUTTLING_MOVE;
+    move->numParameters = operation.num_parameters();
+    auto& store = operations().emplace_back(
+        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
+    store->name = operation.name();
+    store->type = OperationType::SHUTTLING_STORE;
+    store->numParameters = operation.num_parameters();
+    store->duration = operation.store_duration();
+    store->fidelity = operation.store_fidelity();
+  }
 }
 
 /**
@@ -689,16 +730,21 @@ int MQT_NA_QDMI_device_session_query_operation_property(
   ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, size_t,
                             operation->numParameters, prop, size, value,
                             size_ret)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_DURATION, double,
-                            operation->duration, prop, size, value, size_ret)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double,
-                            operation->fidelity, prop, size, value, size_ret)
-  if (isSingleQubit(operation->type)) {
-    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t, 1UL,
-                              prop, size, value, size_ret)
-  } else {
-    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
-                              operation->numQubits, prop, size, value, size_ret)
+  if (operation->type != OperationType::SHUTTLING_MOVE) {
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_DURATION, double,
+                              operation->duration, prop, size, value, size_ret)
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double,
+                              operation->fidelity, prop, size, value, size_ret)
+  }
+  if (!isShuttling(operation->type)) {
+    if (isSingleQubit(operation->type)) {
+      ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t, 1UL,
+                                prop, size, value, size_ret)
+    } else {
+      ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
+                                operation->numQubits, prop, size, value,
+                                size_ret)
+    }
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
