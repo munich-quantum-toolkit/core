@@ -29,11 +29,17 @@
 #include <stddef.h>
 #endif
 
+namespace {
+enum class DeviceSessionStatus : uint8_t { ALLOCATED, INITIALIZED };
+} // namespace
+
 /**
  * @brief Implementation of the MQT_NA_QDMI_Device_Session structure.
  * @details This structure can, e.g., be used to store a token to access an API.
  */
-struct MQT_NA_QDMI_Device_Session_impl_d {};
+struct MQT_NA_QDMI_Device_Session_impl_d {
+  DeviceSessionStatus status = DeviceSessionStatus::ALLOCATED;
+};
 
 /**
  * @brief Implementation of the MQT_NA_QDMI_Device_Job structure.
@@ -89,7 +95,8 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
 }
 
 // todo: Should this function be exposed and how because it is not part of the
-//  public QDMI API?
+//  public QDMI API? If it is exposed, it also should be moved outside the
+//  anonymous namespace.
 /**
  * @brief Writes a JSON schema with default values for the device configuration
  * to the specified path.
@@ -195,56 +202,102 @@ int MQT_NA_QDMI_device_initialize() {
 int MQT_NA_QDMI_device_finalize() { return QDMI_SUCCESS; }
 
 int MQT_NA_QDMI_device_session_alloc(MQT_NA_QDMI_Device_Session* session) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (session == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  *session = new MQT_NA_QDMI_Device_Session_impl_d();
+  return QDMI_SUCCESS;
 }
 
 int MQT_NA_QDMI_device_session_init(MQT_NA_QDMI_Device_Session session) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (session == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (session->status != DeviceSessionStatus::ALLOCATED) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  session->status = DeviceSessionStatus::INITIALIZED;
+  return QDMI_SUCCESS;
 }
 
-void MQT_NA_QDMI_device_session_free(MQT_NA_QDMI_Device_Session session) {}
+void MQT_NA_QDMI_device_session_free(MQT_NA_QDMI_Device_Session session) {
+  delete session;
+}
 
 int MQT_NA_QDMI_device_session_set_parameter(
     MQT_NA_QDMI_Device_Session session, QDMI_Device_Session_Parameter param,
     const size_t size, const void* value) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (session == nullptr || (value != nullptr && size == 0) ||
+      param >= QDMI_DEVICE_SESSION_PARAMETER_MAX) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (session->status != DeviceSessionStatus::ALLOCATED) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_NA_QDMI_device_session_create_device_job(
     MQT_NA_QDMI_Device_Session session, MQT_NA_QDMI_Device_Job* job) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (session == nullptr || job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (session->status != DeviceSessionStatus::INITIALIZED) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  return QDMI_ERROR_PERMISSIONDENIED;
 }
 
-void MQT_NA_QDMI_device_job_free(MQT_NA_QDMI_Device_Job job) {}
+void MQT_NA_QDMI_device_job_free(MQT_NA_QDMI_Device_Job /* unused */) {}
 
 int MQT_NA_QDMI_device_job_set_parameter(MQT_NA_QDMI_Device_Job job,
                                          const QDMI_Device_Job_Parameter param,
                                          const size_t size, const void* value) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (job == nullptr || (value != nullptr && size == 0) ||
+      param >= QDMI_DEVICE_JOB_PARAMETER_MAX) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return QDMI_ERROR_PERMISSIONDENIED;
 }
 
 int MQT_NA_QDMI_device_job_submit(MQT_NA_QDMI_Device_Job job) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return QDMI_ERROR_PERMISSIONDENIED;
 }
 
 int MQT_NA_QDMI_device_job_cancel(MQT_NA_QDMI_Device_Job job) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return QDMI_ERROR_PERMISSIONDENIED;
 }
 
 int MQT_NA_QDMI_device_job_check(MQT_NA_QDMI_Device_Job job,
                                  QDMI_Job_Status* status) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (job == nullptr || status == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return QDMI_ERROR_PERMISSIONDENIED;
 }
 
 int MQT_NA_QDMI_device_job_wait(MQT_NA_QDMI_Device_Job job) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return QDMI_ERROR_PERMISSIONDENIED;
 }
 
 int MQT_NA_QDMI_device_job_get_results(MQT_NA_QDMI_Device_Job job,
                                        QDMI_Job_Result result,
                                        const size_t size, void* data,
                                        size_t* size_ret) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (job == nullptr || (data != nullptr && size == 0) ||
+      result >= QDMI_JOB_RESULT_MAX) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return QDMI_ERROR_PERMISSIONDENIED;
 }
 
 int MQT_NA_QDMI_device_session_query_device_property(
