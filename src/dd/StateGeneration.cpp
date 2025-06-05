@@ -232,11 +232,11 @@ VectorDD makeStateFromVector(const CVec& stateVector, Package& dd) {
   });
 
   // Generate nodes above the leaves.
-  for (Qubit v{1}; v < std::log2(sz) - 1; ++v) {
+  for (Qubit v{1}; v < std::log2(sz); ++v) {
     layerSize /= 2;
     std::vector<vCachedEdge> next(layerSize);
     std::generate(next.begin(), next.end(), [&, i = 0UL]() mutable {
-      const auto edges = std::array{next[i++], next[i++]};
+      const auto edges = std::array{curr[i++], curr[i++]};
       return dd.makeDDNode(v, edges);
     });
 
