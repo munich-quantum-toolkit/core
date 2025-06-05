@@ -56,7 +56,7 @@ TEST_F(QDMIImplementationTest, JobCreateImplemented) {
 TEST_F(QDMIImplementationTest, JobSetParameterImplemented) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_SUCCESS);
+            QDMI_ERROR_PERMISSIONDENIED);
   ASSERT_EQ(MQT_NA_QDMI_device_job_set_parameter(
                 job, QDMI_DEVICE_JOB_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
@@ -66,7 +66,7 @@ TEST_F(QDMIImplementationTest, JobSetParameterImplemented) {
 TEST_F(QDMIImplementationTest, JobSubmitImplemented) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_SUCCESS);
+            QDMI_ERROR_PERMISSIONDENIED);
   ASSERT_NE(MQT_NA_QDMI_device_job_submit(job), QDMI_ERROR_NOTIMPLEMENTED);
   MQT_NA_QDMI_device_job_free(job);
 }
@@ -74,7 +74,7 @@ TEST_F(QDMIImplementationTest, JobSubmitImplemented) {
 TEST_F(QDMIImplementationTest, JobCancelImplemented) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_SUCCESS);
+            QDMI_ERROR_PERMISSIONDENIED);
   ASSERT_NE(MQT_NA_QDMI_device_job_cancel(job), QDMI_ERROR_NOTIMPLEMENTED);
   MQT_NA_QDMI_device_job_free(job);
 }
@@ -83,7 +83,7 @@ TEST_F(QDMIImplementationTest, JobCheckImplemented) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   QDMI_Job_Status status = QDMI_JOB_STATUS_RUNNING;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_SUCCESS);
+            QDMI_ERROR_PERMISSIONDENIED);
   ASSERT_NE(MQT_NA_QDMI_device_job_check(job, &status),
             QDMI_ERROR_NOTIMPLEMENTED);
   MQT_NA_QDMI_device_job_free(job);
@@ -92,7 +92,7 @@ TEST_F(QDMIImplementationTest, JobCheckImplemented) {
 TEST_F(QDMIImplementationTest, JobWaitImplemented) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_SUCCESS);
+            QDMI_ERROR_PERMISSIONDENIED);
   ASSERT_NE(MQT_NA_QDMI_device_job_wait(job), QDMI_ERROR_NOTIMPLEMENTED);
   MQT_NA_QDMI_device_job_free(job);
 }
@@ -100,7 +100,7 @@ TEST_F(QDMIImplementationTest, JobWaitImplemented) {
 TEST_F(QDMIImplementationTest, JobGetResultsImplemented) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_SUCCESS);
+            QDMI_ERROR_PERMISSIONDENIED);
   ASSERT_EQ(MQT_NA_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_MAX, 0,
                                                nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
