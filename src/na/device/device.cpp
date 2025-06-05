@@ -264,7 +264,7 @@ auto initialize() -> void {
                    [](const auto& vector) { return vector.repeat(); });
     std::vector indices(lattice.lattice_vectors_size(), 0UL);
     do {
-      // For every sublattice offset add a site for repetition indices
+      // For every sublattice offset, add a site for repetition indices
       for (const auto& offset : lattice.sublattice_offsets()) {
         auto& site =
             sites().emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>());
