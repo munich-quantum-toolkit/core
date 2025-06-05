@@ -459,6 +459,62 @@ auto initialize() -> void {
 }
 } // namespace
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
+#define ADD_SINGLE_VALUE_PROPERTY(prop_name, prop_type, prop_value, prop,      \
+                                  size, value, size_ret)                       \
+  {                                                                            \
+    if ((prop) == (prop_name)) {                                               \
+      if ((value) != nullptr) {                                                \
+        if ((size) < sizeof(prop_type)) {                                      \
+          return QDMI_ERROR_INVALIDARGUMENT;                                   \
+        }                                                                      \
+        *static_cast<prop_type*>(value) = prop_value;                          \
+      }                                                                        \
+      if ((size_ret) != nullptr) {                                             \
+        *size_ret = sizeof(prop_type);                                         \
+      }                                                                        \
+      return QDMI_SUCCESS;                                                     \
+    }                                                                          \
+  } /// [DOXYGEN MACRO END]
+
+#define ADD_STRING_PROPERTY(prop_name, prop_value, prop, size, value,          \
+                            size_ret)                                          \
+  {                                                                            \
+    if ((prop) == (prop_name)) {                                               \
+      if ((value) != nullptr) {                                                \
+        if ((size) < strlen(prop_value) + 1) {                                 \
+          return QDMI_ERROR_INVALIDARGUMENT;                                   \
+        }                                                                      \
+        strncpy(static_cast<char*>(value), prop_value, size);                  \
+        static_cast<char*>(value)[size - 1] = '\0';                            \
+      }                                                                        \
+      if ((size_ret) != nullptr) {                                             \
+        *size_ret = strlen(prop_value) + 1;                                    \
+      }                                                                        \
+      return QDMI_SUCCESS;                                                     \
+    }                                                                          \
+  } /// [DOXYGEN MACRO END]
+
+#define ADD_LIST_PROPERTY(prop_name, prop_type, prop_values, prop, size,       \
+                          value, size_ret)                                     \
+  {                                                                            \
+    if ((prop) == (prop_name)) {                                               \
+      if ((value) != nullptr) {                                                \
+        if ((size) < (prop_values).size() * sizeof(prop_type)) {               \
+          return QDMI_ERROR_INVALIDARGUMENT;                                   \
+        }                                                                      \
+        memcpy(static_cast<void*>(value),                                      \
+               static_cast<const void*>((prop_values).data()),                 \
+               (prop_values).size() * sizeof(prop_type));                      \
+      }                                                                        \
+      if ((size_ret) != nullptr) {                                             \
+        *size_ret = (prop_values).size() * sizeof(prop_type);                  \
+      }                                                                        \
+      return QDMI_SUCCESS;                                                     \
+    }                                                                          \
+  } /// [DOXYGEN MACRO END]
+// NOLINTEND(bugprone-macro-parentheses)
+
 int MQT_NA_QDMI_device_initialize() {
   try {
     initialize();
@@ -569,62 +625,6 @@ int MQT_NA_QDMI_device_job_get_results(MQT_NA_QDMI_Device_Job job,
   }
   return QDMI_ERROR_PERMISSIONDENIED;
 }
-
-// NOLINTBEGIN(bugprone-macro-parentheses)
-#define ADD_SINGLE_VALUE_PROPERTY(prop_name, prop_type, prop_value, prop,      \
-                                  size, value, size_ret)                       \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < sizeof(prop_type)) {                                      \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        *static_cast<prop_type*>(value) = prop_value;                          \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = sizeof(prop_type);                                         \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
-  } /// [DOXYGEN MACRO END]
-
-#define ADD_STRING_PROPERTY(prop_name, prop_value, prop, size, value,          \
-                            size_ret)                                          \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < strlen(prop_value) + 1) {                                 \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        strncpy(static_cast<char*>(value), prop_value, size);                  \
-        static_cast<char*>(value)[size - 1] = '\0';                            \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = strlen(prop_value) + 1;                                    \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
-  } /// [DOXYGEN MACRO END]
-
-#define ADD_LIST_PROPERTY(prop_name, prop_type, prop_values, prop, size,       \
-                          value, size_ret)                                     \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < (prop_values).size() * sizeof(prop_type)) {               \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        memcpy(static_cast<void*>(value),                                      \
-               static_cast<const void*>((prop_values).data()),                 \
-               (prop_values).size() * sizeof(prop_type));                      \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = (prop_values).size() * sizeof(prop_type);                  \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
-  } /// [DOXYGEN MACRO END]
-// NOLINTEND(bugprone-macro-parentheses)
 
 int MQT_NA_QDMI_device_session_query_device_property(
     MQT_NA_QDMI_Device_Session session, const QDMI_Device_Property prop,
