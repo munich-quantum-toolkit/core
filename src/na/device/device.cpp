@@ -51,16 +51,20 @@ struct MQT_NA_QDMI_Device_Job_impl_d {};
  * @brief Implementation of the MQT_NA_QDMI_Device_Site structure.
  * @details This structure can, e.g., be used to store the site id.
  */
-struct MQT_NA_QDMI_Device_Site_impl_d {};
+struct MQT_NA_QDMI_Site_impl_d {
+  int64_t x = 0;
+  int64_t y = 0;
+};
 
 /**
  * @brief Implementation of the MQT_NA_QDMI_Device_Operation structure.
  * @details This structure can, e.g., be used to store the operation id.
  */
-struct MQT_NA_QDMI_Device_Operation_impl_d {};
+struct MQT_NA_QDMI_Operation_impl_d {
+  std::string name;
+};
 
 namespace {
-
 /**
  * @brief Populates all repeated fields of the message type in the given
  * Protobuf message with empty messages.
@@ -142,56 +146,146 @@ auto writeJsonSchema(const std::string& path) -> void {
   }
 }
 
-/**
- * @brief Returns a reference to the device singleton.
- * @details This function initializes the device singleton on the first call
- * and returns a reference to it.
- * @returns A reference to the device singleton.
- * @throws std::runtime_error if the environment variable
- * MQT_CORE_NA_QDMI_DEVICE_JSON_FILE is not set, the JSON file does not exist,
- * or the JSON file cannot be parsed.
- */
-auto getDevice() -> const na::Device& {
-  static na::Device device;
+[[nodiscard]] auto initialized() -> bool& {
   static bool initialized = false;
-  if (!initialized) {
-    // Get the path to the JSON file from the environment variable
-    const char* path = std::getenv("MQT_CORE_NA_QDMI_DEVICE_JSON_FILE");
-    if (path == nullptr) {
-      throw std::runtime_error(
-          "Environment variable MQT_CORE_NA_QDMI_DEVICE_JSON_FILE is not set.");
-    }
-    // Read the device configuration from a JSON file
-    std::ifstream ifs(path);
-    if (!ifs.is_open()) {
-      throw std::runtime_error("Failed to open JSON file: " +
-                               std::string(path));
-    }
-    std::stringstream buffer;
-    buffer << ifs.rdbuf();
-    const std::string json = buffer.str();
-    ifs.close();
-    // Parse the JSON string into the protobuf message
-    google::protobuf::util::JsonParseOptions options;
-    options.ignore_unknown_fields = true;
-    const auto status =
-        google::protobuf::util::JsonStringToMessage(json, &device);
-    if (!status.ok()) {
+  return initialized;
+}
+
+[[nodiscard]] auto name() -> std::string& {
+  static std::string name;
+  return name;
+}
+
+[[nodiscard]] auto sites()
+    -> std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>>& {
+  static std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>> sites;
+  return sites;
+}
+
+[[nodiscard]] auto operations()
+    -> std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>>& {
+  static std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>> operations;
+  return operations;
+}
+
+/**
+ * @brief Parses the device configuration from a JSON file specified by the
+ * environment variable MQT_CORE_NA_QDMI_DEVICE_JSON_FILE.
+ * @returns The parsed device configuration as a Protobuf message.
+ * @throws std::runtime_error if the environment variable is not set, the JSON
+ * file does not exist, or the JSON file cannot be parsed.
+ */
+[[nodiscard]] auto parse() -> na::Device {
+  // Get the path to the JSON file from the environment variable
+  const char* path = std::getenv("MQT_CORE_NA_QDMI_DEVICE_JSON_FILE");
+  if (path == nullptr) {
+    throw std::runtime_error(
+        "Environment variable MQT_CORE_NA_QDMI_DEVICE_JSON_FILE is not set.");
+  }
+  // Read the device configuration from a JSON file
+  std::ifstream ifs(path);
+  if (!ifs.is_open()) {
+    throw std::runtime_error("Failed to open JSON file: " + std::string(path));
+  }
+  std::stringstream buffer;
+  buffer << ifs.rdbuf();
+  const std::string json = buffer.str();
+  ifs.close();
+  // Parse the JSON string into the protobuf message
+  google::protobuf::util::JsonParseOptions options;
+  options.ignore_unknown_fields = true;
+  na::Device device;
+  const auto status =
+      google::protobuf::util::JsonStringToMessage(json, &device);
+  if (!status.ok()) {
+    std::stringstream ss;
+    ss << "Failed to parse JSON string into Protobuf message: "
+       << status.ToString();
+    throw std::runtime_error(ss.str());
+  }
+  // Validate device
+  for (const auto& lattice : device.traps()) {
+    if (lattice.lattice_vectors_size() > 2) {
       std::stringstream ss;
-      ss << "Failed to parse JSON string into Protobuf message: "
-         << status.ToString();
+      ss << "Lattice vectors size " << lattice.lattice_vectors_size()
+         << "exceeds 2 which means that specification of traps is not unique "
+            "anymore in the 2D plane.";
       throw std::runtime_error(ss.str());
     }
-    // Set initialized to true to avoid re-initialization
-    initialized = true;
   }
   return device;
+}
+
+/**
+ * @brief Increments the indices in lexicographic order.
+ * @details This function increments the first index that is less than its
+ * limit, resets all previous indices to zero.
+ * @param indices The vector of indices to increment.
+ * @param limits The limits for each index.
+ * @returns true if the increment was successful, false if all indices have
+ * reached their limits.
+ */
+[[nodiscard]] auto increment(std::vector<size_t>& indices,
+                             const std::vector<size_t>& limits) -> bool {
+  size_t i = 0;
+  for (; i < indices.size() && indices[i] < limits[i]; ++i) {
+  }
+  if (i == indices.size()) {
+    return false;
+  }
+  for (size_t j = 0; j < i; ++j) {
+    indices[j] = 0; // Reset all previous indices
+  }
+  indices[i]++; // Increment the next index
+  return true;
+}
+
+/**
+ * @brief Initializes the device with the configuration parsed from the JSON
+ * file.
+ * @details This function transfers all data from the parsed Protobuf
+ * message to the device's internal structures, such as the name, sites, and
+ * operations.
+ * @throws std::runtime_error if the device has already been initialized.
+ */
+auto initialize() -> void {
+  if (initialized()) {
+    throw std::runtime_error("The device has already been initialized.");
+  }
+  const auto& device = parse();
+  // Transfer all data from the protobuf message to the device
+  name() = device.name();
+  for (const auto& lattice : device.traps()) {
+    const auto originX = lattice.lattice_origin().x();
+    const auto originY = lattice.lattice_origin().y();
+    std::vector limits(lattice.lattice_vectors_size(), 0UL);
+    std::transform(lattice.lattice_vectors().begin(),
+                   lattice.lattice_vectors().end(), limits.begin(),
+                   [](const auto& vector) { return vector.repeat(); });
+    std::vector indices(lattice.lattice_vectors_size(), 0UL);
+    do {
+      // For every sublattice offset add a site for repetition indices
+      for (const auto& offset : lattice.sublattice_offsets()) {
+        auto& site =
+            sites().emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>());
+        site->x = originX + offset.x();
+        site->y = originY + offset.y();
+        for (size_t i = 0; i < lattice.lattice_vectors_size(); ++i) {
+          const auto& vector = lattice.lattice_vectors(i).vector();
+          site->x += indices[i] * vector.x();
+          site->y += indices[i] * vector.y();
+        }
+      }
+    } while (increment(indices, limits));
+  }
+  // Set initialized to true to avoid re-initialization
+  initialized() = true;
 }
 } // namespace
 
 int MQT_NA_QDMI_device_initialize() {
   try {
-    getDevice();
+    initialize();
   } catch (const std::runtime_error& e) {
     SPDLOG_ERROR(e.what());
     return QDMI_ERROR_FATAL;
@@ -300,10 +394,89 @@ int MQT_NA_QDMI_device_job_get_results(MQT_NA_QDMI_Device_Job job,
   return QDMI_ERROR_PERMISSIONDENIED;
 }
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
+#define ADD_SINGLE_VALUE_PROPERTY(prop_name, prop_type, prop_value, prop,      \
+                                  size, value, size_ret)                       \
+  {                                                                            \
+    if ((prop) == (prop_name)) {                                               \
+      if ((value) != nullptr) {                                                \
+        if ((size) < sizeof(prop_type)) {                                      \
+          return QDMI_ERROR_INVALIDARGUMENT;                                   \
+        }                                                                      \
+        *static_cast<prop_type*>(value) = prop_value;                          \
+      }                                                                        \
+      if ((size_ret) != nullptr) {                                             \
+        *size_ret = sizeof(prop_type);                                         \
+      }                                                                        \
+      return QDMI_SUCCESS;                                                     \
+    }                                                                          \
+  } /// [DOXYGEN MACRO END]
+
+#define ADD_STRING_PROPERTY(prop_name, prop_value, prop, size, value,          \
+                            size_ret)                                          \
+  {                                                                            \
+    if ((prop) == (prop_name)) {                                               \
+      if ((value) != nullptr) {                                                \
+        if ((size) < strlen(prop_value) + 1) {                                 \
+          return QDMI_ERROR_INVALIDARGUMENT;                                   \
+        }                                                                      \
+        strncpy(static_cast<char*>(value), prop_value, size);                  \
+        static_cast<char*>(value)[size - 1] = '\0';                            \
+      }                                                                        \
+      if ((size_ret) != nullptr) {                                             \
+        *size_ret = strlen(prop_value) + 1;                                    \
+      }                                                                        \
+      return QDMI_SUCCESS;                                                     \
+    }                                                                          \
+  } /// [DOXYGEN MACRO END]
+
+#define ADD_LIST_PROPERTY(prop_name, prop_type, prop_values, prop, size,       \
+                          value, size_ret)                                     \
+  {                                                                            \
+    if ((prop) == (prop_name)) {                                               \
+      if ((value) != nullptr) {                                                \
+        if ((size) < (prop_values).size() * sizeof(prop_type)) {               \
+          return QDMI_ERROR_INVALIDARGUMENT;                                   \
+        }                                                                      \
+        memcpy(static_cast<void*>(value),                                      \
+               static_cast<const void*>((prop_values).data()),                 \
+               (prop_values).size() * sizeof(prop_type));                      \
+      }                                                                        \
+      if ((size_ret) != nullptr) {                                             \
+        *size_ret = (prop_values).size() * sizeof(prop_type);                  \
+      }                                                                        \
+      return QDMI_SUCCESS;                                                     \
+    }                                                                          \
+  } /// [DOXYGEN MACRO END]
+// NOLINTEND(bugprone-macro-parentheses)
+
 int MQT_NA_QDMI_device_session_query_device_property(
     MQT_NA_QDMI_Device_Session session, const QDMI_Device_Property prop,
     const size_t size, void* value, size_t* size_ret) {
-  return QDMI_ERROR_NOTIMPLEMENTED;
+  if (session == nullptr || (value != nullptr && size == 0) ||
+      prop >= QDMI_DEVICE_PROPERTY_MAX) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (session->status != DeviceSessionStatus::INITIALIZED) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name().c_str(), prop, size,
+                      value, size_ret)
+  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_VERSION, MQT_CORE_VERSION, prop,
+                      size, value, size_ret)
+  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_LIBRARYVERSION, QDMI_VERSION, prop,
+                      size, value, size_ret)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_STATUS, QDMI_Device_Status,
+                            QDMI_DEVICE_STATUS_OFFLINE, prop, size, value,
+                            size_ret)
+  // This device never needs calibration
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION, size_t, 0,
+                            prop, size, value, size_ret)
+  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SITES, MQT_NA_QDMI_Site, sites(), prop,
+                    size, value, size_ret)
+  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_NA_QDMI_Operation,
+                    operations(), prop, size, value, size_ret)
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_NA_QDMI_device_session_query_site_property(
