@@ -27,7 +27,7 @@ MatrixDD buildFunctionality(const qc::QuantumComputation& qc, Package& dd) {
   }
 
   auto permutation = qc.initialLayout;
-  auto e = dd.createInitialMatrix(qc.getAncillary());
+  auto e = dd.matrices().createInitialMatrix(qc.getAncillary());
 
   for (const auto& op : qc) {
     // SWAP gates can be executed virtually by changing the permutation
@@ -41,7 +41,7 @@ MatrixDD buildFunctionality(const qc::QuantumComputation& qc, Package& dd) {
   }
   // correct permutation if necessary
   changePermutation(e, permutation, qc.outputPermutation, dd);
-  e = dd.reduceAncillae(e, qc.getAncillary());
+  e = dd.matrices().reduceAncillae(e, qc.getAncillary());
   e = dd.reduceGarbage(e, qc.getGarbage());
 
   return e;
@@ -54,7 +54,7 @@ bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
                                  qc::Permutation& permutation, Package& dd) {
   // base case
   if (depth == 1U) {
-    auto e = Package::makeIdent();
+    auto e = MatrixDDContainer::makeIdent();
     if (const auto& op = qc.at(opIdx);
         op->getType() == qc::OpType::SWAP && !op->isControlled()) {
       const auto& targets = op->getTargets();
@@ -69,7 +69,7 @@ bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
       dd.incRef(e);
       return false;
     }
-    auto f = Package::makeIdent();
+    auto f = MatrixDDContainer::makeIdent();
     if (const auto& op = qc.at(opIdx);
         op->getType() == qc::OpType::SWAP && !op->isControlled()) {
       const auto& targets = op->getTargets();
@@ -135,8 +135,8 @@ MatrixDD buildFunctionalityRecursive(const qc::QuantumComputation& qc,
 
   // correct permutation if necessary
   changePermutation(e, permutation, qc.outputPermutation, dd);
-  e = dd.reduceAncillae(e, qc.getAncillary());
-  e = dd.reduceGarbage(e, qc.getGarbage());
+  e = dd.matrices().reduceAncillae(e, qc.getAncillary());
+  e = dd.matrices().reduceGarbage(e, qc.getGarbage());
 
   return e;
 }

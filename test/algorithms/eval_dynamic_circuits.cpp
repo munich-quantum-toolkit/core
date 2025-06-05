@@ -127,7 +127,7 @@ TEST_P(DynamicCircuitEvalExactQPE, UnitaryTransformation) {
   iqpe.reorderOperations();
   const auto finishedTransformation = std::chrono::steady_clock::now();
 
-  dd::MatrixDD e = dd::Package::makeIdent();
+  dd::MatrixDD e = dd::MatrixDDContainer::makeIdent();
   dd->incRef(e);
 
   auto leftIt = qpe.begin();
@@ -296,7 +296,7 @@ TEST_P(DynamicCircuitEvalInexactQPE, UnitaryTransformation) {
   iqpe.reorderOperations();
   const auto finishedTransformation = std::chrono::steady_clock::now();
 
-  dd::MatrixDD e = dd::Package::makeIdent();
+  dd::MatrixDD e = dd::MatrixDDContainer::makeIdent();
   dd->incRef(e);
 
   auto leftIt = qpe.begin();
@@ -409,7 +409,7 @@ TEST_P(DynamicCircuitEvalBV, UnitaryTransformation) {
   dbv.reorderOperations();
   const auto finishedTransformation = std::chrono::steady_clock::now();
 
-  dd::MatrixDD e = dd::Package::makeIdent();
+  dd::MatrixDD e = dd::MatrixDDContainer::makeIdent();
   dd->incRef(e);
 
   auto leftIt = bv.begin();
@@ -518,7 +518,7 @@ TEST_P(DynamicCircuitEvalQFT, UnitaryTransformation) {
   dqft.reorderOperations();
   const auto finishedTransformation = std::chrono::steady_clock::now();
 
-  dd::MatrixDD e = dd::Package::makeIdent();
+  dd::MatrixDD e = dd::MatrixDDContainer::makeIdent();
   dd->incRef(e);
 
   auto leftIt = qft.begin();

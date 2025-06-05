@@ -78,7 +78,7 @@ benchmarkSimulate(const qc::QuantumComputation& qc) {
   const auto nq = qc.getNqubits();
   exp->dd = std::make_unique<Package>(nq);
   const auto start = std::chrono::high_resolution_clock::now();
-  const auto in = exp->dd->makeZeroState(nq);
+  const auto in = exp->dd->vectors().makeZeroState(nq);
   exp->sim = simulate(qc, in, *(exp->dd));
   const auto end = std::chrono::high_resolution_clock::now();
   exp->runtime =
