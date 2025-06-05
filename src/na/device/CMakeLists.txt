@@ -54,6 +54,10 @@ if(NOT TARGET ${TARGET_NAME})
     PUBLIC qdmi::qdmi protobuf::libprotobuf spdlog::spdlog
     PRIVATE qdmi::project_warnings MQT::ProjectOptions MQT::ProjectWarnings)
 
+  # Make QDMI and MQT Core Version available
+  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
+  target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+
   # Generate alias for the target
   add_library(MQT::CoreNaQDMI ALIAS ${TARGET_NAME})
   add_library(qdmi::mqt_na_device ALIAS ${TARGET_NAME})
