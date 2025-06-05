@@ -35,7 +35,6 @@ enum class DeviceSessionStatus : uint8_t { ALLOCATED, INITIALIZED };
 
 /**
  * @brief Implementation of the MQT_NA_QDMI_Device_Session structure.
- * @details This structure can, e.g., be used to store a token to access an API.
  */
 struct MQT_NA_QDMI_Device_Session_impl_d {
   DeviceSessionStatus status = DeviceSessionStatus::ALLOCATED;
@@ -43,25 +42,22 @@ struct MQT_NA_QDMI_Device_Session_impl_d {
 
 /**
  * @brief Implementation of the MQT_NA_QDMI_Device_Job structure.
- * @details This structure can, e.g., be used to store the job id.
  */
 struct MQT_NA_QDMI_Device_Job_impl_d {};
 
 /**
  * @brief Implementation of the MQT_NA_QDMI_Device_Site structure.
- * @details This structure can, e.g., be used to store the site id.
  */
 struct MQT_NA_QDMI_Site_impl_d {
-  int64_t x = 0;
-  int64_t y = 0;
+  int64_t x = 0; ///< X coordinate of the site in the lattice
+  int64_t y = 0; ///< Y coordinate of the site in the lattice
 };
 
 /**
  * @brief Implementation of the MQT_NA_QDMI_Device_Operation structure.
- * @details This structure can, e.g., be used to store the operation id.
  */
 struct MQT_NA_QDMI_Operation_impl_d {
-  std::string name;
+  std::string name; ///< Name of the operation
 };
 
 namespace {
@@ -146,22 +142,44 @@ auto writeJsonSchema(const std::string& path) -> void {
   }
 }
 
+/**
+ * @brief Indicates whether the device has been initialized.
+ * @details This function uses a static variable to track the initialization
+ * state of the device. It is initialized to false and set to true after the
+ * first successful initialization in @ref initialize.
+ * @return A reference to a boolean indicating the initialization state.
+ */
 [[nodiscard]] auto initialized() -> bool& {
   static bool initialized = false;
   return initialized;
 }
 
+/**
+ * @brief Provides access to the device name.
+ * @returns a reference to a static variables that stores the
+ * device name.
+ */
 [[nodiscard]] auto name() -> std::string& {
   static std::string name;
   return name;
 }
 
+/**
+ * @brief Provides access to the lists of sites and operations.
+ * @returns a reference to a static vector of unique pointers to
+ * @ref MQT_NA_QDMI_Site_impl_d.
+ */
 [[nodiscard]] auto sites()
     -> std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>>& {
   static std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>> sites;
   return sites;
 }
 
+/**
+ * @brief Provides access to the list of operations.
+ * @returns a reference to a static vector of unique pointers to
+ * @ref MQT_NA_QDMI_Operation_impl_d.
+ */
 [[nodiscard]] auto operations()
     -> std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>>& {
   static std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>> operations;
@@ -241,20 +259,16 @@ auto writeJsonSchema(const std::string& path) -> void {
 }
 
 /**
- * @brief Initializes the device with the configuration parsed from the JSON
- * file.
- * @details This function transfers all data from the parsed Protobuf
- * message to the device's internal structures, such as the name, sites, and
- * operations.
- * @throws std::runtime_error if the device has already been initialized.
+ * @brief Imports the name of the device from the Protobuf message.
+ * @param device The Protobuf message containing the device configuration.
  */
-auto initialize() -> void {
-  if (initialized()) {
-    throw std::runtime_error("The device has already been initialized.");
-  }
-  const auto& device = parse();
-  // Transfer all data from the protobuf message to the device
-  name() = device.name();
+auto importName(const na::Device& device) -> void { name() = device.name(); }
+
+/**
+ * @brief Imports the sites from the Protobuf message into the device.
+ * @param device The Protobuf message containing the device configuration.
+ */
+auto importSites(const na::Device& device) -> void {
   for (const auto& lattice : device.traps()) {
     const auto originX = lattice.lattice_origin().x();
     const auto originY = lattice.lattice_origin().y();
@@ -278,6 +292,31 @@ auto initialize() -> void {
       }
     } while (increment(indices, limits));
   }
+}
+
+/**
+ * @brief Imports the operations from the Protobuf message into the device.
+ * @param device The Protobuf message containing the device configuration.
+ */
+auto importOperations(const na::Device& device) -> void {}
+
+/**
+ * @brief Initializes the device with the configuration parsed from the JSON
+ * file.
+ * @details This function transfers all data from the parsed Protobuf
+ * message to the device's internal structures, such as the name, sites, and
+ * operations.
+ * @throws std::runtime_error if the device has already been initialized.
+ */
+auto initialize() -> void {
+  if (initialized()) {
+    throw std::runtime_error("The device has already been initialized.");
+  }
+  const auto& device = parse();
+  // Transfer all data from the protobuf message to the device
+  importName(device);
+  importSites(device);
+  importOperations(device);
   // Set initialized to true to avoid re-initialization
   initialized() = true;
 }
