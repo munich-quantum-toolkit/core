@@ -41,7 +41,7 @@ message Device {
   message GlobalSingleQubitOperation {
     string name = 1;
     Region region = 2;
-    double duration = 3;
+    uint64 duration = 3;
     double fidelity = 4;
     uint64 num_parameters = 5;
   }
@@ -52,7 +52,7 @@ message Device {
     Region region = 2;
     double interaction_radius = 3;
     double blocking_radius = 4;
-    double duration = 5;
+    uint64 duration = 5;
     double fidelity = 6;
     double idling_fidelity = 7;
     uint64 num_qubits = 8;
@@ -65,7 +65,7 @@ message Device {
     Region region = 2;
     uint64 num_rows = 3;
     uint64 num_columns = 4;
-    double duration = 5;
+    uint64 duration = 5;
     double fidelity = 6;
     uint64 num_parameters = 7;
   }
@@ -78,7 +78,7 @@ message Device {
     double blocking_radius = 4;
     uint64 num_rows = 5;
     uint64 num_columns = 6;
-    double duration = 7;
+    uint64 duration = 7;
     double fidelity = 8;
     uint64 num_qubits = 9;
     uint64 num_parameters = 10;

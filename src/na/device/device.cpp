@@ -164,7 +164,7 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
       // Message fields must be explicitly initialized such that they appear in
       // the written JSON schema, primitive fields are automatically
       // initialized
-      reflection->MutableMessage(message, field);
+      populateRepeatedFields(reflection->MutableMessage(message, field));
     }
   }
 }
@@ -280,6 +280,31 @@ struct DecoherenceTimes {
 }
 
 /**
+ * @brief Provides access to the time factor for the device.
+ * @details This function returns a reference to a static variable that stores
+ * the time factor for the device. The time factor is used to convert time
+ * values from the device's time unit to microseconds.
+ * @returns A reference to a static double variable that stores the time factor.
+ */
+[[nodiscard]] auto timeFactor() -> double& {
+  static double timeFactor;
+  return timeFactor;
+}
+
+/**
+ * @brief Provides access to the length factor for the device.
+ * @details This function returns a reference to a static variable that stores
+ * the length factor for the device. The length factor is used to convert length
+ * values from the device's length unit to micrometers.
+ * @returns A reference to a static double variable that stores the length
+ * factor.
+ */
+[[nodiscard]] auto lengthFactor() -> double& {
+  static double lengthFactor;
+  return lengthFactor;
+}
+
+/**
  * @brief Parses the device configuration from a JSON file specified by the
  * environment variable MQT_CORE_NA_QDMI_DEVICE_JSON_FILE.
  * @returns The parsed device configuration as a Protobuf message.
@@ -339,15 +364,16 @@ struct DecoherenceTimes {
 [[nodiscard]] auto increment(std::vector<size_t>& indices,
                              const std::vector<size_t>& limits) -> bool {
   size_t i = 0;
-  for (; i < indices.size() && indices[i] < limits[i]; ++i) {
+  for (; i < indices.size() && indices[i] == limits[i]; ++i) {
   }
   if (i == indices.size()) {
+    // all indices are at their limits
     return false;
   }
   for (size_t j = 0; j < i; ++j) {
     indices[j] = 0; // Reset all previous indices
   }
-  indices[i]++; // Increment the next index
+  ++indices[i]; // Increment the next index
   return true;
 }
 
@@ -401,7 +427,7 @@ auto importOperations(const na::Device& device) -> void {
     op->type = OperationType::GLOBAL_SINGLE_QUBIT;
     op->numParameters = operation.num_parameters();
     op->numQubits = 1;
-    op->duration = operation.duration();
+    op->duration = operation.duration() * timeFactor();
     op->fidelity = operation.fidelity();
   }
   for (const auto& operation : device.global_multi_qubit_operations()) {
@@ -411,7 +437,7 @@ auto importOperations(const na::Device& device) -> void {
     op->type = OperationType::GLOBAL_MULTI_QUBIT;
     op->numParameters = operation.num_parameters();
     op->numQubits = operation.num_qubits();
-    op->duration = operation.duration();
+    op->duration = operation.duration() * timeFactor();
     op->fidelity = operation.fidelity();
   }
   for (const auto& operation : device.local_single_qubit_operations()) {
@@ -421,7 +447,7 @@ auto importOperations(const na::Device& device) -> void {
     op->type = OperationType::LOCAL_SINGLE_QUBIT;
     op->numParameters = operation.num_parameters();
     op->numQubits = 1;
-    op->duration = operation.duration();
+    op->duration = operation.duration() * timeFactor();
     op->fidelity = operation.fidelity();
   }
   for (const auto& operation : device.local_multi_qubit_operations()) {
@@ -431,7 +457,7 @@ auto importOperations(const na::Device& device) -> void {
     op->type = OperationType::LOCAL_MULTI_QUBIT;
     op->numParameters = operation.num_parameters();
     op->numQubits = operation.num_qubits();
-    op->duration = operation.duration();
+    op->duration = operation.duration() * timeFactor();
     op->fidelity = operation.fidelity();
   }
   for (const auto& operation : device.shuttling_units()) {
@@ -440,7 +466,7 @@ auto importOperations(const na::Device& device) -> void {
     load->name = operation.name();
     load->type = OperationType::SHUTTLING_LOAD;
     load->numParameters = operation.num_parameters();
-    load->duration = operation.load_duration();
+    load->duration = operation.load_duration() * timeFactor();
     load->fidelity = operation.load_fidelity();
     auto& move = operations().emplace_back(
         std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
@@ -452,7 +478,7 @@ auto importOperations(const na::Device& device) -> void {
     store->name = operation.name();
     store->type = OperationType::SHUTTLING_STORE;
     store->numParameters = operation.num_parameters();
-    store->duration = operation.store_duration();
+    store->duration = operation.store_duration() * timeFactor();
     store->fidelity = operation.store_fidelity();
   }
 }
@@ -463,18 +489,8 @@ auto importOperations(const na::Device& device) -> void {
  * @param device The Protobuf message containing the device configuration.
  */
 auto importDecoherenceTimes(const na::Device& device) -> void {
-  double factor = device.time_unit().value();
-  if (device.time_unit().unit() == "ns") {
-    factor *= 1e-3;
-  } else if (device.time_unit().unit() == "ms") {
-    factor *= 1e3;
-  } else if (device.time_unit().unit() != "us") {
-    std::stringstream ss;
-    ss << "Unsupported time unit: " << device.time_unit().unit();
-    throw std::runtime_error(ss.str());
-  }
-  decoherence().t1 = device.decoherence_times().t1() * factor;
-  decoherence().t2 = device.decoherence_times().t2() * factor;
+  decoherence().t1 = device.decoherence_times().t1() * timeFactor();
+  decoherence().t2 = device.decoherence_times().t2() * timeFactor();
 }
 
 /**
@@ -490,6 +506,23 @@ auto initialize() -> void {
     throw std::runtime_error("The device has already been initialized.");
   }
   const auto& device = parse();
+  // Initialize units
+  timeFactor() = device.time_unit().value();
+  if (device.time_unit().unit() == "ns") {
+    timeFactor() *= 1e-3;
+  } else if (device.time_unit().unit() != "us") {
+    std::stringstream ss;
+    ss << "Unsupported time unit: " << device.time_unit().unit();
+    throw std::runtime_error(ss.str());
+  }
+  lengthFactor() = device.length_unit().value();
+  if (device.length_unit().unit() == "nm") {
+    lengthFactor() *= 1e-3;
+  } else if (device.length_unit().unit() != "um") {
+    std::stringstream ss;
+    ss << "Unsupported length unit: " << device.length_unit().unit();
+    throw std::runtime_error(ss.str());
+  }
   // Transfer all data from the protobuf message to the device
   importName(device);
   importSites(device);
