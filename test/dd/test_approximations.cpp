@@ -10,7 +10,6 @@
 
 #include "dd/Approximation.hpp"
 #include "dd/DDDefinitions.hpp"
-#include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
@@ -18,13 +17,11 @@
 #include "ir/QuantumComputation.hpp"
 
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <gtest/gtest.h>
 #include <memory>
 #include <numeric>
-#include <random>
 
 using namespace dd;
 
