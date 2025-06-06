@@ -264,7 +264,7 @@ bool StandardOperation::isClifford() const {
   case Sdg:
   case SX:
   case SXdg:
-    return (getControls().empty());
+    return (getControls().size() == 0);
   case DCX:
   case SWAP:
   case iSWAP:

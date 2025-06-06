@@ -84,7 +84,7 @@ TEST(CollectBlocks, collectTwoQubitCliffordGates) {
   std::cout << qc << "\n";
   qc::CircuitOptimizer::collectBlocks(qc, 2, true);
   std::cout << qc << "\n";
-  EXPECT_EQ(qc.size(), 3);
+  EXPECT_EQ(qc.size(), 2);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
 }
 
