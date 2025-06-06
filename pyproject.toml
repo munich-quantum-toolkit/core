@@ -212,7 +212,6 @@ ignore = [
     "TID252"   # Prefer absolute imports over relative imports from parent modules
 ]
 typing-modules = ["mqt.core._compat.typing"]
-isort.required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "typing.Callable".msg = "Use collections.abc.Callable instead."
@@ -221,6 +220,10 @@ isort.required-imports = ["from __future__ import annotations"]
 "typing.Sequence".msg = "Use collections.abc.Sequence instead."
 "typing.Set".msg = "Use collections.abc.Set instead."
 "typing.assert_never".msg = "Use mqt.core._compat.typing.assert_never instead."
+
+[tool.ruff.lint.isort]
+known-first-party = ["mqt.core"]
+required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.lint.per-file-ignores]
 "test/python/**" = ["T20", "INP001"]
