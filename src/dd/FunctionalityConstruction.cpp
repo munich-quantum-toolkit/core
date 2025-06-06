@@ -103,7 +103,7 @@ bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
   s.pop();
   s.push(dd.multiply(e, f)); // ordering because of stack structure
 
-  // reference counting
+  // remove references to e and f via decRef and add the product via incRef
   dd.decRef(e);
   dd.decRef(f);
   dd.incRef(s.top());

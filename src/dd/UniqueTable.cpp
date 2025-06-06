@@ -43,22 +43,6 @@ void UniqueTable::resize(const std::size_t nVars) {
   }
 }
 
-bool UniqueTable::incRef(NodeBase* p) noexcept {
-  const auto inc = ::dd::incRef(p);
-  if (inc && p->ref == 1U) {
-    stats[p->v].trackActiveEntry();
-  }
-  return inc;
-}
-
-bool UniqueTable::decRef(NodeBase* p) noexcept {
-  const auto dec = ::dd::decRef(p);
-  if (dec && p->ref == 0U) {
-    --stats[p->v].numActiveEntries;
-  }
-  return dec;
-}
-
 bool UniqueTable::possiblyNeedsCollection() const {
   return getNumEntries() >= gcLimit;
 }
@@ -77,7 +61,7 @@ std::size_t UniqueTable::garbageCollect(const bool force) {
       NodeBase* p = bucket;
       NodeBase* lastp = nullptr;
       while (p != nullptr) {
-        if (p->ref == 0) {
+        if (!p->marked()) {
           NodeBase* next = p->next();
           if (lastp == nullptr) {
             bucket = next;
@@ -88,6 +72,7 @@ std::size_t UniqueTable::garbageCollect(const bool force) {
           p = next;
           --stat.numEntries;
         } else {
+          p->unmark();
           lastp = p;
           p = p->next();
         }

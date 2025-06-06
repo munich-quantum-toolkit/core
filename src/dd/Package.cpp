@@ -76,6 +76,9 @@ void Package::reset() {
   clearUniqueTables();
   resetMemoryManagers();
   clearComputeTables();
+  vectorRoots.clear();
+  matrixRoots.clear();
+  densityRoots.clear();
 }
 
 void Package::resetMemoryManagers(const bool resizeToTotal) {
@@ -101,15 +104,53 @@ bool Package::garbageCollect(bool force) {
     return false;
   }
 
-  const auto cCollect = cUniqueTable.garbageCollect(force);
-  if (cCollect > 0) {
-    // Collecting garbage in the complex numbers table requires collecting the
-    // node tables as well
-    force = true;
+  // mark all nodes reachable from the current roots and count the referenced
+  // complex numbers
+  for (const auto& [edge, _] : vectorRoots) {
+    cn.incRef(edge.w);
+    markNodes(edge.p);
   }
-  const auto vCollect = vUniqueTable.garbageCollect(force);
-  const auto mCollect = mUniqueTable.garbageCollect(force);
-  const auto dCollect = dUniqueTable.garbageCollect(force);
+  for (const auto& [edge, _] : matrixRoots) {
+    cn.incRef(edge.w);
+    markNodes(edge.p);
+  }
+  for (const auto& [edge, _] : densityRoots) {
+    cn.incRef(edge.w);
+    markNodes(edge.p);
+  }
+
+  // first sweep all node tables
+  const auto vCollect = vUniqueTable.garbageCollect(true);
+  const auto mCollect = mUniqueTable.garbageCollect(true);
+  const auto dCollect = dUniqueTable.garbageCollect(true);
+
+  // then collect unused complex numbers based on the reference counts gathered
+  // during the mark phase
+  const auto cCollect = cUniqueTable.garbageCollect(force);
+
+  // unmark all complex numbers again so reference counts are reset for the next
+  // collection cycle
+  {
+    std::unordered_set<vNode*> visited{};
+    for (const auto& [edge, _] : vectorRoots) {
+      cn.decRef(edge.w);
+      markComplexNumbersRec(edge.p, false, &visited);
+    }
+  }
+  {
+    std::unordered_set<mNode*> visited{};
+    for (const auto& [edge, _] : matrixRoots) {
+      cn.decRef(edge.w);
+      markComplexNumbersRec(edge.p, false, &visited);
+    }
+  }
+  {
+    std::unordered_set<dNode*> visited{};
+    for (const auto& [edge, _] : densityRoots) {
+      cn.decRef(edge.w);
+      markComplexNumbersRec(edge.p, false, &visited);
+    }
+  }
 
   // invalidate all compute tables involving vectors if any vector node has
   // been collected
@@ -163,7 +204,6 @@ dEdge Package::makeZeroDensityOperator(const std::size_t n) {
     f = makeDDNode(static_cast<Qubit>(p),
                    std::array{f, dEdge::zero(), dEdge::zero(), dEdge::zero()});
   }
-  incRef(f);
   return f;
 }
 
@@ -179,7 +219,6 @@ vEdge Package::makeZeroState(const std::size_t n, const std::size_t start) {
   for (std::size_t p = start; p < n + start; p++) {
     f = makeDDNode(static_cast<Qubit>(p), std::array{f, vEdge::zero()});
   }
-  incRef(f);
   return f;
 }
 
@@ -815,9 +854,7 @@ char Package::measureOneCollapsing(dEdge& e, const Qubit index,
 
   // Normalize density matrix
   auto result = e.w / densityMatrixTrace;
-  cn.decRef(e.w);
   e.w = cn.lookup(result);
-  cn.incRef(e.w);
   return measuredResult;
 }
 void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,

@@ -19,8 +19,7 @@ namespace dd {
 /// \brief A class for storing statistics of a unique table
 struct UniqueTableStatistics : public TableStatistics {
   /**
-   * @brief The total number of active entries
-   * @details An entry is considered active if it has a non-zero reference count
+   * @brief The total number of active entries.
    */
   std::size_t numActiveEntries = 0U;
   /// The peak number of active entries in the table

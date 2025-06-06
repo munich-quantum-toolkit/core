@@ -163,8 +163,7 @@ static std::ostream& memoryNode(const Edge<Node>& e, std::ostream& os) {
   os << nodelabel << "[label=<";
   os << R"(<font point-size="10"><table border="1" cellspacing="0" cellpadding="2" style="rounded">)";
   os << R"(<tr><td colspan=")" << n << R"(" border="1" sides="B">)" << std::hex
-     << reinterpret_cast<std::uintptr_t>(e.p) << std::dec
-     << " ref: " << e.p->ref << "</td></tr>";
+     << reinterpret_cast<std::uintptr_t>(e.p) << std::dec << "</td></tr>";
   os << "<tr>";
   for (std::size_t i = 0; i < n; ++i) {
     os << "<td port=\"" << i << R"(" href="javascript:;" border="0" tooltip=")"
