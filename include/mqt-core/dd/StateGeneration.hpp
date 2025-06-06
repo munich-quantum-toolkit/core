@@ -64,7 +64,7 @@ VectorDD makeGHZState(std::size_t n, Package& dd) noexcept(false);
  * |0...01\rangle + |0...10\rangle + |10...0\rangle
  * \f]
  * @param n The number of qubits.
- * @param dd The DD package to use.
+ * @param dd The DD package to use for making the vector DD.
  * @return A vector DD for the W state.
  */
 VectorDD makeWState(std::size_t n, Package& dd) noexcept(false);
@@ -72,7 +72,7 @@ VectorDD makeWState(std::size_t n, Package& dd) noexcept(false);
 /**
  * @brief Construct a decision diagram from an arbitrary state vector.
  * @param vec The state vector to convert to a DD.
- * @param dd The DD package to use.
+ * @param dd The DD package to use for making the vector DD.
  * @return A vector DD representing the state.
  */
 VectorDD makeStateFromVector(const CVec& vec, Package& dd) noexcept(false);
