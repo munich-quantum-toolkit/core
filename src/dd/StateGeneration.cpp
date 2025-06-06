@@ -10,6 +10,7 @@
 
 #include "dd/StateGeneration.hpp"
 
+#include "dd/CachedEdge.hpp"
 #include "dd/Complex.hpp"
 #include "dd/ComplexNumbers.hpp"
 #include "dd/DDDefinitions.hpp"
@@ -27,7 +28,6 @@
 #include <iterator>
 #include <numeric>
 #include <random>
-#include <stack>
 #include <stdexcept>
 #include <string>
 #include <utility>
