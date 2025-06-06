@@ -27,6 +27,7 @@
 #include <iterator>
 #include <numeric>
 #include <random>
+#include <stack>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -80,6 +81,44 @@ void suitablePackage(const std::size_t n, Package& dd) {
         " qubits. Please allocate a larger package instance."};
   }
 }
+
+/**
+ * @brief Constructs a decision diagram (DD) from a state vector using a
+ * recursive algorithm.
+ *
+ * @param begin Iterator pointing to the beginning of the state vector.
+ * @param end Iterator pointing to the end of the state vector.
+ * @param v The current level of recursion. Starts at the highest level of
+ * the state vector (log base 2 of the vector size - 1).
+ * @param dd The DD package to use.
+ * @return A vCachedEdge representing the root node of the created DD.
+ *
+ * @details This function recursively breaks down the state vector into halves
+ * until each half has only one element. At each level of recursion, two new
+ * edges are created, one for each half of the state vector. The two resulting
+ * decision diagram edges are used to create a new decision diagram node at
+ * the current level, and this node is returned as the result of the current
+ * recursive call. At the base case of recursion, the state vector has only
+ * two elements, which are converted into terminal nodes of the decision
+ * diagram.
+ *
+ * @note This function assumes that the state vector size is a power of two.
+ */
+vCachedEdge makeStateFromVector(const CVec::const_iterator& begin,
+                                const CVec::const_iterator& end, const Qubit v,
+                                Package& dd) {
+  if (v == 0U) {
+    const auto zeroSuccessor = vCachedEdge::terminal(*begin);
+    const auto oneSuccessor = vCachedEdge::terminal(*(begin + 1));
+    return dd.makeDDNode<vNode, CachedEdge>(0, {zeroSuccessor, oneSuccessor});
+  }
+
+  const auto pivot = std::next(begin, std::distance(begin, end) / 2);
+  const auto zeroSuccessor = makeStateFromVector(begin, pivot, v - 1, dd);
+  const auto oneSuccessor = makeStateFromVector(pivot, end, v - 1, dd);
+  return dd.makeDDNode<vNode, CachedEdge>(v, {zeroSuccessor, oneSuccessor});
+}
+
 } // namespace
 
 VectorDD makeZeroState(const std::size_t n, Package& dd,
@@ -208,8 +247,8 @@ VectorDD makeWState(const std::size_t n, Package& dd) {
   return leftSubtree;
 }
 
-VectorDD makeStateFromVector(const CVec& stateVector, Package& dd) {
-  const std::size_t sz = stateVector.size();
+VectorDD makeStateFromVector(const CVec& vec, Package& dd) {
+  const std::size_t sz = vec.size();
 
   if ((sz & (sz - 1)) != 0) {
     throw std::invalid_argument(
@@ -221,35 +260,15 @@ VectorDD makeStateFromVector(const CVec& stateVector, Package& dd) {
   }
 
   if (sz == 1) {
-    return vEdge::terminal(dd.cn.lookup(stateVector[0]));
+    return vEdge::terminal(dd.cn.lookup(vec[0]));
   }
 
-  // Generate leaf nodes.
-  std::size_t layerSize{sz / 2};
-  std::vector<vCachedEdge> curr(layerSize);
-  std::generate(curr.begin(), curr.end(), [&, i = 0UL]() mutable {
-    const auto edges = std::array{vCachedEdge::terminal(stateVector[i++]),
-                                  vCachedEdge::terminal(stateVector[i++])};
-    return dd.makeDDNode(0, edges);
-  });
+  const auto v = static_cast<Qubit>(std::log2(sz) - 1);
+  const vCachedEdge state = makeStateFromVector(vec.begin(), vec.end(), v, dd);
 
-  // Generate nodes above the leaves.
-  for (Qubit v{1}; v < std::log2(sz); ++v) {
-    layerSize /= 2;
-    std::vector<vCachedEdge> next(layerSize);
-    std::generate(next.begin(), next.end(), [&, i = 0UL]() mutable {
-      const auto edges = std::array{curr[i++], curr[i++]};
-      return dd.makeDDNode(v, edges);
-    });
-
-    curr = std::move(next);
-  }
-
-  const vCachedEdge state = curr.at(0);
-  const vEdge e{state.p, dd.cn.lookup(state.w)};
-  dd.incRef(e);
-
-  return e;
+  const vEdge ret{state.p, dd.cn.lookup(state.w)};
+  dd.incRef(ret);
+  return ret;
 }
 
 VectorDD generateExponentialState(const std::size_t levels, Package& dd) {

@@ -71,12 +71,11 @@ VectorDD makeWState(std::size_t n, Package& dd) noexcept(false);
 
 /**
  * @brief Construct a decision diagram from an arbitrary state vector.
- * @param stateVector The state vector to convert to a DD.
+ * @param vec The state vector to convert to a DD.
  * @param dd The DD package to use.
  * @return A vector DD representing the state.
  */
-VectorDD makeStateFromVector(const CVec& stateVector,
-                             Package& dd) noexcept(false);
+VectorDD makeStateFromVector(const CVec& vec, Package& dd) noexcept(false);
 
 /// @brief The strategy to wire two layers.
 enum GenerationWireStrategy : std::uint8_t {
