@@ -150,9 +150,6 @@ _NATIVELY_SUPPORTED_GATES = frozenset({
     "sxdg",
     "csx",
     "mcx",
-    "mcx_gray",
-    "mcx_recursive",
-    "mcx_vchain",
     "mcphase",
     "mcrx",
     "mcry",
@@ -207,7 +204,7 @@ def _emplace_operation(
     if name in {"i", "id", "iden"}:
         return _add_operation(qc, OpType.i, qargs, params, qubit_map)
 
-    if name in {"x", "cx", "ccx", "mcx", "mcx_gray"}:
+    if name in {"x", "cx", "ccx", "mcx"}:
         return _add_operation(qc, OpType.x, qargs, params, qubit_map)
 
     if name in {"y", "cy"}:
@@ -236,21 +233,6 @@ def _emplace_operation(
 
     if name == "sxdg":
         return _add_operation(qc, OpType.sxdg, qargs, params, qubit_map)
-
-    if name == "mcx_recursive":
-        if len(qargs) <= 5:
-            return _add_operation(qc, OpType.x, qargs, params, qubit_map)
-        # reconfigure controls and targets (drops the last qubit as ancilla)
-        qargs = qargs[:-1]
-        return _add_operation(qc, OpType.x, qargs, params, qubit_map)
-
-    if name == "mcx_vchain":
-        size = len(qargs)
-        num_controls = (size + 1) // 2
-        # reconfigure controls and targets (drops the last num_controls - 2 qubits as ancilla)
-        if num_controls > 2:
-            qargs = qargs[: -num_controls + 2]
-        return _add_operation(qc, OpType.x, qargs, params, qubit_map)
 
     if name in {"rx", "crx", "mcrx"}:
         return _add_operation(qc, OpType.rx, qargs, params, qubit_map)
