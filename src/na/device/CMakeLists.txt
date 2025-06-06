@@ -38,7 +38,7 @@ if(NOT TARGET ${TARGET_NAME})
   add_custom_target(generate_proto_files DEPENDS ${PROTO_SRC} ${PROTO_HDR})
 
   # Add executable
-  add_library(${TARGET_NAME} device.cpp ${PROTO_SRC} ${PROTO_HDR})
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME NaQDMI device.cpp ${PROTO_SRC} ${PROTO_HDR})
   add_dependencies(${TARGET_NAME} generate_proto_files)
 
   # Generate prefixed QDMI headers
@@ -58,7 +58,6 @@ if(NOT TARGET ${TARGET_NAME})
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
   target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
 
-  # Generate alias for the target
-  add_library(MQT::CoreNaQDMI ALIAS ${TARGET_NAME})
+  # Generate additional alias for the target
   add_library(qdmi::mqt_na_device ALIAS ${TARGET_NAME})
 endif()
