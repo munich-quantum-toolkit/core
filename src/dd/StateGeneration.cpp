@@ -69,11 +69,11 @@ vCachedEdge randomNode(Qubit v, vNode* left, vNode* right, Generator& gen,
 /**
  * @brief Validate that the package is suitable for the use with up to @p n
  * qubits.
- * @throws std::invalid_argument, if not suitable.
+ * @throws `std::invalid_argument`, if `dd.qubits() < n`.
  */
 void suitablePackage(const std::size_t n, const Package& dd) {
   const std::size_t nqubits = dd.qubits();
-  if (n > nqubits) {
+  if (nqubits < n) {
     throw std::invalid_argument{
         "Requested state with " + std::to_string(n) +
         " qubits, but current package configuration only supports up to " +
