@@ -80,6 +80,9 @@ add_subdirectory(zx)
 # add NA library
 add_subdirectory(na)
 
+# add QDMI package library
+add_subdirectory(qdmi)
+
 # Installation instructions for the main library
 if(MQT_CORE_INSTALL)
   include(CMakePackageConfigHelpers)
