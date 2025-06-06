@@ -208,9 +208,7 @@ VectorDD makeGHZState(const std::size_t n, Package& dd) {
       std::array<vEdge, RADIX>{
           {{leftSubtree.p, {&constants::sqrt2over2, &constants::zero}},
            {rightSubtree.p, {&constants::sqrt2over2, &constants::zero}}}});
-
   dd.incRef(e);
-
   return e;
 }
 
@@ -221,7 +219,6 @@ VectorDD makeWState(const std::size_t n, Package& dd) {
     return vEdge::one();
   }
 
-  auto leftSubtree = vEdge::zero();
   if ((1. / sqrt(static_cast<double>(n))) < RealNumber::eps) {
     throw std::invalid_argument(
         "Requested qubit size for generating W-state would lead to an "
@@ -232,7 +229,8 @@ VectorDD makeWState(const std::size_t n, Package& dd) {
         "the tolerance accordingly.");
   }
 
-  auto rightSubtree = vEdge::terminal(dd.cn.lookup(1. / std::sqrt(n)));
+  vEdge leftSubtree = vEdge::zero();
+  vEdge rightSubtree = vEdge::terminal(dd.cn.lookup(1. / std::sqrt(n)));
   for (size_t p = 0; p < n; ++p) {
     leftSubtree = dd.makeDDNode(static_cast<Qubit>(p),
                                 std::array{leftSubtree, rightSubtree});
@@ -241,9 +239,7 @@ VectorDD makeWState(const std::size_t n, Package& dd) {
                                    std::array{rightSubtree, vEdge::zero()});
     }
   }
-
   dd.incRef(leftSubtree);
-
   return leftSubtree;
 }
 
