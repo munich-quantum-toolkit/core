@@ -310,13 +310,14 @@ TEST(StateGenerationTest, MakeWInvalidArguments) {
 
 TEST(StateGenerationTest, FromVectorInvalidArguments) {
 
+  // Test: Misconfigured package (# of qubits).
   // Test: Invalid length of state vector.
 
   constexpr std::size_t nq = 2;
 
-  const CVec vec(3);
   auto dd = std::make_unique<Package>(nq);
-  EXPECT_THROW({ makeStateFromVector(vec, *dd); }, std::invalid_argument);
+  EXPECT_THROW({ makeStateFromVector(CVec(5), *dd); }, std::invalid_argument);
+  EXPECT_THROW({ makeStateFromVector(CVec(3), *dd); }, std::invalid_argument);
 }
 
 ///-----------------------------------------------------------------------------
@@ -530,6 +531,7 @@ TEST(StateGenerationTest, GenerateRandomRandomWithSeed) {
 
 TEST(StateGenerationTest, GenerateRandomInvalidArguments) {
 
+  // Test: Misconfigured package (# of qubits).
   // Test: Number of levels must be greater than zero.
   // Test: Invalid size of nodesPerLevel.
   // Test: Invalid nodesPerLevel.
@@ -537,6 +539,10 @@ TEST(StateGenerationTest, GenerateRandomInvalidArguments) {
   constexpr std::size_t nq = 3;
 
   auto dd = std::make_unique<Package>(nq);
+
+  EXPECT_THROW(
+      { generateRandomState(nq + 1, {}, RANDOM, *dd, 1337U); },
+      std::invalid_argument);
 
   EXPECT_THROW(
       { generateRandomState(0, {0}, RANDOM, *dd, 1337U); },

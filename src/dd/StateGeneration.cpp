@@ -69,9 +69,9 @@ vCachedEdge randomNode(Qubit v, vNode* left, vNode* right, Generator& gen,
 /**
  * @brief Validate that the package is suitable for the use with up to @p n
  * qubits.
- * @throw `std::invalid_argument`, if not suitable.
+ * @throws std::invalid_argument, if not suitable.
  */
-void suitablePackage(const std::size_t n, Package& dd) {
+void suitablePackage(const std::size_t n, const Package& dd) {
   const std::size_t nqubits = dd.qubits();
   if (n > nqubits) {
     throw std::invalid_argument{
@@ -123,7 +123,7 @@ vCachedEdge makeStateFromVector(const CVec::const_iterator& begin,
 
 VectorDD makeZeroState(const std::size_t n, Package& dd,
                        const std::size_t start) {
-  const std::vector<BasisStates> state(n - start, BasisStates::zero);
+  const std::vector<BasisStates> state(n, BasisStates::zero);
   return makeBasisState(n, state, dd, start);
 }
 
@@ -149,37 +149,31 @@ VectorDD makeBasisState(const std::size_t n,
   }
 
   vCachedEdge f = vCachedEdge::one();
-  for (std::size_t p = start; p < n + start; ++p) {
+  for (std::size_t p = 0; p < n; ++p) {
+    std::array<vCachedEdge, RADIX> edges{};
+
+    const auto v = static_cast<Qubit>(p + start);
     switch (state[p]) {
     case BasisStates::zero:
-      f = dd.makeDDNode(static_cast<Qubit>(p),
-                        std::array{f, vCachedEdge::zero()});
+      edges = {f, vCachedEdge::zero()};
       break;
     case BasisStates::one:
-      f = dd.makeDDNode(static_cast<Qubit>(p),
-                        std::array{vCachedEdge::zero(), f});
+      edges = {vCachedEdge::zero(), f};
       break;
     case BasisStates::plus:
-      f = dd.makeDDNode(static_cast<Qubit>(p),
-                        std::array<vCachedEdge, RADIX>{
-                            {{f.p, dd::SQRT2_2}, {f.p, dd::SQRT2_2}}});
+      edges = {{{f.p, dd::SQRT2_2}, {f.p, dd::SQRT2_2}}};
       break;
     case BasisStates::minus:
-      f = dd.makeDDNode(static_cast<Qubit>(p),
-                        std::array<vCachedEdge, RADIX>{
-                            {{f.p, dd::SQRT2_2}, {f.p, -dd::SQRT2_2}}});
+      edges = {{{f.p, dd::SQRT2_2}, {f.p, -dd::SQRT2_2}}};
       break;
     case BasisStates::right:
-      f = dd.makeDDNode(static_cast<Qubit>(p),
-                        std::array<vCachedEdge, RADIX>{
-                            {{f.p, dd::SQRT2_2}, {f.p, {0, dd::SQRT2_2}}}});
+      edges = {{{f.p, dd::SQRT2_2}, {f.p, {0, dd::SQRT2_2}}}};
       break;
     case BasisStates::left:
-      f = dd.makeDDNode(static_cast<Qubit>(p),
-                        std::array<vCachedEdge, RADIX>{
-                            {{f.p, dd::SQRT2_2}, {f.p, {0, -dd::SQRT2_2}}}});
+      edges = {{{f.p, dd::SQRT2_2}, {f.p, {0, -dd::SQRT2_2}}}};
       break;
     }
+    f = dd.makeDDNode(v, edges);
   }
   const vEdge e{f.p, dd.cn.lookup(f.w)};
   dd.incRef(e);
@@ -260,6 +254,8 @@ VectorDD makeStateFromVector(const CVec& vec, Package& dd) {
   }
 
   const auto v = static_cast<Qubit>(std::log2(sz) - 1);
+  suitablePackage(v, dd);
+
   const vCachedEdge state = makeStateFromVector(vec.begin(), vec.end(), v, dd);
 
   const vEdge ret{state.p, dd.cn.lookup(state.w)};
@@ -292,6 +288,8 @@ VectorDD generateRandomState(const std::size_t levels,
                              const std::vector<std::size_t>& nodesPerLevel,
                              const GenerationWireStrategy strategy, Package& dd,
                              const std::size_t seed) {
+  suitablePackage(levels, dd);
+
   if (levels <= 0U) {
     throw std::invalid_argument("Number of levels must be greater than zero");
   }
