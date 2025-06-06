@@ -218,18 +218,6 @@ auto writeJsonSchema(const std::string& path) -> void {
 }
 
 /**
- * @brief Indicates whether the device has been initialized.
- * @details This function uses a static variable to track the initialization
- * state of the device. It is initialized to false and set to true after the
- * first successful initialization in @ref initialize.
- * @return A reference to a boolean indicating the initialization state.
- */
-[[nodiscard]] auto initialized() -> bool& {
-  static bool initialized = false;
-  return initialized;
-}
-
-/**
  * @brief Provides access to the device name.
  * @returns a reference to a static variables that stores the
  * device name.
@@ -499,15 +487,11 @@ auto importDecoherenceTimes(const na::Device& device) -> void {
  * @details This function transfers all data from the parsed Protobuf
  * message to the device's internal structures, such as the name, sites, and
  * operations.
- * @throws std::runtime_error if the device has already been initialized.
  */
 auto initialize() -> void {
-  if (initialized()) {
-    throw std::runtime_error("The device has already been initialized.");
-  }
   const auto& device = parse();
   // Initialize units
-  timeFactor() = device.time_unit().value();
+  timeFactor() = static_cast<double>(device.time_unit().value());
   if (device.time_unit().unit() == "ns") {
     timeFactor() *= 1e-3;
   } else if (device.time_unit().unit() != "us") {
@@ -515,7 +499,7 @@ auto initialize() -> void {
     ss << "Unsupported time unit: " << device.time_unit().unit();
     throw std::runtime_error(ss.str());
   }
-  lengthFactor() = device.length_unit().value();
+  lengthFactor() = static_cast<double>(device.length_unit().value());
   if (device.length_unit().unit() == "nm") {
     lengthFactor() *= 1e-3;
   } else if (device.length_unit().unit() != "um") {
@@ -528,8 +512,6 @@ auto initialize() -> void {
   importSites(device);
   importOperations(device);
   importDecoherenceTimes(device);
-  // Set initialized to true to avoid re-initialization
-  initialized() = true;
 }
 } // namespace
 
@@ -599,10 +581,7 @@ int MQT_NA_QDMI_device_initialize() {
   return QDMI_SUCCESS;
 }
 
-int MQT_NA_QDMI_device_finalize() {
-  initialized() = false;
-  return QDMI_SUCCESS;
-}
+int MQT_NA_QDMI_device_finalize() { return QDMI_SUCCESS; }
 
 int MQT_NA_QDMI_device_session_alloc(MQT_NA_QDMI_Device_Session* session) {
   if (session == nullptr) {
