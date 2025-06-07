@@ -65,7 +65,7 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
   qc::QuantumComputation qc(nq);
   qc.x(0);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {1}};
@@ -98,7 +98,7 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
   qc::QuantumComputation qc(nq);
   qc.x(0);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {1}};
@@ -131,7 +131,7 @@ TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
   qc::QuantumComputation qc(nq);
   qc.ry(qc::PI / 3, 0);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{1}, {0}};
@@ -169,7 +169,7 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
   qc.h(0);
   qc.cry(qc::PI / 3, 0, 1);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0.755929}, {0.654654}, {0}, {0}};
@@ -225,9 +225,9 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   qcRef.s(0);
   qcRef.x(1);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   const auto meta = approximate(state, fidelity, *dd);
-  auto ref = simulate(qcRef, dd->makeZeroState(nq), *dd);
+  auto ref = simulate(qcRef, makeZeroState(nq, *dd), *dd);
 
   const CVec expected{{0}, {0}, {0}, {0, 1}};
   vecNear(state.getVector(), expected);
@@ -274,7 +274,7 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   qc.cry(qc::PI / 3, 2, 0);
   qc.cry(qc::PI / 4, 2, 1);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0, 1}, {0}, {0}, {0}, {0}, {0}, {0}, {0}};
@@ -321,7 +321,7 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
   qc.ry(qc::PI / 2, 1);
   qc.cry(qc::PI / 4, 1, 2);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {-1}, {0}, {0}, {0}, {0}, {0}, {0}};
