@@ -244,6 +244,26 @@ def test_mcx_vchain() -> None:
     assert qiskit_qc[0].operation.name == "mcx"
 
 
+def test_mcx_without_mode() -> None:
+    """Test roundtrip of mcx gate without a dedicated mode being set (Qiskit 2.1+)."""
+    qc = QuantumCircuit(5)
+    qc.mcx(target_qubit=4, control_qubits=list(range(4)))
+    print(qc)
+
+    mqt_qc = qiskit_to_mqt(qc)
+    print(mqt_qc)
+    assert mqt_qc.num_qubits == 5
+    assert mqt_qc.num_ops == 1
+    assert mqt_qc[0].name.strip() == "x"
+    assert {control.qubit for control in mqt_qc[0].controls} == {0, 1, 2, 3}
+
+    qiskit_qc = mqt_to_qiskit(mqt_qc)
+    print(qiskit_qc)
+    assert qiskit_qc.num_qubits == 5
+    assert len(qiskit_qc) == 1
+    assert qiskit_qc[0].operation.name == "mcx"
+
+
 def test_custom_gate() -> None:
     """Test roundtrip of custom gate."""
     custom_instr = QuantumCircuit(3, 1)
