@@ -13,6 +13,8 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
+from packaging import version
+from qiskit import __version__ as qiskit_version
 from qiskit import transpile
 from qiskit.circuit import AncillaRegister, ClassicalRegister, Parameter, QuantumCircuit, QuantumRegister
 from qiskit.circuit.library import U2Gate, XXMinusYYGate, XXPlusYYGate
@@ -170,10 +172,17 @@ def test_ccx() -> None:
     assert qiskit_qc[0].operation.name == "ccx"
 
 
-def test_large_mcx() -> None:
+skip_if_qiskit_version_ge_2_1 = pytest.mark.skipif(
+    version.parse(qiskit_version) >= version.parse("2.1"),
+    reason="Qiskit 2.1+ deprecates setting a mode for `mcx` gates",
+)
+
+
+@skip_if_qiskit_version_ge_2_1
+def test_mcx_recursive() -> None:
     """Test roundtrip of large mcx gate."""
     qc = QuantumCircuit(9)
-    qc.mcx(control_qubits=list(range(7)), target_qubit=7, ancilla_qubits=list(range(8, 9)))
+    qc.mcx(control_qubits=list(range(7)), target_qubit=7, ancilla_qubits=list(range(8, 9)), mode="recursion")
     print(qc)
 
     mqt_qc = qiskit_to_mqt(qc)
@@ -191,10 +200,11 @@ def test_large_mcx() -> None:
     assert qiskit_qc[0].operation.name == "mcx"
 
 
-def test_small_mcx() -> None:
-    """Test roundtrip of small mcx gate."""
+@skip_if_qiskit_version_ge_2_1
+def test_small_mcx_recursive() -> None:
+    """Test roundtrip of small mcx_recursive gate."""
     qc = QuantumCircuit(5)
-    qc.mcx(target_qubit=4, control_qubits=list(range(4)))
+    qc.mcx(target_qubit=4, control_qubits=list(range(4)), mode="recursion")
     print(qc)
 
     mqt_qc = qiskit_to_mqt(qc)
@@ -207,6 +217,29 @@ def test_small_mcx() -> None:
     qiskit_qc = mqt_to_qiskit(mqt_qc)
     print(qiskit_qc)
     assert qiskit_qc.num_qubits == 5
+    assert len(qiskit_qc) == 1
+    assert qiskit_qc[0].operation.name == "mcx"
+
+
+@skip_if_qiskit_version_ge_2_1
+def test_mcx_vchain() -> None:
+    """Test roundtrip of mcx gate with v-chain."""
+    qc = QuantumCircuit(9)
+    qc.mcx(target_qubit=5, control_qubits=list(range(5)), ancilla_qubits=list(range(6, 9)), mode="v-chain")
+    print(qc)
+
+    mqt_qc = qiskit_to_mqt(qc)
+    print(mqt_qc)
+    assert mqt_qc.num_qubits == 9
+    assert mqt_qc.num_ops == 1
+    assert mqt_qc[0].name.strip() == "x"
+    assert {control.qubit for control in mqt_qc[0].controls} == {0, 1, 2, 3, 4}
+    for i in range(6, 9):
+        assert not mqt_qc[0].acts_on(i)
+
+    qiskit_qc = mqt_to_qiskit(mqt_qc)
+    print(qiskit_qc)
+    assert qiskit_qc.num_qubits == 9
     assert len(qiskit_qc) == 1
     assert qiskit_qc[0].operation.name == "mcx"
 
