@@ -123,7 +123,7 @@ TEST(CompoundOperation, GetNqubits) {
   EXPECT_EQ(op.getNqubits(), 3);
 }
 
-TEST(CompoundOperation, IsClifford){
+TEST(CompoundOperation, IsClifford) {
   qc::CompoundOperation op1;
   op1.emplace_back<qc::StandardOperation>(0, qc::OpType::H);
   op1.emplace_back<qc::StandardOperation>(1, qc::OpType::RX,
