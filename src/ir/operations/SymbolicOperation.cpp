@@ -287,28 +287,28 @@ SymbolicOperation::SymbolicOperation(const Control control, const Qubit target,
                                      const OpType g,
                                      const std::vector<SymbolOrNumber>& params)
     : SymbolicOperation(target, g, params) {
-  controls.insert(control);
+  SymbolicOperation::addControl(control);
 }
 
 SymbolicOperation::SymbolicOperation(const Control control, const Targets& targ,
                                      const OpType g,
                                      const std::vector<SymbolOrNumber>& params)
     : SymbolicOperation(targ, g, params) {
-  controls.insert(control);
+  SymbolicOperation::addControl(control);
 }
 
 SymbolicOperation::SymbolicOperation(const Controls& c, const Qubit target,
                                      const OpType g,
                                      const std::vector<SymbolOrNumber>& params)
     : SymbolicOperation(target, g, params) {
-  controls = c;
+  addControls(c);
 }
 
 SymbolicOperation::SymbolicOperation(const Controls& c, const Targets& targ,
                                      const OpType g,
                                      const std::vector<SymbolOrNumber>& params)
     : SymbolicOperation(targ, g, params) {
-  controls = c;
+  addControls(c);
 }
 
 // MCF (cSWAP), Peres, parameterized two target Constructor

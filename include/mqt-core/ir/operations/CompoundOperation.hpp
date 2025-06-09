@@ -48,6 +48,8 @@ public:
 
   [[nodiscard]] std::unique_ptr<Operation> clone() const override;
 
+  [[nodiscard]] size_t getNqubits() const override;
+
   [[nodiscard]] bool isCompoundOperation() const noexcept override;
 
   [[nodiscard]] bool isNonUnitaryOperation() const override;
