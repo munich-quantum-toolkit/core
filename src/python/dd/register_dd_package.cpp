@@ -13,6 +13,7 @@
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/Control.hpp"
@@ -104,7 +105,7 @@ void registerDDPackage(const py::module& mod) {
   dd.def(
       "zero_state",
       [](dd::Package& p, const size_t numQubits) {
-        return p.makeZeroState(numQubits);
+        return dd::makeZeroState(numQubits, p);
       },
       "num_qubits"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -114,7 +115,7 @@ void registerDDPackage(const py::module& mod) {
       "computational_basis_state",
       [](dd::Package& p, const size_t numQubits,
          const std::vector<bool>& state) {
-        return p.makeBasisState(numQubits, state);
+        return dd::makeBasisState(numQubits, state, p);
       },
       "num_qubits"_a, "state"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -132,19 +133,29 @@ void registerDDPackage(const py::module& mod) {
       "basis_state",
       [](dd::Package& p, const size_t numQubits,
          const std::vector<dd::BasisStates>& state) {
-        return p.makeBasisState(numQubits, state);
+        return dd::makeBasisState(numQubits, state, p);
       },
       "num_qubits"_a, "state"_a,
       // keep the DD package alive while the returned vector DD is alive.
       py::keep_alive<0, 1>());
 
-  dd.def("ghz_state", &dd::Package::makeGHZState, "num_qubits"_a,
-         // keep the DD package alive while the returned vector DD is alive.
-         py::keep_alive<0, 1>());
+  dd.def(
+      "ghz_state",
+      [](dd::Package& p, const size_t numQubits) {
+        return dd::makeGHZState(numQubits, p);
+      },
+      "num_qubits"_a,
+      // keep the DD package alive while the returned vector DD is alive.
+      py::keep_alive<0, 1>());
 
-  dd.def("w_state", &dd::Package::makeWState, "num_qubits"_a,
-         // keep the DD package alive while the returned vector DD is alive.
-         py::keep_alive<0, 1>());
+  dd.def(
+      "w_state",
+      [](dd::Package& p, const size_t numQubits) {
+        return dd::makeWState(numQubits, p);
+      },
+      "num_qubits"_a,
+      // keep the DD package alive while the returned vector DD is alive.
+      py::keep_alive<0, 1>());
 
   dd.def(
       "from_vector",
