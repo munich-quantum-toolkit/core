@@ -13,6 +13,7 @@
 #include "dd/NoiseFunctionality.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/OpType.hpp"
@@ -210,7 +211,7 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4TrackAPD) {
       *dd, qc.getNqubits(), 0.01, 0.02, 2., noiseEffects);
 
   for (size_t i = 0U; i < stochRuns; i++) {
-    auto rootEdge = dd->makeZeroState(qc.getNqubits());
+    auto rootEdge = makeZeroState(qc.getNqubits(), *dd);
     dd->incRef(rootEdge);
 
     for (auto const& op : qc) {
@@ -263,7 +264,7 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4IdentityError) {
       *dd, qc.getNqubits(), 0.01, 0.02, 2., noiseEffects);
 
   for (size_t i = 0U; i < stochRuns; i++) {
-    auto rootEdge = dd->makeZeroState(qc.getNqubits());
+    auto rootEdge = makeZeroState(qc.getNqubits(), *dd);
     dd->incRef(rootEdge);
 
     for (auto const& op : qc) {

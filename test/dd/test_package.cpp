@@ -17,6 +17,7 @@
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
+#include "dd/StateGeneration.hpp"
 #include "dd/statistics/PackageStatistics.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/operations/Control.hpp"
@@ -61,7 +62,7 @@ TEST(DDPackageTest, TrivialTest) {
 
   ASSERT_EQ(hGate.getValueByPath(1, "0"), SQRT2_2);
 
-  auto zeroState = dd->makeZeroState(1);
+  auto zeroState = makeZeroState(1, *dd);
   auto hState = dd->multiply(hGate, zeroState);
   auto oneState = dd->multiply(xGate, zeroState);
 
@@ -77,7 +78,7 @@ TEST(DDPackageTest, BellState) {
 
   auto hGate = getDD(qc::StandardOperation(1, qc::H), *dd);
   auto cxGate = getDD(qc::StandardOperation(1_pc, 0, qc::X), *dd);
-  auto zeroState = dd->makeZeroState(2);
+  auto zeroState = makeZeroState(2, *dd);
 
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
   bellState.printVector();
@@ -160,7 +161,7 @@ TEST(DDPackageTest, QFTState) {
   qftOp = dd->multiply(h2Gate, qftOp);
 
   qftOp = dd->multiply(swapGate, qftOp);
-  auto qftState = dd->multiply(qftOp, dd->makeZeroState(3));
+  auto qftState = dd->multiply(qftOp, makeZeroState(3, *dd));
 
   qftState.printVector();
 
@@ -271,7 +272,7 @@ TEST(DDPackageTest, CorruptedBellState) {
 
   auto hGate = getDD(qc::StandardOperation(1, qc::H), *dd);
   auto cxGate = getDD(qc::StandardOperation(1_pc, 0, qc::X), *dd);
-  auto zeroState = dd->makeZeroState(2);
+  auto zeroState = makeZeroState(2, *dd);
 
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
 
@@ -316,7 +317,7 @@ TEST(DDPackageTest, NegativeControl) {
   auto dd = std::make_unique<Package>(2);
 
   auto xGate = getDD(qc::StandardOperation(1_nc, 0, qc::X), *dd);
-  auto zeroState = dd->makeZeroState(2);
+  auto zeroState = makeZeroState(2, *dd);
   auto state01 = dd->multiply(xGate, zeroState);
   EXPECT_EQ(state01.getValueByIndex(0b01).real(), 1.);
 }
@@ -465,10 +466,12 @@ TEST(DDPackageTest, StateGenerationManipulation) {
   auto dd = std::make_unique<Package>(nqubits);
   auto b = std::vector<bool>(nqubits, false);
   b[0] = b[1] = true;
-  auto e = dd->makeBasisState(nqubits, b);
-  auto f = dd->makeBasisState(nqubits, {BasisStates::zero, BasisStates::one,
-                                        BasisStates::plus, BasisStates::minus,
-                                        BasisStates::left, BasisStates::right});
+  auto e = makeBasisState(nqubits, b, *dd);
+  auto f = makeBasisState(nqubits,
+                          {BasisStates::zero, BasisStates::one,
+                           BasisStates::plus, BasisStates::minus,
+                           BasisStates::left, BasisStates::right},
+                          *dd);
   dd->vUniqueTable.print<vNode>();
   dd->decRef(e);
   dd->decRef(f);
@@ -479,7 +482,7 @@ TEST(DDPackageTest, VectorSerializationTest) {
 
   auto hGate = getDD(qc::StandardOperation(1, qc::H), *dd);
   auto cxGate = getDD(qc::StandardOperation(1_pc, 0, qc::X), *dd);
-  auto zeroState = dd->makeZeroState(2);
+  auto zeroState = makeZeroState(2, *dd);
 
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
 
@@ -601,7 +604,7 @@ TEST(DDPackageTest, SerializationErrors) {
 
   auto hGate = getDD(qc::StandardOperation(1, qc::H), *dd);
   auto cxGate = getDD(qc::StandardOperation(1_pc, 0, qc::X), *dd);
-  auto zeroState = dd->makeZeroState(2);
+  auto zeroState = makeZeroState(2, *dd);
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
 
   // test non-existing file
@@ -687,7 +690,7 @@ TEST(DDPackageTest, GarbageVector) {
   auto dd = std::make_unique<Package>(4);
   auto hGate = getDD(qc::StandardOperation(0, qc::H), *dd);
   auto cxGate = getDD(qc::StandardOperation(0_pc, 1, qc::X), *dd);
-  auto zeroState = dd->makeZeroState(2);
+  auto zeroState = makeZeroState(2, *dd);
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
   std::cout << "Bell State:\n";
   bellState.printVector();
@@ -758,7 +761,7 @@ TEST(DDPackageTest, ReduceGarbageVector) {
   auto dd = std::make_unique<Package>(3);
   auto xGate = getDD(qc::StandardOperation(2, qc::X), *dd);
   auto hGate = getDD(qc::StandardOperation(2, qc::H), *dd);
-  auto zeroState = dd->makeZeroState(3);
+  auto zeroState = makeZeroState(3, *dd);
   auto initialState = dd->multiply(dd->multiply(hGate, xGate), zeroState);
   std::cout << "Initial State:\n";
   initialState.printVector();
@@ -767,13 +770,13 @@ TEST(DDPackageTest, ReduceGarbageVector) {
   auto reducedState = dd->reduceGarbage(initialState, {false, true, true});
   std::cout << "After reduceGarbage():\n";
   reducedState.printVector();
-  EXPECT_EQ(reducedState, dd->makeZeroState(3));
+  EXPECT_EQ(reducedState, makeZeroState(3, *dd));
 
   dd->incRef(initialState);
   auto reducedState2 =
       dd->reduceGarbage(initialState, {false, true, true}, true);
 
-  EXPECT_EQ(reducedState2, dd->makeZeroState(3));
+  EXPECT_EQ(reducedState2, makeZeroState(3, *dd));
 }
 
 TEST(DDPackageTest, ReduceGarbageVectorTGate) {
@@ -783,7 +786,7 @@ TEST(DDPackageTest, ReduceGarbageVectorTGate) {
   const auto xGate1 = getDD(qc::StandardOperation(1, qc::X), *dd);
   const auto tdgGate0 = getDD(qc::StandardOperation(0, qc::Tdg), *dd);
 
-  auto zeroState = dd->makeZeroState(nqubits);
+  auto zeroState = makeZeroState(nqubits, *dd);
   auto initialState = dd->multiply(
       dd->multiply(tdgGate0, dd->multiply(xGate0, xGate1)), zeroState);
   std::cout << "Initial State:\n";
@@ -919,13 +922,6 @@ TEST(DDPackageTest, ReduceGarbageMatrixTGate) {
 TEST(DDPackageTest, InvalidMakeBasisStateAndGate) {
   auto nqubits = 2U;
   auto dd = std::make_unique<Package>(nqubits);
-  auto basisState = std::vector<BasisStates>{BasisStates::zero};
-  EXPECT_THROW(dd->makeBasisState(nqubits, basisState), std::runtime_error);
-  EXPECT_THROW(dd->makeZeroState(3), std::runtime_error);
-  EXPECT_THROW(dd->makeBasisState(3, {true, true, true}), std::runtime_error);
-  EXPECT_THROW(dd->makeBasisState(
-                   3, {BasisStates::one, BasisStates::one, BasisStates::one}),
-               std::runtime_error);
   EXPECT_THROW(getDD(qc::StandardOperation(3, qc::X), *dd), std::runtime_error);
 }
 
@@ -1064,10 +1060,10 @@ TEST(DDPackageTest, KroneckerProduct) {
 
 TEST(DDPackageTest, KroneckerProductVectors) {
   auto dd = std::make_unique<Package>(2);
-  auto zeroState = dd->makeZeroState(1);
+  auto zeroState = makeZeroState(1, *dd);
   auto kronecker = dd->kronecker(zeroState, zeroState, 1);
 
-  auto expected = dd->makeZeroState(2);
+  auto expected = makeZeroState(2, *dd);
   EXPECT_EQ(kronecker, expected);
 }
 
@@ -1155,7 +1151,7 @@ TEST(DDPackageTest, DestructiveMeasurementAll) {
   auto hGate0 = getDD(qc::StandardOperation(0, qc::H), *dd);
   auto hGate1 = getDD(qc::StandardOperation(1, qc::H), *dd);
   auto plusMatrix = dd->multiply(hGate0, hGate1);
-  auto zeroState = dd->makeZeroState(2);
+  auto zeroState = makeZeroState(2, *dd);
   auto plusState = dd->multiply(plusMatrix, zeroState);
   dd->incRef(plusState);
 
@@ -1180,7 +1176,7 @@ TEST(DDPackageTest, DestructiveMeasurementOne) {
   auto hGate0 = getDD(qc::StandardOperation(0, qc::H), *dd);
   auto hGate1 = getDD(qc::StandardOperation(1, qc::H), *dd);
   auto plusMatrix = dd->multiply(hGate0, hGate1);
-  auto zeroState = dd->makeZeroState(2);
+  auto zeroState = makeZeroState(2, *dd);
   auto plusState = dd->multiply(plusMatrix, zeroState);
   dd->incRef(plusState);
 
@@ -1324,7 +1320,7 @@ TEST(DDPackageTest, BasicNumericStabilityTest) {
   auto dd = std::make_unique<Package>(1);
   auto tol = RealNumber::eps;
   ComplexNumbers::setTolerance(limits::epsilon());
-  auto state = dd->makeZeroState(1);
+  auto state = makeZeroState(1, *dd);
   auto h = getDD(qc::StandardOperation(0, qc::H), *dd);
   auto state1 = dd->multiply(h, state);
   auto z = getDD(qc::StandardOperation(0, qc::Z), *dd);
@@ -1369,7 +1365,7 @@ TEST(DDPackageTest, FidelityOfMeasurementOutcomes) {
   const auto hGate = getDD(qc::StandardOperation(2, qc::H), *dd);
   const auto cxGate1 = getDD(qc::StandardOperation(2_pc, 1, qc::X), *dd);
   const auto cxGate2 = getDD(qc::StandardOperation(1_pc, 0, qc::X), *dd);
-  const auto zeroState = dd->makeZeroState(3);
+  const auto zeroState = makeZeroState(3, *dd);
 
   const auto ghzState = dd->multiply(
       cxGate2, dd->multiply(cxGate1, dd->multiply(hGate, zeroState)));
@@ -1711,7 +1707,7 @@ TEST(DDPackageTest, dStochCache) {
 TEST(DDPackageTest, stateFromVectorBell) {
   const auto dd = std::make_unique<Package>(2);
   const auto v = std::vector<std::complex<fp>>{SQRT2_2, 0, 0, SQRT2_2};
-  const auto s = dd->makeStateFromVector(v);
+  const auto s = makeStateFromVector(v, *dd);
   ASSERT_NE(s.p, nullptr);
   EXPECT_EQ(s.p->v, 1);
   EXPECT_EQ(s.p->e[0].w.r->value, SQRT2_2);
@@ -1733,18 +1729,18 @@ TEST(DDPackageTest, stateFromVectorBell) {
 TEST(DDPackageTest, stateFromVectorEmpty) {
   auto dd = std::make_unique<Package>(1);
   auto v = std::vector<std::complex<fp>>{};
-  EXPECT_TRUE(dd->makeStateFromVector(v).isOneTerminal());
+  EXPECT_TRUE(makeStateFromVector(v, *dd).isOneTerminal());
 }
 
 TEST(DDPackageTest, stateFromVectorNoPowerOfTwo) {
   auto dd = std::make_unique<Package>(3);
   auto v = std::vector<std::complex<fp>>{1, 2, 3, 4, 5};
-  EXPECT_THROW(dd->makeStateFromVector(v), std::invalid_argument);
+  EXPECT_THROW(makeStateFromVector(v, *dd), std::invalid_argument);
 }
 
 TEST(DDPackageTest, stateFromScalar) {
   const auto dd = std::make_unique<Package>(1);
-  const auto s = dd->makeStateFromVector({1});
+  const auto s = makeStateFromVector({1}, *dd);
   EXPECT_TRUE(s.isTerminal());
   EXPECT_EQ(s.w.r->value, 1);
   EXPECT_EQ(s.w.i->value, 0);
@@ -1754,7 +1750,7 @@ TEST(DDPackageTest, expectationValueGlobalOperators) {
   constexpr Qubit maxQubits = 3;
   const auto dd = std::make_unique<Package>(maxQubits);
   for (Qubit nrQubits = 1; nrQubits < maxQubits + 1; ++nrQubits) {
-    const auto zeroState = dd->makeZeroState(nrQubits);
+    const auto zeroState = makeZeroState(nrQubits, *dd);
 
     // Definition global operators
     const auto singleSiteX = getDD(qc::StandardOperation(0, qc::X), *dd);
@@ -1784,7 +1780,7 @@ TEST(DDPackageTest, expectationValueLocalOperators) {
   constexpr Qubit maxQubits = 3;
   const auto dd = std::make_unique<Package>(maxQubits);
   for (Qubit nrQubits = 1; nrQubits < maxQubits + 1; ++nrQubits) {
-    const auto zeroState = dd->makeZeroState(nrQubits);
+    const auto zeroState = makeZeroState(nrQubits, *dd);
 
     // Local expectation values at each site
     for (Qubit site = 0; site < nrQubits - 1; ++site) {
@@ -1804,7 +1800,7 @@ TEST(DDPackageTest, expectationValueExceptions) {
   constexpr auto nrQubits = 2U;
 
   const auto dd = std::make_unique<Package>(nrQubits);
-  const auto zeroState = dd->makeZeroState(nrQubits - 1);
+  const auto zeroState = makeZeroState(nrQubits - 1, *dd);
   const auto xGate = getDD(qc::StandardOperation(1, qc::X), *dd);
 
   EXPECT_ANY_THROW(dd->expectationValue(xGate, zeroState));
@@ -2431,7 +2427,7 @@ TEST(DDPackageTest, InnerProductTopNodeConjugation) {
   // Ising model evolution up to a time T=1
   constexpr auto nrQubits = 2U;
   const auto dd = std::make_unique<Package>(nrQubits);
-  const auto zeroState = dd->makeZeroState(nrQubits);
+  const auto zeroState = makeZeroState(nrQubits, *dd);
   const auto rxx = getDD(qc::StandardOperation({0, 1}, qc::RXX, {-2}), *dd);
   const auto op = getDD(qc::StandardOperation(0, qc::Z), *dd);
 
@@ -2561,7 +2557,7 @@ TEST(DDPackageTest, VectorConjugate) {
            {0., -0.5},
            {-0.5 * SQRT2_2, -0.5 * SQRT2_2}};
 
-  const auto vecDD = dd->makeStateFromVector(vec);
+  const auto vecDD = makeStateFromVector(vec, *dd);
   std::cout << "Vector:\n";
   vecDD.printVector();
   const auto conjVecDD = dd->conjugate(vecDD);

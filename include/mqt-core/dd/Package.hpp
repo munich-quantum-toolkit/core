@@ -263,60 +263,6 @@ public:
    */
   dEdge makeZeroDensityOperator(std::size_t n);
 
-  /**
-   * @brief Construct the all-zero state \f$|0...0\rangle\f$
-   * @param n The number of qubits
-   * @param start The starting qubit index. Default is 0.
-   * @return A decision diagram for the all-zero state
-   */
-  vEdge makeZeroState(std::size_t n, std::size_t start = 0);
-
-  /**
-   * @brief Construct a computational basis state \f$|b_{n-1}...b_0\rangle\f$
-   * @param n The number of qubits
-   * @param state The state to construct
-   * @param start The starting qubit index. Default is 0.
-   * @return A decision diagram for the computational basis state
-   */
-  vEdge makeBasisState(std::size_t n, const std::vector<bool>& state,
-                       std::size_t start = 0);
-
-  /**
-   * @brief Construct a product state out of
-   *        \f$\{0, 1, +, -, R, L\}^{\otimes n}\f$.
-   * @param n The number of qubits
-   * @param state The state to construct
-   * @param start The starting qubit index. Default is 0.
-   * @return A decision diagram for the product state
-   */
-  vEdge makeBasisState(std::size_t n, const std::vector<BasisStates>& state,
-                       std::size_t start = 0);
-
-  /**
-   * @brief Construct a GHZ state \f$|0...0\rangle + |1...1\rangle\f$
-   * @param n The number of qubits
-   * @return A decision diagram for the GHZ state
-   */
-  vEdge makeGHZState(std::size_t n);
-
-  /**
-   * @brief Construct a W state
-   * @details The W state is defined as
-   * \f[
-   * |0...01\rangle + |0...10\rangle + |10...0\rangle
-   * \f]
-   * @param n The number of qubits
-   * @return A decision diagram for the W state
-   */
-  vEdge makeWState(std::size_t n);
-
-  /**
-   * @brief Construct a decision diagram from an arbitrary state vector
-   * @param stateVector The state vector to convert to a DD
-   * @return A decision diagram for the state
-   */
-  vEdge makeStateFromVector(const CVec& stateVector);
-
   ///
   /// Matrix nodes, edges and quantum gates
   ///
@@ -399,30 +345,6 @@ public:
   mEdge makeDDFromMatrix(const CMat& matrix);
 
 private:
-  /**
-   * @brief Constructs a decision diagram (DD) from a state vector using a
-   * recursive algorithm.
-   *
-   * @param begin Iterator pointing to the beginning of the state vector.
-   * @param end Iterator pointing to the end of the state vector.
-   * @param level The current level of recursion. Starts at the highest level of
-   * the state vector (log base 2 of the vector size - 1).
-   * @return A vCachedEdge representing the root node of the created DD.
-   *
-   * @details This function recursively breaks down the state vector into halves
-   * until each half has only one element. At each level of recursion, two new
-   * edges are created, one for each half of the state vector. The two resulting
-   * decision diagram edges are used to create a new decision diagram node at
-   * the current level, and this node is returned as the result of the current
-   * recursive call. At the base case of recursion, the state vector has only
-   * two elements, which are converted into terminal nodes of the decision
-   * diagram.
-   *
-   * @note This function assumes that the state vector size is a power of two.
-   */
-  vCachedEdge makeStateFromVector(const CVec::const_iterator& begin,
-                                  const CVec::const_iterator& end, Qubit level);
-
   /**
    * @brief Constructs a decision diagram (DD) from a complex matrix using a
    * recursive algorithm.
