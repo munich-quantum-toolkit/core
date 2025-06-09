@@ -114,6 +114,14 @@ TEST(CompoundOperation, IsInverseOf) {
   EXPECT_TRUE(op1.isInverseOf(op2));
 }
 
+TEST(CompoundOperation, IsClifford){
+  qc::CompoundOperation op1;
+  op1.emplace_back<qc::StandardOperation>(0, qc::OpType::H);
+  op1.emplace_back<qc::StandardOperation>(1, qc::OpType::RX,
+                                          std::vector{qc::PI_2});
+  EXPECT_FALSE(op1.isClifford());
+}
+
 TEST(OpType, General) {
   EXPECT_EQ(qc::toString(qc::RZ), "rz");
   std::stringstream ss;
