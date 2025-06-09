@@ -397,12 +397,10 @@ def test_symbolic() -> None:
     expr = cast("Expression", mqt_qc[0].get_parameter(0))
     print(expr)
     assert expr.num_terms() == 3
-    assert expr.terms[0].coefficient == -1
-    assert expr.terms[0].variable.name == "lambda"
-    assert expr.terms[1].coefficient == 0.5
-    assert expr.terms[1].variable.name == "phi"
-    assert expr.terms[2].coefficient == 2
-    assert expr.terms[2].variable.name == "theta"
+    coeffs_vars = {(term.coefficient, term.variable.name) for term in expr.terms}
+    assert (-1, "lambda") in coeffs_vars
+    assert (0.5, "phi") in coeffs_vars
+    assert (2, "theta") in coeffs_vars
     assert expr.constant == 2
     assert not mqt_qc.is_variable_free()
 
