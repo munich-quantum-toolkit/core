@@ -204,7 +204,9 @@ def _emplace_operation(
     if name in {"i", "id", "iden"}:
         return _add_operation(qc, OpType.i, qargs, params, qubit_map)
 
-    if name in {"x", "cx", "ccx", "mcx"}:
+    # we keep "mcx_gray" here for compatibility reasons with older Qiskit versions, e.g., 1.0.0 where "noancilla" 
+    # is the default for the argument "mode" which leads to the gate name "gray_code" 
+    if name in {"x", "cx", "ccx", "mcx", "mcx_gray"}:
         return _add_operation(qc, OpType.x, qargs, params, qubit_map)
 
     if name in {"y", "cy"}:
