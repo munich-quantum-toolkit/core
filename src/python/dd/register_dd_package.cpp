@@ -19,13 +19,22 @@
 #include "ir/operations/Control.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/Operation.hpp"
-#include "python/pybind11.hpp"
 
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+
+#include <pybind11/attr.h>
+#include <pybind11/cast.h>
+#include <pybind11/numpy.h>
+// clang-format on
+
+#include <array>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <memory>
-#include <pybind11/numpy.h>
 #include <random>
 #include <stdexcept>
 #include <utility>
@@ -85,6 +94,7 @@ dd::mCachedEdge makeDDFromMatrix(
 }
 } // namespace
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerDDPackage(const py::module& mod) {
   auto dd =
       py::class_<dd::Package, std::unique_ptr<dd::Package>>(mod, "DDPackage");

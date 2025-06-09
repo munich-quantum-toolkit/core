@@ -9,13 +9,24 @@
  */
 
 #include "ir/operations/Expression.hpp"
-#include "python/pybind11.hpp"
 
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+
+#include <pybind11/cast.h>
 #include <pybind11/operators.h>
+// clang-format on
+
 #include <sstream>
 
 namespace mqt {
 
+namespace py = pybind11;
+using namespace pybind11::literals;
+
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerTerm(py::module& m) {
   py::class_<sym::Term<double>>(m, "Term")
       .def(py::init<sym::Variable, double>(), "variable"_a,
@@ -29,8 +40,8 @@ void registerTerm(py::module& m) {
       .def(double() * py::self)
       .def(py::self / double())
       .def(double() / py::self)
-      .def(py::self == py::self)
-      .def(py::self != py::self)
+      .def(py::self == py::self) // NOLINT(misc-redundant-expression)
+      .def(py::self != py::self) // NOLINT(misc-redundant-expression)
       .def(hash(py::self))
       .def("__str__",
            [](const sym::Term<double>& term) {

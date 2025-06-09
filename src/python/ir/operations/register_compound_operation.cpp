@@ -10,19 +10,33 @@
 
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Operation.hpp"
-#include "python/pybind11.hpp"
+
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+
+#include <pybind11/cast.h>
+#include <pybind11/pytypes.h>
+// clang-format on
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
 namespace mqt {
 
+namespace py = pybind11;
+using namespace pybind11::literals;
+
 using DiffType = std::vector<std::unique_ptr<qc::Operation>>::difference_type;
 using SizeType = std::vector<std::unique_ptr<qc::Operation>>::size_type;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerCompoundOperation(const py::module& m) {
   auto wrap = [](DiffType i, const SizeType size) {
     if (i < 0) {
@@ -39,7 +53,7 @@ void registerCompoundOperation(const py::module& m) {
       .def(py::init([](const std::vector<qc::Operation*>& ops) {
              std::vector<std::unique_ptr<qc::Operation>> uniqueOps;
              uniqueOps.reserve(ops.size());
-             for (auto& op : ops) {
+             for (const auto& op : ops) {
                uniqueOps.emplace_back(op->clone());
              }
              return qc::CompoundOperation(std::move(uniqueOps));
@@ -122,7 +136,7 @@ void registerCompoundOperation(const py::module& m) {
             // delete in reverse order to not invalidate indices
             for (std::size_t i = sliceLength; i > 0; --i) {
               compOp.erase(compOp.begin() +
-                           static_cast<int64_t>(start + (i - 1) * step));
+                           static_cast<int64_t>(start + ((i - 1) * step)));
             }
           },
           "slice"_a)
