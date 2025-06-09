@@ -13,6 +13,7 @@
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/QuantumComputation.hpp"
 
 // These includes must be the first includes for any bindings code
@@ -70,7 +71,7 @@ PYBIND11_MODULE(dd, mod, py::mod_gil_not_used()) {
       "simulate_statevector",
       [](const qc::QuantumComputation& qc) {
         auto dd = std::make_unique<dd::Package>(qc.getNqubits());
-        auto in = dd->makeZeroState(qc.getNqubits());
+        auto in = makeZeroState(qc.getNqubits(), *dd);
         const auto sim = dd::simulate(qc, in, *dd);
         return getVector(sim);
       },

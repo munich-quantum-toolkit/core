@@ -15,6 +15,7 @@
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
@@ -372,7 +373,7 @@ TEST_F(DDFunctionality, changePermutation) {
                                "qreg q[2];"
                                "x q[0];\n";
   const auto qc = qasm3::Importer::imports(testfile);
-  const auto sim = simulate(qc, dd->makeZeroState(qc.getNqubits()), *dd);
+  const auto sim = simulate(qc, makeZeroState(qc.getNqubits(), *dd), *dd);
   EXPECT_TRUE(sim.p->e[0].isZeroTerminal());
   EXPECT_TRUE(sim.p->e[1].w.exactlyOne());
   EXPECT_TRUE(sim.p->e[1].p->e[1].isZeroTerminal());
@@ -486,7 +487,7 @@ TEST_F(DDFunctionality, classicControlledOperationConditions) {
 
 TEST_F(DDFunctionality, vectorKroneckerWithTerminal) {
   constexpr auto root = dd::vEdge::one();
-  const auto zeroState = dd->makeZeroState(1);
+  const auto zeroState = makeZeroState(1, *dd);
   const auto extendedRoot = dd->kronecker(zeroState, root, 0);
   EXPECT_EQ(zeroState, extendedRoot);
 }

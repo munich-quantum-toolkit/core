@@ -13,6 +13,8 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
+from packaging import version
+from qiskit import __version__ as qiskit_version
 from qiskit import transpile
 from qiskit.circuit import AncillaRegister, ClassicalRegister, Parameter, QuantumCircuit, QuantumRegister
 from qiskit.circuit.library import U2Gate, XXMinusYYGate, XXPlusYYGate
@@ -150,7 +152,7 @@ def test_two_qubit_gate() -> None:
     assert qc == qiskit_qc
 
 
-def test_mcx() -> None:
+def test_ccx() -> None:
     """Test roundtrip of ccx gate."""
     qc = QuantumCircuit(3)
     qc.ccx(0, 1, 2)
@@ -170,6 +172,13 @@ def test_mcx() -> None:
     assert qiskit_qc[0].operation.name == "ccx"
 
 
+skip_if_qiskit_version_ge_2_1 = pytest.mark.skipif(
+    version.parse(qiskit_version) >= version.parse("2.1"),
+    reason="Qiskit 2.1+ deprecates setting a mode for `mcx` gates",
+)
+
+
+@skip_if_qiskit_version_ge_2_1
 def test_mcx_recursive() -> None:
     """Test roundtrip of large mcx gate."""
     qc = QuantumCircuit(9)
@@ -191,6 +200,7 @@ def test_mcx_recursive() -> None:
     assert qiskit_qc[0].operation.name == "mcx"
 
 
+@skip_if_qiskit_version_ge_2_1
 def test_small_mcx_recursive() -> None:
     """Test roundtrip of small mcx_recursive gate."""
     qc = QuantumCircuit(5)
@@ -211,6 +221,7 @@ def test_small_mcx_recursive() -> None:
     assert qiskit_qc[0].operation.name == "mcx"
 
 
+@skip_if_qiskit_version_ge_2_1
 def test_mcx_vchain() -> None:
     """Test roundtrip of mcx gate with v-chain."""
     qc = QuantumCircuit(9)
@@ -229,6 +240,26 @@ def test_mcx_vchain() -> None:
     qiskit_qc = mqt_to_qiskit(mqt_qc)
     print(qiskit_qc)
     assert qiskit_qc.num_qubits == 9
+    assert len(qiskit_qc) == 1
+    assert qiskit_qc[0].operation.name == "mcx"
+
+
+def test_mcx_without_mode() -> None:
+    """Test roundtrip of mcx gate without a dedicated mode being set (Qiskit 2.1+)."""
+    qc = QuantumCircuit(5)
+    qc.mcx(target_qubit=4, control_qubits=list(range(4)))
+    print(qc)
+
+    mqt_qc = qiskit_to_mqt(qc)
+    print(mqt_qc)
+    assert mqt_qc.num_qubits == 5
+    assert mqt_qc.num_ops == 1
+    assert mqt_qc[0].name.strip() == "x"
+    assert {control.qubit for control in mqt_qc[0].controls} == {0, 1, 2, 3}
+
+    qiskit_qc = mqt_to_qiskit(mqt_qc)
+    print(qiskit_qc)
+    assert qiskit_qc.num_qubits == 5
     assert len(qiskit_qc) == 1
     assert qiskit_qc[0].operation.name == "mcx"
 
@@ -386,12 +417,10 @@ def test_symbolic() -> None:
     expr = cast("Expression", mqt_qc[0].get_parameter(0))
     print(expr)
     assert expr.num_terms() == 3
-    assert expr.terms[0].coefficient == -1
-    assert expr.terms[0].variable.name == "lambda"
-    assert expr.terms[1].coefficient == 0.5
-    assert expr.terms[1].variable.name == "phi"
-    assert expr.terms[2].coefficient == 2
-    assert expr.terms[2].variable.name == "theta"
+    coeffs_vars = {(term.coefficient, term.variable.name) for term in expr.terms}
+    assert (-1, "lambda") in coeffs_vars
+    assert (0.5, "phi") in coeffs_vars
+    assert (2, "theta") in coeffs_vars
     assert expr.constant == 2
     assert not mqt_qc.is_variable_free()
 
