@@ -12,6 +12,7 @@
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 
 #include <cstddef>
@@ -44,7 +45,7 @@ TEST_P(RandomClifford, simulate) {
   for (size_t i = 0; i < numReps; ++i) {
     auto qc =
         qc::createRandomCliffordCircuit(nq, static_cast<std::size_t>(nq) * nq);
-    auto in = dd->makeZeroState(nq);
+    auto in = makeZeroState(nq, *dd);
     ASSERT_NO_THROW({ dd::simulate(qc, in, *dd); });
     qc.printStatistics(std::cout);
   }

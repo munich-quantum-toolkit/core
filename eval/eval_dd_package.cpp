@@ -20,6 +20,7 @@
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 #include "dd/statistics/PackageStatistics.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
@@ -78,7 +79,7 @@ benchmarkSimulate(const qc::QuantumComputation& qc) {
   const auto nq = qc.getNqubits();
   exp->dd = std::make_unique<Package>(nq);
   const auto start = std::chrono::high_resolution_clock::now();
-  const auto in = exp->dd->makeZeroState(nq);
+  const auto in = makeZeroState(nq, *exp->dd);
   exp->sim = simulate(qc, in, *(exp->dd));
   const auto end = std::chrono::high_resolution_clock::now();
   exp->runtime =
@@ -113,7 +114,7 @@ benchmarkSimulateGrover(const qc::Qubit nq,
   qc::QuantumComputation statePrep(nq + 1);
   appendGroverInitialization(statePrep);
   const auto s = buildFunctionality(statePrep, dd);
-  auto e = dd.applyOperation(s, dd.makeZeroState(nq + 1));
+  auto e = dd.applyOperation(s, makeZeroState(nq + 1, dd));
 
   qc::QuantumComputation groverIteration(nq + 1);
   appendGroverOracle(groverIteration, targetValue);
