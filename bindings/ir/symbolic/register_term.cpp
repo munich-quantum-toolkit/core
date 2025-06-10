@@ -12,17 +12,11 @@
 
 // These includes must be the first includes for any bindings code
 // clang-format off
-<<<<<<< HEAD
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
 
 #include <pybind11/cast.h>
 #include <pybind11/operators.h>
-=======
-#include <pybind11/operators.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
->>>>>>> 59e09070 (Remove pybind11.hpp)
 // clang-format on
 
 #include <sstream>
@@ -30,14 +24,9 @@
 namespace mqt {
 
 namespace py = pybind11;
-<<<<<<< HEAD
 using namespace pybind11::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-=======
-using namespace py::literals;
-
->>>>>>> 59e09070 (Remove pybind11.hpp)
 void registerTerm(py::module& m) {
   py::class_<sym::Term<double>>(m, "Term")
       .def(py::init<sym::Variable, double>(), "variable"_a,

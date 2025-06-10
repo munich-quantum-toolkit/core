@@ -15,18 +15,12 @@
 
 // These includes must be the first includes for any bindings code
 // clang-format off
-<<<<<<< HEAD
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
 
 #include <pybind11/buffer_info.h>
 #include <pybind11/cast.h>
 #include <pybind11/numpy.h>
-=======
-#include <pybind11/numpy.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
->>>>>>> 59e09070 (Remove pybind11.hpp)
 // clang-format on
 
 #include <cmath>
@@ -39,7 +33,7 @@
 namespace mqt {
 
 namespace py = pybind11;
-using namespace py::literals;
+using namespace pybind11::literals;
 
 struct Matrix {
   std::vector<std::complex<dd::fp>> data;
