@@ -468,8 +468,7 @@ TEST_F(Qasm3ParserTest, ImportQasm3IfElseStatement) {
                                "c[0] = measure q[0];\n"
                                "if (c[0]) {\n"
                                "  x q[1];\n"
-                               "}\n"
-                               "if (!c[0]) {\n"
+                               "} else {\n"
                                "  x q[0];\n"
                                "  x q[1];\n"
                                "}\n";
@@ -502,8 +501,7 @@ TEST_F(Qasm3ParserTest, ImportQasm3IfElseStatementRegister) {
                                "c[0] = measure q[0];\n"
                                "if (c == 1) {\n"
                                "  x q[1];\n"
-                               "}\n"
-                               "if (c != 1) {\n"
+                               "} else {\n"
                                "  x q[0];\n"
                                "  x q[1];\n"
                                "}\n";
@@ -609,7 +607,8 @@ TEST_F(Qasm3ParserTest, ImportQasm3IfElseNoBlock) {
                                "bit[1] c;\n"
                                "h q[0];\n"
                                "c[0] = measure q[0];\n"
-                               "if (!c[0]) {\n"
+                               "if (c[0]) {\n"
+                               "} else {\n"
                                "  x q[1];\n"
                                "}\n"
                                "x q[0];\n";
