@@ -264,12 +264,11 @@ bool StandardOperation::isClifford() const {
   case Sdg:
   case SX:
   case SXdg:
-    return (getControls().size() == 0);
   case DCX:
   case SWAP:
   case iSWAP:
   case ECR:
-    return (getControls().size() == 1);
+    return !isControlled();
   default:
     return false;
   }
