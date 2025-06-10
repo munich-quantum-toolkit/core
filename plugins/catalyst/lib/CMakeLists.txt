@@ -6,25 +6,6 @@
 #
 # Licensed under the MIT License
 
-if(APPLE)
-  set(BASEPOINT @loader_path)
-else()
-  set(BASEPOINT $ORIGIN)
-endif()
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-list(
-  APPEND
-  CMAKE_INSTALL_RPATH
-  ${BASEPOINT}
-  ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR}
-  ${BASEPOINT}/../core/${CMAKE_INSTALL_LIBDIR}
-  ${BASEPOINT}/../core/lib
-  ${BASEPOINT}/../core/lib64
-  ${BASEPOINT}/../../core/${CMAKE_INSTALL_LIBDIR}
-  ${BASEPOINT}/../../core/lib
-  ${BASEPOINT}/../../core/lib64)
-
 add_compile_options(-fexceptions)
 
 # Q: Why is it add_llvm_library and not add_mlir_library? A: According to Erick from Xanadu, who
@@ -53,8 +34,11 @@ add_llvm_library(
 
 # where to find the MQT-core library
 list(APPEND CMAKE_INSTALL_RPATH ${BASEPOINT}/../../src/ir)
-set_target_properties(mqt-catalyst-plugin PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_RPATH}"
-                                                     BUILD_RPATH "${CMAKE_INSTALL_RPATH}")
+set_target_properties(
+  mqt-catalyst-plugin
+  PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_RPATH}"
+             BUILD_RPATH "${CMAKE_INSTALL_RPATH}"
+             INSTALL_NAME_DIR "@rpath")
 
 # set required C++ standard
 target_compile_features(mqt-catalyst-plugin PUBLIC cxx_std_17)

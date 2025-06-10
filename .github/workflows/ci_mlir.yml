@@ -249,6 +249,8 @@ jobs:
           cmake --build build --config Release --target check-quantum-opt
 
       - name: Prepare Python environment
+        # currently we use a pre-release Catalyst version that already contains
+        # https://github.com/PennyLaneAI/catalyst/pull/1733
         run: |
           source .venv/bin/activate
           uv sync
