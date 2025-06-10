@@ -11,7 +11,16 @@ if(NOT TARGET ir)
   file(GLOB_RECURSE IR_SOURCES **.cpp)
 
   # declare the Python module
-  add_mqt_core_binding(ir ${IR_SOURCES} LINK_LIBS MQT::CoreIR MQT::CoreQASM)
+  add_mqt_core_binding(
+    ${MQT_CORE_TARGET_NAME}-ir-bindings
+    ${IR_SOURCES}
+    MODULE_NAME
+    ir
+    INSTALL_DIR
+    .
+    LINK_LIBS
+    MQT::CoreIR
+    MQT::CoreQASM)
 
   # install the Python stub files in editable mode for better IDE support
   if(SKBUILD_STATE STREQUAL "editable")

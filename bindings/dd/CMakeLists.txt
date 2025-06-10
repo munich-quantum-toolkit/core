@@ -11,7 +11,15 @@ if(NOT TARGET dd)
   file(GLOB_RECURSE DD_SOURCES **.cpp)
 
   # declare the Python module
-  add_mqt_core_binding(dd ${DD_SOURCES} LINK_LIBS MQT::CoreDD)
+  add_mqt_core_binding(
+    ${MQT_CORE_TARGET_NAME}-dd-bindings
+    ${DD_SOURCES}
+    MODULE_NAME
+    dd
+    INSTALL_DIR
+    .
+    LINK_LIBS
+    MQT::CoreDD)
 
   # install the Python stub file in editable mode for better IDE support
   if(SKBUILD_STATE STREQUAL "editable")
