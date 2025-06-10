@@ -68,7 +68,10 @@ HANDLE_OP_TYPE(38, AodActivate, 0, "aod_activate")
 HANDLE_OP_TYPE(39, AodDeactivate, 0, "aod_deactivate")
 HANDLE_OP_TYPE(40, AodMove, 0, "aod_move")
 
-LAST_OP_TYPE(41)
+// Control flow operations
+HANDLE_OP_TYPE(41, IfElse, OpTypeNone, "if_else")
+
+LAST_OP_TYPE(42)
 
 
 #undef OpTypeInv
