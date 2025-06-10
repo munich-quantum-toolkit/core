@@ -30,5 +30,4 @@ void registerSymbolic(pybind11::module& m) {
   registerTerm(m);
   registerExpression(m);
 }
-
 } // namespace mqt
