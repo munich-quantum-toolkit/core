@@ -137,7 +137,7 @@ jobs:
       build-project: true
       clang-version: 20
       cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_MLIR=ON -DBUILD_MQT_CORE_BINDINGS=ON
-      files-changed-only: true
+      files-changed-only: false
       install-pkgs: "pybind11==2.13.6"
       setup-python: true
 
