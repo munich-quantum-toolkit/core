@@ -129,6 +129,11 @@ private:
                            const std::shared_ptr<DebugInfo>& debugInfo,
                            uint64_t defaultValue = 0);
 
+  static int64_t
+  evaluateSignedConstant(const std::shared_ptr<Expression>& expr,
+                         const std::shared_ptr<DebugInfo>& debugInfo,
+                         int64_t defaultValue = 0);
+
   void visitVersionDeclaration(
       std::shared_ptr<VersionDeclaration> versionDeclaration) override;
 

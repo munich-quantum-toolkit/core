@@ -279,6 +279,25 @@ Importer::evaluatePositiveConstant(const std::shared_ptr<Expression>& expr,
   return constInt->getUInt();
 }
 
+int64_t
+Importer::evaluateSignedConstant(const std::shared_ptr<Expression>& expr,
+                                 const std::shared_ptr<DebugInfo>& debugInfo,
+                                 const int64_t defaultValue) {
+  if (expr == nullptr) {
+    return defaultValue;
+  }
+
+  const auto constInt = std::dynamic_pointer_cast<Constant>(expr);
+  if (!constInt || !constInt->isInt()) {
+    throw CompilerError("Expected a constant integer expression.", debugInfo);
+  }
+
+  if (constInt->isSInt()) {
+    return constInt->getSInt();
+  }
+  return static_cast<int64_t>(constInt->getUInt());
+}
+
 Importer::Importer(qc::QuantumComputation& quantumComputation)
     : typeCheckPass(constEvalPass), qc(&quantumComputation),
       gates(STANDARD_GATES) {
@@ -548,6 +567,7 @@ std::unique_ptr<qc::Operation> Importer::evaluateGateCall(
   }
 
   bool invertOperation = false;
+  int64_t powerExponent = 1;
   for (const auto& modifier : gateCallStatement->modifiers) {
     if (auto ctrlModifier =
             std::dynamic_pointer_cast<CtrlGateModifier>(modifier);
@@ -574,8 +594,18 @@ std::unique_ptr<qc::Operation> Importer::evaluateGateCall(
       // if we have an even number of inv modifiers, they cancel each other
       // out
       invertOperation = !invertOperation;
+    } else if (auto powModifier =
+                   std::dynamic_pointer_cast<PowGateModifier>(modifier);
+               powModifier != nullptr) {
+      int64_t exp = evaluateSignedConstant(powModifier->expression,
+                                           gateCallStatement->debugInfo, 1);
+      if (exp < 0) {
+        invertOperation = !invertOperation;
+        exp = -exp;
+      }
+      powerExponent *= exp;
     } else {
-      throw CompilerError("Only ctrl/negctrl/inv modifiers are supported.",
+      throw CompilerError("Only ctrl/negctrl/inv/pow modifiers are supported.",
                           gateCallStatement->debugInfo);
     }
   }
@@ -672,10 +702,32 @@ std::unique_ptr<qc::Operation> Importer::evaluateGateCall(
       allQubits.emplace(qubit);
     }
 
-    // first we apply the operation
-    auto nestedOp = applyQuantumOperation(gate, targetBits, controlBits,
+    // first we apply the operation, potentially multiple times
+    std::unique_ptr<qc::Operation> nestedOp = nullptr;
+    for (int64_t p = 0; p < powerExponent; ++p) {
+      auto single = applyQuantumOperation(gate, targetBits, controlBits,
                                           evaluatedParameters, invertOperation,
                                           gateCallStatement->debugInfo);
+      if (single == nullptr) {
+        nestedOp = nullptr;
+        break;
+      }
+      if (powerExponent == 1) {
+        nestedOp = std::move(single);
+        break;
+      }
+      if (p == 0) {
+        nestedOp = std::move(single);
+      } else if (nestedOp->isCompoundOperation()) {
+        auto* compound = dynamic_cast<qc::CompoundOperation*>(nestedOp.get());
+        compound->getOps().emplace_back(std::move(single));
+      } else {
+        auto compoundOp = std::make_unique<qc::CompoundOperation>();
+        compoundOp->getOps().emplace_back(std::move(nestedOp));
+        compoundOp->getOps().emplace_back(std::move(single));
+        nestedOp = std::move(compoundOp);
+      }
+    }
     if (nestedOp == nullptr || broadcastingWidth == 1) {
       return nestedOp;
     }
