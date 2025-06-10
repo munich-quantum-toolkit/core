@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#ifdef ENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN
+#ifdef BUILD_MQT_CORE_CATALYST_PLUGIN
 #include "mlir/Conversion/Catalyst/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h" // IWYU pragma: keep
 #include "mlir/Conversion/Catalyst/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h" // IWYU pragma: keep
 
@@ -27,7 +27,7 @@
 #include <mlir/Tools/mlir-opt/MlirOptMain.h>
 
 void registerCatalystIfEnabled(mlir::DialectRegistry& registry) {
-#ifdef ENABLE_MQT_CORE_MLIR_CATALYST_PLUGIN
+#ifdef BUILD_MQT_CORE_CATALYST_PLUGIN
   mlir::mqt::ir::conversions::registerCatalystQuantumToMQTOptPasses();
   mlir::mqt::ir::conversions::registerMQTOptToCatalystQuantumPasses();
   registry.insert<catalyst::quantum::QuantumDialect>();
