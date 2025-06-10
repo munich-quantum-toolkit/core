@@ -58,6 +58,8 @@ std::string shortName(const OpType opType) {
     return "msr";
   case Reset:
     return "rst";
+  case IfElse:
+    return "if";
   default:
     return toString(opType);
   }
@@ -130,6 +132,7 @@ OpType opTypeFromString(const std::string& opType) {
       {"reset", OpType::Reset},
       {"barrier", OpType::Barrier},
       {"classic_controlled", OpType::ClassicControlled},
+      {"if_else", OpType::IfElse},
       {"compound", OpType::Compound},
       {"move", OpType::Move},
       {"aod_activate", OpType::AodActivate},
