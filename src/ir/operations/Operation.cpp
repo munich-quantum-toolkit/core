@@ -12,6 +12,7 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
+#include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 
@@ -193,6 +194,21 @@ void Operation::apply(const Permutation& permutation) {
 
 auto Operation::isInverseOf(const Operation& other) const -> bool {
   return operator==(*other.getInverted());
+}
+
+std::unique_ptr<Operation> Operation::getPowered(std::size_t exponent) const {
+  if (exponent == 1U) {
+    return clone();
+  }
+
+  auto compound = std::make_unique<CompoundOperation>();
+  for (std::size_t i = 0; i < exponent; ++i) {
+    compound->getOps().emplace_back(clone());
+  }
+  if (compound->size() == 1U) {
+    return std::move(compound->getOps()[0]);
+  }
+  return compound;
 }
 
 auto Operation::getUsedQubitsPermuted(const qc::Permutation& perm) const

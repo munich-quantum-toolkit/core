@@ -121,6 +121,9 @@ public:
   [[nodiscard]] auto commutesAtQubit(const Operation& other,
                                      const Qubit& qubit) const -> bool override;
 
+  [[nodiscard]] std::unique_ptr<Operation>
+  getPowered(std::size_t exponent) const override;
+
   void invert() override;
 
 protected:
