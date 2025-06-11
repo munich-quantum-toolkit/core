@@ -195,3 +195,57 @@ jobs:
           Write-Output "Batch file created at C:\Windows\quantum-opt pointing to $targetPath"
 
           cmake --build build --config Release --target check-quantum-opt
+
+  cpp-coverage-mlir:
+    name: 🧪 MLIR Coverage
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang-20
+      CXX: clang++-20
+      LLVM_DIR: /usr/lib/llvm-20/lib/cmake/llvm
+      MLIR_DIR: /usr/lib/llvm-20/lib/cmake/mlir
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install LLVM/MLIR
+        run: |
+          sudo apt-get update
+          wget https://apt.llvm.org/llvm.sh -O llvm_install.sh
+          chmod +x llvm_install.sh
+          sudo ./llvm_install.sh 20
+          sudo apt-get install -y llvm-20-tools llvm-20-dev libmlir-20-dev mlir-20-tools
+
+      - name: Install Python tools
+        run: pip install lit
+
+      - name: Configure with CMake and coverage flags
+        run: |
+          cmake -G Ninja -S . -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_MQT_CORE_MLIR=ON \
+            -DCMAKE_C_COMPILER=clang-20 \
+            -DCMAKE_CXX_COMPILER=clang++-20 \
+            -DLLVM_EXTERNAL_LIT=$(which lit) \
+            -DCMAKE_CXX_FLAGS="--coverage -O0 -g" \
+            -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+
+      - name: Build and run MLIR tests
+        run: |
+          cmake --build build --target check-quantum-opt
+
+      - name: Generate coverage report
+        run: |
+          llvm-profdata merge -sparse default.profraw -o default.profdata
+          llvm-cov export build/mlir/tools/quantum-opt/quantum-opt \
+            -instr-profile=default.profdata \
+            -format=lcov > coverage.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.info
+          flags: mlir
+          name: mlir-coverage
