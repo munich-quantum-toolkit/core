@@ -269,3 +269,72 @@ jobs:
           echo "Using DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"
           cd plugins/catalyst/python
           DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH pytest
+
+  cpp-test-mlir-macos-catalyst:
+    name: 🍎 Test MLIR using Catalyst-built LLVM
+    runs-on: macos-14
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      CTEST_PARALLEL_LEVEL: 4
+      FORCE_COLOR: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      #- name: Install prerequisites
+      #  run: |
+      #    xcode-select --install || true
+      #    pip install 'cmake<4' ninja
+      #    brew install libomp ccache gfortran
+      #    echo "/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
+#
+      #- name: Set up uv for Python 3.13
+      #  uses: astral-sh/setup-uv@v6
+      #  with:
+      #    python-version: 3.13
+      #    activate-environment: true
+#
+      #- name: Clone Catalyst (shallow, with submodules)
+      #  run: |
+      #    git clone --recurse-submodules --shallow-submodules https://github.com/PennyLaneAI/catalyst.git
+#
+      #- name: Install Catalyst requirements
+      #  run: |
+      #    cd catalyst
+      #    pip install -r requirements.txt
+#
+      #- name: Build Catalyst from source
+      #  run: |
+      #    cd catalyst
+      #    make all
+#
+      #- name: Test Catalyst build
+      #  run: |
+      #    cd catalyst
+      #    make test
+
+      - name: Set Catalyst LLVM/MLIR paths
+        run: |
+          echo "MLIR_DIR=$(pwd)/catalyst/mlir/llvm-project/build/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "LLVM_DIR=$(pwd)/catalyst/mlir/llvm-project/build/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "LLVM_EXTERNAL_LIT=$(pwd)/catalyst/mlir/llvm-project/build/bin/lit" >> $GITHUB_ENV
+          echo "Catalyst_DIR=$(pwd)/catalyst/mlir/build/lib/cmake/catalyst" >> $GITHUB_ENV
+
+      - name: Prepare Python environment and install plugin
+        run: |
+          uv sync
+          cd plugins/catalyst/python
+          uv sync \
+            --config-settings=cmake.define.MLIR_DIR=$MLIR_DIR \
+            --config-settings=cmake.define.LLVM_DIR=$LLVM_DIR \
+            --config-settings=cmake.define.LLVM_EXTERNAL_LIT=$LLVM_EXTERNAL_LIT \
+            --config-settings=cmake.define.Catalyst_DIR=$Catalyst_DIR \
+            --inexact --no-dev --no-build-isolation-package mqt-catalyst-plugin --active
+
+      - name: Run Catalyst Plugin Tests (macOS)
+        run: |
+          cd plugins/catalyst/python
+          export DYLD_LIBRARY_PATH=$(find build -type f -name 'libmqt-core-ir*.dylib' -exec dirname {} \; | head -n1)
+          echo "Using DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"
+          DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH pytest
