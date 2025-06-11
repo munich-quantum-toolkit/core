@@ -353,4 +353,3 @@ jobs:
           lcov --capture --directory . --output-file coverage.info
           lcov --extract coverage.info '*/mlir/*' --output-file mlir_coverage.info
           codecov --file mlir_coverage.info --flags MLIR --name "MLIR Coverage Report"
-        
