@@ -200,17 +200,17 @@ TEST_F(Qasm3ParserTest, ImportQasm3PowNonInteger) {
                                "include \"stdgates.inc\";\n"
                                "qubit[1] q;\n"
                                "pow(pi) @ x q[0];\n";
-  EXPECT_THROW({
-    try {
-      const auto qc = qasm3::Importer::imports(testfile);
-      (void)qc;
-    } catch (const qasm3::CompilerError& e) {
-      EXPECT_EQ(e.message,
-                "Expected a constant integer expression.");
-      throw;
-    }
-  },
-               qasm3::CompilerError);
+  EXPECT_THROW(
+      {
+        try {
+          const auto qc = qasm3::Importer::imports(testfile);
+          (void)qc;
+        } catch (const qasm3::CompilerError& e) {
+          EXPECT_EQ(e.message, "Expected a constant integer expression.");
+          throw;
+        }
+      },
+      qasm3::CompilerError);
 }
 
 TEST_F(Qasm3ParserTest, ImportQasm3CompoundGate) {
