@@ -13,13 +13,24 @@
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 #include "ir/operations/StandardOperation.hpp"
-#include "python/pybind11.hpp"
+
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+
+#include <pybind11/cast.h>
+// clang-format on
 
 #include <sstream>
 #include <vector>
 
 namespace mqt {
 
+namespace py = pybind11;
+using namespace pybind11::literals;
+
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerStandardOperation(const py::module& m) {
   py::class_<qc::StandardOperation, qc::Operation>(m, "StandardOperation")
       .def(py::init<>())

@@ -12,18 +12,24 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - 📦 Add Windows ARM64 wheels ([#926]) ([**@burgholzer**])
 - 📝 Add documentation page for MLIR ([#931]) ([**@ystade**])
 - ✨ Initial implementation of the mqtdyn Dialect ([#900]) ([**@DRovara**], [**@ystade**])
+- ✨ Add function to approximate decision diagrams ([#908]) ([**@MatthiasReumann**])
+- ✨ Add functions to generate random vector DDs ([#975]) ([**@MatthiasReumann**])
 
 ### Fixed
 
 - 🐛 Fix bug in MLIR roundtrip passes caused by accessing an invalidated iterator after erasure in a loop ([#932]) ([**@flowerthrower**])
 - 🐛 Add missing support for `sxdg` gates in Qiskit circuit import ([#930]) ([**@burgholzer**])
+- 🐛 Fix bug initialization of operations with duplicate operands ([#964]) ([**@ystade**])
+- 🐛 Open issue for Qiskit upstream test only when the test is actually failing not when it was cancelled ([#973]) ([**@ystade**])
 
 ### Changed
 
+- ♻️ Improve performance of getNqubits for StandardOperations ([#959]) ([**@ystade**])
 - ♻️ Outsource definition of standard operations from MLIR dialects to reduce redundancy ([#933]) ([**@ystade**])
 - ♻️ Unify operands and results in MLIR dialects ([#931]) ([**@ystade**])
 - ⏪️ Restore support for (MLIR and) LLVM v19 ([#934]) ([**@flowerthrower**]), [**@ystade**])
 - ⬆️ Update nlohmann_json to `v3.12.0` ([#921]) ([**@burgholzer**])
+- ♻️ Move Make-State Functionality To StateGeneration ([#984]) ([**@MatthiasReumann**])
 
 ## [3.0.2] - 2025-04-07
 
@@ -107,6 +113,11 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#984]: https://github.com/munich-quantum-toolkit/core/pull/984
+[#975]: https://github.com/munich-quantum-toolkit/core/pull/975
+[#973]: https://github.com/munich-quantum-toolkit/core/pull/973
+[#964]: https://github.com/munich-quantum-toolkit/core/pull/964
+[#959]: https://github.com/munich-quantum-toolkit/core/pull/959
 [#934]: https://github.com/munich-quantum-toolkit/core/pull/934
 [#933]: https://github.com/munich-quantum-toolkit/core/pull/933
 [#932]: https://github.com/munich-quantum-toolkit/core/pull/932
@@ -117,6 +128,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#913]: https://github.com/munich-quantum-toolkit/core/pull/913
 [#912]: https://github.com/munich-quantum-toolkit/core/pull/912
 [#911]: https://github.com/munich-quantum-toolkit/core/pull/911
+[#908]: https://github.com/munich-quantum-toolkit/core/pull/908
 [#900]: https://github.com/munich-quantum-toolkit/core/pull/900
 [#895]: https://github.com/munich-quantum-toolkit/core/pull/895
 [#893]: https://github.com/munich-quantum-toolkit/core/pull/893
@@ -165,6 +177,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@M-J-Hochreiter**]: https://github.com/M-J-Hochreiter
 [**@rotmanjanez**]: https://github.com/rotmanjanez
 [**@pehamTom**]: https://github.com/pehamTom
+[**@MatthiasReumann**]: https://github.com/MatthiasReumann
 
 <!-- General links -->
 
