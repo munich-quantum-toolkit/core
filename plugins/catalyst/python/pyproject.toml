@@ -172,7 +172,7 @@ build = "cp3*"
 skip = "*-manylinux* *-linux* *-musllinux*"
 archs = "auto64"
 test-groups = ["test"]
-test-command = "pytest {project}/test"
+test-command = "DYLD_LIBRARY_PATH={project}/plugins/catalyst/python/build/{python_tag}/{build_type}/src/ir pytest {project}/test"
 build-frontend = "build[uv]"
 
 [tool.cibuildwheel.macos]

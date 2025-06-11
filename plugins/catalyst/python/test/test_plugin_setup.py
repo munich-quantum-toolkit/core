@@ -62,6 +62,7 @@ def test_mqt_plugin() -> None:
         return qnode()
 
     assert "mqt-core-round-trip" in module.mlir
+    assert module.mlir_opt
 
 
 @pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")

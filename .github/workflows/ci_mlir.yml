@@ -265,5 +265,7 @@ jobs:
 
       - name: Run plugin Python tests
         run: |
+          DYLD_LIBRARY_PATH=$(find build -type f -name 'libmqt-core-ir*.dylib' -exec dirname {} \; | head -n1)
+          echo "Using DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"
           cd plugins/catalyst/python
-          pytest
+          DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH pytest
