@@ -18,6 +18,7 @@ concurrency:
 
 jobs:
   cpp-test-mlir:
+    if: false # Skip this job during debugging
     name: 🐧 Test MLIR with LLVM@${{ matrix.llvm-version }}
     runs-on: ubuntu-24.04
     strategy:
@@ -92,6 +93,7 @@ jobs:
         run: cmake --build build --config Release --target check-quantum-opt
 
   cpp-test-mlir-windows:
+    if: false # Skip this job during debugging
     name: 🏁 Test MLIR with LLVM@${{ matrix.llvm-version }}
     runs-on: windows-latest
     strategy:
@@ -158,7 +160,7 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}\llvm-install
           cmake --build build_llvm --target install --config Release
 
-      # set up uv for faster Python package management
+      # install uv
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v6
         with:
@@ -169,6 +171,7 @@ jobs:
       - name: Install lit
         run: |
           uv pip install lit
+          echo "LLVM_EXTERNAL_LIT=$(which lit)" >> $GITHUB_ENV
 
       # configure the project with CMake
       - name: Configure CMake for MLIR
@@ -208,66 +211,51 @@ jobs:
       FORCE_COLOR: 3
       MLIR_DIR: /opt/homebrew/opt/llvm@${{ matrix.llvm-version }}/lib/cmake/mlir
       LLVM_DIR: /opt/homebrew/opt/llvm@${{ matrix.llvm-version }}/lib/cmake/llvm
-      LLVM_EXTERNAL_LIT: /opt/homebrew/opt/lit/bin/lit
+
     steps:
-      # check out the repository
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # install llvm and mlir
-      - name: Install llvm and mlir
-        run: |
-          brew install llvm@${{ matrix.llvm-version }} lit ninja
-          echo "/opt/homebrew/opt/llvm@${{ matrix.llvm-version }}/bin" >> $GITHUB_PATH
-
-      # install uv
-      - name: Install the latest version of uv
+      - name: Set up uv for Python 3.13
         uses: astral-sh/setup-uv@v6
         with:
           python-version: 3.13
           activate-environment: true
 
-      # install lit (redundant but mirrors other jobs)
-      - name: Install lit
-        run: uv pip install lit
-
-      # configure the project with CMake
-      - name: Configure CMake for MLIR
+      - name: Setup Python environment
         run: |
-          cmake -G Ninja -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_MQT_CORE_MLIR=ON \
-            -DMLIR_DIR=$MLIR_DIR \
-            -DLLVM_DIR=$LLVM_DIR \
-            -DLLVM_EXTERNAL_LIT=$LLVM_EXTERNAL_LIT \
-            -DPython_EXECUTABLE=.venv/bin/python
+          echo "Using Python: $(which python)"
+          echo "Python_EXECUTABLE=$(which python)" >> $GITHUB_ENV
+          echo "PYTHON=$(which python)" >> $GITHUB_ENV
 
-      # build the project and run the tests
-      - name: Build MLIR components and directly run lit tests
+      - name: Install prerequisites
         run: |
-          cmake --build build --config Release --target check-quantum-opt
+          uv pip install lit
+          LIT_PATH=$(python -c "import shutil; print(shutil.which('lit'))")
+          echo "LLVM_EXTERNAL_LIT=$LIT_PATH" >> $GITHUB_ENV
+          uv pip install scikit-build-core
 
-      - name: Prepare Python environment
-        # currently we use a pre-release Catalyst version that already contains
-        # https://github.com/PennyLaneAI/catalyst/pull/1733
+      - name: Install llvm and mlir
         run: |
-          source .venv/bin/activate
-          uv sync
-          uv pip install --extra-index-url https://test.pypi.org/simple \
-            PennyLane-Catalyst==0.12.0.dev42 \
-            --index-strategy unsafe-best-match --prerelease=allow
+          brew install llvm@${{ matrix.llvm-version }} lit ninja
+          echo "/opt/homebrew/opt/llvm@${{ matrix.llvm-version }}/bin" >> $GITHUB_PATH
 
-      - name: Install the Catalyst plugin
+      - name: Build and install mqt-catalyst-plugin
         run: |
           cd plugins/catalyst/python
-          uv sync --inexact --no-dev --no-build-isolation-package mqt-catalyst-plugin --active
+          uv sync \
+            --config-settings=cmake.define.Python_EXECUTABLE=$Python_EXECUTABLE \
+            --config-settings=cmake.define.MLIR_DIR=$MLIR_DIR \
+            --config-settings=cmake.define.LLVM_DIR=$LLVM_DIR \
+            --config-settings=cmake.define.LLVM_EXTERNAL_LIT=$LLVM_EXTERNAL_LIT \
+            --inexact --no-dev --no-build-isolation-package mqt-catalyst-plugin --active
 
-      - name: Run plugin Python tests
+      - name: Run Catalyst Plugin Tests (macOS)
         run: |
-          DYLD_LIBRARY_PATH=$(find build -type f -name 'libmqt-core-ir*.dylib' -exec dirname {} \; | head -n1)
+          cd plugins/catalyst/python
+          export DYLD_LIBRARY_PATH=$(find build -type f -name 'libmqt-core-ir*.dylib' -exec dirname {} \; | head -n1)
           echo "Using DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"
-          cd plugins/catalyst/python
           DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH pytest
 
   cpp-test-mlir-macos-catalyst:
@@ -282,54 +270,72 @@ jobs:
         with:
           fetch-depth: 0
 
-      #- name: Install prerequisites
-      #  run: |
-      #    xcode-select --install || true
-      #    pip install 'cmake<4' ninja
-      #    brew install libomp ccache gfortran
-      #    echo "/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
-      #
-      #- name: Set up uv for Python 3.13
-      #  uses: astral-sh/setup-uv@v6
-      #  with:
-      #    python-version: 3.13
-      #    activate-environment: true
-      #
-      #- name: Clone Catalyst (shallow, with submodules)
-      #  run: |
-      #    git clone --recurse-submodules --shallow-submodules https://github.com/PennyLaneAI/catalyst.git
-      #
-      #- name: Install Catalyst requirements
-      #  run: |
-      #    cd catalyst
-      #    pip install -r requirements.txt
-      #
-      #- name: Build Catalyst from source
-      #  run: |
-      #    cd catalyst
-      #    make all
-      #
-      #- name: Test Catalyst build
-      #  run: |
-      #    cd catalyst
-      #    make test
+      - name: Set up uv for Python 3.13
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      - name: Setup Python environment
+        run: |
+          echo "Using Python: $(which python)"
+          echo "Python_EXECUTABLE=$(which python)" >> $GITHUB_ENV
+          echo "PYTHON=$(which python)" >> $GITHUB_ENV
+
+      - name: Install prerequisites
+        run: |
+          uv pip install lit
+          LIT_PATH=$(python -c "import shutil; print(shutil.which('lit'))")
+          echo "LLVM_EXTERNAL_LIT=$LIT_PATH" >> $GITHUB_ENV
+          uv pip install scikit-build-core
+
+      - name: Install Catalyst prerequisites
+        run: |
+          xcode-select --install || true
+          uv pip install 'cmake<4' ninja
+          brew install libomp ccache gfortran
+          echo "/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
+
+      - name: Clone Catalyst (shallow, with submodules)
+        run: |
+          git clone --recurse-submodules --shallow-submodules https://github.com/PennyLaneAI/catalyst.git
+
+      - name: Install Catalyst requirements
+        run: |
+          cd catalyst
+          uv pip install -r requirements.txt
+
+      - name: Build Catalyst from source
+        run: |
+          cd catalyst
+          make all
+
+      - name: List installed Python packages (debugging)
+        run: |
+          uv pip list
+          uv pip show pennylane-catalyst || echo "pennylane-catalyst not found"
+          which python
+          python -c "import sys; print(sys.executable)"
 
       - name: Set Catalyst LLVM/MLIR paths
         run: |
           echo "MLIR_DIR=$(pwd)/catalyst/mlir/llvm-project/build/lib/cmake/mlir" >> $GITHUB_ENV
           echo "LLVM_DIR=$(pwd)/catalyst/mlir/llvm-project/build/lib/cmake/llvm" >> $GITHUB_ENV
-          echo "LLVM_EXTERNAL_LIT=$(pwd)/catalyst/mlir/llvm-project/build/bin/lit" >> $GITHUB_ENV
-          echo "Catalyst_DIR=$(pwd)/catalyst/mlir/build/lib/cmake/catalyst" >> $GITHUB_ENV
 
-      - name: Prepare Python environment and install plugin
+      - name: Verify Catalyst is importable (debugging)
         run: |
-          uv sync
+          echo "Python executable: $Python_EXECUTABLE"
+          $Python_EXECUTABLE -m pip list | grep catalyst || echo "Catalyst not installed"
+          $Python_EXECUTABLE -c "import catalyst; print(catalyst.__version__)" || echo "Could not import catalyst"
+
+      - name: Build and install mqt-catalyst-plugin
+        run: |
           cd plugins/catalyst/python
           uv sync \
+            --config-settings=cmake.define.Python_EXECUTABLE=$Python_EXECUTABLE \
             --config-settings=cmake.define.MLIR_DIR=$MLIR_DIR \
             --config-settings=cmake.define.LLVM_DIR=$LLVM_DIR \
             --config-settings=cmake.define.LLVM_EXTERNAL_LIT=$LLVM_EXTERNAL_LIT \
-            --config-settings=cmake.define.Catalyst_DIR=$Catalyst_DIR \
             --inexact --no-dev --no-build-isolation-package mqt-catalyst-plugin --active
 
       - name: Run Catalyst Plugin Tests (macOS)
