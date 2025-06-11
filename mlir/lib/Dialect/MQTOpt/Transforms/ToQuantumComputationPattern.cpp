@@ -47,14 +47,6 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
                                        qc::QuantumComputation& qc)
       : OpRewritePattern(context), circuit(qc) {}
 
-  // clang-tidy false positive
-  // NOLINTNEXTLINE(*-convert-member-functions-to-static)
-  [[nodiscard]] mlir::LogicalResult match(const AllocOp op) const override {
-    return (op->hasAttr("to_replace") || op->hasAttr("mqt_core"))
-               ? mlir::failure()
-               : mlir::success();
-  }
-
   /**
    * @brief Finds the index of a qubit in the list of previously defined qubit
    * variables.
@@ -313,7 +305,14 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     return std::nullopt;
   }
 
-  void rewrite(AllocOp op, mlir::PatternRewriter& rewriter) const override {
+  mlir::LogicalResult
+  matchAndRewrite(AllocOp op, mlir::PatternRewriter& rewriter) const override {
+
+    // Skip if already marked
+    if (op->hasAttr("to_replace") || op->hasAttr("mqt_core")) {
+      return mlir::failure();
+    }
+
     const auto& sizeAttr = op.getSizeAttr();
 
     // First, we create a new `AllocOp` that will replace the old one. It
