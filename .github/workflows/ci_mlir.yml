@@ -288,27 +288,27 @@ jobs:
       #    pip install 'cmake<4' ninja
       #    brew install libomp ccache gfortran
       #    echo "/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
-#
+      #
       #- name: Set up uv for Python 3.13
       #  uses: astral-sh/setup-uv@v6
       #  with:
       #    python-version: 3.13
       #    activate-environment: true
-#
+      #
       #- name: Clone Catalyst (shallow, with submodules)
       #  run: |
       #    git clone --recurse-submodules --shallow-submodules https://github.com/PennyLaneAI/catalyst.git
-#
+      #
       #- name: Install Catalyst requirements
       #  run: |
       #    cd catalyst
       #    pip install -r requirements.txt
-#
+      #
       #- name: Build Catalyst from source
       #  run: |
       #    cd catalyst
       #    make all
-#
+      #
       #- name: Test Catalyst build
       #  run: |
       #    cd catalyst
