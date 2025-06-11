@@ -155,6 +155,74 @@ TEST_F(Qasm3ParserTest, ImportQasm3PowNegativeExponent) {
                                "OPENQASM 3.0;\n"
                                "include \"stdgates.inc\";\n"
                                "qubit[1] q;\n"
+                               "z q[0];\n";
+  EXPECT_EQ(out, expected);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasm3PowPositiveExponent) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[1] q;\n"
+                               "pow(3) @ s q[0];\n";
+  const auto qc = qasm3::Importer::imports(testfile);
+
+  const std::string out = qc.toQASM();
+  const std::string expected = "// i 0\n"
+                               "// o 0\n"
+                               "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[1] q;\n"
+                               "p(4.71238898038469) q[0];\n";
+  EXPECT_EQ(out, expected);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasm3PowZeroExponent) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[1] q;\n"
+                               "pow(0) @ x q[0];\n";
+  const auto qc = qasm3::Importer::imports(testfile);
+
+  const std::string out = qc.toQASM();
+  const std::string expected = "// i 0\n"
+                               "// o 0\n"
+                               "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[1] q;\n";
+  EXPECT_EQ(out, expected);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasm3PowNonInteger) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[1] q;\n"
+                               "pow(pi) @ x q[0];\n";
+  EXPECT_THROW(
+      {
+        try {
+          const auto qc = qasm3::Importer::imports(testfile);
+          (void)qc;
+        } catch (const qasm3::CompilerError& e) {
+          EXPECT_EQ(e.message, "Expected a constant integer expression.");
+          throw;
+        }
+      },
+      qasm3::CompilerError);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasm3PowNegativeExponent) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[1] q;\n"
+                               "pow(-2) @ s q[0];\n";
+  const auto qc = qasm3::Importer::imports(testfile);
+
+  const std::string out = qc.toQASM();
+  const std::string expected = "// i 0\n"
+                               "// o 0\n"
+                               "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[1] q;\n"
                                "sdg q[0];\n"
                                "sdg q[0];\n";
   EXPECT_EQ(out, expected);
