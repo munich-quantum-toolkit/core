@@ -14,12 +14,9 @@
 
 #include "mqt_na_qdmi/device.h"
 
-#include "device.pb.h"
+#include "Device.hpp"
 
 #include <fstream>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/message.h>
-#include <google/protobuf/util/json_util.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
 
