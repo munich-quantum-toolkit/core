@@ -15,43 +15,31 @@ set(QDMI_PREFIX "MQT_NA")
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
-  # Proto files
-  set(PROTO_FILE ${PROJECT_SOURCE_DIR}/proto/na/device.proto)
-
-  # ------------------------------------------------------------------------------
-  # Generate C++ source files from .proto
-  # ------------------------------------------------------------------------------
-
-  # protobuf_generate_cpp(PROTO_SRC PROTO_HDR ${PROTO_FILES})
-
   # Set paths
-  set(PROTO_SRC ${CMAKE_CURRENT_BINARY_DIR}/device.pb.cc)
-  set(PROTO_HDR ${CMAKE_CURRENT_BINARY_DIR}/device.pb.h)
+  set(JSON_FILE ${PROJECT_SOURCE_DIR}/json/na/device.json)
+  set(DEVICE_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/Device.hpp)
 
-  # Generate .pb.cc and .pb.h
+  # Generate definitions for device
   add_custom_command(
-    OUTPUT ${PROTO_SRC} ${PROTO_HDR}
-    COMMAND protobuf::protoc ARGS --proto_path=${PROJECT_SOURCE_DIR}/proto/na
-            --cpp_out=${CMAKE_CURRENT_BINARY_DIR} ${PROTO_FILE}
-    DEPENDS ${PROTO_FILE}
-    COMMENT "Generating C++ source from ${PROTO_FILE}")
-  add_custom_target(generate_proto_files DEPENDS ${PROTO_SRC} ${PROTO_HDR})
+    OUTPUT ${DEVICE_HDR}
+    COMMAND MQT::CoreNADeviceGen ARGS --hpp_out=${CMAKE_CURRENT_BINARY_DIR}/include ${JSON_FILE}
+    DEPENDS ${JSON_FILE}
+    COMMENT "Generating C++ header from ${JSON_FILE}")
+  add_custom_target(generate_na_device_header DEPENDS ${DEVICE_HDR})
 
-  # Add executable
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME NaQDMI device.cpp ${PROTO_SRC} ${PROTO_HDR})
-  add_dependencies(${TARGET_NAME} generate_proto_files)
+  # Add library
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME NaQDMI device.cpp)
 
   # Generate prefixed QDMI headers
   generate_prefixed_qdmi_headers(${QDMI_PREFIX})
 
   # Add include directories
-  target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/include
-                                                   ${CMAKE_CURRENT_BINARY_DIR})
+  target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/include)
 
   # Link Protobuf, QDMI, spdlog, and project warnings
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC qdmi::qdmi protobuf::libprotobuf spdlog::spdlog
+    PUBLIC qdmi::qdmi spdlog::spdlog
     PRIVATE qdmi::project_warnings MQT::ProjectOptions MQT::ProjectWarnings)
 
   # Make QDMI and MQT Core Version available
