@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include <na/device_generator/device.pb.h>
+#include <na/device/device.pb.h>
 #include <string>
 
 namespace na {
