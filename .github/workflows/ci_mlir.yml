@@ -199,8 +199,8 @@ jobs:
 
           cmake --build build --config Release --target check-quantum-opt
 
-  cpp-test-mlir-macos:
-    name: 🍎 Test MLIR with LLVM@${{ matrix.llvm-version }}
+  cpp-test-homebrew-mlir-plugin-macos:
+    name: 🍎 Test mqt-catalyst-plugin with LLVM@${{ matrix.llvm-version }}
     runs-on: macos-14
     strategy:
       matrix:
@@ -209,8 +209,6 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       CTEST_PARALLEL_LEVEL: 4
       FORCE_COLOR: 3
-      MLIR_DIR: /opt/homebrew/opt/llvm@${{ matrix.llvm-version }}/lib/cmake/mlir
-      LLVM_DIR: /opt/homebrew/opt/llvm@${{ matrix.llvm-version }}/lib/cmake/llvm
 
     steps:
       - uses: actions/checkout@v4
@@ -223,23 +221,33 @@ jobs:
           python-version: 3.13
           activate-environment: true
 
-      - name: Setup Python environment
+      - name: Setup Python path
         run: |
           echo "Using Python: $(which python)"
           echo "Python_EXECUTABLE=$(which python)" >> $GITHUB_ENV
           echo "PYTHON=$(which python)" >> $GITHUB_ENV
 
-      - name: Install prerequisites
+      - name: Install lit, scikit-build-core, and Catalyst
+        # Use pre-release Catalyst to include latest features
         run: |
           uv pip install lit
+          uv pip install scikit-build-core
+          uv pip install --extra-index-url https://test.pypi.org/simple PennyLane-Catalyst==0.12.0.dev51 --index-strategy unsafe-best-match --prerelease=allow
+
+      - name: Set lit path
+        run: |
           LIT_PATH=$(python -c "import shutil; print(shutil.which('lit'))")
           echo "LLVM_EXTERNAL_LIT=$LIT_PATH" >> $GITHUB_ENV
-          uv pip install scikit-build-core
 
       - name: Install llvm and mlir
         run: |
           brew install llvm@${{ matrix.llvm-version }} lit ninja
           echo "/opt/homebrew/opt/llvm@${{ matrix.llvm-version }}/bin" >> $GITHUB_PATH
+
+      - name: Set LLVM and MLIR paths
+        run: |
+          echo "MLIR_DIR=/opt/homebrew/opt/llvm@${{ matrix.llvm-version }}/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "LLVM_DIR=/opt/homebrew/opt/llvm@${{ matrix.llvm-version }}/lib/cmake/llvm" >> $GITHUB_ENV
 
       - name: Build and install mqt-catalyst-plugin
         run: |
@@ -251,20 +259,26 @@ jobs:
             --config-settings=cmake.define.LLVM_EXTERNAL_LIT=$LLVM_EXTERNAL_LIT \
             --inexact --no-dev --no-build-isolation-package mqt-catalyst-plugin --active
 
-      - name: Run Catalyst Plugin Tests (macOS)
+      - name: Set DYLD_LIBRARY_PATH
+        # Ensure the shared library is found during tests
         run: |
-          cd plugins/catalyst/python
           export DYLD_LIBRARY_PATH=$(find build -type f -name 'libmqt-core-ir*.dylib' -exec dirname {} \; | head -n1)
           echo "Using DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"
-          DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH pytest
 
-  cpp-test-mlir-macos-catalyst:
-    name: 🍎 Test MLIR using Catalyst-built LLVM
+      - name: Run mqt-catalyst-plugin tests
+        # Currently only plugin setup can be tested with homebrew LLVM
+        run: |
+          cd plugins/catalyst/python
+          DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH pytest test/test_plugin_setup.py
+
+  cpp-test-source-mlir-plugin-macos:
+    name: 🍎 Test mqt-catalyst-plugin with Catalyst from source
     runs-on: macos-14
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       CTEST_PARALLEL_LEVEL: 4
       FORCE_COLOR: 3
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -276,19 +290,23 @@ jobs:
           python-version: 3.13
           activate-environment: true
 
-      - name: Setup Python environment
+      - name: Setup Python path
         run: |
           echo "Using Python: $(which python)"
           echo "Python_EXECUTABLE=$(which python)" >> $GITHUB_ENV
           echo "PYTHON=$(which python)" >> $GITHUB_ENV
 
-      - name: Install prerequisites
+      - name: Install lit and scikit-build-core
         run: |
           uv pip install lit
-          LIT_PATH=$(python -c "import shutil; print(shutil.which('lit'))")
-          echo "LLVM_EXTERNAL_LIT=$LIT_PATH" >> $GITHUB_ENV
           uv pip install scikit-build-core
 
+      - name: Set lit path
+        run: |
+          LIT_PATH=$(python -c "import shutil; print(shutil.which('lit'))")
+          echo "LLVM_EXTERNAL_LIT=$LIT_PATH" >> $GITHUB_ENV
+
+      # This is the recommended way to install Catalyst from source
       - name: Install Catalyst prerequisites
         run: |
           xcode-select --install || true
@@ -310,23 +328,10 @@ jobs:
           cd catalyst
           make all
 
-      - name: List installed Python packages (debugging)
-        run: |
-          uv pip list
-          uv pip show pennylane-catalyst || echo "pennylane-catalyst not found"
-          which python
-          python -c "import sys; print(sys.executable)"
-
-      - name: Set Catalyst LLVM/MLIR paths
+      - name: Set LLVM and MLIR paths
         run: |
           echo "MLIR_DIR=$(pwd)/catalyst/mlir/llvm-project/build/lib/cmake/mlir" >> $GITHUB_ENV
           echo "LLVM_DIR=$(pwd)/catalyst/mlir/llvm-project/build/lib/cmake/llvm" >> $GITHUB_ENV
-
-      - name: Verify Catalyst is importable (debugging)
-        run: |
-          echo "Python executable: $Python_EXECUTABLE"
-          $Python_EXECUTABLE -m pip list | grep catalyst || echo "Catalyst not installed"
-          $Python_EXECUTABLE -c "import catalyst; print(catalyst.__version__)" || echo "Could not import catalyst"
 
       - name: Build and install mqt-catalyst-plugin
         run: |
@@ -338,9 +343,14 @@ jobs:
             --config-settings=cmake.define.LLVM_EXTERNAL_LIT=$LLVM_EXTERNAL_LIT \
             --inexact --no-dev --no-build-isolation-package mqt-catalyst-plugin --active
 
-      - name: Run Catalyst Plugin Tests (macOS)
+      - name: Set DYLD_LIBRARY_PATH
+        # Ensure the shared library is found during tests
         run: |
-          cd plugins/catalyst/python
           export DYLD_LIBRARY_PATH=$(find build -type f -name 'libmqt-core-ir*.dylib' -exec dirname {} \; | head -n1)
           echo "Using DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH"
-          DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH pytest
+
+      - name: Run mqt-catalyst-plugin tests
+        # Test the plugin execution
+        run: |
+          cd plugins/catalyst/python
+          DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH pytest test/test_plugin.py

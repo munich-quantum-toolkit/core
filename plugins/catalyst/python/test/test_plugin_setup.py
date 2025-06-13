@@ -6,23 +6,10 @@
 #
 # Licensed under the MIT License
 
-# Copyright 2024 Xanadu Quantum Technologies Inc.
+"""Tests for MQT plugin setup with PennyLane and Catalyst.
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""Tests for MQT plugin.
-
-The MQT plugin may be found here:
-https://github.com/llvm/llvm-project/tree/main/mlir/examples/standalone
+These tests only check that the MQT plugin is correctly installed and
+can be used in various ways with PennyLane (they do NOT execute any pass).
 """
 
 from __future__ import annotations
@@ -49,7 +36,7 @@ except ImportError:
 def test_mqt_plugin() -> None:
     """Generate MLIR for the MQT plugin.
 
-    Do not execute code. The code execution test should be in the lit test.
+    Does not execute the pass.
     """
 
     @apply_pass("mqt-core-round-trip")
@@ -62,7 +49,6 @@ def test_mqt_plugin() -> None:
         return qnode()
 
     assert "mqt-core-round-trip" in module.mlir
-    assert module.mlir_opt
 
 
 @pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
