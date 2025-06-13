@@ -16,15 +16,8 @@
 
 #include "Device.hpp"
 
-#include <fstream>
-#include <spdlog/spdlog.h>
-#include <sstream>
-
-#ifdef __cplusplus
 #include <cstddef>
-#else
-#include <stddef.h>
-#endif
+#include <spdlog/spdlog.h>
 
 namespace {
 /// The status of the session.
@@ -33,7 +26,7 @@ enum class SessionStatus : uint8_t {
   INITIALIZED, ///< The session has been initialized and is ready for use
 };
 
-/// The type of an operation.
+/// The type of operation.
 enum class OperationType : uint8_t {
   GLOBAL_SINGLE_QUBIT, ///< Global single-qubit operation
   GLOBAL_MULTI_QUBIT,  ///< Global multi-qubit operation
@@ -54,22 +47,6 @@ enum class OperationType : uint8_t {
   switch (type) {
   case OperationType::GLOBAL_SINGLE_QUBIT:
   case OperationType::LOCAL_SINGLE_QUBIT:
-    return true;
-  default:
-    return false;
-  }
-}
-
-/**
- * @brief Checks if the operation type is a local operation.
- * @param type The operation type to check.
- * @return true if the operation type is a local operation, false
- * otherwise.
- */
-[[nodiscard]] auto isLocal(const OperationType type) -> bool {
-  switch (type) {
-  case OperationType::LOCAL_SINGLE_QUBIT:
-  case OperationType::LOCAL_MULTI_QUBIT:
     return true;
   default:
     return false;
@@ -183,258 +160,6 @@ struct DecoherenceTimes {
   static DecoherenceTimes decoherenceTimes;
   return decoherenceTimes;
 }
-
-/**
- * @brief Provides access to the time factor for the device.
- * @details This function returns a reference to a static variable that stores
- * the time factor for the device. The time factor is used to convert time
- * values from the device's time unit to microseconds.
- * @returns A reference to a static double variable that stores the time factor.
- */
-[[nodiscard]] auto timeFactor() -> double& {
-  static double timeFactor;
-  return timeFactor;
-}
-
-/**
- * @brief Provides access to the length factor for the device.
- * @details This function returns a reference to a static variable that stores
- * the length factor for the device. The length factor is used to convert length
- * values from the device's length unit to micrometers.
- * @returns A reference to a static double variable that stores the length
- * factor.
- */
-[[nodiscard]] auto lengthFactor() -> double& {
-  static double lengthFactor;
-  return lengthFactor;
-}
-
-/**
- * @brief Parses the device configuration from a JSON file specified by the
- * environment variable MQT_CORE_NA_QDMI_DEVICE_JSON_FILE.
- * @returns The parsed device configuration as a Protobuf message.
- * @throws std::runtime_error if the environment variable is not set, the JSON
- * file does not exist, or the JSON file cannot be parsed.
- */
-[[nodiscard]] auto parse() -> na::Device {
-  // Get the path to the JSON file from the environment variable
-  const char* path = std::getenv("MQT_CORE_NA_QDMI_DEVICE_JSON_FILE");
-  if (path == nullptr) {
-    throw std::runtime_error(
-        "Environment variable MQT_CORE_NA_QDMI_DEVICE_JSON_FILE is not set.");
-  }
-  // Read the device configuration from a JSON file
-  std::ifstream ifs(path);
-  if (!ifs.is_open()) {
-    throw std::runtime_error("Failed to open JSON file: " + std::string(path));
-  }
-  std::stringstream buffer;
-  buffer << ifs.rdbuf();
-  const std::string json = buffer.str();
-  ifs.close();
-  // Parse the JSON string into the protobuf message
-  google::protobuf::util::JsonParseOptions options;
-  options.ignore_unknown_fields = true;
-  na::Device device;
-  const auto status =
-      google::protobuf::util::JsonStringToMessage(json, &device);
-  if (!status.ok()) {
-    std::stringstream ss;
-    ss << "Failed to parse JSON string into Protobuf message: "
-       << status.ToString();
-    throw std::runtime_error(ss.str());
-  }
-  // Validate device
-  for (const auto& lattice : device.traps()) {
-    if (lattice.lattice_vectors_size() > 2) {
-      std::stringstream ss;
-      ss << "Lattice vectors size " << lattice.lattice_vectors_size()
-         << "exceeds 2 which means that specification of traps is not unique "
-            "anymore in the 2D plane.";
-      throw std::runtime_error(ss.str());
-    }
-  }
-  return device;
-}
-
-/**
- * @brief Increments the indices in lexicographic order.
- * @details This function increments the first index that is less than its
- * limit, resets all previous indices to zero.
- * @param indices The vector of indices to increment.
- * @param limits The limits for each index.
- * @returns true if the increment was successful, false if all indices have
- * reached their limits.
- */
-[[nodiscard]] auto increment(std::vector<size_t>& indices,
-                             const std::vector<size_t>& limits) -> bool {
-  size_t i = 0;
-  for (; i < indices.size() && indices[i] == limits[i]; ++i) {
-  }
-  if (i == indices.size()) {
-    // all indices are at their limits
-    return false;
-  }
-  for (size_t j = 0; j < i; ++j) {
-    indices[j] = 0; // Reset all previous indices
-  }
-  ++indices[i]; // Increment the next index
-  return true;
-}
-
-/**
- * @brief Imports the name of the device from the Protobuf message.
- * @param device The Protobuf message containing the device configuration.
- */
-auto importName(const na::Device& device) -> void { name() = device.name(); }
-
-/**
- * @brief Imports the sites from the Protobuf message into the device.
- * @param device The Protobuf message containing the device configuration.
- */
-auto importSites(const na::Device& device) -> void {
-
-  const auto s = MQT_NA_QDMI_Site_impl_d{1, 2, 3};
-  constexpr auto ss = std::vector{std::make_unique<MQT_NA_QDMI_Site_impl_d>(
-      MQT_NA_QDMI_Site_impl_d{1, 2, 3})};
-
-  size_t count = 0;
-  for (const auto& lattice : device.traps()) {
-    const auto originX = lattice.lattice_origin().x();
-    const auto originY = lattice.lattice_origin().y();
-    std::vector limits(lattice.lattice_vectors_size(), 0UL);
-    std::transform(lattice.lattice_vectors().begin(),
-                   lattice.lattice_vectors().end(), limits.begin(),
-                   [](const auto& vector) { return vector.repeat(); });
-    std::vector indices(lattice.lattice_vectors_size(), 0UL);
-    do {
-      // For every sublattice offset, add a site for repetition indices
-      for (const auto& offset : lattice.sublattice_offsets()) {
-        auto& site =
-            sites().emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>());
-        site->id = count++;
-        site->x = originX + offset.x();
-        site->y = originY + offset.y();
-        for (size_t i = 0; i < lattice.lattice_vectors_size(); ++i) {
-          const auto& vector = lattice.lattice_vectors(i).vector();
-          site->x += indices[i] * vector.x();
-          site->y += indices[i] * vector.y();
-        }
-      }
-    } while (increment(indices, limits));
-  }
-}
-
-/**
- * @brief Imports the operations from the Protobuf message into the device.
- * @param device The Protobuf message containing the device configuration.
- */
-auto importOperations(const na::Device& device) -> void {
-  for (const auto& operation : device.global_single_qubit_operations()) {
-    auto& op = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    op->name = operation.name();
-    op->type = OperationType::GLOBAL_SINGLE_QUBIT;
-    op->numParameters = operation.num_parameters();
-    op->numQubits = 1;
-    op->duration = operation.duration() * timeFactor();
-    op->fidelity = operation.fidelity();
-  }
-  for (const auto& operation : device.global_multi_qubit_operations()) {
-    auto& op = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    op->name = operation.name();
-    op->type = OperationType::GLOBAL_MULTI_QUBIT;
-    op->numParameters = operation.num_parameters();
-    op->numQubits = operation.num_qubits();
-    op->duration = operation.duration() * timeFactor();
-    op->fidelity = operation.fidelity();
-  }
-  for (const auto& operation : device.local_single_qubit_operations()) {
-    auto& op = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    op->name = operation.name();
-    op->type = OperationType::LOCAL_SINGLE_QUBIT;
-    op->numParameters = operation.num_parameters();
-    op->numQubits = 1;
-    op->duration = operation.duration() * timeFactor();
-    op->fidelity = operation.fidelity();
-  }
-  for (const auto& operation : device.local_multi_qubit_operations()) {
-    auto& op = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    op->name = operation.name();
-    op->type = OperationType::LOCAL_MULTI_QUBIT;
-    op->numParameters = operation.num_parameters();
-    op->numQubits = operation.num_qubits();
-    op->duration = operation.duration() * timeFactor();
-    op->fidelity = operation.fidelity();
-  }
-  for (const auto& operation : device.shuttling_units()) {
-    auto& load = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    load->name = operation.name();
-    load->type = OperationType::SHUTTLING_LOAD;
-    load->numParameters = operation.num_parameters();
-    load->duration = operation.load_duration() * timeFactor();
-    load->fidelity = operation.load_fidelity();
-    auto& move = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    move->name = operation.name();
-    move->type = OperationType::SHUTTLING_MOVE;
-    move->numParameters = operation.num_parameters();
-    auto& store = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    store->name = operation.name();
-    store->type = OperationType::SHUTTLING_STORE;
-    store->numParameters = operation.num_parameters();
-    store->duration = operation.store_duration() * timeFactor();
-    store->fidelity = operation.store_fidelity();
-  }
-}
-
-/**
- * @brief Imports the decoherence times from the Protobuf message into the
- * device.
- * @param device The Protobuf message containing the device configuration.
- */
-auto importDecoherenceTimes(const na::Device& device) -> void {
-  decoherence().t1 = device.decoherence_times().t1() * timeFactor();
-  decoherence().t2 = device.decoherence_times().t2() * timeFactor();
-}
-
-/**
- * @brief Initializes the device with the configuration parsed from the JSON
- * file.
- * @details This function transfers all data from the parsed Protobuf
- * message to the device's internal structures, such as the name, sites, and
- * operations.
- */
-auto initialize() -> void {
-  const auto& device = parse();
-  // Initialize units
-  timeFactor() = static_cast<double>(device.time_unit().value());
-  if (device.time_unit().unit() == "ns") {
-    timeFactor() *= 1e-3;
-  } else if (device.time_unit().unit() != "us") {
-    std::stringstream ss;
-    ss << "Unsupported time unit: " << device.time_unit().unit();
-    throw std::runtime_error(ss.str());
-  }
-  lengthFactor() = static_cast<double>(device.length_unit().value());
-  if (device.length_unit().unit() == "nm") {
-    lengthFactor() *= 1e-3;
-  } else if (device.length_unit().unit() != "um") {
-    std::stringstream ss;
-    ss << "Unsupported length unit: " << device.length_unit().unit();
-    throw std::runtime_error(ss.str());
-  }
-  // Transfer all data from the protobuf message to the device
-  importName(device);
-  importSites(device);
-  importOperations(device);
-  importDecoherenceTimes(device);
-}
 } // namespace
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
@@ -464,6 +189,7 @@ auto initialize() -> void {
           return QDMI_ERROR_INVALIDARGUMENT;                                   \
         }                                                                      \
         strncpy(static_cast<char*>(value), prop_value, size);                  \
+        /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) */  \
         static_cast<char*>(value)[size - 1] = '\0';                            \
       }                                                                        \
       if ((size_ret) != nullptr) {                                             \
@@ -494,12 +220,11 @@ auto initialize() -> void {
 // NOLINTEND(bugprone-macro-parentheses)
 
 int MQT_NA_QDMI_device_initialize() {
-  try {
-    initialize();
-  } catch (const std::runtime_error& e) {
-    SPDLOG_ERROR(e.what());
-    return QDMI_ERROR_FATAL;
-  }
+  INITIALIZE_NAME(name());
+  INITIALIZE_SITES(sites());
+  INITIALIZE_OPERATIONS(operations());
+  INITIALIZE_T1(decoherence().t1);
+  INITIALIZE_T2(decoherence().t2);
   return QDMI_SUCCESS;
 }
 
@@ -509,6 +234,7 @@ int MQT_NA_QDMI_device_session_alloc(MQT_NA_QDMI_Device_Session* session) {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   *session = new MQT_NA_QDMI_Device_Session_impl_d();
   return QDMI_SUCCESS;
 }
@@ -525,6 +251,7 @@ int MQT_NA_QDMI_device_session_init(MQT_NA_QDMI_Device_Session session) {
 }
 
 void MQT_NA_QDMI_device_session_free(MQT_NA_QDMI_Device_Session session) {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   delete session;
 }
 
@@ -578,8 +305,10 @@ int MQT_NA_QDMI_device_job_cancel(MQT_NA_QDMI_Device_Job job) {
   return QDMI_ERROR_PERMISSIONDENIED;
 }
 
-int MQT_NA_QDMI_device_job_check(MQT_NA_QDMI_Device_Job job,
-                                 QDMI_Job_Status* status) {
+int MQT_NA_QDMI_device_job_check(
+    MQT_NA_QDMI_Device_Job job,
+    // NOLINTNEXTLINE(readability-non-const-parameter)
+    QDMI_Job_Status* status) {
   if (job == nullptr || status == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
@@ -596,7 +325,7 @@ int MQT_NA_QDMI_device_job_wait(MQT_NA_QDMI_Device_Job job) {
 int MQT_NA_QDMI_device_job_get_results(MQT_NA_QDMI_Device_Job job,
                                        QDMI_Job_Result result,
                                        const size_t size, void* data,
-                                       size_t* size_ret) {
+                                       [[maybe_unused]] size_t* sizeRet) {
   if (job == nullptr || (data != nullptr && size == 0) ||
       result >= QDMI_JOB_RESULT_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -606,7 +335,7 @@ int MQT_NA_QDMI_device_job_get_results(MQT_NA_QDMI_Device_Job job,
 
 int MQT_NA_QDMI_device_session_query_device_property(
     MQT_NA_QDMI_Device_Session session, const QDMI_Device_Property prop,
-    const size_t size, void* value, size_t* size_ret) {
+    const size_t size, void* value, size_t* sizeRet) {
   if (session == nullptr || (value != nullptr && size == 0) ||
       prop >= QDMI_DEVICE_PROPERTY_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -615,72 +344,72 @@ int MQT_NA_QDMI_device_session_query_device_property(
     return QDMI_ERROR_BADSTATE;
   }
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name().c_str(), prop, size,
-                      value, size_ret)
+                      value, sizeRet)
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_VERSION, MQT_CORE_VERSION, prop,
-                      size, value, size_ret)
+                      size, value, sizeRet)
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_LIBRARYVERSION, QDMI_VERSION, prop,
-                      size, value, size_ret)
+                      size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_STATUS, QDMI_Device_Status,
                             QDMI_DEVICE_STATUS_OFFLINE, prop, size, value,
-                            size_ret)
+                            sizeRet)
   // This device never needs calibration
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION, size_t, 0,
-                            prop, size, value, size_ret)
+                            prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SITES, MQT_NA_QDMI_Site, sites(), prop,
-                    size, value, size_ret)
+                    size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_NA_QDMI_Operation,
-                    operations(), prop, size, value, size_ret)
+                    operations(), prop, size, value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_NA_QDMI_device_session_query_site_property(
     MQT_NA_QDMI_Device_Session session, MQT_NA_QDMI_Site site,
     const QDMI_Site_Property prop, const size_t size, void* value,
-    size_t* size_ret) {
+    size_t* sizeRet) {
   if (session == nullptr || site == nullptr ||
       (value != nullptr && size == 0) || prop >= QDMI_SITE_PROPERTY_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_ID, uint64_t, site->id, prop,
-                            size, value, size_ret)
+                            size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T1, double, decoherence().t1,
-                            prop, size, value, size_ret)
+                            prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T2, double, decoherence().t2,
-                            prop, size, value, size_ret)
+                            prop, size, value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_NA_QDMI_device_session_query_operation_property(
     MQT_NA_QDMI_Device_Session session, MQT_NA_QDMI_Operation operation,
-    const size_t num_sites, const MQT_NA_QDMI_Site* sites,
-    const size_t num_params, const double* params,
+    const size_t numSites, const MQT_NA_QDMI_Site* sites,
+    const size_t numParams, const double* params,
     const QDMI_Operation_Property prop, const size_t size, void* value,
-    size_t* size_ret) {
+    size_t* sizeRet) {
   if (session == nullptr || operation == nullptr ||
-      (sites != nullptr && num_sites == 0) ||
-      (params != nullptr && num_params == 0) ||
+      (sites != nullptr && numSites == 0) ||
+      (params != nullptr && numParams == 0) ||
       (value != nullptr && size == 0) || prop >= QDMI_OPERATION_PROPERTY_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, operation->name.c_str(),
-                      prop, size, value, size_ret)
+                      prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, size_t,
                             operation->numParameters, prop, size, value,
-                            size_ret)
+                            sizeRet)
   if (operation->type != OperationType::SHUTTLING_MOVE) {
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_DURATION, double,
-                              operation->duration, prop, size, value, size_ret)
+                              operation->duration, prop, size, value, sizeRet)
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double,
-                              operation->fidelity, prop, size, value, size_ret)
+                              operation->fidelity, prop, size, value, sizeRet)
   }
   if (!isShuttling(operation->type)) {
     if (isSingleQubit(operation->type)) {
       ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t, 1UL,
-                                prop, size, value, size_ret)
+                                prop, size, value, sizeRet)
     } else {
       ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
                                 operation->numQubits, prop, size, value,
-                                size_ret)
+                                sizeRet)
     }
   }
   return QDMI_ERROR_NOTSUPPORTED;
