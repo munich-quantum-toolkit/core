@@ -257,18 +257,13 @@ jobs:
             --config-settings=cmake.define.LLVM_EXTERNAL_LIT=$LLVM_EXTERNAL_LIT \
             --config-settings=cmake.define.MLIR_DIR=$MLIR_DIR \
             --config-settings=cmake.define.LLVM_DIR=$LLVM_DIR \
-            --inexact --no-dev --no-build-isolation-package mqt-catalyst-plugin --active
-
-      - name: Set DYLD_LIBRARY_PATH
-        # Ensure the shared library is found during tests
-        run: |
-          echo "DYLD_LIBRARY_PATH=$(find build -type f -name 'libmqt-core-ir*.dylib' -exec dirname {} \; | head -n1)" >> $GITHUB_ENV
+            --inexact --no-dev --no-build-isolation-package mqt-catalyst-plugin --active --verbose
 
       - name: Run mqt-catalyst-plugin tests
         # Currently only plugin setup can be tested with homebrew LLVM
         run: |
           cd plugins/catalyst/python
-          DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH pytest test/test_plugin_setup.py
+          pytest test/test_plugin_setup.py
 
   cpp-test-mlir-plugin-macos-from-source:
     name: 🍎 Test mqt-catalyst-plugin with Catalyst and LLVM (MLIR) from source
@@ -338,11 +333,13 @@ jobs:
             --config-settings=cmake.define.MLIR_DIR=$MLIR_DIR \
             --config-settings=cmake.define.LLVM_DIR=$LLVM_DIR \
             --config-settings=cmake.define.LLVM_EXTERNAL_LIT=$LLVM_EXTERNAL_LIT \
-            --inexact --no-dev --no-build-isolation-package mqt-catalyst-plugin --active
+            --inexact --no-dev --no-build-isolation-package mqt-catalyst-plugin --active --verbose
 
       - name: Set DYLD_LIBRARY_PATH
         # Ensure the shared library is found during tests
+        # TODO: Why even necessary?
         run: |
+          cd plugins/catalyst/python
           echo "DYLD_LIBRARY_PATH=$(find build -type f -name 'libmqt-core-ir*.dylib' -exec dirname {} \; | head -n1)" >> $GITHUB_ENV
 
       - name: Run mqt-catalyst-plugin tests

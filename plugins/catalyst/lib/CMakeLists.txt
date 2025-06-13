@@ -8,6 +8,12 @@
 
 add_compile_options(-fexceptions)
 
+if(APPLE)
+  set(BASEPOINT @loader_path)
+else()
+  set(BASEPOINT $ORIGIN)
+endif()
+
 # Q: Why is it add_llvm_library and not add_mlir_library? A: According to Erick from Xanadu, who
 # talked with the MLIR team, the reason is probably, that the MLIR plugin uses the same
 # infrastructure as the LLVM plugins. Probably due to laziness, the appropriate MLIR macros were not
