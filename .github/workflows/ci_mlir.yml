@@ -227,11 +227,10 @@ jobs:
           echo "Python_EXECUTABLE=$(which python)" >> $GITHUB_ENV
           echo "PYTHON=$(which python)" >> $GITHUB_ENV
 
-      - name: Install lit, scikit-build-core, and Catalyst
+      - name: Install lit, pytest, scikit-build-core, and Catalyst
         # Use pre-release Catalyst to include latest features
         run: |
-          uv pip install lit
-          uv pip install scikit-build-core
+          uv pip install lit pytest scikit-build-core
           uv pip install --extra-index-url https://test.pypi.org/simple PennyLane-Catalyst==0.12.0.dev51 --index-strategy unsafe-best-match --prerelease=allow
 
       - name: Set lit path
@@ -296,10 +295,9 @@ jobs:
           echo "Python_EXECUTABLE=$(which python)" >> $GITHUB_ENV
           echo "PYTHON=$(which python)" >> $GITHUB_ENV
 
-      - name: Install lit and scikit-build-core
+      - name: Install lit, pytest, and scikit-build-core
         run: |
-          uv pip install lit
-          uv pip install scikit-build-core
+          uv pip install lit pytest scikit-build-core
 
       - name: Set lit path
         run: |
