@@ -1,1 +1,2 @@
 add_subdirectory(MQTDynToMQTOpt)
+add_subdirectory(MQTOptToMQTDyn)

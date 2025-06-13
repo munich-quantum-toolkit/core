@@ -8,8 +8,8 @@
 
 include "mlir/Pass/PassBase.td"
 
-def MQTDynToMQTOpt : Pass<"mqtdyn-to-mqtopt"> {
-  let summary = "Convert MQT's `MQTDyn` to MQT's `MQTOpt` dialect.";
+def MQTOptToMQTDyn : Pass<"mqtopt-to-mqtdyn"> {
+  let summary = "Convert MQT's `MQTOpt` to MQT's `MQTDyn` dialect.";
 
   let description = [{
    

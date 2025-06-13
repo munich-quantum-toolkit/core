@@ -19,7 +19,7 @@ set(LIBS
     MLIRMQTOptTransforms
     MLIRMQTDynTransforms
     MQTDynToMQTOpt
-    )
+    MQTOptToMQTDyn)
 
 add_mlir_tool(quantum-opt quantum-opt.cpp DEPENDS ${LIBS} SUPPORT_PLUGINS)
 target_compile_options(quantum-opt PRIVATE -fexceptions)
