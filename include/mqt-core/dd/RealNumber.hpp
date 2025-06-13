@@ -123,13 +123,6 @@ struct RealNumber final : LLBase {
    */
   [[nodiscard]] static bool approximatelyZero(const RealNumber* e) noexcept;
 
-  /// Mark a number for garbage collection
-  [[nodiscard]] static RealNumber* mark(const RealNumber* e) noexcept;
-  /// Unmark a number after garbage collection
-  [[nodiscard]] static RealNumber* unmark(const RealNumber* e) noexcept;
-  /// Check whether a number is marked
-  [[nodiscard]] static bool marked(const RealNumber* e) noexcept;
-
   /**
    * @brief Write a binary representation of the number to a stream.
    * @param e The number to write.
@@ -262,5 +255,4 @@ constexpr bool RealNumber::exactlyOne(const RealNumber* e) noexcept {
 constexpr bool RealNumber::exactlySqrt2over2(const RealNumber* e) noexcept {
   return clearMark(e) == &constants::sqrt2over2;
 }
-
 } // namespace dd
