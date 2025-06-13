@@ -94,6 +94,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
     // simulate once and measure all qubits repeatedly
     auto permutation = qc.initialLayout;
     auto e = in;
+    dd.incRef(e);
 
     for (const auto& op : qc) {
       // simply skip any non-unitary

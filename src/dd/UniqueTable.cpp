@@ -78,7 +78,6 @@ std::size_t UniqueTable::garbageCollect(const bool force) {
         }
       }
     }
-    stat.numActiveEntries = stat.numEntries;
     ++v;
   }
 
@@ -133,8 +132,6 @@ UniqueTable::getStatsJson(const bool includeIndividualTables) const {
     totalStats.hits += stat.hits;
     totalStats.lookups += stat.lookups;
     totalStats.inserts += stat.inserts;
-    totalStats.numActiveEntries += stat.numActiveEntries;
-    totalStats.peakNumActiveEntries += stat.peakNumActiveEntries;
     totalStats.gcRuns = std::max(totalStats.gcRuns, stat.gcRuns);
   }
 
@@ -158,20 +155,20 @@ std::size_t UniqueTable::getNumEntries() const noexcept {
       });
 }
 
-std::size_t UniqueTable::getNumActiveEntries() const noexcept {
-  return std::accumulate(
-      stats.begin(), stats.end(), std::size_t{0},
-      [](const std::size_t& sum, const UniqueTableStatistics& stat) {
-        return sum + stat.numActiveEntries;
-      });
-}
-
-std::size_t UniqueTable::getPeakNumActiveEntries() const noexcept {
-  return std::accumulate(
-      stats.begin(), stats.end(), std::size_t{0},
-      [](const std::size_t& sum, const UniqueTableStatistics& stat) {
-        return sum + stat.peakNumActiveEntries;
-      });
+std::size_t UniqueTable::countMarkedEntries() const noexcept {
+  std::size_t count = 0U;
+  for (const auto& table : tables) {
+    for (auto* bucket : table) {
+      auto* p = bucket;
+      while (p != nullptr) {
+        if (p->marked()) {
+          ++count;
+        }
+        p = p->next();
+      }
+    }
+  }
+  return count;
 }
 
 } // namespace dd

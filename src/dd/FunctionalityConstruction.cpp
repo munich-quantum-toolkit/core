@@ -23,7 +23,9 @@
 namespace dd {
 MatrixDD buildFunctionality(const qc::QuantumComputation& qc, Package& dd) {
   if (qc.getNqubits() == 0U) {
-    return MatrixDD::one();
+    auto e = MatrixDD::one();
+    dd.incRef(e);
+    return e;
   }
 
   auto permutation = qc.initialLayout;
@@ -43,7 +45,6 @@ MatrixDD buildFunctionality(const qc::QuantumComputation& qc, Package& dd) {
   changePermutation(e, permutation, qc.outputPermutation, dd);
   e = dd.reduceAncillae(e, qc.getAncillary());
   e = dd.reduceGarbage(e, qc.getGarbage());
-
   return e;
 }
 
@@ -116,7 +117,9 @@ bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
 MatrixDD buildFunctionalityRecursive(const qc::QuantumComputation& qc,
                                      Package& dd) {
   if (qc.getNqubits() == 0U) {
-    return MatrixDD::one();
+    auto e = MatrixDD::one();
+    dd.incRef(e);
+    return e;
   }
 
   auto permutation = qc.initialLayout;
@@ -137,7 +140,6 @@ MatrixDD buildFunctionalityRecursive(const qc::QuantumComputation& qc,
   changePermutation(e, permutation, qc.outputPermutation, dd);
   e = dd.reduceAncillae(e, qc.getAncillary());
   e = dd.reduceGarbage(e, qc.getGarbage());
-
   return e;
 }
 

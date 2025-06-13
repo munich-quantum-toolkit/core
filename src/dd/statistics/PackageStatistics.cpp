@@ -41,12 +41,10 @@ static constexpr auto D_EDGE_MEMORY_MIB =
     static_cast<double>(sizeof(Edge<dNode>)) / static_cast<double>(1ULL << 20U);
 
 double computeActiveMemoryMiB(const Package& package) {
-  const auto vActiveEntries =
-      static_cast<double>(package.vUniqueTable.getNumActiveEntries());
-  const auto mActiveEntries =
-      static_cast<double>(package.mUniqueTable.getNumActiveEntries());
-  const auto dActiveEntries =
-      static_cast<double>(package.dUniqueTable.getNumActiveEntries());
+  const auto counts = package.computeActiveCounts();
+  const auto vActiveEntries = static_cast<double>(counts.vectorNodes);
+  const auto mActiveEntries = static_cast<double>(counts.matrixNodes);
+  const auto dActiveEntries = static_cast<double>(counts.densityNodes);
 
   const auto vMemoryForNodes = vActiveEntries * V_NODE_MEMORY_MIB;
   const auto mMemoryForNodes = mActiveEntries * M_NODE_MEMORY_MIB;
@@ -60,8 +58,7 @@ double computeActiveMemoryMiB(const Package& package) {
   const auto memoryForEdges =
       vMemoryForEdges + mMemoryForEdges + dMemoryForEdges;
 
-  const auto activeRealNumbers =
-      static_cast<double>(package.cUniqueTable.getStats().numActiveEntries);
+  const auto activeRealNumbers = static_cast<double>(counts.realNumbers);
   const auto memoryForRealNumbers = activeRealNumbers * REAL_NUMBER_MEMORY_MIB;
 
   return memoryForNodes + memoryForEdges + memoryForRealNumbers;

@@ -203,15 +203,21 @@ public:
    * @brief Mark an edge and add it to the root set
    *
    * @details The edge is inserted into the appropriate root set so it is
-   * considered live for the mark phase of garbage collection.  Complex-number
-   * reference counts are only updated during garbage collection and therefore
-   * remain unaffected by this call.
+   * considered live for the mark phase of garbage collection. Marks for the
+   * complex weight referenced by this edge are only manipulated during garbage
+   * collection itself and therefore remain unaffected by this call.
    *
    * @tparam Node The node type of the edge.
    * @param e The edge to mark and add to the root set
    */
   template <class Node> void incRef(const Edge<Node>& e) noexcept {
-    static_cast<void>(addRoot(e));
+    if constexpr (std::is_same_v<Node, vNode>) {
+      ++vectorRoots[e];
+    } else if constexpr (std::is_same_v<Node, mNode>) {
+      ++matrixRoots[e];
+    } else if constexpr (std::is_same_v<Node, dNode>) {
+      ++densityRoots[e];
+    }
   }
 
   /**
@@ -219,110 +225,97 @@ public:
    *
    * @details The edge is removed from the root set so it can be reclaimed
    * during the next sweep if it is no longer reachable from any other root.
-   * Reference counts of complex numbers are not adjusted here.
+   * Marks on the associated complex weight are not adjusted here.
    *
    * @tparam Node The node type of the edge.
    * @param e The edge to unmark and remove from the root set
+   * @throws std::invalid_argument If the edge is not part of the root set
    */
-  template <class Node> void decRef(const Edge<Node>& e) noexcept {
-    static_cast<void>(removeRoot(e));
+  template <class Node> void decRef(const Edge<Node>& e) {
+    if (e.p == nullptr) {
+      return;
+    }
+    auto& roots = getRootSet<Node>();
+    auto it = validateRoot(e);
+    if (--it->second == 0U) {
+      roots.erase(it);
+    }
   }
 
 private:
-  // helper to mark/unmark complex numbers referenced by a node recursively
-  template <class Node>
-  void
-  markComplexNumbersRec(Node* p, bool inc,
-                        std::unordered_set<Node*>* visited = nullptr) noexcept {
-    if (Node::isTerminal(p)) {
-      return;
-    }
-    if (!inc && visited != nullptr) {
-      if (visited->find(p) != visited->end()) {
-        return;
-      }
-      visited->insert(p);
-    }
-    for (const auto& child : p->e) {
-      if (inc) {
-        cn.incRef(child.w);
-      } else {
-        cn.decRef(child.w);
-      }
-      markComplexNumbersRec(child.p, inc, visited);
+  template <class Node> [[nodiscard]] auto& getRootSet() noexcept {
+    if constexpr (std::is_same_v<Node, vNode>) {
+      return vectorRoots;
+    } else if constexpr (std::is_same_v<Node, mNode>) {
+      return matrixRoots;
+    } else {
+      static_assert(std::is_same_v<Node, dNode>);
+      return densityRoots;
     }
   }
 
-  template <class Node> void markNodes(Node* p) noexcept {
-    if (Node::isTerminal(p) || p->marked()) {
+  template <class Node>
+  auto validateRoot(const Edge<Node>& e) ->
+      typename std::unordered_map<Edge<Node>, std::size_t>::iterator {
+    auto& roots = getRootSet<Node>();
+    auto it = roots.find(e);
+    if (it == roots.end()) {
+      if constexpr (std::is_same_v<Node, vNode>) {
+        throw std::invalid_argument("Edge is not part of the vector root set");
+      } else if constexpr (std::is_same_v<Node, mNode>) {
+        throw std::invalid_argument("Edge is not part of the matrix root set");
+      } else {
+        throw std::invalid_argument("Edge is not part of the density root set");
+      }
+    }
+    return it;
+  }
+
+  template <class Node> void markNodes(const Edge<Node>& e) noexcept {
+    cn.mark(const_cast<Complex&>(e.w));
+    if (e.isTerminal()) {
+      return;
+    }
+    auto* p = e.p;
+    if (p->marked()) {
       return;
     }
     p->mark();
-    for (const auto& child : p->e) {
-      cn.incRef(child.w);
-      markNodes(child.p);
+    for (auto& child : p->e) {
+      markNodes(child);
     }
   }
 
-  template <class Node> bool addRoot(const Edge<Node>& e) {
-    if constexpr (std::is_same_v<Node, vNode>) {
-      auto it = vectorRoots.find(e);
-      if (it == vectorRoots.end()) {
-        vectorRoots.emplace(e, 1U);
-        return true;
-      }
-      ++it->second;
-      return false;
-    } else if constexpr (std::is_same_v<Node, mNode>) {
-      auto it = matrixRoots.find(e);
-      if (it == matrixRoots.end()) {
-        matrixRoots.emplace(e, 1U);
-        return true;
-      }
-      ++it->second;
-      return false;
-    } else if constexpr (std::is_same_v<Node, dNode>) {
-      auto it = densityRoots.find(e);
-      if (it == densityRoots.end()) {
-        densityRoots.emplace(e, 1U);
-        return true;
-      }
-      ++it->second;
-      return false;
+  template <class Node>
+  void unmarkWeights(const Edge<Node>& e,
+                     std::unordered_set<Node*>* visited = nullptr) noexcept {
+    cn.unmark(const_cast<Complex&>(e.w));
+    if (e.isTerminal()) {
+      return;
     }
-    return false;
+    auto* p = e.p;
+    if (visited != nullptr) {
+      if (!visited->insert(p).second) {
+        return;
+      }
+    }
+    for (auto& child : p->e) {
+      unmarkWeights(child, visited);
+    }
   }
 
-  template <class Node> bool removeRoot(const Edge<Node>& e) {
-    if constexpr (std::is_same_v<Node, vNode>) {
-      auto it = vectorRoots.find(e);
-      if (it != vectorRoots.end()) {
-        if (--it->second == 0U) {
-          vectorRoots.erase(it);
-          return true;
-        }
-        return false;
-      }
-    } else if constexpr (std::is_same_v<Node, mNode>) {
-      auto it = matrixRoots.find(e);
-      if (it != matrixRoots.end()) {
-        if (--it->second == 0U) {
-          matrixRoots.erase(it);
-          return true;
-        }
-        return false;
-      }
-    } else if constexpr (std::is_same_v<Node, dNode>) {
-      auto it = densityRoots.find(e);
-      if (it != densityRoots.end()) {
-        if (--it->second == 0U) {
-          densityRoots.erase(it);
-          return true;
-        }
-        return false;
-      }
+  template <class Node> void unmarkNodes(const Edge<Node>& e) noexcept {
+    if (e.isTerminal()) {
+      return;
     }
-    return false;
+    auto* p = e.p;
+    if (!p->marked()) {
+      return;
+    }
+    p->unmark();
+    for (auto& child : p->e) {
+      unmarkNodes(child);
+    }
   }
 
 public:
@@ -338,11 +331,19 @@ public:
    *
    * @param force If `true`, perform a collection regardless of whether any
    *              table reports that it may need collecting.
-   * @returns `true` if at least one vector or matrix node, or a complex number,
-   *          was reclaimed. Collections of density-matrix nodes do not affect
-   *          the return value.
+   * @returns `true` if at least one vector, matrix, or density-matrix node, or
+   *          a complex number was reclaimed.
    */
   bool garbageCollect(bool force = false);
+
+  struct ActiveCounts {
+    std::size_t vectorNodes = 0U;
+    std::size_t matrixNodes = 0U;
+    std::size_t densityNodes = 0U;
+    std::size_t realNumbers = 0U;
+  };
+
+  [[nodiscard]] ActiveCounts computeActiveCounts() const;
 
   ///
   /// Vector nodes, edges and quantum states

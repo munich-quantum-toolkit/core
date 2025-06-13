@@ -978,11 +978,14 @@ TEST(DDPackageTest, DuplicateIncRefDoesNotLeaveStaleRoot) {
 
   // vector root
   auto vec = dd->makeZeroState(1);
-  dd->incRef(vec);
   EXPECT_EQ(dd->vectorRoots.size(), 1U);
+  dd->incRef(vec);
+  EXPECT_EQ(dd->vectorRoots.at(vec), 2U);
+  dd->decRef(vec);
+  EXPECT_EQ(dd->vectorRoots.at(vec), 1U);
   dd->decRef(vec);
   EXPECT_TRUE(dd->vectorRoots.empty());
-  dd->decRef(vec);
+  EXPECT_THROW(dd->decRef(vec), std::invalid_argument);
 
   // matrix root
   auto mat = getDD(qc::StandardOperation(0, qc::X), *dd);
@@ -997,9 +1000,8 @@ TEST(DDPackageTest, DuplicateIncRefDoesNotLeaveStaleRoot) {
 
   // density root
   auto dens = dd->makeZeroDensityOperator(1);
-  dd->incRef(dens);
-  dd->incRef(dens);
   EXPECT_EQ(dd->densityRoots.size(), 1U);
+  dd->incRef(dens);
   EXPECT_EQ(dd->densityRoots.at(dens), 2U);
   dd->decRef(dens);
   EXPECT_EQ(dd->densityRoots.at(dens), 1U);
@@ -2569,7 +2571,7 @@ TEST(DDPackageTest, DataStructureStatistics) {
   EXPECT_EQ(stats["mEdge"]["alignment_B"], 8U);
   EXPECT_EQ(stats["dEdge"]["size_B"], 24U);
   EXPECT_EQ(stats["dEdge"]["alignment_B"], 8U);
-  EXPECT_EQ(stats["RealNumber"]["size_B"], 24U);
+  EXPECT_EQ(stats["RealNumber"]["size_B"], 16U);
   EXPECT_EQ(stats["RealNumber"]["alignment_B"], 8U);
 }
 

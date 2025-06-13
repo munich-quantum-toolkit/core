@@ -21,17 +21,34 @@
 namespace dd {
 /**
  * @brief A struct for representing real numbers as part of the DD package.
- * @details Consists of a floating point number (the value), a next pointer
- * (used for chaining entries), and a reference count.
+ * @details Consists of a floating point number (the value) and a next pointer
+ * (used for chaining entries). Numbers are marked for garbage collection via
+ * the second least significant bit of pointers referencing them.
  * @note Due to the way the sign of the value is encoded, special care has to
  * be taken when accessing the value. The static functions in this struct
  * provide safe access to the value of a RealNumber* pointer.
  */
 struct RealNumber final : LLBase {
+  static constexpr std::uintptr_t MARK_BIT = 1U << 1U;
 
   /// Getter for the next object.
   [[nodiscard]] RealNumber* next() const noexcept {
-    return reinterpret_cast<RealNumber*>(next_);
+    return reinterpret_cast<RealNumber*>(
+        reinterpret_cast<std::uintptr_t>(next_) & ~MARK_BIT);
+  }
+
+  void markEntry() noexcept {
+    next_ = reinterpret_cast<RealNumber*>(
+        reinterpret_cast<std::uintptr_t>(next_) | MARK_BIT);
+  }
+
+  void unmarkEntry() noexcept {
+    next_ = reinterpret_cast<RealNumber*>(
+        reinterpret_cast<std::uintptr_t>(next_) & ~MARK_BIT);
+  }
+
+  [[nodiscard]] bool isMarked() const noexcept {
+    return (reinterpret_cast<std::uintptr_t>(next_) & MARK_BIT) != 0U;
   }
 
   /**
@@ -64,15 +81,6 @@ struct RealNumber final : LLBase {
    * memory address of the number.
    */
   [[nodiscard]] static fp val(const RealNumber* e) noexcept;
-
-  /**
-   * @brief Get the reference count of the number.
-   * @param num A pointer to the number to get the reference count for.
-   * @returns The reference count of the number.
-   * @note This function accounts for the sign of the number embedded in the
-   * memory address of the number.
-   */
-  [[nodiscard]] static RefCount refCount(const RealNumber* num) noexcept;
 
   /**
    * @brief Check whether two floating point numbers are approximately equal.
@@ -114,42 +122,6 @@ struct RealNumber final : LLBase {
    * @see approximatelyZero(fp)
    */
   [[nodiscard]] static bool approximatelyZero(const RealNumber* e) noexcept;
-
-  /**
-   * @brief Indicates whether a given number needs reference count updates.
-   * @details This function checks whether a given number needs reference count
-   * updates. A number needs reference count updates if the pointer to it is
-   * not the null pointer, if it is not one of the special numbers (zero,
-   * one, 1/sqrt(2)), and if the reference count has saturated.
-   * @param num Pointer to the number to check.
-   * @returns Whether the number needs reference count updates.
-   * @note This function assumes that the pointer to the number is aligned.
-   */
-  [[nodiscard]] static bool noRefCountingNeeded(const RealNumber* num) noexcept;
-
-  /**
-   * @brief Increment the reference count of a number.
-   * @details This function increments the reference count of a number. If the
-   * reference count has saturated (i.e. reached the maximum value of RefCount)
-   * the reference count is not incremented.
-   * @param num A pointer to the number to increment the reference count of.
-   * @returns Whether the reference count was incremented.
-   * @note Typically, you do not want to call this function directly. Instead,
-   * use the RealNumberUniqueTable::incRef(RelNumber*) function.
-   */
-  [[nodiscard]] static bool incRef(const RealNumber* num) noexcept;
-
-  /**
-   * @brief Decrement the reference count of a number.
-   * @details This function decrements the reference count of a number. If the
-   * reference count has saturated (i.e. reached the maximum value of RefCount)
-   * the reference count is not decremented.
-   * @param num A pointer to the number to decrement the reference count of.
-   * @returns Whether the reference count was decremented.
-   * @note Typically, you do not want to call this function directly. Instead,
-   * use the RealNumberUniqueTable::decRef(RelNumber*) function.
-   */
-  [[nodiscard]] static bool decRef(const RealNumber* num) noexcept;
 
   /**
    * @brief Write a binary representation of the number to a stream.
@@ -215,6 +187,28 @@ struct RealNumber final : LLBase {
   flipPointerSign(const RealNumber* e) noexcept;
 
   /**
+   * @brief Mark a real number pointer for garbage collection.
+   * @param p Pointer to mark.
+   * @return The marked pointer.
+   */
+  [[nodiscard]] static RealNumber*
+  getMarkedPointer(const RealNumber* p) noexcept;
+
+  /**
+   * @brief Check whether a real number pointer is marked.
+   * @param p Pointer to check.
+   * @return True if the pointer is marked.
+   */
+  [[nodiscard]] static bool isMarkedPointer(const RealNumber* p) noexcept;
+
+  /**
+   * @brief Clear the mark bit from a pointer.
+   * @param p Pointer to clear.
+   * @return The unmarked pointer.
+   */
+  [[nodiscard]] static RealNumber* clearMark(const RealNumber* p) noexcept;
+
+  /**
    * @brief The value of the number.
    * @details The value of the number is a floating point number. The sign of
    * the value is encoded in the least significant bit of the memory address
@@ -223,14 +217,6 @@ struct RealNumber final : LLBase {
    * accessed using the static functions of this struct.
    */
   fp value{};
-
-  /**
-   * @brief The reference count of the number.
-   * @details The reference count is used to determine whether a number is
-   * still in use. If the reference count is zero, the number is not in use
-   * and can be garbage collected.
-   */
-  RefCount ref{};
 
   /// numerical tolerance to be used for floating point values
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
@@ -259,14 +245,14 @@ MQT_CORE_DD_EXPORT extern RealNumber sqrt2over2;
 } // namespace constants
 
 constexpr bool RealNumber::exactlyZero(const RealNumber* e) noexcept {
-  return e == &constants::zero;
+  return clearMark(e) == &constants::zero;
 }
 
 constexpr bool RealNumber::exactlyOne(const RealNumber* e) noexcept {
-  return e == &constants::one;
+  return clearMark(e) == &constants::one;
 }
 
 constexpr bool RealNumber::exactlySqrt2over2(const RealNumber* e) noexcept {
-  return e == &constants::sqrt2over2;
+  return clearMark(e) == &constants::sqrt2over2;
 }
 } // namespace dd

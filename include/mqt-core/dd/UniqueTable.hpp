@@ -142,11 +142,8 @@ public:
   /// Get the total number of entries
   [[nodiscard]] std::size_t getNumEntries() const noexcept;
 
-  /// Get the total number of active entries
-  [[nodiscard]] std::size_t getNumActiveEntries() const noexcept;
-
-  /// Get the peak total number of active entries
-  [[nodiscard]] std::size_t getPeakNumActiveEntries() const noexcept;
+  /// Count the number of marked entries
+  [[nodiscard]] std::size_t countMarkedEntries() const noexcept;
 
   /**
    * @brief Determine whether the table possibly requires garbage collection.

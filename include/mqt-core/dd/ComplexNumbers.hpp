@@ -129,22 +129,21 @@ public:
   }
 
   /**
-   * @brief Increment the reference count of a complex number.
-   * @details This is a pass-through function that increments the reference
-   * count of the real and imaginary parts of the given complex number.
-   * @param c The complex number
-   * @see RealNumberUniqueTable::incRef(RealNumber*)
+   * @brief Mark the real and imaginary parts of the complex number.
+   * @param c The complex number to mark.
+   * @note Internally calls
+   *       {cpp}`RealNumberUniqueTable::markNumber` on both pointers.
    */
-  void incRef(const Complex& c) const noexcept;
+  void mark(Complex& c) const noexcept;
 
   /**
-   * @brief Decrement the reference count of a complex number.
-   * @details This is a pass-through function that decrements the reference
-   * count of the real and imaginary parts of the given complex number.
-   * @param c The complex number
-   * @see RealNumberUniqueTable::decRef(RealNumber*)
+   * @brief Remove the mark from the real and imaginary parts of the complex
+   * number.
+   * @param c The complex number to unmark.
+   * @note Internally calls
+   *       {cpp}`RealNumberUniqueTable::unmarkNumber` on both pointers.
    */
-  void decRef(const Complex& c) const noexcept;
+  void unmark(Complex& c) const noexcept;
 
   /**
    * @brief Check whether a complex number is one of the static ones.

@@ -104,51 +104,45 @@ bool Package::garbageCollect(bool force) {
     return false;
   }
 
-  // mark all nodes reachable from the current roots and count the referenced
+  // mark all nodes reachable from the current roots and mark the referenced
   // complex numbers
   for (const auto& [edge, _] : vectorRoots) {
-    cn.incRef(edge.w);
-    markNodes(edge.p);
+    markNodes(edge);
   }
   for (const auto& [edge, _] : matrixRoots) {
-    cn.incRef(edge.w);
-    markNodes(edge.p);
+    markNodes(edge);
   }
   for (const auto& [edge, _] : densityRoots) {
-    cn.incRef(edge.w);
-    markNodes(edge.p);
+    markNodes(edge);
   }
 
   // first sweep all node tables
-  const auto vCollect = vUniqueTable.garbageCollect(true);
-  const auto mCollect = mUniqueTable.garbageCollect(true);
-  const auto dCollect = dUniqueTable.garbageCollect(true);
+  // force collection only if explicitly requested or complex numbers were
+  // previously collected
+  const auto vCollect = vUniqueTable.garbageCollect(force);
+  const auto mCollect = mUniqueTable.garbageCollect(force);
+  const auto dCollect = dUniqueTable.garbageCollect(force);
 
-  // then collect unused complex numbers based on the reference counts gathered
-  // during the mark phase
+  // then collect unused complex numbers based on the marks gathered during the
+  // mark phase
   const auto cCollect = cUniqueTable.garbageCollect(force);
 
-  // unmark all complex numbers again so reference counts are reset for the next
-  // collection cycle
   {
-    std::unordered_set<vNode*> visited{};
+    std::unordered_set<vNode*> visitedV;
     for (const auto& [edge, _] : vectorRoots) {
-      cn.decRef(edge.w);
-      markComplexNumbersRec(edge.p, false, &visited);
+      unmarkWeights(edge, &visitedV);
     }
   }
   {
-    std::unordered_set<mNode*> visited{};
+    std::unordered_set<mNode*> visitedM;
     for (const auto& [edge, _] : matrixRoots) {
-      cn.decRef(edge.w);
-      markComplexNumbersRec(edge.p, false, &visited);
+      unmarkWeights(edge, &visitedM);
     }
   }
   {
-    std::unordered_set<dNode*> visited{};
+    std::unordered_set<dNode*> visitedD;
     for (const auto& [edge, _] : densityRoots) {
-      cn.decRef(edge.w);
-      markComplexNumbersRec(edge.p, false, &visited);
+      unmarkWeights(edge, &visitedD);
     }
   }
 
@@ -195,7 +189,57 @@ bool Package::garbageCollect(bool force) {
     densityNoise.clear();
     densityTrace.clear();
   }
-  return vCollect > 0 || mCollect > 0 || cCollect > 0;
+  return vCollect > 0 || mCollect > 0 || dCollect > 0 || cCollect > 0;
+}
+
+Package::ActiveCounts Package::computeActiveCounts() const {
+  auto* self = const_cast<Package*>(this);
+  for (const auto& [edge, _] : self->vectorRoots) {
+    self->markNodes(edge);
+  }
+  for (const auto& [edge, _] : self->matrixRoots) {
+    self->markNodes(edge);
+  }
+  for (const auto& [edge, _] : self->densityRoots) {
+    self->markNodes(edge);
+  }
+
+  ActiveCounts counts{};
+  counts.vectorNodes = self->vUniqueTable.countMarkedEntries();
+  counts.matrixNodes = self->mUniqueTable.countMarkedEntries();
+  counts.densityNodes = self->dUniqueTable.countMarkedEntries();
+  counts.realNumbers = self->cUniqueTable.countMarkedEntries();
+
+  {
+    std::unordered_set<vNode*> visitedV;
+    for (const auto& [edge, _] : self->vectorRoots) {
+      self->unmarkWeights(edge, &visitedV);
+    }
+  }
+  {
+    std::unordered_set<mNode*> visitedM;
+    for (const auto& [edge, _] : self->matrixRoots) {
+      self->unmarkWeights(edge, &visitedM);
+    }
+  }
+  {
+    std::unordered_set<dNode*> visitedD;
+    for (const auto& [edge, _] : self->densityRoots) {
+      self->unmarkWeights(edge, &visitedD);
+    }
+  }
+
+  for (const auto& [edge, _] : self->vectorRoots) {
+    self->unmarkNodes(edge);
+  }
+  for (const auto& [edge, _] : self->matrixRoots) {
+    self->unmarkNodes(edge);
+  }
+  for (const auto& [edge, _] : self->densityRoots) {
+    self->unmarkNodes(edge);
+  }
+
+  return counts;
 }
 
 dEdge Package::makeZeroDensityOperator(const std::size_t n) {
@@ -204,6 +248,7 @@ dEdge Package::makeZeroDensityOperator(const std::size_t n) {
     f = makeDDNode(static_cast<Qubit>(p),
                    std::array{f, dEdge::zero(), dEdge::zero(), dEdge::zero()});
   }
+  incRef(f);
   return f;
 }
 
@@ -219,6 +264,7 @@ vEdge Package::makeZeroState(const std::size_t n, const std::size_t start) {
   for (std::size_t p = start; p < n + start; p++) {
     f = makeDDNode(static_cast<Qubit>(p), std::array{f, vEdge::zero()});
   }
+  incRef(f);
   return f;
 }
 
@@ -804,6 +850,9 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
 }
 char Package::measureOneCollapsing(vEdge& rootEdge, const Qubit index,
                                    std::mt19937_64& mt, const fp epsilon) {
+  if (vectorRoots.find(rootEdge) == vectorRoots.end()) {
+    incRef(rootEdge);
+  }
   const auto& [pzero, pone] =
       determineMeasurementProbabilities(rootEdge, index);
   const fp sum = pzero + pone;
@@ -824,8 +873,11 @@ char Package::measureOneCollapsing(vEdge& rootEdge, const Qubit index,
 }
 char Package::measureOneCollapsing(dEdge& e, const Qubit index,
                                    std::mt19937_64& mt) {
-  char measuredResult = '0';
   dEdge::alignDensityEdge(e);
+  if (densityRoots.find(e) == densityRoots.end()) {
+    incRef(e);
+  }
+  char measuredResult = '0';
   const auto nrQubits = e.p->v + 1U;
   dEdge::setDensityMatrixTrue(e);
 
@@ -931,7 +983,9 @@ mCachedEdge Package::conjugateTransposeRec(const mEdge& a) {
 VectorDD Package::applyOperation(const MatrixDD& operation, const VectorDD& e) {
   const auto tmp = multiply(operation, e);
   incRef(tmp);
-  decRef(e);
+  if (vectorRoots.find(e) != vectorRoots.end()) {
+    decRef(e);
+  }
   garbageCollect();
   return tmp;
 }
@@ -940,7 +994,9 @@ MatrixDD Package::applyOperation(const MatrixDD& operation, const MatrixDD& e,
   const MatrixDD tmp =
       applyFromLeft ? multiply(operation, e) : multiply(e, operation);
   incRef(tmp);
-  decRef(e);
+  if (matrixRoots.find(e) != matrixRoots.end()) {
+    decRef(e);
+  }
   garbageCollect();
   return tmp;
 }
@@ -950,7 +1006,9 @@ dEdge Package::applyOperationToDensity(dEdge& e, const mEdge& operation) {
   const auto tmp2 = multiply(densityFromMatrixEdge(operation), tmp1, true);
   incRef(tmp2);
   dEdge::alignDensityEdge(e);
-  decRef(e);
+  if (densityRoots.find(e) != densityRoots.end()) {
+    decRef(e);
+  }
   e = tmp2;
   dEdge::setDensityMatrixTrue(e);
   return e;
@@ -1080,7 +1138,7 @@ bool Package::isCloseToIdentity(const mEdge& m, const fp tol,
                                 const std::vector<bool>& garbage,
                                 const bool checkCloseToOne) const {
   std::unordered_set<decltype(m.p)> visited{};
-  visited.reserve(mUniqueTable.getNumActiveEntries());
+  visited.reserve(computeActiveCounts().matrixNodes);
   return isCloseToIdentityRecursive(m, visited, tol, garbage, checkCloseToOne);
 }
 bool Package::isCloseToIdentityRecursive(
@@ -1204,7 +1262,9 @@ mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
   }
   const auto res = mEdge{g.p, cn.lookup(g.w * e.w)};
   incRef(res);
-  decRef(e);
+  if (matrixRoots.find(e) != matrixRoots.end()) {
+    decRef(e);
+  }
   return res;
 }
 vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
@@ -1233,7 +1293,9 @@ vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
   }
   const auto res = vEdge{f.p, cn.lookup(weight)};
   incRef(res);
-  decRef(e);
+  if (vectorRoots.find(e) != vectorRoots.end()) {
+    decRef(e);
+  }
   return res;
 }
 mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
@@ -1298,7 +1360,9 @@ mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
   const auto res = mEdge{g.p, cn.lookup(weight)};
 
   incRef(res);
-  decRef(e);
+  if (matrixRoots.find(e) != matrixRoots.end()) {
+    decRef(e);
+  }
   return res;
 }
 mCachedEdge Package::reduceAncillaeRecursion(mNode* p,
