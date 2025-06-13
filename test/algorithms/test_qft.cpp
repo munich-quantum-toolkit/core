@@ -14,6 +14,7 @@
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
@@ -170,7 +171,7 @@ TEST_P(QFT, Simulation) {
 
   // there should be no error simulating the circuit
   ASSERT_NO_THROW({
-    auto in = dd->makeZeroState(nqubits);
+    auto in = makeZeroState(nqubits, *dd);
     sim = simulate(qc, in, *dd);
   });
   qc.printStatistics(std::cout);

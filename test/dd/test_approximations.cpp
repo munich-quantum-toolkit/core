@@ -10,20 +10,18 @@
 
 #include "dd/Approximation.hpp"
 #include "dd/DDDefinitions.hpp"
-#include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <gtest/gtest.h>
 #include <memory>
 #include <numeric>
-#include <random>
 
 using namespace dd;
 
@@ -36,33 +34,6 @@ void vecNear(CVec a, CVec b, double delta = 1e-6) {
     EXPECT_NEAR(a[i].real(), b[i].real(), delta);
     EXPECT_NEAR(a[i].imag(), b[i].imag(), delta);
   }
-}
-
-/**
- * @brief Generate (most-likely) exponentially large DD.
- */
-vEdge generateExponentialDD(const std::size_t nq, Package& dd) {
-  // Setup random distribution for edge weights.
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_real_distribution<double> dis(0., 1.0);
-
-  // Generate random state vector.
-  CVec v(static_cast<std::size_t>(std::pow(2, nq)));
-  for (auto& vi : v) {
-    vi = dis(gen);
-  }
-
-  // Normalize to norm 1.
-  constexpr auto zero = std::complex<double>{0.};
-  const auto inner = std::inner_product(v.begin(), v.end(), v.begin(), zero);
-  const auto norm = std::sqrt(inner);
-  for (auto& vi : v) {
-    vi /= norm;
-  }
-
-  // Return as DD.
-  return dd.makeStateFromVector(v);
 }
 }; // namespace
 
@@ -94,7 +65,7 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
   qc::QuantumComputation qc(nq);
   qc.x(0);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {1}};
@@ -127,7 +98,7 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
   qc::QuantumComputation qc(nq);
   qc.x(0);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {1}};
@@ -160,7 +131,7 @@ TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
   qc::QuantumComputation qc(nq);
   qc.ry(qc::PI / 3, 0);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{1}, {0}};
@@ -198,7 +169,7 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
   qc.h(0);
   qc.cry(qc::PI / 3, 0, 1);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0.755929}, {0.654654}, {0}, {0}};
@@ -254,9 +225,9 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   qcRef.s(0);
   qcRef.x(1);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   const auto meta = approximate(state, fidelity, *dd);
-  auto ref = simulate(qcRef, dd->makeZeroState(nq), *dd);
+  auto ref = simulate(qcRef, makeZeroState(nq, *dd), *dd);
 
   const CVec expected{{0}, {0}, {0}, {0, 1}};
   vecNear(state.getVector(), expected);
@@ -303,7 +274,7 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   qc.cry(qc::PI / 3, 2, 0);
   qc.cry(qc::PI / 4, 2, 1);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0, 1}, {0}, {0}, {0}, {0}, {0}, {0}, {0}};
@@ -350,7 +321,7 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
   qc.ry(qc::PI / 2, 1);
   qc.cry(qc::PI / 4, 1, 2);
 
-  auto state = simulate(qc, dd->makeZeroState(nq), *dd);
+  auto state = simulate(qc, makeZeroState(nq, *dd), *dd);
   auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {-1}, {0}, {0}, {0}, {0}, {0}, {0}};
@@ -369,7 +340,7 @@ TEST(ApproximationTest, NodesVisited) {
   for (std::size_t i = 0; i < n; ++i) {
     const std::size_t nq = qubits[i];
     auto dd = std::make_unique<dd::Package>(nq);
-    auto state = generateExponentialDD(nq, *dd);
+    auto state = generateExponentialState(nq, *dd);
 
     const std::size_t preSize = state.size() - 1; // Minus terminal.
     const auto meta = approximate(state, fidelity, *dd);

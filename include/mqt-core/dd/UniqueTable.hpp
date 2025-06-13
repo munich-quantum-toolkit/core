@@ -154,7 +154,7 @@ public:
 
   void clear();
 
-  template <class Node> void print() {
+  template <class Node> void print() const {
     static_assert(std::is_base_of_v<NodeBase, Node>,
                   "Node must be derived from NodeBase");
     auto q = cfg.nVars - 1U;
