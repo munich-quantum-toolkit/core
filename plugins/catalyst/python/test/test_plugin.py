@@ -1,4 +1,12 @@
-"""Tests for MQT plugin exectution with PennyLane and Catalyst.
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+"""Tests for MQT plugin execution with PennyLane and Catalyst.
 
 These tests check that the MQT plugin is correctly installed and
 can be executed with PennyLane.
