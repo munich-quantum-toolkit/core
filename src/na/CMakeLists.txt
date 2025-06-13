@@ -55,4 +55,3 @@ endif()
 
 # add subdirectories
 add_subdirectory(device)
-add_subdirectory(device_generator)

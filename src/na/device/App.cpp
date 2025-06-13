@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "na/device_generator/Generator.hpp"
+#include "na/device/Generator.hpp"
 
 #include <iostream>
 #include <optional>
@@ -45,8 +45,7 @@ auto parseArguments(const std::vector<std::string>& args) -> Arguments {
   Arguments arguments;
   arguments.programName = args.front();
   for (size_t i = 1; i < args.size(); ++i) {
-    const std::string& arg = args.at(i);
-    if (arg == "-h" || arg == "--help") {
+    if (const std::string& arg = args.at(i); arg == "-h" || arg == "--help") {
       arguments.help = true;
     } else if (arg == "-v" || arg == "--version") {
       arguments.version = true;
