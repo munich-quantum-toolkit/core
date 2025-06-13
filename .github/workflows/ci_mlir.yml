@@ -229,9 +229,15 @@ jobs:
 
       - name: Install lit, pytest, scikit-build-core, and Catalyst
         # Use pre-release Catalyst to include latest features
+        # Make sure to use stable urllib3 to avoid issues with requests
         run: |
           uv pip install lit pytest scikit-build-core
-          uv pip install --extra-index-url https://test.pypi.org/simple PennyLane-Catalyst==0.12.0.dev51 --index-strategy unsafe-best-match --prerelease=allow
+          uv pip install \
+            --extra-index-url https://test.pypi.org/simple \
+            --index-strategy unsafe-best-match \
+            --prerelease=allow \
+            "PennyLane-Catalyst==0.12.0.dev51" \
+            "urllib3==2.4.0"
 
       - name: Set lit path
         run: |
