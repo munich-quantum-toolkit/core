@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 # Set target name
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-device-gen)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device-gen)
 
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
@@ -79,7 +79,7 @@ if(NOT TARGET ${TARGET_NAME})
 endif()
 
 # Set target name
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-device)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device)
 
 # Set prefix for QDMI
 set(QDMI_PREFIX "MQT_NA")
