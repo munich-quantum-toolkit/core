@@ -326,7 +326,6 @@ jobs:
       # configure the project with CMake for coverage
       - name: Configure CMake for MLIR Coverage
         env:
-          CMAKE_BUILD_TYPE: Debug
           CMAKE_CXX_COMPILER: clang++-${{ matrix.llvm-version }}
           CMAKE_C_COMPILER: clang-${{ matrix.llvm-version }}
         run: |
