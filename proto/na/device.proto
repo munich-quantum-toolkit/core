@@ -91,8 +91,8 @@ message Device {
     uint64 num_rows = 3;
     uint64 num_columns = 4;
     double moving_speed = 5;
-    double load_duration = 6;
-    double store_duration = 7;
+    uint64 load_duration = 6;
+    uint64 store_duration = 7;
     double load_fidelity = 8;
     double store_fidelity = 9;
     uint64 num_parameters = 10;

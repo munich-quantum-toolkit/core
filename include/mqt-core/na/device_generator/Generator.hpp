@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <na/device_generator/device.pb.h>
 #include <string>
 
 namespace na {
@@ -23,12 +24,20 @@ namespace na {
 auto writeJsonSchema(const std::string& path) -> void;
 
 /**
+ * @brief Parses the device configuration from a JSON file.
+ * @returns The parsed device configuration as a Protobuf message.
+ * @throws std::runtime_error if the JSON file does not exist, or the JSON file
+ * cannot be parsed.
+ */
+[[nodiscard]] auto readJsonFile(const std::string& path) -> Device;
+
+/**
  * @brief Writes a header file with the device configuration to the specified
  * path.
- * @param json is the path to the JSON file containing the device configuration.
+ * @param device is the protobuf representation of the device.
  * @param path is the path to write the header file to.
  * @throws std::runtime_error if the file cannot be opened or written to.
  */
-auto writeHeaderFile(const std::string& json, const std::string& path) -> void;
+auto writeHeaderFile(const Device& device, const std::string& path) -> void;
 
 } // namespace na

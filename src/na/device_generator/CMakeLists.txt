@@ -36,14 +36,19 @@ if(NOT TARGET ${TARGET_NAME})
   add_dependencies(${TARGET_NAME} generate_proto_files)
 
   # add sources to target
-  target_sources(${MQT_CORE_TARGET_NAME}-na PRIVATE Generator.cpp ${PROTO_SRC})
+  target_sources(${TARGET_NAME} PRIVATE Generator.cpp App.cpp ${PROTO_SRC})
 
   # add headers using file sets
   target_sources(
-    ${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES
-                          ${MQT_CORE_INCLUDE_BUILD_DIR}/na/device_generator/Generator.hpp)
-  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR} FILES
-                                       ${PROTO_HDR})
+    ${TARGET_NAME}
+    PUBLIC FILE_SET
+           HEADERS
+           BASE_DIRS
+           ${MQT_CORE_INCLUDE_BUILD_DIR}
+           ${CMAKE_BINARY_DIR}/src
+           FILES
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/na/device_generator/Generator.hpp
+           ${PROTO_HDR})
 
   # Link Protobuf, QDMI, spdlog, and project warnings
   target_link_libraries(
@@ -57,6 +62,9 @@ if(NOT TARGET ${TARGET_NAME})
     PROPERTIES VERSION ${PROJECT_VERSION}
                SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
                EXPORT_NAME CoreNaDeviceGen)
+
+  # Make version available
+  target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
