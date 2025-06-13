@@ -341,7 +341,6 @@ jobs:
       # build the project and run the tests with coverage
       - name: Build MLIR components and run tests with coverage
         run: |
-          cmake --build build --config Debug --target all
           cmake --build build --config Debug --target check-quantum-opt
 
       # generate coverage report
