@@ -31,7 +31,7 @@ auto printUsage(const std::string& programName) -> void {
          "                      This option does not require a JSON file.\n";
 }
 auto printVersion() -> void {
-  std::cout << "MQT QDMI NA Device Generator Version 1.0.0\n";
+  std::cout << "MQT QDMI NA Device Generator Version " MQT_CORE_VERSION "\n";
 }
 struct Arguments {
   std::string programName;
@@ -42,9 +42,6 @@ struct Arguments {
   std::optional<std::string> jsonFile;
 };
 auto parseArguments(const std::vector<std::string>& args) -> Arguments {
-  if (args.size() < 2) {
-    printUsage(args.front());
-  }
   Arguments arguments;
   arguments.programName = args.front();
   for (size_t i = 1; i < args.size(); ++i) {
