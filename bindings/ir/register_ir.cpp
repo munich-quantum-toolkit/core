@@ -17,7 +17,7 @@
 namespace mqt {
 
 namespace py = pybind11;
-using namespace pybind11::literals;
+using namespace py::literals;
 
 // forward declarations
 void registerRegisters(py::module& m);
