@@ -16,18 +16,13 @@
 
 #include "na/device/device.pb.h"
 
+#include <cstddef>
 #include <fstream>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/message.h>
 #include <google/protobuf/util/json_util.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
-
-#ifdef __cplusplus
-#include <cstddef>
-#else
-#include <stddef.h>
-#endif
 
 namespace na {
 namespace {
@@ -118,7 +113,7 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
  * @param device The Protobuf message containing the device configuration.
  */
 auto writeName(const Device& device, std::ostream& os) -> void {
-  os << "#define DEVICE_NAME \"" << device.name() << "\"\n";
+  os << "#define INITIALIZE_NAME(var) var = \"" << device.name() << "\"\n";
 }
 
 /**
@@ -127,7 +122,7 @@ auto writeName(const Device& device, std::ostream& os) -> void {
  */
 auto writeSites(const Device& device, std::ostream& os) -> void {
   size_t count = 0;
-  os << "#define SITES std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>>{";
+  os << "#define INITIALIZE_SITES(var) var.clear();";
   for (const auto& lattice : device.traps()) {
     const auto originX = lattice.lattice_origin().x();
     const auto originY = lattice.lattice_origin().y();
@@ -138,7 +133,7 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
                    [](const auto& vector) { return vector.repeat(); });
     std::vector indices(static_cast<size_t>(lattice.lattice_vectors_size()),
                         0UL);
-    do {
+    for (bool loop = true; loop; loop = increment(indices, limits)) {
       // For every sublattice offset, add a site for repetition indices
       for (const auto& offset : lattice.sublattice_offsets()) {
         const auto id = count++;
@@ -151,16 +146,14 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
           x += static_cast<int64_t>(indices[i]) * vector.x();
           y += static_cast<int64_t>(indices[i]) * vector.y();
         }
-        if (id > 0) {
-          os << ",\\\n";
-        }
-        os << "  std::make_unique<MQT_NA_QDMI_Site_impl_d>("
+        os << "\\\n  "
+              "var.emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>("
               "MQT_NA_QDMI_Site_impl_d{"
-           << id << ", " << x << ", " << y << "})";
+           << id << ", " << x << ", " << y << "}));";
       }
-    } while (increment(indices, limits));
+    }
   }
-  os << "\\\n}\n";
+  os << "\n";
 }
 
 /**
@@ -169,80 +162,65 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
  */
 auto writeOperations(const Device& device, const double timeUnit,
                      std::ostream& os) -> void {
-  os << "#define OPERATIONS "
-        "std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>>{";
-  bool first = true;
+  os << "#define INITIALIZE_OPERATIONS(var) var.clear();";
   for (const auto& operation : device.global_single_qubit_operations()) {
-    if (first) {
-      os << ",\\\n";
-      first = false;
-    }
-    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{"
-       << operation.name() << ", OperationType::GLOBAL_SINGLE_QUBIT, "
+    os << "\\\n"
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{\""
+       << operation.name() << "\", OperationType::GLOBAL_SINGLE_QUBIT, "
        << operation.num_parameters() << ", 1, "
        << static_cast<double>(operation.duration()) * timeUnit << ", "
-       << operation.fidelity() << "})";
+       << operation.fidelity() << "}));";
   }
   for (const auto& operation : device.global_multi_qubit_operations()) {
-    if (first) {
-      os << ",\\\n";
-      first = false;
-    }
-    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{"
-       << operation.name() << ", OperationType::GLOBAL_MULTI_QUBIT, "
+    os << "\\\n"
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{\""
+       << operation.name() << "\", OperationType::GLOBAL_MULTI_QUBIT, "
        << operation.num_parameters() << ", " << operation.num_qubits() << ", "
        << static_cast<double>(operation.duration()) * timeUnit << ", "
-       << operation.fidelity() << "})";
+       << operation.fidelity() << "}));";
   }
   for (const auto& operation : device.local_single_qubit_operations()) {
-    if (first) {
-      os << ",\\\n";
-      first = false;
-    }
-    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{"
-       << operation.name() << ", OperationType::LOCAL_SINGLE_QUBIT, "
+    os << "\\\n"
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{\""
+       << operation.name() << "\", OperationType::LOCAL_SINGLE_QUBIT, "
        << operation.num_parameters() << ", 1, "
        << static_cast<double>(operation.duration()) * timeUnit << ", "
-       << operation.fidelity() << "})";
+       << operation.fidelity() << "}));";
   }
   for (const auto& operation : device.local_multi_qubit_operations()) {
-    if (first) {
-      os << ",\\\n";
-      first = false;
-    }
-    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{"
-       << operation.name() << ", OperationType::LOCAL_MULTI_QUBIT, "
+    os << "\\\n"
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{\""
+       << operation.name() << "\", OperationType::LOCAL_MULTI_QUBIT, "
        << operation.num_parameters() << ", " << operation.num_qubits() << ", "
        << static_cast<double>(operation.duration()) * timeUnit << ", "
-       << operation.fidelity() << "})";
+       << operation.fidelity() << "}));";
   }
   for (const auto& operation : device.shuttling_units()) {
-    if (first) {
-      os << ",\\\n";
-      first = false;
-    }
-    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{"
-       << operation.name() << ", OperationType::SHUTTLING_LOAD, "
+    os << "\\\n"
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{\""
+       << operation.name() << "\", OperationType::SHUTTLING_LOAD, "
        << operation.num_parameters() << ", 0, "
        << static_cast<double>(operation.load_duration()) * timeUnit << ", "
-       << operation.load_fidelity() << "})";
-    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{"
-       << operation.name() << ", OperationType::SHUTTLING_MOVE, "
-       << operation.num_parameters() << ", 0, 0, 0})";
-    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{"
-       << operation.name() << ", OperationType::SHUTTLING_STORE, "
+       << operation.load_fidelity() << "}));";
+    os << "\\\n"
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{\""
+       << operation.name() << "\", OperationType::SHUTTLING_MOVE, "
+       << operation.num_parameters() << ", 0, 0, 0}));";
+    os << "\\\n"
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{\""
+       << operation.name() << "\", OperationType::SHUTTLING_STORE, "
        << operation.num_parameters() << ", 0, "
        << static_cast<double>(operation.store_duration()) * timeUnit << ", "
-       << operation.store_fidelity() << "})";
+       << operation.store_fidelity() << "}));";
   }
-  os << "\\\n}\n";
+  os << "\n";
 }
 
 /**
@@ -251,10 +229,12 @@ auto writeOperations(const Device& device, const double timeUnit,
  */
 auto writeDecoherenceTimes(const Device& device, const double timeUnit,
                            std::ostream& os) -> void {
-  os << "#define T1 "
-     << static_cast<double>(device.decoherence_times().t1()) * timeUnit << "\n";
-  os << "#define T2 "
-     << static_cast<double>(device.decoherence_times().t2()) * timeUnit << "\n";
+  os << "#define INITIALIZE_T1(var) var = "
+     << static_cast<double>(device.decoherence_times().t1()) * timeUnit
+     << ";\n";
+  os << "#define INITIALIZE_T2(var) var = "
+     << static_cast<double>(device.decoherence_times().t2()) * timeUnit
+     << ";\n";
 }
 } // namespace
 
