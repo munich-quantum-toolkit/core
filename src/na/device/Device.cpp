@@ -133,86 +133,6 @@ struct MQT_NA_QDMI_Operation_impl_d {
 };
 
 namespace {
-/**
- * @brief Populates all repeated fields of the message type in the given
- * Protobuf message with empty messages.
- * @param message The Protobuf message to populate.
- * @throws std::runtime_error if a repeated field has an unsupported type, i.e.,
- * not a message type.
- * @note This is a recursive auxiliary function used by @ref writeJsonSchema
- */
-auto populateRepeatedFields(google::protobuf::Message* message) -> void {
-  const google::protobuf::Descriptor* descriptor = message->GetDescriptor();
-  const google::protobuf::Reflection* reflection = message->GetReflection();
-
-  for (int i = 0; i < descriptor->field_count(); ++i) {
-    const google::protobuf::FieldDescriptor* field = descriptor->field(i);
-    if (field->is_repeated()) {
-      if (field->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE) {
-        populateRepeatedFields(reflection->AddMessage(message, field));
-      } else {
-        std::stringstream ss;
-        ss << "Unsupported repeated field type in device configuration: "
-           << field->cpp_type();
-        throw std::runtime_error(ss.str());
-      }
-    } else if (field->type() ==
-               google::protobuf::FieldDescriptor::TYPE_MESSAGE) {
-      // Message fields must be explicitly initialized such that they appear in
-      // the written JSON schema, primitive fields are automatically
-      // initialized
-      populateRepeatedFields(reflection->MutableMessage(message, field));
-    }
-  }
-}
-
-// todo: Should this function be exposed and how because it is not part of the
-//  public QDMI API? If it is exposed, it also should be moved outside the
-//  anonymous namespace.
-/**
- * @brief Writes a JSON schema with default values for the device configuration
- * to the specified path.
- * @param path The path to write the JSON schema to.
- * @throws std::runtime_error if the JSON conversion fails or the file cannot be
- * opened.
- */
-auto writeJsonSchema(const std::string& path) -> void {
-  // Create a default device configuration
-  na::Device device;
-
-  // Fill each repeated field with an empty message
-  populateRepeatedFields(&device);
-
-  // Set print options
-  google::protobuf::util::JsonPrintOptions options;
-  options.always_print_fields_with_no_presence = true;
-
-  // Convert to JSON
-  std::string json;
-  const auto status =
-      google::protobuf::util::MessageToJsonString(device, &json, options);
-  if (!status.ok()) {
-    std::stringstream ss;
-    ss << "Failed to convert Protobuf message to JSON: " << status.ToString();
-    throw std::runtime_error(ss.str());
-  }
-
-  // Write to file
-  std::ofstream ofs(path);
-  if (ofs.is_open()) {
-    ofs << json;
-    ofs.close();
-#if SPDLOG_ACTIVE_LEVEL <= SPDLOG_LEVEL_INFO
-    std::stringstream ss;
-    ss << "JSON template written to " << path;
-    SPDLOG_INFO(ss.str());
-#endif
-  } else {
-    std::stringstream ss;
-    ss << "Failed to open file for writing: " << path;
-    throw std::runtime_error(ss.str());
-  }
-}
 
 /**
  * @brief Provides access to the device name.
@@ -373,6 +293,11 @@ auto importName(const na::Device& device) -> void { name() = device.name(); }
  * @param device The Protobuf message containing the device configuration.
  */
 auto importSites(const na::Device& device) -> void {
+
+  const auto s = MQT_NA_QDMI_Site_impl_d{1, 2, 3};
+  constexpr auto ss = std::vector{std::make_unique<MQT_NA_QDMI_Site_impl_d>(
+      MQT_NA_QDMI_Site_impl_d{1, 2, 3})};
+
   size_t count = 0;
   for (const auto& lattice : device.traps()) {
     const auto originX = lattice.lattice_origin().x();
