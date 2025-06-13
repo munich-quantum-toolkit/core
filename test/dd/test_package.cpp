@@ -954,7 +954,7 @@ TEST(DDPackageTest, PackageReset) {
 TEST(DDPackageTest, ResetClearsRoots) {
   auto dd = std::make_unique<Package>(2);
 
-  auto vec = dd->makeZeroState(2);
+  auto vec = dd->makeBasisState(2, std::vector<bool>(2));
   auto mat = getDD(qc::StandardOperation(0, qc::X), *dd);
   auto dens = dd->makeZeroDensityOperator(2);
 
@@ -977,7 +977,7 @@ TEST(DDPackageTest, DuplicateIncRefDoesNotLeaveStaleRoot) {
   auto dd = std::make_unique<Package>(1);
 
   // vector root
-  auto vec = dd->makeZeroState(1);
+  auto vec = dd->makeBasisState(1, std::vector<bool>(1));
   EXPECT_EQ(dd->vectorRoots.size(), 1U);
   dd->incRef(vec);
   EXPECT_EQ(dd->vectorRoots.at(vec), 2U);
