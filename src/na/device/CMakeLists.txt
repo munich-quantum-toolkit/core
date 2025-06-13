@@ -22,7 +22,7 @@ if(NOT TARGET ${TARGET_NAME})
   # Generate definitions for device
   add_custom_command(
     OUTPUT ${DEVICE_HDR}
-    COMMAND MQT::CoreNADeviceGen ARGS --hpp_out=${CMAKE_CURRENT_BINARY_DIR}/include ${JSON_FILE}
+    COMMAND MQT::CoreNADeviceGen ARGS --output ${CMAKE_CURRENT_BINARY_DIR}/include ${JSON_FILE}
     DEPENDS ${JSON_FILE}
     COMMENT "Generating C++ header from ${JSON_FILE}")
   add_custom_target(generate_na_device_header DEPENDS ${DEVICE_HDR})

@@ -12,9 +12,9 @@
  * @brief The MQT QDMI device generator for neutral atom devices.
  */
 
-#include "na/device/Generator.hpp"
+#include "na/device_generator/Generator.hpp"
 
-#include "device.pb.h"
+#include "na/device_generator/device.pb.h"
 
 #include <fstream>
 #include <google/protobuf/descriptor.h>
@@ -29,6 +29,7 @@
 #include <stddef.h>
 #endif
 
+namespace na {
 namespace {
 /**
  * @brief Populates all repeated fields of the message type in the given
@@ -63,9 +64,203 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
   }
 }
 
+/**
+ * @brief Increments the indices in lexicographic order.
+ * @details This function increments the first index that is less than its
+ * limit, resets all previous indices to zero.
+ * @param indices The vector of indices to increment.
+ * @param limits The limits for each index.
+ * @returns true if the increment was successful, false if all indices have
+ * reached their limits.
+ */
+[[nodiscard]] auto increment(std::vector<size_t>& indices,
+                             const std::vector<size_t>& limits) -> bool {
+  size_t i = 0;
+  for (; i < indices.size() && indices[i] == limits[i]; ++i) {
+  }
+  if (i == indices.size()) {
+    // all indices are at their limits
+    return false;
+  }
+  for (size_t j = 0; j < i; ++j) {
+    indices[j] = 0; // Reset all previous indices
+  }
+  ++indices[i]; // Increment the next index
+  return true;
+}
+
+[[nodiscard]] auto getTimeUnit(const Device& device) -> double {
+  if (device.time_unit().unit() == "us") {
+    return static_cast<double>(device.time_unit().value());
+  }
+  if (device.time_unit().unit() == "ns") {
+    return static_cast<double>(device.time_unit().value()) * 1e-3;
+  }
+  std::stringstream ss;
+  ss << "Unsupported time unit: " << device.time_unit().unit();
+  throw std::runtime_error(ss.str());
+}
+
+[[nodiscard]] auto getLengthUnit(const Device& device) -> double {
+  if (device.length_unit().unit() == "um") {
+    return static_cast<double>(device.length_unit().value());
+  }
+  if (device.length_unit().unit() == "nm") {
+    return static_cast<double>(device.length_unit().value()) * 1e-3;
+  }
+  std::stringstream ss;
+  ss << "Unsupported length unit: " << device.length_unit().unit();
+  throw std::runtime_error(ss.str());
+}
+
+/**
+ * @brief Writes the name from the Protobuf message.
+ * @param device The Protobuf message containing the device configuration.
+ */
+auto writeName(const Device& device, std::ostream& os) -> void {
+  os << "#define DEVICE_NAME \"" << device.name() << "\"\n";
+}
+
+/**
+ * @brief Writes the sites from the Protobuf message.
+ * @param device The Protobuf message containing the device configuration.
+ */
+auto writeSites(const Device& device, std::ostream& os) -> void {
+  size_t count = 0;
+  os << "#define SITES std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>>{";
+  for (const auto& lattice : device.traps()) {
+    const auto originX = lattice.lattice_origin().x();
+    const auto originY = lattice.lattice_origin().y();
+    std::vector limits(static_cast<size_t>(lattice.lattice_vectors_size()),
+                       0UL);
+    std::transform(lattice.lattice_vectors().begin(),
+                   lattice.lattice_vectors().end(), limits.begin(),
+                   [](const auto& vector) { return vector.repeat(); });
+    std::vector indices(static_cast<size_t>(lattice.lattice_vectors_size()),
+                        0UL);
+    do {
+      // For every sublattice offset, add a site for repetition indices
+      for (const auto& offset : lattice.sublattice_offsets()) {
+        const auto id = count++;
+        auto x = originX + offset.x();
+        auto y = originY + offset.y();
+        for (size_t i = 0;
+             i < static_cast<size_t>(lattice.lattice_vectors_size()); ++i) {
+          const auto& vector =
+              lattice.lattice_vectors(static_cast<int32_t>(i)).vector();
+          x += static_cast<int64_t>(indices[i]) * vector.x();
+          y += static_cast<int64_t>(indices[i]) * vector.y();
+        }
+        if (id > 0) {
+          os << ",\\\n";
+        }
+        os << "  std::make_unique<MQT_NA_QDMI_Site_impl_d>("
+              "MQT_NA_QDMI_Site_impl_d{"
+           << id << ", " << x << ", " << y << "})";
+      }
+    } while (increment(indices, limits));
+  }
+  os << "\\\n}\n";
+}
+
+/**
+ * @brief Imports the operations from the Protobuf message into the device.
+ * @param device The Protobuf message containing the device configuration.
+ */
+auto writeOperations(const Device& device, const double timeUnit,
+                     std::ostream& os) -> void {
+  os << "#define OPERATIONS "
+        "std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>>{";
+  bool first = true;
+  for (const auto& operation : device.global_single_qubit_operations()) {
+    if (first) {
+      os << ",\\\n";
+      first = false;
+    }
+    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{"
+       << operation.name() << ", OperationType::GLOBAL_SINGLE_QUBIT, "
+       << operation.num_parameters() << ", 1, "
+       << static_cast<double>(operation.duration()) * timeUnit << ", "
+       << operation.fidelity() << "})";
+  }
+  for (const auto& operation : device.global_multi_qubit_operations()) {
+    if (first) {
+      os << ",\\\n";
+      first = false;
+    }
+    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{"
+       << operation.name() << ", OperationType::GLOBAL_MULTI_QUBIT, "
+       << operation.num_parameters() << ", " << operation.num_qubits() << ", "
+       << static_cast<double>(operation.duration()) * timeUnit << ", "
+       << operation.fidelity() << "})";
+  }
+  for (const auto& operation : device.local_single_qubit_operations()) {
+    if (first) {
+      os << ",\\\n";
+      first = false;
+    }
+    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{"
+       << operation.name() << ", OperationType::LOCAL_SINGLE_QUBIT, "
+       << operation.num_parameters() << ", 1, "
+       << static_cast<double>(operation.duration()) * timeUnit << ", "
+       << operation.fidelity() << "})";
+  }
+  for (const auto& operation : device.local_multi_qubit_operations()) {
+    if (first) {
+      os << ",\\\n";
+      first = false;
+    }
+    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{"
+       << operation.name() << ", OperationType::LOCAL_MULTI_QUBIT, "
+       << operation.num_parameters() << ", " << operation.num_qubits() << ", "
+       << static_cast<double>(operation.duration()) * timeUnit << ", "
+       << operation.fidelity() << "})";
+  }
+  for (const auto& operation : device.shuttling_units()) {
+    if (first) {
+      os << ",\\\n";
+      first = false;
+    }
+    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{"
+       << operation.name() << ", OperationType::SHUTTLING_LOAD, "
+       << operation.num_parameters() << ", 0, "
+       << static_cast<double>(operation.load_duration()) * timeUnit << ", "
+       << operation.load_fidelity() << "})";
+    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{"
+       << operation.name() << ", OperationType::SHUTTLING_MOVE, "
+       << operation.num_parameters() << ", 0, 0, 0})";
+    os << "  std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
+          "MQT_NA_QDMI_Operation_impl_d{"
+       << operation.name() << ", OperationType::SHUTTLING_STORE, "
+       << operation.num_parameters() << ", 0, "
+       << static_cast<double>(operation.store_duration()) * timeUnit << ", "
+       << operation.store_fidelity() << "})";
+  }
+  os << "\\\n}\n";
+}
+
+/**
+ * @brief Writes the decoherence times from the Protobuf message.
+ * @param device The Protobuf message containing the device configuration.
+ */
+auto writeDecoherenceTimes(const Device& device, const double timeUnit,
+                           std::ostream& os) -> void {
+  os << "#define T1 "
+     << static_cast<double>(device.decoherence_times().t1()) * timeUnit << "\n";
+  os << "#define T2 "
+     << static_cast<double>(device.decoherence_times().t2()) * timeUnit << "\n";
+}
+} // namespace
+
 auto writeJsonSchema(const std::string& path) -> void {
   // Create a default device configuration
-  na::Device device;
+  Device device;
 
   // Fill each repeated field with an empty message
   populateRepeatedFields(&device);
@@ -101,14 +296,7 @@ auto writeJsonSchema(const std::string& path) -> void {
   }
 }
 
-/**
- * @brief Parses the device configuration from a JSON file specified by the
- * environment variable MQT_CORE_NA_QDMI_DEVICE_JSON_FILE.
- * @returns The parsed device configuration as a Protobuf message.
- * @throws std::runtime_error if the environment variable is not set, the JSON
- * file does not exist, or the JSON file cannot be parsed.
- */
-[[nodiscard]] auto parse(const std::string& path) -> na::Device {
+[[nodiscard]] auto readJsonFile(const std::string& path) -> Device {
   // Read the device configuration from a JSON file
   std::ifstream ifs(path);
   if (!ifs.is_open()) {
@@ -121,7 +309,7 @@ auto writeJsonSchema(const std::string& path) -> void {
   // Parse the JSON string into the protobuf message
   google::protobuf::util::JsonParseOptions options;
   options.ignore_unknown_fields = true;
-  na::Device device;
+  Device device;
   const auto status =
       google::protobuf::util::JsonStringToMessage(json, &device);
   if (!status.ok()) {
@@ -143,153 +331,13 @@ auto writeJsonSchema(const std::string& path) -> void {
   return device;
 }
 
-/**
- * @brief Increments the indices in lexicographic order.
- * @details This function increments the first index that is less than its
- * limit, resets all previous indices to zero.
- * @param indices The vector of indices to increment.
- * @param limits The limits for each index.
- * @returns true if the increment was successful, false if all indices have
- * reached their limits.
- */
-[[nodiscard]] auto increment(std::vector<size_t>& indices,
-                             const std::vector<size_t>& limits) -> bool {
-  size_t i = 0;
-  for (; i < indices.size() && indices[i] == limits[i]; ++i) {
-  }
-  if (i == indices.size()) {
-    // all indices are at their limits
-    return false;
-  }
-  for (size_t j = 0; j < i; ++j) {
-    indices[j] = 0; // Reset all previous indices
-  }
-  ++indices[i]; // Increment the next index
-  return true;
-}
-
-/**
- * @brief Imports the name of the device from the Protobuf message.
- * @param device The Protobuf message containing the device configuration.
- */
-auto importName(const na::Device& device) -> void { name() = device.name(); }
-
-/**
- * @brief Imports the sites from the Protobuf message into the device.
- * @param device The Protobuf message containing the device configuration.
- */
-auto importSites(const na::Device& device) -> void {
-  size_t count = 0;
-  for (const auto& lattice : device.traps()) {
-    const auto originX = lattice.lattice_origin().x();
-    const auto originY = lattice.lattice_origin().y();
-    std::vector limits(lattice.lattice_vectors_size(), 0UL);
-    std::transform(lattice.lattice_vectors().begin(),
-                   lattice.lattice_vectors().end(), limits.begin(),
-                   [](const auto& vector) { return vector.repeat(); });
-    std::vector indices(lattice.lattice_vectors_size(), 0UL);
-    do {
-      // For every sublattice offset, add a site for repetition indices
-      for (const auto& offset : lattice.sublattice_offsets()) {
-        auto& site =
-            sites().emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>());
-        site->id = count++;
-        site->x = originX + offset.x();
-        site->y = originY + offset.y();
-        for (size_t i = 0; i < lattice.lattice_vectors_size(); ++i) {
-          const auto& vector = lattice.lattice_vectors(i).vector();
-          site->x += indices[i] * vector.x();
-          site->y += indices[i] * vector.y();
-        }
-      }
-    } while (increment(indices, limits));
-  }
-}
-
-/**
- * @brief Imports the operations from the Protobuf message into the device.
- * @param device The Protobuf message containing the device configuration.
- */
-auto importOperations(const na::Device& device) -> void {
-  for (const auto& operation : device.global_single_qubit_operations()) {
-    auto& op = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    op->name = operation.name();
-    op->type = OperationType::GLOBAL_SINGLE_QUBIT;
-    op->numParameters = operation.num_parameters();
-    op->numQubits = 1;
-    op->duration = operation.duration() * timeFactor();
-    op->fidelity = operation.fidelity();
-  }
-  for (const auto& operation : device.global_multi_qubit_operations()) {
-    auto& op = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    op->name = operation.name();
-    op->type = OperationType::GLOBAL_MULTI_QUBIT;
-    op->numParameters = operation.num_parameters();
-    op->numQubits = operation.num_qubits();
-    op->duration = operation.duration() * timeFactor();
-    op->fidelity = operation.fidelity();
-  }
-  for (const auto& operation : device.local_single_qubit_operations()) {
-    auto& op = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    op->name = operation.name();
-    op->type = OperationType::LOCAL_SINGLE_QUBIT;
-    op->numParameters = operation.num_parameters();
-    op->numQubits = 1;
-    op->duration = operation.duration() * timeFactor();
-    op->fidelity = operation.fidelity();
-  }
-  for (const auto& operation : device.local_multi_qubit_operations()) {
-    auto& op = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    op->name = operation.name();
-    op->type = OperationType::LOCAL_MULTI_QUBIT;
-    op->numParameters = operation.num_parameters();
-    op->numQubits = operation.num_qubits();
-    op->duration = operation.duration() * timeFactor();
-    op->fidelity = operation.fidelity();
-  }
-  for (const auto& operation : device.shuttling_units()) {
-    auto& load = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    load->name = operation.name();
-    load->type = OperationType::SHUTTLING_LOAD;
-    load->numParameters = operation.num_parameters();
-    load->duration = operation.load_duration() * timeFactor();
-    load->fidelity = operation.load_fidelity();
-    auto& move = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    move->name = operation.name();
-    move->type = OperationType::SHUTTLING_MOVE;
-    move->numParameters = operation.num_parameters();
-    auto& store = operations().emplace_back(
-        std::make_unique<MQT_NA_QDMI_Operation_impl_d>());
-    store->name = operation.name();
-    store->type = OperationType::SHUTTLING_STORE;
-    store->numParameters = operation.num_parameters();
-    store->duration = operation.store_duration() * timeFactor();
-    store->fidelity = operation.store_fidelity();
-  }
-}
-
-/**
- * @brief Imports the decoherence times from the Protobuf message into the
- * device.
- * @param device The Protobuf message containing the device configuration.
- */
-auto importDecoherenceTimes(const na::Device& device) -> void {
-  decoherence().t1 = device.decoherence_times().t1() * timeFactor();
-  decoherence().t2 = device.decoherence_times().t2() * timeFactor();
-}
-} // namespace
-
-namespace na {
-auto writeHeaderFile(const std::string& json, const std::string& path) -> void {
-  const auto& device = parse(json);
+auto writeHeaderFile(const Device& device, const std::string& path) -> void {
   std::ofstream ofs(path);
   ofs << "#pragma once\n\n";
-  ofs << "#define DEVICE_NAME \"" << device.name() << "\"\n";
+  const auto timeUnit = getTimeUnit(device);
+  writeName(device, ofs);
+  writeSites(device, ofs);
+  writeOperations(device, timeUnit, ofs);
+  writeDecoherenceTimes(device, timeUnit, ofs);
 }
 } // namespace na
