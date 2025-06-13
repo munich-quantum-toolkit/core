@@ -333,11 +333,18 @@ auto writeJsonSchema(const std::string& path) -> void {
 
 auto writeHeaderFile(const Device& device, const std::string& path) -> void {
   std::ofstream ofs(path);
+  if (!ofs.is_open()) {
+    std::stringstream ss;
+    ss << "Failed to open header file for writing: " << path;
+    throw std::runtime_error(ss.str());
+  }
   ofs << "#pragma once\n\n";
   const auto timeUnit = getTimeUnit(device);
   writeName(device, ofs);
   writeSites(device, ofs);
   writeOperations(device, timeUnit, ofs);
   writeDecoherenceTimes(device, timeUnit, ofs);
+  std::cout << "Header file written to " << path << std::endl;
+  ofs.close();
 }
 } // namespace na

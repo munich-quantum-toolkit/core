@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 # Set target name
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device-gen)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-device-gen)
 
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
@@ -79,7 +79,7 @@ if(NOT TARGET ${TARGET_NAME})
 endif()
 
 # Set target name
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-device)
 
 # Set prefix for QDMI
 set(QDMI_PREFIX "MQT_NA")
@@ -94,25 +94,60 @@ if(NOT TARGET ${TARGET_NAME})
   # Generate definitions for device
   add_custom_command(
     OUTPUT ${DEVICE_HDR}
-    COMMAND MQT::CoreNADeviceGen ARGS --output ${CMAKE_CURRENT_BINARY_DIR}/include ${JSON_FILE}
+    COMMAND MQT::CoreNADeviceGen ARGS --output ${DEVICE_HDR} ${JSON_FILE}
     DEPENDS ${JSON_FILE}
     COMMENT "Generating C++ header from ${JSON_FILE}")
   add_custom_target(generate_na_device_header DEPENDS ${DEVICE_HDR})
 
   # Add library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME NaQDMI device.cpp)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME NaQDMI)
+  add_dependencies(${TARGET_NAME} generate_na_device_header)
 
   # Generate prefixed QDMI headers
   generate_prefixed_qdmi_headers(${QDMI_PREFIX})
+  file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_na_qdmi/**.hpp)
 
-  # Add include directories
-  target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/include)
+  # add sources to target
+  target_sources(${TARGET_NAME} PRIVATE Device.cpp)
 
-  # Link Protobuf, QDMI, spdlog, and project warnings
+  # add headers using file sets
+  target_sources(
+    ${TARGET_NAME}
+    PUBLIC FILE_SET
+           HEADERS
+           BASE_DIRS
+           ${CMAKE_CURRENT_BINARY_DIR}/include
+           FILES
+           ${DEVICE_HDR}
+           ${QDMI_HDRS})
+
+  # add link libraries
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi spdlog::spdlog
     PRIVATE qdmi::project_warnings MQT::ProjectOptions MQT::ProjectWarnings)
+
+  # set versioning information
+  set_target_properties(
+    ${TARGET_NAME}
+    PROPERTIES VERSION ${PROJECT_VERSION}
+               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+               EXPORT_NAME CoreNaQDMI)
+
+  # generate export header
+  include(GenerateExportHeader)
+  set(EXPORT_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_core_na_qdmi_export.h)
+  generate_export_header(${TARGET_NAME} BASE_NAME mqt_core_na_qdmi EXPORT_FILE_NAME ${EXPORT_HDR})
+  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS
+                                       ${CMAKE_CURRENT_BINARY_DIR}/include FILES ${EXPORT_HDR})
+  if(NOT BUILD_MQT_CORE_SHARED_LIBS)
+    target_compile_definitions(${TARGET_NAME} PUBLIC MQT_CORE_NA_STATIC_DEFINE)
+  endif()
+
+  # add to list of MQT core targets
+  set(MQT_CORE_TARGETS
+      ${MQT_CORE_TARGETS} ${TARGET_NAME}
+      PARENT_SCOPE)
 
   # Make QDMI and MQT Core Version available
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
