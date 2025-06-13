@@ -21,6 +21,7 @@
 
 #include <cstddef>
 #include <spdlog/spdlog.h>
+#include <unordered_set>
 
 namespace {
 /// The status of the session.
@@ -163,6 +164,20 @@ struct DecoherenceTimes {
   static DecoherenceTimes decoherenceTimes;
   return decoherenceTimes;
 }
+
+/**
+ * @brief Provides access to the list of device sessions.
+ * @return a reference to a static vector of unique pointers to
+ * MQT_NA_QDMI_Device_Session_impl_d.
+ */
+[[nodiscard]] auto sessions()
+    -> std::unordered_map<MQT_NA_QDMI_Device_Session,
+                          std::unique_ptr<MQT_NA_QDMI_Device_Session_impl_d>>& {
+  static std::unordered_map<MQT_NA_QDMI_Device_Session,
+                            std::unique_ptr<MQT_NA_QDMI_Device_Session_impl_d>>
+      sessions;
+  return sessions;
+}
 } // namespace
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
@@ -231,14 +246,21 @@ int MQT_NA_QDMI_device_initialize() {
   return QDMI_SUCCESS;
 }
 
-int MQT_NA_QDMI_device_finalize() { return QDMI_SUCCESS; }
+int MQT_NA_QDMI_device_finalize() {
+  while (!sessions().empty()) {
+    MQT_NA_QDMI_device_session_free(sessions().begin()->first);
+  }
+  return QDMI_SUCCESS;
+}
 
 int MQT_NA_QDMI_device_session_alloc(MQT_NA_QDMI_Device_Session* session) {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  *session = new MQT_NA_QDMI_Device_Session_impl_d();
+  auto uniqueSession = std::make_unique<MQT_NA_QDMI_Device_Session_impl_d>();
+  *session = sessions()
+                 .emplace(uniqueSession.get(), std::move(uniqueSession))
+                 .first->first;
   return QDMI_SUCCESS;
 }
 
@@ -250,8 +272,7 @@ int MQT_NA_QDMI_device_session_init(MQT_NA_QDMI_Device_Session session) {
 }
 
 void MQT_NA_QDMI_device_session_free(MQT_NA_QDMI_Device_Session session) {
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  delete session;
+  sessions().erase(session);
 }
 
 int MQT_NA_QDMI_device_session_set_parameter(
