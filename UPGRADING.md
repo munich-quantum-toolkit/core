@@ -4,6 +4,10 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+### DD Package
+
+The `makeZeroState`, `makeBasisState`, `makeGHZState`, `makeWState`, and `makeStateFromVector` methods have been refactored to functions taking the DD package as an argument. These functions reside in the `StateGeneration` header. Any existing code that uses these methods must replace the respective calls with their function counterpart.
+
 ## [3.0.0]
 
 This major release introduces several breaking changes, including the removal of deprecated features and the introduction of new APIs.

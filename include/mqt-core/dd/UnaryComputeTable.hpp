@@ -29,11 +29,13 @@ namespace dd {
  * @tparam OperandType type of the operation's operand
  * @tparam ResultType type of the operation's result
  */
-template <class OperandType, class ResultType, std::size_t NBUCKET = 32768>
-class UnaryComputeTable {
+template <class OperandType, class ResultType> class UnaryComputeTable {
 public:
+  /// Default number of buckets for the compute table
+  static constexpr std::size_t DEFAULT_NUM_BUCKETS = 32768U;
+
   /// Default constructor
-  explicit UnaryComputeTable(const size_t numBuckets = 32768U) {
+  explicit UnaryComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
     // numBuckets must be a power of two
     if ((numBuckets & (numBuckets - 1)) != 0) {
       throw std::invalid_argument("Number of buckets must be a power of two.");
@@ -106,7 +108,7 @@ public:
    * @brief Clear the compute table
    * @details Sets all entries to invalid.
    */
-  void clear() { valid = std::vector(NBUCKET, false); }
+  void clear() { valid = std::vector(stats.numBuckets, false); }
 
 private:
   /// The actual table storing the entries

@@ -24,10 +24,12 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ♻️ Improve performance of getNqubits for StandardOperations ([#959]) ([**@ystade**])
 - ♻️ Outsource definition of standard operations from MLIR dialects to reduce redundancy ([#933]) ([**@ystade**])
 - ♻️ Unify operands and results in MLIR dialects ([#931]) ([**@ystade**])
 - ⏪️ Restore support for (MLIR and) LLVM v19 ([#934]) ([**@flowerthrower**]), [**@ystade**])
 - ⬆️ Update nlohmann_json to `v3.12.0` ([#921]) ([**@burgholzer**])
+- ♻️ Move Make-State Functionality To StateGeneration ([#984]) ([**@MatthiasReumann**])
 
 ## [3.0.2] - 2025-04-07
 
@@ -111,9 +113,11 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#984]: https://github.com/munich-quantum-toolkit/core/pull/984
 [#975]: https://github.com/munich-quantum-toolkit/core/pull/975
 [#973]: https://github.com/munich-quantum-toolkit/core/pull/973
 [#964]: https://github.com/munich-quantum-toolkit/core/pull/964
+[#959]: https://github.com/munich-quantum-toolkit/core/pull/959
 [#934]: https://github.com/munich-quantum-toolkit/core/pull/934
 [#933]: https://github.com/munich-quantum-toolkit/core/pull/933
 [#932]: https://github.com/munich-quantum-toolkit/core/pull/932

@@ -8,7 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "python/pybind11.hpp"
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+// clang-format on
 
 namespace mqt {
 

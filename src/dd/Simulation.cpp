@@ -12,6 +12,7 @@
 
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
@@ -235,6 +236,6 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
                                           const std::size_t seed) {
   const auto nqubits = qc.getNqubits();
   const auto dd = std::make_unique<Package>(nqubits);
-  return sample(qc, dd->makeZeroState(nqubits), *dd, shots, seed);
+  return sample(qc, makeZeroState(nqubits, *dd), *dd, shots, seed);
 }
 } // namespace dd

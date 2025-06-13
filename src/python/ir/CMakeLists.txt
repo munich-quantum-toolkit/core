@@ -19,7 +19,6 @@ if(NOT TARGET ir)
     # Optimize the bindings for size
     OPT_SIZE
     # Source code goes here
-    ${MQT_CORE_INCLUDE_BUILD_DIR}/python/pybind11.hpp
     ${IR_SOURCES})
   target_link_libraries(ir PRIVATE MQT::CoreIR MQT::CoreQASM MQT::ProjectOptions
                                    MQT::ProjectWarnings)

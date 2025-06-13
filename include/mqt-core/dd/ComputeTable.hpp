@@ -36,11 +36,14 @@ namespace dd {
 template <class LeftOperandType, class RightOperandType, class ResultType>
 class ComputeTable {
 public:
+  /// Default number of buckets for the compute table
+  static constexpr std::size_t DEFAULT_NUM_BUCKETS = 16384U;
+
   /**
    * Default constructor
    * @param numBuckets Number of hash table buckets. Must be a power of two.
    */
-  explicit ComputeTable(const size_t numBuckets = 16384U) {
+  explicit ComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
     // numBuckets must be a power of two
     if ((numBuckets & (numBuckets - 1)) != 0) {
       throw std::invalid_argument("Number of buckets must be a power of two.");

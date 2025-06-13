@@ -13,6 +13,7 @@
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
 
@@ -43,7 +44,7 @@ TEST(VectorFunctionality, GetValueByIndexEndianness) {
   auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
-  const auto stateDD = dd->makeStateFromVector(state);
+  const auto stateDD = makeStateFromVector(state, *dd);
 
   for (std::size_t i = 0U; i < state.size(); ++i) {
     EXPECT_EQ(state[i], stateDD.getValueByIndex(i));
@@ -59,7 +60,7 @@ TEST(VectorFunctionality, GetVectorRoundtrip) {
   auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
-  const auto stateDD = dd->makeStateFromVector(state);
+  const auto stateDD = makeStateFromVector(state, *dd);
   const auto stateVec = stateDD.getVector();
   EXPECT_EQ(stateVec, state);
 }
@@ -68,7 +69,7 @@ TEST(VectorFunctionality, GetVectorTolerance) {
   auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
-  const auto stateDD = dd->makeStateFromVector(state);
+  const auto stateDD = makeStateFromVector(state, *dd);
   const auto stateVec = stateDD.getVector(std::sqrt(0.1));
   EXPECT_EQ(stateVec, state);
   const auto stateVec2 = stateDD.getVector(std::sqrt(0.1) + RealNumber::eps);
@@ -87,7 +88,7 @@ TEST(VectorFunctionality, GetSparseVectorConsistency) {
   auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
-  const auto stateDD = dd->makeStateFromVector(state);
+  const auto stateDD = makeStateFromVector(state, *dd);
   const auto stateSparseVec = stateDD.getSparseVector();
   const auto stateVec = stateDD.getVector();
   for (const auto& [index, value] : stateSparseVec) {
@@ -99,7 +100,7 @@ TEST(VectorFunctionality, GetSparseVectorTolerance) {
   auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
-  const auto stateDD = dd->makeStateFromVector(state);
+  const auto stateDD = makeStateFromVector(state, *dd);
   const auto stateSparseVec = stateDD.getSparseVector(std::sqrt(0.1));
   for (const auto& [index, value] : stateSparseVec) {
     EXPECT_EQ(value, state[index]);
@@ -125,7 +126,7 @@ TEST(VectorFunctionality, PrintVector) {
   auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
-  const auto stateDD = dd->makeStateFromVector(state);
+  const auto stateDD = makeStateFromVector(state, *dd);
   testing::internal::CaptureStdout();
   stateDD.printVector();
   const auto stateStr = testing::internal::GetCapturedStdout();
@@ -145,7 +146,7 @@ TEST(VectorFunctionality, AddToVector) {
   auto dd = std::make_unique<Package>(2);
   const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
                       std::sqrt(0.4)};
-  const auto stateDD = dd->makeStateFromVector(state);
+  const auto stateDD = makeStateFromVector(state, *dd);
   stateDD.addToVector(vec);
   EXPECT_EQ(vec, state);
 }
@@ -158,7 +159,7 @@ TEST(VectorFunctionality, SizeTerminal) {
 TEST(VectorFunctionality, SizeBellState) {
   auto dd = std::make_unique<Package>(2);
   const CVec state = {SQRT2_2, 0., 0., SQRT2_2};
-  const auto bell = dd->makeStateFromVector(state);
+  const auto bell = makeStateFromVector(state, *dd);
   EXPECT_EQ(bell.size(), 4);
 }
 

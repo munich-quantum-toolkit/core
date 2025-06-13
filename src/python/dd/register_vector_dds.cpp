@@ -12,12 +12,20 @@
 #include "dd/Edge.hpp"
 #include "dd/Export.hpp"
 #include "dd/Node.hpp"
-#include "python/pybind11.hpp"
+
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+
+#include <pybind11/buffer_info.h>
+#include <pybind11/cast.h>
+#include <pybind11/numpy.h>
+// clang-format on
 
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <pybind11/numpy.h>
 #include <sstream>
 #include <string>
 
@@ -30,10 +38,12 @@ struct Vector {
   dd::CVec v;
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 Vector getVector(const dd::vEdge& v, const dd::fp threshold = 0.) {
   return {v.getVector(threshold)};
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerVectorDDs(const py::module& mod) {
   auto vec = py::class_<dd::vEdge>(mod, "VectorDD");
 
@@ -61,6 +71,7 @@ void registerVectorDDs(const py::module& mod) {
       .def_buffer([](Vector& vector) -> py::buffer_info {
         return py::buffer_info(
             vector.v.data(), sizeof(std::complex<dd::fp>),
+            // NOLINTNEXTLINE(misc-include-cleaner)
             py::format_descriptor<std::complex<dd::fp>>::format(), 1,
             {vector.v.size()}, {sizeof(std::complex<dd::fp>)});
       });

@@ -13,6 +13,7 @@
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
@@ -137,7 +138,7 @@ TEST_P(QPE, QPETest) {
 
   dd::VectorDD e{};
   ASSERT_NO_THROW(
-      { e = dd::simulate(qc, dd->makeZeroState(qc.getNqubits()), *dd); });
+      { e = dd::simulate(qc, makeZeroState(qc.getNqubits(), *dd), *dd); });
 
   // account for the eigenstate qubit by adding an offset
   const auto offset = 1ULL << (e.p->v + 1);
@@ -219,7 +220,7 @@ TEST_P(QPE, DynamicEquivalenceSimulation) {
   qc::CircuitOptimizer::removeFinalMeasurements(qpe);
 
   // simulate circuit
-  auto e = dd::simulate(qpe, dd->makeZeroState(qpe.getNqubits()), *dd);
+  auto e = dd::simulate(qpe, makeZeroState(qpe.getNqubits(), *dd), *dd);
 
   // create standard IQPE circuit
   auto iqpe = qc::createIterativeQPE(lambda, precision);
@@ -233,7 +234,7 @@ TEST_P(QPE, DynamicEquivalenceSimulation) {
   qc::CircuitOptimizer::removeFinalMeasurements(iqpe);
 
   // simulate circuit
-  auto f = dd::simulate(iqpe, dd->makeZeroState(iqpe.getNqubits()), *dd);
+  auto f = dd::simulate(iqpe, makeZeroState(iqpe.getNqubits(), *dd), *dd);
 
   // calculate fidelity between both results
   auto fidelity = dd->fidelity(e, f);

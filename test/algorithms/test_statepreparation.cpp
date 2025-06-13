@@ -11,6 +11,7 @@
 #include "algorithms/StatePreparation.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/QuantumComputation.hpp"
 
 #include <cmath>
@@ -66,7 +67,7 @@ TEST_P(StatePreparation, StatePreparationCircuitSimulation) {
   auto dd = std::make_unique<dd::Package>(qc.getNqubits());
   dd::VectorDD e{};
   ASSERT_NO_THROW(
-      { e = dd::simulate(qc, dd->makeZeroState(qc.getNqubits()), *dd); });
+      { e = dd::simulate(qc, makeZeroState(qc.getNqubits(), *dd), *dd); });
   auto result = e.getVector();
   for (size_t i = 0; i < expectedAmplitudes.size(); ++i) {
     ASSERT_NEAR(expectedAmplitudes[i].real(), result[i].real(), EPS);

@@ -9,18 +9,25 @@
  */
 
 #include "dd/DDDefinitions.hpp"
-#include "dd/DDpackageConfig.hpp"
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "python/pybind11.hpp"
+
+// These includes must be the first includes for any bindings code
+// clang-format off
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+
+#include <pybind11/cast.h>
+#include <pybind11/numpy.h>
+// clang-format on
 
 #include <complex>
 #include <cstddef>
 #include <memory>
-#include <pybind11/numpy.h>
 #include <vector>
 
 namespace mqt {
@@ -64,7 +71,7 @@ PYBIND11_MODULE(dd, mod, py::mod_gil_not_used()) {
       "simulate_statevector",
       [](const qc::QuantumComputation& qc) {
         auto dd = std::make_unique<dd::Package>(qc.getNqubits());
-        auto in = dd->makeZeroState(qc.getNqubits());
+        auto in = makeZeroState(qc.getNqubits(), *dd);
         const auto sim = dd::simulate(qc, in, *dd);
         return getVector(sim);
       },
