@@ -23,6 +23,57 @@
 namespace dd {
 
 static constexpr std::uintptr_t LSB = 1U;
+static constexpr std::uintptr_t MARK_BIT = 1U << 1;
+
+RealNumber* RealNumber::getAlignedPointer(const RealNumber* e) noexcept {
+  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) &
+                                       ~(LSB | MARK_BIT));
+}
+
+RealNumber* RealNumber::getNegativePointer(const RealNumber* e) noexcept {
+  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) |
+                                       LSB);
+}
+
+bool RealNumber::isNegativePointer(const RealNumber* e) noexcept {
+  return (reinterpret_cast<std::uintptr_t>(e) & LSB) != 0U;
+}
+
+RealNumber* RealNumber::flipPointerSign(const RealNumber* e) noexcept {
+  if (exactlyZero(e)) {
+    return &constants::zero;
+  }
+  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) ^
+                                       LSB);
+}
+
+RealNumber* RealNumber::getMarkedPointer(const RealNumber* p) noexcept {
+  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(p) |
+                                       MARK_BIT);
+}
+
+bool RealNumber::isMarkedPointer(const RealNumber* p) noexcept {
+  return (reinterpret_cast<std::uintptr_t>(p) & MARK_BIT) != 0U;
+}
+
+RealNumber* RealNumber::clearMark(const RealNumber* p) noexcept {
+  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(p) &
+                                       ~MARK_BIT);
+}
+
+RealNumber* RealNumber::mark(const RealNumber* e) noexcept {
+  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) |
+                                       MARK_BIT);
+}
+
+RealNumber* RealNumber::unmark(const RealNumber* e) noexcept {
+  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) &
+                                       ~MARK_BIT);
+}
+
+bool RealNumber::marked(const RealNumber* e) noexcept {
+  return (reinterpret_cast<std::uintptr_t>(e) & MARK_BIT) != 0U;
+}
 
 fp RealNumber::val(const RealNumber* e) noexcept {
   assert(e != nullptr);

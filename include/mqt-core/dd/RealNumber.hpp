@@ -123,6 +123,13 @@ struct RealNumber final : LLBase {
    */
   [[nodiscard]] static bool approximatelyZero(const RealNumber* e) noexcept;
 
+  /// Mark a number for garbage collection
+  [[nodiscard]] static RealNumber* mark(const RealNumber* e) noexcept;
+  /// Unmark a number after garbage collection
+  [[nodiscard]] static RealNumber* unmark(const RealNumber* e) noexcept;
+  /// Check whether a number is marked
+  [[nodiscard]] static bool marked(const RealNumber* e) noexcept;
+
   /**
    * @brief Write a binary representation of the number to a stream.
    * @param e The number to write.
@@ -153,7 +160,7 @@ struct RealNumber final : LLBase {
    * @param e The number to get the aligned pointer for.
    * @returns An aligned pointer to the number.
    */
-  [[nodiscard]] static constexpr RealNumber*
+  [[nodiscard]] static RealNumber*
   getAlignedPointer(const RealNumber* e) noexcept;
 
   /**
@@ -164,7 +171,7 @@ struct RealNumber final : LLBase {
    * @param e The number to get the negative pointer for.
    * @returns A negative pointer to the number.
    */
-  [[nodiscard]] static constexpr RealNumber*
+  [[nodiscard]] static RealNumber*
   getNegativePointer(const RealNumber* e) noexcept;
 
   /**
@@ -172,8 +179,7 @@ struct RealNumber final : LLBase {
    * @param e The number to check.
    * @returns Whether the number is a negative pointer.
    */
-  [[nodiscard]] static constexpr bool
-  isNegativePointer(const RealNumber* e) noexcept;
+  [[nodiscard]] static bool isNegativePointer(const RealNumber* e) noexcept;
 
   /**
    * @brief Flip the sign of the number pointer.
@@ -184,7 +190,7 @@ struct RealNumber final : LLBase {
    * @note We do not consider negative zero here, since it is not used in the
    * DD package. There only exists one zero number, which is positive.
    */
-  [[nodiscard]] static constexpr RealNumber*
+  [[nodiscard]] static RealNumber*
   flipPointerSign(const RealNumber* e) noexcept;
 
   /**
@@ -192,7 +198,7 @@ struct RealNumber final : LLBase {
    * @param p Pointer to mark.
    * @return The marked pointer.
    */
-  [[nodiscard]] static constexpr RealNumber*
+  [[nodiscard]] static RealNumber*
   getMarkedPointer(const RealNumber* p) noexcept;
 
   /**
@@ -200,16 +206,14 @@ struct RealNumber final : LLBase {
    * @param p Pointer to check.
    * @return True if the pointer is marked.
    */
-  [[nodiscard]] static constexpr bool
-  isMarkedPointer(const RealNumber* p) noexcept;
+  [[nodiscard]] static bool isMarkedPointer(const RealNumber* p) noexcept;
 
   /**
    * @brief Clear the mark bit from a pointer.
    * @param p Pointer to clear.
    * @return The unmarked pointer.
    */
-  [[nodiscard]] static constexpr RealNumber*
-  clearMark(const RealNumber* p) noexcept;
+  [[nodiscard]] static RealNumber* clearMark(const RealNumber* p) noexcept;
 
   /**
    * @brief The value of the number.
@@ -259,43 +263,4 @@ constexpr bool RealNumber::exactlySqrt2over2(const RealNumber* e) noexcept {
   return clearMark(e) == &constants::sqrt2over2;
 }
 
-constexpr RealNumber*
-RealNumber::getAlignedPointer(const RealNumber* e) noexcept {
-  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) &
-                                       ~(1U | MARK_BIT));
-}
-
-constexpr RealNumber*
-RealNumber::getNegativePointer(const RealNumber* e) noexcept {
-  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) |
-                                       1U);
-}
-
-constexpr bool RealNumber::isNegativePointer(const RealNumber* e) noexcept {
-  return (reinterpret_cast<std::uintptr_t>(e) & 1U) != 0U;
-}
-
-constexpr RealNumber*
-RealNumber::flipPointerSign(const RealNumber* e) noexcept {
-  if (exactlyZero(e)) {
-    return &constants::zero;
-  }
-  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) ^
-                                       1U);
-}
-
-constexpr RealNumber*
-RealNumber::getMarkedPointer(const RealNumber* p) noexcept {
-  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(p) |
-                                       MARK_BIT);
-}
-
-constexpr bool RealNumber::isMarkedPointer(const RealNumber* p) noexcept {
-  return (reinterpret_cast<std::uintptr_t>(p) & MARK_BIT) != 0U;
-}
-
-constexpr RealNumber* RealNumber::clearMark(const RealNumber* p) noexcept {
-  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(p) &
-                                       ~MARK_BIT);
-}
 } // namespace dd
