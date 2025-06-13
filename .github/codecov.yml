@@ -43,7 +43,7 @@ flag_management:
           threshold: 0.5%
           removed_code_behavior: adjust_base
         - type: patch
-          target: 80%
+          target: 90%
           threshold: 1%
 
 parsers:
