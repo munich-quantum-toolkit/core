@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-add_mlir_dialect_library(MLIRMQTDyn MQTDynOps.cpp DEPENDS MLIRMQTDynOpsIncGen
+add_mlir_dialect_library(MLIRMQTDyn DISABLE_INSTALL MQTDynOps.cpp DEPENDS MLIRMQTDynOpsIncGen
                          MLIRMQTDynInterfacesIncGen)
 
 # collect header files

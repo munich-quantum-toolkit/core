@@ -72,16 +72,22 @@ struct CancelConsecutiveInversesPattern final
                         [&](auto* user) { return user != *users.begin(); });
   }
 
-  mlir::LogicalResult match(UnitaryInterface op) const override {
+  mlir::LogicalResult
+  matchAndRewrite(UnitaryInterface op,
+                  mlir::PatternRewriter& rewriter) const override {
     const auto& users = op->getUsers();
     if (!areUsersUnique(users)) {
       return mlir::failure();
     }
-    auto* user = *users.begin();
-    if (!areGatesInverse(*op, *user)) {
+
+    auto* userOp = *users.begin();
+    if (!areGatesInverse(*op, *userOp)) {
       return mlir::failure();
     }
-    auto unitaryUser = mlir::dyn_cast<UnitaryInterface>(user);
+    auto unitaryUser = mlir::dyn_cast<UnitaryInterface>(userOp);
+    if (!unitaryUser) {
+      return mlir::failure();
+    }
     if (op.getAllOutQubits() != unitaryUser.getAllInQubits()) {
       return mlir::failure();
     }
@@ -93,25 +99,21 @@ struct CancelConsecutiveInversesPattern final
       // already checked by the previous condition.
       return mlir::failure();
     }
-    return mlir::success();
-  }
 
-  void rewrite(UnitaryInterface op,
-               mlir::PatternRewriter& rewriter) const override {
-    auto user = mlir::dyn_cast<UnitaryInterface>(
-        *op->getUsers().begin()); // We always have exactly one user.
+    // --- Begin Rewrite Phase ---
+
     // When iterating over the output qubits, it is important to call
     // `getAllOutQubits()` only once, as the output qubits are combined into a
     // fresh vector on every call.
-    const auto& userOutQubits = user.getAllOutQubits();
-    // Also get the op's input qubits
+    const auto& userOutQubits = unitaryUser.getAllOutQubits();
+    // Also get the op's input qubits.
     const auto& opInQubits = op.getAllInQubits();
 
     // Note: There might be multiple users of an operation. The qubits itself
     // can only be used once (linear typing). However, the user may output
     // multiple qubits, e.g., a CX gate, that are used by different users.
     // Hence, the user may have multiple child users.
-    const auto& childUsers = user->getUsers();
+    const auto& childUsers = unitaryUser->getUsers();
 
     for (const auto& childUser : childUsers) {
       for (size_t i = 0; i < childUser->getOperands().size(); i++) {
@@ -127,8 +129,9 @@ struct CancelConsecutiveInversesPattern final
       }
     }
 
-    rewriter.eraseOp(user);
+    rewriter.eraseOp(unitaryUser);
     rewriter.eraseOp(op);
+    return mlir::success();
   }
 };
 
