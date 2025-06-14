@@ -12,6 +12,7 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/Register.hpp"
+#include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
@@ -640,6 +641,92 @@ void StandardOperation::invert() {
     throw std::runtime_error("Inverting gate" + toString(type) +
                              " is not supported.");
   }
+}
+
+std::unique_ptr<Operation>
+StandardOperation::getPowered(const std::size_t exponent) const {
+  if (exponent == 1U) {
+    return clone();
+  }
+
+  switch (type) {
+  case GPhase:
+  case P:
+  case RX:
+  case RY:
+  case RZ:
+  case RXX:
+  case RYY:
+  case RZZ:
+  case RZX:
+  case XXminusYY:
+  case XXplusYY: {
+    auto op = std::make_unique<StandardOperation>(*this);
+    op->parameter[0] *= static_cast<fp>(exponent);
+    op->setup();
+    return op;
+  }
+  case S:
+    return std::make_unique<StandardOperation>(
+        targets, P, std::vector<fp>{PI_2 * static_cast<fp>(exponent)});
+  case Sdg:
+    return std::make_unique<StandardOperation>(
+        targets, P, std::vector<fp>{-PI_2 * static_cast<fp>(exponent)});
+  case T:
+    return std::make_unique<StandardOperation>(
+        targets, P, std::vector<fp>{PI_4 * static_cast<fp>(exponent)});
+  case Tdg:
+    return std::make_unique<StandardOperation>(
+        targets, P, std::vector<fp>{-PI_4 * static_cast<fp>(exponent)});
+  case SX: {
+    const auto r = exponent % 4U;
+    switch (r) {
+    case 0:
+      return std::make_unique<StandardOperation>(targets, I);
+    case 1:
+      return clone();
+    case 2:
+      return std::make_unique<StandardOperation>(targets, X);
+    default:
+      return std::make_unique<StandardOperation>(targets, SXdg);
+    }
+  }
+  case SXdg: {
+    const auto r = exponent % 4U;
+    switch (r) {
+    case 0:
+      return std::make_unique<StandardOperation>(targets, I);
+    case 1:
+      return clone();
+    case 2:
+      return std::make_unique<StandardOperation>(targets, X);
+    default:
+      return std::make_unique<StandardOperation>(targets, SX);
+    }
+  }
+  case I:
+    return std::make_unique<StandardOperation>(targets, I);
+  case X:
+  case Y:
+  case Z:
+  case H:
+  case SWAP:
+  case ECR:
+    if (exponent % 2U == 0U) {
+      return std::make_unique<StandardOperation>(targets, I);
+    }
+    return clone();
+  default:
+    break;
+  }
+  auto compound = std::make_unique<CompoundOperation>();
+  for (std::size_t i = 0; i < exponent; ++i) {
+    compound->getOps().emplace_back(clone());
+  }
+  if (compound->size() == 1U) {
+    return std::move(compound->getOps()[0]);
+  }
+  return compound;
 }
 
 void StandardOperation::dumpControls(std::ostringstream& op) const {

@@ -91,6 +91,9 @@ public:
     return op;
   }
 
+  [[nodiscard]] virtual std::unique_ptr<Operation>
+  getPowered(std::size_t exponent) const;
+
   // Setter
   virtual void setTargets(const Targets& t) { targets = t; }
 
