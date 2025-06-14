@@ -405,7 +405,8 @@ void registerDDPackage(const py::module& mod) {
       // keep the DD package alive while the returned matrix DD is alive.
       py::keep_alive<0, 1>());
 
-  // Reference counting and garbage collection
+  // `inc_ref_*` and `dec_ref_*` manage the root sets. Garbage collection
+  // performs a mark-and-sweep pass over all nodes.
   dd.def("inc_ref_vec", &dd::Package::incRef<dd::vNode>, "vec"_a);
   dd.def("inc_ref_mat", &dd::Package::incRef<dd::mNode>, "mat"_a);
   dd.def("dec_ref_vec", &dd::Package::decRef<dd::vNode>, "vec"_a);

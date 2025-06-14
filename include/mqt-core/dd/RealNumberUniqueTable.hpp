@@ -93,27 +93,11 @@ public:
    */
   [[nodiscard]] RealNumber* lookup(fp val);
 
-  /**
-   * @brief Increment the reference count of a number.
-   * @details This is a pass-through function that calls the increment function
-   * of the number. It additionally keeps track of the number of active entries
-   * in the table (entries with a reference count greater than zero). Reference
-   * counts saturate at the maximum value of RefCount.
-   * @param num A pointer to the number to increase the reference count of.
-   * @see RealNumber::incRef(RealNumber*)
-   */
-  void incRef(RealNumber* num) noexcept;
+  /// Mark a number pointer for garbage collection.
+  RealNumber* markNumber(RealNumber* num) noexcept;
 
-  /**
-   * @brief Decrement the reference count of a number.
-   * @details This is a pass-through function that calls the decrement function
-   * of the number. It additionally keeps track of the number of active entries
-   * in the table (entries with a reference count greater than zero). Reference
-   * counts saturate at the maximum value of RefCount.
-   * @param num A pointer to the number to decrease the reference count of.
-   * @see RealNumber::decRef(RealNumber*)
-   */
-  void decRef(RealNumber* num) noexcept;
+  /// Clear the mark from a number pointer.
+  RealNumber* unmarkNumber(RealNumber* num) noexcept;
 
   /**
    * @brief Check whether the table possibly needs garbage collection.
@@ -126,9 +110,9 @@ public:
    * @brief Perform garbage collection.
    * @details This function performs garbage collection. It first checks whether
    * garbage collection is necessary. If not, it does nothing. Otherwise, it
-   * iterates over all entries in the table and returns all entries with a
-   * reference count of zero to the available list. If the force flag is set,
-   * garbage collection is performed even if it is not necessary.
+   * iterates over all entries in the table and removes all numbers whose
+   * pointers are unmarked. If the force flag is set, garbage collection is
+   * performed even if it is not necessary.
    * Based on how many entries are returned to the available list, the garbage
    * collection limit is dynamically adjusted.
    * @param force Whether to force garbage collection.
@@ -155,6 +139,9 @@ public:
    * @returns The output stream.
    */
   std::ostream& printBucketDistribution(std::ostream& os = std::cout);
+
+  /// Count the marked entries in the table
+  [[nodiscard]] std::size_t countMarkedEntries() const noexcept;
 
 private:
   /// Typedef for a bucket in the table.
