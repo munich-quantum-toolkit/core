@@ -14,6 +14,7 @@
 #include "dd/LinkedListBase.hpp"
 #include "dd/mqt_core_dd_export.h"
 
+#include <bit>
 #include <istream>
 #include <limits>
 #include <ostream>
@@ -206,7 +207,16 @@ struct RealNumber final : LLBase {
    * @param p Pointer to clear.
    * @return The unmarked pointer.
    */
+#if defined(__cpp_lib_bit_cast) && __cpp_lib_bit_cast >= 201806L
+  [[nodiscard]] static constexpr RealNumber*
+  clearMark(const RealNumber* p) noexcept {
+    auto val = std::bit_cast<std::uintptr_t>(p);
+    val &= ~MARK_BIT;
+    return std::bit_cast<RealNumber*>(val);
+  }
+#else
   [[nodiscard]] static RealNumber* clearMark(const RealNumber* p) noexcept;
+#endif
 
   /**
    * @brief The value of the number.
