@@ -71,5 +71,39 @@ if(BUILD_MQT_CORE_TESTS)
   list(APPEND FETCH_PACKAGES googletest)
 endif()
 
+set(Protobuf_VERSION
+    31.1
+    CACHE STRING "protobuf version")
+set(Protobuf_URL
+    https://github.com/protocolbuffers/protobuf/releases/download/v${Protobuf_VERSION}/protobuf-${Protobuf_VERSION}.tar.gz
+)
+FetchContent_Declare(protobuf URL ${Protobuf_URL} FIND_PACKAGE_ARGS ${Protobuf_VERSION} CONFIG
+                                  NAMES protobuf)
+list(APPEND FETCH_PACKAGES protobuf)
+
+# cmake-format: off
+set(QDMI_VERSION 1.1.0
+        CACHE STRING "QDMI version")
+set(QDMI_REV "v${QDMI_VERSION}"
+        CACHE STRING "QDMI identifier (tag, branch or commit hash)")
+set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
+        CACHE STRING "QDMI repository owner (change when using a fork)")
+# cmake-format: on
+FetchContent_Declare(
+  qdmi
+  GIT_REPOSITORY https://github.com/${QDMI_REPO_OWNER}/qdmi.git
+  GIT_TAG ${QDMI_REV}
+  FIND_PACKAGE_ARGS ${QDMI_VERSION})
+list(APPEND FETCH_PACKAGES qdmi)
+
+set(SPDLOG_VERSION
+    1.15.3
+    CACHE STRING "spdlog version")
+set(SPDLOG_URL https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz)
+# Add position independent code for spdlog, this is required for python bindings on linux
+set(SPDLOG_BUILD_PIC ON)
+FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
+list(APPEND FETCH_PACKAGES spdlog)
+
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
