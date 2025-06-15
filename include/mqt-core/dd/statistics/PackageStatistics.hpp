@@ -20,9 +20,10 @@ namespace dd {
 
 /**
  * @brief Computes an estimate for the memory usage of active DDs.
- * @details The estimate is based on the number of active entries in the
- * respective unique tables. It accounts for the memory used by DD nodes, DD
- * edges, and real numbers.
+ * @details The estimate is based on the number of active entries which are
+ * computed by temporarily marking all nodes reachable from the current root
+ * set and subsequently counting them in the unique tables. It accounts for the
+ * memory used by DD nodes, DD edges, and real numbers.
  * @param package The package instance
  * @return The estimated memory usage in MiB
  */

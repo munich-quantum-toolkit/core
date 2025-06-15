@@ -54,14 +54,14 @@ Complex ComplexNumbers::lookup(const Complex& c) {
   return lookup(valr, vali);
 }
 
-void ComplexNumbers::incRef(const Complex& c) const noexcept {
-  uniqueTable->incRef(c.r);
-  uniqueTable->incRef(c.i);
+void ComplexNumbers::mark(Complex& c) const noexcept {
+  c.r = uniqueTable->markNumber(c.r);
+  c.i = uniqueTable->markNumber(c.i);
 }
 
-void ComplexNumbers::decRef(const Complex& c) const noexcept {
-  uniqueTable->decRef(c.r);
-  uniqueTable->decRef(c.i);
+void ComplexNumbers::unmark(Complex& c) const noexcept {
+  c.r = uniqueTable->unmarkNumber(c.r);
+  c.i = uniqueTable->unmarkNumber(c.i);
 }
 
 Complex ComplexNumbers::lookup(const std::complex<fp>& c) {
