@@ -330,13 +330,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DBUILD_MQT_CORE_MLIR=ON \
             -DLLVM_EXTERNAL_LIT=$(which lit) \
-            -DMLIR_INCLUDE_INTEGRATION_TESTS=ON \
-            -DCOVERAGE=ON \
-            -DMLIR_ENABLE_COVERAGE=ON \
-            -DMLIR_COVERAGE_EXCLUDE="tools/quantum-opt/test/*"
-            -DENABLE_COVERAGE=ON \
-            -DCMAKE_C_COMPILER=$CC \
-            -DCMAKE_CXX_COMPILER=$CXX
+            -DENABLE_COVERAGE=ON
 
       # build the project and run the tests with coverage
       - name: Build MLIR components and run tests with coverage
