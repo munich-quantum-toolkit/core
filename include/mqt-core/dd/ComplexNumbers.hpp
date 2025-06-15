@@ -150,7 +150,7 @@ public:
    * @param c The complex number.
    * @return Whether the complex number is one of the static ones.
    */
-  [[nodiscard]] static constexpr bool isStaticComplex(const Complex& c) {
+  [[nodiscard]] static bool isStaticComplex(const Complex& c) {
     return c.exactlyZero() || c.exactlyOne();
   }
 
