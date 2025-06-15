@@ -93,12 +93,6 @@ public:
    */
   [[nodiscard]] RealNumber* lookup(fp val);
 
-  /// Mark a number pointer for garbage collection.
-  RealNumber* markNumber(RealNumber* num) noexcept;
-
-  /// Clear the mark from a number pointer.
-  RealNumber* unmarkNumber(RealNumber* num) noexcept;
-
   /**
    * @brief Check whether the table possibly needs garbage collection.
    * @returns Whether the number of entries in the table has reached the garbage
@@ -112,7 +106,7 @@ public:
    * garbage collection is necessary. If not, it does nothing. Otherwise, it
    * iterates over all entries in the table and removes all numbers whose
    * pointers are unmarked. If the force flag is set, garbage collection is
-   * performed even if it is not necessary.
+   * performed even if it is not strictly necessary.
    * Based on how many entries are returned to the available list, the garbage
    * collection limit is dynamically adjusted.
    * @param force Whether to force garbage collection.

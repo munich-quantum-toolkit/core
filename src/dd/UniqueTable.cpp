@@ -72,7 +72,6 @@ std::size_t UniqueTable::garbageCollect(const bool force) {
           p = next;
           --stat.numEntries;
         } else {
-          p->unmark();
           lastp = p;
           p = p->next();
         }

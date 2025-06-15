@@ -48,13 +48,12 @@ protected:
 
     // number of complex table entries after clean-up should equal initial
     // number of entries
-    EXPECT_EQ(dd->cn.realCount(), initialComplexCount);
+    EXPECT_EQ(dd->cn.realCount(), 0);
   }
 
   void SetUp() override {
     // dd
     dd = std::make_unique<dd::Package>(nqubits);
-    initialComplexCount = dd->cn.realCount();
 
     // initial state preparation
     e = ident = dd::Package::makeIdent();
@@ -70,7 +69,6 @@ protected:
   }
 
   std::size_t nqubits = 4U;
-  std::size_t initialComplexCount = 0U;
   dd::MatrixDD e{}, ident{};
   std::unique_ptr<dd::Package> dd;
   std::mt19937_64 mt;

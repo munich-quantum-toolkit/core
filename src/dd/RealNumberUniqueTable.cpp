@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <tuple>
 
 namespace dd {
 
@@ -31,7 +32,7 @@ RealNumberUniqueTable::RealNumberUniqueTable(MemoryManager& manager,
   stats.numBuckets = NBUCKET;
 
   // add 1/2 to the table so that it is available for complex numbers
-  static_cast<void>(lookupNonNegative(0.5L));
+  std::ignore = lookupNonNegative(0.5L);
 }
 
 std::int64_t RealNumberUniqueTable::hash(const fp val) noexcept {
@@ -50,24 +51,6 @@ RealNumber* RealNumberUniqueTable::lookup(const fp val) {
     return RealNumber::getNegativePointer(lookupNonNegative(std::abs(val)));
   }
   return lookupNonNegative(val);
-}
-
-RealNumber* RealNumberUniqueTable::markNumber(RealNumber* num) noexcept {
-  if (constants::isStaticNumber(num)) {
-    return num;
-  }
-  auto* ptr = RealNumber::getAlignedPointer(num);
-  ptr->markEntry();
-  return RealNumber::getMarkedPointer(num);
-}
-
-RealNumber* RealNumberUniqueTable::unmarkNumber(RealNumber* num) noexcept {
-  if (constants::isStaticNumber(num)) {
-    return num;
-  }
-  auto* ptr = RealNumber::getAlignedPointer(num);
-  ptr->unmarkEntry();
-  return RealNumber::clearMark(num);
 }
 
 RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {
@@ -150,9 +133,8 @@ bool RealNumberUniqueTable::possiblyNeedsCollection() const noexcept {
 
 std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
   // nothing to be done if garbage collection is not forced, and the limit has
-  // not been reached, or the current count is minimal (the complex table
-  // always contains at least 0.5)
-  if ((!force && !possiblyNeedsCollection()) || stats.numEntries <= 1) {
+  // not been reached, or the current count is minimal.
+  if ((!force && !possiblyNeedsCollection()) || stats.numEntries == 0) {
     return 0;
   }
 
@@ -162,39 +144,35 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
     auto* curr = table[key];
     RealNumber* prev = nullptr;
     while (curr != nullptr) {
-      auto* next = curr->next();
-      const bool isMarked = curr->isMarked();
-      const bool isHalf = RealNumber::approximatelyEquals(curr->value, 0.5L);
-      if (!isMarked && !isHalf) {
+      if (!RealNumber::isMarked(*curr)) {
+        auto* next = curr->next();
         if (prev == nullptr) {
           table[key] = next;
         } else {
           prev->setNext(next);
         }
-        memoryManager->returnEntry(*RealNumber::getAlignedPointer(curr));
+        memoryManager->returnEntry(*curr);
+        curr = next;
         --stats.numEntries;
-        curr = next;
       } else {
-        curr->unmarkEntry();
-        curr = RealNumber::clearMark(curr);
-        if (prev == nullptr) {
-          table[key] = curr;
-        } else {
-          prev->setNext(curr);
-        }
         prev = curr;
-        curr = next;
+        curr = curr->next();
       }
+      tailTable[key] = prev;
     }
-    tailTable[key] = prev;
   }
-
+  // The garbage collection limit changes dynamically depending on the number
+  // of remaining (active) nodes. If it were not changed, garbage collection
+  // would run through the complete table on each successive call once the
+  // number of remaining entries reaches the garbage collection limit. It is
+  // increased whenever the number of remaining entries is rather close to the
+  // garbage collection threshold and decreased if the number of remaining
+  // entries is much lower than the current limit.
   if (stats.numEntries > gcLimit / 10 * 9) {
     gcLimit = stats.numEntries + initialGCLimit;
   } else if (stats.numEntries < gcLimit / 128) {
     gcLimit /= 2;
   }
-
   return before - stats.numEntries;
 }
 
@@ -251,10 +229,10 @@ std::ostream& RealNumberUniqueTable::printBucketDistribution(std::ostream& os) {
 
 std::size_t RealNumberUniqueTable::countMarkedEntries() const noexcept {
   std::size_t count = 0U;
-  for (auto* bucket : table) {
-    auto* curr = bucket;
+  for (const auto* bucket : table) {
+    const auto* curr = bucket;
     while (curr != nullptr) {
-      if (curr->isMarked()) {
+      if (RealNumber::isMarked(*curr)) {
         ++count;
       }
       curr = curr->next();

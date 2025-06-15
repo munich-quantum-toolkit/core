@@ -139,15 +139,15 @@ def simulate(qc: QuantumComputation, initial_state: VectorDD, dd_package: DDPack
         qc: The quantum computation.
             Must only contain unitary operations.
         initial_state: The initial state as a DD. Must have the same number of qubits
-                       as the quantum computation. The state is removed from the
-                       root set during the simulation, so the caller must ensure that
-                       it is rooted beforehand.
+                       as the quantum computation. The reference count of the initial
+                       state is decremented during the simulation, so the caller must
+                       ensure that the initial state has a non-zero reference count.
         dd_package: The DD package. Must be configured with a sufficient number of
                     qubits to accommodate the quantum computation.
 
     Returns:
-        The final state as a DD. The resulting edge is added to the root set and
-        must be removed when it is no longer needed.
+        The final state as a DD. The reference count of the final state is non-zero
+        and must be manually decremented by the caller if it is no longer needed.
     """
 
 def build_functionality(qc: QuantumComputation, dd_package: DDPackage, recursive: bool = False) -> MatrixDD:
@@ -172,8 +172,8 @@ def build_functionality(qc: QuantumComputation, dd_package: DDPackage, recursive
                    computation to the identity matrix. Defaults to False.
 
     Returns:
-        The functionality as a DD. The resulting edge is added to the root set
-        and must be removed when it is no longer needed.
+        The functionality as a DD. The reference count of the result is non-zero
+        and must be manually decremented by the caller if it is no longer needed.
     """
 
 class DDPackage:
@@ -188,7 +188,7 @@ class DDPackage:
     - ensures the efficiency of decision diagram operations (Compute Table),
     - provides methods for creating quantum states and operations from various sources,
     - provides methods for various operations on quantum states and operations, and
-    - provides means for managing roots and performing mark-and-sweep garbage collection.
+    - provides means for reference counting and garbage collection.
 
     Args:
         num_qubits: The maximum number of qubits that the DDPackage can handle.
@@ -231,7 +231,7 @@ class DDPackage:
 
         Returns:
             The DD for the zero state.
-            The resulting state is added to the root set.
+            The resulting state is guaranteed to have its reference count increased.
         """
 
     def computational_basis_state(self, num_qubits: int, state: list[bool]) -> VectorDD:
@@ -245,7 +245,7 @@ class DDPackage:
 
         Returns:
             The DD for the computational basis state.
-            The resulting state is added to the root set.
+            The resulting state is guaranteed to have its reference count increased.
         """
 
     def basis_state(self, num_qubits: int, state: Iterable[BasisStates]) -> VectorDD:
@@ -259,7 +259,7 @@ class DDPackage:
 
         Returns:
             The DD for the basis state.
-            The resulting state is added to the root set.
+            The resulting state is guaranteed to have its reference count increased.
         """
 
     def ghz_state(self, num_qubits: int) -> VectorDD:
@@ -271,7 +271,7 @@ class DDPackage:
 
         Returns:
             The DD for the GHZ state.
-            The resulting state is added to the root set.
+            The resulting state is guaranteed to have its reference count increased.
         """
 
     def w_state(self, num_qubits: int) -> VectorDD:
@@ -285,7 +285,7 @@ class DDPackage:
 
         Returns:
             The DD for the W state.
-            The resulting state is added to the root set.
+            The resulting state is guaranteed to have its reference count increased.
         """
 
     def from_vector(self, state: npt.NDArray[(Any,), np.cdouble]) -> VectorDD:
@@ -298,7 +298,7 @@ class DDPackage:
 
         Returns:
             The DD for the vector.
-            The resulting state is added to the root set.
+            The resulting state is guaranteed to have its reference count increased.
         """
 
     def apply_unitary_operation(self, vec: VectorDD, operation: Operation, permutation: Permutation = ...) -> VectorDD:
@@ -315,8 +315,8 @@ class DDPackage:
             The resulting DD.
 
         Notes:
-            Automatically manages the roots of the input and output DDs.
-            The input DD must be part of the root set.
+            Automatically manages the reference count of the input and output DDs.
+            The input DD must have a non-zero reference count.
         """
 
     def apply_measurement(
@@ -339,8 +339,8 @@ class DDPackage:
             The resulting DD after the measurement as well as the updated measurement outcomes.
 
         Notes:
-            Automatically manages the roots of the input and output DDs.
-            The input DD must be part of the root set.
+            Automatically manages the reference count of the input and output DDs.
+            The input DD must have a non-zero reference count.
         """
 
     def apply_reset(self, vec: VectorDD, operation: NonUnitaryOperation, permutation: Permutation = ...) -> VectorDD:
@@ -356,8 +356,8 @@ class DDPackage:
             The resulting DD after the reset.
 
         Notes:
-            Automatically manages the roots of the input and output DDs.
-            The input DD must be part of the root set.
+            Automatically manages the reference count of the input and output DDs.
+            The input DD must have a non-zero reference count.
         """
 
     def apply_classic_controlled_operation(
@@ -380,8 +380,8 @@ class DDPackage:
             The resulting DD after the operation.
 
         Notes:
-            Automatically manages the roots of the input and output DDs.
-            The input DD must be part of the root set.
+            Automatically manages the reference count of the input and output DDs.
+            The input DD must have a non-zero reference count.
         """
 
     def measure_collapsing(self, vec: VectorDD, qubit: int) -> str:
@@ -395,8 +395,8 @@ class DDPackage:
             The measurement outcome.
 
         Notes:
-            Automatically manages the roots of the input and output DDs.
-            The input DD must be part of the root set.
+            Automatically manages the reference count of the input and output DDs.
+            The input DD must have a non-zero reference count.
         """
 
     def measure_all(self, vec: VectorDD, collapse: bool = False) -> str:
@@ -410,8 +410,8 @@ class DDPackage:
             The measurement outcome.
 
         Notes:
-            Automatically manages the roots of the input and output DDs.
-            The input DD must be part of the root set.
+            Automatically manages the reference count of the input and output DDs.
+            The input DD must have a non-zero reference count.
         """
 
     @staticmethod
@@ -547,19 +547,19 @@ class DDPackage:
         """
 
     def inc_ref_vec(self, vec: VectorDD) -> None:
-        """Add a vector to the root set."""
+        """Increment the reference count of a vector."""
 
     def dec_ref_vec(self, vec: VectorDD) -> None:
-        """Remove a vector from the root set."""
+        """Decrement the reference count of a vector."""
 
     def inc_ref_mat(self, mat: MatrixDD) -> None:
-        """Add a matrix to the root set."""
+        """Increment the reference count of a matrix."""
 
     def dec_ref_mat(self, mat: MatrixDD) -> None:
-        """Remove a matrix from the root set."""
+        """Decrement the reference count of a matrix."""
 
     def garbage_collect(self, force: bool = False) -> bool:
-        """Perform mark-and-sweep garbage collection on the package.
+        """Perform garbage collection on the DDPackage.
 
         Args:
             force: Whether to force garbage collection.
@@ -582,7 +582,7 @@ class DDPackage:
             The sum of the two vectors.
 
         Notes:
-            It is the caller's responsibility to manage the roots of the
+            It is the caller's responsibility to update the reference count of the
             input and output vectors after the operation.
 
             Both vectors must have the same number of qubits.
@@ -599,7 +599,7 @@ class DDPackage:
             The sum of the two matrices.
 
         Notes:
-            It is the caller's responsibility to manage the roots of the
+            It is the caller's responsibility to update the reference count of the
             input and output matrices after the operation.
 
             Both matrices must have the same number of qubits.
@@ -615,7 +615,7 @@ class DDPackage:
             The conjugated vector.
 
         Notes:
-            It is the caller's responsibility to manage the roots of the
+            It is the caller's responsibility to update the reference count of the
             input and output vectors after the operation.
         """
 
@@ -629,7 +629,7 @@ class DDPackage:
             The conjugate transposed matrix.
 
         Notes:
-            It is the caller's responsibility to manage the roots of the
+            It is the caller's responsibility to update the reference count of the
             input and output matrices after the operation.
         """
 
@@ -644,7 +644,7 @@ class DDPackage:
             The product of the matrix and the vector.
 
         Notes:
-            It is the caller's responsibility to manage the roots of the
+            It is the caller's responsibility to update the reference count of the
             input and output matrices after the operation.
 
             The vector must have at least as many qubits as the matrix non-trivially acts on.
@@ -661,7 +661,7 @@ class DDPackage:
             The product of the two matrices.
 
         Notes:
-            It is the caller's responsibility to manage the roots of the
+            It is the caller's responsibility to update the reference count of the
             input and output matrices after the operation.
         """
 
@@ -725,7 +725,7 @@ class DDPackage:
             The Kronecker product of the two vectors.
 
         Notes:
-            It is the caller's responsibility to manage the roots of the
+            It is the caller's responsibility to update the reference count of the
             input and output vectors after the operation.
         """
 
@@ -744,7 +744,7 @@ class DDPackage:
             The Kronecker product of the two matrices.
 
         Notes:
-            It is the caller's responsibility to manage the roots of the
+            It is the caller's responsibility to update the reference count of the
             input and output matrices after the operation.
         """
 

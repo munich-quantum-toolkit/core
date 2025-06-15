@@ -13,11 +13,9 @@
 #include "dd/DDDefinitions.hpp"
 
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <istream>
-#include <limits>
 #include <ostream>
 
 namespace dd {
@@ -26,7 +24,7 @@ static constexpr std::uintptr_t LSB = 1U;
 
 RealNumber* RealNumber::getAlignedPointer(const RealNumber* e) noexcept {
   return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) &
-                                       ~(LSB | RealNumber::MARK_BIT));
+                                       ~LSB);
 }
 
 RealNumber* RealNumber::getNegativePointer(const RealNumber* e) noexcept {
@@ -46,18 +44,23 @@ bool RealNumber::isNegativePointer(const RealNumber* e) noexcept {
   return (reinterpret_cast<std::uintptr_t>(e) & LSB) != 0U;
 }
 
-RealNumber* RealNumber::getMarkedPointer(const RealNumber* p) noexcept {
-  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(p) |
-                                       RealNumber::MARK_BIT);
+RealNumber* RealNumber::next() const noexcept {
+  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(next_) &
+                                       ~LSB);
 }
 
-bool RealNumber::isMarkedPointer(const RealNumber* p) noexcept {
-  return (reinterpret_cast<std::uintptr_t>(p) & RealNumber::MARK_BIT) != 0U;
+bool RealNumber::isMarked(const RealNumber& p) noexcept {
+  return (reinterpret_cast<std::uintptr_t>(p.next_) & LSB) == LSB;
 }
 
-RealNumber* RealNumber::clearMark(const RealNumber* p) noexcept {
-  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(p) &
-                                       ~RealNumber::MARK_BIT);
+void RealNumber::mark(RealNumber& p) noexcept {
+  p.next_ = reinterpret_cast<RealNumber*>(
+      reinterpret_cast<std::uintptr_t>(p.next_) | LSB);
+}
+
+void RealNumber::unmark(RealNumber& p) noexcept {
+  p.next_ = reinterpret_cast<RealNumber*>(
+      reinterpret_cast<std::uintptr_t>(p.next_) & ~LSB);
 }
 
 fp RealNumber::val(const RealNumber* e) noexcept {
@@ -82,7 +85,7 @@ bool RealNumber::approximatelyZero(const fp e) noexcept {
 }
 
 bool RealNumber::approximatelyZero(const RealNumber* e) noexcept {
-  return clearMark(e) == &constants::zero || approximatelyZero(val(e));
+  return e == &constants::zero || approximatelyZero(val(e));
 }
 
 void RealNumber::writeBinary(const RealNumber* e, std::ostream& os) {

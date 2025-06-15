@@ -27,7 +27,7 @@ namespace dd {
  * @param package The package instance
  * @return The estimated memory usage in MiB
  */
-[[nodiscard]] double computeActiveMemoryMiB(const Package& package);
+[[nodiscard]] double computeActiveMemoryMiB(Package& package);
 
 /**
  * @brief Computes an estimate for the peak memory usage of DDs.
@@ -40,7 +40,7 @@ namespace dd {
 [[nodiscard]] double computePeakMemoryMiB(const Package& package);
 
 [[nodiscard]] nlohmann::basic_json<>
-getStatistics(const Package& package, bool includeIndividualTables = false);
+getStatistics(Package& package, bool includeIndividualTables = false);
 
 /**
  * @brief Get some key statistics about data structures used by the DD package
@@ -48,8 +48,8 @@ getStatistics(const Package& package, bool includeIndividualTables = false);
  */
 [[nodiscard]] nlohmann::basic_json<> getDataStructureStatistics();
 
-[[nodiscard]] std::string getStatisticsString(const Package& package);
+[[nodiscard]] std::string getStatisticsString(Package& package);
 
-void printStatistics(const Package& package, std::ostream& os = std::cout);
+void printStatistics(Package& package, std::ostream& os = std::cout);
 
 } // namespace dd

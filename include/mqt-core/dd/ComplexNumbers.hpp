@@ -129,28 +129,11 @@ public:
   }
 
   /**
-   * @brief Mark the real and imaginary parts of the complex number.
-   * @param c The complex number to mark.
-   * @note Internally calls
-   *       {cpp}`RealNumberUniqueTable::markNumber` on both pointers.
-   */
-  void mark(Complex& c) const noexcept;
-
-  /**
-   * @brief Remove the mark from the real and imaginary parts of the complex
-   * number.
-   * @param c The complex number to unmark.
-   * @note Internally calls
-   *       {cpp}`RealNumberUniqueTable::unmarkNumber` on both pointers.
-   */
-  void unmark(Complex& c) const noexcept;
-
-  /**
    * @brief Check whether a complex number is one of the static ones.
    * @param c The complex number.
    * @return Whether the complex number is one of the static ones.
    */
-  [[nodiscard]] static bool isStaticComplex(const Complex& c) {
+  [[nodiscard]] static constexpr bool isStaticComplex(const Complex& c) {
     return c.exactlyZero() || c.exactlyOne();
   }
 

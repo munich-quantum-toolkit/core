@@ -118,7 +118,7 @@ TEST_F(CNTest, GarbageCollectSomeInBucket) {
   auto lookup2 = cn.lookup(num2, 0.0);
   ASSERT_NE(lookup2.r, nullptr);
   ASSERT_NE(lookup2.i, nullptr);
-  cn.mark(lookup2);
+  lookup2.mark();
 
   // num2 should be placed in same bucket as num
   auto key = RealNumberUniqueTable::hash(num);
@@ -133,6 +133,7 @@ TEST_F(CNTest, GarbageCollectSomeInBucket) {
   EXPECT_NEAR((p->next())->value, num2, RealNumber::eps);
 
   ut.garbageCollect(true); // num should be collected
+  lookup2.unmark();
   const auto* q = table[static_cast<std::size_t>(key)];
   ASSERT_NE(q, nullptr);
   EXPECT_NEAR(q->value, num2, RealNumber::eps);
