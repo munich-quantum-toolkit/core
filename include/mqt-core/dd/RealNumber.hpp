@@ -14,7 +14,6 @@
 #include "dd/LinkedListBase.hpp"
 #include "dd/mqt_core_dd_export.h"
 
-#include <bit>
 #include <istream>
 #include <limits>
 #include <ostream>
@@ -57,22 +56,21 @@ struct RealNumber final : LLBase {
    * @param e The number to check.
    * @returns Whether the number points to zero.
    */
-  [[nodiscard]] static constexpr bool exactlyZero(const RealNumber* e) noexcept;
+  [[nodiscard]] static bool exactlyZero(const RealNumber* e) noexcept;
 
   /**
    * @brief Check whether the number points to the one number.
    * @param e The number to check.
    * @returns Whether the number points to one.
    */
-  [[nodiscard]] static constexpr bool exactlyOne(const RealNumber* e) noexcept;
+  [[nodiscard]] static bool exactlyOne(const RealNumber* e) noexcept;
 
   /**
    * @brief Check whether the number points to the sqrt(2)/2 = 1/sqrt(2) number.
    * @param e The number to check.
    * @returns Whether the number points to negative one.
    */
-  [[nodiscard]] static constexpr bool
-  exactlySqrt2over2(const RealNumber* e) noexcept;
+  [[nodiscard]] static bool exactlySqrt2over2(const RealNumber* e) noexcept;
 
   /**
    * @brief Get the value of the number.
@@ -207,16 +205,7 @@ struct RealNumber final : LLBase {
    * @param p Pointer to clear.
    * @return The unmarked pointer.
    */
-#if defined(__cpp_lib_bit_cast) && __cpp_lib_bit_cast >= 201806L
-  [[nodiscard]] static constexpr RealNumber*
-  clearMark(const RealNumber* p) noexcept {
-    auto val = std::bit_cast<std::uintptr_t>(p);
-    val &= ~MARK_BIT;
-    return std::bit_cast<RealNumber*>(val);
-  }
-#else
   [[nodiscard]] static RealNumber* clearMark(const RealNumber* p) noexcept;
-#endif
 
   /**
    * @brief The value of the number.
@@ -248,21 +237,21 @@ MQT_CORE_DD_EXPORT extern RealNumber sqrt2over2;
  * @param e The number to check.
  * @return Whether the number is one of the static numbers.
  */
-[[nodiscard]] constexpr bool isStaticNumber(const RealNumber* e) noexcept {
+[[nodiscard]] inline bool isStaticNumber(const RealNumber* e) noexcept {
   return RealNumber::exactlyZero(e) || RealNumber::exactlyOne(e) ||
          RealNumber::exactlySqrt2over2(e);
 }
 } // namespace constants
 
-constexpr bool RealNumber::exactlyZero(const RealNumber* e) noexcept {
+inline bool RealNumber::exactlyZero(const RealNumber* e) noexcept {
   return clearMark(e) == &constants::zero;
 }
 
-constexpr bool RealNumber::exactlyOne(const RealNumber* e) noexcept {
+inline bool RealNumber::exactlyOne(const RealNumber* e) noexcept {
   return clearMark(e) == &constants::one;
 }
 
-constexpr bool RealNumber::exactlySqrt2over2(const RealNumber* e) noexcept {
+inline bool RealNumber::exactlySqrt2over2(const RealNumber* e) noexcept {
   return clearMark(e) == &constants::sqrt2over2;
 }
 } // namespace dd

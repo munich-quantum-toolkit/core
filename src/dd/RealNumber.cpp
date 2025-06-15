@@ -55,12 +55,10 @@ bool RealNumber::isMarkedPointer(const RealNumber* p) noexcept {
   return (reinterpret_cast<std::uintptr_t>(p) & RealNumber::MARK_BIT) != 0U;
 }
 
-#if !defined(__cpp_lib_bit_cast) || __cpp_lib_bit_cast < 201806L
 RealNumber* RealNumber::clearMark(const RealNumber* p) noexcept {
   return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(p) &
                                        ~RealNumber::MARK_BIT);
 }
-#endif
 
 fp RealNumber::val(const RealNumber* e) noexcept {
   assert(e != nullptr);
