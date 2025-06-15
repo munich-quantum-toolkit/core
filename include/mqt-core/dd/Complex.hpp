@@ -55,7 +55,7 @@ struct Complex {
    * otherwise.
    * @see RealNumber::exactlyZero
    */
-  [[nodiscard]] constexpr bool exactlyZero() const noexcept {
+  [[nodiscard]] bool exactlyZero() const noexcept {
     return RealNumber::exactlyZero(r) && RealNumber::exactlyZero(i);
   }
 
@@ -66,7 +66,7 @@ struct Complex {
    * @see RealNumber::exactlyOne
    * @see RealNumber::exactlyZero
    */
-  [[nodiscard]] constexpr bool exactlyOne() const noexcept {
+  [[nodiscard]] bool exactlyOne() const noexcept {
     return RealNumber::exactlyOne(r) && RealNumber::exactlyZero(i);
   }
 
