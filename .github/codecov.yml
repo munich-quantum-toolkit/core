@@ -37,13 +37,13 @@ flag_management:
           threshold: 1%
     - name: mlir
       paths:
-        - "mlir/"
+        - "mlir"
       statuses:
         - type: project
           threshold: 0.5%
           removed_code_behavior: adjust_base
         - type: patch
-          target: 90%
+          target: 95%
           threshold: 1%
 
 parsers:
