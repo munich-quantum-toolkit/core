@@ -341,8 +341,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
-          files: mlir_coverage.info
-          flags: MLIR
-          name: MLIR Coverage Report
+          flags: mlir
+          name: mlir-coverage-llvm-${{ matrix.llvm-version }}
           fail_ci_if_error: true
           use_oidc: ${{ !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) }}
