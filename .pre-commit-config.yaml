@@ -70,7 +70,7 @@ repos:
     rev: v1.16.0
     hooks:
       - id: mypy
-        files: ^(src/mqt|test/python|noxfile.py)
+        files: ^(python/mqt|test/python|noxfile.py)
         args: []
         additional_dependencies:
           - nox
@@ -92,7 +92,7 @@ repos:
 
   # Clang-format the C++ part of the code base automatically
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v20.1.5
+    rev: v20.1.6
     hooks:
       - id: clang-format
         types_or: [c++, c, cuda]
