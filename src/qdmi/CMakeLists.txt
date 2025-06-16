@@ -11,9 +11,9 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-driver)
 if(NOT TARGET ${TARGET_NAME})
 
   add_mqt_core_library(${TARGET_NAME})
-  target_sources(${TARGET_NAME} PRIVATE driver.cpp)
+  target_sources(${TARGET_NAME} PRIVATE driver.cpp ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Macros.hpp)
   target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver.hpp)
+                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Driver.hpp)
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi MQT::CoreNaQDMI
