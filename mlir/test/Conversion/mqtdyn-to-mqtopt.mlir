@@ -36,7 +36,7 @@ module {
         // CHECK: %[[q_8:.*]] = mqtopt.u(%[[c_0]], %[[c_0]] static [3.000000e-01] mask [false, true, false]) %[[q_6]] 
         mqtdyn.u(%cst, %cst static [3.000000e-01] mask [false, true, false]) %q1
         // CHECK: %[[q_9:.*]], [[b_0:.*]] = "mqtopt.measure"(%[[q_7]])
-        // CHECK: %[[q_10:.*]], [[b_0:.*]] = "mqtopt.measure"(%[[q_8]])
+        // CHECK: %[[q_10:.*]], [[b_1:.*]] = "mqtopt.measure"(%[[q_8]])
         %c0 = "mqtdyn.measure" (%q0) : (!mqtdyn.Qubit) -> i1
         %c1 = "mqtdyn.measure" (%q1) : (!mqtdyn.Qubit) -> i1
         // CHECK: %[[reg_6:.*]] = "mqtopt.insertQubit"(%[[reg_5]], %[[q_9]]) <{index_attr = 0 : i64}>
