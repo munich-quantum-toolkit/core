@@ -6,15 +6,10 @@
 #
 # Licensed under the MIT License
 
-function(add_mqt_core_binding target_name)
+function(add_mqt_python_binding package_name target_name)
   # parse the arguments
   cmake_parse_arguments(ARG "" "MODULE_NAME;INSTALL_DIR" "LINK_LIBS" ${ARGN})
   set(SOURCES ${ARG_UNPARSED_ARGUMENTS})
-
-  # set default "." for INSTALL_DIR
-  if(NOT ARG_INSTALL_DIR)
-    set(ARG_INSTALL_DIR ".")
-  endif()
 
   # declare the Python module
   pybind11_add_module(
@@ -27,13 +22,20 @@ function(add_mqt_core_binding target_name)
     # source code goes here
     ${SOURCES})
 
+  # set default "." for INSTALL_DIR
+  if(NOT ARG_INSTALL_DIR)
+    set(ARG_INSTALL_DIR ".")
+  endif()
+
   if(ARG_MODULE_NAME)
     # the library name must be the same as the module name
     set_target_properties(${target_name} PROPERTIES OUTPUT_NAME ${ARG_MODULE_NAME})
-    target_compile_definitions(${target_name} PRIVATE MQT_CORE_MODULE_NAME=${ARG_MODULE_NAME})
+    target_compile_definitions(${target_name}
+                               PRIVATE MQT_${package_name}_MODULE_NAME=${ARG_MODULE_NAME})
   else()
     # use the target name as the module name
-    target_compile_definitions(${target_name} PRIVATE MQT_CORE_MODULE_NAME=${target_name})
+    target_compile_definitions(${target_name}
+                               PRIVATE MQT_${package_name}_MODULE_NAME=${target_name})
   endif()
 
   # add project libraries to the link libraries
@@ -46,5 +48,5 @@ function(add_mqt_core_binding target_name)
   install(
     TARGETS ${target_name}
     DESTINATION ${ARG_INSTALL_DIR}
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+    COMPONENT ${MQT_${package_name}_TARGET_NAME}_Python)
 endfunction()
