@@ -84,6 +84,12 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
   return true;
 }
 
+/**
+ * Computes the time unit factor based on the device configuration.
+ * @param device is the Protobuf message containing the device configuration.
+ * @returns a factor every time value must be multiplied with to convert it to
+ * microseconds.
+ */
 [[nodiscard]] auto getTimeUnit(const Device& device) -> double {
   if (device.time_unit().unit() == "us") {
     return static_cast<double>(device.time_unit().value());
@@ -96,6 +102,12 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
   throw std::runtime_error(ss.str());
 }
 
+/**
+ * Computes the length unit factor based on the device configuration.
+ * @param device is the Protobuf message containing the device configuration.
+ * @returns a factor every length value must be multiplied with to convert it to
+ * micrometers.
+ */
 [[nodiscard]] auto getLengthUnit(const Device& device) -> double {
   if (device.length_unit().unit() == "um") {
     return static_cast<double>(device.length_unit().value());
