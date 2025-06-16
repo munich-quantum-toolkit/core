@@ -448,12 +448,20 @@ auto initialize(const std::vector<Library>& additionalLibraries) -> void {
 }
 
 auto finalize() -> void {
+  // Free all existing sessions
   while (!sessions().empty()) {
     QDMI_session_free(sessions().begin()->first);
   }
+  // By clearing the devices, we ensure that all device sessions are freed and
+  // the dynamic libraries are closed, see the destructor of `DeviceLibrary`
+  // and `QDMI_Device_impl_d` for details.
   devices().clear();
   dynamicDeviceLibraries().clear();
-  staticDeviceLibraries().fill(nullptr);
+  // Clear the static device libraries in the same way just that there is no
+  // `clear` method for the array.
+  for (auto& lib : staticDeviceLibraries()) {
+    lib.reset();
+  }
 }
 } // namespace na
 
