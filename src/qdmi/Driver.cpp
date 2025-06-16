@@ -43,6 +43,7 @@
 #include INCLUDE(NTH_MAX(9, DEVICE_LIST_LOWERCASE))
 // NOLINTEND(readability-duplicate-include)
 
+namespace qc {
 // Anonymous namespace to enforce internal linkage
 namespace {
 /**
@@ -126,13 +127,14 @@ struct DeviceLibrary {
   }
 };
 } // namespace
+} // namespace qc
 
 /**
  * Definition of the QDMI Device.
  */
 struct QDMI_Device_impl_d {
   /// The device library that provides the device interface functions.
-  const DeviceLibrary* library = nullptr;
+  const qc::DeviceLibrary* library = nullptr;
   /// The device session handle.
   QDMI_Device_Session session = nullptr;
 
@@ -148,7 +150,7 @@ struct QDMI_Device_impl_d {
  */
 struct QDMI_Session_impl_d {
   /// The status of the session.
-  SessionStatus status = SessionStatus::ALLOCATED;
+  qc::SessionStatus status = qc::SessionStatus::ALLOCATED;
 };
 
 /**
@@ -159,6 +161,7 @@ struct QDMI_Job_impl_d {
   QDMI_Device device = nullptr; ///< The device handle associated with the job.
 };
 
+namespace qc {
 // Anonymous namespace to enforce internal linkage
 namespace {
 /**
@@ -429,8 +432,6 @@ auto addDevice(const DeviceLibrary& library) -> void {
 }
 } // namespace
 
-// `na` namespace for the public API of the MQT QDMI driver
-namespace na {
 auto initialize(const std::vector<Library>& additionalLibraries) -> void {
   // Initialize known static device libraries
   ITERATE_I(ADD_STATIC_DEVICE_LIBRARY, DEVICE_LIST_UPPERCASE)
@@ -463,14 +464,14 @@ auto finalize() -> void {
     lib.reset();
   }
 }
-} // namespace na
+} // namespace qc
 
 int QDMI_session_alloc(QDMI_Session* session) {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   auto uniqueSession = std::make_unique<QDMI_Session_impl_d>();
-  *session = sessions()
+  *session = qc::sessions()
                  .emplace(uniqueSession.get(), std::move(uniqueSession))
                  .first->first;
   return QDMI_SUCCESS;
@@ -480,14 +481,14 @@ int QDMI_session_init(QDMI_Session session) {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (session->status != SessionStatus::ALLOCATED) {
+  if (session->status != qc::SessionStatus::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
-  session->status = SessionStatus::INITIALIZED;
+  session->status = qc::SessionStatus::INITIALIZED;
   return QDMI_SUCCESS;
 }
 
-void QDMI_session_free(QDMI_Session session) { sessions().erase(session); }
+void QDMI_session_free(QDMI_Session session) { qc::sessions().erase(session); }
 
 int QDMI_session_set_parameter(QDMI_Session session,
                                QDMI_Session_Parameter param, const size_t size,
@@ -496,7 +497,7 @@ int QDMI_session_set_parameter(QDMI_Session session,
       param >= QDMI_SESSION_PARAMETER_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (session->status != SessionStatus::ALLOCATED) {
+  if (session->status != qc::SessionStatus::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
   return QDMI_ERROR_NOTSUPPORTED;
@@ -509,19 +510,19 @@ int QDMI_session_query_session_property(QDMI_Session session,
       prop >= QDMI_SESSION_PROPERTY_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (session->status != SessionStatus::INITIALIZED) {
+  if (session->status != qc::SessionStatus::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
   if (prop == (QDMI_SESSION_PROPERTY_DEVICES)) {
     if (value != nullptr) {
-      if (size < devices().size() * sizeof(QDMI_Device)) {
+      if (size < qc::devices().size() * sizeof(QDMI_Device)) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
-      memcpy(value, static_cast<const void*>(devices().data()),
-             devices().size() * sizeof(QDMI_Device));
+      memcpy(value, static_cast<const void*>(qc::devices().data()),
+             qc::devices().size() * sizeof(QDMI_Device));
     }
     if (sizeRet != nullptr) {
-      *sizeRet = devices().size() * sizeof(QDMI_Device);
+      *sizeRet = qc::devices().size() * sizeof(QDMI_Device);
     }
     return QDMI_SUCCESS;
   }

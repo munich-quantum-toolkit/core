@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace na {
+namespace qc {
 struct Library {
   std::string prefix;
   std::string path;
@@ -35,4 +35,4 @@ auto initialize(const std::vector<Library>& additionalLibraries = {}) -> void;
  * @returns void
  */
 auto finalize() -> void;
-} // namespace na
+} // namespace qc
