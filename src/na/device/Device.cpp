@@ -126,6 +126,15 @@ namespace {
 }
 
 /**
+ * @brief Provides access to the number of qubits in the device.
+ * @returns a reference to a static variable that stores the number of qubits.
+ */
+[[nodiscard]] auto qubitsNum() -> size_t& {
+  static size_t qubitsNum = 0;
+  return qubitsNum;
+}
+
+/**
  * @brief Provides access to the lists of sites and operations.
  * @returns a reference to a static vector of unique pointers to
  * @ref MQT_NA_QDMI_Site_impl_d.
@@ -239,6 +248,7 @@ struct DecoherenceTimes {
 
 int MQT_NA_QDMI_device_initialize() {
   INITIALIZE_NAME(name());
+  INITIALIZE_QUBITSNUM(qubitsNum());
   INITIALIZE_SITES(sites());
   INITIALIZE_OPERATIONS(operations());
   INITIALIZE_T1(decoherence().t1);
@@ -417,6 +427,8 @@ int MQT_NA_QDMI_device_session_query_device_property(
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_STATUS, QDMI_Device_Status,
                             QDMI_DEVICE_STATUS_OFFLINE, prop, size, value,
                             sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum(),
+                            prop, size, value, sizeRet)
   // This device never needs calibration
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION, size_t, 0,
                             prop, size, value, sizeRet)

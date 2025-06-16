@@ -111,14 +111,26 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
 /**
  * @brief Writes the name from the Protobuf message.
  * @param device The Protobuf message containing the device configuration.
+ * @param os The output stream to write the sites to.
  */
 auto writeName(const Device& device, std::ostream& os) -> void {
   os << "#define INITIALIZE_NAME(var) var = \"" << device.name() << "\"\n";
 }
 
 /**
+ * @brief Writes the qubits number from the Protobuf message.
+ * @param device The Protobuf message containing the device configuration.
+ * @param os The output stream to write the sites to.
+ */
+auto writeQubitsNum(const Device& device, std::ostream& os) -> void {
+  os << "#define INITIALIZE_QUBITSNUM(var) var = " << device.num_qubits()
+     << "UL\n";
+}
+
+/**
  * @brief Writes the sites from the Protobuf message.
  * @param device The Protobuf message containing the device configuration.
+ * @param os The output stream to write the sites to.
  */
 auto writeSites(const Device& device, std::ostream& os) -> void {
   size_t count = 0;
@@ -159,6 +171,8 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
 /**
  * @brief Imports the operations from the Protobuf message into the device.
  * @param device The Protobuf message containing the device configuration.
+ * @param timeUnit The time unit to use for the operations.
+ * @param os The output stream to write the sites to.
  */
 auto writeOperations(const Device& device, const double timeUnit,
                      std::ostream& os) -> void {
@@ -226,6 +240,8 @@ auto writeOperations(const Device& device, const double timeUnit,
 /**
  * @brief Writes the decoherence times from the Protobuf message.
  * @param device The Protobuf message containing the device configuration.
+ * @param timeUnit The time unit to use for the decoherence times.
+ * @param os The output stream to write the sites to.
  */
 auto writeDecoherenceTimes(const Device& device, const double timeUnit,
                            std::ostream& os) -> void {
@@ -321,6 +337,7 @@ auto writeHeaderFile(const Device& device, const std::string& path) -> void {
   ofs << "#pragma once\n\n";
   const auto timeUnit = getTimeUnit(device);
   writeName(device, ofs);
+  writeQubitsNum(device, ofs);
   writeSites(device, ofs);
   writeOperations(device, timeUnit, ofs);
   writeDecoherenceTimes(device, timeUnit, ofs);
