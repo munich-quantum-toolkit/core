@@ -176,7 +176,7 @@
 
 // Iterate over a sequence with a macro accepting the index and one element of
 // the sequence at a time. The macro is applied to each element of the sequence
-// with the index starting at 1.
+// with the index starting at 0.
 #define ITERATE_I(macro, seq) CONTINUE_I_1(macro, (seq))
 
 #define ITERATE_I_1(macro, seq)                                                \
@@ -199,31 +199,31 @@
   ITE(EMPTY(seq), BREAK, CONTINUE_I_10)(macro, (seq))
 
 #define CONTINUE_I_1(macro, seq)                                               \
-  APPLY2(macro, 1, APPLY_PAREN(HEAD, seq))                                     \
+  APPLY2(macro, 0, APPLY_PAREN(HEAD, seq))                                     \
   ITERATE_I_1(macro, APPLY_PAREN(TAIL, seq))
 #define CONTINUE_I_2(macro, seq)                                               \
-  APPLY2(macro, 2, APPLY_PAREN(HEAD, seq))                                     \
+  APPLY2(macro, 1, APPLY_PAREN(HEAD, seq))                                     \
   ITERATE_I_2(macro, APPLY_PAREN(TAIL, seq))
 #define CONTINUE_I_3(macro, seq)                                               \
-  APPLY2(macro, 3, APPLY_PAREN(HEAD, seq))                                     \
+  APPLY2(macro, 2, APPLY_PAREN(HEAD, seq))                                     \
   ITERATE_I_3(macro, APPLY_PAREN(TAIL, seq))
 #define CONTINUE_I_4(macro, seq)                                               \
-  APPLY2(macro, 4, APPLY_PAREN(HEAD, seq))                                     \
+  APPLY2(macro, 3, APPLY_PAREN(HEAD, seq))                                     \
   ITERATE_I_4(macro, APPLY_PAREN(TAIL, seq))
 #define CONTINUE_I_5(macro, seq)                                               \
-  APPLY2(macro, 5, APPLY_PAREN(HEAD, seq))                                     \
+  APPLY2(macro, 4, APPLY_PAREN(HEAD, seq))                                     \
   ITERATE_I_5(macro, APPLY_PAREN(TAIL, seq))
 #define CONTINUE_I_6(macro, seq)                                               \
-  APPLY2(macro, 6, APPLY_PAREN(HEAD, seq))                                     \
+  APPLY2(macro, 5, APPLY_PAREN(HEAD, seq))                                     \
   ITERATE_I_6(macro, APPLY_PAREN(TAIL, seq))
 #define CONTINUE_I_7(macro, seq)                                               \
-  APPLY2(macro, 7, APPLY_PAREN(HEAD, seq))                                     \
+  APPLY2(macro, 6, APPLY_PAREN(HEAD, seq))                                     \
   ITERATE_I_7(macro, APPLY_PAREN(TAIL, seq))
 #define CONTINUE_I_8(macro, seq)                                               \
-  APPLY2(macro, 8, APPLY_PAREN(HEAD, seq))                                     \
+  APPLY2(macro, 7, APPLY_PAREN(HEAD, seq))                                     \
   ITERATE_I_8(macro, APPLY_PAREN(TAIL, seq))
 #define CONTINUE_I_9(macro, seq)                                               \
-  APPLY2(macro, 9, APPLY_PAREN(HEAD, seq))                                     \
+  APPLY2(macro, 8, APPLY_PAREN(HEAD, seq))                                     \
   ITERATE_I_9(macro, APPLY_PAREN(TAIL, seq))
 
 // Include the device headers for the devices in the list. The device headers
