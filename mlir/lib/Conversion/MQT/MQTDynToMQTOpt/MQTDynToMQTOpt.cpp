@@ -48,7 +48,7 @@ public:
       return ::mqt::ir::opt::QubitType::get(ctx);
     });
 
-    // QuregType conversion
+    // QregType conversion
     addConversion([ctx](::mqt::ir::dyn::QubitRegisterType /*type*/) -> Type {
       return ::mqt::ir::opt::QubitRegisterType::get(ctx);
     });
@@ -63,27 +63,29 @@ struct ConvertMQTDynAlloc
   matchAndRewrite(::mqt::ir::dyn::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // create result type
-    auto quregType =
+    auto qregType =
         ::mqt::ir::opt::QubitRegisterType::get(rewriter.getContext());
 
     // create new operation
     auto mqtoptOp = rewriter.create<::mqt::ir::opt::AllocOp>(
-        op.getLoc(), quregType, adaptor.getSize(), adaptor.getSizeAttrAttr());
+        op.getLoc(), qregType, adaptor.getSize(), adaptor.getSizeAttrAttr());
 
-    // replace old operation with new operation
+    auto oldQreg = op->getResult(0);
+    auto newQreg = mqtoptOp->getResult(0);
 
-    auto qureg = op->getResult(0);
-    std::vector<mlir::Operation*> quregUsers(qureg.getUsers().begin(),
-                                             qureg.getUsers().end());
-    for (auto* user : llvm::reverse(quregUsers)) {
+    // get the users of the previous register
+    std::vector<mlir::Operation*> qregUsers(oldQreg.getUsers().begin(),
+                                            oldQreg.getUsers().end());
+
+    // iterate over them and replace the operands with the new one
+    for (auto* user : llvm::reverse(qregUsers)) {
 
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
-        // replace uses of the old qubit with the new qubit result
-        user->replaceUsesOfWith(qureg, mqtoptOp->getResult(0));
+        user->replaceUsesOfWith(oldQreg, newQreg);
       }
     }
-    // rewriter.replaceOp(op, mqtoptOp);
+    // erase old operation
     rewriter.eraseOp(op);
 
     return success();
@@ -103,6 +105,7 @@ struct ConvertMQTDynDealloc
 
     // replace old operation with new operation
     rewriter.replaceOp(op, mqtoptOp);
+
     return success();
   }
 };
@@ -115,81 +118,91 @@ struct ConvertMQTDynExtract
   matchAndRewrite(::mqt::ir::dyn::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // create result types
-    auto quregType =
+    auto qregType =
         ::mqt::ir::opt::QubitRegisterType::get(rewriter.getContext());
     auto qubitType = ::mqt::ir::opt::QubitType::get(rewriter.getContext());
 
     // create new operation
     auto mqtoptOp = rewriter.create<::mqt::ir::opt::ExtractOp>(
-        op.getLoc(), quregType, qubitType, adaptor.getInQreg(),
+        op.getLoc(), qregType, qubitType, adaptor.getInQreg(),
         adaptor.getIndex(), adaptor.getIndexAttrAttr());
 
-    // get the alloc operation to find the dealloc operation
-    auto qureg = mqtoptOp.getInQreg();
-    std::vector<mlir::Operation*> quregUsers(qureg.getUsers().begin(),
-                                             qureg.getUsers().end());
+    auto oldQreg = mqtoptOp.getInQreg();
+    auto newQreg = mqtoptOp->getResult(0);
+    auto oldQubit = op->getResult(0);
+    auto newQubit = mqtoptOp->getResult(1);
+    // get the users of the input register
+    std::vector<mlir::Operation*> qregUsers(oldQreg.getUsers().begin(),
+                                            oldQreg.getUsers().end());
 
-    for (auto* user : quregUsers) {
+    for (auto* user : qregUsers) {
 
-      // Only consider operations after the current operation
+      // find the dealloc operation at the end of the block to place the insert
+      // operation
       if (auto deallocOp = dyn_cast<::mqt::ir::dyn::DeallocOp>(user)) {
-        // create insert operation
 
+        // create insert operation
         auto mqtoptInsertOp = rewriter.create<::mqt::ir::opt::InsertOp>(
-            mqtoptOp.getLoc(), quregType, mqtoptOp->getResult(0),
-            mqtoptOp->getResult(1), mqtoptOp.getIndex(),
+            mqtoptOp.getLoc(), qregType, newQreg, newQubit, mqtoptOp.getIndex(),
             mqtoptOp.getIndexAttrAttr());
 
         // move insert operation to the end before the dealloc operation
         mqtoptInsertOp->moveBefore(deallocOp);
-        deallocOp->replaceUsesOfWith(mqtoptOp.getInQreg(),
-                                     mqtoptInsertOp->getResult(0));
-      } else if (auto insertOp = dyn_cast<::mqt::ir::opt::InsertOp>(user)) {
+        // update the qreg of the dealloc operation
+        deallocOp->replaceUsesOfWith(oldQreg, mqtoptInsertOp->getResult(0));
+      }
+      // if there is already an insert operation move it after the previous one
+      // and update the operands of the operation afterward
+      else if (auto insertOp = dyn_cast<::mqt::ir::opt::InsertOp>(user)) {
+        // create insert operation
+        auto newInsertOp = rewriter.create<::mqt::ir::opt::InsertOp>(
+            mqtoptOp.getLoc(), qregType, insertOp->getResult(0), newQubit,
+            mqtoptOp.getIndex(), mqtoptOp.getIndexAttrAttr());
 
-        auto mqtoptInsertOp = rewriter.create<::mqt::ir::opt::InsertOp>(
-            mqtoptOp.getLoc(), quregType, insertOp->getResult(0),
-            mqtoptOp->getResult(1), mqtoptOp.getIndex(),
-            mqtoptOp.getIndexAttrAttr());
-        mqtoptInsertOp->moveAfter(insertOp);
+        // move new insert operation after the old one
+        newInsertOp->moveAfter(insertOp);
+
+        auto oldInsertQreg = insertOp->getResult(0);
+        auto newInsertQreg = newInsertOp->getResult(0);
+
+        // get the users of the register from the old insert operation
         std::vector<mlir::Operation*> insertUsers(
-            insertOp->getResult(0).getUsers().begin(),
-            insertOp->getResult(0).getUsers().end());
+            oldInsertQreg.getUsers().begin(), oldInsertQreg.getUsers().end());
+
+        // iterate over the users to find the next operation after the new
+        // insert operation and update the operands
         for (auto* insertUser : insertUsers) {
 
           // Only consider operations after the current operation
-          if (!insertUser->isBeforeInBlock(mqtoptInsertOp) &&
-              insertUser != mqtoptInsertOp) {
-
-            // replace uses of the old qubit with the new qubit result
-            insertUser->replaceUsesOfWith(insertOp->getResult(0),
-                                          mqtoptInsertOp->getResult(0));
+          if (!insertUser->isBeforeInBlock(newInsertOp) &&
+              insertUser != newInsertOp) {
+            insertUser->replaceUsesOfWith(oldInsertQreg, newInsertQreg);
+            break;
           }
         }
-        //    insertUsers[0]->replaceUsesOfWith(insertOp->getResult(0),
-        //                                        mqtoptInsertOp->getResult(0));
       }
     }
 
-    auto oldQubit = op->getResult(0);
-    auto newQubit = mqtoptOp->getResult(1);
+    // get the users of the previous qubit
     std::vector<mlir::Operation*> qubitUsers(oldQubit.getUsers().begin(),
                                              oldQubit.getUsers().end());
-
+    // iterate over the users of the old qubit and replace the operands with the
+    // new one
     for (auto* user : llvm::reverse(qubitUsers)) {
 
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
-        // replace uses of the old qubit with the new qubit result
         user->replaceUsesOfWith(oldQubit, newQubit);
       }
     }
 
-    for (auto* user : quregUsers) {
+    // iterate over the users of the old register and replace the operands with
+    // the new one
+    for (auto* user : qregUsers) {
 
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
-        // doesnt work
-        user->replaceUsesOfWith(qureg, mqtoptOp->getResult(0));
+        user->replaceUsesOfWith(oldQreg, newQreg);
       }
     }
 
@@ -215,33 +228,41 @@ struct ConvertMQTDynMeasure
     auto mqtoptOp = rewriter.create<::mqt::ir::opt::MeasureOp>(
         op.getLoc(), qubitType, bitType, adaptor.getInQubits()[0]);
 
-    auto dynResult = op->getResult(0);
+    auto oldBit = op->getResult(0);
+    auto oldQubit = op.getInQubits()[0];
+    auto newBit = mqtoptOp->getResult(1);
+    auto newQubit = mqtoptOp->getResult(0);
 
-    std::vector<mlir::Operation*> resultUsers(dynResult.getUsers().begin(),
-                                              dynResult.getUsers().end());
+    // get the users of the result bit
+    std::vector<mlir::Operation*> bitUsers(oldBit.getUsers().begin(),
+                                           oldBit.getUsers().end());
 
-    std::vector<mlir::Operation*> qubitUsers(
-        op.getInQubits()[0].getUsers().begin(),
-        op.getInQubits()[0].getUsers().end());
+    // get the users of the input qubit
+    std::vector<mlir::Operation*> qubitUsers(oldQubit.getUsers().begin(),
+                                             oldQubit.getUsers().end());
 
+    // iterate over the users of the old qubit and replace the operands with
+    // the new one
     for (auto* user : llvm::reverse(qubitUsers)) {
 
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
-
-        // replace the previous use of the input qubit with the result qubit
-        user->replaceUsesOfWith(op.getInQubits()[0], mqtoptOp->getResult(0));
+        user->replaceUsesOfWith(oldQubit, newQubit);
       }
     }
-    for (auto* user : llvm::reverse(resultUsers)) {
+    // iterate over the users of the old bit and replace the operands with
+    // the new one
+    for (auto* user : llvm::reverse(bitUsers)) {
 
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
-        // replace uses of the old bit with the new bit result
-        user->replaceUsesOfWith(dynResult, mqtoptOp->getResult(1));
+        user->replaceUsesOfWith(oldBit, newBit);
       }
     }
+
+    // erase old operation
     rewriter.eraseOp(op);
+
     return success();
   }
 };
@@ -289,56 +310,48 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateOp> {
           negCtrlQubitsValues.getType(), staticParams, paramMask,
           adaptor.getParams(), inQubitsValues, posCtrlQubitsValues,
           negCtrlQubitsValues);
-
     } else if (llvm::isa<::mqt::ir::dyn::IOp>(op)) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::IOp>(
           op.getLoc(), inQubitsValues.getType(), posCtrlQubitsValues.getType(),
           negCtrlQubitsValues.getType(), staticParams, paramMask,
           adaptor.getParams(), inQubitsValues, posCtrlQubitsValues,
           negCtrlQubitsValues);
-
     } else if (llvm::isa<::mqt::ir::dyn::BarrierOp>(op)) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::BarrierOp>(
           op.getLoc(), inQubitsValues.getType(), posCtrlQubitsValues.getType(),
           negCtrlQubitsValues.getType(), staticParams, paramMask,
           adaptor.getParams(), inQubitsValues, posCtrlQubitsValues,
           negCtrlQubitsValues);
-
     } else if (llvm::isa<::mqt::ir::dyn::HOp>(op)) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::HOp>(
           op.getLoc(), inQubitsValues.getType(), posCtrlQubitsValues.getType(),
           negCtrlQubitsValues.getType(), staticParams, paramMask,
           adaptor.getParams(), inQubitsValues, posCtrlQubitsValues,
           negCtrlQubitsValues);
-
     } else if (llvm::isa<::mqt::ir::dyn::YOp>(op)) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::YOp>(
           op.getLoc(), inQubitsValues.getType(), posCtrlQubitsValues.getType(),
           negCtrlQubitsValues.getType(), staticParams, paramMask,
           adaptor.getParams(), inQubitsValues, posCtrlQubitsValues,
           negCtrlQubitsValues);
-
     } else if (llvm::isa<::mqt::ir::dyn::ZOp>(op)) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::ZOp>(
           op.getLoc(), inQubitsValues.getType(), posCtrlQubitsValues.getType(),
           negCtrlQubitsValues.getType(), staticParams, paramMask,
           adaptor.getParams(), inQubitsValues, posCtrlQubitsValues,
           negCtrlQubitsValues);
-
     } else if (llvm::isa<::mqt::ir::dyn::SOp>(op)) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::SOp>(
           op.getLoc(), inQubitsValues.getType(), posCtrlQubitsValues.getType(),
           negCtrlQubitsValues.getType(), staticParams, paramMask,
           adaptor.getParams(), inQubitsValues, posCtrlQubitsValues,
           negCtrlQubitsValues);
-
     } else if (llvm::isa<::mqt::ir::dyn::SdgOp>(op)) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::SdgOp>(
           op.getLoc(), inQubitsValues.getType(), posCtrlQubitsValues.getType(),
           negCtrlQubitsValues.getType(), staticParams, paramMask,
           adaptor.getParams(), inQubitsValues, posCtrlQubitsValues,
           negCtrlQubitsValues);
-
     } else if (llvm::isa<::mqt::ir::dyn::TOp>(op)) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::TOp>(
           op.getLoc(), inQubitsValues.getType(), posCtrlQubitsValues.getType(),
@@ -492,27 +505,26 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateOp> {
     } else {
       return failure();
     }
-    // replace the uses of the input qubits with the result of the new
-    // operation
+
+    // iterate over all the input qubits and replace their uses with the new
+    // results
     Value value;
     for (size_t i = 0; i < values.size(); i++) {
       value = values[i];
       std::vector<mlir::Operation*> users(value.getUsers().begin(),
                                           value.getUsers().end());
 
-      // Iterate over users in reverse order to update their operands properly
       for (auto* user : llvm::reverse(users)) {
 
         // Only consider operations after the current operation
         if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp &&
             user != op) {
-
           user->replaceUsesOfWith(value, mqtoptOp->getResult(i));
         }
       }
     }
 
-    // erase the previous operation
+    // erase the old operation
     rewriter.eraseOp(op);
 
     return success();
@@ -524,12 +536,13 @@ struct MQTDynToMQTOpt : impl::MQTDynToMQTOptBase<MQTDynToMQTOpt> {
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
-    ConversionTarget target(*context);
-    target.addIllegalDialect<::mqt::ir::dyn::MQTDynDialect>();
-    target.addLegalDialect<::mqt::ir::opt::MQTOptDialect>();
 
+    ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     MQTDynToMQTOptTypeConverter typeConverter(context);
+
+    target.addIllegalDialect<::mqt::ir::dyn::MQTDynDialect>();
+    target.addLegalDialect<::mqt::ir::opt::MQTOptDialect>();
 
     patterns.add<ConvertMQTDynAlloc, ConvertMQTDynExtract, ConvertMQTDynMeasure,
                  ConvertMQTDynDealloc>(typeConverter, context);
@@ -602,6 +615,7 @@ struct MQTDynToMQTOpt : impl::MQTDynToMQTOptBase<MQTDynToMQTOpt> {
     patterns.add<ConvertMQTDynGateOp<::mqt::ir::dyn::UOp>>(typeConverter,
                                                            context);
 
+    // Boilerplate code to prevent: unresolved materialization
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
         patterns, typeConverter);
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
