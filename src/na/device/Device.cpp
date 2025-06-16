@@ -434,6 +434,11 @@ int MQT_NA_QDMI_device_session_query_operation_property(
                               operation->duration, prop, size, value, sizeRet)
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double,
                               operation->fidelity, prop, size, value, sizeRet)
+  } else {
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_DURATION, double, 0.0,
+                              prop, size, value, sizeRet)
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double, 1.0,
+                              prop, size, value, sizeRet)
   }
   if (!isShuttling(operation->type)) {
     if (isSingleQubit(operation->type)) {
