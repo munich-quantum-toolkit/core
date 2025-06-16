@@ -7,8 +7,8 @@
  *
  * Licensed under the MIT License
  */
-#include "mlir/Conversion/MQT/MQTOptToMQTDyn/MQTOptToMQTDyn.h"
-#include "mlir/Conversion/MQT/MQTDynToMQTOpt/MQTDynToMQTOpt.h"
+#include "mlir/Conversion/MQT/MQTOptToMQTDyn/MQTOptToMQTDyn.h" // IWYU pragma: keep
+#include "mlir/Conversion/MQT/MQTDynToMQTOpt/MQTDynToMQTOpt.h" // IWYU pragma: keep
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"  // IWYU pragma: keep
 #include "mlir/Dialect/MQTDyn/Transforms/Passes.h" // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"  // IWYU pragma: keep
