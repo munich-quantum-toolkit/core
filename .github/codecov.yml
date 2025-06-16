@@ -27,7 +27,7 @@ flag_management:
         - "src"
     - name: python
       paths:
-        - "src/mqt/**/*.py"
+        - "python/mqt/**/*.py"
       statuses:
         - type: project
           threshold: 0.5%

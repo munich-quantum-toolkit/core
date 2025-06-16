@@ -72,13 +72,32 @@ project(
   VERSION ${MQT_CORE_VERSION}
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
-include(ExternalDependencies)
+include(cmake/ExternalDependencies.cmake)
+include(AddMQTPythonBinding)
 
 # set the include directory for the build tree
 set(MQT_CORE_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/mqt-core")
 
+if(MQT_CORE_INSTALL)
+  if(APPLE)
+    set(BASEPOINT @loader_path)
+  else()
+    set(BASEPOINT $ORIGIN)
+  endif()
+  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR})
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+endif()
+
+set(MQT_CORE_TARGET_NAME "mqt-core")
+
 # add main library code
 add_subdirectory(src)
+
+# add bindings code if enabled
+if(BUILD_MQT_CORE_BINDINGS)
+  add_subdirectory(bindings)
+endif()
 
 # add test code
 if(BUILD_MQT_CORE_TESTS)
