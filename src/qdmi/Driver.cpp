@@ -12,31 +12,347 @@
  * @brief An example driver implementation in C++.
  */
 
+#define DEVICE_LIST_UPPERCASE (MQT_NA)
+#define DEVICE_LIST_LOWERCASE (mqt_na)
+
 #include "qdmi/Driver.hpp"
 
 #include "qdmi/client.h"
 #include "qdmi/device.h"
-#include "spdlog/sinks/basic_file_sink-inl.h"
 
-#include <cstdlib>
+#include <cstddef>
 #include <dlfcn.h>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#define APPLY(func, arg) func(arg)
+#define APPLY2(func, arg1, arg2) func(arg1, arg2)
+#define APPLY_PAREN(func, arg) func arg
+
+#define CAT(a, b) CAT_I(a, b)
+#define CAT_I(a, b) a##b
+
+#define TO_SEQ(n) TO_SEQ_I(n)
+#define TO_SEQ_I(n) TO_SEQ_##n
+#define TO_SEQ_0
+#define TO_SEQ_1 ()
+#define TO_SEQ_2 () TO_SEQ_1
+#define TO_SEQ_3 () TO_SEQ_2
+#define TO_SEQ_4 () TO_SEQ_3
+#define TO_SEQ_5 () TO_SEQ_4
+#define TO_SEQ_6 () TO_SEQ_5
+#define TO_SEQ_7 () TO_SEQ_6
+#define TO_SEQ_8 () TO_SEQ_7
+#define TO_SEQ_9 () TO_SEQ_8
+
+#define HEAD(x) HEAD_I(HEAD_III x)
+#define HEAD_I(x) HEAD_II(x)
+#define HEAD_II(x, _) x
+#define HEAD_III(x) x, NIL
+
+#define TAIL(seq) TAIL_I seq
+#define TAIL_I(_)
+
+#define EMPTY(seq) HEAD(CAT(EMPTY_, EMPTY_I seq))
+#define EMPTY_I(_) NOT_EMPTY_I
+// NOLINTBEGIN(cppcoreguidelines-macro-to-enum)
+#define EMPTY_NOT_EMPTY_I (0)
+#define EMPTY_EMPTY_I (1)
+// NOLINTEND(cppcoreguidelines-macro-to-enum)
+
+#define SIZE(seq) CAT(SIZE_, SIZE_0 seq)
+#define SIZE_0(_) SIZE_1
+#define SIZE_1(_) SIZE_2
+#define SIZE_2(_) SIZE_3
+#define SIZE_3(_) SIZE_4
+#define SIZE_4(_) SIZE_5
+#define SIZE_5(_) SIZE_6
+#define SIZE_6(_) SIZE_7
+#define SIZE_7(_) SIZE_8
+#define SIZE_8(_) SIZE_9
+
+// NOLINTBEGIN(cppcoreguidelines-macro-to-enum)
+#define SIZE_SIZE_0 0
+#define SIZE_SIZE_1 1
+#define SIZE_SIZE_2 2
+#define SIZE_SIZE_3 3
+#define SIZE_SIZE_4 4
+#define SIZE_SIZE_5 5
+#define SIZE_SIZE_6 6
+#define SIZE_SIZE_7 7
+#define SIZE_SIZE_8 8
+#define SIZE_SIZE_9 9
+// NOLINTEND(cppcoreguidelines-macro-to-enum)
+
+#define NTH(i, seq) NTH_I(NTH_##i seq)
+#define NTH_I(e) NTH_II(e)
+#define NTH_II(e, _) e
+#define NTH_0(e) e, NIL
+#define NTH_1(_) NTH_0
+#define NTH_2(_) NTH_1
+#define NTH_3(_) NTH_2
+#define NTH_4(_) NTH_3
+#define NTH_5(_) NTH_4
+#define NTH_6(_) NTH_5
+#define NTH_7(_) NTH_6
+#define NTH_8(_) NTH_7
+
+#define SUB(a, b) SUB_I(TO_SEQ(a), b)
+#define SUB_I(a, b) SIZE(CAT(SUB_, SUB_##b a))
+#define SUB_1(_) SUB_0
+#define SUB_2(_) SUB_1
+#define SUB_3(_) SUB_2
+#define SUB_4(_) SUB_3
+#define SUB_5(_) SUB_4
+#define SUB_6(_) SUB_5
+#define SUB_7(_) SUB_6
+#define SUB_8(_) SUB_7
+#define SUB_9(_) SUB_8
+#define SUB_SUB_0
+#define SUB_SUB_1
+#define SUB_SUB_2
+#define SUB_SUB_3
+#define SUB_SUB_4
+#define SUB_SUB_5
+#define SUB_SUB_6
+#define SUB_SUB_7
+#define SUB_SUB_8
+#define SUB_SUB_9
+
+#define NOT(x) CAT(NOT_, x)
+// NOLINTBEGIN(cppcoreguidelines-macro-to-enum)
+#define NOT_0 1
+#define NOT_1 0
+// NOLINTEND(cppcoreguidelines-macro-to-enum)
+#define BOOL(x) NOT(EMPTY(TO_SEQ(x)))
+
+#define ITE(bit, t, f) ITE_I(bit, t, f)
+#define ITE_I(bit, t, f) CAT(ITE_, bit(t, f))
+#define ITE_0(t, f) f
+#define ITE_1(t, f) t
+
+#define MIN(a, b) ITE(BOOL(SUB(b, a)), a, b)
+
+#define NTH_MAX(i, seq) NTH_MAX_I(i, SUB(SIZE(seq), 1), seq)
+#define NTH_MAX_I(i, n, seq) NTH_MAX_II(MIN(i, n), seq)
+#define NTH_MAX_II(i, seq) NTH(i, seq)
+
+#define ITERATE(macro, seq) CONTINUE_1(macro, (seq))
+
+#define ITERATE_1(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_2)(macro, (seq))
+#define ITERATE_2(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_3)(macro, (seq))
+#define ITERATE_3(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_4)(macro, (seq))
+#define ITERATE_4(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_5)(macro, (seq))
+#define ITERATE_5(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_6)(macro, (seq))
+#define ITERATE_6(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_7)(macro, (seq))
+#define ITERATE_7(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_8)(macro, (seq))
+#define ITERATE_8(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_9)(macro, (seq))
+#define ITERATE_9(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_10)(macro, (seq))
+
+#define CONTINUE_1(macro, seq)                                                 \
+  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_1(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_2(macro, seq)                                                 \
+  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_2(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_3(macro, seq)                                                 \
+  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_3(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_4(macro, seq)                                                 \
+  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_4(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_5(macro, seq)                                                 \
+  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_5(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_6(macro, seq)                                                 \
+  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_6(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_7(macro, seq)                                                 \
+  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_7(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_8(macro, seq)                                                 \
+  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_8(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_9(macro, seq)                                                 \
+  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_9(macro, APPLY_PAREN(TAIL, seq))
+
+#define BREAK(macro, seq)
+
+#define ITERATE_I(macro, seq) CONTINUE_I_1(macro, (seq))
+
+#define ITERATE_I_1(macro, seq)                                                \
+  ITE(EMPTY(seq), BREAK, CONTINUE_I_2)(macro, (seq))
+#define ITERATE_I_2(macro, seq)                                                \
+  ITE(EMPTY(seq), BREAK, CONTINUE_I_3)(macro, (seq))
+#define ITERATE_I_3(macro, seq)                                                \
+  ITE(EMPTY(seq), BREAK, CONTINUE_I_4)(macro, (seq))
+#define ITERATE_I_4(macro, seq)                                                \
+  ITE(EMPTY(seq), BREAK, CONTINUE_I_5)(macro, (seq))
+#define ITERATE_I_5(macro, seq)                                                \
+  ITE(EMPTY(seq), BREAK, CONTINUE_I_6)(macro, (seq))
+#define ITERATE_I_6(macro, seq)                                                \
+  ITE(EMPTY(seq), BREAK, CONTINUE_I_7)(macro, (seq))
+#define ITERATE_I_7(macro, seq)                                                \
+  ITE(EMPTY(seq), BREAK, CONTINUE_I_8)(macro, (seq))
+#define ITERATE_I_8(macro, seq)                                                \
+  ITE(EMPTY(seq), BREAK, CONTINUE_I_9)(macro, (seq))
+#define ITERATE_I_9(macro, seq)                                                \
+  ITE(EMPTY(seq), BREAK, CONTINUE_I_10)(macro, (seq))
+
+#define CONTINUE_I_1(macro, seq)                                               \
+  APPLY2(macro, 1, APPLY_PAREN(HEAD, seq))                                     \
+  ITERATE_I_1(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_I_2(macro, seq)                                               \
+  APPLY2(macro, 2, APPLY_PAREN(HEAD, seq))                                     \
+  ITERATE_I_2(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_I_3(macro, seq)                                               \
+  APPLY2(macro, 3, APPLY_PAREN(HEAD, seq))                                     \
+  ITERATE_I_3(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_I_4(macro, seq)                                               \
+  APPLY2(macro, 4, APPLY_PAREN(HEAD, seq))                                     \
+  ITERATE_I_4(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_I_5(macro, seq)                                               \
+  APPLY2(macro, 5, APPLY_PAREN(HEAD, seq))                                     \
+  ITERATE_I_5(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_I_6(macro, seq)                                               \
+  APPLY2(macro, 6, APPLY_PAREN(HEAD, seq))                                     \
+  ITERATE_I_6(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_I_7(macro, seq)                                               \
+  APPLY2(macro, 7, APPLY_PAREN(HEAD, seq))                                     \
+  ITERATE_I_7(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_I_8(macro, seq)                                               \
+  APPLY2(macro, 8, APPLY_PAREN(HEAD, seq))                                     \
+  ITERATE_I_8(macro, APPLY_PAREN(TAIL, seq))
+#define CONTINUE_I_9(macro, seq)                                               \
+  APPLY2(macro, 9, APPLY_PAREN(HEAD, seq))                                     \
+  ITERATE_I_9(macro, APPLY_PAREN(TAIL, seq))
+
+// clang-format off
+#define INCLUDE(prefix) APPLY(STR, CAT(prefix, _qdmi/device.h))
+// clang-format on
+#define STR(x) #x
+
+// NOLINTBEGIN(readability-duplicate-include)
+#include INCLUDE(NTH_MAX(0, DEVICE_LIST_LOWERCASE))
+#include INCLUDE(NTH_MAX(1, DEVICE_LIST_LOWERCASE))
+#include INCLUDE(NTH_MAX(2, DEVICE_LIST_LOWERCASE))
+#include INCLUDE(NTH_MAX(3, DEVICE_LIST_LOWERCASE))
+#include INCLUDE(NTH_MAX(4, DEVICE_LIST_LOWERCASE))
+#include INCLUDE(NTH_MAX(5, DEVICE_LIST_LOWERCASE))
+#include INCLUDE(NTH_MAX(6, DEVICE_LIST_LOWERCASE))
+#include INCLUDE(NTH_MAX(7, DEVICE_LIST_LOWERCASE))
+#include INCLUDE(NTH_MAX(8, DEVICE_LIST_LOWERCASE))
+#include INCLUDE(NTH_MAX(9, DEVICE_LIST_LOWERCASE))
+// NOLINTEND(readability-duplicate-include)
+
+#define PREFIX_CAST(prefix, type, var)                                         \
+  /* NOLINTNEXTLINE(bugprone-casting-through-void) */                          \
+  static_cast<prefix##_QDMI_##type>(static_cast<void*>(var))
+#define PREFIX_PTR_CAST(prefix, type, var) PREFIX_CAST(prefix, type*, var)
+// clang-format off
+#define PREFIX_CONST_PTR_CAST(prefix, type, var)                               \
+  /* NOLINTBEGIN(bugprone-casting-through-void,bugprone-macro-parentheses) */  \
+  static_cast<const prefix## _QDMI_## type*>(static_cast<const void*>(var))    \
+  /* NOLINTEND(bugprone-casting-through-void,bugprone-macro-parentheses) */
+// clang-format on
+
+#define ADD_DEVICE(prefix)                                                     \
+  int prefix##_device_initialize(void) {                                       \
+    return prefix##_QDMI_device_initialize();                                  \
+  }                                                                            \
+  int prefix##_device_finalize(void) {                                         \
+    return prefix##_QDMI_device_finalize();                                    \
+  }                                                                            \
+  int prefix##_device_session_alloc(QDMI_Device_Session* session) {            \
+    return prefix##_QDMI_device_session_alloc(                                 \
+        PREFIX_PTR_CAST(prefix, Device_Session, session));                     \
+  }                                                                            \
+  int prefix##_device_session_set_parameter(                                   \
+      QDMI_Device_Session session, QDMI_Device_Session_Parameter param,        \
+      size_t size, const void* value) {                                        \
+    return prefix##_QDMI_device_session_set_parameter(                         \
+        PREFIX_CAST(prefix, Device_Session, session), param, size, value);     \
+  }                                                                            \
+  int prefix##_device_session_init(QDMI_Device_Session session) {              \
+    return prefix##_QDMI_device_session_init(                                  \
+        PREFIX_CAST(prefix, Device_Session, session));                         \
+  }                                                                            \
+  void prefix##_device_session_free(QDMI_Device_Session session) {             \
+    return prefix##_QDMI_device_session_free(                                  \
+        PREFIX_CAST(prefix, Device_Session, session));                         \
+  }                                                                            \
+  int prefix##_device_session_query_device_property(                           \
+      QDMI_Device_Session session, QDMI_Device_Property prop, size_t size,     \
+      void* value, size_t* size_ret) {                                         \
+    return prefix##_QDMI_device_session_query_device_property(                 \
+        PREFIX_CAST(prefix, Device_Session, session), prop, size, value,       \
+        size_ret);                                                             \
+  }                                                                            \
+  int prefix##_device_session_query_site_property(                             \
+      QDMI_Device_Session session, QDMI_Site site, QDMI_Site_Property prop,    \
+      size_t size, void* value, size_t* size_ret) {                            \
+    return prefix##_QDMI_device_session_query_site_property(                   \
+        PREFIX_CAST(prefix, Device_Session, session),                          \
+        PREFIX_CAST(prefix, Site, site), prop, size, value, size_ret);         \
+  }                                                                            \
+  int prefix##_device_session_query_operation_property(                        \
+      QDMI_Device_Session session, QDMI_Operation operation, size_t num_sites, \
+      const QDMI_Site* sites, size_t num_params, const double* params,         \
+      QDMI_Operation_Property prop, size_t size, void* value,                  \
+      size_t* size_ret) {                                                      \
+    return prefix##_QDMI_device_session_query_operation_property(              \
+        PREFIX_CAST(prefix, Device_Session, session),                          \
+        PREFIX_CAST(prefix, Operation, operation), num_sites,                  \
+        PREFIX_CONST_PTR_CAST(prefix, Site, sites), num_params, params, prop,  \
+        size, value, size_ret);                                                \
+  }                                                                            \
+  int prefix##_device_session_create_device_job(QDMI_Device_Session session,   \
+                                                QDMI_Device_Job* job) {        \
+    return prefix##_QDMI_device_session_create_device_job(                     \
+        PREFIX_CAST(prefix, Device_Session, session),                          \
+        PREFIX_PTR_CAST(prefix, Device_Job, job));                             \
+  }                                                                            \
+  int prefix##_device_job_set_parameter(QDMI_Device_Job job,                   \
+                                        QDMI_Device_Job_Parameter param,       \
+                                        size_t size, const void* value) {      \
+    return prefix##_QDMI_device_job_set_parameter(                             \
+        PREFIX_CAST(prefix, Device_Job, job), param, size, value);             \
+  }                                                                            \
+  int prefix##_device_job_submit(QDMI_Device_Job job) {                        \
+    return prefix##_QDMI_device_job_submit(                                    \
+        PREFIX_CAST(prefix, Device_Job, job));                                 \
+  }                                                                            \
+  int prefix##_device_job_cancel(QDMI_Device_Job job) {                        \
+    return prefix##_QDMI_device_job_cancel(                                    \
+        PREFIX_CAST(prefix, Device_Job, job));                                 \
+  }                                                                            \
+  int prefix##_device_job_check(QDMI_Device_Job job,                           \
+                                QDMI_Job_Status* status) {                     \
+    return prefix##_QDMI_device_job_check(                                     \
+        PREFIX_CAST(prefix, Device_Job, job), status);                         \
+  }                                                                            \
+  int prefix##_device_job_wait(QDMI_Device_Job job) {                          \
+    return prefix##_QDMI_device_job_wait(                                      \
+        PREFIX_CAST(prefix, Device_Job, job));                                 \
+  }                                                                            \
+  int prefix##_device_job_get_results(QDMI_Device_Job job,                     \
+                                      QDMI_Job_Result result, size_t size,     \
+                                      void* data, size_t* size_ret) {          \
+    return prefix##_QDMI_device_job_get_results(                               \
+        PREFIX_CAST(prefix, Device_Job, job), result, size, data, size_ret);   \
+  }                                                                            \
+  void prefix##_device_job_free(QDMI_Device_Job job) {                         \
+    return prefix##_QDMI_device_job_free(                                      \
+        PREFIX_CAST(prefix, Device_Job, job));                                 \
+  }
+
 namespace {
+ITERATE(ADD_DEVICE, DEVICE_LIST_UPPERCASE)
+
 enum class SessionStatus : uint8_t {
   ALLOCATED,  ///< The session has been allocated but not initialized
   INITIALIZED ///< The session has been initialized and is ready for use
 };
-} // namespace
 
 /**
  * @brief Definition of the QDMI Library.
  */
 struct DeviceLibrary {
-  void* lib_handle = nullptr;
+  void* libHandle = nullptr;
 
   // NOLINTBEGIN(readability-identifier-naming)
   /// Function pointer to @ref QDMI_device_initialize.
@@ -96,11 +412,12 @@ struct DeviceLibrary {
       device_finalize();
     }
     // close the dynamic library
-    if (lib_handle != nullptr) {
-      dlclose(lib_handle);
+    if (libHandle != nullptr) {
+      dlclose(libHandle);
     }
   }
 };
+} // namespace
 
 /**
  * @brief Definition of the QDMI Device.
@@ -134,39 +451,82 @@ struct QDMI_Job_impl_d {
 
 namespace {
 
-[[nodiscard]] auto deviceLibraries()
+[[nodiscard]] auto staticDeviceLibraries()
+    -> std::array<std::unique_ptr<DeviceLibrary>,
+                  SIZE(DEVICE_LIST_UPPERCASE)>& {
+  static std::array<std::unique_ptr<DeviceLibrary>, SIZE(DEVICE_LIST_UPPERCASE)>
+      libraries;
+  return libraries;
+}
+
+[[nodiscard]] auto dynamicDeviceLibraries()
     -> std::unordered_map<void*, std::unique_ptr<DeviceLibrary>>& {
   static std::unordered_map<void*, std::unique_ptr<DeviceLibrary>> libraries;
   return libraries;
 }
 
-#define LOAD_SYMBOL(device, prefix, symbol)                                    \
+#define ADD_STATIC_DEVICE_LIBRARY(id, prefix)                                  \
+  auto& library =                                                              \
+      *(staticDeviceLibraries()[id] = std::make_unique<DeviceLibrary>());      \
+  /* static library has no handle */                                           \
+  library.libHandle = nullptr;                                                 \
+  /* load the function symbols from the dynamic library */                     \
+  library.device_initialize = prefix##_##device_initialize;                    \
+  library.device_finalize = prefix##_##device_finalize;                        \
+  /* device session interface */                                               \
+  library.device_session_alloc = prefix##_##device_session_alloc;              \
+  library.device_session_init = prefix##_##device_session_init;                \
+  library.device_session_free = prefix##_##device_session_free;                \
+  library.device_session_set_parameter =                                       \
+      prefix##_##device_session_set_parameter;                                 \
+  /* device job interface */                                                   \
+  library.device_session_create_device_job =                                   \
+      prefix##_##device_session_create_device_job;                             \
+  library.device_job_free = prefix##_##device_job_free;                        \
+  library.device_job_set_parameter = prefix##_##device_job_set_parameter;      \
+  library.device_job_submit = prefix##_##device_job_submit;                    \
+  library.device_job_cancel = prefix##_##device_job_cancel;                    \
+  library.device_job_check = prefix##_##device_job_check;                      \
+  library.device_job_wait = prefix##_##device_job_wait;                        \
+  library.device_job_get_results = prefix##_##device_job_get_results;          \
+  /* device query interface */                                                 \
+  library.device_session_query_device_property =                               \
+      prefix##_##device_session_query_device_property;                         \
+  library.device_session_query_site_property =                                 \
+      prefix##_##device_session_query_site_property;                           \
+  library.device_session_query_operation_property =                            \
+      prefix##_##device_session_query_operation_property;                      \
+  /* initialize the device */                                                  \
+  library.device_initialize();
+
+#define LOAD_SYMBOL(library, prefix, symbol)                                   \
   {                                                                            \
-    const std::string symbol_name = std::string(prefix) + "_QDMI_" + #symbol;  \
-    (device).symbol = reinterpret_cast<decltype((device).symbol)>(             \
-        dlsym((device).lib_handle, symbol_name.c_str()));                      \
-    if ((device).symbol == nullptr) {                                          \
-      throw std::runtime_error("Failed to load symbol: " + symbol_name);       \
+    const std::string symbolName = std::string(prefix) + "_QDMI_" + #symbol;   \
+    (library).symbol = reinterpret_cast<decltype((library).symbol)>(           \
+        dlsym((library).libHandle, symbolName.c_str()));                       \
+    if ((library).symbol == nullptr) {                                         \
+      throw std::runtime_error("Failed to load symbol: " + symbolName);        \
     }                                                                          \
   }
 
-void addDeviceLibrary(const std::string& libName, const std::string& prefix) {
-  auto* lib_handle = dlopen(libName.c_str(), RTLD_NOW | RTLD_LOCAL);
-  if (lib_handle == nullptr) {
+void addDynamicDeviceLibrary(const std::string& libName,
+                             const std::string& prefix) {
+  auto* libHandle = dlopen(libName.c_str(), RTLD_NOW | RTLD_LOCAL);
+  if (libHandle == nullptr) {
     throw std::runtime_error("Couldn't open the device library: " + libName);
   }
-  if (const auto it = deviceLibraries().find(lib_handle);
-      it != deviceLibraries().end()) {
+  if (const auto it = dynamicDeviceLibraries().find(libHandle);
+      it != dynamicDeviceLibraries().end()) {
     // dlopen uses reference counting, so we need to decrement the reference
     // count that was increased by dlopen.
-    dlclose(lib_handle);
+    dlclose(libHandle);
     return;
   }
-  auto it = deviceLibraries()
-                .emplace(lib_handle, std::make_unique<DeviceLibrary>())
+  auto it = dynamicDeviceLibraries()
+                .emplace(libHandle, std::make_unique<DeviceLibrary>())
                 .first;
   auto& library = *it->second;
-  library.lib_handle = lib_handle;
+  library.libHandle = libHandle;
 
   try {
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -195,7 +555,7 @@ void addDeviceLibrary(const std::string& libName, const std::string& prefix) {
 
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
   } catch (const std::exception&) {
-    dlclose(lib_handle);
+    dlclose(libHandle);
     throw;
   }
   // initialize the device
@@ -226,22 +586,18 @@ auto addDevice(const DeviceLibrary& library) -> void {
 
 namespace na {
 auto initialize(const std::vector<Library>& additionalLibraries) -> void {
-  std::vector<Library> knownLibraries;
-  std::stringstream libs(KNOWN_LIBRARIES);
-  std::stringstream prefixes(KNOWN_LIBRARY_PREFIXES);
-  std::string lib;
-  std::string prefix;
-  while (std::getline(libs, lib, ' ') && std::getline(prefixes, prefix, ' ')) {
-    knownLibraries.emplace_back(Library{prefix, lib});
-  }
-  for (const auto& [prefix, path] : knownLibraries) {
-    addDeviceLibrary(path, prefix);
-  }
+  // Initialize known static device libraries
+  ITERATE_I(ADD_STATIC_DEVICE_LIBRARY, DEVICE_LIST_UPPERCASE)
+  // Load additional dynamic device libraries
   for (const auto& [prefix, path] : additionalLibraries) {
-    addDeviceLibrary(path, prefix);
+    addDynamicDeviceLibrary(path, prefix);
   }
-  for (const auto& deviceLib : deviceLibraries()) {
-    addDevice(*deviceLib.second);
+  // Add all static and dynamic device libraries to the device list
+  for (const auto& lib : staticDeviceLibraries()) {
+    addDevice(*lib);
+  }
+  for (const auto& [handle, lib] : dynamicDeviceLibraries()) {
+    addDevice(*lib);
   }
 }
 
