@@ -72,7 +72,7 @@ project(
   VERSION ${MQT_CORE_VERSION}
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
-include(ExternalDependencies)
+include(cmake/ExternalDependencies.cmake)
 include(AddMQTPythonBinding)
 
 # set the include directory for the build tree
