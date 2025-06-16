@@ -15,6 +15,10 @@
 #include <vector>
 
 namespace {
+/**
+ * Prints the usage information for the command line tool.
+ * @param programName is the name of the program executable.
+ */
 auto printUsage(const std::string& programName) -> void {
   std::cout
       << "Usage: " << programName
@@ -30,17 +34,34 @@ auto printUsage(const std::string& programName) -> void {
          "  -s, --schema FILE   Write a JSON schema with default values.\n"
          "                      This option does not require a JSON file.\n";
 }
+
+/**
+ * Prints the version information for the command line tool.
+ */
 auto printVersion() -> void {
   std::cout << "MQT QDMI NA Device Generator Version " MQT_CORE_VERSION "\n";
 }
+
+/// Struct to hold the parsed command line arguments.
 struct Arguments {
-  std::string programName;
-  bool help = false;
+  std::string programName; ///< Name of the program executable
+  bool help = false;       ///< Flag to indicate if help is requested
+  /// Flag to indicate if version information is requested
   bool version = false;
+  /// Optional output file for the generated header file
   std::optional<std::string> outputFile;
+  /// Optional schema file to write the JSON schema
   std::optional<std::string> schemaFile;
+  /// Optional JSON file to parse the device configuration
   std::optional<std::string> jsonFile;
 };
+
+/**
+ * Parses the command line arguments and returns an Arguments struct.
+ * @param args is the vector of command line arguments.
+ * @return Parsed arguments as an Arguments struct.
+ * @throws std::invalid_argument if the value after an option is missing.
+ */
 auto parseArguments(const std::vector<std::string>& args) -> Arguments {
   Arguments arguments;
   arguments.programName = args.front();
@@ -69,6 +90,17 @@ auto parseArguments(const std::vector<std::string>& args) -> Arguments {
 }
 } // namespace
 
+/**
+ * @brief Main function that parses command-line-arguments and processes the
+ * JSON.
+ * @details This function handles the command line arguments, checks for help
+ * and version flags, and processes the JSON file or schema file as specified by
+ * the user. Either a JSON file or a schema file must be provided. If no output
+ * file is specified, the JSON file is parsed but no header file is generated.
+ *
+ * @param argc is the number of command line arguments.
+ * @param argv is the array of command line arguments.
+ */
 int main(int argc, char* argv[]) {
   const auto& args =
       parseArguments(std::vector<std::string>(argv, argv + argc));
