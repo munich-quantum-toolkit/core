@@ -18,6 +18,5 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi MQT::CoreNaQDMI
     PRIVATE qdmi::project_warnings MQT::ProjectOptions MQT::ProjectWarnings)
-  set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 endif()

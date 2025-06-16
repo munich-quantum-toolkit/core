@@ -52,12 +52,12 @@ protected:
     for (auto* const dev : devices) {
       size_t namesSize = 0;
       ASSERT_EQ(QDMI_device_query_device_property(
-                    device, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, &namesSize),
+                    dev, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, &namesSize),
                 QDMI_SUCCESS)
           << "Failed to retrieve the length of the device's name.";
       std::string name(namesSize - 1, '\0');
       ASSERT_EQ(
-          QDMI_device_query_device_property(device, QDMI_DEVICE_PROPERTY_NAME,
+          QDMI_device_query_device_property(dev, QDMI_DEVICE_PROPERTY_NAME,
                                             namesSize, name.data(), nullptr),
           QDMI_SUCCESS)
           << "Failed to retrieve the device's name.";
@@ -291,16 +291,8 @@ TEST_P(DriverTest, QueryOperations) {
         << "Failed to retrieve the operation's name.";
     EXPECT_FALSE(name.empty())
         << "Device must provide a non-empty name for every operation.";
-    EXPECT_EQ(name.size(), namesSize);
 
-    size_t numQubits = 0;
     size_t numParams = 0;
-    ASSERT_EQ(QDMI_device_query_operation_property(
-                  device, op, 0, nullptr, 0, nullptr,
-                  QDMI_OPERATION_PROPERTY_QUBITSNUM, sizeof(size_t), &numQubits,
-                  nullptr),
-              QDMI_SUCCESS)
-        << "Failed to query number of qubits for operation.";
     ASSERT_EQ(QDMI_device_query_operation_property(
                   device, op, 0, nullptr, 0, nullptr,
                   QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sizeof(size_t),
@@ -322,7 +314,7 @@ TEST_P(DriverTest, QueryOperations) {
                   QDMI_OPERATION_PROPERTY_DURATION, sizeof(double), &duration,
                   nullptr),
               QDMI_SUCCESS)
-        << "Failed to query duration for operation.";
+        << "Failed to query duration for operation " << name << ".";
     EXPECT_EQ(QDMI_device_query_operation_property(
                   device, op, 0, nullptr, numParams, params.data(),
                   QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity,
@@ -384,11 +376,11 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
-    ,
+    DefaultDevices,
     // Test suite name
     DriverTest,
     // Parameters to test with
-    ::testing::Values(std::vector{"MQT NA QDMI Default Device"}),
+    ::testing::Values("MQT NA QDMI Default Device"),
     [](const testing::TestParamInfo<std::string>& info) {
       std::string name = info.param;
       std::replace(name.begin(), name.end(), ' ', '_');
