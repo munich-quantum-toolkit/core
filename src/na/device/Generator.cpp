@@ -229,19 +229,19 @@ auto writeOperations(const Device& device, const double timeUnit,
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << "\", OperationType::SHUTTLING_LOAD, "
+       << operation.name() << " (Load)\", OperationType::SHUTTLING_LOAD, "
        << operation.num_parameters() << ", 0, "
        << static_cast<double>(operation.load_duration()) * timeUnit << ", "
        << operation.load_fidelity() << "}));";
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << "\", OperationType::SHUTTLING_MOVE, "
+       << operation.name() << " (Move)\", OperationType::SHUTTLING_MOVE, "
        << operation.num_parameters() << ", 0, 0, 0}));";
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << "\", OperationType::SHUTTLING_STORE, "
+       << operation.name() << " (Store)\", OperationType::SHUTTLING_STORE, "
        << operation.num_parameters() << ", 0, "
        << static_cast<double>(operation.store_duration()) * timeUnit << ", "
        << operation.store_fidelity() << "}));";
