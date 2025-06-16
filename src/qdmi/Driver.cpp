@@ -530,7 +530,6 @@ void addDynamicDeviceLibrary(const std::string& libName,
 
   try {
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
-
     // load the function symbols from the dynamic library
     LOAD_SYMBOL(library, prefix, device_initialize)
     LOAD_SYMBOL(library, prefix, device_finalize)
@@ -552,7 +551,6 @@ void addDynamicDeviceLibrary(const std::string& libName,
     LOAD_SYMBOL(library, prefix, device_session_query_device_property)
     LOAD_SYMBOL(library, prefix, device_session_query_site_property)
     LOAD_SYMBOL(library, prefix, device_session_query_operation_property)
-
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
   } catch (const std::exception&) {
     dlclose(libHandle);
@@ -577,8 +575,9 @@ auto addDevice(const DeviceLibrary& library) -> void {
 }
 
 [[nodiscard]] auto sessions()
-    -> std::vector<std::unique_ptr<QDMI_Session_impl_d>>& {
-  static std::vector<std::unique_ptr<QDMI_Session_impl_d>> sessions;
+    -> std::unordered_map<QDMI_Session, std::unique_ptr<QDMI_Session_impl_d>>& {
+  static std::unordered_map<QDMI_Session, std::unique_ptr<QDMI_Session_impl_d>>
+      sessions;
   return sessions;
 }
 
@@ -601,15 +600,24 @@ auto initialize(const std::vector<Library>& additionalLibraries) -> void {
   }
 }
 
-auto finalize() -> void {}
+auto finalize() -> void {
+  while (!sessions().empty()) {
+    QDMI_session_free(sessions().begin()->first);
+  }
+  devices().clear();
+  dynamicDeviceLibraries().clear();
+  staticDeviceLibraries().fill(nullptr);
+}
 } // namespace na
 
 int QDMI_session_alloc(QDMI_Session* session) {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  *session = new QDMI_Session_impl_d();
+  auto uniqueSession = std::make_unique<QDMI_Session_impl_d>();
+  *session = sessions()
+                 .emplace(uniqueSession.get(), std::move(uniqueSession))
+                 .first->first;
   return QDMI_SUCCESS;
 }
 
@@ -624,10 +632,7 @@ int QDMI_session_init(QDMI_Session session) {
   return QDMI_SUCCESS;
 }
 
-void QDMI_session_free(QDMI_Session session) {
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  delete session;
-}
+void QDMI_session_free(QDMI_Session session) { sessions().erase(session); }
 
 int QDMI_session_set_parameter(QDMI_Session session,
                                QDMI_Session_Parameter param, const size_t size,

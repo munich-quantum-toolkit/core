@@ -13,11 +13,6 @@
 #include <string>
 #include <vector>
 
-#define PREFIX MQT_NA
-#define CAT2(a, b) a##b
-#define CAT(a, b) CAT2(a, b)
-#define PREFIXED(name) CAT(PREFIX, _##name)
-
 namespace na {
 struct Library {
   std::string prefix;
@@ -26,8 +21,8 @@ struct Library {
 
 /**
  * @brief Initializes the QDMI driver.
- * @details This function initializes the only QDMI device by allocating and
- * initializing a device session.
+ * @details This function initializes the QDMI devices by allocating and
+ * initializing a single device session for each device.
  * @param additionalLibraries A vector of additional libraries to load.
  * @returns void
  */
@@ -36,7 +31,7 @@ auto initialize(const std::vector<Library>& additionalLibraries = {}) -> void;
 /**
  * @brief Finalizes the QDMI driver.
  * @details This function finalizes the QDMI driver by freeing the device
- * session and closing the device.
+ * sessions and closing the devices.
  * @returns void
  */
 auto finalize() -> void;
