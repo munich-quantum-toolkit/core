@@ -20,10 +20,6 @@ protected:
   MQT_NA_QDMI_Device_Session session = nullptr;
 
   void SetUp() override {
-    // Set environment variable for testing
-    setenv("MQT_CORE_NA_QDMI_DEVICE_JSON_FILE",
-           MQT_CORE_NA_QDMI_DEVICE_JSON_FILE, 1);
-
     ASSERT_EQ(MQT_NA_QDMI_device_initialize(), QDMI_SUCCESS)
         << "Failed to initialize the device";
 

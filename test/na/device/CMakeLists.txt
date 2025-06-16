@@ -26,9 +26,4 @@ if(TARGET qdmi::mqt_na_device)
   package_add_test(${TARGET_NAME} qdmi::mqt_na_device test_interface.cpp)
   add_dependencies(${TARGET_NAME} qdmi_test_mqt_na_device_defs)
 
-  # Set json file for the device
-  target_compile_definitions(
-    ${TARGET_NAME}
-    PRIVATE MQT_CORE_NA_QDMI_DEVICE_JSON_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device.json")
-
 endif()
