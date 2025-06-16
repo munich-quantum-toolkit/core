@@ -12,7 +12,7 @@ def MQTDynToMQTOpt : Pass<"mqtdyn-to-mqtopt"> {
   let summary = "Convert MQT's `MQTDyn` to MQT's `MQTOpt` dialect.";
 
   let description = [{
-   
+
    }];
 
   // Define dependent dialects

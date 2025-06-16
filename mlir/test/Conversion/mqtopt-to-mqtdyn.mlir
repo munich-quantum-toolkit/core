@@ -11,16 +11,16 @@
 module {
 // CHECK-LABEL: func @foo()
   func.func @foo() -> (i1, i1) {
-    // CHECK: %[[reg_0:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> 
+    // CHECK: %[[reg_0:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}>
     %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
     // CHECK: %[[q_0:.*]] = "mqtdyn.extractQubit"(%[[reg_0]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
     %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
     // CHECK: %[[index_0:.*]] = arith.constant 0
     %i = arith.constant 0 : i64
-    // CHECK: %[[q_1:.*]] = "mqtdyn.extractQubit"(%[[reg_0]], %[[index_0]]) 
-    // CHECK: %[[q_2:.*]] = "mqtdyn.extractQubit"(%[[reg_0]], %[[index_0]]) 
+    // CHECK: %[[q_1:.*]] = "mqtdyn.extractQubit"(%[[reg_0]], %[[index_0]])
+    // CHECK: %[[q_2:.*]] = "mqtdyn.extractQubit"(%[[reg_0]], %[[index_0]])
     // CHECK: %[[q_3:.*]] = "mqtdyn.extractQubit"(%[[reg_0]], %[[index_0]])
-    // CHECK: %[[q_4:.*]] = "mqtdyn.extractQubit"(%[[reg_0]], %[[index_0]]) 
+    // CHECK: %[[q_4:.*]] = "mqtdyn.extractQubit"(%[[reg_0]], %[[index_0]])
     %r2, %q1 = "mqtopt.extractQubit"(%r1, %i) : (!mqtopt.QubitRegister, i64) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
     %r3, %q2 = "mqtopt.extractQubit"(%r2, %i) : (!mqtopt.QubitRegister, i64) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
     %r4, %q3 = "mqtopt.extractQubit"(%r3, %i) : (!mqtopt.QubitRegister, i64) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -33,7 +33,7 @@ module {
 
     // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01
     %cst = arith.constant 3.000000e-01 : f64
-    // CHECK:  mqtdyn.u(%[[c_0]], %[[c_0]] static [3.000000e-01] mask [false, true, false]) %[[q_1]] 
+    // CHECK:  mqtdyn.u(%[[c_0]], %[[c_0]] static [3.000000e-01] mask [false, true, false]) %[[q_1]]
     %q8 = mqtopt.u(%cst, %cst static [3.000000e-01] mask [false, true, false]) %q6 : !mqtopt.Qubit
     // CHECK:  [[b_0:.*]] = "mqtdyn.measure"(%[[q_0]])
     // CHECK:  [[b_1:.*]] = "mqtdyn.measure"(%[[q_1]])

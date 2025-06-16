@@ -8,9 +8,6 @@
 
 file(GLOB CONVERSION_SOURCES *.cpp)
 
-
 add_mlir_library(MQTDynToMQTOpt ${CONVERSION_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
                  MQTDynToMQTOptIncGen)
 target_link_libraries(MQTDynToMQTOpt PRIVATE)
-
-

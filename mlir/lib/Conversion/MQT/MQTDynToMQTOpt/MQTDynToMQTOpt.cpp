@@ -7,6 +7,7 @@
  *
  * Licensed under the MIT License
  */
+
 #include "mlir/Conversion/MQT/MQTDynToMQTOpt/MQTDynToMQTOpt.h"
 
 #include "mlir/Dialect/Common/Compat.h"

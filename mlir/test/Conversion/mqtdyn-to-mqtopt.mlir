@@ -25,7 +25,7 @@ module {
         %q2 = "mqtdyn.extractQubit" (%r0, %i) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
         %q3 = "mqtdyn.extractQubit" (%r0, %i) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
         %q4 = "mqtdyn.extractQubit" (%r0, %i) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
-        
+
         // CHECK: %[[q_5:.*]] = mqtopt.x() %[[q_0]] : !mqtopt.Qubit
         mqtdyn.x () %q0
         // CHECK: %[[q_6:.*]], %[[q_7:.*]] = mqtopt.x() %[[q_1]] ctrl %[[q_5]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
@@ -33,14 +33,14 @@ module {
 
         // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01
         %cst = arith.constant 3.000000e-01 : f64
-        // CHECK: %[[q_8:.*]] = mqtopt.u(%[[c_0]], %[[c_0]] static [3.000000e-01] mask [false, true, false]) %[[q_6]] 
+        // CHECK: %[[q_8:.*]] = mqtopt.u(%[[c_0]], %[[c_0]] static [3.000000e-01] mask [false, true, false]) %[[q_6]]
         mqtdyn.u(%cst, %cst static [3.000000e-01] mask [false, true, false]) %q1
         // CHECK: %[[q_9:.*]], [[b_0:.*]] = "mqtopt.measure"(%[[q_7]])
         // CHECK: %[[q_10:.*]], [[b_1:.*]] = "mqtopt.measure"(%[[q_8]])
         %c0 = "mqtdyn.measure" (%q0) : (!mqtdyn.Qubit) -> i1
         %c1 = "mqtdyn.measure" (%q1) : (!mqtdyn.Qubit) -> i1
         // CHECK: %[[reg_6:.*]] = "mqtopt.insertQubit"(%[[reg_5]], %[[q_9]]) <{index_attr = 0 : i64}>
-        // CHECK: %[[reg_7:.*]] = "mqtopt.insertQubit"(%[[reg_6]], %[[q_4]], %[[index_0]]) 
+        // CHECK: %[[reg_7:.*]] = "mqtopt.insertQubit"(%[[reg_6]], %[[q_4]], %[[index_0]])
         // CHECK: %[[reg_8:.*]] = "mqtopt.insertQubit"(%[[reg_7]], %[[q_3]], %[[index_0]])
         // CHECK: %[[reg_9:.*]] = "mqtopt.insertQubit"(%[[reg_8]], %[[q_2]], %[[index_0]])
         // CHECK: %[[reg_10:.*]] = "mqtopt.insertQubit"(%[[reg_9]], %[[q_10]], %[[index_0]])
