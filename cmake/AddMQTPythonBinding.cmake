@@ -11,9 +11,6 @@ function(add_mqt_python_binding package_name target_name)
   cmake_parse_arguments(ARG "" "MODULE_NAME;INSTALL_DIR" "LINK_LIBS" ${ARGN})
   set(SOURCES ${ARG_UNPARSED_ARGUMENTS})
 
-  set(MQT_PACKAGE_MODULE_NAME MQT_${package_name}_MODULE_NAME)
-  set(MQT_PACKAGE_TARGET_NAME MQT_${package_name}_TARGET_NAME)
-
   # declare the Python module
   pybind11_add_module(
     # name of the extension
@@ -33,10 +30,6 @@ function(add_mqt_python_binding package_name target_name)
   if(ARG_MODULE_NAME)
     # the library name must be the same as the module name
     set_target_properties(${target_name} PROPERTIES OUTPUT_NAME ${ARG_MODULE_NAME})
-    target_compile_definitions(${target_name} PRIVATE MQT_PACKAGE_MODULE_NAME=${ARG_MODULE_NAME})
-  else()
-    # use the target name as the module name
-    target_compile_definitions(${target_name} PRIVATE MQT_PACKAGE_MODULE_NAME=${target_name})
   endif()
 
   # add project libraries to the link libraries
@@ -49,5 +42,5 @@ function(add_mqt_python_binding package_name target_name)
   install(
     TARGETS ${target_name}
     DESTINATION ${ARG_INSTALL_DIR}
-    COMPONENT ${MQT_PACKAGE_TARGET_NAME}_Python)
+    COMPONENT MQT_${package_name}_MODULE_NAME_Python)
 endfunction()
