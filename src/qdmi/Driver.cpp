@@ -9,7 +9,7 @@
  */
 
 /** @file
- * @brief An example driver implementation in C++.
+ * An example driver implementation in C++.
  */
 
 #define DEVICE_LIST_UPPERCASE (MQT_NA)
@@ -17,6 +17,7 @@
 
 #include "qdmi/Driver.hpp"
 
+#include "qdmi/Macros.hpp"
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 
@@ -27,205 +28,8 @@
 #include <unordered_map>
 #include <vector>
 
-#define APPLY(func, arg) func(arg)
-#define APPLY2(func, arg1, arg2) func(arg1, arg2)
-#define APPLY_PAREN(func, arg) func arg
-
-#define CAT(a, b) CAT_I(a, b)
-#define CAT_I(a, b) a##b
-
-#define TO_SEQ(n) TO_SEQ_I(n)
-#define TO_SEQ_I(n) TO_SEQ_##n
-#define TO_SEQ_0
-#define TO_SEQ_1 ()
-#define TO_SEQ_2 () TO_SEQ_1
-#define TO_SEQ_3 () TO_SEQ_2
-#define TO_SEQ_4 () TO_SEQ_3
-#define TO_SEQ_5 () TO_SEQ_4
-#define TO_SEQ_6 () TO_SEQ_5
-#define TO_SEQ_7 () TO_SEQ_6
-#define TO_SEQ_8 () TO_SEQ_7
-#define TO_SEQ_9 () TO_SEQ_8
-
-#define HEAD(x) HEAD_I(HEAD_III x)
-#define HEAD_I(x) HEAD_II(x)
-#define HEAD_II(x, _) x
-#define HEAD_III(x) x, NIL
-
-#define TAIL(seq) TAIL_I seq
-#define TAIL_I(_)
-
-#define EMPTY(seq) HEAD(CAT(EMPTY_, EMPTY_I seq))
-#define EMPTY_I(_) NOT_EMPTY_I
-// NOLINTBEGIN(cppcoreguidelines-macro-to-enum)
-#define EMPTY_NOT_EMPTY_I (0)
-#define EMPTY_EMPTY_I (1)
-// NOLINTEND(cppcoreguidelines-macro-to-enum)
-
-#define SIZE(seq) CAT(SIZE_, SIZE_0 seq)
-#define SIZE_0(_) SIZE_1
-#define SIZE_1(_) SIZE_2
-#define SIZE_2(_) SIZE_3
-#define SIZE_3(_) SIZE_4
-#define SIZE_4(_) SIZE_5
-#define SIZE_5(_) SIZE_6
-#define SIZE_6(_) SIZE_7
-#define SIZE_7(_) SIZE_8
-#define SIZE_8(_) SIZE_9
-
-// NOLINTBEGIN(cppcoreguidelines-macro-to-enum)
-#define SIZE_SIZE_0 0
-#define SIZE_SIZE_1 1
-#define SIZE_SIZE_2 2
-#define SIZE_SIZE_3 3
-#define SIZE_SIZE_4 4
-#define SIZE_SIZE_5 5
-#define SIZE_SIZE_6 6
-#define SIZE_SIZE_7 7
-#define SIZE_SIZE_8 8
-#define SIZE_SIZE_9 9
-// NOLINTEND(cppcoreguidelines-macro-to-enum)
-
-#define NTH(i, seq) NTH_I(NTH_##i seq)
-#define NTH_I(e) NTH_II(e)
-#define NTH_II(e, _) e
-#define NTH_0(e) e, NIL
-#define NTH_1(_) NTH_0
-#define NTH_2(_) NTH_1
-#define NTH_3(_) NTH_2
-#define NTH_4(_) NTH_3
-#define NTH_5(_) NTH_4
-#define NTH_6(_) NTH_5
-#define NTH_7(_) NTH_6
-#define NTH_8(_) NTH_7
-
-#define SUB(a, b) SUB_I(TO_SEQ(a), b)
-#define SUB_I(a, b) SIZE(CAT(SUB_, SUB_##b a))
-#define SUB_1(_) SUB_0
-#define SUB_2(_) SUB_1
-#define SUB_3(_) SUB_2
-#define SUB_4(_) SUB_3
-#define SUB_5(_) SUB_4
-#define SUB_6(_) SUB_5
-#define SUB_7(_) SUB_6
-#define SUB_8(_) SUB_7
-#define SUB_9(_) SUB_8
-#define SUB_SUB_0
-#define SUB_SUB_1
-#define SUB_SUB_2
-#define SUB_SUB_3
-#define SUB_SUB_4
-#define SUB_SUB_5
-#define SUB_SUB_6
-#define SUB_SUB_7
-#define SUB_SUB_8
-#define SUB_SUB_9
-
-#define NOT(x) CAT(NOT_, x)
-// NOLINTBEGIN(cppcoreguidelines-macro-to-enum)
-#define NOT_0 1
-#define NOT_1 0
-// NOLINTEND(cppcoreguidelines-macro-to-enum)
-#define BOOL(x) NOT(EMPTY(TO_SEQ(x)))
-
-#define ITE(bit, t, f) ITE_I(bit, t, f)
-#define ITE_I(bit, t, f) CAT(ITE_, bit(t, f))
-#define ITE_0(t, f) f
-#define ITE_1(t, f) t
-
-#define MIN(a, b) ITE(BOOL(SUB(b, a)), a, b)
-
-#define NTH_MAX(i, seq) NTH_MAX_I(i, SUB(SIZE(seq), 1), seq)
-#define NTH_MAX_I(i, n, seq) NTH_MAX_II(MIN(i, n), seq)
-#define NTH_MAX_II(i, seq) NTH(i, seq)
-
-#define ITERATE(macro, seq) CONTINUE_1(macro, (seq))
-
-#define ITERATE_1(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_2)(macro, (seq))
-#define ITERATE_2(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_3)(macro, (seq))
-#define ITERATE_3(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_4)(macro, (seq))
-#define ITERATE_4(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_5)(macro, (seq))
-#define ITERATE_5(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_6)(macro, (seq))
-#define ITERATE_6(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_7)(macro, (seq))
-#define ITERATE_7(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_8)(macro, (seq))
-#define ITERATE_8(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_9)(macro, (seq))
-#define ITERATE_9(macro, seq) ITE(EMPTY(seq), BREAK, CONTINUE_10)(macro, (seq))
-
-#define CONTINUE_1(macro, seq)                                                 \
-  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_1(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_2(macro, seq)                                                 \
-  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_2(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_3(macro, seq)                                                 \
-  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_3(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_4(macro, seq)                                                 \
-  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_4(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_5(macro, seq)                                                 \
-  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_5(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_6(macro, seq)                                                 \
-  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_6(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_7(macro, seq)                                                 \
-  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_7(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_8(macro, seq)                                                 \
-  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_8(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_9(macro, seq)                                                 \
-  APPLY(macro, APPLY_PAREN(HEAD, seq)) ITERATE_9(macro, APPLY_PAREN(TAIL, seq))
-
-#define BREAK(macro, seq)
-
-#define ITERATE_I(macro, seq) CONTINUE_I_1(macro, (seq))
-
-#define ITERATE_I_1(macro, seq)                                                \
-  ITE(EMPTY(seq), BREAK, CONTINUE_I_2)(macro, (seq))
-#define ITERATE_I_2(macro, seq)                                                \
-  ITE(EMPTY(seq), BREAK, CONTINUE_I_3)(macro, (seq))
-#define ITERATE_I_3(macro, seq)                                                \
-  ITE(EMPTY(seq), BREAK, CONTINUE_I_4)(macro, (seq))
-#define ITERATE_I_4(macro, seq)                                                \
-  ITE(EMPTY(seq), BREAK, CONTINUE_I_5)(macro, (seq))
-#define ITERATE_I_5(macro, seq)                                                \
-  ITE(EMPTY(seq), BREAK, CONTINUE_I_6)(macro, (seq))
-#define ITERATE_I_6(macro, seq)                                                \
-  ITE(EMPTY(seq), BREAK, CONTINUE_I_7)(macro, (seq))
-#define ITERATE_I_7(macro, seq)                                                \
-  ITE(EMPTY(seq), BREAK, CONTINUE_I_8)(macro, (seq))
-#define ITERATE_I_8(macro, seq)                                                \
-  ITE(EMPTY(seq), BREAK, CONTINUE_I_9)(macro, (seq))
-#define ITERATE_I_9(macro, seq)                                                \
-  ITE(EMPTY(seq), BREAK, CONTINUE_I_10)(macro, (seq))
-
-#define CONTINUE_I_1(macro, seq)                                               \
-  APPLY2(macro, 1, APPLY_PAREN(HEAD, seq))                                     \
-  ITERATE_I_1(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_I_2(macro, seq)                                               \
-  APPLY2(macro, 2, APPLY_PAREN(HEAD, seq))                                     \
-  ITERATE_I_2(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_I_3(macro, seq)                                               \
-  APPLY2(macro, 3, APPLY_PAREN(HEAD, seq))                                     \
-  ITERATE_I_3(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_I_4(macro, seq)                                               \
-  APPLY2(macro, 4, APPLY_PAREN(HEAD, seq))                                     \
-  ITERATE_I_4(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_I_5(macro, seq)                                               \
-  APPLY2(macro, 5, APPLY_PAREN(HEAD, seq))                                     \
-  ITERATE_I_5(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_I_6(macro, seq)                                               \
-  APPLY2(macro, 6, APPLY_PAREN(HEAD, seq))                                     \
-  ITERATE_I_6(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_I_7(macro, seq)                                               \
-  APPLY2(macro, 7, APPLY_PAREN(HEAD, seq))                                     \
-  ITERATE_I_7(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_I_8(macro, seq)                                               \
-  APPLY2(macro, 8, APPLY_PAREN(HEAD, seq))                                     \
-  ITERATE_I_8(macro, APPLY_PAREN(TAIL, seq))
-#define CONTINUE_I_9(macro, seq)                                               \
-  APPLY2(macro, 9, APPLY_PAREN(HEAD, seq))                                     \
-  ITERATE_I_9(macro, APPLY_PAREN(TAIL, seq))
-
-// clang-format off
-#define INCLUDE(prefix) APPLY(STR, CAT(prefix, _qdmi/device.h))
-// clang-format on
-#define STR(x) #x
-
+// Include the device headers for the devices in the list. The device headers
+// are expected to be available under `<prefix>_qdmi/device.h`.
 // NOLINTBEGIN(readability-duplicate-include)
 #include INCLUDE(NTH_MAX(0, DEVICE_LIST_LOWERCASE))
 #include INCLUDE(NTH_MAX(1, DEVICE_LIST_LOWERCASE))
@@ -239,17 +43,141 @@
 #include INCLUDE(NTH_MAX(9, DEVICE_LIST_LOWERCASE))
 // NOLINTEND(readability-duplicate-include)
 
-#define PREFIX_CAST(prefix, type, var)                                         \
-  /* NOLINTNEXTLINE(bugprone-casting-through-void) */                          \
-  static_cast<prefix##_QDMI_##type>(static_cast<void*>(var))
-#define PREFIX_PTR_CAST(prefix, type, var) PREFIX_CAST(prefix, type*, var)
-// clang-format off
-#define PREFIX_CONST_PTR_CAST(prefix, type, var)                               \
-  /* NOLINTBEGIN(bugprone-casting-through-void,bugprone-macro-parentheses) */  \
-  static_cast<const prefix## _QDMI_## type*>(static_cast<const void*>(var))    \
-  /* NOLINTEND(bugprone-casting-through-void,bugprone-macro-parentheses) */
-// clang-format on
+// Anonymous namespace to enforce internal linkage
+namespace {
+/**
+ * @brief The status of a session.
+ * @details This enum defines the possible states of a session in the QDMI
+ * library. A session can be either allocated or initialized.
+ */
+enum class SessionStatus : uint8_t {
+  ALLOCATED,  ///< The session has been allocated but not initialized
+  INITIALIZED ///< The session has been initialized and is ready for use
+};
 
+/**
+ * Definition of the QDMI Library.
+ */
+struct DeviceLibrary {
+  void* libHandle = nullptr; ///< Handle to the dynamic library
+
+  // we keep the naming scheme of QDMI, i.e., snail_case for function names,
+  // here to ease the `LOAD_SYMBOL` macro later on.
+  // NOLINTBEGIN(readability-identifier-naming)
+  /// Function pointer to @ref QDMI_device_initialize.
+  decltype(QDMI_device_initialize)* device_initialize{};
+  /// Function pointer to @ref QDMI_device_finalize.
+  decltype(QDMI_device_finalize)* device_finalize{};
+  /// Function pointer to @ref QDMI_device_session_alloc.
+  decltype(QDMI_device_session_alloc)* device_session_alloc{};
+  /// Function pointer to @ref QDMI_device_session_init.
+  decltype(QDMI_device_session_init)* device_session_init{};
+  /// Function pointer to @ref QDMI_device_session_free.
+  decltype(QDMI_device_session_free)* device_session_free{};
+  /// Function pointer to @ref QDMI_device_session_set_parameter.
+  decltype(QDMI_device_session_set_parameter)* device_session_set_parameter{};
+  /// Function pointer to @ref QDMI_device_session_create_device_job.
+  decltype(QDMI_device_session_create_device_job)*
+      device_session_create_device_job{};
+  /// Function pointer to @ref QDMI_device_job_free.
+  decltype(QDMI_device_job_free)* device_job_free{};
+  /// Function pointer to @ref QDMI_device_job_set_parameter.
+  decltype(QDMI_device_job_set_parameter)* device_job_set_parameter{};
+  /// Function pointer to @ref QDMI_device_job_submit.
+  decltype(QDMI_device_job_submit)* device_job_submit{};
+  /// Function pointer to @ref QDMI_device_job_cancel.
+  decltype(QDMI_device_job_cancel)* device_job_cancel{};
+  /// Function pointer to @ref QDMI_device_job_check.
+  decltype(QDMI_device_job_check)* device_job_check{};
+  /// Function pointer to @ref QDMI_device_job_wait.
+  decltype(QDMI_device_job_wait)* device_job_wait{};
+  /// Function pointer to @ref QDMI_device_job_get_results.
+  decltype(QDMI_device_job_get_results)* device_job_get_results{};
+  /// Function pointer to @ref QDMI_device_session_query_device_property.
+  decltype(QDMI_device_session_query_device_property)*
+      device_session_query_device_property{};
+  /// Function pointer to @ref QDMI_device_session_query_site_property.
+  decltype(QDMI_device_session_query_site_property)*
+      device_session_query_site_property{};
+  /// Function pointer to @ref QDMI_device_session_query_operation_property.
+  decltype(QDMI_device_session_query_operation_property)*
+      device_session_query_operation_property{};
+  // NOLINTEND(readability-identifier-naming)
+
+  /// Construct a new DeviceLibrary instance.
+  DeviceLibrary() = default;
+
+  // delete copy constructor, copy assignment, move constructor, move assignment
+  // to allow only one instance and proper destruction of the dynamic library.
+  DeviceLibrary(const DeviceLibrary&) = delete;
+  DeviceLibrary& operator=(const DeviceLibrary&) = delete;
+  DeviceLibrary(DeviceLibrary&&) = delete;
+  DeviceLibrary& operator=(DeviceLibrary&&) = delete;
+
+  ~DeviceLibrary() {
+    // Check if QDMI_device_finalize is not NULL before calling it.
+    if (device_finalize != nullptr) {
+      device_finalize();
+    }
+    // close the dynamic library
+    if (libHandle != nullptr) {
+      dlclose(libHandle);
+    }
+  }
+};
+} // namespace
+
+/**
+ * Definition of the QDMI Device.
+ */
+struct QDMI_Device_impl_d {
+  /// The device library that provides the device interface functions.
+  const DeviceLibrary* library = nullptr;
+  /// The device session handle.
+  QDMI_Device_Session session = nullptr;
+
+  ~QDMI_Device_impl_d() {
+    if (library != nullptr && session != nullptr) {
+      library->device_session_free(session);
+    }
+  }
+};
+
+/**
+ * Definition of the QDMI Session.
+ */
+struct QDMI_Session_impl_d {
+  /// The status of the session.
+  SessionStatus status = SessionStatus::ALLOCATED;
+};
+
+/**
+ * Definition of the QDMI Job.
+ */
+struct QDMI_Job_impl_d {
+  QDMI_Device_Job deviceJob = nullptr; ///< The device job handle.
+  QDMI_Device device = nullptr; ///< The device handle associated with the job.
+};
+
+// Anonymous namespace to enforce internal linkage
+namespace {
+/**
+ * Returns a reference to the array of static device libraries.
+ * @returns a reference to an array of unique pointers to DeviceLibrary objects.
+ */
+[[nodiscard]] auto staticDeviceLibraries()
+    -> std::array<std::unique_ptr<DeviceLibrary>,
+                  SIZE(DEVICE_LIST_UPPERCASE)>& {
+  static std::array<std::unique_ptr<DeviceLibrary>, SIZE(DEVICE_LIST_UPPERCASE)>
+      libraries;
+  return libraries;
+}
+
+// Map the device interface functions to functions with generic (un-prefixed)
+// argument types. Those functions are later used in the DeviceLibrary to ease
+// the implementation of the driver. For distinction between the device
+// interface functions and those defined here, we drop `QDMI_` in the middle of
+// the function name and use `prefix` as a prefix for the function name.
 #define ADD_DEVICE(prefix)                                                     \
   int prefix##_device_initialize(void) {                                       \
     return prefix##_QDMI_device_initialize();                                  \
@@ -340,131 +268,13 @@
         PREFIX_CAST(prefix, Device_Job, job));                                 \
   }
 
-namespace {
+// Call `ADD_DEVICE` for each device in the list of devices. See `ADD_DEVICE`
+// for more information.
 ITERATE(ADD_DEVICE, DEVICE_LIST_UPPERCASE)
 
-enum class SessionStatus : uint8_t {
-  ALLOCATED,  ///< The session has been allocated but not initialized
-  INITIALIZED ///< The session has been initialized and is ready for use
-};
-
-/**
- * @brief Definition of the QDMI Library.
- */
-struct DeviceLibrary {
-  void* libHandle = nullptr;
-
-  // NOLINTBEGIN(readability-identifier-naming)
-  /// Function pointer to @ref QDMI_device_initialize.
-  decltype(QDMI_device_initialize)* device_initialize{};
-  /// Function pointer to @ref QDMI_device_finalize.
-  decltype(QDMI_device_finalize)* device_finalize{};
-  /// Function pointer to @ref QDMI_device_session_alloc.
-  decltype(QDMI_device_session_alloc)* device_session_alloc{};
-  /// Function pointer to @ref QDMI_device_session_init.
-  decltype(QDMI_device_session_init)* device_session_init{};
-  /// Function pointer to @ref QDMI_device_session_free.
-  decltype(QDMI_device_session_free)* device_session_free{};
-  /// Function pointer to @ref QDMI_device_session_set_parameter.
-  decltype(QDMI_device_session_set_parameter)* device_session_set_parameter{};
-  /// Function pointer to @ref QDMI_device_session_create_device_job.
-  decltype(QDMI_device_session_create_device_job)*
-      device_session_create_device_job{};
-  /// Function pointer to @ref QDMI_device_job_free.
-  decltype(QDMI_device_job_free)* device_job_free{};
-  /// Function pointer to @ref QDMI_device_job_set_parameter.
-  decltype(QDMI_device_job_set_parameter)* device_job_set_parameter{};
-  /// Function pointer to @ref QDMI_device_job_submit.
-  decltype(QDMI_device_job_submit)* device_job_submit{};
-  /// Function pointer to @ref QDMI_device_job_cancel.
-  decltype(QDMI_device_job_cancel)* device_job_cancel{};
-  /// Function pointer to @ref QDMI_device_job_check.
-  decltype(QDMI_device_job_check)* device_job_check{};
-  /// Function pointer to @ref QDMI_device_job_wait.
-  decltype(QDMI_device_job_wait)* device_job_wait{};
-  /// Function pointer to @ref QDMI_device_job_get_results.
-  decltype(QDMI_device_job_get_results)* device_job_get_results{};
-  /// Function pointer to @ref QDMI_device_session_query_device_property.
-  decltype(QDMI_device_session_query_device_property)*
-      device_session_query_device_property{};
-  /// Function pointer to @ref QDMI_device_session_query_site_property.
-  decltype(QDMI_device_session_query_site_property)*
-      device_session_query_site_property{};
-  /// Function pointer to @ref QDMI_device_session_query_operation_property.
-  decltype(QDMI_device_session_query_operation_property)*
-      device_session_query_operation_property{};
-  // NOLINTEND(readability-identifier-naming)
-
-  // default constructor
-  DeviceLibrary() = default;
-
-  // delete copy constructor, copy assignment, move constructor, move assignment
-  // to allow only one instance and proper destruction of the dynamic library.
-  DeviceLibrary(const DeviceLibrary&) = delete;
-  DeviceLibrary& operator=(const DeviceLibrary&) = delete;
-  DeviceLibrary(DeviceLibrary&&) = delete;
-  DeviceLibrary& operator=(DeviceLibrary&&) = delete;
-
-  // destructor
-  ~DeviceLibrary() {
-    // Check if QDMI_device_finalize is not NULL before calling it.
-    if (device_finalize != nullptr) {
-      device_finalize();
-    }
-    // close the dynamic library
-    if (libHandle != nullptr) {
-      dlclose(libHandle);
-    }
-  }
-};
-} // namespace
-
-/**
- * @brief Definition of the QDMI Device.
- */
-struct QDMI_Device_impl_d {
-  const DeviceLibrary* library = nullptr;
-  QDMI_Device_Session session = nullptr;
-
-  // destructor
-  ~QDMI_Device_impl_d() {
-    if (library != nullptr && session != nullptr) {
-      library->device_session_free(session);
-    }
-  }
-};
-
-/**
- * @brief Definition of the QDMI Session.
- */
-struct QDMI_Session_impl_d {
-  SessionStatus status = SessionStatus::ALLOCATED;
-};
-
-/**
- * @brief Definition of the QDMI Job.
- */
-struct QDMI_Job_impl_d {
-  QDMI_Device_Job deviceJob = nullptr;
-  QDMI_Device device = nullptr;
-};
-
-namespace {
-
-[[nodiscard]] auto staticDeviceLibraries()
-    -> std::array<std::unique_ptr<DeviceLibrary>,
-                  SIZE(DEVICE_LIST_UPPERCASE)>& {
-  static std::array<std::unique_ptr<DeviceLibrary>, SIZE(DEVICE_LIST_UPPERCASE)>
-      libraries;
-  return libraries;
-}
-
-[[nodiscard]] auto dynamicDeviceLibraries()
-    -> std::unordered_map<void*, std::unique_ptr<DeviceLibrary>>& {
-  static std::unordered_map<void*, std::unique_ptr<DeviceLibrary>> libraries;
-  return libraries;
-}
-
+// Add a static device library to the list of static device libraries. The `id`
+// is the index in the static device libraries array, and `prefix` is the prefix
+// used for the device interface functions.
 #define ADD_STATIC_DEVICE_LIBRARY(id, prefix)                                  \
   auto& library =                                                              \
       *(staticDeviceLibraries()[id] = std::make_unique<DeviceLibrary>());      \
@@ -499,6 +309,21 @@ namespace {
   /* initialize the device */                                                  \
   library.device_initialize();
 
+/**
+ * Returns a reference to the map of library handles returned by `dlopen`
+ * to the dynamic device libraries.
+ * @returns a reference to a map library handle to unique pointer of
+ * DeviceLibrary objects.
+ */
+[[nodiscard]] auto dynamicDeviceLibraries()
+    -> std::unordered_map<void*, std::unique_ptr<DeviceLibrary>>& {
+  static std::unordered_map<void*, std::unique_ptr<DeviceLibrary>> libraries;
+  return libraries;
+}
+
+// Load a symbol from the dynamic library. The `library` is the DeviceLibrary
+// object, `prefix` is the prefix used for the device interface functions, and
+// `symbol` is the name of the symbol to load.
 #define LOAD_SYMBOL(library, prefix, symbol)                                   \
   {                                                                            \
     const std::string symbolName = std::string(prefix) + "_QDMI_" + #symbol;   \
@@ -509,6 +334,11 @@ namespace {
     }                                                                          \
   }
 
+/**
+ * Adds a dynamic device library to the list of dynamic device libraries.
+ * @param libName is the path to the dynamic library to load.
+ * @param prefix is the prefix used for the device interface functions.
+ */
 void addDynamicDeviceLibrary(const std::string& libName,
                              const std::string& prefix) {
   auto* libHandle = dlopen(libName.c_str(), RTLD_NOW | RTLD_LOCAL);
@@ -560,12 +390,23 @@ void addDynamicDeviceLibrary(const std::string& libName,
   library.device_initialize();
 }
 
+/**
+ * Returns a reference to the vector of devices.
+ * @returns a reference to a vector of unique pointers to QDMI_Device_impl_d
+ * objects.
+ */
 [[nodiscard]] auto devices()
     -> std::vector<std::unique_ptr<QDMI_Device_impl_d>>& {
   static std::vector<std::unique_ptr<QDMI_Device_impl_d>> devices;
   return devices;
 }
 
+/**
+ * Adds a device to the list of devices. The device is initialized with the
+ * given library.
+ * @param library is the DeviceLibrary object that provides the device interface
+ * functions.
+ */
 auto addDevice(const DeviceLibrary& library) -> void {
   auto& device =
       *devices().emplace_back(std::make_unique<QDMI_Device_impl_d>());
@@ -574,15 +415,21 @@ auto addDevice(const DeviceLibrary& library) -> void {
   device.library->device_session_init(device.session);
 }
 
+/**
+ * Returns a reference to the map of sessions. The map is used to store the
+ * sessions allocated by the QDMI library.
+ * @returns a reference to a map of QDMI_Session to their corresponding unique
+ * pointers of QDMI_Session_impl_d objects.
+ */
 [[nodiscard]] auto sessions()
     -> std::unordered_map<QDMI_Session, std::unique_ptr<QDMI_Session_impl_d>>& {
   static std::unordered_map<QDMI_Session, std::unique_ptr<QDMI_Session_impl_d>>
       sessions;
   return sessions;
 }
-
 } // namespace
 
+// `na` namespace for the public API of the MQT QDMI driver
 namespace na {
 auto initialize(const std::vector<Library>& additionalLibraries) -> void {
   // Initialize known static device libraries
