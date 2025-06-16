@@ -12,6 +12,7 @@
  * An example driver implementation in C++.
  */
 
+// todo: Figure out how to set those from CMake.
 #define DEVICE_LIST_UPPERCASE (MQT_NA)
 #define DEVICE_LIST_LOWERCASE (mqt_na)
 
