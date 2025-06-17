@@ -1435,10 +1435,8 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
     bool canProcess = true;
     bool makesTooBig = false;
 
-    if (!op->isUnitary()) {
+    if (!op->isUnitary() || (onlyCollectCliffords && !op->isClifford())) {
       canProcess = false;
-    } else if (onlyCollectCliffords && !op->isClifford()) {
-      continue;
     }
 
     const auto usedQubits = op->getUsedQubits();

@@ -53,6 +53,10 @@ TEST(CollectBlocks, nonCliffordOnAll) {
   qc.t(1);
   qc.x(0);
   qc.x(1);
+
+  QuantumComputation qc2(2);
+  qc2 = qc;
+
   std::cout << qc << "\n";
   qc::CircuitOptimizer::collectBlocks(qc, 2, true);
   std::cout << qc << "\n";
