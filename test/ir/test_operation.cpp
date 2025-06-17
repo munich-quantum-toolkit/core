@@ -123,7 +123,7 @@ TEST(CompoundOperation, GetNqubits) {
   EXPECT_EQ(op.getNqubits(), 3);
 }
 
-TEST(CompoundOperation, IsClifford){
+TEST(CompoundOperation, IsClifford) {
   qc::CompoundOperation op1;
   op1.emplace_back<qc::StandardOperation>(0, qc::OpType::H);
   op1.emplace_back<qc::StandardOperation>(1, qc::OpType::RX,
@@ -171,36 +171,48 @@ TEST(Operation, IsClifford) {
   EXPECT_TRUE(x.isClifford());
   const qc::StandardOperation cx(0, 1, qc::X);
   EXPECT_TRUE(cx.isClifford());
-  const qc::StandardOperation y(0, 1, qc::Y);
+  const qc::StandardOperation ccx({0, 1}, 2, qc::X);
+  EXPECT_FALSE(ccx.isClifford());
+
+  const qc::StandardOperation y(0, qc::Y);
   EXPECT_TRUE(y.isClifford());
-  const qc::StandardOperation z(0, 1, qc::Z);
+  const qc::StandardOperation cy(0, 1, qc::Y);
+  EXPECT_TRUE(cy.isClifford());
+  const qc::StandardOperation ccy({0, 1}, 2, qc::Y);
+  EXPECT_FALSE(ccy.isClifford());
+
+  const qc::StandardOperation z(0, qc::Z);
   EXPECT_TRUE(z.isClifford());
+  const qc::StandardOperation cz(0, 1, qc::Z);
+  EXPECT_TRUE(cz.isClifford());
+  const qc::StandardOperation ccz({0, 1}, 2, qc::Z);
+  EXPECT_FALSE(ccz.isClifford());
+
   const qc::StandardOperation t(0, qc::T);
   EXPECT_FALSE(t.isClifford());
-  const qc::Controls controls = {qc::Control(0), qc::Control(1)};
-  const qc::StandardOperation ccx(controls, 2, qc::X);
-  EXPECT_FALSE(ccx.isClifford());
-  const qc::StandardOperation ccy(controls, 2, qc::Y);
-  EXPECT_FALSE(ccy.isClifford());
-  const qc::StandardOperation ccz(controls, 2, qc::Z);
-  EXPECT_FALSE(ccz.isClifford());
+  const qc::StandardOperation tdg(0, qc::Tdg);
+  EXPECT_FALSE(tdg.isClifford());
+
   const qc::StandardOperation h(0, qc::H);
   EXPECT_TRUE(h.isClifford());
+
   const qc::StandardOperation s(0, qc::S);
   EXPECT_TRUE(s.isClifford());
   const qc::StandardOperation sdg(0, qc::Sdg);
   EXPECT_TRUE(sdg.isClifford());
+
   const qc::StandardOperation sx(0, qc::SX);
   EXPECT_TRUE(sx.isClifford());
   const qc::StandardOperation sxdg(0, qc::SXdg);
   EXPECT_TRUE(sxdg.isClifford());
-  const qc::StandardOperation dcx(0, 1, qc::DCX);
+
+  const qc::StandardOperation dcx({0, 1}, qc::DCX);
   EXPECT_TRUE(dcx.isClifford());
-  const qc::StandardOperation swap(0, 1, qc::SWAP);
+  const qc::StandardOperation swap({0, 1}, qc::SWAP);
   EXPECT_TRUE(swap.isClifford());
-  const qc::StandardOperation iswap(0, 1, qc::iSWAP);
+  const qc::StandardOperation iswap({0, 1}, qc::iSWAP);
   EXPECT_TRUE(iswap.isClifford());
-  const qc::StandardOperation ecr(0, 1, qc::ECR);
+  const qc::StandardOperation ecr({0, 1}, qc::ECR);
   EXPECT_TRUE(ecr.isClifford());
 }
 
