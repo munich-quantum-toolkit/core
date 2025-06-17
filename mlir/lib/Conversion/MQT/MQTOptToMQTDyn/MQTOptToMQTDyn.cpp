@@ -10,28 +10,26 @@
 
 #include "mlir/Conversion/MQT/MQTOptToMQTDyn/MQTOptToMQTDyn.h"
 
-#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
-#include <cassert>
+#include "llvm/ADT/STLExtras.h"
+
 #include <cstddef>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/TypeRange.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 #include <utility>
+#include <vector>
 namespace mlir::mqt::ir::conversions {
 
 #define GEN_PASS_DEF_MQTOPTTOMQTDYN
@@ -198,8 +196,8 @@ struct ConvertMQTOptMeasure
     }
 
     // get the users of the previous bit
-    std::vector<mlir::Operation*> bitUsers(oldBit.getUsers().begin(),
-                                           oldBit.getUsers().end());
+    const std::vector<mlir::Operation*> bitUsers(oldBit.getUsers().begin(),
+                                                 oldBit.getUsers().end());
 
     // iterate over them and replace the old bit with the new bit
     for (auto* user : llvm::reverse(bitUsers)) {
@@ -243,7 +241,6 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateOp> {
                          : mlir::DenseBoolArrayAttr{};
 
     // create new operation
-
     if (llvm::isa<::mqt::ir::opt::XOp>(op)) {
       rewriter.create<::mqt::ir::dyn::XOp>(
           op.getLoc(), staticParams, paramMask, adaptor.getParams(),

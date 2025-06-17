@@ -10,28 +10,26 @@
 
 #include "mlir/Conversion/MQT/MQTDynToMQTOpt/MQTDynToMQTOpt.h"
 
-#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
-#include <cassert>
+#include "llvm/ADT/STLExtras.h"
+
 #include <cstddef>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/TypeRange.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 #include <utility>
+#include <vector>
 
 namespace mlir::mqt::ir::conversions {
 
@@ -75,8 +73,8 @@ struct ConvertMQTDynAlloc
     auto newQreg = mqtoptOp->getResult(0);
 
     // get the users of the previous register
-    std::vector<mlir::Operation*> qregUsers(oldQreg.getUsers().begin(),
-                                            oldQreg.getUsers().end());
+    const std::vector<mlir::Operation*> qregUsers(oldQreg.getUsers().begin(),
+                                                  oldQreg.getUsers().end());
 
     // iterate over them and replace the operands with the new one
     for (auto* user : llvm::reverse(qregUsers)) {
@@ -133,8 +131,8 @@ struct ConvertMQTDynExtract
     auto oldQubit = op->getResult(0);
     auto newQubit = mqtoptOp->getResult(1);
     // get the users of the input register
-    std::vector<mlir::Operation*> qregUsers(oldQreg.getUsers().begin(),
-                                            oldQreg.getUsers().end());
+    const std::vector<mlir::Operation*> qregUsers(oldQreg.getUsers().begin(),
+                                                  oldQreg.getUsers().end());
 
     for (auto* user : qregUsers) {
 
@@ -167,7 +165,7 @@ struct ConvertMQTDynExtract
         auto newInsertQreg = newInsertOp->getResult(0);
 
         // get the users of the register from the old insert operation
-        std::vector<mlir::Operation*> insertUsers(
+        const std::vector<mlir::Operation*> insertUsers(
             oldInsertQreg.getUsers().begin(), oldInsertQreg.getUsers().end());
 
         // iterate over the users to find the next operation after the new
@@ -185,8 +183,8 @@ struct ConvertMQTDynExtract
     }
 
     // get the users of the previous qubit
-    std::vector<mlir::Operation*> qubitUsers(oldQubit.getUsers().begin(),
-                                             oldQubit.getUsers().end());
+    const std::vector qubitUsers(oldQubit.getUsers().begin(),
+                                 oldQubit.getUsers().end());
     // iterate over the users of the old qubit and replace the operands with the
     // new one
     for (auto* user : llvm::reverse(qubitUsers)) {
@@ -235,12 +233,12 @@ struct ConvertMQTDynMeasure
     auto newQubit = mqtoptOp->getResult(0);
 
     // get the users of the result bit
-    std::vector<mlir::Operation*> bitUsers(oldBit.getUsers().begin(),
-                                           oldBit.getUsers().end());
+    const std::vector<mlir::Operation*> bitUsers(oldBit.getUsers().begin(),
+                                                 oldBit.getUsers().end());
 
     // get the users of the input qubit
-    std::vector<mlir::Operation*> qubitUsers(oldQubit.getUsers().begin(),
-                                             oldQubit.getUsers().end());
+    const std::vector<mlir::Operation*> qubitUsers(oldQubit.getUsers().begin(),
+                                                   oldQubit.getUsers().end());
 
     // iterate over the users of the old qubit and replace the operands with
     // the new one
@@ -297,7 +295,7 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateOp> {
                          : mlir::DenseBoolArrayAttr{};
 
     // create new operation
-    Operation* mqtoptOp;
+    Operation* mqtoptOp = nullptr;
 
     if (llvm::isa<::mqt::ir::dyn::XOp>(op)) {
       mqtoptOp = rewriter.create<::mqt::ir::opt::XOp>(
@@ -509,11 +507,11 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateOp> {
 
     // iterate over all the input qubits and replace their uses with the new
     // results
-    Value value;
+    Value value = nullptr;
     for (size_t i = 0; i < values.size(); i++) {
       value = values[i];
-      std::vector<mlir::Operation*> users(value.getUsers().begin(),
-                                          value.getUsers().end());
+      const std::vector<mlir::Operation*> users(value.getUsers().begin(),
+                                                value.getUsers().end());
 
       for (auto* user : llvm::reverse(users)) {
 
