@@ -65,25 +65,33 @@ struct Arguments {
 auto parseArguments(const std::vector<std::string>& args) -> Arguments {
   Arguments arguments;
   arguments.programName = args.front();
-  for (size_t i = 1; i < args.size(); ++i) {
+  size_t i = 1;
+  while (i < args.size()) {
     if (const std::string& arg = args.at(i); arg == "-h" || arg == "--help") {
       arguments.help = true;
+      ++i;
     } else if (arg == "-v" || arg == "--version") {
       arguments.version = true;
+      ++i;
     } else if (arg == "-o" || arg == "--output") {
-      if (++i < args.size()) {
+      ++i;
+      if (i < args.size()) {
         arguments.outputFile = args.at(i);
       } else {
         throw std::invalid_argument("Missing output file argument.");
       }
+      ++i;
     } else if (arg == "-s" || arg == "--schema") {
-      if (++i < args.size()) {
+      ++i;
+      if (i < args.size()) {
         arguments.schemaFile = args.at(i);
       } else {
         throw std::invalid_argument("Missing schema file argument.");
       }
+      ++i;
     } else {
       arguments.jsonFile = arg;
+      ++i;
     }
   }
   return arguments;
