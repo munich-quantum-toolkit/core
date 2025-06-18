@@ -10,4 +10,4 @@ set(LLVM_TARGET_DEFINITIONS MQTOptToMQTDyn.td)
 mlir_tablegen(MQTOptToMQTDyn.h.inc -gen-pass-decls -name MQTOptToMQTDyn)
 add_public_tablegen_target(MQTOptToMQTDynIncGen)
 
-add_mlir_doc(MQTOptToMQTDyn MQTOptToMQTDyn ./ -gen-pass-doc)
+add_mlir_doc(MQTOptToMQTDyn MQTOptToMQTDyn Conversions/ -gen-pass-doc)

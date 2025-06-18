@@ -6,8 +6,11 @@
 #
 # Licensed under the MIT License
 
+get_property(dialect_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
+set(LIBRARIES ${dialect_libs} MQT::CoreIR)
+add_compile_options(-fexceptions)
+
 file(GLOB CONVERSION_SOURCES *.cpp)
 
 add_mlir_library(MQTDynToMQTOpt ${CONVERSION_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
                  MQTDynToMQTOptIncGen)
-target_link_libraries(MQTDynToMQTOpt PRIVATE)
