@@ -34,7 +34,6 @@
 #include <mlir/Transforms/DialectConversion.h>
 #include <utility>
 #include <vector>
-
 namespace mqt::ir {
 
 using namespace mlir;
@@ -43,6 +42,15 @@ using namespace mlir;
 #include <mlir/Conversion/MQTDynToMQTOpt/MQTDynToMQTOpt.h.inc>
 
 namespace {
+// struct to store the metadata for qubits
+struct QubitData {
+  Value qReg;
+  Value index;
+  IntegerAttr indexAttr;
+  QubitData(Value qReg, Value index, IntegerAttr indexAttr)
+      : qReg(qReg), index(index), indexAttr(indexAttr) {}
+  QubitData() : qReg(nullptr), index(nullptr), indexAttr(nullptr) {}
+};
 llvm::DenseMap<mlir::Value, mlir::Value>& getQubitMap() {
   static llvm::DenseMap<mlir::Value, mlir::Value> qubitMap;
   return qubitMap;
@@ -50,6 +58,10 @@ llvm::DenseMap<mlir::Value, mlir::Value>& getQubitMap() {
 llvm::DenseMap<mlir::Value, mlir::Value>& getQregMap() {
   static llvm::DenseMap<mlir::Value, mlir::Value> qregMap;
   return qregMap;
+}
+llvm::DenseMap<mlir::Value, QubitData>& getQubitDataMap() {
+  static llvm::DenseMap<mlir::Value, QubitData> qubitDataMap;
+  return qubitDataMap;
 }
 
 } // namespace
@@ -103,10 +115,52 @@ struct ConvertMQTDynDealloc : public OpConversionPattern<dyn::DeallocOp> {
   matchAndRewrite(dyn::DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
 
-    // get the input qreg
-    auto oldQreg = getQregMap()[op.getQreg()];
-    // create new operation
-    auto mqtoptOp = rewriter.create<opt::DeallocOp>(op.getLoc(), oldQreg);
+    // prepare return type
+
+    auto qregType =
+        ::mqt::ir::opt::QubitRegisterType::get(rewriter.getContext());
+
+    auto dynQreg = op.getQreg();
+
+    // get the maps for the qubits and the qubitdata
+    auto& qubitMap = getQubitMap();
+    auto& qubitDataMap = getQubitDataMap();
+    auto& qregMap = getQregMap();
+    // iterate over all qubits to check if the qubit needs to be inserted in the
+    // register before the dealloc operation is called
+    for (auto qubitPair = qubitMap.begin(); qubitPair != qubitMap.end();) {
+      auto dynQubit = qubitPair->getFirst();
+      auto optQreg = qregMap[dynQreg];
+
+      // work around to delete the inserted qubit from the maps
+      auto toErase = qubitPair;
+      ++qubitPair;
+      // check if the qubit is extracted from the same register
+      if (dynQreg == qubitDataMap[dynQubit].qReg) {
+        auto optQubit = toErase->second;
+
+        // create insert operation
+        auto optInsertOp = rewriter.create<opt::InsertOp>(
+            op.getLoc(), qregType, optQreg, optQubit,
+            qubitDataMap[dynQubit].index, qubitDataMap[dynQubit].indexAttr);
+
+        // move it before the current dealloc operation
+        optInsertOp->moveBefore(op);
+        // update the latest opt register of the initial dyn register
+        qregMap[dynQreg] = optInsertOp.getOutQreg();
+
+        // remove the qubits from the maps
+        qubitMap.erase(toErase);
+        qubitDataMap.erase(dynQubit);
+      }
+    }
+    auto optQreg = qregMap[dynQreg];
+
+    // create the new dealloc operation
+    auto mqtoptOp = rewriter.create<opt::DeallocOp>(op.getLoc(), optQreg);
+
+    // erase the register from the map
+    qregMap.erase(dynQreg);
 
     // replace old operation with new operation
     rewriter.replaceOp(op, mqtoptOp);
@@ -127,7 +181,7 @@ struct ConvertMQTDynExtract : public OpConversionPattern<dyn::ExtractOp> {
 
     // get the latest opt register from the map
     auto dynQreg = op.getInQreg();
-    auto optQreg = getQregMap().at(dynQreg);
+    auto optQreg = getQregMap()[dynQreg];
     // create new operation
     auto mqtoptOp = rewriter.create<opt::ExtractOp>(
         op.getLoc(), qregType, qubitType, optQreg, adaptor.getIndex(),
@@ -143,6 +197,10 @@ struct ConvertMQTDynExtract : public OpConversionPattern<dyn::ExtractOp> {
     // update the latest opt register of the initial dyn register
     getQregMap()[dynQreg] = newQreg;
 
+    // add an entry to the qubitDataMap to store the indices and the register
+    // for the insertOperation
+    getQubitDataMap().insert({dynQubit, QubitData(dynQreg, adaptor.getIndex(),
+                                                  adaptor.getIndexAttrAttr())});
     // erase old operation
     rewriter.eraseOp(op);
 
@@ -160,17 +218,21 @@ struct ConvertMQTDynMeasure : public OpConversionPattern<dyn::MeasureOp> {
     auto qubitType = opt::QubitType::get(rewriter.getContext());
     auto bitType = rewriter.getI1Type();
 
+    auto& qubitMap = getQubitMap();
     // get the latest opt qubit from the map
-    auto oldQubit = getQubitMap()[op.getInQubits()[0]];
-    auto dynQubit = op.getInQubits()[0]; // create new operation
+
+    auto dynQubit = op.getInQubits()[0];
+    auto oldQubit = qubitMap[dynQubit];
+    // create new operation
     auto mqtoptOp = rewriter.create<opt::MeasureOp>(op.getLoc(), qubitType,
                                                     bitType, oldQubit);
 
     auto oldBit = op->getResult(0);
     auto newBit = mqtoptOp->getResult(1);
     auto newQubit = mqtoptOp->getResult(0);
+
     // update the latest opt qubit of the initial dyn qubit
-    getQubitMap()[dynQubit] = newQubit;
+    qubitMap[dynQubit] = newQubit;
 
     // iterate over the users of the old bit and replace the operands with
     // the new one
