@@ -44,21 +44,27 @@ using namespace mlir;
 namespace {
 // struct to store the metadata for qubits
 struct QubitData {
+  // dyn register from where the qubit was extracted
   Value qReg;
+  // index given as a value
   Value index;
+  // index given as an attribute
   IntegerAttr indexAttr;
   QubitData(Value qReg, Value index, IntegerAttr indexAttr)
       : qReg(qReg), index(index), indexAttr(indexAttr) {}
   QubitData() : qReg(nullptr), index(nullptr), indexAttr(nullptr) {}
 };
+// map each initial dyn qubit to its latest opt qubit
 llvm::DenseMap<mlir::Value, mlir::Value>& getQubitMap() {
   static llvm::DenseMap<mlir::Value, mlir::Value> qubitMap;
   return qubitMap;
 }
+// map each initial dyn register to its latest opt register
 llvm::DenseMap<mlir::Value, mlir::Value>& getQregMap() {
   static llvm::DenseMap<mlir::Value, mlir::Value> qregMap;
   return qregMap;
 }
+// map each initial dyn qubit to its metadata
 llvm::DenseMap<mlir::Value, QubitData>& getQubitDataMap() {
   static llvm::DenseMap<mlir::Value, QubitData> qubitDataMap;
   return qubitDataMap;
@@ -92,6 +98,7 @@ struct ConvertMQTDynAlloc : public OpConversionPattern<dyn::AllocOp> {
     // create result type
     auto qregType = opt::QubitRegisterType::get(rewriter.getContext());
 
+    auto& qRegMap = getQregMap();
     // create new operation
     auto mqtoptOp = rewriter.create<opt::AllocOp>(
         op.getLoc(), qregType, adaptor.getSize(), adaptor.getSizeAttrAttr());
@@ -100,7 +107,7 @@ struct ConvertMQTDynAlloc : public OpConversionPattern<dyn::AllocOp> {
     auto optQreg = mqtoptOp.getQreg();
 
     // put the pair of the dyn register and the latest opt register in the map
-    getQregMap().insert({dynQreg, optQreg});
+    qRegMap.insert({dynQreg, optQreg});
 
     rewriter.eraseOp(op);
 
@@ -116,9 +123,7 @@ struct ConvertMQTDynDealloc : public OpConversionPattern<dyn::DeallocOp> {
                   ConversionPatternRewriter& rewriter) const override {
 
     // prepare return type
-
-    auto qregType =
-        ::mqt::ir::opt::QubitRegisterType::get(rewriter.getContext());
+    auto qregType = opt::QubitRegisterType::get(rewriter.getContext());
 
     auto dynQreg = op.getQreg();
 
@@ -126,13 +131,14 @@ struct ConvertMQTDynDealloc : public OpConversionPattern<dyn::DeallocOp> {
     auto& qubitMap = getQubitMap();
     auto& qubitDataMap = getQubitDataMap();
     auto& qregMap = getQregMap();
+
     // iterate over all qubits to check if the qubit needs to be inserted in the
     // register before the dealloc operation is called
     for (auto qubitPair = qubitMap.begin(); qubitPair != qubitMap.end();) {
       auto dynQubit = qubitPair->getFirst();
       auto optQreg = qregMap[dynQreg];
 
-      // work around to delete the inserted qubit from the maps
+      // work around to delete the qubitPair from the maps
       auto toErase = qubitPair;
       ++qubitPair;
       // check if the qubit is extracted from the same register
@@ -179,9 +185,13 @@ struct ConvertMQTDynExtract : public OpConversionPattern<dyn::ExtractOp> {
     auto qregType = opt::QubitRegisterType::get(rewriter.getContext());
     auto qubitType = opt::QubitType::get(rewriter.getContext());
 
+    auto& qRegMap = getQregMap();
+    auto& qubitMap = getQubitMap();
+    auto& qubitDataMap = getQubitDataMap();
+
     // get the latest opt register from the map
     auto dynQreg = op.getInQreg();
-    auto optQreg = getQregMap()[dynQreg];
+    auto optQreg = qRegMap[dynQreg];
     // create new operation
     auto mqtoptOp = rewriter.create<opt::ExtractOp>(
         op.getLoc(), qregType, qubitType, optQreg, adaptor.getIndex(),
@@ -192,15 +202,15 @@ struct ConvertMQTDynExtract : public OpConversionPattern<dyn::ExtractOp> {
     auto newQreg = mqtoptOp.getOutQreg();
 
     ////put the pair of the dyn qubit and the latest opt qubit in the map
-    getQubitMap().insert({dynQubit, optQubit});
+    qubitMap.insert({dynQubit, optQubit});
 
     // update the latest opt register of the initial dyn register
-    getQregMap()[dynQreg] = newQreg;
+    qRegMap[dynQreg] = newQreg;
 
     // add an entry to the qubitDataMap to store the indices and the register
     // for the insertOperation
-    getQubitDataMap().insert({dynQubit, QubitData(dynQreg, adaptor.getIndex(),
-                                                  adaptor.getIndexAttrAttr())});
+    qubitDataMap.insert({dynQubit, QubitData(dynQreg, adaptor.getIndex(),
+                                             adaptor.getIndexAttrAttr())});
     // erase old operation
     rewriter.eraseOp(op);
 
@@ -214,33 +224,45 @@ struct ConvertMQTDynMeasure : public OpConversionPattern<dyn::MeasureOp> {
   LogicalResult
   matchAndRewrite(dyn::MeasureOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    // prepare result types
+
+    // prepare result type
     auto qubitType = opt::QubitType::get(rewriter.getContext());
-    auto bitType = rewriter.getI1Type();
 
     auto& qubitMap = getQubitMap();
-    // get the latest opt qubit from the map
+    auto dynQubits = op.getInQubits();
 
-    auto dynQubit = op.getInQubits()[0];
-    auto oldQubit = qubitMap[dynQubit];
+    std::vector<Value> optQubits;
+    std::vector<Type> qubitTypes;
+    // get the latest opt qubit from the map and add them and their type to the
+    // vectors
+    for (auto dynQubit : dynQubits) {
+      optQubits.push_back(qubitMap[dynQubit]);
+      qubitTypes.push_back(qubitType);
+    }
     // create new operation
-    auto mqtoptOp = rewriter.create<opt::MeasureOp>(op.getLoc(), qubitType,
-                                                    bitType, oldQubit);
+    auto mqtoptOp = rewriter.create<opt::MeasureOp>(
+        op.getLoc(), qubitTypes, op.getOutBits().getTypes(), optQubits);
 
-    auto oldBit = op->getResult(0);
-    auto newBit = mqtoptOp->getResult(1);
-    auto newQubit = mqtoptOp->getResult(0);
+    auto outOptQubits = mqtoptOp.getOutQubits();
+    auto oldBits = op.getOutBits();
+    auto newBits = mqtoptOp.getOutBits();
 
-    // update the latest opt qubit of the initial dyn qubit
-    qubitMap[dynQubit] = newQubit;
+    // iterate over all qubits and bits
+    for (size_t i = 0; i < dynQubits.size(); i++) {
 
-    // iterate over the users of the old bit and replace the operands with
-    // the new one
-    for (auto* user : oldBit.getUsers()) {
+      // update the latest opt qubit of the initial dyn qubit
+      qubitMap[dynQubits[i]] = outOptQubits[i];
 
-      // Only consider operations after the current operation
-      if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
-        user->replaceUsesOfWith(oldBit, newBit);
+      auto oldBit = oldBits[i];
+      auto newBit = newBits[i];
+
+      // update the operand of the previous bit users
+      for (auto* user : oldBit.getUsers()) {
+        // Only consider operations after the current operation
+        if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp &&
+            user != op) {
+          user->replaceUsesOfWith(oldBit, newBit);
+        }
       }
     }
 
@@ -263,6 +285,7 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateDynOp> {
     auto dynPosCtrlQubitsValues = op.getPosCtrlInQubits();
     auto dynNegCtrlQubitsValues = op.getNegCtrlInQubits();
     auto dynAllQubits = op.getAllInQubits();
+    auto& qubitMap = getQubitMap();
 
     // get the latest opt qubit of all dyn input qubits
     std::vector<Value> optInQubits;
@@ -270,13 +293,13 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateDynOp> {
     std::vector<Value> optNegCtrlQubitsValues;
 
     for (auto dynQubit : dynInQubitsValues) {
-      optInQubits.push_back(getQubitMap()[dynQubit]);
+      optInQubits.push_back(qubitMap[dynQubit]);
     }
     for (auto dynQubit : dynPosCtrlQubitsValues) {
-      optPosCtrlQubitsValues.push_back(getQubitMap()[dynQubit]);
+      optPosCtrlQubitsValues.push_back(qubitMap[dynQubit]);
     }
     for (auto dynQubit : dynNegCtrlQubitsValues) {
-      optNegCtrlQubitsValues.push_back(getQubitMap()[dynQubit]);
+      optNegCtrlQubitsValues.push_back(qubitMap[dynQubit]);
     }
 
     // append them to a single vector
@@ -288,16 +311,16 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateDynOp> {
 
     // get the static params and paramMask if they exist
     DenseF64ArrayAttr staticParams = nullptr;
-    if (auto params = op.getStaticParams()) {
-      staticParams =
-          mlir::DenseF64ArrayAttr::get(rewriter.getContext(), params.value());
+    if (auto optionalParams = op.getStaticParams()) {
+      staticParams = mlir::DenseF64ArrayAttr::get(rewriter.getContext(),
+                                                  optionalParams.value());
     } else {
       staticParams = DenseF64ArrayAttr{};
     }
     DenseBoolArrayAttr paramMask = nullptr;
-    if (auto mask = op.getParamsMask()) {
-      paramMask =
-          mlir::DenseBoolArrayAttr::get(rewriter.getContext(), mask.value());
+    if (auto optionalMask = op.getParamsMask()) {
+      paramMask = mlir::DenseBoolArrayAttr::get(rewriter.getContext(),
+                                                optionalMask.value());
     } else {
       paramMask = DenseBoolArrayAttr{};
     }
@@ -314,7 +337,7 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateDynOp> {
     Value dynQubit = nullptr;
     for (size_t i = 0; i < dynAllQubits.size(); i++) {
       dynQubit = dynAllQubits[i];
-      getQubitMap()[dynQubit] = mqtoptOp->getResult(i);
+      qubitMap[dynQubit] = mqtoptOp->getResult(i);
     }
 
     // erase the old operation

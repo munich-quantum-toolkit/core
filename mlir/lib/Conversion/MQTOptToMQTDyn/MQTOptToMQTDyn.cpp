@@ -161,29 +161,42 @@ struct ConvertMQTOptMeasure : public OpConversionPattern<opt::MeasureOp> {
   LogicalResult
   matchAndRewrite(opt::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // prepare result type
-    auto bitType = rewriter.getI1Type();
 
+    auto oldBits = op.getOutBits();
+    auto dynQubits = adaptor.getInQubits();
+    auto optQubits = op.getOutQubits();
     // create new operation
-    auto mqtdynOp = rewriter.create<dyn::MeasureOp>(op.getLoc(), bitType,
-                                                    adaptor.getInQubits()[0]);
+    auto mqtdynOp = rewriter.create<dyn::MeasureOp>(
+        op.getLoc(), oldBits.getTypes(), dynQubits);
 
-    auto oldBit = op->getResult(1);
-    auto optQubit = op->getResult(0);
-    auto newBit = mqtdynOp->getResult(0);
-    auto dynQubit = adaptor.getInQubits()[0];
+    auto newBits = mqtdynOp.getOutBits();
 
-    // update the operand of the opt qubit user
-    (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
+    Value dynQubit = nullptr;
+    Value optQubit = nullptr;
+    Value oldBit = nullptr;
+    Value newBit = nullptr;
 
-    // iterate over them and replace the old bit with the new bit
-    for (auto* user : oldBit.getUsers()) {
+    // iterate over the qubits and bits
+    for (size_t i = 0; i < optQubits.size(); i++) {
+      dynQubit = dynQubits[i];
+      optQubit = optQubits[i];
+      oldBit = oldBits[i];
+      newBit = newBits[i];
+      // update the operand of the opt qubit user
+      (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
 
-      // Only consider operations after the current operation
-      if (!user->isBeforeInBlock(mqtdynOp) && user != mqtdynOp && user != op) {
-        user->replaceUsesOfWith(oldBit, newBit);
+      // iterate over the users of the old bit and replace the old bit with the
+      // new bit
+      for (auto* user : oldBit.getUsers()) {
+
+        // Only consider operations after the current operation
+        if (!user->isBeforeInBlock(mqtdynOp) && user != mqtdynOp &&
+            user != op) {
+          user->replaceUsesOfWith(oldBit, newBit);
+        }
       }
     }
+
     rewriter.eraseOp(op);
     return success();
   }
@@ -213,16 +226,16 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
 
     // get the static params and paramMask if they exist
     DenseF64ArrayAttr staticParams = nullptr;
-    if (auto params = op.getStaticParams()) {
-      staticParams =
-          mlir::DenseF64ArrayAttr::get(rewriter.getContext(), params.value());
+    if (auto optionalParams = op.getStaticParams()) {
+      staticParams = mlir::DenseF64ArrayAttr::get(rewriter.getContext(),
+                                                  optionalParams.value());
     } else {
       staticParams = DenseF64ArrayAttr{};
     }
     DenseBoolArrayAttr paramMask = nullptr;
-    if (auto mask = op.getParamsMask()) {
-      paramMask =
-          mlir::DenseBoolArrayAttr::get(rewriter.getContext(), mask.value());
+    if (auto optionalMask = op.getParamsMask()) {
+      paramMask = mlir::DenseBoolArrayAttr::get(rewriter.getContext(),
+                                                optionalMask.value());
     } else {
       paramMask = DenseBoolArrayAttr{};
     }
