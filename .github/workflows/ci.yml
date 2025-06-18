@@ -276,25 +276,3 @@ jobs:
               && '' || 'cd,'
             }}
           jobs: ${{ toJSON(needs) }}
-
-  render-template:
-    name: Render template
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          submodules: recursive
-      - name: Render template
-        uses: munich-quantum-toolkit/.github/.github/workflows/templating.yml@templating
-        with:
-          output-path: .github/pull_request_template.md
-      - name: Commit and push changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -am "Update template"
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
