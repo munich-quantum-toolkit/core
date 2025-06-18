@@ -199,13 +199,13 @@ struct ConvertMQTDynExtract : public OpConversionPattern<dyn::ExtractOp> {
 
     auto dynQubit = op.getOutQubit();
     auto optQubit = mqtoptOp.getOutQubit();
-    auto newQreg = mqtoptOp.getOutQreg();
+    auto newOptQreg = mqtoptOp.getOutQreg();
 
     ////put the pair of the dyn qubit and the latest opt qubit in the map
     qubitMap.insert({dynQubit, optQubit});
 
     // update the latest opt register of the initial dyn register
-    qRegMap[dynQreg] = newQreg;
+    qRegMap[dynQreg] = newOptQreg;
 
     // add an entry to the qubitDataMap to store the indices and the register
     // for the insertOperation

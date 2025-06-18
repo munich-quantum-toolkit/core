@@ -245,16 +245,16 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
                                   dynInQubitsValues, dynPosCtrlQubitsValues,
                                   dynCtrlQubitsValues);
 
-    Value optQubit;
+    Value optQubit = nullptr;
+    Value dynQubit = nullptr;
     auto optResults = op->getResults();
 
     // iterate over all opt qubits
     for (size_t i = 0; i < optResults.size(); i++) {
       optQubit = optResults[i];
-
+      dynQubit = allDynInputQubits[i];
       // update the operand of the opt qubit user
-      (*optQubit.getUsers().begin())
-          ->replaceUsesOfWith(optQubit, allDynInputQubits[i]);
+      (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
     }
 
     // erase the previous operation
