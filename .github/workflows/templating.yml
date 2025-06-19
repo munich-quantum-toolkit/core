@@ -7,22 +7,17 @@ on:
 jobs:
   render-template:
     name: Render template
-    uses: munich-quantum-toolkit/.github/.github/workflows/templating.yml@templating
-    with:
-      output-path: .github/pull_request_template.md
-  commit-changes:
-    name: Commit and push changes
     runs-on: ubuntu-latest
-    needs: render-template
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           submodules: recursive
-      - name: Download rendered template
-        uses: actions/download-artifact@v4
+      - name: Render template
+        uses: https://github.com/munich-quantum-toolkit/.github/templating@templating
         with:
-          name: rendered-template
-          path: .github/
+          package-name: core
+      - name: Copy rendered template
+        run: cp ${{ github.workspace }}/pull_request_template.md .github/pull_request_template.md
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
