@@ -13,7 +13,7 @@ jobs:
         with:
           submodules: recursive
       - name: Render template
-        uses: https://github.com/munich-quantum-toolkit/.github/templating@templating
+        uses: munich-quantum-toolkit/.github/templating@templating
         with:
           package-name: core
       - name: Copy rendered template
