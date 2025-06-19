@@ -23,5 +23,9 @@ jobs:
       - name: Commit and push changes
         run: |
           git add .
-          git commit -m "Update template"
-          git push
+          if ! git diff --cached --quiet; then
+            git commit -m "Update template"
+            git push
+          else
+            echo "No changes to commit."
+          fi
