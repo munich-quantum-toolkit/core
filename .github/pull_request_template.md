@@ -1,24 +1,19 @@
-## Description
+# Security Policy
 
-core3
+## Supported Versions
 
-Please include a summary of the change and, if applicable, which issue is fixed.
-Please also include relevant motivation and context.
-List any dependencies that are required for this change.
+Security updates are applied only to the most recent releases.
 
-Fixes #(issue) <!--- Replace `(issue)` with the issue number fixed by this pull request. If this PR does not fix an issue, please remove this line. -->
+## Reporting a Vulnerability
 
-## Checklist:
+To report vulnerabilities, you can privately report a potential security issue
+via the GitHub security vulnerabilities feature. This can be done here:
 
-<!---
-This checklist serves as a reminder of a couple of things that ensure your pull request will be merged swiftly.
--->
+/security/advisories
 
-- [ ] The pull request only contains commits that are focused and relevant to this change.
-- [ ] I have added appropriate tests that cover the new/changed functionality.
-- [ ] I have updated the documentation to reflect these changes.
-- [ ] I have added entries to the changelog for any noteworthy additions, changes, fixes or removals.
-- [ ] I have added migration instructions to the upgrade guide (if needed).
-- [ ] The changes follow the project's style guidelines and introduce no new warnings.
-- [ ] The changes are fully tested and pass the CI checks.
-- [ ] I have reviewed my own code changes.
+Please do **not** open a public issue about a potential security vulnerability.
+
+You can find more details on the security vulnerability feature in the GitHub
+documentation here:
+
+https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability
