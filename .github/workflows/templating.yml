@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
-          submodules: recursive
+          ref: ${{ github.head_ref }}
       - name: Render template
         uses: munich-quantum-toolkit/.github/templating@templating
         with:
@@ -19,11 +19,9 @@ jobs:
       - name: Configure bot
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Commit and push changes
         run: |
           git add .
           git commit -m "Update template"
-          git push HEAD
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          git push
