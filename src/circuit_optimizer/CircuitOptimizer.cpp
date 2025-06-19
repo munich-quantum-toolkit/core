@@ -1435,8 +1435,9 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
     bool canProcess = true;
     bool makesTooBig = false;
 
-    if (!op->isUnitary() ) {
-      //print is Clifford on console //|| (onlyCollectCliffords && !op->isClifford()))
+    if (!op->isUnitary()) {
+      // print is Clifford on console //|| (onlyCollectCliffords &&
+      // !op->isClifford()))
       std::cout << "Skipping operation: " << op->isClifford() << std::endl;
       canProcess = false;
     }
