@@ -19,14 +19,11 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <cstddef>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/TypeRange.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -271,7 +268,7 @@ struct MQTOptToMQTDyn : impl::MQTOptToMQTDynBase<MQTOptToMQTDyn> {
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
-    MQTOptToMQTDynTypeConverter typeConverter(context);
+    const MQTOptToMQTDynTypeConverter typeConverter(context);
 
     target.addIllegalDialect<opt::MQTOptDialect>();
     target.addLegalDialect<dyn::MQTDynDialect>();
