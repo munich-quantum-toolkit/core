@@ -18,7 +18,6 @@ jobs:
           package-name: core2
       - name: Commit and push changes
         run: |
-          git config user.name "The Templating Bot"
           git add .
           git commit -m "Update template"
           git push origin templating
