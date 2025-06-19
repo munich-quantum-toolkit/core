@@ -22,9 +22,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
       - name: Commit and push changes
         run: |
-          git checkout templating
           git add .
           git commit -m "Update template"
-          git push
+          git push HEAD
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
