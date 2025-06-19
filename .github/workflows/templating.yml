@@ -16,14 +16,12 @@ jobs:
         uses: munich-quantum-toolkit/.github/templating@templating
         with:
           package-name: core2
-      - name: Copy rendered template
-        run: cp ${{ github.workspace }}/pull_request_template.md .github/pull_request_template.md
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .
           git commit -m "Update template"
-          git push
+          git push origin ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
