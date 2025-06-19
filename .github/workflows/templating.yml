@@ -16,7 +16,7 @@ jobs:
       - name: Render template
         uses: munich-quantum-toolkit/.github/templating@templating
         with:
-          package-name: core3
+          package-url: https://github.com/munich-quantum-toolkit/core
       - name: Configure bot
         run: |
           git config user.name "github-actions[bot]"
