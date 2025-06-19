@@ -15,7 +15,7 @@ jobs:
       - name: Render template
         uses: munich-quantum-toolkit/.github/templating@templating
         with:
-          package-name: core2
+          package-name: core
       - name: Copy rendered template
         run: cp ${{ github.workspace }}/pull_request_template.md .github/pull_request_template.md
       - name: Commit and push changes
