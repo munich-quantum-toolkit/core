@@ -426,11 +426,13 @@ struct CatalystQuantumToMQTOpt
     target.addIllegalDialect<catalyst::quantum::QuantumDialect>();
 
     // Mark operations legal, that have no equivalent in the target dialect
+    // TODO: how to handle them properly?
     target.addLegalOp<
         catalyst::quantum::DeviceInitOp, catalyst::quantum::DeviceReleaseOp,
         catalyst::quantum::NamedObsOp, catalyst::quantum::ExpvalOp,
         catalyst::quantum::FinalizeOp, catalyst::quantum::ComputationalBasisOp,
-        catalyst::quantum::StateOp, catalyst::quantum::InitializeOp>();
+        catalyst::quantum::StateOp, catalyst::quantum::InitializeOp,
+        catalyst::quantum::ComputationalBasisOp>();
 
     RewritePatternSet patterns(context);
     CatalystQuantumToMQTOptTypeConverter typeConverter(context);

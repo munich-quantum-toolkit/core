@@ -65,16 +65,16 @@ def get_catalyst_plugin_abs_path() -> Path:
     raise FileNotFoundError(msg)
 
 
-def name2pass(_name: str) -> tuple[Path, str]:
+def name2pass(name: str) -> tuple[Path, str]:
     """Convert a pass name to its plugin path and pass name (required by Catalyst).
 
     Args:
-        _name: The name of the pass, e.g., "mqt-core-round-trip".
+        name: The name of the pass, e.g., "mqt-core-round-trip".
 
     Returns:
         A tuple containing the absolute path to the plugin and the pass name.
     """
-    return get_catalyst_plugin_abs_path(), "mqt-core-round-trip"
+    return get_catalyst_plugin_abs_path(), name
 
 
 def mqt_core_roundtrip(*flags: any, **valued_options: any) -> qml.QNode:
@@ -93,10 +93,27 @@ def mqt_core_roundtrip(*flags: any, **valued_options: any) -> qml.QNode:
 
     def add_pass_to_pipeline(**kwargs: any) -> list[PassPlugin]:
         pass_pipeline = kwargs.get("pass_pipeline", [])
+
+        pass_pipeline.append(
+            PassPlugin(
+                get_catalyst_plugin_abs_path(),
+                "catalystquantum-to-mqtopt",
+                *flags,
+                **valued_options,
+            )
+        )
         pass_pipeline.append(
             PassPlugin(
                 get_catalyst_plugin_abs_path(),
                 "mqt-core-round-trip",
+                *flags,
+                **valued_options,
+            )
+        )
+        pass_pipeline.append(
+            PassPlugin(
+                get_catalyst_plugin_abs_path(),
+                "mqtopt-to-catalystquantum",
                 *flags,
                 **valued_options,
             )

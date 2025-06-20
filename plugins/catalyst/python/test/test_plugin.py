@@ -14,15 +14,11 @@ can be executed with PennyLane.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
+import catalyst
 import pennylane as qml
 import pytest
 from catalyst.passes import apply_pass
 from mqt.catalyst import get_catalyst_plugin_abs_path
-
-if TYPE_CHECKING:
-    from pennylane.measurements.state import StateMP
 
 plugin_available: bool = True
 try:
@@ -32,21 +28,19 @@ except ImportError:
 
 
 @pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
-def test_mqt_plugin() -> None:
-    """Generate MLIR for the MQT plugin.
+def test_mqtopt_conversion() -> None:
+    """Execute the conversion passes to and from MQTOpt dialect."""
 
-    Execute the full pipeline, including the MQT pass.
-    """
-
-    @apply_pass("mqt-core-round-trip")
+    @apply_pass("mqtopt-to-catalystquantum")
+    @apply_pass("catalystquantum-to-mqtopt")
     @qml.qnode(qml.device("lightning.qubit", wires=2))
-    def circuit() -> StateMP:
+    def circuit() -> None:
         qml.Hadamard(wires=[0])
         qml.CNOT(wires=[0, 1])
-        return qml.state()
+        catalyst.measure(0)
 
-    @qml.qjit(pass_plugins={plugin_path}, dialect_plugins={plugin_path}, target="mlir")
-    def module() -> StateMP:
+    @qml.qjit(pass_plugins={plugin_path}, dialect_plugins={plugin_path}, target="mlir", autograph=True)
+    def module() -> None:
         return circuit()
 
     # This will execute the pass and return the final MLIR
