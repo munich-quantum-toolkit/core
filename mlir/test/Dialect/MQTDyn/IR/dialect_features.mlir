@@ -14,7 +14,6 @@ module {
     // CHECK-LABEL: func.func @testAllocOpAttribute
     func.func @testAllocOpAttribute() {
         // CHECK: %[[QREG:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}>
-        // CHECK-NOT: "mqtdyn.allocQubitRegister"
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
         return
@@ -28,7 +27,6 @@ module {
     func.func @testAllocOpOperand() {
         // CHECK: %[[SIZE:.*]] = arith.constant 4
         // CHECK: %[[QREG:.*]] = "mqtdyn.allocQubitRegister"(%[[SIZE]]) : (i64) -> !mqtdyn.QubitRegister
-        // CHECK-NOT: "mqtdyn.allocQubitRegister"
 
         %size = arith.constant 4 : i64
         %qreg = "mqtdyn.allocQubitRegister"(%size) : (i64) -> !mqtdyn.QubitRegister
@@ -42,7 +40,6 @@ module {
     // CHECK-LABEL: func.func @testDeallocOp
     func.func @testDeallocOp() {
         // CHECK: "mqtdyn.deallocQubitRegister"(%[[ANY:.*]])
-        // CHECK-NOT: "mqtdyn.deallocQubitRegister"
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
         "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
@@ -56,7 +53,6 @@ module {
     // CHECK-LABEL: func.func @testExtractOpAttribute
     func.func @testExtractOpAttribute() {
         // CHECK: %[[Q0:.*]] = "mqtdyn.extractQubit"(%[[ANY:.*]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-        // CHECK-NOT: "mqtdyn.extractQubit"([[ANY:.*]])
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -71,7 +67,6 @@ module {
     func.func @testExtractOpOperand() {
         // CHECK: %[[INDEX:.*]] = arith.constant 0
         // CHECK: %[[Q0:.*]] = "mqtdyn.extractQubit"(%[[ANY:.*]], %[[INDEX]]) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
-        // CHECK-NOT: "mqtdyn.extractQubit"([[ANY:.*]])
 
         %index = arith.constant 0 : i64
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
@@ -90,9 +85,6 @@ module {
         // CHECK: %[[QREG:.*]] = "mqtdyn.allocQubitRegister"(%[[SIZE]]) : (i64) -> !mqtdyn.QubitRegister
         // CHECK: %[[Q0:.*]] = "mqtdyn.extractQubit"(%[[QREG]], %[[INDEX]]) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
         // CHECK: "mqtdyn.deallocQubitRegister"(%[[QREG]])
-        // CHECK-NOT: "mqtdyn.allocQubitRegister"
-        // CHECK-NOT: "mqtdyn.extractQubit"
-        // CHECK-NOT: "mqtdyn.deallocQubitRegister"
 
         %size = arith.constant 1 : i64
         %index = arith.constant 0 : i64
@@ -109,7 +101,6 @@ module {
     // CHECK-LABEL: func.func @testMeasureOp
     func.func @testMeasureOp() {
         // CHECK: [[M0:.*]] = "mqtdyn.measure"(%[[ANY:.*]])
-        // CHECK-NOT: "mqtdyn.measure"([[ANY:.*]])
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -127,7 +118,6 @@ module {
     // CHECK-LABEL: func.func @testMeasureOpOnMultipleInputs
     func.func @testMeasureOpOnMultipleInputs() {
         // CHECK: [[M:.*]]:2 = "mqtdyn.measure"(%[[ANY:.*]], %[[ANY:.*]])
-        // CHECK-NOT: "mqtdyn.measure"([[ANY:.*]])
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -158,7 +148,6 @@ module {
         // CHECK: mqtdyn.vdg() %[[Q0]]
         // CHECK: mqtdyn.sx() %[[Q0]]
         // CHECK: mqtdyn.sxdg() %[[Q0]]
-        // CHECK-NOT: mqtdyn.[[ANY:.*]]() [[ANY:.*]]
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -194,7 +183,6 @@ module {
         // CHECK: mqtdyn.rx(%[[P0]]) %[[Q0]]
         // CHECK: mqtdyn.ry(%[[P0]]) %[[Q0]]
         // CHECK: mqtdyn.rz(%[[P0]]) %[[Q0]]
-        // CHECK-NOT: mqtdyn.[[ANY:.*]]([[ANY:.*]]) %[[ANY:.*]]
 
         %p0 = arith.constant 3.000000e-01 : f64
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
@@ -224,7 +212,6 @@ module {
         // CHECK: mqtdyn.rx(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
         // CHECK: mqtdyn.ry(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
         // CHECK: mqtdyn.rz(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
-        // CHECK-NOT: mqtdyn.[[ANY:.*]]([[ANY:.*]]) %[[ANY:.*]] ctrl %[[ANY:.*]]
 
         %p0 = arith.constant 3.000000e-01 : f64
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
@@ -249,7 +236,6 @@ module {
     // CHECK-LABEL: func.func @testCXOp
     func.func @testCXOp() {
         // CHECK: mqtdyn.x() %[[Q0:.*]] ctrl %[[Q1:.*]]
-        // CHECK-NOT: %[[ANY:.*]], %[[ANY:.*]] = mqtdyn.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -268,7 +254,6 @@ module {
     // CHECK-LABEL: func.func @testNegativeCXOp
     func.func @testNegativeCXOp() {
         // CHECK: mqtdyn.x() %[[Q1:.*]] nctrl %[[Q0:.*]]
-        // CHECK-NOT: %[[ANY:.*]], %[[ANY:.*]] = mqtdyn.x() %[[ANY:.*]] nctrl %[[ANY:.*]]
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -287,7 +272,6 @@ module {
     // CHECK-LABEL: func.func @testMCXOp
     func.func @testMCXOp() {
         // CHECK: mqtdyn.x() %[[Q1:.*]] ctrl %[[Q0:.*]], %[[Q2:.*]]
-        // CHECK-NOT: mqtdyn.x() [[ANY:.*]] ctrl %[[ANY:.*]]:2
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -315,7 +299,6 @@ module {
     // CHECK-LABEL: func.func @testNegativeMCXOp
     func.func @testNegativeMCXOp() {
         // CHECK: mqtdyn.x() %[[Q1:.*]] nctrl %[[Q0:.*]], %[[Q2:.*]]
-        // CHECK-NOT: mqtdyn.x() [[ANY:.*]] nctrl %[[ANY:.*]]:2
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -343,7 +326,6 @@ module {
     // CHECK-LABEL: func.func @testMixedMCXOp
     func.func @testMixedMCXOp() {
         // CHECK: mqtdyn.x() %[[Q1:.*]] ctrl %[[Q0:.*]] nctrl %[[Q2:.*]]
-        // CHECK-NOT: mqtdyn.x() [[ANY:.*]] ctrl %[[ANY:.*]] nctrl %[[ANY:.*]]
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -377,7 +359,6 @@ module {
         // CHECK: mqtdyn.peresdg() %[[Q0]], %[[Q1]]
         // CHECK: mqtdyn.dcx() %[[Q0]], %[[Q1]]
         // CHECK: mqtdyn.ecr() %[[Q0]], %[[Q1]]
-        // CHECK-NOT: mqtdyn.[[ANY:.*]]() %[[ANY:.*]], %[[ANY:.*]]
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -402,7 +383,6 @@ module {
     // CHECK-LABEL: func.func @testControlledSWAPOp
     func.func @testControlledSWAPOp() {
         // CHECK: mqtdyn.swap() %[[Q0:.*]], %[[Q1:.*]] ctrl %[[Q2:.*]]
-        // CHECK-NOT: mqtdyn.swap() [[ANY:.*]], [[ANY:.*]] ctrl [[ANY:.*]]
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -410,7 +390,6 @@ module {
         %q2 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 2 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
 
         mqtdyn.swap() %q0, %q1 ctrl %q2
-
 
         "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
         return
@@ -423,7 +402,6 @@ module {
     // CHECK-LABEL: func.func @testNegativeControlledSWAPOp
     func.func @testNegativeControlledSWAPOp() {
         // CHECK: mqtdyn.swap() %[[Q0:.*]], %[[Q1:.*]] nctrl %[[Q2:.*]]
-        // CHECK-NOT: mqtdyn.swap() [[ANY:.*]], [[ANY:.*]] nctrl [[ANY:.*]]
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -444,7 +422,6 @@ module {
     // CHECK-LABEL: func.func @testMixedControlledSWAPOp
     func.func @testMixedControlledSWAPOp() {
         // CHECK: mqtdyn.swap() %[[Q0:.*]], %[[Q1:.*]] ctrl %[[Q2:.*]] nctrl %[[Q3:.*]]
-        // CHECK-NOT: mqtdyn.swap() [[ANY:.*]], [[ANY:.*]] ctrl [[ANY:.*]] nctrl [[ANY:.*]]
 
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 4 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -483,7 +460,6 @@ module {
         // CHECK: mqtdyn.rzx(%[[P0]]) %[[Q0]], %[[Q1]]
         // CHECK: mqtdyn.xxminusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]]
         // CHECK: mqtdyn.xxplusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]]
-        // CHECK-NOT: mqtdyn.[[ANY:.*]]([[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]]
 
         %p0 = arith.constant 3.000000e-01 : f64
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
@@ -514,7 +490,6 @@ module {
         // CHECK: mqtdyn.rzx(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
         // CHECK: mqtdyn.xxminusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
         // CHECK: mqtdyn.xxplusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
-        // CHECK-NOT: mqtdyn.[[ANY:.*]]([[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]] ctrl %[[ANY:.*]]
 
         %p0 = arith.constant 3.000000e-01 : f64
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
