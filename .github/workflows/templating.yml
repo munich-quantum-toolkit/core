@@ -8,6 +8,9 @@ jobs:
   render-template:
     name: Render template
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: munich-quantum-toolkit/templates@add-action
         with:
