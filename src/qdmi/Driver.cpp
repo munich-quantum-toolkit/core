@@ -85,6 +85,8 @@ struct DeviceLibrary {
   decltype(QDMI_device_job_free)* device_job_free{};
   /// Function pointer to @ref QDMI_device_job_set_parameter.
   decltype(QDMI_device_job_set_parameter)* device_job_set_parameter{};
+  /// Function pointer to @ref QDMI_device_job_query_property.
+  decltype(QDMI_device_job_query_property)* device_job_query_property{};
   /// Function pointer to @ref QDMI_device_job_submit.
   decltype(QDMI_device_job_submit)* device_job_submit{};
   /// Function pointer to @ref QDMI_device_job_cancel.
@@ -160,6 +162,11 @@ struct QDMI_Session_impl_d {
 struct QDMI_Job_impl_d {
   QDMI_Device_Job deviceJob = nullptr; ///< The device job handle.
   QDMI_Device device = nullptr; ///< The device handle associated with the job.
+  void* program = nullptr;      ///< Pointer to the program data
+  std::string id;               ///< Unique identifier of the job
+  size_t shotsNum = 1;          ///< The number of shots
+  /// The format of the program to be executed.
+  QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_MAX;
 };
 
 namespace qc {
@@ -244,6 +251,12 @@ namespace {
     return prefix##_QDMI_device_job_set_parameter(                             \
         PREFIX_CAST(prefix, Device_Job, job), param, size, value);             \
   }                                                                            \
+  int prefix##_device_job_query_property(                                      \
+      QDMI_Device_Job job, QDMI_Device_Job_Property prop, size_t size,         \
+      void* value, size_t* size_ret) {                                         \
+    return prefix##_QDMI_device_job_query_property(                            \
+        PREFIX_CAST(prefix, Device_Job, job), prop, size, value, size_ret);    \
+  }                                                                            \
   int prefix##_device_job_submit(QDMI_Device_Job job) {                        \
     return prefix##_QDMI_device_job_submit(                                    \
         PREFIX_CAST(prefix, Device_Job, job));                                 \
@@ -257,9 +270,9 @@ namespace {
     return prefix##_QDMI_device_job_check(                                     \
         PREFIX_CAST(prefix, Device_Job, job), status);                         \
   }                                                                            \
-  int prefix##_device_job_wait(QDMI_Device_Job job) {                          \
-    return prefix##_QDMI_device_job_wait(                                      \
-        PREFIX_CAST(prefix, Device_Job, job));                                 \
+  int prefix##_device_job_wait(QDMI_Device_Job job, size_t timeout) {          \
+    return prefix##_QDMI_device_job_wait(PREFIX_CAST(prefix, Device_Job, job), \
+                                         timeout);                             \
   }                                                                            \
   int prefix##_device_job_get_results(QDMI_Device_Job job,                     \
                                       QDMI_Job_Result result, size_t size,     \
@@ -376,6 +389,7 @@ void addDynamicDeviceLibrary(const std::string& libName,
     LOAD_SYMBOL(library, prefix, device_session_create_device_job)
     LOAD_SYMBOL(library, prefix, device_job_free)
     LOAD_SYMBOL(library, prefix, device_job_set_parameter)
+    LOAD_SYMBOL(library, prefix, device_job_query_property)
     LOAD_SYMBOL(library, prefix, device_job_submit)
     LOAD_SYMBOL(library, prefix, device_job_cancel)
     LOAD_SYMBOL(library, prefix, device_job_check)
@@ -430,6 +444,18 @@ auto addDevice(const DeviceLibrary& library) -> void {
   static std::unordered_map<QDMI_Session, std::unique_ptr<QDMI_Session_impl_d>>
       sessions;
   return sessions;
+}
+
+/**
+ * Returns a reference to the map of jobs. The map is used to store the
+ * jobs created by the QDMI library.
+ * @returns a reference to a map of QDMI_Job to their corresponding unique
+ * pointers of QDMI_Job_impl_d objects.
+ */
+[[nodiscard]] auto jobs()
+    -> std::unordered_map<QDMI_Job, std::unique_ptr<QDMI_Job_impl_d>>& {
+  static std::unordered_map<QDMI_Job, std::unique_ptr<QDMI_Job_impl_d>> jobs;
+  return jobs;
 }
 } // namespace
 
@@ -514,19 +540,8 @@ int QDMI_session_query_session_property(QDMI_Session session,
   if (session->status != qc::SessionStatus::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
-  if (prop == (QDMI_SESSION_PROPERTY_DEVICES)) {
-    if (value != nullptr) {
-      if (size < qc::devices().size() * sizeof(QDMI_Device)) {
-        return QDMI_ERROR_INVALIDARGUMENT;
-      }
-      memcpy(value, static_cast<const void*>(qc::devices().data()),
-             qc::devices().size() * sizeof(QDMI_Device));
-    }
-    if (sizeRet != nullptr) {
-      *sizeRet = qc::devices().size() * sizeof(QDMI_Device);
-    }
-    return QDMI_SUCCESS;
-  }
+  ADD_LIST_PROPERTY(QDMI_SESSION_PROPERTY_DEVICES, QDMI_Device, qc::devices(),
+                    prop, size, value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
@@ -534,18 +549,37 @@ int QDMI_device_create_job(QDMI_Device dev, QDMI_Job* job) {
   if (dev == nullptr || job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  *job = new QDMI_Job_impl_d();
-  (*job)->device = dev;
-  return dev->library->device_session_create_device_job(dev->session,
-                                                        &(*job)->deviceJob);
+  auto uniqueJob = std::make_unique<QDMI_Job_impl_d>();
+  uniqueJob->device = dev;
+  auto result = dev->library->device_session_create_device_job(
+      dev->session, &uniqueJob->deviceJob);
+  if (result != QDMI_SUCCESS) {
+    return result;
+  }
+  // Query the job ID from the device job
+  size_t size = 0;
+  result = dev->library->device_job_query_property(
+      uniqueJob->deviceJob, QDMI_DEVICE_JOB_PROPERTY_ID, 0, nullptr, &size);
+  if (result != QDMI_SUCCESS || size == 0) {
+    dev->library->device_job_free(uniqueJob->deviceJob);
+    return QDMI_ERROR_FATAL;
+  }
+  uniqueJob->id.resize(size);
+  result = dev->library->device_job_query_property(
+      uniqueJob->deviceJob, QDMI_DEVICE_JOB_PROPERTY_ID, size,
+      uniqueJob->id.data(), nullptr);
+  if (result != QDMI_SUCCESS) {
+    dev->library->device_job_free(uniqueJob->deviceJob);
+    return QDMI_ERROR_FATAL;
+  }
+  *job = qc::jobs().emplace(uniqueJob.get(), std::move(uniqueJob)).first->first;
+  return QDMI_SUCCESS;
 }
 
 void QDMI_job_free(QDMI_Job job) {
   if (job != nullptr) {
     job->device->library->device_job_free(job->deviceJob);
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    delete job;
+    qc::jobs().erase(job);
   }
 }
 
@@ -554,9 +588,31 @@ int QDMI_job_set_parameter(QDMI_Job job, QDMI_Job_Parameter param,
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return job->device->library->device_job_set_parameter(
-      job->deviceJob, static_cast<QDMI_Device_Job_Parameter>(param), size,
-      value);
+  ADD_POINTER_PARAMETER(QDMI_JOB_PARAMETER_PROGRAM, void, job->program, param,
+                        size, value)
+  ADD_SINGLE_VALUE_PARAMETER(QDMI_JOB_PARAMETER_PROGRAMFORMAT,
+                             QDMI_Program_Format, job->format, param, size,
+                             value)
+  ADD_SINGLE_VALUE_PARAMETER(QDMI_JOB_PARAMETER_SHOTSNUM, size_t, job->shotsNum,
+                             param, size, value)
+  return QDMI_ERROR_INVALIDARGUMENT;
+}
+
+int QDMI_job_query_property(QDMI_Job job, QDMI_Job_Property prop,
+                            const size_t size, void* value, size_t* sizeRet) {
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  ADD_STRING_PROPERTY(QDMI_JOB_PROPERTY_ID, job->id.c_str(), prop, size, value,
+                      sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PARAMETER_PROGRAM, void*,
+                            job->program, prop, size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_JOB_PROPERTY_PROGRAMFORMAT,
+                            QDMI_Program_Format, job->format, prop, size, value,
+                            sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_JOB_PROPERTY_SHOTSNUM, size_t, job->shotsNum,
+                            prop, size, value, sizeRet)
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int QDMI_job_submit(QDMI_Job job) {
@@ -580,11 +636,11 @@ int QDMI_job_check(QDMI_Job job, QDMI_Job_Status* status) {
   return job->device->library->device_job_check(job->deviceJob, status);
 }
 
-int QDMI_job_wait(QDMI_Job job) {
+int QDMI_job_wait(QDMI_Job job, size_t timeout) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return job->device->library->device_job_wait(job->deviceJob);
+  return job->device->library->device_job_wait(job->deviceJob, timeout);
 }
 
 int QDMI_job_get_results(QDMI_Job job, QDMI_Job_Result result,

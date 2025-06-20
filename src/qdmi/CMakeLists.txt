@@ -19,4 +19,6 @@ if(NOT TARGET ${TARGET_NAME})
     PUBLIC qdmi::qdmi MQT::CoreNaQDMI
     PRIVATE qdmi::project_warnings MQT::ProjectOptions MQT::ProjectWarnings)
 
+  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
+
 endif()
