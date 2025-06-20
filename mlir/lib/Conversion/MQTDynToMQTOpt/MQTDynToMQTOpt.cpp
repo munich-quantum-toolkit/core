@@ -90,7 +90,7 @@ struct ConvertMQTDynAlloc : public OpConversionPattern<dyn::AllocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(dyn::AllocOp op, OpAdaptor adaptor,
+  matchAndRewrite(dyn::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     // create result type
     auto qregType = opt::QubitRegisterType::get(rewriter.getContext());
@@ -98,7 +98,7 @@ struct ConvertMQTDynAlloc : public OpConversionPattern<dyn::AllocOp> {
     auto& qRegMap = getQregMap();
     // create new operation
     auto mqtoptOp = rewriter.create<opt::AllocOp>(
-        op.getLoc(), qregType, adaptor.getSize(), adaptor.getSizeAttrAttr());
+        op.getLoc(), qregType, op.getSize(), op.getSizeAttrAttr());
 
     auto dynQreg = op.getQreg();
     auto optQreg = mqtoptOp.getQreg();
@@ -106,7 +106,9 @@ struct ConvertMQTDynAlloc : public OpConversionPattern<dyn::AllocOp> {
     // put the pair of the dyn register and the latest opt register in the map
     qRegMap.insert({dynQreg, optQreg});
 
-    rewriter.eraseOp(op);
+    // replace the old register use with the new register otherwise
+    // there will be an unrealized conversion
+    rewriter.replaceOp(op, mqtoptOp.getQreg());
 
     return success();
   }
@@ -160,13 +162,13 @@ struct ConvertMQTDynDealloc : public OpConversionPattern<dyn::DeallocOp> {
     auto optQreg = qregMap[dynQreg];
 
     // create the new dealloc operation
-    auto mqtoptOp = rewriter.create<opt::DeallocOp>(op.getLoc(), optQreg);
+    rewriter.create<opt::DeallocOp>(op.getLoc(), optQreg);
 
     // erase the register from the map
     qregMap.erase(dynQreg);
 
     // replace old operation with new operation
-    rewriter.replaceOp(op, mqtoptOp);
+    rewriter.eraseOp(op);
 
     return success();
   }
@@ -176,7 +178,7 @@ struct ConvertMQTDynExtract : public OpConversionPattern<dyn::ExtractOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(dyn::ExtractOp op, OpAdaptor adaptor,
+  matchAndRewrite(dyn::ExtractOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     // create result types
     auto qregType = opt::QubitRegisterType::get(rewriter.getContext());
@@ -191,8 +193,8 @@ struct ConvertMQTDynExtract : public OpConversionPattern<dyn::ExtractOp> {
     auto optQreg = qRegMap[dynQreg];
     // create new operation
     auto mqtoptOp = rewriter.create<opt::ExtractOp>(
-        op.getLoc(), qregType, qubitType, optQreg, adaptor.getIndex(),
-        adaptor.getIndexAttrAttr());
+        op.getLoc(), qregType, qubitType, optQreg, op.getIndex(),
+        op.getIndexAttrAttr());
 
     auto dynQubit = op.getOutQubit();
     auto optQubit = mqtoptOp.getOutQubit();
@@ -206,10 +208,12 @@ struct ConvertMQTDynExtract : public OpConversionPattern<dyn::ExtractOp> {
 
     // add an entry to the qubitDataMap to store the indices and the register
     // for the insertOperation
-    qubitDataMap.insert({dynQubit, QubitData(dynQreg, adaptor.getIndex(),
-                                             adaptor.getIndexAttrAttr())});
-    // erase old operation
-    rewriter.eraseOp(op);
+    qubitDataMap.insert(
+        {dynQubit, QubitData(dynQreg, op.getIndex(), op.getIndexAttrAttr())});
+
+    // replace the old operation result with the new qubit otherwise there will
+    // be an unrealized conversion
+    rewriter.replaceOp(op, optQubit);
 
     return success();
   }
@@ -275,7 +279,7 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateDynOp> {
   using OpConversionPattern<MQTGateDynOp>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(MQTGateDynOp op, typename MQTGateDynOp::Adaptor adaptor,
+  matchAndRewrite(MQTGateDynOp op, typename MQTGateDynOp::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     // get all the input qubits including the ctrl qubits
     auto dynInQubitsValues = op.getInQubits();
@@ -327,7 +331,7 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateDynOp> {
         op.getLoc(), ValueRange(optInQubits).getTypes(),
         ValueRange(optPosCtrlQubitsValues).getTypes(),
         ValueRange(optNegCtrlQubitsValues).getTypes(), staticParams, paramMask,
-        adaptor.getParams(), optInQubits, optPosCtrlQubitsValues,
+        op.getParams(), optInQubits, optPosCtrlQubitsValues,
         optNegCtrlQubitsValues);
 
     // iterate over all the dyn input qubits and update their latest opt qubit
