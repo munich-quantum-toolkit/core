@@ -42,22 +42,6 @@ enum class OperationType : uint8_t {
 };
 
 /**
- * @brief Checks if the operation type is a single-qubit operation.
- * @param type The operation type to check.
- * @return true if the operation type is a single-qubit operation, false
- * otherwise.
- */
-[[nodiscard]] auto isSingleQubit(const OperationType type) -> bool {
-  switch (type) {
-  case OperationType::GLOBAL_SINGLE_QUBIT:
-  case OperationType::LOCAL_SINGLE_QUBIT:
-    return true;
-  default:
-    return false;
-  }
-}
-
-/**
  * @brief Checks if the operation type is a shuttling operation.
  * @param type The operation type to check.
  * @return true if the operation type is a shuttling operation, false
@@ -169,7 +153,7 @@ struct DecoherenceTimes {
  * device.
  * @returns A reference to a static instance of @ref DecoherenceTimes.
  */
-[[nodiscard]] auto decoherence() -> DecoherenceTimes& {
+[[nodiscard]] auto decoherenceTimes() -> DecoherenceTimes& {
   static DecoherenceTimes decoherenceTimes;
   return decoherenceTimes;
 }
@@ -251,8 +235,8 @@ int MQT_NA_QDMI_device_initialize() {
   INITIALIZE_QUBITSNUM(qubitsNum());
   INITIALIZE_SITES(sites());
   INITIALIZE_OPERATIONS(operations());
-  INITIALIZE_T1(decoherence().t1);
-  INITIALIZE_T2(decoherence().t2);
+  INITIALIZE_T1(decoherenceTimes().t1);
+  INITIALIZE_T2(decoherenceTimes().t2);
   return QDMI_SUCCESS;
 }
 
@@ -299,7 +283,10 @@ int MQT_NA_QDMI_device_session_create_device_job(
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return session->createDeviceJob(job);
+  if (session->status != SessionStatus::INITIALIZED) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 void MQT_NA_QDMI_device_job_free(MQT_NA_QDMI_Device_Job job) { job->free(); }
@@ -310,51 +297,21 @@ int MQT_NA_QDMI_device_job_set_parameter(MQT_NA_QDMI_Device_Job job,
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. However,
-  // we keep the function call for a complete implementation of QDMI and silence
-  // the respective warning.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
-  return job->setParameter(param, size, value);
-}
-
-int MQT_NA_QDMI_device_job_query_property(MQT_NA_QDMI_Device_Job job,
-                                          const QDMI_Device_Job_Property prop,
-                                          const size_t size, void* value,
-                                          size_t* sizeRet) {
-  if (job == nullptr) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
-  return job->queryProperty(prop, size, value, sizeRet);
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_NA_QDMI_device_job_submit(MQT_NA_QDMI_Device_Job job) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
-  return job->submit();
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_NA_QDMI_device_job_cancel(MQT_NA_QDMI_Device_Job job) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
-  return job->cancel();
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_NA_QDMI_device_job_check(
@@ -364,32 +321,14 @@ int MQT_NA_QDMI_device_job_check(
   if (job == nullptr || status == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return QDMI_ERROR_PERMISSIONDENIED;
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_NA_QDMI_device_job_wait(MQT_NA_QDMI_Device_Job job) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
-  return job->check(status);
-}
-
-int MQT_NA_QDMI_device_job_wait(MQT_NA_QDMI_Device_Job job,
-                                const size_t timeout) {
-  if (job == nullptr) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
-  return job->wait(timeout);
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_NA_QDMI_device_job_get_results(MQT_NA_QDMI_Device_Job job,
@@ -400,12 +339,7 @@ int MQT_NA_QDMI_device_job_get_results(MQT_NA_QDMI_Device_Job job,
       result >= QDMI_JOB_RESULT_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
-  return job->getResults(result, size, data, sizeRet);
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_NA_QDMI_device_session_query_device_property(
@@ -425,8 +359,7 @@ int MQT_NA_QDMI_device_session_query_device_property(
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_LIBRARYVERSION, QDMI_VERSION, prop,
                       size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_STATUS, QDMI_Device_Status,
-                            QDMI_DEVICE_STATUS_OFFLINE, prop, size, value,
-                            sizeRet)
+                            QDMI_DEVICE_STATUS_IDLE, prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum(),
                             prop, size, value, sizeRet)
   // This device never needs calibration
@@ -449,10 +382,10 @@ int MQT_NA_QDMI_device_session_query_site_property(
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_ID, uint64_t, site->id, prop,
                             size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T1, double, decoherence().t1,
-                            prop, size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T2, double, decoherence().t2,
-                            prop, size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T1, double,
+                            decoherenceTimes().t1, prop, size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T2, double,
+                            decoherenceTimes().t2, prop, size, value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
@@ -485,14 +418,8 @@ int MQT_NA_QDMI_device_session_query_operation_property(
                               prop, size, value, sizeRet)
   }
   if (!isShuttling(operation->type)) {
-    if (isSingleQubit(operation->type)) {
-      ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t, 1UL,
-                                prop, size, value, sizeRet)
-    } else {
-      ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
-                                operation->numQubits, prop, size, value,
-                                sizeRet)
-    }
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
+                              operation->numQubits, prop, size, value, sizeRet)
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }

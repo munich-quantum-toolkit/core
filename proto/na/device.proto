@@ -24,8 +24,9 @@ message Device {
       Vector vector = 1;
       uint64 repeat = 2;
     }
-    repeated LatticeVector lattice_vectors = 2;
-    repeated Vector sublattice_offsets = 3;
+    LatticeVector lattice_vector_1 = 2;
+    LatticeVector lattice_vector_2 = 3;
+    repeated Vector sublattice_offsets = 4;
   }
   repeated Lattice traps = 3;
   uint64 min_atom_distance = 4;
@@ -34,8 +35,8 @@ message Device {
     Vector origin = 1;
 
     message Size {
-      int64 width = 1;
-      int64 height = 2;
+      uint64 width = 1;
+      uint64 height = 2;
     }
     Size size = 2;
   }
