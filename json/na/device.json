@@ -7,22 +7,20 @@
         "x": 0,
         "y": 0
       },
-      "latticeVectors": [
-        {
-          "vector": {
-            "x": 1,
-            "y": 0
-          },
-          "repeat": 10
+      "latticeVector1": {
+        "vector": {
+          "x": 1,
+          "y": 0
         },
-        {
-          "vector": {
-            "x": 0,
-            "y": 1
-          },
-          "repeat": 10
-        }
-      ],
+        "repeat": 10
+      },
+      "latticeVector2": {
+        "vector": {
+          "x": 0,
+          "y": 1
+        },
+        "repeat": 10
+      },
       "sublatticeOffsets": [
         {
           "x": 0,

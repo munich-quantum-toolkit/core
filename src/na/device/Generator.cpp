@@ -150,26 +150,24 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
   for (const auto& lattice : device.traps()) {
     const auto originX = lattice.lattice_origin().x();
     const auto originY = lattice.lattice_origin().y();
-    std::vector limits(static_cast<size_t>(lattice.lattice_vectors_size()),
-                       0UL);
-    std::transform(lattice.lattice_vectors().begin(),
-                   lattice.lattice_vectors().end(), limits.begin(),
-                   [](const auto& vector) { return vector.repeat(); });
-    std::vector indices(static_cast<size_t>(lattice.lattice_vectors_size()),
-                        0UL);
+    const std::vector limits{
+        static_cast<size_t>(lattice.lattice_vector_1().repeat()),
+        static_cast<size_t>(lattice.lattice_vector_2().repeat())};
+    std::vector indices(2, 0UL);
     for (bool loop = true; loop; loop = increment(indices, limits)) {
       // For every sublattice offset, add a site for repetition indices
       for (const auto& offset : lattice.sublattice_offsets()) {
         const auto id = count++;
         auto x = originX + offset.x();
         auto y = originY + offset.y();
-        for (size_t i = 0;
-             i < static_cast<size_t>(lattice.lattice_vectors_size()); ++i) {
-          const auto& vector =
-              lattice.lattice_vectors(static_cast<int32_t>(i)).vector();
-          x += static_cast<int64_t>(indices[i]) * vector.x();
-          y += static_cast<int64_t>(indices[i]) * vector.y();
-        }
+        x += static_cast<int64_t>(indices[0]) *
+             lattice.lattice_vector_1().vector().x();
+        y += static_cast<int64_t>(indices[0]) *
+             lattice.lattice_vector_1().vector().y();
+        x += static_cast<int64_t>(indices[1]) *
+             lattice.lattice_vector_2().vector().x();
+        y += static_cast<int64_t>(indices[1]) *
+             lattice.lattice_vector_2().vector().y();
         os << "\\\n  "
               "var.emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>("
               "MQT_NA_QDMI_Site_impl_d{"
@@ -321,16 +319,6 @@ auto writeJSONSchema(const std::string& path) -> void {
     ss << "Failed to parse JSON string into Protobuf message: "
        << status.ToString();
     throw std::runtime_error(ss.str());
-  }
-  // Validate device
-  for (const auto& lattice : device.traps()) {
-    if (lattice.lattice_vectors_size() > 2) {
-      std::stringstream ss;
-      ss << "Lattice vectors size " << lattice.lattice_vectors_size()
-         << "exceeds 2 which means that specification of traps is not unique "
-            "anymore in the 2D plane.";
-      throw std::runtime_error(ss.str());
-    }
   }
   return device;
 }
