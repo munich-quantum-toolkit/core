@@ -18,7 +18,6 @@
 
 #include <cstddef>
 #include <spdlog/spdlog.h>
-#include <unordered_set>
 
 namespace {
 /// The status of the session.
@@ -306,6 +305,18 @@ int MQT_NA_QDMI_device_job_set_parameter(MQT_NA_QDMI_Device_Job job,
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
+int MQT_NA_QDMI_device_job_query_property(
+    MQT_NA_QDMI_Device_Job job, const QDMI_Device_Job_Property prop,
+    const size_t size,
+    // NOLINTNEXTLINE(readability-non-const-parameter)
+    void* value, size_t* /* unused */) {
+  if (job == nullptr || (value != nullptr && size == 0) ||
+      prop >= QDMI_DEVICE_JOB_PROPERTY_MAX) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return QDMI_ERROR_NOTSUPPORTED;
+}
+
 int MQT_NA_QDMI_device_job_submit(MQT_NA_QDMI_Device_Job job) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -330,7 +341,8 @@ int MQT_NA_QDMI_device_job_check(
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
-int MQT_NA_QDMI_device_job_wait(MQT_NA_QDMI_Device_Job job) {
+int MQT_NA_QDMI_device_job_wait(MQT_NA_QDMI_Device_Job job,
+                                const size_t /* unused */) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
@@ -386,7 +398,7 @@ int MQT_NA_QDMI_device_session_query_site_property(
       (value != nullptr && size == 0) || prop >= QDMI_SITE_PROPERTY_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_ID, uint64_t, site->id, prop,
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, uint64_t, site->id, prop,
                             size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T1, double,
                             decoherenceTimes().t1, prop, size, value, sizeRet)
