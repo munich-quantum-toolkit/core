@@ -209,7 +209,7 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
     // get all the input qubits including the ctrl qubits
     auto dynInQubitsValues = adaptor.getInQubits();
     auto dynPosCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    auto dynCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+    auto dynNegCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
     // append them to a single vector
     std::vector<Value> allDynInputQubits(dynInQubitsValues.begin(),
@@ -218,8 +218,8 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
                              dynPosCtrlQubitsValues.begin(),
                              dynPosCtrlQubitsValues.end());
     allDynInputQubits.insert(allDynInputQubits.end(),
-                             dynCtrlQubitsValues.begin(),
-                             dynCtrlQubitsValues.end());
+                             dynNegCtrlQubitsValues.begin(),
+                             dynNegCtrlQubitsValues.end());
 
     // get the static params and paramMask if they exist
     DenseF64ArrayAttr staticParams = nullptr;
@@ -237,10 +237,9 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
       paramMask = DenseBoolArrayAttr{};
     }
     // create new operation
-    rewriter.create<MQTGateDynOp>(op.getLoc(), dynCtrlQubitsValues.getType(),
-                                  staticParams, paramMask, adaptor.getParams(),
-                                  dynInQubitsValues, dynPosCtrlQubitsValues,
-                                  dynCtrlQubitsValues);
+    rewriter.create<MQTGateDynOp>(
+        op.getLoc(), staticParams, paramMask, op.getParams(), dynInQubitsValues,
+        dynPosCtrlQubitsValues, dynNegCtrlQubitsValues);
 
     Value optQubit = nullptr;
     Value dynQubit = nullptr;
