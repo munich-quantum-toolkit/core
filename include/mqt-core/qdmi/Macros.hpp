@@ -247,3 +247,88 @@
 static_cast<const prefix## _QDMI_## type*>(static_cast<const void*>(var))    \
 /* NOLINTEND(bugprone-casting-through-void,bugprone-macro-parentheses) */
 // clang-format on
+
+// NOLINTBEGIN(bugprone-macro-parentheses)
+#define ADD_SINGLE_VALUE_PROPERTY(prop_name, prop_type, prop_value, prop,      \
+                                  size, value, size_ret)                       \
+  {                                                                            \
+    if ((prop) == (prop_name)) {                                               \
+      if ((value) != nullptr) {                                                \
+        if ((size) < sizeof(prop_type)) {                                      \
+          return QDMI_ERROR_INVALIDARGUMENT;                                   \
+        }                                                                      \
+        *static_cast<prop_type*>(value) = prop_value;                          \
+      }                                                                        \
+      if ((size_ret) != nullptr) {                                             \
+        *size_ret = sizeof(prop_type);                                         \
+      }                                                                        \
+      return QDMI_SUCCESS;                                                     \
+    }                                                                          \
+  }
+
+#define ADD_STRING_PROPERTY(prop_name, prop_value, prop, size, value,          \
+                            size_ret)                                          \
+  {                                                                            \
+    if ((prop) == (prop_name)) {                                               \
+      if ((value) != nullptr) {                                                \
+        if ((size) < strlen(prop_value) + 1) {                                 \
+          return QDMI_ERROR_INVALIDARGUMENT;                                   \
+        }                                                                      \
+        strncpy(static_cast<char*>(value), prop_value, size);                  \
+        /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) */  \
+        static_cast<char*>(value)[size - 1] = '\0';                            \
+      }                                                                        \
+      if ((size_ret) != nullptr) {                                             \
+        *size_ret = strlen(prop_value) + 1;                                    \
+      }                                                                        \
+      return QDMI_SUCCESS;                                                     \
+    }                                                                          \
+  }
+
+#define ADD_LIST_PROPERTY(prop_name, prop_type, prop_values, prop, size,       \
+                          value, size_ret)                                     \
+  {                                                                            \
+    if ((prop) == (prop_name)) {                                               \
+      if ((value) != nullptr) {                                                \
+        if ((size) < (prop_values).size() * sizeof(prop_type)) {               \
+          return QDMI_ERROR_INVALIDARGUMENT;                                   \
+        }                                                                      \
+        memcpy(static_cast<void*>(value),                                      \
+               static_cast<const void*>((prop_values).data()),                 \
+               (prop_values).size() * sizeof(prop_type));                      \
+      }                                                                        \
+      if ((size_ret) != nullptr) {                                             \
+        *size_ret = (prop_values).size() * sizeof(prop_type);                  \
+      }                                                                        \
+      return QDMI_SUCCESS;                                                     \
+    }                                                                          \
+  }
+
+#define ADD_SINGLE_VALUE_PARAMETER(param_name, param_type, var, param, size,   \
+                                   value)                                      \
+  {                                                                            \
+    if ((param) == (param_name)) {                                             \
+      if ((value) != nullptr) {                                                \
+        if ((size) < sizeof(param_type)) {                                     \
+          return QDMI_ERROR_INVALIDARGUMENT;                                   \
+        }                                                                      \
+        var = *static_cast<const param_type*>(value);                          \
+      }                                                                        \
+      return QDMI_SUCCESS;                                                     \
+    }                                                                          \
+  }
+
+#define ADD_POINTER_PARAMETER(param_name, ptr_type, var, param, size, value)   \
+  {                                                                            \
+    if ((param) == (param_name)) {                                             \
+      if ((value) != nullptr) {                                                \
+        if ((size) == 0) {                                                     \
+          return QDMI_ERROR_INVALIDARGUMENT;                                   \
+        }                                                                      \
+        memcpy(static_cast<void*>(var), static_cast<const void*>(value),       \
+               size);                                                          \
+      }                                                                        \
+      return QDMI_SUCCESS;                                                     \
+    }                                                                          \
+  }
+// NOLINTEND(bugprone-macro-parentheses)
