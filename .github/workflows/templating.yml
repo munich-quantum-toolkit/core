@@ -11,4 +11,4 @@ jobs:
     steps:
       - uses: munich-quantum-toolkit/.github/templating@templating
         with:
-          package-url: https://github.com/munich-quantum-toolkit/core/test
+          package-url: https://github.com/munich-quantum-toolkit/core
