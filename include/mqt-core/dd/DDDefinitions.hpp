@@ -33,13 +33,6 @@ namespace dd {
 using Qubit = std::uint16_t;
 
 /**
- * @brief Integer type used for reference counting
- * @details Allows a maximum reference count of roughly 4 billion.
- */
-using RefCount = std::uint32_t;
-static_assert(std::is_unsigned_v<RefCount>, "RefCount should be unsigned.");
-
-/**
  * @brief Floating point type to use for computations
  * @note Adjusting the precision might lead to unexpected results.
  */
