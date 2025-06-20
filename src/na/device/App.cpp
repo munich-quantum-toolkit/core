@@ -9,6 +9,7 @@
  */
 
 #include "na/device/Generator.hpp"
+#include "spdlog/spdlog.h"
 
 #include <iostream>
 #include <optional>
@@ -21,18 +22,83 @@ namespace {
  */
 auto printUsage(const std::string& programName) -> void {
   std::cout
-      << "Usage: " << programName
-      << " [OPTION] [JSON_FILE]\n"
-         "Parse the device configuration from a JSON file and output\n"
-         "corresponding definitions in a C++ header file.\n\n"
+      << "Generator of a header file from a JSON file for neutral atom QDMI\n"
+         "implementation.\n"
+         "\n"
+         "Usage: "
+      << programName
+      << " [OPTIONS] <command> [ARGS]\n"
+         "\n"
+         "Commands:\n"
+         "  schema      Generate a default JSON schema.\n"
+         "  validate    Validate a JSON specification.\n"
+         "  generate    Generate a header file from a JSON specification.\n"
+         "\n"
          "Options:\n"
-         "  -h, --help          Show this help message and exit.\n"
-         "  -v, --version       Show version information and exit.\n"
-         "  -o, --output FILE   Specify the output header file. If no output\n"
-         "                      file is specified, the JSON file is just\n"
-         "                      parsed and no output produced.\n"
-         "  -s, --schema FILE   Write a JSON schema with default values.\n"
-         "                      This option does not require a JSON file.\n";
+         "  -h, --help        Show this help message and exit.\n"
+         "  -v, --version     Show version information and exit.\n";
+}
+
+/**
+ * Prints the usage information for the schema sub-command.
+ * @param programName is the name of the program executable.
+ */
+auto printSchemaUsage(const std::string& programName) -> void {
+  std::cout << "Generates a JSON schema with default values.\n"
+               "\n"
+               "Usage: "
+            << programName
+            << " schema [options]\n"
+               "\n"
+               "Options:\n"
+               "  -h, --help            Show this help message and exit.\n"
+               "  -o, --output <file>   Specify the output file. If no output "
+               "                        file is "
+               "                        specified, the schema is printed to "
+               "                        stdout.\n";
+}
+
+/**
+ * Prints the usage information for the validate sub-command.
+ * @param programName is the name of the program executable.
+ */
+auto printValidateUsage(const std::string& programName) -> void {
+  std::cout << "Validates a JSON specification against the schema.\n"
+               "\n"
+               "Usage: "
+            << programName
+            << " validate [options] [<json_file>]\n"
+               "\n"
+               "Arguments:\n"
+               "  json_file       the path to the JSON file to validate. If\n"
+               "                  not specified, the JSON is read from stdin.\n"
+               "\n"
+               "Options:\n"
+               "  -h, --help      Show this help message and exit.\n";
+}
+
+/**
+ * Prints the usage information for the generate sub-command.
+ * @param programName is the name of the program executable.
+ */
+auto printGenerateUsage(const std::string& programName) -> void {
+  std::cout << "Generates a header file from a JSON specification.\n"
+               "\n"
+               "Usage: "
+            << programName
+            << " generate [options] <json_file>\n"
+               "\n"
+               "Arguments:\n"
+               "  json_file       the path to the JSON file to generate the\n"
+               "                  header file from. If not specified, the\n"
+               "                  JSON is read from stdin.\n"
+               "\n"
+               "Options:\n"
+               "  -h, --help            Show this help message and exit.\n"
+               "  -o, --output <file>   Specify the output file for the\n"
+               "                        generated header file. If no output\n"
+               "                        file is specified, the header file is\n"
+               "                        printed to stdout.\n";
 }
 
 /**
@@ -42,16 +108,41 @@ auto printVersion() -> void {
   std::cout << "MQT QDMI NA Device Generator Version " MQT_CORE_VERSION "\n";
 }
 
+/// Enum to represent the different commands that can be executed.
+enum class Command : uint8_t {
+  Schema,   ///< Command to generate a JSON schema
+  Validate, ///< Command to validate a JSON specification
+  Generate  ///< Command to generate a header file from a JSON specification
+};
+
 /// Struct to hold the parsed command line arguments.
 struct Arguments {
   std::string programName; ///< Name of the program executable
   bool help = false;       ///< Flag to indicate if help is requested
   /// Flag to indicate if version information is requested
   bool version = false;
+  std::optional<Command> command; ///< Command to execute
+};
+
+/// Struct to hold the parsed schema command line arguments.
+struct SchemaArguments {
+  bool help = false; ///< Flag to indicate if help is requested
+  /// Optional output file for the schema
+  std::optional<std::string> outputFile;
+};
+
+/// Struct to hold the parsed validate command line arguments.
+struct ValidateArguments {
+  bool help = false; ///< Flag to indicate if help is requested
+  /// Optional JSON file to validate
+  std::optional<std::string> jsonFile;
+};
+
+/// Struct to hold the parsed generate command line arguments.
+struct GenerateArguments {
+  bool help = false; ///< Flag to indicate if help is requested
   /// Optional output file for the generated header file
   std::optional<std::string> outputFile;
-  /// Optional schema file to write the JSON schema
-  std::optional<std::string> schemaFile;
   /// Optional JSON file to parse the device configuration
   std::optional<std::string> jsonFile;
 };
@@ -59,42 +150,114 @@ struct Arguments {
 /**
  * Parses the command line arguments and returns an Arguments struct.
  * @param args is the vector of command line arguments.
- * @return Parsed arguments as an Arguments struct.
+ * @returns the parsed arguments as an Arguments struct and an index indicating
+ * the position of the first sub-command argument.
  * @throws std::invalid_argument if the value after an option is missing.
  */
-auto parseArguments(const std::vector<std::string>& args) -> Arguments {
+auto parseArguments(const std::vector<std::string>& args)
+    -> std::pair<Arguments, size_t> {
   Arguments arguments;
-  arguments.programName = args.front();
+  arguments.programName =
+      args.empty() ? "mqt-core-na-device-gen" : args.front();
   size_t i = 1;
   while (i < args.size()) {
     if (const std::string& arg = args.at(i); arg == "-h" || arg == "--help") {
       arguments.help = true;
-      ++i;
     } else if (arg == "-v" || arg == "--version") {
       arguments.version = true;
-      ++i;
-    } else if (arg == "-o" || arg == "--output") {
-      ++i;
-      if (i < args.size()) {
-        arguments.outputFile = args.at(i);
-      } else {
-        throw std::invalid_argument("Missing output file argument.");
-      }
-      ++i;
-    } else if (arg == "-s" || arg == "--schema") {
-      ++i;
-      if (i < args.size()) {
-        arguments.schemaFile = args.at(i);
-      } else {
-        throw std::invalid_argument("Missing schema file argument.");
-      }
-      ++i;
+    } else if (arg == "schema") {
+      arguments.command = Command::Schema;
+      break; // No more arguments for schema command
+    } else if (arg == "validate") {
+      arguments.command = Command::Validate;
+      break; // No more arguments for validate command
+    } else if (arg == "generate") {
+      arguments.command = Command::Generate;
+      break; // No more arguments for generate command
     } else {
-      arguments.jsonFile = arg;
-      ++i;
+      throw std::invalid_argument("Unknown argument: " + arg);
     }
+    ++i;
   }
-  return arguments;
+  return {arguments, i + 1};
+}
+
+/**
+ * Parses the command line arguments for the schema command and returns a
+ * SchemaArguments struct.
+ * @param args is the vector of command line arguments.
+ * @param i is the index to the first sub-command argument within @p args
+ * @return Parsed schema arguments as a SchemaArguments struct.
+ */
+auto parseSchemaArguments(const std::vector<std::string>& args, size_t i)
+    -> SchemaArguments {
+  SchemaArguments schemaArgs;
+  while (i < args.size()) {
+    if (const std::string& arg = args.at(i); arg == "-h" || arg == "--help") {
+      schemaArgs.help = true;
+    } else if (arg == "-o" || arg == "--output") {
+      if (++i >= args.size()) {
+        throw std::invalid_argument("Missing value for output option.");
+      }
+      schemaArgs.outputFile = args.at(i);
+    } else {
+      throw std::invalid_argument("Unknown argument: " + arg);
+    }
+    ++i;
+  }
+  return schemaArgs;
+}
+
+/**
+ * Parses the command line arguments for the validate command and returns a
+ * ValidateArguments struct.
+ * @param args is the vector of command line arguments.
+ * @param i is the index to the first sub-command argument within @p args
+ * @return Parsed validate arguments as a ValidateArguments struct.
+ */
+auto parseValidateArguments(const std::vector<std::string>& args, size_t i)
+    -> ValidateArguments {
+  ValidateArguments validateArgs;
+  while (i < args.size()) {
+    if (const std::string& arg = args.at(i); arg == "-h" || arg == "--help") {
+      validateArgs.help = true;
+    } else if (arg == "-o" || arg == "--output") {
+      if (++i >= args.size()) {
+        throw std::invalid_argument("Missing value for output option.");
+      }
+      validateArgs.jsonFile = args.at(i);
+    } else {
+      validateArgs.jsonFile = arg;
+    }
+    ++i;
+  }
+  return validateArgs;
+}
+
+/**
+ * Parses the command line arguments for the generate command and returns a
+ * GenerateArguments struct.
+ * @param args is the vector of command line arguments.
+ * @param i is the index to the first sub-command argument within @p args
+ * @return Parsed generate arguments as a GenerateArguments struct.
+ */
+auto parseGenerateArguments(const std::vector<std::string>& args, size_t i)
+    -> GenerateArguments {
+  GenerateArguments generateArgs;
+  while (i < args.size()) {
+    if (const std::string& arg = args.at(i); arg == "-h" || arg == "--help") {
+      generateArgs.help = true;
+    } else if (arg == "-o" || arg == "--output") {
+      if (++i >= args.size()) {
+        throw std::invalid_argument("Missing value for output option.");
+      }
+      generateArgs.outputFile = args.at(i);
+    } else {
+      generateArgs.jsonFile = arg;
+    }
+    ++i;
+  }
+  return generateArgs;
 }
 } // namespace
 
@@ -110,8 +273,8 @@ auto parseArguments(const std::vector<std::string>& args) -> Arguments {
  * @param argv is the array of command line arguments.
  */
 int main(int argc, char* argv[]) {
-  const auto& args =
-      parseArguments(std::vector<std::string>(argv, argv + argc));
+  const std::vector<std::string> argVec(argv, argv + argc);
+  const auto& [args, i] = parseArguments(argVec);
   if (args.help) {
     printUsage(args.programName);
     return 0;
@@ -120,35 +283,70 @@ int main(int argc, char* argv[]) {
     printVersion();
     return 0;
   }
-  if (!args.jsonFile && !args.schemaFile) {
-    std::cerr << "Error: No JSON file or schema file specified.\n";
+  if (!args.command.has_value()) {
     printUsage(args.programName);
     return 1;
   }
-  if (args.schemaFile) {
+  switch (args.command.value()) {
+  case Command::Schema: {
+    const auto& schemaArgs = parseSchemaArguments(argVec, i);
+    if (schemaArgs.help) {
+      printSchemaUsage(args.programName);
+      return 0;
+    }
     try {
-      na::writeJSONSchema(*args.schemaFile);
-    } catch (const std::runtime_error& e) {
-      std::cerr << "Error writing JSON schema: " << e.what() << '\n';
+      if (schemaArgs.outputFile.has_value()) {
+        na::writeJSONSchema(schemaArgs.outputFile.value());
+      } else {
+        na::writeJSONSchema(std::cout);
+      }
+    } catch (const std::exception& e) {
+      SPDLOG_ERROR("Error generating JSON schema: {}", e.what());
+      return 1;
+    }
+    break;
+  }
+  case Command::Validate: {
+    const auto& validateArgs = parseValidateArguments(argVec, i);
+    if (validateArgs.help) {
+      printValidateUsage(args.programName);
+      return 0;
+    }
+    try {
+      if (validateArgs.jsonFile.has_value()) {
+        std::ignore = na::readJSON(validateArgs.jsonFile.value());
+      } else {
+        std::ignore = na::readJSON(std::cin);
+      }
+    } catch (const std::exception& e) {
+      SPDLOG_ERROR("Error validating JSON: {}", e.what());
+      return 1;
+    }
+    break;
+  }
+  case Command::Generate: {
+    const auto& generateArgs = parseGenerateArguments(argVec, i);
+    if (generateArgs.help) {
+      printGenerateUsage(args.programName);
+      return 0;
+    }
+    try {
+      na::Device device;
+      if (generateArgs.jsonFile.has_value()) {
+        device = na::readJSON(generateArgs.jsonFile.value());
+      } else {
+        device = na::readJSON(std::cin);
+      }
+      if (generateArgs.outputFile.has_value()) {
+        na::writeHeader(device, generateArgs.outputFile.value());
+      } else {
+        na::writeHeader(device, std::cout);
+      }
+    } catch (const std::exception& e) {
+      SPDLOG_ERROR("Error generating header file: {}", e.what());
       return 1;
     }
   }
-  if (args.jsonFile) {
-    na::Device device;
-    try {
-      device = na::readJsonFile(*args.jsonFile);
-    } catch (const std::runtime_error& e) {
-      std::cerr << "Error parsing JSON file: " << e.what() << '\n';
-      return 1;
-    }
-    if (args.outputFile) {
-      try {
-        na::writeHeaderFile(device, *args.outputFile);
-      } catch (const std::runtime_error& e) {
-        std::cerr << "Error writing header file: " << e.what() << '\n';
-        return 1;
-      }
-    }
   }
   return 0;
 }
