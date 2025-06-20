@@ -10,6 +10,13 @@ syntax = "proto3";
 
 package na;
 
+//===----------------------------------------------------------------------===//
+// INFORMATION
+//===----------------------------------------------------------------------===//
+// For documentation of the fields, see the documentation page on
+// the neutral atom QDMI device at `docs/na_qdmi_device.md`.
+//===----------------------------------------------------------------------===//
+
 message Device {
   string name = 1;
   uint64 num_qubits = 2;
