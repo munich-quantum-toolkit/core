@@ -52,9 +52,19 @@ TEST_F(QDMISpecificationTest, JobCreate) {
 TEST_F(QDMISpecificationTest, JobSetParameter) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_ERROR_PERMISSIONDENIED);
+            QDMI_ERROR_NOTSUPPORTED);
   ASSERT_EQ(MQT_NA_QDMI_device_job_set_parameter(
                 job, QDMI_DEVICE_JOB_PARAMETER_MAX, 0, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  MQT_NA_QDMI_device_job_free(job);
+}
+
+TEST_F(QDMISpecificationTest, JobQueryProperty) {
+  MQT_NA_QDMI_Device_Job job = nullptr;
+  ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
+            QDMI_ERROR_NOTSUPPORTED);
+  ASSERT_EQ(MQT_NA_QDMI_device_job_query_property(
+                job, QDMI_DEVICE_JOB_PROPERTY_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
   MQT_NA_QDMI_device_job_free(job);
 }
@@ -62,7 +72,7 @@ TEST_F(QDMISpecificationTest, JobSetParameter) {
 TEST_F(QDMISpecificationTest, JobSubmit) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_ERROR_PERMISSIONDENIED);
+            QDMI_ERROR_NOTSUPPORTED);
   ASSERT_NE(MQT_NA_QDMI_device_job_submit(job), QDMI_ERROR_NOTIMPLEMENTED);
   MQT_NA_QDMI_device_job_free(job);
 }
@@ -70,7 +80,7 @@ TEST_F(QDMISpecificationTest, JobSubmit) {
 TEST_F(QDMISpecificationTest, JobCancel) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_ERROR_PERMISSIONDENIED);
+            QDMI_ERROR_NOTSUPPORTED);
   ASSERT_NE(MQT_NA_QDMI_device_job_cancel(job), QDMI_ERROR_NOTIMPLEMENTED);
   MQT_NA_QDMI_device_job_free(job);
 }
@@ -79,7 +89,7 @@ TEST_F(QDMISpecificationTest, JobCheck) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   QDMI_Job_Status status = QDMI_JOB_STATUS_RUNNING;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_ERROR_PERMISSIONDENIED);
+            QDMI_ERROR_NOTSUPPORTED);
   ASSERT_NE(MQT_NA_QDMI_device_job_check(job, &status),
             QDMI_ERROR_NOTIMPLEMENTED);
   MQT_NA_QDMI_device_job_free(job);
@@ -88,15 +98,15 @@ TEST_F(QDMISpecificationTest, JobCheck) {
 TEST_F(QDMISpecificationTest, JobWait) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_ERROR_PERMISSIONDENIED);
-  ASSERT_NE(MQT_NA_QDMI_device_job_wait(job), QDMI_ERROR_NOTIMPLEMENTED);
+            QDMI_ERROR_NOTSUPPORTED);
+  ASSERT_NE(MQT_NA_QDMI_device_job_wait(job, 0), QDMI_ERROR_NOTIMPLEMENTED);
   MQT_NA_QDMI_device_job_free(job);
 }
 
 TEST_F(QDMISpecificationTest, JobGetResults) {
   MQT_NA_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-            QDMI_ERROR_PERMISSIONDENIED);
+            QDMI_ERROR_NOTSUPPORTED);
   ASSERT_EQ(MQT_NA_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_MAX, 0,
                                                nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
@@ -182,18 +192,18 @@ TEST_F(QDMISpecificationTest, QuerySiteIndex) {
       << "Devices must provide a list of sites";
   size_t id = 0;
   for (auto* site : sites) {
-    ASSERT_EQ(
-        MQT_NA_QDMI_device_session_query_site_property(
-            session, site, QDMI_SITE_PROPERTY_ID, sizeof(size_t), &id, nullptr),
-        QDMI_SUCCESS)
+    ASSERT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                  session, site, QDMI_SITE_PROPERTY_INDEX, sizeof(size_t), &id,
+                  nullptr),
+              QDMI_SUCCESS)
         << "Devices must provide a site id";
   }
 }
 
 TEST_F(QDMISpecificationTest, QueryDeviceQubitNum) {
-  size_t num_qubits = 0;
+  size_t numQubits = 0;
   EXPECT_EQ(MQT_NA_QDMI_device_session_query_device_property(
                 session, QDMI_DEVICE_PROPERTY_QUBITSNUM, sizeof(size_t),
-                &num_qubits, nullptr),
+                &numQubits, nullptr),
             QDMI_SUCCESS);
 }
