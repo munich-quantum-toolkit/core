@@ -86,9 +86,9 @@ FetchContent_Declare(protobuf URL ${Protobuf_URL} FIND_PACKAGE_ARGS ${Protobuf_V
 list(APPEND FETCH_PACKAGES protobuf)
 
 # cmake-format: off
-set(QDMI_VERSION 1.1.0
+set(QDMI_VERSION 1.2.0
         CACHE STRING "QDMI version")
-set(QDMI_REV "v${QDMI_VERSION}"
+set(QDMI_REV "9034e653a6e368579d99e352ecd8390e6e947bc6"
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")
