@@ -9,6 +9,6 @@ jobs:
     name: Render template
     runs-on: ubuntu-latest
     steps:
-      - uses: munich-quantum-toolkit/.github/templating@templating
+      - uses: munich-quantum-toolkit/templates@add-action
         with:
           package-url: https://github.com/munich-quantum-toolkit/core
