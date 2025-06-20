@@ -6,13 +6,13 @@
 #
 # Licensed under the MIT License
 
-# todo: should this be dropped? add a compile feature for C++17
+include(cmake/ExternalDependencies.cmake)
+
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${CATALYST_INCLUDE_DIRS})
+
 set(CMAKE_CXX_STANDARD 17)
 
-# add main library code
 add_subdirectory(include)
 add_subdirectory(lib)
-add_subdirectory(tools)
-
-# add test code
-add_subdirectory(test)
