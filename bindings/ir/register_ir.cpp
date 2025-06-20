@@ -26,7 +26,7 @@ void registerOperations(py::module& m);
 void registerSymbolic(py::module& m);
 void registerQuantumComputation(py::module& m);
 
-PYBIND11_MODULE(ir, m, py::mod_gil_not_used()) {
+PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   registerPermutation(m);
   py::module registers = m.def_submodule("registers");
   registerRegisters(registers);

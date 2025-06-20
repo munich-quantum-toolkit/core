@@ -11,7 +11,8 @@ if(NOT TARGET dd)
   file(GLOB_RECURSE DD_SOURCES **.cpp)
 
   # declare the Python module
-  add_mqt_core_binding(
+  add_mqt_python_binding(
+    CORE
     ${MQT_CORE_TARGET_NAME}-dd-bindings
     ${DD_SOURCES}
     MODULE_NAME

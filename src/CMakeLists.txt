@@ -116,7 +116,8 @@ if(MQT_CORE_INSTALL)
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 
   install(
-    FILES ${PROJECT_SOURCE_DIR}/cmake/Cache.cmake
+    FILES ${PROJECT_SOURCE_DIR}/cmake/AddMQTPythonBinding.cmake
+          ${PROJECT_SOURCE_DIR}/cmake/Cache.cmake
           ${PROJECT_SOURCE_DIR}/cmake/FindGMP.cmake
           ${PROJECT_SOURCE_DIR}/cmake/PackageAddTest.cmake
           ${PROJECT_SOURCE_DIR}/cmake/PreventInSourceBuilds.cmake
