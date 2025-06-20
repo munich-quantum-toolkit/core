@@ -385,11 +385,11 @@ module {
         %reg_3, %q2_0 = "mqtopt.extractQubit"(%reg_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
         //===------------------------------------------------------------------===//
-        // q0_0: ──■── q02_1#0
+        // q0_0: ──○── q02_1#0
         //       ┌─┴─┐
         // q1_0: ┤ X ├ q1_1
         //       └─┬─┘
-        // q2_0: ──■── q02_1#1
+        // q2_0: ──○── q02_1#1
         //===----------------------------------------------------------------===//
 
         %q1_1, %q02_1:2 = mqtopt.x() %q1_0 nctrl %q0_0, %q2_0 : !mqtopt.Qubit nctrl !mqtopt.Qubit, !mqtopt.Qubit
@@ -419,7 +419,7 @@ module {
         //       ┌─┴─┐
         // q1_0: ┤ X ├ q1_1
         //       └─┬─┘
-        // q2_0: ──■── q2_1
+        // q2_0: ──○── q2_1
         //===----------------------------------------------------------------===//
 
         %q1_1, %q0_1, %q2_1 = mqtopt.x() %q1_0 ctrl %q0_0 nctrl %q2_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
@@ -538,6 +538,7 @@ module {
         return
     }
 }
+
 // -----
 // This test checks if parameterized multiple qubit gates are parsed and handled correctly.
 module {
