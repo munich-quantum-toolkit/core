@@ -15,6 +15,8 @@
 
 #include "mlir/Conversion/MQTDynToMQTOpt/MQTDynToMQTOpt.h"
 
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Func/Transforms/FuncConversions.h"
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/IR/ValueRange.h"
@@ -31,6 +33,7 @@
 #include <mlir/Transforms/DialectConversion.h>
 #include <utility>
 #include <vector>
+
 namespace mqt::ir {
 
 using namespace mlir;
@@ -356,7 +359,7 @@ struct MQTDynToMQTOpt : impl::MQTDynToMQTOptBase<MQTDynToMQTOpt> {
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
-    const MQTDynToMQTOptTypeConverter typeConverter(context);
+    MQTDynToMQTOptTypeConverter typeConverter(context);
 
     target.addIllegalDialect<dyn::MQTDynDialect>();
     target.addLegalDialect<opt::MQTOptDialect>();
@@ -398,6 +401,27 @@ struct MQTDynToMQTOpt : impl::MQTDynToMQTOptBase<MQTDynToMQTOpt> {
     ADD_CONVERT_PATTERN(RZXOp)
     ADD_CONVERT_PATTERN(XXminusYY)
     ADD_CONVERT_PATTERN(XXplusYY)
+
+    // conversion of mqtdyn types in func.func signatures
+    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
+        patterns, typeConverter);
+    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+      return typeConverter.isSignatureLegal(op.getFunctionType()) &&
+             typeConverter.isLegal(&op.getBody());
+    });
+
+    // conversion of mqtdyn types in func.return
+    populateReturnOpTypeConversionPattern(patterns, typeConverter);
+    target.addDynamicallyLegalOp<func::ReturnOp>(
+        [&](func::ReturnOp op) { return typeConverter.isLegal(op); });
+
+    // conversion of mqtdyn types in func.call
+    populateCallOpTypeConversionPattern(patterns, typeConverter);
+    target.addDynamicallyLegalOp<func::CallOp>(
+        [&](func::CallOp op) { return typeConverter.isLegal(op); });
+
+    // conversion of mqtdyn types in control-flow ops; e.g. cf.br
+    populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();

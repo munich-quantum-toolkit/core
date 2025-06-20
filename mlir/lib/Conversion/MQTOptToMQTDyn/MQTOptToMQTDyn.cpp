@@ -15,6 +15,8 @@
 
 #include "mlir/Conversion/MQTOptToMQTDyn/MQTOptToMQTDyn.h"
 
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Func/Transforms/FuncConversions.h"
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
@@ -267,7 +269,7 @@ struct MQTOptToMQTDyn : impl::MQTOptToMQTDynBase<MQTOptToMQTDyn> {
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
-    const MQTOptToMQTDynTypeConverter typeConverter(context);
+    MQTOptToMQTDynTypeConverter typeConverter(context);
 
     target.addIllegalDialect<opt::MQTOptDialect>();
     target.addLegalDialect<dyn::MQTDynDialect>();
@@ -309,6 +311,27 @@ struct MQTOptToMQTDyn : impl::MQTOptToMQTDynBase<MQTOptToMQTDyn> {
     ADD_CONVERT_PATTERN(RZXOp)
     ADD_CONVERT_PATTERN(XXminusYY)
     ADD_CONVERT_PATTERN(XXplusYY)
+
+    // conversion of mqtopt types in func.func signatures
+    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
+        patterns, typeConverter);
+    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+      return typeConverter.isSignatureLegal(op.getFunctionType()) &&
+             typeConverter.isLegal(&op.getBody());
+    });
+
+    // conversion of mqtopt types in func.return
+    populateReturnOpTypeConversionPattern(patterns, typeConverter);
+    target.addDynamicallyLegalOp<func::ReturnOp>(
+        [&](func::ReturnOp op) { return typeConverter.isLegal(op); });
+
+    // conversion of mqtopt types in func.call
+    populateCallOpTypeConversionPattern(patterns, typeConverter);
+    target.addDynamicallyLegalOp<func::CallOp>(
+        [&](func::CallOp op) { return typeConverter.isLegal(op); });
+
+    // conversion of mqtopt types in control-flow ops; e.g. cf.br
+    populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
