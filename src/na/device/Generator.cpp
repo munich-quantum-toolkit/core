@@ -32,7 +32,7 @@ namespace {
  * @param message The Protobuf message to populate.
  * @throws std::runtime_error if a repeated field has an unsupported type, i.e.,
  * not a message type.
- * @note This is a recursive auxiliary function used by @ref writeJsonSchema
+ * @note This is a recursive auxiliary function used by @ref writeJSONSchema
  */
 auto populateRepeatedFields(google::protobuf::Message* message) -> void {
   const google::protobuf::Descriptor* descriptor = message->GetDescriptor();
@@ -266,7 +266,7 @@ auto writeDecoherenceTimes(const Device& device, const double timeUnit,
 }
 } // namespace
 
-auto writeJsonSchema(const std::string& path) -> void {
+auto writeJSONSchema(const std::string& path) -> void {
   // Create a default device configuration
   Device device;
 
@@ -292,11 +292,7 @@ auto writeJsonSchema(const std::string& path) -> void {
   if (ofs.is_open()) {
     ofs << json;
     ofs.close();
-#if SPDLOG_ACTIVE_LEVEL <= SPDLOG_LEVEL_INFO
-    std::stringstream ss;
-    ss << "JSON template written to " << path;
-    SPDLOG_INFO(ss.str());
-#endif
+    SPDLOG_INFO("JSON template written to {}", path);
   } else {
     std::stringstream ss;
     ss << "Failed to open file for writing: " << path;
@@ -353,7 +349,7 @@ auto writeHeaderFile(const Device& device, const std::string& path) -> void {
   writeSites(device, ofs);
   writeOperations(device, timeUnit, ofs);
   writeDecoherenceTimes(device, timeUnit, ofs);
-  std::cout << "Header file written to " << path << std::endl;
+  SPDLOG_INFO("Header file written to {}", path);
   ofs.close();
 }
 } // namespace na
