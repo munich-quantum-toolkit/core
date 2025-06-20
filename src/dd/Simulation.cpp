@@ -95,6 +95,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
     // simulate once and measure all qubits repeatedly
     auto permutation = qc.initialLayout;
     auto e = in;
+    dd.incRef(e);
 
     for (const auto& op : qc) {
       // simply skip any non-unitary
@@ -121,7 +122,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
       auto measurement = dd.measureAll(e, false, mt);
       counts.operator[](measurement) += 1U;
     }
-    // reduce reference count of measured state
+    // remove the measured state edge from the root set
     dd.decRef(e);
 
     std::map<std::string, std::size_t> actualCounts{};
@@ -194,7 +195,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
       qc::unreachable();
     }
 
-    // reduce reference count of measured state
+    // remove the measured state edge from the root set
     dd.decRef(e);
 
     std::string shot(qc.getNcbits(), '0');

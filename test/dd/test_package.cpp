@@ -925,14 +925,6 @@ TEST(DDPackageTest, InvalidMakeBasisStateAndGate) {
   EXPECT_THROW(getDD(qc::StandardOperation(3, qc::X), *dd), std::runtime_error);
 }
 
-TEST(DDPackageTest, InvalidDecRef) {
-  auto dd = std::make_unique<Package>(2);
-  auto e = getDD(qc::StandardOperation(0, qc::H), *dd);
-  EXPECT_DEBUG_DEATH(
-      dd->decRef(e),
-      "Reference count of Node must not be zero before decrement");
-}
-
 TEST(DDPackageTest, PackageReset) {
   auto dd = std::make_unique<Package>(1);
 
@@ -955,13 +947,62 @@ TEST(DDPackageTest, PackageReset) {
   EXPECT_EQ(node2, node);
 }
 
-TEST(DDPackageTest, MaxRefCount) {
+TEST(DDPackageTest, ResetClearsRoots) {
+  auto dd = std::make_unique<Package>(2);
+
+  auto vec = dd::makeZeroState(2, *dd);
+  auto mat = getDD(qc::StandardOperation(0, qc::X), *dd);
+  auto dens = dd->makeZeroDensityOperator(2);
+
+  dd->incRef(vec);
+  dd->incRef(mat);
+  dd->incRef(dens);
+
+  EXPECT_EQ(dd->vectorRoots.size(), 1U);
+  EXPECT_EQ(dd->matrixRoots.size(), 1U);
+  EXPECT_EQ(dd->densityRoots.size(), 1U);
+
+  dd->reset();
+
+  EXPECT_TRUE(dd->vectorRoots.empty());
+  EXPECT_TRUE(dd->matrixRoots.empty());
+  EXPECT_TRUE(dd->densityRoots.empty());
+}
+
+TEST(DDPackageTest, DuplicateIncRefDoesNotLeaveStaleRoot) {
   auto dd = std::make_unique<Package>(1);
-  auto e = getDD(qc::StandardOperation(0, qc::X), *dd);
-  // ref count saturates at this value
-  e.p->ref = std::numeric_limits<decltype(e.p->ref)>::max();
-  dd->incRef(e);
-  EXPECT_EQ(e.p->ref, std::numeric_limits<decltype(e.p->ref)>::max());
+
+  // vector root
+  auto vec = dd::makeZeroState(1, *dd);
+  EXPECT_EQ(dd->vectorRoots.size(), 1U);
+  dd->incRef(vec);
+  EXPECT_EQ(dd->vectorRoots.at(vec), 2U);
+  dd->decRef(vec);
+  EXPECT_EQ(dd->vectorRoots.at(vec), 1U);
+  dd->decRef(vec);
+  EXPECT_TRUE(dd->vectorRoots.empty());
+  EXPECT_THROW(dd->decRef(vec), std::invalid_argument);
+
+  // matrix root
+  auto mat = getDD(qc::StandardOperation(0, qc::X), *dd);
+  dd->incRef(mat);
+  dd->incRef(mat);
+  EXPECT_EQ(dd->matrixRoots.size(), 1U);
+  EXPECT_EQ(dd->matrixRoots.at(mat), 2U);
+  dd->decRef(mat);
+  EXPECT_EQ(dd->matrixRoots.at(mat), 1U);
+  dd->decRef(mat);
+  EXPECT_TRUE(dd->matrixRoots.empty());
+
+  // density root
+  auto dens = dd->makeZeroDensityOperator(1);
+  EXPECT_EQ(dd->densityRoots.size(), 1U);
+  dd->incRef(dens);
+  EXPECT_EQ(dd->densityRoots.at(dens), 2U);
+  dd->decRef(dens);
+  EXPECT_EQ(dd->densityRoots.at(dens), 1U);
+  dd->decRef(dens);
+  EXPECT_TRUE(dd->densityRoots.empty());
 }
 
 TEST(DDPackageTest, Inverse) {
@@ -970,16 +1011,43 @@ TEST(DDPackageTest, Inverse) {
   auto xdag = dd->conjugateTranspose(x);
   EXPECT_EQ(x, xdag);
   dd->garbageCollect();
-  // nothing should have been collected since the threshold is not reached
+  // Mark-and-sweep does not run if no unique table exceeded its threshold
   EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 1);
   dd->incRef(x);
   dd->garbageCollect(true);
-  // nothing should have been collected since the lone node has a non-zero ref
-  // count
+  // For mark-and-sweep the node is still part of the root set and therefore
+  // remains reachable
   EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 1);
   dd->decRef(x);
   dd->garbageCollect(true);
-  // now the node should have been collected
+  // After removing the node from the root set it is reclaimed
+  EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 0);
+}
+
+TEST(DDPackageTest, IncRefTwiceThenDecRefTwice) {
+  auto dd = std::make_unique<Package>(1);
+
+  auto x = getDD(qc::StandardOperation(0, qc::X), *dd);
+
+  // add the same edge twice
+  dd->incRef(x);
+  dd->incRef(x);
+  EXPECT_EQ(dd->matrixRoots.size(), 1U);
+  EXPECT_EQ(dd->matrixRoots.at(x), 2U);
+
+  dd->garbageCollect(true);
+
+  // node should survive collection since it is still in the root set
+  EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 1);
+
+  // remove the edge twice
+  dd->decRef(x);
+  EXPECT_EQ(dd->matrixRoots.at(x), 1U);
+  dd->decRef(x);
+
+  dd->garbageCollect(true);
+
+  // node should now be reclaimed
   EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 0);
 }
 
@@ -2499,7 +2567,7 @@ TEST(DDPackageTest, DataStructureStatistics) {
   EXPECT_EQ(stats["mEdge"]["alignment_B"], 8U);
   EXPECT_EQ(stats["dEdge"]["size_B"], 24U);
   EXPECT_EQ(stats["dEdge"]["alignment_B"], 8U);
-  EXPECT_EQ(stats["RealNumber"]["size_B"], 24U);
+  EXPECT_EQ(stats["RealNumber"]["size_B"], 16U);
   EXPECT_EQ(stats["RealNumber"]["alignment_B"], 8U);
 }
 

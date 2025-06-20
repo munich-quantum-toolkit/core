@@ -96,10 +96,8 @@ public:
     }
   }
 
-  // lookup a node in the unique table for the appropriate variable; insert it,
-  // if it has not been found NOTE: reference counting is to be adjusted by
-  // function invoking the table lookup and only normalized nodes shall be
-  // stored.
+  // Lookup a node in the unique table for the appropriate variable and insert
+  // it if it has not been found. Only normalized nodes shall be stored.
   template <class Node> [[nodiscard]] Node* lookup(Node* p) {
     static_assert(std::is_base_of_v<NodeBase, Node>,
                   "Node must be derived from NodeBase");
@@ -144,35 +142,12 @@ public:
   /// Get the total number of entries
   [[nodiscard]] std::size_t getNumEntries() const noexcept;
 
-  /// Get the total number of active entries
-  [[nodiscard]] std::size_t getNumActiveEntries() const noexcept;
-
-  /// Get the peak total number of active entries
-  [[nodiscard]] std::size_t getPeakNumActiveEntries() const noexcept;
+  /// Count the number of marked entries
+  [[nodiscard]] std::size_t countMarkedEntries() const noexcept;
 
   /**
-   * @brief Increment the reference count of a node.
-   * @details This is a pass-through function that calls the increment function
-   * of the node. It additionally keeps track of the number of active entries
-   * in the table (entries with a reference count greater than zero). Reference
-   * counts saturate at the maximum value of RefCount.
-   * @param p A pointer to the node to increase the reference count of.
-   * @returns Whether the reference count was increased.
-   * @see Node::incRef(Node*)
+   * @brief Determine whether the table possibly requires garbage collection.
    */
-  [[nodiscard]] bool incRef(NodeBase* p) noexcept;
-  /**
-   * @brief Decrement the reference count of a node.
-   * @details This is a pass-through function that calls the decrement function
-   * of the node. It additionally keeps track of the number of active entries
-   * in the table (entries with a reference count greater than zero). Reference
-   * counts saturate at the maximum value of RefCount.
-   * @param p A pointer to the node to decrease the reference count of.
-   * @returns Whether the reference count was decreased.
-   * @see Node::decRef(Node*)
-   */
-  [[nodiscard]] bool decRef(NodeBase* p) noexcept;
-
   [[nodiscard]] bool possiblyNeedsCollection() const;
 
   std::size_t garbageCollect(bool force = false);
@@ -195,7 +170,7 @@ public:
 
         while (p != nullptr) {
           std::cout << "\t\t" << std::hex << reinterpret_cast<std::uintptr_t>(p)
-                    << std::dec << " " << p->ref << std::hex;
+                    << std::dec;
           for (const auto& e : p->e) {
             std::cout << " p" << reinterpret_cast<std::uintptr_t>(e.p) << "(r"
                       << reinterpret_cast<std::uintptr_t>(e.w.r) << " i"
@@ -235,12 +210,11 @@ private:
   std::vector<UniqueTableStatistics> stats;
 
   /**
-  Searches for a node in the hash table with the given key.
-  @param p The node to search for.
-  @param key The hashed value used to search the table.
-  @return The Edge<Node> found in the hash table or Edge<Node>::zero if not
-  found.
-  **/
+   * @brief Search for a node in the hash table with the given key.
+   * @param p The node to search for.
+   * @param key The hashed value used to search the table.
+   * @returns A pointer to the node if found or Node::getTerminal() otherwise.
+   */
   template <class Node>
   [[nodiscard]] Node* searchTable(Node& p, const std::size_t& key) {
     static_assert(std::is_base_of_v<NodeBase, Node>,

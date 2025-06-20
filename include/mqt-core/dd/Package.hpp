@@ -169,6 +169,12 @@ public:
   RealNumberUniqueTable cUniqueTable{cMemoryManager};
   ComplexNumbers cn{cUniqueTable};
 
+  // Root sets for mark-and-sweep garbage collection with explicit
+  // reference counting for externally tracked DDs
+  std::unordered_map<vEdge, std::size_t> vectorRoots{};
+  std::unordered_map<mEdge, std::size_t> matrixRoots{};
+  std::unordered_map<dEdge, std::size_t> densityRoots{};
+
   /**
    * @brief Get the unique table for a given type
    * @tparam T The type to get the unique table for
@@ -194,62 +200,83 @@ public:
   void clearUniqueTables();
 
   /**
-   * @brief Increment the reference count of an edge
-   * @details This is the main function for increasing reference counts within
-   * the DD package. It increases the reference count of the complex edge weight
-   * as well as the DD node itself. If the node newly becomes active, meaning
-   * that it had a reference count of zero beforehand, the reference count of
-   * all children is recursively increased.
+   * @brief Add the DD to a tracking hashset and update its reference count.
    * @tparam Node The node type of the edge.
-   * @param e The edge to increase the reference count of
+   * @param e The edge to increase the reference count of.
    */
   template <class Node> void incRef(const Edge<Node>& e) noexcept {
-    cn.incRef(e.w);
-    const auto& p = e.p;
-    const auto inc = getUniqueTable<Node>().incRef(p);
-    if (inc && p->ref == 1U) {
-      for (const auto& child : p->e) {
-        incRef(child);
-      }
-    }
+    ++getRootSet<Node>()[e];
   }
 
   /**
-   * @brief Decrement the reference count of an edge
-   * @details This is the main function for decreasing reference counts within
-   * the DD package. It decreases the reference count of the complex edge weight
-   * as well as the DD node itself. If the node newly becomes dead, meaning
-   * that its reference count hit zero, the reference count of all children is
-   * recursively decreased.
+   * @brief Decrease the DD's reference count and remove it from the tracking
+   * hashset if the count hits zero.
    * @tparam Node The node type of the edge.
-   * @param e The edge to decrease the reference count of
+   * @param e The edge to decrease the reference count of.
+   * @throws std::invalid_argument If the edge is not part of the tracking
+   * hashset.
    */
-  template <class Node> void decRef(const Edge<Node>& e) noexcept {
-    cn.decRef(e.w);
-    const auto& p = e.p;
-    const auto dec = getUniqueTable<Node>().decRef(p);
-    if (dec && p->ref == 0U) {
-      for (const auto& child : p->e) {
-        decRef(child);
-      }
+  template <class Node> void decRef(const Edge<Node>& e) {
+    if (e.p == nullptr) {
+      return;
+    }
+    auto& roots = getRootSet<Node>();
+    auto it = roots.find(e);
+    if (it == roots.end()) {
+      throw std::invalid_argument("Edge is not part of the root set.");
+    }
+    if (--it->second == 0U) {
+      roots.erase(it);
     }
   }
 
+private:
+  /// Getter for the tracking hashset of the given node type.
+  template <class Node> [[nodiscard]] auto& getRootSet() noexcept {
+    if constexpr (std::is_same_v<Node, vNode>) {
+      return vectorRoots;
+    } else if constexpr (std::is_same_v<Node, mNode>) {
+      return matrixRoots;
+    } else {
+      static_assert(std::is_same_v<Node, dNode>);
+      return densityRoots;
+    }
+  }
+
+public:
   /**
    * @brief Trigger garbage collection in all unique tables
    *
-   * @details Garbage collection is the process of removing all nodes from the
-   * unique tables that have a reference count of zero.
-   * Such nodes are considered "dead" and they can be safely removed from the
-   * unique tables. This process is necessary to free up memory that is no
-   * longer needed. By default, garbage collection is only triggered if the
-   * unique table indicates that it possibly needs collection. Whenever some
-   * nodes are recollected, some compute tables need to be invalidated as well.
+   * @details Garbage collection uses a mark-and-sweep algorithm. During the
+   * mark phase all nodes reachable from the root sets are marked. In the sweep
+   * phase unmarked nodes are removed from the unique tables and the associated
+   * compute tables are cleared. By default, garbage collection is only
+   * triggered if the unique tables report that a collection might be
+   * necessary.
    *
-   * @param force
-   * @return
+   * @param force If `true`, perform a collection regardless of whether any
+   *              table reports that it may need collecting.
+   * @returns `true` if at least one vector, matrix, or density-matrix node, or
+   *          a complex number was reclaimed.
    */
   bool garbageCollect(bool force = false);
+
+  /// Mark all active nodes and numbers
+  void mark() noexcept;
+
+  /// Unmark all active nodes and numbers
+  void unmark() noexcept;
+
+  struct ActiveCounts {
+    std::size_t vectorNodes = 0U;
+    std::size_t matrixNodes = 0U;
+    std::size_t densityNodes = 0U;
+    std::size_t realNumbers = 0U;
+  };
+
+  /// @brief Compute the active number of nodes and numbers
+  /// @note This traverses every currently tracked DD twice.
+  [[nodiscard]] ActiveCounts computeActiveCounts();
 
   ///
   /// Vector nodes, edges and quantum states
@@ -399,7 +426,6 @@ public:
              [[maybe_unused]] const bool generateDensityMatrix = false) {
     auto& memoryManager = getMemoryManager<Node>();
     auto p = memoryManager.template get<Node>();
-    assert(p->ref == 0U);
 
     p->v = var;
     if constexpr (std::is_same_v<Node, mNode> || std::is_same_v<Node, dNode>) {
