@@ -86,66 +86,56 @@ TEST_P(DriverTest, SessionSetParameterImplemented) {
 
 TEST_P(DriverTest, JobCreateImplemented) {
   QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_ERROR_PERMISSIONDENIED)
+  EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_ERROR_NOTSUPPORTED)
       << "Devices must implement `QDMI_device_create_job`.";
   QDMI_job_free(job);
 }
 
 TEST_P(DriverTest, JobSetParameterImplemented) {
   QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_ERROR_PERMISSIONDENIED)
-      << "Devices must implement `QDMI_device_create_job`.";
   EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT)
       << "Devices must implement `QDMI_job_set_parameter`.";
-  QDMI_job_free(job);
+}
+
+TEST_P(DriverTest, JobQueryPropertyImplemented) {
+  QDMI_Job job = nullptr;
+  EXPECT_EQ(
+      QDMI_job_query_property(job, QDMI_JOB_PROPERTY_MAX, 0, nullptr, nullptr),
+      QDMI_ERROR_INVALIDARGUMENT)
+      << "Devices must implement `QDMI_job_set_parameter`.";
 }
 
 TEST_P(DriverTest, JobSubmitImplemented) {
   QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_ERROR_PERMISSIONDENIED)
-      << "Devices must implement `QDMI_device_create_job`.";
   EXPECT_EQ(QDMI_job_submit(job), QDMI_ERROR_INVALIDARGUMENT)
       << "Devices must implement `QDMI_job_submit`.";
-  QDMI_job_free(job);
 }
 
 TEST_P(DriverTest, JobCancelImplemented) {
   QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_ERROR_PERMISSIONDENIED)
-      << "Devices must implement `QDMI_device_create_job`.";
   EXPECT_EQ(QDMI_job_cancel(job), QDMI_ERROR_INVALIDARGUMENT)
       << "Devices must implement `QDMI_job_cancel`.";
-  QDMI_job_free(job);
 }
 
 TEST_P(DriverTest, JobCheckImplemented) {
   QDMI_Job job = nullptr;
   QDMI_Job_Status status = QDMI_JOB_STATUS_RUNNING;
-  EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_ERROR_PERMISSIONDENIED)
-      << "Devices must implement `QDMI_device_create_job`.";
   EXPECT_EQ(QDMI_job_check(job, &status), QDMI_ERROR_INVALIDARGUMENT)
       << "Devices must implement `QDMI_job_check`.";
-  QDMI_job_free(job);
 }
 
 TEST_P(DriverTest, JobWaitImplemented) {
   QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_ERROR_PERMISSIONDENIED)
-      << "Devices must implement `QDMI_device_create_job`.";
-  EXPECT_EQ(QDMI_job_wait(job), QDMI_ERROR_INVALIDARGUMENT)
+  EXPECT_EQ(QDMI_job_wait(job, 0), QDMI_ERROR_INVALIDARGUMENT)
       << "Devices must implement `QDMI_job_wait`.";
-  QDMI_job_free(job);
 }
 
 TEST_P(DriverTest, JobGetResultsImplemented) {
   QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_ERROR_PERMISSIONDENIED)
-      << "Devices must implement `QDMI_device_create_job`.";
   EXPECT_EQ(QDMI_job_get_results(job, QDMI_JOB_RESULT_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT)
       << "Devices must implement `QDMI_job_get_results`.";
-  QDMI_job_free(job);
 }
 
 TEST_P(DriverTest, QueryDevicePropertyImplemented) {
@@ -233,7 +223,7 @@ TEST_P(DriverTest, QuerySites) {
   for (auto* site : sites) {
     uint64_t id = 0;
     EXPECT_EQ(QDMI_device_query_site_property(device, site,
-                                              QDMI_SITE_PROPERTY_ID,
+                                              QDMI_SITE_PROPERTY_INDEX,
                                               sizeof(uint64_t), &id, nullptr),
               QDMI_SUCCESS)
         << "Devices must provide a site id";

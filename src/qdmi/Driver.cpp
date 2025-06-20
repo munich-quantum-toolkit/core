@@ -311,6 +311,7 @@ ITERATE(ADD_DEVICE, DEVICE_LIST_UPPERCASE)
       prefix##_##device_session_create_device_job;                             \
   library.device_job_free = prefix##_##device_job_free;                        \
   library.device_job_set_parameter = prefix##_##device_job_set_parameter;      \
+  library.device_job_query_property = prefix##_##device_job_query_property;    \
   library.device_job_submit = prefix##_##device_job_submit;                    \
   library.device_job_cancel = prefix##_##device_job_cancel;                    \
   library.device_job_check = prefix##_##device_job_check;                      \
@@ -605,8 +606,8 @@ int QDMI_job_query_property(QDMI_Job job, QDMI_Job_Property prop,
   }
   ADD_STRING_PROPERTY(QDMI_JOB_PROPERTY_ID, job->id.c_str(), prop, size, value,
                       sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PARAMETER_PROGRAM, void*,
-                            job->program, prop, size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_JOB_PROPERTY_PROGRAM, void*, job->program,
+                            prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_JOB_PROPERTY_PROGRAMFORMAT,
                             QDMI_Program_Format, job->format, prop, size, value,
                             sizeRet)
