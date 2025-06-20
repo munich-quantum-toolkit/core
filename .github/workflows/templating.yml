@@ -10,23 +10,6 @@ jobs:
     name: Render template
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          ref: ${{ github.head_ref }}
-      - name: Render template
-        uses: munich-quantum-toolkit/.github/templating@templating
+      - uses: munich-quantum-toolkit/.github/templating@templating
         with:
           package-url: https://github.com/munich-quantum-toolkit/core
-      - name: Configure bot
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      - name: Commit and push changes
-        run: |
-          git add .
-          if ! git diff --cached --quiet; then
-            git commit -m "Update template"
-            git push
-          else
-            echo "No changes to commit."
-          fi
