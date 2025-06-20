@@ -54,14 +54,11 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC protobuf::libprotobuf spdlog::spdlog
-    PRIVATE qdmi::project_warnings MQT::ProjectOptions MQT::ProjectWarnings)
+    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
 
   # set versioning information
-  set_target_properties(
-    ${TARGET_NAME}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreNaDeviceGen)
+  set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME
+                                                                             CoreNaDeviceGen)
   # place in the bin directory
   set_target_properties(${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY
                                                   "${CMAKE_BINARY_DIR}/bin")
@@ -125,7 +122,10 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi spdlog::spdlog
-    PRIVATE qdmi::project_warnings MQT::ProjectOptions MQT::ProjectWarnings)
+    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
+
+  # set c++ standard
+  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
 
   # set versioning information
   set_target_properties(
@@ -133,16 +133,6 @@ if(NOT TARGET ${TARGET_NAME})
     PROPERTIES VERSION ${PROJECT_VERSION}
                SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
                EXPORT_NAME CoreNaQDMI)
-
-  # generate export header
-  include(GenerateExportHeader)
-  set(EXPORT_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_core_na_qdmi_export.h)
-  generate_export_header(${TARGET_NAME} BASE_NAME mqt_core_na_qdmi EXPORT_FILE_NAME ${EXPORT_HDR})
-  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS
-                                       ${CMAKE_CURRENT_BINARY_DIR}/include FILES ${EXPORT_HDR})
-  if(NOT BUILD_MQT_CORE_SHARED_LIBS)
-    target_compile_definitions(${TARGET_NAME} PUBLIC MQT_CORE_NA_STATIC_DEFINE)
-  endif()
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS

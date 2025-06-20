@@ -10,7 +10,8 @@
 
 #pragma once
 
-#include <na/device/device.pb.h>
+#include "na/device/device.pb.h"
+
 #include <string>
 
 namespace na {
@@ -21,7 +22,7 @@ namespace na {
  * @throws std::runtime_error if the JSON conversion fails or the file cannot be
  * opened.
  */
-auto writeJsonSchema(const std::string& path) -> void;
+auto writeJSONSchema(const std::string& path) -> void;
 
 /**
  * @brief Parses the device configuration from a JSON file.

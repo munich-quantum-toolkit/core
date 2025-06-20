@@ -127,7 +127,7 @@ int main(int argc, char* argv[]) {
   }
   if (args.schemaFile) {
     try {
-      na::writeJsonSchema(*args.schemaFile);
+      na::writeJSONSchema(*args.schemaFile);
     } catch (const std::runtime_error& e) {
       std::cerr << "Error writing JSON schema: " << e.what() << '\n';
       return 1;
