@@ -12,9 +12,19 @@
 
 #include "na/device/device.pb.h"
 
+#include <istream>
+#include <ostream>
 #include <string>
 
 namespace na {
+/**
+ * @brief Writes a JSON schema with default values for the device configuration
+ * to the specified output stream.
+ * @param os is the output stream to write the JSON schema to.
+ * @throws std::runtime_error if the JSON conversion fails.
+ */
+auto writeJSONSchema(std::ostream& os) -> void;
+
 /**
  * @brief Writes a JSON schema with default values for the device configuration
  * to the specified path.
@@ -25,12 +35,31 @@ namespace na {
 auto writeJSONSchema(const std::string& path) -> void;
 
 /**
+ * @brief Parses the device configuration from an input stream.
+ * @param is is the input stream containing the JSON representation of the
+ * device configuration.
+ * @returns The parsed device configuration as a Protobuf message.
+ * @throws std::runtime_error if the JSON cannot be parsed.
+ */
+[[nodiscard]] auto readJSON(std::istream& is) -> Device;
+
+/**
  * @brief Parses the device configuration from a JSON file.
+ * @param path is the path to the JSON file containing the device configuration.
  * @returns The parsed device configuration as a Protobuf message.
  * @throws std::runtime_error if the JSON file does not exist, or the JSON file
  * cannot be parsed.
  */
-[[nodiscard]] auto readJsonFile(const std::string& path) -> Device;
+[[nodiscard]] auto readJSON(const std::string& path) -> Device;
+
+/**
+ * @brief Writes a header file with the device configuration to the specified
+ * output stream.
+ * @param device is the protobuf representation of the device.
+ * @param os is the output stream to write the header file to.
+ * @throws std::runtime_error if the file cannot be opened or written to.
+ */
+auto writeHeader(const Device& device, std::ostream& os) -> void;
 
 /**
  * @brief Writes a header file with the device configuration to the specified
@@ -39,6 +68,6 @@ auto writeJSONSchema(const std::string& path) -> void;
  * @param path is the path to write the header file to.
  * @throws std::runtime_error if the file cannot be opened or written to.
  */
-auto writeHeaderFile(const Device& device, const std::string& path) -> void;
+auto writeHeader(const Device& device, const std::string& path) -> void;
 
 } // namespace na

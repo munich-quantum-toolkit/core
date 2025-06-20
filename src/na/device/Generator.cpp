@@ -264,7 +264,7 @@ auto writeDecoherenceTimes(const Device& device, const double timeUnit,
 }
 } // namespace
 
-auto writeJSONSchema(const std::string& path) -> void {
+auto writeJSONSchema(std::ostream& os) -> void {
   // Create a default device configuration
   Device device;
 
@@ -285,10 +285,15 @@ auto writeJSONSchema(const std::string& path) -> void {
     throw std::runtime_error(ss.str());
   }
 
+  // Write to output stream
+  os << json;
+}
+
+auto writeJSONSchema(const std::string& path) -> void {
   // Write to file
   std::ofstream ofs(path);
   if (ofs.is_open()) {
-    ofs << json;
+    writeJSONSchema(ofs);
     ofs.close();
     SPDLOG_INFO("JSON template written to {}", path);
   } else {
@@ -298,16 +303,11 @@ auto writeJSONSchema(const std::string& path) -> void {
   }
 }
 
-[[nodiscard]] auto readJsonFile(const std::string& path) -> Device {
-  // Read the device configuration from a JSON file
-  std::ifstream ifs(path);
-  if (!ifs.is_open()) {
-    throw std::runtime_error("Failed to open JSON file: " + std::string(path));
-  }
+[[nodiscard]] auto readJSON(std::istream& is) -> Device {
+  // Read the device configuration from the input stream
   std::stringstream buffer;
-  buffer << ifs.rdbuf();
+  buffer << is.rdbuf();
   const std::string json = buffer.str();
-  ifs.close();
   // Parse the JSON string into the protobuf message
   google::protobuf::util::JsonParseOptions options;
   options.ignore_unknown_fields = true;
@@ -323,21 +323,36 @@ auto writeJSONSchema(const std::string& path) -> void {
   return device;
 }
 
-auto writeHeaderFile(const Device& device, const std::string& path) -> void {
+[[nodiscard]] auto readJSON(const std::string& path) -> Device {
+  // Read the device configuration from a JSON file
+  std::ifstream ifs(path);
+  if (!ifs.is_open()) {
+    throw std::runtime_error("Failed to open JSON file: " + std::string(path));
+  }
+  const auto& device = readJSON(ifs);
+  ifs.close();
+  return device;
+}
+
+auto writeHeader(const Device& device, std::ostream& os) -> void {
+  os << "#pragma once\n\n";
+  const auto timeUnit = getTimeUnit(device);
+  writeName(device, os);
+  writeQubitsNum(device, os);
+  writeSites(device, os);
+  writeOperations(device, timeUnit, os);
+  writeDecoherenceTimes(device, timeUnit, os);
+}
+
+auto writeHeader(const Device& device, const std::string& path) -> void {
   std::ofstream ofs(path);
   if (!ofs.is_open()) {
     std::stringstream ss;
     ss << "Failed to open header file for writing: " << path;
     throw std::runtime_error(ss.str());
   }
-  ofs << "#pragma once\n\n";
-  const auto timeUnit = getTimeUnit(device);
-  writeName(device, ofs);
-  writeQubitsNum(device, ofs);
-  writeSites(device, ofs);
-  writeOperations(device, timeUnit, ofs);
-  writeDecoherenceTimes(device, timeUnit, ofs);
-  SPDLOG_INFO("Header file written to {}", path);
+  writeHeader(device, ofs);
   ofs.close();
+  SPDLOG_INFO("Header file written to {}", path);
 }
 } // namespace na
