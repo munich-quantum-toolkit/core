@@ -14,6 +14,7 @@
 #include "ir/Register.hpp"
 #include "ir/operations/AodOperation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
+#include "ir/operations/Control.hpp"
 #include "ir/operations/Expression.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
@@ -122,6 +123,14 @@ TEST(CompoundOperation, GetNqubits) {
   EXPECT_EQ(op.getNqubits(), 3);
 }
 
+TEST(CompoundOperation, IsClifford) {
+  qc::CompoundOperation op1;
+  op1.emplace_back<qc::StandardOperation>(0, qc::OpType::H);
+  op1.emplace_back<qc::StandardOperation>(1, qc::OpType::RX,
+                                          std::vector{qc::PI_2});
+  EXPECT_FALSE(op1.isClifford());
+}
+
 TEST(OpType, General) {
   EXPECT_EQ(qc::toString(qc::RZ), "rz");
   std::stringstream ss;
@@ -155,6 +164,56 @@ TEST(Operation, IsIndividualGate) {
   EXPECT_FALSE(op2.isSingleQubitGate());
   const qc::StandardOperation op3(1, qc::RXX);
   EXPECT_FALSE(op3.isSingleQubitGate());
+}
+
+TEST(Operation, IsClifford) {
+  const qc::StandardOperation x(0, qc::X);
+  EXPECT_TRUE(x.isClifford());
+  const qc::StandardOperation cx(0, 1, qc::X);
+  EXPECT_TRUE(cx.isClifford());
+  const qc::StandardOperation ccx({0, 1}, 2, qc::X);
+  EXPECT_FALSE(ccx.isClifford());
+
+  const qc::StandardOperation y(0, qc::Y);
+  EXPECT_TRUE(y.isClifford());
+  const qc::StandardOperation cy(0, 1, qc::Y);
+  EXPECT_TRUE(cy.isClifford());
+  const qc::StandardOperation ccy({0, 1}, 2, qc::Y);
+  EXPECT_FALSE(ccy.isClifford());
+
+  const qc::StandardOperation z(0, qc::Z);
+  EXPECT_TRUE(z.isClifford());
+  const qc::StandardOperation cz(0, 1, qc::Z);
+  EXPECT_TRUE(cz.isClifford());
+  const qc::StandardOperation ccz({0, 1}, 2, qc::Z);
+  EXPECT_FALSE(ccz.isClifford());
+
+  const qc::StandardOperation t(0, qc::T);
+  EXPECT_FALSE(t.isClifford());
+  const qc::StandardOperation tdg(0, qc::Tdg);
+  EXPECT_FALSE(tdg.isClifford());
+
+  const qc::StandardOperation h(0, qc::H);
+  EXPECT_TRUE(h.isClifford());
+
+  const qc::StandardOperation s(0, qc::S);
+  EXPECT_TRUE(s.isClifford());
+  const qc::StandardOperation sdg(0, qc::Sdg);
+  EXPECT_TRUE(sdg.isClifford());
+
+  const qc::StandardOperation sx(0, qc::SX);
+  EXPECT_TRUE(sx.isClifford());
+  const qc::StandardOperation sxdg(0, qc::SXdg);
+  EXPECT_TRUE(sxdg.isClifford());
+
+  const qc::StandardOperation dcx({0, 1}, qc::DCX);
+  EXPECT_TRUE(dcx.isClifford());
+  const qc::StandardOperation swap({0, 1}, qc::SWAP);
+  EXPECT_TRUE(swap.isClifford());
+  const qc::StandardOperation iswap({0, 1}, qc::iSWAP);
+  EXPECT_TRUE(iswap.isClifford());
+  const qc::StandardOperation ecr({0, 1}, qc::ECR);
+  EXPECT_TRUE(ecr.isClifford());
 }
 
 TEST(Operation, IsDiagonalGate) {
