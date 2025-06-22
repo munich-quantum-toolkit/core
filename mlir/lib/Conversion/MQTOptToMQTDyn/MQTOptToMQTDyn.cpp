@@ -75,8 +75,8 @@ struct ConvertMQTOptAlloc : public OpConversionPattern<opt::AllocOp> {
     auto dynQreg = mqtdynOp.getQreg();
 
     // get a view of the opt register users that can be modified
-    std::vector<Operation*> optQregUsers(optQreg.getUsers().begin(),
-                                         optQreg.getUsers().end());
+    const std::vector<Operation*> optQregUsers(optQreg.getUsers().begin(),
+                                               optQreg.getUsers().end());
 
     // update the operand of the opt register user
     for (auto* user : optQregUsers) {
@@ -128,8 +128,8 @@ struct ConvertMQTOptExtract : public OpConversionPattern<opt::ExtractOp> {
     auto optQreg = op.getOutQreg();
 
     // get a view of the opt qubit users that can be modified
-    std::vector<Operation*> optQubitUsers(optQubit.getUsers().begin(),
-                                          optQubit.getUsers().end());
+    const std::vector<Operation*> optQubitUsers(optQubit.getUsers().begin(),
+                                                optQubit.getUsers().end());
 
     // update the operand of the opt qubit user
     for (auto* user : optQubitUsers) {
@@ -137,8 +137,8 @@ struct ConvertMQTOptExtract : public OpConversionPattern<opt::ExtractOp> {
     }
 
     // get a view of the opt register users that can be modified
-    std::vector<Operation*> optQregUsers(optQreg.getUsers().begin(),
-                                         optQreg.getUsers().end());
+    const std::vector<Operation*> optQregUsers(optQreg.getUsers().begin(),
+                                               optQreg.getUsers().end());
 
     // update the operand of the opt register user
     for (auto* user : optQregUsers) {
@@ -163,8 +163,8 @@ struct ConvertMQTOptInsert : public OpConversionPattern<opt::InsertOp> {
     auto dynQreg = adaptor.getInQreg();
 
     // get a view of the opt register users that can be modified
-    std::vector<Operation*> optQregUsers(optQreg.getUsers().begin(),
-                                         optQreg.getUsers().end());
+    const std::vector<Operation*> optQregUsers(optQreg.getUsers().begin(),
+                                               optQreg.getUsers().end());
 
     // update the operand of the opt register user
     for (auto* user : optQregUsers) {
@@ -208,16 +208,16 @@ struct ConvertMQTOptMeasure : public OpConversionPattern<opt::MeasureOp> {
       newBit = newBits[i];
 
       // get a view of the opt qubit users that can be modified
-      std::vector<mlir::Operation*> qubitUsers(optQubit.getUsers().begin(),
-                                               optQubit.getUsers().end());
+      const std::vector<mlir::Operation*> qubitUsers(
+          optQubit.getUsers().begin(), optQubit.getUsers().end());
 
       // update the operand of the opt qubit user
       for (auto* user : qubitUsers) {
         user->replaceUsesOfWith(optQubit, dynQubit);
       }
 
-      std::vector<mlir::Operation*> bitUsers(oldBit.getUsers().begin(),
-                                             oldBit.getUsers().end());
+      const std::vector<mlir::Operation*> bitUsers(oldBit.getUsers().begin(),
+                                                   oldBit.getUsers().end());
       // iterate over the users of the old bit and replace the old bit with the
       // new bit
       for (auto* user : bitUsers) {
@@ -284,8 +284,8 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
       dynQubit = allDynInputQubits[i];
 
       // get a view of the opt qubit users that can be modified
-      std::vector<mlir::Operation*> qubitUsers(optQubit.getUsers().begin(),
-                                               optQubit.getUsers().end());
+      const std::vector<mlir::Operation*> qubitUsers(
+          optQubit.getUsers().begin(), optQubit.getUsers().end());
 
       // update the operand of the opt qubit user
       for (auto* user : qubitUsers) {
