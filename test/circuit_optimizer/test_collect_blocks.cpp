@@ -109,8 +109,8 @@ TEST(CollectBlocks, TwoQubitnonClifford) {
 TEST(CollectBlocks, DoubleGHZClifford) {
   QuantumComputation qc(3);
   qc.h(0);
-  qc.cx(0,1);
-  qc.cx(1,2);
+  qc.cx(0, 1);
+  qc.cx(1, 2);
   qc.t(0);
   qc.t(1);
   qc.cx(0,1);
