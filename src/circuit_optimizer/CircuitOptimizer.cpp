@@ -1430,28 +1430,30 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
 
   // create an empty disjoint set union data structure
   DSU dsu{};
+  DSU nonCliffordDSU{};
   for (auto opIt = qc.begin(); opIt != qc.end(); ++opIt) {
     auto& op = *opIt;
     bool canProcess = true;
     bool makesTooBig = false;
 
     if (!op->isUnitary() ) {
-      //print is Clifford on console //|| (onlyCollectCliffords && !op->isClifford()))
-      std::cout << "Skipping operation: " << op->isClifford() << std::endl;
       canProcess = false;
     }
 
-    if (onlyCollectCliffords && !op->isClifford()) {
+    /*if (onlyCollectCliffords && !op->isClifford()) {
+      const auto usedQubits = op->getUsedQubits();
+      std::int64_t prev = -1;
+      for (const auto& q : usedQubits) {
+        if (prev != -1) {
+          dsu.unionBlock(static_cast<Qubit>(prev), q);
+        }
+        prev = q;
+      }
       for (auto q : op->getUsedQubits()) {
         dsu.finalizeBlock(q);
       }
-      ++opIt;
-      auto& opnext = *opIt;
-      for (auto q : opnext->getUsedQubits()) {
-        dsu.finalizeBlock(q);
-      }
       continue;
-    }
+    }*/
 
     const auto usedQubits = op->getUsedQubits();
 
@@ -1549,6 +1551,8 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
       }
     }
 
+
+
     if (canProcess) {
       if (usedQubits.size() > maxBlockSize) {
         continue;
@@ -1560,6 +1564,14 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
         }
         prev = q;
       }
+
+      if (onlyCollectCliffords && !op->isClifford()) {
+        for (auto q : op->getUsedQubits()) {
+        dsu.finalizeBlock(q);
+      }
+        continue;
+      }
+
       const auto block = dsu.findBlock(static_cast<Qubit>(prev));
       const auto empty = dsu.blockEmpty(block);
       if (empty) {
