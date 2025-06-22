@@ -74,8 +74,14 @@ struct ConvertMQTOptAlloc : public OpConversionPattern<opt::AllocOp> {
     auto optQreg = op.getQreg();
     auto dynQreg = mqtdynOp.getQreg();
 
+    // get a view of the opt register users that can be modified
+    std::vector<Operation*> optQregUsers(optQreg.getUsers().begin(),
+                                         optQreg.getUsers().end());
+
     // update the operand of the opt register user
-    (*optQreg.getUsers().begin())->replaceUsesOfWith(optQreg, dynQreg);
+    for (auto* user : optQregUsers) {
+      user->replaceUsesOfWith(optQreg, dynQreg);
+    }
 
     // erase the old operation
     rewriter.eraseOp(op);
@@ -110,22 +116,34 @@ struct ConvertMQTOptExtract : public OpConversionPattern<opt::ExtractOp> {
     // create result type
     auto qubitType = dyn::QubitType::get(rewriter.getContext());
 
+    auto dynQreg = adaptor.getInQreg();
+
     // create new operation
-    auto mqtdynOp = rewriter.create<dyn::ExtractOp>(
-        op.getLoc(), qubitType, adaptor.getInQreg(), adaptor.getIndex(),
-        adaptor.getIndexAttrAttr());
+    auto mqtdynOp = rewriter.create<dyn::ExtractOp>(op.getLoc(), qubitType,
+                                                    dynQreg, adaptor.getIndex(),
+                                                    adaptor.getIndexAttrAttr());
 
     auto optQubit = op.getOutQubit();
     auto dynQubit = mqtdynOp.getOutQubit();
+    auto optQreg = op.getOutQreg();
+
+    // get a view of the opt qubit users that can be modified
+    std::vector<Operation*> optQubitUsers(optQubit.getUsers().begin(),
+                                          optQubit.getUsers().end());
 
     // update the operand of the opt qubit user
-    (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
+    for (auto* user : optQubitUsers) {
+      user->replaceUsesOfWith(optQubit, dynQubit);
+    }
 
-    auto optQreg = op.getOutQreg();
-    auto dynQreg = adaptor.getInQreg();
+    // get a view of the opt register users that can be modified
+    std::vector<Operation*> optQregUsers(optQreg.getUsers().begin(),
+                                         optQreg.getUsers().end());
 
     // update the operand of the opt register user
-    (*optQreg.getUsers().begin())->replaceUsesOfWith(optQreg, dynQreg);
+    for (auto* user : optQregUsers) {
+      user->replaceUsesOfWith(optQreg, dynQreg);
+    }
 
     // erase old operation
     rewriter.eraseOp(op);
@@ -144,8 +162,14 @@ struct ConvertMQTOptInsert : public OpConversionPattern<opt::InsertOp> {
     auto optQreg = op.getOutQreg();
     auto dynQreg = adaptor.getInQreg();
 
+    // get a view of the opt register users that can be modified
+    std::vector<Operation*> optQregUsers(optQreg.getUsers().begin(),
+                                         optQreg.getUsers().end());
+
     // update the operand of the opt register user
-    (*optQreg.getUsers().begin())->replaceUsesOfWith(optQreg, dynQreg);
+    for (auto* user : optQregUsers) {
+      user->replaceUsesOfWith(optQreg, dynQreg);
+    }
 
     // erase old operation
     rewriter.eraseOp(op);
@@ -164,6 +188,7 @@ struct ConvertMQTOptMeasure : public OpConversionPattern<opt::MeasureOp> {
     auto oldBits = op.getOutBits();
     auto dynQubits = adaptor.getInQubits();
     auto optQubits = op.getOutQubits();
+
     // create new operation
     auto mqtdynOp = rewriter.create<dyn::MeasureOp>(
         op.getLoc(), oldBits.getTypes(), dynQubits);
@@ -181,22 +206,28 @@ struct ConvertMQTOptMeasure : public OpConversionPattern<opt::MeasureOp> {
       optQubit = optQubits[i];
       oldBit = oldBits[i];
       newBit = newBits[i];
-      // update the operand of the opt qubit user
-      (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
 
+      // get a view of the opt qubit users that can be modified
+      std::vector<mlir::Operation*> qubitUsers(optQubit.getUsers().begin(),
+                                               optQubit.getUsers().end());
+
+      // update the operand of the opt qubit user
+      for (auto* user : qubitUsers) {
+        user->replaceUsesOfWith(optQubit, dynQubit);
+      }
+
+      std::vector<mlir::Operation*> bitUsers(oldBit.getUsers().begin(),
+                                             oldBit.getUsers().end());
       // iterate over the users of the old bit and replace the old bit with the
       // new bit
-      for (auto* user : oldBit.getUsers()) {
-
-        // Only consider operations after the current operation
-        if (!user->isBeforeInBlock(mqtdynOp) && user != mqtdynOp &&
-            user != op) {
-          user->replaceUsesOfWith(oldBit, newBit);
-        }
+      for (auto* user : bitUsers) {
+        user->replaceUsesOfWith(oldBit, newBit);
       }
     }
 
+    // erase the previous operation
     rewriter.eraseOp(op);
+
     return success();
   }
 };
@@ -251,8 +282,15 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
     for (size_t i = 0; i < optResults.size(); i++) {
       optQubit = optResults[i];
       dynQubit = allDynInputQubits[i];
+
+      // get a view of the opt qubit users that can be modified
+      std::vector<mlir::Operation*> qubitUsers(optQubit.getUsers().begin(),
+                                               optQubit.getUsers().end());
+
       // update the operand of the opt qubit user
-      (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
+      for (auto* user : qubitUsers) {
+        user->replaceUsesOfWith(optQubit, dynQubit);
+      }
     }
 
     // erase the previous operation
@@ -261,6 +299,7 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
     return success();
   }
 };
+
 struct MQTOptToMQTDyn : impl::MQTOptToMQTDynBase<MQTOptToMQTDyn> {
   using MQTOptToMQTDynBase::MQTOptToMQTDynBase;
   void runOnOperation() override {
@@ -277,6 +316,7 @@ struct MQTOptToMQTDyn : impl::MQTOptToMQTDynBase<MQTOptToMQTDyn> {
     patterns.add<ConvertMQTOptAlloc, ConvertMQTOptDealloc, ConvertMQTOptInsert,
                  ConvertMQTOptExtract, ConvertMQTOptMeasure>(typeConverter,
                                                              context);
+
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)
     ADD_CONVERT_PATTERN(BarrierOp)
