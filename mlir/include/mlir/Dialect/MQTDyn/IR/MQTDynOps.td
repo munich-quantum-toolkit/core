@@ -183,7 +183,7 @@ def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
 
         Extract:
 
-        %out_qubit = "mqtdyn.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> (!mqtdyn.QubitRegister, !mqtdyn.Qubit)
+        %out_qubit = "mqtdyn.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
 
     }];
 
