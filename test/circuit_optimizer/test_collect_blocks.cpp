@@ -56,22 +56,23 @@ TEST(CollectBlocks, nonCliffordOnAll) {
   qc.x(1);
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 3, true);
+  qc::CircuitOptimizer::collectBlocks(qc, 2, true);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 5);
+  EXPECT_TRUE(qc.front()->isCompoundOperation());
+  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 3);
 }
 
-TEST(CollectBlocks, nonCliffordonTop) {
-  QuantumComputation qc(2);
+TEST(CollectBlocks, nonCliffordSingleQubit) {
+  QuantumComputation qc(1);
   qc.sdg(0);
-  qc.h(1);
+  qc.h(0);
   qc.t(0);
   qc.x(0);
-  qc.z(1);
   std::cout << qc << "\n";
   qc::CircuitOptimizer::collectBlocks(qc, 2, true);
   std::cout << qc << "\n";
-  EXPECT_EQ(qc.size(), 4);
+  EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
 }
 
@@ -106,7 +107,7 @@ TEST(CollectBlocks, TwoQubitnonClifford) {
   EXPECT_TRUE(qc.front()->isCompoundOperation());
 }
 
-TEST(CollectBlocks, DoubleGHZClifford) {
+TEST(CollectBlocks, mergeBlocksnonClifford) {
   QuantumComputation qc(3);
   qc.h(0);
   qc.cx(0, 1);
