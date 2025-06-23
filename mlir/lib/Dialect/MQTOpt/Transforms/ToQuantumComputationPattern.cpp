@@ -219,7 +219,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
   static void deleteRecursively(mlir::Operation& op,
                                 mlir::PatternRewriter& rewriter) {
     if (llvm::isa<AllocOp>(op)) {
-      return; // Do not delete extract operations.
+      return; // Do not delete alloc operations.
     }
     if (!op.getUsers().empty()) {
       return; // Do not delete operations with users.
@@ -420,6 +420,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     }
 
     rewriter.replaceOp(op, newAlloc);
+    return mlir::success();
   }
 };
 

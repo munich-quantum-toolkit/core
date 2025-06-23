@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
@@ -257,9 +258,15 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       // Finally, the return operation needs to be updated with the measurement
       // results and then replace the original `alloc` operation with the
       // updated one.
-      auto* const returnOperation = *op->getUsers().begin();
-      updateReturnOperation(returnOperation, currentRegister, measurementValues,
-                            rewriter);
+      auto returnIt = llvm::find_if(op->getUsers(), [](mlir::Operation* user) {
+        return llvm::isa<mlir::func::ReturnOp>(user);
+      });
+
+      if (returnIt != op->getUsers().end()) {
+        updateReturnOperation(*returnIt, currentRegister, measurementValues,
+                              rewriter);
+      }
+
       rewriter.replaceOp(op, newAlloc);
       return mlir::success();
     }

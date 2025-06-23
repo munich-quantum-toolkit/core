@@ -38,6 +38,33 @@ def test_mqtopt_conversion() -> None:
         qml.Hadamard(wires=[0])
         qml.CNOT(wires=[0, 1])
         catalyst.measure(0)
+        catalyst.measure(1)
+
+    @qml.qjit(pass_plugins={plugin_path}, dialect_plugins={plugin_path}, target="mlir", autograph=True)
+    def module() -> None:
+        return circuit()
+
+    # This will execute the pass and return the final MLIR
+    assert module.mlir_opt
+
+
+@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
+def test_mqtopt_roundtrip() -> None:
+    """Execute the full roundtrip including MQT Core IR.
+
+    Executes the conversion passes to and from MQTOpt dialect AND
+    the roundtrip through MQT Core IR.
+    """
+
+    @apply_pass("mqtopt-to-catalystquantum")
+    @apply_pass("mqt-core-round-trip")
+    @apply_pass("catalystquantum-to-mqtopt")
+    @qml.qnode(qml.device("lightning.qubit", wires=2))
+    def circuit() -> None:
+        qml.Hadamard(wires=[0])
+        qml.CNOT(wires=[0, 1])
+        catalyst.measure(0)
+        catalyst.measure(1)
 
     @qml.qjit(pass_plugins={plugin_path}, dialect_plugins={plugin_path}, target="mlir", autograph=True)
     def module() -> None:

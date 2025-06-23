@@ -215,10 +215,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up uv for Python 3.13
+      - name: Set up uv for Python 3.12
         uses: astral-sh/setup-uv@v6
         with:
-          python-version: 3.13
+          python-version: 3.12
           activate-environment: true
 
       - name: Setup Python path
@@ -278,10 +278,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up uv for Python 3.13
+      - name: Set up uv for Python 3.12
         uses: astral-sh/setup-uv@v6
         with:
-          python-version: 3.13
+          python-version: 3.12
           activate-environment: true
 
       - name: Setup Python path
