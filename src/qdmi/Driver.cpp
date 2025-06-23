@@ -9,7 +9,12 @@
  */
 
 /** @file
- * An example driver implementation in C++.
+ * @brief The MQT QDMI driver implementation.
+ * @details This driver loads all statically known and linked QDMI device
+ * libraries. Those are introduced to the driver via the macros
+ * `DEVICE_LIST_UPPERCASE` and `DEVICE_LIST_LOWERCASE`. Additional devices
+ * can be added dynamically by providing the respective information to the
+ * @ref qdmi::Driver::initialize function that initializes the driver.
  */
 
 // todo: Figure out how to set those from CMake.
@@ -19,12 +24,12 @@
 #include "qdmi/Driver.hpp"
 
 #include "qdmi/Macros.hpp"
-#include "qdmi/client.h"
-#include "qdmi/device.h"
 
 #include <cstddef>
 #include <dlfcn.h>
 #include <memory>
+#include <qdmi/client.h>
+#include <qdmi/device.h>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -330,8 +335,6 @@ ITERATE(ADD_DEVICE, DEVICE_LIST_UPPERCASE)
 /**
  * Returns a reference to the map of library handles returned by `dlopen`
  * to the dynamic device libraries.
- * @returns a reference to a map library handle to unique pointer of
- * DeviceLibrary objects.
  */
 [[nodiscard]] auto dynamicDeviceLibraries()
     -> std::unordered_map<void*, std::unique_ptr<DeviceLibrary>>& {
@@ -368,7 +371,7 @@ void addDynamicDeviceLibrary(const std::string& libName,
     // dlopen uses reference counting, so we need to decrement the reference
     // count that was increased by dlopen.
     dlclose(libHandle);
-    return;
+    throw std::runtime_error("Device library already loaded: " + libName);
   }
   auto it = dynamicDeviceLibraries()
                 .emplace(libHandle, std::make_unique<DeviceLibrary>())
@@ -430,8 +433,13 @@ auto addDevice(const DeviceLibrary& library) -> void {
   auto& device =
       *devices().emplace_back(std::make_unique<QDMI_Device_impl_d>());
   device.library = &library;
-  device.library->device_session_alloc(&device.session);
-  device.library->device_session_init(device.session);
+  if (device.library->device_session_alloc(&device.session) != QDMI_SUCCESS) {
+    throw std::runtime_error("Failed to allocate device session");
+  }
+  if (device.library->device_session_init(device.session) != QDMI_SUCCESS) {
+    device.library->device_session_free(device.session);
+    throw std::runtime_error("Failed to initialize device session");
+  }
 }
 
 /**
@@ -488,9 +496,7 @@ auto finalize() -> void {
   dynamicDeviceLibraries().clear();
   // Clear the static device libraries in the same way just that there is no
   // `clear` method for the array.
-  for (auto& lib : staticDeviceLibraries()) {
-    lib.reset();
-  }
+  staticDeviceLibraries().fill(nullptr);
 }
 } // namespace qc
 
@@ -565,7 +571,7 @@ int QDMI_device_create_job(QDMI_Device dev, QDMI_Job* job) {
     dev->library->device_job_free(uniqueJob->deviceJob);
     return QDMI_ERROR_FATAL;
   }
-  uniqueJob->id.resize(size);
+  uniqueJob->id.resize(size - 1);
   result = dev->library->device_job_query_property(
       uniqueJob->deviceJob, QDMI_DEVICE_JOB_PROPERTY_ID, size,
       uniqueJob->id.data(), nullptr);
@@ -589,6 +595,7 @@ int QDMI_job_set_parameter(QDMI_Job job, QDMI_Job_Parameter param,
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
+  // todo: Pass parameters on to the device job.
   ADD_POINTER_PARAMETER(QDMI_JOB_PARAMETER_PROGRAM, void, job->program, param,
                         size, value)
   ADD_SINGLE_VALUE_PARAMETER(QDMI_JOB_PARAMETER_PROGRAMFORMAT,
@@ -596,7 +603,7 @@ int QDMI_job_set_parameter(QDMI_Job job, QDMI_Job_Parameter param,
                              value)
   ADD_SINGLE_VALUE_PARAMETER(QDMI_JOB_PARAMETER_SHOTSNUM, size_t, job->shotsNum,
                              param, size, value)
-  return QDMI_ERROR_INVALIDARGUMENT;
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int QDMI_job_query_property(QDMI_Job job, QDMI_Job_Property prop,
