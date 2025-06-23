@@ -36,6 +36,13 @@ def CancelConsecutiveInverses : Pass<"cancel-consecutive-inverses", "mlir::Modul
   }];
 }
 
+def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
+  let summary = "This pass searches for consecutive applications of rotation gates that can be merged.";
+  let description = [{
+    This pass searches for consecutive applications of rotation gates that can be merged.
+  }];
+}
+
 def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   let summary = "This pass attempts to push down operations into branches for possible optimizations.";
   let description = [{
