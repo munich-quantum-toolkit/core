@@ -18,7 +18,6 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
-#include <limits>
 
 namespace dd {
 
@@ -44,7 +43,8 @@ struct NodeBase : LLBase {
    *    0b10 = mark first path edge (tmp flag),
    *     0b1 = mark path is conjugated (tmp flag)
    */
-  std::uint16_t flags = 0;
+  std::uint16_t flags = 0; // TODO: Would it make sense to use a larger datatype
+                           // here since Ref is gone?
 
   /// Mark flag used for mark-and-sweep garbage collection
   static constexpr std::uint16_t MARK_FLAG = 0b10000U;
@@ -53,7 +53,7 @@ struct NodeBase : LLBase {
     return (flags & MARK_FLAG) != 0U;
   }
   void mark() noexcept { flags |= MARK_FLAG; }
-  void unmark() noexcept { flags &= static_cast<std::uint16_t>(~MARK_FLAG); }
+  void unmark() noexcept { flags &= ~MARK_FLAG; }
 
   /// Getter for the next object.
   [[nodiscard]] NodeBase* next() const noexcept {

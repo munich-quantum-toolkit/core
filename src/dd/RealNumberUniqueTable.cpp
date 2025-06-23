@@ -144,7 +144,7 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
     auto* curr = table[key];
     RealNumber* prev = nullptr;
     while (curr != nullptr) {
-      if (!RealNumber::isMarked(*curr)) {
+      if (!RealNumber::marked(curr)) {
         auto* next = curr->next();
         if (prev == nullptr) {
           table[key] = next;
@@ -232,7 +232,7 @@ std::size_t RealNumberUniqueTable::countMarkedEntries() const noexcept {
   for (const auto* bucket : table) {
     const auto* curr = bucket;
     while (curr != nullptr) {
-      if (RealNumber::isMarked(*curr)) {
+      if (RealNumber::marked(curr)) {
         ++count;
       }
       curr = curr->next();

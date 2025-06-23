@@ -44,6 +44,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -75,9 +76,7 @@ void Package::reset() {
   clearUniqueTables();
   resetMemoryManagers();
   clearComputeTables();
-  vectorRoots.clear();
-  matrixRoots.clear();
-  densityRoots.clear();
+  mark.reset();
 }
 
 void Package::resetMemoryManagers(const bool resizeToTotal) {
@@ -94,37 +93,9 @@ void Package::clearUniqueTables() {
   cUniqueTable.clear();
 }
 
-void Package::mark() noexcept {
-  for (auto& [edge, _] : vectorRoots) {
-    auto e = edge;
-    e.mark();
-  }
-  for (auto& [edge, _] : matrixRoots) {
-    auto e = edge;
-    e.mark();
-  }
-  for (auto& [edge, _] : densityRoots) {
-    auto e = edge;
-    e.mark();
-  }
-}
-
-void Package::unmark() noexcept {
-  for (auto& [edge, _] : vectorRoots) {
-    auto e = edge;
-    e.unmark();
-  }
-  for (auto& [edge, _] : matrixRoots) {
-    auto e = edge;
-    e.unmark();
-  }
-  for (auto& [edge, _] : densityRoots) {
-    auto e = edge;
-    e.unmark();
-  }
-}
-
 bool Package::garbageCollect(bool force) {
+  using flags = std::tuple<bool, bool, bool, bool>;
+
   // return immediately if no table needs collection
   if (!force && !vUniqueTable.possiblyNeedsCollection() &&
       !mUniqueTable.possiblyNeedsCollection() &&
@@ -133,25 +104,20 @@ bool Package::garbageCollect(bool force) {
     return false;
   }
 
-  // Mark phase
-  mark();
+  const auto sweep = [this, &force]() -> flags {
+    const bool invC = cUniqueTable.garbageCollect(force) > 0;
+    force |= invC;
+    const bool invV = vUniqueTable.garbageCollect(force) > 0;
+    const bool invM = mUniqueTable.garbageCollect(force) > 0;
+    const bool invD = dUniqueTable.garbageCollect(force) > 0;
+    return {invC, invV, invM, invD};
+  };
 
-  // Sweep phase
-  const auto cCollect = cUniqueTable.garbageCollect(force);
-  if (cCollect > 0) {
-    force = true;
-  }
-
-  const auto vCollect = vUniqueTable.garbageCollect(force);
-  const auto mCollect = mUniqueTable.garbageCollect(force);
-  const auto dCollect = dUniqueTable.garbageCollect(force);
-
-  // Unmark phase
-  unmark();
+  const auto [invC, invV, invM, invD] = mark.execute<flags>(sweep);
 
   // invalidate all compute tables involving vectors if any vector node has
   // been collected
-  if (vCollect > 0) {
+  if (invV) {
     vectorAdd.clear();
     vectorInnerProduct.clear();
     vectorKronecker.clear();
@@ -159,7 +125,7 @@ bool Package::garbageCollect(bool force) {
   }
   // invalidate all compute tables involving matrices if any matrix node has
   // been collected
-  if (mCollect > 0) {
+  if (invM) {
     matrixAdd.clear();
     conjugateMatrixTranspose.clear();
     matrixKronecker.clear();
@@ -170,7 +136,7 @@ bool Package::garbageCollect(bool force) {
   }
   // invalidate all compute tables involving density matrices if any density
   // matrix node has been collected
-  if (dCollect > 0) {
+  if (invD) {
     densityAdd.clear();
     densityDensityMultiplication.clear();
     densityNoise.clear();
@@ -178,7 +144,7 @@ bool Package::garbageCollect(bool force) {
   }
   // invalidate all compute tables where any component of the entry contains
   // numbers from the complex table if any complex numbers were collected
-  if (cCollect > 0) {
+  if (invC) {
     matrixVectorMultiplication.clear();
     matrixMatrixMultiplication.clear();
     conjugateMatrixTranspose.clear();
@@ -192,24 +158,16 @@ bool Package::garbageCollect(bool force) {
     densityNoise.clear();
     densityTrace.clear();
   }
-  return vCollect > 0 || mCollect > 0 || dCollect > 0 || cCollect > 0;
+  return invC || invV || invM || invD;
 }
 
 Package::ActiveCounts Package::computeActiveCounts() {
-  // Mark phase
-  mark();
-
-  // Counting phase
-  ActiveCounts counts{};
-  counts.vectorNodes = vUniqueTable.countMarkedEntries();
-  counts.matrixNodes = mUniqueTable.countMarkedEntries();
-  counts.densityNodes = dUniqueTable.countMarkedEntries();
-  counts.realNumbers = cUniqueTable.countMarkedEntries();
-
-  // Unmark phase
-  unmark();
-
-  return counts;
+  const auto count = [this]() -> ActiveCounts {
+    return {
+        vUniqueTable.countMarkedEntries(), mUniqueTable.countMarkedEntries(),
+        dUniqueTable.countMarkedEntries(), cUniqueTable.countMarkedEntries()};
+  };
+  return mark.execute<ActiveCounts>(count);
 }
 
 dEdge Package::makeZeroDensityOperator(const std::size_t n) {

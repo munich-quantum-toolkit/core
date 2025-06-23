@@ -169,12 +169,6 @@ public:
   RealNumberUniqueTable cUniqueTable{cMemoryManager};
   ComplexNumbers cn{cUniqueTable};
 
-  // Root sets for mark-and-sweep garbage collection with explicit
-  // reference counting for externally tracked DDs
-  std::unordered_map<vEdge, std::size_t> vectorRoots{};
-  std::unordered_map<mEdge, std::size_t> matrixRoots{};
-  std::unordered_map<dEdge, std::size_t> densityRoots{};
-
   /**
    * @brief Get the unique table for a given type
    * @tparam T The type to get the unique table for
@@ -205,7 +199,7 @@ public:
    * @param e The edge to increase the reference count of.
    */
   template <class Node> void incRef(const Edge<Node>& e) noexcept {
-    ++getRootSet<Node>()[e];
+    mark.addToRoots(e);
   }
 
   /**
@@ -217,35 +211,98 @@ public:
    * hashset.
    */
   template <class Node> void decRef(const Edge<Node>& e) {
-    if (e.p == nullptr) {
-      return;
-    }
-    auto& roots = getRootSet<Node>();
-    auto it = roots.find(e);
-    if (it == roots.end()) {
-      throw std::invalid_argument("Edge is not part of the root set.");
-    }
-    if (--it->second == 0U) {
-      roots.erase(it);
-    }
+    mark.removeFromRoots(e);
+  }
+
+  template <class Node> [[nodiscard]] auto& getRootSet() noexcept {
+    return mark.getRoots<Node>();
   }
 
 private:
-  /// Getter for the tracking hashset of the given node type.
-  template <class Node> [[nodiscard]] auto& getRootSet() noexcept {
-    if constexpr (std::is_same_v<Node, vNode>) {
-      return vectorRoots;
-    } else if constexpr (std::is_same_v<Node, mNode>) {
-      return matrixRoots;
-    } else {
-      static_assert(std::is_same_v<Node, dNode>);
-      return densityRoots;
+  struct MarkAndPerform {
+  public:
+    template <class Edge> using RootSet = std::unordered_map<Edge, std::size_t>;
+
+    /// @brief Add to respective root set. Terminals may be added too.
+    template <class Node> void addToRoots(const Edge<Node>& e) noexcept {
+      getRoots<Node>()[e]++;
     }
-  }
+
+    /// @brief Remove from respective root set. Terminals may be removed too.
+    template <class Node> void removeFromRoots(const Edge<Node>& e) {
+      auto& roots = getRoots<Node>();
+      auto it = roots.find(e);
+      if (it == roots.end()) {
+        throw std::invalid_argument("Edge is not part of the root set.");
+      }
+      if (--it->second == 0U) {
+        roots.erase(it);
+      }
+    }
+
+    template <class Result, typename Fn> Result execute(Fn& op) noexcept {
+      mark();
+      Result res = op();
+      unmark();
+      return res;
+    }
+
+    /**
+     * @brief Clear all root sets.
+     */
+    void reset() {
+      vRoots.clear();
+      mRoots.clear();
+      dRoots.clear();
+    }
+
+  private:
+    /// @brief Mark edges contained in @p roots.
+    template <class Edge> static void mark(const RootSet<Edge>& roots) {
+      for (auto& [edge, _] : roots) {
+        auto e = edge;
+        e.mark();
+      }
+    }
+
+    /// @brief Unmark edges contained in @p roots.
+    template <class Edge> static void unmark(const RootSet<Edge>& roots) {
+      for (auto& [edge, _] : roots) {
+        auto e = edge;
+        e.unmark();
+      }
+    }
+
+    void mark() noexcept {
+      MarkAndPerform::mark(vRoots);
+      MarkAndPerform::mark(mRoots);
+      MarkAndPerform::mark(dRoots);
+    }
+
+    void unmark() noexcept {
+      MarkAndPerform::unmark(vRoots);
+      MarkAndPerform::unmark(mRoots);
+      MarkAndPerform::unmark(dRoots);
+    }
+
+    /// @brief Return appropriate hashset for the templated Node type.
+    template <class Node> [[nodiscard]] auto& getRoots() noexcept;
+    template <> auto& getRoots<vNode>() noexcept { return vRoots; }
+    template <> auto& getRoots<mNode>() noexcept { return mRoots; }
+    template <> auto& getRoots<dNode>() noexcept { return dRoots; }
+
+    RootSet<vEdge> vRoots;
+    RootSet<mEdge> mRoots;
+    RootSet<dEdge> dRoots;
+
+    template <class Node> friend auto& Package::getRootSet() noexcept;
+  };
+
+  MarkAndPerform mark;
 
 public:
   /**
-   * @brief Trigger garbage collection in all unique tables
+   * @brief Trigger garbage collection in all unique tables.
    *
    * @details Garbage collection uses a mark-and-sweep algorithm. During the
    * mark phase all nodes reachable from the root sets are marked. In the sweep
@@ -261,21 +318,16 @@ public:
    */
   bool garbageCollect(bool force = false);
 
-  /// Mark all active nodes and numbers
-  void mark() noexcept;
-
-  /// Unmark all active nodes and numbers
-  void unmark() noexcept;
-
   struct ActiveCounts {
-    std::size_t vectorNodes = 0U;
-    std::size_t matrixNodes = 0U;
-    std::size_t densityNodes = 0U;
-    std::size_t realNumbers = 0U;
+    std::size_t vector = 0U;
+    std::size_t matrix = 0U;
+    std::size_t density = 0U;
+    std::size_t reals = 0U;
   };
-
-  /// @brief Compute the active number of nodes and numbers
-  /// @note This traverses every currently tracked DD twice.
+  /**
+   * @brief Compute the active number of nodes and numbers
+   * @note This traverses every currently tracked DD twice.
+   */
   [[nodiscard]] ActiveCounts computeActiveCounts();
 
   ///

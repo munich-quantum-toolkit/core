@@ -44,23 +44,17 @@ bool RealNumber::isNegativePointer(const RealNumber* e) noexcept {
   return (reinterpret_cast<std::uintptr_t>(e) & LSB) != 0U;
 }
 
-RealNumber* RealNumber::next() const noexcept {
-  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(next_) &
-                                       ~LSB);
+RealNumber* RealNumber::mark(const RealNumber* e) noexcept {
+  std::uintptr_t ptr = reinterpret_cast<std::uintptr_t>(e) | 2U;
+  return reinterpret_cast<RealNumber*>(ptr);
+}
+RealNumber* RealNumber::unmark(const RealNumber* e) noexcept {
+  std::uintptr_t ptr = reinterpret_cast<std::uintptr_t>(e) & ~2U;
+  return reinterpret_cast<RealNumber*>(ptr);
 }
 
-bool RealNumber::isMarked(const RealNumber& p) noexcept {
-  return (reinterpret_cast<std::uintptr_t>(p.next_) & LSB) == LSB;
-}
-
-void RealNumber::mark(RealNumber& p) noexcept {
-  p.next_ = reinterpret_cast<RealNumber*>(
-      reinterpret_cast<std::uintptr_t>(p.next_) | LSB);
-}
-
-void RealNumber::unmark(RealNumber& p) noexcept {
-  p.next_ = reinterpret_cast<RealNumber*>(
-      reinterpret_cast<std::uintptr_t>(p.next_) & ~LSB);
+bool RealNumber::marked(const RealNumber* e) noexcept {
+  return (reinterpret_cast<std::uintptr_t>(e) & 2U) == 2U;
 }
 
 fp RealNumber::val(const RealNumber* e) noexcept {

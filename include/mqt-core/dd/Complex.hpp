@@ -88,10 +88,10 @@ struct Complex {
    */
   [[nodiscard]] bool approximatelyZero() const noexcept;
 
-  /// Mark the complex number as used.
+  /// @brief Mark the complex number as used.
   void mark() noexcept;
 
-  /// Unmark the complex number.
+  /// @brief Unmark the complex number.
   void unmark() noexcept;
 
   /**

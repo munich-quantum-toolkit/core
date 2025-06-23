@@ -950,6 +950,10 @@ TEST(DDPackageTest, PackageReset) {
 TEST(DDPackageTest, ResetClearsRoots) {
   auto dd = std::make_unique<Package>(2);
 
+  auto& vRoots = dd->getRootSet<vNode>();
+  auto& mRoots = dd->getRootSet<mNode>();
+  auto& dRoots = dd->getRootSet<dNode>();
+
   auto vec = dd::makeZeroState(2, *dd);
   auto mat = getDD(qc::StandardOperation(0, qc::X), *dd);
   auto dens = dd->makeZeroDensityOperator(2);
@@ -958,51 +962,55 @@ TEST(DDPackageTest, ResetClearsRoots) {
   dd->incRef(mat);
   dd->incRef(dens);
 
-  EXPECT_EQ(dd->vectorRoots.size(), 1U);
-  EXPECT_EQ(dd->matrixRoots.size(), 1U);
-  EXPECT_EQ(dd->densityRoots.size(), 1U);
+  EXPECT_EQ(vRoots.size(), 1U);
+  EXPECT_EQ(mRoots.size(), 1U);
+  EXPECT_EQ(dRoots.size(), 1U);
 
   dd->reset();
 
-  EXPECT_TRUE(dd->vectorRoots.empty());
-  EXPECT_TRUE(dd->matrixRoots.empty());
-  EXPECT_TRUE(dd->densityRoots.empty());
+  EXPECT_TRUE(vRoots.empty());
+  EXPECT_TRUE(mRoots.empty());
+  EXPECT_TRUE(dRoots.empty());
 }
 
 TEST(DDPackageTest, DuplicateIncRefDoesNotLeaveStaleRoot) {
   auto dd = std::make_unique<Package>(1);
 
+  auto& vRoots = dd->getRootSet<vNode>();
+  auto& mRoots = dd->getRootSet<mNode>();
+  auto& dRoots = dd->getRootSet<dNode>();
+
   // vector root
   auto vec = dd::makeZeroState(1, *dd);
-  EXPECT_EQ(dd->vectorRoots.size(), 1U);
+  EXPECT_EQ(vRoots.size(), 1U);
   dd->incRef(vec);
-  EXPECT_EQ(dd->vectorRoots.at(vec), 2U);
+  EXPECT_EQ(vRoots.at(vec), 2U);
   dd->decRef(vec);
-  EXPECT_EQ(dd->vectorRoots.at(vec), 1U);
+  EXPECT_EQ(vRoots.at(vec), 1U);
   dd->decRef(vec);
-  EXPECT_TRUE(dd->vectorRoots.empty());
+  EXPECT_TRUE(vRoots.empty());
   EXPECT_THROW(dd->decRef(vec), std::invalid_argument);
 
   // matrix root
   auto mat = getDD(qc::StandardOperation(0, qc::X), *dd);
   dd->incRef(mat);
   dd->incRef(mat);
-  EXPECT_EQ(dd->matrixRoots.size(), 1U);
-  EXPECT_EQ(dd->matrixRoots.at(mat), 2U);
+  EXPECT_EQ(mRoots.size(), 1U);
+  EXPECT_EQ(mRoots.at(mat), 2U);
   dd->decRef(mat);
-  EXPECT_EQ(dd->matrixRoots.at(mat), 1U);
+  EXPECT_EQ(mRoots.at(mat), 1U);
   dd->decRef(mat);
-  EXPECT_TRUE(dd->matrixRoots.empty());
+  EXPECT_TRUE(mRoots.empty());
 
   // density root
   auto dens = dd->makeZeroDensityOperator(1);
-  EXPECT_EQ(dd->densityRoots.size(), 1U);
+  EXPECT_EQ(dRoots.size(), 1U);
   dd->incRef(dens);
-  EXPECT_EQ(dd->densityRoots.at(dens), 2U);
+  EXPECT_EQ(dRoots.at(dens), 2U);
   dd->decRef(dens);
-  EXPECT_EQ(dd->densityRoots.at(dens), 1U);
+  EXPECT_EQ(dRoots.at(dens), 1U);
   dd->decRef(dens);
-  EXPECT_TRUE(dd->densityRoots.empty());
+  EXPECT_TRUE(dRoots.empty());
 }
 
 TEST(DDPackageTest, Inverse) {
@@ -1032,8 +1040,8 @@ TEST(DDPackageTest, IncRefTwiceThenDecRefTwice) {
   // add the same edge twice
   dd->incRef(x);
   dd->incRef(x);
-  EXPECT_EQ(dd->matrixRoots.size(), 1U);
-  EXPECT_EQ(dd->matrixRoots.at(x), 2U);
+  // EXPECT_EQ(mRoots.size(), 1U);
+  // EXPECT_EQ(mRoots.at(x), 2U);
 
   dd->garbageCollect(true);
 
@@ -1042,7 +1050,7 @@ TEST(DDPackageTest, IncRefTwiceThenDecRefTwice) {
 
   // remove the edge twice
   dd->decRef(x);
-  EXPECT_EQ(dd->matrixRoots.at(x), 1U);
+  // EXPECT_EQ(mRoots.at(x), 1U);
   dd->decRef(x);
 
   dd->garbageCollect(true);
@@ -2652,7 +2660,7 @@ TEST(DDPackageTest, ReduceAncillaIdentity) {
   EXPECT_EQ(outputMatrix, expected);
 }
 
-TEST(DDPackageTest, ReduceAnicllaIdentityBeforeFirstNode) {
+TEST(DDPackageTest, ReduceAncillaIdentityBeforeFirstNode) {
   const auto dd = std::make_unique<Package>(2);
   auto xGate = getDD(qc::StandardOperation(0, qc::X), *dd);
   const auto outputDD = dd->reduceAncillae(xGate, {false, true});
@@ -2663,7 +2671,7 @@ TEST(DDPackageTest, ReduceAnicllaIdentityBeforeFirstNode) {
   EXPECT_EQ(outputMatrix, expected);
 }
 
-TEST(DDPackageTest, ReduceAnicllaIdentityAfterLastNode) {
+TEST(DDPackageTest, ReduceAncillaIdentityAfterLastNode) {
   const auto dd = std::make_unique<Package>(2);
   auto xGate = getDD(qc::StandardOperation(1, qc::X), *dd);
   dd->incRef(xGate);

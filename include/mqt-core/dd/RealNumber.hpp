@@ -30,16 +30,9 @@ namespace dd {
  */
 struct RealNumber final : LLBase {
   /// Getter for the next object.
-  [[nodiscard]] RealNumber* next() const noexcept;
-
-  /// Check whether @p p is marked for garbage collection.
-  [[nodiscard]] static bool isMarked(const RealNumber& p) noexcept;
-
-  /// Mark @p p for garbage collection
-  static void mark(RealNumber& p) noexcept;
-
-  /// Unmark @p p for garbage collection
-  static void unmark(RealNumber& p) noexcept;
+  [[nodiscard]] RealNumber* next() const noexcept {
+    return reinterpret_cast<RealNumber*>(next_);
+  }
 
   /**
    * @brief Check whether the number points to the zero number.
@@ -175,6 +168,10 @@ struct RealNumber final : LLBase {
    */
   [[nodiscard]] static RealNumber*
   flipPointerSign(const RealNumber* e) noexcept;
+
+  [[nodiscard]] static RealNumber* mark(const RealNumber* e) noexcept;
+  [[nodiscard]] static RealNumber* unmark(const RealNumber* e) noexcept;
+  [[nodiscard]] static bool marked(const RealNumber* e) noexcept;
 
   /**
    * @brief The value of the number.
