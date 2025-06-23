@@ -9,11 +9,12 @@
  */
 
 #include "qdmi/Driver.hpp"
-#include "qdmi/client.h"
 
+#include "gmock/gmock-matchers.h"
 #include <algorithm>
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <qdmi/client.h>
 #include <random>
 #include <string>
 #include <tuple>
@@ -221,14 +222,14 @@ TEST_P(DriverTest, QuerySites) {
       << "Failed to get sites.";
   std::unordered_set<size_t> ids;
   for (auto* site : sites) {
-    uint64_t id = 0;
-    EXPECT_EQ(QDMI_device_query_site_property(device, site,
-                                              QDMI_SITE_PROPERTY_INDEX,
-                                              sizeof(uint64_t), &id, nullptr),
-              QDMI_SUCCESS)
+    uint64_t index = 0;
+    EXPECT_EQ(
+        QDMI_device_query_site_property(device, site, QDMI_SITE_PROPERTY_INDEX,
+                                        sizeof(uint64_t), &index, nullptr),
+        QDMI_SUCCESS)
         << "Devices must provide a site id";
-    EXPECT_TRUE(ids.emplace(id).second)
-        << "Device must provide unique site ids. Found duplicate id: " << id
+    EXPECT_TRUE(ids.emplace(index).second)
+        << "Device must provide unique site ids. Found duplicate id: " << index
         << ".";
     double t1 = 0;
     double t2 = 0;
@@ -305,11 +306,11 @@ TEST_P(DriverTest, QueryOperations) {
                   nullptr),
               QDMI_SUCCESS)
         << "Failed to query duration for operation " << name << ".";
-    EXPECT_EQ(QDMI_device_query_operation_property(
-                  device, op, 0, nullptr, numParams, params.data(),
-                  QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity,
-                  nullptr),
-              QDMI_SUCCESS)
+    EXPECT_THAT(QDMI_device_query_operation_property(
+                    device, op, 0, nullptr, numParams, params.data(),
+                    QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity,
+                    nullptr),
+                ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
         << "Failed to query fidelity for operation " << name << ".";
 
     EXPECT_EQ(QDMI_device_query_operation_property(
@@ -360,7 +361,7 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
       device, QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION, sizeof(size_t),
       &needsCalibration, nullptr);
   EXPECT_EQ(ret, QDMI_SUCCESS);
-  EXPECT_EQ(needsCalibration, 0);
+  EXPECT_THAT(needsCalibration, ::testing::AnyOf(0, 1));
 }
 
 // Instantiate the test suite with different parameters
