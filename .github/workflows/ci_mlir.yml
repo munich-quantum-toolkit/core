@@ -274,6 +274,9 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       CTEST_PARALLEL_LEVEL: 4
       FORCE_COLOR: 3
+    permissions:
+      contents: read
+      id-token: write
     steps:
       # check out the repository
       - uses: actions/checkout@v4
