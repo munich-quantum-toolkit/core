@@ -29,14 +29,14 @@ bool Complex::approximatelyZero() const noexcept {
   return RealNumber::approximatelyZero(r) && RealNumber::approximatelyZero(i);
 }
 
-void Complex::mark() noexcept {
-  r = RealNumber::mark(r);
-  i = RealNumber::mark(i);
+void Complex::mark() const noexcept {
+  r->mark();
+  i->unmark();
 }
 
-void Complex::unmark() noexcept {
-  r = RealNumber::unmark(r);
-  i = RealNumber::unmark(i);
+void Complex::unmark() const noexcept {
+  r->mark();
+  i->unmark();
 }
 
 std::string Complex::toString(bool formatted, int precision) const {

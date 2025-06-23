@@ -21,6 +21,12 @@
 namespace dd {
 
 static constexpr std::uintptr_t LSB = 1U;
+static constexpr std::uintptr_t LSB2 = 2U;
+
+RealNumber* RealNumber::next() const noexcept {
+  const std::uintptr_t ptr = reinterpret_cast<std::uintptr_t>(next_) & ~LSB2;
+  return ptr == 0U ? nullptr : reinterpret_cast<RealNumber*>(ptr);
+}
 
 RealNumber* RealNumber::getAlignedPointer(const RealNumber* e) noexcept {
   return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) &
@@ -44,17 +50,18 @@ bool RealNumber::isNegativePointer(const RealNumber* e) noexcept {
   return (reinterpret_cast<std::uintptr_t>(e) & LSB) != 0U;
 }
 
-RealNumber* RealNumber::mark(const RealNumber* e) noexcept {
-  std::uintptr_t ptr = reinterpret_cast<std::uintptr_t>(e) | 2U;
-  return reinterpret_cast<RealNumber*>(ptr);
+void RealNumber::mark() noexcept {
+  next_ = reinterpret_cast<RealNumber*>(
+      reinterpret_cast<std::uintptr_t>(next_) | LSB2);
 }
-RealNumber* RealNumber::unmark(const RealNumber* e) noexcept {
-  std::uintptr_t ptr = reinterpret_cast<std::uintptr_t>(e) & ~2U;
-  return reinterpret_cast<RealNumber*>(ptr);
+
+void RealNumber::unmark() noexcept {
+  next_ = reinterpret_cast<RealNumber*>(
+      reinterpret_cast<std::uintptr_t>(next_) & ~LSB2);
 }
 
 bool RealNumber::marked(const RealNumber* e) noexcept {
-  return (reinterpret_cast<std::uintptr_t>(e) & 2U) == 2U;
+  return (reinterpret_cast<std::uintptr_t>(e->next_) & LSB2) == LSB2;
 }
 
 fp RealNumber::val(const RealNumber* e) noexcept {
