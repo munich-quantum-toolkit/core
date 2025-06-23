@@ -249,6 +249,18 @@ static_cast<const prefix## _QDMI_## type*>(static_cast<const void*>(var))    \
 // clang-format on
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
+
+// Within a query function add the corresponding conditional branches to return
+// the requested property value.
+// Args:
+//   prop_name: is the QDMI enum value of the property to query.
+//   prop_type: is the type of the property value, e.g., `int`.
+//   prop_value: is the value of the property to return.
+//   prop: is the property parameter of the query function.
+//   size: is the size of the value buffer.
+//   value: is the pointer to the value buffer to write the property value to.
+//   size_ret: is the pointer to the size of the value buffer to write the size
+//     of the property value to.
 #define ADD_SINGLE_VALUE_PROPERTY(prop_name, prop_type, prop_value, prop,      \
                                   size, value, size_ret)                       \
   {                                                                            \
@@ -266,6 +278,10 @@ static_cast<const prefix## _QDMI_## type*>(static_cast<const void*>(var))    \
     }                                                                          \
   }
 
+// Same as `ADD_SINGLE_VALUE_PROPERTY`, but for properties that are strings.
+// Note:
+//   The `prop_value` must be a c-type string. Otherwise, the purpose of the
+//   parameters can be retrieved from the `ADD_SINGLE_VALUE_PROPERTY`macro.
 #define ADD_STRING_PROPERTY(prop_name, prop_value, prop, size, value,          \
                             size_ret)                                          \
   {                                                                            \
@@ -285,6 +301,12 @@ static_cast<const prefix## _QDMI_## type*>(static_cast<const void*>(var))    \
     }                                                                          \
   }
 
+// Same as `ADD_SINGLE_VALUE_PROPERTY`, but for properties that are lists of
+// values.
+// Note:
+//   The `prop_values` must be a `std::vector<prop_type>` or a similar container
+//   providing the functions `size()` and `data()`. Otherwise, the purpose of
+//   the parameters can be retrieved from the `ADD_SINGLE_VALUE_PROPERTY` macro.
 #define ADD_LIST_PROPERTY(prop_name, prop_type, prop_values, prop, size,       \
                           value, size_ret)                                     \
   {                                                                            \
@@ -304,6 +326,15 @@ static_cast<const prefix## _QDMI_## type*>(static_cast<const void*>(var))    \
     }                                                                          \
   }
 
+// Within a function to set a parameter, add the corresponding conditional
+// branches to set the parameter accordingly.
+// Args:
+//   param_name: is the QDMI enum value of the parameter to set.
+//   param_type: is the type of the parameter value, e.g., `int`.
+//   var: is the variable to set the parameter value to.
+//   param: is the parameter argument of the setter function.
+//   size: is the size of the value buffer.
+//   value: is the pointer to the value buffer to read the parameter value from.
 #define ADD_SINGLE_VALUE_PARAMETER(param_name, param_type, var, param, size,   \
                                    value)                                      \
   {                                                                            \
@@ -318,6 +349,12 @@ static_cast<const prefix## _QDMI_## type*>(static_cast<const void*>(var))    \
     }                                                                          \
   }
 
+// Same as `ADD_SINGLE_VALUE_PARAMETER`, but for parameters that are held in a
+// pointer.
+// Note:
+//   The `var` must be a pointer to the type of the parameter value and must be
+//   allocated before calling the setter function. Otherwise, the purpose of the
+//   parameters can be retrieved from the `ADD_SINGLE_VALUE_PARAMETER` macro.
 #define ADD_POINTER_PARAMETER(param_name, ptr_type, var, param, size, value)   \
   {                                                                            \
     if ((param) == (param_name)) {                                             \
