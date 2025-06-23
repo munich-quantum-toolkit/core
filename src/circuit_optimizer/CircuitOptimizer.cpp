@@ -1436,7 +1436,7 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
     bool canProcess = true;
     bool makesTooBig = false;
 
-    if (!op->isUnitary() ) {
+    if (!op->isUnitary()) {
       canProcess = false;
     }
 
@@ -1551,8 +1551,6 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
       }
     }
 
-
-
     if (canProcess) {
       if (usedQubits.size() > maxBlockSize) {
         continue;
@@ -1567,8 +1565,8 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
 
       if (onlyCollectCliffords && !op->isClifford()) {
         for (auto q : op->getUsedQubits()) {
-        dsu.finalizeBlock(q);
-      }
+          dsu.finalizeBlock(q);
+        }
         continue;
       }
 

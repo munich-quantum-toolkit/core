@@ -114,8 +114,8 @@ TEST(CollectBlocks, mergeBlocksnonClifford) {
   qc.cx(1, 2);
   qc.t(0);
   qc.t(1);
-  qc.cx(0,1);
-  qc.cx(1,2);
+  qc.cx(0, 1);
+  qc.cx(1, 2);
   std::cout << qc << "\n";
   qc::CircuitOptimizer::collectBlocks(qc, 3, true);
   std::cout << qc << "\n";
