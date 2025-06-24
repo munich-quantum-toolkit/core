@@ -143,7 +143,6 @@ auto QDMI_Device_impl_d::queryOperationProperty(
       value, sizeRet);
 }
 QDMI_Job_impl_d::~QDMI_Job_impl_d() { library->device_job_free(deviceJob); }
-auto QDMI_Job_impl_d::getDevice() const -> QDMI_Device { return device; }
 auto QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
                                    const void* value) const -> int {
   switch (param) {
@@ -197,6 +196,7 @@ auto QDMI_Job_impl_d::getResults(QDMI_Job_Result result, const size_t size,
   return library->device_job_get_results(deviceJob, result, size, data,
                                          sizeRet);
 }
+auto QDMI_Job_impl_d::free() -> void { device->jobFree(this); }
 auto QDMI_Session_impl_d::init() -> int {
   if (status != qdmi::SessionStatus::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
@@ -311,7 +311,7 @@ int QDMI_device_create_job(QDMI_Device dev, QDMI_Job* job) {
 
 void QDMI_job_free(QDMI_Job job) {
   if (job != nullptr) {
-    job->getDevice()->jobFree(job);
+    job->free();
   }
 }
 
