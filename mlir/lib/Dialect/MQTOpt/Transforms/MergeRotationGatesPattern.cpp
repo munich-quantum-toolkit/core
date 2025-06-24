@@ -96,15 +96,41 @@ struct MergeRotationGatesPattern final
                mlir::PatternRewriter& rewriter) const override {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
 
-    auto newOp = user.clone();
+    // Prepare erasure of op
+    const auto& opInQubits = op.getAllInQubits();
+    const auto& userInQubits = user.getAllInQubits();
+    for (size_t i = 0; i < user->getOperands().size(); i++) {
+      const auto& operand = user->getOperand(i);
+      const auto found =
+          std::find(userInQubits.begin(), userInQubits.end(), operand);
+      if (found == userInQubits.end()) {
+        continue;
+      }
+      const auto idx = std::distance(userInQubits.begin(), found);
+      rewriter.modifyOpInPlace(user,
+                               [&] { user->setOperand(i, opInQubits[idx]); });
+    }
 
-    auto add = rewriter.create<mlir::arith::AddFOp>(
-        user.getLoc(), op.getParams()[0], user.getParams()[0]);
-    mlir::OperandRange range = add->getOperands();
-
-    newOp.setParams(range);
-    rewriter.replaceOp(user, newOp);
+    // Erase op
     rewriter.eraseOp(op);
+    return; // TODO: Continue here
+
+    // Compute new parameter
+    auto opParams = op.getParams();
+    if (opParams.empty())
+      return;
+    auto opParam = opParams[0];
+
+    auto userParams = user.getParams();
+    if (userParams.empty())
+      return;
+    auto userParam = userParams[0];
+
+    auto add =
+        rewriter.create<mlir::arith::AddFOp>(user.getLoc(), opParam, userParam);
+
+    // Set new parameter
+    user.setParams(mlir::ValueRange{add.getResult()});
   }
 };
 

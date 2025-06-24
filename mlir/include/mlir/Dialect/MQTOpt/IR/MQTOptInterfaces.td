@@ -143,7 +143,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             }]>,
         InterfaceMethod<
             /*desc=*/        "Get params.",
-            /*returnType=*/  "mlir::OperandRange",
+            /*returnType=*/  "mlir::ValueRange",
             /*methodName=*/  "getParams",
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
@@ -154,7 +154,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             /*desc=*/        "Set params.",
             /*returnType=*/  "void",
             /*methodName=*/  "setParams",
-            /*args=*/        (ins "mlir::OperandRange":$values),
+            /*args=*/        (ins "mlir::ValueRange":$values),
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
                 return $_op.setParams(values);
