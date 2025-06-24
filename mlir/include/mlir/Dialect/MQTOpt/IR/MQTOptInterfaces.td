@@ -140,6 +140,24 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 operands.insert(operands.end(), outQubits.begin(), outQubits.end());
                 operands.insert(operands.end(), controls.begin(), controls.end());
                 return operands;
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Get params.",
+            /*returnType=*/  "Variadic<F64>",
+            /*methodName=*/  "getParams",
+            /*args=*/        (ins),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                return $_op.getParams();
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Set params.",
+            /*returnType=*/  "void",
+            /*methodName=*/  "setParams",
+            /*args=*/        (ins Variadic<F64>:$values),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                return $_op.setParams(values);
             }]>
     ];
 

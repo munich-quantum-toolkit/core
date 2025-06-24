@@ -96,15 +96,13 @@ struct MergeRotationGatesPattern final
                mlir::PatternRewriter& rewriter) const override {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
 
-    // Something like this
-    // I probably need to extend MQTOptInterfaces.td
-    // p1 = op.getParams();
-    // p2 = user.getParams();
-    // p = p1 + p2;
-    // new = user.clone();
-    // new.setParams(p);
-    // rewriter.replaceOp(user, new);
-    // rewriter.eraseOp(op);
+    double p1 = op.getParams()[0];
+    double p2 = user.getParams()[0];
+    double p = p1 + p2;
+    auto newOp = user.clone();
+    newOp.setParams(p);
+    rewriter.replaceOp(user, newOp);
+    rewriter.eraseOp(op);
   }
 };
 
