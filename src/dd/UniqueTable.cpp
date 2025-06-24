@@ -61,7 +61,7 @@ std::size_t UniqueTable::garbageCollect(const bool force) {
       NodeBase* p = bucket;
       NodeBase* lastp = nullptr;
       while (p != nullptr) {
-        if (!p->marked()) {
+        if (!p->isMarked()) {
           NodeBase* next = p->next();
           if (lastp == nullptr) {
             bucket = next;
@@ -160,7 +160,7 @@ std::size_t UniqueTable::countMarkedEntries() const noexcept {
     for (auto* bucket : table) {
       auto* p = bucket;
       while (p != nullptr) {
-        if (p->marked()) {
+        if (p->isMarked()) {
           ++count;
         }
         p = p->next();

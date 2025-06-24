@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <ostream>
 #include <tuple>
 
 namespace dd {
@@ -141,11 +142,11 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
   ++stats.gcRuns;
   const auto before = stats.numEntries;
   for (std::size_t key = 0; key < table.size(); ++key) {
-    auto* curr = table[key];
+    RealNumber* curr = table[key];
     RealNumber* prev = nullptr;
     while (curr != nullptr) {
-      if (!RealNumber::marked(curr)) {
-        auto* next = curr->next();
+      if (!RealNumber::isMarked(curr)) {
+        RealNumber* next = curr->next();
         if (prev == nullptr) {
           table[key] = next;
         } else {
@@ -161,6 +162,7 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
       tailTable[key] = prev;
     }
   }
+
   // The garbage collection limit changes dynamically depending on the number
   // of remaining (active) nodes. If it were not changed, garbage collection
   // would run through the complete table on each successive call once the
@@ -232,7 +234,7 @@ std::size_t RealNumberUniqueTable::countMarkedEntries() const noexcept {
   for (const auto* bucket : table) {
     const auto* curr = bucket;
     while (curr != nullptr) {
-      if (RealNumber::marked(curr)) {
+      if (RealNumber::isMarked(curr)) {
         ++count;
       }
       curr = curr->next();

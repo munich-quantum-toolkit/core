@@ -106,7 +106,7 @@ auto Edge<Node>::size(std::unordered_set<const Node*>& visited) const
 
 template <class Node> void Edge<Node>::mark() noexcept {
   w.mark();
-  if (isTerminal() || p->marked()) {
+  if (isTerminal() || p->isMarked()) {
     return;
   }
   p->mark();
@@ -117,7 +117,7 @@ template <class Node> void Edge<Node>::mark() noexcept {
 
 template <class Node> void Edge<Node>::unmark() noexcept {
   w.unmark();
-  if (isTerminal() || !p->marked()) {
+  if (isTerminal() || !p->isMarked()) {
     return;
   }
   p->unmark();

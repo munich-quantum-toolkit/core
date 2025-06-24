@@ -15,27 +15,27 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
+#include <iostream>
 #include <istream>
 #include <ostream>
 
 namespace dd {
 
-static constexpr std::uintptr_t LSB = 1U;
-static constexpr std::uintptr_t LSB2 = 2U;
+static constexpr std::uintptr_t NEG_FLAG = (1UL << 0);
+static constexpr std::uintptr_t MARK_FLAG = (1UL << 1);
 
 RealNumber* RealNumber::next() const noexcept {
-  const std::uintptr_t ptr = reinterpret_cast<std::uintptr_t>(next_) & ~LSB2;
-  return ptr == 0U ? nullptr : reinterpret_cast<RealNumber*>(ptr);
+  return RealNumber::getAlignedPointer(reinterpret_cast<RealNumber*>(next_));
 }
 
 RealNumber* RealNumber::getAlignedPointer(const RealNumber* e) noexcept {
   return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) &
-                                       ~LSB);
+                                       (~(NEG_FLAG | MARK_FLAG)));
 }
 
 RealNumber* RealNumber::getNegativePointer(const RealNumber* e) noexcept {
   return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) |
-                                       LSB);
+                                       NEG_FLAG);
 }
 
 RealNumber* RealNumber::flipPointerSign(const RealNumber* e) noexcept {
@@ -43,25 +43,28 @@ RealNumber* RealNumber::flipPointerSign(const RealNumber* e) noexcept {
     return &constants::zero;
   }
   return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) ^
-                                       LSB);
+                                       NEG_FLAG);
 }
 
 bool RealNumber::isNegativePointer(const RealNumber* e) noexcept {
-  return (reinterpret_cast<std::uintptr_t>(e) & LSB) != 0U;
+  return (reinterpret_cast<std::uintptr_t>(e) & NEG_FLAG) != 0U;
 }
 
-void RealNumber::mark() noexcept {
-  next_ = reinterpret_cast<RealNumber*>(
-      reinterpret_cast<std::uintptr_t>(next_) | LSB2);
+void RealNumber::mark(RealNumber* e) noexcept {
+  RealNumber* p = isNegativePointer(e) ? getAlignedPointer(e) : e;
+  p->next_ = reinterpret_cast<RealNumber*>(
+      reinterpret_cast<std::uintptr_t>(p->next_) | MARK_FLAG);
 }
 
-void RealNumber::unmark() noexcept {
-  next_ = reinterpret_cast<RealNumber*>(
-      reinterpret_cast<std::uintptr_t>(next_) & ~LSB2);
+void RealNumber::unmark(RealNumber* e) noexcept {
+  RealNumber* p = isNegativePointer(e) ? getAlignedPointer(e) : e;
+  p->next_ = reinterpret_cast<RealNumber*>(
+      reinterpret_cast<std::uintptr_t>(p->next_) & ~MARK_FLAG);
 }
 
-bool RealNumber::marked(const RealNumber* e) noexcept {
-  return (reinterpret_cast<std::uintptr_t>(e->next_) & LSB2) == LSB2;
+bool RealNumber::isMarked(const RealNumber* e) noexcept {
+  const RealNumber* p = isNegativePointer(e) ? getAlignedPointer(e) : e;
+  return (reinterpret_cast<std::uintptr_t>(p->next_) & MARK_FLAG) != 0U;
 }
 
 fp RealNumber::val(const RealNumber* e) noexcept {

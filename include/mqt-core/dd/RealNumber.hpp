@@ -167,9 +167,9 @@ struct RealNumber final : LLBase {
   [[nodiscard]] static RealNumber*
   flipPointerSign(const RealNumber* e) noexcept;
 
-  void mark() noexcept;
-  void unmark() noexcept;
-  [[nodiscard]] static bool marked(const RealNumber* e) noexcept;
+  static void mark(RealNumber* e) noexcept;
+  static void unmark(RealNumber* e) noexcept;
+  [[nodiscard]] static bool isMarked(const RealNumber* e) noexcept;
 
   /**
    * @brief The value of the number.

@@ -30,13 +30,13 @@ bool Complex::approximatelyZero() const noexcept {
 }
 
 void Complex::mark() const noexcept {
-  r->mark();
-  i->unmark();
+  RealNumber::mark(r);
+  RealNumber::mark(i);
 }
 
 void Complex::unmark() const noexcept {
-  r->mark();
-  i->unmark();
+  RealNumber::unmark(r);
+  RealNumber::unmark(i);
 }
 
 std::string Complex::toString(bool formatted, int precision) const {

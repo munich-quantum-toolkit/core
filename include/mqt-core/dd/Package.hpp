@@ -40,6 +40,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <ostream>
 #include <random>
 #include <regex>
 #include <stack>
@@ -232,10 +233,7 @@ private:
     template <class Node> void removeFromRoots(const Edge<Node>& e) {
       auto& roots = getRoots<Node>();
       auto it = roots.find(e);
-      if (it == roots.end()) {
-        throw std::invalid_argument("Edge is not part of the root set.");
-      }
-      if (--it->second == 0U) {
+      if (it != roots.end() && --it->second == 0U) {
         roots.erase(it);
       }
     }
