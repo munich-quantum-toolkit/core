@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <iterator>
 #include <map>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -51,7 +52,6 @@ struct MergeRotationGatesPattern final
 
     const auto aName = a.getName().stripDialect().str();
     const auto bName = b.getName().stripDialect().str();
-    const auto found = INVERSE_PAIRS.find(aName);
 
     return ((aName == bName) && (MERGEABLE_GATES.count(aName) > 0));
   }
@@ -96,11 +96,13 @@ struct MergeRotationGatesPattern final
                mlir::PatternRewriter& rewriter) const override {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
 
-    double p1 = op.getParams()[0];
-    double p2 = user.getParams()[0];
-    double p = p1 + p2;
     auto newOp = user.clone();
-    newOp.setParams(p);
+
+    auto add = rewriter.create<mlir::arith::AddFOp>(
+        user.getLoc(), op.getParams()[0], user.getParams()[0]);
+    mlir::OperandRange range = add->getOperands();
+
+    newOp.setParams(range);
     rewriter.replaceOp(user, newOp);
     rewriter.eraseOp(op);
   }
