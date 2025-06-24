@@ -112,7 +112,7 @@ public:
   class prefix##DeviceLibrary : public DeviceLibrary {                         \
   public:                                                                      \
     prefix##DeviceLibrary() {                                                  \
-      /* NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast) *\           \
+      /* NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast) */           \
       /* load the function symbols from the dynamic library */                 \
       LOAD_STATIC_SYMBOL(prefix, device_initialize)                            \
       LOAD_STATIC_SYMBOL(prefix, device_finalize)                              \
@@ -219,7 +219,7 @@ private:
 public:
   explicit QDMI_Job_impl_d(const qdmi::DeviceLibrary* library,
                            QDMI_Device_Job deviceJob)
-      : library(library), deviceJob(deviceJob) {}
+      : deviceJob(deviceJob), library(library) {}
 
   ~QDMI_Job_impl_d();
 

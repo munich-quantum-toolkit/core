@@ -8,8 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/Driver.hpp"
-
 #include "gmock/gmock-matchers.h"
 #include <algorithm>
 #include <cstdint>
@@ -28,8 +26,6 @@ protected:
 
   void SetUp() override {
     const auto& deviceName = GetParam();
-
-    ASSERT_NO_THROW(initialize()) << "Failed to initialize the driver.";
 
     ASSERT_EQ(QDMI_session_alloc(&session), QDMI_SUCCESS)
         << "Failed to allocate session.";
@@ -72,10 +68,7 @@ protected:
     }
   }
 
-  void TearDown() override {
-    QDMI_session_free(session);
-    finalize();
-  }
+  void TearDown() override { QDMI_session_free(session); }
 };
 
 TEST_P(DriverTest, SessionSetParameterImplemented) {
