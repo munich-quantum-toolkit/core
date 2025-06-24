@@ -223,9 +223,6 @@ public:
 
   ~QDMI_Job_impl_d();
 
-  /// @brief Get the device associated with this job.
-  [[nodiscard]] auto getDevice() const -> QDMI_Device;
-
   /// @copydoc QDMI_job_set_parameter
   auto setParameter(QDMI_Job_Parameter param, size_t size,
                     const void* value) const -> int;
@@ -249,6 +246,9 @@ public:
   /// @copydoc QDMI_job_get_results
   auto getResults(QDMI_Job_Result result, size_t size, void* data,
                   size_t* sizeRet) const -> int;
+
+  /// @copydoc QDMI_job_free
+  auto free() -> void;
 };
 
 /**
