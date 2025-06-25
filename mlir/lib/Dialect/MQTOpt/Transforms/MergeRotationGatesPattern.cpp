@@ -18,12 +18,13 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <stdexcept>
 #include <string>
 #include <unordered_set>
-
 namespace mqt::ir::opt {
 
 /**
@@ -91,88 +92,90 @@ struct MergeRotationGatesPattern final
   }
 
   static UnitaryInterface createNewUser(
-      const mlir::Location loc, const std::string type,
+      const mlir::Location loc, const std::string& type,
       const mlir::ValueRange inQubits, mlir::ValueRange controlQubitsPositive,
       mlir::ValueRange controlQubitsNegative, mlir::ValueRange opParams,
       mlir::ValueRange userParams, mlir::PatternRewriter& rewriter) {
-    if (type == "rx") {
+    if (type == "gphase") {
       auto add =
           rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      mlir::ValueRange newParams(newParamsVec);
-      return rewriter.create<RXOp>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
-    } else if (type == "ry") {
-      auto add =
-          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      mlir::ValueRange newParams(newParamsVec);
-      return rewriter.create<RYOp>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
-    } else if (type == "rz") {
-      auto add =
-          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      mlir::ValueRange newParams(newParamsVec);
-      return rewriter.create<RZOp>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
-    } else if (type == "gphase") {
-      auto add =
-          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      mlir::ValueRange newParams(newParamsVec);
+      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      const mlir::ValueRange newParams(newParamsVec);
       return rewriter.create<GPhaseOp>(
           loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
           mlir::DenseBoolArrayAttr{}, newParams, inQubits,
           controlQubitsPositive, controlQubitsNegative);
-    } else if (type == "rxx") {
+    }
+    if (type == "rx") {
       auto add =
           rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      mlir::ValueRange newParams(newParamsVec);
+      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      const mlir::ValueRange newParams(newParamsVec);
+      return rewriter.create<RXOp>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    }
+    if (type == "ry") {
+      auto add =
+          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
+      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      const mlir::ValueRange newParams(newParamsVec);
+      return rewriter.create<RYOp>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    }
+    if (type == "rz") {
+      auto add =
+          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
+      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      const mlir::ValueRange newParams(newParamsVec);
+      return rewriter.create<RZOp>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    }
+    if (type == "rxx") {
+      auto add =
+          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
+      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      const mlir::ValueRange newParams(newParamsVec);
       return rewriter.create<RXXOp>(
           loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
           mlir::DenseBoolArrayAttr{}, newParams, inQubits,
           controlQubitsPositive, controlQubitsNegative);
-    } else if (type == "ryy") {
+    }
+    if (type == "ryy") {
       auto add =
           rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      mlir::ValueRange newParams(newParamsVec);
+      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      const mlir::ValueRange newParams(newParamsVec);
       return rewriter.create<RYYOp>(
           loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
           mlir::DenseBoolArrayAttr{}, newParams, inQubits,
           controlQubitsPositive, controlQubitsNegative);
-    } else if (type == "rzz") {
+    }
+    if (type == "rzz") {
       auto add =
           rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      mlir::ValueRange newParams(newParamsVec);
+      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      const mlir::ValueRange newParams(newParamsVec);
       return rewriter.create<RZZOp>(
           loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
           mlir::DenseBoolArrayAttr{}, newParams, inQubits,
           controlQubitsPositive, controlQubitsNegative);
-    } else if (type == "xxminusyy") {
-      throw std::runtime_error("Not implemented");
-    } else if (type == "xxplusyy") {
-      throw std::runtime_error("Not implemented");
-    } else if (type == "u") {
-      throw std::runtime_error("Not implemented");
-    } else if (type == "u2") {
-      throw std::runtime_error("Not implemented");
+    }
+    if (type == "xxminusyy" || type == "xxplusyy" || type == "u" ||
+        type == "u2") {
+      throw std::runtime_error("Not implemented yet");
     } else {
       throw std::runtime_error("Unsupported operation type");
     }
