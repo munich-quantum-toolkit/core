@@ -71,7 +71,7 @@ TEST_P(DDFunctionality, StandardOpBuildInverseBuild) {
 
   constexpr std::size_t nq = 4;
 
-  auto dd = std::make_unique<Package>(nq);
+  const auto dd = std::make_unique<Package>(nq);
 
   StandardOperation op;
   auto gate = static_cast<OpType>(GetParam());
@@ -126,7 +126,7 @@ TEST_P(DDFunctionality, ControlledStandardOpBuildInverseBuild) {
 
   constexpr std::size_t nq = 4;
 
-  auto dd = std::make_unique<Package>(nq);
+  const auto dd = std::make_unique<Package>(nq);
 
   StandardOperation op;
   auto gate = static_cast<OpType>(GetParam());
@@ -182,7 +182,7 @@ TEST_P(DDFunctionality, ControlledStandardNegOpBuildInverseBuild) {
 
   constexpr std::size_t nq = 4;
 
-  auto dd = std::make_unique<Package>(nq);
+  const auto dd = std::make_unique<Package>(nq);
 
   StandardOperation op;
   auto gate = static_cast<OpType>(GetParam());
@@ -238,7 +238,7 @@ TEST_P(DDFunctionality, ControlledStandardNegOpBuildInverseBuild) {
 TEST_F(DDFunctionality, BuildCircuit) {
   constexpr std::size_t nq = 4;
 
-  auto dd = std::make_unique<Package>(nq);
+  const auto dd = std::make_unique<Package>(nq);
 
   QuantumComputation qc(nq);
   qc.x(0);
@@ -330,7 +330,7 @@ TEST_F(DDFunctionality, BuildCircuit) {
 TEST_F(DDFunctionality, NonUnitary) {
   constexpr std::size_t nq = 4;
 
-  auto dd = std::make_unique<Package>(nq);
+  const auto dd = std::make_unique<Package>(nq);
 
   const QuantumComputation qc{};
   auto dummyMap = Permutation{};
@@ -357,7 +357,7 @@ TEST_F(DDFunctionality, NonUnitary) {
 TEST_F(DDFunctionality, CircuitEquivalence) {
   constexpr std::size_t nq = 1;
 
-  auto dd = std::make_unique<Package>(nq);
+  const auto dd = std::make_unique<Package>(nq);
 
   // verify that the IBM decomposition of the H gate into RZ-SX-RZ works as
   // expected (i.e., realizes H up to a global phase)
@@ -392,7 +392,7 @@ TEST_F(DDFunctionality, ChangePermutation) {
                                "qreg q[2];"
                                "x q[0];\n";
   const auto qc = qasm3::Importer::imports(testfile);
-  auto dd = std::make_unique<Package>(qc.getNqubits());
+  const auto dd = std::make_unique<Package>(qc.getNqubits());
 
   const auto sim = simulate(qc, makeZeroState(qc.getNqubits(), *dd), *dd);
   EXPECT_TRUE(sim.p->e[0].isZeroTerminal());
@@ -413,7 +413,7 @@ TEST_F(DDFunctionality, ChangePermutation) {
 TEST_F(DDFunctionality, FuseTwoSingleQubitGates) {
   constexpr std::size_t nq = 1;
 
-  auto dd = std::make_unique<Package>(nq);
+  const auto dd = std::make_unique<Package>(nq);
 
   QuantumComputation qc(nq);
   qc.x(0);
@@ -445,7 +445,7 @@ TEST_F(DDFunctionality, FuseTwoSingleQubitGates) {
 TEST_F(DDFunctionality, FuseThreeSingleQubitGates) {
   constexpr std::size_t nq = 1;
 
-  auto dd = std::make_unique<Package>(nq);
+  const auto dd = std::make_unique<Package>(nq);
 
   QuantumComputation qc(nq);
   qc.x(0);
@@ -480,7 +480,7 @@ TEST_F(DDFunctionality, FuseThreeSingleQubitGates) {
 TEST_F(DDFunctionality, FuseNoSingleQubitGates) {
   constexpr std::size_t nq = 2;
 
-  auto dd = std::make_unique<Package>(nq);
+  const auto dd = std::make_unique<Package>(nq);
 
   QuantumComputation qc(nq);
   qc.h(0);
@@ -515,7 +515,7 @@ TEST_F(DDFunctionality, FuseNoSingleQubitGates) {
 TEST_F(DDFunctionality, FuseSingleQubitGatesAcrossOtherGates) {
   constexpr std::size_t nq = 2;
 
-  auto dd = std::make_unique<Package>(nq);
+  const auto dd = std::make_unique<Package>(nq);
 
   QuantumComputation qc(nq);
   qc.h(0);
@@ -578,7 +578,7 @@ TEST_F(DDFunctionality, VectorKroneckerWithTerminal) {
   constexpr std::size_t nq = 1;
   constexpr auto root = vEdge::one();
 
-  auto dd = std::make_unique<Package>(nq);
+  const auto dd = std::make_unique<Package>(nq);
 
   const auto zeroState = makeZeroState(nq, *dd);
   const auto extendedRoot = dd->kronecker(zeroState, root, 0);
