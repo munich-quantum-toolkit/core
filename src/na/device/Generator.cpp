@@ -17,12 +17,18 @@
 #include "na/device/device.pb.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/message.h>
 #include <google/protobuf/util/json_util.h>
+#include <istream>
+#include <ostream>
 #include <spdlog/spdlog.h>
 #include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace na {
 namespace {
