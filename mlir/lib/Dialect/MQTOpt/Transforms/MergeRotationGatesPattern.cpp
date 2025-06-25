@@ -11,6 +11,8 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
@@ -44,11 +46,7 @@ struct MergeRotationGatesPattern final
    */
   [[nodiscard]] static bool areGatesMergeable(mlir::Operation& a,
                                               mlir::Operation& b) {
-    static const std::unordered_set<std::string> MERGEABLE_GATES = {
-        "rx",
-        "ry",
-        "rz",
-    };
+    static const std::unordered_set<std::string> MERGEABLE_GATES = {"rx"};
 
     const auto aName = a.getName().stripDialect().str();
     const auto bName = b.getName().stripDialect().str();
@@ -96,41 +94,45 @@ struct MergeRotationGatesPattern final
                mlir::PatternRewriter& rewriter) const override {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
 
+    // Compute newParam
+    auto opParam = op.getParams()[0];
+    auto userParam = user.getParams()[0];
+    auto addParams =
+        rewriter.create<mlir::arith::AddFOp>(user.getLoc(), opParam, userParam);
+    auto newParam = addParams.getResult();
+
+    // Create newUser
+    auto userInQubit = user.getInQubits()[0];
+    auto userControlQubitsPositive = user.getPosCtrlInQubits();
+    auto userControlQubitsNegative = user.getNegCtrlInQubits();
+    auto newUser = rewriter.create<RXOp>(
+        user.getLoc(), userInQubit.getType(),
+        userControlQubitsPositive.getType(),
+        userControlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+        mlir::DenseBoolArrayAttr{}, mlir::ValueRange{newParam},
+        mlir::ValueRange{userInQubit}, userControlQubitsPositive,
+        userControlQubitsNegative);
+
     // Prepare erasure of op
     const auto& opInQubits = op.getAllInQubits();
-    const auto& userInQubits = user.getAllInQubits();
-    for (size_t i = 0; i < user->getOperands().size(); i++) {
-      const auto& operand = user->getOperand(i);
+    const auto& newUserInQubits = user.getAllInQubits();
+    for (size_t i = 0; i < newUser->getOperands().size(); i++) {
+      const auto& operand = newUser->getOperand(i);
       const auto found =
-          std::find(userInQubits.begin(), userInQubits.end(), operand);
-      if (found == userInQubits.end()) {
+          std::find(newUserInQubits.begin(), newUserInQubits.end(), operand);
+      if (found == newUserInQubits.end()) {
         continue;
       }
-      const auto idx = std::distance(userInQubits.begin(), found);
-      rewriter.modifyOpInPlace(user,
-                               [&] { user->setOperand(i, opInQubits[idx]); });
+      const auto idx = std::distance(newUserInQubits.begin(), found);
+      rewriter.modifyOpInPlace(
+          newUser, [&] { newUser->setOperand(i, opInQubits[idx]); });
     }
 
-    // Erase op
+    // Eraise op
     rewriter.eraseOp(op);
-    return; // TODO: Continue here
 
-    // Compute new parameter
-    auto opParams = op.getParams();
-    if (opParams.empty())
-      return;
-    auto opParam = opParams[0];
-
-    auto userParams = user.getParams();
-    if (userParams.empty())
-      return;
-    auto userParam = userParams[0];
-
-    auto add =
-        rewriter.create<mlir::arith::AddFOp>(user.getLoc(), opParam, userParam);
-
-    // Set new parameter
-    user.setParams(mlir::ValueRange{add.getResult()});
+    // Replace user with newUser
+    rewriter.replaceOp(user, newUser);
   }
 };
 
