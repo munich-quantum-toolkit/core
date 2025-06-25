@@ -124,5 +124,6 @@ if(MQT_CORE_INSTALL)
           ${PROJECT_SOURCE_DIR}/cmake/PackageAddTest.cmake
           ${PROJECT_SOURCE_DIR}/cmake/PreventInSourceBuilds.cmake
           ${PROJECT_SOURCE_DIR}/cmake/StandardProjectSettings.cmake
-    DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR})
+    DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
+    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 endif()
