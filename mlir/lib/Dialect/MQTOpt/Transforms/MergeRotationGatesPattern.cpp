@@ -46,8 +46,8 @@ struct MergeRotationGatesPattern final
   [[nodiscard]] static bool areGatesMergeable(mlir::Operation& a,
                                               mlir::Operation& b) {
     static const std::unordered_set<std::string> MERGEABLE_GATES = {
-        "rx",  "ry",        "rz",       "gphase", "rxx", "ryy",
-        "rzz", "xxminusyy", "xxplusyy", "u",      "u2"};
+        "gphase", "rx",  "ry",        "rz",       "rxx", "ryy",
+        "rzz",    "rzx", "xxminusyy", "xxplusyy", "u",   "u2"};
 
     const auto aName = a.getName().stripDialect().str();
     const auto bName = b.getName().stripDialect().str();
@@ -168,6 +168,17 @@ struct MergeRotationGatesPattern final
       const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
       const mlir::ValueRange newParams(newParamsVec);
       return rewriter.create<RZZOp>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    }
+    if (type == "rzx") {
+      auto add =
+          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
+      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      const mlir::ValueRange newParams(newParamsVec);
+      return rewriter.create<RZXOp>(
           loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
           mlir::DenseBoolArrayAttr{}, newParams, inQubits,
