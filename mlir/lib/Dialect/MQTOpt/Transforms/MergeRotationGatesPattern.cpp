@@ -176,9 +176,8 @@ struct MergeRotationGatesPattern final
     if (type == "xxminusyy" || type == "xxplusyy" || type == "u" ||
         type == "u2") {
       throw std::runtime_error("Not implemented yet");
-    } else {
-      throw std::runtime_error("Unsupported operation type");
     }
+    throw std::runtime_error("Unsupported operation type");
   }
 
   void rewrite(UnitaryInterface op,
