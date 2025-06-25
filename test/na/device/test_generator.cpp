@@ -8,6 +8,23 @@
  * Licensed under the MIT License
  */
 
-//
-// Created by Yannick Stade on 25.06.25.
-//
+#include "na/device/Generator.hpp"
+
+#include <cstddef>
+#include <fstream>
+#include <gmock/gmock-matchers.h>
+#include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
+
+namespace na {
+
+TEST(GeneratorTest, WriteJSONSchema) {
+  std::ostringstream os;
+  EXPECT_NO_THROW(writeJSONSchema(os));
+  nlohmann::json json;
+  EXPECT_NO_THROW(json = nlohmann::json::parse(os.str()));
+  EXPECT_TRUE(json.is_object());
+  EXPECT_GT(json.size(), 0);
+}
+
+} // namespace na

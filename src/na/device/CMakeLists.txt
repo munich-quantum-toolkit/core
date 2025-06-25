@@ -31,12 +31,12 @@ if(NOT TARGET ${TARGET_NAME})
     COMMENT "Generating C++ source from ${PROTO_FILE}")
   add_custom_target(generate_proto_files DEPENDS ${PROTO_SRC} ${PROTO_HDR})
 
-  # Add executable for device generation
-  add_executable(${TARGET_NAME})
+  # Add library for device generation
+  add_mqt_core_library(${TARGET_NAME})
   add_dependencies(${TARGET_NAME} generate_proto_files)
 
   # add sources to target
-  target_sources(${TARGET_NAME} PRIVATE Generator.cpp App.cpp ${PROTO_SRC})
+  target_sources(${TARGET_NAME} PRIVATE Generator.cpp ${PROTO_SRC})
 
   # add headers using file sets
   target_sources(
@@ -57,6 +57,39 @@ if(NOT TARGET ${TARGET_NAME})
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
 
   # set versioning information
+  set_target_properties(
+    ${TARGET_NAME}
+    PROPERTIES VERSION ${PROJECT_VERSION}
+               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+               EXPORT_NAME CoreNaDeviceGen)
+
+  # Make version available
+  target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+
+  # add to list of MQT core targets
+  set(MQT_CORE_TARGETS
+      ${MQT_CORE_TARGETS} ${TARGET_NAME}
+      PARENT_SCOPE)
+endif()
+
+# Set target name
+set(TARGET_NAME mqt-core-qdmi-na-device-generator)
+
+# If the target is not already defined
+if(NOT TARGET ${TARGET_NAME})
+  # Add executable for device generation
+  add_executable(${TARGET_NAME})
+
+  # add sources to target
+  target_sources(${TARGET_NAME} PRIVATE App.cpp)
+
+  # Link Generator library
+  target_link_libraries(
+    ${TARGET_NAME}
+    PUBLIC MQT::CoreNaDeviceGen
+    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
+
+  # set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME
                                                                              CoreNaDeviceGen)
   # place in the bin directory
@@ -72,7 +105,7 @@ if(NOT TARGET ${TARGET_NAME})
       PARENT_SCOPE)
 
   # Create an alias for the target
-  add_executable(MQT::CoreNADeviceGen ALIAS ${TARGET_NAME})
+  add_executable(MQT::CoreQdmiNaDeviceGenerator ALIAS ${TARGET_NAME})
 endif()
 
 # Set target name
@@ -91,7 +124,7 @@ if(NOT TARGET ${TARGET_NAME})
   # Generate definitions for device
   add_custom_command(
     OUTPUT ${DEVICE_HDR}
-    COMMAND MQT::CoreNADeviceGen ARGS generate --output ${DEVICE_HDR} ${JSON_FILE}
+    COMMAND MQT::CoreQdmiNaDeviceGenerator ARGS generate --output ${DEVICE_HDR} ${JSON_FILE}
     DEPENDS ${JSON_FILE}
     COMMENT "Generating C++ header from ${JSON_FILE}")
   add_custom_target(generate_na_device_header DEPENDS ${DEVICE_HDR})
