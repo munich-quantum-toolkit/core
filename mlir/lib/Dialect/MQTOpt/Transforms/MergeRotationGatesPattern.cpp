@@ -90,79 +90,89 @@ struct MergeRotationGatesPattern final
     return mlir::success();
   }
 
-  static UnitaryInterface createNewUser(const mlir::Location loc,
-                                        const std::string type,
-                                        const mlir::ValueRange inQubits,
-                                        mlir::ValueRange controlQubitsPositive,
-                                        mlir::ValueRange controlQubitsNegative,
-                                        mlir::ValueRange newValues,
-                                        mlir::PatternRewriter& rewriter) {
+  static UnitaryInterface createNewUser(
+      const mlir::Location loc, const std::string type,
+      const mlir::ValueRange inQubits, mlir::ValueRange controlQubitsPositive,
+      mlir::ValueRange controlQubitsNegative, mlir::ValueRange opParams,
+      mlir::ValueRange userParams, mlir::PatternRewriter& rewriter) {
     if (type == "rx") {
+      auto add =
+          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
+      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      mlir::ValueRange newParams(newParamsVec);
       return rewriter.create<RXOp>(
           loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
           controlQubitsPositive, controlQubitsNegative);
     } else if (type == "ry") {
+      auto add =
+          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
+      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      mlir::ValueRange newParams(newParamsVec);
       return rewriter.create<RYOp>(
           loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
           controlQubitsPositive, controlQubitsNegative);
     } else if (type == "rz") {
+      auto add =
+          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
+      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      mlir::ValueRange newParams(newParamsVec);
       return rewriter.create<RZOp>(
           loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
           controlQubitsPositive, controlQubitsNegative);
     } else if (type == "gphase") {
+      auto add =
+          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
+      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      mlir::ValueRange newParams(newParamsVec);
       return rewriter.create<GPhaseOp>(
           loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
           controlQubitsPositive, controlQubitsNegative);
     } else if (type == "rxx") {
+      auto add =
+          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
+      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      mlir::ValueRange newParams(newParamsVec);
       return rewriter.create<RXXOp>(
           loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
           controlQubitsPositive, controlQubitsNegative);
     } else if (type == "ryy") {
+      auto add =
+          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
+      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      mlir::ValueRange newParams(newParamsVec);
       return rewriter.create<RYYOp>(
           loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
           controlQubitsPositive, controlQubitsNegative);
     } else if (type == "rzz") {
+      auto add =
+          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
+      llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+      mlir::ValueRange newParams(newParamsVec);
       return rewriter.create<RZZOp>(
           loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
           controlQubitsPositive, controlQubitsNegative);
     } else if (type == "xxminusyy") {
-      return rewriter.create<XXminusYY>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
+      throw std::runtime_error("Not implemented");
     } else if (type == "xxplusyy") {
-      return rewriter.create<XXplusYY>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
+      throw std::runtime_error("Not implemented");
     } else if (type == "u") {
-      return rewriter.create<UOp>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
+      throw std::runtime_error("Not implemented");
     } else if (type == "u2") {
-      return rewriter.create<U2Op>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
+      throw std::runtime_error("Not implemented");
     } else {
       throw std::runtime_error("Unsupported operation type");
     }
@@ -172,25 +182,11 @@ struct MergeRotationGatesPattern final
                mlir::PatternRewriter& rewriter) const override {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
 
-    // Compute newParams
-    auto opParams = op.getParams();
-    auto userParams = user.getParams();
-    assert(opParams.size() == userParams.size() &&
-           "Parameter sizes must match!");
-    std::vector<mlir::Value> newParamsVector;
-    newParamsVector.reserve(opParams.size());
-    for (size_t i = 0; i < opParams.size(); ++i) {
-      auto add = rewriter.create<mlir::arith::AddFOp>(
-          user.getLoc(), opParams[i], userParams[i]);
-      newParamsVector.push_back(add.getResult());
-    }
-    mlir::ValueRange newParams(newParamsVector);
-
     // Create newUser
-    auto newUser =
-        createNewUser(user.getLoc(), user->getName().stripDialect().str(),
-                      user.getInQubits(), user.getPosCtrlInQubits(),
-                      user.getNegCtrlInQubits(), newParams, rewriter);
+    auto newUser = createNewUser(
+        user.getLoc(), user->getName().stripDialect().str(), user.getInQubits(),
+        user.getPosCtrlInQubits(), user.getNegCtrlInQubits(), op.getParams(),
+        user.getParams(), rewriter);
 
     // Prepare erasure of op
     const auto& opInQubits = op.getAllInQubits();
