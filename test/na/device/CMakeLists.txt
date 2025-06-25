@@ -23,8 +23,13 @@ if(TARGET qdmi::mqt_na_device)
   # Functional Tests
   # ------------------------------------------------------------------------------
 
-  package_add_test(${TARGET_NAME} qdmi::mqt_na_device test_interface.cpp)
+  file(GLOB SOURCES *.cpp)
+
+  package_add_test(${TARGET_NAME} qdmi::mqt_na_device ${SOURCES})
+  target_link_libraries(${TARGET_NAME} PRIVATE nlohmann_json::nlohmann_json)
   add_dependencies(${TARGET_NAME} qdmi_test_mqt_na_device_defs)
+  target_compile_definitions(${TARGET_NAME}
+                             PRIVATE NA_DEVICE_JSON="${CMAKE_SOURCE_DIR}/json/na/device.json")
 
   # set c++ standard
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
