@@ -53,7 +53,7 @@ if(NOT TARGET ${TARGET_NAME})
   # Link Protobuf, QDMI, spdlog, and project warnings
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC protobuf::libprotobuf spdlog::spdlog_header_only
+    PUBLIC protobuf::libprotobuf spdlog::spdlog
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
 
   # set versioning information
@@ -121,7 +121,7 @@ if(NOT TARGET ${TARGET_NAME})
   # add link libraries
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC qdmi::qdmi spdlog::spdlog_header_only
+    PUBLIC qdmi::qdmi spdlog::spdlog
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
 
   # set c++ standard
