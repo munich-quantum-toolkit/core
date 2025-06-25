@@ -2664,12 +2664,15 @@ TEST(DDPackageTest, ReduceAncillaIdentity) {
 
 TEST(DDPackageTest, ReduceAncillaIdentityBeforeFirstNode) {
   const auto dd = std::make_unique<Package>(2);
+
   auto xGate = getDD(qc::StandardOperation(0, qc::X), *dd);
+  dd->track(xGate);
   const auto outputDD = dd->reduceAncillae(xGate, {false, true});
 
   const auto outputMatrix = outputDD.getMatrix(dd->qubits());
   const auto expected =
       CMat{{0, 1, 0, 0}, {1, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}};
+
   EXPECT_EQ(outputMatrix, expected);
 }
 
@@ -2682,6 +2685,7 @@ TEST(DDPackageTest, ReduceAncillaIdentityAfterLastNode) {
   const auto outputMatrix = outputDD.getMatrix(dd->qubits());
   const auto expected =
       CMat{{0, 0, 1, 0}, {0, 0, 0, 0}, {1, 0, 0, 0}, {0, 0, 0, 0}};
+
   EXPECT_EQ(outputMatrix, expected);
 }
 
@@ -2722,6 +2726,8 @@ TEST(DDPackageTest, ReduceGarbageIdentity) {
 TEST(DDPackageTest, ReduceGarbageIdentityBeforeFirstNode) {
   const auto dd = std::make_unique<Package>(2);
   auto xGate = getDD(qc::StandardOperation(0, qc::X), *dd);
+  dd->track(xGate);
+
   auto outputDD = dd->reduceGarbage(xGate, {false, true});
 
   auto outputMatrix = outputDD.getMatrix(dd->qubits());
@@ -2729,6 +2735,7 @@ TEST(DDPackageTest, ReduceGarbageIdentityBeforeFirstNode) {
   EXPECT_EQ(outputMatrix, expected);
 
   // test also for non-regular garbage reduction as well
+  dd->track(xGate);
   outputDD = dd->reduceGarbage(xGate, {false, true}, false);
 
   outputMatrix = outputDD.getMatrix(dd->qubits());
@@ -2740,6 +2747,7 @@ TEST(DDPackageTest, ReduceGarbageIdentityAfterLastNode) {
   const auto dd = std::make_unique<Package>(2);
   auto xGate = getDD(qc::StandardOperation(1, qc::X), *dd);
   dd->track(xGate);
+
   auto outputDD = dd->reduceGarbage(xGate, {true, false});
 
   auto outputMatrix = outputDD.getMatrix(dd->qubits());
