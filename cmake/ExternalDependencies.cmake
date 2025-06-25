@@ -77,6 +77,13 @@ set(Protobuf_VERSION
 set(Protobuf_URL
     https://github.com/protocolbuffers/protobuf/releases/download/v${Protobuf_VERSION}/protobuf-${Protobuf_VERSION}.tar.gz
 )
+# the default of the following is ON, they are just here to make more explicit that they are
+# required
+set(protobuf_BUILD_PROTOBUF_BINARIES ON)
+set(protobuf_BUILD_PROTOC_BINARIES ON)
+set(protobuf_BUILD_LIBUPB ON)
+# the default of the following is ON, but we do not need the tests
+set(protobuf_BUILD_TESTS OFF)
 FetchContent_Declare(protobuf URL ${Protobuf_URL} FIND_PACKAGE_ARGS ${Protobuf_VERSION} CONFIG
                                   NAMES protobuf)
 list(APPEND FETCH_PACKAGES protobuf)
