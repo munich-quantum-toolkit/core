@@ -11,12 +11,9 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
-#include "llvm/Support/raw_ostream.h"
-
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
-#include <map>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -25,6 +22,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <string>
+#include <unordered_set>
 
 namespace mqt::ir::opt {
 
