@@ -6,12 +6,26 @@
 #
 # Licensed under the MIT License
 
-# Set test target name
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device-test)
-# Set QDMI prefix again for the tests
-set(QDMI_PREFIX "MQT_NA")
+if(TARGET MQT::CoreNaDeviceGen)
+  # Set test target name
+  set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device-gen-test)
+  package_add_test(${TARGET_NAME} MQT::CoreNaDeviceGen test_generator.cpp)
+endif()
+
+if(TARGET MQT::CoreQdmiNaDeviceGenerator)
+  # Set test target name
+  set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-generator-test)
+  package_add_test(${TARGET_NAME} "" test_app.cpp)
+  target_compile_definitions(
+    ${TARGET_NAME} PRIVATE EXECUTABLE_PATH="$<TARGET_FILE:MQT::CoreQdmiNaDeviceGenerator>"
+                           MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+endif()
 
 if(TARGET qdmi::mqt_na_device)
+  # Set test target name
+  set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device-test)
+  # Set QDMI prefix again for the tests
+  set(QDMI_PREFIX "MQT_NA")
 
   # ------------------------------------------------------------------------------
   # Non-Functional Tests
@@ -23,9 +37,7 @@ if(TARGET qdmi::mqt_na_device)
   # Functional Tests
   # ------------------------------------------------------------------------------
 
-  file(GLOB SOURCES *.cpp)
-
-  package_add_test(${TARGET_NAME} qdmi::mqt_na_device ${SOURCES})
+  package_add_test(${TARGET_NAME} qdmi::mqt_na_device test_device.cpp)
   target_link_libraries(${TARGET_NAME} PRIVATE nlohmann_json::nlohmann_json)
   add_dependencies(${TARGET_NAME} qdmi_test_mqt_na_device_defs)
   target_compile_definitions(${TARGET_NAME}
