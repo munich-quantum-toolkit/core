@@ -88,6 +88,24 @@ struct MergeRotationGatesPattern final
     return mlir::success();
   }
 
+  static UnitaryInterface createNewUser(const mlir::Location loc,
+                                        const std::string type,
+                                        const mlir::ValueRange inQubits,
+                                        mlir::ValueRange controlQubitsPositive,
+                                        mlir::ValueRange controlQubitsNegative,
+                                        mlir::Value newValue,
+                                        mlir::PatternRewriter& rewriter) {
+    if (type == "rx") {
+      return rewriter.create<RXOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{newValue}, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    } else {
+      throw std::runtime_error("Unsupported operation type");
+    }
+  }
+
   void rewrite(UnitaryInterface op,
                mlir::PatternRewriter& rewriter) const override {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
@@ -100,16 +118,10 @@ struct MergeRotationGatesPattern final
     auto newParam = addParams.getResult();
 
     // Create newUser
-    auto userInQubit = user.getInQubits()[0];
-    auto userControlQubitsPositive = user.getPosCtrlInQubits();
-    auto userControlQubitsNegative = user.getNegCtrlInQubits();
-    auto newUser = rewriter.create<RXOp>(
-        user.getLoc(), userInQubit.getType(),
-        userControlQubitsPositive.getType(),
-        userControlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-        mlir::DenseBoolArrayAttr{}, mlir::ValueRange{newParam},
-        mlir::ValueRange{userInQubit}, userControlQubitsPositive,
-        userControlQubitsNegative);
+    auto newUser =
+        createNewUser(user.getLoc(), user->getName().stripDialect().str(),
+                      user.getInQubits(), user.getPosCtrlInQubits(),
+                      user.getNegCtrlInQubits(), newParam, rewriter);
 
     // Prepare erasure of op
     const auto& opInQubits = op.getAllInQubits();
