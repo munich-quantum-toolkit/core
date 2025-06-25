@@ -31,8 +31,8 @@ class Grover
     : public testing::TestWithParam<std::tuple<qc::Qubit, std::size_t>> {
 protected:
   void TearDown() override {
-    dd->decRef(sim);
-    dd->decRef(func);
+    dd->untrack(sim);
+    dd->untrack(func);
     dd->garbageCollect(true);
     // number of complex table entries after clean-up should equal 1
     EXPECT_EQ(dd->cn.realCount(), 0);
@@ -96,12 +96,12 @@ TEST_P(Grover, Functionality) {
   const auto iteration = buildFunctionality(groverIteration, *dd);
 
   auto e = iteration;
-  dd->incRef(e);
+  dd->track(e);
   const auto iterations = qc::computeNumberOfIterations(nqubits);
   for (std::size_t i = 0U; i < iterations - 1U; ++i) {
     auto f = dd->multiply(iteration, e);
-    dd->incRef(f);
-    dd->decRef(e);
+    dd->track(f);
+    dd->untrack(e);
     e = f;
     dd->garbageCollect();
   }
@@ -110,12 +110,12 @@ TEST_P(Grover, Functionality) {
   qc::appendGroverInitialization(setup);
   const auto g = buildFunctionality(setup, *dd);
   const auto f = dd->multiply(e, g);
-  dd->incRef(f);
-  dd->decRef(e);
-  dd->decRef(g);
+  dd->track(f);
+  dd->untrack(e);
+  dd->untrack(g);
   func = f;
 
-  dd->decRef(iteration);
+  dd->untrack(iteration);
 
   // amplitude of the searched-for entry should be 1
   const auto c = func.getValueByPath(qc.getNqubits(), x);
@@ -140,38 +140,38 @@ TEST_P(Grover, FunctionalityRecursive) {
   const std::bitset<128U> iterBits(iterations);
   const auto msb = static_cast<std::size_t>(std::floor(std::log2(iterations)));
   auto f = iter;
-  dd->incRef(f);
+  dd->track(f);
   bool zero = !iterBits[0U];
   for (std::size_t j = 1U; j <= msb; ++j) {
     auto tmp = dd->multiply(f, f);
-    dd->incRef(tmp);
-    dd->decRef(f);
+    dd->track(tmp);
+    dd->untrack(f);
     f = tmp;
     if (iterBits[j]) {
       if (zero) {
-        dd->incRef(f);
-        dd->decRef(e);
+        dd->track(f);
+        dd->untrack(e);
         e = f;
         zero = false;
       } else {
         auto g = dd->multiply(e, f);
-        dd->incRef(g);
-        dd->decRef(e);
+        dd->track(g);
+        dd->untrack(e);
         e = g;
         dd->garbageCollect();
       }
     }
   }
-  dd->decRef(f);
+  dd->untrack(f);
 
   // apply state preparation setup
   qc::QuantumComputation statePrep(qc.getNqubits());
   qc::appendGroverInitialization(statePrep);
   const auto s = buildFunctionality(statePrep, *dd);
   func = dd->multiply(e, s);
-  dd->incRef(func);
-  dd->decRef(s);
-  dd->decRef(e);
+  dd->track(func);
+  dd->untrack(s);
+  dd->untrack(e);
 
   // amplitude of the searched-for entry should be 1
   const auto c = func.getValueByPath(qc.getNqubits(), x);

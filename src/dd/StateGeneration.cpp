@@ -176,7 +176,7 @@ VectorDD makeBasisState(const std::size_t n,
     f = dd.makeDDNode(v, edges);
   }
   const vEdge e{f.p, dd.cn.lookup(f.w)};
-  dd.incRef(e);
+  dd.track(e);
   return e;
 }
 
@@ -202,7 +202,7 @@ VectorDD makeGHZState(const std::size_t n, Package& dd) {
       std::array<vEdge, RADIX>{
           {{leftSubtree.p, {&constants::sqrt2over2, &constants::zero}},
            {rightSubtree.p, {&constants::sqrt2over2, &constants::zero}}}});
-  dd.incRef(e);
+  dd.track(e);
   return e;
 }
 
@@ -233,7 +233,7 @@ VectorDD makeWState(const std::size_t n, Package& dd) {
                                    std::array{rightSubtree, vEdge::zero()});
     }
   }
-  dd.incRef(leftSubtree);
+  dd.track(leftSubtree);
   return leftSubtree;
 }
 
@@ -259,7 +259,7 @@ VectorDD makeStateFromVector(const CVec& vec, Package& dd) {
   const vCachedEdge state = makeStateFromVector(vec.begin(), vec.end(), v, dd);
 
   const vEdge ret{state.p, dd.cn.lookup(state.w)};
-  dd.incRef(ret);
+  dd.track(ret);
   return ret;
 }
 
@@ -357,7 +357,7 @@ VectorDD generateRandomState(const std::size_t levels,
 
   // Below only contains one element: the root.
   vEdge ret{curr.at(0).p, Complex::one()};
-  dd.incRef(ret);
+  dd.track(ret);
   return ret;
 }
 } // namespace dd

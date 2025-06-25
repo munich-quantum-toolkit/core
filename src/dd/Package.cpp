@@ -175,7 +175,7 @@ dEdge Package::makeZeroDensityOperator(const std::size_t n) {
     f = makeDDNode(static_cast<Qubit>(p),
                    std::array{f, dEdge::zero(), dEdge::zero(), dEdge::zero()});
   }
-  incRef(f);
+  track(f);
   return f;
 }
 
@@ -498,8 +498,8 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
       }
       e = makeDDNode(static_cast<Qubit>(p), edges);
     }
-    incRef(e);
-    decRef(rootEdge);
+    track(e);
+    untrack(rootEdge);
     rootEdge = e;
   }
 
@@ -627,9 +627,9 @@ char Package::measureOneCollapsing(dEdge& e, const Qubit index,
     densityMatrixTrace = trace(tmp2, nrQubits);
   }
 
-  incRef(tmp2);
+  track(tmp2);
   dEdge::alignDensityEdge(e);
-  decRef(e);
+  untrack(e);
   e = tmp2;
   dEdge::setDensityMatrixTrue(e);
 
@@ -649,8 +649,8 @@ void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
 
   assert(probability > 0.);
   e.w = cn.lookup(e.w / std::sqrt(probability));
-  incRef(e);
-  decRef(rootEdge);
+  track(e);
+  untrack(rootEdge);
   rootEdge = e;
 }
 vEdge Package::conjugate(const vEdge& a) {
@@ -710,8 +710,8 @@ mCachedEdge Package::conjugateTransposeRec(const mEdge& a) {
 }
 VectorDD Package::applyOperation(const MatrixDD& operation, const VectorDD& e) {
   const auto tmp = multiply(operation, e);
-  incRef(tmp);
-  decRef(e);
+  track(tmp);
+  untrack(e);
   garbageCollect();
   return tmp;
 }
@@ -719,18 +719,18 @@ MatrixDD Package::applyOperation(const MatrixDD& operation, const MatrixDD& e,
                                  const bool applyFromLeft) {
   const MatrixDD tmp =
       applyFromLeft ? multiply(operation, e) : multiply(e, operation);
-  incRef(tmp);
-  decRef(e);
-  garbageCollect();
+  untrack(e);       // TODO: Untrack after operation.
+  track(tmp);       // TODO: Track new state.
+  garbageCollect(); // TODO: Garbage collect.
   return tmp;
 }
 dEdge Package::applyOperationToDensity(dEdge& e, const mEdge& operation) {
   const auto tmp0 = conjugateTranspose(operation);
   const auto tmp1 = multiply(e, densityFromMatrixEdge(tmp0), false);
   const auto tmp2 = multiply(densityFromMatrixEdge(operation), tmp1, true);
-  incRef(tmp2);
+  track(tmp2);
   dEdge::alignDensityEdge(e);
-  decRef(e);
+  untrack(e);
   e = tmp2;
   dEdge::setDensityMatrixTrue(e);
   return e;
@@ -958,7 +958,7 @@ mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
             std::array{g, mEdge::zero(), mEdge::zero(), mEdge::zero()});
       }
     }
-    incRef(g);
+    track(g);
     return g;
   }
 
@@ -983,8 +983,8 @@ mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
     }
   }
   const auto res = mEdge{g.p, cn.lookup(g.w * e.w)};
-  incRef(res);
-  decRef(e);
+  track(res);
+  untrack(e);
   return res;
 }
 vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
@@ -1012,8 +1012,8 @@ vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
     weight = weight.mag();
   }
   const auto res = vEdge{f.p, cn.lookup(weight)};
-  incRef(res);
-  decRef(e);
+  track(res);
+  untrack(e);
   return res;
 }
 mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
@@ -1039,7 +1039,7 @@ mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
         }
       }
     }
-    incRef(g);
+    track(g);
     return g;
   }
 
@@ -1077,8 +1077,8 @@ mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
   }
   const auto res = mEdge{g.p, cn.lookup(weight)};
 
-  incRef(res);
-  decRef(e);
+  track(res);
+  untrack(e);
   return res;
 }
 mCachedEdge Package::reduceAncillaeRecursion(mNode* p,

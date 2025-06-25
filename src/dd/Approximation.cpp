@@ -233,8 +233,8 @@ ApproximationMetadata approximate(VectorDD& state, const double fidelity,
   const ApproximationMetadata& meta = mark(state, fidelity);
   const vEdge& approx = sweep(state, meta.min, dd);
 
-  dd.incRef(approx);
-  dd.decRef(state);
+  dd.track(approx);
+  dd.untrack(state);
   dd.garbageCollect();
 
   state = approx;

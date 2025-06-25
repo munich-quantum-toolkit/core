@@ -199,7 +199,7 @@ public:
    * @tparam Node The node type of the edge.
    * @param e The edge to increase the reference count of.
    */
-  template <class Node> void incRef(const Edge<Node>& e) noexcept {
+  template <class Node> void track(const Edge<Node>& e) noexcept {
     mark.addToRoots(e);
   }
 
@@ -211,7 +211,7 @@ public:
    * @throws std::invalid_argument If the edge is not part of the tracking
    * hashset.
    */
-  template <class Node> void decRef(const Edge<Node>& e) {
+  template <class Node> void untrack(const Edge<Node>& e) {
     mark.removeFromRoots(e);
   }
 
@@ -233,7 +233,10 @@ private:
     template <class Node> void removeFromRoots(const Edge<Node>& e) {
       auto& roots = getRoots<Node>();
       auto it = roots.find(e);
-      if (it != roots.end() && --it->second == 0U) {
+      if (it == roots.end()) {
+        throw std::invalid_argument("Edge is not part of the root set.");
+      }
+      if (--it->second == 0U) {
         roots.erase(it);
       }
     }

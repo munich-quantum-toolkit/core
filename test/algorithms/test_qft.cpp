@@ -110,7 +110,7 @@ TEST_P(QFT, Functionality) {
                 dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
-  dd->decRef(func);
+  dd->untrack(func);
   dd->garbageCollect(true);
   // number of complex table entries after clean-up should equal initial
   // number of entries
@@ -156,7 +156,7 @@ TEST_P(QFT, FunctionalityRecursive) {
                 dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
-  dd->decRef(func);
+  dd->untrack(func);
   dd->garbageCollect(true);
   // number of complex table entries after clean-up should equal initial
   // number of entries
@@ -192,7 +192,7 @@ TEST_P(QFT, Simulation) {
                 dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
-  dd->decRef(sim);
+  dd->untrack(sim);
   dd->garbageCollect(true);
   // number of complex table entries after clean-up should equal initial
   // number of entries
@@ -211,8 +211,8 @@ TEST_P(QFT, FunctionalityRecursiveEquality) {
   ASSERT_NO_THROW({ funcRec = buildFunctionality(qc, *dd); });
 
   ASSERT_EQ(func, funcRec);
-  dd->decRef(funcRec);
-  dd->decRef(func);
+  dd->untrack(funcRec);
+  dd->untrack(func);
   dd->garbageCollect(true);
   // number of complex table entries after clean-up should equal initial
   // number of entries

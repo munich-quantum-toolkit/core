@@ -473,8 +473,8 @@ TEST(DDPackageTest, StateGenerationManipulation) {
                            BasisStates::left, BasisStates::right},
                           *dd);
   dd->vUniqueTable.print<vNode>();
-  dd->decRef(e);
-  dd->decRef(f);
+  dd->untrack(e);
+  dd->untrack(f);
 }
 
 TEST(DDPackageTest, VectorSerializationTest) {
@@ -656,12 +656,12 @@ TEST(DDPackageTest, Ancillaries) {
   auto cxGate = getDD(qc::StandardOperation(0_pc, 1, qc::X), *dd);
   auto bellMatrix = dd->multiply(cxGate, hGate);
 
-  dd->incRef(bellMatrix);
+  dd->track(bellMatrix);
   auto reducedBellMatrix =
       dd->reduceAncillae(bellMatrix, {false, false, false, false});
   EXPECT_EQ(bellMatrix, reducedBellMatrix);
 
-  dd->incRef(bellMatrix);
+  dd->track(bellMatrix);
   reducedBellMatrix =
       dd->reduceAncillae(bellMatrix, {false, false, true, true});
   EXPECT_TRUE(reducedBellMatrix.p->e[1].isZeroTerminal());
@@ -673,7 +673,7 @@ TEST(DDPackageTest, Ancillaries) {
   EXPECT_TRUE(reducedBellMatrix.p->e[0].p->e[2].isZeroTerminal());
   EXPECT_TRUE(reducedBellMatrix.p->e[0].p->e[3].isZeroTerminal());
 
-  dd->incRef(bellMatrix);
+  dd->track(bellMatrix);
   reducedBellMatrix =
       dd->reduceAncillae(bellMatrix, {false, false, true, true}, false);
   EXPECT_TRUE(reducedBellMatrix.p->e[1].isZeroTerminal());
@@ -695,15 +695,15 @@ TEST(DDPackageTest, GarbageVector) {
   std::cout << "Bell State:\n";
   bellState.printVector();
 
-  dd->incRef(bellState);
+  dd->track(bellState);
   auto reducedBellState =
       dd->reduceGarbage(bellState, {false, false, false, false});
   EXPECT_EQ(bellState, reducedBellState);
-  dd->incRef(bellState);
+  dd->track(bellState);
   reducedBellState = dd->reduceGarbage(bellState, {false, false, true, false});
   EXPECT_EQ(bellState, reducedBellState);
 
-  dd->incRef(bellState);
+  dd->track(bellState);
   reducedBellState = dd->reduceGarbage(bellState, {false, true, false, false});
   auto vec = reducedBellState.getVector();
   std::cout << "Reduced Bell State (q1 garbage):\n";
@@ -711,7 +711,7 @@ TEST(DDPackageTest, GarbageVector) {
   EXPECT_EQ(vec[2], 0.);
   EXPECT_EQ(vec[3], 0.);
 
-  dd->incRef(bellState);
+  dd->track(bellState);
   reducedBellState = dd->reduceGarbage(bellState, {true, false, false, false});
   std::cout << "Reduced Bell State (q0 garbage):\n";
   reducedBellState.printVector();
@@ -726,16 +726,16 @@ TEST(DDPackageTest, GarbageMatrix) {
   auto cxGate = getDD(qc::StandardOperation(0_pc, 1, qc::X), *dd);
   auto bellMatrix = dd->multiply(cxGate, hGate);
 
-  dd->incRef(bellMatrix);
+  dd->track(bellMatrix);
   auto reducedBellMatrix =
       dd->reduceGarbage(bellMatrix, {false, false, false, false});
   EXPECT_EQ(bellMatrix, reducedBellMatrix);
-  dd->incRef(bellMatrix);
+  dd->track(bellMatrix);
   reducedBellMatrix =
       dd->reduceGarbage(bellMatrix, {false, false, true, false});
   EXPECT_NE(bellMatrix, reducedBellMatrix);
 
-  dd->incRef(bellMatrix);
+  dd->track(bellMatrix);
   reducedBellMatrix =
       dd->reduceGarbage(bellMatrix, {false, true, false, false});
   auto mat = reducedBellMatrix.getMatrix(2);
@@ -743,14 +743,14 @@ TEST(DDPackageTest, GarbageMatrix) {
   EXPECT_EQ(mat[2], zero);
   EXPECT_EQ(mat[3], zero);
 
-  dd->incRef(bellMatrix);
+  dd->track(bellMatrix);
   reducedBellMatrix =
       dd->reduceGarbage(bellMatrix, {true, false, false, false});
   mat = reducedBellMatrix.getMatrix(2);
   EXPECT_EQ(mat[1], zero);
   EXPECT_EQ(mat[3], zero);
 
-  dd->incRef(bellMatrix);
+  dd->track(bellMatrix);
   reducedBellMatrix =
       dd->reduceGarbage(bellMatrix, {false, true, false, false}, false);
   EXPECT_TRUE(reducedBellMatrix.p->e[1].isZeroTerminal());
@@ -766,13 +766,13 @@ TEST(DDPackageTest, ReduceGarbageVector) {
   std::cout << "Initial State:\n";
   initialState.printVector();
 
-  dd->incRef(initialState);
+  dd->track(initialState);
   auto reducedState = dd->reduceGarbage(initialState, {false, true, true});
   std::cout << "After reduceGarbage():\n";
   reducedState.printVector();
   EXPECT_EQ(reducedState, makeZeroState(3, *dd));
 
-  dd->incRef(initialState);
+  dd->track(initialState);
   auto reducedState2 =
       dd->reduceGarbage(initialState, {false, true, true}, true);
 
@@ -792,7 +792,7 @@ TEST(DDPackageTest, ReduceGarbageVectorTGate) {
   std::cout << "Initial State:\n";
   initialState.printVector();
 
-  dd->incRef(initialState);
+  dd->track(initialState);
   auto reducedState = dd->reduceGarbage(initialState, {false, false}, true);
   std::cout << "After reduceGarbage():\n";
   reducedState.printVector();
@@ -810,7 +810,7 @@ TEST(DDPackageTest, ReduceGarbageMatrix) {
   std::cout << "Initial State:\n";
   initialState.printMatrix(dd->qubits());
 
-  dd->incRef(initialState);
+  dd->track(initialState);
   auto reducedState1 =
       dd->reduceGarbage(initialState, {false, true, true}, true, true);
   std::cout << "After reduceGarbage(q1 and q2 are garbage):\n";
@@ -827,7 +827,7 @@ TEST(DDPackageTest, ReduceGarbageMatrix) {
       {0, 0, 0, 0, 0, 0, 0, 0}};
   EXPECT_EQ(reducedState1.getMatrix(dd->qubits()), expectedMatrix1);
 
-  dd->incRef(initialState);
+  dd->track(initialState);
   auto reducedState2 =
       dd->reduceGarbage(initialState, {true, false, false}, true, true);
   std::cout << "After reduceGarbage(q0 is garbage):\n";
@@ -860,14 +860,14 @@ TEST(DDPackageTest, ReduceGarbageMatrix2) {
   std::cout << "c1:\n";
   c1.printMatrix(dd->qubits());
   std::cout << "reduceGarbage:\n";
-  dd->incRef(c1);
+  dd->track(c1);
   auto c1Reduced = dd->reduceGarbage(c1, {false, true, true}, true, true);
   c1Reduced.printMatrix(dd->qubits());
 
   std::cout << "c2:\n";
   c2.printMatrix(dd->qubits());
   std::cout << "reduceGarbage:\n";
-  dd->incRef(c2);
+  dd->track(c2);
   auto c2Reduced = dd->reduceGarbage(c2, {false, true, true}, true, true);
   c2Reduced.printMatrix(dd->qubits());
 
@@ -886,7 +886,7 @@ TEST(DDPackageTest, ReduceGarbageMatrixNoGarbage) {
   std::cout << "c2:\n";
   c2.printMatrix(dd->qubits());
   std::cout << "reduceGarbage:\n";
-  dd->incRef(c2);
+  dd->track(c2);
   auto c2Reduced = dd->reduceGarbage(c2, {false, false}, true, true);
   c2Reduced.printMatrix(dd->qubits());
 
@@ -905,14 +905,14 @@ TEST(DDPackageTest, ReduceGarbageMatrixTGate) {
   std::cout << "c1:\n";
   c1.printMatrix(dd->qubits());
   std::cout << "reduceGarbage:\n";
-  dd->incRef(c1);
+  dd->track(c1);
   auto c1Reduced = dd->reduceGarbage(c1, {false, true}, true, true);
   c1Reduced.printMatrix(dd->qubits());
 
   std::cout << "c2:\n";
   c2.printMatrix(dd->qubits());
   std::cout << "reduceGarbage:\n";
-  dd->incRef(c2);
+  dd->track(c2);
   auto c2Reduced = dd->reduceGarbage(c2, {false, true}, true, true);
   c2Reduced.printMatrix(dd->qubits());
 
@@ -958,9 +958,9 @@ TEST(DDPackageTest, ResetClearsRoots) {
   auto mat = getDD(qc::StandardOperation(0, qc::X), *dd);
   auto dens = dd->makeZeroDensityOperator(2);
 
-  dd->incRef(vec);
-  dd->incRef(mat);
-  dd->incRef(dens);
+  dd->track(vec);
+  dd->track(mat);
+  dd->track(dens);
 
   EXPECT_EQ(vRoots.size(), 1U);
   EXPECT_EQ(mRoots.size(), 1U);
@@ -973,7 +973,7 @@ TEST(DDPackageTest, ResetClearsRoots) {
   EXPECT_TRUE(dRoots.empty());
 }
 
-TEST(DDPackageTest, DuplicateIncRefDoesNotLeaveStaleRoot) {
+TEST(DDPackageTest, DuplicatetrackDoesNotLeaveStaleRoot) {
   auto dd = std::make_unique<Package>(1);
 
   auto& vRoots = dd->getRootSet<vNode>();
@@ -983,34 +983,36 @@ TEST(DDPackageTest, DuplicateIncRefDoesNotLeaveStaleRoot) {
   // vector root
   auto vec = dd::makeZeroState(1, *dd);
   EXPECT_EQ(vRoots.size(), 1U);
-  dd->incRef(vec);
+  dd->track(vec);
   EXPECT_EQ(vRoots.at(vec), 2U);
-  dd->decRef(vec);
+  dd->untrack(vec);
   EXPECT_EQ(vRoots.at(vec), 1U);
-  dd->decRef(vec);
+  dd->untrack(vec);
   EXPECT_TRUE(vRoots.empty());
-  EXPECT_THROW(dd->decRef(vec), std::invalid_argument);
+  EXPECT_THROW(dd->untrack(vec), std::invalid_argument);
 
   // matrix root
   auto mat = getDD(qc::StandardOperation(0, qc::X), *dd);
-  dd->incRef(mat);
-  dd->incRef(mat);
+  dd->track(mat);
+  dd->track(mat);
   EXPECT_EQ(mRoots.size(), 1U);
   EXPECT_EQ(mRoots.at(mat), 2U);
-  dd->decRef(mat);
+  dd->untrack(mat);
   EXPECT_EQ(mRoots.at(mat), 1U);
-  dd->decRef(mat);
+  dd->untrack(mat);
   EXPECT_TRUE(mRoots.empty());
+  EXPECT_THROW(dd->untrack(mat), std::invalid_argument);
 
   // density root
   auto dens = dd->makeZeroDensityOperator(1);
   EXPECT_EQ(dRoots.size(), 1U);
-  dd->incRef(dens);
+  dd->track(dens);
   EXPECT_EQ(dRoots.at(dens), 2U);
-  dd->decRef(dens);
+  dd->untrack(dens);
   EXPECT_EQ(dRoots.at(dens), 1U);
-  dd->decRef(dens);
+  dd->untrack(dens);
   EXPECT_TRUE(dRoots.empty());
+  EXPECT_THROW(dd->untrack(dens), std::invalid_argument);
 }
 
 TEST(DDPackageTest, Inverse) {
@@ -1021,25 +1023,25 @@ TEST(DDPackageTest, Inverse) {
   dd->garbageCollect();
   // Mark-and-sweep does not run if no unique table exceeded its threshold
   EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 1);
-  dd->incRef(x);
+  dd->track(x);
   dd->garbageCollect(true);
   // For mark-and-sweep the node is still part of the root set and therefore
   // remains reachable
   EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 1);
-  dd->decRef(x);
+  dd->untrack(x);
   dd->garbageCollect(true);
   // After removing the node from the root set it is reclaimed
   EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 0);
 }
 
-TEST(DDPackageTest, IncRefTwiceThenDecRefTwice) {
+TEST(DDPackageTest, trackTwiceThenuntrackTwice) {
   auto dd = std::make_unique<Package>(1);
 
   auto x = getDD(qc::StandardOperation(0, qc::X), *dd);
 
   // add the same edge twice
-  dd->incRef(x);
-  dd->incRef(x);
+  dd->track(x);
+  dd->track(x);
   // EXPECT_EQ(mRoots.size(), 1U);
   // EXPECT_EQ(mRoots.at(x), 2U);
 
@@ -1049,9 +1051,9 @@ TEST(DDPackageTest, IncRefTwiceThenDecRefTwice) {
   EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 1);
 
   // remove the edge twice
-  dd->decRef(x);
+  dd->untrack(x);
   // EXPECT_EQ(mRoots.at(x), 1U);
-  dd->decRef(x);
+  dd->untrack(x);
 
   dd->garbageCollect(true);
 
@@ -1229,7 +1231,7 @@ TEST(DDPackageTest, DestructiveMeasurementAll) {
   auto plusMatrix = dd->multiply(hGate0, hGate1);
   auto zeroState = makeZeroState(2, *dd);
   auto plusState = dd->multiply(plusMatrix, zeroState);
-  dd->incRef(plusState);
+  dd->track(plusState);
 
   std::mt19937_64 mt{0}; // NOLINT(ms
 
@@ -1254,7 +1256,7 @@ TEST(DDPackageTest, DestructiveMeasurementOne) {
   auto plusMatrix = dd->multiply(hGate0, hGate1);
   auto zeroState = makeZeroState(2, *dd);
   auto plusState = dd->multiply(plusMatrix, zeroState);
-  dd->incRef(plusState);
+  dd->track(plusState);
 
   std::mt19937_64 mt{0}; // NOLINT(cert-msc51-cpp)
 
@@ -2609,7 +2611,7 @@ TEST(DDPackageTest, ReduceAncillaRegression) {
   const auto inputMatrix =
       CMat{{1, 1, 1, 1}, {1, -1, 1, -1}, {1, 1, -1, -1}, {1, -1, -1, 1}};
   auto inputDD = dd->makeDDFromMatrix(inputMatrix);
-  dd->incRef(inputDD);
+  dd->track(inputDD);
   const auto outputDD = dd->reduceAncillae(inputDD, {true, false});
 
   const auto outputMatrix = outputDD.getMatrix(dd->qubits());
@@ -2674,7 +2676,7 @@ TEST(DDPackageTest, ReduceAncillaIdentityBeforeFirstNode) {
 TEST(DDPackageTest, ReduceAncillaIdentityAfterLastNode) {
   const auto dd = std::make_unique<Package>(2);
   auto xGate = getDD(qc::StandardOperation(1, qc::X), *dd);
-  dd->incRef(xGate);
+  dd->track(xGate);
   const auto outputDD = dd->reduceAncillae(xGate, {true, false});
 
   const auto outputMatrix = outputDD.getMatrix(dd->qubits());
@@ -2689,7 +2691,7 @@ TEST(DDPackageTest, ReduceAncillaIdentityBetweenTwoNodes) {
   const auto xGate2 = getDD(qc::StandardOperation(2, qc::X), *dd);
   auto state = dd->multiply(xGate0, xGate2);
 
-  dd->incRef(state);
+  dd->track(state);
   const auto outputDD = dd->reduceAncillae(state, {false, true, false});
   const auto outputMatrix = outputDD.getMatrix(dd->qubits());
   const auto expected =
@@ -2737,7 +2739,7 @@ TEST(DDPackageTest, ReduceGarbageIdentityBeforeFirstNode) {
 TEST(DDPackageTest, ReduceGarbageIdentityAfterLastNode) {
   const auto dd = std::make_unique<Package>(2);
   auto xGate = getDD(qc::StandardOperation(1, qc::X), *dd);
-  dd->incRef(xGate);
+  dd->track(xGate);
   auto outputDD = dd->reduceGarbage(xGate, {true, false});
 
   auto outputMatrix = outputDD.getMatrix(dd->qubits());
@@ -2745,7 +2747,7 @@ TEST(DDPackageTest, ReduceGarbageIdentityAfterLastNode) {
   EXPECT_EQ(outputMatrix, expected);
 
   // test also for non-regular garbage reduction as well
-  dd->incRef(xGate);
+  dd->track(xGate);
   outputDD = dd->reduceGarbage(xGate, {true, false}, false);
 
   outputMatrix = outputDD.getMatrix(dd->qubits());
@@ -2759,7 +2761,7 @@ TEST(DDPackageTest, ReduceGarbageIdentityBetweenTwoNodes) {
   const auto xGate2 = getDD(qc::StandardOperation(2, qc::X), *dd);
   auto state = dd->multiply(xGate0, xGate2);
 
-  dd->incRef(state);
+  dd->track(state);
   auto outputDD = dd->reduceGarbage(state, {false, true, false});
   auto outputMatrix = outputDD.getMatrix(dd->qubits());
   auto expected = CMat{{0, 0, 0, 0, 0, 1, 0, 1}, {0, 0, 0, 0, 1, 0, 1, 0},
@@ -2769,7 +2771,7 @@ TEST(DDPackageTest, ReduceGarbageIdentityBetweenTwoNodes) {
   EXPECT_EQ(outputMatrix, expected);
 
   // test also for non-regular garbage reduction as well
-  dd->incRef(state);
+  dd->track(state);
   outputDD = dd->reduceGarbage(state, {false, true, false}, false);
 
   outputMatrix = outputDD.getMatrix(dd->qubits());
