@@ -44,7 +44,9 @@ struct MergeRotationGatesPattern final
    */
   [[nodiscard]] static bool areGatesMergeable(mlir::Operation& a,
                                               mlir::Operation& b) {
-    static const std::unordered_set<std::string> MERGEABLE_GATES = {"rx"};
+    static const std::unordered_set<std::string> MERGEABLE_GATES = {
+        "rx",  "ry",        "rz",       "gphase", "rxx", "ryy",
+        "rzz", "xxminusyy", "xxplusyy", "u",      "u2"};
 
     const auto aName = a.getName().stripDialect().str();
     const auto bName = b.getName().stripDialect().str();
@@ -93,13 +95,73 @@ struct MergeRotationGatesPattern final
                                         const mlir::ValueRange inQubits,
                                         mlir::ValueRange controlQubitsPositive,
                                         mlir::ValueRange controlQubitsNegative,
-                                        mlir::Value newValue,
+                                        mlir::ValueRange newValues,
                                         mlir::PatternRewriter& rewriter) {
     if (type == "rx") {
       return rewriter.create<RXOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{newValue}, inQubits,
+          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    } else if (type == "ry") {
+      return rewriter.create<RYOp>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    } else if (type == "rz") {
+      return rewriter.create<RZOp>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    } else if (type == "gphase") {
+      return rewriter.create<GPhaseOp>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    } else if (type == "rxx") {
+      return rewriter.create<RXXOp>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    } else if (type == "ryy") {
+      return rewriter.create<RYYOp>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    } else if (type == "rzz") {
+      return rewriter.create<RZZOp>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    } else if (type == "xxminusyy") {
+      return rewriter.create<XXminusYY>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    } else if (type == "xxplusyy") {
+      return rewriter.create<XXplusYY>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    } else if (type == "u") {
+      return rewriter.create<UOp>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
+          controlQubitsPositive, controlQubitsNegative);
+    } else if (type == "u2") {
+      return rewriter.create<U2Op>(
+          loc, inQubits.getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newValues, inQubits,
           controlQubitsPositive, controlQubitsNegative);
     } else {
       throw std::runtime_error("Unsupported operation type");
@@ -110,18 +172,25 @@ struct MergeRotationGatesPattern final
                mlir::PatternRewriter& rewriter) const override {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
 
-    // Compute newParam
-    auto opParam = op.getParams()[0];
-    auto userParam = user.getParams()[0];
-    auto addParams =
-        rewriter.create<mlir::arith::AddFOp>(user.getLoc(), opParam, userParam);
-    auto newParam = addParams.getResult();
+    // Compute newParams
+    auto opParams = op.getParams();
+    auto userParams = user.getParams();
+    assert(opParams.size() == userParams.size() &&
+           "Parameter sizes must match!");
+    std::vector<mlir::Value> newParamsVector;
+    newParamsVector.reserve(opParams.size());
+    for (size_t i = 0; i < opParams.size(); ++i) {
+      auto add = rewriter.create<mlir::arith::AddFOp>(
+          user.getLoc(), opParams[i], userParams[i]);
+      newParamsVector.push_back(add.getResult());
+    }
+    mlir::ValueRange newParams(newParamsVector);
 
     // Create newUser
     auto newUser =
         createNewUser(user.getLoc(), user->getName().stripDialect().str(),
                       user.getInQubits(), user.getPosCtrlInQubits(),
-                      user.getNegCtrlInQubits(), newParam, rewriter);
+                      user.getNegCtrlInQubits(), newParams, rewriter);
 
     // Prepare erasure of op
     const auto& opInQubits = op.getAllInQubits();
