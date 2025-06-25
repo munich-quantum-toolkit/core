@@ -149,15 +149,6 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
                 return $_op.getParams();
-            }]>,
-        InterfaceMethod<
-            /*desc=*/        "Set params.",
-            /*returnType=*/  "void",
-            /*methodName=*/  "setParams",
-            /*args=*/        (ins "mlir::ValueRange":$values),
-            /*methodBody=*/  [{}],
-            /*defaultImpl=*/ [{
-                return $_op.setParams(values);
             }]>
     ];
 
