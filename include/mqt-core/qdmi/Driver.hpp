@@ -8,15 +8,6 @@
  * Licensed under the MIT License
  */
 
-/** @file
- * @brief The MQT QDMI driver implementation.
- * @details This driver loads all statically known and linked QDMI device
- * libraries. Those are introduced to the driver via the macros
- * `DEVICE_LIST_UPPERCASE` and `DEVICE_LIST_LOWERCASE`. Additional devices
- * can be added dynamically by providing the respective information to the
- * @ref qdmi::Driver::initialize function that initializes the driver.
- */
-
 #pragma once
 
 #include "mqt_na_qdmi/device.h"
@@ -32,8 +23,11 @@
 #include <vector>
 
 namespace qdmi {
+
 /**
- * Definition of the QDMI Library.
+ * @brief Definition of the device library.
+ * @details The device library contains function pointers to the QDMI
+ * device interface functions.
  */
 struct DeviceLibrary {
   // we keep the naming scheme of QDMI, i.e., snail_case for function names,
@@ -81,6 +75,7 @@ struct DeviceLibrary {
       device_session_query_operation_property{};
   // NOLINTEND(readability-identifier-naming)
 
+  // Default constructor
   DeviceLibrary() = default;
   // delete copy constructor and copy assignment operator
   DeviceLibrary(const DeviceLibrary&) = delete;
@@ -88,32 +83,65 @@ struct DeviceLibrary {
   // define move constructor and move assignment operator
   DeviceLibrary(DeviceLibrary&&) = default;
   DeviceLibrary& operator=(DeviceLibrary&&) = default;
+  // destructor should be virtual to allow for polymorphic deletion
   virtual ~DeviceLibrary() = default;
 };
+
+/**
+ * @brief Definition of the dynamic device library.
+ * @details This class is used to load the QDMI device interface functions
+ * from a dynamic library at runtime. It inherits from DeviceLibrary and
+ * overrides the constructor and destructor to open and close the library.
+ */
 class DynamicDeviceLibrary : public DeviceLibrary {
-  /// Handle to the dynamic library.
+  /// @brief Handle to the dynamic library returned by `dlopen`.
   void* libHandle;
 
+  /**
+   * @brief Returns a reference to the set of open library handles.
+   * @details This set can be used to check whether a newly opened library
+   * is already open.
+   */
   static auto openLibHandles() -> std::unordered_set<void*>& {
     static std::unordered_set<void*> libHandles;
     return libHandles;
   }
 
 public:
+  /**
+   * @brief Constructs a DynamicDeviceLibrary object.
+   * @details This constructor loads the QDMI device interface functions
+   * from the dynamic library specified by `libName` and `prefix`.
+   * @param libName is the name of the dynamic library to load.
+   * @param prefix is the prefix used for the function names in the library.
+   */
   DynamicDeviceLibrary(const std::string& libName, const std::string& prefix);
 
+  /**
+   * @brief Destructor for the DynamicDeviceLibrary.
+   * @details This destructor calls the @ref QDMI_device_finalize function if it
+   * is not null and closes the dynamic library.
+   */
   ~DynamicDeviceLibrary() override;
 };
+
+// Macro to load a static symbol from a statically linked library.
+// @param prefix is the prefix used for the function names in the library.
+// @param symbol is the name of the symbol to load.
 #define LOAD_STATIC_SYMBOL(prefix, symbol)                                     \
   {                                                                            \
     (symbol) = reinterpret_cast<decltype(symbol)>(prefix##_QDMI_##symbol);     \
   }
+
+// Macro to define a static library class that inherits from DeviceLibrary.
+// It binds all device library functions to the functions of the static library.
+// @param prefix is the prefix used for the function names in the library.
 #define ADD_STATIC_LIBRARY(prefix)                                             \
   class prefix##DeviceLibrary : public DeviceLibrary {                         \
   public:                                                                      \
     prefix##DeviceLibrary() {                                                  \
       /* NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast) */           \
-      /* load the function symbols from the dynamic library */                 \
+      /* load the function symbols from the static library */                  \
       LOAD_STATIC_SYMBOL(prefix, device_initialize)                            \
       LOAD_STATIC_SYMBOL(prefix, device_finalize)                              \
       /* device session interface */                                           \
@@ -147,6 +175,8 @@ public:
       }                                                                        \
     }                                                                          \
   };
+
+// Call the above macro for all static libraries that we want to support.
 ADD_STATIC_LIBRARY(MQT_NA)
 
 /**
@@ -161,13 +191,17 @@ enum class SessionStatus : uint8_t {
 } // namespace qdmi
 
 /**
- * Definition of the QDMI Device.
+ * @brief Definition of the QDMI Device.
  */
 struct QDMI_Device_impl_d {
 private:
-  /// The device library that provides the device interface functions.
+  /**
+   * @brief The device library that provides the device interface functions.
+   * @note This must be a pointer type as we need access to dynamic and static
+   * libraries that are subclasses of qdmi::DeviceLibrary.
+   */
   std::unique_ptr<qdmi::DeviceLibrary> library;
-  /// The device session handle.
+  /// @brief The device session handle.
   QDMI_Device_Session deviceSession = nullptr;
   /**
    * @brief Map of jobs to their corresponding unique pointers of
@@ -176,8 +210,19 @@ private:
   std::unordered_map<QDMI_Job, std::unique_ptr<QDMI_Job_impl_d>> jobs;
 
 public:
+  /**
+   * @brief Constructor for the QDMI device.
+   * @details This constructor initializes the device session and allocates
+   * the device session handle.
+   * @param lib is a unique pointer to the device library that provides the
+   * device interface functions.
+   */
   explicit QDMI_Device_impl_d(std::unique_ptr<qdmi::DeviceLibrary>&& lib);
 
+  /**
+   * @brief Destructor for the QDMI device.
+   * @details This destructor frees the device session and clears the jobs map.
+   */
   ~QDMI_Device_impl_d() {
     jobs.clear();
     if (deviceSession != nullptr) {
@@ -185,21 +230,36 @@ public:
     }
   }
 
-  /// @copydoc QDMI_device_create_job
+  /**
+   * @brief Creates a job for the device.
+   * @see QDMI_device_create_job
+   */
   auto createJob(QDMI_Job* job) -> int;
 
-  /// @copydoc QDMI_job_free
+  /**
+   * @brief Frees the job associated with the device.
+   * @see QDMI_job_free
+   */
   auto jobFree(QDMI_Job job) -> void;
 
-  /// @copydoc QDMI_device_query_device_property
+  /**
+   * @brief Queries a device property.
+   * @see QDMI_device_query_device_property
+   */
   auto queryDeviceProperty(QDMI_Device_Property prop, size_t size, void* value,
                            size_t* sizeRet) const -> int;
 
-  /// @copydoc QDMI_device_query_site_property
+  /**
+   * @brief Queries a site property.
+   * @see QDMI_device_query_site_property
+   */
   auto querySiteProperty(QDMI_Site site, QDMI_Site_Property prop, size_t size,
                          void* value, size_t* sizeRet) const -> int;
 
-  /// @copydoc QDMI_device_query_operation_property
+  /**
+   * @brief Queries an operation property.
+   * @see QDMI_device_query_operation_property
+   */
   auto queryOperationProperty(QDMI_Operation operation, size_t numSites,
                               const QDMI_Site* sites, size_t numParams,
                               const double* params,
@@ -208,57 +268,102 @@ public:
 };
 
 /**
- * Definition of the QDMI Job.
+ * @brief Definition of the QDMI Job.
  */
 struct QDMI_Job_impl_d {
 private:
-  QDMI_Device_Job deviceJob = nullptr; ///< The device job handle.
-  QDMI_Device device = nullptr;        ///< The device associated with the job.
+  /// @brief The device library that provides the device interface functions.
   const qdmi::DeviceLibrary* library = nullptr;
+  /// @brief The device job handle.
+  QDMI_Device_Job deviceJob = nullptr;
+  /// @brief The device associated with the job.
+  QDMI_Device device = nullptr;
 
 public:
+  /**
+   * @brief Constructor for the QDMI job.
+   * @details This constructor initializes the job with the device job handle
+   * and the device library.
+   * @param library is a pointer to the device library that provides the
+   * device interface functions.
+   * @param deviceJob is the handle to the device job.
+   * @param device is the device associated with the job.
+   */
   explicit QDMI_Job_impl_d(const qdmi::DeviceLibrary* library,
-                           QDMI_Device_Job deviceJob)
-      : deviceJob(deviceJob), library(library) {}
+                           QDMI_Device_Job deviceJob, QDMI_Device device)
+      : library(library), deviceJob(deviceJob), device(device) {}
 
+  /**
+   * @brief Destructor for the QDMI job.
+   * @details This destructor frees the device job handle using the
+   * @ref QDMI_device_job_free function from the device library.
+   */
   ~QDMI_Job_impl_d();
 
-  /// @copydoc QDMI_job_set_parameter
+  /**
+   * @brief Sets a parameter for the job.
+   * @see QDMI_job_set_parameter
+   */
   auto setParameter(QDMI_Job_Parameter param, size_t size,
                     const void* value) const -> int;
 
-  /// @copydoc QDMI_job_query_property
+  /**
+   * @brief Queries a property of the job.
+   * @see QDMI_job_query_property
+   */
   auto queryProperty(QDMI_Job_Property prop, size_t size, void* value,
                      size_t* sizeRet) const -> int;
 
-  /// @copydoc QDMI_job_submit
+  /**
+   * @brief Submits the job to the device.
+   * @see QDMI_job_submit
+   */
   [[nodiscard]] auto submit() const -> int;
 
-  /// @copydoc QDMI_job_cancel
+  /**
+   * @brief Cancels the job.
+   * @see QDMI_job_cancel
+   */
   [[nodiscard]] auto cancel() const -> int;
 
-  /// @copydoc QDMI_job_check
+  /**
+   * @brief Checks the status of the job.
+   * @see QDMI_job_check
+   */
   auto check(QDMI_Job_Status* status) const -> int;
 
-  /// @copydoc QDMI_job_wait
+  /**
+   * @brief Waits for the job to complete but at most for the specified
+   * timeout.
+   * @see QDMI_job_wait
+   */
   [[nodiscard]] auto wait(size_t timeout) const -> int;
 
-  /// @copydoc QDMI_job_get_results
+  /**
+   * @brief Gets the results of the job.
+   * @see QDMI_job_get_results
+   */
   auto getResults(QDMI_Job_Result result, size_t size, void* data,
                   size_t* sizeRet) const -> int;
 
-  /// @copydoc QDMI_job_free
+  /**
+   * @brief Frees the job.
+   * @note This function just forwards to the device's jobFree function. This
+   * function is needed because the interface only provides the job handle to
+   * the @ref QDMI_job_free function and the job's device handle is private.
+   * @see QDMI_job_free
+   */
   auto free() -> void;
 };
 
 /**
- * Definition of the QDMI Session.
+ * @brief Definition of the QDMI Session.
  */
 struct QDMI_Session_impl_d {
 private:
-  /// The status of the session.
+  /// @brief The status of the session.
   qdmi::SessionStatus status = qdmi::SessionStatus::ALLOCATED;
-  /// A pointer to the list of all devices.
+  /// @brief A pointer to the list of all devices.
   const std::vector<std::unique_ptr<QDMI_Device_impl_d>>* devices;
 
 public:
@@ -267,21 +372,33 @@ public:
       const std::vector<std::unique_ptr<QDMI_Device_impl_d>>& devices)
       : devices(&devices) {}
 
-  /// @copydoc QDMI_session_init
+  /**
+   * @brief Initializes the session.
+   * @see QDMI_session_init
+   */
   auto init() -> int;
 
-  /// @copydoc QDMI_session_set_parameter
+  /**
+   * @brief Sets a parameter for the session.
+   * @see QDMI_session_set_parameter
+   */
   auto setParameter(QDMI_Session_Parameter param, size_t size,
                     const void* value) const -> int;
 
-  /// @copydoc QDMI_session_query_session_property
+  /**
+   * @brief Queries a session property.
+   * @see QDMI_session_query_session_property
+   */
   auto querySessionProperty(QDMI_Session_Property prop, size_t size,
                             void* value, size_t* sizeRet) const -> int;
 };
 
 namespace qdmi {
-/** @brief The QDMI driver class.
- * @details This class is a singleton that manages the QDMI libraries and
+/**
+ * @brief The MQT QDMI driver class.
+ * @details This driver loads all statically known and linked QDMI device
+ * libraries. Additional devices can be added dynamically.
+ * @note This class is a singleton that manages the QDMI libraries and
  * sessions. It is responsible for loading the libraries, allocating sessions,
  * and providing access to the devices.
  */
@@ -290,15 +407,14 @@ class Driver final {
   Driver();
 
   /**
-   * @brief Map of sessions to their corresponding unique pointers of
+   * @brief Map of sessions to their corresponding unique pointers to
    * QDMI_Session_impl_d objects.
    */
   std::unordered_map<QDMI_Session, std::unique_ptr<QDMI_Session_impl_d>>
       sessions;
 
   /**
-   * @brief Map of devices to their corresponding unique pointers of
-   * QDMI_Device_impl_d objects.
+   * @brief Vector of unique pointers to QDMI_Device_impl_d objects.
    */
   std::vector<std::unique_ptr<QDMI_Device_impl_d>> devices;
 
@@ -308,26 +424,34 @@ public:
   Driver(const Driver&) = delete;
   Driver& operator=(const Driver&) = delete;
 
-  /// @brief Get the singleton instance
+  /// @brief Returns the singleton instance.
   static auto get() -> Driver& {
     static Driver instance;
     return instance;
   }
 
+  /// @brief Destructor for the Driver class.
   ~Driver();
 
   /**
-   * Adds a dynamic device library to the list of dynamic device libraries.
+   * @brief Adds a dynamic device library to the driver.
    * @param libName is the path to the dynamic library to load.
    * @param prefix is the prefix used for the device interface functions.
    */
   auto addDynamicDeviceLibrary(const std::string& libName,
                                const std::string& prefix) -> void;
 
-  /// @copydoc QDMI_session_alloc
+  /**
+   * @brief Allocates a new session.
+   * @see QDMI_session_alloc
+   */
   auto sessionAlloc(QDMI_Session* session) -> int;
 
-  /// @copydoc QDMI_session_free
+  /**
+   * @brief Frees a session.
+   * @see QDMI_session_free
+   */
   auto sessionFree(QDMI_Session session) -> void;
 };
+
 } // namespace qdmi
