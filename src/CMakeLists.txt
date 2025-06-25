@@ -98,6 +98,7 @@ if(MQT_CORE_INSTALL)
     DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 
+  # FILE_SET should be aligned with LIBRARY and ARCHIVE, so we turn cmake-format off
   # cmake-format: off
   install(
     TARGETS ${MQT_CORE_TARGETS}
