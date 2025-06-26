@@ -11,6 +11,7 @@
 #include "algorithms/QFT.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
+#include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/Simulation.hpp"
@@ -74,7 +75,6 @@ INSTANTIATE_TEST_SUITE_P(QFT, QFT,
 TEST_P(QFT, Functionality) {
   // there should be no error constructing the circuit
   ASSERT_NO_THROW({ qc = qc::createQFT(nqubits, false); });
-  // there should be no error building the functionality
 
   // there should be no error building the functionality
   ASSERT_NO_THROW({ func = buildFunctionality(qc, *dd); });
@@ -90,7 +90,8 @@ TEST_P(QFT, Functionality) {
   // since only positive real values are stored in the complex table
   // this number has to be divided by 4
   ASSERT_EQ(dd->cn.realCount(),
-            1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
+            (1ULL << (std::max<std::size_t>(2UL, nqubits) - 2)) -
+                1); // TODO: No static 0.5 anymore.
 
   // top edge weight should equal sqrt(0.5)^n
   EXPECT_NEAR(dd::RealNumber::val(func.w.r),
@@ -135,7 +136,8 @@ TEST_P(QFT, FunctionalityRecursive) {
   // since only positive real values are stored in the complex table
   // this number has to be divided by 4
   ASSERT_EQ(dd->cn.realCount(),
-            1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
+            (1ULL << (std::max<std::size_t>(2UL, nqubits) - 2)) -
+                1); // TODO: No static 0.5 anymore.
 
   // top edge weight should equal sqrt(0.5)^n
   EXPECT_NEAR(dd::RealNumber::val(func.w.r),
@@ -156,8 +158,10 @@ TEST_P(QFT, FunctionalityRecursive) {
                 dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
+
   dd->untrack(func);
   dd->garbageCollect(true);
+
   // number of complex table entries after clean-up should equal initial
   // number of entries
   EXPECT_EQ(dd->cn.realCount(), 0);

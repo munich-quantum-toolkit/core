@@ -22,7 +22,6 @@
 #include <iostream>
 #include <limits>
 #include <ostream>
-#include <tuple>
 
 namespace dd {
 
@@ -33,7 +32,8 @@ RealNumberUniqueTable::RealNumberUniqueTable(MemoryManager& manager,
   stats.numBuckets = NBUCKET;
 
   // add 1/2 to the table so that it is available for complex numbers
-  std::ignore = lookupNonNegative(0.5L);
+  // std::ignore = lookupNonNegative(0.5L); // TODO: This causes problems since
+  // it will be garbage collected.
 }
 
 std::int64_t RealNumberUniqueTable::hash(const fp val) noexcept {
