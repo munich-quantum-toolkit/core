@@ -17,7 +17,6 @@
 #include "ir/QuantumComputation.hpp"
 
 #include <algorithm>
-#include <bitset>
 #include <cmath>
 #include <complex>
 #include <cstddef>

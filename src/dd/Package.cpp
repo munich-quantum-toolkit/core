@@ -37,6 +37,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <iostream>
 #include <map>
 #include <queue>
 #include <random>
