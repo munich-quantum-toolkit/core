@@ -1037,13 +1037,15 @@ TEST(DDPackageTest, Inverse) {
 TEST(DDPackageTest, trackTwiceThenuntrackTwice) {
   auto dd = std::make_unique<Package>(1);
 
+  auto& mRoots = dd->getRootSet<mNode>();
+
   auto x = getDD(qc::StandardOperation(0, qc::X), *dd);
 
   // add the same edge twice
   dd->track(x);
   dd->track(x);
-  // EXPECT_EQ(mRoots.size(), 1U);
-  // EXPECT_EQ(mRoots.at(x), 2U);
+  EXPECT_EQ(mRoots.size(), 1U);
+  EXPECT_EQ(mRoots.at(x), 2U);
 
   dd->garbageCollect(true);
 
@@ -1052,7 +1054,7 @@ TEST(DDPackageTest, trackTwiceThenuntrackTwice) {
 
   // remove the edge twice
   dd->untrack(x);
-  // EXPECT_EQ(mRoots.at(x), 1U);
+  EXPECT_EQ(mRoots.at(x), 1U);
   dd->untrack(x);
 
   dd->garbageCollect(true);
