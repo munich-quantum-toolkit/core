@@ -627,14 +627,13 @@ char Package::measureOneCollapsing(dEdge& e, const Qubit index,
     densityMatrixTrace = trace(tmp2, nrQubits);
   }
 
-  track(tmp2);
   dEdge::alignDensityEdge(e);
   untrack(e);
   e = tmp2;
+  e.w = cn.lookup(e.w / densityMatrixTrace); // Normalize density matrix.
+  track(e); // TODO: Since we use maps the hash is required. Hash is also based
+            // on weight.
   dEdge::setDensityMatrixTrue(e);
-
-  // Normalize density matrix
-  e.w = cn.lookup(e.w / densityMatrixTrace);
   return measuredResult;
 }
 void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
