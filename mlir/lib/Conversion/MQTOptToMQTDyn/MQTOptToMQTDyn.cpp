@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+// macro to add the conversion pattern from any opt gate operation to the same
+// gate operation in the dyn dialect
 #define ADD_CONVERT_PATTERN(gate)                                              \
   patterns                                                                     \
       .add<ConvertMQTOptGateOp<::mqt::ir::opt::gate, ::mqt::ir::dyn::gate>>(   \
@@ -33,9 +35,9 @@
 #include <utility>
 #include <vector>
 
-using namespace mlir;
-
 namespace mqt::ir {
+
+using namespace mlir;
 
 #define GEN_PASS_DEF_MQTOPTTOMQTDYN
 #include <mlir/Conversion/MQTOptToMQTDyn/MQTOptToMQTDyn.h.inc>
@@ -65,23 +67,17 @@ struct ConvertMQTOptAlloc : public OpConversionPattern<opt::AllocOp> {
   matchAndRewrite(opt::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // create result type
-    auto qregType = dyn::QubitRegisterType::get(rewriter.getContext());
+    const auto qregType = dyn::QubitRegisterType::get(rewriter.getContext());
 
     // create new operation
     auto mqtdynOp = rewriter.create<dyn::AllocOp>(
         op.getLoc(), qregType, adaptor.getSize(), adaptor.getSizeAttrAttr());
 
-    auto optQreg = op.getQreg();
-    auto dynQreg = mqtdynOp.getQreg();
+    const auto optQreg = op.getQreg();
+    const auto dynQreg = mqtdynOp.getQreg();
 
-    // get a view of the opt register users that can be modified
-    const std::vector<Operation*> optQregUsers(optQreg.getUsers().begin(),
-                                               optQreg.getUsers().end());
-
-    // update the operand of the opt register user
-    for (auto* user : optQregUsers) {
-      user->replaceUsesOfWith(optQreg, dynQreg);
-    }
+    // update the operands of the opt register user
+    (*optQreg.getUsers().begin())->replaceUsesOfWith(optQreg, dynQreg);
 
     // erase the old operation
     rewriter.eraseOp(op);
@@ -114,36 +110,22 @@ struct ConvertMQTOptExtract : public OpConversionPattern<opt::ExtractOp> {
   matchAndRewrite(opt::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // create result type
-    auto qubitType = dyn::QubitType::get(rewriter.getContext());
+    const auto qubitType = dyn::QubitType::get(rewriter.getContext());
 
-    auto dynQreg = adaptor.getInQreg();
+    const auto dynQreg = adaptor.getInQreg();
 
     // create new operation
     auto mqtdynOp = rewriter.create<dyn::ExtractOp>(op.getLoc(), qubitType,
                                                     dynQreg, adaptor.getIndex(),
                                                     adaptor.getIndexAttrAttr());
 
-    auto optQubit = op.getOutQubit();
-    auto dynQubit = mqtdynOp.getOutQubit();
-    auto optQreg = op.getOutQreg();
+    const auto optQubit = op.getOutQubit();
+    const auto dynQubit = mqtdynOp.getOutQubit();
+    const auto optQreg = op.getOutQreg();
 
-    // get a view of the opt qubit users that can be modified
-    const std::vector<Operation*> optQubitUsers(optQubit.getUsers().begin(),
-                                                optQubit.getUsers().end());
-
-    // update the operand of the opt qubit user
-    for (auto* user : optQubitUsers) {
-      user->replaceUsesOfWith(optQubit, dynQubit);
-    }
-
-    // get a view of the opt register users that can be modified
-    const std::vector<Operation*> optQregUsers(optQreg.getUsers().begin(),
-                                               optQreg.getUsers().end());
-
-    // update the operand of the opt register user
-    for (auto* user : optQregUsers) {
-      user->replaceUsesOfWith(optQreg, dynQreg);
-    }
+    // update the operands of the opt users
+    (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
+    (*optQreg.getUsers().begin())->replaceUsesOfWith(optQreg, dynQreg);
 
     // erase old operation
     rewriter.eraseOp(op);
@@ -159,17 +141,11 @@ struct ConvertMQTOptInsert : public OpConversionPattern<opt::InsertOp> {
   matchAndRewrite(opt::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
 
-    auto optQreg = op.getOutQreg();
-    auto dynQreg = adaptor.getInQreg();
+    const auto optQreg = op.getOutQreg();
+    const auto dynQreg = adaptor.getInQreg();
 
-    // get a view of the opt register users that can be modified
-    const std::vector<Operation*> optQregUsers(optQreg.getUsers().begin(),
-                                               optQreg.getUsers().end());
-
-    // update the operand of the opt register user
-    for (auto* user : optQregUsers) {
-      user->replaceUsesOfWith(optQreg, dynQreg);
-    }
+    // update the operands of the opt register users
+    (*optQreg.getUsers().begin())->replaceUsesOfWith(optQreg, dynQreg);
 
     // erase old operation
     rewriter.eraseOp(op);
@@ -185,39 +161,28 @@ struct ConvertMQTOptMeasure : public OpConversionPattern<opt::MeasureOp> {
   matchAndRewrite(opt::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
 
-    auto oldBits = op.getOutBits();
-    auto dynQubits = adaptor.getInQubits();
-    auto optQubits = op.getOutQubits();
+    const auto oldBits = op.getOutBits();
+    const auto dynQubits = adaptor.getInQubits();
+    const auto optQubits = op.getOutQubits();
 
     // create new operation
     auto mqtdynOp = rewriter.create<dyn::MeasureOp>(
         op.getLoc(), oldBits.getTypes(), dynQubits);
 
-    auto newBits = mqtdynOp.getOutBits();
-
-    Value dynQubit = nullptr;
-    Value optQubit = nullptr;
-    Value oldBit = nullptr;
-    Value newBit = nullptr;
+    const auto newBits = mqtdynOp.getOutBits();
 
     // iterate over the qubits and bits
     for (size_t i = 0; i < optQubits.size(); i++) {
-      dynQubit = dynQubits[i];
-      optQubit = optQubits[i];
-      oldBit = oldBits[i];
-      newBit = newBits[i];
+      const auto& dynQubit = dynQubits[i];
+      const auto& optQubit = optQubits[i];
+      const auto& oldBit = oldBits[i];
+      const auto& newBit = newBits[i];
 
-      // get a view of the opt qubit users that can be modified
-      const std::vector<mlir::Operation*> qubitUsers(
-          optQubit.getUsers().begin(), optQubit.getUsers().end());
+      // update the operands of the opt qubit user
+      (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
 
-      // update the operand of the opt qubit user
-      for (auto* user : qubitUsers) {
-        user->replaceUsesOfWith(optQubit, dynQubit);
-      }
-
-      const std::vector<mlir::Operation*> bitUsers(oldBit.getUsers().begin(),
-                                                   oldBit.getUsers().end());
+      const std::vector<Operation*> bitUsers(oldBit.getUsers().begin(),
+                                             oldBit.getUsers().end());
       // iterate over the users of the old bit and replace the old bit with the
       // new bit
       for (auto* user : bitUsers) {
@@ -240,9 +205,9 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
   matchAndRewrite(MQTGateOptOp op, typename MQTGateOptOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // get all the input qubits including the ctrl qubits
-    auto dynInQubitsValues = adaptor.getInQubits();
-    auto dynPosCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    auto dynNegCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+    const auto dynInQubitsValues = adaptor.getInQubits();
+    const auto dynPosCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    const auto dynNegCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
     // append them to a single vector
     std::vector<Value> allDynInputQubits(dynInQubitsValues.begin(),
@@ -257,40 +222,33 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
     // get the static params and paramMask if they exist
     DenseF64ArrayAttr staticParams = nullptr;
     if (auto optionalParams = op.getStaticParams()) {
-      staticParams = mlir::DenseF64ArrayAttr::get(rewriter.getContext(),
-                                                  optionalParams.value());
+      staticParams =
+          DenseF64ArrayAttr::get(rewriter.getContext(), optionalParams.value());
     } else {
       staticParams = DenseF64ArrayAttr{};
     }
     DenseBoolArrayAttr paramMask = nullptr;
     if (auto optionalMask = op.getParamsMask()) {
-      paramMask = mlir::DenseBoolArrayAttr::get(rewriter.getContext(),
-                                                optionalMask.value());
+      paramMask =
+          DenseBoolArrayAttr::get(rewriter.getContext(), optionalMask.value());
     } else {
       paramMask = DenseBoolArrayAttr{};
     }
+
     // create new operation
     rewriter.create<MQTGateDynOp>(
         op.getLoc(), staticParams, paramMask, op.getParams(), dynInQubitsValues,
         dynPosCtrlQubitsValues, dynNegCtrlQubitsValues);
 
-    Value optQubit = nullptr;
-    Value dynQubit = nullptr;
-    auto optResults = op->getResults();
+    const auto optResults = op.getAllOutQubits();
 
     // iterate over all opt qubits
     for (size_t i = 0; i < optResults.size(); i++) {
-      optQubit = optResults[i];
-      dynQubit = allDynInputQubits[i];
+      const auto& optQubit = optResults[i];
+      const auto& dynQubit = allDynInputQubits[i];
 
       // get a view of the opt qubit users that can be modified
-      const std::vector<mlir::Operation*> qubitUsers(
-          optQubit.getUsers().begin(), optQubit.getUsers().end());
-
-      // update the operand of the opt qubit user
-      for (auto* user : qubitUsers) {
-        user->replaceUsesOfWith(optQubit, dynQubit);
-      }
+      (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
     }
 
     // erase the previous operation
