@@ -38,12 +38,12 @@ module {
         // CHECK: %[[q_10:.*]], [[b_1:.*]] = "mqtopt.measure"(%[[q_8]])
         %c0 = "mqtdyn.measure" (%q0) : (!mqtdyn.Qubit) -> i1
         %c1 = "mqtdyn.measure" (%q1) : (!mqtdyn.Qubit) -> i1
-        // CHECK-DAG: %[[reg_6:.*]] = "mqtopt.insertQubit"(%[[reg_5:.*]], %[[q_9]]) <{index_attr = 0 : i64}>
-        // CHECK-DAG: %[[reg_7:.*]] = "mqtopt.insertQubit"(%[[reg_6:.*]], %[[q_4]]) <{index_attr = 4 : i64}>
-        // CHECK-DAG: %[[reg_8:.*]] = "mqtopt.insertQubit"(%[[reg_7:.*]], %[[q_3]]) <{index_attr = 3 : i64}>
-        // CHECK-DAG: %[[reg_9:.*]] = "mqtopt.insertQubit"(%[[reg_8:.*]], %[[q_2]]) <{index_attr = 2 : i64}>
-        // CHECK-DAG: %[[reg_10:.*]] = "mqtopt.insertQubit"(%[[reg_9:.*]], %[[q_10]], %[[index_0]])
-        // CHECK: "mqtopt.deallocQubitRegister"(%5) : (!mqtopt.QubitRegister) -> ()
+        // CHECK: %[[reg_6:.*]] = "mqtopt.insertQubit"(%[[reg_5]], %[[q_9]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[reg_7:.*]] = "mqtopt.insertQubit"(%[[reg_6]], %[[q_10]], %[[index_0]])
+        // CHECK: %[[reg_8:.*]] = "mqtopt.insertQubit"(%[[reg_7]], %[[q_2]]) <{index_attr = 2 : i64}>
+        // CHECK: %[[reg_9:.*]] = "mqtopt.insertQubit"(%[[reg_8]], %[[q_3]]) <{index_attr = 3 : i64}>
+        // CHECK: %[[reg_10:.*]] = "mqtopt.insertQubit"(%[[reg_9]], %[[q_4]]) <{index_attr = 4 : i64}>
+        // CHECK: "mqtopt.deallocQubitRegister"(%[[reg_10]]) : (!mqtopt.QubitRegister) -> ()
         "mqtdyn.deallocQubitRegister" (%r0) : (!mqtdyn.QubitRegister) -> ()
 
         return %c0, %c1 : i1, i1
