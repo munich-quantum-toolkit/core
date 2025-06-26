@@ -222,7 +222,8 @@ public:
 private:
   struct MarkAndPerform {
   public:
-    template <class Edge> using RootSet = std::unordered_map<Edge, std::size_t>;
+    template <class Node>
+    using RootSet = std::unordered_map<Edge<Node>, std::size_t>;
 
     /// @brief Add to respective root set. Terminals may be added too.
     template <class Node> void addToRoots(const Edge<Node>& e) noexcept {
@@ -259,7 +260,7 @@ private:
 
   private:
     /// @brief Mark edges contained in @p roots.
-    template <class Edge> static void mark(const RootSet<Edge>& roots) {
+    template <class Node> static void mark(const RootSet<Node>& roots) {
       for (auto& [edge, _] : roots) {
         auto e = edge;
         e.mark();
@@ -267,7 +268,7 @@ private:
     }
 
     /// @brief Unmark edges contained in @p roots.
-    template <class Edge> static void unmark(const RootSet<Edge>& roots) {
+    template <class Node> static void unmark(const RootSet<Node>& roots) {
       for (auto& [edge, _] : roots) {
         auto e = edge;
         e.unmark();
@@ -286,15 +287,27 @@ private:
       MarkAndPerform::unmark(dRoots);
     }
 
-    /// @brief Return appropriate hashset for the templated Node type.
-    template <class Node> [[nodiscard]] auto& getRoots() noexcept;
-    template <> auto& getRoots<vNode>() noexcept { return vRoots; }
-    template <> auto& getRoots<mNode>() noexcept { return mRoots; }
-    template <> auto& getRoots<dNode>() noexcept { return dRoots; }
+    template <class Node,
+              std::enable_if_t<std::is_same_v<Node, vNode>, bool> = true>
+    auto& getRoots() noexcept {
+      return vRoots;
+    }
 
-    RootSet<vEdge> vRoots;
-    RootSet<mEdge> mRoots;
-    RootSet<dEdge> dRoots;
+    template <class Node,
+              std::enable_if_t<std::is_same_v<Node, mNode>, bool> = true>
+    auto& getRoots() noexcept {
+      return mRoots;
+    }
+
+    template <class Node,
+              std::enable_if_t<std::is_same_v<Node, dNode>, bool> = true>
+    auto& getRoots() noexcept {
+      return dRoots;
+    }
+
+    RootSet<vNode> vRoots;
+    RootSet<mNode> mRoots;
+    RootSet<dNode> dRoots;
 
     template <class Node> friend auto& Package::getRootSet() noexcept;
   };
