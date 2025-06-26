@@ -6,44 +6,27 @@
 #
 # Licensed under the MIT License
 
-if(TARGET MQT::CoreNaDeviceGen)
-  # Set test target name
-  set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device-gen-test)
-  package_add_test(${TARGET_NAME} MQT::CoreNaDeviceGen test_generator.cpp)
-endif()
-
-if(TARGET MQT::CoreQdmiNaDeviceGenerator)
-  # Set test target name
-  set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-generator-test)
-  package_add_test(${TARGET_NAME} "" test_app.cpp)
-  target_compile_definitions(
-    ${TARGET_NAME} PRIVATE EXECUTABLE_PATH="$<TARGET_FILE:MQT::CoreQdmiNaDeviceGenerator>"
-                           MQT_CORE_VERSION="${MQT_CORE_VERSION}")
-endif()
-
-if(TARGET qdmi::mqt_na_device)
-  # Set test target name
-  set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device-test)
+if(TARGET MQT::CoreNaDeviceGen
+   AND TARGET MQT::CoreQdmiNaDeviceGenerator
+   AND TARGET qdmi::mqt_na_device)
   # Set QDMI prefix again for the tests
   set(QDMI_PREFIX "MQT_NA")
-
-  # ------------------------------------------------------------------------------
-  # Non-Functional Tests
-  # ------------------------------------------------------------------------------
-
   generate_device_defs_executable(${QDMI_PREFIX})
-
-  # ------------------------------------------------------------------------------
-  # Functional Tests
-  # ------------------------------------------------------------------------------
-
-  package_add_test(${TARGET_NAME} qdmi::mqt_na_device test_device.cpp)
-  target_link_libraries(${TARGET_NAME} PRIVATE nlohmann_json::nlohmann_json)
+  # Set test target name
+  set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device-test)
+  # Add the test executable
+  package_add_test(${TARGET_NAME} qdmi::mqt_na_device test_generator.cpp test_app.cpp
+                   test_device.cpp)
+  # Add dependency to enforce implementation of all interface functions
   add_dependencies(${TARGET_NAME} qdmi_test_mqt_na_device_defs)
-  target_compile_definitions(${TARGET_NAME}
-                             PRIVATE NA_DEVICE_JSON="${CMAKE_SOURCE_DIR}/json/na/device.json")
-
-  # set c++ standard
+  # Link further libraries
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreNaDeviceGen nlohmann_json::nlohmann_json)
+  # Set the executable path and version information
+  target_compile_definitions(
+    ${TARGET_NAME}
+    PRIVATE EXECUTABLE_PATH="$<TARGET_FILE:MQT::CoreQdmiNaDeviceGenerator>"
+            MQT_CORE_VERSION="${MQT_CORE_VERSION}"
+            NA_DEVICE_JSON="${CMAKE_SOURCE_DIR}/json/na/device.json")
+  # Set c++ standard
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
-
 endif()
