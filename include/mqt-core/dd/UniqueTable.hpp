@@ -169,8 +169,8 @@ public:
         }
 
         while (p != nullptr) {
-          std::cout << "\t\t" << std::hex << reinterpret_cast<std::uintptr_t>(p)
-                    << std::dec;
+          std::cout << "\t\t" << std::hex
+                    << reinterpret_cast<std::uintptr_t>(p);
           for (const auto& e : p->e) {
             std::cout << " p" << reinterpret_cast<std::uintptr_t>(e.p) << "(r"
                       << reinterpret_cast<std::uintptr_t>(e.w.r) << " i"
