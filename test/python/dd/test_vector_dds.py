@@ -25,7 +25,7 @@ def test_zero_state() -> None:
         arr = np.array(vec, copy=False)
         assert arr.shape == (2**i,)
         assert np.allclose(arr, np.array([1] + [0] * (2**i - 1)))
-        p.dec_ref_vec(dd)
+        p.untrack_vec(dd)
 
 
 def test_computational_basis_state() -> None:
@@ -40,7 +40,7 @@ def test_computational_basis_state() -> None:
             arr = np.array(vec, copy=False)
             assert arr.shape == (2**i,)
             assert np.allclose(arr, np.array([0] * j + [1] + [0] * (2**i - j - 1)))
-            p.dec_ref_vec(dd)
+            p.untrack_vec(dd)
 
 
 def test_plus_state() -> None:
@@ -54,7 +54,7 @@ def test_plus_state() -> None:
         arr = np.array(vec, copy=False)
         assert arr.shape == (2**i,)
         assert np.allclose(arr, np.array([(1 / np.sqrt(2) ** i)] * 2**i))
-        p.dec_ref_vec(dd)
+        p.untrack_vec(dd)
 
 
 def test_ghz_state() -> None:
@@ -67,7 +67,7 @@ def test_ghz_state() -> None:
         arr = np.array(vec, copy=False)
         assert arr.shape == (2**i,)
         assert np.allclose(arr, np.array([1 / np.sqrt(2)] + [0] * (2**i - 2) + [1 / np.sqrt(2)]))
-        p.dec_ref_vec(dd)
+        p.untrack_vec(dd)
 
 
 def test_w_state() -> None:
@@ -83,7 +83,7 @@ def test_w_state() -> None:
         for j in range(i):
             target[2**j] = 1 / np.sqrt(i)
         assert np.allclose(arr, target)
-        p.dec_ref_vec(dd)
+        p.untrack_vec(dd)
 
 
 def test_from_vector() -> None:
@@ -97,4 +97,4 @@ def test_from_vector() -> None:
             dd = p.from_vector(vec)
             vec2 = dd.get_vector()
             assert np.allclose(vec, vec2)
-            p.dec_ref_vec(dd)
+            p.untrack_vec(dd)
