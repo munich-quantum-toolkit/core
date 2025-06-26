@@ -10,10 +10,10 @@
 
 #include "na/device/Generator.hpp"
 
-#include <cstddef>
-#include <fstream>
-#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <sstream>
+// clang-tidy wants to include the forward header, but we need the full
+// NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
 
 namespace na {
@@ -21,6 +21,8 @@ namespace na {
 TEST(GeneratorTest, WriteJSONSchema) {
   std::ostringstream os;
   EXPECT_NO_THROW(writeJSONSchema(os));
+  // clang-tidy wants to include the forward header, but we have the full
+  // NOLINTNEXTLINE(misc-include-cleaner)
   nlohmann::json json;
   EXPECT_NO_THROW(json = nlohmann::json::parse(os.str()));
   EXPECT_TRUE(json.is_object());

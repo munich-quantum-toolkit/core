@@ -152,6 +152,7 @@ auto writeQubitsNum(const Device& device, std::ostream& os) -> void {
  */
 auto writeSites(const Device& device, std::ostream& os) -> void {
   size_t count = 0;
+  const auto lengthUnit = getLengthUnit(device);
   os << "#define INITIALIZE_SITES(var) var.clear();";
   for (const auto& lattice : device.traps()) {
     const auto originX = lattice.lattice_origin().x();
@@ -177,7 +178,8 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
         os << "\\\n  "
               "var.emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>("
               "MQT_NA_QDMI_Site_impl_d{"
-           << id << ", " << x << ", " << y << "}));";
+           << id << ", " << static_cast<double>(x) * lengthUnit << ", "
+           << static_cast<double>(y) * lengthUnit << "}));";
       }
     }
   }

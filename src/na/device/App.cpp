@@ -9,10 +9,12 @@
  */
 
 #include "na/device/Generator.hpp"
+#include "na/device/device.pb.h"
 #include "spdlog/spdlog.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <iostream>
 #include <optional>
 #include <stdexcept>

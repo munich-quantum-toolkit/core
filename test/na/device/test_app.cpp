@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include <array>
 #include <cstdio>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -19,8 +18,12 @@
 #define PLATFORM_POPEN _popen
 #define PLATFORM_PCLOSE _pclose
 #else
+// The following are included via <stdio> but the direct include are platform-
+// specific, so ignore the corresponding warning for platform-agnostic includes.
+// NOLINTBEGIN(misc-include-cleaner)
 #define PLATFORM_POPEN popen
 #define PLATFORM_PCLOSE pclose
+// NOLINTEND(misc-include-cleaner)
 #endif
 
 TEST(ExecutableTest, Version) {
@@ -31,10 +34,10 @@ TEST(ExecutableTest, Version) {
   FILE* pipe = PLATFORM_POPEN(command.c_str(), "r");
   ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
   // Read the output
-  std::array<char, 128> buffer;
+  std::string buffer(127, '\0'); // Buffer size of 128 characters
   std::stringstream output;
-  while (fgets(buffer.data(), sizeof(buffer), pipe) != nullptr) {
-    output << buffer.data();
+  while (fgets(buffer.data(), 128, pipe) != nullptr) {
+    output << buffer;
   }
   // Close the pipe
   const int returnCode = PLATFORM_PCLOSE(pipe);
