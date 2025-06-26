@@ -173,14 +173,18 @@ void registerDDPackage(const py::module& mod) {
         const auto data = v.unchecked<1>();
         const auto length = static_cast<size_t>(data.shape(0));
         if (length == 0) {
-          return dd::vEdge::one();
+          const auto state = dd::vEdge::one();
+          p.track(state);
+          return state;
         }
         if ((length & (length - 1)) != 0) {
           throw std::invalid_argument(
               "State vector must have a length of a power of two.");
         }
         if (length == 1) {
-          return dd::vEdge::terminal(p.cn.lookup(data(0)));
+          const auto state = dd::vEdge::terminal(p.cn.lookup(data(0)));
+          p.track(state);
+          return state;
         }
 
         const auto level = static_cast<dd::Qubit>(std::log2(length) - 1);
