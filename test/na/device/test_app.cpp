@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include <_stdio.h>
+#include <array>
 #include <cstdio>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -23,19 +23,19 @@ TEST(ExecutableTest, Version) {
   FILE* pipe = popen(command.c_str(), "r");
   ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
   // Read the output
-  char buffer[128];
+  std::array<char, 128> buffer;
   std::stringstream output;
-  while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-    output << buffer;
+  while (fgets(buffer.data(), sizeof(buffer), pipe) != nullptr) {
+    output << buffer.data();
   }
   // Close the pipe
-  int returnCode = pclose(pipe);
+  const int returnCode = pclose(pipe);
   ASSERT_EQ(returnCode, 0) << "Executable failed with return code: "
                            << returnCode;
   // Print the captured output
   std::cout << "Captured Output:\n" << output.str() << "\n";
   // Optionally, validate the output
-  // NOLINTNEXTLINE(misc-include-cleaner)
   EXPECT_EQ(output.str(),
+            // NOLINTNEXTLINE(misc-include-cleaner)
             "MQT QDMI NA Device Generator Version " MQT_CORE_VERSION "\n");
 }
