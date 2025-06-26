@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include <array>
 #include <cstdio>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -34,10 +35,11 @@ TEST(ExecutableTest, Version) {
   FILE* pipe = PLATFORM_POPEN(command.c_str(), "r");
   ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
   // Read the output
-  std::string buffer(127, '\0'); // Buffer size of 128 characters
+  std::array<char, 128> buffer{};
+  buffer.fill('\0');
   std::stringstream output;
-  while (fgets(buffer.data(), 128, pipe) != nullptr) {
-    output << buffer;
+  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    output << buffer.data();
   }
   // Close the pipe
   const int returnCode = PLATFORM_PCLOSE(pipe);

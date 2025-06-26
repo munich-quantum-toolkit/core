@@ -380,9 +380,24 @@ protected:
 };
 
 TEST_F(NADeviceTest, QuerySiteData) {
+  size_t module = 0;
+  int64_t x = 0;
+  int64_t y = 0;
   double t1 = 0;
   double t2 = 0;
   EXPECT_NO_THROW(for (auto* site : querySites(session)) {
+    EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                  session, site, QDMI_SITE_PROPERTY_CUSTOM1, sizeof(size_t),
+                  &module, nullptr),
+              QDMI_SUCCESS);
+    EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                  session, site, QDMI_SITE_PROPERTY_CUSTOM2, sizeof(int64_t),
+                  &x, nullptr),
+              QDMI_SUCCESS);
+    EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                  session, site, QDMI_SITE_PROPERTY_CUSTOM3, sizeof(int64_t),
+                  &y, nullptr),
+              QDMI_SUCCESS);
     EXPECT_EQ(
         MQT_NA_QDMI_device_session_query_site_property(
             session, site, QDMI_SITE_PROPERTY_T1, sizeof(double), &t1, nullptr),
