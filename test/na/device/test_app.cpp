@@ -15,12 +15,20 @@
 #include <sstream>
 #include <string>
 
+#ifdef _WIN32
+#define PLATFORM_POPEN _popen
+#define PLATFORM_PCLOSE _pclose
+#else
+#define PLATFORM_POPEN popen
+#define PLATFORM_PCLOSE pclose
+#endif
+
 TEST(ExecutableTest, Version) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " --version";
   // Open a pipe to capture the output
-  FILE* pipe = popen(command.c_str(), "r");
+  FILE* pipe = PLATFORM_POPEN(command.c_str(), "r");
   ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
   // Read the output
   std::array<char, 128> buffer;
@@ -29,7 +37,7 @@ TEST(ExecutableTest, Version) {
     output << buffer.data();
   }
   // Close the pipe
-  const int returnCode = pclose(pipe);
+  const int returnCode = PLATFORM_PCLOSE(pipe);
   ASSERT_EQ(returnCode, 0) << "Executable failed with return code: "
                            << returnCode;
   // Print the captured output

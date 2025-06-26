@@ -11,8 +11,13 @@
 #include "na/device/Generator.hpp"
 #include "spdlog/spdlog.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <optional>
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -274,7 +279,15 @@ auto parseGenerateArguments(const std::vector<std::string>& args, size_t i)
  */
 int main(int argc, char* argv[]) {
   const std::vector<std::string> argVec(argv, argv + argc);
-  const auto& [args, i] = parseArguments(argVec);
+  std::pair<Arguments, size_t> parsedArgs;
+  try {
+    parsedArgs = parseArguments(argVec);
+  } catch (const std::invalid_argument& e) {
+    SPDLOG_ERROR("Error parsing arguments: {}", e.what());
+    printUsage(argVec.empty() ? "mqt-core-na-device-gen" : argVec.front());
+    return 1;
+  }
+  const auto& [args, i] = parsedArgs;
   if (args.help) {
     printUsage(args.programName);
     return 0;
@@ -289,7 +302,14 @@ int main(int argc, char* argv[]) {
   }
   switch (args.command.value()) {
   case Command::Schema: {
-    const auto& schemaArgs = parseSchemaArguments(argVec, i);
+    SchemaArguments schemaArgs;
+    try {
+      schemaArgs = parseSchemaArguments(argVec, i);
+    } catch (const std::invalid_argument& e) {
+      SPDLOG_ERROR("Error parsing schema arguments: {}", e.what());
+      printSchemaUsage(args.programName);
+      return 1;
+    }
     if (schemaArgs.help) {
       printSchemaUsage(args.programName);
       return 0;
@@ -307,7 +327,14 @@ int main(int argc, char* argv[]) {
     break;
   }
   case Command::Validate: {
-    const auto& validateArgs = parseValidateArguments(argVec, i);
+    ValidateArguments validateArgs;
+    try {
+      validateArgs = parseValidateArguments(argVec, i);
+    } catch (const std::invalid_argument& e) {
+      SPDLOG_ERROR("Error parsing validate arguments: {}", e.what());
+      printValidateUsage(args.programName);
+      return 1;
+    }
     if (validateArgs.help) {
       printValidateUsage(args.programName);
       return 0;
@@ -325,7 +352,14 @@ int main(int argc, char* argv[]) {
     break;
   }
   case Command::Generate: {
-    const auto& generateArgs = parseGenerateArguments(argVec, i);
+    GenerateArguments generateArgs;
+    try {
+      generateArgs = parseGenerateArguments(argVec, i);
+    } catch (const std::invalid_argument& e) {
+      SPDLOG_ERROR("Error parsing generate arguments: {}", e.what());
+      printGenerateUsage(args.programName);
+      return 1;
+    }
     if (generateArgs.help) {
       printGenerateUsage(args.programName);
       return 0;
