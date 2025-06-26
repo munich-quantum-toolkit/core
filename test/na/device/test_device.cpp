@@ -11,6 +11,7 @@
 #include "mqt_na_qdmi/device.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>

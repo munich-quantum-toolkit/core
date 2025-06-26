@@ -152,6 +152,7 @@ auto writeQubitsNum(const Device& device, std::ostream& os) -> void {
  */
 auto writeSites(const Device& device, std::ostream& os) -> void {
   size_t count = 0;
+  size_t moduleCount = 0;
   const auto lengthUnit = getLengthUnit(device);
   os << "#define INITIALIZE_SITES(var) var.clear();";
   for (const auto& lattice : device.traps()) {
@@ -161,7 +162,8 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
         static_cast<size_t>(lattice.lattice_vector_1().repeat()),
         static_cast<size_t>(lattice.lattice_vector_2().repeat())};
     std::vector indices(2, 0UL);
-    for (bool loop = true; loop; loop = increment(indices, limits)) {
+    for (bool loop = true; loop;
+         loop = increment(indices, limits), ++moduleCount) {
       // For every sublattice offset, add a site for repetition indices
       for (const auto& offset : lattice.sublattice_offsets()) {
         const auto id = count++;
@@ -178,7 +180,8 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
         os << "\\\n  "
               "var.emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>("
               "MQT_NA_QDMI_Site_impl_d{"
-           << id << ", " << static_cast<double>(x) * lengthUnit << ", "
+           << id << ", " << moduleCount << ", "
+           << static_cast<double>(x) * lengthUnit << ", "
            << static_cast<double>(y) * lengthUnit << "}));";
       }
     }
