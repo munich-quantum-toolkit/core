@@ -136,8 +136,6 @@ struct MergeRotationGatesPattern final
                                   mlir::PatternRewriter& rewriter) const {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
 
-    auto loc = user->getLoc();
-
     auto opParamDouble = getDoubleFromValue(op.getParams()[0]);
     auto userParamDouble = getDoubleFromValue(user.getParams()[0]);
 
@@ -148,6 +146,7 @@ struct MergeRotationGatesPattern final
       return;
     }
 
+    auto loc = user->getLoc();
     auto newParam = getValueFromDouble(newParamValue, rewriter, loc);
     const llvm::SmallVector<mlir::Value, 1> newParamsVec{newParam};
     const mlir::ValueRange newParams(newParamsVec);
@@ -231,6 +230,19 @@ struct MergeRotationGatesPattern final
     rewriter.replaceOp(user, newUser);
   }
 
+  void rewriteXxPlusMinusYy(UnitaryInterface op, const std::string& type,
+                            mlir::PatternRewriter& rewriter) const {
+    auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
+
+    auto opBetaDouble = getDoubleFromValue(op.getParams()[0]);
+    auto userBetaDouble = getDoubleFromValue(user.getParams()[0]);
+
+    if (opBetaDouble == -userBetaDouble) {
+      cancelGates(op, user, rewriter);
+      return;
+    }
+  }
+
   void rewrite(UnitaryInterface op,
                mlir::PatternRewriter& rewriter) const override {
     auto const type = op->getName().stripDialect().str();
@@ -238,6 +250,8 @@ struct MergeRotationGatesPattern final
     if (type == "gphase" || type == "rx" || type == "ry" || type == "rz" ||
         type == "rxx" || type == "ryy" || type == "rzz" || type == "rzx") {
       rewriteSingleAdditiveParam(op, type, rewriter);
+    } else if (type == "xxminusyy" || type == "xxplusyy") {
+      rewriteXxPlusMinusYy(op, type, rewriter);
     } else {
       throw std::runtime_error("Unsupported operation type: " + type);
     }
