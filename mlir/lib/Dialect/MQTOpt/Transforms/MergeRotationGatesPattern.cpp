@@ -19,6 +19,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -167,9 +168,9 @@ struct MergeRotationGatesPattern final
   static mlir::Value getValueFromDouble(double value,
                                         mlir::PatternRewriter& rewriter,
                                         mlir::Location loc) {
-    mlir::Type type = rewriter.getF64Type();
-    auto floatAttr = rewriter.getFloatAttr(type, value);
-    return rewriter.create<mlir::arith::ConstantOp>(loc, type, floatAttr);
+    const mlir::FloatType f64_type = rewriter.getF64Type();
+    auto floatAttr = rewriter.getFloatAttr(f64_type, value);
+    return rewriter.create<mlir::arith::ConstantOp>(loc, f64_type, floatAttr);
   }
 
   void static cancelGates(UnitaryInterface op, UnitaryInterface user,
@@ -199,8 +200,8 @@ struct MergeRotationGatesPattern final
     rewriter.eraseOp(user);
   }
 
-  void rewriteSingleAdditiveParam(UnitaryInterface op,
-                                  mlir::PatternRewriter& rewriter) const {
+  void static rewriteSingleAdditiveParam(UnitaryInterface op,
+                                         mlir::PatternRewriter& rewriter) {
     auto const type = op->getName().stripDialect().str();
 
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
@@ -299,18 +300,18 @@ struct MergeRotationGatesPattern final
     rewriter.replaceOp(user, newUser);
   }
 
-  void rewriteXxMinusPlusYy(UnitaryInterface op,
-                            mlir::PatternRewriter& rewriter) const {
+  void static rewriteXxMinusPlusYy(UnitaryInterface op,
+                                   mlir::PatternRewriter& rewriter) {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
     cancelGates(op, user, rewriter);
   }
 
-  void rewriteU(UnitaryInterface op, mlir::PatternRewriter& rewriter) const {
+  void static rewriteU(UnitaryInterface op, mlir::PatternRewriter& rewriter) {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
     cancelGates(op, user, rewriter);
   }
 
-  void rewriteU2(UnitaryInterface op, mlir::PatternRewriter& rewriter) const {
+  void static rewriteU2(UnitaryInterface op, mlir::PatternRewriter& rewriter) {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
     cancelGates(op, user, rewriter);
   }
