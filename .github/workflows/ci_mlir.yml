@@ -23,6 +23,7 @@ jobs:
     strategy:
       matrix:
         llvm-version: [19, 20]
+      fail-fast: false
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       CTEST_PARALLEL_LEVEL: 4
@@ -58,7 +59,7 @@ jobs:
         uses: Chocobo1/setup-ccache-action@v1
         with:
           prepend_symlinks_to_path: false
-          override_cache_key: c++-tests-mlir
+          override_cache_key: c++-tests-mlir-ubuntu-${{ matrix.llvm-version }}
 
       # set up mold as linker for faster C++ builds
       - name: Set up mold as linker
@@ -97,6 +98,7 @@ jobs:
     strategy:
       matrix:
         llvm-version: [19, 20]
+      fail-fast: false
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       CTEST_PARALLEL_LEVEL: 4
@@ -195,3 +197,68 @@ jobs:
           Write-Output "Batch file created at C:\Windows\quantum-opt pointing to $targetPath"
 
           cmake --build build --config Release --target check-quantum-opt
+
+  cpp-test-mlir-macos:
+    name: 🍎 Test MLIR with LLVM@${{ matrix.llvm-version }} on ${{ matrix.macos-version }}
+    runs-on: ${{ matrix.macos-version }}
+    strategy:
+      matrix:
+        macos-version: [macos-13, macos-14]
+        llvm-version: [19, 20]
+      fail-fast: false
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      CTEST_PARALLEL_LEVEL: 4
+      FORCE_COLOR: 3
+    steps:
+      # Check out the repository
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Install llvm and ninja
+      - name: Install llvm@${{ matrix.llvm-version }} and Ninja via Homebrew
+        run: |
+          brew install llvm@${{ matrix.llvm-version }} ninja
+
+      # Set compiler and environment variables
+      - name: Set compiler and CMake environment variables
+        run: |
+          if [ "$(uname -m)" = "x86_64" ]; then
+            LLVM_PREFIX="/usr/local/opt/llvm@${{ matrix.llvm-version }}"
+          else
+            LLVM_PREFIX="/opt/homebrew/opt/llvm@${{ matrix.llvm-version }}"
+          fi
+
+          echo "CC=$LLVM_PREFIX/bin/clang" >> $GITHUB_ENV
+          echo "CXX=$LLVM_PREFIX/bin/clang++" >> $GITHUB_ENV
+          echo "LLVM_DIR=$LLVM_PREFIX/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "MLIR_DIR=$LLVM_PREFIX/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "$LLVM_PREFIX/bin" >> $GITHUB_PATH
+
+      # Set up uv for faster Python package management
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      # Install lit
+      - name: Install lit
+        run: uv pip install lit
+
+      # Configure with CMake
+      - name: Configure CMake for MLIR
+        run: |
+          cmake -G Ninja -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_MQT_CORE_MLIR=ON \
+            -DCMAKE_C_COMPILER=$CC \
+            -DCMAKE_CXX_COMPILER=$CXX \
+            -DLLVM_DIR=$LLVM_DIR \
+            -DMLIR_DIR=$MLIR_DIR \
+            -DLLVM_EXTERNAL_LIT=$(which lit)
+
+      # Build and run tests
+      - name: Build MLIR components and directly run lit tests
+        run: cmake --build build --config Release --target check-quantum-opt
