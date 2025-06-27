@@ -70,6 +70,7 @@ set(ABSL_URL https://github.com/abseil/abseil-cpp/archive/refs/tags/${ABSL_VERSI
 set(ABSL_ENABLE_INSTALL
     ON
     CACHE BOOL "" FORCE)
+set(ABSL_MSVC_STATIC_RUNTIME OFF)
 FetchContent_Declare(abseil-cpp URL ${ABSL_URL} FIND_PACKAGE_ARGS ${ABSL_VERSION} CONFIG NAMES absl)
 list(APPEND FETCH_PACKAGES abseil-cpp)
 
@@ -109,6 +110,7 @@ set(protobuf_BUILD_PROTOC_BINARIES ON)
 set(protobuf_BUILD_LIBUPB ON)
 # the default of the following is ON, but we do not need the tests
 set(protobuf_BUILD_TESTS OFF)
+set(protobuf_MSVC_STATIC_RUNTIME OFF)
 FetchContent_Declare(protobuf URL ${Protobuf_URL} FIND_PACKAGE_ARGS ${Protobuf_VERSION} CONFIG
                                   NAMES protobuf)
 list(APPEND FETCH_PACKAGES protobuf)
