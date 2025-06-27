@@ -161,7 +161,7 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
     const std::vector limits{
         static_cast<size_t>(lattice.lattice_vector_1().repeat()),
         static_cast<size_t>(lattice.lattice_vector_2().repeat())};
-    std::vector indices(2, 0UL);
+    std::vector<size_t> indices(2, 0);
     for (bool loop = true; loop;
          loop = increment(indices, limits), ++moduleCount) {
       // For every sublattice offset, add a site for repetition indices

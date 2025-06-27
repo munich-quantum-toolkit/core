@@ -70,7 +70,9 @@ set(ABSL_URL https://github.com/abseil/abseil-cpp/archive/refs/tags/${ABSL_VERSI
 set(ABSL_ENABLE_INSTALL
     ON
     CACHE BOOL "" FORCE)
-set(ABSL_MSVC_STATIC_RUNTIME OFF)
+set(ABSL_MSVC_STATIC_RUNTIME
+    OFF
+    CACHE BOOL "" FORCE)
 FetchContent_Declare(abseil-cpp URL ${ABSL_URL} FIND_PACKAGE_ARGS ${ABSL_VERSION} CONFIG NAMES absl)
 list(APPEND FETCH_PACKAGES abseil-cpp)
 
