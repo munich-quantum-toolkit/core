@@ -17,7 +17,7 @@ def MQTOptToMQTDyn : Pass<"mqtopt-to-mqtdyn"> {
       that uses the initial mqtopt qubit register. This reference is then propagated to all subsequent operations that use the state
       of the initial mqtopt register and replaces their operand. The same applies to the result of the extract operation that acts as a qubit
       reference and is propagated to all later uses of this qubit. The mqtopt insert operation is deleted as there is no equivalent
-      operation in the mqtdyn dialect and any subsequent operation that uses the result of this operation acts on the qubit register reference.
+      operation in the mqtdyn dialect. The use of the insert operation's result in any subsequent operation is replaced by the qubit register reference.
    }];
 
   // Define dependent dialects
