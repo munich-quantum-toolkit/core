@@ -48,10 +48,15 @@ struct NodeBase : LLBase {
   /// Mark flag used for mark-and-sweep garbage collection
   static constexpr std::uint16_t MARK_FLAG = 0b10000U;
 
+  /// @brief Whether a node is marked as used.
   [[nodiscard]] bool isMarked() const noexcept {
     return (flags & MARK_FLAG) != 0U;
   }
+
+  /// @brief Mark the node as used.
   void mark() noexcept { flags |= MARK_FLAG; }
+
+  /// @brief Unmark the node.
   void unmark() noexcept { flags &= ~MARK_FLAG; }
 
   /// Getter for the next object.

@@ -149,13 +149,6 @@ struct RealNumber final : LLBase {
   getNegativePointer(const RealNumber* e) noexcept;
 
   /**
-   * @brief Check whether the number is a negative pointer.
-   * @param e The number to check.
-   * @returns Whether the number is a negative pointer.
-   */
-  [[nodiscard]] static bool isNegativePointer(const RealNumber* e) noexcept;
-
-  /**
    * @brief Flip the sign of the number pointer.
    * @param e The number to flip the sign of.
    * @returns The number with the sign flipped.
@@ -167,11 +160,46 @@ struct RealNumber final : LLBase {
   [[nodiscard]] static RealNumber*
   flipPointerSign(const RealNumber* e) noexcept;
 
+  /**
+   * @brief Mark @p e for garbage collection.
+   * @details Sets the 2nd least significant bit of the next_ pointer.
+   * @param e The number to mark.
+   */
   static void mark(RealNumber* e) noexcept;
+
+  /**
+   * @brief Unmark @p e after garbage collection.
+   * @details Unsets the 2nd least significant bit of the next_ pointer.
+   * @param e The number to unmark.
+   */
   static void unmark(RealNumber* e) noexcept;
+
+  /**
+   * @brief Immortalize @p e.
+   * @details Sets the 3rd least significant bit of the next_ pointer.
+   * @param e The number to immortalize.
+   */
+  static void immortalize(RealNumber* e) noexcept;
+
+  /**
+   * @brief Check whether the number is flagged as negative.
+   * @param e The number to check.
+   * @returns Whether the number is negative.
+   */
+  [[nodiscard]] static bool isNegativePointer(const RealNumber* e) noexcept;
+
+  /**
+   * @brief Check whether the number is flagged as marked.
+   * @param e The number to check.
+   * @returns Whether the number is marked.
+   */
   [[nodiscard]] static bool isMarked(const RealNumber* e) noexcept;
 
-  static void immortalize(RealNumber* e) noexcept;
+  /**
+   * @brief Check whether the number is flagged as immortal.
+   * @param e The number to check.
+   * @returns Whether the number is immortal.
+   */
   [[nodiscard]] static bool isImmortal(const RealNumber* e) noexcept;
 
   /**

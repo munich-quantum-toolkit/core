@@ -318,19 +318,18 @@ private:
 
 public:
   /**
-   * @brief Trigger garbage collection in all unique tables.
+   * @brief Trigger garbage collection on all unique tables.
+   * @details Mark-and-sweep algorithm: First, mark all nodes and complex
+   * numbers tracked in @p roots. Second, remove any unmarked nodes and numbers
+   * from the respective unique tables. Lastly, unmark all nodes and complex
+   * numbers again.
+   * @note By default, garbage collection is only triggered if the unique tables
+   * report that a collection might be necessary.
    *
-   * @details Garbage collection uses a mark-and-sweep algorithm. During the
-   * mark phase all nodes reachable from the root sets are marked. In the sweep
-   * phase unmarked nodes are removed from the unique tables and the associated
-   * compute tables are cleared. By default, garbage collection is only
-   * triggered if the unique tables report that a collection might be
-   * necessary.
-   *
-   * @param force If `true`, perform a collection regardless of whether any
-   *              table reports that it may need collecting.
-   * @returns `true` if at least one vector, matrix, or density-matrix node, or
-   *          a complex number was reclaimed.
+   * @param force Force garbage collect, regardless of whether any
+   * table reports that it may need collecting.
+   * @returns Whether at least one vector, matrix, density-matrix node, or
+   *          any complex number was reclaimed.
    */
   bool garbageCollect(bool force = false);
 
