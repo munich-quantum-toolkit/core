@@ -25,7 +25,11 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
+
 namespace mqt::ir::opt {
+
+static constexpr auto PI = static_cast<double>(
+    3.141592653589793238462643383279502884197169399375105820974L);
 
 /**
  * @brief This pattern attempts to merge consecutive rotation gates.
@@ -132,8 +136,10 @@ struct MergeRotationGatesPattern final
     rewriter.eraseOp(user);
   }
 
-  void rewriteSingleAdditiveParam(UnitaryInterface op, const std::string& type,
+  void rewriteSingleAdditiveParam(UnitaryInterface op,
                                   mlir::PatternRewriter& rewriter) const {
+    auto const type = op->getName().stripDialect().str();
+
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
 
     auto opParamDouble = getDoubleFromValue(op.getParams()[0]);
@@ -230,7 +236,7 @@ struct MergeRotationGatesPattern final
     rewriter.replaceOp(user, newUser);
   }
 
-  void rewriteXxPlusMinusYy(UnitaryInterface op, const std::string& type,
+  void rewriteXxMinusPlusYy(UnitaryInterface op,
                             mlir::PatternRewriter& rewriter) const {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
 
@@ -239,7 +245,41 @@ struct MergeRotationGatesPattern final
 
     if (opBetaDouble == -userBetaDouble) {
       cancelGates(op, user, rewriter);
-      return;
+    }
+  }
+
+  void rewriteU(UnitaryInterface op, mlir::PatternRewriter& rewriter) const {
+    return;
+    auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
+
+    auto opThetaDouble = getDoubleFromValue(op.getParams()[0]);
+    auto opPhiDouble = getDoubleFromValue(op.getParams()[1]);
+    auto opLambdaDouble = getDoubleFromValue(op.getParams()[2]);
+
+    auto userThetaDouble = getDoubleFromValue(user.getParams()[0]);
+    auto userPhiDouble = getDoubleFromValue(user.getParams()[1]);
+    auto userLambdaDouble = getDoubleFromValue(user.getParams()[2]);
+
+    if ((opThetaDouble == -userThetaDouble) &&
+        (opPhiDouble == -userLambdaDouble) &&
+        (opLambdaDouble == -userPhiDouble)) {
+      cancelGates(op, user, rewriter);
+    }
+  }
+
+  void rewriteU2(UnitaryInterface op, mlir::PatternRewriter& rewriter) const {
+    return;
+    auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
+
+    auto opPhiDouble = getDoubleFromValue(op.getParams()[0]);
+    auto opLambdaDouble = getDoubleFromValue(op.getParams()[1]);
+
+    auto userPhiDouble = getDoubleFromValue(user.getParams()[0]);
+    auto userLambdaDouble = getDoubleFromValue(user.getParams()[1]);
+
+    if ((opPhiDouble == -userLambdaDouble - PI) &&
+        (opLambdaDouble == -userPhiDouble + PI)) {
+      cancelGates(op, user, rewriter);
     }
   }
 
@@ -249,9 +289,13 @@ struct MergeRotationGatesPattern final
 
     if (type == "gphase" || type == "rx" || type == "ry" || type == "rz" ||
         type == "rxx" || type == "ryy" || type == "rzz" || type == "rzx") {
-      rewriteSingleAdditiveParam(op, type, rewriter);
+      rewriteSingleAdditiveParam(op, rewriter);
     } else if (type == "xxminusyy" || type == "xxplusyy") {
-      rewriteXxPlusMinusYy(op, type, rewriter);
+      rewriteXxMinusPlusYy(op, rewriter);
+    } else if (type == "u") {
+      rewriteU(op, rewriter);
+    } else if (type == "u2") {
+      rewriteU2(op, rewriter);
     } else {
       throw std::runtime_error("Unsupported operation type: " + type);
     }
