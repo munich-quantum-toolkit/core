@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
+#include "mlir/IR/BuiltinAttributes.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -166,13 +167,13 @@ struct MergeRotationGatesPattern final
   static mlir::Value getValueFromDouble(double value,
                                         mlir::PatternRewriter& rewriter,
                                         mlir::Location loc) {
-    auto floatAttr = rewriter.getFloatAttr(rewriter.getF64Type(), value);
-    return rewriter.create<mlir::arith::ConstantOp>(loc, rewriter.getF64Type(),
-                                                    floatAttr);
+    mlir::Type type = rewriter.getF64Type();
+    auto floatAttr = rewriter.getFloatAttr(type, value);
+    return rewriter.create<mlir::arith::ConstantOp>(loc, type, floatAttr);
   }
 
-  void cancelGates(UnitaryInterface op, UnitaryInterface user,
-                   mlir::PatternRewriter& rewriter) const {
+  void static cancelGates(UnitaryInterface op, UnitaryInterface user,
+                          mlir::PatternRewriter& rewriter) {
     // Prepare erasures of op and user
     const auto& userUsers = user->getUsers();
     const auto& opAllInQubits = op.getAllInQubits();
@@ -207,7 +208,7 @@ struct MergeRotationGatesPattern final
     auto opParamDouble = getDoubleFromValue(op.getParams()[0]);
     auto userParamDouble = getDoubleFromValue(user.getParams()[0]);
 
-    double newParamValue = opParamDouble + userParamDouble;
+    double const newParamValue = opParamDouble + userParamDouble;
 
     if (newParamValue == 0.0) {
       cancelGates(op, user, rewriter);
