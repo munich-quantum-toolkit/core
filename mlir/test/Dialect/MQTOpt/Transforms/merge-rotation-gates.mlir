@@ -9,7 +9,10 @@
 // RUN: quantum-opt %s -split-input-file --merge-rotation-gates | FileCheck %s
 
 // -----
-// This test checks if single-qubit gates are merged and canceled correctly.
+// This test checks if consecutive single-qubit gates are merged and canceled correctly.
+// If a gate has no consecutive partner, it is left as is.
+// If consecutive gates A and B satisfy angle_A == -angle_B, they are canceled.
+// Otherwise, the gates are merged by adding their angles.
 
 module {
   // CHECK-LABEL: func.func @testMergeSingleQubitGates
@@ -55,7 +58,10 @@ module {
 }
 
 // -----
-// This test checks if multi-qubit gates are merged and canceled correctly.
+// This test checks if consecutive multi-qubit rotation gates are merged and canceled correctly.
+// If a gate has no consecutive partner, it is left as is.
+// If consecutive gates A and B satisfy angle_A == -angle_B, they are canceled.
+// Otherwise, the gates are merged by adding their angles.
 
 module {
   // CHECK-LABEL: func.func @testMergeMultiQubitGates
@@ -105,7 +111,10 @@ module {
 }
 
 // -----
-// This test checks if xxminusyy and xxplusyy gates are merged and canceled correctly.
+// This test checks if consecutive xxminusyy and xxplusyy gates are canceled correctly.
+// If a gate has no consecutive partner, it is left as is.
+// If consecutive gates A and B satisfy theta_A == -theta_B, they are canceled.
+// Currently, we do not support the merging of xxminusyy and xxplusyy gates.
 
 module {
   // CHECK-LABEL: func.func @testCancelXxMinusPlusYyGates
@@ -148,7 +157,10 @@ module {
 }
 
 // -----
-// This test checks if u and u2 gates are merged and canceled correctly.
+// This test checks if consecutive u and u2 gates are canceled correctly.
+// If a gate has no consecutive partner, it is left as is.
+// If consecutive gates A and B have compatible parameters, they are canceled.
+// Currently, we do not support the merging of u and u2 gates.
 
 module {
   // CHECK-LABEL: func.func @testCancelUGates
