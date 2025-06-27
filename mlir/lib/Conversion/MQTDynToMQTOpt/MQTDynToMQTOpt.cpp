@@ -355,7 +355,7 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateDynOp> {
     }
 
     // create new operation
-    MQTGateOptOp mqtoptOp = rewriter.create<MQTGateOptOp>(
+    auto mqtoptOp = rewriter.create<MQTGateOptOp>(
         op.getLoc(), ValueRange(optInQubits).getTypes(),
         ValueRange(optPosCtrlQubitsValues).getTypes(),
         ValueRange(optNegCtrlQubitsValues).getTypes(), staticParams, paramMask,
