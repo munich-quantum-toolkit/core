@@ -19,7 +19,6 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -168,9 +167,9 @@ struct MergeRotationGatesPattern final
   static mlir::Value getValueFromDouble(double value,
                                         mlir::PatternRewriter& rewriter,
                                         mlir::Location loc) {
-    const mlir::FloatType f64_type = rewriter.getF64Type();
-    auto floatAttr = rewriter.getFloatAttr(f64_type, value);
-    return rewriter.create<mlir::arith::ConstantOp>(loc, f64_type, floatAttr);
+    const auto f64Type = rewriter.getF64Type();
+    auto floatAttr = rewriter.getF64FloatAttr(value);
+    return rewriter.create<mlir::arith::ConstantOp>(loc, f64Type, floatAttr);
   }
 
   void static cancelGates(UnitaryInterface op, UnitaryInterface user,
