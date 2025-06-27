@@ -112,6 +112,7 @@ auto printGenerateUsage(const std::string& programName) -> void {
  * Prints the version information for the command line tool.
  */
 auto printVersion() -> void {
+  // NOLINTNEXTLINE(misc-include-cleaner)
   std::cout << "MQT QDMI NA Device Generator Version " MQT_CORE_VERSION "\n";
 }
 
@@ -280,11 +281,17 @@ auto parseGenerateArguments(const std::vector<std::string>& args, size_t i)
  * @param argv is the array of command line arguments.
  */
 int main(int argc, char* argv[]) {
-  const std::vector<std::string> argVec(argv, argv + argc);
+  std::vector<std::string> argVec;
   std::pair<Arguments, size_t> parsedArgs;
   try {
+    argVec = std::vector<std::string>(argv, argv + argc);
+  } catch (std::exception& e) {
+    SPDLOG_ERROR("Error parsing arguments into vector: {}", e.what());
+    return 1;
+  }
+  try {
     parsedArgs = parseArguments(argVec);
-  } catch (const std::invalid_argument& e) {
+  } catch (const std::exception& e) {
     SPDLOG_ERROR("Error parsing arguments: {}", e.what());
     printUsage(argVec.empty() ? "mqt-core-na-device-gen" : argVec.front());
     return 1;
@@ -302,12 +309,12 @@ int main(int argc, char* argv[]) {
     printUsage(args.programName);
     return 1;
   }
-  switch (args.command.value()) {
+  switch (*args.command) {
   case Command::Schema: {
     SchemaArguments schemaArgs;
     try {
       schemaArgs = parseSchemaArguments(argVec, i);
-    } catch (const std::invalid_argument& e) {
+    } catch (const std::exception& e) {
       SPDLOG_ERROR("Error parsing schema arguments: {}", e.what());
       printSchemaUsage(args.programName);
       return 1;
@@ -332,7 +339,7 @@ int main(int argc, char* argv[]) {
     ValidateArguments validateArgs;
     try {
       validateArgs = parseValidateArguments(argVec, i);
-    } catch (const std::invalid_argument& e) {
+    } catch (const std::exception& e) {
       SPDLOG_ERROR("Error parsing validate arguments: {}", e.what());
       printValidateUsage(args.programName);
       return 1;
@@ -357,7 +364,7 @@ int main(int argc, char* argv[]) {
     GenerateArguments generateArgs;
     try {
       generateArgs = parseGenerateArguments(argVec, i);
-    } catch (const std::invalid_argument& e) {
+    } catch (const std::exception& e) {
       SPDLOG_ERROR("Error parsing generate arguments: {}", e.what());
       printGenerateUsage(args.programName);
       return 1;
@@ -382,6 +389,7 @@ int main(int argc, char* argv[]) {
       SPDLOG_ERROR("Error generating header file: {}", e.what());
       return 1;
     }
+    break;
   }
   }
   return 0;

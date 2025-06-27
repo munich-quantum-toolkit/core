@@ -90,7 +90,9 @@ if(BUILD_MQT_CORE_TESTS)
   set(gtest_force_shared_crt
       ON
       CACHE BOOL "" FORCE)
-  set(GTEST_HAS_ABSL ON)
+  set(GTEST_HAS_ABSL
+      ON
+      CACHE BOOL "" FORCE)
   set(GTEST_VERSION
       1.17.0
       CACHE STRING "Google Test version")
