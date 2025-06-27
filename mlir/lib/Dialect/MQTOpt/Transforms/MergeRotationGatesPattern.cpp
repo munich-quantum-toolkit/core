@@ -49,14 +49,76 @@ struct MergeRotationGatesPattern final
    */
   [[nodiscard]] static bool areGatesMergeable(mlir::Operation& a,
                                               mlir::Operation& b) {
-    static const std::unordered_set<std::string> MERGEABLE_GATES = {
-        "gphase", "rx",  "ry",        "rz",       "rxx", "ryy",
-        "rzz",    "rzx", "xxminusyy", "xxplusyy", "u",   "u2"};
 
     const auto aName = a.getName().stripDialect().str();
     const auto bName = b.getName().stripDialect().str();
 
-    return ((aName == bName) && (MERGEABLE_GATES.count(aName) > 0));
+    if (aName != bName) {
+      return false;
+    }
+
+    static const std::unordered_set<std::string> MERGEABLE_GATES = {
+        "gphase", "rx", "ry", "rz", "rxx", "ryy", "rzz", "rzx"};
+    if (MERGEABLE_GATES.count(aName) == 1) {
+      return true;
+    }
+
+    if (aName == "xxminusyy" || aName == "xxplusyy") {
+      return areGatesMergeableXxMinusPlusYy(a, b);
+    }
+
+    if (aName == "u") {
+      return areGatesMergeableU(a, b);
+    }
+
+    if (aName == "u2") {
+      return areGatesMergeableU2(a, b);
+    }
+
+    return false;
+  }
+
+  [[nodiscard]] static bool areGatesMergeableXxMinusPlusYy(mlir::Operation& a,
+                                                           mlir::Operation& b) {
+    auto unitaryA = mlir::dyn_cast<UnitaryInterface>(a);
+    auto unitaryB = mlir::dyn_cast<UnitaryInterface>(b);
+
+    auto aThetaDouble = getDoubleFromValue(unitaryA.getParams()[0]);
+    auto bThetaDouble = getDoubleFromValue(unitaryB.getParams()[0]);
+
+    return (aThetaDouble == -bThetaDouble);
+  }
+
+  [[nodiscard]] static bool areGatesMergeableU(mlir::Operation& a,
+                                               mlir::Operation& b) {
+    auto unitaryA = mlir::dyn_cast<UnitaryInterface>(a);
+    auto unitaryB = mlir::dyn_cast<UnitaryInterface>(b);
+
+    auto aThetaDouble = getDoubleFromValue(unitaryA.getParams()[0]);
+    auto aPhiDouble = getDoubleFromValue(unitaryA.getParams()[1]);
+    auto aLambdaDouble = getDoubleFromValue(unitaryA.getParams()[2]);
+
+    auto bThetaDouble = getDoubleFromValue(unitaryB.getParams()[0]);
+    auto bPhiDouble = getDoubleFromValue(unitaryB.getParams()[1]);
+    auto bLambdaDouble = getDoubleFromValue(unitaryB.getParams()[2]);
+
+    return ((aThetaDouble == -bThetaDouble) && (aPhiDouble == -bLambdaDouble) &&
+            (aLambdaDouble == -bPhiDouble));
+  }
+
+  [[nodiscard]] static bool areGatesMergeableU2(mlir::Operation& a,
+                                                mlir::Operation& b) {
+    auto unitaryA = mlir::dyn_cast<UnitaryInterface>(a);
+    auto unitaryB = mlir::dyn_cast<UnitaryInterface>(b);
+
+    auto aPhiDouble = getDoubleFromValue(unitaryA.getParams()[0]);
+    auto aLambdaDouble = getDoubleFromValue(unitaryA.getParams()[1]);
+
+    auto bPhiDouble = getDoubleFromValue(unitaryB.getParams()[0]);
+    auto bLambdaDouble = getDoubleFromValue(unitaryB.getParams()[1]);
+
+    return ((aPhiDouble == -bLambdaDouble - PI) &&
+            (aLambdaDouble == -bPhiDouble + PI));
   }
 
   /**
@@ -229,7 +291,7 @@ struct MergeRotationGatesPattern final
           newUser, [&] { newUser->setOperand(i, opAllInQubits[idx]); });
     }
 
-    // Eraise op
+    // Erase op
     rewriter.eraseOp(op);
 
     // Replace user with newUser
@@ -239,48 +301,17 @@ struct MergeRotationGatesPattern final
   void rewriteXxMinusPlusYy(UnitaryInterface op,
                             mlir::PatternRewriter& rewriter) const {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
-
-    auto opBetaDouble = getDoubleFromValue(op.getParams()[0]);
-    auto userBetaDouble = getDoubleFromValue(user.getParams()[0]);
-
-    if (opBetaDouble == -userBetaDouble) {
-      cancelGates(op, user, rewriter);
-    }
+    cancelGates(op, user, rewriter);
   }
 
   void rewriteU(UnitaryInterface op, mlir::PatternRewriter& rewriter) const {
-    return;
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
-
-    auto opThetaDouble = getDoubleFromValue(op.getParams()[0]);
-    auto opPhiDouble = getDoubleFromValue(op.getParams()[1]);
-    auto opLambdaDouble = getDoubleFromValue(op.getParams()[2]);
-
-    auto userThetaDouble = getDoubleFromValue(user.getParams()[0]);
-    auto userPhiDouble = getDoubleFromValue(user.getParams()[1]);
-    auto userLambdaDouble = getDoubleFromValue(user.getParams()[2]);
-
-    if ((opThetaDouble == -userThetaDouble) &&
-        (opPhiDouble == -userLambdaDouble) &&
-        (opLambdaDouble == -userPhiDouble)) {
-      cancelGates(op, user, rewriter);
-    }
+    cancelGates(op, user, rewriter);
   }
 
   void rewriteU2(UnitaryInterface op, mlir::PatternRewriter& rewriter) const {
-    return;
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
-
-    auto opPhiDouble = getDoubleFromValue(op.getParams()[0]);
-    auto opLambdaDouble = getDoubleFromValue(op.getParams()[1]);
-
-    auto userPhiDouble = getDoubleFromValue(user.getParams()[0]);
-    auto userLambdaDouble = getDoubleFromValue(user.getParams()[1]);
-
-    if ((opPhiDouble == -userLambdaDouble - PI) &&
-        (opLambdaDouble == -userPhiDouble + PI)) {
-      cancelGates(op, user, rewriter);
-    }
+    cancelGates(op, user, rewriter);
   }
 
   void rewrite(UnitaryInterface op,
