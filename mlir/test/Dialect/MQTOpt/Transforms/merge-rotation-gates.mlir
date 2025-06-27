@@ -8,6 +8,9 @@
 
 // RUN: quantum-opt %s -split-input-file --merge-rotation-gates | FileCheck %s
 
+// -----
+// This test checks if single-qubit gates are merged and canceled correctly.
+
 module {
   // CHECK-LABEL: func.func @testMergeSingleQubitGates
   func.func @testMergeSingleQubitGates() {
@@ -48,6 +51,9 @@ module {
     return
   }
 }
+
+// -----
+// This test checks if multi-qubit gates are merged and canceled correctly.
 
 module {
   // CHECK-LABEL: func.func @testMergeMultiQubitGates
@@ -94,6 +100,8 @@ module {
   }
 }
 
+// -----
+// This test checks if xxminusyy and xxplusyy gates are merged and canceled correctly.
 
 module {
   // CHECK-LABEL: func.func @testCancelXxMinusPlusYyGates
