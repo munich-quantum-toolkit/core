@@ -20,9 +20,11 @@
 
 namespace dd {
 
-static constexpr std::uintptr_t NEG_FLAG = (1UL << 0);
-static constexpr std::uintptr_t MARK_FLAG = (1UL << 1);
-static constexpr std::uintptr_t IMMORTAL_FLAG = (1UL << 2);
+namespace {
+constexpr std::uintptr_t NEG_FLAG = (1UL << 0);
+constexpr std::uintptr_t MARK_FLAG = (1UL << 1);
+constexpr std::uintptr_t IMMORTAL_FLAG = (1UL << 2);
+}; // namespace
 
 RealNumber* RealNumber::next() const noexcept {
   return RealNumber::getAlignedPointer(reinterpret_cast<RealNumber*>(next_));
