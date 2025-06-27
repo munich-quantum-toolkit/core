@@ -326,6 +326,10 @@ jobs:
       - name: Install Ninja
         run: uv tool install ninja
 
+      # install gcovr for coverage reporting
+      - name: Install gcovr
+        run: uv tool install gcovr
+
       # make sure the lit test runner is installed
       - name: Install lit
         run: uv pip install lit
@@ -343,11 +347,6 @@ jobs:
       - name: Build MLIR components and run tests with coverage
         run: |
           cmake --build build --config Debug --target check-quantum-opt
-
-      # debug: print the coverage files
-      - name: List coverage files
-        run: |
-          find build -name "*.gcda" -o -name "*.gcno" -o -name "*.profraw"
 
       # Run gcovr to generate coverage data
       - name: Generate coverage data as XML
