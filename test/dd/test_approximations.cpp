@@ -209,9 +209,7 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   //  □                   □                          □
 
   constexpr std::size_t nq = 2;
-  // TODO: When removing the static 0.5 from the cUniqueTable
-  // this causes numerical issues with an exact budget of .25.
-  constexpr double fidelity = 1 - 0.26;
+  constexpr double fidelity = 1 - 0.25;
 
   auto dd = std::make_unique<dd::Package>(nq);
 
@@ -264,7 +262,7 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   //
 
   constexpr std::size_t nq = 3;
-  constexpr double fidelity = 1 - 0.26;
+  constexpr double fidelity = 1 - 0.25;
 
   auto dd = std::make_unique<dd::Package>(nq);
 
