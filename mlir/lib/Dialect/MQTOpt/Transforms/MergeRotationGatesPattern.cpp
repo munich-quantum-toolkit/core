@@ -91,129 +91,89 @@ struct MergeRotationGatesPattern final
     return mlir::success();
   }
 
-  static UnitaryInterface createNewUser(
-      const mlir::Location loc, const std::string& type,
-      const mlir::ValueRange inQubits, mlir::ValueRange controlQubitsPositive,
-      mlir::ValueRange controlQubitsNegative, mlir::ValueRange opParams,
-      mlir::ValueRange userParams, mlir::PatternRewriter& rewriter) {
-    if (type == "gphase") {
-      auto add =
-          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      const mlir::ValueRange newParams(newParamsVec);
-      return rewriter.create<GPhaseOp>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
-    }
-    if (type == "rx") {
-      auto add =
-          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      const mlir::ValueRange newParams(newParamsVec);
-      return rewriter.create<RXOp>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
-    }
-    if (type == "ry") {
-      auto add =
-          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      const mlir::ValueRange newParams(newParamsVec);
-      return rewriter.create<RYOp>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
-    }
-    if (type == "rz") {
-      auto add =
-          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      const mlir::ValueRange newParams(newParamsVec);
-      return rewriter.create<RZOp>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
-    }
-    if (type == "rxx") {
-      auto add =
-          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      const mlir::ValueRange newParams(newParamsVec);
-      return rewriter.create<RXXOp>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
-    }
-    if (type == "ryy") {
-      auto add =
-          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      const mlir::ValueRange newParams(newParamsVec);
-      return rewriter.create<RYYOp>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
-    }
-    if (type == "rzz") {
-      auto add =
-          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      const mlir::ValueRange newParams(newParamsVec);
-      return rewriter.create<RZZOp>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
-    }
-    if (type == "rzx") {
-      auto add =
-          rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-      const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-      const mlir::ValueRange newParams(newParamsVec);
-      return rewriter.create<RZXOp>(
-          loc, inQubits.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, inQubits,
-          controlQubitsPositive, controlQubitsNegative);
-    }
-    if (type == "xxminusyy" || type == "xxplusyy" || type == "u" ||
-        type == "u2") {
-      throw std::runtime_error("Not implemented yet");
-    }
-    throw std::runtime_error("Unsupported operation type");
-  }
-
-  void rewrite(UnitaryInterface op,
-               mlir::PatternRewriter& rewriter) const override {
+  void rewriteSingleAdditiveParam(UnitaryInterface op, const std::string& type,
+                                  mlir::PatternRewriter& rewriter) const {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
 
-    // Create newUser
-    auto newUser = createNewUser(
-        user.getLoc(), user->getName().stripDialect().str(), user.getInQubits(),
-        user.getPosCtrlInQubits(), user.getNegCtrlInQubits(), op.getParams(),
-        user.getParams(), rewriter);
+    auto loc = user->getLoc();
+    auto opParams = op.getParams();
+    auto userParams = user.getParams();
+
+    auto add =
+        rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
+    const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+    const mlir::ValueRange newParams(newParamsVec);
+
+    auto userInQubits = user.getInQubits();
+    auto userPosCtrlInQubits = user.getPosCtrlInQubits();
+    auto userNegCtrlInQubits = user.getNegCtrlInQubits();
+
+    UnitaryInterface newUser;
+    if (type == "gphase") {
+      newUser = rewriter.create<GPhaseOp>(
+          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
+          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
+          userPosCtrlInQubits, userNegCtrlInQubits);
+    } else if (type == "rx") {
+      newUser = rewriter.create<RXOp>(
+          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
+          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
+          userPosCtrlInQubits, userNegCtrlInQubits);
+    } else if (type == "ry") {
+      newUser = rewriter.create<RYOp>(
+          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
+          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
+          userPosCtrlInQubits, userNegCtrlInQubits);
+    } else if (type == "rz") {
+      newUser = rewriter.create<RZOp>(
+          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
+          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
+          userPosCtrlInQubits, userNegCtrlInQubits);
+    } else if (type == "rxx") {
+      newUser = rewriter.create<RXXOp>(
+          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
+          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
+          userPosCtrlInQubits, userNegCtrlInQubits);
+    } else if (type == "ryy") {
+      newUser = rewriter.create<RYYOp>(
+          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
+          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
+          userPosCtrlInQubits, userNegCtrlInQubits);
+    } else if (type == "rzz") {
+      newUser = rewriter.create<RZZOp>(
+          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
+          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
+          userPosCtrlInQubits, userNegCtrlInQubits);
+    } else if (type == "rzx") {
+      newUser = rewriter.create<RZXOp>(
+          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
+          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
+          userPosCtrlInQubits, userNegCtrlInQubits);
+    } else {
+      throw std::runtime_error("Unsupported operation type: " + type);
+    }
 
     // Prepare erasure of op
-    const auto& opInQubits = op.getAllInQubits();
-    const auto& newUserInQubits = user.getAllInQubits();
+    const auto& opAllInQubits = op.getAllInQubits();
+    const auto& newUserAllInQubits = newUser.getAllInQubits();
     for (size_t i = 0; i < newUser->getOperands().size(); i++) {
       const auto& operand = newUser->getOperand(i);
-      const auto found =
-          std::find(newUserInQubits.begin(), newUserInQubits.end(), operand);
-      if (found == newUserInQubits.end()) {
+      const auto found = std::find(newUserAllInQubits.begin(),
+                                   newUserAllInQubits.end(), operand);
+      if (found == newUserAllInQubits.end()) {
         continue;
       }
-      const auto idx = std::distance(newUserInQubits.begin(), found);
+      const auto idx = std::distance(newUserAllInQubits.begin(), found);
       rewriter.modifyOpInPlace(
-          newUser, [&] { newUser->setOperand(i, opInQubits[idx]); });
+          newUser, [&] { newUser->setOperand(i, opAllInQubits[idx]); });
     }
 
     // Eraise op
@@ -221,6 +181,18 @@ struct MergeRotationGatesPattern final
 
     // Replace user with newUser
     rewriter.replaceOp(user, newUser);
+  }
+
+  void rewrite(UnitaryInterface op,
+               mlir::PatternRewriter& rewriter) const override {
+    auto const type = op->getName().stripDialect().str();
+
+    if (type == "gphase" || type == "rx" || type == "ry" || type == "rz" ||
+        type == "rxx" || type == "ryy" || type == "rzz" || type == "rzx") {
+      rewriteSingleAdditiveParam(op, type, rewriter);
+    } else {
+      throw std::runtime_error("Unsupported operation type: " + type);
+    }
   }
 };
 
