@@ -91,17 +91,33 @@ struct MergeRotationGatesPattern final
     return mlir::success();
   }
 
+  static double getDoubleFromValue(mlir::Value value) {
+    auto constOp = value.getDefiningOp<mlir::arith::ConstantOp>();
+    auto floatAttr = mlir::dyn_cast<mlir::FloatAttr>(constOp.getValue());
+    return floatAttr.getValueAsDouble();
+  }
+
+  static mlir::Value getValueFromDouble(double value,
+                                        mlir::PatternRewriter& rewriter,
+                                        mlir::Location loc) {
+    auto floatAttr = rewriter.getFloatAttr(rewriter.getF64Type(), value);
+    return rewriter.create<mlir::arith::ConstantOp>(loc, rewriter.getF64Type(),
+                                                    floatAttr);
+  }
+
   void rewriteSingleAdditiveParam(UnitaryInterface op, const std::string& type,
                                   mlir::PatternRewriter& rewriter) const {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
 
     auto loc = user->getLoc();
-    auto opParams = op.getParams();
-    auto userParams = user.getParams();
 
-    auto add =
-        rewriter.create<mlir::arith::AddFOp>(loc, opParams[0], userParams[0]);
-    const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+    auto opParamDouble = getDoubleFromValue(op.getParams()[0]);
+    auto userParamDouble = getDoubleFromValue(user.getParams()[0]);
+
+    double newParamValue = opParamDouble + userParamDouble;
+
+    auto newParam = getValueFromDouble(newParamValue, rewriter, loc);
+    const llvm::SmallVector<mlir::Value, 1> newParamsVec{newParam};
     const mlir::ValueRange newParams(newParamsVec);
 
     auto userInQubits = user.getInQubits();
