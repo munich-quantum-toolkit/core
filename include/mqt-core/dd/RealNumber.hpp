@@ -171,6 +171,9 @@ struct RealNumber final : LLBase {
   static void unmark(RealNumber* e) noexcept;
   [[nodiscard]] static bool isMarked(const RealNumber* e) noexcept;
 
+  static void immortalize(RealNumber* e) noexcept;
+  [[nodiscard]] static bool isImmortal(const RealNumber* e) noexcept;
+
   /**
    * @brief The value of the number.
    * @details The value of the number is a floating point number. The sign of
@@ -185,6 +188,9 @@ struct RealNumber final : LLBase {
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
   static inline fp eps = std::numeric_limits<dd::fp>::epsilon() * 1024;
 };
+
+static_assert(sizeof(RealNumber) == 16);
+static_assert(alignof(RealNumber) == 8);
 
 namespace constants {
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)

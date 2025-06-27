@@ -43,8 +43,7 @@ struct NodeBase : LLBase {
    *    0b10 = mark first path edge (tmp flag),
    *     0b1 = mark path is conjugated (tmp flag)
    */
-  std::uint16_t flags = 0; // TODO: Would it make sense to use a larger datatype
-                           // here since Ref is gone?
+  std::uint16_t flags = 0;
 
   /// Mark flag used for mark-and-sweep garbage collection
   static constexpr std::uint16_t MARK_FLAG = 0b10000U;
@@ -75,6 +74,9 @@ struct NodeBase : LLBase {
   }
   static constexpr NodeBase* getTerminal() noexcept { return nullptr; }
 };
+
+static_assert(sizeof(NodeBase) == 16);
+static_assert(alignof(NodeBase) == 8);
 
 /**
  * @brief A vector DD node

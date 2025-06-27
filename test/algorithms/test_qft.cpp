@@ -14,6 +14,7 @@
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
+#include "dd/RealNumberUniqueTable.hpp"
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
@@ -90,8 +91,7 @@ TEST_P(QFT, Functionality) {
   // since only positive real values are stored in the complex table
   // this number has to be divided by 4
   ASSERT_EQ(dd->cn.realCount(),
-            (1ULL << (std::max<std::size_t>(2UL, nqubits) - 2)) -
-                1); // TODO: No static 0.5 anymore.
+            (1ULL << (std::max<std::size_t>(2UL, nqubits) - 2)));
 
   // top edge weight should equal sqrt(0.5)^n
   EXPECT_NEAR(dd::RealNumber::val(func.w.r),
@@ -113,9 +113,8 @@ TEST_P(QFT, Functionality) {
   }
   dd->untrack(func);
   dd->garbageCollect(true);
-  // number of complex table entries after clean-up should equal initial
-  // number of entries
-  EXPECT_EQ(dd->cn.realCount(), 0);
+
+  EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
 }
 
 TEST_P(QFT, FunctionalityRecursive) {
@@ -136,8 +135,7 @@ TEST_P(QFT, FunctionalityRecursive) {
   // since only positive real values are stored in the complex table
   // this number has to be divided by 4
   ASSERT_EQ(dd->cn.realCount(),
-            (1ULL << (std::max<std::size_t>(2UL, nqubits) - 2)) -
-                1); // TODO: No static 0.5 anymore.
+            (1ULL << (std::max<std::size_t>(2UL, nqubits) - 2)));
 
   // top edge weight should equal sqrt(0.5)^n
   EXPECT_NEAR(dd::RealNumber::val(func.w.r),
@@ -162,9 +160,7 @@ TEST_P(QFT, FunctionalityRecursive) {
   dd->untrack(func);
   dd->garbageCollect(true);
 
-  // number of complex table entries after clean-up should equal initial
-  // number of entries
-  EXPECT_EQ(dd->cn.realCount(), 0);
+  EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
 }
 
 TEST_P(QFT, Simulation) {
@@ -198,9 +194,8 @@ TEST_P(QFT, Simulation) {
   }
   dd->untrack(sim);
   dd->garbageCollect(true);
-  // number of complex table entries after clean-up should equal initial
-  // number of entries
-  EXPECT_EQ(dd->cn.realCount(), 0);
+
+  EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
 }
 
 TEST_P(QFT, FunctionalityRecursiveEquality) {
@@ -218,9 +213,8 @@ TEST_P(QFT, FunctionalityRecursiveEquality) {
   dd->untrack(funcRec);
   dd->untrack(func);
   dd->garbageCollect(true);
-  // number of complex table entries after clean-up should equal initial
-  // number of entries
-  EXPECT_EQ(dd->cn.realCount(), 0);
+
+  EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
 }
 
 TEST_P(QFT, SimulationSampling) {
@@ -247,8 +241,7 @@ TEST_P(QFT, SimulationSampling) {
     // the number of unique entries should be close to the number of shots
     EXPECT_GE(ratio, 0.7);
     dd->garbageCollect(true);
-    // number of complex table entries after clean-up should equal initial
-    // number of entries
-    EXPECT_EQ(dd->cn.realCount(), 0);
+
+    EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
   }
 }

@@ -12,6 +12,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Package.hpp"
+#include "dd/RealNumberUniqueTable.hpp"
 #include "dd/Simulation.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
@@ -31,8 +32,7 @@ class Grover
 protected:
   void TearDown() override {
     dd->garbageCollect(true);
-    // number of complex table entries after clean-up should equal 0
-    EXPECT_EQ(dd->cn.realCount(), 0);
+    EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
   }
 
   void SetUp() override {
@@ -100,7 +100,7 @@ TEST_P(Grover, Functionality) {
     const auto next = dd->multiply(iterationOp, iteration);
     dd->track(next);
     dd->untrack(iteration); // This will automatically untrack the iterationOp.
-    dd->garbageCollect();
+    dd->garbageCollect(false);
     iteration = next;
   }
 

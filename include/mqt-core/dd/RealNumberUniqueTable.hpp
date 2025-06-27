@@ -24,6 +24,14 @@ namespace dd {
 struct RealNumber;
 
 /**
+ * @brief Immortal numbers that will never be garbage collected.
+ */
+namespace immortals {
+constexpr std::array<fp, 1> get() { return {.5}; }
+constexpr std::size_t size() { return get().size(); }
+} // namespace immortals
+
+/**
  * @brief A unique table for real numbers.
  * @details A hash table that stores real numbers. The hash table is implemented
  * as an array of buckets, each of which is a linked list of entries. The hash

@@ -30,10 +30,9 @@ RealNumberUniqueTable::RealNumberUniqueTable(MemoryManager& manager,
     : memoryManager(&manager), initialGCLimit(initialGCLim) {
   stats.entrySize = sizeof(Bucket);
   stats.numBuckets = NBUCKET;
-
-  // add 1/2 to the table so that it is available for complex numbers
-  // TODO: This causes problems since it will be garbage collected.
-  // std::ignore = lookupNonNegative(0.5L);
+  for (const auto& ival : immortals::get()) {
+    RealNumber::immortalize(lookupNonNegative(ival));
+  }
 }
 
 std::int64_t RealNumberUniqueTable::hash(const fp val) noexcept {
@@ -145,7 +144,7 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
     RealNumber* curr = table[key];
     RealNumber* prev = nullptr;
     while (curr != nullptr) {
-      if (!RealNumber::isMarked(curr)) {
+      if (!RealNumber::isImmortal(curr) && !RealNumber::isMarked(curr)) {
         RealNumber* next = curr->next();
         if (prev == nullptr) {
           table[key] = next;
