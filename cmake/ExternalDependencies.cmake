@@ -77,20 +77,7 @@ FetchContent_Declare(abseil-cpp URL ${ABSL_URL} FIND_PACKAGE_ARGS ${ABSL_VERSION
 list(APPEND FETCH_PACKAGES abseil-cpp)
 
 if(BUILD_MQT_CORE_TESTS)
-  # When adding abseil manually, GTest also requires re2
-  set(RE2_VERSION
-      2024-07-02
-      CACHE STRING "re2 version")
-  set(RE2_URL https://github.com/google/re2/archive/refs/tags/${RE2_VERSION}.tar.gz)
-  # remove '-' from version
-  string(REPLACE "-" "" RE2_VERSION "${RE2_VERSION}")
-  FetchContent_Declare(re2 URL ${RE2_URL} FIND_PACKAGE_ARGS ${RE2_VERSION} CONFIG)
-  list(APPEND FETCH_PACKAGES re2)
-
   set(gtest_force_shared_crt
-      ON
-      CACHE BOOL "" FORCE)
-  set(GTEST_HAS_ABSL
       ON
       CACHE BOOL "" FORCE)
   set(GTEST_VERSION
