@@ -65,11 +65,6 @@ set(ABSL_VERSION
     20250512.1
     CACHE STRING "abseil-cpp version")
 set(ABSL_URL https://github.com/abseil/abseil-cpp/archive/refs/tags/${ABSL_VERSION}.tar.gz)
-# The install instruction for re2 cannot be disabled and they require the export targets from
-# abseil.
-set(ABSL_ENABLE_INSTALL
-    ON
-    CACHE BOOL "" FORCE)
 set(ABSL_MSVC_STATIC_RUNTIME
     OFF
     CACHE BOOL "" FORCE)
