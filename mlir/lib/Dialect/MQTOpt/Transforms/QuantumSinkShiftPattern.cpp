@@ -82,29 +82,6 @@ struct QuantumSinkShiftPattern final
     return earliestUsers;
   }
 
-  mlir::LogicalResult match(UnitaryInterface op) const override {
-    // We only consider 1-qubit gates.
-    if (op.getAllOutQubits().size() != 1) {
-      return mlir::failure();
-    }
-
-    // Ensure that there is at least one user.
-    const auto& users = op->getUsers();
-    if (users.empty()) {
-      return mlir::failure();
-    }
-
-    // There may be multiple users if canonicalization has deemed a branch
-    // operand as pass-through and therefore removed it. If more than one user
-    // is in the same block, then the `QuantumSinkShiftPattern` cannot be
-    // applied
-    return std::all_of(
-               users.begin(), users.end(),
-               [&](auto* user) { return user->getBlock() != op->getBlock(); })
-               ? mlir::success()
-               : mlir::failure();
-  }
-
   /**
    * @brief Replaces all uses of a given operation with the results of a clone,
    *
@@ -130,17 +107,52 @@ struct QuantumSinkShiftPattern final
     }
   }
 
-  void rewrite(UnitaryInterface op,
-               mlir::PatternRewriter& rewriter) const override {
-    auto users = getEarliestUsers(op->getUsers());
+  mlir::LogicalResult
+  matchAndRewrite(UnitaryInterface op,
+                  mlir::PatternRewriter& rewriter) const override {
+    // We only consider 1-qubit gates.
+    if (op.getAllOutQubits().size() != 1) {
+      return mlir::failure();
+    }
 
-    for (auto* user : users) {
+    // Ensure that there is at least one user.
+    const auto& users = op->getUsers();
+    if (users.empty()) {
+      return mlir::failure();
+    }
+
+    // There may be multiple users if canonicalization has deemed a branch
+    // operand as pass-through and therefore removed it. If more than one user
+    // is in the same block, then the `QuantumSinkShiftPattern` cannot be
+    // applied.
+    if (!std::all_of(users.begin(), users.end(), [&](auto* user) {
+          return user->getBlock() != op->getBlock();
+        })) {
+      return mlir::failure();
+    }
+
+    // --- Begin Rewrite Phase ---
+    auto earliestUsers = getEarliestUsers(users);
+
+    for (auto* user : earliestUsers) {
       auto* block = user->getBlock();
       rewriter.setInsertionPoint(&block->front());
       auto* clone = rewriter.clone(*op);
-      replaceInputsWithClone(rewriter, *op, *clone, *user);
+      for (size_t i = 0; i < user->getOperands().size(); i++) {
+        const auto& operand = user->getOperand(i);
+        const auto found = std::find(op->getResults().begin(),
+                                     op->getResults().end(), operand);
+        if (found == op->getResults().end()) {
+          continue;
+        }
+        const auto idx = std::distance(op->getResults().begin(), found);
+        rewriter.modifyOpInPlace(
+            user, [&] { user->setOperand(i, clone->getResult(idx)); });
+      }
     }
+
     rewriter.eraseOp(op);
+    return mlir::success();
   }
 };
 
