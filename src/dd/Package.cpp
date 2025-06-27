@@ -76,7 +76,7 @@ void Package::reset() {
   clearUniqueTables();
   resetMemoryManagers();
   clearComputeTables();
-  mark.reset();
+  roots.reset();
 }
 
 void Package::resetMemoryManagers(const bool resizeToTotal) {
@@ -113,7 +113,7 @@ bool Package::garbageCollect(bool force) {
     return {invC, invV, invM, invD};
   };
 
-  const auto [invC, invV, invM, invD] = mark.execute<flags>(sweep);
+  const auto [invC, invV, invM, invD] = roots.execute<flags>(sweep);
 
   // invalidate all compute tables involving vectors if any vector node has
   // been collected
@@ -167,7 +167,7 @@ Package::ActiveCounts Package::computeActiveCounts() {
         vUniqueTable.countMarkedEntries(), mUniqueTable.countMarkedEntries(),
         dUniqueTable.countMarkedEntries(), cUniqueTable.countMarkedEntries()};
   };
-  return mark.execute<ActiveCounts>(count);
+  return roots.execute<ActiveCounts>(count);
 }
 
 dEdge Package::makeZeroDensityOperator(const std::size_t n) {

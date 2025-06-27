@@ -200,7 +200,7 @@ public:
    * @param e The edge to increase the reference count of.
    */
   template <class Node> void track(const Edge<Node>& e) noexcept {
-    mark.addToRoots(e);
+    roots.addToRoots(e);
   }
 
   /**
@@ -212,36 +212,37 @@ public:
    * hashset.
    */
   template <class Node> void untrack(const Edge<Node>& e) {
-    mark.removeFromRoots(e);
+    roots.removeFromRoots(e);
   }
 
   template <class Node> [[nodiscard]] auto& getRootSet() noexcept {
-    return mark.getRoots<Node>();
+    return roots.getRoots<Node>();
   }
 
 private:
-  struct MarkAndPerform {
+  struct RootSetManager {
   public:
     template <class Node>
     using RootSet = std::unordered_map<Edge<Node>, std::size_t>;
 
-    /// @brief Add to respective root set. Terminals may be added too.
+    /// @brief Add to respective root set.
     template <class Node> void addToRoots(const Edge<Node>& e) noexcept {
       getRoots<Node>()[e]++;
     }
 
-    /// @brief Remove from respective root set. Terminals may be removed too.
+    /// @brief Remove from respective root set.
     template <class Node> void removeFromRoots(const Edge<Node>& e) {
-      auto& roots = getRoots<Node>();
-      auto it = roots.find(e);
-      if (it == roots.end()) {
+      auto& set = getRoots<Node>();
+      auto it = set.find(e);
+      if (it == set.end()) {
         throw std::invalid_argument("Edge is not part of the root set.");
       }
       if (--it->second == 0U) {
-        roots.erase(it);
+        set.erase(it);
       }
     }
 
+    /// @brief Execute mark() -> op() -> unmark().
     template <class Result, typename Fn> Result execute(Fn& op) noexcept {
       mark();
       Result res = op();
@@ -249,9 +250,7 @@ private:
       return res;
     }
 
-    /**
-     * @brief Clear all root sets.
-     */
+    /// @brief Clear all root sets.
     void reset() {
       vRoots.clear();
       mRoots.clear();
@@ -262,43 +261,46 @@ private:
     /// @brief Mark edges contained in @p roots.
     template <class Node> static void mark(const RootSet<Node>& roots) {
       for (auto& [edge, _] : roots) {
-        auto e = edge;
-        e.mark();
+        edge.mark();
       }
     }
 
     /// @brief Unmark edges contained in @p roots.
     template <class Node> static void unmark(const RootSet<Node>& roots) {
       for (auto& [edge, _] : roots) {
-        auto e = edge;
-        e.unmark();
+        edge.unmark();
       }
     }
 
+    /// @brief Mark edges contained in all root sets.
     void mark() noexcept {
-      MarkAndPerform::mark(vRoots);
-      MarkAndPerform::mark(mRoots);
-      MarkAndPerform::mark(dRoots);
+      RootSetManager::mark(vRoots);
+      RootSetManager::mark(mRoots);
+      RootSetManager::mark(dRoots);
     }
 
+    /// @brief Unmark edges contained in all root sets.
     void unmark() noexcept {
-      MarkAndPerform::unmark(vRoots);
-      MarkAndPerform::unmark(mRoots);
-      MarkAndPerform::unmark(dRoots);
+      RootSetManager::unmark(vRoots);
+      RootSetManager::unmark(mRoots);
+      RootSetManager::unmark(dRoots);
     }
 
+    /// @brief Return vector roots.
     template <class Node,
               std::enable_if_t<std::is_same_v<Node, vNode>, bool> = true>
     auto& getRoots() noexcept {
       return vRoots;
     }
 
+    /// @brief Return matrix roots.
     template <class Node,
               std::enable_if_t<std::is_same_v<Node, mNode>, bool> = true>
     auto& getRoots() noexcept {
       return mRoots;
     }
 
+    /// @brief Return density roots.
     template <class Node,
               std::enable_if_t<std::is_same_v<Node, dNode>, bool> = true>
     auto& getRoots() noexcept {
@@ -312,7 +314,7 @@ private:
     template <class Node> friend auto& Package::getRootSet() noexcept;
   };
 
-  MarkAndPerform mark;
+  RootSetManager roots;
 
 public:
   /**

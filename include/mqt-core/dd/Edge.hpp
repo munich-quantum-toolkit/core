@@ -131,8 +131,8 @@ template <class Node> struct Edge {
    */
   [[nodiscard]] std::size_t size() const;
 
-  void mark() noexcept;
-  void unmark() noexcept;
+  void mark() const noexcept;
+  void unmark() const noexcept;
 
 private:
   /**
