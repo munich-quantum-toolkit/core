@@ -105,6 +105,33 @@ struct MergeRotationGatesPattern final
                                                     floatAttr);
   }
 
+  void cancelGates(UnitaryInterface op, UnitaryInterface user,
+                   mlir::PatternRewriter& rewriter) const {
+    // Prepare erasures of op and user
+    const auto& userUsers = user->getUsers();
+    const auto& opAllInQubits = op.getAllInQubits();
+    const auto& userAllOutQubits = user.getAllOutQubits();
+    for (const auto& userUser : userUsers) {
+      for (size_t i = 0; i < userUser->getOperands().size(); i++) {
+        const auto& operand = userUser->getOperand(i);
+        const auto found = std::find(userAllOutQubits.begin(),
+                                     userAllOutQubits.end(), operand);
+        if (found == userAllOutQubits.end()) {
+          continue;
+        }
+        const auto idx = std::distance(userAllOutQubits.begin(), found);
+        rewriter.modifyOpInPlace(
+            userUser, [&] { userUser->setOperand(i, opAllInQubits[idx]); });
+      }
+    }
+
+    // Erase op
+    rewriter.eraseOp(op);
+
+    // Erase user
+    rewriter.eraseOp(user);
+  }
+
   void rewriteSingleAdditiveParam(UnitaryInterface op, const std::string& type,
                                   mlir::PatternRewriter& rewriter) const {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
@@ -115,6 +142,11 @@ struct MergeRotationGatesPattern final
     auto userParamDouble = getDoubleFromValue(user.getParams()[0]);
 
     double newParamValue = opParamDouble + userParamDouble;
+
+    if (newParamValue == 0.0) {
+      cancelGates(op, user, rewriter);
+      return;
+    }
 
     auto newParam = getValueFromDouble(newParamValue, rewriter, loc);
     const llvm::SmallVector<mlir::Value, 1> newParamsVec{newParam};
