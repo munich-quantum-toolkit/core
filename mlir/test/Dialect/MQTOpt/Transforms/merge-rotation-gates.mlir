@@ -46,8 +46,10 @@ module {
     %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_3) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
     // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q1_3]])  <{index_attr = 1 : i64}>
     %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_5) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
     // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
     "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+
     return
   }
 }
@@ -94,8 +96,10 @@ module {
     %reg_5 = "mqtopt.insertQubit"(%reg_4, %q12_4#0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
     // CHECK: %[[Reg_6:.*]] = "mqtopt.insertQubit"(%[[Reg_5]], %[[Q12_2]]#1)  <{index_attr = 2 : i64}>
     %reg_6 = "mqtopt.insertQubit"(%reg_5, %q12_4#1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
     // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_6]])
     "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
+
     return
   }
 }
@@ -135,8 +139,54 @@ module {
     %reg_5 = "mqtopt.insertQubit"(%reg_4, %q12_2#0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
     // CHECK: %[[Reg_6:.*]] = "mqtopt.insertQubit"(%[[Reg_5]], %[[ANY:.*]])  <{index_attr = 2 : i64}>
     %reg_6 = "mqtopt.insertQubit"(%reg_5, %q12_2#1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
     // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_6]])
     "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
+
+    return
+  }
+}
+
+// -----
+// This test checks if u and u2 gates are merged and canceled correctly.
+
+module {
+  // CHECK-LABEL: func.func @testCancelUGates
+  func.func @testCancelUGates() {
+    // CHECK: %[[Res_p2:.*]] = arith.constant 2.000000e+00 : f64
+    // CHECK: %[[Res_p1:.*]] = arith.constant 1.000000e+00 : f64
+    // CHECK: %[[Res_m1:.*]] = arith.constant -1.000000e+00 : f64
+
+    // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+
+    // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
+    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    // CHECK: %[[Q0_1:.*]] = mqtopt.u(%[[Res_m1:.*]], %[[Res_p1:.*]], %[[Res_p1:.*]]) %[[Q0_0]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_2:.*]] = mqtopt.u(%[[Res_m1:.*]], %[[Res_m1:.*]], %[[Res_m1:.*]]) %[[Q0_1]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_3:.*]] = mqtopt.u2(%[[Res_p1:.*]], %[[Res_p2:.*]]) %[[Q0_2]] : !mqtopt.Qubit
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.u(%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]]) %[[ANY:.*]] : !mqtopt.Qubit
+
+    %c_0 = arith.constant -1.000000e+00 : f64
+    %c_1 = arith.constant 1.000000e+00 : f64
+    %c_2 = arith.constant 2.000000e+00 : f64
+    %q0_1 = mqtopt.u(%c_0, %c_1, %c_1) %q0_0 : !mqtopt.Qubit
+    %q0_2 = mqtopt.u(%c_0, %c_0, %c_0) %q0_1 : !mqtopt.Qubit
+    %q0_3 = mqtopt.u2(%c_1, %c_2) %q0_2 : !mqtopt.Qubit
+    %q1_1 = mqtopt.u(%c_0, %c_1, %c_1) %q1_0 : !mqtopt.Qubit
+    %q1_2 = mqtopt.u(%c_1, %c_0, %c_0) %q1_1 : !mqtopt.Qubit
+
+    // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q0_3]])  <{index_attr = 0 : i64}>
+    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_3) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[ANY:.*]])  <{index_attr = 1 : i64}>
+    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_2) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+    // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
+    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+
     return
   }
 }
