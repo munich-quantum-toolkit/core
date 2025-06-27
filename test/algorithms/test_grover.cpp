@@ -100,7 +100,6 @@ TEST_P(Grover, Functionality) {
     const auto next = dd->multiply(iterationOp, iteration);
     dd->track(next);
     dd->untrack(iteration); // This will automatically untrack the iterationOp.
-    dd->garbageCollect(false);
     iteration = next;
   }
 
