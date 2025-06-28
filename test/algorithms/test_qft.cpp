@@ -91,7 +91,7 @@ TEST_P(QFT, Functionality) {
   // since only positive real values are stored in the complex table
   // this number has to be divided by 4
   ASSERT_EQ(dd->cn.realCount(),
-            (1ULL << (std::max<std::size_t>(2UL, nqubits) - 2)));
+            1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
 
   // top edge weight should equal sqrt(0.5)^n
   EXPECT_NEAR(dd::RealNumber::val(func.w.r),
@@ -135,7 +135,7 @@ TEST_P(QFT, FunctionalityRecursive) {
   // since only positive real values are stored in the complex table
   // this number has to be divided by 4
   ASSERT_EQ(dd->cn.realCount(),
-            (1ULL << (std::max<std::size_t>(2UL, nqubits) - 2)));
+            1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
 
   // top edge weight should equal sqrt(0.5)^n
   EXPECT_NEAR(dd::RealNumber::val(func.w.r),
@@ -156,7 +156,6 @@ TEST_P(QFT, FunctionalityRecursive) {
                 dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
-
   dd->untrack(func);
   dd->garbageCollect(true);
 
