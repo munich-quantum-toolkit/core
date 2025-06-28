@@ -172,6 +172,7 @@ benchmarkFunctionalityConstructionGrover(
         e = f;
         zero = false;
       } else {
+        dd.track(f);
         e = dd.applyOperation(e, f);
       }
     }
