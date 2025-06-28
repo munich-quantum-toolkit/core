@@ -54,16 +54,6 @@ Complex ComplexNumbers::lookup(const Complex& c) {
   return lookup(valr, vali);
 }
 
-void ComplexNumbers::incRef(const Complex& c) const noexcept {
-  uniqueTable->incRef(c.r);
-  uniqueTable->incRef(c.i);
-}
-
-void ComplexNumbers::decRef(const Complex& c) const noexcept {
-  uniqueTable->decRef(c.r);
-  uniqueTable->decRef(c.i);
-}
-
 Complex ComplexNumbers::lookup(const std::complex<fp>& c) {
   return lookup(c.real(), c.imag());
 }

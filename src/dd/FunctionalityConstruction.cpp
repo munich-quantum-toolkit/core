@@ -23,12 +23,14 @@
 namespace dd {
 MatrixDD buildFunctionality(const qc::QuantumComputation& qc, Package& dd) {
   if (qc.getNqubits() == 0U) {
-    return MatrixDD::one();
+    auto e = MatrixDD::one();
+    dd.track(e);
+    return e;
   }
 
   auto permutation = qc.initialLayout;
   auto e = dd.createInitialMatrix(qc.getAncillary());
-
+  dd.track(e);
   for (const auto& op : qc) {
     // SWAP gates can be executed virtually by changing the permutation
     if (op->getType() == qc::OpType::SWAP && !op->isControlled()) {
@@ -43,7 +45,6 @@ MatrixDD buildFunctionality(const qc::QuantumComputation& qc, Package& dd) {
   changePermutation(e, permutation, qc.outputPermutation, dd);
   e = dd.reduceAncillae(e, qc.getAncillary());
   e = dd.reduceGarbage(e, qc.getGarbage());
-
   return e;
 }
 
@@ -66,7 +67,7 @@ bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
     if (opIdx == qc.size()) {
       // only one element was left
       s.push(e);
-      dd.incRef(e);
+      dd.track(e);
       return false;
     }
     auto f = Package::makeIdent();
@@ -78,7 +79,7 @@ bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
       f = getDD(*qc.at(opIdx), dd, permutation);
     }
     s.push(dd.multiply(f, e)); // ! reverse multiplication
-    dd.incRef(s.top());
+    dd.track(s.top());
     return (opIdx != qc.size() - 1U);
   }
 
@@ -103,10 +104,10 @@ bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
   s.pop();
   s.push(dd.multiply(e, f)); // ordering because of stack structure
 
-  // reference counting
-  dd.decRef(e);
-  dd.decRef(f);
-  dd.incRef(s.top());
+  // remove references to e and f via decRef and add the product via incRef
+  dd.untrack(e);
+  dd.untrack(f);
+  dd.track(s.top());
   dd.garbageCollect();
 
   return success;
@@ -116,14 +117,16 @@ bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
 MatrixDD buildFunctionalityRecursive(const qc::QuantumComputation& qc,
                                      Package& dd) {
   if (qc.getNqubits() == 0U) {
-    return MatrixDD::one();
+    auto e = MatrixDD::one();
+    dd.track(e);
+    return e;
   }
 
   auto permutation = qc.initialLayout;
 
   if (qc.size() == 1U) {
     auto e = getDD(*qc.front(), dd, permutation);
-    dd.incRef(e);
+    dd.track(e);
     return e;
   }
 
@@ -137,7 +140,6 @@ MatrixDD buildFunctionalityRecursive(const qc::QuantumComputation& qc,
   changePermutation(e, permutation, qc.outputPermutation, dd);
   e = dd.reduceAncillae(e, qc.getAncillary());
   e = dd.reduceGarbage(e, qc.getGarbage());
-
   return e;
 }
 

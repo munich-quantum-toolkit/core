@@ -131,6 +131,12 @@ template <class Node> struct Edge {
    */
   [[nodiscard]] std::size_t size() const;
 
+  /// @brief Mark the edge as used.
+  void mark() const noexcept;
+
+  /// @brief Unmark the edge.
+  void unmark() const noexcept;
+
 private:
   /**
    * @brief Recursively traverse the DD and count the number of nodes

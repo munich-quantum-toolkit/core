@@ -11,8 +11,10 @@
 #include "algorithms/QFT.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
+#include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
+#include "dd/RealNumberUniqueTable.hpp"
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
@@ -57,8 +59,6 @@ protected:
 ///	Utilizing more qubits requires the use of fp=long double
 constexpr qc::Qubit QFT_MAX_QUBITS = 17U;
 
-constexpr size_t INITIAL_COMPLEX_COUNT = 1;
-
 INSTANTIATE_TEST_SUITE_P(QFT, QFT,
                          testing::Range<qc::Qubit>(0U, QFT_MAX_QUBITS + 1U, 3U),
                          [](const testing::TestParamInfo<QFT::ParamType>& inf) {
@@ -76,7 +76,6 @@ INSTANTIATE_TEST_SUITE_P(QFT, QFT,
 TEST_P(QFT, Functionality) {
   // there should be no error constructing the circuit
   ASSERT_NO_THROW({ qc = qc::createQFT(nqubits, false); });
-  // there should be no error building the functionality
 
   // there should be no error building the functionality
   ASSERT_NO_THROW({ func = buildFunctionality(qc, *dd); });
@@ -112,11 +111,10 @@ TEST_P(QFT, Functionality) {
                 dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
-  dd->decRef(func);
+  dd->untrack(func);
   dd->garbageCollect(true);
-  // number of complex table entries after clean-up should equal initial
-  // number of entries
-  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
+
+  EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
 }
 
 TEST_P(QFT, FunctionalityRecursive) {
@@ -158,11 +156,10 @@ TEST_P(QFT, FunctionalityRecursive) {
                 dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
-  dd->decRef(func);
+  dd->untrack(func);
   dd->garbageCollect(true);
-  // number of complex table entries after clean-up should equal initial
-  // number of entries
-  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
+
+  EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
 }
 
 TEST_P(QFT, Simulation) {
@@ -194,11 +191,10 @@ TEST_P(QFT, Simulation) {
                 dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
-  dd->decRef(sim);
+  dd->untrack(sim);
   dd->garbageCollect(true);
-  // number of complex table entries after clean-up should equal initial
-  // number of entries
-  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
+
+  EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
 }
 
 TEST_P(QFT, FunctionalityRecursiveEquality) {
@@ -213,12 +209,11 @@ TEST_P(QFT, FunctionalityRecursiveEquality) {
   ASSERT_NO_THROW({ funcRec = buildFunctionality(qc, *dd); });
 
   ASSERT_EQ(func, funcRec);
-  dd->decRef(funcRec);
-  dd->decRef(func);
+  dd->untrack(funcRec);
+  dd->untrack(func);
   dd->garbageCollect(true);
-  // number of complex table entries after clean-up should equal initial
-  // number of entries
-  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
+
+  EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
 }
 
 TEST_P(QFT, SimulationSampling) {
@@ -245,8 +240,7 @@ TEST_P(QFT, SimulationSampling) {
     // the number of unique entries should be close to the number of shots
     EXPECT_GE(ratio, 0.7);
     dd->garbageCollect(true);
-    // number of complex table entries after clean-up should equal initial
-    // number of entries
-    EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
+
+    EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
   }
 }

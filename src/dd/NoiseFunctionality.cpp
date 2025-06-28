@@ -83,7 +83,7 @@ StochasticNoiseFunctionality::StochasticNoiseFunctionality(
       identityDD(Package::makeIdent()) {
   sanityCheckOfNoiseProbabilities(gateNoiseProbability, amplitudeDampingProb,
                                   multiQubitGateFactor);
-  package->incRef(identityDD);
+  package->track(identityDD);
 }
 
 double StochasticNoiseFunctionality::getNoiseProbability(
@@ -129,8 +129,8 @@ void StochasticNoiseFunctionality::applyNoiseOperation(
     }
     tmp.w = Complex::one();
 
-    package->incRef(tmp);
-    package->decRef(state);
+    package->track(tmp);
+    package->untrack(state);
     state = tmp;
 
     // I only need to apply the operations once
@@ -261,9 +261,9 @@ void DeterministicNoiseFunctionality::applyNoiseEffects(
                                      static_cast<Qubit>(nQubits));
   dEdge::revertDmChangesToEdge(originalEdge);
   const auto r = dEdge{nodeAfterNoise.p, package->cn.lookup(nodeAfterNoise.w)};
-  package->incRef(r);
+  package->track(r);
   dEdge::alignDensityEdge(originalEdge);
-  package->decRef(originalEdge);
+  package->untrack(originalEdge);
   originalEdge = r;
   dEdge::setDensityMatrixTrue(originalEdge);
 }

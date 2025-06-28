@@ -44,6 +44,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -75,6 +76,7 @@ void Package::reset() {
   clearUniqueTables();
   resetMemoryManagers();
   clearComputeTables();
+  roots.reset();
 }
 
 void Package::resetMemoryManagers(const bool resizeToTotal) {
@@ -92,6 +94,8 @@ void Package::clearUniqueTables() {
 }
 
 bool Package::garbageCollect(bool force) {
+  using flags = std::tuple<bool, bool, bool, bool>;
+
   // return immediately if no table needs collection
   if (!force && !vUniqueTable.possiblyNeedsCollection() &&
       !mUniqueTable.possiblyNeedsCollection() &&
@@ -100,19 +104,20 @@ bool Package::garbageCollect(bool force) {
     return false;
   }
 
-  const auto cCollect = cUniqueTable.garbageCollect(force);
-  if (cCollect > 0) {
-    // Collecting garbage in the complex numbers table requires collecting the
-    // node tables as well
-    force = true;
-  }
-  const auto vCollect = vUniqueTable.garbageCollect(force);
-  const auto mCollect = mUniqueTable.garbageCollect(force);
-  const auto dCollect = dUniqueTable.garbageCollect(force);
+  const auto sweep = [this, &force]() -> flags {
+    const bool invC = cUniqueTable.garbageCollect(force) > 0;
+    force |= invC;
+    const bool invV = vUniqueTable.garbageCollect(force) > 0;
+    const bool invM = mUniqueTable.garbageCollect(force) > 0;
+    const bool invD = dUniqueTable.garbageCollect(force) > 0;
+    return {invC, invV, invM, invD};
+  };
+
+  const auto [invC, invV, invM, invD] = roots.execute<flags>(sweep);
 
   // invalidate all compute tables involving vectors if any vector node has
   // been collected
-  if (vCollect > 0) {
+  if (invV) {
     vectorAdd.clear();
     vectorInnerProduct.clear();
     vectorKronecker.clear();
@@ -120,7 +125,7 @@ bool Package::garbageCollect(bool force) {
   }
   // invalidate all compute tables involving matrices if any matrix node has
   // been collected
-  if (mCollect > 0) {
+  if (invM) {
     matrixAdd.clear();
     conjugateMatrixTranspose.clear();
     matrixKronecker.clear();
@@ -131,7 +136,7 @@ bool Package::garbageCollect(bool force) {
   }
   // invalidate all compute tables involving density matrices if any density
   // matrix node has been collected
-  if (dCollect > 0) {
+  if (invD) {
     densityAdd.clear();
     densityDensityMultiplication.clear();
     densityNoise.clear();
@@ -139,7 +144,7 @@ bool Package::garbageCollect(bool force) {
   }
   // invalidate all compute tables where any component of the entry contains
   // numbers from the complex table if any complex numbers were collected
-  if (cCollect > 0) {
+  if (invC) {
     matrixVectorMultiplication.clear();
     matrixMatrixMultiplication.clear();
     conjugateMatrixTranspose.clear();
@@ -153,7 +158,16 @@ bool Package::garbageCollect(bool force) {
     densityNoise.clear();
     densityTrace.clear();
   }
-  return vCollect > 0 || mCollect > 0 || cCollect > 0;
+  return invC || invV || invM || invD;
+}
+
+Package::ActiveCounts Package::computeActiveCounts() {
+  const auto count = [this]() -> ActiveCounts {
+    return {
+        vUniqueTable.countMarkedEntries(), mUniqueTable.countMarkedEntries(),
+        dUniqueTable.countMarkedEntries(), cUniqueTable.countMarkedEntries()};
+  };
+  return roots.execute<ActiveCounts>(count);
 }
 
 dEdge Package::makeZeroDensityOperator(const std::size_t n) {
@@ -162,7 +176,7 @@ dEdge Package::makeZeroDensityOperator(const std::size_t n) {
     f = makeDDNode(static_cast<Qubit>(p),
                    std::array{f, dEdge::zero(), dEdge::zero(), dEdge::zero()});
   }
-  incRef(f);
+  track(f);
   return f;
 }
 
@@ -485,8 +499,8 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
       }
       e = makeDDNode(static_cast<Qubit>(p), edges);
     }
-    incRef(e);
-    decRef(rootEdge);
+    track(e);
+    untrack(rootEdge);
     rootEdge = e;
   }
 
@@ -614,17 +628,14 @@ char Package::measureOneCollapsing(dEdge& e, const Qubit index,
     densityMatrixTrace = trace(tmp2, nrQubits);
   }
 
-  incRef(tmp2);
+  tmp2.w = cn.lookup(e.w / densityMatrixTrace); // Normalize density matrix
+
+  track(tmp2);
   dEdge::alignDensityEdge(e);
-  decRef(e);
+  untrack(e);
   e = tmp2;
   dEdge::setDensityMatrixTrue(e);
 
-  // Normalize density matrix
-  auto result = e.w / densityMatrixTrace;
-  cn.decRef(e.w);
-  e.w = cn.lookup(result);
-  cn.incRef(e.w);
   return measuredResult;
 }
 void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
@@ -639,8 +650,8 @@ void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
 
   assert(probability > 0.);
   e.w = cn.lookup(e.w / std::sqrt(probability));
-  incRef(e);
-  decRef(rootEdge);
+  track(e);
+  untrack(rootEdge);
   rootEdge = e;
 }
 vEdge Package::conjugate(const vEdge& a) {
@@ -700,8 +711,8 @@ mCachedEdge Package::conjugateTransposeRec(const mEdge& a) {
 }
 VectorDD Package::applyOperation(const MatrixDD& operation, const VectorDD& e) {
   const auto tmp = multiply(operation, e);
-  incRef(tmp);
-  decRef(e);
+  track(tmp);
+  untrack(e);
   garbageCollect();
   return tmp;
 }
@@ -709,8 +720,8 @@ MatrixDD Package::applyOperation(const MatrixDD& operation, const MatrixDD& e,
                                  const bool applyFromLeft) {
   const MatrixDD tmp =
       applyFromLeft ? multiply(operation, e) : multiply(e, operation);
-  incRef(tmp);
-  decRef(e);
+  track(tmp);
+  untrack(e);
   garbageCollect();
   return tmp;
 }
@@ -718,9 +729,9 @@ dEdge Package::applyOperationToDensity(dEdge& e, const mEdge& operation) {
   const auto tmp0 = conjugateTranspose(operation);
   const auto tmp1 = multiply(e, densityFromMatrixEdge(tmp0), false);
   const auto tmp2 = multiply(densityFromMatrixEdge(operation), tmp1, true);
-  incRef(tmp2);
+  track(tmp2);
   dEdge::alignDensityEdge(e);
-  decRef(e);
+  untrack(e);
   e = tmp2;
   dEdge::setDensityMatrixTrue(e);
   return e;
@@ -850,7 +861,7 @@ bool Package::isCloseToIdentity(const mEdge& m, const fp tol,
                                 const std::vector<bool>& garbage,
                                 const bool checkCloseToOne) const {
   std::unordered_set<decltype(m.p)> visited{};
-  visited.reserve(mUniqueTable.getNumActiveEntries());
+  visited.reserve(mUniqueTable.getNumEntries());
   return isCloseToIdentityRecursive(m, visited, tol, garbage, checkCloseToOne);
 }
 bool Package::isCloseToIdentityRecursive(
@@ -948,7 +959,7 @@ mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
             std::array{g, mEdge::zero(), mEdge::zero(), mEdge::zero()});
       }
     }
-    incRef(g);
+    track(g);
     return g;
   }
 
@@ -973,8 +984,8 @@ mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
     }
   }
   const auto res = mEdge{g.p, cn.lookup(g.w * e.w)};
-  incRef(res);
-  decRef(e);
+  track(res);
+  untrack(e);
   return res;
 }
 vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
@@ -1002,8 +1013,8 @@ vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
     weight = weight.mag();
   }
   const auto res = vEdge{f.p, cn.lookup(weight)};
-  incRef(res);
-  decRef(e);
+  track(res);
+  untrack(e);
   return res;
 }
 mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
@@ -1029,7 +1040,7 @@ mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
         }
       }
     }
-    incRef(g);
+    track(g);
     return g;
   }
 
@@ -1067,8 +1078,8 @@ mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
   }
   const auto res = mEdge{g.p, cn.lookup(weight)};
 
-  incRef(res);
-  decRef(e);
+  track(res);
+  untrack(e);
   return res;
 }
 mCachedEdge Package::reduceAncillaeRecursion(mNode* p,
