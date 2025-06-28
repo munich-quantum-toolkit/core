@@ -101,8 +101,8 @@ MatrixDD getInverseDD(const qc::Operation& op, Package& dd,
  * @brief Apply a unitary operation to a given vector DD.
  *
  * @details This is a convenience function that realizes @p op times @p in and
- * correctly accounts for the permutation of the operation's qubits and
- * automatically manages root-set membership.
+ * correctly accounts for the permutation of the operation's qubits as well as
+ * automatically handles reference counting.
  *
  * @param op The operation to apply
  * @param in The input DD
@@ -119,8 +119,8 @@ VectorDD applyUnitaryOperation(const qc::Operation& op, const VectorDD& in,
  * @brief Apply a unitary operation to a given matrix DD.
  *
  * @details This is a convenience function that realizes @p op times @p in and
- * correctly accounts for the permutation of the operation's qubits and
- * automatically manages root-set membership.
+ * correctly accounts for the permutation of the operation's qubits as well as
+ * automatically handles reference counting.
  *
  * @param op The operation to apply
  * @param in The input DD
@@ -142,8 +142,8 @@ MatrixDD applyUnitaryOperation(const qc::Operation& op, const MatrixDD& in,
  * @details This is a convenience function that realizes the measurement @p op
  * on @p in and stores the measurement results in @p measurements. The result is
  * determined based on the RNG @p rng. The function correctly accounts for the
- * permutation of the operation's qubits and automatically manages root-set
- * membership.
+ * permutation of the operation's qubits and automatically handles reference
+ * counting.
  *
  * @param op The measurement operation to apply
  * @param in The input DD
@@ -166,7 +166,7 @@ VectorDD applyMeasurement(const qc::NonUnitaryOperation& op, VectorDD in,
  * in. To this end, it measures the qubit and applies an X operation if the
  * measurement result is one. The result is determined based on the RNG @p rng.
  * The function correctly accounts for the permutation of the operation's
- * qubits and automatically manages root-set membership.
+ * qubits and automatically handles reference counting.
  *
  * @param op The reset operation to apply
  * @param in The input DD
@@ -187,7 +187,7 @@ VectorDD applyReset(const qc::NonUnitaryOperation& op, VectorDD in, Package& dd,
  * operation @p op on @p in. It applies the underlying operation if the actual
  * value stored in the measurement results matches the expected value according
  * to the comparison kind. The function correctly accounts for the permutation
- * of the operation's qubits and automatically manages root-set membership.
+ * of the operation's qubits and automatically handles reference counting.
  *
  * @param op The classic controlled operation to apply
  * @param in The input DD
