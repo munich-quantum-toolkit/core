@@ -30,7 +30,7 @@ MatrixDD buildFunctionality(const qc::QuantumComputation& qc, Package& dd) {
 
   auto permutation = qc.initialLayout;
   auto e = dd.createInitialMatrix(qc.getAncillary());
-  dd.track(e); // TODO: Track for applyOp.
+  dd.track(e);
   for (const auto& op : qc) {
     // SWAP gates can be executed virtually by changing the permutation
     if (op->getType() == qc::OpType::SWAP && !op->isControlled()) {
