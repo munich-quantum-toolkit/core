@@ -110,7 +110,7 @@ template <class Node> void Edge<Node>::mark() const noexcept {
     return;
   }
   p->mark();
-  for (Edge<Node>& e : p->e) {
+  for (const Edge<Node>& e : p->e) {
     e.mark();
   }
 }
@@ -121,7 +121,7 @@ template <class Node> void Edge<Node>::unmark() const noexcept {
     return;
   }
   p->unmark();
-  for (Edge<Node>& e : p->e) {
+  for (const Edge<Node>& e : p->e) {
     e.unmark();
   }
 }
