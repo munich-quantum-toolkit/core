@@ -66,8 +66,8 @@ TEST(GeneratorTest, LengthUnitNanometer) {
 })");
   Device device;
   ASSERT_NO_THROW(device = readJSON(is));
-  EXPECT_EQ(device.time_unit().value(), 5);
-  EXPECT_EQ(device.time_unit().unit(), "nm");
+  EXPECT_EQ(device.length_unit().value(), 5);
+  EXPECT_EQ(device.length_unit().unit(), "nm");
 }
 
 TEST(GeneratorTest, LengthUnitInvalid) {
