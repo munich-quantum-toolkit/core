@@ -96,11 +96,9 @@ TEST_P(Grover, Functionality) {
   const auto iterations = qc::computeNumberOfIterations(nqubits);
 
   auto iteration = iterationOp;
+  dd->track(iteration);
   for (std::size_t i = 0U; i < iterations - 1U; ++i) {
-    const auto next = dd->multiply(iterationOp, iteration);
-    dd->track(next);
-    dd->untrack(iteration); // This will automatically untrack the iterationOp.
-    iteration = next;
+    iteration = dd->applyOperation(iterationOp, iteration);
   }
 
   const auto groverFull = dd->multiply(iteration, setup);
@@ -114,9 +112,10 @@ TEST_P(Grover, Functionality) {
   EXPECT_NEAR(std::abs(c.imag()), 0, GROVER_ACCURACY);
   EXPECT_GE(prob, GROVER_GOAL_PROBABILITY);
 
-  dd->untrack(setup);
   dd->untrack(iteration);
   dd->untrack(groverFull);
+  dd->untrack(iterationOp);
+  dd->untrack(setup);
 }
 
 TEST_P(Grover, FunctionalityRecursive) {
@@ -136,12 +135,9 @@ TEST_P(Grover, FunctionalityRecursive) {
   const auto iterations = qc::computeNumberOfIterations(nqubits);
 
   auto iteration = iterationOp;
+  dd->track(iteration);
   for (std::size_t i = 0U; i < iterations - 1U; ++i) {
-    const auto next = dd->multiply(iterationOp, iteration);
-    dd->track(next);
-    dd->untrack(iteration); // This will automatically untrack the iterationOp.
-    dd->garbageCollect();
-    iteration = next;
+    iteration = dd->applyOperation(iterationOp, iteration);
   }
 
   const auto groverFull = dd->multiply(iteration, setup);
@@ -155,9 +151,10 @@ TEST_P(Grover, FunctionalityRecursive) {
   EXPECT_NEAR(std::abs(c.imag()), 0, GROVER_ACCURACY);
   EXPECT_GE(prob, GROVER_GOAL_PROBABILITY);
 
-  dd->untrack(setup);
   dd->untrack(iteration);
   dd->untrack(groverFull);
+  dd->untrack(iterationOp);
+  dd->untrack(setup);
 }
 
 TEST_P(Grover, Simulation) {
