@@ -91,12 +91,28 @@ set(Protobuf_URL
 )
 # the default of the following is ON, they are just here to make more explicit that they are
 # required
-set(protobuf_BUILD_PROTOBUF_BINARIES ON)
-set(protobuf_BUILD_PROTOC_BINARIES ON)
-set(protobuf_BUILD_LIBUPB ON)
+set(protobuf_BUILD_PROTOBUF_BINARIES
+    ON
+    CACHE BOOL "" FORCE)
+set(protobuf_BUILD_PROTOC_BINARIES
+    ON
+    CACHE BOOL "" FORCE)
+set(protobuf_BUILD_LIBUPB
+    ON
+    CACHE BOOL "" FORCE)
 # the default of the following is ON, but we do not need the tests
-set(protobuf_BUILD_TESTS OFF)
-set(protobuf_MSVC_STATIC_RUNTIME OFF)
+set(protobuf_BUILD_TESTS
+    OFF
+    CACHE BOOL "" FORCE)
+# Force dynamic runtime for MSVC analog to `set(gtest_force_shared_crt ON)` for googletest
+set(protobuf_MSVC_STATIC_RUNTIME
+    OFF
+    CACHE BOOL "" FORCE)
+# For now, we do not need the install instructions, if you enable them, you also need to enable them
+# for abseil above via `set(ABSL_ENABLE_INSTALL ON)`
+set(protobuf_INSTALL
+    OFF
+    CACHE BOOL "" FORCE)
 FetchContent_Declare(protobuf URL ${Protobuf_URL} FIND_PACKAGE_ARGS ${Protobuf_VERSION} CONFIG
                                   NAMES protobuf)
 list(APPEND FETCH_PACKAGES protobuf)
