@@ -9,6 +9,11 @@
 # add a compile feature for C++17
 set(CMAKE_CXX_STANDARD 17)
 
+if(ENABLE_COVERAGE)
+  add_compile_options(--coverage -fprofile-arcs -ftest-coverage)
+  add_link_options(--coverage)
+endif()
+
 # add main library code
 add_subdirectory(include)
 add_subdirectory(lib)
