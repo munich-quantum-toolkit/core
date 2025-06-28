@@ -16,6 +16,7 @@
 
 #include "na/device/device.pb.h"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -47,14 +48,8 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
   for (int i = 0; i < descriptor->field_count(); ++i) {
     const google::protobuf::FieldDescriptor* field = descriptor->field(i);
     if (field->is_repeated()) {
-      if (field->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE) {
-        populateRepeatedFields(reflection->AddMessage(message, field));
-      } else {
-        std::stringstream ss;
-        ss << "Unsupported repeated field type in device configuration: "
-           << field->cpp_type();
-        throw std::runtime_error(ss.str());
-      }
+      assert(field->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE);
+      populateRepeatedFields(reflection->AddMessage(message, field));
     } else if (field->type() ==
                google::protobuf::FieldDescriptor::TYPE_MESSAGE) {
       // Message fields must be explicitly initialized such that they appear in
