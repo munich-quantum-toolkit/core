@@ -19,7 +19,6 @@
 #include <ostream>
 
 namespace dd {
-
 namespace {
 constexpr std::uintptr_t NEG_FLAG = (1UL << 0);
 constexpr std::uintptr_t MARK_FLAG = (1UL << 1);
@@ -49,10 +48,6 @@ RealNumber* RealNumber::flipPointerSign(const RealNumber* e) noexcept {
                                        NEG_FLAG);
 }
 
-bool RealNumber::isNegativePointer(const RealNumber* e) noexcept {
-  return (reinterpret_cast<std::uintptr_t>(e) & NEG_FLAG) != 0U;
-}
-
 void RealNumber::mark(RealNumber* e) noexcept {
   RealNumber* p = isNegativePointer(e) ? getAlignedPointer(e) : e;
   p->next_ = reinterpret_cast<RealNumber*>(
@@ -65,15 +60,19 @@ void RealNumber::unmark(RealNumber* e) noexcept {
       reinterpret_cast<std::uintptr_t>(p->next_) & ~MARK_FLAG);
 }
 
-bool RealNumber::isMarked(const RealNumber* e) noexcept {
-  const RealNumber* p = isNegativePointer(e) ? getAlignedPointer(e) : e;
-  return (reinterpret_cast<std::uintptr_t>(p->next_) & MARK_FLAG) != 0U;
-}
-
 void RealNumber::immortalize(RealNumber* e) noexcept {
   RealNumber* p = isNegativePointer(e) ? getAlignedPointer(e) : e;
   p->next_ = reinterpret_cast<RealNumber*>(
       reinterpret_cast<std::uintptr_t>(p->next_) | IMMORTAL_FLAG);
+}
+
+bool RealNumber::isNegativePointer(const RealNumber* e) noexcept {
+  return (reinterpret_cast<std::uintptr_t>(e) & NEG_FLAG) != 0U;
+}
+
+bool RealNumber::isMarked(const RealNumber* e) noexcept {
+  const RealNumber* p = isNegativePointer(e) ? getAlignedPointer(e) : e;
+  return (reinterpret_cast<std::uintptr_t>(p->next_) & MARK_FLAG) != 0U;
 }
 
 bool RealNumber::isImmortal(const RealNumber* e) noexcept {
