@@ -1418,7 +1418,8 @@ struct DSU {
 };
 
 void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
-                                     const std::size_t maxBlockSize) {
+                                     const std::size_t maxBlockSize,
+                                     bool onlyCollectCliffords) {
   if (qc.size() <= 1) {
     return;
   }
@@ -1429,15 +1430,30 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
 
   // create an empty disjoint set union data structure
   DSU dsu{};
+  DSU nonCliffordDSU{};
   for (auto opIt = qc.begin(); opIt != qc.end(); ++opIt) {
     auto& op = *opIt;
     bool canProcess = true;
     bool makesTooBig = false;
 
-    // check if the operation can be processed
     if (!op->isUnitary()) {
       canProcess = false;
     }
+
+    /*if (onlyCollectCliffords && !op->isClifford()) {
+      const auto usedQubits = op->getUsedQubits();
+      std::int64_t prev = -1;
+      for (const auto& q : usedQubits) {
+        if (prev != -1) {
+          dsu.unionBlock(static_cast<Qubit>(prev), q);
+        }
+        prev = q;
+      }
+      for (auto q : op->getUsedQubits()) {
+        dsu.finalizeBlock(q);
+      }
+      continue;
+    }*/
 
     const auto usedQubits = op->getUsedQubits();
 
@@ -1546,6 +1562,14 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
         }
         prev = q;
       }
+
+      if (onlyCollectCliffords && !op->isClifford()) {
+        for (auto q : op->getUsedQubits()) {
+          dsu.finalizeBlock(q);
+        }
+        continue;
+      }
+
       const auto block = dsu.findBlock(static_cast<Qubit>(prev));
       const auto empty = dsu.blockEmpty(block);
       if (empty) {
