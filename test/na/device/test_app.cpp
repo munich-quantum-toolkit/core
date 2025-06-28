@@ -53,6 +53,27 @@ TEST(ExecutableTest, Version) {
             "MQT QDMI NA Device Generator Version " MQT_CORE_VERSION "\n");
 }
 
+TEST(ExecutableTest, MissingSubcommand) {
+  // Command to execute
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  const std::string command = EXECUTABLE_PATH;
+  // Open a pipe to capture the output
+  FILE* pipe = PLATFORM_POPEN(command.c_str(), "r");
+  ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
+  // Read the output
+  std::array<char, 128> buffer{};
+  buffer.fill('\0');
+  std::stringstream output;
+  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    output << buffer.data();
+  }
+  // Close the pipe
+  const int returnCode = PLATFORM_PCLOSE(pipe);
+  // Print the captured output
+  std::cout << "Captured Output:\n" << output.str() << "\n";
+  EXPECT_EQ(returnCode, 256);
+}
+
 TEST(ExecutableTest, UnknownSubcommand) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
@@ -99,6 +120,42 @@ TEST(ExecutableTest, SchemaMissingFile) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " schema --output";
+  // Open a pipe to capture the output
+  FILE* pipe = PLATFORM_POPEN(command.c_str(), "r");
+  ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
+  // Read the output
+  std::array<char, 128> buffer{};
+  buffer.fill('\0');
+  std::stringstream output;
+  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    output << buffer.data();
+  }
+  // Close the pipe
+  const int returnCode = PLATFORM_PCLOSE(pipe);
+  // Print the captured output
+  std::cout << "Captured Output:\n" << output.str() << "\n";
+  EXPECT_EQ(returnCode, 256);
+}
+
+TEST(ExecutableTest, ValidateInvalidJson) {
+  // Command to execute
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  const std::string command = EXECUTABLE_PATH " validate";
+  // Open a pipe to the executable
+  FILE* pipe = PLATFORM_POPEN(command.c_str(), "w");
+  ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
+  // Write the schema to the executable's stdin
+  fwrite("{", sizeof(char), 2, pipe);
+  // Close the pipe
+  const int returnCode = PLATFORM_PCLOSE(pipe);
+  EXPECT_EQ(returnCode, 256)
+      << "Executable failed with return code: " << returnCode;
+}
+
+TEST(ExecutableTest, GenerateMissingFile) {
+  // Command to execute
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  const std::string command = EXECUTABLE_PATH " generate --output";
   // Open a pipe to capture the output
   FILE* pipe = PLATFORM_POPEN(command.c_str(), "r");
   ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
@@ -292,7 +349,7 @@ TEST(ExecutableTest, RoundTripFile) {
     const int returnCode = PLATFORM_PCLOSE(pipe);
     // Print the captured output
     std::cout << "Captured Output:\n" << output.str() << "\n";
-    ASSERT_EQ(returnCode, 0)
+    EXPECT_EQ(returnCode, 0)
         << "Executable failed with return code: " << returnCode;
   }
 }

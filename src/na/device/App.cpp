@@ -229,11 +229,6 @@ auto parseValidateArguments(const std::vector<std::string>& args, size_t i)
   while (i < args.size()) {
     if (const std::string& arg = args.at(i); arg == "-h" || arg == "--help") {
       validateArgs.help = true;
-    } else if (arg == "-o" || arg == "--output") {
-      if (++i >= args.size()) {
-        throw std::invalid_argument("Missing value for output option.");
-      }
-      validateArgs.jsonFile = args.at(i);
     } else {
       validateArgs.jsonFile = arg;
     }
@@ -336,14 +331,7 @@ int main(int argc, char* argv[]) {
     break;
   }
   case Command::Validate: {
-    ValidateArguments validateArgs;
-    try {
-      validateArgs = parseValidateArguments(argVec, i);
-    } catch (const std::exception& e) {
-      SPDLOG_ERROR("Error parsing validate arguments: {}", e.what());
-      printValidateUsage(args.programName);
-      return 1;
-    }
+    const ValidateArguments validateArgs = parseValidateArguments(argVec, i);
     if (validateArgs.help) {
       printValidateUsage(args.programName);
       return 0;
