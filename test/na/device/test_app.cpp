@@ -43,14 +43,77 @@ TEST(ExecutableTest, Version) {
   }
   // Close the pipe
   const int returnCode = PLATFORM_PCLOSE(pipe);
-  ASSERT_EQ(returnCode, 0) << "Executable failed with return code: "
-                           << returnCode;
   // Print the captured output
   std::cout << "Captured Output:\n" << output.str() << "\n";
+  ASSERT_EQ(returnCode, 0) << "Executable failed with return code: "
+                           << returnCode;
   // Validate the output
   EXPECT_EQ(output.str(),
             // NOLINTNEXTLINE(misc-include-cleaner)
             "MQT QDMI NA Device Generator Version " MQT_CORE_VERSION "\n");
+}
+
+TEST(ExecutableTest, UnknownSubcommand) {
+  // Command to execute
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  const std::string command = EXECUTABLE_PATH " unknown";
+  // Open a pipe to capture the output
+  FILE* pipe = PLATFORM_POPEN(command.c_str(), "r");
+  ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
+  // Read the output
+  std::array<char, 128> buffer{};
+  buffer.fill('\0');
+  std::stringstream output;
+  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    output << buffer.data();
+  }
+  // Close the pipe
+  const int returnCode = PLATFORM_PCLOSE(pipe);
+  // Print the captured output
+  std::cout << "Captured Output:\n" << output.str() << "\n";
+  EXPECT_EQ(returnCode, 256);
+}
+
+TEST(ExecutableTest, SchemaUnknownOption) {
+  // Command to execute
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  const std::string command = EXECUTABLE_PATH " schema --unknown-option";
+  // Open a pipe to capture the output
+  FILE* pipe = PLATFORM_POPEN(command.c_str(), "r");
+  ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
+  // Read the output
+  std::array<char, 128> buffer{};
+  buffer.fill('\0');
+  std::stringstream output;
+  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    output << buffer.data();
+  }
+  // Close the pipe
+  const int returnCode = PLATFORM_PCLOSE(pipe);
+  // Print the captured output
+  std::cout << "Captured Output:\n" << output.str() << "\n";
+  EXPECT_EQ(returnCode, 256);
+}
+
+TEST(ExecutableTest, SchemaMissingFile) {
+  // Command to execute
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  const std::string command = EXECUTABLE_PATH " schema --output";
+  // Open a pipe to capture the output
+  FILE* pipe = PLATFORM_POPEN(command.c_str(), "r");
+  ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
+  // Read the output
+  std::array<char, 128> buffer{};
+  buffer.fill('\0');
+  std::stringstream output;
+  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    output << buffer.data();
+  }
+  // Close the pipe
+  const int returnCode = PLATFORM_PCLOSE(pipe);
+  // Print the captured output
+  std::cout << "Captured Output:\n" << output.str() << "\n";
+  EXPECT_EQ(returnCode, 256);
 }
 
 TEST(ExecutableTest, Usage) {
@@ -69,10 +132,10 @@ TEST(ExecutableTest, Usage) {
   }
   // Close the pipe
   const int returnCode = PLATFORM_PCLOSE(pipe);
-  ASSERT_EQ(returnCode, 0) << "Executable failed with return code: "
-                           << returnCode;
   // Print the captured output
   std::cout << "Captured Output:\n" << output.str() << "\n";
+  ASSERT_EQ(returnCode, 0) << "Executable failed with return code: "
+                           << returnCode;
   EXPECT_FALSE(output.str().empty());
 }
 
@@ -92,10 +155,10 @@ TEST(ExecutableTest, SchemaUsage) {
   }
   // Close the pipe
   const int returnCode = PLATFORM_PCLOSE(pipe);
-  ASSERT_EQ(returnCode, 0) << "Executable failed with return code: "
-                           << returnCode;
   // Print the captured output
   std::cout << "Captured Output:\n" << output.str() << "\n";
+  ASSERT_EQ(returnCode, 0) << "Executable failed with return code: "
+                           << returnCode;
   EXPECT_TRUE(output.str().rfind("Generates a JSON schema", 0) == 0);
 }
 
@@ -115,10 +178,10 @@ TEST(ExecutableTest, ValidateUsage) {
   }
   // Close the pipe
   const int returnCode = PLATFORM_PCLOSE(pipe);
-  ASSERT_EQ(returnCode, 0) << "Executable failed with return code: "
-                           << returnCode;
   // Print the captured output
   std::cout << "Captured Output:\n" << output.str() << "\n";
+  ASSERT_EQ(returnCode, 0) << "Executable failed with return code: "
+                           << returnCode;
   EXPECT_TRUE(output.str().rfind("Validates", 0) == 0);
 }
 
@@ -138,10 +201,10 @@ TEST(ExecutableTest, GenerateUsage) {
   }
   // Close the pipe
   const int returnCode = PLATFORM_PCLOSE(pipe);
-  ASSERT_EQ(returnCode, 0) << "Executable failed with return code: "
-                           << returnCode;
   // Print the captured output
   std::cout << "Captured Output:\n" << output.str() << "\n";
+  ASSERT_EQ(returnCode, 0) << "Executable failed with return code: "
+                           << returnCode;
   EXPECT_TRUE(output.str().rfind("Generates a header file", 0) == 0);
 }
 
@@ -164,11 +227,11 @@ TEST(ExecutableTest, RoundTrip) {
     }
     // Close the pipe
     const int returnCode = PLATFORM_PCLOSE(pipe);
+    schema = output.str();
+    // Print the captured output
+    std::cout << "Captured Output:\n" << schema << "\n";
     ASSERT_EQ(returnCode, 0)
         << "Executable failed with return code: " << returnCode;
-    // Print the captured output
-    schema = output.str();
-    std::cout << "Captured Output:\n" << schema << "\n";
   }
   // Validate the output
   {
@@ -182,6 +245,53 @@ TEST(ExecutableTest, RoundTrip) {
     fwrite(schema.c_str(), sizeof(char), schema.size(), pipe);
     // Close the pipe
     const int returnCode = PLATFORM_PCLOSE(pipe);
+    ASSERT_EQ(returnCode, 0)
+        << "Executable failed with return code: " << returnCode;
+  }
+}
+
+TEST(ExecutableTest, RoundTripFile) {
+  // Write schema to a file
+  {
+    // Command to execute
+    // NOLINTNEXTLINE(misc-include-cleaner)
+    const std::string command = EXECUTABLE_PATH " schema --output schema.json";
+    // Open a pipe to capture the output
+    FILE* pipe = PLATFORM_POPEN(command.c_str(), "r");
+    ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
+    // Read the output
+    std::array<char, 128> buffer{};
+    buffer.fill('\0');
+    std::stringstream output;
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+      output << buffer.data();
+    }
+    // Close the pipe
+    const int returnCode = PLATFORM_PCLOSE(pipe);
+    // Print the captured output
+    std::cout << "Captured Output:\n" << output.str() << "\n";
+    ASSERT_EQ(returnCode, 0)
+        << "Executable failed with return code: " << returnCode;
+  }
+  // Validate the output
+  {
+    // Command to execute
+    // NOLINTNEXTLINE(misc-include-cleaner)
+    const std::string command = EXECUTABLE_PATH " validate schema.json";
+    // Open a pipe to capture the output
+    FILE* pipe = PLATFORM_POPEN(command.c_str(), "r");
+    ASSERT_NE(pipe, nullptr) << "Failed to open pipe";
+    // Read the output
+    std::array<char, 128> buffer{};
+    buffer.fill('\0');
+    std::stringstream output;
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+      output << buffer.data();
+    }
+    // Close the pipe
+    const int returnCode = PLATFORM_PCLOSE(pipe);
+    // Print the captured output
+    std::cout << "Captured Output:\n" << output.str() << "\n";
     ASSERT_EQ(returnCode, 0)
         << "Executable failed with return code: " << returnCode;
   }
