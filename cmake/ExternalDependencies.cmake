@@ -59,6 +59,18 @@ else()
   list(APPEND FETCH_PACKAGES boost_mp)
 endif()
 
+# Abseil is required by GTest and Protobuf. To avoid version conflicts, we add this dependency
+# centrally.
+set(ABSL_VERSION
+    20250512.1
+    CACHE STRING "abseil-cpp version")
+set(ABSL_URL https://github.com/abseil/abseil-cpp/archive/refs/tags/${ABSL_VERSION}.tar.gz)
+set(ABSL_MSVC_STATIC_RUNTIME
+    OFF
+    CACHE BOOL "" FORCE)
+FetchContent_Declare(abseil-cpp URL ${ABSL_URL} FIND_PACKAGE_ARGS ${ABSL_VERSION} CONFIG NAMES absl)
+list(APPEND FETCH_PACKAGES abseil-cpp)
+
 if(BUILD_MQT_CORE_TESTS)
   set(gtest_force_shared_crt
       ON
@@ -70,6 +82,64 @@ if(BUILD_MQT_CORE_TESTS)
   FetchContent_Declare(googletest URL ${GTEST_URL} FIND_PACKAGE_ARGS ${GTEST_VERSION} NAMES GTest)
   list(APPEND FETCH_PACKAGES googletest)
 endif()
+
+set(Protobuf_VERSION
+    31.1
+    CACHE STRING "protobuf version")
+set(Protobuf_URL
+    https://github.com/protocolbuffers/protobuf/releases/download/v${Protobuf_VERSION}/protobuf-${Protobuf_VERSION}.tar.gz
+)
+# the default of the following is ON, they are just here to make more explicit that they are
+# required
+set(protobuf_BUILD_PROTOBUF_BINARIES
+    ON
+    CACHE BOOL "" FORCE)
+set(protobuf_BUILD_PROTOC_BINARIES
+    ON
+    CACHE BOOL "" FORCE)
+set(protobuf_BUILD_LIBUPB
+    ON
+    CACHE BOOL "" FORCE)
+# the default of the following is ON, but we do not need the tests
+set(protobuf_BUILD_TESTS
+    OFF
+    CACHE BOOL "" FORCE)
+# Force dynamic runtime for MSVC analog to `set(gtest_force_shared_crt ON)` for googletest
+set(protobuf_MSVC_STATIC_RUNTIME
+    OFF
+    CACHE BOOL "" FORCE)
+# For now, we do not need the install instructions, if you enable them, you also need to enable them
+# for abseil above via `set(ABSL_ENABLE_INSTALL ON)`
+set(protobuf_INSTALL
+    OFF
+    CACHE BOOL "" FORCE)
+FetchContent_Declare(protobuf URL ${Protobuf_URL} FIND_PACKAGE_ARGS ${Protobuf_VERSION} CONFIG
+                                  NAMES protobuf)
+list(APPEND FETCH_PACKAGES protobuf)
+
+# cmake-format: off
+set(QDMI_VERSION 1.2.0
+        CACHE STRING "QDMI version")
+set(QDMI_REV "9034e653a6e368579d99e352ecd8390e6e947bc6"
+        CACHE STRING "QDMI identifier (tag, branch or commit hash)")
+set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
+        CACHE STRING "QDMI repository owner (change when using a fork)")
+# cmake-format: on
+FetchContent_Declare(
+  qdmi
+  GIT_REPOSITORY https://github.com/${QDMI_REPO_OWNER}/qdmi.git
+  GIT_TAG ${QDMI_REV}
+  FIND_PACKAGE_ARGS ${QDMI_VERSION})
+list(APPEND FETCH_PACKAGES qdmi)
+
+set(SPDLOG_VERSION
+    1.15.3
+    CACHE STRING "spdlog version")
+set(SPDLOG_URL https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz)
+# Add position independent code for spdlog, this is required for python bindings on linux
+set(SPDLOG_BUILD_PIC ON)
+FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
+list(APPEND FETCH_PACKAGES spdlog)
 
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
