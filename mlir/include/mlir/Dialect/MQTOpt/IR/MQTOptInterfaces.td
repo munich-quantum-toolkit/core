@@ -140,6 +140,15 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 operands.insert(operands.end(), outQubits.begin(), outQubits.end());
                 operands.insert(operands.end(), controls.begin(), controls.end());
                 return operands;
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Get params.",
+            /*returnType=*/  "mlir::ValueRange",
+            /*methodName=*/  "getParams",
+            /*args=*/        (ins),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                return $_op.getParams();
             }]>
     ];
 
