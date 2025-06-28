@@ -20,6 +20,48 @@
 #include <string>
 #include <vector>
 
+namespace {
+[[nodiscard]] auto querySites(MQT_NA_QDMI_Device_Session session)
+    -> std::vector<MQT_NA_QDMI_Site> {
+  size_t size = 0;
+  if (MQT_NA_QDMI_device_session_query_device_property(
+          session, QDMI_DEVICE_PROPERTY_SITES, 0, nullptr, &size) !=
+      QDMI_SUCCESS) {
+    throw std::runtime_error("Failed to query sites");
+  }
+  if (size == 0) {
+    throw std::runtime_error("No sites available");
+  }
+  std::vector<MQT_NA_QDMI_Site> sites(size / sizeof(MQT_NA_QDMI_Site));
+  if (MQT_NA_QDMI_device_session_query_device_property(
+          session, QDMI_DEVICE_PROPERTY_SITES, size,
+          static_cast<void*>(sites.data()), nullptr) != QDMI_SUCCESS) {
+    throw std::runtime_error("Failed to query sites");
+  }
+  return sites;
+}
+[[nodiscard]] auto queryOperations(MQT_NA_QDMI_Device_Session session)
+    -> std::vector<MQT_NA_QDMI_Operation> {
+  size_t size = 0;
+  if (MQT_NA_QDMI_device_session_query_device_property(
+          session, QDMI_DEVICE_PROPERTY_OPERATIONS, 0, nullptr, &size) !=
+      QDMI_SUCCESS) {
+    throw std::runtime_error("Failed to query operations");
+  }
+  if (size == 0) {
+    throw std::runtime_error("No operations available");
+  }
+  std::vector<MQT_NA_QDMI_Operation> operations(size /
+                                                sizeof(MQT_NA_QDMI_Operation));
+  if (MQT_NA_QDMI_device_session_query_device_property(
+          session, QDMI_DEVICE_PROPERTY_OPERATIONS, size,
+          static_cast<void*>(operations.data()), nullptr) != QDMI_SUCCESS) {
+    throw std::runtime_error("Failed to query operations");
+  }
+  return operations;
+}
+} // namespace
+
 class QDMISpecificationTest : public ::testing::Test {
 protected:
   MQT_NA_QDMI_Device_Session session = nullptr;
@@ -108,6 +150,10 @@ TEST_F(QDMISpecificationTest, JobCreate) {
   EXPECT_EQ(
       MQT_NA_QDMI_device_session_create_device_job(uninitializedSession, &job),
       QDMI_ERROR_BADSTATE);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_create_device_job(nullptr, &job),
+            QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_THAT(MQT_NA_QDMI_device_session_create_device_job(session, &job),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   MQT_NA_QDMI_device_job_free(job);
@@ -207,27 +253,53 @@ TEST_F(QDMISpecificationTest, QueryDeviceProperty) {
   MQT_NA_QDMI_Device_Session uninitializedSession = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_alloc(&uninitializedSession),
             QDMI_SUCCESS);
-  size_t size = 0;
   EXPECT_EQ(
       MQT_NA_QDMI_device_session_query_device_property(
-          uninitializedSession, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, &size),
+          uninitializedSession, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, nullptr),
       QDMI_ERROR_BADSTATE);
   EXPECT_EQ(MQT_NA_QDMI_device_session_query_device_property(
                 nullptr, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_query_device_property(
+                session, QDMI_DEVICE_PROPERTY_MAX, 0, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_THAT(
+      MQT_NA_QDMI_device_session_query_device_property(
+          session, QDMI_DEVICE_PROPERTY_COUPLINGMAP, 0, nullptr, nullptr),
+      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
 TEST_F(QDMISpecificationTest, QuerySiteProperty) {
+  MQT_NA_QDMI_Site site = querySites(session).front();
+  EXPECT_EQ(
+      MQT_NA_QDMI_device_session_query_site_property(
+          session, nullptr, QDMI_SITE_PROPERTY_INDEX, 0, nullptr, nullptr),
+      QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
-                nullptr, nullptr, QDMI_SITE_PROPERTY_MAX, 0, nullptr, nullptr),
+                nullptr, site, QDMI_SITE_PROPERTY_INDEX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                session, site, QDMI_SITE_PROPERTY_MAX, 0, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_THAT(MQT_NA_QDMI_device_session_query_site_property(
+                  session, site, QDMI_SITE_PROPERTY_NAME, 0, nullptr, nullptr),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
 TEST_F(QDMISpecificationTest, QueryOperationProperty) {
+  MQT_NA_QDMI_Operation operation = queryOperations(session).front();
   EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
-                nullptr, nullptr, 0, nullptr, 0, nullptr,
+                nullptr, operation, 0, nullptr, 0, nullptr,
+                QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                session, operation, 0, nullptr, 0, nullptr,
                 QDMI_OPERATION_PROPERTY_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
+                  session, operation, 0, nullptr, 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_QUBITSNUM, 0, nullptr, nullptr),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
 TEST_F(QDMISpecificationTest, QueryDeviceName) {
@@ -276,28 +348,6 @@ TEST_F(QDMISpecificationTest, QueryDeviceLibraryVersion) {
   EXPECT_FALSE(value.empty()) << "Devices must provide a library version";
 }
 
-namespace {
-[[nodiscard]] auto querySites(MQT_NA_QDMI_Device_Session session)
-    -> std::vector<MQT_NA_QDMI_Site> {
-  size_t size = 0;
-  if (MQT_NA_QDMI_device_session_query_device_property(
-          session, QDMI_DEVICE_PROPERTY_SITES, 0, nullptr, &size) !=
-      QDMI_SUCCESS) {
-    throw std::runtime_error("Failed to query sites");
-  }
-  if (size == 0) {
-    throw std::runtime_error("No sites available");
-  }
-  std::vector<MQT_NA_QDMI_Site> sites(size / sizeof(MQT_NA_QDMI_Site));
-  if (MQT_NA_QDMI_device_session_query_device_property(
-          session, QDMI_DEVICE_PROPERTY_SITES, size,
-          static_cast<void*>(sites.data()), nullptr) != QDMI_SUCCESS) {
-    throw std::runtime_error("Failed to query sites");
-  }
-  return sites;
-}
-} // namespace
-
 TEST_F(QDMISpecificationTest, QuerySiteIndex) {
   size_t id = 0;
   EXPECT_NO_THROW(for (auto* site : querySites(session)) {
@@ -308,29 +358,6 @@ TEST_F(QDMISpecificationTest, QuerySiteIndex) {
         << "Devices must provide a site id";
   }) << "Devices must provide a list of sites";
 }
-
-namespace {
-[[nodiscard]] auto queryOperations(MQT_NA_QDMI_Device_Session session)
-    -> std::vector<MQT_NA_QDMI_Operation> {
-  size_t size = 0;
-  if (MQT_NA_QDMI_device_session_query_device_property(
-          session, QDMI_DEVICE_PROPERTY_OPERATIONS, 0, nullptr, &size) !=
-      QDMI_SUCCESS) {
-    throw std::runtime_error("Failed to query operations");
-  }
-  if (size == 0) {
-    throw std::runtime_error("No operations available");
-  }
-  std::vector<MQT_NA_QDMI_Operation> operations(size /
-                                                sizeof(MQT_NA_QDMI_Operation));
-  if (MQT_NA_QDMI_device_session_query_device_property(
-          session, QDMI_DEVICE_PROPERTY_OPERATIONS, size,
-          static_cast<void*>(operations.data()), nullptr) != QDMI_SUCCESS) {
-    throw std::runtime_error("Failed to query operations");
-  }
-  return operations;
-}
-} // namespace
 
 TEST_F(QDMISpecificationTest, QueryOperationName) {
   size_t nameSize = 0;
