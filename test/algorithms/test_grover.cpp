@@ -35,7 +35,7 @@ protected:
     dd->decRef(func);
     dd->garbageCollect(true);
     // number of complex table entries after clean-up should equal 1
-    EXPECT_EQ(dd->cn.realCount(), 1);
+    EXPECT_EQ(dd->cn.realCount(), 0);
   }
 
   void SetUp() override {

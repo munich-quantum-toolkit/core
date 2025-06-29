@@ -75,6 +75,9 @@ void Package::reset() {
   clearUniqueTables();
   resetMemoryManagers();
   clearComputeTables();
+  vectorRoots.clear();
+  matrixRoots.clear();
+  densityRoots.clear();
 }
 
 void Package::resetMemoryManagers(const bool resizeToTotal) {
@@ -91,6 +94,36 @@ void Package::clearUniqueTables() {
   cUniqueTable.clear();
 }
 
+void Package::mark() noexcept {
+  for (auto& [edge, _] : vectorRoots) {
+    auto e = edge;
+    e.mark();
+  }
+  for (auto& [edge, _] : matrixRoots) {
+    auto e = edge;
+    e.mark();
+  }
+  for (auto& [edge, _] : densityRoots) {
+    auto e = edge;
+    e.mark();
+  }
+}
+
+void Package::unmark() noexcept {
+  for (auto& [edge, _] : vectorRoots) {
+    auto e = edge;
+    e.unmark();
+  }
+  for (auto& [edge, _] : matrixRoots) {
+    auto e = edge;
+    e.unmark();
+  }
+  for (auto& [edge, _] : densityRoots) {
+    auto e = edge;
+    e.unmark();
+  }
+}
+
 bool Package::garbageCollect(bool force) {
   // return immediately if no table needs collection
   if (!force && !vUniqueTable.possiblyNeedsCollection() &&
@@ -100,15 +133,21 @@ bool Package::garbageCollect(bool force) {
     return false;
   }
 
+  // Mark phase
+  mark();
+
+  // Sweep phase
   const auto cCollect = cUniqueTable.garbageCollect(force);
   if (cCollect > 0) {
-    // Collecting garbage in the complex numbers table requires collecting the
-    // node tables as well
     force = true;
   }
+
   const auto vCollect = vUniqueTable.garbageCollect(force);
   const auto mCollect = mUniqueTable.garbageCollect(force);
   const auto dCollect = dUniqueTable.garbageCollect(force);
+
+  // Unmark phase
+  unmark();
 
   // invalidate all compute tables involving vectors if any vector node has
   // been collected
@@ -153,7 +192,24 @@ bool Package::garbageCollect(bool force) {
     densityNoise.clear();
     densityTrace.clear();
   }
-  return vCollect > 0 || mCollect > 0 || cCollect > 0;
+  return vCollect > 0 || mCollect > 0 || dCollect > 0 || cCollect > 0;
+}
+
+Package::ActiveCounts Package::computeActiveCounts() {
+  // Mark phase
+  mark();
+
+  // Counting phase
+  ActiveCounts counts{};
+  counts.vectorNodes = vUniqueTable.countMarkedEntries();
+  counts.matrixNodes = mUniqueTable.countMarkedEntries();
+  counts.densityNodes = dUniqueTable.countMarkedEntries();
+  counts.realNumbers = cUniqueTable.countMarkedEntries();
+
+  // Unmark phase
+  unmark();
+
+  return counts;
 }
 
 dEdge Package::makeZeroDensityOperator(const std::size_t n) {
@@ -621,10 +677,7 @@ char Package::measureOneCollapsing(dEdge& e, const Qubit index,
   dEdge::setDensityMatrixTrue(e);
 
   // Normalize density matrix
-  auto result = e.w / densityMatrixTrace;
-  cn.decRef(e.w);
-  e.w = cn.lookup(result);
-  cn.incRef(e.w);
+  e.w = cn.lookup(e.w / densityMatrixTrace);
   return measuredResult;
 }
 void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
@@ -850,7 +903,7 @@ bool Package::isCloseToIdentity(const mEdge& m, const fp tol,
                                 const std::vector<bool>& garbage,
                                 const bool checkCloseToOne) const {
   std::unordered_set<decltype(m.p)> visited{};
-  visited.reserve(mUniqueTable.getNumActiveEntries());
+  visited.reserve(mUniqueTable.getNumEntries());
   return isCloseToIdentityRecursive(m, visited, tol, garbage, checkCloseToOne);
 }
 bool Package::isCloseToIdentityRecursive(

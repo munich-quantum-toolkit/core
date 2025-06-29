@@ -29,6 +29,16 @@ bool Complex::approximatelyZero() const noexcept {
   return RealNumber::approximatelyZero(r) && RealNumber::approximatelyZero(i);
 }
 
+void Complex::mark() noexcept {
+  RealNumber::mark(*r);
+  RealNumber::mark(*i);
+}
+
+void Complex::unmark() noexcept {
+  RealNumber::unmark(*r);
+  RealNumber::unmark(*i);
+}
+
 std::string Complex::toString(bool formatted, int precision) const {
   return ComplexValue::toString(RealNumber::val(r), RealNumber::val(i),
                                 formatted, precision);

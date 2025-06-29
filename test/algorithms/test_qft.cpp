@@ -57,8 +57,6 @@ protected:
 ///	Utilizing more qubits requires the use of fp=long double
 constexpr qc::Qubit QFT_MAX_QUBITS = 17U;
 
-constexpr size_t INITIAL_COMPLEX_COUNT = 1;
-
 INSTANTIATE_TEST_SUITE_P(QFT, QFT,
                          testing::Range<qc::Qubit>(0U, QFT_MAX_QUBITS + 1U, 3U),
                          [](const testing::TestParamInfo<QFT::ParamType>& inf) {
@@ -116,7 +114,7 @@ TEST_P(QFT, Functionality) {
   dd->garbageCollect(true);
   // number of complex table entries after clean-up should equal initial
   // number of entries
-  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
+  EXPECT_EQ(dd->cn.realCount(), 0);
 }
 
 TEST_P(QFT, FunctionalityRecursive) {
@@ -162,7 +160,7 @@ TEST_P(QFT, FunctionalityRecursive) {
   dd->garbageCollect(true);
   // number of complex table entries after clean-up should equal initial
   // number of entries
-  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
+  EXPECT_EQ(dd->cn.realCount(), 0);
 }
 
 TEST_P(QFT, Simulation) {
@@ -198,7 +196,7 @@ TEST_P(QFT, Simulation) {
   dd->garbageCollect(true);
   // number of complex table entries after clean-up should equal initial
   // number of entries
-  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
+  EXPECT_EQ(dd->cn.realCount(), 0);
 }
 
 TEST_P(QFT, FunctionalityRecursiveEquality) {
@@ -218,7 +216,7 @@ TEST_P(QFT, FunctionalityRecursiveEquality) {
   dd->garbageCollect(true);
   // number of complex table entries after clean-up should equal initial
   // number of entries
-  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
+  EXPECT_EQ(dd->cn.realCount(), 0);
 }
 
 TEST_P(QFT, SimulationSampling) {
@@ -247,6 +245,6 @@ TEST_P(QFT, SimulationSampling) {
     dd->garbageCollect(true);
     // number of complex table entries after clean-up should equal initial
     // number of entries
-    EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
+    EXPECT_EQ(dd->cn.realCount(), 0);
   }
 }

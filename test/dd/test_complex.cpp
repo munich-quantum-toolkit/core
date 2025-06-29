@@ -115,10 +115,10 @@ TEST_F(CNTest, GarbageCollectSomeInBucket) {
   ASSERT_NE(i, nullptr);
 
   const fp num2 = num + (2. * RealNumber::eps);
-  const auto lookup2 = cn.lookup(num2, 0.0);
+  auto lookup2 = cn.lookup(num2, 0.0);
   ASSERT_NE(lookup2.r, nullptr);
   ASSERT_NE(lookup2.i, nullptr);
-  cn.incRef(lookup2);
+  lookup2.mark();
 
   // num2 should be placed in same bucket as num
   auto key = RealNumberUniqueTable::hash(num);
@@ -133,6 +133,7 @@ TEST_F(CNTest, GarbageCollectSomeInBucket) {
   EXPECT_NEAR((p->next())->value, num2, RealNumber::eps);
 
   ut.garbageCollect(true); // num should be collected
+  lookup2.unmark();
   const auto* q = table[static_cast<std::size_t>(key)];
   ASSERT_NE(q, nullptr);
   EXPECT_NEAR(q->value, num2, RealNumber::eps);
@@ -418,19 +419,6 @@ TEST(DDComplexTest, NumberPrintingFormattedFloating) {
   ss.str("");
 }
 
-TEST_F(CNTest, MaxRefCountReached) {
-  const auto c = cn.lookup(SQRT2_2 / 2, SQRT2_2 / 2);
-  constexpr auto max = std::numeric_limits<RefCount>::max();
-  c.r->ref = max - 1;
-  cn.incRef(c);
-  cn.incRef(c);
-  EXPECT_EQ(c.r->ref, max);
-  EXPECT_EQ(c.i->ref, max);
-  cn.decRef(c);
-  EXPECT_EQ(c.r->ref, max);
-  EXPECT_EQ(c.i->ref, max);
-}
-
 TEST_F(CNTest, ComplexTableAllocation) {
   auto mem = MemoryManager::create<RealNumber>();
   const auto allocs = mem.getStats().numAllocated;
@@ -507,15 +495,6 @@ TEST_F(CNTest, DoubleHitAcrossBuckets) {
   const fp num4 = num1 - (0.6 * RealNumber::eps);
   const auto* tnum4 = ut.lookup(num4);
   EXPECT_EQ(tnum4->value, num1);
-}
-
-TEST_F(CNTest, complexRefCount) {
-  const auto value = cn.lookup(0.2, 0.2);
-  EXPECT_EQ(value.r->ref, 0);
-  EXPECT_EQ(value.i->ref, 0);
-  cn.incRef(value);
-  EXPECT_EQ(value.r->ref, 2);
-  EXPECT_EQ(value.i->ref, 2);
 }
 
 TEST_F(CNTest, exactlyZeroComparison) {

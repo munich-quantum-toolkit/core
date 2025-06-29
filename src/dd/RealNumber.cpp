@@ -13,16 +13,14 @@
 #include "dd/DDDefinitions.hpp"
 
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <istream>
-#include <limits>
 #include <ostream>
 
 namespace dd {
 
-static constexpr std::size_t LSB = static_cast<std::uintptr_t>(1U);
+static constexpr std::uintptr_t LSB = 1U;
 
 RealNumber* RealNumber::getAlignedPointer(const RealNumber* e) noexcept {
   return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) &
@@ -46,20 +44,31 @@ bool RealNumber::isNegativePointer(const RealNumber* e) noexcept {
   return (reinterpret_cast<std::uintptr_t>(e) & LSB) != 0U;
 }
 
+RealNumber* RealNumber::next() const noexcept {
+  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(next_) &
+                                       ~LSB);
+}
+
+bool RealNumber::isMarked(const RealNumber& p) noexcept {
+  return (reinterpret_cast<std::uintptr_t>(p.next_) & LSB) == LSB;
+}
+
+void RealNumber::mark(RealNumber& p) noexcept {
+  p.next_ = reinterpret_cast<RealNumber*>(
+      reinterpret_cast<std::uintptr_t>(p.next_) | LSB);
+}
+
+void RealNumber::unmark(RealNumber& p) noexcept {
+  p.next_ = reinterpret_cast<RealNumber*>(
+      reinterpret_cast<std::uintptr_t>(p.next_) & ~LSB);
+}
+
 fp RealNumber::val(const RealNumber* e) noexcept {
   assert(e != nullptr);
   if (isNegativePointer(e)) {
     return -getAlignedPointer(e)->value;
   }
   return e->value;
-}
-
-RefCount RealNumber::refCount(const RealNumber* num) noexcept {
-  assert(num != nullptr);
-  if (isNegativePointer(num)) {
-    return getAlignedPointer(num)->ref;
-  }
-  return num->ref;
 }
 
 bool RealNumber::approximatelyEquals(const fp left, const fp right) noexcept {
@@ -79,32 +88,6 @@ bool RealNumber::approximatelyZero(const RealNumber* e) noexcept {
   return e == &constants::zero || approximatelyZero(val(e));
 }
 
-bool RealNumber::noRefCountingNeeded(const RealNumber* const num) noexcept {
-  assert(!isNegativePointer(num));
-  return num == nullptr || constants::isStaticNumber(num) ||
-         num->ref == std::numeric_limits<RefCount>::max();
-}
-
-bool RealNumber::incRef(const dd::RealNumber* num) noexcept {
-  auto* const ptr = getAlignedPointer(num);
-  if (noRefCountingNeeded(ptr)) {
-    return false;
-  }
-  ++ptr->ref;
-  return true;
-}
-
-bool RealNumber::decRef(const dd::RealNumber* num) noexcept {
-  auto* const ptr = getAlignedPointer(num);
-  if (noRefCountingNeeded(ptr)) {
-    return false;
-  }
-  assert(ptr->ref != 0 &&
-         "Reference count of RealNumber must not be zero before decrement");
-  --ptr->ref;
-  return true;
-}
-
 void RealNumber::writeBinary(const RealNumber* e, std::ostream& os) {
   const auto temp = val(e);
   writeBinary(temp, os);
@@ -120,9 +103,9 @@ void RealNumber::readBinary(dd::fp& num, std::istream& is) {
 
 namespace constants {
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
-RealNumber zero{{nullptr}, 0., 1U};
-RealNumber one{{nullptr}, 1., 1U};
-RealNumber sqrt2over2{{nullptr}, SQRT2_2, 1U};
+RealNumber zero{{nullptr}, 0.};
+RealNumber one{{nullptr}, 1.};
+RealNumber sqrt2over2{{nullptr}, SQRT2_2};
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 } // namespace constants
 } // namespace dd
