@@ -396,14 +396,14 @@ public:
       : inputFilename(std::move(filename)) {};
 
   void runAll() const {
-    // runGHZ();
-    // runWState();
-    // runBV();
-    // runQFT();
+    runGHZ();
+    runWState();
+    runBV();
+    runQFT();
     runGrover();
-    // runQPE();
-    // runExactQPE();
-    // runRandomClifford();
+    runQPE();
+    runExactQPE();
+    runRandomClifford();
   }
 };
 

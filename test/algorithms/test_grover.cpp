@@ -123,25 +123,47 @@ TEST_P(Grover, FunctionalityRecursive) {
   std::reverse(x.begin(), x.end());
   std::replace(x.begin(), x.end(), '1', '2');
 
-  qc::QuantumComputation groverSetup(qc.getNqubits());
-  qc::appendGroverInitialization(groverSetup);
-
   qc::QuantumComputation groverIteration(qc.getNqubits());
   qc::appendGroverOracle(groverIteration, targetValue);
   qc::appendGroverDiffusion(groverIteration);
 
-  const auto setup = buildFunctionalityRecursive(groverSetup, *dd);
-  const auto iterationOp = buildFunctionalityRecursive(groverIteration, *dd);
+  const auto iter = buildFunctionalityRecursive(groverIteration, *dd);
+  auto e = iter;
   const auto iterations = qc::computeNumberOfIterations(nqubits);
-
-  auto iteration = iterationOp;
-  dd->track(iteration);
-  for (std::size_t i = 0U; i < iterations - 1U; ++i) {
-    iteration = dd->applyOperation(iterationOp, iteration);
+  const std::bitset<128U> iterBits(iterations);
+  const auto msb = static_cast<std::size_t>(std::floor(std::log2(iterations)));
+  auto f = iter;
+  dd->track(f);
+  bool zero = !iterBits[0U];
+  for (std::size_t j = 1U; j <= msb; ++j) {
+    auto tmp = dd->multiply(f, f);
+    dd->track(tmp);
+    dd->untrack(f);
+    f = tmp;
+    if (iterBits[j]) {
+      if (zero) {
+        dd->track(f);
+        dd->untrack(e);
+        e = f;
+        zero = false;
+      } else {
+        auto g = dd->multiply(e, f);
+        dd->track(g);
+        dd->untrack(e);
+        e = g;
+        dd->garbageCollect();
+      }
+    }
   }
+  dd->untrack(f);
 
-  const auto groverFull = dd->multiply(iteration, setup);
-  dd->track(groverFull);
+  // apply state preparation setup
+  qc::QuantumComputation statePrep(qc.getNqubits());
+  qc::appendGroverInitialization(statePrep);
+  const auto s = buildFunctionality(statePrep, *dd);
+  const auto groverFull = dd->multiply(e, s);
+  dd->untrack(s);
+  dd->untrack(e);
 
   // amplitude of the searched-for entry should be 1
   const auto c = groverFull.getValueByPath(qc.getNqubits(), x);
@@ -150,11 +172,6 @@ TEST_P(Grover, FunctionalityRecursive) {
   EXPECT_NEAR(std::abs(c.real()), 1, GROVER_ACCURACY);
   EXPECT_NEAR(std::abs(c.imag()), 0, GROVER_ACCURACY);
   EXPECT_GE(prob, GROVER_GOAL_PROBABILITY);
-
-  dd->untrack(iteration);
-  dd->untrack(groverFull);
-  dd->untrack(iterationOp);
-  dd->untrack(setup);
 }
 
 TEST_P(Grover, Simulation) {
