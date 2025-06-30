@@ -23,14 +23,11 @@
 namespace dd {
 MatrixDD buildFunctionality(const qc::QuantumComputation& qc, Package& dd) {
   if (qc.getNqubits() == 0U) {
-    auto e = MatrixDD::one();
-    dd.track(e);
-    return e;
+    return MatrixDD::one();
   }
 
   auto permutation = qc.initialLayout;
   auto e = dd.createInitialMatrix(qc.getAncillary());
-  dd.track(e);
   for (const auto& op : qc) {
     // SWAP gates can be executed virtually by changing the permutation
     if (op->getType() == qc::OpType::SWAP && !op->isControlled()) {

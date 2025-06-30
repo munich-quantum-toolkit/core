@@ -199,7 +199,10 @@ public:
    * @param e The edge to increase the reference count of.
    */
   template <class Node> void track(const Edge<Node>& e) noexcept {
-    roots.addToRoots(e);
+    if (!(e.isTerminal() && constants::isStaticNumber(e.w.r) &&
+          constants::isStaticNumber(e.w.i))) {
+      roots.addToRoots(e);
+    }
   }
 
   /**
@@ -211,7 +214,10 @@ public:
    * hashset.
    */
   template <class Node> void untrack(const Edge<Node>& e) {
-    roots.removeFromRoots(e);
+    if (!(e.isTerminal() && constants::isStaticNumber(e.w.r) &&
+          constants::isStaticNumber(e.w.i))) {
+      roots.removeFromRoots(e);
+    }
   }
 
   template <class Node> [[nodiscard]] auto& getRootSet() noexcept {

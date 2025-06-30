@@ -173,9 +173,7 @@ void registerDDPackage(const py::module& mod) {
         const auto data = v.unchecked<1>();
         const auto length = static_cast<size_t>(data.shape(0));
         if (length == 0) {
-          const auto state = dd::vEdge::one();
-          p.track(state);
-          return state;
+          return dd::vEdge::one();
         }
         if ((length & (length - 1)) != 0) {
           throw std::invalid_argument(
