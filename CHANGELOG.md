@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add MLIR pass for merging rotation gates ([#1019]) ([**@denialhaag**])
 - ✨ Add functions to generate random vector DDs ([#975]) ([**@MatthiasReumann**])
 - ✨ Add function to approximate decision diagrams ([#908]) ([**@MatthiasReumann**])
 - 📦 Add Windows ARM64 wheels ([#926]) ([**@burgholzer**])
@@ -117,6 +118,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1019]: https://github.com/munich-quantum-toolkit/core/pull/1019
 [#982]: https://github.com/munich-quantum-toolkit/core/pull/982
 [#984]: https://github.com/munich-quantum-toolkit/core/pull/984
 [#975]: https://github.com/munich-quantum-toolkit/core/pull/975
