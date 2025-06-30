@@ -18,6 +18,7 @@
 #include "ir/QuantumComputation.hpp"
 
 #include <algorithm>
+#include <bitset>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -136,10 +137,7 @@ TEST_P(Grover, FunctionalityRecursive) {
   dd->track(f);
   bool zero = !iterBits[0U];
   for (std::size_t j = 1U; j <= msb; ++j) {
-    auto tmp = dd->multiply(f, f);
-    dd->track(tmp);
-    dd->untrack(f);
-    f = tmp;
+    f = dd->applyOperation(f, f);
     if (iterBits[j]) {
       if (zero) {
         dd->track(f);
@@ -147,10 +145,7 @@ TEST_P(Grover, FunctionalityRecursive) {
         e = f;
         zero = false;
       } else {
-        auto g = dd->multiply(e, f);
-        dd->track(g);
-        dd->untrack(e);
-        e = g;
+        e = dd->applyOperation(f, e);
         dd->garbageCollect();
       }
     }
