@@ -20,7 +20,8 @@ import pennylane as qml
 import pytest
 from catalyst import pipeline
 from catalyst.passes import apply_pass, apply_pass_plugin
-from mqt.catalyst import get_catalyst_plugin_abs_path, mqt_core_roundtrip
+
+from mqt.core.plugins.catalyst import get_catalyst_plugin_abs_path, mqt_core_roundtrip
 
 if TYPE_CHECKING:
     from pennylane.measurements.state import StateMP

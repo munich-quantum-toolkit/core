@@ -9,19 +9,19 @@
 [build-system]
 requires = [
   "scikit-build-core>=0.11.1",
-  "mqt-core~=3.0.0",
-  "pennylane @ https://test-files.pythonhosted.org/packages/a4/ae/b8b0fdcd91fe0e87d699d46938cfee0531e8093042dd9eff11abc247c02f/pennylane-0.42.0.dev27-py3-none-any.whl ; sys_platform == 'darwin' and platform_machine == 'arm64'",
-  "pennylane-lightning @ https://test-files.pythonhosted.org/packages/4d/99/1cab1348e3b839f0c8df515dc6b2d347c5e913361ff65e6fa1f197c0a67a/pennylane_lightning-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl ; sys_platform == 'darwin' and platform_machine == 'arm64'",
-  "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/25/97/9707f73d2ed6e2549e4e099d0083481c144e984227e147b44cd2838535e6/pennylane_lightning_kokkos-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl ; sys_platform == 'darwin' and platform_machine == 'arm64'",
-  "pennylane-catalyst @ https://test-files.pythonhosted.org/packages/00/1f/791910226d7363ba8272add71529c637426d1ac225a4e582ef8612b7ecee/pennylane_catalyst-0.12.0.dev37-cp312-abi3-macosx_13_0_arm64.whl ; sys_platform == 'darwin' and platform_machine == 'arm64'"
+  "pennylane-catalyst>=0.12.0.dev66",
+  # The following dependencies can be removed once we no longer rely on the pre-release version for Catalyst
+  "pennylane>=0.42.0.dev48",
+  "pennylane-lightning>=0.42.0.dev16",
+  "pennylane-lightning-kokkos>=0.42.0.dev16",
 ]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "mqt-catalyst_plugin"
+name = "mqt-catalyst-plugin"
 version = "0.1.0"
-description = "The Munich Quantum Toolkit's Catalyst Plugin"
-readme = "../../README.md"
+description = "The Munich Quantum Toolkit's Catalyst MLIR Plugin"
+readme = "README.md"
 authors = [
     { name = "Patrick Hopf", email = "patrick.hopf@tum.de" },
     { name = "Yannick Stade", email = "yannick.stade@tum.de" },
@@ -48,11 +48,34 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 
-[project.entry-points."catalyst.passes_resolution"]
-"mqt.passes" = "mqt.catalyst"
+dependencies = [
+  "mqt-core ~=3.0.0",
+]
 
-[project.scripts]
-mqt-catalyst-cli = "mqt.catalyst.__main__:main"
+[dependency-groups]
+build = [
+  "scikit-build-core>=0.11.1",
+  {include-group = "catalyst"},
+]
+test = [
+  "lit>=18.1.8",
+  "pytest>=8.3.5",
+  "pytest-cov>=6.1.1",
+]
+catalyst = [
+  "pennylane-catalyst>=0.12.0.dev66",
+  # The following dependencies can be removed once we no longer rely on the pre-release version for Catalyst
+  "pennylane>=0.42.0.dev48",
+  "pennylane-lightning>=0.42.0.dev16",
+  "pennylane-lightning-kokkos>=0.42.0.dev16",
+]
+dev = [
+  {include-group = "build"},
+  {include-group = "test"},
+]
+
+[project.entry-points."catalyst.passes_resolution"]
+"mqt.passes" = "mqt.core.plugins.catalyst"
 
 [project.urls]
 Homepage = "https://github.com/munich-quantum-toolkit/core"
@@ -68,7 +91,7 @@ PyPI = "https://pypi.org/project/mqt-core/"
 minimum-version = "build-system.requires"
 
 # Set the wheel install directory
-wheel.install-dir = "mqt/catalyst_plugin"
+wheel.install-dir = "mqt/core/plugins/catalyst"
 
 # Explicitly set the package directory
 wheel.packages = ["python/mqt"]
@@ -83,6 +106,9 @@ build-dir = "build/{wheel_tag}/{build_type}"
 install.components = [
   "mqt-catalyst_Plugin",
 ]
+
+# We are not building a CPython extension, so the produced wheel will work with any Python version
+wheel.py-api = "py3"
 
 sdist.exclude = [
   "**/test",
@@ -117,7 +143,8 @@ filterwarnings = [
   'ignore:\s.*Pyarrow.*:DeprecationWarning:',
   'ignore:.*datetime\.datetime\.utcfromtimestamp.*:DeprecationWarning:',
   'ignore:.*jax\.interpreters\.mlir.*:DeprecationWarning:',
-  'ignore:.*The jaxlib\\.hlo_helpers submodule is deprecated.*:DeprecationWarning'
+  'ignore:.*The jaxlib\\.hlo_helpers submodule is deprecated.*:DeprecationWarning',
+  'ignore:.*:DeprecationWarning:gast.*',
 ]
 log_cli_level = "INFO"
 testpaths = ["test/python"]
@@ -179,20 +206,56 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }
 select = "*-macosx_arm64"
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
-[dependency-groups]
-build = [
-  "scikit-build-core>=0.11.1",
-  "mqt-core>=3.0.0",
-  "pennylane @ https://test-files.pythonhosted.org/packages/a4/ae/b8b0fdcd91fe0e87d699d46938cfee0531e8093042dd9eff11abc247c02f/pennylane-0.42.0.dev27-py3-none-any.whl",
-  "pennylane-lightning @ https://test-files.pythonhosted.org/packages/4d/99/1cab1348e3b839f0c8df515dc6b2d347c5e913361ff65e6fa1f197c0a67a/pennylane_lightning-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
-  "pennylane-lightning-kokkos @ https://test-files.pythonhosted.org/packages/25/97/9707f73d2ed6e2549e4e099d0083481c144e984227e147b44cd2838535e6/pennylane_lightning_kokkos-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",
-  "pennylane-catalyst @ https://test-files.pythonhosted.org/packages/00/1f/791910226d7363ba8272add71529c637426d1ac225a4e582ef8612b7ecee/pennylane_catalyst-0.12.0.dev37-cp312-abi3-macosx_13_0_arm64.whl",
+
+[tool.uv]
+prerelease = "allow"
+
+# Only resolve on Linux and macOS
+environments = [
+  "sys_platform == 'darwin'",
+  "sys_platform == 'linux'",
 ]
-test = [
-  "pytest>=8.3.5",
-  "pytest-cov>=6.1.1"
+
+[[tool.uv.index]]
+name = "test.pypi.org"
+url = "https://test.pypi.org/simple"
+explicit = true
+
+
+[tool.uv.sources]
+pennylane-catalyst = { index = "test.pypi.org" }
+pennylane-lightning = { index = "test.pypi.org" }
+pennylane-lightning-kokkos = { index = "test.pypi.org" }
+pennylane = { index = "test.pypi.org" }
+
+[tool.ruff]
+line-length = 120
+namespace-packages = ["mqt"]
+preview = true
+unsafe-fixes = true
+src = ["python"]
+exclude = [
+  "plugins/catalyst",
 ]
-dev = [
-  {include-group = "build"},
-  {include-group = "test"},
+
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "C90",     # <...> too complex
+  "COM812",  # Conflicts with formatter
+  "CPY001",  # Missing copyright notice at top of file
+  "ISC001",  # Conflicts with formatter
+  "PLR09",   # Too many <...>
+  "PLR2004", # Magic value used in comparison
+  "PLC0415", # Import should be at top of file
+  "S101",    # Use of assert detected
+  "S404",    # `subprocess` module is possibly insecure
+  "TID252"   # Prefer absolute imports over relative imports from parent modules
 ]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"test/python/**" = ["T20", "INP001"]

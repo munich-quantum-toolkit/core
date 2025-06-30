@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import platform
-from importlib.metadata import PackageNotFoundError, distribution
+from importlib import resources
 from pathlib import Path
 
 import pennylane as qml
@@ -41,27 +41,22 @@ def get_catalyst_plugin_abs_path() -> Path:
         msg = f"Environment override MQT_CATALYST_PLUGIN_PATH is set but not valid: {override_path}"
         raise FileNotFoundError(msg)
 
-    # 1. Try site-packages from distribution metadata (wheel install)
-    try:
-        dist = distribution("mqt-catalyst-plugin")
-        lib_base = Path(dist.locate_file("mqt/catalyst/lib"))
-        for path in lib_base.glob(f"**/mqt-catalyst-plugin{ext}"):
-            if path.is_file():
-                return path.resolve()
-    except PackageNotFoundError:
-        pass
+    # First check in the package resources
+    for file in resources.files("mqt.core.plugins.catalyst").iterdir():
+        if "mqt-catalyst-plugin" in file.name:
+            return Path(str(file)).resolve()
 
-    # 2. Fallback: search in editable build directory under the repo root
-    current = Path(__file__).resolve()
-    for up in [2, 3, 4]:  # src/, src/mqt/, plugins/catalyst/python/src etc.
-        candidate_root = current.parents[up] / "build"
-        if candidate_root.exists():
-            matches = list(candidate_root.glob(f"**/plugins/catalyst/lib/mqt-catalyst-plugin{ext}"))
-            if matches:
-                return matches[0].resolve()
+    # Then check in site-packages
+    import site
 
-    # 3. Give up
-    msg = f"mqt-catalyst-plugin{ext} not found in site-packages or build directories."
+    for site_dir in site.getsitepackages():
+        site_path = Path(site_dir) / "mqt/core/plugins/catalyst"
+        if site_path.exists():
+            for file in site_path.iterdir():
+                if "mqt-catalyst-plugin" in file.name:
+                    return file.resolve()
+
+    msg = f"Could not locate catalyst plugin library with extension {ext}"
     raise FileNotFoundError(msg)
 
 

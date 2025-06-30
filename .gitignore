@@ -177,4 +177,4 @@ wheelhouse/
 # mlir
 
 **/.lit
-plugins/catalyst/python/build
+plugins/catalyst/build

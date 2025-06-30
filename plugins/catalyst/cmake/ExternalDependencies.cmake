@@ -9,7 +9,6 @@
 # Declare all external dependencies and make sure that they are available.
 
 if(DEFINED Python_EXECUTABLE AND Python_EXECUTABLE)
-
   set(CATALYST_VERSION 0.12.0)
   # Check if the pennylane-catalyst package is installed in the python environment.
   execute_process(
@@ -68,3 +67,6 @@ else()
       "Python executable is not defined. Please set the Python_EXECUTABLE variable to the path of the Python interpreter."
   )
 endif()
+
+# Make all declared dependencies available.
+FetchContent_MakeAvailable(${FETCH_PACKAGES})

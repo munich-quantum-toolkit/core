@@ -18,7 +18,8 @@ import catalyst
 import pennylane as qml
 import pytest
 from catalyst.passes import apply_pass
-from mqt.catalyst import get_catalyst_plugin_abs_path
+
+from mqt.core.plugins.catalyst import get_catalyst_plugin_abs_path
 
 plugin_available: bool = True
 try:

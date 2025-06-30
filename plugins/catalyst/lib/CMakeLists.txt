@@ -6,14 +6,6 @@
 #
 # Licensed under the MIT License
 
-add_compile_options(-fexceptions)
-
-if(APPLE)
-  set(BASEPOINT @loader_path)
-else()
-  set(BASEPOINT $ORIGIN)
-endif()
-
 # Q: Why is it add_llvm_library and not add_mlir_library? A: According to Erick from Xanadu, who
 # talked with the MLIR team, the reason is probably, that the MLIR plugin uses the same
 # infrastructure as the LLVM plugins. Probably due to laziness, the appropriate MLIR macros were not
@@ -33,33 +25,27 @@ add_llvm_library(
   MODULE
   mqt-plugin.cpp
   LINK_LIBS
-  MLIRMQTOpt
   MLIRMQTOptTransforms
   CatalystQuantumToMQTOpt
   MQTOptToCatalystQuantum)
 
-# where to find the MQT-core library
-list(APPEND CMAKE_INSTALL_RPATH ${BASEPOINT}/../../src/ir)
-set_target_properties(
-  mqt-catalyst-plugin
-  PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_RPATH}"
-             BUILD_RPATH "${CMAKE_INSTALL_RPATH}"
-             INSTALL_NAME_DIR "@rpath")
-
 # set required C++ standard
 target_compile_features(mqt-catalyst-plugin PUBLIC cxx_std_17)
 
+# RPATH settings to make sure the MQT Core IR library is found at runtime.
 include(GNUInstallDirs)
-# Install directive for scikit-build-core
+list(
+  APPEND
+  CMAKE_INSTALL_RPATH
+  ${BASEPOINT}/../core/${CMAKE_INSTALL_LIBDIR}
+  ${BASEPOINT}/../core/lib
+  ${BASEPOINT}/../core/lib64
+  ${BASEPOINT}/../../core/${CMAKE_INSTALL_LIBDIR}
+  ${BASEPOINT}/../../core/lib
+  ${BASEPOINT}/../../core/lib64)
+
+# install directive for scikit-build-core
 install(
   TARGETS mqt-catalyst-plugin
-  EXPORT mqt-catalyst-plugin-targets
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-          FILE_SET HEADERS
-          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mqt/catalyst
-          COMPONENT mqt-catalyst_Plugin)
-
-# add MQT alias
-add_library(MQT::CatalystPlugin ALIAS mqt-catalyst-plugin)
+  DESTINATION .
+  COMPONENT mqt-catalyst_Plugin)
