@@ -192,11 +192,11 @@ struct MergeRotationGatesPattern final
       }
     }
 
-    // Erase op
-    rewriter.eraseOp(op);
-
     // Erase user
     rewriter.eraseOp(user);
+
+    // Erase op
+    rewriter.eraseOp(op);
   }
 
   void static rewriteSingleAdditiveParam(UnitaryInterface op,
@@ -292,11 +292,11 @@ struct MergeRotationGatesPattern final
           newUser, [&] { newUser->setOperand(i, opAllInQubits[idx]); });
     }
 
-    // Erase op
-    rewriter.eraseOp(op);
-
     // Replace user with newUser
     rewriter.replaceOp(user, newUser);
+
+    // Erase op
+    rewriter.eraseOp(op);
   }
 
   void static rewriteXxMinusPlusYy(UnitaryInterface op,
