@@ -1564,7 +1564,8 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
       }
 
       if (onlyCollectCliffords && !op->isClifford()) {
-        //check if next operation which acts on other qubits within the same block fits in the block
+        // check if next operation which acts on other qubits within the same
+        // block fits in the block
         if (opIt + 1 != qc.end() && (*std::next(opIt))->isUnitary()) {
           const auto& nextOp = *(opIt + 1);
           const auto nextUsedQubits = nextOp->getUsedQubits();
@@ -1585,8 +1586,6 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
             continue;
           }
         }
-
-
 
         for (auto q : op->getUsedQubits()) {
           dsu.finalizeBlock(q);
