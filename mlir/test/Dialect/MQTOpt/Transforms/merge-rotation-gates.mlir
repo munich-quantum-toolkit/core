@@ -105,7 +105,7 @@ module {
 }
 
 // -----
-// This test checks that incompatible single single-qubit gates are not merged.
+// This test checks that incompatible single-qubit gates are not merged.
 
 module {
   // CHECK-LABEL: func.func @testDoNotMergeIncompatibleSingleQubitGates
@@ -140,14 +140,155 @@ module {
 }
 
 // -----
-// This test checks if consecutive multi-qubit rotation gates are merged and canceled correctly.
-// If a gate has no consecutive partner, it is left as is.
-// If consecutive gates A and B satisfy angle_A == -angle_B, they are canceled.
-// Otherwise, the gates are merged by adding their angles.
+// This test checks that consecutive rxx gates are merged correctly.
 
 module {
-  // CHECK-LABEL: func.func @testMergeMultiQubitGates
-  func.func @testMergeMultiQubitGates() {
+  // CHECK-LABEL: func.func @testMergeRxxGates
+  func.func @testMergeRxxGates() {
+    // CHECK: %[[Res_3:.*]] = arith.constant 3.000000e+00 : f64
+
+    // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
+
+    // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
+    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    // CHECK: %[[Q01_3:.*]]:2 = mqtopt.rxx(%[[Res_3:.*]]) %[[Q0_0]], %[[Q1_0]] : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK-NOT: %[[ANY:.*]]:2 = mqtopt.rxx(%[[ANY:.*]]) %[[ANY]], %[[ANY]] : !mqtopt.Qubit, !mqtopt.Qubit
+
+    %c_0 = arith.constant 1.000000e+00 : f64
+    %q01_1:2 = mqtopt.rxx(%c_0) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+    %q01_2:2 = mqtopt.rxx(%c_0) %q01_1#0, %q01_1#1 : !mqtopt.Qubit, !mqtopt.Qubit
+    %q01_3:2 = mqtopt.rxx(%c_0) %q01_2#0, %q01_2#1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+    // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q01_3]]#0)  <{index_attr = 0 : i64}>
+    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q01_3#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q01_3]]#1)  <{index_attr = 1 : i64}>
+    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_3#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+    // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
+    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+
+    return
+  }
+}
+
+// -----
+// This test checks that consecutive ryy gates are merged correctly.
+
+module {
+  // CHECK-LABEL: func.func @testMergeRyyGates
+  func.func @testMergeRyyGates() {
+    // CHECK: %[[Res_0:.*]] = arith.constant 0.000000e+00 : f64
+
+    // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
+
+    // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
+    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    // CHECK: %[[Q01_2:.*]]:2 = mqtopt.ryy(%[[Res_0:.*]]) %[[Q0_0]], %[[Q1_0]] : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK-NOT: %[[ANY:.*]]:2 = mqtopt.ryy(%[[ANY:.*]]) %[[ANY]], %[[ANY]] : !mqtopt.Qubit, !mqtopt.Qubit
+
+    %c_0 = arith.constant -1.000000e+00 : f64
+    %c_1 = arith.constant 1.000000e+00 : f64
+    %q01_1:2 = mqtopt.ryy(%c_0) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+    %q01_2:2 = mqtopt.ryy(%c_1) %q01_1#0, %q01_1#1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+    // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q01_2]]#0)  <{index_attr = 0 : i64}>
+    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q01_2#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q01_2]]#1)  <{index_attr = 1 : i64}>
+    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_2#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+    // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
+    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+
+    return
+  }
+}
+
+// -----
+// This test checks that consecutive rzz gates are merged correctly.
+
+module {
+  // CHECK-LABEL: func.func @testMergeRzzGates
+  func.func @testMergeRzzGates() {
+    // CHECK: %[[Res_3:.*]] = arith.constant 3.000000e+00 : f64
+
+    // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
+
+    // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
+    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    // CHECK: %[[Q01_2:.*]]:2 = mqtopt.rzz(%[[Res_3:.*]]) %[[Q0_0]], %[[Q1_0]] : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK-NOT: %[[ANY:.*]]:2 = mqtopt.rzz(%[[ANY:.*]]) %[[ANY]], %[[ANY]] : !mqtopt.Qubit, !mqtopt.Qubit
+
+    %c_0 = arith.constant 1.000000e+00 : f64
+    %c_1 = arith.constant 2.000000e+00 : f64
+    %q01_1:2 = mqtopt.rzz(%c_0) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+    %q01_2:2 = mqtopt.rzz(%c_1) %q01_1#0, %q01_1#1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+    // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q01_2]]#0)  <{index_attr = 0 : i64}>
+    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q01_2#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q01_2]]#1)  <{index_attr = 1 : i64}>
+    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_2#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+    // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
+    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+
+    return
+  }
+}
+
+// -----
+// This test checks that consecutive rzx gates are merged correctly.
+
+module {
+  // CHECK-LABEL: func.func @testMergeRzxGates
+  func.func @testMergeRzxGates() {
+    // CHECK: %[[Res_3:.*]] = arith.constant 3.000000e+00 : f64
+
+    // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
+    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
+
+    // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
+    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    // CHECK: %[[Q01_2:.*]]:2 = mqtopt.rzx(%[[Res_3:.*]]) %[[Q0_0]], %[[Q1_0]] : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK-NOT: %[[ANY:.*]]:2 = mqtopt.rzx(%[[ANY:.*]]) %[[ANY]], %[[ANY]] : !mqtopt.Qubit, !mqtopt.Qubit
+
+    %c_0 = arith.constant 1.000000e+00 : f64
+    %c_1 = arith.constant 2.000000e+00 : f64
+    %q01_1:2 = mqtopt.rzx(%c_0) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+    %q01_2:2 = mqtopt.rzx(%c_1) %q01_1#0, %q01_1#1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+    // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q01_2]]#0)  <{index_attr = 0 : i64}>
+    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q01_2#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q01_2]]#1)  <{index_attr = 1 : i64}>
+    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_2#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+    // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
+    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+
+    return
+  }
+}
+
+// -----
+// This test checks that incompatible multi-qubit gates are not merged.
+
+module {
+  // CHECK-LABEL: func.func @testDoNotMergeIncompatibleMultiQubitGates
+  func.func @testDoNotMergeIncompatibleMultiQubitGates() {
     // CHECK: %[[Res_2:.*]] = arith.constant 2.000000e+00 : f64
     // CHECK: %[[Res_1:.*]] = arith.constant 1.000000e+00 : f64
 
@@ -158,32 +299,24 @@ module {
     %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
     // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
     %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    // CHECK: %[[Reg_3:.*]], %[[Q2_0:.*]] = "mqtopt.extractQubit"(%[[Reg_2]]) <{index_attr = 2 : i64}>
-    %reg_3, %q2_0 = "mqtopt.extractQubit"(%reg_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
     // CHECK: %[[Q01_1:.*]]:2 = mqtopt.rxx(%[[Res_1:.*]]) %[[Q0_0]], %[[Q1_0]] : !mqtopt.Qubit, !mqtopt.Qubit
-    // CHECK: %[[Q12_2:.*]]:2 = mqtopt.rxx(%[[Res_2:.*]]) %[[Q01_1]]#1, %[[Q2_0]] : !mqtopt.Qubit, !mqtopt.Qubit
-    // CHECK: %[[Q01_3:.*]]:2 = mqtopt.ryy(%[[Res_2:.*]]) %[[Q01_1]]#0, %[[Q12_2]]#0 : !mqtopt.Qubit, !mqtopt.Qubit
-    // CHECK-NOT: %[[ANY:.*]]:2 = mqtopt.rxx(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
-    // CHECK-NOT: %[[ANY:.*]]:2 = mqtopt.ryy(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
-    // CHECK-NOT: %[[ANY:.*]]:2 = mqtopt.rzz(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[Q01_2:.*]]:2 = mqtopt.ryy(%[[Res_1:.*]]) %[[Q01_1]]#0, %[[Q01_1]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[Q01_3:.*]]:2 = mqtopt.rzz(%[[Res_2:.*]]) %[[Q01_2]]#0, %[[Q01_2]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
 
     %c_0 = arith.constant 1.000000e+00 : f64
+    %c_1 = arith.constant 2.000000e+00 : f64
     %q01_1:2 = mqtopt.rxx(%c_0) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
-    %q12_1:2 = mqtopt.rxx(%c_0) %q01_1#1, %q2_0 : !mqtopt.Qubit, !mqtopt.Qubit
-    %q12_2:2 = mqtopt.rxx(%c_0) %q12_1#0, %q12_1#1 : !mqtopt.Qubit, !mqtopt.Qubit
-    %q01_2:2 = mqtopt.ryy(%c_0) %q01_1#0, %q12_2#0 : !mqtopt.Qubit, !mqtopt.Qubit
-    %q01_3:2 = mqtopt.ryy(%c_0) %q01_2#0, %q01_2#1 : !mqtopt.Qubit, !mqtopt.Qubit
+    %q01_2:2 = mqtopt.ryy(%c_0) %q01_1#0, %q01_1#1 : !mqtopt.Qubit, !mqtopt.Qubit
+    %q01_3:2 = mqtopt.rzz(%c_1) %q01_2#0, %q01_2#1 : !mqtopt.Qubit, !mqtopt.Qubit
 
-    // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q01_3]]#0)  <{index_attr = 0 : i64}>
-    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_3#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    // CHECK: %[[Reg_5:.*]] = "mqtopt.insertQubit"(%[[Reg_4]], %[[Q01_3]]#1)  <{index_attr = 1 : i64}>
-    %reg_5 = "mqtopt.insertQubit"(%reg_4, %q01_3#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    // CHECK: %[[Reg_6:.*]] = "mqtopt.insertQubit"(%[[Reg_5]], %[[Q12_2]]#1)  <{index_attr = 2 : i64}>
-    %reg_6 = "mqtopt.insertQubit"(%reg_5, %q12_2#1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q01_3]]#0)  <{index_attr = 0 : i64}>
+    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q01_3#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q01_3]]#1)  <{index_attr = 1 : i64}>
+    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_3#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
 
-    // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_6]])
-    "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
+    // CHECK: "mqtopt.deallocQubitRegister"(%[[Reg_4]])
+    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
 
     return
   }
