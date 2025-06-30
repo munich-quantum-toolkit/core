@@ -171,7 +171,6 @@ jobs:
       - name: Install lit
         run: |
           uv pip install lit
-          echo "LLVM_EXTERNAL_LIT=$(which lit)" >> $GITHUB_ENV
 
       # configure the project with CMake
       - name: Configure CMake for MLIR

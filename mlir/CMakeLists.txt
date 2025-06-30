@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-# todo: should this be dropped? add a compile feature for C++17
+# add a compile feature for C++17
 set(CMAKE_CXX_STANDARD 17)
 
 # add main library code

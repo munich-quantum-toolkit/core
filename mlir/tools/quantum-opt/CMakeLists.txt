@@ -17,8 +17,7 @@ set(LIBS
     ${passes_libs}
     MLIROptLib
     MLIRMQTOptTransforms
-    MLIRMQTDynTransforms
-    MQT::CoreIR)
+    MLIRMQTDynTransforms)
 
 add_mlir_tool(quantum-opt quantum-opt.cpp DEPENDS ${LIBS} SUPPORT_PLUGINS)
 target_compile_options(quantum-opt PRIVATE -fexceptions)
