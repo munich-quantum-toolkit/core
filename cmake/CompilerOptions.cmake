@@ -41,7 +41,8 @@ function(enable_project_options target_name)
 
       check_cxx_compiler_flag(-march=native HAS_MARCH_NATIVE)
       if(HAS_MARCH_NATIVE)
-        if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+        if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang" OR CMAKE_SYSTEM_PROCESSOR MATCHES
+                                                      "(x86)|(x86_64)|(AMD64)|(amd64)")
           target_compile_options(${target_name} INTERFACE -march=native)
         else()
           target_compile_options(${target_name} INTERFACE -mcpu=native)

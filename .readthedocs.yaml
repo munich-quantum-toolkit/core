@@ -1,7 +1,7 @@
 version: 2
 
 formats:
-  - pdf
+  #  - pdf
   - htmlzip
 
 build:
@@ -17,7 +17,7 @@ build:
       - (git --no-pager log --pretty="tformat:%s -- %b" -1 | grep -viq "skip ci") || exit 183
       # Skip docs build if there are no changes related to docs
       - |
-        if [ "$READTHEDOCS_VERSION_TYPE" = "external" ] && git diff --quiet origin/main -- docs/ .readthedocs.yaml src/mqt/ src/python include/*/python .github/contributing* .github/support*;
+        if [ "$READTHEDOCS_VERSION_TYPE" = "external" ] && git diff --quiet origin/main -- bindings/ include/ docs/ python/ .github/contributing* .github/support* .readthedocs.yaml;
         then
           exit 183;
         fi
@@ -35,8 +35,8 @@ build:
         - uv run --frozen --no-dev --group docs -m sphinx -T -b dirhtml -d docs/_build/doctrees -D language=en docs docs/_build/dirhtml
         - mkdir -p $READTHEDOCS_OUTPUT/htmlzip
         - zip -r $READTHEDOCS_OUTPUT/htmlzip/html.zip docs/_build/dirhtml/*
-      pdf:
-        - uv run --frozen --no-dev --group docs -m sphinx -T -b latex -d docs/_build/doctrees -D language=en docs docs/_build/latex
-        - cd docs/_build/latex && latexmk -pdf -f -dvi- -ps- -interaction=nonstopmode -jobname=$READTHEDOCS_PROJECT
-        - mkdir -p $READTHEDOCS_OUTPUT/pdf
-        - cp docs/_build/latex/$READTHEDOCS_PROJECT.pdf $READTHEDOCS_OUTPUT/pdf/$READTHEDOCS_PROJECT.pdf
+#      pdf:
+#        - uv run --frozen --no-dev --group docs -m sphinx -T -b latex -d docs/_build/doctrees -D language=en docs docs/_build/latex
+#        - cd docs/_build/latex && latexmk -pdf -f -dvi- -ps- -interaction=nonstopmode -jobname=$READTHEDOCS_PROJECT
+#        - mkdir -p $READTHEDOCS_OUTPUT/pdf
+#        - cp docs/_build/latex/$READTHEDOCS_PROJECT.pdf $READTHEDOCS_OUTPUT/pdf/$READTHEDOCS_PROJECT.pdf
