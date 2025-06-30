@@ -206,6 +206,9 @@ namespace-packages = ["mqt"]
 preview = true
 unsafe-fixes = true
 src = ["python"]
+exclude = [
+    "plugins/catalyst",
+]
 
 [tool.ruff.lint]
 select = ["ALL"]

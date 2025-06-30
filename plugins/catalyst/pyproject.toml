@@ -21,7 +21,7 @@ build-backend = "scikit_build_core.build"
 name = "mqt-catalyst_plugin"
 version = "0.1.0"
 description = "The Munich Quantum Toolkit's Catalyst Plugin"
-readme = "../../../README.md"
+readme = "../../README.md"
 authors = [
     { name = "Patrick Hopf", email = "patrick.hopf@tum.de" },
     { name = "Yannick Stade", email = "yannick.stade@tum.de" },
@@ -71,7 +71,7 @@ minimum-version = "build-system.requires"
 wheel.install-dir = "mqt/catalyst_plugin"
 
 # Explicitly set the package directory
-wheel.packages = ["src/mqt"]
+wheel.packages = ["python/mqt"]
 
 # Set required Ninja version
 ninja.version = ">=1.10"
@@ -84,20 +84,17 @@ install.components = [
   "mqt-catalyst_Plugin",
 ]
 
-sdist.include = ["src/mqt/catalyst/_version.py"]
 sdist.exclude = [
-  "**/docs",
   "**/test",
 ]
 
 [tool.check-sdist]
 git-only = [
-  "docs/*",
   "test/*",
 ]
 
 [tool.scikit-build.cmake]
-source-dir = "../../.."
+source-dir = "../.."
 
 [tool.scikit-build.cmake.define]
 BUILD_MQT_CORE_TESTS = "OFF"
@@ -123,7 +120,7 @@ filterwarnings = [
   'ignore:.*The jaxlib\\.hlo_helpers submodule is deprecated.*:DeprecationWarning'
 ]
 log_cli_level = "INFO"
-testpaths = ["test"]
+testpaths = ["test/python"]
 
 [tool.coverage]
 run.source = ["mqt.catalyst_plugin"]
@@ -138,8 +135,8 @@ report.exclude_also = [
 ]
 
 [tool.mypy]
-files = ["src", "test"]
-mypy_path = ["$MYPY_CONFIG_FILE_DIR/src"]
+files = ["python", "test"]
+mypy_path = ["$MYPY_CONFIG_FILE_DIR/python"]
 python_version = "3.10"
 warn_unused_configs = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
@@ -147,9 +144,6 @@ strict = true
 disallow_untyped_defs = false
 explicit_package_bases = true
 warn_unreachable = true
-
-# todo: can the module be used from mqt-core?
-typing-modules = ["mqt.core._compat.typing"]
 isort.required-imports = ["from __future__ import annotations"]
 
 [tool.typos]
@@ -169,11 +163,14 @@ ignore = ["GH200"]
 
 [tool.cibuildwheel]
 build = "cp3*"
-skip = "*-manylinux* *-linux* *-musllinux*"
+skip = "*-musllinux_* *-win_*"
 archs = "auto64"
 test-groups = ["test"]
-test-command = "DYLD_LIBRARY_PATH={project}/plugins/catalyst/python/build/{python_tag}/{build_type}/src/ir pytest {project}/test"
+test-command = "pytest {project}/test/python"
 build-frontend = "build[uv]"
+
+[tool.cibuildwheel.linux]
+environment = { DEPLOY = "ON" }
 
 [tool.cibuildwheel.macos]
 environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }
@@ -182,18 +179,9 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }
 select = "*-macosx_arm64"
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
-[tool.uv]
-required-version = ">=0.5.20"
-reinstall-package = ["mqt-catalyst-plugin"]
-
-[tool.uv.sources]
-mqt-catalyst-plugin = { workspace = true }
-
 [dependency-groups]
 build = [
-  "pybind11>=2.13.6",
   "scikit-build-core>=0.11.1",
-  "setuptools-scm>=8.2",
   "mqt-core>=3.0.0",
   "pennylane @ https://test-files.pythonhosted.org/packages/a4/ae/b8b0fdcd91fe0e87d699d46938cfee0531e8093042dd9eff11abc247c02f/pennylane-0.42.0.dev27-py3-none-any.whl",
   "pennylane-lightning @ https://test-files.pythonhosted.org/packages/4d/99/1cab1348e3b839f0c8df515dc6b2d347c5e913361ff65e6fa1f197c0a67a/pennylane_lightning-0.42.0.dev16-cp312-cp312-macosx_13_0_arm64.whl",

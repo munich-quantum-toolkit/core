@@ -6,15 +6,8 @@
 #
 # Licensed under the MIT License
 
-add_mlir_dialect_library(
-  MLIRMQTOpt
-  DISABLE_INSTALL
-  MQTOptOps.cpp
-  DEPENDS
-  MLIRMQTOptOpsIncGen
-  MLIRMQTOptInterfacesIncGen
-  LINK_LIBS
-  MQT::CoreIR)
+add_mlir_dialect_library(MLIRMQTOpt DISABLE_INSTALL MQTOptOps.cpp DEPENDS MLIRMQTOptOpsIncGen
+                         MLIRMQTOptInterfacesIncGen)
 
 # collect header files todo: Does that really include all necessary headers, also the auto-generated
 # ones?
