@@ -79,6 +79,15 @@ struct MergeRotationGatesPattern final
     return false;
   }
 
+  /**
+   * @brief Checks if two consecutive xxminusyy/xxplusyy gates can be merged.
+   *
+   * Currently, this function only checks if the gates can be removed.
+   *
+   * @param a The first gate.
+   * @param b The second gate.
+   * @return True if the gates can be merged, false otherwise.
+   */
   [[nodiscard]] static bool areGatesMergeableXxMinusPlusYy(mlir::Operation& a,
                                                            mlir::Operation& b) {
     auto unitaryA = mlir::dyn_cast<UnitaryInterface>(a);
@@ -90,6 +99,15 @@ struct MergeRotationGatesPattern final
     return (aThetaDouble == -bThetaDouble);
   }
 
+  /**
+   * @brief Checks if two consecutive u gates can be merged.
+   *
+   * Currently, this function only checks if the gates can be removed.
+   *
+   * @param a The first gate.
+   * @param b The second gate.
+   * @return True if the gates can be merged, false otherwise.
+   */
   [[nodiscard]] static bool areGatesMergeableU(mlir::Operation& a,
                                                mlir::Operation& b) {
     auto unitaryA = mlir::dyn_cast<UnitaryInterface>(a);
@@ -107,6 +125,15 @@ struct MergeRotationGatesPattern final
             (aLambdaDouble == -bPhiDouble));
   }
 
+  /**
+   * @brief Checks if two consecutive u2 gates can be merged.
+   *
+   * Currently, this function only checks if the gates can be removed.
+   *
+   * @param a The first gate.
+   * @param b The second gate.
+   * @return True if the gates can be merged, false otherwise.
+   */
   [[nodiscard]] static bool areGatesMergeableU2(mlir::Operation& a,
                                                 mlir::Operation& b) {
     auto unitaryA = mlir::dyn_cast<UnitaryInterface>(a);
@@ -158,12 +185,26 @@ struct MergeRotationGatesPattern final
     return mlir::success();
   }
 
+  /**
+   * @brief Converts an MLIR value to a double.
+   *
+   * @param value The MLIR value.
+   * @return The double.
+   */
   static double getDoubleFromValue(mlir::Value value) {
     auto constOp = value.getDefiningOp<mlir::arith::ConstantOp>();
     auto floatAttr = mlir::dyn_cast<mlir::FloatAttr>(constOp.getValue());
     return floatAttr.getValueAsDouble();
   }
 
+  /**
+   * @brief Creates an MLIR value from a double.
+   *
+   * @param value The double value.
+   * @param rewriter The pattern rewriter.
+   * @param loc The location for the new value.
+   * @return The MLIR value.
+   */
   static mlir::Value getValueFromDouble(double value,
                                         mlir::PatternRewriter& rewriter,
                                         mlir::Location loc) {
@@ -172,6 +213,13 @@ struct MergeRotationGatesPattern final
     return rewriter.create<mlir::arith::ConstantOp>(loc, f64Type, floatAttr);
   }
 
+  /**
+   * @brief Cancels two consecutive gates.
+   *
+   * @param op The operation to cancel.
+   * @param user The user of the operation to cancel.
+   * @param rewriter The pattern rewriter.
+   */
   void static cancelGates(UnitaryInterface op, UnitaryInterface user,
                           mlir::PatternRewriter& rewriter) {
     // Prepare erasures of op and user
@@ -199,8 +247,18 @@ struct MergeRotationGatesPattern final
     rewriter.eraseOp(op);
   }
 
-  void static rewriteSingleAdditiveParam(UnitaryInterface op,
-                                         mlir::PatternRewriter& rewriter) {
+  /**
+   * @brief Merges two consecutive rotation gates into a single gate.
+   *
+   * The function supports gphase, rx, ry, rz, rxx, ryy, and rzz.
+   * The gates are merged by adding their angles.
+   * If the angels add up to zero, the gates are removed altogether.
+   *
+   * @param op The first instance of the rotation gate.
+   * @param rewriter The pattern rewriter.
+   */
+  void static rewriteSimpleRotation(UnitaryInterface op,
+                                    mlir::PatternRewriter& rewriter) {
     auto const type = op->getName().stripDialect().str();
 
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
@@ -299,17 +357,35 @@ struct MergeRotationGatesPattern final
     rewriter.eraseOp(op);
   }
 
+  /**
+   * @brief Removes two consecutive xxminusyy/xxplusyy gates.
+   *
+   * @param op The first instance of the gate.
+   * @param rewriter The pattern rewriter.
+   */
   void static rewriteXxMinusPlusYy(UnitaryInterface op,
                                    mlir::PatternRewriter& rewriter) {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
     cancelGates(op, user, rewriter);
   }
 
+  /**
+   * @brief Removes two consecutive u gates.
+   *
+   * @param op The first instance of the gate.
+   * @param rewriter The pattern rewriter.
+   */
   void static rewriteU(UnitaryInterface op, mlir::PatternRewriter& rewriter) {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
     cancelGates(op, user, rewriter);
   }
 
+  /**
+   * @brief Removes two consecutive u2 gates.
+   *
+   * @param op The first instance of the gate.
+   * @param rewriter The pattern rewriter.
+   */
   void static rewriteU2(UnitaryInterface op, mlir::PatternRewriter& rewriter) {
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
     cancelGates(op, user, rewriter);
@@ -321,7 +397,7 @@ struct MergeRotationGatesPattern final
 
     if (type == "gphase" || type == "rx" || type == "ry" || type == "rz" ||
         type == "rxx" || type == "ryy" || type == "rzz" || type == "rzx") {
-      rewriteSingleAdditiveParam(op, rewriter);
+      rewriteSimpleRotation(op, rewriter);
     } else if (type == "xxminusyy" || type == "xxplusyy") {
       rewriteXxMinusPlusYy(op, rewriter);
     } else if (type == "u") {

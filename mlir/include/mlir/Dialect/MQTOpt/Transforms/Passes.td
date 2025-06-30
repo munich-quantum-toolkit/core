@@ -40,6 +40,12 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   let summary = "This pass searches for consecutive applications of rotation gates that can be merged.";
   let description = [{
     This pass searches for consecutive applications of rotation gates that can be merged.
+
+    Consecutive applications of gphase, rx, ry, rz, rxx, ryy, and rzz are merged into one by adding their angels.
+    If the angels add up to zero, the gates are removed altogether.
+
+    For xxminusyy, xxplusyy, u, and u2, only the removal under the respective circumstances is implemented
+    at the moment. This pass does currently not merge consecutive applications into a new single gate.
   }];
 }
 
