@@ -114,9 +114,7 @@ bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
 MatrixDD buildFunctionalityRecursive(const qc::QuantumComputation& qc,
                                      Package& dd) {
   if (qc.getNqubits() == 0U) {
-    auto e = MatrixDD::one();
-    dd.track(e);
-    return e;
+    return MatrixDD::one();
   }
 
   auto permutation = qc.initialLayout;
