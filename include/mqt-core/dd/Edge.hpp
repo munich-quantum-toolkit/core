@@ -89,6 +89,16 @@ template <class Node> struct Edge {
   }
 
   /**
+   * @brief Check whether an edge requires tracking.
+   * @param e The edge to check.
+   * @return Whether the edge requires tracking.
+   */
+  [[nodiscard]] static constexpr bool trackingRequired(const Edge& e) {
+    return !(e.isTerminal() && constants::isStaticNumber(e.w.r) &&
+             constants::isStaticNumber(e.w.i));
+  }
+
+  /**
    * @brief Check whether this is a terminal
    * @return whether this is a terminal
    */

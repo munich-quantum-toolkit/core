@@ -199,8 +199,7 @@ public:
    * @param e The edge to increase the reference count of.
    */
   template <class Node> void track(const Edge<Node>& e) noexcept {
-    if (!(e.isTerminal() && constants::isStaticNumber(e.w.r) &&
-          constants::isStaticNumber(e.w.i))) {
+    if (Edge<Node>::trackingRequired(e)) {
       roots.addToRoots(e);
     }
   }
@@ -214,8 +213,7 @@ public:
    * hashset.
    */
   template <class Node> void untrack(const Edge<Node>& e) {
-    if (!(e.isTerminal() && constants::isStaticNumber(e.w.r) &&
-          constants::isStaticNumber(e.w.i))) {
+    if (Edge<Node>::trackingRequired(e)) {
       roots.removeFromRoots(e);
     }
   }
