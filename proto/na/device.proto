@@ -25,19 +25,6 @@ message Device {
     int64 x = 1;
     int64 y = 2;
   }
-  message Lattice {
-    Vector lattice_origin = 1;
-    message LatticeVector {
-      Vector vector = 1;
-      uint64 repeat = 2;
-    }
-    LatticeVector lattice_vector_1 = 2;
-    LatticeVector lattice_vector_2 = 3;
-    repeated Vector sublattice_offsets = 4;
-  }
-  repeated Lattice traps = 3;
-  uint64 min_atom_distance = 4;
-
   message Region {
     Vector origin = 1;
 
@@ -47,6 +34,20 @@ message Device {
     }
     Size size = 2;
   }
+  message Lattice {
+    Vector lattice_origin = 1;
+    message LatticeVector {
+      Vector vector = 1;
+      uint64 repeat = 2;
+    }
+    LatticeVector lattice_vector_1 = 2;
+    LatticeVector lattice_vector_2 = 3;
+    repeated Vector sublattice_offsets = 4;
+    Region extent = 5;
+  }
+  repeated Lattice traps = 3;
+  uint64 min_atom_distance = 4;
+
   message GlobalSingleQubitOperation {
     string name = 1;
     Region region = 2;

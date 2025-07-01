@@ -26,7 +26,17 @@
           "x": 0,
           "y": 0
         }
-      ]
+      ],
+      "extent": {
+        "origin": {
+          "x": 0,
+          "y": 0
+        },
+        "size": {
+          "width": 10,
+          "height": 10
+        }
+      }
     }
   ],
   "minAtomDistance": 1,
