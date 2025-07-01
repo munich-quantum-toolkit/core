@@ -38,16 +38,14 @@ module {
 
 module {
   // CHECK-LABEL: func.func @testMergeRyGates
-  func.func @testMergeRyGates() {
-    // CHECK: %[[Res_0:.*]] = arith.constant 0.000000e+00 : f64
-    // CHECK: %[[ANY:.*]] = mqtopt.ry(%[[Res_0]]) %[[ANY:.*]] : !mqtopt.Qubit
+  func.func @testMergeRyGates(%c_0 : f64, %c_1 : f64) {
+    // CHECK: %[[Res:.*]] = arith.addf %arg0, %arg1 : f64
+    // CHECK: %[[ANY:.*]] = mqtopt.ry(%[[Res]]) %[[ANY:.*]] : !mqtopt.Qubit
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.ry(%[[ANY:.*]]) %[[ANY:.*]] : !mqtopt.Qubit
 
     %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
     %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
-    %c_0 = arith.constant -1.000000e+00 : f64
-    %c_1 = arith.constant 1.000000e+00 : f64
     %q0_1 = mqtopt.ry(%c_0) %q0_0 : !mqtopt.Qubit
     %q0_2 = mqtopt.ry(%c_1) %q0_1 : !mqtopt.Qubit
 
@@ -173,17 +171,15 @@ module {
 
 module {
   // CHECK-LABEL: func.func @testMergeRyyGates
-  func.func @testMergeRyyGates() {
-    // CHECK: %[[Res_0:.*]] = arith.constant 0.000000e+00 : f64
-    // CHECK: %[[ANY:.*]]:2 = mqtopt.ryy(%[[Res_0]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
+  func.func @testMergeRyyGates(%c_0 : f64, %c_1 : f64) {
+    // CHECK: %[[Res:.*]] = arith.addf %arg0, %arg1 : f64
+    // CHECK: %[[ANY:.*]]:2 = mqtopt.ryy(%[[Res]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK-NOT: %[[ANY:.*]]:2 = mqtopt.ryy(%[[ANY:.*]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
 
     %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
     %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
     %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
-    %c_0 = arith.constant -1.000000e+00 : f64
-    %c_1 = arith.constant 1.000000e+00 : f64
     %q01_1:2 = mqtopt.ryy(%c_0) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
     %q01_2:2 = mqtopt.ryy(%c_1) %q01_1#0, %q01_1#1 : !mqtopt.Qubit, !mqtopt.Qubit
 
