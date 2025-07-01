@@ -85,10 +85,11 @@ module {
 
 // -----
 // This test checks that incompatible single-qubit gates are not merged.
+// The gates cannot be merged because their types are different.
 
 module {
-  // CHECK-LABEL: func.func @testDoNotMergeIncompatibleSingleQubitGates
-  func.func @testDoNotMergeIncompatibleSingleQubitGates() {
+  // CHECK-LABEL: func.func @testDoNotMergeSingleQubitGatesDifferentGates
+  func.func @testDoNotMergeSingleQubitGatesDifferentGates() {
     // CHECK: %[[Res_2:.*]] = arith.constant 2.000000e+00 : f64
     // CHECK: %[[Res_1:.*]] = arith.constant 1.000000e+00 : f64
     // CHECK: %[[Q0_1:.*]] = mqtopt.rx(%[[Res_1]]) %[[ANY:.*]] : !mqtopt.Qubit
@@ -106,6 +107,35 @@ module {
 
     %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_3) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
     "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+    return
+  }
+}
+
+// -----
+// This test checks that incompatible single-qubit gates are not merged.
+// The gates cannot be merged because they act on different qubits.
+
+module {
+  // CHECK-LABEL: func.func @testDoNotMergeSingleQubitGatesIndependentGates
+  func.func @testDoNotMergeSingleQubitGatesIndependentGates() {
+    // CHECK: %[[Res_2:.*]] = arith.constant 2.000000e+00 : f64
+    // CHECK: %[[Res_1:.*]] = arith.constant 1.000000e+00 : f64
+    // CHECK: %[[ANY:.*]] = mqtopt.rx(%[[Res_1]]) %[[ANY:.*]] : !mqtopt.Qubit
+    // CHECK: %[[ANY:.*]] = mqtopt.rx(%[[Res_2]]) %[[ANY:.*]] : !mqtopt.Qubit
+
+    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
+    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    %c_0 = arith.constant 1.000000e+00 : f64
+    %c_1 = arith.constant 2.000000e+00 : f64
+    %q0_1 = mqtopt.rx(%c_0) %q0_0 : !mqtopt.Qubit
+    %q1_1 = mqtopt.rx(%c_1) %q1_0 : !mqtopt.Qubit
+
+    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
 
     return
   }
@@ -221,10 +251,11 @@ module {
 
 // -----
 // This test checks that incompatible multi-qubit gates are not merged.
+// The gates cannot be merged because their types are different.
 
 module {
-  // CHECK-LABEL: func.func @testDoNotMergeIncompatibleMultiQubitGates
-  func.func @testDoNotMergeIncompatibleMultiQubitGates() {
+  // CHECK-LABEL: func.func @testDoNotMergeMultiQubitGatesDifferentGates
+  func.func @testDoNotMergeMultiQubitGatesDifferentGates() {
     // CHECK: %[[Res_2:.*]] = arith.constant 2.000000e+00 : f64
     // CHECK: %[[Res_1:.*]] = arith.constant 1.000000e+00 : f64
     // CHECK: %[[Q01_1:.*]]:2 = mqtopt.rxx(%[[Res_1]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
@@ -243,6 +274,66 @@ module {
 
     %reg_3 = "mqtopt.insertQubit"(%reg_2, %q01_3#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
     %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_3#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+
+    return
+  }
+}
+
+// -----
+// This test checks that incompatible multi-qubit gates are not merged.
+// The gates cannot be merged because their types are different.
+
+module {
+  // CHECK-LABEL: func.func @testDoNotMergeMultiQubitGatesIndependentGates
+  func.func @testDoNotMergeMultiQubitGatesIndependentGates() {
+    // CHECK: %[[Res_2:.*]] = arith.constant 2.000000e+00 : f64
+    // CHECK: %[[Res_1:.*]] = arith.constant 1.000000e+00 : f64
+    // CHECK: %[[Q0_1:.*]]:2 = mqtopt.rxx(%[[Res_1]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[ANY:.*]]:2 = mqtopt.rxx(%[[Res_2]]) %[[Q0_1:.*]]#1, %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
+
+    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
+    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %reg_3, %q2_0 = "mqtopt.extractQubit"(%reg_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    %c_0 = arith.constant 1.000000e+00 : f64
+    %c_1 = arith.constant 2.000000e+00 : f64
+    %q01_1:2 = mqtopt.rxx(%c_0) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+    %q12_1:2 = mqtopt.rxx(%c_1) %q01_1#1, %q2_0 : !mqtopt.Qubit, !mqtopt.Qubit
+
+    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_1#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    %reg_5 = "mqtopt.insertQubit"(%reg_4, %q12_1#0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    %reg_6 = "mqtopt.insertQubit"(%reg_5, %q12_1#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
+
+    return
+  }
+}
+
+// -----
+// This test checks that incompatible multi-qubit gates are not merged.
+// The gates cannot be merged because their input qubits are not identical.
+
+module {
+  // CHECK-LABEL: func.func @testDoNotMergeMultiQubitGatesDifferentInputQubits
+  func.func @testDoNotMergeMultiQubitGatesDifferentInputQubits() {
+    // CHECK: %[[Res_2:.*]] = arith.constant 2.000000e+00 : f64
+    // CHECK: %[[Res_1:.*]] = arith.constant 1.000000e+00 : f64
+    // CHECK: %[[Q0_1:.*]]:2 = mqtopt.rxx(%[[Res_1]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[ANY:.*]]:2 = mqtopt.rxx(%[[Res_2]]) %[[Q0_1]]#1, %[[Q0_1]]#0 : !mqtopt.Qubit, !mqtopt.Qubit
+
+    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
+    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    %c_0 = arith.constant 1.000000e+00 : f64
+    %c_1 = arith.constant 2.000000e+00 : f64
+    %q01_1:2 = mqtopt.rxx(%c_0) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+    %q01_2:2 = mqtopt.rxx(%c_1) %q01_1#1, %q01_1#0 : !mqtopt.Qubit, !mqtopt.Qubit
+
+    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q01_2#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_2#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
     "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
 
     return
