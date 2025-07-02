@@ -628,10 +628,9 @@ char Package::measureOneCollapsing(dEdge& e, const Qubit index,
     densityMatrixTrace = trace(tmp2, nrQubits);
   }
 
-  tmp2.w = cn.lookup(e.w / densityMatrixTrace); // Normalize density matrix
-
-  incRef(tmp2);
   dEdge::alignDensityEdge(e);
+  tmp2.w = cn.lookup(e.w / densityMatrixTrace); // Normalize density matrix
+  incRef(tmp2);
   decRef(e);
   e = tmp2;
   dEdge::setDensityMatrixTrue(e);

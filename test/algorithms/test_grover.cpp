@@ -149,7 +149,7 @@ TEST_P(Grover, FunctionalityRecursive) {
         e = f;
         zero = false;
       } else {
-        e = dd->applyOperation(f, e, false);
+        e = dd->applyOperation(f, e);
       }
     }
   }

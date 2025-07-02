@@ -412,6 +412,7 @@ void registerDDPackage(const py::module& mod) {
   dd.def("inc_ref_mat", &dd::Package::incRef<dd::mNode>, "mat"_a);
   dd.def("dec_ref_vec", &dd::Package::decRef<dd::vNode>, "vec"_a);
   dd.def("dec_ref_mat", &dd::Package::decRef<dd::mNode>, "mat"_a);
+  dd.def("garbage_collect", &dd::Package::garbageCollect, "force"_a = false);
 
   // Operations on DDs
   dd.def("vector_add",

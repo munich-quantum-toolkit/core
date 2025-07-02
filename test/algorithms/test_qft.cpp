@@ -59,6 +59,8 @@ protected:
 ///	Utilizing more qubits requires the use of fp=long double
 constexpr qc::Qubit QFT_MAX_QUBITS = 17U;
 
+constexpr size_t INITIAL_COMPLEX_COUNT = dd::immortals::size();
+
 INSTANTIATE_TEST_SUITE_P(QFT, QFT,
                          testing::Range<qc::Qubit>(0U, QFT_MAX_QUBITS + 1U, 3U),
                          [](const testing::TestParamInfo<QFT::ParamType>& inf) {
@@ -113,8 +115,9 @@ TEST_P(QFT, Functionality) {
   }
   dd->decRef(func);
   dd->garbageCollect(true);
-
-  EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
+  // number of complex table entries after clean-up should equal initial
+  // number of entries
+  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
 }
 
 TEST_P(QFT, FunctionalityRecursive) {
@@ -158,8 +161,9 @@ TEST_P(QFT, FunctionalityRecursive) {
   }
   dd->decRef(func);
   dd->garbageCollect(true);
-
-  EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
+  // number of complex table entries after clean-up should equal initial
+  // number of entries
+  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
 }
 
 TEST_P(QFT, Simulation) {
@@ -193,8 +197,9 @@ TEST_P(QFT, Simulation) {
   }
   dd->decRef(sim);
   dd->garbageCollect(true);
-
-  EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
+  // number of complex table entries after clean-up should equal initial
+  // number of entries
+  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
 }
 
 TEST_P(QFT, FunctionalityRecursiveEquality) {
@@ -212,8 +217,9 @@ TEST_P(QFT, FunctionalityRecursiveEquality) {
   dd->decRef(funcRec);
   dd->decRef(func);
   dd->garbageCollect(true);
-
-  EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
+  // number of complex table entries after clean-up should equal initial
+  // number of entries
+  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
 }
 
 TEST_P(QFT, SimulationSampling) {
@@ -240,7 +246,8 @@ TEST_P(QFT, SimulationSampling) {
     // the number of unique entries should be close to the number of shots
     EXPECT_GE(ratio, 0.7);
     dd->garbageCollect(true);
-
-    EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
+    // number of complex table entries after clean-up should equal initial
+    // number of entries
+    EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
   }
 }

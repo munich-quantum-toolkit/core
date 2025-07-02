@@ -142,8 +142,8 @@ MatrixDD applyUnitaryOperation(const qc::Operation& op, const MatrixDD& in,
  * @details This is a convenience function that realizes the measurement @p op
  * on @p in and stores the measurement results in @p measurements. The result is
  * determined based on the RNG @p rng. The function correctly accounts for the
- * permutation of the operation's qubits and automatically handles reference
- * counting.
+ * permutation of the operation's qubits as well as automatically handles
+ * reference counting.
  *
  * @param op The measurement operation to apply
  * @param in The input DD
@@ -166,7 +166,7 @@ VectorDD applyMeasurement(const qc::NonUnitaryOperation& op, VectorDD in,
  * in. To this end, it measures the qubit and applies an X operation if the
  * measurement result is one. The result is determined based on the RNG @p rng.
  * The function correctly accounts for the permutation of the operation's
- * qubits and automatically handles reference counting.
+ * qubits as well as automatically handles reference counting.
  *
  * @param op The reset operation to apply
  * @param in The input DD
@@ -187,7 +187,8 @@ VectorDD applyReset(const qc::NonUnitaryOperation& op, VectorDD in, Package& dd,
  * operation @p op on @p in. It applies the underlying operation if the actual
  * value stored in the measurement results matches the expected value according
  * to the comparison kind. The function correctly accounts for the permutation
- * of the operation's qubits and automatically handles reference counting.
+ * of the operation's qubits as well as automatically handles reference
+ * counting.
  *
  * @param op The classic controlled operation to apply
  * @param in The input DD
