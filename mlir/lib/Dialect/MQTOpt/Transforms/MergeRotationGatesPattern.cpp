@@ -29,7 +29,8 @@
 
 namespace mqt::ir::opt {
 
-static const std::unordered_set<std::string> MERGEABLE_GATES = {"gphase", "rx", "ry", "rz", "rxx", "ryy", "rzz", "rzx"};
+static const std::unordered_set<std::string> MERGEABLE_GATES = {
+    "gphase", "rx", "ry", "rz", "rxx", "ryy", "rzz", "rzx"};
 
 /**
  * @brief This pattern attempts to merge consecutive rotation gates.
@@ -39,7 +40,7 @@ struct MergeRotationGatesPattern final
 
   explicit MergeRotationGatesPattern(mlir::MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
-  
+
   /**
    * @brief Checks if two gates can be merged.
    *
