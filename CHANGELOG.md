@@ -27,6 +27,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ♻️ Switch from reference counting to mark-and-sweep garbage collection in decision diagram package ([#1020]) ([**@MatthiasReumann**], [**burgholzer**], [**q-inho**])
 - ♻️ Move the C++ code for the Python bindings to the top-level `bindings` directory ([#982]) ([**@denialhaag**])
 - ♻️ Move all Python code (no tests) to the top-level `python` directory ([#982]) ([**@denialhaag**])
 - ⚡ Improve performance of getNqubits for StandardOperations ([#959]) ([**@ystade**])
@@ -118,9 +119,10 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1020]: https://github.com/munich-quantum-toolkit/core/pull/1020
 [#1019]: https://github.com/munich-quantum-toolkit/core/pull/1019
-[#982]: https://github.com/munich-quantum-toolkit/core/pull/982
 [#984]: https://github.com/munich-quantum-toolkit/core/pull/984
+[#982]: https://github.com/munich-quantum-toolkit/core/pull/982
 [#975]: https://github.com/munich-quantum-toolkit/core/pull/975
 [#973]: https://github.com/munich-quantum-toolkit/core/pull/973
 [#964]: https://github.com/munich-quantum-toolkit/core/pull/964
@@ -186,6 +188,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@pehamTom**]: https://github.com/pehamTom
 [**@MatthiasReumann**]: https://github.com/MatthiasReumann
 [**@denialhaag**]: https://github.com/denialhaag
+[**q-inho**]: https://github.com/q-inho
 
 <!-- General links -->
 
