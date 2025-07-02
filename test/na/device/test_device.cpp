@@ -14,7 +14,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
-#include <gmock/gmock-cardinalities.h>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -23,11 +22,15 @@
 #include <vector>
 
 namespace testing {
+namespace {
+// NOLINTBEGIN(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
 MATCHER_P2(IsBetween, a, b,
            absl::StrCat(negation ? "isn't" : "is", " between ",
                         PrintToString(a), " and ", PrintToString(b))) {
   return a <= arg && arg <= b;
 }
+// NOLINTEND(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
+} // namespace
 } // namespace testing
 
 namespace {
@@ -447,11 +450,6 @@ TEST_F(NADeviceTest, QuerySiteData) {
               QDMI_SUCCESS);
     int64_t originX = 0;
     int64_t width = 0;
-    const auto& traps = json["traps"];
-    const auto& moduleTraps = traps[0];
-    const auto& extent = moduleTraps["extent"];
-    const auto& origin = extent["origin"];
-    const int64_t xValue = origin["x"];
     ASSERT_NO_THROW(
         originX =
             json["traps"][module]["extent"]["origin"]["x"].get<int64_t>());

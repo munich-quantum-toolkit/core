@@ -16,7 +16,9 @@
 
 #include "na/device/device.pb.h"
 
+#include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -24,12 +26,10 @@
 #include <google/protobuf/message.h>
 #include <google/protobuf/util/json_util.h>
 #include <istream>
-#include <ostream>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace na {
@@ -163,8 +163,10 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
     const auto baseVector2Y = lattice.lattice_vector_2().y();
     const auto extentOriginX = lattice.extent().origin().x();
     const auto extentOriginY = lattice.extent().origin().y();
-    const auto extentWidth = lattice.extent().size().width();
-    const auto extentHeight = lattice.extent().size().height();
+    const auto extentWidth =
+        static_cast<int64_t>(lattice.extent().size().width());
+    const auto extentHeight =
+        static_cast<int64_t>(lattice.extent().size().height());
 
     // approximate indices of the bottom left corner
     const auto& [bottomLeftI, bottomLeftJ] = solve2DLinearEquation<int64_t>(
