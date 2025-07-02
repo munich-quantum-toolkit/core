@@ -143,9 +143,7 @@ list(APPEND FETCH_PACKAGES spdlog)
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
 # Mark the plog includes as SYSTEM includes to suppress warnings.
-get_target_property(PROTOC_IID protobuf::protoc INTERFACE_INCLUDE_DIRECTORIES)
-set_target_properties(protobuf::protoc PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
-                                                  "${PROTOC_IID}")
-get_target_property(PROTOBUF_IID protobuf::libprotobuf INTERFACE_INCLUDE_DIRECTORIES)
-set_target_properties(protobuf::libprotobuf PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
-                                                       "${PROTOBUF_IID}")
+get_target_property(PROTOC_IID protoc INTERFACE_INCLUDE_DIRECTORIES)
+set_target_properties(protoc PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${PROTOC_IID}")
+get_target_property(PROTOBUF_IID libprotobuf INTERFACE_INCLUDE_DIRECTORIES)
+set_target_properties(libprotobuf PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${PROTOBUF_IID}")
