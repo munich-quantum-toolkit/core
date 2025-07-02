@@ -108,8 +108,7 @@ set(protobuf_MSVC_STATIC_RUNTIME
 set(protobuf_INSTALL
     OFF
     CACHE BOOL "" FORCE)
-FetchContent_Declare(protobuf URL ${Protobuf_URL} FIND_PACKAGE_ARGS ${Protobuf_VERSION} CONFIG
-                                  NAMES protobuf)
+FetchContent_Declare(protobuf URL ${Protobuf_URL} FIND_PACKAGE_ARGS ${Protobuf_VERSION} CONFIG)
 list(APPEND FETCH_PACKAGES protobuf)
 
 # cmake-format: off
@@ -138,3 +137,10 @@ list(APPEND FETCH_PACKAGES spdlog)
 
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
+# Mark the plog includes as SYSTEM includes to suppress warnings.
+get_target_property(PROTOC_IID protobuf::protoc INTERFACE_INCLUDE_DIRECTORIES)
+set_target_properties(protobuf::protoc PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
+                                                  "${PROTOC_IID}")
+get_target_property(PROTOBUF_IID protobuf::libprotobuf INTERFACE_INCLUDE_DIRECTORIES)
+set_target_properties(protobuf::libprotobuf PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
+                                                       "${PROTOBUF_IID}")
