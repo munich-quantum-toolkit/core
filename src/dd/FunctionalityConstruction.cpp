@@ -64,7 +64,7 @@ bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
     if (opIdx == qc.size()) {
       // only one element was left
       s.push(e);
-      dd.track(e);
+      dd.incRef(e);
       return false;
     }
     auto f = Package::makeIdent();
@@ -76,7 +76,7 @@ bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
       f = getDD(*qc.at(opIdx), dd, permutation);
     }
     s.push(dd.multiply(f, e)); // ! reverse multiplication
-    dd.track(s.top());
+    dd.incRef(s.top());
     return (opIdx != qc.size() - 1U);
   }
 
@@ -102,9 +102,9 @@ bool buildFunctionalityRecursive(const qc::QuantumComputation& qc,
   s.push(dd.multiply(e, f)); // ordering because of stack structure
 
   // remove references to e and f via decRef and add the product via incRef
-  dd.untrack(e);
-  dd.untrack(f);
-  dd.track(s.top());
+  dd.decRef(e);
+  dd.decRef(f);
+  dd.incRef(s.top());
   dd.garbageCollect();
 
   return success;
@@ -121,7 +121,7 @@ MatrixDD buildFunctionalityRecursive(const qc::QuantumComputation& qc,
 
   if (qc.size() == 1U) {
     auto e = getDD(*qc.front(), dd, permutation);
-    dd.track(e);
+    dd.incRef(e);
     return e;
   }
 

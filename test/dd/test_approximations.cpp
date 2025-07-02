@@ -180,7 +180,7 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
 
   // Test: Correctly increase and decrease ref counts.
 
-  dd->untrack(state);
+  dd->decRef(state);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);

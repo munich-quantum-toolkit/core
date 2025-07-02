@@ -125,7 +125,7 @@ benchmarkSimulateGrover(const qc::Qubit nq,
   const std::bitset<128U> iterBits(iterations);
   const auto msb = static_cast<std::size_t>(std::floor(std::log2(iterations)));
   auto f = iter;
-  dd.track(f);
+  dd.incRef(f);
   for (std::size_t j = 0U; j <= msb; ++j) {
     if (iterBits[j]) {
       e = dd.applyOperation(f, e);
@@ -134,7 +134,7 @@ benchmarkSimulateGrover(const qc::Qubit nq,
       f = dd.applyOperation(f, f);
     }
   }
-  dd.untrack(f);
+  dd.decRef(f);
   exp->sim = e;
   const auto end = std::chrono::high_resolution_clock::now();
   exp->runtime =
@@ -161,22 +161,22 @@ benchmarkFunctionalityConstructionGrover(
   const std::bitset<128U> iterBits(iterations);
   const auto msb = static_cast<std::size_t>(std::floor(std::log2(iterations)));
   auto f = iter;
-  dd.track(f);
+  dd.incRef(f);
   bool zero = !iterBits[0U];
   for (std::size_t j = 1U; j <= msb; ++j) {
     f = dd.applyOperation(f, f);
     if (iterBits[j]) {
       if (zero) {
-        dd.track(f);
-        dd.untrack(e);
+        dd.incRef(f);
+        dd.decRef(e);
         e = f;
         zero = false;
       } else {
-        e = dd.applyOperation(f, e);
+        e = dd.applyOperation(f, e, false);
       }
     }
   }
-  dd.untrack(f);
+  dd.decRef(f);
 
   // apply state preparation setup
   qc::QuantumComputation statePrep(nq + 1);

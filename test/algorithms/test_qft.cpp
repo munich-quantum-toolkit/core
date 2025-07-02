@@ -111,7 +111,7 @@ TEST_P(QFT, Functionality) {
                 dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
-  dd->untrack(func);
+  dd->decRef(func);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
@@ -156,7 +156,7 @@ TEST_P(QFT, FunctionalityRecursive) {
                 dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
-  dd->untrack(func);
+  dd->decRef(func);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
@@ -191,7 +191,7 @@ TEST_P(QFT, Simulation) {
                 dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
-  dd->untrack(sim);
+  dd->decRef(sim);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
@@ -209,8 +209,8 @@ TEST_P(QFT, FunctionalityRecursiveEquality) {
   ASSERT_NO_THROW({ funcRec = buildFunctionality(qc, *dd); });
 
   ASSERT_EQ(func, funcRec);
-  dd->untrack(funcRec);
-  dd->untrack(func);
+  dd->decRef(funcRec);
+  dd->decRef(func);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());

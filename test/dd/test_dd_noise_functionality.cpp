@@ -212,7 +212,7 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4TrackAPD) {
 
   for (size_t i = 0U; i < stochRuns; i++) {
     auto rootEdge = makeZeroState(qc.getNqubits(), *dd);
-    dd->track(rootEdge);
+    dd->incRef(rootEdge);
 
     for (auto const& op : qc) {
       auto operation = dd::getDD(*op, *dd);
@@ -265,7 +265,7 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4IdentityError) {
 
   for (size_t i = 0U; i < stochRuns; i++) {
     auto rootEdge = makeZeroState(qc.getNqubits(), *dd);
-    dd->track(rootEdge);
+    dd->incRef(rootEdge);
 
     for (auto const& op : qc) {
       auto operation = dd::getDD(*op, *dd);

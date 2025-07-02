@@ -121,7 +121,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
       counts.operator[](measurement) += 1U;
     }
     // remove the measured state edge from the root set
-    dd.untrack(e);
+    dd.decRef(e);
 
     std::map<std::string, std::size_t> actualCounts{};
     const auto numBits =
@@ -157,7 +157,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
 
     auto permutation = qc.initialLayout;
     auto e = in;
-    dd.track(e);
+    dd.incRef(e);
     for (const auto& op : qc) {
       if (op->isUnitary()) {
         // SWAP gates can be executed virtually by changing the permutation
@@ -194,7 +194,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
     }
 
     // remove the measured state edge from the root set
-    dd.untrack(e);
+    dd.decRef(e);
 
     std::string shot(qc.getNcbits(), '0');
     for (size_t bit = 0U; bit < qc.getNcbits(); ++bit) {

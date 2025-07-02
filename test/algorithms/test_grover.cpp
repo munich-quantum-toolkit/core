@@ -52,6 +52,7 @@ protected:
   std::size_t seed = 0;
   std::unique_ptr<dd::Package> dd;
   qc::QuantumComputation qc;
+  dd::MatrixDD func{};
   std::string expected;
   qc::GroverBitString targetValue;
 };
@@ -85,38 +86,38 @@ TEST_P(Grover, Functionality) {
   std::reverse(x.begin(), x.end());
   std::replace(x.begin(), x.end(), '1', '2');
 
-  qc::QuantumComputation groverSetup(qc.getNqubits());
-  qc::appendGroverInitialization(groverSetup);
-
   qc::QuantumComputation groverIteration(qc.getNqubits());
   qc::appendGroverOracle(groverIteration, targetValue);
   qc::appendGroverDiffusion(groverIteration);
 
-  const auto setup = buildFunctionality(groverSetup, *dd);
-  const auto iterationOp = buildFunctionality(groverIteration, *dd);
-  const auto iterations = qc::computeNumberOfIterations(nqubits);
+  const auto iteration = buildFunctionality(groverIteration, *dd);
 
-  auto iteration = iterationOp;
-  dd->track(iteration);
+  auto e = iteration;
+  dd->incRef(e);
+  const auto iterations = qc::computeNumberOfIterations(nqubits);
   for (std::size_t i = 0U; i < iterations - 1U; ++i) {
-    iteration = dd->applyOperation(iterationOp, iteration);
+    e = dd->applyOperation(iteration, e);
   }
 
-  const auto groverFull = dd->multiply(iteration, setup);
-  dd->track(groverFull);
+  qc::QuantumComputation setup(qc.getNqubits());
+  qc::appendGroverInitialization(setup);
+  const auto g = buildFunctionality(setup, *dd);
+  const auto f = dd->multiply(e, g);
+  dd->incRef(f);
+  dd->decRef(e);
+  dd->decRef(g);
+  func = f;
 
-  // Amplitude of the searched-for entry should be 1
-  const auto c = groverFull.getValueByPath(qc.getNqubits(), x);
-  const auto prob = std::norm(c);
+  dd->decRef(iteration);
 
+  // amplitude of the searched-for entry should be 1
+  const auto c = func.getValueByPath(qc.getNqubits(), x);
   EXPECT_NEAR(std::abs(c.real()), 1, GROVER_ACCURACY);
   EXPECT_NEAR(std::abs(c.imag()), 0, GROVER_ACCURACY);
+  const auto prob = std::norm(c);
   EXPECT_GE(prob, GROVER_GOAL_PROBABILITY);
 
-  dd->untrack(iteration);
-  dd->untrack(groverFull);
-  dd->untrack(iterationOp);
-  dd->untrack(setup);
+  dd->decRef(func);
 }
 
 TEST_P(Grover, FunctionalityRecursive) {
@@ -134,39 +135,43 @@ TEST_P(Grover, FunctionalityRecursive) {
   const std::bitset<128U> iterBits(iterations);
   const auto msb = static_cast<std::size_t>(std::floor(std::log2(iterations)));
   auto f = iter;
-  dd->track(f);
+  dd->incRef(f);
   bool zero = !iterBits[0U];
   for (std::size_t j = 1U; j <= msb; ++j) {
-    f = dd->applyOperation(f, f);
+    auto tmp = dd->multiply(f, f);
+    dd->incRef(tmp);
+    dd->decRef(f);
+    f = tmp;
     if (iterBits[j]) {
       if (zero) {
-        dd->track(f);
-        dd->untrack(e);
+        dd->incRef(f);
+        dd->decRef(e);
         e = f;
         zero = false;
       } else {
-        e = dd->applyOperation(f, e);
-        dd->garbageCollect();
+        e = dd->applyOperation(f, e, false);
       }
     }
   }
-  dd->untrack(f);
+  dd->decRef(f);
 
   // apply state preparation setup
   qc::QuantumComputation statePrep(qc.getNqubits());
   qc::appendGroverInitialization(statePrep);
   const auto s = buildFunctionality(statePrep, *dd);
-  const auto groverFull = dd->multiply(e, s);
-  dd->untrack(s);
-  dd->untrack(e);
+  func = dd->multiply(e, s);
+  dd->incRef(func);
+  dd->decRef(s);
+  dd->decRef(e);
 
   // amplitude of the searched-for entry should be 1
-  const auto c = groverFull.getValueByPath(qc.getNqubits(), x);
-  const auto prob = std::norm(c);
-
+  const auto c = func.getValueByPath(qc.getNqubits(), x);
   EXPECT_NEAR(std::abs(c.real()), 1, GROVER_ACCURACY);
   EXPECT_NEAR(std::abs(c.imag()), 0, GROVER_ACCURACY);
+  const auto prob = std::norm(c);
   EXPECT_GE(prob, GROVER_GOAL_PROBABILITY);
+
+  dd->decRef(func);
 }
 
 TEST_P(Grover, Simulation) {

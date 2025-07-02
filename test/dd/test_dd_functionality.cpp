@@ -316,8 +316,8 @@ TEST_F(DDFunctionality, BuildCircuit) {
   EXPECT_TRUE(dd1.isIdentity());
   EXPECT_FALSE(dd2.isIdentity());
 
-  dd->untrack(dd1);
-  dd->untrack(dd2);
+  dd->decRef(dd1);
+  dd->decRef(dd2);
   dd->garbageCollect(true);
 
   const auto counts = dd->computeActiveCounts();
@@ -374,8 +374,8 @@ TEST_F(DDFunctionality, CircuitEquivalence) {
 
   EXPECT_EQ(dd1.p, dd2.p);
 
-  dd->untrack(dd1);
-  dd->untrack(dd2);
+  dd->decRef(dd1);
+  dd->decRef(dd2);
   dd->garbageCollect(true);
 
   const auto counts = dd->computeActiveCounts();
@@ -431,8 +431,8 @@ TEST_F(DDFunctionality, FuseTwoSingleQubitGates) {
   EXPECT_EQ(qc.getNops(), 1);
   EXPECT_EQ(baseDD, optDD);
 
-  dd->untrack(baseDD);
-  dd->untrack(optDD);
+  dd->decRef(baseDD);
+  dd->decRef(optDD);
   dd->garbageCollect(true);
 
   const auto counts = dd->computeActiveCounts();
@@ -466,8 +466,8 @@ TEST_F(DDFunctionality, FuseThreeSingleQubitGates) {
   EXPECT_EQ(qc.getNops(), 1);
   EXPECT_EQ(baseDD, optDD);
 
-  dd->untrack(baseDD);
-  dd->untrack(optDD);
+  dd->decRef(baseDD);
+  dd->decRef(optDD);
   dd->garbageCollect(true);
 
   const auto counts = dd->computeActiveCounts();
@@ -501,8 +501,8 @@ TEST_F(DDFunctionality, FuseNoSingleQubitGates) {
   EXPECT_EQ(qc.getNops(), 3);
   EXPECT_EQ(baseDD, optDD);
 
-  dd->untrack(baseDD);
-  dd->untrack(optDD);
+  dd->decRef(baseDD);
+  dd->decRef(optDD);
   dd->garbageCollect(true);
 
   const auto counts = dd->computeActiveCounts();
@@ -535,8 +535,8 @@ TEST_F(DDFunctionality, FuseSingleQubitGatesAcrossOtherGates) {
   EXPECT_EQ(qc.getNops(), 2);
   EXPECT_EQ(baseDD, optDD);
 
-  dd->untrack(baseDD);
-  dd->untrack(optDD);
+  dd->decRef(baseDD);
+  dd->decRef(optDD);
   dd->garbageCollect(true);
 
   const auto counts = dd->computeActiveCounts();
@@ -584,7 +584,7 @@ TEST_F(DDFunctionality, VectorKroneckerWithTerminal) {
   const auto extendedRoot = dd->kronecker(zeroState, root, 0);
   EXPECT_EQ(zeroState, extendedRoot);
 
-  dd->untrack(zeroState);
+  dd->decRef(zeroState);
   dd->garbageCollect(true);
 
   const auto counts = dd->computeActiveCounts();

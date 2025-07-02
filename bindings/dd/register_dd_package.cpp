@@ -181,14 +181,14 @@ void registerDDPackage(const py::module& mod) {
         }
         if (length == 1) {
           const auto state = dd::vEdge::terminal(p.cn.lookup(data(0)));
-          p.track(state);
+          p.incRef(state);
           return state;
         }
 
         const auto level = static_cast<dd::Qubit>(std::log2(length) - 1);
         const auto state = makeDDFromVector(p, data, 0, length, level);
         const dd::vEdge e{state.p, p.cn.lookup(state.w)};
-        p.track(e);
+        p.incRef(e);
         return e;
       },
       "state"_a,
@@ -407,13 +407,11 @@ void registerDDPackage(const py::module& mod) {
       // keep the DD package alive while the returned matrix DD is alive.
       py::keep_alive<0, 1>());
 
-  // `track_*` and `untrack_*` manage the root sets. Garbage collection
-  // performs a mark-and-sweep pass over all nodes.
-  dd.def("track_vec", &dd::Package::track<dd::vNode>, "vec"_a);
-  dd.def("track_mat", &dd::Package::track<dd::mNode>, "mat"_a);
-  dd.def("untrack_vec", &dd::Package::untrack<dd::vNode>, "vec"_a);
-  dd.def("untrack_mat", &dd::Package::untrack<dd::mNode>, "mat"_a);
-  dd.def("garbage_collect", &dd::Package::garbageCollect, "force"_a = false);
+  // Reference counting and garbage collection
+  dd.def("inc_ref_vec", &dd::Package::incRef<dd::vNode>, "vec"_a);
+  dd.def("inc_ref_mat", &dd::Package::incRef<dd::mNode>, "mat"_a);
+  dd.def("dec_ref_vec", &dd::Package::decRef<dd::vNode>, "vec"_a);
+  dd.def("dec_ref_mat", &dd::Package::decRef<dd::mNode>, "mat"_a);
 
   // Operations on DDs
   dd.def("vector_add",

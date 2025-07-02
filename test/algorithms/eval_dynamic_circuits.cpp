@@ -128,7 +128,7 @@ TEST_P(DynamicCircuitEvalExactQPE, UnitaryTransformation) {
   const auto finishedTransformation = std::chrono::steady_clock::now();
 
   dd::MatrixDD e = dd::Package::makeIdent();
-  dd->track(e);
+  dd->incRef(e);
 
   auto leftIt = qpe.begin();
   auto rightIt = iqpe.begin();
@@ -136,8 +136,8 @@ TEST_P(DynamicCircuitEvalExactQPE, UnitaryTransformation) {
   while (leftIt != qpe.end() && rightIt != iqpe.end()) {
     auto multLeft = dd->multiply(getDD(**leftIt, *dd), e);
     auto multRight = dd->multiply(multLeft, getInverseDD(**rightIt, *dd));
-    dd->track(multRight);
-    dd->untrack(e);
+    dd->incRef(multRight);
+    dd->decRef(e);
     e = multRight;
 
     dd->garbageCollect();
@@ -148,8 +148,8 @@ TEST_P(DynamicCircuitEvalExactQPE, UnitaryTransformation) {
 
   while (leftIt != qpe.end()) {
     auto multLeft = dd->multiply(getDD(**leftIt, *dd), e);
-    dd->track(multLeft);
-    dd->untrack(e);
+    dd->incRef(multLeft);
+    dd->decRef(e);
     e = multLeft;
 
     dd->garbageCollect();
@@ -159,8 +159,8 @@ TEST_P(DynamicCircuitEvalExactQPE, UnitaryTransformation) {
 
   while (rightIt != iqpe.end()) {
     auto multRight = dd->multiply(e, getInverseDD(**rightIt, *dd));
-    dd->track(multRight);
-    dd->untrack(e);
+    dd->incRef(multRight);
+    dd->decRef(e);
     e = multRight;
 
     dd->garbageCollect();
@@ -297,7 +297,7 @@ TEST_P(DynamicCircuitEvalInexactQPE, UnitaryTransformation) {
   const auto finishedTransformation = std::chrono::steady_clock::now();
 
   dd::MatrixDD e = dd::Package::makeIdent();
-  dd->track(e);
+  dd->incRef(e);
 
   auto leftIt = qpe.begin();
   auto rightIt = iqpe.begin();
@@ -305,8 +305,8 @@ TEST_P(DynamicCircuitEvalInexactQPE, UnitaryTransformation) {
   while (leftIt != qpe.end() && rightIt != iqpe.end()) {
     auto multLeft = dd->multiply(getDD(**leftIt, *dd), e);
     auto multRight = dd->multiply(multLeft, getInverseDD(**rightIt, *dd));
-    dd->track(multRight);
-    dd->untrack(e);
+    dd->incRef(multRight);
+    dd->decRef(e);
     e = multRight;
 
     dd->garbageCollect();
@@ -317,8 +317,8 @@ TEST_P(DynamicCircuitEvalInexactQPE, UnitaryTransformation) {
 
   while (leftIt != qpe.end()) {
     auto multLeft = dd->multiply(getDD(**leftIt, *dd), e);
-    dd->track(multLeft);
-    dd->untrack(e);
+    dd->incRef(multLeft);
+    dd->decRef(e);
     e = multLeft;
 
     dd->garbageCollect();
@@ -328,8 +328,8 @@ TEST_P(DynamicCircuitEvalInexactQPE, UnitaryTransformation) {
 
   while (rightIt != iqpe.end()) {
     auto multRight = dd->multiply(e, getInverseDD(**rightIt, *dd));
-    dd->track(multRight);
-    dd->untrack(e);
+    dd->incRef(multRight);
+    dd->decRef(e);
     e = multRight;
 
     dd->garbageCollect();
@@ -410,7 +410,7 @@ TEST_P(DynamicCircuitEvalBV, UnitaryTransformation) {
   const auto finishedTransformation = std::chrono::steady_clock::now();
 
   dd::MatrixDD e = dd::Package::makeIdent();
-  dd->track(e);
+  dd->incRef(e);
 
   auto leftIt = bv.begin();
   auto rightIt = dbv.begin();
@@ -418,8 +418,8 @@ TEST_P(DynamicCircuitEvalBV, UnitaryTransformation) {
   while (leftIt != bv.end() && rightIt != dbv.end()) {
     auto multLeft = dd->multiply(getDD(**leftIt, *dd), e);
     auto multRight = dd->multiply(multLeft, getInverseDD(**rightIt, *dd));
-    dd->track(multRight);
-    dd->untrack(e);
+    dd->incRef(multRight);
+    dd->decRef(e);
     e = multRight;
 
     dd->garbageCollect();
@@ -430,8 +430,8 @@ TEST_P(DynamicCircuitEvalBV, UnitaryTransformation) {
 
   while (leftIt != bv.end()) {
     auto multLeft = dd->multiply(getDD(**leftIt, *dd), e);
-    dd->track(multLeft);
-    dd->untrack(e);
+    dd->incRef(multLeft);
+    dd->decRef(e);
     e = multLeft;
 
     dd->garbageCollect();
@@ -441,8 +441,8 @@ TEST_P(DynamicCircuitEvalBV, UnitaryTransformation) {
 
   while (rightIt != dbv.end()) {
     auto multRight = dd->multiply(e, getInverseDD(**rightIt, *dd));
-    dd->track(multRight);
-    dd->untrack(e);
+    dd->incRef(multRight);
+    dd->decRef(e);
     e = multRight;
 
     dd->garbageCollect();
@@ -519,7 +519,7 @@ TEST_P(DynamicCircuitEvalQFT, UnitaryTransformation) {
   const auto finishedTransformation = std::chrono::steady_clock::now();
 
   dd::MatrixDD e = dd::Package::makeIdent();
-  dd->track(e);
+  dd->incRef(e);
 
   auto leftIt = qft.begin();
   auto rightIt = dqft.begin();
@@ -527,8 +527,8 @@ TEST_P(DynamicCircuitEvalQFT, UnitaryTransformation) {
   while (leftIt != qft.end() && rightIt != dqft.end()) {
     auto multLeft = dd->multiply(getDD(**leftIt, *dd), e);
     auto multRight = dd->multiply(multLeft, getInverseDD(**rightIt, *dd));
-    dd->track(multRight);
-    dd->untrack(e);
+    dd->incRef(multRight);
+    dd->decRef(e);
     e = multRight;
 
     dd->garbageCollect();
@@ -539,8 +539,8 @@ TEST_P(DynamicCircuitEvalQFT, UnitaryTransformation) {
 
   while (leftIt != qft.end()) {
     auto multLeft = dd->multiply(getDD(**leftIt, *dd), e);
-    dd->track(multLeft);
-    dd->untrack(e);
+    dd->incRef(multLeft);
+    dd->decRef(e);
     e = multLeft;
 
     dd->garbageCollect();
@@ -550,8 +550,8 @@ TEST_P(DynamicCircuitEvalQFT, UnitaryTransformation) {
 
   while (rightIt != dqft.end()) {
     auto multRight = dd->multiply(e, getInverseDD(**rightIt, *dd));
-    dd->track(multRight);
-    dd->untrack(e);
+    dd->incRef(multRight);
+    dd->decRef(e);
     e = multRight;
 
     dd->garbageCollect();

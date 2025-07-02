@@ -65,7 +65,7 @@ TEST(StateGenerationTest, MakeZero) {
 
   EXPECT_EQ(zero.getVector(), vec);
 
-  dd->untrack(zero);
+  dd->decRef(zero);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -90,7 +90,7 @@ TEST(StateGenerationTest, MakeBasis) {
 
   EXPECT_EQ(basis.getVector(), vec);
 
-  dd->untrack(basis);
+  dd->decRef(basis);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -118,7 +118,7 @@ TEST(StateGenerationTest, MakeBasisDifficult) {
 
   vecNear(basis.getVector(), vec);
 
-  dd->untrack(basis);
+  dd->decRef(basis);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -142,7 +142,7 @@ TEST(StateGenerationTest, MakeGHZ) {
 
   vecNear(ghz.getVector(), vec);
 
-  dd->untrack(ghz);
+  dd->decRef(ghz);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -177,7 +177,7 @@ TEST(StateGenerationTest, MakeW) {
 
   vecNear(w.getVector(), vec);
 
-  dd->untrack(w);
+  dd->decRef(w);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -252,8 +252,8 @@ TEST(StateGenerationTest, FromVector) {
 
   EXPECT_EQ(psi, ref);
 
-  dd->untrack(ref);
-  dd->untrack(psi);
+  dd->decRef(ref);
+  dd->decRef(psi);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -344,8 +344,8 @@ TEST(StateGenerationTest, GenerateExponential) {
   EXPECT_EQ(state, rebuild);
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size - 1);
 
-  dd->untrack(state);
-  dd->untrack(rebuild);
+  dd->decRef(state);
+  dd->decRef(rebuild);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -371,8 +371,8 @@ TEST(StateGenerationTest, GenerateExponentialWithSeed) {
   EXPECT_EQ(state, rebuild);
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size - 1);
 
-  dd->untrack(state);
-  dd->untrack(rebuild);
+  dd->decRef(state);
+  dd->decRef(rebuild);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -396,7 +396,7 @@ TEST(StateGenerationTest, GenerateRandomOneQubit) {
   EXPECT_EQ(state.size(), 2); // Node plus Terminal.
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 1);
 
-  dd->untrack(state);
+  dd->decRef(state);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -426,8 +426,8 @@ TEST(StateGenerationTest, GenerateRandomRoundRobin) {
   EXPECT_EQ(state, rebuild);
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
 
-  dd->untrack(state);
-  dd->untrack(rebuild);
+  dd->decRef(state);
+  dd->decRef(rebuild);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -459,8 +459,8 @@ TEST(StateGenerationTest, GenerateRandomRoundRobinWithSeed) {
   EXPECT_EQ(state, rebuild);
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
 
-  dd->untrack(state);
-  dd->untrack(rebuild);
+  dd->decRef(state);
+  dd->decRef(rebuild);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -490,8 +490,8 @@ TEST(StateGenerationTest, GenerateRandomRandom) {
   EXPECT_EQ(state, rebuild);
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
 
-  dd->untrack(state);
-  dd->untrack(rebuild);
+  dd->decRef(state);
+  dd->decRef(rebuild);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
@@ -522,8 +522,8 @@ TEST(StateGenerationTest, GenerateRandomRandomWithSeed) {
   EXPECT_EQ(state, rebuild);
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
 
-  dd->untrack(state);
-  dd->untrack(rebuild);
+  dd->decRef(state);
+  dd->decRef(rebuild);
   dd->garbageCollect(true);
 
   EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);

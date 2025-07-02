@@ -294,8 +294,8 @@ void changePermutation(DDType& on, qc::Permutation& from,
       }
     }
 
-    dd.track(on);
-    dd.untrack(saved);
+    dd.incRef(on);
+    dd.decRef(saved);
     dd.garbageCollect();
 
     // update permutation

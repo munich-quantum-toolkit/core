@@ -546,16 +546,16 @@ class DDPackage:
             The DD for the operation.
         """
 
-    def track_vec(self, vec: VectorDD) -> None:
+    def inc_ref_vec(self, vec: VectorDD) -> None:
         """Increment the reference count of a vector."""
 
-    def untrack_vec(self, vec: VectorDD) -> None:
+    def dec_ref_vec(self, vec: VectorDD) -> None:
         """Decrement the reference count of a vector."""
 
-    def track_mat(self, mat: MatrixDD) -> None:
+    def inc_ref_mat(self, mat: MatrixDD) -> None:
         """Increment the reference count of a matrix."""
 
-    def untrack_mat(self, mat: MatrixDD) -> None:
+    def dec_ref_mat(self, mat: MatrixDD) -> None:
         """Decrement the reference count of a matrix."""
 
     def garbage_collect(self, force: bool = False) -> bool:
