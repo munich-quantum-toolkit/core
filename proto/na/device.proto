@@ -36,12 +36,8 @@ message Device {
   }
   message Lattice {
     Vector lattice_origin = 1;
-    message LatticeVector {
-      Vector vector = 1;
-      uint64 repeat = 2;
-    }
-    LatticeVector lattice_vector_1 = 2;
-    LatticeVector lattice_vector_2 = 3;
+    Vector lattice_vector_1 = 2;
+    Vector lattice_vector_2 = 3;
     repeated Vector sublattice_offsets = 4;
     Region extent = 5;
   }
