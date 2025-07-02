@@ -98,23 +98,42 @@ nlohmann::basic_json<> getStatistics(Package& package,
 
   j["data_structure"] = getDataStructureStatistics();
 
+  const auto [activeVectorNodes, activeMatrixNodes, activeDensityNodes,
+              activeRealNumbers] = package.computeActiveCounts();
+
   auto& vector = j["vector"];
-  vector["unique_table"] =
+  auto& vectorUniqueTable = vector["unique_table"];
+  vectorUniqueTable =
       package.vUniqueTable.getStatsJson(includeIndividualTables);
+  if (vectorUniqueTable != "unused") {
+    vectorUniqueTable["total"]["num_active_entries"] = activeVectorNodes;
+  }
   vector["memory_manager"] = package.vMemoryManager.getStats().json();
 
   auto& matrix = j["matrix"];
-  matrix["unique_table"] =
+  auto& matrixUniqueTable = matrix["unique_table"];
+  matrixUniqueTable =
       package.mUniqueTable.getStatsJson(includeIndividualTables);
+  if (matrixUniqueTable != "unused") {
+    matrixUniqueTable["total"]["num_active_entries"] = activeMatrixNodes;
+  }
   matrix["memory_manager"] = package.mMemoryManager.getStats().json();
 
   auto& densityMatrix = j["density_matrix"];
-  densityMatrix["unique_table"] =
+  auto& densityUniqueTable = densityMatrix["unique_table"];
+  densityUniqueTable =
       package.dUniqueTable.getStatsJson(includeIndividualTables);
+  if (densityUniqueTable != "unused") {
+    densityUniqueTable["total"]["num_active_entries"] = activeDensityNodes;
+  }
   densityMatrix["memory_manager"] = package.dMemoryManager.getStats().json();
 
   auto& realNumbers = j["real_numbers"];
-  realNumbers["unique_table"] = package.cUniqueTable.getStats().json();
+  auto& realNumbersUniqueTable = realNumbers["unique_table"];
+  realNumbersUniqueTable = package.cUniqueTable.getStats().json();
+  if (realNumbersUniqueTable != "unused") {
+    realNumbersUniqueTable["num_active_entries"] = activeRealNumbers;
+  }
   realNumbers["memory_manager"] = package.cMemoryManager.getStats().json();
 
   auto& computeTables = j["compute_tables"];
