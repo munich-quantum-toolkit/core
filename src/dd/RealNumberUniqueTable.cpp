@@ -134,7 +134,8 @@ bool RealNumberUniqueTable::possiblyNeedsCollection() const noexcept {
 std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
   // nothing to be done if garbage collection is not forced, and the limit has
   // not been reached, or the current count is minimal.
-  if ((!force && !possiblyNeedsCollection()) || stats.numEntries == 0) {
+  if ((!force && !possiblyNeedsCollection()) ||
+      stats.numEntries <= immortals::size()) {
     return 0;
   }
 
