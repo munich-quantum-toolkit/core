@@ -60,11 +60,16 @@ else()
 endif()
 
 # Abseil is required by GTest and Protobuf. To avoid version conflicts, we add this dependency
-# centrally. set(ABSL_VERSION 20250512.1 CACHE STRING "abseil-cpp version") set(ABSL_URL
-# https://github.com/abseil/abseil-cpp/archive/refs/tags/${ABSL_VERSION}.tar.gz)
-# set(ABSL_MSVC_STATIC_RUNTIME OFF CACHE BOOL "" FORCE) FetchContent_Declare(abseil-cpp URL
-# ${ABSL_URL} FIND_PACKAGE_ARGS ${ABSL_VERSION} CONFIG NAMES absl) list(APPEND FETCH_PACKAGES
-# abseil-cpp)
+# centrally.
+set(ABSL_VERSION
+    20250512.1
+    CACHE STRING "abseil-cpp version")
+set(ABSL_URL https://github.com/abseil/abseil-cpp/archive/refs/tags/${ABSL_VERSION}.tar.gz)
+set(ABSL_MSVC_STATIC_RUNTIME
+    OFF
+    CACHE BOOL "" FORCE)
+FetchContent_Declare(abseil-cpp URL ${ABSL_URL} FIND_PACKAGE_ARGS ${ABSL_VERSION} CONFIG NAMES absl)
+list(APPEND FETCH_PACKAGES abseil-cpp)
 
 if(BUILD_MQT_CORE_TESTS)
   set(gtest_force_shared_crt
