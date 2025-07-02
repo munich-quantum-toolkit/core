@@ -113,7 +113,8 @@ auto printGenerateUsage(const std::string& programName) -> void {
  */
 auto printVersion() -> void {
   // NOLINTNEXTLINE(misc-include-cleaner)
-  std::cout << "MQT QDMI NA Device Generator Version " MQT_CORE_VERSION "\n";
+  std::cout << "MQT QDMI NA Device Generator (MQT Version " MQT_CORE_VERSION
+               ")\n";
 }
 
 /// Enum to represent the different commands that can be executed.

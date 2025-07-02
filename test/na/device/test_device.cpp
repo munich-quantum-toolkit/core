@@ -10,15 +10,25 @@
 
 #include "mqt_na_qdmi/device.h"
 
+#include <absl/strings/str_cat.h>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <gmock/gmock-cardinalities.h>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+namespace testing {
+MATCHER_P2(IsBetween, a, b,
+           absl::StrCat(negation ? "isn't" : "is", " between ",
+                        PrintToString(a), " and ", PrintToString(b))) {
+  return a <= arg && arg <= b;
+}
+} // namespace testing
 
 namespace {
 [[nodiscard]] auto querySites(MQT_NA_QDMI_Device_Session session)
@@ -409,23 +419,56 @@ protected:
 
 TEST_F(NADeviceTest, QuerySiteData) {
   size_t module = 0;
+  size_t subModule = 0;
   int64_t x = 0;
   int64_t y = 0;
   double t1 = 0;
   double t2 = 0;
-  EXPECT_NO_THROW(for (auto* site : querySites(session)) {
+  std::vector<MQT_NA_QDMI_Site> sites;
+  EXPECT_NO_THROW(sites = querySites(session))
+      << "Devices must provide a sites";
+  EXPECT_EQ(sites.size(), 100);
+  for (auto* site : sites) {
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
                   session, site, QDMI_SITE_PROPERTY_CUSTOM1, sizeof(size_t),
                   &module, nullptr),
               QDMI_SUCCESS);
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
                   session, site, QDMI_SITE_PROPERTY_CUSTOM2, sizeof(int64_t),
-                  &x, nullptr),
+                  &subModule, nullptr),
               QDMI_SUCCESS);
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
                   session, site, QDMI_SITE_PROPERTY_CUSTOM3, sizeof(int64_t),
+                  &x, nullptr),
+              QDMI_SUCCESS);
+    EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                  session, site, QDMI_SITE_PROPERTY_CUSTOM4, sizeof(int64_t),
                   &y, nullptr),
               QDMI_SUCCESS);
+    int64_t originX = 0;
+    int64_t width = 0;
+    const auto& traps = json["traps"];
+    const auto& moduleTraps = traps[0];
+    const auto& extent = moduleTraps["extent"];
+    const auto& origin = extent["origin"];
+    const int64_t xValue = origin["x"];
+    ASSERT_NO_THROW(
+        originX =
+            json["traps"][module]["extent"]["origin"]["x"].get<int64_t>());
+    ASSERT_NO_THROW(
+        width =
+            json["traps"][module]["extent"]["size"]["width"].get<int64_t>());
+    EXPECT_THAT(x, ::testing::IsBetween(originX, originX + width));
+    int64_t originY = 0;
+    int64_t height = 0;
+    ASSERT_NO_THROW(
+        originY =
+            json["traps"][module]["extent"]["origin"]["y"].get<int64_t>());
+    ASSERT_NO_THROW(
+        height =
+            json["traps"][module]["extent"]["size"]["height"].get<int64_t>());
+    EXPECT_THAT(y, ::testing::IsBetween(originY, height));
+
     EXPECT_EQ(
         MQT_NA_QDMI_device_session_query_site_property(
             session, site, QDMI_SITE_PROPERTY_T1, sizeof(double), &t1, nullptr),
@@ -436,7 +479,7 @@ TEST_F(NADeviceTest, QuerySiteData) {
             session, site, QDMI_SITE_PROPERTY_T2, sizeof(double), &t2, nullptr),
         QDMI_SUCCESS);
     EXPECT_DOUBLE_EQ(t2, json["decoherenceTimes"]["t2"]);
-  }) << "Devices must provide a list of sites";
+  }
 }
 
 TEST_F(NADeviceTest, QueryOperationData) {

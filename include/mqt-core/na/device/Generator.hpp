@@ -70,4 +70,37 @@ auto writeHeader(const Device& device, std::ostream& os) -> void;
  */
 auto writeHeader(const Device& device, const std::string& path) -> void;
 
+/**
+ * @brief Solves a 2D linear equation system.
+ * @details The equation has the following form:
+ * @code
+ * x1 * i + x2 * j = x0
+ * y1 * i + y2 * j = y0
+ * @endcode
+ * The free variables are i and j.
+ * @param x1 Coefficient for x in the first equation.
+ * @param x2 Coefficient for y in the first equation.
+ * @param y1 Coefficient for x in the second equation.
+ * @param y2 Coefficient for y in the second equation.
+ * @param x0 Right-hand side of the first equation.
+ * @param y0 Right-hand side of the second equation.
+ * @returns A pair containing the solution (x, y).
+ * @throws std::runtime_error if the system has no unique solution (determinant
+ * is zero).
+ */
+template <typename T>
+[[nodiscard]] auto solve2DLinearEquation(const T x1, const T x2, const T y1,
+                                         const T y2, const T x0, const T y0)
+    -> std::pair<double, double> {
+  // Calculate the determinant
+  const auto D = static_cast<double>(x1 * y2 - x2 * y1);
+  if (D == 0) {
+    throw std::runtime_error("The system of equations has no unique solution.");
+  }
+  // Calculate the solution
+  const auto Dx = static_cast<double>(x0 * y2 - x2 * y0);
+  const auto Dy = static_cast<double>(x1 * y0 - x0 * y1);
+  return {Dx / D, Dy / D};
+}
+
 } // namespace na

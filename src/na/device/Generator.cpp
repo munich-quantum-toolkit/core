@@ -29,6 +29,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace na {
@@ -69,8 +70,8 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
  * @returns true if the increment was successful, false if all indices have
  * reached their limits.
  */
-[[nodiscard]] auto increment(std::vector<size_t>& indices,
-                             const std::vector<size_t>& limits) -> bool {
+[[nodiscard]] auto increment(std::vector<int64_t>& indices,
+                             const std::vector<int64_t>& limits) -> bool {
   size_t i = 0;
   for (; i < indices.size() && indices[i] == limits[i]; ++i) {
   }
@@ -149,37 +150,80 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
   size_t count = 0;
   size_t moduleCount = 0;
   const auto lengthUnit = getLengthUnit(device);
+
   os << "#define INITIALIZE_SITES(var) var.clear();";
   for (const auto& lattice : device.traps()) {
-    const auto originX = lattice.lattice_origin().x();
-    const auto originY = lattice.lattice_origin().y();
-    const std::vector limits{
-        static_cast<size_t>(lattice.lattice_vector_1().repeat()),
-        static_cast<size_t>(lattice.lattice_vector_2().repeat())};
-    std::vector<size_t> indices(2, 0);
+    size_t subModuleCount = 0;
+
+    const auto latticeOriginX = lattice.lattice_origin().x();
+    const auto latticeOriginY = lattice.lattice_origin().y();
+    const auto baseVector1X = lattice.lattice_vector_1().x();
+    const auto baseVector1Y = lattice.lattice_vector_1().y();
+    const auto baseVector2X = lattice.lattice_vector_2().x();
+    const auto baseVector2Y = lattice.lattice_vector_2().y();
+    const auto extentOriginX = lattice.extent().origin().x();
+    const auto extentOriginY = lattice.extent().origin().y();
+    const auto extentWidth = lattice.extent().size().width();
+    const auto extentHeight = lattice.extent().size().height();
+
+    // approximate indices of the bottom left corner
+    const auto& [bottomLeftI, bottomLeftJ] = solve2DLinearEquation<int64_t>(
+        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
+        extentOriginX - latticeOriginX, extentOriginY - latticeOriginY);
+
+    // approximate indices of the bottom right corner
+    const auto& [bottomRightI, bottomRightJ] = solve2DLinearEquation<int64_t>(
+        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
+        extentOriginX + extentWidth - latticeOriginX,
+        extentOriginY - latticeOriginY);
+
+    // approximate indices of the top left corner
+    const auto& [topLeftI, topLeftJ] = solve2DLinearEquation<int64_t>(
+        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
+        extentOriginX - latticeOriginX,
+        extentOriginY + extentHeight - latticeOriginY);
+
+    // approximate indices of the top right corner
+    const auto& [topRightI, topRightJ] = solve2DLinearEquation<int64_t>(
+        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
+        extentOriginX + extentWidth - latticeOriginX,
+        extentOriginY + extentHeight - latticeOriginY);
+
+    const auto minI = static_cast<int64_t>(
+        std::floor(std::min({bottomLeftI, bottomRightI, topLeftI, topRightI})));
+    const auto minJ = static_cast<int64_t>(
+        std::floor(std::min({bottomLeftJ, bottomRightJ, topLeftJ, topRightJ})));
+    const auto maxI = static_cast<int64_t>(
+        std::floor(std::max({bottomLeftI, bottomRightI, topLeftI, topRightI})));
+    const auto maxJ = static_cast<int64_t>(
+        std::floor(std::max({bottomLeftJ, bottomRightJ, topLeftJ, topRightJ})));
+
+    const std::vector limits{maxI, maxJ};
+    std::vector indices{minI, minJ};
     for (bool loop = true; loop;
-         loop = increment(indices, limits), ++moduleCount) {
+         loop = increment(indices, limits), ++subModuleCount) {
       // For every sublattice offset, add a site for repetition indices
       for (const auto& offset : lattice.sublattice_offsets()) {
         const auto id = count++;
-        auto x = originX + offset.x();
-        auto y = originY + offset.y();
-        x += static_cast<int64_t>(indices[0]) *
-             lattice.lattice_vector_1().vector().x();
-        y += static_cast<int64_t>(indices[0]) *
-             lattice.lattice_vector_1().vector().y();
-        x += static_cast<int64_t>(indices[1]) *
-             lattice.lattice_vector_2().vector().x();
-        y += static_cast<int64_t>(indices[1]) *
-             lattice.lattice_vector_2().vector().y();
-        os << "\\\n  "
-              "var.emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>("
-              "MQT_NA_QDMI_Site_impl_d{"
-           << id << ", " << moduleCount << ", "
-           << static_cast<double>(x) * lengthUnit << ", "
-           << static_cast<double>(y) * lengthUnit << "}));";
+        auto x = latticeOriginX + offset.x();
+        auto y = latticeOriginY + offset.y();
+        x += indices[0] * baseVector1X;
+        y += indices[0] * baseVector1Y;
+        x += indices[1] * baseVector2X;
+        y += indices[1] * baseVector2Y;
+        if (extentOriginX <= x && x < extentOriginX + extentWidth &&
+            extentOriginY <= y && y < extentOriginY + extentHeight) {
+          // Only add the site if it is within the extent of the lattice
+          os << "\\\n  "
+                "var.emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>("
+                "MQT_NA_QDMI_Site_impl_d{"
+             << id << ", " << moduleCount << ", " << subModuleCount << ", "
+             << static_cast<double>(x) * lengthUnit << ", "
+             << static_cast<double>(y) * lengthUnit << "}));";
+        }
       }
     }
+    ++moduleCount;
   }
   os << "\n";
 }

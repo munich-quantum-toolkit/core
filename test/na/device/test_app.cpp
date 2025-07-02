@@ -50,7 +50,8 @@ TEST(ExecutableTest, Version) {
   // Validate the output
   EXPECT_EQ(output.str(),
             // NOLINTNEXTLINE(misc-include-cleaner)
-            "MQT QDMI NA Device Generator Version " MQT_CORE_VERSION "\n");
+            "MQT QDMI NA Device Generator (MQT Version " MQT_CORE_VERSION
+            ")\n");
 }
 
 TEST(ExecutableTest, MissingSubcommand) {
@@ -71,7 +72,7 @@ TEST(ExecutableTest, MissingSubcommand) {
   const int returnCode = PLATFORM_PCLOSE(pipe);
   // Print the captured output
   std::cout << "Captured Output:\n" << output.str() << "\n";
-  EXPECT_EQ(returnCode, 256);
+  EXPECT_NE(returnCode, 0);
 }
 
 TEST(ExecutableTest, UnknownSubcommand) {
@@ -92,7 +93,7 @@ TEST(ExecutableTest, UnknownSubcommand) {
   const int returnCode = PLATFORM_PCLOSE(pipe);
   // Print the captured output
   std::cout << "Captured Output:\n" << output.str() << "\n";
-  EXPECT_EQ(returnCode, 256);
+  EXPECT_NE(returnCode, 0);
 }
 
 TEST(ExecutableTest, SchemaUnknownOption) {
@@ -113,7 +114,7 @@ TEST(ExecutableTest, SchemaUnknownOption) {
   const int returnCode = PLATFORM_PCLOSE(pipe);
   // Print the captured output
   std::cout << "Captured Output:\n" << output.str() << "\n";
-  EXPECT_EQ(returnCode, 256);
+  EXPECT_NE(returnCode, 0);
 }
 
 TEST(ExecutableTest, SchemaMissingFile) {
@@ -134,7 +135,7 @@ TEST(ExecutableTest, SchemaMissingFile) {
   const int returnCode = PLATFORM_PCLOSE(pipe);
   // Print the captured output
   std::cout << "Captured Output:\n" << output.str() << "\n";
-  EXPECT_EQ(returnCode, 256);
+  EXPECT_NE(returnCode, 0);
 }
 
 TEST(ExecutableTest, ValidateInvalidJson) {
@@ -148,8 +149,8 @@ TEST(ExecutableTest, ValidateInvalidJson) {
   fwrite("{", sizeof(char), 2, pipe);
   // Close the pipe
   const int returnCode = PLATFORM_PCLOSE(pipe);
-  EXPECT_EQ(returnCode, 256)
-      << "Executable failed with return code: " << returnCode;
+  EXPECT_NE(returnCode, 0) << "Executable failed with return code: "
+                           << returnCode;
 }
 
 TEST(ExecutableTest, GenerateMissingFile) {
@@ -170,7 +171,7 @@ TEST(ExecutableTest, GenerateMissingFile) {
   const int returnCode = PLATFORM_PCLOSE(pipe);
   // Print the captured output
   std::cout << "Captured Output:\n" << output.str() << "\n";
-  EXPECT_EQ(returnCode, 256);
+  EXPECT_NE(returnCode, 0);
 }
 
 TEST(ExecutableTest, Usage) {

@@ -77,10 +77,11 @@ struct MQT_NA_QDMI_Device_Job_impl_d {};
  * @brief Implementation of the MQT_NA_QDMI_Device_Site structure.
  */
 struct MQT_NA_QDMI_Site_impl_d {
-  size_t id;     ///< Unique identifier of the site
-  size_t module; ///< Identifier of the module the site belongs to
-  int64_t x;     ///< X coordinate of the site in the lattice
-  int64_t y;     ///< Y coordinate of the site in the lattice
+  size_t id;        ///< Unique identifier of the site
+  size_t module;    ///< Identifier of the module the site belongs to
+  size_t subModule; ///< Identifier of the sub-module the site belongs to
+  int64_t x;        ///< X coordinate of the site in the lattice
+  int64_t y;        ///< Y coordinate of the site in the lattice
 };
 
 /**
@@ -407,16 +408,19 @@ int MQT_NA_QDMI_device_session_query_site_property(
       (value != nullptr && size == 0) ||
       (prop != QDMI_SITE_PROPERTY_CUSTOM1 &&
        prop != QDMI_SITE_PROPERTY_CUSTOM2 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM3 && prop >= QDMI_SITE_PROPERTY_MAX)) {
+       prop != QDMI_SITE_PROPERTY_CUSTOM3 &&
+       prop != QDMI_SITE_PROPERTY_CUSTOM4 && prop >= QDMI_SITE_PROPERTY_MAX)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, size_t, site->id, prop,
                             size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM1, size_t, site->module,
                             prop, size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM2, int64_t, site->x, prop,
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM2, size_t, site->subModule,
+                            prop, size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM3, int64_t, site->x, prop,
                             size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM3, int64_t, site->y, prop,
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM4, int64_t, site->y, prop,
                             size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T1, double,
                             decoherenceTimes().t1, prop, size, value, sizeRet)
