@@ -29,6 +29,8 @@
 
 namespace mqt::ir::opt {
 
+static const std::unordered_set<std::string> MERGEABLE_GATES = {"gphase", "rx", "ry", "rz", "rxx", "ryy", "rzz", "rzx"};
+
 /**
  * @brief This pattern attempts to merge consecutive rotation gates.
  */
@@ -37,7 +39,7 @@ struct MergeRotationGatesPattern final
 
   explicit MergeRotationGatesPattern(mlir::MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
-
+  
   /**
    * @brief Checks if two gates can be merged.
    *
@@ -47,10 +49,6 @@ struct MergeRotationGatesPattern final
    */
   [[nodiscard]] static bool areGatesMergeable(mlir::Operation& a,
                                               mlir::Operation& b) {
-
-    static const std::unordered_set<std::string> MERGEABLE_GATES = {
-        "gphase", "rx", "ry", "rz", "rxx", "ryy", "rzz", "rzx"};
-
     const auto aName = a.getName().stripDialect().str();
     const auto bName = b.getName().stripDialect().str();
 
@@ -200,8 +198,7 @@ struct MergeRotationGatesPattern final
                mlir::PatternRewriter& rewriter) const override {
     auto const type = op->getName().stripDialect().str();
 
-    if (type == "gphase" || type == "rx" || type == "ry" || type == "rz" ||
-        type == "rxx" || type == "ryy" || type == "rzz" || type == "rzx") {
+    if (MERGEABLE_GATES.count(type) == 1) {
       rewriteAdditiveAngle(op, rewriter);
     } else {
       throw std::runtime_error("Unsupported operation type: " + type);
