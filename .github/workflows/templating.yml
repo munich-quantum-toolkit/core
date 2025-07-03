@@ -1,0 +1,19 @@
+name: Templating
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+
+jobs:
+  render-template:
+    name: Render template
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: munich-quantum-toolkit/templates@add-action
+        with:
+          organization: munich-quantum-toolkit
+          repository: core
