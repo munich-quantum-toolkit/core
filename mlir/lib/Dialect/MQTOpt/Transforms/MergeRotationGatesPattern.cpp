@@ -30,7 +30,7 @@
 namespace mqt::ir::opt {
 
 static const std::unordered_set<std::string> MERGEABLE_GATES = {
-    "gphase", "rx", "ry", "rz", "rxx", "ryy", "rzz", "rzx"};
+    "gphase", "p", "rx", "ry", "rz", "rxx", "ryy", "rzz", "rzx"};
 
 /**
  * @brief This pattern attempts to merge consecutive rotation gates.
@@ -95,7 +95,7 @@ struct MergeRotationGatesPattern final
   /**
    * @brief Merges two consecutive rotation gates into a single gate.
    *
-   * The function supports gphase, rx, ry, rz, rxx, ryy, rzz, and rzx.
+   * The function supports gphase, p, rx, ry, rz, rxx, ryy, rzz, and rzx.
    * The gates are merged by adding their angles.
    * The merged gate is not removed if the angles add up to zero.
    *
@@ -123,6 +123,12 @@ struct MergeRotationGatesPattern final
     UnitaryInterface newUser;
     if (type == "gphase") {
       newUser = rewriter.create<GPhaseOp>(
+          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
+          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
+          userPosCtrlInQubits, userNegCtrlInQubits);
+    } else if (type == "p") {
+      newUser = rewriter.create<POp>(
           loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
           userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
           mlir::DenseBoolArrayAttr{}, newParams, userInQubits,

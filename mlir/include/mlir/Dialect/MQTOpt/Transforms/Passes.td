@@ -39,7 +39,7 @@ def CancelConsecutiveInverses : Pass<"cancel-consecutive-inverses", "mlir::Modul
 def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   let summary = "This pass searches for consecutive applications of rotation gates that can be merged.";
   let description = [{
-    Consecutive applications of gphase, rx, ry, rz, rxx, ryy, rzz, and rzx are merged into one by adding their angles.
+    Consecutive applications of gphase, p, rx, ry, rz, rxx, ryy, rzz, and rzx are merged into one by adding their angles.
     The merged gate is currently not removed if the angles add up to zero.
 
     This pass currently does not affect xxminusyy, xxplusyy, u, and u2.

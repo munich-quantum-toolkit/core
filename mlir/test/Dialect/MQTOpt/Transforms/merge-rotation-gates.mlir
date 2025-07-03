@@ -9,6 +9,30 @@
 // RUN: quantum-opt %s -split-input-file --merge-rotation-gates | FileCheck %s
 
 // -----
+// This test checks that consecutive p gates are merged correctly.
+
+module {
+  // CHECK-LABEL: func.func @testMergeRxGates
+  func.func @testMergeRxGates() {
+    // CHECK: %[[Res_2:.*]] = arith.constant 2.000000e+00 : f64
+    // CHECK: %[[ANY:.*]] = mqtopt.p(%[[Res_2]]) %[[ANY:.*]] : !mqtopt.Qubit
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.p(%[[ANY:.*]]) %[[ANY:.*]] : !mqtopt.Qubit
+
+    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    %c_0 = arith.constant 1.000000e+00 : f64
+    %q0_1 = mqtopt.p(%c_0) %q0_0 : !mqtopt.Qubit
+    %q0_2 = mqtopt.p(%c_0) %q0_1 : !mqtopt.Qubit
+
+    %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+    return
+  }
+}
+
+// -----
 // This test checks that consecutive rx gates are merged correctly.
 
 module {
