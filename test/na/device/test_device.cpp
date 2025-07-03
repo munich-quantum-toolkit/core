@@ -141,15 +141,15 @@ TEST_F(QDMISpecificationTest, SessionSetParameter) {
   MQT_NA_QDMI_Device_Session uninitializedSession = nullptr;
   ASSERT_EQ(MQT_NA_QDMI_device_session_alloc(&uninitializedSession),
             QDMI_SUCCESS);
+  EXPECT_THAT(MQT_NA_QDMI_device_session_set_parameter(
+                  uninitializedSession, QDMI_DEVICE_SESSION_PARAMETER_BASEURL,
+                  20, "https://example.com"),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED,
+                             QDMI_ERROR_INVALIDARGUMENT));
   EXPECT_EQ(MQT_NA_QDMI_device_session_set_parameter(
-                uninitializedSession, QDMI_DEVICE_SESSION_PARAMETER_BASEURL, 20,
+                session, QDMI_DEVICE_SESSION_PARAMETER_BASEURL, 20,
                 "https://example.com"),
             QDMI_ERROR_BADSTATE);
-  EXPECT_THAT(MQT_NA_QDMI_device_session_set_parameter(
-                  session, QDMI_DEVICE_SESSION_PARAMETER_BASEURL, 20,
-                  "https://example.com"),
-              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED,
-                             QDMI_ERROR_INVALIDARGUMENT, QDMI_ERROR_BADSTATE));
   EXPECT_EQ(MQT_NA_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
