@@ -177,3 +177,4 @@ wheelhouse/
 # mlir
 
 **/.lit
+plugins/catalyst/build
