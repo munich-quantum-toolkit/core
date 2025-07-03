@@ -333,11 +333,12 @@ module {
 
 // -----
 // This test checks that incompatible multi-qubit gates are not merged.
-// The gates cannot be merged because their input qubits are not identical.
+// The gates cannot be merged because their input qubits do not have the same order.
+// This test should fail when a canonicalization pass is implemented with #1031.
 
 module {
-  // CHECK-LABEL: func.func @testDoNotMergeMultiQubitGatesDifferentInputQubits
-  func.func @testDoNotMergeMultiQubitGatesDifferentInputQubits() {
+  // CHECK-LABEL: func.func @testDoNotMergeMultiQubitGatesDifferentInputQubitOrder
+  func.func @testDoNotMergeMultiQubitGatesDifferentInputQubitOrder() {
     // CHECK: %[[Res_2:.*]] = arith.constant 2.000000e+00 : f64
     // CHECK: %[[Res_1:.*]] = arith.constant 1.000000e+00 : f64
     // CHECK: %[[Q0_1:.*]]:2 = mqtopt.rxx(%[[Res_1]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
