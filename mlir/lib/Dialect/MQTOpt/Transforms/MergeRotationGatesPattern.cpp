@@ -93,6 +93,41 @@ struct MergeRotationGatesPattern final
   }
 
   /**
+   * @brief Creates a new rotation gate.
+   *
+   * The new rotation gate is created by adding the angles of two compatible
+   * rotation gates.
+   *
+   * @tparam OpType The type of the operation to create.
+   * @param op The first instance of the rotation gate.
+   * @param user The second instance of the rotation gate.
+   * @param rewriter The pattern rewriter.
+   * @return A new rotation gate.
+   */
+  template <typename OpType>
+  static UnitaryInterface
+  createOpAdditiveAngle(UnitaryInterface op, UnitaryInterface user,
+                        mlir::PatternRewriter& rewriter) {
+    auto loc = user->getLoc();
+
+    auto userInQubits = user.getInQubits();
+    auto userPosCtrlInQubits = user.getPosCtrlInQubits();
+    auto userNegCtrlInQubits = user.getNegCtrlInQubits();
+
+    auto opParam = op.getParams()[0];
+    auto userParam = user.getParams()[0];
+    auto add = rewriter.create<mlir::arith::AddFOp>(loc, opParam, userParam);
+    const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
+    const mlir::ValueRange newParams(newParamsVec);
+
+    return rewriter.create<OpType>(
+        loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
+        userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
+        mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
+        userPosCtrlInQubits, userNegCtrlInQubits);
+  }
+
+  /**
    * @brief Merges two consecutive rotation gates into a single gate.
    *
    * The function supports gphase, p, rx, ry, rz, rxx, ryy, rzz, and rzx.
@@ -107,74 +142,26 @@ struct MergeRotationGatesPattern final
     auto const type = op->getName().stripDialect().str();
 
     auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
-    auto loc = user->getLoc();
-
-    auto opParam = op.getParams()[0];
-    auto userParam = user.getParams()[0];
-
-    auto add = rewriter.create<mlir::arith::AddFOp>(loc, opParam, userParam);
-    const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-    const mlir::ValueRange newParams(newParamsVec);
-
-    auto userInQubits = user.getInQubits();
-    auto userPosCtrlInQubits = user.getPosCtrlInQubits();
-    auto userNegCtrlInQubits = user.getNegCtrlInQubits();
 
     UnitaryInterface newUser;
     if (type == "gphase") {
-      newUser = rewriter.create<GPhaseOp>(
-          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
-          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
-          userPosCtrlInQubits, userNegCtrlInQubits);
+      newUser = createOpAdditiveAngle<GPhaseOp>(op, user, rewriter);
     } else if (type == "p") {
-      newUser = rewriter.create<POp>(
-          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
-          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
-          userPosCtrlInQubits, userNegCtrlInQubits);
+      newUser = createOpAdditiveAngle<POp>(op, user, rewriter);
     } else if (type == "rx") {
-      newUser = rewriter.create<RXOp>(
-          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
-          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
-          userPosCtrlInQubits, userNegCtrlInQubits);
+      newUser = createOpAdditiveAngle<RXOp>(op, user, rewriter);
     } else if (type == "ry") {
-      newUser = rewriter.create<RYOp>(
-          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
-          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
-          userPosCtrlInQubits, userNegCtrlInQubits);
+      newUser = createOpAdditiveAngle<RYOp>(op, user, rewriter);
     } else if (type == "rz") {
-      newUser = rewriter.create<RZOp>(
-          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
-          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
-          userPosCtrlInQubits, userNegCtrlInQubits);
+      newUser = createOpAdditiveAngle<RZOp>(op, user, rewriter);
     } else if (type == "rxx") {
-      newUser = rewriter.create<RXXOp>(
-          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
-          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
-          userPosCtrlInQubits, userNegCtrlInQubits);
+      newUser = createOpAdditiveAngle<RXXOp>(op, user, rewriter);
     } else if (type == "ryy") {
-      newUser = rewriter.create<RYYOp>(
-          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
-          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
-          userPosCtrlInQubits, userNegCtrlInQubits);
+      newUser = createOpAdditiveAngle<RYYOp>(op, user, rewriter);
     } else if (type == "rzz") {
-      newUser = rewriter.create<RZZOp>(
-          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
-          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
-          userPosCtrlInQubits, userNegCtrlInQubits);
+      newUser = createOpAdditiveAngle<RZZOp>(op, user, rewriter);
     } else if (type == "rzx") {
-      newUser = rewriter.create<RZXOp>(
-          loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
-          userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
-          userPosCtrlInQubits, userNegCtrlInQubits);
+      newUser = createOpAdditiveAngle<RZXOp>(op, user, rewriter);
     } else {
       throw std::runtime_error("Unsupported operation type: " + type);
     }
