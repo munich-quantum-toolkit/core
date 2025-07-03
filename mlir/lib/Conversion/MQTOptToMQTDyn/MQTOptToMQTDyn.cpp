@@ -67,14 +67,14 @@ struct ConvertMQTOptAlloc : public OpConversionPattern<opt::AllocOp> {
   matchAndRewrite(opt::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // create result type
-    const auto qregType = dyn::QubitRegisterType::get(rewriter.getContext());
+    const auto& qregType = dyn::QubitRegisterType::get(rewriter.getContext());
 
     // create new operation
     auto mqtdynOp = rewriter.create<dyn::AllocOp>(
         op.getLoc(), qregType, adaptor.getSize(), adaptor.getSizeAttrAttr());
 
-    const auto optQreg = op.getQreg();
-    const auto dynQreg = mqtdynOp.getQreg();
+    const auto& optQreg = op.getQreg();
+    const auto& dynQreg = mqtdynOp.getQreg();
 
     // update the operands of the opt register user
     (*optQreg.getUsers().begin())->replaceUsesOfWith(optQreg, dynQreg);
@@ -110,18 +110,18 @@ struct ConvertMQTOptExtract : public OpConversionPattern<opt::ExtractOp> {
   matchAndRewrite(opt::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // create result type
-    const auto qubitType = dyn::QubitType::get(rewriter.getContext());
+    const auto& qubitType = dyn::QubitType::get(rewriter.getContext());
 
-    const auto dynQreg = adaptor.getInQreg();
+    const auto& dynQreg = adaptor.getInQreg();
 
     // create new operation
     auto mqtdynOp = rewriter.create<dyn::ExtractOp>(op.getLoc(), qubitType,
                                                     dynQreg, adaptor.getIndex(),
                                                     adaptor.getIndexAttrAttr());
 
-    const auto optQubit = op.getOutQubit();
-    const auto dynQubit = mqtdynOp.getOutQubit();
-    const auto optQreg = op.getOutQreg();
+    const auto& optQubit = op.getOutQubit();
+    const auto& dynQubit = mqtdynOp.getOutQubit();
+    const auto& optQreg = op.getOutQreg();
 
     // update the operands of the opt users
     (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
@@ -141,8 +141,8 @@ struct ConvertMQTOptInsert : public OpConversionPattern<opt::InsertOp> {
   matchAndRewrite(opt::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
 
-    const auto optQreg = op.getOutQreg();
-    const auto dynQreg = adaptor.getInQreg();
+    const auto& optQreg = op.getOutQreg();
+    const auto& dynQreg = adaptor.getInQreg();
 
     // update the operands of the opt register users
     (*optQreg.getUsers().begin())->replaceUsesOfWith(optQreg, dynQreg);
@@ -161,15 +161,15 @@ struct ConvertMQTOptMeasure : public OpConversionPattern<opt::MeasureOp> {
   matchAndRewrite(opt::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
 
-    const auto oldBits = op.getOutBits();
-    const auto dynQubits = adaptor.getInQubits();
-    const auto optQubits = op.getOutQubits();
+    const auto& oldBits = op.getOutBits();
+    const auto& dynQubits = adaptor.getInQubits();
+    const auto& optQubits = op.getOutQubits();
 
     // create new operation
     auto mqtdynOp = rewriter.create<dyn::MeasureOp>(
         op.getLoc(), oldBits.getTypes(), dynQubits);
 
-    const auto newBits = mqtdynOp.getOutBits();
+    const auto& newBits = mqtdynOp.getOutBits();
 
     // iterate over the qubits and bits
     for (size_t i = 0; i < optQubits.size(); i++) {
@@ -205,9 +205,9 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
   matchAndRewrite(MQTGateOptOp op, typename MQTGateOptOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // get all the input qubits including the ctrl qubits
-    const auto dynInQubitsValues = adaptor.getInQubits();
-    const auto dynPosCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    const auto dynNegCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+    const auto& dynInQubitsValues = adaptor.getInQubits();
+    const auto& dynPosCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    const auto& dynNegCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
     // append them to a single vector
     std::vector<Value> allDynInputQubits(dynInQubitsValues.begin(),
@@ -240,7 +240,7 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
         op.getLoc(), staticParams, paramMask, op.getParams(), dynInQubitsValues,
         dynPosCtrlQubitsValues, dynNegCtrlQubitsValues);
 
-    const auto optResults = op.getAllOutQubits();
+    const auto& optResults = op.getAllOutQubits();
 
     // iterate over all opt qubits
     for (size_t i = 0; i < optResults.size(); i++) {
