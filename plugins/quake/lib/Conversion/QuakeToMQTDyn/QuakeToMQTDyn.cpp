@@ -12,11 +12,11 @@
 
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 
+#include <cassert>
+#include <cstddef>
 #include <cudaq/Optimizer/Dialect/Quake/QuakeDialect.h>
 #include <cudaq/Optimizer/Dialect/Quake/QuakeOps.h>
 #include <cudaq/Optimizer/Dialect/Quake/QuakeTypes.h>
-#include <cassert>
-#include <cstddef>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -56,8 +56,8 @@ struct ConvertQuakeAlloca
   matchAndRewrite(cudaq::quake::quake_AllocaOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Create the new operation
-    auto mqtDynOp = rewriter.create<::mqt::ir::dyn::AllocOp>(
-        op.getLoc(), adaptor.getSize());
+    auto mqtDynOp = rewriter.create<::mqt::ir::dyn::AllocOp>(op.getLoc(),
+                                                             adaptor.getSize());
 
     // Get the result of the new operation
     auto mqtDynReg = mqtDynOp->getResult(0);
@@ -77,8 +77,7 @@ struct ConvertQuakeAlloca
   }
 };
 
-struct QuakeToMQTDyn
-    : impl::QuakeToMQTDynBase<QuakeToMQTDyn> {
+struct QuakeToMQTDyn : impl::QuakeToMQTDynBase<QuakeToMQTDyn> {
   using QuakeToMQTDynBase::QuakeToMQTDynBase;
 
   void runOnOperation() override {
@@ -92,8 +91,7 @@ struct QuakeToMQTDyn
     RewritePatternSet patterns(context);
     QuakeToMQTDynTypeConverter typeConverter(context);
 
-    patterns.add<ConvertQuakeAlloca>(typeConverter,
-                                                               context);
+    patterns.add<ConvertQuakeAlloca>(typeConverter, context);
 
     // Boilerplate code to prevent unresolved materialization
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(

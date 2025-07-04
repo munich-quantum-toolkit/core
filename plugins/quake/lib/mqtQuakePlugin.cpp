@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/QuakeToMQTDyn/QuakeToMQTDyn.h"
 #include "mlir/Conversion/MQTDynToQuake/MQTDynToQuake.h"
+#include "mlir/Conversion/QuakeToMQTDyn/QuakeToMQTDyn.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTDynDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
