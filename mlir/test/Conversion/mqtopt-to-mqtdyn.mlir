@@ -128,7 +128,7 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertMeasureOpOnMultipleInputs
     func.func @testConvertMeasureOpOnMultipleInputs() {
-        // CHECK: [[m_0:.*]]:2 = "mqtdyn.measure"(%[[ANY:.*]], %[[ANY:.*]])
+        // CHECK: [[m01_1:.*]]:2 = "mqtdyn.measure"(%[[ANY:.*]], %[[ANY:.*]])
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
