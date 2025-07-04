@@ -5,3 +5,20 @@
 // SPDX-License-Identifier: MIT
 //
 // Licensed under the MIT License
+
+include "mlir/Pass/PassBase.td"
+
+def QuakeToMQTDyn : Pass<"quake-to-mqtdyn"> {
+  let summary = "Convert NVIDIA's `Quake` to MQT's `MQTDyn` dialect.";
+
+  let description = [{
+    TODO.
+   }];
+
+  // Define dependent dialects
+  let dependentDialects = [
+    "cudaq::quake::QuakeDialect",
+    "::mqt::ir::dyn::MQTDynDialect"
+  ];
+}
+

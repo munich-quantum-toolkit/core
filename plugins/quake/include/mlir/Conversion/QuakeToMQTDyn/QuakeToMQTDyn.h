@@ -7,3 +7,17 @@
  *
  * Licensed under the MIT License
  */
+
+ #pragma once
+
+#include <mlir/Pass/Pass.h>
+
+namespace mqt::ir::conversions {
+
+#define GEN_PASS_DECL
+#include "mlir/Conversion/QuakeToMQTDyn/QuakeToMQTDyn.h.inc"
+
+#define GEN_PASS_REGISTRATION
+#include "mlir/Conversion/QuakeToMQTDyn/QuakeToMQTDyn.h.inc"
+
+} // namespace mqt::ir::conversions
