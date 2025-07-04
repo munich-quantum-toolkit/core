@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
- #pragma once
+#pragma once
 
 #include <mlir/Pass/Pass.h>
 

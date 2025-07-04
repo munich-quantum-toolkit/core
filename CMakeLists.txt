@@ -118,9 +118,8 @@ if(BUILD_MQT_CORE_MLIR)
 endif()
 
 # only build MLIR plugins if the MLIR submodule is enabled
-cmake_dependent_option(
-  BUILD_MQT_CORE_QUAKE_PLUGIN "Build the Quake plugin" OFF
-  "BUILD_MQT_CORE_MLIR" OFF)
+cmake_dependent_option(BUILD_MQT_CORE_QUAKE_PLUGIN "Build the Quake plugin" OFF
+                       "BUILD_MQT_CORE_MLIR" OFF)
 add_subdirectory(plugins)
 
 if(MQT_CORE_MASTER_PROJECT)

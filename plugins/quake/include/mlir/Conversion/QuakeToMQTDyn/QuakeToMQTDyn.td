@@ -21,4 +21,3 @@ def QuakeToMQTDyn : Pass<"quake-to-mqtdyn"> {
     "::mqt::ir::dyn::MQTDynDialect"
   ];
 }
-
