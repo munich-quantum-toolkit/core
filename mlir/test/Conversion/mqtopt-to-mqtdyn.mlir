@@ -11,7 +11,7 @@
 // -----
 // This test checks if the AllocOp is converted correctly using a static attribute.
 module {
-    // CHECK-LABEL: func @testConvertAllocOpAttribute()
+    // CHECK-LABEL: func.func @testConvertAllocOpAttribute()
     func.func @testConvertAllocOpAttribute() {
         // CHECK: %[[r_0:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}>
 
@@ -24,7 +24,7 @@ module {
 // -----
 // This test checks if the AllocOp is converted correctly using a dynamic operand.
 module {
-    // CHECK-LABEL: func @testConvertAllocOpOperand()
+    // CHECK-LABEL: func.func @testConvertAllocOpOperand()
     func.func @testConvertAllocOpOperand() {
         // CHECK: %[[size:.*]] = arith.constant 2
         // CHECK: %[[r_0:.*]] = "mqtdyn.allocQubitRegister"(%[[size]]) : (i64) -> !mqtdyn.QubitRegister
