@@ -17,21 +17,20 @@
 
 #include "mlir/Conversion/MQTDynToMQTOpt/MQTDynToMQTOpt.h"
 
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/Func/Transforms/FuncConversions.h"
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
-#include "mlir/IR/ValueRange.h"
-
-#include "llvm/ADT/DenseMap.h"
 
 #include <cstddef>
+#include <llvm/ADT/DenseMap.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -43,7 +42,7 @@ namespace mqt::ir {
 using namespace mlir;
 
 #define GEN_PASS_DEF_MQTDYNTOMQTOPT
-#include <mlir/Conversion/MQTDynToMQTOpt/MQTDynToMQTOpt.h.inc>
+#include "mlir/Conversion/MQTDynToMQTOpt/MQTDynToMQTOpt.h.inc"
 
 namespace {
 // struct to store the metadata for qubits
@@ -102,7 +101,7 @@ struct ConvertMQTDynAlloc : public OpConversionPattern<dyn::AllocOp> {
 
     // replace the old register use with the new register otherwise
     // there will be an unrealized conversion
-    rewriter.replaceOp(op, optQreg);
+    rewriter.replaceOp(op, mqtoptOp);
 
     return success();
   }
@@ -160,14 +159,14 @@ struct ConvertMQTDynDealloc : public OpConversionPattern<dyn::DeallocOp> {
     }
 
     // create the new dealloc operation
-    rewriter.create<opt::DeallocOp>(op.getLoc(), optQreg);
+    auto mqtoptOp = rewriter.create<opt::DeallocOp>(op.getLoc(), optQreg);
 
     // erase the register from the maps
     qregMap->erase(dynQreg);
     qregQubitsMap->erase(dynQreg);
 
     // erase old operation
-    rewriter.eraseOp(op);
+    rewriter.replaceOp(op, mqtoptOp);
 
     return success();
   }
@@ -253,14 +252,12 @@ struct ConvertMQTDynMeasure : public OpConversionPattern<dyn::MeasureOp> {
     auto& qubitMapRef = *qubitMap;
 
     std::vector<Value> optQubits;
-    std::vector<Type> qubitTypes;
     // get the latest opt qubit from the map and add them and their type to the
     // vectors
     for (const auto& dynQubit : dynQubits) {
       optQubits.emplace_back(qubitMapRef[dynQubit]);
-      qubitTypes.emplace_back(qubitType);
     }
-
+    std::vector<Type> qubitTypes(optQubits.size(), qubitType);
     // create new operation
     auto mqtoptOp = rewriter.create<opt::MeasureOp>(
         op.getLoc(), qubitTypes, op.getOutBits().getTypes(), optQubits);
@@ -278,12 +275,8 @@ struct ConvertMQTDynMeasure : public OpConversionPattern<dyn::MeasureOp> {
       const auto& oldBit = oldBits[i];
       const auto& newBit = newBits[i];
 
-      const std::vector<Operation*> bitUsers(oldBit.getUsers().begin(),
-                                             oldBit.getUsers().end());
-      // update the operand of the previous bit users
-      for (auto* user : bitUsers) {
-
-        user->replaceUsesOfWith(oldBit, newBit);
+      for (auto& use : llvm::make_early_inc_range(oldBit.getUses())) {
+        use.getOwner()->replaceUsesOfWith(oldBit, newBit);
       }
     }
 
@@ -333,19 +326,15 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateDynOp> {
     }
 
     // get the static params and paramMask if they exist
-    DenseF64ArrayAttr staticParams = nullptr;
+    auto staticParams = DenseF64ArrayAttr{};
     if (auto optionalParams = op.getStaticParams()) {
       staticParams =
           DenseF64ArrayAttr::get(rewriter.getContext(), optionalParams.value());
-    } else {
-      staticParams = DenseF64ArrayAttr{};
     }
-    DenseBoolArrayAttr paramMask = nullptr;
+    auto paramMask = DenseBoolArrayAttr{};
     if (auto optionalMask = op.getParamsMask()) {
       paramMask =
           DenseBoolArrayAttr::get(rewriter.getContext(), optionalMask.value());
-    } else {
-      paramMask = DenseBoolArrayAttr{};
     }
 
     // create new operation
@@ -362,7 +351,6 @@ struct ConvertMQTDynGateOp : public OpConversionPattern<MQTGateDynOp> {
       const auto& dynQubit = dynAllQubits[i];
       qubitMapRef[dynQubit] = optResults[i];
     }
-
     // erase the old operation
     rewriter.eraseOp(op);
 

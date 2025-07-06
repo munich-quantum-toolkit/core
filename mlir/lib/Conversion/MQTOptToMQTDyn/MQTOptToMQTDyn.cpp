@@ -17,12 +17,12 @@
 
 #include "mlir/Conversion/MQTOptToMQTDyn/MQTOptToMQTDyn.h"
 
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/Func/Transforms/FuncConversions.h"
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <cstddef>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -40,7 +40,7 @@ namespace mqt::ir {
 using namespace mlir;
 
 #define GEN_PASS_DEF_MQTOPTTOMQTDYN
-#include <mlir/Conversion/MQTOptToMQTDyn/MQTOptToMQTDyn.h.inc>
+#include "mlir/Conversion/MQTOptToMQTDyn/MQTOptToMQTDyn.h.inc"
 
 class MQTOptToMQTDynTypeConverter : public TypeConverter {
 public:
@@ -73,14 +73,8 @@ struct ConvertMQTOptAlloc : public OpConversionPattern<opt::AllocOp> {
     auto mqtdynOp = rewriter.create<dyn::AllocOp>(
         op.getLoc(), qregType, adaptor.getSize(), adaptor.getSizeAttrAttr());
 
-    const auto& optQreg = op.getQreg();
-    const auto& dynQreg = mqtdynOp.getQreg();
-
-    // update the operands of the opt register user
-    (*optQreg.getUsers().begin())->replaceUsesOfWith(optQreg, dynQreg);
-
-    // erase the old operation
-    rewriter.eraseOp(op);
+    // replace old operation with new operation
+    rewriter.replaceOp(op, mqtdynOp);
 
     return success();
   }
@@ -181,12 +175,8 @@ struct ConvertMQTOptMeasure : public OpConversionPattern<opt::MeasureOp> {
       // update the operands of the opt qubit user
       (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
 
-      const std::vector<Operation*> bitUsers(oldBit.getUsers().begin(),
-                                             oldBit.getUsers().end());
-      // iterate over the users of the old bit and replace the old bit with the
-      // new bit
-      for (auto* user : bitUsers) {
-        user->replaceUsesOfWith(oldBit, newBit);
+      for (auto& use : llvm::make_early_inc_range(oldBit.getUses())) {
+        use.getOwner()->replaceUsesOfWith(oldBit, newBit);
       }
     }
 
@@ -220,19 +210,15 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
                              dynNegCtrlQubitsValues.end());
 
     // get the static params and paramMask if they exist
-    DenseF64ArrayAttr staticParams = nullptr;
+    auto staticParams = DenseF64ArrayAttr{};
     if (auto optionalParams = op.getStaticParams()) {
       staticParams =
           DenseF64ArrayAttr::get(rewriter.getContext(), optionalParams.value());
-    } else {
-      staticParams = DenseF64ArrayAttr{};
     }
-    DenseBoolArrayAttr paramMask = nullptr;
+    auto paramMask = DenseBoolArrayAttr{};
     if (auto optionalMask = op.getParamsMask()) {
       paramMask =
           DenseBoolArrayAttr::get(rewriter.getContext(), optionalMask.value());
-    } else {
-      paramMask = DenseBoolArrayAttr{};
     }
 
     // create new operation
