@@ -269,16 +269,16 @@ module {
         // CHECK: %[[q_4:.*]] = mqtopt.ry(%[[c_0]]) %[[q_3]] : !mqtopt.Qubit
         // CHECK: %[[q_5:.*]] = mqtopt.rz(%[[c_0]]) %[[q_4]] : !mqtopt.Qubit
 
-        %p0 = arith.constant 3.000000e-01 : f64
+        %cst = arith.constant 3.000000e-01 : f64
         %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
 
-        mqtdyn.u(%p0, %p0, %p0) %q0
-        mqtdyn.u2(%p0, %p0) %q0
-        mqtdyn.p(%p0) %q0
-        mqtdyn.rx(%p0) %q0
-        mqtdyn.ry(%p0) %q0
-        mqtdyn.rz(%p0) %q0
+        mqtdyn.u(%cst, %cst, %cst) %q0
+        mqtdyn.u2(%cst, %cst) %q0
+        mqtdyn.p(%cst) %q0
+        mqtdyn.rx(%cst) %q0
+        mqtdyn.ry(%cst) %q0
+        mqtdyn.rz(%cst) %q0
 
         "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
         return
@@ -298,17 +298,17 @@ module {
         // CHECK: %[[q01_5:.*]]:2 = mqtopt.xxminusyy(%[[c_0]], %[[c_0]]) %[[q01_4]]#0, %[[q01_4]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
         // CHECK: %[[q01_6:.*]]:2 = mqtopt.xxplusyy(%[[c_0]], %[[c_0]]) %[[q01_5]]#0, %[[q01_5]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
 
-        %p0 = arith.constant 3.000000e-01 : f64
+        %cst = arith.constant 3.000000e-01 : f64
         %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
         %q1 = "mqtdyn.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
 
-        mqtdyn.rxx(%p0) %q0, %q1
-        mqtdyn.ryy(%p0) %q0, %q1
-        mqtdyn.rzz(%p0) %q0, %q1
-        mqtdyn.rzx(%p0) %q0, %q1
-        mqtdyn.xxminusyy(%p0, %p0) %q0, %q1
-        mqtdyn.xxplusyy(%p0, %p0) %q0, %q1
+        mqtdyn.rxx(%cst) %q0, %q1
+        mqtdyn.ryy(%cst) %q0, %q1
+        mqtdyn.rzz(%cst) %q0, %q1
+        mqtdyn.rzx(%cst) %q0, %q1
+        mqtdyn.xxminusyy(%cst, %cst) %q0, %q1
+        mqtdyn.xxplusyy(%cst, %cst) %q0, %q1
 
         "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
         return
@@ -407,8 +407,8 @@ module {
         // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01 : f64
         // mqtopt.gphase(%[[c_0]])
 
-        %p0 = arith.constant 3.000000e-01 : f64
-        mqtdyn.gphase(%p0)
+        %cst = arith.constant 3.000000e-01 : f64
+        mqtdyn.gphase(%cst)
         return
     }
 }
@@ -423,8 +423,8 @@ module {
 
         %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-        %p0 = arith.constant 3.000000e-01 : f64
-        mqtdyn.gphase(%p0) ctrl %q0
+        %cst = arith.constant 3.000000e-01 : f64
+        mqtdyn.gphase(%cst) ctrl %q0
         "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
         return
     }
