@@ -9,14 +9,14 @@
 include "mlir/Pass/PassBase.td"
 
 def MQTDynToMQTOpt : Pass<"mqtdyn-to-mqtopt"> {
-  let summary = "Convert MQT's `MQTDyn` to MQT's `MQTOpt` dialect.";
+    let summary = "Convert MQT's `Dyn` to MQT's `Opt` dialect.";
 
-  let description = [{
-      This pass converts all current mqtdyn operations to an equivalent mqtopt operation.
-      To convert them to the opt dialect, the conversion pass keeps an updated map that tracks each dyn qubit
+    let description = [{
+      This pass converts all current MQTDyn operations to an equivalent MQTOpt operation.
+      To convert them to the opt dialect, the conversion pass maintains a map that matches each dyn qubit
       and dyn qubit register to its latest state value when replacing them with an opt operation. These state values
-      are obtained by updating the map with the return values of the newly created opt operations. The mqtopt insert
-      operation is added when matching the dealloc operation of any qubit register. A mqtopt insert operation is then
+      are obtained by updating the map with the return values of the newly created opt operations. The MQTOpt insert
+      operation is added when matching the dealloc operation of any qubit register. An MQTOpt insert operation is then
       created for each qubit that was extracted from the qubit register and placed before the dealloc operation.
    }];
 

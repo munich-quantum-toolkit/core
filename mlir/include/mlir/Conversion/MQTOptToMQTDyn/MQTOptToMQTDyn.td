@@ -9,15 +9,15 @@
 include "mlir/Pass/PassBase.td"
 
 def MQTOptToMQTDyn : Pass<"mqtopt-to-mqtdyn"> {
-  let summary = "Convert MQT's `MQTOpt` to MQT's `MQTDyn` dialect.";
+  let summary = "Convert MQT's `Opt` to MQT's `Dyn` dialect.";
 
   let description = [{
-      This pass converts all current mqtopt operations to an equivalent mqtdyn operation.
-      The result of the converted mqtdyn alloc operation acts as a qubit register reference and replaces the operand of the operation
-      that uses the initial mqtopt qubit register. This reference is then propagated to all subsequent operations that use the state
-      of the initial mqtopt register and replaces their operand. The same applies to the result of the extract operation that acts as a qubit
-      reference and is propagated to all later uses of this qubit. The mqtopt insert operation is deleted as there is no equivalent
-      operation in the mqtdyn dialect. The use of the insert operation's result in any subsequent operation is replaced by the qubit register reference.
+      This pass converts all current MQTOpt operations to an equivalent MQTDyn operation.
+      The result of the converted MQTDyn alloc operation acts as a qubit register reference and replaces the operand of the operation
+      that uses the initial MQTOpt qubit register. This reference is then propagated to all subsequent operations that use the state
+      of the initial MQTOpt register and replaces their operand. The same applies to the result of the extract operation that acts as a qubit
+      reference and is propagated to all later uses of this qubit. The MQTOpt insert operation is deleted as there is no equivalent
+      operation in the MQTDyn dialect. The use of the insert operation's result in any subsequent operation is replaced by the qubit register reference.
    }];
 
   // Define dependent dialects
