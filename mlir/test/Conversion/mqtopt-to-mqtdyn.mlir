@@ -351,3 +351,39 @@ module {
         return
     }
 }
+
+
+
+// -----
+// This test checks if a barrierOp is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertBarrierOp()
+    func.func @testConvertBarrierOp() {
+        // CHECK: mqtdyn.barrier() %[[ANY:.*]]
+
+        %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %q1 = mqtopt.barrier() %q0 : !mqtopt.Qubit
+        %r2 = "mqtopt.insertQubit"(%r1, %q1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%r2) : (!mqtopt.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if a barrierOp with multiple inputs is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertBarrierOpMultipleInputs()
+    func.func @testConvertBarrierOpMultipleInputs() {
+        // CHECK: mqtdyn.barrier() %[[ANY:.*]], %[[ANY:.*]]
+
+        %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %r2, %q1 = "mqtopt.extractQubit"(%r1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %q01_1:2 = mqtopt.barrier() %q0, %q1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %r3 = "mqtopt.insertQubit"(%r2, %q01_1#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        %r4 = "mqtopt.insertQubit"(%r3, %q01_1#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%r4) : (!mqtopt.QubitRegister) -> ()
+        return
+    }
+}

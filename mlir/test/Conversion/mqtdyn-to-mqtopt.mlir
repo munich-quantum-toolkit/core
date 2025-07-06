@@ -372,8 +372,8 @@ module {
 // -----
 // This test checks if a Bell state is converted correctly.
 module {
-    // CHECK-LABEL: func.func @bellState()
-    func.func @bellState() {
+    // CHECK-LABEL: func.func @bellConvertState()
+    func.func @bellConvertState() {
         // CHECK: %[[r_0:.*]] = "mqtopt.allocQubitRegister"
         // CHECK: %[[r_1:.*]], %[[q0_1:.*]] = "mqtopt.extractQubit"(%[[r_0]]) <{index_attr = 0 : i64}>
         // CHECK: %[[r_2:.*]], %[[q1_1:.*]] = "mqtopt.extractQubit"(%[[r_1]]) <{index_attr = 1 : i64}>
@@ -394,6 +394,67 @@ module {
         %m0 = "mqtdyn.measure"(%q0) : (!mqtdyn.Qubit) -> i1
         %m1 = "mqtdyn.measure"(%q1) : (!mqtdyn.Qubit) -> i1
 
+        "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if a barrierOp is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertGPhaseOp()
+    func.func @testConvertGPhaseOp() {
+        // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01 : f64
+        // mqtopt.gphase(%[[c_0]])
+
+        %p0 = arith.constant 3.000000e-01 : f64
+        mqtdyn.gphase(%p0)
+        return
+    }
+}
+
+// -----
+// This test checks if a barrierOp with a controlled qubit is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertGPhaseOpControlled()
+    func.func @testConvertGPhaseOpControlled() {
+        // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01 : f64
+        // CHECK: %[[q_0:.*]] = mqtopt.gphase(%[[c_0]]) ctrl %[[ANY:.*]] :  ctrl !mqtopt.Qubit
+
+        %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+        %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+        %p0 = arith.constant 3.000000e-01 : f64
+        mqtdyn.gphase(%p0) ctrl %q0
+        "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if a barrierOp is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertBarrierOp()
+    func.func @testConvertBarrierOp() {
+        // CHECK: %[[q_0:.*]] = mqtopt.barrier() %[[ANY:.*]] : !mqtopt.Qubit
+
+        %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+        %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+        mqtdyn.barrier() %q0
+        "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
+        return
+    }
+}
+// -----
+// This test checks if a barrierOp with multiple inputs is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertBarrierOpMultipleInputs()
+    func.func @testConvertBarrierOpMultipleInputs() {
+        // CHECK: %[[q01_1:.*]]:2 = mqtopt.barrier() %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
+
+        %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+        %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+        %q1 = "mqtdyn.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+        mqtdyn.barrier() %q0, %q1
         "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
         return
     }
