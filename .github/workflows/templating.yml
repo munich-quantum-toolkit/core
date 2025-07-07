@@ -1,8 +1,12 @@
 name: Templating
 on:
+  schedule:
+    # Run every Monday at 00:00 UTC
+    - cron: "0 0 * * 1"
   pull_request:
-    types: [opened, reopened, synchronize]
-  workflow_dispatch:
+    paths:
+      - ".github/workflows/templating.yml"
+  workflow_dispatch: # Allow manual triggering
 
 jobs:
   render-template:
