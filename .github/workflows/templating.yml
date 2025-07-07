@@ -13,7 +13,13 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - id: create-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
       - uses: munich-quantum-toolkit/templates@add-action
         with:
+          token: ${{ steps.create-token.outputs.token }}
           organization: munich-quantum-toolkit
           repository: core
