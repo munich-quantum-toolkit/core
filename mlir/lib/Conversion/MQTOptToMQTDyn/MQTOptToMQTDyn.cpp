@@ -32,7 +32,6 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 #include <utility>
-#include <vector>
 
 namespace mqt::ir {
 
@@ -63,7 +62,7 @@ struct ConvertMQTOptAlloc final : OpConversionPattern<opt::AllocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(opt::AllocOp op, OpAdaptor adaptor,
+  matchAndRewrite(opt::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     // prepare return type
     const auto& qregType = dyn::QubitRegisterType::get(rewriter.getContext());

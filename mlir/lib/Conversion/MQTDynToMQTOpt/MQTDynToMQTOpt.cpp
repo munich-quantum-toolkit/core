@@ -21,6 +21,7 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <llvm/ADT/DenseMap.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
