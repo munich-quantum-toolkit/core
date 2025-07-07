@@ -41,7 +41,7 @@ using namespace mlir;
 #define GEN_PASS_DEF_MQTOPTTOMQTDYN
 #include "mlir/Conversion/MQTOptToMQTDyn/MQTOptToMQTDyn.h.inc"
 
-class MQTOptToMQTDynTypeConverter : public TypeConverter {
+class MQTOptToMQTDynTypeConverter final : public TypeConverter {
 public:
   explicit MQTOptToMQTDynTypeConverter(MLIRContext* ctx) {
     // Identity conversion
@@ -59,46 +59,41 @@ public:
   }
 };
 
-struct ConvertMQTOptAlloc : public OpConversionPattern<opt::AllocOp> {
+struct ConvertMQTOptAlloc final : OpConversionPattern<opt::AllocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(opt::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // create result type
+    // prepare return type
     const auto& qregType = dyn::QubitRegisterType::get(rewriter.getContext());
 
-    // create new operation
-    auto mqtdynOp = rewriter.create<dyn::AllocOp>(
-        op.getLoc(), qregType, adaptor.getSize(), adaptor.getSizeAttrAttr());
+    // prepare size attribute
+    auto sizeAttr = op.getSizeAttr()
+                        ? rewriter.getI64IntegerAttr(
+                              static_cast<int64_t>(*op.getSizeAttr()))
+                        : IntegerAttr{};
 
-    // replace the old operation with the result of the new operation and delete
-    // the old operation
-    rewriter.replaceOp(op, mqtdynOp);
+    // replace the opt alloc operation with a dyn alloc operation
+    rewriter.replaceOpWithNewOp<dyn::AllocOp>(op, qregType, op.getSize(),
+                                              sizeAttr);
 
     return success();
   }
 };
 
-struct ConvertMQTOptDealloc : public OpConversionPattern<opt::DeallocOp> {
+struct ConvertMQTOptDealloc final : OpConversionPattern<opt::DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(opt::DeallocOp op, OpAdaptor adaptor,
+  matchAndRewrite(const opt::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // create new operation
-    auto mqtdynOp =
-        rewriter.create<dyn::DeallocOp>(op.getLoc(), adaptor.getQreg());
-
-    // replace the old operation with the result of the new operation and delete
-    // the old operation
-    rewriter.replaceOp(op, mqtdynOp);
-
+    rewriter.replaceOpWithNewOp<dyn::DeallocOp>(op, adaptor.getQreg());
     return success();
   }
 };
 
-struct ConvertMQTOptExtract : public OpConversionPattern<opt::ExtractOp> {
+struct ConvertMQTOptExtract final : OpConversionPattern<opt::ExtractOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -114,33 +109,27 @@ struct ConvertMQTOptExtract : public OpConversionPattern<opt::ExtractOp> {
                                                     dynQreg, adaptor.getIndex(),
                                                     adaptor.getIndexAttrAttr());
 
-    const auto& dynQubit = mqtdynOp.getOutQubit();
-
     // replace the results of the old operation with the new results and delete
     // old operation
-    rewriter.replaceOp(op, ValueRange({dynQreg, dynQubit}));
+    rewriter.replaceOp(op, ValueRange({dynQreg, mqtdynOp.getOutQubit()}));
     return success();
   }
 };
 
-struct ConvertMQTOptInsert : public OpConversionPattern<opt::InsertOp> {
+struct ConvertMQTOptInsert final : OpConversionPattern<opt::InsertOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(opt::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-
-    const auto& dynQreg = adaptor.getInQreg();
-
     // replace the result of the old operation with the new result and delete
     // old operation
-    rewriter.replaceOp(op, dynQreg);
-
+    rewriter.replaceOp(op, adaptor.getInQreg());
     return success();
   }
 };
 
-struct ConvertMQTOptMeasure : public OpConversionPattern<opt::MeasureOp> {
+struct ConvertMQTOptMeasure final : OpConversionPattern<opt::MeasureOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -157,19 +146,20 @@ struct ConvertMQTOptMeasure : public OpConversionPattern<opt::MeasureOp> {
     const auto& newBits = mqtdynOp.getOutBits();
 
     // concatenate the dyn qubits and the bits
-    std::vector<Value> newValues(dynQubits.begin(), dynQubits.end());
-    newValues.insert(newValues.end(), newBits.begin(), newBits.end());
+    SmallVector<Value> newValues;
+    newValues.reserve(dynQubits.size() + newBits.size());
+    newValues.append(dynQubits.begin(), dynQubits.end());
+    newValues.append(newBits.begin(), newBits.end());
 
     // replace the results of the old operation with the new results and delete
     // old operation
-    rewriter.replaceOp(op, ValueRange(newValues));
-
+    rewriter.replaceOp(op, newValues);
     return success();
   }
 };
 
 template <typename MQTGateOptOp, typename MQTGateDynOp>
-struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
+struct ConvertMQTOptGateOp final : OpConversionPattern<MQTGateOptOp> {
   using OpConversionPattern<MQTGateOptOp>::OpConversionPattern;
 
   LogicalResult
@@ -181,26 +171,25 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
     const auto& dynNegCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
     // append them to a single vector
-    std::vector<Value> allDynInputQubits(dynInQubitsValues.begin(),
-                                         dynInQubitsValues.end());
-    allDynInputQubits.insert(allDynInputQubits.end(),
-                             dynPosCtrlQubitsValues.begin(),
-                             dynPosCtrlQubitsValues.end());
-    allDynInputQubits.insert(allDynInputQubits.end(),
-                             dynNegCtrlQubitsValues.begin(),
-                             dynNegCtrlQubitsValues.end());
+    SmallVector<Value> dynQubitsValues;
+    dynQubitsValues.reserve(dynInQubitsValues.size() +
+                            dynPosCtrlQubitsValues.size() +
+                            dynNegCtrlQubitsValues.size());
+    dynQubitsValues.append(dynInQubitsValues.begin(), dynInQubitsValues.end());
+    dynQubitsValues.append(dynPosCtrlQubitsValues.begin(),
+                           dynPosCtrlQubitsValues.end());
+    dynQubitsValues.append(dynNegCtrlQubitsValues.begin(),
+                           dynNegCtrlQubitsValues.end());
 
     // get the static params and paramMask if they exist
-    auto staticParams = DenseF64ArrayAttr{};
-    if (auto optionalParams = op.getStaticParams()) {
-      staticParams =
-          DenseF64ArrayAttr::get(rewriter.getContext(), optionalParams.value());
-    }
-    auto paramMask = DenseBoolArrayAttr{};
-    if (auto optionalMask = op.getParamsMask()) {
-      paramMask =
-          DenseBoolArrayAttr::get(rewriter.getContext(), optionalMask.value());
-    }
+    auto staticParams = op.getStaticParams()
+                            ? DenseF64ArrayAttr::get(rewriter.getContext(),
+                                                     *op.getStaticParams())
+                            : DenseF64ArrayAttr{};
+    auto paramMask = op.getParamsMask()
+                         ? DenseBoolArrayAttr::get(rewriter.getContext(),
+                                                   *op.getParamsMask())
+                         : DenseBoolArrayAttr{};
 
     // create new operation
     rewriter.create<MQTGateDynOp>(
@@ -209,13 +198,13 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
 
     // replace the results of the old operation with the new results and delete
     // old operation
-    rewriter.replaceOp(op, allDynInputQubits);
+    rewriter.replaceOp(op, dynQubitsValues);
 
     return success();
   }
 };
 
-struct MQTOptToMQTDyn : impl::MQTOptToMQTDynBase<MQTOptToMQTDyn> {
+struct MQTOptToMQTDyn final : impl::MQTOptToMQTDynBase<MQTOptToMQTDyn> {
   using MQTOptToMQTDynBase::MQTOptToMQTDynBase;
   void runOnOperation() override {
     MLIRContext* context = &getContext();
@@ -278,12 +267,12 @@ struct MQTOptToMQTDyn : impl::MQTOptToMQTDynBase<MQTOptToMQTDyn> {
     // conversion of mqtopt types in func.return
     populateReturnOpTypeConversionPattern(patterns, typeConverter);
     target.addDynamicallyLegalOp<func::ReturnOp>(
-        [&](func::ReturnOp op) { return typeConverter.isLegal(op); });
+        [&](const func::ReturnOp op) { return typeConverter.isLegal(op); });
 
     // conversion of mqtopt types in func.call
     populateCallOpTypeConversionPattern(patterns, typeConverter);
     target.addDynamicallyLegalOp<func::CallOp>(
-        [&](func::CallOp op) { return typeConverter.isLegal(op); });
+        [&](const func::CallOp op) { return typeConverter.isLegal(op); });
 
     // conversion of mqtopt types in control-flow ops; e.g. cf.br
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
