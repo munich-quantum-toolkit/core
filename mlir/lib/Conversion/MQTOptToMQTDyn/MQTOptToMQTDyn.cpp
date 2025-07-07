@@ -10,7 +10,6 @@
 
 // macro to add the conversion pattern from any opt gate operation to the same
 // gate operation in the dyn dialect
-
 #define ADD_CONVERT_PATTERN(gate)                                              \
   patterns                                                                     \
       .add<ConvertMQTOptGateOp<::mqt::ir::opt::gate, ::mqt::ir::dyn::gate>>(   \
@@ -25,7 +24,6 @@
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>

@@ -26,7 +26,6 @@
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -259,7 +258,7 @@ struct ConvertMQTDynMeasure : public OpConversionPattern<dyn::MeasureOp> {
       optQubits.emplace_back(qubitMapRef[dynQubit]);
     }
     // create the result types
-    std::vector<Type> qubitTypes(optQubits.size(), qubitType);
+    const std::vector<Type> qubitTypes(optQubits.size(), qubitType);
 
     // create new operation
     auto mqtoptOp = rewriter.create<opt::MeasureOp>(
