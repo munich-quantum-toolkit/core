@@ -10,6 +10,7 @@
 
 // macro to add the conversion pattern from any opt gate operation to the same
 // gate operation in the dyn dialect
+
 #define ADD_CONVERT_PATTERN(gate)                                              \
   patterns                                                                     \
       .add<ConvertMQTOptGateOp<::mqt::ir::opt::gate, ::mqt::ir::dyn::gate>>(   \
@@ -20,7 +21,6 @@
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
-#include <cstddef>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -29,6 +29,7 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -73,7 +74,8 @@ struct ConvertMQTOptAlloc : public OpConversionPattern<opt::AllocOp> {
     auto mqtdynOp = rewriter.create<dyn::AllocOp>(
         op.getLoc(), qregType, adaptor.getSize(), adaptor.getSizeAttrAttr());
 
-    // replace old operation with new operation
+    // replace the old operation with the result of the new operation and delete
+    // the old operation
     rewriter.replaceOp(op, mqtdynOp);
 
     return success();
@@ -90,7 +92,8 @@ struct ConvertMQTOptDealloc : public OpConversionPattern<opt::DeallocOp> {
     auto mqtdynOp =
         rewriter.create<dyn::DeallocOp>(op.getLoc(), adaptor.getQreg());
 
-    // replace old operation with new operation
+    // replace the old operation with the result of the new operation and delete
+    // the old operation
     rewriter.replaceOp(op, mqtdynOp);
 
     return success();
@@ -113,17 +116,11 @@ struct ConvertMQTOptExtract : public OpConversionPattern<opt::ExtractOp> {
                                                     dynQreg, adaptor.getIndex(),
                                                     adaptor.getIndexAttrAttr());
 
-    const auto& optQubit = op.getOutQubit();
     const auto& dynQubit = mqtdynOp.getOutQubit();
-    const auto& optQreg = op.getOutQreg();
 
-    // update the operands of the opt users
-    (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
-    (*optQreg.getUsers().begin())->replaceUsesOfWith(optQreg, dynQreg);
-
-    // erase old operation
-    rewriter.eraseOp(op);
-
+    // replace the results of the old operation with the new results and delete
+    // old operation
+    rewriter.replaceOp(op, ValueRange({dynQreg, dynQubit}));
     return success();
   }
 };
@@ -135,14 +132,11 @@ struct ConvertMQTOptInsert : public OpConversionPattern<opt::InsertOp> {
   matchAndRewrite(opt::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
 
-    const auto& optQreg = op.getOutQreg();
     const auto& dynQreg = adaptor.getInQreg();
 
-    // update the operands of the opt register users
-    (*optQreg.getUsers().begin())->replaceUsesOfWith(optQreg, dynQreg);
-
-    // erase old operation
-    rewriter.eraseOp(op);
+    // replace the result of the old operation with the new result and delete
+    // old operation
+    rewriter.replaceOp(op, dynQreg);
 
     return success();
   }
@@ -157,7 +151,6 @@ struct ConvertMQTOptMeasure : public OpConversionPattern<opt::MeasureOp> {
 
     const auto& oldBits = op.getOutBits();
     const auto& dynQubits = adaptor.getInQubits();
-    const auto& optQubits = op.getOutQubits();
 
     // create new operation
     auto mqtdynOp = rewriter.create<dyn::MeasureOp>(
@@ -165,23 +158,13 @@ struct ConvertMQTOptMeasure : public OpConversionPattern<opt::MeasureOp> {
 
     const auto& newBits = mqtdynOp.getOutBits();
 
-    // iterate over the qubits and bits
-    for (size_t i = 0; i < optQubits.size(); i++) {
-      const auto& dynQubit = dynQubits[i];
-      const auto& optQubit = optQubits[i];
-      const auto& oldBit = oldBits[i];
-      const auto& newBit = newBits[i];
+    // concatenate the dyn qubits and the bits
+    std::vector<Value> newValues(dynQubits.begin(), dynQubits.end());
+    newValues.insert(newValues.end(), newBits.begin(), newBits.end());
 
-      // update the operands of the opt qubit user
-      (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
-
-      for (auto& use : llvm::make_early_inc_range(oldBit.getUses())) {
-        use.getOwner()->replaceUsesOfWith(oldBit, newBit);
-      }
-    }
-
-    // erase the previous operation
-    rewriter.eraseOp(op);
+    // replace the results of the old operation with the new results and delete
+    // old operation
+    rewriter.replaceOp(op, ValueRange(newValues));
 
     return success();
   }
@@ -226,19 +209,9 @@ struct ConvertMQTOptGateOp : public OpConversionPattern<MQTGateOptOp> {
         op.getLoc(), staticParams, paramMask, op.getParams(), dynInQubitsValues,
         dynPosCtrlQubitsValues, dynNegCtrlQubitsValues);
 
-    const auto& optResults = op.getAllOutQubits();
-
-    // iterate over all opt qubits
-    for (size_t i = 0; i < optResults.size(); i++) {
-      const auto& optQubit = optResults[i];
-      const auto& dynQubit = allDynInputQubits[i];
-
-      // get a view of the opt qubit users that can be modified
-      (*optQubit.getUsers().begin())->replaceUsesOfWith(optQubit, dynQubit);
-    }
-
-    // erase the previous operation
-    rewriter.eraseOp(op);
+    // replace the results of the old operation with the new results and delete
+    // old operation
+    rewriter.replaceOp(op, allDynInputQubits);
 
     return success();
   }

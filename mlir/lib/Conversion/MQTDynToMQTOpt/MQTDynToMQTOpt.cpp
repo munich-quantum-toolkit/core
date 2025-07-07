@@ -99,8 +99,8 @@ struct ConvertMQTDynAlloc : public OpConversionPattern<dyn::AllocOp> {
     // put the pair of the dyn register and the latest opt register in the map
     qregMap->try_emplace(dynQreg, optQreg);
 
-    // replace the old register use with the new register otherwise
-    // there will be an unrealized conversion
+    // replace the old operation with the result of the new operation and delete
+    // the old operation
     rewriter.replaceOp(op, mqtoptOp);
 
     return success();
@@ -165,7 +165,8 @@ struct ConvertMQTDynDealloc : public OpConversionPattern<dyn::DeallocOp> {
     qregMap->erase(dynQreg);
     qregQubitsMap->erase(dynQreg);
 
-    // erase old operation
+    // replace the old operation with the result of the new operation and delete
+    // the old operation
     rewriter.replaceOp(op, mqtoptOp);
 
     return success();
@@ -223,8 +224,8 @@ struct ConvertMQTDynExtract : public OpConversionPattern<dyn::ExtractOp> {
     // extracted from the register
     (*qregQubitsMap)[dynQreg].emplace_back(dynQubit);
 
-    // replace the old operation result with the new qubit otherwise there will
-    // be an unrealized conversion
+    // replace the old operation result with the new result and delete
+    // old operation
     rewriter.replaceOp(op, optQubit);
 
     return success();
@@ -252,36 +253,31 @@ struct ConvertMQTDynMeasure : public OpConversionPattern<dyn::MeasureOp> {
     auto& qubitMapRef = *qubitMap;
 
     std::vector<Value> optQubits;
-    // get the latest opt qubit from the map and add them and their type to the
-    // vectors
+
+    // get the latest opt qubit from the map and add them to the vector
     for (const auto& dynQubit : dynQubits) {
       optQubits.emplace_back(qubitMapRef[dynQubit]);
     }
+    // create the result types
     std::vector<Type> qubitTypes(optQubits.size(), qubitType);
+
     // create new operation
     auto mqtoptOp = rewriter.create<opt::MeasureOp>(
         op.getLoc(), qubitTypes, op.getOutBits().getTypes(), optQubits);
 
     const auto& outOptQubits = mqtoptOp.getOutQubits();
-    const auto& oldBits = op.getOutBits();
     const auto& newBits = mqtoptOp.getOutBits();
 
-    // iterate over all qubits and bits
+    // iterate over all qubits
     for (size_t i = 0; i < dynQubits.size(); i++) {
 
       // update the latest opt qubit of the initial dyn qubit
       qubitMapRef[dynQubits[i]] = outOptQubits[i];
-
-      const auto& oldBit = oldBits[i];
-      const auto& newBit = newBits[i];
-
-      for (auto& use : llvm::make_early_inc_range(oldBit.getUses())) {
-        use.getOwner()->replaceUsesOfWith(oldBit, newBit);
-      }
     }
 
-    // erase old operation
-    rewriter.eraseOp(op);
+    // replace the old operation results with the new bits and delete
+    // old operation
+    rewriter.replaceOp(op, newBits);
 
     return success();
   }
