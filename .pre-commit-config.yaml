@@ -18,7 +18,7 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
-      - id: check-case-conflict
+      - id: check-merge-conflict
         args: ["--assume-in-merge"]
     fail_fast: true
 
