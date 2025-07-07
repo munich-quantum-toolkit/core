@@ -34,11 +34,11 @@ def test_loading_quantum_computation() -> None:
 def test_loading_file() -> None:
     """Test whether importing a simple QASM file works."""
     qasm = "qreg q[2];\ncreg c[2];\nh q[0];\ncx q[0], q[1];\nmeasure q -> c;\n"
-    with Path("test.qasm").open("w", encoding="utf-8") as f:
+    with Path("test_1.qasm").open("w", encoding="utf-8") as f:
         f.write(qasm)
 
     # load the file
-    qc = load("test.qasm")
+    qc = load("test_1.qasm")
     print(qc)
 
     # check the result
@@ -48,13 +48,13 @@ def test_loading_file() -> None:
     assert qasm in qc_qasm
 
     # remove the file
-    Path("test.qasm").unlink()
+    Path("test_1.qasm").unlink()
 
 
 def test_loading_file_from_path() -> None:
     """Test whether importing a simple QASM file works."""
     qasm = "qreg q[2];\ncreg c[2];\nh q[0];\ncx q[0], q[1];\nmeasure q -> c;\n"
-    path = Path("test.qasm")
+    path = Path("test_2.qasm")
     with path.open("w", encoding="utf-8") as f:
         f.write(qasm)
 

@@ -92,6 +92,9 @@ build.targets = [
   "mqt-core-dd-bindings",
 ]
 
+# Only install the mqt-core library and Python package components
+install.components = ["mqt-core_Python", "mqt-core_Development", "mqt-core_Runtime"]
+
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
 sdist.include = ["python/mqt/core/_version.py"]
 sdist.exclude = [
@@ -140,7 +143,12 @@ ignore = [
 
 [tool.pytest.ini_options]
 minversion = "7.2"
-addopts = ["-ra", "--strict-markers", "--strict-config"]
+addopts = [
+  "-ra",
+  "--strict-markers",
+  "--strict-config",
+  "--numprocesses=auto", # Automatically use all available CPU cores for parallel testing
+]
 xfail_strict = true
 filterwarnings = [
   "error",
@@ -173,7 +181,9 @@ report.exclude_also = [
   'def __dir__()',  # Ignore __dir__ method that exists mainly for better IDE support
   '@overload'  # Overloads are only for static typing
 ]
-
+run.disable_warnings = [
+  "no-sysmon",
+]
 
 [tool.mypy]
 files = ["python/mqt", "test/python", "noxfile.py"]
@@ -323,6 +333,8 @@ test = [
   "pytest>=8.3.5",
   "pytest-console-scripts>=1.4.1",
   "pytest-cov>=6.1.1",
+  "pytest-sugar>=1.0.0",
+  "pytest-xdist>=3.7.0",
   "pandas[output-formatting]>=2.1.2",
   "pandas[output-formatting]>=2.2.3; python_version >= '3.13'",
   "qiskit[qasm3-import]>=1.0.0",
