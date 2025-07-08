@@ -162,6 +162,24 @@ module {
 }
 
 // -----
+// This test checks if global phase operations are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testGPhaseOp
+    func.func @testGPhaseOp() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: %[[Q_1:.*]] = mqtopt.gphase(%[[C0_F64]]) ctrl %[[ANY:.*]] : !mqtopt.Qubit
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        %q_1 = mqtopt.gphase(%c0_f64) ctrl %q_0 : ctrl !mqtopt.Qubit
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
 // This test checks if single qubit gates are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testSingleQubitOp
