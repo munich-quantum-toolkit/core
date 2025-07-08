@@ -53,7 +53,7 @@ struct ConvertQuakeAlloca
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(cudaq::quake::quake_AllocaOp op, OpAdaptor adaptor,
+  matchAndRewrite(cudaq::quake::AllocaOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Create the new operation
     auto mqtDynOp = rewriter.create<::mqt::ir::dyn::AllocOp>(op.getLoc(),
