@@ -13,7 +13,7 @@ module {
   func.func @testAlloca() {
     // CHECK: %[[ANY:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}>
     %qubit = quake.alloca !quake.ref
-    
+
     return
   }
 }
