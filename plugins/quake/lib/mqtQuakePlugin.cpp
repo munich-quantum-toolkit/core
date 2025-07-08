@@ -10,8 +10,8 @@
 
 #include "mlir/Conversion/MQTDynToQuake/MQTDynToQuake.h"
 #include "mlir/Conversion/QuakeToMQTDyn/QuakeToMQTDyn.h"
-#include "mlir/Dialect/MQTOpt/IR/MQTDynDialect.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
+#include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
+#include "mlir/Dialect/MQTDyn/Transforms/Passes.h"
 
 #include <llvm/Config/llvm-config.h>
 #include <llvm/Support/Compiler.h>
@@ -25,7 +25,7 @@ mlirGetDialectPluginInfo() {
   return {MLIR_PLUGIN_API_VERSION, "MQTDyn", LLVM_VERSION_STRING,
           [](DialectRegistry* registry) {
             registry->insert<::mqt::ir::dyn::MQTDynDialect>();
-            mqt::ir::opt::registerMQTDynPasses();
+            mqt::ir::dyn::registerMQTDynPasses();
             mqt::ir::conversions::registerMQTDynToQuake();
             mqt::ir::conversions::registerQuakeToMQTDyn();
           }};
@@ -33,7 +33,7 @@ mlirGetDialectPluginInfo() {
 
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo mlirGetPassPluginInfo() {
   return {MLIR_PLUGIN_API_VERSION, "MQTDynPasses", LLVM_VERSION_STRING, []() {
-            mqt::ir::opt::registerMQTDynPasses();
+            mqt::ir::dyn::registerMQTDynPasses();
             mqt::ir::conversions::registerMQTDynToQuake();
             mqt::ir::conversions::registerQuakeToMQTDyn();
           }};
