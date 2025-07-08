@@ -59,21 +59,13 @@ else()
   list(APPEND FETCH_PACKAGES boost_mp)
 endif()
 
-# Abseil is required by GTest and Protobuf. To avoid version conflicts, we add this dependency
-# centrally.
-set(ABSL_VERSION
-    20250512.1
-    CACHE STRING "abseil-cpp version")
-set(ABSL_URL https://github.com/abseil/abseil-cpp/archive/refs/tags/${ABSL_VERSION}.tar.gz)
-set(ABSL_MSVC_STATIC_RUNTIME
-    OFF
-    CACHE BOOL "" FORCE)
-FetchContent_Declare(abseil-cpp URL ${ABSL_URL} FIND_PACKAGE_ARGS ${ABSL_VERSION} CONFIG NAMES absl)
-list(APPEND FETCH_PACKAGES abseil-cpp)
-
 if(BUILD_MQT_CORE_TESTS)
   set(gtest_force_shared_crt
       ON
+      CACHE BOOL "" FORCE)
+  # Disable the install instructions for GTest, as we do not need them.
+  set(INSTALL_GTEST
+      OFF
       CACHE BOOL "" FORCE)
   set(GTEST_VERSION
       1.17.0
@@ -82,6 +74,21 @@ if(BUILD_MQT_CORE_TESTS)
   FetchContent_Declare(googletest URL ${GTEST_URL} FIND_PACKAGE_ARGS ${GTEST_VERSION} NAMES GTest)
   list(APPEND FETCH_PACKAGES googletest)
 endif()
+
+# Abseil is required by protobuf.
+set(ABSL_VERSION
+    20250512.1
+    CACHE STRING "abseil-cpp version")
+set(ABSL_URL https://github.com/abseil/abseil-cpp/archive/refs/tags/${ABSL_VERSION}.tar.gz)
+set(ABSL_MSVC_STATIC_RUNTIME
+    OFF
+    CACHE BOOL "" FORCE)
+# Silence warnings from Abseil headers by marking them as system includes.
+set(ABSL_USE_SYSTEM_INCLUDES
+    ON
+    CACHE BOOL "" FORCE)
+FetchContent_Declare(abseil-cpp URL ${ABSL_URL} FIND_PACKAGE_ARGS ${ABSL_VERSION} CONFIG NAMES absl)
+list(APPEND FETCH_PACKAGES abseil-cpp)
 
 set(Protobuf_VERSION
     31.1
@@ -113,6 +120,10 @@ set(protobuf_MSVC_STATIC_RUNTIME
 set(protobuf_INSTALL
     OFF
     CACHE BOOL "" FORCE)
+# Enable ccache support
+set(protobuf_ALLOW_CCACHE
+    ON
+    CACHE BOOL "" FORCE)
 FetchContent_Declare(protobuf URL ${Protobuf_URL} FIND_PACKAGE_ARGS ${Protobuf_VERSION} CONFIG)
 list(APPEND FETCH_PACKAGES protobuf)
 
@@ -142,7 +153,8 @@ list(APPEND FETCH_PACKAGES spdlog)
 
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
-# Mark the plog includes as SYSTEM includes to suppress warnings.
+
+# Mark the protobuf includes as SYSTEM includes to suppress warnings.
 get_target_property(PROTOC_IID protoc INTERFACE_INCLUDE_DIRECTORIES)
 set_target_properties(protoc PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${PROTOC_IID}")
 get_target_property(PROTOBUF_IID libprotobuf INTERFACE_INCLUDE_DIRECTORIES)
