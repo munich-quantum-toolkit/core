@@ -1,8 +1,5 @@
 name: Templating
 on:
-  schedule:
-    # Run every Monday at 00:00 UTC
-    - cron: "0 0 * * 1"
   pull_request:
     paths:
       - ".github/workflows/templating.yml"
@@ -24,5 +21,5 @@ jobs:
       - uses: munich-quantum-toolkit/templates@main
         with:
           token: ${{ steps.create-token.outputs.token }}
-          organization: munich-quantum-toolkit
-          repository: core
+          organization: ${{ github.repository_owner }}
+          repository: ${{ github.event.repository.name }}
