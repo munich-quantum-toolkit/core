@@ -53,8 +53,8 @@ if(NOT TARGET ${TARGET_NAME})
   # Link Protobuf, QDMI, spdlog, and project warnings
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC protobuf::libprotobuf spdlog::spdlog
-    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
+    PUBLIC protobuf::libprotobuf
+    PRIVATE spdlog::spdlog)
 
   # set versioning information
   set_target_properties(
@@ -84,10 +84,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PRIVATE App.cpp)
 
   # Link Generator library
-  target_link_libraries(
-    ${TARGET_NAME}
-    PUBLIC MQT::CoreNaDeviceGen
-    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreNaDeviceGen spdlog::spdlog)
 
   # set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME
@@ -154,8 +151,8 @@ if(NOT TARGET ${TARGET_NAME})
   # add link libraries
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC qdmi::qdmi spdlog::spdlog
-    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
+    PUBLIC qdmi::qdmi
+    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
 
   # set c++ standard
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
