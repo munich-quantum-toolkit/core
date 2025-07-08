@@ -97,6 +97,23 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
     }];
 }
 
+class NoTargetUnitaryOp<string mnemonic, list<Trait> traits = []> :
+    UnitaryOp<mnemonic, traits # [AttrSizedOperandSegments, UnitaryInterface]> {
+    let arguments = (ins
+        OptionalAttr<DenseF64ArrayAttr>:$static_params,
+        OptionalAttr<DenseBoolArrayAttr>:$params_mask,
+        Variadic<F64>:$params,
+        Variadic<QubitType>:$pos_ctrl_in_qubits,
+        Variadic<QubitType>:$neg_ctrl_in_qubits
+    );
+
+    let results = (outs);
+
+    let assemblyFormat = [{
+        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
+    }];
+}
+
 include "mlir/Dialect/MQTDyn/IR/MQTDynStdOps.td"
 
 def MeasureOp : GateOp<"measure", [MatchingMeasureInOuts]> {
