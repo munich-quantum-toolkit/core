@@ -5,3 +5,15 @@
 // SPDX-License-Identifier: MIT
 //
 // Licensed under the MIT License
+
+// RUN: quantum-opt %s --quake-to-mqtdyn | FileCheck %s
+
+module {
+  // CHECK-LABEL: func @testAlloca()
+  func.func @testAlloca() {
+    // CHECK: %[[ANY:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}>
+    %qubit = quake.alloca !quake.ref
+    
+    return
+  }
+}
