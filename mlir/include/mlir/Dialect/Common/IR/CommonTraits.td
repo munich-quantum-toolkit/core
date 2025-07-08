@@ -19,7 +19,6 @@ class TargetArity<int N>
     let cppNamespace = "::mqt::ir::common";
 }
 
-def NoTarget : TargetArity<0>;
 def OneTarget : TargetArity<1>;
 def TwoTarget : TargetArity<2>;
 
