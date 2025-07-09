@@ -10,13 +10,13 @@
 
 #include "na/device/Generator.hpp"
 #include "na/device/device.pb.h"
-#include "spdlog/spdlog.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <iostream>
 #include <optional>
+#include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -29,7 +29,8 @@ namespace {
  */
 auto printUsage(const std::string& programName) -> void {
   std::cout
-      << "Generator of a header file from a JSON file for neutral atom QDMI\n"
+      << "Generator for turning neutral atom computer JSON specifications into "
+         "header files to be used as part of a neutral atom QDMI device "
          "implementation.\n"
          "\n"
          "Usage: "

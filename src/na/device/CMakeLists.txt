@@ -50,7 +50,7 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}/na/device/Generator.hpp
            ${PROTO_HDR})
 
-  # Link Protobuf, QDMI, spdlog, and project warnings
+  # Link Protobuf, spdlog, and project warnings
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC protobuf::libprotobuf
