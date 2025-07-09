@@ -18,9 +18,9 @@ requires = [
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "mqt-catalyst-plugin"
+name = "mqt-core-catalyst-plugin"
 version = "0.1.0"
-description = "The Munich Quantum Toolkit's Catalyst MLIR Plugin"
+description = "The MQT Core Catalyst MLIR Plugin"
 readme = "README.md"
 authors = [
     { name = "Patrick Hopf", email = "patrick.hopf@tum.de" },
@@ -100,7 +100,7 @@ build-dir = "build/{wheel_tag}/{build_type}"
 
 # All components to install
 install.components = [
-  "mqt-catalyst_Plugin",
+  "mqt-core-catalyst_Plugin",
 ]
 
 # We are not building a CPython extension, so the produced wheel will work with any Python version

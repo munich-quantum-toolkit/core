@@ -20,8 +20,10 @@
 
 add_subdirectory(Conversion)
 
+set(TARGET_NAME mqt-core-catalyst-plugin)
+
 add_llvm_library(
-  mqt-catalyst-plugin
+  ${TARGET_NAME}
   MODULE
   mqt-plugin.cpp
   LINK_LIBS
@@ -46,6 +48,6 @@ list(
 
 # install directive for scikit-build-core
 install(
-  TARGETS mqt-catalyst-plugin
+  TARGETS ${TARGET_NAME}
   DESTINATION .
-  COMPONENT mqt-catalyst_Plugin)
+  COMPONENT mqt-core-catalyst_Plugin)

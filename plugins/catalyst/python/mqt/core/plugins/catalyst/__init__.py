@@ -15,7 +15,6 @@ from importlib import resources
 from pathlib import Path
 
 import pennylane as qml
-
 from catalyst.passes import PassPlugin
 
 
@@ -43,7 +42,7 @@ def get_catalyst_plugin_abs_path() -> Path:
 
     # First check in the package resources
     for file in resources.files("mqt.core.plugins.catalyst").iterdir():
-        if "mqt-catalyst-plugin" in file.name:
+        if "mqt-core-catalyst-plugin" in file.name:
             return Path(str(file)).resolve()
 
     # Then check in site-packages
@@ -53,7 +52,7 @@ def get_catalyst_plugin_abs_path() -> Path:
         site_path = Path(site_dir) / "mqt/core/plugins/catalyst"
         if site_path.exists():
             for file in site_path.iterdir():
-                if "mqt-catalyst-plugin" in file.name:
+                if "mqt-core-catalyst-plugin" in file.name:
                     return file.resolve()
 
     msg = f"Could not locate catalyst plugin library with extension {ext}"
