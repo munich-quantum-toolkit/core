@@ -110,6 +110,7 @@ sdist.exclude = [
   "**/test",
 ]
 
+
 [tool.check-sdist]
 git-only = [
   "test/*",
@@ -132,7 +133,7 @@ log_cli_level = "INFO"
 testpaths = ["test/python"]
 
 [tool.coverage]
-run.source = ["mqt.catalyst_plugin"]
+run.source = ["mqt.core.plugins.catalyst"]
 run.omit = []
 report.exclude_also = [
   '\.\.\.',
@@ -216,9 +217,6 @@ namespace-packages = ["mqt"]
 preview = true
 unsafe-fixes = true
 src = ["python"]
-exclude = [
-  "plugins/catalyst",
-]
 
 
 [tool.ruff.lint]
