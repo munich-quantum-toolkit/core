@@ -4,11 +4,11 @@ on:
     branches:
       - main
     paths:
-      - "mlir/**"
+      - "plugins/**"
   pull_request:
     paths:
-      - "mlir/**"
-      - ".github/workflows/ci_mlir.yml"
+      - "plugins/**"
+      - ".github/workflows/ci_mlir_plugin.yml"
   merge_group:
   workflow_dispatch:
 
