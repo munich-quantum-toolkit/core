@@ -89,7 +89,9 @@ set(BUILD_MQT_CORE_SHARED_LIBS
 set(BUILD_MQT_CORE_MLIR
     ON
     CACHE BOOL "Build MQT Core MLIR support")
-
+set(CMAKE_POSITION_INDEPENDENT_CODE
+    ON
+    CACHE BOOL "Enable position independent code (PIC) for MQT Core")
 if(NOT PROJECT_IS_TOP_LEVEL)
   FetchContent_Declare(mqt-core SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." FIND_PACKAGE_ARGS
                                 ${MQT_CORE_MINIMUM_VERSION})
