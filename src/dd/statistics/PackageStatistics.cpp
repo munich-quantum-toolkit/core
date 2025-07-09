@@ -40,13 +40,12 @@ static constexpr auto M_EDGE_MEMORY_MIB =
 static constexpr auto D_EDGE_MEMORY_MIB =
     static_cast<double>(sizeof(Edge<dNode>)) / static_cast<double>(1ULL << 20U);
 
-double computeActiveMemoryMiB(const Package& package) {
-  const auto vActiveEntries =
-      static_cast<double>(package.vUniqueTable.getNumActiveEntries());
-  const auto mActiveEntries =
-      static_cast<double>(package.mUniqueTable.getNumActiveEntries());
-  const auto dActiveEntries =
-      static_cast<double>(package.dUniqueTable.getNumActiveEntries());
+double computeActiveMemoryMiB(Package& package) {
+  const auto [vectorNodes, matrixNodes, densityNodes, realNumbers] =
+      package.computeActiveCounts();
+  const auto vActiveEntries = static_cast<double>(vectorNodes);
+  const auto mActiveEntries = static_cast<double>(matrixNodes);
+  const auto dActiveEntries = static_cast<double>(densityNodes);
 
   const auto vMemoryForNodes = vActiveEntries * V_NODE_MEMORY_MIB;
   const auto mMemoryForNodes = mActiveEntries * M_NODE_MEMORY_MIB;
@@ -60,8 +59,7 @@ double computeActiveMemoryMiB(const Package& package) {
   const auto memoryForEdges =
       vMemoryForEdges + mMemoryForEdges + dMemoryForEdges;
 
-  const auto activeRealNumbers =
-      static_cast<double>(package.cUniqueTable.getStats().numActiveEntries);
+  const auto activeRealNumbers = static_cast<double>(realNumbers);
   const auto memoryForRealNumbers = activeRealNumbers * REAL_NUMBER_MEMORY_MIB;
 
   return memoryForNodes + memoryForEdges + memoryForRealNumbers;
@@ -94,29 +92,48 @@ double computePeakMemoryMiB(const Package& package) {
   return memoryForNodes + memoryForEdges + memoryForRealNumbers;
 }
 
-nlohmann::basic_json<> getStatistics(const Package& package,
+nlohmann::basic_json<> getStatistics(Package& package,
                                      const bool includeIndividualTables) {
   nlohmann::basic_json<> j;
 
   j["data_structure"] = getDataStructureStatistics();
 
+  const auto [activeVectorNodes, activeMatrixNodes, activeDensityNodes,
+              activeRealNumbers] = package.computeActiveCounts();
+
   auto& vector = j["vector"];
-  vector["unique_table"] =
+  auto& vectorUniqueTable = vector["unique_table"];
+  vectorUniqueTable =
       package.vUniqueTable.getStatsJson(includeIndividualTables);
+  if (vectorUniqueTable != "unused") {
+    vectorUniqueTable["total"]["num_active_entries"] = activeVectorNodes;
+  }
   vector["memory_manager"] = package.vMemoryManager.getStats().json();
 
   auto& matrix = j["matrix"];
-  matrix["unique_table"] =
+  auto& matrixUniqueTable = matrix["unique_table"];
+  matrixUniqueTable =
       package.mUniqueTable.getStatsJson(includeIndividualTables);
+  if (matrixUniqueTable != "unused") {
+    matrixUniqueTable["total"]["num_active_entries"] = activeMatrixNodes;
+  }
   matrix["memory_manager"] = package.mMemoryManager.getStats().json();
 
   auto& densityMatrix = j["density_matrix"];
-  densityMatrix["unique_table"] =
+  auto& densityUniqueTable = densityMatrix["unique_table"];
+  densityUniqueTable =
       package.dUniqueTable.getStatsJson(includeIndividualTables);
+  if (densityUniqueTable != "unused") {
+    densityUniqueTable["total"]["num_active_entries"] = activeDensityNodes;
+  }
   densityMatrix["memory_manager"] = package.dMemoryManager.getStats().json();
 
   auto& realNumbers = j["real_numbers"];
-  realNumbers["unique_table"] = package.cUniqueTable.getStats().json();
+  auto& realNumbersUniqueTable = realNumbers["unique_table"];
+  realNumbersUniqueTable = package.cUniqueTable.getStats().json();
+  if (realNumbersUniqueTable != "unused") {
+    realNumbersUniqueTable["num_active_entries"] = activeRealNumbers;
+  }
   realNumbers["memory_manager"] = package.cMemoryManager.getStats().json();
 
   auto& computeTables = j["compute_tables"];
@@ -258,11 +275,11 @@ nlohmann::basic_json<> getDataStructureStatistics() {
   return j;
 }
 
-std::string getStatisticsString(const Package& package) {
+std::string getStatisticsString(Package& package) {
   return getStatistics(package).dump(2U);
 }
 
-void printStatistics(const Package& package, std::ostream& os) {
+void printStatistics(Package& package, std::ostream& os) {
   os << getStatisticsString(package);
 }
 } // namespace dd
