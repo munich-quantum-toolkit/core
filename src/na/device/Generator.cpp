@@ -33,8 +33,8 @@
 namespace na {
 namespace {
 /**
- * @brief Populates all array fields of the JSON object with one default entry.
- * @param device is the JSON object representing the device.
+ * @brief Populates all array fields in the device object with default values.
+ * @param device is the device object to populate.
  * @note This is a recursive auxiliary function used by @ref writeJSONSchema.
  */
 auto populateArrayFields(Device& device) -> void {
@@ -73,16 +73,16 @@ auto populateArrayFields(Device& device) -> void {
 
 /**
  * Computes the time unit factor based on the device configuration.
- * @param device is the Protobuf message containing the device configuration.
+ * @param device is the device object containing the time unit.
  * @returns a factor every time value must be multiplied with to convert it to
  * microseconds.
  */
 [[nodiscard]] auto getTimeUnit(const Device& device) -> double {
   if (device.timeUnit.unit == "us") {
-    return static_cast<double>(device.timeUnit.value);
+    return static_cast<double>(device.timeUnit.scaleFactor);
   }
   if (device.timeUnit.unit == "ns") {
-    return static_cast<double>(device.timeUnit.value) * 1e-3;
+    return static_cast<double>(device.timeUnit.scaleFactor) * 1e-3;
   }
   std::stringstream ss;
   ss << "Unsupported time unit: " << device.timeUnit.unit;
@@ -91,16 +91,16 @@ auto populateArrayFields(Device& device) -> void {
 
 /**
  * Computes the length unit factor based on the device configuration.
- * @param device is the Protobuf message containing the device configuration.
+ * @param device is the device object containing the length unit.
  * @returns a factor every length value must be multiplied with to convert it to
  * micrometers.
  */
 [[nodiscard]] auto getLengthUnit(const Device& device) -> double {
   if (device.lengthUnit.unit == "um") {
-    return static_cast<double>(device.lengthUnit.value);
+    return static_cast<double>(device.lengthUnit.scaleFactor);
   }
   if (device.lengthUnit.unit == "nm") {
-    return static_cast<double>(device.lengthUnit.value) * 1e-3;
+    return static_cast<double>(device.lengthUnit.scaleFactor) * 1e-3;
   }
   std::stringstream ss;
   ss << "Unsupported length unit: " << device.lengthUnit.unit;
@@ -108,18 +108,18 @@ auto populateArrayFields(Device& device) -> void {
 }
 
 /**
- * @brief Writes the name from the Protobuf message.
- * @param device The Protobuf message containing the device configuration.
- * @param os The output stream to write the sites to.
+ * @brief Writes the name from the device object.
+ * @param device is the device object containing the name.
+ * @param os is the output stream to write the sites to.
  */
 auto writeName(const Device& device, std::ostream& os) -> void {
   os << "#define INITIALIZE_NAME(var) var = \"" << device.name << "\"\n";
 }
 
 /**
- * @brief Writes the qubits number from the Protobuf message.
- * @param device The Protobuf message containing the device configuration.
- * @param os The output stream to write the sites to.
+ * @brief Writes the qubits number from the device object.
+ * @param device is the device object containing the number of qubits.
+ * @param os is the output stream to write the sites to.
  */
 auto writeQubitsNum(const Device& device, std::ostream& os) -> void {
   os << "#define INITIALIZE_QUBITSNUM(var) var = " << device.numQubits
@@ -127,9 +127,9 @@ auto writeQubitsNum(const Device& device, std::ostream& os) -> void {
 }
 
 /**
- * @brief Writes the sites from the Protobuf message.
- * @param device The Protobuf message containing the device configuration.
- * @param os The output stream to write the sites to.
+ * @brief Writes the sites from the device object.
+ * @param device is the device object containing the sites configuration.
+ * @param os is the output stream to write the sites to.
  */
 auto writeSites(const Device& device, std::ostream& os) -> void {
   size_t count = 0;
@@ -214,10 +214,10 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
 }
 
 /**
- * @brief Imports the operations from the Protobuf message into the device.
- * @param device The Protobuf message containing the device configuration.
- * @param timeUnit The time unit to use for the operations.
- * @param os The output stream to write the sites to.
+ * @brief Writes the operations from the device object.
+ * @param device is the device object containing the operations configuration.
+ * @param timeUnit is the time unit to use for the operations durations.
+ * @param os is the output stream to write the operations to.
  */
 auto writeOperations(const Device& device, const double timeUnit,
                      std::ostream& os) -> void {
@@ -283,10 +283,10 @@ auto writeOperations(const Device& device, const double timeUnit,
 }
 
 /**
- * @brief Writes the decoherence times from the Protobuf message.
- * @param device The Protobuf message containing the device configuration.
- * @param timeUnit The time unit to use for the decoherence times.
- * @param os The output stream to write the sites to.
+ * @brief Writes the decoherence times from the device object.
+ * @param device is the device object containing the decoherence times.
+ * @param timeUnit is the time unit to use for the decoherence times.
+ * @param os is the output stream to write the sites to.
  */
 auto writeDecoherenceTimes(const Device& device, const double timeUnit,
                            std::ostream& os) -> void {

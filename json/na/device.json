@@ -145,11 +145,11 @@
     "t2": 1500000
   },
   "lengthUnit": {
-    "value": 1,
+    "scaleFactor": 1.0,
     "unit": "um"
   },
   "timeUnit": {
-    "value": 1,
+    "scaleFactor": 1.0,
     "unit": "us"
   }
 }

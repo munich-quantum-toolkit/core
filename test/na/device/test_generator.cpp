@@ -56,20 +56,20 @@ TEST(GeneratorTest, WriteJSONSchema) {
 TEST(GeneratorTest, TimeUnitNanosecond) {
   std::istringstream is(R"({
   "timeUnit": {
-    "value": 5,
+    "scaleFactor": 5,
     "unit": "ns"
   }
 })");
   Device device;
   ASSERT_NO_THROW(device = readJSON(is));
-  EXPECT_EQ(device.timeUnit.value, 5);
+  EXPECT_EQ(device.timeUnit.scaleFactor, 5);
   EXPECT_EQ(device.timeUnit.unit, "ns");
 }
 
 TEST(GeneratorTest, TimeUnitInvalid) {
   std::istringstream is(R"({
   "timeUnit": {
-    "value": 1,
+    "scaleFactor": 1,
     "unit": "ts"
   }
 })");
@@ -81,20 +81,20 @@ TEST(GeneratorTest, TimeUnitInvalid) {
 TEST(GeneratorTest, LengthUnitNanometer) {
   std::istringstream is(R"({
   "lengthUnit": {
-    "value": 5,
+    "scaleFactor": 5,
     "unit": "nm"
   }
 })");
   Device device;
   ASSERT_NO_THROW(device = readJSON(is));
-  EXPECT_EQ(device.lengthUnit.value, 5);
+  EXPECT_EQ(device.lengthUnit.scaleFactor, 5);
   EXPECT_EQ(device.lengthUnit.unit, "nm");
 }
 
 TEST(GeneratorTest, LengthUnitInvalid) {
   std::istringstream is(R"({
   "lengthUnit": {
-    "value": 1,
+    "scaleFactor": 1,
     "unit": "tm"
   }
 })");
