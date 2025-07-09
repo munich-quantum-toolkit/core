@@ -15,6 +15,7 @@ from importlib import resources
 from pathlib import Path
 
 import pennylane as qml
+
 from catalyst.passes import PassPlugin
 
 
