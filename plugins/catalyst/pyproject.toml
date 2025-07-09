@@ -115,20 +115,6 @@ git-only = [
   "test/*",
 ]
 
-[tool.scikit-build.cmake]
-source-dir = "../.."
-
-[tool.scikit-build.cmake.define]
-BUILD_MQT_CORE_TESTS = "OFF"
-BUILD_MQT_CORE_SHARED_LIBS = "ON"
-BUILD_MQT_CORE_MLIR = "ON"
-BUILD_MQT_CORE_CATALYST_PLUGIN = "ON"
-
-[tool.check-wheel-contents]
-ignore = [
-  "W002", # Wheel contains duplicate files (.so symlinks)
-  "W004", # Module is not located at importable path (/lib/mqt-core-*.so)
-]
 
 [tool.pytest.ini_options]
 minversion = "7.2"

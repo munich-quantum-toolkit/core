@@ -8,6 +8,8 @@
 
 # Declare all external dependencies and make sure that they are available.
 
+include(FetchContent)
+
 if(DEFINED Python_EXECUTABLE AND Python_EXECUTABLE)
   set(CATALYST_VERSION 0.12.0)
   # Check if the pennylane-catalyst package is installed in the python environment.
@@ -67,6 +69,38 @@ else()
       "Python executable is not defined. Please set the Python_EXECUTABLE variable to the path of the Python interpreter."
   )
 endif()
+
+# cmake-format: off
+set(MQT_CORE_MINIMUM_VERSION 3.0.0
+    CACHE STRING "MQT Core minimum version")
+set(MQT_CORE_VERSION 3.0.3
+    CACHE STRING "MQT Core version")
+set(MQT_CORE_REV "144f77d1a5153b0afdc15393f5107f03c986ea2f"
+    CACHE STRING "MQT Core identifier (tag, branch or commit hash)")
+set(MQT_CORE_REPO_OWNER "munich-quantum-toolkit"
+    CACHE STRING "MQT Core repository owner (change when using a fork)")
+
+# cmake-format: on
+set(BUILD_MQT_CORE_TESTS
+    OFF
+    CACHE BOOL "Build MQT Core tests")
+set(BUILD_MQT_CORE_SHARED_LIBS
+    OFF
+    CACHE BOOL "Build MQT Core shared libraries")
+set(BUILD_MQT_CORE_MLIR
+    ON
+    CACHE BOOL "Build MQT Core MLIR support")
+
+if(NOT PROJECT_IS_TOP_LEVEL)
+  FetchContent_Declare(mqt-core SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." FIND_PACKAGE_ARGS
+                                ${MQT_CORE_MINIMUM_VERSION})
+else()
+  # FetchContent_Declare( mqt-core GIT_REPOSITORY https://github.com/${MQT_CORE_REPO_OWNER}/core.git
+  # GIT_TAG ${MQT_CORE_REV} FIND_PACKAGE_ARGS ${MQT_CORE_MINIMUM_VERSION})
+  FetchContent_Declare(mqt-core SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." FIND_PACKAGE_ARGS
+                                ${MQT_CORE_MINIMUM_VERSION})
+endif()
+list(APPEND FETCH_PACKAGES mqt-core)
 
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
