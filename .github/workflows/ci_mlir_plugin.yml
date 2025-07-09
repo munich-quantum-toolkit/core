@@ -90,6 +90,9 @@ jobs:
       # Set up uv for faster Python package management
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
 
       # Build the plugin package
       - name: Build mqt-core-catalyst-plugin
@@ -132,6 +135,9 @@ jobs:
       # Set up uv for faster Python package management
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
 
       # Check out the Catalyst repository
       - name: Checkout catalyst
