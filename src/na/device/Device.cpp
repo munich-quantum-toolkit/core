@@ -284,7 +284,7 @@ int MQT_NA_QDMI_device_session_set_parameter(
       param >= QDMI_DEVICE_SESSION_PARAMETER_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (session->status == SessionStatus::ALLOCATED) {
+  if (session->status != SessionStatus::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
   return QDMI_ERROR_NOTSUPPORTED;

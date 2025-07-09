@@ -9,7 +9,6 @@
  */
 
 #include "na/device/Generator.hpp"
-#include "na/device/device.pb.h"
 
 #include <gtest/gtest.h>
 #include <iostream>
@@ -20,6 +19,27 @@
 #include <stdexcept>
 
 namespace na {
+namespace {
+// clang-tidy wants to include the forward header, but we have the full
+// NOLINTNEXTLINE(misc-include-cleaner)
+auto testPopulation(const nlohmann::json& json) -> void {
+  for (const auto& [key, value] : json.items()) {
+    if (value.is_array()) {
+      // Array field should have at least one default entry
+      EXPECT_GT(value.size(), 0) << "Array field '" << key
+                                 << "' should have at least one default entry";
+      for (const auto& item : value) {
+        // Each entry in the array should not be null
+        EXPECT_FALSE(item.is_null())
+            << "Array field '" << key << "' should not have null entries";
+        testPopulation(item);
+      }
+    } else if (value.is_object()) {
+      testPopulation(value);
+    }
+  }
+}
+} // namespace
 
 TEST(GeneratorTest, WriteJSONSchema) {
   std::ostringstream os;
@@ -30,6 +50,7 @@ TEST(GeneratorTest, WriteJSONSchema) {
   EXPECT_NO_THROW(json = nlohmann::json::parse(os.str()));
   EXPECT_TRUE(json.is_object());
   EXPECT_GT(json.size(), 0);
+  testPopulation(json);
 }
 
 TEST(GeneratorTest, TimeUnitNanosecond) {
@@ -41,8 +62,8 @@ TEST(GeneratorTest, TimeUnitNanosecond) {
 })");
   Device device;
   ASSERT_NO_THROW(device = readJSON(is));
-  EXPECT_EQ(device.time_unit().value(), 5);
-  EXPECT_EQ(device.time_unit().unit(), "ns");
+  EXPECT_EQ(device.timeUnit.value, 5);
+  EXPECT_EQ(device.timeUnit.unit, "ns");
 }
 
 TEST(GeneratorTest, TimeUnitInvalid) {
@@ -66,8 +87,8 @@ TEST(GeneratorTest, LengthUnitNanometer) {
 })");
   Device device;
   ASSERT_NO_THROW(device = readJSON(is));
-  EXPECT_EQ(device.length_unit().value(), 5);
-  EXPECT_EQ(device.length_unit().unit(), "nm");
+  EXPECT_EQ(device.lengthUnit.value, 5);
+  EXPECT_EQ(device.lengthUnit.unit, "nm");
 }
 
 TEST(GeneratorTest, LengthUnitInvalid) {

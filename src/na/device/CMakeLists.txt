@@ -11,49 +11,21 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device-gen)
 
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
-  # ------------------------------------------------------------------------------
-  # Generate C++ source files from .proto
-  # ------------------------------------------------------------------------------
-
-  # Proto files
-  set(PROTO_FILE ${PROJECT_SOURCE_DIR}/proto/na/device.proto)
-
-  # Set paths
-  set(PROTO_SRC ${CMAKE_CURRENT_BINARY_DIR}/device.pb.cc)
-  set(PROTO_HDR ${CMAKE_CURRENT_BINARY_DIR}/device.pb.h)
-
-  # Generate .pb.cc and .pb.h
-  add_custom_command(
-    OUTPUT ${PROTO_SRC} ${PROTO_HDR}
-    COMMAND protobuf::protoc ARGS --proto_path=${PROJECT_SOURCE_DIR}/proto/na
-            --cpp_out=${CMAKE_CURRENT_BINARY_DIR} ${PROTO_FILE}
-    DEPENDS ${PROTO_FILE}
-    COMMENT "Generating C++ source from ${PROTO_FILE}")
-  add_custom_target(generate_proto_files DEPENDS ${PROTO_SRC} ${PROTO_HDR})
 
   # Add library for device generation
   add_mqt_core_library(${TARGET_NAME})
-  add_dependencies(${TARGET_NAME} generate_proto_files)
 
   # add sources to target
-  target_sources(${TARGET_NAME} PRIVATE Generator.cpp ${PROTO_SRC})
+  target_sources(${TARGET_NAME} PRIVATE Generator.cpp)
 
   # add headers using file sets
-  target_sources(
-    ${TARGET_NAME}
-    PUBLIC FILE_SET
-           HEADERS
-           BASE_DIRS
-           ${MQT_CORE_INCLUDE_BUILD_DIR}
-           ${CMAKE_BINARY_DIR}/src
-           FILES
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/na/device/Generator.hpp
-           ${PROTO_HDR})
+  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
+                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/na/device/Generator.hpp)
 
-  # Link Protobuf, spdlog, and project warnings
+  # Link nlohmann_json, spdlog
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC protobuf::libprotobuf
+    PUBLIC nlohmann_json::nlohmann_json
     PRIVATE spdlog::spdlog)
 
   # set versioning information
@@ -63,13 +35,11 @@ if(NOT TARGET ${TARGET_NAME})
                SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
                EXPORT_NAME CoreNaDeviceGen)
 
+  # set c++ standard
+  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
+
   # Make version available
   target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
-
-  # add to list of MQT core targets
-  set(MQT_CORE_TARGETS
-      ${MQT_CORE_TARGETS} ${TARGET_NAME}
-      PARENT_SCOPE)
 endif()
 
 # Set target name
@@ -93,13 +63,11 @@ if(NOT TARGET ${TARGET_NAME})
   set_target_properties(${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY
                                                   "${CMAKE_BINARY_DIR}/bin")
 
+  # set c++ standard
+  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
+
   # Make version available
   target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
-
-  # add to list of MQT core targets
-  set(MQT_CORE_TARGETS
-      ${MQT_CORE_TARGETS} ${TARGET_NAME}
-      PARENT_SCOPE)
 
   # Create an alias for the target
   add_executable(MQT::CoreQdmiNaDeviceGenerator ALIAS ${TARGET_NAME})

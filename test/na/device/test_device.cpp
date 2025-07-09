@@ -10,22 +10,28 @@
 
 #include "mqt_na_qdmi/device.h"
 
-#include <absl/strings/str_cat.h>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace testing {
 namespace {
+template <typename... Args> auto stringConcat(Args&&... args) -> std::string {
+  std::stringstream ss;
+  (ss << ...
+      << std::forward<Args>(args)); // Fold expression to concatenate strings
+  return ss.str();
+}
 // NOLINTBEGIN(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
 MATCHER_P2(IsBetween, a, b,
-           absl::StrCat(negation ? "isn't" : "is", " between ",
+           stringConcat(negation ? "isn't" : "is", " between ",
                         PrintToString(a), " and ", PrintToString(b))) {
   return a <= arg && arg <= b;
 }

@@ -14,18 +14,15 @@
 
 #include "na/device/Generator.hpp"
 
-#include "na/device/device.pb.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/message.h>
-#include <google/protobuf/util/json_util.h>
 #include <istream>
+#include <nlohmann/detail/exceptions.hpp>
+#include <nlohmann/json.hpp>
 #include <ostream>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -36,30 +33,17 @@
 namespace na {
 namespace {
 /**
- * @brief Populates all repeated fields of the message type in the given
- * Protobuf message with empty messages.
- * @param message The Protobuf message to populate.
- * @throws std::runtime_error if a repeated field has an unsupported type, i.e.,
- * not a message type.
- * @note This is a recursive auxiliary function used by @ref writeJSONSchema
+ * @brief Populates all array fields of the JSON object with one default entry.
+ * @param device is the JSON object representing the device.
+ * @note This is a recursive auxiliary function used by @ref writeJSONSchema.
  */
-auto populateRepeatedFields(google::protobuf::Message* message) -> void {
-  const google::protobuf::Descriptor* descriptor = message->GetDescriptor();
-  const google::protobuf::Reflection* reflection = message->GetReflection();
-
-  for (int i = 0; i < descriptor->field_count(); ++i) {
-    const google::protobuf::FieldDescriptor* field = descriptor->field(i);
-    if (field->is_repeated()) {
-      assert(field->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE);
-      populateRepeatedFields(reflection->AddMessage(message, field));
-    } else if (field->type() ==
-               google::protobuf::FieldDescriptor::TYPE_MESSAGE) {
-      // Message fields must be explicitly initialized such that they appear in
-      // the written JSON schema, primitive fields are automatically
-      // initialized
-      populateRepeatedFields(reflection->MutableMessage(message, field));
-    }
-  }
+auto populateArrayFields(Device& device) -> void {
+  device.traps.emplace_back().sublatticeOffsets.emplace_back();
+  device.globalMultiQubitOperations.emplace_back();
+  device.globalSingleQubitOperations.emplace_back();
+  device.localMultiQubitOperations.emplace_back();
+  device.localSingleQubitOperations.emplace_back();
+  device.shuttlingUnits.emplace_back();
 }
 
 /**
@@ -94,14 +78,14 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
  * microseconds.
  */
 [[nodiscard]] auto getTimeUnit(const Device& device) -> double {
-  if (device.time_unit().unit() == "us") {
-    return static_cast<double>(device.time_unit().value());
+  if (device.timeUnit.unit == "us") {
+    return static_cast<double>(device.timeUnit.value);
   }
-  if (device.time_unit().unit() == "ns") {
-    return static_cast<double>(device.time_unit().value()) * 1e-3;
+  if (device.timeUnit.unit == "ns") {
+    return static_cast<double>(device.timeUnit.value) * 1e-3;
   }
   std::stringstream ss;
-  ss << "Unsupported time unit: " << device.time_unit().unit();
+  ss << "Unsupported time unit: " << device.timeUnit.unit;
   throw std::runtime_error(ss.str());
 }
 
@@ -112,14 +96,14 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
  * micrometers.
  */
 [[nodiscard]] auto getLengthUnit(const Device& device) -> double {
-  if (device.length_unit().unit() == "um") {
-    return static_cast<double>(device.length_unit().value());
+  if (device.lengthUnit.unit == "um") {
+    return static_cast<double>(device.lengthUnit.value);
   }
-  if (device.length_unit().unit() == "nm") {
-    return static_cast<double>(device.length_unit().value()) * 1e-3;
+  if (device.lengthUnit.unit == "nm") {
+    return static_cast<double>(device.lengthUnit.value) * 1e-3;
   }
   std::stringstream ss;
-  ss << "Unsupported length unit: " << device.length_unit().unit();
+  ss << "Unsupported length unit: " << device.lengthUnit.unit;
   throw std::runtime_error(ss.str());
 }
 
@@ -129,7 +113,7 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
  * @param os The output stream to write the sites to.
  */
 auto writeName(const Device& device, std::ostream& os) -> void {
-  os << "#define INITIALIZE_NAME(var) var = \"" << device.name() << "\"\n";
+  os << "#define INITIALIZE_NAME(var) var = \"" << device.name << "\"\n";
 }
 
 /**
@@ -138,7 +122,7 @@ auto writeName(const Device& device, std::ostream& os) -> void {
  * @param os The output stream to write the sites to.
  */
 auto writeQubitsNum(const Device& device, std::ostream& os) -> void {
-  os << "#define INITIALIZE_QUBITSNUM(var) var = " << device.num_qubits()
+  os << "#define INITIALIZE_QUBITSNUM(var) var = " << device.numQubits
      << "UL\n";
 }
 
@@ -153,21 +137,19 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
   const auto lengthUnit = getLengthUnit(device);
 
   os << "#define INITIALIZE_SITES(var) var.clear();";
-  for (const auto& lattice : device.traps()) {
+  for (const auto& lattice : device.traps) {
     size_t subModuleCount = 0;
 
-    const auto latticeOriginX = lattice.lattice_origin().x();
-    const auto latticeOriginY = lattice.lattice_origin().y();
-    const auto baseVector1X = lattice.lattice_vector_1().x();
-    const auto baseVector1Y = lattice.lattice_vector_1().y();
-    const auto baseVector2X = lattice.lattice_vector_2().x();
-    const auto baseVector2Y = lattice.lattice_vector_2().y();
-    const auto extentOriginX = lattice.extent().origin().x();
-    const auto extentOriginY = lattice.extent().origin().y();
-    const auto extentWidth =
-        static_cast<int64_t>(lattice.extent().size().width());
-    const auto extentHeight =
-        static_cast<int64_t>(lattice.extent().size().height());
+    const auto latticeOriginX = lattice.latticeOrigin.x;
+    const auto latticeOriginY = lattice.latticeOrigin.y;
+    const auto baseVector1X = lattice.latticeVector1.x;
+    const auto baseVector1Y = lattice.latticeVector1.y;
+    const auto baseVector2X = lattice.latticeVector2.x;
+    const auto baseVector2Y = lattice.latticeVector2.y;
+    const auto extentOriginX = lattice.extent.origin.x;
+    const auto extentOriginY = lattice.extent.origin.y;
+    const auto extentWidth = static_cast<int64_t>(lattice.extent.size.width);
+    const auto extentHeight = static_cast<int64_t>(lattice.extent.size.height);
 
     // approximate indices of the bottom left corner
     const auto& [bottomLeftI, bottomLeftJ] = solve2DLinearEquation<int64_t>(
@@ -206,10 +188,10 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
     for (bool loop = true; loop;
          loop = increment(indices, limits), ++subModuleCount) {
       // For every sublattice offset, add a site for repetition indices
-      for (const auto& offset : lattice.sublattice_offsets()) {
+      for (const auto& offset : lattice.sublatticeOffsets) {
         const auto id = count++;
-        auto x = latticeOriginX + offset.x();
-        auto y = latticeOriginY + offset.y();
+        auto x = latticeOriginX + offset.x;
+        auto y = latticeOriginY + offset.y;
         x += indices[0] * baseVector1X;
         y += indices[0] * baseVector1Y;
         x += indices[1] * baseVector2X;
@@ -240,62 +222,62 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
 auto writeOperations(const Device& device, const double timeUnit,
                      std::ostream& os) -> void {
   os << "#define INITIALIZE_OPERATIONS(var) var.clear();";
-  for (const auto& operation : device.global_single_qubit_operations()) {
+  for (const auto& operation : device.globalSingleQubitOperations) {
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << "\", OperationType::GLOBAL_SINGLE_QUBIT, "
-       << operation.num_parameters() << ", 1, "
-       << static_cast<double>(operation.duration()) * timeUnit << ", "
-       << operation.fidelity() << "}));";
+       << operation.name << "\", OperationType::GLOBAL_SINGLE_QUBIT, "
+       << operation.numParameters << ", 1, "
+       << static_cast<double>(operation.duration) * timeUnit << ", "
+       << operation.fidelity << "}));";
   }
-  for (const auto& operation : device.global_multi_qubit_operations()) {
+  for (const auto& operation : device.globalMultiQubitOperations) {
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << "\", OperationType::GLOBAL_MULTI_QUBIT, "
-       << operation.num_parameters() << ", " << operation.num_qubits() << ", "
-       << static_cast<double>(operation.duration()) * timeUnit << ", "
-       << operation.fidelity() << "}));";
+       << operation.name << "\", OperationType::GLOBAL_MULTI_QUBIT, "
+       << operation.numParameters << ", " << operation.numQubits << ", "
+       << static_cast<double>(operation.duration) * timeUnit << ", "
+       << operation.fidelity << "}));";
   }
-  for (const auto& operation : device.local_single_qubit_operations()) {
+  for (const auto& operation : device.localSingleQubitOperations) {
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << "\", OperationType::LOCAL_SINGLE_QUBIT, "
-       << operation.num_parameters() << ", 1, "
-       << static_cast<double>(operation.duration()) * timeUnit << ", "
-       << operation.fidelity() << "}));";
+       << operation.name << "\", OperationType::LOCAL_SINGLE_QUBIT, "
+       << operation.numParameters << ", 1, "
+       << static_cast<double>(operation.duration) * timeUnit << ", "
+       << operation.fidelity << "}));";
   }
-  for (const auto& operation : device.local_multi_qubit_operations()) {
+  for (const auto& operation : device.localMultiQubitOperations) {
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << "\", OperationType::LOCAL_MULTI_QUBIT, "
-       << operation.num_parameters() << ", " << operation.num_qubits() << ", "
-       << static_cast<double>(operation.duration()) * timeUnit << ", "
-       << operation.fidelity() << "}));";
+       << operation.name << "\", OperationType::LOCAL_MULTI_QUBIT, "
+       << operation.numParameters << ", " << operation.numQubits << ", "
+       << static_cast<double>(operation.duration) * timeUnit << ", "
+       << operation.fidelity << "}));";
   }
-  for (const auto& operation : device.shuttling_units()) {
+  for (const auto& operation : device.shuttlingUnits) {
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << " (Load)\", OperationType::SHUTTLING_LOAD, "
-       << operation.num_parameters() << ", 0, "
-       << static_cast<double>(operation.load_duration()) * timeUnit << ", "
-       << operation.load_fidelity() << "}));";
+       << operation.name << " (Load)\", OperationType::SHUTTLING_LOAD, "
+       << operation.numParameters << ", 0, "
+       << static_cast<double>(operation.loadDuration) * timeUnit << ", "
+       << operation.loadFidelity << "}));";
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << " (Move)\", OperationType::SHUTTLING_MOVE, "
-       << operation.num_parameters() << ", 0, 0, 0}));";
+       << operation.name << " (Move)\", OperationType::SHUTTLING_MOVE, "
+       << operation.numParameters << ", 0, 0, 0}));";
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << " (Store)\", OperationType::SHUTTLING_STORE, "
-       << operation.num_parameters() << ", 0, "
-       << static_cast<double>(operation.store_duration()) * timeUnit << ", "
-       << operation.store_fidelity() << "}));";
+       << operation.name << " (Store)\", OperationType::SHUTTLING_STORE, "
+       << operation.numParameters << ", 0, "
+       << static_cast<double>(operation.storeDuration) * timeUnit << ", "
+       << operation.storeFidelity << "}));";
   }
   os << "\n";
 }
@@ -309,11 +291,9 @@ auto writeOperations(const Device& device, const double timeUnit,
 auto writeDecoherenceTimes(const Device& device, const double timeUnit,
                            std::ostream& os) -> void {
   os << "#define INITIALIZE_T1(var) var = "
-     << static_cast<double>(device.decoherence_times().t1()) * timeUnit
-     << ";\n";
+     << static_cast<double>(device.decoherenceTimes.t1) * timeUnit << ";\n";
   os << "#define INITIALIZE_T2(var) var = "
-     << static_cast<double>(device.decoherence_times().t2()) * timeUnit
-     << ";\n";
+     << static_cast<double>(device.decoherenceTimes.t2) * timeUnit << ";\n";
 }
 } // namespace
 
@@ -321,22 +301,12 @@ auto writeJSONSchema(std::ostream& os) -> void {
   // Create a default device configuration
   Device device;
 
-  // Fill each repeated field with an empty message
-  populateRepeatedFields(&device);
+  // Fill each array field with default values
+  populateArrayFields(device);
 
-  // Set print options
-  google::protobuf::util::JsonPrintOptions options;
-  options.always_print_fields_with_no_presence = true;
-
-  // Convert to JSON
-  std::string json;
-  const auto status =
-      google::protobuf::util::MessageToJsonString(device, &json, options);
-  if (!status.ok()) {
-    std::stringstream ss;
-    ss << "Failed to convert Protobuf message to JSON: " << status.ToString();
-    throw std::runtime_error(ss.str());
-  }
+  // Convert the device configuration to a JSON object
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  const nlohmann::json json = device;
 
   // Write to output stream
   os << json;
@@ -358,22 +328,15 @@ auto writeJSONSchema(const std::string& path) -> void {
 
 [[nodiscard]] auto readJSON(std::istream& is) -> Device {
   // Read the device configuration from the input stream
-  std::stringstream buffer;
-  buffer << is.rdbuf();
-  const std::string json = buffer.str();
-  // Parse the JSON string into the protobuf message
-  google::protobuf::util::JsonParseOptions options;
-  options.ignore_unknown_fields = true;
-  Device device;
-  const auto status =
-      google::protobuf::util::JsonStringToMessage(json, &device);
-  if (!status.ok()) {
+  nlohmann::json json;
+  try {
+    is >> json;
+  } catch (const nlohmann::detail::parse_error& e) {
     std::stringstream ss;
-    ss << "Failed to parse JSON string into Protobuf message: "
-       << status.ToString();
+    ss << "Failed to parse JSON string: " << e.what();
     throw std::runtime_error(ss.str());
   }
-  return device;
+  return json;
 }
 
 [[nodiscard]] auto readJSON(const std::string& path) -> Device {

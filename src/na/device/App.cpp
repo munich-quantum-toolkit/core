@@ -9,7 +9,6 @@
  */
 
 #include "na/device/Generator.hpp"
-#include "na/device/device.pb.h"
 
 #include <cstddef>
 #include <cstdint>
