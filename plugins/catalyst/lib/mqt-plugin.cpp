@@ -36,9 +36,6 @@ mlirGetDialectPluginInfo() {
   return {MLIR_PLUGIN_API_VERSION, "MQTOpt", LLVM_VERSION_STRING,
           [](DialectRegistry* registry) {
             registry->insert<::mqt::ir::opt::MQTOptDialect>();
-            mqt::ir::opt::registerMQTOptPasses();
-            mqt::ir::conversions::registerCatalystQuantumToMQTOptPasses();
-            mqt::ir::conversions::registerMQTOptToCatalystQuantumPasses();
           }};
 }
 
