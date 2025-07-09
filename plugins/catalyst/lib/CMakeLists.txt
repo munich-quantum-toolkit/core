@@ -32,19 +32,8 @@ add_llvm_library(
   MQTOptToCatalystQuantum)
 
 # set required C++ standard
-target_compile_features(mqt-catalyst-plugin PUBLIC cxx_std_17)
-
-# RPATH settings to make sure the MQT Core IR library is found at runtime.
-include(GNUInstallDirs)
-list(
-  APPEND
-  CMAKE_INSTALL_RPATH
-  ${BASEPOINT}/../core/${CMAKE_INSTALL_LIBDIR}
-  ${BASEPOINT}/../core/lib
-  ${BASEPOINT}/../core/lib64
-  ${BASEPOINT}/../../core/${CMAKE_INSTALL_LIBDIR}
-  ${BASEPOINT}/../../core/lib
-  ${BASEPOINT}/../../core/lib64)
+target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
+target_compile_options(${TARGET_NAME} PUBLIC -fexceptions)
 
 # install directive for scikit-build-core
 install(
