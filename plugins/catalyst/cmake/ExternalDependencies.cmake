@@ -71,15 +71,14 @@ else()
 endif()
 
 # cmake-format: off
-set(MQT_CORE_MINIMUM_VERSION 3.0.0
+set(MQT_CORE_MINIMUM_VERSION 3.0.3
     CACHE STRING "MQT Core minimum version")
 set(MQT_CORE_VERSION 3.0.3
     CACHE STRING "MQT Core version")
-set(MQT_CORE_REV "144f77d1a5153b0afdc15393f5107f03c986ea2f"
+set(MQT_CORE_REV "6963f936c6d7649a15fdd356f8cebc4abaab4820"
     CACHE STRING "MQT Core identifier (tag, branch or commit hash)")
 set(MQT_CORE_REPO_OWNER "munich-quantum-toolkit"
     CACHE STRING "MQT Core repository owner (change when using a fork)")
-
 # cmake-format: on
 set(BUILD_MQT_CORE_TESTS
     OFF
@@ -95,10 +94,11 @@ if(NOT PROJECT_IS_TOP_LEVEL)
   FetchContent_Declare(mqt-core SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." FIND_PACKAGE_ARGS
                                 ${MQT_CORE_MINIMUM_VERSION})
 else()
-  # FetchContent_Declare( mqt-core GIT_REPOSITORY https://github.com/${MQT_CORE_REPO_OWNER}/core.git
-  # GIT_TAG ${MQT_CORE_REV} FIND_PACKAGE_ARGS ${MQT_CORE_MINIMUM_VERSION})
-  FetchContent_Declare(mqt-core SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." FIND_PACKAGE_ARGS
-                                ${MQT_CORE_MINIMUM_VERSION})
+  FetchContent_Declare(
+    mqt-core
+    GIT_REPOSITORY https://github.com/${MQT_CORE_REPO_OWNER}/core.git
+    GIT_TAG ${MQT_CORE_REV}
+    FIND_PACKAGE_ARGS ${MQT_CORE_MINIMUM_VERSION})
 endif()
 list(APPEND FETCH_PACKAGES mqt-core)
 
