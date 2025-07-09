@@ -32,8 +32,8 @@ except ImportError:
 def test_mqtopt_conversion() -> None:
     """Execute the conversion passes to and from MQTOpt dialect."""
 
-    @apply_pass("mqtopt-to-catalystquantum")
-    @apply_pass("catalystquantum-to-mqtopt")
+    @apply_pass("mqt.mqtopt-to-catalystquantum")
+    @apply_pass("mqt.catalystquantum-to-mqtopt")
     @qml.qnode(qml.device("lightning.qubit", wires=2))
     def circuit() -> None:
         qml.Hadamard(wires=[0])
@@ -41,7 +41,7 @@ def test_mqtopt_conversion() -> None:
         catalyst.measure(0)
         catalyst.measure(1)
 
-    @qml.qjit(pass_plugins={plugin_path}, dialect_plugins={plugin_path}, target="mlir", autograph=True)
+    @qml.qjit(target="mlir", autograph=True)
     def module() -> None:
         return circuit()
 
@@ -57,9 +57,9 @@ def test_mqtopt_roundtrip() -> None:
     the roundtrip through MQT Core IR.
     """
 
-    @apply_pass("mqtopt-to-catalystquantum")
-    @apply_pass("mqt-core-round-trip")
-    @apply_pass("catalystquantum-to-mqtopt")
+    @apply_pass("mqt.mqtopt-to-catalystquantum")
+    @apply_pass("mqt.mqt-core-round-trip")
+    @apply_pass("mqt.catalystquantum-to-mqtopt")
     @qml.qnode(qml.device("lightning.qubit", wires=2))
     def circuit() -> None:
         qml.Hadamard(wires=[0])
@@ -67,7 +67,7 @@ def test_mqtopt_roundtrip() -> None:
         catalyst.measure(0)
         catalyst.measure(1)
 
-    @qml.qjit(pass_plugins={plugin_path}, dialect_plugins={plugin_path}, target="mlir", autograph=True)
+    @qml.qjit(target="mlir", autograph=True)
     def module() -> None:
         return circuit()
 
