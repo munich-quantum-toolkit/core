@@ -23,16 +23,13 @@
 
 namespace testing {
 namespace {
-template <typename... Args> auto stringConcat(Args&&... args) -> std::string {
-  std::stringstream ss;
-  (ss << ...
-      << std::forward<Args>(args)); // Fold expression to concatenate strings
-  return ss.str();
-}
 // NOLINTBEGIN(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
-MATCHER_P2(IsBetween, a, b,
-           stringConcat(negation ? "isn't" : "is", " between ",
-                        PrintToString(a), " and ", PrintToString(b))) {
+MATCHER_P2(IsBetween, a, b, {
+  std::stringstream ss;
+  ss << (negation ? "isn't" : "is") << " between " << PrintToString(a)
+     << " and " << PrintToString(b);
+  ss.str();
+}) {
   return a <= arg && arg <= b;
 }
 // NOLINTEND(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
