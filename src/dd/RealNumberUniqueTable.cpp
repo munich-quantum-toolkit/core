@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <ostream>
 
 namespace dd {
 
@@ -29,10 +30,9 @@ RealNumberUniqueTable::RealNumberUniqueTable(MemoryManager& manager,
     : memoryManager(&manager), initialGCLimit(initialGCLim) {
   stats.entrySize = sizeof(Bucket);
   stats.numBuckets = NBUCKET;
-
-  // add 1/2 to the complex table and increase its ref count (so that it is
-  // not collected)
-  lookupNonNegative(0.5L)->ref++;
+  for (const auto& ival : immortals::get()) {
+    RealNumber::immortalize(lookupNonNegative(ival));
+  }
 }
 
 std::int64_t RealNumberUniqueTable::hash(const fp val) noexcept {
@@ -51,20 +51,6 @@ RealNumber* RealNumberUniqueTable::lookup(const fp val) {
     return RealNumber::getNegativePointer(lookupNonNegative(std::abs(val)));
   }
   return lookupNonNegative(val);
-}
-
-void RealNumberUniqueTable::incRef(RealNumber* num) noexcept {
-  const auto inc = RealNumber::incRef(num);
-  if (inc && RealNumber::refCount(num) == 1U) {
-    stats.trackActiveEntry();
-  }
-}
-
-void RealNumberUniqueTable::decRef(RealNumber* num) noexcept {
-  const auto dec = RealNumber::decRef(num);
-  if (dec && RealNumber::refCount(num) == 0U) {
-    --stats.numActiveEntries;
-  }
 }
 
 RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {
@@ -147,35 +133,36 @@ bool RealNumberUniqueTable::possiblyNeedsCollection() const noexcept {
 
 std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
   // nothing to be done if garbage collection is not forced, and the limit has
-  // not been reached, or the current count is minimal (the complex table
-  // always contains at least 0.5)
-  if ((!force && !possiblyNeedsCollection()) || stats.numEntries <= 1) {
+  // not been reached, or the current count is minimal.
+  if ((!force && !possiblyNeedsCollection()) ||
+      stats.numEntries <= immortals::size()) {
     return 0;
   }
 
   ++stats.gcRuns;
-  const auto entryCountBefore = stats.numEntries;
+  const auto before = stats.numEntries;
   for (std::size_t key = 0; key < table.size(); ++key) {
-    auto* p = table[key];
-    RealNumber* lastp = nullptr;
-    while (p != nullptr) {
-      if (p->ref == 0) {
-        auto* next = p->next();
-        if (lastp == nullptr) {
+    RealNumber* curr = table[key];
+    RealNumber* prev = nullptr;
+    while (curr != nullptr) {
+      if (!RealNumber::isImmortal(curr) && !RealNumber::isMarked(curr)) {
+        RealNumber* next = curr->next();
+        if (prev == nullptr) {
           table[key] = next;
         } else {
-          lastp->setNext(next);
+          prev->setNext(next);
         }
-        memoryManager->returnEntry(*p);
-        p = next;
+        memoryManager->returnEntry(*curr);
+        curr = next;
         --stats.numEntries;
       } else {
-        lastp = p;
-        p = p->next();
+        prev = curr;
+        curr = curr->next();
       }
-      tailTable[key] = lastp;
+      tailTable[key] = prev;
     }
   }
+
   // The garbage collection limit changes dynamically depending on the number
   // of remaining (active) nodes. If it were not changed, garbage collection
   // would run through the complete table on each successive call once the
@@ -188,8 +175,7 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
   } else if (stats.numEntries < gcLimit / 128) {
     gcLimit /= 2;
   }
-  stats.numActiveEntries = stats.numEntries;
-  return entryCountBefore - stats.numEntries;
+  return before - stats.numEntries;
 }
 
 void RealNumberUniqueTable::clear() noexcept {
@@ -215,7 +201,7 @@ void RealNumberUniqueTable::print() const {
 
     while (p != nullptr) {
       std::cout << "\t\t" << p->value << " "
-                << reinterpret_cast<std::uintptr_t>(p) << " " << p->ref << "\n";
+                << reinterpret_cast<std::uintptr_t>(p) << "\n";
       p = p->next();
     }
 
@@ -241,6 +227,20 @@ std::ostream& RealNumberUniqueTable::printBucketDistribution(std::ostream& os) {
   }
   os << "\n";
   return os;
+}
+
+std::size_t RealNumberUniqueTable::countMarkedEntries() const noexcept {
+  std::size_t count = 0U;
+  for (const auto* bucket : table) {
+    const auto* curr = bucket;
+    while (curr != nullptr) {
+      if (RealNumber::isMarked(curr)) {
+        ++count;
+      }
+      curr = curr->next();
+    }
+  }
+  return count;
 }
 
 RealNumber* RealNumberUniqueTable::findOrInsert(const std::int64_t key,

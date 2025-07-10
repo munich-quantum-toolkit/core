@@ -9,7 +9,6 @@
  */
 
 #include "circuit_optimizer/CircuitOptimizer.hpp"
-#include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
@@ -37,44 +36,24 @@
 #include <vector>
 
 using namespace qc;
+using namespace dd;
 
 class DDFunctionality : public testing::TestWithParam<OpType> {
 protected:
-  void TearDown() override {
-    if (!e.isTerminal()) {
-      dd->decRef(e);
-    }
-    dd->garbageCollect(true);
-
-    // number of complex table entries after clean-up should equal initial
-    // number of entries
-    EXPECT_EQ(dd->cn.realCount(), initialComplexCount);
-  }
+  void TearDown() override {}
 
   void SetUp() override {
-    // dd
-    dd = std::make_unique<dd::Package>(nqubits);
-    initialComplexCount = dd->cn.realCount();
-
-    // initial state preparation
-    e = ident = dd::Package::makeIdent();
-    dd->incRef(ident);
-
     std::array<std::mt19937_64::result_type, std::mt19937_64::state_size>
         randomData{};
     std::random_device rd;
     std::generate(begin(randomData), end(randomData), [&]() { return rd(); });
     std::seed_seq seeds(begin(randomData), end(randomData));
     mt.seed(seeds);
-    dist = std::uniform_real_distribution<dd::fp>(0.0, 2. * dd::PI);
+    dist = std::uniform_real_distribution<fp>(0.0, 2. * qc::PI);
   }
 
-  std::size_t nqubits = 4U;
-  std::size_t initialComplexCount = 0U;
-  dd::MatrixDD e{}, ident{};
-  std::unique_ptr<dd::Package> dd;
   std::mt19937_64 mt;
-  std::uniform_real_distribution<dd::fp> dist;
+  std::uniform_real_distribution<fp> dist;
 };
 
 INSTANTIATE_TEST_SUITE_P(
@@ -87,11 +66,15 @@ INSTANTIATE_TEST_SUITE_P(
       return toString(gate);
     });
 
-TEST_P(DDFunctionality, standardOpBuildInverseBuild) {
+TEST_P(DDFunctionality, StandardOpBuildInverseBuild) {
   using namespace literals;
-  auto gate = static_cast<OpType>(GetParam());
+
+  constexpr std::size_t nq = 4;
+
+  const auto dd = std::make_unique<Package>(nq);
 
   StandardOperation op;
+  auto gate = static_cast<OpType>(GetParam());
   switch (gate) {
   case GPhase:
     op = StandardOperation(Controls{}, Targets{}, gate, std::vector{dist(mt)});
@@ -108,7 +91,6 @@ TEST_P(DDFunctionality, standardOpBuildInverseBuild) {
   case P:
     op = StandardOperation(0, gate, std::vector{dist(mt)});
     break;
-
   case SWAP:
   case iSWAP:
   case iSWAPdg:
@@ -133,17 +115,21 @@ TEST_P(DDFunctionality, standardOpBuildInverseBuild) {
     op = StandardOperation(0, gate);
   }
 
-  ASSERT_NO_THROW({ e = dd->multiply(getDD(op, *dd), getInverseDD(op, *dd)); });
-  dd->incRef(e);
-
-  EXPECT_EQ(ident, e);
+  MatrixDD mDD;
+  ASSERT_NO_THROW(
+      { mDD = dd->multiply(getDD(op, *dd), getInverseDD(op, *dd)); });
+  EXPECT_TRUE(mDD.isIdentity());
 }
 
-TEST_P(DDFunctionality, controlledStandardOpBuildInverseBuild) {
+TEST_P(DDFunctionality, ControlledStandardOpBuildInverseBuild) {
   using namespace literals;
-  auto gate = static_cast<OpType>(GetParam());
+
+  constexpr std::size_t nq = 4;
+
+  const auto dd = std::make_unique<Package>(nq);
 
   StandardOperation op;
+  auto gate = static_cast<OpType>(GetParam());
   switch (gate) {
   case GPhase:
     op = StandardOperation(Controls{0}, Targets{}, gate, std::vector{dist(mt)});
@@ -161,7 +147,6 @@ TEST_P(DDFunctionality, controlledStandardOpBuildInverseBuild) {
   case P:
     op = StandardOperation(0, 1, gate, std::vector{dist(mt)});
     break;
-
   case SWAP:
   case iSWAP:
   case iSWAPdg:
@@ -186,17 +171,21 @@ TEST_P(DDFunctionality, controlledStandardOpBuildInverseBuild) {
     op = StandardOperation(0, 1, gate);
   }
 
-  ASSERT_NO_THROW({ e = dd->multiply(getDD(op, *dd), getInverseDD(op, *dd)); });
-  dd->incRef(e);
-
-  EXPECT_EQ(ident, e);
+  MatrixDD mDD;
+  ASSERT_NO_THROW(
+      { mDD = dd->multiply(getDD(op, *dd), getInverseDD(op, *dd)); });
+  EXPECT_TRUE(mDD.isIdentity());
 }
 
-TEST_P(DDFunctionality, controlledStandardNegOpBuildInverseBuild) {
+TEST_P(DDFunctionality, ControlledStandardNegOpBuildInverseBuild) {
   using namespace literals;
-  auto gate = static_cast<OpType>(GetParam());
+
+  constexpr std::size_t nq = 4;
+
+  const auto dd = std::make_unique<Package>(nq);
 
   StandardOperation op;
+  auto gate = static_cast<OpType>(GetParam());
   switch (gate) {
   case GPhase:
     op = StandardOperation(Controls{0_nc}, Targets{}, gate,
@@ -216,7 +205,6 @@ TEST_P(DDFunctionality, controlledStandardNegOpBuildInverseBuild) {
   case P:
     op = StandardOperation(Controls{0_nc}, 1, gate, std::vector{dist(mt)});
     break;
-
   case SWAP:
   case iSWAP:
   case iSWAPdg:
@@ -241,15 +229,18 @@ TEST_P(DDFunctionality, controlledStandardNegOpBuildInverseBuild) {
     op = StandardOperation(Controls{0_nc}, 1, gate);
   }
 
-  ASSERT_NO_THROW({ e = dd->multiply(getDD(op, *dd), getInverseDD(op, *dd)); });
-  dd->incRef(e);
-
-  EXPECT_EQ(ident, e);
+  MatrixDD mDD;
+  ASSERT_NO_THROW(
+      { mDD = dd->multiply(getDD(op, *dd), getInverseDD(op, *dd)); });
+  EXPECT_TRUE(mDD.isIdentity());
 }
 
-TEST_F(DDFunctionality, buildCircuit) {
-  QuantumComputation qc(nqubits);
+TEST_F(DDFunctionality, BuildCircuit) {
+  constexpr std::size_t nq = 4;
 
+  const auto dd = std::make_unique<Package>(nq);
+
+  QuantumComputation qc(nq);
   qc.x(0);
   qc.swap(0, 1);
   qc.cswap(2, 0, 1);
@@ -317,16 +308,30 @@ TEST_F(DDFunctionality, buildCircuit) {
   qc.swap(0, 1);
   qc.x(0);
 
-  e = buildFunctionality(qc, *dd);
-  EXPECT_EQ(ident, e);
+  const MatrixDD dd1 = buildFunctionality(qc, *dd);
 
   qc.x(0);
-  e = buildFunctionality(qc, *dd);
-  dd->incRef(e);
-  EXPECT_NE(ident, e);
+  const MatrixDD dd2 = buildFunctionality(qc, *dd);
+
+  EXPECT_TRUE(dd1.isIdentity());
+  EXPECT_FALSE(dd2.isIdentity());
+
+  dd->decRef(dd1);
+  dd->decRef(dd2);
+  dd->garbageCollect(true);
+
+  const auto counts = dd->computeActiveCounts();
+  EXPECT_EQ(counts.vector, 0);
+  EXPECT_EQ(counts.density, 0);
+  EXPECT_EQ(counts.matrix, 0);
+  EXPECT_EQ(counts.reals, 0);
 }
 
-TEST_F(DDFunctionality, nonUnitary) {
+TEST_F(DDFunctionality, NonUnitary) {
+  constexpr std::size_t nq = 4;
+
+  const auto dd = std::make_unique<Package>(nq);
+
   const QuantumComputation qc{};
   auto dummyMap = Permutation{};
   auto op = NonUnitaryOperation({0, 1, 2, 3}, {0, 1, 2, 3});
@@ -335,11 +340,11 @@ TEST_F(DDFunctionality, nonUnitary) {
   EXPECT_THROW(getInverseDD(op, *dd), std::invalid_argument);
   EXPECT_THROW(getDD(op, *dd, dummyMap), std::invalid_argument);
   EXPECT_THROW(getInverseDD(op, *dd, dummyMap), std::invalid_argument);
-  for (Qubit i = 0; i < nqubits; ++i) {
+  for (qc::Qubit i = 0; i < nq; ++i) {
     EXPECT_TRUE(op.actsOn(i));
   }
 
-  for (Qubit i = 0; i < nqubits; ++i) {
+  for (qc::Qubit i = 0; i < nq; ++i) {
     dummyMap[i] = i;
   }
   auto barrier = StandardOperation({0, 1, 2, 3}, OpType::Barrier);
@@ -350,29 +355,45 @@ TEST_F(DDFunctionality, nonUnitary) {
 }
 
 TEST_F(DDFunctionality, CircuitEquivalence) {
+  constexpr std::size_t nq = 1;
+
+  const auto dd = std::make_unique<Package>(nq);
+
   // verify that the IBM decomposition of the H gate into RZ-SX-RZ works as
   // expected (i.e., realizes H up to a global phase)
-  QuantumComputation qc1(1);
+  QuantumComputation qc1(nq);
   qc1.h(0);
 
-  QuantumComputation qc2(1);
-  qc2.rz(PI_2, 0);
+  QuantumComputation qc2(nq);
+  qc2.rz(qc::PI_2, 0);
   qc2.sx(0);
-  qc2.rz(PI_2, 0);
+  qc2.rz(qc::PI_2, 0);
 
-  const dd::MatrixDD dd1 = buildFunctionality(qc1, *dd);
-  const dd::MatrixDD dd2 = buildFunctionality(qc2, *dd);
+  const MatrixDD dd1 = buildFunctionality(qc1, *dd);
+  const MatrixDD dd2 = buildFunctionality(qc2, *dd);
 
   EXPECT_EQ(dd1.p, dd2.p);
+
+  dd->decRef(dd1);
+  dd->decRef(dd2);
+  dd->garbageCollect(true);
+
+  const auto counts = dd->computeActiveCounts();
+  EXPECT_EQ(counts.vector, 0);
+  EXPECT_EQ(counts.density, 0);
+  EXPECT_EQ(counts.matrix, 0);
+  EXPECT_EQ(counts.reals, 0);
 }
 
-TEST_F(DDFunctionality, changePermutation) {
+TEST_F(DDFunctionality, ChangePermutation) {
   const std::string testfile = "// o 1 0\n"
                                "OPENQASM 2.0;"
                                "include \"qelib1.inc\";"
                                "qreg q[2];"
                                "x q[0];\n";
   const auto qc = qasm3::Importer::imports(testfile);
+  const auto dd = std::make_unique<Package>(qc.getNqubits());
+
   const auto sim = simulate(qc, makeZeroState(qc.getNqubits(), *dd), *dd);
   EXPECT_TRUE(sim.p->e[0].isZeroTerminal());
   EXPECT_TRUE(sim.p->e[1].w.exactlyOne());
@@ -390,74 +411,142 @@ TEST_F(DDFunctionality, changePermutation) {
 }
 
 TEST_F(DDFunctionality, FuseTwoSingleQubitGates) {
-  nqubits = 1;
-  QuantumComputation qc(nqubits);
+  constexpr std::size_t nq = 1;
+
+  const auto dd = std::make_unique<Package>(nq);
+
+  QuantumComputation qc(nq);
   qc.x(0);
   qc.h(0);
 
   qc.print(std::cout);
-  e = buildFunctionality(qc, *dd);
+  const MatrixDD baseDD = buildFunctionality(qc, *dd);
+
   CircuitOptimizer::singleQubitGateFusion(qc);
-  const auto f = buildFunctionality(qc, *dd);
+  const auto optDD = buildFunctionality(qc, *dd);
+
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
+
   EXPECT_EQ(qc.getNops(), 1);
-  EXPECT_EQ(e, f);
+  EXPECT_EQ(baseDD, optDD);
+
+  dd->decRef(baseDD);
+  dd->decRef(optDD);
+  dd->garbageCollect(true);
+
+  const auto counts = dd->computeActiveCounts();
+  EXPECT_EQ(counts.vector, 0);
+  EXPECT_EQ(counts.density, 0);
+  EXPECT_EQ(counts.matrix, 0);
+  EXPECT_EQ(counts.reals, 0);
 }
 
 TEST_F(DDFunctionality, FuseThreeSingleQubitGates) {
-  nqubits = 1;
-  QuantumComputation qc(nqubits);
+  constexpr std::size_t nq = 1;
+
+  const auto dd = std::make_unique<Package>(nq);
+
+  QuantumComputation qc(nq);
   qc.x(0);
   qc.h(0);
   qc.y(0);
 
-  e = buildFunctionality(qc, *dd);
+  const MatrixDD baseDD = buildFunctionality(qc, *dd);
+
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
+
   CircuitOptimizer::singleQubitGateFusion(qc);
-  const auto f = buildFunctionality(qc, *dd);
+  const MatrixDD optDD = buildFunctionality(qc, *dd);
+
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
+
   EXPECT_EQ(qc.getNops(), 1);
-  EXPECT_EQ(e, f);
+  EXPECT_EQ(baseDD, optDD);
+
+  dd->decRef(baseDD);
+  dd->decRef(optDD);
+  dd->garbageCollect(true);
+
+  const auto counts = dd->computeActiveCounts();
+  EXPECT_EQ(counts.vector, 0);
+  EXPECT_EQ(counts.density, 0);
+  EXPECT_EQ(counts.matrix, 0);
+  EXPECT_EQ(counts.reals, 0);
 }
 
 TEST_F(DDFunctionality, FuseNoSingleQubitGates) {
-  nqubits = 2;
-  QuantumComputation qc(nqubits);
+  constexpr std::size_t nq = 2;
+
+  const auto dd = std::make_unique<Package>(nq);
+
+  QuantumComputation qc(nq);
   qc.h(0);
   qc.cx(0, 1);
   qc.y(0);
-  e = buildFunctionality(qc, *dd);
+
+  const MatrixDD baseDD = buildFunctionality(qc, *dd);
+
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
+
   CircuitOptimizer::singleQubitGateFusion(qc);
-  const auto f = buildFunctionality(qc, *dd);
+  const MatrixDD optDD = buildFunctionality(qc, *dd);
+
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
+
   EXPECT_EQ(qc.getNops(), 3);
-  EXPECT_EQ(e, f);
+  EXPECT_EQ(baseDD, optDD);
+
+  dd->decRef(baseDD);
+  dd->decRef(optDD);
+  dd->garbageCollect(true);
+
+  const auto counts = dd->computeActiveCounts();
+  EXPECT_EQ(counts.vector, 0);
+  EXPECT_EQ(counts.density, 0);
+  EXPECT_EQ(counts.matrix, 0);
+  EXPECT_EQ(counts.reals, 0);
 }
 
 TEST_F(DDFunctionality, FuseSingleQubitGatesAcrossOtherGates) {
-  nqubits = 2;
-  QuantumComputation qc(nqubits);
+  constexpr std::size_t nq = 2;
+
+  const auto dd = std::make_unique<Package>(nq);
+
+  QuantumComputation qc(nq);
   qc.h(0);
   qc.z(1);
   qc.y(0);
-  e = buildFunctionality(qc, *dd);
+  const MatrixDD baseDD = buildFunctionality(qc, *dd);
+
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
+
   CircuitOptimizer::singleQubitGateFusion(qc);
-  const auto f = buildFunctionality(qc, *dd);
+  const auto optDD = buildFunctionality(qc, *dd);
+
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
+
   EXPECT_EQ(qc.getNops(), 2);
-  EXPECT_EQ(e, f);
+  EXPECT_EQ(baseDD, optDD);
+
+  dd->decRef(baseDD);
+  dd->decRef(optDD);
+  dd->garbageCollect(true);
+
+  const auto counts = dd->computeActiveCounts();
+  EXPECT_EQ(counts.vector, 0);
+  EXPECT_EQ(counts.density, 0);
+  EXPECT_EQ(counts.matrix, 0);
+  EXPECT_EQ(counts.reals, 0);
 }
 
-TEST_F(DDFunctionality, classicControlledOperationConditions) {
+TEST_F(DDFunctionality, ClassicControlledOperationConditions) {
   const auto cmpKinds = {ComparisonKind::Eq, ComparisonKind::Neq};
   for (const auto kind : cmpKinds) {
     QuantumComputation qc(1U, 1U);
@@ -472,7 +561,7 @@ TEST_F(DDFunctionality, classicControlledOperationConditions) {
     qc.measure(0, 0);
 
     constexpr auto shots = 16U;
-    const auto hist = dd::sample(qc, shots);
+    const auto hist = sample(qc, shots);
 
     EXPECT_EQ(hist.size(), 1);
     const auto& [key, value] = *hist.begin();
@@ -485,14 +574,27 @@ TEST_F(DDFunctionality, classicControlledOperationConditions) {
   }
 }
 
-TEST_F(DDFunctionality, vectorKroneckerWithTerminal) {
-  constexpr auto root = dd::vEdge::one();
-  const auto zeroState = makeZeroState(1, *dd);
+TEST_F(DDFunctionality, VectorKroneckerWithTerminal) {
+  constexpr std::size_t nq = 1;
+  constexpr auto root = vEdge::one();
+
+  const auto dd = std::make_unique<Package>(nq);
+
+  const auto zeroState = makeZeroState(nq, *dd);
   const auto extendedRoot = dd->kronecker(zeroState, root, 0);
   EXPECT_EQ(zeroState, extendedRoot);
+
+  dd->decRef(zeroState);
+  dd->garbageCollect(true);
+
+  const auto counts = dd->computeActiveCounts();
+  EXPECT_EQ(counts.vector, 0);
+  EXPECT_EQ(counts.density, 0);
+  EXPECT_EQ(counts.matrix, 0);
+  EXPECT_EQ(counts.reals, 0);
 }
 
-TEST_F(DDFunctionality, dynamicCircuitSimulationWithSWAP) {
+TEST_F(DDFunctionality, DynamicCircuitSimulationWithSWAP) {
   QuantumComputation qc(2, 2);
   qc.x(0);
   qc.swap(0, 1);
@@ -501,7 +603,7 @@ TEST_F(DDFunctionality, dynamicCircuitSimulationWithSWAP) {
   qc.measure(0, 1);
 
   constexpr auto shots = 16U;
-  const auto hist = dd::sample(qc, shots);
+  const auto hist = sample(qc, shots);
   EXPECT_EQ(hist.size(), 1);
   const auto& [key, value] = *hist.begin();
   EXPECT_EQ(value, shots);

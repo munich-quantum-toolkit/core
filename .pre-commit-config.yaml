@@ -14,6 +14,14 @@ ci:
   skip: [mypy]
 
 repos:
+  # Check for merge conflicts
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+        args: ["--assume-in-merge"]
+        fail_fast: true
+
   # Standard hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -21,7 +29,6 @@ repos:
       - id: check-added-large-files
       - id: check-case-conflict
       - id: check-docstring-first
-      - id: check-merge-conflict
       - id: check-symlinks
       - id: check-toml
       - id: check-yaml
@@ -59,7 +66,7 @@ repos:
 
   # Python linting using ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.1
+    rev: v0.12.2
     hooks:
       - id: ruff
         args: ["--fix", "--show-fixes"]
@@ -115,7 +122,7 @@ repos:
 
   # Check for spelling
   - repo: https://github.com/crate-ci/typos
-    rev: v1.33.1
+    rev: v1.34.0
     hooks:
       - id: typos
 
@@ -130,14 +137,14 @@ repos:
 
   # Check best practices for scientific Python code
   - repo: https://github.com/scientific-python/cookie
-    rev: 2025.01.22
+    rev: 2025.05.02
     hooks:
       - id: sp-repo-review
         additional_dependencies: ["repo-review[cli]"]
 
   # Check JSON schemata
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.33.1
+    rev: 0.33.2
     hooks:
       - id: check-dependabot
       - id: check-github-workflows
@@ -145,7 +152,7 @@ repos:
 
   # Check the pyproject.toml file
   - repo: https://github.com/henryiii/validate-pyproject-schema-store
-    rev: 2025.04.07
+    rev: 2025.06.23
     hooks:
       - id: validate-pyproject
 

@@ -11,8 +11,10 @@
 #include "algorithms/QFT.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
+#include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
+#include "dd/RealNumberUniqueTable.hpp"
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
@@ -57,7 +59,7 @@ protected:
 ///	Utilizing more qubits requires the use of fp=long double
 constexpr qc::Qubit QFT_MAX_QUBITS = 17U;
 
-constexpr size_t INITIAL_COMPLEX_COUNT = 1;
+constexpr size_t INITIAL_COMPLEX_COUNT = dd::immortals::size();
 
 INSTANTIATE_TEST_SUITE_P(QFT, QFT,
                          testing::Range<qc::Qubit>(0U, QFT_MAX_QUBITS + 1U, 3U),
@@ -76,7 +78,6 @@ INSTANTIATE_TEST_SUITE_P(QFT, QFT,
 TEST_P(QFT, Functionality) {
   // there should be no error constructing the circuit
   ASSERT_NO_THROW({ qc = qc::createQFT(nqubits, false); });
-  // there should be no error building the functionality
 
   // there should be no error building the functionality
   ASSERT_NO_THROW({ func = buildFunctionality(qc, *dd); });
