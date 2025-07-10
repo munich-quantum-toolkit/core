@@ -44,7 +44,7 @@ struct Device {
     /// @brief The y-coordinate of the vector.
     int64_t y = 0;
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Vector, x, y);
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Vector, x, y)
   };
   /// @brief Represents a region in the device.
   struct Region {
@@ -58,12 +58,12 @@ struct Device {
       /// @brief The height of the region.
       uint64_t height = 0;
 
-      NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Size, width, height);
+      NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Size, width, height)
     };
     /// @brief The size of the region.
     Size size;
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Region, origin, size);
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Region, origin, size)
   };
   /// @brief Represents a lattice of traps in the device.
   struct Lattice {
@@ -100,7 +100,7 @@ struct Device {
 
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Lattice, latticeOrigin,
                                                 latticeVector1, latticeVector2,
-                                                sublatticeOffsets, extent);
+                                                sublatticeOffsets, extent)
   };
   /// @brief The list of lattices (trap areas) in the device.
   std::vector<Lattice> traps;
@@ -125,7 +125,7 @@ struct Device {
 
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(GlobalSingleQubitOperation,
                                                 name, region, duration,
-                                                fidelity, numParameters);
+                                                fidelity, numParameters)
   };
   /// @brief The list of global single-qubit operations supported by the device.
   std::vector<GlobalSingleQubitOperation> globalSingleQubitOperations;
@@ -161,7 +161,7 @@ struct Device {
                                                 region, interactionRadius,
                                                 blockingRadius, duration,
                                                 fidelity, idlingFidelity,
-                                                numQubits, numParameters);
+                                                numQubits, numParameters)
   };
   /// @brief The list of global multi-qubit operations supported by the device.
   std::vector<GlobalMultiQubitOperation> globalMultiQubitOperations;
@@ -186,7 +186,7 @@ struct Device {
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(LocalSingleQubitOperation, name,
                                                 region, numRows, numColumns,
                                                 duration, fidelity,
-                                                numParameters);
+                                                numParameters)
   };
   /// @brief The list of local single-qubit operations supported by the device.
   std::vector<LocalSingleQubitOperation> localSingleQubitOperations;
@@ -224,7 +224,7 @@ struct Device {
                                                 region, interactionRadius,
                                                 blockingRadius, numRows,
                                                 numColumns, duration, fidelity,
-                                                numQubits, numParameters);
+                                                numQubits, numParameters)
   };
   /// @brief The list of local multi-qubit operations supported by the device.
   std::vector<LocalMultiQubitOperation> localMultiQubitOperations;
@@ -256,7 +256,7 @@ struct Device {
                                                 numRows, numColumns,
                                                 movingSpeed, loadDuration,
                                                 storeDuration, loadFidelity,
-                                                storeFidelity, numParameters);
+                                                storeFidelity, numParameters)
   };
   /// @brief The list of shuttling units supported by the device.
   std::vector<ShuttlingUnit> shuttlingUnits;
@@ -268,7 +268,7 @@ struct Device {
     /// @brief The T2 time.
     uint64_t t2 = 0;
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(DecoherenceTimes, t1, t2);
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(DecoherenceTimes, t1, t2)
   };
   /// @brief The decoherence times of the device.
   DecoherenceTimes decoherenceTimes;
@@ -281,7 +281,7 @@ struct Device {
     /// nanoseconds).
     std::string unit;
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Unit, scaleFactor, unit);
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Unit, scaleFactor, unit)
   };
 
   /// @brief The unit of measurement for lengths in the device.
@@ -293,7 +293,7 @@ struct Device {
       Device, name, numQubits, traps, minAtomDistance,
       globalSingleQubitOperations, globalMultiQubitOperations,
       localSingleQubitOperations, localMultiQubitOperations, shuttlingUnits,
-      decoherenceTimes, lengthUnit, timeUnit);
+      decoherenceTimes, lengthUnit, timeUnit)
 };
 
 /**
