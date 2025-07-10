@@ -97,7 +97,7 @@ jobs:
       # Build the plugin package
       - name: Build mqt-core-catalyst-plugin
         working-directory: plugins/catalyst
-        run: uv sync --verbose
+        run: uv sync --verbose --active
 
       # Run the plugin tests
       - name: Run pytest for mqt-core-catalyst-plugin
@@ -164,7 +164,7 @@ jobs:
       # Build the plugin package
       - name: Build mqt-core-catalyst-plugin
         working-directory: plugins/catalyst
-        run: uv sync --verbose
+        run: uv sync --verbose --active
 
       # Run the plugin tests
       - name: Run pytest for mqt-core-catalyst-plugin
