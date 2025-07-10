@@ -12,33 +12,13 @@ add_compile_options(-fexceptions)
 
 file(GLOB TRANSFORMS_SOURCES *.cpp)
 
-add_mlir_library(
-  MLIRMQTDynTransforms
-  DISABLE_INSTALL
-  ${TRANSFORMS_SOURCES}
-  LINK_LIBS
-  ${LIBRARIES}
-  DEPENDS
-  MLIRMQTDynTransformsIncGen)
+add_mlir_library(MLIRMQTDynTransforms ${TRANSFORMS_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
+                 MLIRMQTDynTransformsIncGen)
 
 # collect header files
-file(GLOB_RECURSE TRANSFORMS_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQTDyn/Transforms/*.h)
-file(GLOB_RECURSE TRANSFORMS_HEADERS_BUILD
-     ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/MQTDyn/Transforms/*.inc)
+file(GLOB_RECURSE TRANSFORMS_HEADERS
+     ${MQT_MLIR_INCLUDE_BUILD_DIR}/mlir/Dialect/MQTDyn/Transforms/*.h)
 
 # add public headers using file sets
-target_sources(
-  MLIRMQTDynTransforms
-  PUBLIC FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-         FILES
-         ${TRANSFORMS_HEADERS_SOURCE}
-         FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_BUILD_INCLUDE_DIR}
-         FILES
-         ${TRANSFORMS_HEADERS_BUILD})
+target_sources(MLIRMQTDynTransforms PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_INCLUDE_BUILD_DIR}
+                                           FILES ${TRANSFORMS_HEADERS})
