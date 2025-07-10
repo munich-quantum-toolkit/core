@@ -1,6 +1,6 @@
 {
   "name": "MQT NA QDMI Default Device",
-  "num_qubits": 100,
+  "numQubits": 100,
   "traps": [
     {
       "latticeOrigin": {

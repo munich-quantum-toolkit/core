@@ -18,19 +18,19 @@ It defines a representation to easily provide static information in the form of 
 
 ## Describing a Device
 
-The basis of a device implementation is a specification in a JSON file.
-These JSON files are defined on the basis of a protocol buffer schema that can be found in `proto/na/device.proto`.
-During compilation, this JSON file is parsed and the corresponding C++ code is produced for the actual QDMI device implementation.
+The basis of a such device implementation is a specification in a JSON file.
+The structure of this JSON files is defined via `struct`s in [`Generator.hpp`](https://github.com/munich-quantum-toolkit/core/tree/main/include/mqt-core/na/device/Generator.hpp) that define functions to serialize and deserialize the data using the [nlohmann/json](https://json.nlohmann.me) library.
+During compilation, this JSON file is parsed and the corresponding C++ code is produced by an application (see [`App.cpp`](https://github.com/munich-quantum-toolkit/core/tree/main/src/na/device/App.cpp)) for the actual QDMI device implementation.
 The C++ code is then compiled to a library that can be used by the QDMI driver.
 
 ### JSON Schema
 
-An example instance of a device JSON file can be found in `json/na/device.json`.
+An example instance of a device JSON file can be found in [`json/na/device.json`](https://github.com/munich-quantum-toolkit/core/tree/main/json/na/device.json).
 
 #### Top-Level Fields
 
 - **`name`** _(string)_: The name of the device.
-- **`num_qubits`** _(integer)_: The total number of qubits in the device.
+- **`numQubits`** _(integer)_: The total number of qubits in the device.
 - **`traps`** _(array)_: A list of traps defining the qubit lattice structure.
 - **`minAtomDistance`** _(number)_: The minimum distance between atoms in the lattice.
 - **`globalSingleQubitOperations`** _(array)_: A list of global single-qubit operations supported by the device.
@@ -52,18 +52,21 @@ An example instance of a device JSON file can be found in `json/na/device.json`.
   - **`x`** _(number)_: X-coordinate of the origin.
   - **`y`** _(number)_: Y-coordinate of the origin.
 - **`latticeVector1`** _(object)_: Defines one lattice vector.
-  - **`vector`** _(object)_: A vector in the lattice.
-    - **`x`** _(number)_: X-component of the vector.
-    - **`y`** _(number)_: Y-component of the vector.
-  - **`repeat`** _(integer)_: Number of repetitions of the vector.
+  - **`x`** _(number)_: X-component of the vector.
+  - **`y`** _(number)_: Y-component of the vector.
 - **`latticeVector2`** _(object)_: Defines the other lattice vector.
-  - **`vector`** _(object)_: A vector in the lattice.
-    - **`x`** _(number)_: X-component of the vector.
-    - **`y`** _(number)_: Y-component of the vector.
-  - **`repeat`** _(integer)_: Number of repetitions of the vector.
+  - **`x`** _(number)_: X-component of the vector.
+  - **`y`** _(number)_: Y-component of the vector.
 - **`sublatticeOffsets`** _(array of objects)_: Offsets for sublattices.
   - **`x`** _(number)_: X-offset.
   - **`y`** _(number)_: Y-offset.
+- **`extent`** _(object)_: The extent of the trap area.
+  - **`origin`** _(object)_: The origin of the trap area.
+    - **`x`** _(number)_: X-coordinate of the origin.
+    - **`y`** _(number)_: Y-coordinate of the origin.
+  - **`size`** _(object)_: Size of the trap area.
+    - **`width`** _(number)_: Width of the trap area.
+    - **`height`** _(number)_: Height of the trap area.
 
 ##### `globalSingleQubitOperations` and `localSingleQubitOperations` _(array of objects)_:
 
@@ -78,6 +81,7 @@ An example instance of a device JSON file can be found in `json/na/device.json`.
 - **`duration`** _(number)_: Duration of the operation.
 - **`fidelity`** _(number)_: Fidelity of the operation.
 - **`numParameters`** _(integer)_: Number of parameters for the operation.
+- **`numRows`** and **`numRows`** _(integer, only `localSingleQubitOperations`)_: Number of rows and columns, respectively, in the operation.
 
 ##### `globalMultiQubitOperations` and `localMultiQubitOperations` _(array of objects)_:
 
@@ -89,7 +93,8 @@ An example instance of a device JSON file can be found in `json/na/device.json`.
 - **`numParameters`** _(integer)_: Number of parameters for the operation.
 - **`duration`** _(number)_: Duration of the operation.
 - **`fidelity`** _(number)_: Fidelity of the operation.
-- **`idlingFidelity`** _(number, optional)_: Fidelity when qubits are idle.
+- **`idlingFidelity`** _(number, only `globalMultiQubitOperations`)_: Fidelity when qubits are idle.
+- **`numRows`** and **`numRows`** _(integer, only `localMultiQubitOperations`)_: Number of rows and columns, respectively, in the operation.
 
 ##### `shuttlingUnits` _(array of objects)_:
 
