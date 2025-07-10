@@ -314,7 +314,6 @@ struct QuantumSinkPushPattern final
     if (auto condBranchOp =
             mlir::dyn_cast<mlir::cf::CondBranchOp>(nextBranch)) {
       rewriteCondBranch(op, condBranchOp, rewriter);
-      rewriter.eraseOp(op);
       return mlir::success();
     }
 
