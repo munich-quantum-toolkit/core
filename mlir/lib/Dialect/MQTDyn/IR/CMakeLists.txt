@@ -6,25 +6,12 @@
 #
 # Licensed under the MIT License
 
-add_mlir_dialect_library(MLIRMQTDyn DISABLE_INSTALL MQTDynOps.cpp DEPENDS MLIRMQTDynOpsIncGen
+add_mlir_dialect_library(MLIRMQTDyn MQTDynOps.cpp DEPENDS MLIRMQTDynOpsIncGen
                          MLIRMQTDynInterfacesIncGen)
 
 # collect header files
-file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQTDyn/IR/*.h")
-file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/MQTDyn/IR/*.inc")
+file(GLOB_RECURSE IR_HEADERS ${MQT_MLIR_INCLUDE_BUILD_DIR}/mlir/Dialect/MQTDyn/IR/*.h)
 
 # add public headers using file sets
-target_sources(
-  MLIRMQTDyn
-  PUBLIC FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-         FILES
-         ${IR_HEADERS_SOURCE}
-         FILE_SET
-         HEADERS
-         BASE_DIRS
-         ${MQT_MLIR_BUILD_INCLUDE_DIR}
-         FILES
-         ${IR_HEADERS_BUILD})
+target_sources(MLIRMQTDyn PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_INCLUDE_BUILD_DIR} FILES
+                                 ${IR_HEADERS})
