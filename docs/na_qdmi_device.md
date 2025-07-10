@@ -4,6 +4,7 @@ kernelspec:
   name: python3
 mystnb:
   number_source_lines: true
+title: NA QDMI Device
 ---
 
 # MQT Core Neutral Atom QDMI Device
@@ -19,13 +20,13 @@ It defines a representation to easily provide static information in the form of 
 ## Describing a Device
 
 The basis of a such device implementation is a specification in a JSON file.
-The structure of this JSON files is defined via `struct`s in [`Generator.hpp`](https://github.com/munich-quantum-toolkit/core/tree/main/include/mqt-core/na/device/Generator.hpp) that define functions to serialize and deserialize the data using the [nlohmann/json](https://json.nlohmann.me) library.
-During compilation, this JSON file is parsed and the corresponding C++ code is produced by an application (see [`App.cpp`](https://github.com/munich-quantum-toolkit/core/tree/main/src/na/device/App.cpp)) for the actual QDMI device implementation.
+The structure of this JSON files is defined via `struct`s in [`Generator.hpp`](../include/mqt-core/na/device/Generator.hpp) that define functions to serialize and deserialize the data using the [nlohmann/json](https://json.nlohmann.me) library.
+During compilation, this JSON file is parsed and the corresponding C++ code is produced by an application (see [`App.cpp`](../src/na/device/App.cpp)) for the actual QDMI device implementation.
 The C++ code is then compiled to a library that can be used by the QDMI driver.
 
 ### JSON Schema
 
-An example instance of a device JSON file can be found in [`json/na/device.json`](https://github.com/munich-quantum-toolkit/core/tree/main/json/na/device.json).
+An example instance of a device JSON file can be found in [`json/na/device.json`](../json/na/device.json).
 
 #### Top-Level Fields
 
