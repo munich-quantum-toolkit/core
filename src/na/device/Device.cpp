@@ -165,11 +165,7 @@ auto MQT_NA_QDMI_Device_Session_impl_d::createDeviceJob(
   return QDMI_ERROR_NOTSUPPORTED;
 }
 auto MQT_NA_QDMI_Device_Session_impl_d::freeDeviceJob(
-    [[maybe_unused]] MQT_NA_QDMI_Device_Job job) -> void {
-  // if (job == nullptr) {
-  //   jobs.erase(job);
-  // }
-}
+    [[maybe_unused]] MQT_NA_QDMI_Device_Job job) -> void {}
 auto MQT_NA_QDMI_Device_Session_impl_d::queryDeviceProperty(
     const QDMI_Device_Property prop, const size_t size, void* value,
     size_t* sizeRet) const -> int {
