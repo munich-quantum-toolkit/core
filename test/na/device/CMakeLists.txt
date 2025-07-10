@@ -26,7 +26,7 @@ if(TARGET MQT::CoreNaDeviceGen
     ${TARGET_NAME}
     PRIVATE EXECUTABLE_PATH="$<TARGET_FILE:MQT::CoreQdmiNaDeviceGenerator>"
             MQT_CORE_VERSION="${MQT_CORE_VERSION}"
-            NA_DEVICE_JSON="${CMAKE_SOURCE_DIR}/json/na/device.json")
+            NA_DEVICE_JSON="${PROJECT_SOURCE_DIR}/json/na/device.json")
   # Set c++ standard
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
 endif()
