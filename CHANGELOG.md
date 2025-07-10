@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [3.1.0]
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#310)._
+
 ### Added
 
 - ✨ Add MLIR pass for merging rotation gates ([#1019]) ([**@denialhaag**])
@@ -22,7 +26,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - 🐛 Fix bug in MLIR roundtrip passes caused by accessing an invalidated iterator after erasure in a loop ([#932]) ([**@flowerthrower**])
 - 🐛 Add missing support for `sxdg` gates in Qiskit circuit import ([#930]) ([**@burgholzer**])
-- 🐛 Fix bug initialization of operations with duplicate operands ([#964]) ([**@ystade**])
+- 🐛 Fix bug related to initialization of operations with duplicate operands ([#964]) ([**@ystade**])
 - 🐛 Open issue for Qiskit upstream test only when the test is actually failing not when it was cancelled ([#973]) ([**@ystade**])
 
 ### Changed
@@ -111,7 +115,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.2...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.2...v3.1.0
 [3.0.2]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.1...v3.0.2
 [3.0.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/munich-quantum-toolkit/core/compare/v2.7.0...v3.0.0
