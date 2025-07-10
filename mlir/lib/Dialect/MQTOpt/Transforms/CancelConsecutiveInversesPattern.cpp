@@ -84,28 +84,26 @@ struct CancelConsecutiveInversesPattern final
     if (!areGatesInverse(*op, *userOp)) {
       return mlir::failure();
     }
-    auto unitaryUser = mlir::dyn_cast<UnitaryInterface>(userOp);
-    if (!unitaryUser) {
+    auto user = mlir::dyn_cast<UnitaryInterface>(userOp);
+    if (!user) {
       return mlir::failure();
     }
-    if (op.getAllOutQubits() != unitaryUser.getAllInQubits()) {
+    if (op.getAllOutQubits() != user.getAllInQubits()) {
       return mlir::failure();
     }
     if (op.getPosCtrlInQubits().size() !=
-            unitaryUser.getPosCtrlInQubits().size() ||
+            user.getPosCtrlInQubits().size() ||
         op.getNegCtrlInQubits().size() !=
-            unitaryUser.getNegCtrlInQubits().size()) {
+            user.getNegCtrlInQubits().size()) {
       // We only need to check the sizes, because the order of the controls was
       // already checked by the previous condition.
       return mlir::failure();
     }
 
-    // --- Begin Rewrite Phase ---
-
     // When iterating over the output qubits, it is important to call
     // `getAllOutQubits()` only once, as the output qubits are combined into a
     // fresh vector on every call.
-    const auto& userOutQubits = unitaryUser.getAllOutQubits();
+    const auto& userOutQubits = user.getAllOutQubits();
     // Also get the op's input qubits.
     const auto& opInQubits = op.getAllInQubits();
 
@@ -113,7 +111,7 @@ struct CancelConsecutiveInversesPattern final
     // can only be used once (linear typing). However, the user may output
     // multiple qubits, e.g., a CX gate, that are used by different users.
     // Hence, the user may have multiple child users.
-    const auto& childUsers = unitaryUser->getUsers();
+    const auto& childUsers = user->getUsers();
 
     for (const auto& childUser : childUsers) {
       for (size_t i = 0; i < childUser->getOperands().size(); i++) {
@@ -129,7 +127,7 @@ struct CancelConsecutiveInversesPattern final
       }
     }
 
-    rewriter.eraseOp(unitaryUser);
+    rewriter.eraseOp(user);
     rewriter.eraseOp(op);
     return mlir::success();
   }
