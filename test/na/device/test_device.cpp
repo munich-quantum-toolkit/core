@@ -23,13 +23,17 @@
 
 namespace testing {
 namespace {
-// NOLINTBEGIN(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
-MATCHER_P2(IsBetween, a, b, {
+auto stringConcat5(const std::string& a, const std::string& b,
+                   const std::string& c, const std::string& d,
+                   const std::string& e) -> std::string {
   std::stringstream ss;
-  ss << (negation ? "isn't" : "is") << " between " << PrintToString(a)
-     << " and " << PrintToString(b);
-  ss.str();
-}) {
+  ss << a << b << c << d << e;
+  return ss.str();
+}
+// NOLINTBEGIN(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
+MATCHER_P2(IsBetween, a, b,
+           stringConcat5(negation ? "isn't" : "is", " between ",
+                         PrintToString(a), " and ", PrintToString(b))) {
   return a <= arg && arg <= b;
 }
 // NOLINTEND(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
