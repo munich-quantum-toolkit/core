@@ -121,6 +121,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      # install a specific version of the LLVM toolchain
+      - name: Install clang
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          wget https://apt.llvm.org/llvm.sh -O ${{ runner.temp }}/llvm_install.sh
+          chmod +x ${{ runner.temp }}/llvm_install.sh
+          if sudo ${{ runner.temp }}/llvm_install.sh 19; then
+            sudo apt-get install -y clang-19 \
+             || exit 1
+          else
+            echo "Installation from script failed."
+            exit 1
+          fi
+          echo "CC=clang-19" >> $GITHUB_ENV
+          echo "CXX=clang++-19" >> $GITHUB_ENV
+
       # set up ccache for faster C++ builds
       - name: Setup ccache
         uses: Chocobo1/setup-ccache-action@v1
