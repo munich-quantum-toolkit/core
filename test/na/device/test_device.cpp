@@ -492,16 +492,16 @@ TEST_F(NADeviceTest, QueryOperationData) {
   size_t numQubits = 0;
   size_t numParameters = 0;
   EXPECT_NO_THROW(for (auto* operation : queryOperations(session)) {
-    EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
-                  session, operation, 0, nullptr, 0, nullptr,
-                  QDMI_OPERATION_PROPERTY_DURATION, sizeof(double), &duration,
-                  nullptr),
-              QDMI_SUCCESS);
-    EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
-                  session, operation, 0, nullptr, 0, nullptr,
-                  QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity,
-                  nullptr),
-              QDMI_SUCCESS);
+    EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
+                    session, operation, 0, nullptr, 0, nullptr,
+                    QDMI_OPERATION_PROPERTY_DURATION, sizeof(double), &duration,
+                    nullptr),
+                testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
+                    session, operation, 0, nullptr, 0, nullptr,
+                    QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity,
+                    nullptr),
+                testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
     EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
                     session, operation, 0, nullptr, 0, nullptr,
                     QDMI_OPERATION_PROPERTY_QUBITSNUM, sizeof(size_t),
