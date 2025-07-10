@@ -279,12 +279,15 @@ auto parseGenerateArguments(const std::vector<std::string>& args, size_t i)
 int main(int argc, char* argv[]) {
   std::vector<std::string> argVec;
   std::pair<Arguments, size_t> parsedArgs;
+  // `main` functions should not throw exceptions. Apparently, the
+  // initialization of a vector can throw exceptions, so we catch them here.
   try {
     argVec = std::vector<std::string>(argv, argv + argc);
   } catch (std::exception& e) {
     SPDLOG_ERROR("Error parsing arguments into vector: {}", e.what());
     return 1;
   }
+  // parse the command line arguments up to the first sub-command
   try {
     parsedArgs = parseArguments(argVec);
   } catch (const std::exception& e) {
@@ -292,15 +295,20 @@ int main(int argc, char* argv[]) {
     printUsage(argVec.empty() ? "mqt-core-na-device-gen" : argVec.front());
     return 1;
   }
+  // unpack the parsed arguments and the index of the first sub-command here
+  // because strcutured bindings only work with fresh variables
   const auto& [args, i] = parsedArgs;
+  // print help or version information if requested
   if (args.help) {
     printUsage(args.programName);
     return 0;
   }
+  // if the version flag is set, print the version information and exit
   if (args.version) {
     printVersion();
     return 0;
   }
+  // if no command is specified, print the usage information
   if (!args.command.has_value()) {
     printUsage(args.programName);
     return 1;
@@ -308,6 +316,7 @@ int main(int argc, char* argv[]) {
   switch (*args.command) {
   case Command::Schema: {
     SchemaArguments schemaArgs;
+    // parse the rest of the command line arguments for the schema command
     try {
       schemaArgs = parseSchemaArguments(argVec, i);
     } catch (const std::exception& e) {
@@ -315,10 +324,12 @@ int main(int argc, char* argv[]) {
       printSchemaUsage(args.programName);
       return 1;
     }
+    // if the help flag is set, print the schema usage information and exit
     if (schemaArgs.help) {
       printSchemaUsage(args.programName);
       return 0;
     }
+    // generate the JSON schema and write it to the output file or stdout
     try {
       if (schemaArgs.outputFile.has_value()) {
         na::writeJSONSchema(schemaArgs.outputFile.value());
@@ -332,11 +343,14 @@ int main(int argc, char* argv[]) {
     break;
   }
   case Command::Validate: {
+    // parse the rest of the command line arguments for the validate command
     const ValidateArguments validateArgs = parseValidateArguments(argVec, i);
+    //
     if (validateArgs.help) {
       printValidateUsage(args.programName);
       return 0;
     }
+    // validate the JSON file or the JSON string from stdin
     try {
       if (validateArgs.jsonFile.has_value()) {
         std::ignore = na::readJSON(validateArgs.jsonFile.value());
@@ -351,6 +365,7 @@ int main(int argc, char* argv[]) {
   }
   case Command::Generate: {
     GenerateArguments generateArgs;
+    // parse the rest of the command line arguments for the generate command
     try {
       generateArgs = parseGenerateArguments(argVec, i);
     } catch (const std::exception& e) {
@@ -358,17 +373,21 @@ int main(int argc, char* argv[]) {
       printGenerateUsage(args.programName);
       return 1;
     }
+    // if the help flag is set, print the generate usage information and exit
     if (generateArgs.help) {
       printGenerateUsage(args.programName);
       return 0;
     }
+    // generate the header file from the JSON specification
     try {
       na::Device device;
+      // read the JSON file or the JSON string from stdin
       if (generateArgs.jsonFile.has_value()) {
         device = na::readJSON(generateArgs.jsonFile.value());
       } else {
         device = na::readJSON(std::cin);
       }
+      // write the header file to the output file or stdout
       if (generateArgs.outputFile.has_value()) {
         na::writeHeader(device, generateArgs.outputFile.value());
       } else {
