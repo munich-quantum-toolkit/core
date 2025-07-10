@@ -155,17 +155,25 @@ auto MQT_NA_QDMI_Device_Session_impl_d::setParameter(
 }
 auto MQT_NA_QDMI_Device_Session_impl_d::createDeviceJob(
     // NOLINTNEXTLINE(readability-non-const-parameter)
-    MQT_NA_QDMI_Device_Job* job) const -> int {
+    MQT_NA_QDMI_Device_Job* job) -> int {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status == Status::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
-  return QDMI_ERROR_NOTSUPPORTED;
+  auto uniqueJob = std::make_unique<MQT_NA_QDMI_Device_Job_impl_d>(this);
+  *job = jobs.emplace(uniqueJob.get(), std::move(uniqueJob)).first->first;
+  return QDMI_SUCCESS;
 }
 auto MQT_NA_QDMI_Device_Session_impl_d::freeDeviceJob(
-    [[maybe_unused]] MQT_NA_QDMI_Device_Job job) -> void {}
+    [[maybe_unused]] MQT_NA_QDMI_Device_Job job) -> void {
+  if (job != nullptr) {
+    if (const auto& it = jobs.find(job); it != jobs.end()) {
+      jobs.erase(it);
+    }
+  }
+}
 auto MQT_NA_QDMI_Device_Session_impl_d::queryDeviceProperty(
     const QDMI_Device_Property prop, const size_t size, void* value,
     size_t* sizeRet) const -> int {

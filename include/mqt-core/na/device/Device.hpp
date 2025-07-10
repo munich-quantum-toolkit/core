@@ -101,7 +101,12 @@ private:
     ALLOCATED,   ///< The session has been allocated but not initialized
     INITIALIZED, ///< The session has been initialized and is ready for use
   };
+  /// @brief The current status of the session.
   Status status = Status::ALLOCATED;
+  /// @brief The device jobs associated with this session.
+  std::unordered_map<MQT_NA_QDMI_Device_Job,
+                     std::unique_ptr<MQT_NA_QDMI_Device_Job_impl_d>>
+      jobs;
 
 public:
   /**
@@ -121,13 +126,13 @@ public:
    * @brief Create a new device job.
    * @see MQT_NA_QDMI_device_session_create_device_job
    */
-  auto createDeviceJob(MQT_NA_QDMI_Device_Job* job) const -> int;
+  auto createDeviceJob(MQT_NA_QDMI_Device_Job* job) -> int;
 
   /**
    * @brief Frees the device job.
    * @see MQT_NA_QDMI_device_job_free
    */
-  static auto freeDeviceJob(MQT_NA_QDMI_Device_Job job) -> void;
+  auto freeDeviceJob(MQT_NA_QDMI_Device_Job job) -> void;
 
   /**
    * @brief Forwards a query of a device property to the device.
@@ -161,11 +166,12 @@ public:
 struct MQT_NA_QDMI_Device_Job_impl_d {
 private:
   /// @brief The device session associated with the job.
-  MQT_NA_QDMI_Device_Session session;
+  const MQT_NA_QDMI_Device_Session_impl_d* session;
 
 public:
   /// @brief Constructor for the MQT_NA_QDMI_Device_Job_impl_d.
-  MQT_NA_QDMI_Device_Job_impl_d(MQT_NA_QDMI_Device_Session session)
+  explicit MQT_NA_QDMI_Device_Job_impl_d(
+      const MQT_NA_QDMI_Device_Session_impl_d* session)
       : session(session) {}
   /**
    * @brief Frees the device job.
