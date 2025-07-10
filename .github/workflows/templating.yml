@@ -18,7 +18,7 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      - uses: munich-quantum-toolkit/templates@main
+      - uses: munich-quantum-toolkit/templates@a8866084f0336008b2d2727a34c9d27ec04694b6 # v1.0.0
         with:
           token: ${{ steps.create-token.outputs.token }}
           organization: ${{ github.repository_owner }}
