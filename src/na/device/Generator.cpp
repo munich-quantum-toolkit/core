@@ -322,15 +322,14 @@ auto writeJSONSchema(std::ostream& os) -> void {
 auto writeJSONSchema(const std::string& path) -> void {
   // Write to file
   std::ofstream ofs(path);
-  if (ofs.is_open()) {
-    writeJSONSchema(ofs);
-    ofs.close();
-    SPDLOG_INFO("JSON template written to {}", path);
-  } else {
+  if (!ofs.good()) {
     std::stringstream ss;
     ss << "Failed to open file for writing: " << path;
     throw std::runtime_error(ss.str());
   }
+  writeJSONSchema(ofs);
+  ofs.close();
+  SPDLOG_INFO("JSON template written to {}", path);
 }
 
 [[nodiscard]] auto readJSON(std::istream& is) -> Device {
@@ -349,7 +348,7 @@ auto writeJSONSchema(const std::string& path) -> void {
 [[nodiscard]] auto readJSON(const std::string& path) -> Device {
   // Read the device configuration from a JSON file
   std::ifstream ifs(path);
-  if (!ifs.is_open()) {
+  if (!ifs.good()) {
     throw std::runtime_error("Failed to open JSON file: " + std::string(path));
   }
   const auto& device = readJSON(ifs);
@@ -369,7 +368,7 @@ auto writeHeader(const Device& device, std::ostream& os) -> void {
 
 auto writeHeader(const Device& device, const std::string& path) -> void {
   std::ofstream ofs(path);
-  if (!ofs.is_open()) {
+  if (!ofs.good()) {
     std::stringstream ss;
     ss << "Failed to open header file for writing: " << path;
     throw std::runtime_error(ss.str());
