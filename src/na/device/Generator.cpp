@@ -226,7 +226,8 @@ auto writeOperations(const Device& device, const double timeUnit,
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name << "\", OperationType::GLOBAL_SINGLE_QUBIT, "
+       << operation.name
+       << "\", MQT_NA_QDMI_Operation_impl_d::Type::GlobalSingleQubit, "
        << operation.numParameters << ", 1, "
        << static_cast<double>(operation.duration) * timeUnit << ", "
        << operation.fidelity << "}));";
@@ -235,7 +236,8 @@ auto writeOperations(const Device& device, const double timeUnit,
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name << "\", OperationType::GLOBAL_MULTI_QUBIT, "
+       << operation.name
+       << "\", MQT_NA_QDMI_Operation_impl_d::Type::GlobalMultiQubit, "
        << operation.numParameters << ", " << operation.numQubits << ", "
        << static_cast<double>(operation.duration) * timeUnit << ", "
        << operation.fidelity << "}));";
@@ -244,7 +246,8 @@ auto writeOperations(const Device& device, const double timeUnit,
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name << "\", OperationType::LOCAL_SINGLE_QUBIT, "
+       << operation.name
+       << "\", MQT_NA_QDMI_Operation_impl_d::Type::LocalSingleQubit, "
        << operation.numParameters << ", 1, "
        << static_cast<double>(operation.duration) * timeUnit << ", "
        << operation.fidelity << "}));";
@@ -253,7 +256,8 @@ auto writeOperations(const Device& device, const double timeUnit,
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name << "\", OperationType::LOCAL_MULTI_QUBIT, "
+       << operation.name
+       << "\", MQT_NA_QDMI_Operation_impl_d::Type::LocalMultiQubit, "
        << operation.numParameters << ", " << operation.numQubits << ", "
        << static_cast<double>(operation.duration) * timeUnit << ", "
        << operation.fidelity << "}));";
@@ -262,19 +266,22 @@ auto writeOperations(const Device& device, const double timeUnit,
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name << " (Load)\", OperationType::SHUTTLING_LOAD, "
+       << operation.name
+       << " (Load)\", MQT_NA_QDMI_Operation_impl_d::Type::ShuttlingLoad, "
        << operation.numParameters << ", 0, "
        << static_cast<double>(operation.loadDuration) * timeUnit << ", "
        << operation.loadFidelity << "}));";
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name << " (Move)\", OperationType::SHUTTLING_MOVE, "
+       << operation.name
+       << " (Move)\", MQT_NA_QDMI_Operation_impl_d::Type::ShuttlingMove, "
        << operation.numParameters << ", 0, 0, 0}));";
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name << " (Store)\", OperationType::SHUTTLING_STORE, "
+       << operation.name
+       << " (Store)\", MQT_NA_QDMI_Operation_impl_d::Type::ShuttlingStore, "
        << operation.numParameters << ", 0, "
        << static_cast<double>(operation.storeDuration) * timeUnit << ", "
        << operation.storeFidelity << "}));";

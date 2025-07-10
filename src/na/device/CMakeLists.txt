@@ -84,7 +84,7 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Set paths
   set(JSON_FILE ${PROJECT_SOURCE_DIR}/json/na/device.json)
-  set(DEVICE_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/Device.hpp)
+  set(DEVICE_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/Initializer.hpp)
 
   # Generate definitions for device
   add_custom_command(
@@ -111,9 +111,11 @@ if(NOT TARGET ${TARGET_NAME})
     PUBLIC FILE_SET
            HEADERS
            BASE_DIRS
+           ${MQT_CORE_INCLUDE_BUILD_DIR}
            ${CMAKE_CURRENT_BINARY_DIR}/include
            FILES
            ${DEVICE_HDR}
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/na/device/Device.hpp
            ${QDMI_HDRS})
 
   # add link libraries
