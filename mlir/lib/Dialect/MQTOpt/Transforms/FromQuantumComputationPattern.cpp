@@ -16,7 +16,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <llvm/Support/raw_ostream.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
@@ -36,6 +35,12 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
   explicit FromQuantumComputationPattern(mlir::MLIRContext* context,
                                          qc::QuantumComputation& qc)
       : OpRewritePattern(context), circuit(qc) {}
+
+  // clang-tidy false positive
+  // NOLINTNEXTLINE(*-convert-member-functions-to-static)
+  [[nodiscard]] mlir::LogicalResult match(const AllocOp op) const override {
+    return op->hasAttr("to_replace") ? mlir::success() : mlir::failure();
+  }
 
   /**
    * @brief Creates an ExtractOp that extracts the qubit at the given index from
@@ -162,115 +167,102 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     rewriter.replaceOp(returnOperation, cloned);
   }
 
-  mlir::LogicalResult
-  matchAndRewrite(AllocOp op, mlir::PatternRewriter& rewriter) const override {
-    if (op->hasAttr("to_replace")) {
+  void rewrite(AllocOp op, mlir::PatternRewriter& rewriter) const override {
+    const std::size_t numQubits = circuit.getNqubits();
 
-      const std::size_t numQubits = circuit.getNqubits();
+    // Prepare list of measurement results for later use.
+    std::vector<mlir::Value> measurementValues(numQubits);
 
-      // Prepare list of measurement results for later use.
-      std::vector<mlir::Value> measurementValues(numQubits);
+    // Create a new qubit register with the correct number of qubits.
+    auto newAlloc = rewriter.create<AllocOp>(
+        op.getLoc(), QubitRegisterType::get(rewriter.getContext()), nullptr,
+        rewriter.getIntegerAttr(rewriter.getI64Type(),
+                                static_cast<std::int64_t>(numQubits)));
+    newAlloc->setAttr("mqt_core", rewriter.getUnitAttr());
 
-      // Create a new qubit register with the correct number of qubits.
-      auto newAlloc = rewriter.create<AllocOp>(
-          op.getLoc(), QubitRegisterType::get(rewriter.getContext()), nullptr,
-          rewriter.getIntegerAttr(rewriter.getI64Type(),
-                                  static_cast<std::int64_t>(numQubits)));
-      newAlloc->setAttr("mqt_core", rewriter.getUnitAttr());
-
-      // We start by first extracting each qubit from the register. The current
-      // `Value` representations of each qubit are stored in the
-      // `currentQubitVariables` vector.
-      auto currentRegister = newAlloc.getResult();
-      std::vector<mlir::Value> currentQubitVariables(numQubits);
-      for (size_t i = 0; i < numQubits; i++) {
-        auto newRegisterAccess =
-            createRegisterAccess(currentRegister, i, rewriter);
-        currentQubitVariables[i] = newRegisterAccess.getOutQubit();
-        currentRegister = newRegisterAccess.getOutQreg();
-      }
-
-      // Iterate over each operation in the circuit and create the corresponding
-      // MLIR operations.
-      for (const auto& o : circuit) {
-        // Collect the positive and negative control qubits for the operation in
-        // separate vectors.
-        std::vector<int> controlQubitIndicesPositive;
-        std::vector<int> controlQubitIndicesNegative;
-        std::vector<mlir::Value> controlQubitsPositive;
-        std::vector<mlir::Value> controlQubitsNegative;
-        for (const auto& control : o->getControls()) {
-          if (control.type == qc::Control::Type::Pos) {
-            controlQubitIndicesPositive.emplace_back(control.qubit);
-            controlQubitsPositive.emplace_back(
-                currentQubitVariables[control.qubit]);
-          } else {
-            controlQubitIndicesNegative.emplace_back(control.qubit);
-            controlQubitsNegative.emplace_back(
-                currentQubitVariables[control.qubit]);
-          }
-        }
-
-        if (o->getType() == qc::OpType::X || o->getType() == qc::OpType::H) {
-          // For unitary operations, we call the `createUnitaryOp` function. We
-          // then have to update the `currentQubitVariables` vector with the new
-          // qubit values.
-          UnitaryInterface newUnitaryOp = createUnitaryOp(
-              op->getLoc(), o->getType(),
-              currentQubitVariables[o->getTargets()[0]], controlQubitsPositive,
-              controlQubitsNegative, rewriter);
-          currentQubitVariables[o->getTargets()[0]] =
-              newUnitaryOp.getAllOutQubits()[0];
-          for (size_t i = 0; i < controlQubitsPositive.size(); i++) {
-            currentQubitVariables[controlQubitIndicesPositive[i]] =
-                newUnitaryOp.getAllOutQubits()[i + 1];
-          }
-          for (size_t i = 0; i < controlQubitsNegative.size(); i++) {
-            currentQubitVariables[controlQubitIndicesNegative[i]] =
-                newUnitaryOp
-                    .getAllOutQubits()[i + 1 + controlQubitsPositive.size()];
-          }
-        } else if (o->getType() == qc::OpType::Measure) {
-          // For measurement operations, we call the `createMeasureOp` function.
-          // We then update the `currentQubitVariables` and `measurementValues`
-          // vectors.
-          MeasureOp newMeasureOp = createMeasureOp(
-              op->getLoc(), currentQubitVariables[o->getTargets()[0]],
-              rewriter);
-          currentQubitVariables[o->getTargets()[0]] =
-              newMeasureOp.getOutQubits()[0];
-          measurementValues[o->getTargets()[0]] = newMeasureOp.getOutBits()[0];
-        } else {
-          llvm::outs() << "ERROR: Unsupported operation type " << o->getType()
-                       << "\n";
-        }
-      }
-
-      // Now insert all the qubits back into the registers they were extracted
-      // from.
-      for (size_t i = 0; i < numQubits; i++) {
-        auto insertOp = createRegisterInsert(
-            newAlloc, currentRegister, currentQubitVariables[i], i, rewriter);
-        // Keep track of qubit register access
-        currentRegister = insertOp.getOutQreg();
-      }
-
-      // Finally, the return operation needs to be updated with the measurement
-      // results and then replace the original `alloc` operation with the
-      // updated one.
-      auto returnIt = llvm::find_if(op->getUsers(), [](mlir::Operation* user) {
-        return llvm::isa<mlir::func::ReturnOp>(user);
-      });
-
-      if (returnIt != op->getUsers().end()) {
-        updateReturnOperation(*returnIt, currentRegister, measurementValues,
-                              rewriter);
-      }
-
-      rewriter.replaceOp(op, newAlloc);
-      return mlir::success();
+    // We start by first extracting each qubit from the register. The current
+    // `Value` representations of each qubit are stored in the
+    // `currentQubitVariables` vector.
+    auto currentRegister = newAlloc.getResult();
+    std::vector<mlir::Value> currentQubitVariables(numQubits);
+    for (size_t i = 0; i < numQubits; i++) {
+      auto newRegisterAccess =
+          createRegisterAccess(currentRegister, i, rewriter);
+      currentQubitVariables[i] = newRegisterAccess.getOutQubit();
+      currentRegister = newRegisterAccess.getOutQreg();
     }
-    return mlir::failure();
+
+    // Iterate over each operation in the circuit and create the corresponding
+    // MLIR operations.
+    for (const auto& o : circuit) {
+      // Collect the positive and negative control qubits for the operation in
+      // separate vectors.
+      std::vector<int> controlQubitIndicesPositive;
+      std::vector<int> controlQubitIndicesNegative;
+      std::vector<mlir::Value> controlQubitsPositive;
+      std::vector<mlir::Value> controlQubitsNegative;
+      for (const auto& control : o->getControls()) {
+        if (control.type == qc::Control::Type::Pos) {
+          controlQubitIndicesPositive.emplace_back(control.qubit);
+          controlQubitsPositive.emplace_back(
+              currentQubitVariables[control.qubit]);
+        } else {
+          controlQubitIndicesNegative.emplace_back(control.qubit);
+          controlQubitsNegative.emplace_back(
+              currentQubitVariables[control.qubit]);
+        }
+      }
+
+      if (o->getType() == qc::OpType::X || o->getType() == qc::OpType::H) {
+        // For unitary operations, we call the `createUnitaryOp` function. We
+        // then have to update the `currentQubitVariables` vector with the new
+        // qubit values.
+        UnitaryInterface newUnitaryOp = createUnitaryOp(
+            op->getLoc(), o->getType(),
+            currentQubitVariables[o->getTargets()[0]], controlQubitsPositive,
+            controlQubitsNegative, rewriter);
+        currentQubitVariables[o->getTargets()[0]] =
+            newUnitaryOp.getAllOutQubits()[0];
+        for (size_t i = 0; i < controlQubitsPositive.size(); i++) {
+          currentQubitVariables[controlQubitIndicesPositive[i]] =
+              newUnitaryOp.getAllOutQubits()[i + 1];
+        }
+        for (size_t i = 0; i < controlQubitsNegative.size(); i++) {
+          currentQubitVariables[controlQubitIndicesNegative[i]] =
+              newUnitaryOp
+                  .getAllOutQubits()[i + 1 + controlQubitsPositive.size()];
+        }
+      } else if (o->getType() == qc::OpType::Measure) {
+        // For measurement operations, we call the `createMeasureOp` function.
+        // We then update the `currentQubitVariables` and `measurementValues`
+        // vectors.
+        MeasureOp newMeasureOp = createMeasureOp(
+            op->getLoc(), currentQubitVariables[o->getTargets()[0]], rewriter);
+        currentQubitVariables[o->getTargets()[0]] =
+            newMeasureOp.getOutQubits()[0];
+        measurementValues[o->getTargets()[0]] = newMeasureOp.getOutBits()[0];
+      } else {
+        llvm::outs() << "ERROR: Unsupported operation type " << o->getType()
+                     << "\n";
+      }
+    }
+
+    // Now insert all the qubits back into the registers they were extracted
+    // from.
+    for (size_t i = 0; i < numQubits; i++) {
+      auto insertOp = createRegisterInsert(
+          newAlloc, currentRegister, currentQubitVariables[i], i, rewriter);
+      // Keep track of qubit register access
+      currentRegister = insertOp.getOutQreg();
+    }
+
+    // Finally, the return operation needs to be updated with the measurement
+    // results and then replace the original `alloc` operation with the updated
+    // one.
+    auto* const returnOperation = *op->getUsers().begin();
+    updateReturnOperation(returnOperation, currentRegister, measurementValues,
+                          rewriter);
+    rewriter.replaceOp(op, newAlloc);
   }
 };
 

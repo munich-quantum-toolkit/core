@@ -24,6 +24,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <unordered_set>
 #include <vector>
+
 namespace mqt::ir::opt {
 
 /**
@@ -116,6 +117,45 @@ struct QuantumSinkPushPattern final
                  });
     auto* nextBranch = getNext(allUsers, op);
     return nextBranch;
+  }
+
+  mlir::LogicalResult match(UnitaryInterface op) const override {
+    // We only consider 1-qubit gates.
+    if (op.getAllOutQubits().size() != 1) {
+      return mlir::failure();
+    }
+
+    const auto& users = op->getUsers();
+    if (users.empty()) {
+      return mlir::failure();
+    }
+
+    auto* nextBranch = getNextBranchOpUser(op);
+    if (nextBranch == nullptr) {
+      return mlir::failure();
+    }
+
+    // This pattern only applies to operations in the same block.
+    if (nextBranch->getBlock() != op->getBlock()) {
+      return mlir::failure();
+    }
+
+    // The pattern can always be applied if the user is a conditional branch
+    // operation.
+    if (mlir::isa<mlir::cf::CondBranchOp>(nextBranch)) {
+      return mlir::success();
+    }
+
+    // For normal branch operations, we can only apply the pattern if the
+    // successor block only has one predecessor.
+    if (auto branchOp = mlir::dyn_cast<mlir::cf::BranchOp>(nextBranch)) {
+      auto* successor = branchOp.getDest();
+      if (std::distance(successor->getPredecessors().begin(),
+                        successor->getPredecessors().end()) == 1) {
+        return mlir::success();
+      }
+    }
+    return mlir::failure();
   }
 
   /**
@@ -287,48 +327,15 @@ struct QuantumSinkPushPattern final
     rewriter.eraseOp(op);
   }
 
-  mlir::LogicalResult
-  matchAndRewrite(UnitaryInterface op,
-                  mlir::PatternRewriter& rewriter) const override {
-    // --- MATCH LOGIC ---
-    // Only consider 1-qubit gates
-    if (op.getAllOutQubits().size() != 1) {
-      return mlir::failure();
-    }
-
-    const auto& users = op->getUsers();
-    if (users.empty()) {
-      return mlir::failure();
-    }
-
-    auto* nextBranch = getNextBranchOpUser(op);
-    if (nextBranch == nullptr) {
-      return mlir::failure();
-    }
-
-    if (nextBranch->getBlock() != op->getBlock()) {
-      return mlir::failure();
-    }
-
-    // --- REWRITE LOGIC ---
-    if (auto condBranchOp =
-            mlir::dyn_cast<mlir::cf::CondBranchOp>(nextBranch)) {
+  void rewrite(UnitaryInterface op,
+               mlir::PatternRewriter& rewriter) const override {
+    auto* user = getNextBranchOpUser(op);
+    if (auto condBranchOp = mlir::dyn_cast<mlir::cf::CondBranchOp>(user)) {
       rewriteCondBranch(op, condBranchOp, rewriter);
-      rewriter.eraseOp(op);
-      return mlir::success();
+    } else {
+      auto branchOp = mlir::dyn_cast<mlir::cf::BranchOp>(user);
+      rewriteBranch(op, branchOp, rewriter);
     }
-
-    if (auto branchOp = mlir::dyn_cast<mlir::cf::BranchOp>(nextBranch)) {
-      auto* successor = branchOp.getDest();
-      if (std::distance(successor->getPredecessors().begin(),
-                        successor->getPredecessors().end()) == 1) {
-        rewriteBranch(op, branchOp, rewriter);
-        rewriter.eraseOp(op);
-        return mlir::success();
-      }
-    }
-
-    return mlir::failure();
   }
 };
 
