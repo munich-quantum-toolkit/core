@@ -91,10 +91,8 @@ struct CancelConsecutiveInversesPattern final
     if (op.getAllOutQubits() != user.getAllInQubits()) {
       return mlir::failure();
     }
-    if (op.getPosCtrlInQubits().size() !=
-            user.getPosCtrlInQubits().size() ||
-        op.getNegCtrlInQubits().size() !=
-            user.getNegCtrlInQubits().size()) {
+    if (op.getPosCtrlInQubits().size() != user.getPosCtrlInQubits().size() ||
+        op.getNegCtrlInQubits().size() != user.getNegCtrlInQubits().size()) {
       // We only need to check the sizes, because the order of the controls was
       // already checked by the previous condition.
       return mlir::failure();
