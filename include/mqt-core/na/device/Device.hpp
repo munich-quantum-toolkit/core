@@ -166,12 +166,12 @@ public:
 struct MQT_NA_QDMI_Device_Job_impl_d {
 private:
   /// @brief The device session associated with the job.
-  const MQT_NA_QDMI_Device_Session_impl_d* session;
+  MQT_NA_QDMI_Device_Session_impl_d* session;
 
 public:
   /// @brief Constructor for the MQT_NA_QDMI_Device_Job_impl_d.
   explicit MQT_NA_QDMI_Device_Job_impl_d(
-      const MQT_NA_QDMI_Device_Session_impl_d* session)
+      MQT_NA_QDMI_Device_Session_impl_d* session)
       : session(session) {}
   /**
    * @brief Frees the device job.

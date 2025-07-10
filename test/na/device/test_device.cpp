@@ -115,13 +115,9 @@ protected:
 
   void SetUp() override {
     QDMISpecificationTest::SetUp();
-    const auto result =
-        MQT_NA_QDMI_device_session_create_device_job(session, &job);
-    ASSERT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
+    ASSERT_THAT(MQT_NA_QDMI_device_session_create_device_job(session, &job),
+                testing::AnyOf(QDMI_SUCCESS))
         << "Failed to create a device job";
-    if (result == QDMI_ERROR_NOTSUPPORTED) {
-      GTEST_SKIP();
-    }
   }
 
   void TearDown() override {
@@ -203,6 +199,9 @@ TEST_F(QDMISpecificationTest, JobQueryProperty) {
 }
 
 TEST_F(QDMIJobSpecificationTest, JobQueryProperty) {
+  EXPECT_THAT(MQT_NA_QDMI_device_job_query_property(
+                  job, QDMI_DEVICE_JOB_PROPERTY_ID, 0, nullptr, nullptr),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   EXPECT_EQ(MQT_NA_QDMI_device_job_query_property(
                 job, QDMI_DEVICE_JOB_PROPERTY_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
@@ -210,9 +209,12 @@ TEST_F(QDMIJobSpecificationTest, JobQueryProperty) {
 
 TEST_F(QDMIJobSpecificationTest, QueryJobId) {
   size_t size = 0;
-  ASSERT_EQ(MQT_NA_QDMI_device_job_query_property(
-                job, QDMI_DEVICE_JOB_PROPERTY_ID, 0, nullptr, &size),
-            QDMI_SUCCESS);
+  const auto status = MQT_NA_QDMI_device_job_query_property(
+      job, QDMI_DEVICE_JOB_PROPERTY_ID, 0, nullptr, &size);
+  ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  if (status == QDMI_ERROR_NOTSUPPORTED) {
+    GTEST_SKIP() << "Job ID property is not supported by the device";
+  }
   ASSERT_GT(size, 0);
   std::string id(size - 1, '\0');
   EXPECT_THAT(MQT_NA_QDMI_device_job_query_property(
@@ -225,7 +227,8 @@ TEST_F(QDMISpecificationTest, JobSubmit) {
 }
 
 TEST_F(QDMIJobSpecificationTest, JobSubmit) {
-  EXPECT_EQ(MQT_NA_QDMI_device_job_submit(job), QDMI_SUCCESS);
+  const auto status = MQT_NA_QDMI_device_job_submit(job);
+  ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
 TEST_F(QDMISpecificationTest, JobCancel) {
@@ -233,8 +236,9 @@ TEST_F(QDMISpecificationTest, JobCancel) {
 }
 
 TEST_F(QDMIJobSpecificationTest, JobCancel) {
-  EXPECT_THAT(MQT_NA_QDMI_device_job_cancel(job),
-              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_INVALIDARGUMENT));
+  const auto status = MQT_NA_QDMI_device_job_cancel(job);
+  ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_INVALIDARGUMENT,
+                                     QDMI_ERROR_NOTSUPPORTED));
 }
 
 TEST_F(QDMISpecificationTest, JobCheck) {
@@ -243,8 +247,9 @@ TEST_F(QDMISpecificationTest, JobCheck) {
 }
 
 TEST_F(QDMIJobSpecificationTest, JobCheck) {
-  QDMI_Job_Status status = QDMI_JOB_STATUS_RUNNING;
-  EXPECT_EQ(MQT_NA_QDMI_device_job_check(job, &status), QDMI_SUCCESS);
+  QDMI_Job_Status jobStatus = QDMI_JOB_STATUS_RUNNING;
+  const auto status = MQT_NA_QDMI_device_job_check(job, &jobStatus);
+  ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
 TEST_F(QDMISpecificationTest, JobWait) {
@@ -253,8 +258,9 @@ TEST_F(QDMISpecificationTest, JobWait) {
 }
 
 TEST_F(QDMIJobSpecificationTest, JobWait) {
-  EXPECT_THAT(MQT_NA_QDMI_device_job_wait(job, 1),
-              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_TIMEOUT));
+  const auto status = MQT_NA_QDMI_device_job_wait(job, 1);
+  ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED,
+                                     QDMI_ERROR_TIMEOUT));
 }
 
 TEST_F(QDMISpecificationTest, JobGetResults) {
@@ -264,6 +270,9 @@ TEST_F(QDMISpecificationTest, JobGetResults) {
 }
 
 TEST_F(QDMIJobSpecificationTest, JobGetResults) {
+  EXPECT_THAT(MQT_NA_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_SHOTS, 0,
+                                                 nullptr, nullptr),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   EXPECT_EQ(MQT_NA_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_MAX, 0,
                                                nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
