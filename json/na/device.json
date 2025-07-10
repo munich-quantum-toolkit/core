@@ -36,7 +36,7 @@
   "minAtomDistance": 1,
   "globalSingleQubitOperations": [
     {
-      "name": "RY",
+      "name": "ry",
       "region": {
         "origin": {
           "x": 0,
@@ -54,7 +54,7 @@
   ],
   "globalMultiQubitOperations": [
     {
-      "name": "CZ",
+      "name": "cz",
       "region": {
         "origin": {
           "x": 0,
@@ -76,7 +76,7 @@
   ],
   "localSingleQubitOperations": [
     {
-      "name": "RZ",
+      "name": "rz",
       "region": {
         "origin": {
           "x": 0,
@@ -96,7 +96,7 @@
   ],
   "localMultiQubitOperations": [
     {
-      "name": "CZ",
+      "name": "cz",
       "region": {
         "origin": {
           "x": 0,
@@ -119,7 +119,7 @@
   ],
   "shuttlingUnits": [
     {
-      "name": "AOD",
+      "name": "aod",
       "region": {
         "origin": {
           "x": 0,
