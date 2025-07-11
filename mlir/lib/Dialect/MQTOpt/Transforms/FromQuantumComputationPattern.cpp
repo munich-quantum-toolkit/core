@@ -260,9 +260,10 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       // Finally, the return operation needs to be updated with the measurement
       // results and then replace the original `alloc` operation with the
       // updated one.
-      auto returnIt = llvm::find_if(op->getUsers(), [](mlir::Operation* user) {
-        return llvm::isa<mlir::func::ReturnOp>(user);
-      });
+      const auto returnIt =
+          llvm::find_if(op->getUsers(), [](mlir::Operation* user) {
+            return llvm::isa<mlir::func::ReturnOp>(user);
+          });
 
       if (returnIt != op->getUsers().end()) {
         updateReturnOperation(*returnIt, currentRegister, measurementValues,

@@ -296,8 +296,7 @@ struct QuantumSinkPushPattern final
       return mlir::failure();
     }
 
-    const auto& users = op->getUsers();
-    if (users.empty()) {
+    if (const auto& users = op->getUsers(); users.empty()) {
       return mlir::failure();
     }
 
@@ -311,15 +310,15 @@ struct QuantumSinkPushPattern final
     }
 
     // --- REWRITE LOGIC ---
-    if (auto condBranchOp =
+    if (const auto condBranchOp =
             mlir::dyn_cast<mlir::cf::CondBranchOp>(nextBranch)) {
       rewriteCondBranch(op, condBranchOp, rewriter);
       return mlir::success();
     }
 
     if (auto branchOp = mlir::dyn_cast<mlir::cf::BranchOp>(nextBranch)) {
-      auto* successor = branchOp.getDest();
-      if (std::distance(successor->getPredecessors().begin(),
+      if (auto* successor = branchOp.getDest();
+          std::distance(successor->getPredecessors().begin(),
                         successor->getPredecessors().end()) == 1) {
         rewriteBranch(op, branchOp, rewriter);
         rewriter.eraseOp(op);
