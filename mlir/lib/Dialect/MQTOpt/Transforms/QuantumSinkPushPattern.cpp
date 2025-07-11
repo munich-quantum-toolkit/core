@@ -14,7 +14,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/MLIRContext.h>
