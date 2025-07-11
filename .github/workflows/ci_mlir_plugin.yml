@@ -187,3 +187,74 @@ jobs:
       - name: Run pytest for mqt-core-catalyst-plugin
         working-directory: plugins/catalyst
         run: python -m pytest --verbose
+
+  cpp-test-mlir-catalyst-plugin-exact-mlir:
+    name: 🧩 Test MLIR Catalyst Plugin on ${{ matrix.runs-on }} from exact MLIR source
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        runs-on: [ubuntu-24.04, macos-14]
+      fail-fast: false
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      CTEST_PARALLEL_LEVEL: 4
+      FORCE_COLOR: 3
+    steps:
+      # Check out the repository
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # set up ccache for faster C++ builds
+      - name: Setup ccache
+        uses: Chocobo1/setup-ccache-action@v1
+        with:
+          prepend_symlinks_to_path: false
+          override_cache_key: mlir-plugin-${{ matrix.runs-on }}-exact-mlir
+
+      # set up mold as linker for faster C++ builds
+      - name: Set up mold as linker
+        uses: rui314/setup-mold@v1
+
+      # Set up uv for faster Python package management
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      # Check out the LLVM commit Catalyst is based on
+      - name: Checkout llvm
+        uses: actions/checkout@v4
+        with:
+          repository: llvm/llvm-project
+          ref: 179d30f8c3fddd3c85056fd2b8e877a4a8513158
+          path: llvm-project
+
+      # Install LLVM
+      - name: Install LLVM
+        working-directory: llvm-project
+        run: |
+          cmake -S llvm -B build_llvm `
+            -DLLVM_ENABLE_PROJECTS=mlir `
+            -DLLVM_BUILD_EXAMPLES=OFF `
+            -DLLVM_TARGETS_TO_BUILD="X86" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLLVM_BUILD_TESTS=OFF `
+            -DLLVM_INCLUDE_TESTS=OFF `
+            -DLLVM_INCLUDE_EXAMPLES=OFF `
+            -DLLVM_ENABLE_ASSERTIONS=ON `
+            -DLLVM_ENABLE_UTILS=ON
+          cmake --build build_llvm --config Release
+          echo "MLIR_DIR=$(pwd)/build_llvm/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "LLVM_DIR=$(pwd)/build_llvm/lib/cmake/llvm" >> $GITHUB_ENV
+
+      # Build the plugin package
+      - name: Build mqt-core-catalyst-plugin
+        working-directory: plugins/catalyst
+        run: uv sync --verbose --active
+
+      # Run the plugin tests
+      - name: Run pytest for mqt-core-catalyst-plugin
+        working-directory: plugins/catalyst
+        run: python -m pytest --verbose
