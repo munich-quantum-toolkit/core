@@ -31,6 +31,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#310)._
 
 ### Changed
 
+- ⬆️ Bump shared library ABI version from `3.0` to `3.1`.
 - ♻️ Switch from reference counting to mark-and-sweep garbage collection in decision diagram package ([#1020]) ([**@MatthiasReumann**], [**burgholzer**], [**q-inho**])
 - ♻️ Move the C++ code for the Python bindings to the top-level `bindings` directory ([#982]) ([**@denialhaag**])
 - ♻️ Move all Python code (no tests) to the top-level `python` directory ([#982]) ([**@denialhaag**])
