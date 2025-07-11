@@ -6,6 +6,9 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [3.1.0]
 
+The shared library ABI version (`SOVERSION`) is increased from `3.0` to `3.1`.
+Thus, consuming libraries need to update their wheel repair configuration for cibuildwheel to ensure the mqt-core libraries are properly skipped in the wheel repair step.
+
 Even tough this is not a breaking change, it is worth mentioning to developers of MQT Core that all Python code (except tests) has been moved to the top-level `python` directory.
 Furthermore, the C++ code for the Python bindings has been moved to the top-level `bindings` directory.
 
