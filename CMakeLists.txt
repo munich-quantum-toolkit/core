@@ -17,10 +17,12 @@ project(
 # Add path for custom modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-include(cmake/StandardProjectSettings.cmake)
-include(cmake/PreventInSourceBuilds.cmake)
-include(cmake/PackageAddTest.cmake)
-include(cmake/Cache.cmake)
+include(AddMQTPythonBinding)
+include(StandardProjectSettings)
+include(PreventInSourceBuilds)
+include(PackageAddTest)
+include(Cache)
+include(AddMQTCoreLibrary)
 
 option(BUILD_MQT_CORE_BINDINGS "Build the MQT Core Python bindings" OFF)
 if(BUILD_MQT_CORE_BINDINGS)
@@ -45,10 +47,7 @@ if(BUILD_MQT_CORE_BINDINGS)
   endif()
 
   # top-level call to find Python
-  find_package(
-    Python 3.9 REQUIRED
-    COMPONENTS Interpreter Development.Module
-    OPTIONAL_COMPONENTS Development.SABIModule)
+  find_package(Python 3.9 REQUIRED COMPONENTS Interpreter Development.Module)
 endif()
 
 # check if this is the master project or used via add_subdirectory
@@ -61,9 +60,11 @@ endif()
 option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core"
        ${MQT_CORE_MASTER_PROJECT})
 option(BUILD_MQT_CORE_TESTS "Also build tests for the MQT Core project" ${MQT_CORE_MASTER_PROJECT})
+option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
+       ${BUILD_SHARED_LIBS})
 
 # try to determine the project version
-include(cmake/GetVersion.cmake)
+include(GetVersion)
 get_mqt_core_version()
 
 project(
@@ -77,8 +78,26 @@ include(cmake/ExternalDependencies.cmake)
 # set the include directory for the build tree
 set(MQT_CORE_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/mqt-core")
 
+if(MQT_CORE_INSTALL)
+  if(APPLE)
+    set(BASEPOINT @loader_path)
+  else()
+    set(BASEPOINT $ORIGIN)
+  endif()
+  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR})
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+endif()
+
+set(MQT_CORE_TARGET_NAME "mqt-core")
+
 # add main library code
 add_subdirectory(src)
+
+# add bindings code if enabled
+if(BUILD_MQT_CORE_BINDINGS)
+  add_subdirectory(bindings)
+endif()
 
 # add test code
 if(BUILD_MQT_CORE_TESTS)
@@ -94,6 +113,7 @@ endif()
 
 option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
 if(BUILD_MQT_CORE_MLIR)
+  include(SetupMLIR)
   add_subdirectory(mlir)
 endif()
 

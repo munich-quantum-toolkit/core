@@ -1,0 +1,48 @@
+cff-version: "1.2.0"
+authors:
+- family-names: Burgholzer
+  given-names: Lukas
+  orcid: "https://orcid.org/0000-0003-4699-1316"
+- family-names: Stade
+  given-names: Yannick
+  orcid: "https://orcid.org/0000-0001-5785-2528"
+- family-names: Peham
+  given-names: Tom
+  orcid: "https://orcid.org/0000-0003-3434-7881"
+- family-names: Wille
+  given-names: Robert
+  orcid: "https://orcid.org/0000-0002-4993-7860"
+contact:
+- family-names: Burgholzer
+  given-names: Lukas
+  orcid: "https://orcid.org/0000-0003-4699-1316"
+doi: 10.6084/m9.figshare.28740254.v1
+message: If you use this software, please cite our article in the
+  Journal of Open Source Software.
+preferred-citation:
+  authors:
+  - family-names: Burgholzer
+    given-names: Lukas
+    orcid: "https://orcid.org/0000-0003-4699-1316"
+  - family-names: Stade
+    given-names: Yannick
+    orcid: "https://orcid.org/0000-0001-5785-2528"
+  - family-names: Peham
+    given-names: Tom
+    orcid: "https://orcid.org/0000-0003-3434-7881"
+  - family-names: Wille
+    given-names: Robert
+    orcid: "https://orcid.org/0000-0002-4993-7860"
+  date-published: 2025-04-07
+  doi: 10.21105/joss.07478
+  issn: 2475-9066
+  issue: 108
+  journal: Journal of Open Source Software
+  publisher:
+    name: Open Journals
+  start: 7478
+  title: "MQT Core: The Backbone of the Munich Quantum Toolkit (MQT)"
+  type: article
+  url: "https://joss.theoj.org/papers/10.21105/joss.07478"
+  volume: 10
+title: "MQT Core: The Backbone of the Munich Quantum Toolkit (MQT)"

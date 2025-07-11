@@ -13,6 +13,7 @@
 #include "dd/NoiseFunctionality.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/OpType.hpp"
@@ -134,8 +135,9 @@ TEST_F(DDNoiseFunctionalityTest, DetSimulateAdder4TrackD) {
 }
 
 TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
-  qc::QuantumComputation qcOp{};
+  constexpr double tolerance = 1e-10;
 
+  qc::QuantumComputation qcOp{};
   qcOp.addQubitRegister(3U);
   qcOp.h(0);
   qcOp.h(1);
@@ -153,8 +155,6 @@ TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
     dd->applyOperationToDensity(rootEdge, dd::getDD(*op, *dd));
     deterministicNoiseFunctionality.applyNoiseEffects(rootEdge, op);
   }
-
-  const double tolerance = 1e-10;
 
   auto tmp = rootEdge.getSparseProbabilityVectorStrKeys(qc.getNqubits());
   auto prob = 0.125;
@@ -187,6 +187,7 @@ TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
                    prob) < tolerance);
 
   dd->measureOneCollapsing(rootEdge, 2, qc.getGenerator());
+
   auto tmp2 = rootEdge.getSparseProbabilityVectorStrKeys(qc.getNqubits());
   EXPECT_TRUE(
       fabs(tmp2["000"] - 1) < tolerance || fabs(tmp2["001"] - 1) < tolerance ||
@@ -210,7 +211,7 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4TrackAPD) {
       *dd, qc.getNqubits(), 0.01, 0.02, 2., noiseEffects);
 
   for (size_t i = 0U; i < stochRuns; i++) {
-    auto rootEdge = dd->makeZeroState(qc.getNqubits());
+    auto rootEdge = makeZeroState(qc.getNqubits(), *dd);
     dd->incRef(rootEdge);
 
     for (auto const& op : qc) {
@@ -263,7 +264,7 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4IdentityError) {
       *dd, qc.getNqubits(), 0.01, 0.02, 2., noiseEffects);
 
   for (size_t i = 0U; i < stochRuns; i++) {
-    auto rootEdge = dd->makeZeroState(qc.getNqubits());
+    auto rootEdge = makeZeroState(qc.getNqubits(), *dd);
     dd->incRef(rootEdge);
 
     for (auto const& op : qc) {

@@ -6,14 +6,6 @@
 //
 // Licensed under the MIT License
 
-//===-- Passes.td - Arith pass definition file --------*- tablegen -*-===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
 #ifndef MQTO_PASSES
 #define MQTO_PASSES
 
@@ -33,6 +25,31 @@ def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
     - The first returned value is the `AllocOp` that constructs a qubit register.
     - Measurements/Operations may only target a single qubit. Unitary operations may also use any number of (positive) controls.
     - Supported operations are `x`, `y`, `z`, `h`, and `measure`.
+  }];
+}
+
+def CancelConsecutiveInverses : Pass<"cancel-consecutive-inverses", "mlir::ModuleOp"> {
+  let summary = "This pass searches for consecutive applications of gates and their inverses and cancels them.";
+  let description = [{
+    This pass searches for applications of gates that are their own inverses. Walking down their def-use chain,
+    it then checks if the same gate is applied once again. In that case, the two gates are cancelled.
+  }];
+}
+
+def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
+  let summary = "This pass searches for consecutive applications of rotation gates that can be merged.";
+  let description = [{
+    Consecutive applications of gphase, p, rx, ry, rz, rxx, ryy, rzz, and rzx are merged into one by adding their angles.
+    The merged gate is currently not removed if the angles add up to zero.
+
+    This pass currently does not affect xxminusyy, xxplusyy, u, and u2.
+  }];
+}
+
+def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
+  let summary = "This pass attempts to push down operations into branches for possible optimizations.";
+  let description = [{
+    This pass searches for branch instructions and attempts to push instructions from previous branches into them.
   }];
 }
 

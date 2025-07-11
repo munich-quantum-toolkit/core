@@ -38,13 +38,13 @@
 #include <cmath>
 #include <cstddef>
 #include <iostream>
-#include <iterator>
 #include <map>
 #include <queue>
 #include <random>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -76,6 +76,7 @@ void Package::reset() {
   clearUniqueTables();
   resetMemoryManagers();
   clearComputeTables();
+  roots.reset();
 }
 
 void Package::resetMemoryManagers(const bool resizeToTotal) {
@@ -93,6 +94,8 @@ void Package::clearUniqueTables() {
 }
 
 bool Package::garbageCollect(bool force) {
+  using flags = std::tuple<bool, bool, bool, bool>;
+
   // return immediately if no table needs collection
   if (!force && !vUniqueTable.possiblyNeedsCollection() &&
       !mUniqueTable.possiblyNeedsCollection() &&
@@ -101,19 +104,20 @@ bool Package::garbageCollect(bool force) {
     return false;
   }
 
-  const auto cCollect = cUniqueTable.garbageCollect(force);
-  if (cCollect > 0) {
-    // Collecting garbage in the complex numbers table requires collecting the
-    // node tables as well
-    force = true;
-  }
-  const auto vCollect = vUniqueTable.garbageCollect(force);
-  const auto mCollect = mUniqueTable.garbageCollect(force);
-  const auto dCollect = dUniqueTable.garbageCollect(force);
+  const auto sweep = [this, &force]() -> flags {
+    const bool invC = cUniqueTable.garbageCollect(force) > 0;
+    force |= invC;
+    const bool invV = vUniqueTable.garbageCollect(force) > 0;
+    const bool invM = mUniqueTable.garbageCollect(force) > 0;
+    const bool invD = dUniqueTable.garbageCollect(force) > 0;
+    return {invC, invV, invM, invD};
+  };
+
+  const auto [invC, invV, invM, invD] = roots.execute<flags>(sweep);
 
   // invalidate all compute tables involving vectors if any vector node has
   // been collected
-  if (vCollect > 0) {
+  if (invV) {
     vectorAdd.clear();
     vectorInnerProduct.clear();
     vectorKronecker.clear();
@@ -121,7 +125,7 @@ bool Package::garbageCollect(bool force) {
   }
   // invalidate all compute tables involving matrices if any matrix node has
   // been collected
-  if (mCollect > 0) {
+  if (invM) {
     matrixAdd.clear();
     conjugateMatrixTranspose.clear();
     matrixKronecker.clear();
@@ -132,7 +136,7 @@ bool Package::garbageCollect(bool force) {
   }
   // invalidate all compute tables involving density matrices if any density
   // matrix node has been collected
-  if (dCollect > 0) {
+  if (invD) {
     densityAdd.clear();
     densityDensityMultiplication.clear();
     densityNoise.clear();
@@ -140,7 +144,7 @@ bool Package::garbageCollect(bool force) {
   }
   // invalidate all compute tables where any component of the entry contains
   // numbers from the complex table if any complex numbers were collected
-  if (cCollect > 0) {
+  if (invC) {
     matrixVectorMultiplication.clear();
     matrixMatrixMultiplication.clear();
     conjugateMatrixTranspose.clear();
@@ -154,7 +158,16 @@ bool Package::garbageCollect(bool force) {
     densityNoise.clear();
     densityTrace.clear();
   }
-  return vCollect > 0 || mCollect > 0 || cCollect > 0;
+  return invC || invV || invM || invD;
+}
+
+Package::ActiveCounts Package::computeActiveCounts() {
+  const auto count = [this]() -> ActiveCounts {
+    return {
+        vUniqueTable.countMarkedEntries(), mUniqueTable.countMarkedEntries(),
+        dUniqueTable.countMarkedEntries(), cUniqueTable.countMarkedEntries()};
+  };
+  return roots.execute<ActiveCounts>(count);
 }
 
 dEdge Package::makeZeroDensityOperator(const std::size_t n) {
@@ -167,182 +180,6 @@ dEdge Package::makeZeroDensityOperator(const std::size_t n) {
   return f;
 }
 
-vEdge Package::makeZeroState(const std::size_t n, const std::size_t start) {
-  if (n + start > nqubits) {
-    throw std::runtime_error{
-        "Requested state with " + std::to_string(n + start) +
-        " qubits, but current package configuration only supports up to " +
-        std::to_string(nqubits) +
-        " qubits. Please allocate a larger package instance."};
-  }
-  auto f = vEdge::one();
-  for (std::size_t p = start; p < n + start; p++) {
-    f = makeDDNode(static_cast<Qubit>(p), std::array{f, vEdge::zero()});
-  }
-  incRef(f);
-  return f;
-}
-
-vEdge Package::makeBasisState(const std::size_t n,
-                              const std::vector<bool>& state,
-                              const std::size_t start) {
-  if (n + start > nqubits) {
-    throw std::runtime_error{
-        "Requested state with " + std::to_string(n + start) +
-        " qubits, but current package configuration only supports up to " +
-        std::to_string(nqubits) +
-        " qubits. Please allocate a larger package instance."};
-  }
-  auto f = vEdge::one();
-  for (std::size_t p = start; p < n + start; ++p) {
-    if (!state[p]) {
-      f = makeDDNode(static_cast<Qubit>(p), std::array{f, vEdge::zero()});
-    } else {
-      f = makeDDNode(static_cast<Qubit>(p), std::array{vEdge::zero(), f});
-    }
-  }
-  incRef(f);
-  return f;
-}
-vEdge Package::makeBasisState(const std::size_t n,
-                              const std::vector<BasisStates>& state,
-                              const std::size_t start) {
-  if (n + start > nqubits) {
-    throw std::runtime_error{
-        "Requested state with " + std::to_string(n + start) +
-        " qubits, but current package configuration only supports up to " +
-        std::to_string(nqubits) +
-        " qubits. Please allocate a larger package instance."};
-  }
-  if (state.size() < n) {
-    throw std::runtime_error("Insufficient qubit states provided. Requested " +
-                             std::to_string(n) + ", but received " +
-                             std::to_string(state.size()));
-  }
-
-  auto f = vCachedEdge::one();
-  for (std::size_t p = start; p < n + start; ++p) {
-    switch (state[p]) {
-    case BasisStates::zero:
-      f = makeDDNode(static_cast<Qubit>(p), std::array{f, vCachedEdge::zero()});
-      break;
-    case BasisStates::one:
-      f = makeDDNode(static_cast<Qubit>(p), std::array{vCachedEdge::zero(), f});
-      break;
-    case BasisStates::plus:
-      f = makeDDNode(static_cast<Qubit>(p),
-                     std::array<vCachedEdge, RADIX>{
-                         {{f.p, dd::SQRT2_2}, {f.p, dd::SQRT2_2}}});
-      break;
-    case BasisStates::minus:
-      f = makeDDNode(static_cast<Qubit>(p),
-                     std::array<vCachedEdge, RADIX>{
-                         {{f.p, dd::SQRT2_2}, {f.p, -dd::SQRT2_2}}});
-      break;
-    case BasisStates::right:
-      f = makeDDNode(static_cast<Qubit>(p),
-                     std::array<vCachedEdge, RADIX>{
-                         {{f.p, dd::SQRT2_2}, {f.p, {0, dd::SQRT2_2}}}});
-      break;
-    case BasisStates::left:
-      f = makeDDNode(static_cast<Qubit>(p),
-                     std::array<vCachedEdge, RADIX>{
-                         {{f.p, dd::SQRT2_2}, {f.p, {0, -dd::SQRT2_2}}}});
-      break;
-    }
-  }
-  const vEdge e{f.p, cn.lookup(f.w)};
-  incRef(e);
-  return e;
-}
-vEdge Package::makeGHZState(const std::size_t n) {
-  if (n > nqubits) {
-    throw std::runtime_error{
-        "Requested state with " + std::to_string(n) +
-        " qubits, but current package configuration only supports up to " +
-        std::to_string(nqubits) +
-        " qubits. Please allocate a larger package instance."};
-  }
-
-  if (n == 0U) {
-    return vEdge::one();
-  }
-
-  auto leftSubtree = vEdge::one();
-  auto rightSubtree = vEdge::one();
-
-  for (std::size_t p = 0; p < n - 1; ++p) {
-    leftSubtree = makeDDNode(static_cast<Qubit>(p),
-                             std::array{leftSubtree, vEdge::zero()});
-    rightSubtree = makeDDNode(static_cast<Qubit>(p),
-                              std::array{vEdge::zero(), rightSubtree});
-  }
-
-  const vEdge e = makeDDNode(
-      static_cast<Qubit>(n - 1),
-      std::array<vEdge, RADIX>{
-          {{leftSubtree.p, {&constants::sqrt2over2, &constants::zero}},
-           {rightSubtree.p, {&constants::sqrt2over2, &constants::zero}}}});
-  incRef(e);
-  return e;
-}
-vEdge Package::makeWState(const std::size_t n) {
-  if (n > nqubits) {
-    throw std::runtime_error{
-        "Requested state with " + std::to_string(n) +
-        " qubits, but current package configuration only supports up to " +
-        std::to_string(nqubits) +
-        " qubits. Please allocate a larger package instance."};
-  }
-
-  if (n == 0U) {
-    return vEdge::one();
-  }
-
-  auto leftSubtree = vEdge::zero();
-  if ((1. / sqrt(static_cast<double>(n))) < RealNumber::eps) {
-    throw std::runtime_error(
-        "Requested qubit size for generating W-state would lead to an "
-        "underflow due to 1 / sqrt(n) being smaller than the currently set "
-        "tolerance " +
-        std::to_string(RealNumber::eps) +
-        ". If you still wanna run the computation, please lower "
-        "the tolerance accordingly.");
-  }
-
-  auto rightSubtree = vEdge::terminal(cn.lookup(1. / std::sqrt(n)));
-  for (size_t p = 0; p < n; ++p) {
-    leftSubtree = makeDDNode(static_cast<Qubit>(p),
-                             std::array{leftSubtree, rightSubtree});
-    if (p != n - 1U) {
-      rightSubtree = makeDDNode(static_cast<Qubit>(p),
-                                std::array{rightSubtree, vEdge::zero()});
-    }
-  }
-  incRef(leftSubtree);
-  return leftSubtree;
-}
-vEdge Package::makeStateFromVector(const CVec& stateVector) {
-  if (stateVector.empty()) {
-    return vEdge::one();
-  }
-  const auto& length = stateVector.size();
-  if ((length & (length - 1)) != 0) {
-    throw std::invalid_argument(
-        "State vector must have a length of a power of two.");
-  }
-
-  if (length == 1) {
-    return vEdge::terminal(cn.lookup(stateVector[0]));
-  }
-
-  const auto level = static_cast<Qubit>(std::log2(length) - 1);
-  const auto state =
-      makeStateFromVector(stateVector.begin(), stateVector.end(), level);
-  const vEdge e{state.p, cn.lookup(state.w)};
-  incRef(e);
-  return e;
-}
 mEdge Package::makeGateDD(const GateMatrix& mat, const qc::Qubit target) {
   return makeGateDD(mat, qc::Controls{}, target);
 }
@@ -558,22 +395,6 @@ mEdge Package::makeDDFromMatrix(const CMat& matrix) {
   const auto level = static_cast<Qubit>(std::log2(length) - 1);
   const auto matrixDD = makeDDFromMatrix(matrix, level, 0, length, 0, width);
   return {matrixDD.p, cn.lookup(matrixDD.w)};
-}
-vCachedEdge Package::makeStateFromVector(const CVec::const_iterator& begin,
-                                         const CVec::const_iterator& end,
-                                         const Qubit level) {
-  if (level == 0U) {
-    assert(std::distance(begin, end) == 2);
-    const auto zeroSuccessor = vCachedEdge::terminal(*begin);
-    const auto oneSuccessor = vCachedEdge::terminal(*(begin + 1));
-    return makeDDNode<vNode, CachedEdge>(0, {zeroSuccessor, oneSuccessor});
-  }
-
-  const auto half = std::distance(begin, end) / 2;
-  const auto zeroSuccessor =
-      makeStateFromVector(begin, begin + half, level - 1);
-  const auto oneSuccessor = makeStateFromVector(begin + half, end, level - 1);
-  return makeDDNode<vNode, CachedEdge>(level, {zeroSuccessor, oneSuccessor});
 }
 mCachedEdge Package::makeDDFromMatrix(const CMat& matrix, const Qubit level,
                                       const std::size_t rowStart,
@@ -807,17 +628,13 @@ char Package::measureOneCollapsing(dEdge& e, const Qubit index,
     densityMatrixTrace = trace(tmp2, nrQubits);
   }
 
-  incRef(tmp2);
   dEdge::alignDensityEdge(e);
+  tmp2.w = cn.lookup(e.w / densityMatrixTrace); // Normalize density matrix
+  incRef(tmp2);
   decRef(e);
   e = tmp2;
   dEdge::setDensityMatrixTrue(e);
 
-  // Normalize density matrix
-  auto result = e.w / densityMatrixTrace;
-  cn.decRef(e.w);
-  e.w = cn.lookup(result);
-  cn.incRef(e.w);
   return measuredResult;
 }
 void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
@@ -1043,7 +860,7 @@ bool Package::isCloseToIdentity(const mEdge& m, const fp tol,
                                 const std::vector<bool>& garbage,
                                 const bool checkCloseToOne) const {
   std::unordered_set<decltype(m.p)> visited{};
-  visited.reserve(mUniqueTable.getNumActiveEntries());
+  visited.reserve(mUniqueTable.getNumEntries());
   return isCloseToIdentityRecursive(m, visited, tol, garbage, checkCloseToOne);
 }
 bool Package::isCloseToIdentityRecursive(

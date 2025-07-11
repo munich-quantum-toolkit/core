@@ -194,62 +194,159 @@ public:
   void clearUniqueTables();
 
   /**
-   * @brief Increment the reference count of an edge
-   * @details This is the main function for increasing reference counts within
-   * the DD package. It increases the reference count of the complex edge weight
-   * as well as the DD node itself. If the node newly becomes active, meaning
-   * that it had a reference count of zero beforehand, the reference count of
-   * all children is recursively increased.
+   * @brief Add the DD to a tracking hashset and update its reference count.
    * @tparam Node The node type of the edge.
-   * @param e The edge to increase the reference count of
+   * @param e The edge to increase the reference count of.
    */
   template <class Node> void incRef(const Edge<Node>& e) noexcept {
-    cn.incRef(e.w);
-    const auto& p = e.p;
-    const auto inc = getUniqueTable<Node>().incRef(p);
-    if (inc && p->ref == 1U) {
-      for (const auto& child : p->e) {
-        incRef(child);
-      }
+    if (Edge<Node>::trackingRequired(e)) {
+      roots.addToRoots(e);
     }
   }
 
   /**
-   * @brief Decrement the reference count of an edge
-   * @details This is the main function for decreasing reference counts within
-   * the DD package. It decreases the reference count of the complex edge weight
-   * as well as the DD node itself. If the node newly becomes dead, meaning
-   * that its reference count hit zero, the reference count of all children is
-   * recursively decreased.
+   * @brief Decrease the DD's reference count and remove it from the tracking
+   * hashset if the count hits zero.
    * @tparam Node The node type of the edge.
-   * @param e The edge to decrease the reference count of
+   * @param e The edge to decrease the reference count of.
+   * @throws std::invalid_argument If the edge is not part of the tracking
+   * hashset.
    */
-  template <class Node> void decRef(const Edge<Node>& e) noexcept {
-    cn.decRef(e.w);
-    const auto& p = e.p;
-    const auto dec = getUniqueTable<Node>().decRef(p);
-    if (dec && p->ref == 0U) {
-      for (const auto& child : p->e) {
-        decRef(child);
-      }
+  template <class Node> void decRef(const Edge<Node>& e) {
+    if (Edge<Node>::trackingRequired(e)) {
+      roots.removeFromRoots(e);
     }
   }
 
+  template <class Node> [[nodiscard]] auto& getRootSet() noexcept {
+    return roots.getRoots<Node>();
+  }
+
+private:
+  struct RootSetManager {
+  public:
+    template <class Node>
+    using RootSet = std::unordered_map<Edge<Node>, std::size_t>;
+
+    /// @brief Add to respective root set.
+    template <class Node> void addToRoots(const Edge<Node>& e) noexcept {
+      getRoots<Node>()[e]++;
+    }
+
+    /// @brief Remove from respective root set.
+    template <class Node> void removeFromRoots(const Edge<Node>& e) {
+      auto& set = getRoots<Node>();
+      auto it = set.find(e);
+      if (it == set.end()) {
+        throw std::invalid_argument("Edge is not part of the root set.");
+      }
+      if (--it->second == 0U) {
+        set.erase(it);
+      }
+    }
+
+    /// @brief Execute mark() -> op() -> unmark().
+    template <class Result, typename Fn> Result execute(Fn& op) noexcept {
+      mark();
+      Result res = op();
+      unmark();
+      return res;
+    }
+
+    /// @brief Clear all root sets.
+    void reset() {
+      vRoots.clear();
+      mRoots.clear();
+      dRoots.clear();
+    }
+
+  private:
+    /// @brief Mark edges contained in @p roots.
+    template <class Node> static void mark(const RootSet<Node>& roots) {
+      for (auto& [edge, _] : roots) {
+        edge.mark();
+      }
+    }
+
+    /// @brief Unmark edges contained in @p roots.
+    template <class Node> static void unmark(const RootSet<Node>& roots) {
+      for (auto& [edge, _] : roots) {
+        edge.unmark();
+      }
+    }
+
+    /// @brief Mark edges contained in all root sets.
+    void mark() noexcept {
+      RootSetManager::mark(vRoots);
+      RootSetManager::mark(mRoots);
+      RootSetManager::mark(dRoots);
+    }
+
+    /// @brief Unmark edges contained in all root sets.
+    void unmark() noexcept {
+      RootSetManager::unmark(vRoots);
+      RootSetManager::unmark(mRoots);
+      RootSetManager::unmark(dRoots);
+    }
+
+    /// @brief Return vector roots.
+    template <class Node,
+              std::enable_if_t<std::is_same_v<Node, vNode>, bool> = true>
+    auto& getRoots() noexcept {
+      return vRoots;
+    }
+
+    /// @brief Return matrix roots.
+    template <class Node,
+              std::enable_if_t<std::is_same_v<Node, mNode>, bool> = true>
+    auto& getRoots() noexcept {
+      return mRoots;
+    }
+
+    /// @brief Return density roots.
+    template <class Node,
+              std::enable_if_t<std::is_same_v<Node, dNode>, bool> = true>
+    auto& getRoots() noexcept {
+      return dRoots;
+    }
+
+    RootSet<vNode> vRoots;
+    RootSet<mNode> mRoots;
+    RootSet<dNode> dRoots;
+
+    template <class Node> friend auto& Package::getRootSet() noexcept;
+  };
+
+  RootSetManager roots;
+
+public:
   /**
-   * @brief Trigger garbage collection in all unique tables
+   * @brief Trigger garbage collection on all unique tables.
+   * @details Mark-and-sweep algorithm: First, mark all nodes and complex
+   * numbers tracked in @p roots. Second, remove any unmarked nodes and numbers
+   * from the respective unique tables. Lastly, unmark all nodes and complex
+   * numbers again.
+   * @note By default, garbage collection is only triggered if the unique tables
+   * report that a collection might be necessary.
    *
-   * @details Garbage collection is the process of removing all nodes from the
-   * unique tables that have a reference count of zero.
-   * Such nodes are considered "dead" and they can be safely removed from the
-   * unique tables. This process is necessary to free up memory that is no
-   * longer needed. By default, garbage collection is only triggered if the
-   * unique table indicates that it possibly needs collection. Whenever some
-   * nodes are recollected, some compute tables need to be invalidated as well.
-   *
-   * @param force
-   * @return
+   * @param force Force garbage collect, regardless of whether any
+   * table reports that it may need collecting.
+   * @returns Whether at least one vector, matrix, density-matrix node, or
+   *          any complex number was reclaimed.
    */
   bool garbageCollect(bool force = false);
+
+  struct ActiveCounts {
+    std::size_t vector = 0U;
+    std::size_t matrix = 0U;
+    std::size_t density = 0U;
+    std::size_t reals = 0U;
+  };
+  /**
+   * @brief Compute the active number of nodes and numbers
+   * @note This traverses every currently tracked DD twice.
+   */
+  [[nodiscard]] ActiveCounts computeActiveCounts();
 
   ///
   /// Vector nodes, edges and quantum states
@@ -262,60 +359,6 @@ public:
    * @return A decision diagram for the all-zero density operator
    */
   dEdge makeZeroDensityOperator(std::size_t n);
-
-  /**
-   * @brief Construct the all-zero state \f$|0...0\rangle\f$
-   * @param n The number of qubits
-   * @param start The starting qubit index. Default is 0.
-   * @return A decision diagram for the all-zero state
-   */
-  vEdge makeZeroState(std::size_t n, std::size_t start = 0);
-
-  /**
-   * @brief Construct a computational basis state \f$|b_{n-1}...b_0\rangle\f$
-   * @param n The number of qubits
-   * @param state The state to construct
-   * @param start The starting qubit index. Default is 0.
-   * @return A decision diagram for the computational basis state
-   */
-  vEdge makeBasisState(std::size_t n, const std::vector<bool>& state,
-                       std::size_t start = 0);
-
-  /**
-   * @brief Construct a product state out of
-   *        \f$\{0, 1, +, -, R, L\}^{\otimes n}\f$.
-   * @param n The number of qubits
-   * @param state The state to construct
-   * @param start The starting qubit index. Default is 0.
-   * @return A decision diagram for the product state
-   */
-  vEdge makeBasisState(std::size_t n, const std::vector<BasisStates>& state,
-                       std::size_t start = 0);
-
-  /**
-   * @brief Construct a GHZ state \f$|0...0\rangle + |1...1\rangle\f$
-   * @param n The number of qubits
-   * @return A decision diagram for the GHZ state
-   */
-  vEdge makeGHZState(std::size_t n);
-
-  /**
-   * @brief Construct a W state
-   * @details The W state is defined as
-   * \f[
-   * |0...01\rangle + |0...10\rangle + |10...0\rangle
-   * \f]
-   * @param n The number of qubits
-   * @return A decision diagram for the W state
-   */
-  vEdge makeWState(std::size_t n);
-
-  /**
-   * @brief Construct a decision diagram from an arbitrary state vector
-   * @param stateVector The state vector to convert to a DD
-   * @return A decision diagram for the state
-   */
-  vEdge makeStateFromVector(const CVec& stateVector);
 
   ///
   /// Matrix nodes, edges and quantum gates
@@ -400,30 +443,6 @@ public:
 
 private:
   /**
-   * @brief Constructs a decision diagram (DD) from a state vector using a
-   * recursive algorithm.
-   *
-   * @param begin Iterator pointing to the beginning of the state vector.
-   * @param end Iterator pointing to the end of the state vector.
-   * @param level The current level of recursion. Starts at the highest level of
-   * the state vector (log base 2 of the vector size - 1).
-   * @return A vCachedEdge representing the root node of the created DD.
-   *
-   * @details This function recursively breaks down the state vector into halves
-   * until each half has only one element. At each level of recursion, two new
-   * edges are created, one for each half of the state vector. The two resulting
-   * decision diagram edges are used to create a new decision diagram node at
-   * the current level, and this node is returned as the result of the current
-   * recursive call. At the base case of recursion, the state vector has only
-   * two elements, which are converted into terminal nodes of the decision
-   * diagram.
-   *
-   * @note This function assumes that the state vector size is a power of two.
-   */
-  vCachedEdge makeStateFromVector(const CVec::const_iterator& begin,
-                                  const CVec::const_iterator& end, Qubit level);
-
-  /**
    * @brief Constructs a decision diagram (DD) from a complex matrix using a
    * recursive algorithm.
    *
@@ -477,7 +496,6 @@ public:
              [[maybe_unused]] const bool generateDensityMatrix = false) {
     auto& memoryManager = getMemoryManager<Node>();
     auto p = memoryManager.template get<Node>();
-    assert(p->ref == 0U);
 
     p->v = var;
     if constexpr (std::is_same_v<Node, mNode> || std::is_same_v<Node, dNode>) {

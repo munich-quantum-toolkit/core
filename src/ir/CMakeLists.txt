@@ -13,7 +13,7 @@ if(NOT TARGET MQT::CoreIR)
   file(GLOB_RECURSE IR_SOURCES **.cpp)
 
   # create the library target (initially empty)
-  add_library(${MQT_CORE_TARGET_NAME}-ir)
+  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-ir ALIAS_NAME IR)
 
   # add sources to target
   target_sources(${MQT_CORE_TARGET_NAME}-ir PRIVATE ${IR_SOURCES})
@@ -25,9 +25,6 @@ if(NOT TARGET MQT::CoreIR)
 
   # add link libraries
   target_link_libraries(${MQT_CORE_TARGET_NAME}-ir PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
-
-  # add MQT alias
-  add_library(MQT::CoreIR ALIAS ${MQT_CORE_TARGET_NAME}-ir)
 
   # set required C++ standard
   target_compile_features(${MQT_CORE_TARGET_NAME}-ir PUBLIC cxx_std_20)
@@ -45,7 +42,7 @@ if(NOT TARGET MQT::CoreIR)
   target_sources(
     ${MQT_CORE_TARGET_NAME}-ir PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
                                       FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_ir_export.h)
-  if(NOT BUILD_SHARED_LIBS)
+  if(NOT BUILD_MQT_CORE_SHARED_LIBS)
     target_compile_definitions(${MQT_CORE_TARGET_NAME}-ir PUBLIC MQT_CORE_IR_STATIC_DEFINE)
   endif()
 

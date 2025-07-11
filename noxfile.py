@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -50,9 +49,6 @@ def _run_tests(
     pytest_run_args: Sequence[str] = (),
 ) -> None:
     env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
-    if os.environ.get("CI", None) and sys.platform == "win32":
-        env["CMAKE_GENERATOR"] = "Ninja"
-
     if shutil.which("cmake") is None and shutil.which("cmake3") is None:
         session.install("cmake")
     if shutil.which("ninja") is None:
@@ -82,6 +78,9 @@ def _run_tests(
     )
     if extra_command:
         session.run(*extra_command, env=env)
+    if "--cov" in session.posargs:
+        # try to use the lighter-weight `sys.monitoring` coverage core
+        env["COVERAGE_CORE"] = "sysmon"
     session.run(
         "uv",
         "run",

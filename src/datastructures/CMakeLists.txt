@@ -12,7 +12,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-ds)
   file(GLOB_RECURSE DS_SOURCES **.cpp)
 
   # create the library target (initially empty)
-  add_library(${MQT_CORE_TARGET_NAME}-ds)
+  add_mqt_core_library(${MQT_CORE_TARGET_NAME}-ds ALIAS_NAME DS)
 
   # add sources to target
   target_sources(${MQT_CORE_TARGET_NAME}-ds PRIVATE ${DS_SOURCES})
@@ -28,9 +28,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-ds)
     PUBLIC MQT::CoreIR
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
 
-  # add MQT alias
-  add_library(MQT::CoreDS ALIAS ${MQT_CORE_TARGET_NAME}-ds)
-
   # set versioning information
   set_target_properties(
     ${MQT_CORE_TARGET_NAME}-ds
@@ -44,7 +41,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-ds)
   target_sources(
     ${MQT_CORE_TARGET_NAME}-ds PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
                                       FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_ds_export.h)
-  if(NOT BUILD_SHARED_LIBS)
+  if(NOT BUILD_MQT_CORE_SHARED_LIBS)
     target_compile_definitions(${MQT_CORE_TARGET_NAME}-ds PUBLIC MQT_CORE_DS_STATIC_DEFINE)
   endif()
 

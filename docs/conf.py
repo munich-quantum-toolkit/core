@@ -48,14 +48,13 @@ except ModuleNotFoundError:
 release = version.split("+")[0]
 
 project = "MQT Core"
-author = "Chair for Design Automation, Technical University of Munich"
+author = "Chair for Design Automation, TUM & Munich Quantum Software Company"
 language = "en"
-project_copyright = "2025, Chair for Design Automation, Technical University of Munich"
+project_copyright = "2023 - 2025 Chair for Design Automation, TUM & 2025 Munich Quantum Software Company"
 
 master_doc = "index"
 
 templates_path = ["_templates"]
-html_css_files = ["custom.css"]
 
 extensions = [
     "myst_nb",
@@ -144,7 +143,7 @@ copybutton_line_continuation_character = "\\"
 
 modindex_common_prefix = ["mqt.core."]
 
-autoapi_dirs = ["../src/mqt"]
+autoapi_dirs = ["../python/mqt"]
 autoapi_python_use_implicit_namespaces = True
 autoapi_root = "api"
 autoapi_add_toctree_entry = False
@@ -171,12 +170,21 @@ breathe_default_project = "mqt.core"
 
 read_the_docs_build = os.environ.get("READTHEDOCS", None) == "True"
 if read_the_docs_build:
-    subprocess.call("doxygen", shell=True)  # noqa: S602, S607
-    subprocess.call("mkdir api/cpp & breathe-apidoc -o api/cpp -m -f -T _build/doxygen/xml/", shell=True)  # noqa: S602, S607
+    subprocess.call("mkdir -p _build/doxygen && doxygen", shell=True)  # noqa: S602, S607
+    subprocess.call(  # noqa: S602
+        "mkdir -p api/cpp && breathe-apidoc -o api/cpp -m -f -g namespace _build/doxygen/xml/",  # noqa: S607
+        shell=True,
+    )
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = "furo"
 html_static_path = ["_static"]
+html_css_files = [
+    "custom.css",
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/fontawesome.min.css",
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/solid.min.css",
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/brands.min.css",
+]
 html_theme_options = {
     "light_logo": "mqt_dark.png",
     "dark_logo": "mqt_light.png",
@@ -184,6 +192,20 @@ html_theme_options = {
     "source_branch": "main",
     "source_directory": "docs/",
     "navigation_with_keys": True,
+    "footer_icons": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/munich-quantum-toolkit/core/",
+            "html": "",
+            "class": "fa-brands fa-solid fa-github fa-2x",
+        },
+        {
+            "name": "PyPI",
+            "url": "https://pypi.org/project/mqt-core/",
+            "html": "",
+            "class": "fa-brands fa-solid fa-python fa-2x",
+        },
+    ],
 }
 
 # -- Options for LaTeX output ------------------------------------------------
@@ -220,6 +242,19 @@ latex_elements = {
 \DeclarePairedDelimiter\mket{\lvert}{\rangle}
 \DeclarePairedDelimiter\mbra{\langle}{\rvert}
 \DeclareUnicodeCharacter{03C0}{$\pi$}
+\DeclareUnicodeCharacter{2728}{\faicon{star}}
+\DeclareUnicodeCharacter{1F6B8}{\faicon{user-plus}}
+\DeclareUnicodeCharacter{1F4DD}{\faicon{book}}
+\DeclareUnicodeCharacter{1F69A}{\faicon{truck}}
+\DeclareUnicodeCharacter{267B}{\faicon{recycle}}
+\DeclareUnicodeCharacter{2B06}{\faicon{arrow-up}}
+\DeclareUnicodeCharacter{1F4C4}{\faicon{file-alt}}
+\DeclareUnicodeCharacter{1F525}{\faicon{fire}}
+\DeclareUnicodeCharacter{1F41B}{\faicon{bug}}
+\DeclareUnicodeCharacter{1F4DA}{\faicon{book-open}}
+\DeclareUnicodeCharacter{1F4E6}{\faicon{archive}}
+\DeclareUnicodeCharacter{23EA}{\faicon{angle-double-left}}
+\DeclareUnicodeCharacter{FE0F}{}
 
 \newcommand*{\ket}[1]{\ensuremath{\mket{\mkern1mu#1}}}
 \newcommand*{\bra}[1]{\ensuremath{\mbra{\mkern1mu#1}}}

@@ -40,11 +40,10 @@ using isMatrixVariant =
     std::enable_if_t<std::is_same_v<T, mNode> || std::is_same_v<T, dNode>,
                      bool>;
 
-using AmplitudeFunc =
-    std::function<void(const std::size_t, const std::complex<fp>&)>;
-using ProbabilityFunc = std::function<void(const std::size_t, const fp&)>;
-using MatrixEntryFunc = std::function<void(const std::size_t, const std::size_t,
-                                           const std::complex<fp>&)>;
+using AmplitudeFunc = std::function<void(std::size_t, const std::complex<fp>&)>;
+using ProbabilityFunc = std::function<void(std::size_t, const fp&)>;
+using MatrixEntryFunc =
+    std::function<void(std::size_t, std::size_t, const std::complex<fp>&)>;
 
 /**
  * @brief A weighted edge pointing to a DD node
@@ -90,6 +89,16 @@ template <class Node> struct Edge {
   }
 
   /**
+   * @brief Check whether an edge requires tracking.
+   * @param e The edge to check.
+   * @return Whether the edge requires tracking.
+   */
+  [[nodiscard]] static constexpr bool trackingRequired(const Edge& e) {
+    return !e.isTerminal() || !constants::isStaticNumber(e.w.r) ||
+           !constants::isStaticNumber(e.w.i);
+  }
+
+  /**
    * @brief Check whether this is a terminal
    * @return whether this is a terminal
    */
@@ -132,6 +141,12 @@ template <class Node> struct Edge {
    */
   [[nodiscard]] std::size_t size() const;
 
+  /// @brief Mark the edge as used.
+  void mark() const noexcept;
+
+  /// @brief Unmark the edge.
+  void unmark() const noexcept;
+
 private:
   /**
    * @brief Recursively traverse the DD and count the number of nodes
@@ -153,8 +168,8 @@ public:
    * @return the normalized vector DD
    */
   template <typename T = Node, isVector<T> = true>
-  static Edge<Node> normalize(Node* p, const std::array<Edge<Node>, RADIX>& e,
-                              MemoryManager& mm, ComplexNumbers& cn);
+  static auto normalize(Node* p, const std::array<Edge, RADIX>& e,
+                        MemoryManager& mm, ComplexNumbers& cn) -> Edge;
 
   /**
    * @brief Get a single element of the vector represented by the DD
@@ -230,8 +245,8 @@ public:
    * @return the normalized (density) matrix DD
    */
   template <typename T = Node, isMatrixVariant<T> = true>
-  static Edge<Node> normalize(Node* p, const std::array<Edge<Node>, NEDGE>& e,
-                              MemoryManager& mm, ComplexNumbers& cn);
+  static auto normalize(Node* p, const std::array<Edge, NEDGE>& e,
+                        MemoryManager& mm, ComplexNumbers& cn) -> Edge;
 
   /**
    * @brief Check whether the matrix represented by the DD is the identity
