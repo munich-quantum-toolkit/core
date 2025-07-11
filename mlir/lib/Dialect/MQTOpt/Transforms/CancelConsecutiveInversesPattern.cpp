@@ -72,39 +72,37 @@ struct CancelConsecutiveInversesPattern final
                         [&](auto* user) { return user != *users.begin(); });
   }
 
-  mlir::LogicalResult match(UnitaryInterface op) const override {
+  mlir::LogicalResult
+  matchAndRewrite(UnitaryInterface op,
+                  mlir::PatternRewriter& rewriter) const override {
     const auto& users = op->getUsers();
     if (!areUsersUnique(users)) {
       return mlir::failure();
     }
-    auto* user = *users.begin();
-    if (!areGatesInverse(*op, *user)) {
+
+    auto* userOp = *users.begin();
+    if (!areGatesInverse(*op, *userOp)) {
       return mlir::failure();
     }
-    auto unitaryUser = mlir::dyn_cast<UnitaryInterface>(user);
-    if (op.getAllOutQubits() != unitaryUser.getAllInQubits()) {
+    auto user = mlir::dyn_cast<UnitaryInterface>(userOp);
+    if (!user) {
       return mlir::failure();
     }
-    if (op.getPosCtrlInQubits().size() !=
-            unitaryUser.getPosCtrlInQubits().size() ||
-        op.getNegCtrlInQubits().size() !=
-            unitaryUser.getNegCtrlInQubits().size()) {
+    if (op.getAllOutQubits() != user.getAllInQubits()) {
+      return mlir::failure();
+    }
+    if (op.getPosCtrlInQubits().size() != user.getPosCtrlInQubits().size() ||
+        op.getNegCtrlInQubits().size() != user.getNegCtrlInQubits().size()) {
       // We only need to check the sizes, because the order of the controls was
       // already checked by the previous condition.
       return mlir::failure();
     }
-    return mlir::success();
-  }
 
-  void rewrite(UnitaryInterface op,
-               mlir::PatternRewriter& rewriter) const override {
-    auto user = mlir::dyn_cast<UnitaryInterface>(
-        *op->getUsers().begin()); // We always have exactly one user.
     // When iterating over the output qubits, it is important to call
     // `getAllOutQubits()` only once, as the output qubits are combined into a
     // fresh vector on every call.
     const auto& userOutQubits = user.getAllOutQubits();
-    // Also get the op's input qubits
+    // Also get the op's input qubits.
     const auto& opInQubits = op.getAllInQubits();
 
     // Note: There might be multiple users of an operation. The qubits itself
@@ -129,6 +127,7 @@ struct CancelConsecutiveInversesPattern final
 
     rewriter.eraseOp(user);
     rewriter.eraseOp(op);
+    return mlir::success();
   }
 };
 
