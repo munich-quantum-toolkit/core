@@ -236,6 +236,7 @@ jobs:
         working-directory: llvm-project
         run: |
           cmake -S llvm -B build_llvm `
+            -DCMAKE_BUILD_TYPE=Release `
             -DLLVM_ENABLE_PROJECTS=mlir `
             -DLLVM_BUILD_EXAMPLES=OFF `
             -DLLVM_TARGETS_TO_BUILD="X86" `
