@@ -42,8 +42,8 @@ public:
       : ptr(node), contribution(1.),
         distance(std::numeric_limits<double>::max()) {}
 
-  LayerNode(vNode* node, double contribution, double budget)
-      : ptr(node), contribution(contribution),
+  LayerNode(vNode* node, const double fidelityContribution, double budget)
+      : ptr(node), contribution(fidelityContribution),
         distance(std::max<double>(0, contribution - budget)) {}
 
   bool operator<(const LayerNode& other) const {
