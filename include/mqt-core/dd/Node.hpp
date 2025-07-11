@@ -57,7 +57,7 @@ struct NodeBase : LLBase {
   void mark() noexcept { flags |= MARK_FLAG; }
 
   /// @brief Unmark the node.
-  void unmark() noexcept { flags &= ~MARK_FLAG; }
+  void unmark() noexcept { flags &= static_cast<uint16_t>(~MARK_FLAG); }
 
   /// Getter for the next object.
   [[nodiscard]] NodeBase* next() const noexcept {
