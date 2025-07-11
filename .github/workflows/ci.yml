@@ -53,7 +53,7 @@ jobs:
       macos-compilers: '["clang", "gcc-13", "gcc-14", "gcc-15", "clang-19", "clang-20"]'
       macos-configs: '["Release", "Debug"]'
       # Windows matrix
-      windows-runners: '["windows-2022", "windows-2025, "windows-11-arm"]'
+      windows-runners: '["windows-2022", "windows-2025", "windows-11-arm"]'
       windows-compilers: '["msvc", "clang"]'
       windows-configs: '["Release", "Debug"]'
       # General settings
