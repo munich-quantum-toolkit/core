@@ -116,6 +116,15 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
     }];
 }
 
+class NoTargetUnitaryOp<string mnemonic, list<Trait> traits = []> :
+    UnitaryOp<mnemonic, traits # [NoTarget]> {
+    let assemblyFormat = [{
+        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)`
+        attr-dict ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
+        `:` ( `ctrl` type($pos_ctrl_out_qubits)^ )?( `nctrl` type($neg_ctrl_out_qubits)^ )?
+    }];
+}
+
 include "mlir/Dialect/MQTOpt/IR/MQTOptStdOps.td"
 
 def MeasureOp : GateOp<"measure", [SameVariadicResultSize, MatchingMeasureInOuts]> {
