@@ -50,7 +50,7 @@ jobs:
       ubuntu-configs: '["Release", "Debug"]'
       # macOS matrix
       macos-runners: '["macos-13", "macos-14", "macos-15"]'
-      macos-compilers: '["clang", "gcc-15", "clang-19", "clang-20"]'
+      macos-compilers: '["clang", "gcc-14", "gcc-15", "clang-19", "clang-20"]'
       macos-configs: '["Release", "Debug"]'
       # Windows matrix
       windows-runners: '["windows-2022", "windows-2025", "windows-11-arm"]'
