@@ -235,16 +235,17 @@ jobs:
       - name: Install LLVM
         working-directory: llvm-project
         run: |
-          cmake -S llvm -B build_llvm `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DLLVM_ENABLE_PROJECTS=mlir `
-            -DLLVM_BUILD_EXAMPLES=OFF `
-            -DLLVM_TARGETS_TO_BUILD="X86" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DLLVM_BUILD_TESTS=OFF `
-            -DLLVM_INCLUDE_TESTS=OFF `
-            -DLLVM_INCLUDE_EXAMPLES=OFF `
-            -DLLVM_ENABLE_ASSERTIONS=ON `
+          cmake \
+            -S llvm \
+            -B build_llvm \
+            -G Ninja \
+            -DLLVM_ENABLE_PROJECTS=mlir \
+            -DLLVM_BUILD_EXAMPLES=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_BUILD_TESTS=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_ENABLE_ASSERTIONS=ON \
             -DLLVM_ENABLE_UTILS=ON
           cmake --build build_llvm --config Release
           echo "MLIR_DIR=$(pwd)/build_llvm/lib/cmake/mlir" >> $GITHUB_ENV
