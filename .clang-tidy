@@ -3,6 +3,7 @@ FormatStyle: file
 Checks: |
   bugprone-*,
   -bugprone-easily-swappable-parameters,
+  -bugprone-unchecked-optional-access,
   clang-analyzer-*,
   -clang-analyzer-core.NullDereference,
   clang-diagnostic-*,

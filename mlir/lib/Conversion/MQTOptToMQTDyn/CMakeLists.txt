@@ -6,5 +6,6 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(Dialect)
-add_subdirectory(Conversion)
+file(GLOB CONVERSION_SOURCES *.cpp)
+
+add_mlir_library(MQTOptToMQTDyn ${CONVERSION_SOURCES} DEPENDS MQTOptToMQTDynIncGen)
