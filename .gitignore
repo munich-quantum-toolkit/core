@@ -136,8 +136,8 @@ python/**/_version.py
 # SKBuild cache dir
 _skbuild/
 
-# Any build dirs in the tests
-test/**/build/
+# Any build dirs
+**/build/
 
 # Common editor files
 *~
@@ -167,9 +167,7 @@ Thumbs.db
 /distro/plans/main.fmf
 /distro/tests/main.fmf
 
-/docs/**/build
 .vs
-out/build
 
 node_modules/
 wheelhouse/
@@ -177,4 +175,3 @@ wheelhouse/
 # mlir
 
 **/.lit
-plugins/catalyst/build
