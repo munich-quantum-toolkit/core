@@ -98,6 +98,11 @@ ninja.version = ">=1.10"
 # Setuptools-style build caching in a local directory
 build-dir = "build/{wheel_tag}/{build_type}"
 
+# All the targets to build
+build.targets = [
+  "mqt-core-catalyst-plugin"
+]
+
 # All components to install
 install.components = [
   "mqt-core-catalyst_Plugin",
