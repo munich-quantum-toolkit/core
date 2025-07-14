@@ -6,10 +6,9 @@
 #
 # Licensed under the MIT License
 
-cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
-
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(/workspaces/cuda-quantum/build/include)
 include_directories(/workspaces/cuda-quantum/include)
 
 add_subdirectory(include)
