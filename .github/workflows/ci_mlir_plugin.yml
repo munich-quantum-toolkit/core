@@ -23,7 +23,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ubuntu-24.04, macos-14]
-        llvm-version: [19, 20]
+        llvm-version: [19, 20, 21]
       fail-fast: false
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
