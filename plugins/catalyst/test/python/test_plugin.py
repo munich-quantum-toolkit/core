@@ -16,19 +16,9 @@ from __future__ import annotations
 
 import catalyst
 import pennylane as qml
-import pytest
 from catalyst.passes import apply_pass
 
-from mqt.core.plugins.catalyst import get_catalyst_plugin_abs_path
 
-plugin_available: bool = True
-try:
-    plugin_path: str = str(get_catalyst_plugin_abs_path())
-except ImportError:
-    plugin_available = False
-
-
-@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
 def test_mqtopt_conversion() -> None:
     """Execute the conversion passes to and from MQTOpt dialect."""
 
@@ -49,7 +39,6 @@ def test_mqtopt_conversion() -> None:
     assert module.mlir_opt
 
 
-@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
 def test_mqtopt_roundtrip() -> None:
     """Execute the full roundtrip including MQT Core IR.
 

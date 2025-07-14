@@ -17,28 +17,21 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pennylane as qml
-import pytest
 from catalyst import pipeline
 from catalyst.passes import apply_pass, apply_pass_plugin
 
-from mqt.core.plugins.catalyst import get_catalyst_plugin_abs_path, mqt_core_roundtrip
+from mqt.core.plugins.catalyst import get_catalyst_plugin_abs_path
 
 if TYPE_CHECKING:
     from pennylane.measurements.state import StateMP
 
-plugin_available: bool = True
-try:
-    plugin_path: str = str(get_catalyst_plugin_abs_path())
-except ImportError:
-    plugin_available = False
 
-
-@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
 def test_mqt_plugin() -> None:
     """Generate MLIR for the MQT plugin.
 
     Does not execute the pass.
     """
+    plugin_path = str(get_catalyst_plugin_abs_path())
 
     @apply_pass("mqt-core-round-trip")
     @qml.qnode(qml.device("null.qubit", wires=0))
@@ -52,12 +45,12 @@ def test_mqt_plugin() -> None:
     assert "mqt-core-round-trip" in module.mlir
 
 
-@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
 def test_mqt_plugin_no_preregistration() -> None:
     """Generate MLIR for the MQT plugin.
 
     No need to register the plugin ahead of time in the qjit decorator.
     """
+    plugin_path = str(get_catalyst_plugin_abs_path())
 
     @apply_pass_plugin(plugin_path, "mqt-core-round-trip")
     @qml.qnode(qml.device("null.qubit", wires=0))
@@ -71,7 +64,6 @@ def test_mqt_plugin_no_preregistration() -> None:
     assert "mqt-core-round-trip" in module.mlir
 
 
-@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
 def test_mqt_entry_point() -> None:
     """Generate MLIR for the MQT plugin via entry-point."""
 
@@ -87,27 +79,10 @@ def test_mqt_entry_point() -> None:
     assert "mqt-core-round-trip" in module.mlir
 
 
-@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
 def test_mqt_dictionary() -> None:
     """Generate MLIR for the MQT plugin via entry-point."""
 
     @pipeline({"mqt.mqt-core-round-trip": {}})
-    @qml.qnode(qml.device("null.qubit", wires=0))
-    def qnode() -> StateMP:
-        return qml.state()
-
-    @qml.qjit(target="mlir")
-    def module() -> StateMP:
-        return qnode()
-
-    assert "mqt-core-round-trip" in module.mlir
-
-
-@pytest.mark.skipif(not plugin_available, reason="MQT Plugin is not installed")
-def test_mqt_plugin_decorator() -> None:
-    """Generate MLIR for the MQT plugin."""
-
-    @mqt_core_roundtrip
     @qml.qnode(qml.device("null.qubit", wires=0))
     def qnode() -> StateMP:
         return qml.state()
