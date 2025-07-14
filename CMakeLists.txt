@@ -111,6 +111,8 @@ if(BUILD_MQT_CORE_BENCHMARKS)
   add_subdirectory(eval)
 endif()
 
+add_compile_options(-Wno-dangling-assignment-gsl)
+
 option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
 if(BUILD_MQT_CORE_MLIR)
   include(SetupMLIR)
