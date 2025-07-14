@@ -92,6 +92,10 @@ set(BUILD_MQT_CORE_MLIR
 set(CMAKE_POSITION_INDEPENDENT_CODE
     ON
     CACHE BOOL "Enable position independent code (PIC) for MQT Core")
+# Fetch mqt-core from the source tree
+set(FETCHCONTENT_SOURCE_DIR_MQT-CORE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+    CACHE PATH "Source directory for MQT Core")
 FetchContent_Declare(
   mqt-core
   GIT_REPOSITORY https://github.com/${MQT_CORE_REPO_OWNER}/core.git
