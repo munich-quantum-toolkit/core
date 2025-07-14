@@ -36,7 +36,9 @@ def test_mqtopt_conversion() -> None:
         return circuit()
 
     # This will execute the pass and return the final MLIR
-    assert module.mlir_opt
+    mlir_opt = module.mlir_opt
+    assert mlir_opt
+    print(mlir_opt)
 
 
 def test_mqtopt_roundtrip() -> None:
@@ -61,4 +63,6 @@ def test_mqtopt_roundtrip() -> None:
         return circuit()
 
     # This will execute the pass and return the final MLIR
-    assert module.mlir_opt
+    mlir_opt = module.mlir_opt
+    assert mlir_opt
+    print(mlir_opt)

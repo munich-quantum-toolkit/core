@@ -102,7 +102,7 @@ jobs:
       # Run the plugin tests
       - name: Run pytest for mqt-core-catalyst-plugin
         working-directory: plugins/catalyst
-        run: python -m pytest --verbose
+        run: python -m pytest -s --verbose
 
   cpp-test-mlir-catalyst-plugin-source:
     name: 🧩 Test MLIR Catalyst Plugin on ${{ matrix.runs-on }} from Source
@@ -189,7 +189,7 @@ jobs:
       # Run the plugin tests
       - name: Run pytest for mqt-core-catalyst-plugin
         working-directory: plugins/catalyst
-        run: python -m pytest --verbose
+        run: python -m pytest -s --verbose
 
   cpp-test-mlir-catalyst-plugin-exact-mlir:
     name: 🧩 Test MLIR Catalyst Plugin on ${{ matrix.runs-on }} from exact MLIR source
@@ -262,4 +262,4 @@ jobs:
       # Run the plugin tests
       - name: Run pytest for mqt-core-catalyst-plugin
         working-directory: plugins/catalyst
-        run: python -m pytest --verbose
+        run: python -m pytest -s --verbose
