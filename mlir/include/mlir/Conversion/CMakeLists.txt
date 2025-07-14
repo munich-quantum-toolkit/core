@@ -8,3 +8,5 @@
 
 add_subdirectory(MQTDynToMQTOpt)
 add_subdirectory(MQTOptToMQTDyn)
+add_subdirectory(MQTDynToQIR)
+add_subdirectory(QIRToMQTDyn)
