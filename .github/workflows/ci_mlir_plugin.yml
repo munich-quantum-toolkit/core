@@ -121,6 +121,26 @@ jobs:
         with:
           fetch-depth: 0
 
+      # install a specific version of the LLVM toolchain
+      - name: Install llvm and mlir
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          wget https://apt.llvm.org/llvm.sh -O ${{ runner.temp }}/llvm_install.sh
+          chmod +x ${{ runner.temp }}/llvm_install.sh
+          if sudo ${{ runner.temp }}/llvm_install.sh 20; then
+            sudo apt-get install -y clang-20 \
+                                    clang-tools-20 \
+             || exit 1
+          else
+            echo "Installation from script failed."
+            exit 1
+          fi
+          echo "C_COMPILER=clang-20" >> $GITHUB_ENV
+          echo "CXX_COMPILER=clang++-20" >> $GITHUB_ENV
+          echo "CC=clang-20" >> $GITHUB_ENV
+          echo "CXX=clang++-20" >> $GITHUB_ENV
+
       # set up ccache for faster C++ builds
       - name: Setup ccache
         uses: Chocobo1/setup-ccache-action@v1
@@ -129,8 +149,8 @@ jobs:
           override_cache_key: mlir-plugin-${{ matrix.runs-on }}-source
 
       # set up mold as linker for faster C++ builds
-      #      - name: Set up mold as linker
-      #        uses: rui314/setup-mold@v1
+      - name: Set up mold as linker
+        uses: rui314/setup-mold@v1
 
       # Set up uv for faster Python package management
       - name: Install the latest version of uv
