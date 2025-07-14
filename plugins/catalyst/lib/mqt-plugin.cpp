@@ -23,6 +23,7 @@
 
 #include <llvm/Config/llvm-config.h>
 #include <llvm/Support/Compiler.h>
+#include <mlir/IR/DialectRegistry.h>
 #include <mlir/Tools/Plugins/DialectPlugin.h>
 #include <mlir/Tools/Plugins/PassPlugin.h>
 
