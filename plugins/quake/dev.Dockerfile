@@ -8,7 +8,7 @@
 #
 # Start up a container using the following command:
 # docker run -it --rm \
-# --mount type=bind,source="$(pwd)",target=/workspace/core/ \
+# --mount type=bind,source="$(pwd)",target=/workspaces/core/ \
 # mqt/quake-dev:latest
 
 # Built locally with bde5f32d33
@@ -21,3 +21,20 @@ RUN pip install cudensitymat-cu12==0.2.0
 
 # Build cudaq
 RUN bash scripts/build_cudaq.sh -j 1
+
+# Install llvm
+RUN apt update && apt install -y lsb-release wget software-properties-common gnupg
+RUN wget https://apt.llvm.org/llvm.sh -O /tmp/llvm_install.sh
+RUN chmod +x /tmp/llvm_install.sh
+RUN bash /tmp/llvm_install.sh 20
+RUN apt install -y libmlir-20-dev mlir-20-tools clang-20
+
+# Set environment variables
+ENV MQT_CORE_CC=/usr/lib/llvm-20/bin/clang
+ENV MQT_CORE_CXX=/usr/lib/llvm-20/bin/clang++
+ENV MQT_CORE_LLVM_DIR=/usr/lib/llvm-20/lib/cmake/llvm
+ENV MQT_CORE_MLIR_DIR=/usr/lib/llvm-20/lib/cmake/mlir
+ENV MQT_CORE_LIT=/usr/local/bin/lit
+
+# Change working directory
+WORKDIR /workspaces/core
