@@ -46,13 +46,13 @@ public:
   LogicalResult
   matchAndRewrite(quake::AllocaOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-      const auto& qregType =
-          ::mqt::ir::dyn::QubitRegisterType::get(rewriter.getContext());
+    const auto& qregType =
+        ::mqt::ir::dyn::QubitRegisterType::get(rewriter.getContext());
 
-      auto sizeAttr = IntegerAttr{}; // TODO
+    auto sizeAttr = IntegerAttr{}; // TODO
 
-      rewriter.replaceOpWithNewOp<::mqt::ir::dyn::AllocOp>(
-          op, qregType, op.getSize(), sizeAttr);
+    rewriter.replaceOpWithNewOp<::mqt::ir::dyn::AllocOp>(
+        op, qregType, op.getSize(), sizeAttr);
 
     return success();
   }
