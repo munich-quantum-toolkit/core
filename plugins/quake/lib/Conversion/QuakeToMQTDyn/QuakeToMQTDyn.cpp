@@ -34,92 +34,56 @@
 
 namespace mqt::ir::conversions {
 
+using namespace mlir;
+
 #define GEN_PASS_DEF_QUAKETOMQTDYN
 #include "mlir/Conversion/QuakeToMQTDyn/QuakeToMQTDyn.h.inc"
 
-using namespace mlir;
-
-class QuakeToMQTDynTypeConverter : public TypeConverter {
+struct ConvertQuakeAlloca : public OpConversionPattern<quake::AllocaOp> {
 public:
-  explicit QuakeToMQTDynTypeConverter(MLIRContext* ctx) {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(quake::AllocaOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+      const auto& qregType =
+          ::mqt::ir::dyn::QubitRegisterType::get(rewriter.getContext());
+
+      auto sizeAttr = IntegerAttr{}; // TODO
+
+      rewriter.replaceOpWithNewOp<::mqt::ir::dyn::AllocOp>(
+          op, qregType, op.getSize(), sizeAttr);
+
+    return success();
+  }
+};
+
+struct QuakeToMQTDynTypeConverter : public TypeConverter {
+  QuakeToMQTDynTypeConverter() {
     // Identity conversion
-    // Allow all types to pass through unmodified if needed
     addConversion([](Type type) { return type; });
   }
 };
 
-struct ConvertQuakeAlloca
-    : public OpConversionPattern<cudaq::quake::quake_AllocaOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(cudaq::quake::AllocaOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    // Create the new operation
-    auto mqtDynOp = rewriter.create<::mqt::ir::dyn::AllocOp>(op.getLoc(),
-                                                             adaptor.getSize());
-
-    // Get the result of the new operation
-    auto mqtDynReg = mqtDynOp->getResult(0);
-
-    // Collect the users of the original operation to update their operands
-    std::vector<mlir::Operation*> users(op->getUsers().begin(),
-                                        op->getUsers().end());
-
-    // Iterate over the users in reverse order
-    for (auto* user : llvm::reverse(users)) {
-      // Update the operand of the user operation to the new qubit register
-      user->replaceUsesOfWith(op.getResult(), mqtDynReg);
-    }
-
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
+void populateQuakeToMQTDynPatterns(TypeConverter& converter,
+                                   RewritePatternSet& patterns) {
+  auto* context = patterns.getContext();
+  patterns.insert<ConvertQuakeAlloca>(converter, context);
+}
 
 struct QuakeToMQTDyn : impl::QuakeToMQTDynBase<QuakeToMQTDyn> {
   using QuakeToMQTDynBase::QuakeToMQTDynBase;
 
   void runOnOperation() override {
-    MLIRContext* context = &getContext();
-    auto* module = getOperation();
+    auto* context = &getContext();
+
+    QuakeToMQTDynTypeConverter typeConverter;
+    RewritePatternSet patterns(context);
+    populateQuakeToMQTDynPatterns(typeConverter, patterns);
 
     ConversionTarget target(*context);
     target.addLegalDialect<::mqt::ir::dyn::MQTDynDialect>();
-    target.addIllegalDialect<cudaq::quake::QuakeDialect>();
-
-    RewritePatternSet patterns(context);
-    QuakeToMQTDynTypeConverter typeConverter(context);
-
-    patterns.add<ConvertQuakeAlloca>(typeConverter, context);
-
-    // Boilerplate code to prevent unresolved materialization
-    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
-        patterns, typeConverter);
-    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return typeConverter.isSignatureLegal(op.getFunctionType()) &&
-             typeConverter.isLegal(&op.getBody());
-    });
-
-    populateReturnOpTypeConversionPattern(patterns, typeConverter);
-    target.addDynamicallyLegalOp<func::ReturnOp>(
-        [&](func::ReturnOp op) { return typeConverter.isLegal(op); });
-
-    populateCallOpTypeConversionPattern(patterns, typeConverter);
-    target.addDynamicallyLegalOp<func::CallOp>(
-        [&](func::CallOp op) { return typeConverter.isLegal(op); });
-
-    populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
-    target.markUnknownOpDynamicallyLegal([&](Operation* op) {
-      return isNotBranchOpInterfaceOrReturnLikeOp(op) ||
-             isLegalForBranchOpInterfaceTypeConversionPattern(op,
-                                                              typeConverter) ||
-             isLegalForReturnOpTypeConversionPattern(op, typeConverter);
-    });
-
-    if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
-      signalPassFailure();
-    }
+    target.addIllegalDialect<quake::QuakeDialect>();
   }
 };
 

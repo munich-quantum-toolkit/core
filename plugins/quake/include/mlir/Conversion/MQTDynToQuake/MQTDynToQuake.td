@@ -17,7 +17,7 @@ def MQTDynToQuake : Pass<"mqtdyn-to-quake"> {
 
   // Define dependent dialects
   let dependentDialects = [
-    "cudaq::quake::QuakeDialect",
+    "quake::QuakeDialect",
     "::mqt::ir::dyn::MQTDynDialect"
   ];
 }
