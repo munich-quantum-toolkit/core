@@ -11,6 +11,7 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h" // IWYU pragma: associated
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/IR/Types.h"
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -129,7 +130,8 @@ parseOptOutputTypes(mlir::OpAsmParser& parser,
  * @param printer The printer to use.
  * @param types The types to print.
  **/
-void printCommaSeparated(mlir::OpAsmPrinter& printer, mlir::TypeRange types) {
+void static printCommaSeparated(mlir::OpAsmPrinter& printer,
+                                mlir::TypeRange types) {
   if (types.empty()) {
     return;
   }
