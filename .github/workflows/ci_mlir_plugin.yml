@@ -54,8 +54,8 @@ jobs:
             echo "Installation from script failed."
             exit 1
           fi
-          echo "CC=clang-${{ matrix.llvm-version }}" >> $GITHUB_ENV
-          echo "CXX=clang++-${{ matrix.llvm-version }}" >> $GITHUB_ENV
+          echo "CC=gcc-14" >> $GITHUB_ENV
+          echo "CXX=g++-14" >> $GITHUB_ENV
           echo "MLIR_DIR=/usr/lib/llvm-${{ matrix.llvm-version }}/lib/cmake/mlir" >> $GITHUB_ENV
           echo "LLVM_DIR=/usr/lib/llvm-${{ matrix.llvm-version }}/lib/cmake/llvm" >> $GITHUB_ENV
 
@@ -124,25 +124,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      # install a specific version of the LLVM toolchain
-      - name: Install llvm and mlir
+      # set up gcc as compiler
+      - name: Set up GCC as compiler
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          wget https://apt.llvm.org/llvm.sh -O ${{ runner.temp }}/llvm_install.sh
-          chmod +x ${{ runner.temp }}/llvm_install.sh
-          if sudo ${{ runner.temp }}/llvm_install.sh 20; then
-            sudo apt-get install -y clang-20 \
-                                    clang-tools-20 \
-             || exit 1
-          else
-            echo "Installation from script failed."
-            exit 1
-          fi
-          echo "C_COMPILER=clang-20" >> $GITHUB_ENV
-          echo "CXX_COMPILER=clang++-20" >> $GITHUB_ENV
-          echo "CC=clang-20" >> $GITHUB_ENV
-          echo "CXX=clang++-20" >> $GITHUB_ENV
+          echo "C_COMPILER=gcc-14" >> $GITHUB_ENV
+          echo "CXX_COMPILER=g++-14" >> $GITHUB_ENV
+          echo "CC=gcc-14" >> $GITHUB_ENV
+          echo "CXX=g++-14" >> $GITHUB_ENV
 
       # set up ccache for faster C++ builds
       - name: Setup ccache
@@ -210,6 +199,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # set up gcc as compiler
+      - name: Set up GCC as compiler
+        if: runner.os == 'Linux'
+        run: |
+          echo "C_COMPILER=gcc-14" >> $GITHUB_ENV
+          echo "CXX_COMPILER=g++-14" >> $GITHUB_ENV
+          echo "CC=gcc-14" >> $GITHUB_ENV
+          echo "CXX=g++-14" >> $GITHUB_ENV
 
       # set up ccache for faster C++ builds
       - name: Setup ccache
