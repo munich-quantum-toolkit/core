@@ -264,6 +264,7 @@ wille = "wille"
 anc = "anc"
 mch = "mch"
 ket = "ket"
+delocate = "delocate"
 
 
 [tool.repo-review]
