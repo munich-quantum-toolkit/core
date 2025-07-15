@@ -9,6 +9,12 @@
  */
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h" // IWYU pragma: associated
+#include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -135,7 +141,7 @@ void printCommaSeparated(mlir::OpAsmPrinter& printer, mlir::TypeRange types) {
   }
 }
 
-void printOptOutputTypes(mlir::OpAsmPrinter& printer, mlir::Operation* op,
+void printOptOutputTypes(mlir::OpAsmPrinter& printer, mlir::Operation* /*op*/,
                          mlir::TypeRange outQubits,
                          mlir::TypeRange posCtrlOutQubits,
                          mlir::TypeRange negCtrlOutQubits) {
