@@ -132,6 +132,7 @@ jobs:
           echo "CXX_COMPILER=g++-14" >> $GITHUB_ENV
           echo "CC=gcc-14" >> $GITHUB_ENV
           echo "CXX=g++-14" >> $GITHUB_ENV
+          echo "ENABLE_LLD=OFF" >> $GITHUB_ENV
 
       # set up ccache for faster C++ builds
       - name: Setup ccache
