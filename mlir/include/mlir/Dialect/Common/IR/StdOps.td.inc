@@ -9,7 +9,7 @@
 #ifndef @DIALECT_NAME@_STD_OPS
 #define @DIALECT_NAME@_STD_OPS
 
-def GPhaseOp : NoTargetUnitaryOp<"gphase", [OneParameter]> {
+def GPhaseOp : UnitaryOp<"gphase", [NoTarget, OneParameter]> {
     let summary = "GPhase operation";
 
     let description = [{

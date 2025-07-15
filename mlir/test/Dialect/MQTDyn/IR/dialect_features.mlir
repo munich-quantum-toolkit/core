@@ -131,6 +131,62 @@ module {
 }
 
 // -----
+// This test checks if no-target operations without controls are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNoTargetNoControls
+    func.func @testNoTargetNoControls() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: mqtdyn.gphase(%[[C0_F64]])
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        mqtdyn.gphase(%c0_f64)
+        return
+    }
+}
+
+// -----
+// This test checks if no-target operations with controls are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNoTargetWithControls
+    func.func @testNoTargetWithControls() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: mqtdyn.gphase(%[[C0_F64]]) ctrl %[[Q0:.*]]
+        // CHECK: mqtdyn.gphase(%[[C0_F64]]) ctrl %[[Q0]], %[[ANY:.*]]
+
+        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+        %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+        %q1 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        mqtdyn.gphase(%c0_f64) ctrl %q0
+        mqtdyn.gphase(%c0_f64) ctrl %q0, %q1
+
+        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if no-target operations with positive and negative controls are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNoTargetPositiveNegativeControls
+    func.func @testNoTargetPositiveNegativeControls() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: mqtdyn.gphase(%[[C0_F64]]) ctrl %[[ANY:.*]]
+
+        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+        %q0_0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+        %q1_0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        mqtdyn.gphase(%c0_f64) ctrl %q0_0 nctrl %q1_0
+
+        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
 // This test checks if single qubit gates are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testSingleQubitOp
