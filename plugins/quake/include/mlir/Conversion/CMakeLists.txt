@@ -7,4 +7,4 @@
 # Licensed under the MIT License
 
 add_subdirectory(MQTDynToQuake)
-add_subdirectory(QuaketoMQTDyn)
+add_subdirectory(QuakeToMQTDyn)
