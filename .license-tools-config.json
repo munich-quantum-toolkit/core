@@ -31,6 +31,6 @@
     ".*\\.tex",
     "uv\\.lock",
     "py\\.typed",
-    ".*build.*"
+    "plugins/quake/"
   ]
 }
