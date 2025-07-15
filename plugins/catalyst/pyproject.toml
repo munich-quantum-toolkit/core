@@ -9,11 +9,11 @@
 [build-system]
 requires = [
   "scikit-build-core>=0.11.5",
-  "pennylane-catalyst>=0.12.0rc6",
-  # The following dependencies can be removed once we no longer rely on the pre-release version for Catalyst
-  "pennylane>=0.42.0.dev68",
-  "pennylane-lightning>=0.42.0.dev45",
-  "pennylane-lightning-kokkos>=0.42.0.dev45",
+  "pennylane-catalyst~=0.12.0",
+  # The following dependencies are needed whenever one wants to build with a pre-release version of Catalyst
+  #  "pennylane>=0.42.0.dev68",
+  #  "pennylane-lightning>=0.42.0.dev45",
+  #  "pennylane-lightning-kokkos>=0.42.0.dev45",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -59,11 +59,11 @@ test = [
   "pytest-cov>=6.1.1",
 ]
 catalyst = [
-  "pennylane-catalyst>=0.12.0rc6",
-  # The following dependencies can be removed once we no longer rely on the pre-release version for Catalyst
-  "pennylane>=0.42.0.dev68",
-  "pennylane-lightning>=0.42.0.dev45",
-  "pennylane-lightning-kokkos>=0.42.0.dev45",
+  "pennylane-catalyst~=0.12.0",
+  # The following dependencies are needed whenever one wants to build with a pre-release version of Catalyst
+  #  "pennylane>=0.42.0.dev68",
+  #  "pennylane-lightning>=0.42.0.dev45",
+  #  "pennylane-lightning-kokkos>=0.42.0.dev45",
 ]
 dev = [
   {include-group = "build"},
@@ -204,17 +204,18 @@ environments = [
   "sys_platform == 'linux'",
 ]
 
-[[tool.uv.index]]
-name = "test.pypi.org"
-url = "https://test.pypi.org/simple"
-explicit = true
-
-
-[tool.uv.sources]
-pennylane-catalyst = { index = "test.pypi.org" }
-pennylane-lightning = { index = "test.pypi.org" }
-pennylane-lightning-kokkos = { index = "test.pypi.org" }
-pennylane = { index = "test.pypi.org" }
+# The following configuration is needed whenever one wants to build with a pre-release version of Catalyst
+#[[tool.uv.index]]
+#name = "test.pypi.org"
+#url = "https://test.pypi.org/simple"
+#explicit = true
+#
+#
+#[tool.uv.sources]
+#pennylane-catalyst = { index = "test.pypi.org" }
+#pennylane-lightning = { index = "test.pypi.org" }
+#pennylane-lightning-kokkos = { index = "test.pypi.org" }
+#pennylane = { index = "test.pypi.org" }
 
 [tool.ruff]
 line-length = 120
