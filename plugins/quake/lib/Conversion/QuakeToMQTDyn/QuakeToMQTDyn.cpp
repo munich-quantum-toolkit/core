@@ -11,12 +11,12 @@
 #include "mlir/Conversion/QuakeToMQTDyn/QuakeToMQTDyn.h"
 
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
+#include "mlir/Dialect/Quake/QuakeDialect.h"
+#include "mlir/Dialect/Quake/QuakeOps.h"
+#include "mlir/Dialect/Quake/QuakeTypes.h"
 
 #include <cassert>
 #include <cstddef>
-#include <cudaq/Optimizer/Dialect/Quake/QuakeDialect.h>
-#include <cudaq/Optimizer/Dialect/Quake/QuakeOps.h>
-#include <cudaq/Optimizer/Dialect/Quake/QuakeTypes.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>

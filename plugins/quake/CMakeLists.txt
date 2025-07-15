@@ -8,8 +8,6 @@
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-include_directories(/workspaces/cuda-quantum/build/include)
-include_directories(/workspaces/cuda-quantum/include)
 
 add_subdirectory(include)
 add_subdirectory(lib)
