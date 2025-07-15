@@ -328,6 +328,9 @@ wheels = [
 name = "mqt-core-catalyst-plugin"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "pennylane-catalyst", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
 
 [package.dev-dependencies]
 build = [
@@ -351,6 +354,7 @@ test = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "pennylane-catalyst", specifier = "~=0.12.0" }]
 
 [package.metadata.requires-dev]
 build = [
