@@ -71,8 +71,7 @@ namespace {
  * @param printer The printer to use.
  * @param types The types to print.
  **/
-void printCommaSeparated(mlir::OpAsmPrinter& printer,
-                                mlir::TypeRange types) {
+void printCommaSeparated(mlir::OpAsmPrinter& printer, mlir::TypeRange types) {
   if (types.empty()) {
     return;
   }
