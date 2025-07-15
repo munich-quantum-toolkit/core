@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h" // IWYU pragma: associated
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Types.h"
@@ -62,6 +63,27 @@ void mqt::ir::opt::MQTOptDialect::initialize() {
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/MQTOpt/IR/MQTOptOps.cpp.inc"
+
+namespace {
+/**
+ * @brief Prints the given list of types as a comma-separated list
+ *
+ * @param printer The printer to use.
+ * @param types The types to print.
+ **/
+void static printCommaSeparated(mlir::OpAsmPrinter& printer,
+                                mlir::TypeRange types) {
+  if (types.empty()) {
+    return;
+  }
+
+  printer.printType(types.front());
+  for (auto type : llvm::drop_begin(types)) {
+    printer << ", ";
+    printer.printType(type);
+  }
+}
+} // namespace
 
 namespace mqt::ir::opt {
 mlir::ParseResult
@@ -122,25 +144,6 @@ parseOptOutputTypes(mlir::OpAsmParser& parser,
   }
 
   return mlir::success();
-}
-
-/**
- * @brief Prints the given list of types as a comma-separated list
- *
- * @param printer The printer to use.
- * @param types The types to print.
- **/
-void static printCommaSeparated(mlir::OpAsmPrinter& printer,
-                                mlir::TypeRange types) {
-  if (types.empty()) {
-    return;
-  }
-
-  printer.printType(types.front());
-  for (auto type : llvm::drop_begin(types)) {
-    printer << ", ";
-    printer.printType(type);
-  }
 }
 
 void printOptOutputTypes(mlir::OpAsmPrinter& printer, mlir::Operation* /*op*/,
