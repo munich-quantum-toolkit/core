@@ -269,7 +269,10 @@ jobs:
             -DLLVM_INCLUDE_TESTS=OFF \
             -DLLVM_INCLUDE_EXAMPLES=OFF \
             -DLLVM_ENABLE_ASSERTIONS=ON \
-            -DLLVM_ENABLE_UTILS=ON
+            -DLLVM_ENABLE_ZLIB=FORCE_ON \
+            -DLLVM_ENABLE_ZSTD=OFF \
+            -DLLVM_ENABLE_LDD=OFF \
+            -DCMAKE_CXX_VISIBILITY_PRESET=default
           cmake --build build_llvm --config Release --target check-mlir
           echo "MLIR_DIR=$(pwd)/build_llvm/lib/cmake/mlir" >> $GITHUB_ENV
           echo "LLVM_DIR=$(pwd)/build_llvm/lib/cmake/llvm" >> $GITHUB_ENV
