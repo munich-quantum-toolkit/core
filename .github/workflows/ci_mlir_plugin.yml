@@ -97,28 +97,10 @@ jobs:
           python-version: 3.13
           activate-environment: true
 
-      # Build the plugin package wheel
+      # Build the plugin package
       - name: Build mqt-core-catalyst-plugin
         working-directory: plugins/catalyst
-        run: uv build --wheel --verbose --out-dir ../../dist
-
-      # Repair the plugin wheel for compatibility
-      - name: Repair mqt-core-catalyst-plugin wheel
-        if: runner.os == 'macOS'
-        working-directory: dist
-        run: uvx --from delocate delocate-wheel -w ./repaired -v mqt_core_catalyst_plugin-*.whl
-
-      # Repair the plugin wheel for compatibility
-      - name: Repair mqt-core-catalyst-plugin wheel
-        if: runner.os == 'Linux'
-        working-directory: dist
-        run: uvx auditwheel repair -w ./repaired mqt_core_catalyst_plugin-*.whl
-
-      # Install the repaired plugin wheel and the test dependencies
-      - name: Install mqt-core-catalyst-plugin and test dependencies
-        run: |
-          uv pip install dist/repaired/mqt_core_catalyst_plugin-*.whl
-          uv sync --inexact --only-group test --only-group catalyst --verbose --directory plugins/catalyst --active
+        run: uv sync --verbose --active
 
       # Run the plugin tests
       - name: Run pytest for mqt-core-catalyst-plugin
