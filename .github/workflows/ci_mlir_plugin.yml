@@ -118,7 +118,7 @@ jobs:
       - name: Install mqt-core-catalyst-plugin and test dependencies
         run: |
           uv pip install dist/repaired/mqt_core_catalyst_plugin-*.whl
-          uv sync --inexact --only-group test --verbose --directory plugins/catalyst
+          uv sync --inexact --only-group test --verbose --directory plugins/catalyst --active
 
       # Run the plugin tests
       - name: Run pytest for mqt-core-catalyst-plugin
@@ -271,9 +271,8 @@ jobs:
             -DLLVM_ENABLE_ASSERTIONS=ON \
             -DLLVM_ENABLE_ZLIB=FORCE_ON \
             -DLLVM_ENABLE_ZSTD=OFF \
-            -DLLVM_ENABLE_LDD=OFF \
             -DCMAKE_CXX_VISIBILITY_PRESET=default
-          cmake --build build_llvm --config Release --target check-mlir
+          cmake --build build_llvm --config Release
           echo "MLIR_DIR=$(pwd)/build_llvm/lib/cmake/mlir" >> $GITHUB_ENV
           echo "LLVM_DIR=$(pwd)/build_llvm/lib/cmake/llvm" >> $GITHUB_ENV
 
