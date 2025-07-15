@@ -8,9 +8,9 @@
 
 #include "mlir/Dialect/Quake/QuakeOps.h"
 
+#include "mlir/Builder/Factory.h"
 #include "mlir/Dialect/CC/CCOps.h"
 #include "mlir/Dialect/CC/CCTypes.h"
-#include "mlir/Dialect/Factory.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/Quake/QuakeDialect.h"
 #include "mlir/Dialect/Utils/IndexingUtils.h"
