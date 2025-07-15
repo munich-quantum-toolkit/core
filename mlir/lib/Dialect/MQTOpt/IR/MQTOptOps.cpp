@@ -59,9 +59,9 @@ void mqt::ir::opt::MQTOptDialect::initialize() {
 namespace mqt::ir::opt {
 mlir::ParseResult
 parseOptOutputTypes(mlir::OpAsmParser& parser,
-                    llvm::SmallVectorImpl<::mlir::Type>& out_qubits,
-                    llvm::SmallVectorImpl<::mlir::Type>& pos_ctrl_out_qubits,
-                    llvm::SmallVectorImpl<::mlir::Type>& neg_ctrl_out_qubits) {
+                    llvm::SmallVectorImpl<::mlir::Type>& outQubits,
+                    llvm::SmallVectorImpl<::mlir::Type>& posCtrlOutQubits,
+                    llvm::SmallVectorImpl<::mlir::Type>& negCtrlOutQubits) {
   // No ":" delimiter -> no output types.
   if (parser.parseOptionalColon().failed()) {
     return mlir::success();
@@ -79,19 +79,19 @@ parseOptOutputTypes(mlir::OpAsmParser& parser,
   // we need to do this manually).
   mlir::Type target;
   if (parser.parseOptionalType(target).has_value()) {
-    out_qubits.push_back(target);
+    outQubits.push_back(target);
     while (parser.parseOptionalComma().succeeded()) {
       if (parser.parseType(target).failed()) {
         return mlir::failure();
       }
-      out_qubits.push_back(target);
+      outQubits.push_back(target);
     }
   }
 
   // Parse the control and negated control qubits if the corresponding keyword
   // exists.
   if (parser.parseOptionalKeyword("ctrl").succeeded()) {
-    if (parser.parseTypeList(pos_ctrl_out_qubits).failed()) {
+    if (parser.parseTypeList(posCtrlOutQubits).failed()) {
       parser.emitError(parser.getCurrentLocation(),
                        "expected at least one type after `ctrl` keyword");
       return mlir::failure();
@@ -99,7 +99,7 @@ parseOptOutputTypes(mlir::OpAsmParser& parser,
   }
 
   if (parser.parseOptionalKeyword("nctrl").succeeded()) {
-    if (parser.parseTypeList(neg_ctrl_out_qubits).failed()) {
+    if (parser.parseTypeList(negCtrlOutQubits).failed()) {
       parser.emitError(parser.getCurrentLocation(),
                        "expected at least one type after `ctrl` keyword");
       return mlir::failure();
@@ -107,8 +107,8 @@ parseOptOutputTypes(mlir::OpAsmParser& parser,
   }
 
   // If no types were parsed, this corresponds to e.g. like `mqtopt.i() %q :`
-  if (out_qubits.empty() && pos_ctrl_out_qubits.empty() &&
-      neg_ctrl_out_qubits.empty()) {
+  if (outQubits.empty() && posCtrlOutQubits.empty() &&
+      negCtrlOutQubits.empty()) {
     parser.emitError(parser.getCurrentLocation(),
                      "expected at least one type after `:`");
     return mlir::failure();
@@ -117,47 +117,51 @@ parseOptOutputTypes(mlir::OpAsmParser& parser,
   return mlir::success();
 }
 
+/**
+ * @brief Prints the given list of types as a comma-separated list
+ *
+ * @param printer The printer to use.
+ * @param types The types to print.
+ **/
+void printCommaSeparated(mlir::OpAsmPrinter& printer, mlir::TypeRange types) {
+  if (types.empty()) {
+    return;
+  }
+
+  printer.printType(types.front());
+  for (auto type : llvm::drop_begin(types)) {
+    printer << ", ";
+    printer.printType(type);
+  }
+}
+
 void printOptOutputTypes(mlir::OpAsmPrinter& printer, mlir::Operation* op,
-                         mlir::TypeRange out_qubits,
-                         mlir::TypeRange pos_ctrl_out_qubits,
-                         mlir::TypeRange neg_ctrl_out_qubits) {
-  if (out_qubits.empty() && pos_ctrl_out_qubits.empty() &&
-      neg_ctrl_out_qubits.empty()) {
+                         mlir::TypeRange outQubits,
+                         mlir::TypeRange posCtrlOutQubits,
+                         mlir::TypeRange negCtrlOutQubits) {
+  if (outQubits.empty() && posCtrlOutQubits.empty() &&
+      negCtrlOutQubits.empty()) {
     return;
   }
 
   printer << ": ";
 
-  if (!out_qubits.empty()) {
-    printer.printType(out_qubits.front());
-    for (auto type : llvm::drop_begin(out_qubits)) {
-      printer << ", ";
-      printer.printType(type);
-    }
-  }
+  printCommaSeparated(printer, outQubits);
 
-  if (!pos_ctrl_out_qubits.empty()) {
-    if (!out_qubits.empty()) {
+  if (!posCtrlOutQubits.empty()) {
+    if (!outQubits.empty()) {
       printer << " ";
     }
     printer << "ctrl ";
-    printer.printType(pos_ctrl_out_qubits.front());
-    for (auto type : llvm::drop_begin(pos_ctrl_out_qubits)) {
-      printer << ", ";
-      printer.printType(type);
-    }
+    printCommaSeparated(printer, posCtrlOutQubits);
   }
 
-  if (!neg_ctrl_out_qubits.empty()) {
-    if (!pos_ctrl_out_qubits.empty() || !out_qubits.empty()) {
+  if (!negCtrlOutQubits.empty()) {
+    if (!posCtrlOutQubits.empty() || !outQubits.empty()) {
       printer << " ";
     }
     printer << "nctrl ";
-    printer.printType(neg_ctrl_out_qubits.front());
-    for (auto type : llvm::drop_begin(neg_ctrl_out_qubits)) {
-      printer << ", ";
-      printer.printType(type);
-    }
+    printCommaSeparated(printer, negCtrlOutQubits);
   }
 }
 } // namespace mqt::ir::opt
