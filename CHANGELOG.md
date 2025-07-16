@@ -24,6 +24,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - 🐛 Add missing support for `sxdg` gates in Qiskit circuit import ([#930]) ([**@burgholzer**])
 - 🐛 Fix bug initialization of operations with duplicate operands ([#964]) ([**@ystade**])
 - 🐛 Open issue for Qiskit upstream test only when the test is actually failing not when it was cancelled ([#973]) ([**@ystade**])
+- 🐛 Fix parsing of `GPhase` in the `MQTOpt` MLIR dialect ([#1042]) ([**@ystade**], [**@DRovara**])
 
 ### Changed
 
