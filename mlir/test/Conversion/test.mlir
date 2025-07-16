@@ -6,6 +6,8 @@
 //
 // Licensed under the MIT License
 
+// FIXME: Move this test to plugins directory
+
 // RUN: quantum-opt %s --quake-to-mqtdyn | FileCheck %s
 
 module {
