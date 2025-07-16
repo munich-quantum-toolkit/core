@@ -45,7 +45,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@v1.13
     with:
       # Ubuntu matrix
-      ubuntu-runners: '["ubuntu-24.04", "ubuntu-24.04-arm"]'
+      ubuntu-runners: '["ubuntu-22.04", "ubuntu-24.04", "ubuntu-22.04-arm", "ubuntu-24.04-arm"]'
       ubuntu-compilers: '["gcc", "clang", "clang-19", "clang-20"]'
       ubuntu-configs: '["Release", "Debug"]'
       # macOS matrix
@@ -99,7 +99,7 @@ jobs:
     if: fromJSON(needs.change-detection.outputs.run-python-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@v1.13
     with:
-      runners: '["ubuntu-24.04", "ubuntu-24.04-arm", "macos-13", "macos-14", "macos-15", "windows-2022", "windows-2025"]'
+      runners: '["ubuntu-22.04", "ubuntu-24.04", "ubuntu-22.04-arm", "ubuntu-24.04-arm", "macos-13", "macos-14", "macos-15", "windows-2022", "windows-2025"]'
     permissions:
       contents: read
       id-token: write
