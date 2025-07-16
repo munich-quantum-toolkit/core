@@ -16,114 +16,115 @@ jobs:
     name: 🔍 Change
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@v1.13
 
-  cpp-tests:
+  cpp-tests-ubuntu:
     name: 🇨‌ Test
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
       fail-fast: false
       matrix:
-        runner:
-          [
-            ubuntu-24.04,
-            ubuntu-24.04-arm,
-            macos-13,
-            macos-14,
-            windows-2022,
-            windows-11-arm,
-          ]
+        runs-on: [ubuntu-24.04, ubuntu-24.04-arm]
+        compiler: [gcc]
         config: [Release]
         include:
-          - runner: ubuntu-24.04
-            compiler: gcc
-          - runner: ubuntu-24.04-arm
-            compiler: gcc
-          - runner: macos-13
-            compiler: clang
-          - runner: macos-14
-            compiler: clang
-          - runner: windows-2022
-            compiler: msvc
-          - runner: windows-11-arm
-            compiler: msvc
-          - runner: ubuntu-24.04
+          - runs-on: ubuntu-24.04
             config: Debug
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@matrix-strategy
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@matrix-strategy
     with:
-      runner: ${{ matrix.runner }}
+      runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
-      cmake-args-macos: -DMQT_CORE_WITH_GMP=ON
+
+  cpp-tests-macos:
+    name: 🇨‌ Test
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [macos-13, macos-14]
+        compiler: [clang]
+        config: [Release]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@matrix-strategy
+    with:
+      runs-on: ${{ matrix.runs-on }}
+      compiler: ${{ matrix.compiler }}
+      config: ${{ matrix.config }}
+      cmake-args: -DMQT_CORE_WITH_GMP=ON
+
+  cpp-tests-windows:
+    name: 🇨‌ Test
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [windows-2022, windows-11-arm]
+        compiler: [msvc]
+        config: [Release]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@matrix-strategy
+    with:
+      runs-on: ${{ matrix.runs-on }}
+      compiler: ${{ matrix.compiler }}
+      config: ${{ matrix.config }}
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
-  cpp-tests-extensive:
+  cpp-tests-extensive-ubuntu:
     name: 🇨‌ Test (Extensive)
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
       fail-fast: false
       matrix:
-        runner:
-          [
-            ubuntu-22.04,
-            ubuntu-24.04,
-            ubuntu-22.04-arm,
-            ubuntu-24.04-arm,
-            macos-13,
-            macos-14,
-            macos-15,
-            windows-2022,
-            windows-2025,
-            windows-11-arm,
-          ]
-        compiler: [clang, clang-19, clang-20]
+        runs-on:
+          [ubuntu-22.04, ubuntu-24.04, ubuntu-22.04-arm, ubuntu-24.04-arm]
+        compiler: [gcc, clang, clang-19, clang-20]
         config: [Release, Debug]
-        exclude:
-          - runner: winows-2022
-            compiler: clang-19
-          - runner: windows-2022
-            compiler: clang-20
-          - runner: windows-2025
-            compiler: clang-19
-          - runner: windows-2025
-            compiler: clang-20
-          - runner: windows-11-arm
-            compiler: clang-19
-          - runner: windows-11-arm
-            compiler: clang-20
-        include:
-          - runner: ubuntu-22.04
-            compiler: gcc
-          - runner: ubuntu-24.04
-            compiler: gcc
-          - runner: ubuntu-22.04-arm
-            compiler: gcc
-          - runner: ubuntu-24.04-arm
-            compiler: gcc
-          - runner: macos-13
-            compiler: gcc-14
-          - runner: macos-13
-            compiler: gcc-15
-          - runner: macos-14
-            compiler: gcc-14
-          - runner: macos-14
-            compiler: gcc-15
-          - runner: macos-15
-            compiler: gcc-14
-          - runner: macos-15
-            compiler: gcc-15
-          - runner: windows-2022
-            compiler: msvc
-          - runner: windows-2025
-            compiler: msvc
-          - runner: windows-11-arm
-            compiler: msvc
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@matrix-strategy
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@matrix-strategy
     with:
-      runner: ${{ matrix.runner }}
+      runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
-      cmake-args-macos: -DMQT_CORE_WITH_GMP=ON
+
+  # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
+  cpp-tests-extensive-macos:
+    name: 🇨‌ Test (Extensive)
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [macos-13, macos-14, macos-15]
+        compiler: [clang, clang-19, clang-20, gcc-14, gcc-15]
+        config: [Release, Debug]
+        exclude:
+          - runs-on: macos-15
+            compiler: gcc-14
+          - runs-on: macos-15
+            compiler: gcc-15
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@matrix-strategy
+    with:
+      runs-on: ${{ matrix.runs-on }}
+      compiler: ${{ matrix.compiler }}
+      config: ${{ matrix.config }}
+      cmake-args: -DMQT_CORE_WITH_GMP=ON
+
+  # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
+  cpp-tests-extensive-windows:
+    name: 🇨‌ Test (Extensive)
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [windows-2022, windows-11-arm]
+        compiler: [msvc, clang]
+        config: [Release]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@matrix-strategy
+    with:
+      runs-on: ${{ matrix.runs-on }}
+      compiler: ${{ matrix.compiler }}
+      config: ${{ matrix.config }}
 
   cpp-coverage:
     name: 🇨‌ Coverage
@@ -190,13 +191,18 @@ jobs:
     with:
       runners: '["ubuntu-24.04", "ubuntu-24.04-arm", "macos-13", "macos-14", "windows-2022", "windows-11-arm"]'
 
-  required-checks-pass: # This job does nothing and is only used for branch protection
+  # this job does nothing and is only used for branch protection
+  required-checks-pass:
     name: 🚦 Check
     if: always()
     needs:
       - change-detection
-      - cpp-tests
-      - cpp-tests-extensive
+      - cpp-tests-ubuntu
+      - cpp-tests-macos
+      - cpp-tests-windows
+      - cpp-tests-extensive-ubuntu
+      - cpp-tests-extensive-macos
+      - cpp-tests-extensive-windows
       - cpp-coverage
       - cpp-linter
       - python-tests
@@ -212,11 +218,11 @@ jobs:
           allowed-skips: >-
             ${{
               fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
-              && '' || 'cpp-tests,'
+              && '' || 'cpp-tests-ubuntu,cpp-tests-macos,cpp-tests-windows,'
             }}
             ${{
               fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
-              && '' || 'cpp-tests-extensive,'
+              && '' || 'cpp-tests-extensive-ubuntu,cpp-tests-extensive-macos,cpp-tests-extensive-windows,'
             }}
             ${{
               fromJSON(needs.change-detection.outputs.run-cpp-tests)
