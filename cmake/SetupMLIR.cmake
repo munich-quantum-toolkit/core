@@ -7,7 +7,8 @@
 # Licensed under the MIT License
 
 # set the include directory for the build tree
-set(MQT_MLIR_INCLUDE_BUILD_DIR "${CMAKE_SOURCE_DIR}/mlir/include")
+set(MQT_MLIR_SOURCE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/mlir/include")
+set(MQT_MLIR_BUILD_INCLUDE_DIR "${PROJECT_BINARY_DIR}/mlir/include")
 set(MQT_MLIR_MIN_VERSION 19.0)
 
 # MLIR must be installed on the system
@@ -30,8 +31,8 @@ include(HandleLLVMOptions)
 
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
-include_directories(${MQT_MLIR_INCLUDE_BUILD_DIR})
-include_directories(${CMAKE_BINARY_DIR}/mlir/include)
+include_directories(${MQT_MLIR_SOURCE_INCLUDE_DIR})
+include_directories(${MQT_MLIR_BUILD_INCLUDE_DIR})
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
@@ -41,4 +42,4 @@ add_compile_definitions(MLIR_VERSION_MAJOR=${MLIR_VERSION_MAJOR})
 
 # set the binary directory for the build tree such that, e.g., docs can be generated in the build
 # tree
-set(MLIR_BINARY_DIR ${CMAKE_BINARY_DIR})
+set(MLIR_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})

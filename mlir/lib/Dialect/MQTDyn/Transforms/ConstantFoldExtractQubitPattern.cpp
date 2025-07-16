@@ -29,26 +29,27 @@ struct ConstantFoldExtractQubitPattern final
   explicit ConstantFoldExtractQubitPattern(mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
-  mlir::LogicalResult match(ExtractOp op) const override {
-    auto index = op.getIndex();
+  mlir::LogicalResult
+  matchAndRewrite(ExtractOp op,
+                  mlir::PatternRewriter& rewriter) const override {
+    const auto index = op.getIndex();
     if (!index) {
       return mlir::failure();
     }
+
     auto* definition = index.getDefiningOp();
     if (!mlir::isa<mlir::arith::ConstantOp>(definition)) {
       return mlir::failure();
     }
-    return mlir::success();
-  }
 
-  void rewrite(ExtractOp op, mlir::PatternRewriter& rewriter) const override {
-    auto index = op.getIndex();
-    auto definition =
-        mlir::cast<mlir::arith::ConstantOp>(index.getDefiningOp());
-    auto value = mlir::cast<mlir::IntegerAttr>(definition.getValue()).getInt();
+    auto constant = mlir::cast<mlir::arith::ConstantOp>(definition);
+    const auto value =
+        mlir::cast<mlir::IntegerAttr>(constant.getValue()).getInt();
+
     rewriter.replaceOpWithNewOp<ExtractOp>(op, op.getOutQubit().getType(),
                                            op.getInQreg(), mlir::Value(),
                                            rewriter.getI64IntegerAttr(value));
+    return mlir::success();
   }
 };
 
