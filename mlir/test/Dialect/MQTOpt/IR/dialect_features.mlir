@@ -162,6 +162,64 @@ module {
 }
 
 // -----
+// This test checks if no-target operations without controls are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNoTargetNoControls
+    func.func @testNoTargetNoControls() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: mqtopt.gphase(%[[C0_F64]])
+        // CHECK: mqtopt.gphase(%[[C0_F64]])
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        mqtopt.gphase(%c0_f64) : ()
+        mqtopt.gphase(%c0_f64)
+        return
+    }
+}
+
+// -----
+// This test checks if no-target operations with controls are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNoTargetWithControls
+    func.func @testNoTargetWithControls() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: %[[Q0_1:.*]] = mqtopt.gphase(%[[C0_F64]]) ctrl %[[ANY:.*]] : ctrl !mqtopt.Qubit
+        // CHECK: %[[Q01:.*]]:2 = mqtopt.gphase(%[[C0_F64]]) ctrl %[[Q0_1]], %[[ANY:.*]] : ctrl !mqtopt.Qubit, !mqtopt.Qubit
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        %q0_1 = mqtopt.gphase(%c0_f64) ctrl %q0_0 : ctrl !mqtopt.Qubit
+        %q0_2, %q1_1 = mqtopt.gphase(%c0_f64) ctrl %q0_1, %q1_0 : ctrl !mqtopt.Qubit, !mqtopt.Qubit
+        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if no-target operations with positive and negative controls are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNoTargetPositiveNegativeControls
+    func.func @testNoTargetPositiveNegativeControls() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.gphase(%[[C0_F64]]) ctrl %[[ANY:.*]] : ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        %q0_1, %q1_1 = mqtopt.gphase(%c0_f64) ctrl %q0_0 nctrl %q1_0 : ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
 // This test checks if single qubit gates are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testSingleQubitOp
