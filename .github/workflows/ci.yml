@@ -37,7 +37,7 @@ jobs:
       # General settings
       cmake-args-macos: -DMQT_CORE_WITH_GMP=ON
 
-  # run extensive C++ tests whenever this is on a PR and the PR has the `extensive-cpp-ci` label
+  # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive:
     name: 🇨‌ Test (Extensive)
     needs: change-detection
@@ -84,7 +84,7 @@ jobs:
   python-tests:
     name: 🐍 Test
     needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-python-tests)
+    if: fromJSON(needs.change-detection.outputs.run-python-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@v1.13
     with:
       runners: '["ubuntu-24.04", "ubuntu-24.04-arm", "macos-13", "macos-14", "windows-2022"]'
@@ -92,14 +92,14 @@ jobs:
       contents: read
       id-token: write
 
-  # run extensive Python tests whenever this is on a PR and the PR has the `extensive-python-ci` label
+  # run extensive Python tests on PRs labeled with the `extensive-python-ci` label
   python-tests-extensive:
     name: 🐍 Test (Extensive)
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@v1.13
     with:
-      runners: '["ubuntu-22.04", "ubuntu-22.04-arm", "macos-15", "windows-2025"]'
+      runners: '["ubuntu-24.04", "ubuntu-24.04-arm", "macos-13", "macos-14", "macos-15", "windows-2022", "windows-2025"]'
     permissions:
       contents: read
       id-token: write
@@ -161,7 +161,7 @@ jobs:
               && '' || 'cpp-linter,'
             }}
             ${{
-              fromJSON(needs.change-detection.outputs.run-python-tests)
+              fromJSON(needs.change-detection.outputs.run-python-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
               && '' || 'python-tests,'
             }}
             ${{
