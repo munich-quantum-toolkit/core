@@ -17,7 +17,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@v1.13
 
   cpp-tests-ubuntu:
-    name: 🇨‌ Test
+    name: 🇨‌ Test 🐧
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
@@ -37,7 +37,7 @@ jobs:
       config: ${{ matrix.config }}
 
   cpp-tests-macos:
-    name: 🇨‌ Test
+    name: 🇨‌ Test 🍎
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
@@ -54,7 +54,7 @@ jobs:
       cmake-args: -DMQT_CORE_WITH_GMP=ON
 
   cpp-tests-windows:
-    name: 🇨‌ Test
+    name: 🇨‌ Test 🏁
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
@@ -71,7 +71,7 @@ jobs:
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-ubuntu:
-    name: 🇨‌ Test (Extensive)
+    name: 🇨‌ Test (Extensive) 🐧
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
@@ -89,7 +89,7 @@ jobs:
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-macos:
-    name: 🇨‌ Test (Extensive)
+    name: 🇨‌ Test (Extensive) 🍎
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
@@ -112,7 +112,7 @@ jobs:
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-windows:
-    name: 🇨‌ Test (Extensive)
+    name: 🇨‌ Test (Extensive) 🏁
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
