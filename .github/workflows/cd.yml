@@ -15,7 +15,7 @@ jobs:
   # workflow is triggered from a PR or a release, respectively.
   python-packaging:
     name: 🐍 Packaging
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging.yml@c++-ci-workflow-updates
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging.yml@v1.13
     with:
       runners: '["ubuntu-24.04", "ubuntu-24.04-arm", "macos-13", "macos-14", "windows-2022", "windows-11-arm"]'
 
