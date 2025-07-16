@@ -326,6 +326,10 @@ jobs:
       - name: Install Ninja
         run: uv tool install ninja
 
+      # install gcovr for coverage reporting
+      - name: Install gcovr
+        run: uv tool install gcovr
+
       # make sure the lit test runner is installed
       - name: Install lit
         run: uv pip install lit
@@ -344,9 +348,16 @@ jobs:
         run: |
           cmake --build build --config Debug --target check-quantum-opt
 
-      # List all generated coverage .gcda files
-      - name: List coverage files
-        run: find build -name "*.gcda" -print
+      # Run gcovr to generate coverage data
+      - name: Generate coverage data as XML
+        run: |
+          gcovr \
+             --gcov-executable "/usr/lib/llvm-${{ matrix.llvm-version }}/bin/llvm-cov gcov" \
+             --exclude build \
+             --exclude-unreachable-branches --exclude-noncode-lines --exclude-throw-branches \
+             --print-summary \
+             --xml \
+             -o coverage-llvm-${{ matrix.llvm-version }}.xml
 
       # generate coverage report
       - name: Upload coverage to Codecov
@@ -356,4 +367,5 @@ jobs:
           name: mlir-coverage-llvm-${{ matrix.llvm-version }}
           fail_ci_if_error: true
           use_oidc: ${{ !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) }}
-          gcov_executable: /usr/lib/llvm-${{ matrix.llvm-version }}/bin/llvm-cov
+          files: coverage-llvm-${{ matrix.llvm-version }}.xml
+          disable_search: true
