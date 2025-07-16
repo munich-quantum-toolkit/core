@@ -28,6 +28,7 @@ jobs:
         config: [Release]
         include:
           - runs-on: ubuntu-24.04
+            compiler: gcc
             config: Debug
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@matrix-strategy
     with:
