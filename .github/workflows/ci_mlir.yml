@@ -354,10 +354,12 @@ jobs:
           gcovr \
              --gcov-executable "/usr/lib/llvm-${{ matrix.llvm-version }}/bin/llvm-cov gcov" \
              --exclude build \
-             --exclude-unreachable-branches --exclude-noncode-lines --exclude-throw-branches \
+             --exclude-unreachable-branches \
+             --exclude-noncode-lines \
+             --exclude-throw-branches \
              --print-summary \
-             --xml \
-             -o coverage-llvm-${{ matrix.llvm-version }}.xml
+             --json \
+             -o coverage-llvm-${{ matrix.llvm-version }}.json
 
       # generate coverage report
       - name: Upload coverage to Codecov
@@ -367,5 +369,5 @@ jobs:
           name: mlir-coverage-llvm-${{ matrix.llvm-version }}
           fail_ci_if_error: true
           use_oidc: ${{ !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) }}
-          files: coverage-llvm-${{ matrix.llvm-version }}.xml
+          files: coverage-llvm-${{ matrix.llvm-version }}.json
           disable_search: true
