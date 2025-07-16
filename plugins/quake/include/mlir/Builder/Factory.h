@@ -34,9 +34,8 @@ class StructType;
 
 namespace opt {
 
-template <typename T>
-  requires std::integral<T>
-T convertBitsToBytes(T bits) {
+template <typename T> T convertBitsToBytes(T bits) {
+  static_assert(std::is_integral<T>::value, "T must be an integral type");
   return (bits + 7) / 8;
 }
 
