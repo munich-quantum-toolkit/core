@@ -223,6 +223,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging.yml@matrix-strategy
     with:
       runs-on: ${{ matrix.runs-on }}
+      job-index: ${{ strategy.job-index }}
 
   # this job does nothing and is only used for branch protection
   required-checks-pass:
