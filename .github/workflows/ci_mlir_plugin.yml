@@ -102,6 +102,24 @@ jobs:
         working-directory: plugins/catalyst
         run: uv sync --verbose --active
 
+        # Print shared library dependencies for the plugin
+      - name: Print shared library dependencies for mqt-core-catalyst-plugin
+        run: |
+          if [ "$(uname)" = "Linux" ]; then
+              ldd .venv/lib/python3.13/site-packages/mqt/core/plugins/catalyst/mqt-core-catalyst-plugin.so || true
+          elif [ "$(uname)" = "Darwin" ]; then
+              otool -l .venv/lib/python3.13/site-packages/mqt/core/plugins/catalyst/mqt-core-catalyst-plugin.dylib || true
+          fi
+
+      # Print shared library dependencies for Catalyst
+      - name: Print shared library dependencies for Catalyst
+        run: |
+          if [ "$(uname)" = "Linux" ]; then
+              ldd $(which catalyst) || true
+          elif [ "$(uname)" = "Darwin" ]; then
+              otool -l $(which catalyst) || true
+          fi
+
       # Run the plugin tests
       - name: Run pytest for mqt-core-catalyst-plugin
         working-directory: plugins/catalyst
@@ -178,6 +196,24 @@ jobs:
       - name: Build mqt-core-catalyst-plugin
         working-directory: plugins/catalyst
         run: uv sync --verbose --active
+
+      # Print shared library dependencies for the plugin
+      - name: Print shared library dependencies for mqt-core-catalyst-plugin
+        run: |
+          if [ "$(uname)" = "Linux" ]; then
+              ldd .venv/lib/python3.13/site-packages/mqt/core/plugins/catalyst/mqt-core-catalyst-plugin.so || true
+          elif [ "$(uname)" = "Darwin" ]; then
+              otool -l .venv/lib/python3.13/site-packages/mqt/core/plugins/catalyst/mqt-core-catalyst-plugin.dylib || true
+          fi
+
+      # Print shared library dependencies for Catalyst
+      - name: Print shared library dependencies for Catalyst
+        run: |
+          if [ "$(uname)" = "Linux" ]; then
+              ldd $(which catalyst) || true
+          elif [ "$(uname)" = "Darwin" ]; then
+              otool -l $(which catalyst) || true
+          fi
 
       # Run the plugin tests
       - name: Run pytest for mqt-core-catalyst-plugin
@@ -262,6 +298,24 @@ jobs:
       - name: Build mqt-core-catalyst-plugin
         working-directory: plugins/catalyst
         run: uv sync --verbose --active
+
+        # Print shared library dependencies for the plugin
+      - name: Print shared library dependencies for mqt-core-catalyst-plugin
+        run: |
+          if [ "$(uname)" = "Linux" ]; then
+              ldd .venv/lib/python3.13/site-packages/mqt/core/plugins/catalyst/mqt-core-catalyst-plugin.so || true
+          elif [ "$(uname)" = "Darwin" ]; then
+              otool -l .venv/lib/python3.13/site-packages/mqt/core/plugins/catalyst/mqt-core-catalyst-plugin.dylib || true
+          fi
+
+      # Print shared library dependencies for Catalyst
+      - name: Print shared library dependencies for Catalyst
+        run: |
+          if [ "$(uname)" = "Linux" ]; then
+              ldd $(which catalyst) || true
+          elif [ "$(uname)" = "Darwin" ]; then
+              otool -l $(which catalyst) || true
+          fi
 
       # Run the plugin tests
       - name: Run pytest for mqt-core-catalyst-plugin
