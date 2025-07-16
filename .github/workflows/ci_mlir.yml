@@ -344,6 +344,10 @@ jobs:
         run: |
           cmake --build build --config Debug --target check-quantum-opt
 
+      # List all generated coverage .gcda files
+      - name: List coverage files
+        run: find build -name "*.gcda" -print
+
       # generate coverage report
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
