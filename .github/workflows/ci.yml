@@ -202,7 +202,7 @@ jobs:
     name: 📝 CodeQL
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-code-ql)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-code-ql.yml@v1.13
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-code-ql.yml@matrix-strategy
 
   cd:
     name: 🚀 CD
