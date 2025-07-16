@@ -561,7 +561,7 @@ LogicalResult quake::InitializeStateOp::verify() {
   if (auto arrTy = dyn_cast<cudaq::cc::ArrayType>(ty)) {
     if (!arrTy.isUnknownSize()) {
       std::size_t size = arrTy.getSize();
-      if (!std::has_single_bit(size))
+      if (!(size > 0 && (size & (size - 1)) == 0))
         return emitOpError(
             "initialize state vector must be power of 2, but is " +
             std::to_string(size) + " instead.");
