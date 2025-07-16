@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD
     CACHE STRING "C++ standard to conform to")
 
 if(ENABLE_COVERAGE)
-  add_compile_options(--coverage -fprofile-arcs -ftest-coverage -O0)
+  add_compile_options(--coverage -O0)
   add_link_options(--coverage)
 endif()
 
