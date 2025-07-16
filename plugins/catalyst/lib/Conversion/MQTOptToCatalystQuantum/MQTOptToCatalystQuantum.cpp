@@ -1258,6 +1258,14 @@ struct MQTOptToCatalystQuantum
                                                                  context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::RZXOp>>(typeConverter,
                                                                  context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::SXOp>>(typeConverter,
+                                                                context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::SXdgOp>>(typeConverter,
+                                                                  context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::UOp>>(typeConverter,
+                                                               context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::U2Op>>(typeConverter,
+                                                                context);
 
     patterns.add<ConvertMQTOptAdjointGate<::mqt::ir::opt::SdgOp>>(typeConverter,
                                                                   context);
