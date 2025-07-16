@@ -153,9 +153,14 @@ jobs:
     name: 🐍 Test
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@v1.13
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on:
+          [ubuntu-24.04, ubuntu-24.04-arm, macos-13, macos-14, windows-2022]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@matrix-strategy
     with:
-      runners: '["ubuntu-24.04", "ubuntu-24.04-arm", "macos-13", "macos-14", "windows-2022"]'
+      runs-on: ${{ matrix.runs-on }}
     permissions:
       contents: read
       id-token: write
@@ -165,9 +170,24 @@ jobs:
     name: 🐍 Test (Extensive)
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@v1.13
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on:
+          [
+            ubuntu-22.04,
+            ubuntu-24.04,
+            ubuntu-22.04-arm,
+            ubuntu-24.04-arm,
+            macos-13,
+            macos-14,
+            macos-15,
+            windows-2022,
+            windows-2025,
+          ]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@matrix-strategy
     with:
-      runners: '["ubuntu-22.04", "ubuntu-24.04", "ubuntu-22.04-arm", "ubuntu-24.04-arm", "macos-13", "macos-14", "macos-15", "windows-2022", "windows-2025"]'
+      runs-on: ${{ matrix.runs-on }}
     permissions:
       contents: read
       id-token: write
