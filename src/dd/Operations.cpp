@@ -315,13 +315,7 @@ void applyVirtualOperation(const qc::Operation& op,
 }
 
 VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd) {
-  const Complex oldW = in.w; // create a temporary copy for reference counting
-
   in.w = dd.cn.lookup(in.w * ComplexValue{std::polar(1.0, phase)});
-
-  // adjust reference counts
-  dd.cn.incRef(in.w);
-  dd.cn.decRef(oldW);
 
   return in;
 }

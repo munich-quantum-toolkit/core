@@ -13,25 +13,31 @@
 #include "dd/DDDefinitions.hpp"
 
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <istream>
-#include <limits>
 #include <ostream>
 
 namespace dd {
+namespace {
+constexpr std::uintptr_t NEG_FLAG = (1UL << 0);
+constexpr std::uintptr_t MARK_FLAG = (1UL << 1);
+constexpr std::uintptr_t IMMORTAL_FLAG = (1UL << 2);
+}; // namespace
 
-static constexpr std::size_t LSB = static_cast<std::uintptr_t>(1U);
+RealNumber* RealNumber::next() const noexcept {
+  return RealNumber::getAlignedPointer(reinterpret_cast<RealNumber*>(next_));
+}
 
 RealNumber* RealNumber::getAlignedPointer(const RealNumber* e) noexcept {
-  return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) &
-                                       ~LSB);
+  return reinterpret_cast<RealNumber*>(
+      reinterpret_cast<std::uintptr_t>(e) &
+      (~(NEG_FLAG | MARK_FLAG | IMMORTAL_FLAG)));
 }
 
 RealNumber* RealNumber::getNegativePointer(const RealNumber* e) noexcept {
   return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) |
-                                       LSB);
+                                       NEG_FLAG);
 }
 
 RealNumber* RealNumber::flipPointerSign(const RealNumber* e) noexcept {
@@ -39,11 +45,39 @@ RealNumber* RealNumber::flipPointerSign(const RealNumber* e) noexcept {
     return &constants::zero;
   }
   return reinterpret_cast<RealNumber*>(reinterpret_cast<std::uintptr_t>(e) ^
-                                       LSB);
+                                       NEG_FLAG);
+}
+
+void RealNumber::mark(RealNumber* e) noexcept {
+  RealNumber* p = getAlignedPointer(e);
+  p->next_ = reinterpret_cast<RealNumber*>(
+      reinterpret_cast<std::uintptr_t>(p->next_) | MARK_FLAG);
+}
+
+void RealNumber::unmark(RealNumber* e) noexcept {
+  RealNumber* p = getAlignedPointer(e);
+  p->next_ = reinterpret_cast<RealNumber*>(
+      reinterpret_cast<std::uintptr_t>(p->next_) & ~MARK_FLAG);
+}
+
+void RealNumber::immortalize(RealNumber* e) noexcept {
+  RealNumber* p = +getAlignedPointer(e);
+  p->next_ = reinterpret_cast<RealNumber*>(
+      reinterpret_cast<std::uintptr_t>(p->next_) | IMMORTAL_FLAG);
 }
 
 bool RealNumber::isNegativePointer(const RealNumber* e) noexcept {
-  return (reinterpret_cast<std::uintptr_t>(e) & LSB) != 0U;
+  return (reinterpret_cast<std::uintptr_t>(e) & NEG_FLAG) != 0U;
+}
+
+bool RealNumber::isMarked(const RealNumber* e) noexcept {
+  const RealNumber* p = getAlignedPointer(e);
+  return (reinterpret_cast<std::uintptr_t>(p->next_) & MARK_FLAG) != 0U;
+}
+
+bool RealNumber::isImmortal(const RealNumber* e) noexcept {
+  const RealNumber* p = getAlignedPointer(e);
+  return (reinterpret_cast<std::uintptr_t>(p->next_) & IMMORTAL_FLAG) != 0U;
 }
 
 fp RealNumber::val(const RealNumber* e) noexcept {
@@ -52,14 +86,6 @@ fp RealNumber::val(const RealNumber* e) noexcept {
     return -getAlignedPointer(e)->value;
   }
   return e->value;
-}
-
-RefCount RealNumber::refCount(const RealNumber* num) noexcept {
-  assert(num != nullptr);
-  if (isNegativePointer(num)) {
-    return getAlignedPointer(num)->ref;
-  }
-  return num->ref;
 }
 
 bool RealNumber::approximatelyEquals(const fp left, const fp right) noexcept {
@@ -79,32 +105,6 @@ bool RealNumber::approximatelyZero(const RealNumber* e) noexcept {
   return e == &constants::zero || approximatelyZero(val(e));
 }
 
-bool RealNumber::noRefCountingNeeded(const RealNumber* const num) noexcept {
-  assert(!isNegativePointer(num));
-  return num == nullptr || constants::isStaticNumber(num) ||
-         num->ref == std::numeric_limits<RefCount>::max();
-}
-
-bool RealNumber::incRef(const dd::RealNumber* num) noexcept {
-  auto* const ptr = getAlignedPointer(num);
-  if (noRefCountingNeeded(ptr)) {
-    return false;
-  }
-  ++ptr->ref;
-  return true;
-}
-
-bool RealNumber::decRef(const dd::RealNumber* num) noexcept {
-  auto* const ptr = getAlignedPointer(num);
-  if (noRefCountingNeeded(ptr)) {
-    return false;
-  }
-  assert(ptr->ref != 0 &&
-         "Reference count of RealNumber must not be zero before decrement");
-  --ptr->ref;
-  return true;
-}
-
 void RealNumber::writeBinary(const RealNumber* e, std::ostream& os) {
   const auto temp = val(e);
   writeBinary(temp, os);
@@ -120,9 +120,9 @@ void RealNumber::readBinary(dd::fp& num, std::istream& is) {
 
 namespace constants {
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
-RealNumber zero{{nullptr}, 0., 1U};
-RealNumber one{{nullptr}, 1., 1U};
-RealNumber sqrt2over2{{nullptr}, SQRT2_2, 1U};
+RealNumber zero{{nullptr}, 0.};
+RealNumber one{{nullptr}, 1.};
+RealNumber sqrt2over2{{nullptr}, SQRT2_2};
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 } // namespace constants
 } // namespace dd

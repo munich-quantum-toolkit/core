@@ -104,6 +104,28 @@ auto Edge<Node>::size(std::unordered_set<const Node*>& visited) const
   return sum;
 }
 
+template <class Node> void Edge<Node>::mark() const noexcept {
+  w.mark();
+  if (isTerminal() || p->isMarked()) {
+    return;
+  }
+  p->mark();
+  for (const Edge<Node>& e : p->e) {
+    e.mark();
+  }
+}
+
+template <class Node> void Edge<Node>::unmark() const noexcept {
+  w.unmark();
+  if (isTerminal() || !p->isMarked()) {
+    return;
+  }
+  p->unmark();
+  for (const Edge<Node>& e : p->e) {
+    e.unmark();
+  }
+}
+
 ///-----------------------------------------------------------------------------
 ///                      \n Methods for vector DDs \n
 ///-----------------------------------------------------------------------------
