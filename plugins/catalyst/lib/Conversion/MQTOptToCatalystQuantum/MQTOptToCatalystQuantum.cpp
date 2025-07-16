@@ -277,6 +277,12 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
   LogicalResult
   matchAndRewrite(MQTGateOp op, typename MQTGateOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    // BarrierOp has no semantic effect on the circuit. Therefore, we erase it.
+    if (std::is_same_v<MQTGateOp, ::mqt::ir::opt::BarrierOp>) {
+      rewriter.eraseOp(op);
+      return success();
+    }
+
     // Extract operand(s) and attribute(s)
     auto inQubitsValues = adaptor.getInQubits(); // excl. controls
     auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
@@ -300,8 +306,7 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
     auto inQubits = mlir::ValueRange(allQubitsValues);
 
     // Determine gate name depending on control count
-    mlir::StringAttr gateName =
-        getGateName(rewriter.getContext(), inCtrlQubits.size());
+    llvm::StringRef gateName = getGateName(inCtrlQubits.size());
     if (gateName.empty()) {
       llvm::errs() << "Unsupported controlled gate for op: " << op->getName()
                    << "\n";
@@ -327,101 +332,861 @@ struct ConvertMQTOptSimpleGate : public OpConversionPattern<MQTGateOp> {
 
 private:
   // Is specialized for each gate type
-  static mlir::StringAttr getGateName(::mlir::MLIRContext* context,
-                                      std::size_t numControls);
+  static llvm::StringRef getGateName(std::size_t numControls);
 };
+
+template <typename MQTGateOp>
+struct ConvertMQTOptAdjointGate : public OpConversionPattern<MQTGateOp> {
+  using OpConversionPattern<MQTGateOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(MQTGateOp op, typename MQTGateOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operand(s) and attribute(s)
+    auto inQubitsValues = adaptor.getInQubits(); // excl. controls
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // Output type
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // Merge inQubitsValues and inCtrlQubits to form the full qubit list
+    auto allQubitsValues = llvm::SmallVector<mlir::Value>();
+    allQubitsValues.append(inQubitsValues.begin(), inQubitsValues.end());
+    allQubitsValues.append(inCtrlQubits.begin(), inCtrlQubits.end());
+    auto inQubits = mlir::ValueRange(allQubitsValues);
+
+    // Get the base gate name and whether it's an adjoint version
+    std::pair<llvm::StringRef, bool> gateInfo = getGateInfo<MQTGateOp>();
+
+    // Create the gate
+    auto catalystOp = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(),
+        /*out_qubits=*/outQubitTypes,
+        /*out_ctrl_qubits=*/mlir::TypeRange{},
+        /*params=*/adaptor.getParams(),
+        /*in_qubits=*/inQubits,
+        /*gate_name=*/gateInfo.first,
+        /*adjoint=*/gateInfo.second ? rewriter.getBoolAttr(true) : nullptr,
+        /*in_ctrl_qubits=*/ValueRange{},
+        /*in_ctrl_values=*/ValueRange{});
+
+    rewriter.replaceOp(op, catalystOp);
+    return success();
+  }
+
+private:
+  template <typename T> static std::pair<llvm::StringRef, bool> getGateInfo() {
+    if constexpr (std::is_same_v<T, ::mqt::ir::opt::SdgOp>)
+      return {"S", true};
+    else if constexpr (std::is_same_v<T, ::mqt::ir::opt::TdgOp>)
+      return {"T", true};
+    else if constexpr (std::is_same_v<T, ::mqt::ir::opt::iSWAPdgOp>)
+      return {"ISWAP", true};
+    // Default case
+    return {"", false};
+  }
+};
+
+// Conversions of unsupported gates which need decomposition
+template <>
+struct ConvertMQTOptSimpleGate<::mqt::ir::opt::VOp>
+    : public OpConversionPattern<::mqt::ir::opt::VOp> {
+  using OpConversionPattern<::mqt::ir::opt::VOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(::mqt::ir::opt::VOp op,
+                  typename ::mqt::ir::opt::VOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operand(s) and attribute(s)
+    auto inQubitsValues = adaptor.getInQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // Output type setup
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // V = RZ(π/2) RY(π/2) RZ(-π/2)
+    auto pi_2 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(M_PI_2));
+    auto neg_pi_2 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(-M_PI_2));
+
+    // Create the decomposed operations
+    auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi_2},
+        inQubitsValues, "RZ", nullptr, inCtrlQubits, ValueRange{});
+
+    auto ry = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi_2},
+        rz1.getResults(), "RY", nullptr, inCtrlQubits, ValueRange{});
+
+    auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{neg_pi_2},
+        ry.getResults(), "RZ", nullptr, inCtrlQubits, ValueRange{});
+
+    // Replace the original operation with the decomposition
+    rewriter.replaceOp(op, rz2.getResults());
+    return success();
+  }
+};
+
+template <>
+struct ConvertMQTOptSimpleGate<::mqt::ir::opt::VdgOp>
+    : public OpConversionPattern<::mqt::ir::opt::VdgOp> {
+  using OpConversionPattern<::mqt::ir::opt::VdgOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(::mqt::ir::opt::VdgOp op,
+                  typename ::mqt::ir::opt::VdgOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operand(s) and attribute(s)
+    auto inQubitsValues = adaptor.getInQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // Output type setup
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // V = RZ(π/2) RY(-π/2) RZ(-π/2)
+    auto pi_2 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(M_PI_2));
+    auto neg_pi_2 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(-M_PI_2));
+
+    // Create the decomposed operations
+    auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi_2},
+        inQubitsValues, "RZ", nullptr, inCtrlQubits, ValueRange{});
+
+    auto ry = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{neg_pi_2},
+        rz1.getResults(), "RY", nullptr, inCtrlQubits, ValueRange{});
+
+    auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{neg_pi_2},
+        ry.getResults(), "RZ", nullptr, inCtrlQubits, ValueRange{});
+
+    // Replace the original operation with the decomposition
+    rewriter.replaceOp(op, rz2.getResults());
+    return success();
+  }
+};
+
+template <>
+struct ConvertMQTOptSimpleGate<::mqt::ir::opt::DCXOp>
+    : public OpConversionPattern<::mqt::ir::opt::DCXOp> {
+  using OpConversionPattern<::mqt::ir::opt::DCXOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(::mqt::ir::opt::DCXOp op,
+                  typename ::mqt::ir::opt::DCXOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto inQubitsValues = adaptor.getInQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // DCX = CNOT(q2,q1) CNOT(q1,q2)
+    auto cnot1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        inQubitsValues, "CNOT", nullptr, inCtrlQubits, ValueRange{});
+
+    auto cnot2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        cnot1.getResults(), "CNOT", nullptr, inCtrlQubits, ValueRange{});
+
+    rewriter.replaceOp(op, cnot2.getResults());
+    return success();
+  }
+};
+
+template <>
+struct ConvertMQTOptSimpleGate<::mqt::ir::opt::RZXOp>
+    : public OpConversionPattern<::mqt::ir::opt::RZXOp> {
+  using OpConversionPattern<::mqt::ir::opt::RZXOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(::mqt::ir::opt::RZXOp op,
+                  typename ::mqt::ir::opt::RZXOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto inQubitsValues = adaptor.getInQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+    auto theta = adaptor.getParams()[0];
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // RZX(θ) = H(q2) CNOT(q1,q2) RZ(θ)(q2) CNOT(q1,q2) H(q2)
+    auto h1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        inQubitsValues, "H", nullptr, inCtrlQubits, ValueRange{});
+
+    auto cnot1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        h1.getResults(), "CNOT", nullptr, inCtrlQubits, ValueRange{});
+
+    auto rz = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{theta},
+        cnot1.getResults(), "RZ", nullptr, inCtrlQubits, ValueRange{});
+
+    auto cnot2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        rz.getResults(), "CNOT", nullptr, inCtrlQubits, ValueRange{});
+
+    auto h2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        cnot2.getResults(), "H", nullptr, inCtrlQubits, ValueRange{});
+
+    rewriter.replaceOp(op, h2.getResults());
+    return success();
+  }
+};
+
+template <>
+struct ConvertMQTOptSimpleGate<::mqt::ir::opt::XXminusYY>
+    : public OpConversionPattern<::mqt::ir::opt::XXminusYY> {
+  using OpConversionPattern<::mqt::ir::opt::XXminusYY>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(::mqt::ir::opt::XXminusYY op,
+                  typename ::mqt::ir::opt::XXminusYY::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto inQubitsValues = adaptor.getInQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+    auto theta = adaptor.getParams()[0];
+    auto beta = adaptor.getParams()[1];
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // XXminusYY(θ,β) = RX(π/2)(q1) RY(π/2)(q2) CNOT(q1,q2) RZ(θ)(q2)
+    // CNOT(q1,q2) RZ(β)(q1) RZ(β)(q2) RX(-π/2)(q1) RY(-π/2)(q2)
+    auto pi_2 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(M_PI_2));
+    auto neg_pi_2 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(-M_PI_2));
+
+    auto rx1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi_2},
+        inQubitsValues, "RX", nullptr, inCtrlQubits, ValueRange{});
+
+    auto ry1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi_2},
+        rx1.getResults(), "RY", nullptr, inCtrlQubits, ValueRange{});
+
+    auto cnot1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        ry1.getResults(), "CNOT", nullptr, inCtrlQubits, ValueRange{});
+
+    auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{theta},
+        cnot1.getResults(), "RZ", nullptr, inCtrlQubits, ValueRange{});
+
+    auto cnot2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        rz1.getResults(), "CNOT", nullptr, inCtrlQubits, ValueRange{});
+
+    auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{beta},
+        cnot2.getResults(), "RZ", nullptr, inCtrlQubits, ValueRange{});
+
+    auto rz3 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{beta},
+        rz2.getResults(), "RZ", nullptr, inCtrlQubits, ValueRange{});
+
+    auto rx2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{neg_pi_2},
+        rz3.getResults(), "RX", nullptr, inCtrlQubits, ValueRange{});
+
+    auto ry2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{neg_pi_2},
+        rx2.getResults(), "RY", nullptr, inCtrlQubits, ValueRange{});
+
+    rewriter.replaceOp(op, ry2.getResults());
+    return success();
+  }
+};
+
+template <>
+struct ConvertMQTOptSimpleGate<::mqt::ir::opt::UOp>
+    : public OpConversionPattern<::mqt::ir::opt::UOp> {
+  using OpConversionPattern<::mqt::ir::opt::UOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(::mqt::ir::opt::UOp op,
+                  typename ::mqt::ir::opt::UOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operand(s) and attribute(s)
+    auto inQubitsValues = adaptor.getInQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    // Extract parameters
+    llvm::SmallVector<mlir::Value> paramValues;
+    auto dynamicParams = adaptor.getParams();
+    auto staticParams = op.getStaticParams();
+    auto paramMask = op.getParamsMask();
+
+    // There must be exactly 3 parameters
+    constexpr size_t numParams = 3;
+    for (size_t i = 0, dynIdx = 0, statIdx = 0; i < numParams; ++i) {
+      if (paramMask.has_value()) {
+        if ((*paramMask)[i]) {
+          // Static parameter
+          auto attr = (*staticParams)[statIdx++];
+          auto constOp = rewriter.create<arith::ConstantOp>(
+              op.getLoc(), attr.cast<mlir::FloatAttr>());
+          paramValues.push_back(constOp);
+        } else {
+          // Dynamic parameter
+          paramValues.push_back(dynamicParams[dynIdx++]);
+        }
+      } else if (staticParams.has_value()) {
+        // All static
+        auto attr = (*staticParams)[i];
+        auto constOp = rewriter.create<arith::ConstantOp>(
+            op.getLoc(), attr.cast<mlir::FloatAttr>());
+        paramValues.push_back(constOp);
+      } else {
+        // All dynamic
+        paramValues.push_back(dynamicParams[i]);
+      }
+    }
+    // Now paramValues[0] = θ, [1] = φ, [2] = λ
+    auto theta = paramValues[0];
+    auto phi = paramValues[1];
+    auto lambda = paramValues[2];
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // Output type setup
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // Based on
+    // https://docs.quantum.ibm.com/api/qiskit/0.24/qiskit.circuit.library.UGate
+    // U(θ, φ, λ) = RZ(φ − π⁄2) ⋅ RX(π⁄2) ⋅ RZ(π − θ) ⋅ RX(π⁄2) ⋅ RZ(λ − π⁄2)
+    // Note: The MQT UOp uses U(θ/2, φ, λ)
+    auto pi = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(M_PI));
+    auto pi_2 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(M_PI_2));
+
+    // Compute φ - π/2
+    auto phiMinusPi2 = rewriter.create<arith::SubFOp>(op.getLoc(), phi, pi_2);
+    // Compute π - θ/2
+    auto piMinusTheta2 =
+        rewriter.create<arith::SubFOp>(op.getLoc(), pi, theta / 2);
+    // Compute λ - π/2
+    auto lambdaMinusPi2 =
+        rewriter.create<arith::SubFOp>(op.getLoc(), lambda, pi_2);
+
+    // RZ(λ − π/2)
+    auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{},
+        ValueRange{lambdaMinusPi2}, inQubitsValues, "RZ", nullptr, inCtrlQubits,
+        ValueRange{});
+
+    // RX(π/2)
+    auto rx1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi_2},
+        rz1.getResults(), "RX", nullptr, inCtrlQubits, ValueRange{});
+
+    // RZ(π − θ)
+    auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{},
+        ValueRange{piMinusTheta2}, rx1.getResults(), "RZ", nullptr,
+        inCtrlQubits, ValueRange{});
+
+    // RX(π/2)
+    auto rx2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi_2},
+        rz2.getResults(), "RX", nullptr, inCtrlQubits, ValueRange{});
+
+    // RZ(φ − π/2)
+    auto rz3 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{phiMinusPi2},
+        rx2.getResults(), "RZ", nullptr, inCtrlQubits, ValueRange{});
+
+    // Replace the original U gate with the decomposed sequence
+    rewriter.replaceOp(op, rz3.getResults());
+    return success();
+  }
+};
+
+template <>
+struct ConvertMQTOptSimpleGate<::mqt::ir::opt::U2Op>
+    : public OpConversionPattern<::mqt::ir::opt::U2Op> {
+  using OpConversionPattern<::mqt::ir::opt::U2Op>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(::mqt::ir::opt::U2Op op,
+                  typename ::mqt::ir::opt::U2Op::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operand(s) and attribute(s)
+    auto inQubitsValues = adaptor.getInQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    // Extract parameters
+    llvm::SmallVector<mlir::Value> paramValues;
+    auto dynamicParams = adaptor.getParams();
+    auto staticParams = op.getStaticParams();
+    auto paramMask = op.getParamsMask();
+
+    // There must be exactly 2 parameters
+    constexpr size_t numParams = 2;
+    for (size_t i = 0, dynIdx = 0, statIdx = 0; i < numParams; ++i) {
+      if (paramMask.has_value()) {
+        if ((*paramMask)[i]) {
+          // Static parameter
+          auto attr = (*staticParams)[statIdx++];
+          auto constOp = rewriter.create<arith::ConstantOp>(
+              op.getLoc(), attr.cast<mlir::FloatAttr>());
+          paramValues.push_back(constOp);
+        } else {
+          // Dynamic parameter
+          paramValues.push_back(dynamicParams[dynIdx++]);
+        }
+      } else if (staticParams.has_value()) {
+        // All static
+        auto attr = (*staticParams)[i];
+        auto constOp = rewriter.create<arith::ConstantOp>(
+            op.getLoc(), attr.cast<mlir::FloatAttr>());
+        paramValues.push_back(constOp);
+      } else {
+        // All dynamic
+        paramValues.push_back(dynamicParams[i]);
+      }
+    }
+    // Now paramValues [0] = φ, [1] = λ
+    auto phi = paramValues[0];
+    auto lambda = paramValues[1];
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // Output type setup
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // U2(φ, λ) = U(π/2, φ, λ) = RZ(φ − π⁄2) ⋅ RX(π⁄2) ⋅ RZ(3/4 π) ⋅ RX(π⁄2) ⋅
+    // RZ(λ − π⁄2)
+    auto pi = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(M_PI));
+    auto pi_2 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(M_PI_2));
+    auto pi_4 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(M_PI_4));
+    auto pi_3_4 = rewriter.create<arith::MulFOp>(op.getLoc(), pi_4,
+                                                 rewriter.getF64FloatAttr(3.0));
+
+    // Compute φ - π/2
+    auto phiMinusPi2 = rewriter.create<arith::SubFOp>(op.getLoc(), phi, pi_2);
+    // Compute λ - π/2
+    auto lambdaMinusPi2 =
+        rewriter.create<arith::SubFOp>(op.getLoc(), lambda, pi_2);
+
+    // RZ(λ − π/2)
+    auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{},
+        ValueRange{lambdaMinusPi2}, inQubitsValues, "RZ", nullptr, inCtrlQubits,
+        ValueRange{});
+
+    // RX(π/2)
+    auto rx1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi_2},
+        rz1.getResults(), "RX", nullptr, inCtrlQubits, ValueRange{});
+
+    // RZ(3/4 π)
+    auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi_3_4},
+        rx1.getResults(), "RZ", nullptr, inCtrlQubits, ValueRange{});
+
+    // RX(π/2)
+    auto rx2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi_2},
+        rz2.getResults(), "RX", nullptr, inCtrlQubits, ValueRange{});
+
+    // RZ(φ − π/2)
+    auto rz3 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{phiMinusPi2},
+        rx2.getResults(), "RZ", nullptr, inCtrlQubits, ValueRange{});
+
+    // Replace the original U gate with the decomposed sequence
+    rewriter.replaceOp(op, rz3.getResults());
+    return success();
+  }
+};
+
+template <>
+struct ConvertMQTOptSimpleGate<::mqt::ir::opt::SXOp>
+    : public OpConversionPattern<::mqt::ir::opt::SXOp> {
+  using OpConversionPattern<::mqt::ir::opt::SXOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(::mqt::ir::opt::SXOp op,
+                  typename ::mqt::ir::opt::SXOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operand(s) and attribute(s)
+    auto inQubitsValues = adaptor.getInQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // Output type setup
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // SX = H S H = H R(π/2) H
+    auto pi_2 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(M_PI_2));
+
+    // Create the decomposed operations
+    auto h1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        inQubitsValues, "Hadamard", nullptr, inCtrlQubits, ValueRange{});
+
+    auto r = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi_2},
+        h1.getResults(), "PhaseShift", nullptr, inCtrlQubits, ValueRange{});
+
+    auto h2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        r.getResults(), "Hadamard", nullptr, inCtrlQubits, ValueRange{});
+
+    // Replace the original operation with the decomposition
+    rewriter.replaceOp(op, h2.getResults());
+    return success();
+  }
+};
+
+template <>
+struct ConvertMQTOptSimpleGate<::mqt::ir::opt::SXdgOp>
+    : public OpConversionPattern<::mqt::ir::opt::SXdgOp> {
+  using OpConversionPattern<::mqt::ir::opt::SXdgOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(::mqt::ir::opt::SXdgOp op,
+                  typename ::mqt::ir::opt::SXdgOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operand(s) and attribute(s)
+    auto inQubitsValues = adaptor.getInQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // Output type setup
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // SX_dagger = H S H = H R(-π/2) H
+    auto neg_pi_2 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(-M_PI_2));
+
+    // Create the decomposed operations
+    auto h1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        inQubitsValues, "Hadamard", nullptr, inCtrlQubits, ValueRange{});
+
+    auto r = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{neg_pi_2},
+        h1.getResults(), "PhaseShift", nullptr, inCtrlQubits, ValueRange{});
+
+    auto h2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        r.getResults(), "Hadamard", nullptr, inCtrlQubits, ValueRange{});
+
+    // Replace the original operation with the decomposition
+    rewriter.replaceOp(op, h2.getResults());
+    return success();
+  }
+};
+
+template <>
+struct ConvertMQTOptSimpleGate<::mqt::ir::opt::ECROp>
+    : public OpConversionPattern<::mqt::ir::opt::ECROp> {
+  using OpConversionPattern<::mqt::ir::opt::ECROp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(::mqt::ir::opt::ECROp op,
+                  typename ::mqt::ir::opt::ECROp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operands
+    auto inQubitsValues = adaptor.getInQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // Output type setup
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // Constants
+    auto pi = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(llvm::numbers::pi));
+    auto pi_4 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(llvm::numbers::pi / 4));
+    auto neg_pi_4 = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(-llvm::numbers::pi / 4));
+
+    // RZX(π/4)
+    auto rzx1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi_4},
+        inQubitsValues, "RZX", nullptr, inCtrlQubits, ValueRange{});
+
+    // RX(π) on the first qubit (q_0)
+    mlir::Value rxQubit = rzx1.getResult(0); // q_0 after RZX
+    auto rx = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{pi},
+        ValueRange{rxQubit}, "RX", nullptr, inCtrlQubits, ValueRange{});
+
+    // Combine updated q_0 with unchanged q_1
+    llvm::SmallVector<mlir::Value> rzx2Inputs{rx.getResult(0),
+                                              rzx1.getResult(1)};
+
+    // RZX(-π/4)
+    auto rzx2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{neg_pi_4},
+        rzx2Inputs, "RZX", nullptr, inCtrlQubits, ValueRange{});
+
+    // Replace the original ECR with the result of final RZX
+    rewriter.replaceOp(op, rzx2.getResults());
+    return success();
+  }
+};
+
+// -- GPhaseOp (gphase)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::GPhaseOp>::getGateName(
+    std::size_t numControls) {
+  return "gphase";
+}
+
+// -- IOp (Identity)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::IOp>::getGateName(
+    std::size_t numControls) {
+  return "Identity";
+}
 
 // -- XOp (PauliX, CNOT, Toffoli)
 template <>
-mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::XOp>::getGateName(
-    ::mlir::MLIRContext* context, std::size_t numControls) {
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::XOp>::getGateName(
+    std::size_t numControls) {
   if (numControls == 0)
-    return mlir::StringAttr::get(context, "PauliX");
+    return "PauliX";
   if (numControls == 1)
-    return mlir::StringAttr::get(context, "CNOT");
+    return "CNOT";
   if (numControls == 2)
-    return mlir::StringAttr::get(context, "Toffoli");
-  return mlir::StringAttr::get(context, "");
+    return "Toffoli";
+  return "";
 }
 
 // -- YOp (PauliY, CY)
 template <>
-mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::YOp>::getGateName(
-    ::mlir::MLIRContext* context, std::size_t numControls) {
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::YOp>::getGateName(
+    std::size_t numControls) {
   if (numControls == 0)
-    return mlir::StringAttr::get(context, "PauliY");
+    return "PauliY";
   if (numControls == 1)
-    return mlir::StringAttr::get(context, "CY");
-  return mlir::StringAttr::get(context, "");
+    return "CY";
+  return "";
 }
 
 // -- ZOp (PauliZ, CZ)
 template <>
-mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::ZOp>::getGateName(
-    ::mlir::MLIRContext* context, std::size_t numControls) {
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::ZOp>::getGateName(
+    std::size_t numControls) {
   if (numControls == 0)
-    return mlir::StringAttr::get(context, "PauliZ");
+    return "PauliZ";
   if (numControls == 1)
-    return mlir::StringAttr::get(context, "CZ");
-  return mlir::StringAttr::get(context, "");
+    return "CZ";
+  return "";
 }
 
 // -- HOp (Hadamard)
 template <>
-mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::HOp>::getGateName(
-    ::mlir::MLIRContext* context, std::size_t numControls) {
-  return mlir::StringAttr::get(context, "Hadamard");
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::HOp>::getGateName(
+    std::size_t numControls) {
+  return "Hadamard";
+}
+
+// -- SOP (S)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::SOp>::getGateName(
+    std::size_t numControls) {
+  return "S";
+}
+
+// -- TOP (T)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::TOp>::getGateName(
+    std::size_t numControls) {
+  return "T";
 }
 
 // -- SWAPOp (SWAP)
 template <>
-mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::SWAPOp>::getGateName(
-    ::mlir::MLIRContext* context, std::size_t numControls) {
-  return mlir::StringAttr::get(context, "SWAP");
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::SWAPOp>::getGateName(
+    std::size_t numControls) {
+  return "SWAP";
+}
+
+// -- iSWAPOp (iSWAP)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::iSWAPOp>::getGateName(
+    std::size_t numControls) {
+  return "ISWAP";
 }
 
 // -- RXOp (RX, CRX)
 template <>
-mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::RXOp>::getGateName(
-    ::mlir::MLIRContext* context, std::size_t numControls) {
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RXOp>::getGateName(
+    std::size_t numControls) {
   if (numControls == 0)
-    return mlir::StringAttr::get(context, "RX");
+    return "RX";
   if (numControls == 1)
-    return mlir::StringAttr::get(context, "CRX");
-  return mlir::StringAttr::get(context, "");
+    return "CRX";
+  return "";
 }
 
 // -- RYOp (RY, CRY)
 template <>
-mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::RYOp>::getGateName(
-    ::mlir::MLIRContext* context, std::size_t numControls) {
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RYOp>::getGateName(
+    std::size_t numControls) {
   if (numControls == 0)
-    return mlir::StringAttr::get(context, "RY");
+    return "RY";
   if (numControls == 1)
-    return mlir::StringAttr::get(context, "CRY");
-  return mlir::StringAttr::get(context, "");
+    return "CRY";
+  return "";
 }
 
 // -- RZOp (RZ, CRZ)
 template <>
-mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::RZOp>::getGateName(
-    ::mlir::MLIRContext* context, std::size_t numControls) {
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RZOp>::getGateName(
+    std::size_t numControls) {
   if (numControls == 0)
-    return mlir::StringAttr::get(context, "RZ");
+    return "RZ";
   if (numControls == 1)
-    return mlir::StringAttr::get(context, "CRZ");
-  return mlir::StringAttr::get(context, "");
+    return "CRZ";
+  return "";
 }
 
 // -- POp (PhaseShift, ControlledPhaseShift)
 template <>
-mlir::StringAttr ConvertMQTOptSimpleGate<::mqt::ir::opt::POp>::getGateName(
-    ::mlir::MLIRContext* context, std::size_t numControls) {
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::POp>::getGateName(
+    std::size_t numControls) {
   if (numControls == 0)
-    return mlir::StringAttr::get(context, "PhaseShift");
+    return "PhaseShift";
   if (numControls == 1)
-    return mlir::StringAttr::get(context, "ControlledPhaseShift");
-  return mlir::StringAttr::get(context, "");
+    return "ControlledPhaseShift";
+  return "";
+}
+
+// -- RXXOp (IsingXX)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RXXOp>::getGateName(
+    std::size_t numControls) {
+  return "IsingXX";
+}
+
+// -- RYYOp (IsingYY)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RYYOp>::getGateName(
+    std::size_t numControls) {
+  return "IsingYY";
+}
+
+// -- RZZ (IsingZZ)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::RZZOp>::getGateName(
+    std::size_t numControls) {
+  return "IsingZZ";
+}
+
+// -- XXplusYY (IsingXY)
+template <>
+llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::XXplusYY>::getGateName(
+    std::size_t numControls) {
+  return "IsingXY";
 }
 
 struct MQTOptToCatalystQuantum
@@ -437,17 +1202,7 @@ struct MQTOptToCatalystQuantum
     target.addIllegalDialect<::mqt::ir::opt::MQTOptDialect>();
 
     // Mark operations legal, that have no equivalent in the target dialect
-    target.addLegalOp<
-        ::mqt::ir::opt::IOp, ::mqt::ir::opt::GPhaseOp,
-        ::mqt::ir::opt::BarrierOp, ::mqt::ir::opt::SOp, ::mqt::ir::opt::SdgOp,
-        ::mqt::ir::opt::TOp, ::mqt::ir::opt::TdgOp, ::mqt::ir::opt::VOp,
-        ::mqt::ir::opt::VdgOp, ::mqt::ir::opt::UOp, ::mqt::ir::opt::U2Op,
-        ::mqt::ir::opt::SXOp, ::mqt::ir::opt::SXdgOp, ::mqt::ir::opt::iSWAPOp,
-        ::mqt::ir::opt::iSWAPdgOp, ::mqt::ir::opt::PeresOp,
-        ::mqt::ir::opt::PeresdgOp, ::mqt::ir::opt::DCXOp, ::mqt::ir::opt::ECROp,
-        ::mqt::ir::opt::RXXOp, ::mqt::ir::opt::RYYOp, ::mqt::ir::opt::RZZOp,
-        ::mqt::ir::opt::RZXOp, ::mqt::ir::opt::XXminusYY,
-        ::mqt::ir::opt::XXplusYY>();
+    target.addLegalOp<::mqt::ir::opt::PeresOp, ::mqt::ir::opt::PeresdgOp>();
 
     RewritePatternSet patterns(context);
     MQTOptToCatalystQuantumTypeConverter typeConverter(context);
@@ -456,12 +1211,26 @@ struct MQTOptToCatalystQuantum
                  ConvertMQTOptMeasure, ConvertMQTOptInsert>(typeConverter,
                                                             context);
 
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::BarrierOp>>(
+        typeConverter, context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::GPhaseOp>>(
+        typeConverter, context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::IOp>>(typeConverter,
+                                                               context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::XOp>>(typeConverter,
                                                                context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::YOp>>(typeConverter,
                                                                context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::ZOp>>(typeConverter,
                                                                context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::SOp>>(typeConverter,
+                                                               context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::TOp>>(typeConverter,
+                                                               context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::VOp>>(typeConverter,
+                                                               context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::VdgOp>>(typeConverter,
+                                                                 context);
 
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::RXOp>>(typeConverter,
                                                                 context);
@@ -474,8 +1243,33 @@ struct MQTOptToCatalystQuantum
                                                                context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::SWAPOp>>(typeConverter,
                                                                   context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::iSWAPOp>>(
+        typeConverter, context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::POp>>(typeConverter,
                                                                context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::DCXOp>>(typeConverter,
+                                                                 context);
+
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::RXXOp>>(typeConverter,
+                                                                 context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::RYYOp>>(typeConverter,
+                                                                 context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::RZZOp>>(typeConverter,
+                                                                 context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::RZXOp>>(typeConverter,
+                                                                 context);
+
+    patterns.add<ConvertMQTOptAdjointGate<::mqt::ir::opt::SdgOp>>(typeConverter,
+                                                                  context);
+    patterns.add<ConvertMQTOptAdjointGate<::mqt::ir::opt::TdgOp>>(typeConverter,
+                                                                  context);
+    patterns.add<ConvertMQTOptAdjointGate<::mqt::ir::opt::iSWAPdgOp>>(
+        typeConverter, context);
+
+    patterns.add<ConvertMQTOptAdjointGate<::mqt::ir::opt::XXminusYY>>(
+        typeConverter, context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::XXplusYY>>(
+        typeConverter, context);
 
     // Boilerplate code to prevent "unresolved materialization" errors when the
     // IR contains ops with signature or operand/result types not yet rewritten:
