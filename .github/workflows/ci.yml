@@ -194,8 +194,8 @@ jobs:
 
   python-coverage:
     name: 🐍 Coverage
-    needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-python-tests)
+    needs: [change-detection, python-tests, python-tests-extensive]
+    if: fromJSON(needs.change-detection.outputs.run-python-tests) && ${{ always() && !failure() && !cancelled() }}
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@matrix-strategy
     permissions:
       contents: read
