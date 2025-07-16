@@ -6,8 +6,9 @@
 #
 # Licensed under the MIT License
 
-# add a compile feature for C++17
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD
+    17
+    CACHE STRING "C++ standard to conform to")
 
 # add main library code
 add_subdirectory(include)

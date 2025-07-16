@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 [build-system]
-requires = ["scikit-build-core>=0.11.1", "setuptools-scm>=8.2", "pybind11>=2.13.6"]
+requires = ["scikit-build-core>=0.11.1", "setuptools-scm>=8.2", "pybind11>=3.0.0"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -305,7 +305,7 @@ mqt-core = { workspace = true }
 
 [dependency-groups]
 build = [
-  "pybind11>=2.13.6",
+  "pybind11>=3.0.0",
   "scikit-build-core>=0.11.1",
   "setuptools-scm>=8.2",
 ]
