@@ -158,7 +158,7 @@ jobs:
       matrix:
         runs-on:
           [ubuntu-24.04, ubuntu-24.04-arm, macos-13, macos-14, windows-2022]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@matrix-strategy
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@matrix-strategy
     with:
       runs-on: ${{ matrix.runs-on }}
     permissions:
@@ -185,9 +185,18 @@ jobs:
             windows-2022,
             windows-2025,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-ci.yml@matrix-strategy
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@matrix-strategy
     with:
       runs-on: ${{ matrix.runs-on }}
+    permissions:
+      contents: read
+      id-token: write
+
+  python-coverage:
+    name: 🐍 Coverage
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-python-tests)
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@matrix-strategy
     permissions:
       contents: read
       id-token: write
@@ -273,6 +282,10 @@ jobs:
             ${{
               fromJSON(needs.change-detection.outputs.run-python-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
               && '' || 'python-tests-extensive,'
+            }}
+            ${{
+              fromJSON(needs.change-detection.outputs.run-python-tests)
+              && '' || 'python-coverage,'
             }}
             ${{
               fromJSON(needs.change-detection.outputs.run-python-tests)
