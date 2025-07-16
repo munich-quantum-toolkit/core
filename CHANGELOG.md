@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+### Added
+
+- ✨ Add MQT-internal MLIR dialect conversions ([#1001]) ([**@li-mingbao**])
+
 ## [3.1.0]
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#310)._
@@ -129,6 +133,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1042]: https://github.com/munich-quantum-toolkit/core/pull/1042
 [#1020]: https://github.com/munich-quantum-toolkit/core/pull/1020
 [#1019]: https://github.com/munich-quantum-toolkit/core/pull/1019
+[#1001]: https://github.com/munich-quantum-toolkit/core/pull/1001
 [#984]: https://github.com/munich-quantum-toolkit/core/pull/984
 [#982]: https://github.com/munich-quantum-toolkit/core/pull/982
 [#975]: https://github.com/munich-quantum-toolkit/core/pull/975
@@ -197,6 +202,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@MatthiasReumann**]: https://github.com/MatthiasReumann
 [**@denialhaag**]: https://github.com/denialhaag
 [**q-inho**]: https://github.com/q-inho
+[**@li-mingbao**]: https://github.com/li-mingbao
 
 <!-- General links -->
 
