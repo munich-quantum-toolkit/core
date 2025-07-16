@@ -358,6 +358,7 @@ jobs:
              --exclude-noncode-lines \
              --exclude-throw-branches \
              --print-summary \
+             --keep \
              --json \
              -o coverage-llvm-${{ matrix.llvm-version }}.json
 
@@ -370,4 +371,3 @@ jobs:
           fail_ci_if_error: true
           use_oidc: ${{ !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) }}
           files: coverage-llvm-${{ matrix.llvm-version }}.json
-          disable_search: true
