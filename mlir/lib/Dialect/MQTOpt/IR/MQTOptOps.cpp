@@ -129,7 +129,7 @@ parseOptOutputTypes(mlir::OpAsmParser& parser,
   if (parser.parseOptionalKeyword("nctrl").succeeded()) {
     if (parser.parseTypeList(negCtrlOutQubits).failed()) {
       parser.emitError(parser.getCurrentLocation(),
-                       "expected at least one type after `ctrl` keyword");
+                       "expected at least one type after `nctrl` keyword");
       return mlir::failure();
     }
   }
