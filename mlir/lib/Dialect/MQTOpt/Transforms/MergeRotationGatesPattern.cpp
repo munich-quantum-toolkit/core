@@ -68,7 +68,9 @@ struct MergeRotationGatesPattern final
                         [&](auto* user) { return user != *users.begin(); });
   }
 
-  mlir::LogicalResult match(UnitaryInterface op) const override {
+  mlir::LogicalResult
+  matchAndRewrite(UnitaryInterface op,
+                  mlir::PatternRewriter& rewriter) const override {
     const auto& users = op->getUsers();
     if (!areUsersUnique(users)) {
       return mlir::failure();
@@ -89,6 +91,7 @@ struct MergeRotationGatesPattern final
       // already checked by the previous condition.
       return mlir::failure();
     }
+    rewriteAdditiveAngle(op, rewriter);
     return mlir::success();
   }
 
@@ -186,17 +189,6 @@ struct MergeRotationGatesPattern final
 
     // Erase op
     rewriter.eraseOp(op);
-  }
-
-  void rewrite(UnitaryInterface op,
-               mlir::PatternRewriter& rewriter) const override {
-    auto const type = op->getName().stripDialect().str();
-
-    if (MERGEABLE_GATES.count(type) == 1) {
-      rewriteAdditiveAngle(op, rewriter);
-    } else {
-      throw std::runtime_error("Unsupported operation type: " + type);
-    }
   }
 };
 
