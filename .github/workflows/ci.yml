@@ -20,21 +20,39 @@ jobs:
     name: 🇨‌ Test
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@v1.13
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          [
+            ubuntu-24.04,
+            ubuntu-24.04-arm,
+            macos-13,
+            macos-14,
+            windows-2022,
+            windows-11-arm,
+          ]
+        config: [Release]
+        include:
+          - runner: ubuntu-24.04
+            compiler: gcc
+          - runner: ubuntu-24.04-arm
+            compiler: gcc
+          - runner: macos-13
+            compiler: clang
+          - runner: macos-14
+            compiler: clang
+          - runner: windows-2022
+            compiler: msvc
+          - runner: windows-11-arm
+            compiler: msvc
+          - runner: ubuntu-24.04
+            config: Debug
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@matrix-strategy
     with:
-      # Ubuntu matrix
-      ubuntu-runners: '["ubuntu-24.04", "ubuntu-24.04-arm"]'
-      ubuntu-compilers: '["gcc"]'
-      ubuntu-configs: '["Release", "Debug"]'
-      # macOS matrix
-      macos-runners: '["macos-13", "macos-14"]'
-      macos-compilers: '["clang"]'
-      macos-configs: '["Release"]'
-      # Windows matrix
-      windows-runners: '["windows-2022", "windows-11-arm"]'
-      windows-compilers: '["msvc"]'
-      windows-configs: '["Release"]'
-      # General settings
+      runner: ${{ matrix.runner }}
+      compiler: ${{ matrix.compiler }}
+      config: ${{ matrix.config }}
       cmake-args-macos: -DMQT_CORE_WITH_GMP=ON
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
@@ -42,21 +60,69 @@ jobs:
     name: 🇨‌ Test (Extensive)
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@v1.13
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          [
+            ubuntu-22.04,
+            ubuntu-24.04,
+            ubuntu-22.04-arm,
+            ubuntu-24.04-arm,
+            macos-13,
+            macos-14,
+            macos-15,
+            windows-2022,
+            windows-2025,
+            windows-11-arm,
+          ]
+        compiler: [clang, clang-19, clang-20]
+        config: [Release, Debug]
+        exclude:
+          - runner: winows-2022
+            compiler: clang-19
+          - runner: windows-2022
+            compiler: clang-20
+          - runner: windows-2025
+            compiler: clang-19
+          - runner: windows-2025
+            compiler: clang-20
+          - runner: windows-11-arm
+            compiler: clang-19
+          - runner: windows-11-arm
+            compiler: clang-20
+        include:
+          - runner: ubuntu-22.04
+            compiler: gcc
+          - runner: ubuntu-24.04
+            compiler: gcc
+          - runner: ubuntu-22.04-arm
+            compiler: gcc
+          - runner: ubuntu-24.04-arm
+            compiler: gcc
+          - runner: macos-13
+            compiler: gcc-14
+          - runner: macos-13
+            compiler: gcc-15
+          - runner: macos-14
+            compiler: gcc-14
+          - runner: macos-14
+            compiler: gcc-15
+          - runner: macos-15
+            compiler: gcc-14
+          - runner: macos-15
+            compiler: gcc-15
+          - runner: windows-2022
+            compiler: msvc
+          - runner: windows-2025
+            compiler: msvc
+          - runner: windows-11-arm
+            compiler: msvc
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-ci.yml@matrix-strategy
     with:
-      # Ubuntu matrix
-      ubuntu-runners: '["ubuntu-22.04", "ubuntu-24.04", "ubuntu-22.04-arm", "ubuntu-24.04-arm"]'
-      ubuntu-compilers: '["gcc", "clang", "clang-19", "clang-20"]'
-      ubuntu-configs: '["Release", "Debug"]'
-      # macOS matrix
-      macos-runners: '["macos-13", "macos-14", "macos-15"]'
-      macos-compilers: '["clang", "gcc-14", "gcc-15", "clang-19", "clang-20"]'
-      macos-configs: '["Release", "Debug"]'
-      # Windows matrix
-      windows-runners: '["windows-2022", "windows-2025", "windows-11-arm"]'
-      windows-compilers: '["msvc", "clang"]'
-      windows-configs: '["Release", "Debug"]'
-      # General settings
+      runner: ${{ matrix.runner }}
+      compiler: ${{ matrix.compiler }}
+      config: ${{ matrix.config }}
       cmake-args-macos: -DMQT_CORE_WITH_GMP=ON
 
   cpp-coverage:
