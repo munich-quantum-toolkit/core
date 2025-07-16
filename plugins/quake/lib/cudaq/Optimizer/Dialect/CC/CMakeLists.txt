@@ -15,6 +15,7 @@ add_cudaq_dialect_library(
   CCDialectIncGen
   CCOpsIncGen
   CCTypesIncGen
+  CCInterfacesIncGen
   LINK_LIBS
   MLIRComplexDialect
   MLIRFuncDialect

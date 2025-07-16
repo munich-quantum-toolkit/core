@@ -8,4 +8,3 @@
 
 add_cudaq_dialect(CC cc)
 add_cudaq_interface(CCInterfaces)
-add_cudaq_dialect_doc(CCDialect cc)

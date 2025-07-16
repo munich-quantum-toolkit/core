@@ -5,3 +5,10 @@
 # SPDX-License-Identifier: MIT
 #
 # Licensed under the MIT License
+
+function(add_cudaq_dialect_library name)
+  add_mlir_library(${ARGV} DISABLE_INSTALL)
+  install(TARGETS ${name} COMPONENT ${name})
+endfunction()
+
+add_subdirectory(cudaq)
