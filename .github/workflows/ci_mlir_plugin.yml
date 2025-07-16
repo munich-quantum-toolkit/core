@@ -87,8 +87,8 @@ jobs:
           override_cache_key: mlir-plugin-${{ matrix.runs-on }}-llvm-${{ matrix.llvm-version }}
 
       # set up mold as linker for faster C++ builds
-      - name: Set up mold as linker
-        uses: rui314/setup-mold@v1
+      #      - name: Set up mold as linker
+      #        uses: rui314/setup-mold@v1
 
       # Set up uv for faster Python package management
       - name: Install the latest version of uv
@@ -142,8 +142,8 @@ jobs:
           override_cache_key: mlir-plugin-${{ matrix.runs-on }}-source
 
       # set up mold as linker for faster C++ builds
-      - name: Set up mold as linker
-        uses: rui314/setup-mold@v1
+      #      - name: Set up mold as linker
+      #        uses: rui314/setup-mold@v1
 
       # Set up uv for faster Python package management
       - name: Install the latest version of uv
@@ -218,8 +218,8 @@ jobs:
           override_cache_key: mlir-plugin-${{ matrix.runs-on }}-exact-mlir
 
       # set up mold as linker for faster C++ builds
-      - name: Set up mold as linker
-        uses: rui314/setup-mold@v1
+      #      - name: Set up mold as linker
+      #        uses: rui314/setup-mold@v1
 
       # Set up uv for faster Python package management
       - name: Install the latest version of uv
