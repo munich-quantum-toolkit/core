@@ -962,6 +962,83 @@ module {
 }
 
 // -----
+// This test checks if incorrect output type format is detected correctly when `)` is missing.
+module {
+    func.func @testOutputTypeFormatErrorMissingClosingParenthesis() {
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{expected ')'}}
+        mqtopt.gphase(%c0_f64) : (
+
+        return
+    }
+}
+
+// -----
+// This test checks if incorrect output type format is detected correctly when the type list ends with a `,`.
+module {
+    func.func @testOutputTypeFormatErrorEndsWithComma() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // expected-error@+1 {{expected non-function type}}
+        %q_1 = mqtopt.i() %q_0 : !mqtopt.Qubit,
+
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if incorrect output type format is detected correctly when the `ctrl` keyword is provided without types.
+module {
+    func.func @testOutputTypeFormatCtrlKeywordWithoutTypes() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // expected-error@+1 {{expected non-function type}}
+        %q_1 = mqtopt.i() %q_0 : !mqtopt.Qubit ctrl
+        // expected-error@+2 {{custom op 'mqtopt.i' expected at least one type after `ctrl` keyword}}
+
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if incorrect output type format is detected correctly when the `nctrl` keyword is provided without types.
+module {
+    func.func @testOutputTypeFormatNctrlKeywordWithoutTypes() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // expected-error@+1 {{expected non-function type}}
+        %q_1 = mqtopt.i() %q_0 : !mqtopt.Qubit nctrl
+        // expected-error@+2 {{custom op 'mqtopt.i' expected at least one type after `nctrl` keyword}}
+
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if incorrect output type format is detected correctly when nothing is provided after `:`.
+module {
+    func.func @testOutputTypeFormatErrorNoTypingInformation() {
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+3 {{custom op 'mqtopt.gphase' expected at least one type after `:`}}
+        mqtopt.gphase(%c0_f64) :
+
+        return
+    }
+}
+
+// -----
 // This test checks if a Bell state is parsed and handled correctly by using many instructions tested above.
 module {
     // CHECK-LABEL: func.func @bellState
