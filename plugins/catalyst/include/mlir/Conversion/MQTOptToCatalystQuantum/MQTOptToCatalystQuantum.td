@@ -13,8 +13,6 @@ def MQTOptToCatalystQuantum : Pass<"mqtopt-to-catalystquantum"> {
 
   let description = [{
     This pass converts MQT's `MQTOpt` to Catalyst's `Quantum` dialect.
-    The following operations are currently NOT converted (and instead marked legal):
-    - PeresOp, PeresdgOp
   }];
   let dependentDialects = [
     "catalyst::quantum::QuantumDialect",
