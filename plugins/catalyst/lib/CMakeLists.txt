@@ -31,6 +31,8 @@ add_llvm_library(
   CatalystQuantumToMQTOpt
   MQTOptToCatalystQuantum)
 
+target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR})
+
 # set required C++ standard
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 target_compile_options(${TARGET_NAME} PUBLIC -fexceptions)

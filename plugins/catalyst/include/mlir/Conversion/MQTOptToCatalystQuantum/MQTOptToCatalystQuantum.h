@@ -15,9 +15,9 @@
 namespace mqt::ir::conversions {
 
 #define GEN_PASS_DECL
-#include "plugins/catalyst/include/mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h.inc"
+#include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h.inc"
 
 #define GEN_PASS_REGISTRATION
-#include "plugins/catalyst/include/mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h.inc"
+#include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h.inc"
 
 } // namespace mqt::ir::conversions
