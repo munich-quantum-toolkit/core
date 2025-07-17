@@ -118,7 +118,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: [windows-2022, windows-11-arm]
+        runs-on: [windows-2022, windows-2025, windows-11-arm]
         compiler: [msvc, clang]
         config: [Release]
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@matrix-strategy
