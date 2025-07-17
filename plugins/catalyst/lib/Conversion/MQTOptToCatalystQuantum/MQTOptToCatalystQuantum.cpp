@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h"
+#include "plugins/catalyst/include/mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h"
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
@@ -33,7 +33,7 @@
 namespace mqt::ir::conversions {
 
 #define GEN_PASS_DEF_MQTOPTTOCATALYSTQUANTUM
-#include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h.inc"
+#include "plugins/catalyst/include/mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h.inc"
 
 using namespace mlir;
 

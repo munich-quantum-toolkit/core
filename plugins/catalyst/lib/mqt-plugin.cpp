@@ -16,8 +16,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Conversion/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h"
-#include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h"
+#include "plugins/catalyst/include/mlir/Conversion/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h"
+#include "plugins/catalyst/include/mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
