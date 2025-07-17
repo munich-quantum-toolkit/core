@@ -803,7 +803,7 @@ module {
         %c0_f64 = arith.constant 3.000000e-01 : f64
         // expected-error@+1 {{number of input qubits (1) must be 0}}
         %q_1 = mqtopt.gphase(%c0_f64) %q_0 : !mqtopt.Qubit
-        
+
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
 
@@ -818,13 +818,13 @@ module {
     func.func @testStaticParameters() {
         // CHECK: %[[ANY:.*]] = mqtopt.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01]) %[[ANY:.*]] : !mqtopt.Qubit
         // CHECK: %[[ANY:.*]] = mqtopt.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01] mask [true, true, true]) %[[ANY:.*]] : !mqtopt.Qubit
-        
+
         %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
         %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
         %q_1 = mqtopt.u(static [1.00000e-01, 2.00000e-01, 3.00000e-01]) %q_0 : !mqtopt.Qubit
         %q_2 = mqtopt.u(static [1.00000e-01, 2.00000e-01, 3.00000e-01] mask [true, true, true]) %q_1 : !mqtopt.Qubit
-        
+
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
 
@@ -837,13 +837,14 @@ module {
 module {
     // CHECK-LABEL: func.func @testStaticAndDynamicParameters
     func.func @testStaticAndDynamicParameters() {
+        // CHECK: %[[ANY:.*]] = mqtopt.u(%[[ANY:.*]] static [1.000000e-01, 2.000000e-01] mask [true, false, true]) %[[ANY:.*]] : !mqtopt.Qubit
+
         %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
         %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
         %c0_f64 = arith.constant 3.000000e-01 : f64
-        // CHECK: %[[ANY:.*]] = mqtopt.u(%[[ANY:.*]] static [1.000000e-01, 2.000000e-01] mask [true, false, true]) %[[ANY:.*]] : !mqtopt.Qubit
         %q_1 = mqtopt.u(%c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, false, true]) %q_0 : !mqtopt.Qubit
-        
+
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
 
@@ -861,7 +862,7 @@ module {
         %c0_f64 = arith.constant 3.000000e-01 : f64
         // expected-error@+1 {{operation expects exactly 3 parameters but got 4}}
         %q_1 = mqtopt.u(%c0_f64, %c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, false, true]) %q_0 : !mqtopt.Qubit
-        
+
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
 
@@ -879,7 +880,7 @@ module {
         %c0_f64 = arith.constant 3.000000e-01 : f64
         // expected-error@+1 {{operation has mixed dynamic and static parameters but no parameter mask}}
         %q_1 = mqtopt.u(%c0_f64 static [1.00000e-01, 2.00000e-01]) %q_0 : !mqtopt.Qubit
-        
+
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
 
@@ -897,7 +898,7 @@ module {
         %c0_f64 = arith.constant 3.000000e-01 : f64
         // expected-error@+1 {{operation expects exactly 3 parameters but has a parameter mask with 2 entries}}
         %q_1 = mqtopt.u(%c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, true]) %q_0 : !mqtopt.Qubit
-        
+
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
 
@@ -915,7 +916,7 @@ module {
         %c0_f64 = arith.constant 3.000000e-01 : f64
         // expected-error@+1 {{operation has 2 static parameter(s) but has a parameter mask with 3 true entries}}
         %q_1 = mqtopt.u(%c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, true, true]) %q_0 : !mqtopt.Qubit
-        
+
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
 
@@ -933,7 +934,7 @@ module {
         %c0_f64 = arith.constant 3.000000e-01 : f64
         // expected-error@+1 {{operation has no static parameter but has a parameter mask with 1 true entries}}
         %q_1 = mqtopt.u(%c0_f64, %c0_f64, %c0_f64 static [] mask [true, false, false]) %q_0 : !mqtopt.Qubit
-        
+
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
 
@@ -951,7 +952,7 @@ module {
 
         // expected-error@+1 {{'mqtopt.barrier' op Gate marked as NoControl should not have control qubits}}
         %q0_1, %q1_1 = mqtopt.barrier() %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
-        
+
         %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
