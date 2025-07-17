@@ -31,7 +31,13 @@ add_llvm_library(
   CatalystQuantumToMQTOpt
   MQTOptToCatalystQuantum)
 
-target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR})
+# ensure both your compiler and clang-tidy see:
+#   -I<repo-root>/plugins/catalyst/include
+target_include_directories(${TARGET_NAME}
+        PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/plugins/catalyst/include>
+        $<INSTALL_INTERFACE:include>
+)
 
 # set required C++ standard
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
