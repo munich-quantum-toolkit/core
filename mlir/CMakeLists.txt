@@ -10,6 +10,11 @@ set(CMAKE_CXX_STANDARD
     20
     CACHE STRING "C++ standard to conform to")
 
+if(ENABLE_COVERAGE)
+  add_compile_options(--coverage -O0)
+  add_link_options(--coverage)
+endif()
+
 # add main library code
 add_subdirectory(include)
 add_subdirectory(lib)
