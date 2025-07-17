@@ -266,7 +266,7 @@ module {
     func.func @testSingleQubitRotationOp() {
         // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
         // CHECK: %[[Q_1:.*]] = mqtopt.u(%[[C0_F64]], %[[C0_F64]], %[[C0_F64]]) %[[ANY:.*]] : !mqtopt.Qubit
-        // CHECK: %[[Q_2:.*]] = mqtopt.u2(%[[C0_F64]], %[[C0_F64]]) %[[Q_1]] : !mqtopt.Qubit
+        // CHECK: %[[Q_2:.*]] = mqtopt.u2(%[[C0_F64]], %[[C0_F64]] static [] mask [false, false]) %[[Q_1]] : !mqtopt.Qubit
         // CHECK: %[[Q_3:.*]] = mqtopt.p(%[[C0_F64]]) %[[Q_2]] : !mqtopt.Qubit
         // CHECK: %[[Q_4:.*]] = mqtopt.rx(%[[C0_F64]]) %[[Q_3]] : !mqtopt.Qubit
         // CHECK: %[[Q_5:.*]] = mqtopt.ry(%[[C0_F64]]) %[[Q_4]] : !mqtopt.Qubit
@@ -276,7 +276,7 @@ module {
         %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
         %c0_f64 = arith.constant 3.000000e-01 : f64
         %q_1 = mqtopt.u(%c0_f64, %c0_f64, %c0_f64) %q_0 : !mqtopt.Qubit
-        %q_2 = mqtopt.u2(%c0_f64, %c0_f64) %q_1 : !mqtopt.Qubit
+        %q_2 = mqtopt.u2(%c0_f64, %c0_f64 static [] mask [false, false]) %q_1 : !mqtopt.Qubit
         %q_3 = mqtopt.p(%c0_f64) %q_2 : !mqtopt.Qubit
         %q_4 = mqtopt.rx(%c0_f64) %q_3 : !mqtopt.Qubit
         %q_5 = mqtopt.ry(%c0_f64) %q_4 : !mqtopt.Qubit
@@ -644,6 +644,8 @@ module {
 
         // expected-error-re@+1 {{'mqtopt.allocQubitRegister' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'size'}}
         %reg = "mqtopt.allocQubitRegister"(%reg_size) <{size_attr = 3 : i64}> : (i64) -> !mqtopt.QubitRegister
+
+        return
     }
 }
 
@@ -653,6 +655,8 @@ module {
     func.func @testAllocMissingSize() {
         // expected-error-re@+1 {{'mqtopt.allocQubitRegister' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'size'}}
         %reg = "mqtopt.allocQubitRegister"() : () -> !mqtopt.QubitRegister
+
+        return
     }
 }
 
@@ -665,6 +669,8 @@ module {
 
         // expected-error-re@+1 {{'mqtopt.extractQubit' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'index'}}
         %reg2, %q_0 = "mqtopt.extractQubit"(%reg, %idx) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, i64) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        return
   }
 }
 
@@ -677,6 +683,8 @@ module {
 
         // expected-error-re@+1 {{'mqtopt.extractQubit' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'index'}}
         %reg2, %q_0 = "mqtopt.extractQubit"(%reg) : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        return
   }
 }
 
@@ -690,6 +698,8 @@ module {
 
         // expected-error-re@+1 {{'mqtopt.insertQubit' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'index'}}
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_0, %idx) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit, i64) -> !mqtopt.QubitRegister
+
+        return
     }
 }
 
@@ -703,6 +713,8 @@ module {
 
         // expected-error-re@+1 {{'mqtopt.insertQubit' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'index'}}
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_0) : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return
     }
 }
 
@@ -716,6 +728,8 @@ module {
 
         // expected-error@+1 {{operation defines 2 results but was provided 1 to bind}}
         %q1_1 = mqtopt.x() %q1_0 ctrl %q0_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        return
     }
 }
 
@@ -729,6 +743,8 @@ module {
 
         // expected-error@+1 {{number of positively-controlling input qubits (0) and positively-controlling output qubits (1) must be the same}}
         %q1_1, %q0_1 = mqtopt.x() %q1_0 ctrl : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        return
     }
 }
 
@@ -742,6 +758,8 @@ module {
 
         // expected-error@+1 {{number of negatively-controlling input qubits (0) and negatively-controlling output qubits (1) must be the same}}
         %q1_1, %q0_1 = mqtopt.x() %q1_0 nctrl : !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        return
     }
 }
 
@@ -755,6 +773,8 @@ module {
 
         // expected-error@+1 {{operation expects exactly 3 parameters but got 2}}
         %q_1 = mqtopt.u(%c0_f64, %c0_f64) %q_0 : !mqtopt.Qubit
+
+        return
     }
 }
 
@@ -768,13 +788,182 @@ module {
 
         // expected-error@+1 {{'mqtopt.measure' op number of input qubits (2) and output bits (0) must be the same}}
         %reg_out = "mqtopt.measure"(%q0, %q1) : (!mqtopt.Qubit, !mqtopt.Qubit) -> (!mqtopt.Qubit)
+
+        return
+    }
+}
+
+// -----
+// This test checks if a no-target arity constraint operation detects correctly when a target is provided.
+module {
+    func.func @testNoTargetContainsTarget() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{number of input qubits (1) must be 0}}
+        %q_1 = mqtopt.gphase(%c0_f64) %q_0 : !mqtopt.Qubit
+        
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if static parameters for rotation operations are parsed correctly.
+module {
+    // CHECK-LABEL: func.func @testStaticParameters
+    func.func @testStaticParameters() {
+        // CHECK: %[[ANY:.*]] = mqtopt.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01]) %[[ANY:.*]] : !mqtopt.Qubit
+        // CHECK: %[[ANY:.*]] = mqtopt.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01] mask [true, true, true]) %[[ANY:.*]] : !mqtopt.Qubit
+        
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q_1 = mqtopt.u(static [1.00000e-01, 2.00000e-01, 3.00000e-01]) %q_0 : !mqtopt.Qubit
+        %q_2 = mqtopt.u(static [1.00000e-01, 2.00000e-01, 3.00000e-01] mask [true, true, true]) %q_1 : !mqtopt.Qubit
+        
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if static parameters together with dynamic parameters for rotation operations are parsed correctly.
+module {
+    // CHECK-LABEL: func.func @testStaticAndDynamicParameters
+    func.func @testStaticAndDynamicParameters() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // CHECK: %[[ANY:.*]] = mqtopt.u(%[[ANY:.*]] static [1.000000e-01, 2.000000e-01] mask [true, false, true]) %[[ANY:.*]] : !mqtopt.Qubit
+        %q_1 = mqtopt.u(%c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, false, true]) %q_0 : !mqtopt.Qubit
+        
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if static parameters and dynamic parameters surpassing the limit of parameters together is detected correctly.
+module {
+    func.func @testTooManyStaticAndDynamicParameters() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{operation expects exactly 3 parameters but got 4}}
+        %q_1 = mqtopt.u(%c0_f64, %c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, false, true]) %q_0 : !mqtopt.Qubit
+        
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if static parameters and dynamic parameters being passed without a mask is detected correctly.
+module {
+    func.func @testStaticAndDynamicParametersNoMask() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{operation has mixed dynamic and static parameters but no parameter mask}}
+        %q_1 = mqtopt.u(%c0_f64 static [1.00000e-01, 2.00000e-01]) %q_0 : !mqtopt.Qubit
+        
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if a static parameter mask with incorrect size is detected correctly.
+module {
+    func.func @testStaticAndDynamicParametersWrongSizeMask() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{operation expects exactly 3 parameters but has a parameter mask with 2 entries}}
+        %q_1 = mqtopt.u(%c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, true]) %q_0 : !mqtopt.Qubit
+        
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if a static parameter mask with an incorrect number of true entries is detected correctly.
+module {
+    func.func @testStaticAndDynamicParametersIncorrectTrueEntriesInMask() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{operation has 2 static parameter(s) but has a parameter mask with 3 true entries}}
+        %q_1 = mqtopt.u(%c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, true, true]) %q_0 : !mqtopt.Qubit
+        
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if a static parameter mask with `true` parameters even though the operation has no static parameters is detected correctly.
+module {
+    func.func @testParametersMaskWithTrueEntriesButNoStaticParameters() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{operation has no static parameter but has a parameter mask with 1 true entries}}
+        %q_1 = mqtopt.u(%c0_f64, %c0_f64, %c0_f64 static [] mask [true, false, false]) %q_0 : !mqtopt.Qubit
+        
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if a no-control gate being passed a control is detected correctly.
+module {
+    func.func @testNoControlWithControl() {
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1)  <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // expected-error@+1 {{'mqtopt.barrier' op Gate marked as NoControl should not have control qubits}}
+        %q0_1, %q1_1 = mqtopt.barrier() %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        
+        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+        return
     }
 }
 
 // -----
 // This test checks if a Bell state is parsed and handled correctly by using many instructions tested above.
 module {
-    // CHECK-LABEL: func.func @bellState()
+    // CHECK-LABEL: func.func @bellState
     func.func @bellState() {
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
         // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
