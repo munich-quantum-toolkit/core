@@ -41,11 +41,10 @@ include(AddLLVM)
 include(AddMLIR)
 include(HandleLLVMOptions)
 
-set(CATALYST_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/include"
-                          "${CMAKE_CURRENT_BINARY_DIR}/include")
-
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
+include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(BEFORE ${CMAKE_CURRENT_BINARY_DIR}/include)
 include_directories(${CATALYST_INCLUDE_DIRS})
 
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
