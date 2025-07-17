@@ -1578,6 +1578,7 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
           }
           if (nextTotalSize <= maxBlockSize) {
             // if the next operation fits in the block, do not finalize the
+            //add opertaion to the block and then finalize it
             // current block yet
             for (const auto& q : usedQubits) {
               dsu.finalizeBlock(q);

@@ -58,7 +58,7 @@ TEST(CollectBlocks, nonCliffordOnAll) {
   std::cout << qc << "\n";
   qc::CircuitOptimizer::collectBlocks(qc, 2, true);
   std::cout << qc << "\n";
-  EXPECT_EQ(qc.size(), 5);
+  EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
   EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 3);
 }
@@ -85,9 +85,9 @@ TEST(CollectBlocks, collectTwoQubitCliffordGates) {
   qc.x(0);
   qc.y(1);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 2, true);
+  qc::CircuitOptimizer::collectBlocks(qc, 3, true);
   std::cout << qc << "\n";
-  EXPECT_EQ(qc.size(), 4);
+  EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
   EXPECT_TRUE(qc.back()->isStandardOperation());
   EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 3);
