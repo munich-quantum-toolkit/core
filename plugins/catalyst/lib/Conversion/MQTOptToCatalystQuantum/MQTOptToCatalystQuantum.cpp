@@ -1033,6 +1033,84 @@ struct ConvertMQTOptSimpleGate<::mqt::ir::opt::ECROp>
   }
 };
 
+template <>
+struct ConvertMQTOptSimpleGate<::mqt::ir::opt::PeresOp>
+    : public OpConversionPattern<::mqt::ir::opt::PeresOp> {
+  using OpConversionPattern<::mqt::ir::opt::PeresOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(::mqt::ir::opt::PeresOp op,
+                  typename ::mqt::ir::opt::PeresOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operands
+    auto inQubitsValues = adaptor.getInQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // Output type setup
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // Peres = Toffoli(q2,q1,q0) CNOT(q2,q1)
+    auto ccnot1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        inQubitsValues, "Toffoli", nullptr, inCtrlQubits, ValueRange{});
+
+    auto cnot2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        ccnot1.getResults(), "CNOT", nullptr, inCtrlQubits, ValueRange{});
+
+    rewriter.replaceOp(op, cnot2.getResults());
+    return success();
+  }
+};
+
+template <>
+struct ConvertMQTOptSimpleGate<::mqt::ir::opt::PeresdgOp>
+    : public OpConversionPattern<::mqt::ir::opt::PeresdgOp> {
+  using OpConversionPattern<::mqt::ir::opt::PeresdgOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(::mqt::ir::opt::PeresdgOp op,
+                  typename ::mqt::ir::opt::PeresdgOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operands
+    auto inQubitsValues = adaptor.getInQubits();
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    llvm::SmallVector<mlir::Value> inCtrlQubits;
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // Output type setup
+    mlir::Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    std::vector<mlir::Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = mlir::TypeRange(qubitTypes);
+
+    // Peresdg = CNOT(q2,q1) Toffoli(q2,q1,q0)
+    auto cnot1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        inQubitsValues, "CNOT", nullptr, inCtrlQubits, ValueRange{});
+
+    auto ccnot2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), outQubitTypes, mlir::TypeRange{}, ValueRange{},
+        cnot1.getResults(), "Toffoli", nullptr, inCtrlQubits, ValueRange{});
+
+    rewriter.replaceOp(op, ccnot1.getResults());
+    return success();
+  }
+};
+
 // -- GPhaseOp (gphase)
 template <>
 llvm::StringRef ConvertMQTOptSimpleGate<::mqt::ir::opt::GPhaseOp>::getGateName(
@@ -1201,9 +1279,6 @@ struct MQTOptToCatalystQuantum
     target.addLegalDialect<catalyst::quantum::QuantumDialect>();
     target.addIllegalDialect<::mqt::ir::opt::MQTOptDialect>();
 
-    // Mark operations legal, that have no equivalent in the target dialect
-    target.addLegalOp<::mqt::ir::opt::PeresOp, ::mqt::ir::opt::PeresdgOp>();
-
     RewritePatternSet patterns(context);
     MQTOptToCatalystQuantumTypeConverter typeConverter(context);
 
@@ -1266,6 +1341,10 @@ struct MQTOptToCatalystQuantum
                                                                context);
     patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::U2Op>>(typeConverter,
                                                                 context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::PeresOp>>(
+        typeConverter, context);
+    patterns.add<ConvertMQTOptSimpleGate<::mqt::ir::opt::PeresdgOp>>(
+        typeConverter, context);
 
     patterns.add<ConvertMQTOptAdjointGate<::mqt::ir::opt::SdgOp>>(typeConverter,
                                                                   context);
