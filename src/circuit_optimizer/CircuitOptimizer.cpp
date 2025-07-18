@@ -1324,10 +1324,9 @@ struct DSU {
   std::unordered_map<Qubit, std::unique_ptr<CompoundOperation>>
       currentBlockOperations;
   std::size_t maxBlockSize = 0;
-  //list of qubits that are currently in a block
+  // list of qubits that are currently in a block
   std::unordered_set<Qubit> currentBlockQubits;
   std::unordered_set<Qubit> alreadyfinalizedQubits;
-  
 
   /**
    * @brief Check if a block is empty.
@@ -1421,7 +1420,8 @@ struct DSU {
   }
 };
 
-void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc, const std::size_t maxBlockSize) {
+void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
+                                             const std::size_t maxBlockSize) {
   if (qc.size() <= 1) {
     return;
   }
@@ -1443,12 +1443,10 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc, const std::
       canProcess = false;
     }
     const auto usedQubits = op->getUsedQubits();
-
   }
 
   removeIdentities(qc);
 }
-
 
 void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
                                      const std::size_t maxBlockSize,
@@ -1465,7 +1463,6 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
   DSU dsu{};
   DSU nonCliffordDSU{};
   for (auto opIt = qc.begin(); opIt != qc.end(); ++opIt) {
-    
 
     auto& op = *opIt;
 
@@ -1476,7 +1473,7 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
       canProcess = false;
     }
     const auto usedQubits = op->getUsedQubits();
-    //print operation and on what qubit it acts
+    // print operation and on what qubit it acts
     std::cout << "Processing operation: " << op->getName() << " on qubits: ";
     for (const auto& q : usedQubits) {
       std::cout << q << " ";
@@ -1484,19 +1481,20 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
     std::cout << std::endl;
 
     if (onlyCollectCliffords && !op->isClifford()) {
-      //add used qubits to the non_Clifford DSU
+      // add used qubits to the non_Clifford DSU
       std::unordered_set<Qubit> non_Clifford_qubits{};
       for (const auto& q : usedQubits) {
         nonCliffordDSU.findBlock(q);
         non_Clifford_qubits.emplace(q);
         dsu.alreadyfinalizedQubits.emplace(q);
       }
-      
-      //make new DSU add the gate where the non Clifford operation is operating on and finalize this block right away
-      // if the operation acts on more qubits than the maximum block size, all
-      // current blocks need to be finalized.
+
+      // make new DSU add the gate where the non Clifford operation is operating
+      // on and finalize this block right away
+      //  if the operation acts on more qubits than the maximum block size, all
+      //  current blocks need to be finalized.
       for (const auto& q : non_Clifford_qubits) {
-          nonCliffordDSU.finalizeBlock(q);
+        nonCliffordDSU.finalizeBlock(q);
       }
     }
 
