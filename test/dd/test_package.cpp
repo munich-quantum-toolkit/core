@@ -48,8 +48,7 @@ using namespace qc::literals;
 
 namespace dd {
 TEST(DDPackageTest, RequestInvalidPackageSize) {
-  EXPECT_THROW(auto dd =
-                   std::make_unique<Package>(Package::MAX_POSSIBLE_QUBITS + 2),
+  EXPECT_THROW(auto dd = Package(Package::MAX_POSSIBLE_QUBITS + 2),
                std::invalid_argument);
 }
 
