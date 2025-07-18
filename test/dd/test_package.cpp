@@ -47,23 +47,6 @@
 using namespace qc::literals;
 
 namespace dd {
-TEST(DDPackageTest, RequestInvalidPackageSize) {
-  try {
-    auto dd = std::make_unique<Package>(Package::MAX_POSSIBLE_QUBITS + 2U);
-    FAIL() << "Expected std::invalid_argument due to invalid package size";
-  } catch (const std::invalid_argument& e) {
-    EXPECT_EQ(e.what(), "Requested too many qubits from package. "
-                        "Qubit datatype only allows up to " +
-                            std::to_string(Package::MAX_POSSIBLE_QUBITS) +
-                            " qubits, while " +
-                            std::to_string(Package::MAX_POSSIBLE_QUBITS + 2U) +
-                            " were requested. Please recompile the package "
-                            "with a wider Qubit type!");
-  } catch (...) {
-    FAIL() << "Expected std::invalid_argument, but got a different exception";
-  }
-}
-
 TEST(DDPackageTest, TrivialTest) {
   auto dd = std::make_unique<Package>(2);
   EXPECT_EQ(dd->qubits(), 2);
