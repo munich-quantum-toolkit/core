@@ -295,6 +295,7 @@ jobs:
                         mlir-${{ matrix.llvm-version }}-tools \
                         clang-${{ matrix.llvm-version }} \
                         llvm-${{ matrix.llvm-version }}-tools \
+                        clang-tools-${{ matrix.llvm-version }} \
              || exit 1
           else
             echo "Installation from script failed."
