@@ -56,7 +56,7 @@ TEST(CollectBlocks, nonCliffordOnAll) {
   qc.x(1);
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 2, true);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc, 3);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());

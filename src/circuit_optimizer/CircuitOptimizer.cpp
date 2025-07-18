@@ -1324,6 +1324,10 @@ struct DSU {
   std::unordered_map<Qubit, std::unique_ptr<CompoundOperation>>
       currentBlockOperations;
   std::size_t maxBlockSize = 0;
+  //list of qubits that are currently in a block
+  std::unordered_set<Qubit> currentBlockQubits;
+  std::unordered_set<Qubit> alreadyfinalizedQubits;
+  
 
   /**
    * @brief Check if a block is empty.
@@ -1417,6 +1421,35 @@ struct DSU {
   }
 };
 
+void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc, const std::size_t maxBlockSize) {
+  if (qc.size() <= 1) {
+    return;
+  }
+
+  qc.reorderOperations();
+  deferMeasurements(qc);
+
+  DSU dsu;
+  dsu.maxBlockSize = maxBlockSize;
+
+  DSU NoneCliffordDSU;
+  NoneCliffordDSU.maxBlockSize = 1;
+  for (auto opIt = qc.begin(); opIt != qc.end(); ++opIt) {
+    auto& op = *opIt;
+    bool canProcess = true;
+    bool makesTooBig = false;
+
+    if (!op->isUnitary()) {
+      canProcess = false;
+    }
+    const auto usedQubits = op->getUsedQubits();
+
+  }
+
+  removeIdentities(qc);
+}
+
+
 void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
                                      const std::size_t maxBlockSize,
                                      bool onlyCollectCliffords) {
@@ -1432,30 +1465,40 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
   DSU dsu{};
   DSU nonCliffordDSU{};
   for (auto opIt = qc.begin(); opIt != qc.end(); ++opIt) {
+    
+
     auto& op = *opIt;
+
     bool canProcess = true;
     bool makesTooBig = false;
 
     if (!op->isUnitary()) {
       canProcess = false;
     }
-
-    /*if (onlyCollectCliffords && !op->isClifford()) {
-      const auto usedQubits = op->getUsedQubits();
-      std::int64_t prev = -1;
-      for (const auto& q : usedQubits) {
-        if (prev != -1) {
-          dsu.unionBlock(static_cast<Qubit>(prev), q);
-        }
-        prev = q;
-      }
-      for (auto q : op->getUsedQubits()) {
-        dsu.finalizeBlock(q);
-      }
-      continue;
-    }*/
-
     const auto usedQubits = op->getUsedQubits();
+    //print operation and on what qubit it acts
+    std::cout << "Processing operation: " << op->getName() << " on qubits: ";
+    for (const auto& q : usedQubits) {
+      std::cout << q << " ";
+    }
+    std::cout << std::endl;
+
+    if (onlyCollectCliffords && !op->isClifford()) {
+      //add used qubits to the non_Clifford DSU
+      std::unordered_set<Qubit> non_Clifford_qubits{};
+      for (const auto& q : usedQubits) {
+        nonCliffordDSU.findBlock(q);
+        non_Clifford_qubits.emplace(q);
+        dsu.alreadyfinalizedQubits.emplace(q);
+      }
+      
+      //make new DSU add the gate where the non Clifford operation is operating on and finalize this block right away
+      // if the operation acts on more qubits than the maximum block size, all
+      // current blocks need to be finalized.
+      for (const auto& q : non_Clifford_qubits) {
+          nonCliffordDSU.finalizeBlock(q);
+      }
+    }
 
     if (canProcess) {
       // check if grouping the operation with the current block would make the
@@ -1561,37 +1604,6 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
           dsu.unionBlock(static_cast<Qubit>(prev), q);
         }
         prev = q;
-      }
-
-      if (onlyCollectCliffords && !op->isClifford()) {
-        // check if next operation which acts on other qubits within the same
-        // block fits in the block
-        if (opIt + 1 != qc.end() && (*std::next(opIt))->isUnitary()) {
-          const auto& nextOp = *(opIt + 1);
-          const auto nextUsedQubits = nextOp->getUsedQubits();
-          std::unordered_set<Qubit> nextBlockQubits;
-          for (const auto& q : nextUsedQubits) {
-            nextBlockQubits.emplace(dsu.findBlock(q));
-          }
-          std::size_t nextTotalSize = 0;
-          for (const auto& q : nextBlockQubits) {
-            nextTotalSize += dsu.bitBlocks[q].size();
-          }
-          if (nextTotalSize <= maxBlockSize) {
-            // if the next operation fits in the block, do not finalize the
-            //add opertaion to the block and then finalize it
-            // current block yet
-            for (const auto& q : usedQubits) {
-              dsu.finalizeBlock(q);
-            }
-            continue;
-          }
-        }
-
-        for (auto q : op->getUsedQubits()) {
-          dsu.finalizeBlock(q);
-        }
-        continue;
       }
 
       const auto block = dsu.findBlock(static_cast<Qubit>(prev));
