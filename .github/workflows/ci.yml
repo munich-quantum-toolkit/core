@@ -46,6 +46,10 @@ jobs:
         runs-on: [macos-13, macos-14]
         compiler: [clang]
         config: [Release]
+        include:
+          - runs-on: macos-14
+            compiler: clang
+            config: Debug
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@v1.14
     with:
       runs-on: ${{ matrix.runs-on }}
@@ -63,6 +67,10 @@ jobs:
         runs-on: [windows-2022, windows-11-arm]
         compiler: [msvc]
         config: [Release]
+        include:
+          - runs-on: windows-2022
+            compiler: msvc
+            config: Debug
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@v1.14
     with:
       runs-on: ${{ matrix.runs-on }}
@@ -99,6 +107,7 @@ jobs:
         compiler: [clang, clang-19, clang-20, gcc-14, gcc-15]
         config: [Release, Debug]
         exclude:
+          # see https://github.com/munich-quantum-toolkit/core/issues/979
           - runs-on: macos-15
             compiler: gcc-14
           - runs-on: macos-15
@@ -162,6 +171,15 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
 
+  python-coverage:
+    name: 🐍 Coverage
+    needs: [change-detection, python-tests]
+    if: fromJSON(needs.change-detection.outputs.run-python-tests)
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@v1.14
+    permissions:
+      contents: read
+      id-token: write
+
   # run extensive Python tests on PRs labeled with the `extensive-python-ci` label
   python-tests-extensive:
     name: 🐍 Test (Extensive)
@@ -174,15 +192,6 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@v1.14
     with:
       runs-on: ${{ matrix.runs-on }}
-
-  python-coverage:
-    name: 🐍 Coverage
-    needs: [change-detection, python-tests]
-    if: fromJSON(needs.change-detection.outputs.run-python-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@v1.14
-    permissions:
-      contents: read
-      id-token: write
 
   python-linter:
     name: 🐍 Lint
@@ -266,15 +275,11 @@ jobs:
             }}
             ${{
               fromJSON(needs.change-detection.outputs.run-python-tests)
-              && '' || 'python-tests,'
+              && '' || 'python-tests,python-coverage,'
             }}
             ${{
               fromJSON(needs.change-detection.outputs.run-python-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
               && '' || 'python-tests-extensive,'
-            }}
-            ${{
-              fromJSON(needs.change-detection.outputs.run-python-tests)
-              && '' || 'python-coverage,'
             }}
             ${{
               fromJSON(needs.change-detection.outputs.run-python-tests)
