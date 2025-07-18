@@ -1606,6 +1606,37 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
         prev = q;
       }
 
+      if (onlyCollectCliffords && !op->isClifford()) {
+        // check if next operation which acts on other qubits within the same
+        // block fits in the block
+        if (opIt + 1 != qc.end() && (*std::next(opIt))->isUnitary()) {
+          const auto& nextOp = *(opIt + 1);
+          const auto nextUsedQubits = nextOp->getUsedQubits();
+          std::unordered_set<Qubit> nextBlockQubits;
+          for (const auto& q : nextUsedQubits) {
+            nextBlockQubits.emplace(dsu.findBlock(q));
+          }
+          std::size_t nextTotalSize = 0;
+          for (const auto& q : nextBlockQubits) {
+            nextTotalSize += dsu.bitBlocks[q].size();
+          }
+          if (nextTotalSize <= maxBlockSize) {
+            // if the next operation fits in the block, do not finalize the
+            // add operation to the block and then finalize it
+            // current block yet
+            for (const auto& q : usedQubits) {
+              dsu.finalizeBlock(q);
+            }
+            continue;
+          }
+        }
+
+        for (auto q : op->getUsedQubits()) {
+          dsu.finalizeBlock(q);
+        }
+        continue;
+      }
+
       const auto block = dsu.findBlock(static_cast<Qubit>(prev));
       const auto empty = dsu.blockEmpty(block);
       if (empty) {
