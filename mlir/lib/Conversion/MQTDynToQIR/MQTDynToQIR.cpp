@@ -16,6 +16,7 @@
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -153,6 +154,75 @@ struct ConvertMQTDynExtractQIR final : OpConversionPattern<dyn::ExtractOp> {
   }
 };
 
+template <typename MQTGateDynOp>
+struct ConvertMQTDynGateOpQIR final : OpConversionPattern<MQTGateDynOp> {
+  using OpConversionPattern<MQTGateDynOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(MQTGateDynOp op, typename MQTGateDynOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    Location loc = op.getLoc();
+    MLIRContext* ctx = rewriter.getContext();
+    const auto& dynInQubitsValues = adaptor.getInQubits();
+    const auto& dynPosCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    const auto& dynNegCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+    SmallVector<Type> argTypes;
+    argTypes.insert(argTypes.end(), dynInQubitsValues.getTypes().begin(),
+                    dynInQubitsValues.getTypes().end());
+    argTypes.insert(argTypes.end(), dynPosCtrlQubitsValues.getTypes().begin(),
+                    dynPosCtrlQubitsValues.getTypes().end());
+    argTypes.insert(argTypes.end(), dynNegCtrlQubitsValues.getTypes().begin(),
+                    dynNegCtrlQubitsValues.getTypes().end());
+
+    SmallVector<Value> dynQubitsValues;
+    dynQubitsValues.reserve(dynInQubitsValues.size() +
+                            dynPosCtrlQubitsValues.size() +
+                            dynNegCtrlQubitsValues.size());
+    dynQubitsValues.append(dynInQubitsValues.begin(), dynInQubitsValues.end());
+    dynQubitsValues.append(dynPosCtrlQubitsValues.begin(),
+                           dynPosCtrlQubitsValues.end());
+    dynQubitsValues.append(dynNegCtrlQubitsValues.begin(),
+                           dynNegCtrlQubitsValues.end());
+
+    StringRef name = op->getName().getStringRef().split('.').second;
+    std::string fnName;
+    if (dynPosCtrlQubitsValues.size() == 0 &&
+        dynNegCtrlQubitsValues.size() == 0) {
+      fnName = ("__quantum__qis__" + name + "__body").str();
+    } else {
+      fnName = "__quantum__qis__cnot__body";
+    }
+    Type qirSignature =
+        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argTypes);
+
+    LLVM::LLVMFuncOp fnDecl =
+        ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    rewriter.create<LLVM::CallOp>(loc, fnDecl, dynQubitsValues);
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(dyn::MeasureOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    MLIRContext* ctx = rewriter.getContext();
+    StringRef fnName = "__quantum__qis__m__body";
+    Type qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx));
+    LLVM::LLVMFuncOp fnDecl =
+        ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
+                                              adaptor.getInQubits());
+
+    return success();
+  }
+};
+
 struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
   using MQTDynToQIRBase::MQTDynToQIRBase;
   void runOnOperation() override {
@@ -169,7 +239,9 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     patterns.add<ConvertMQTDynAllocQIR>(typeConverter, context);
     patterns.add<ConvertMQTDynDeallocQIR>(typeConverter, context);
     patterns.add<ConvertMQTDynExtractQIR>(typeConverter, context);
-
+    patterns.add<ConvertMQTDynMeasureQIR>(typeConverter, context);
+    patterns.add<ConvertMQTDynGateOpQIR<dyn::HOp>>(typeConverter, context);
+    patterns.add<ConvertMQTDynGateOpQIR<dyn::XOp>>(typeConverter, context);
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
     }
