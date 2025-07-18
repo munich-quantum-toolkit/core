@@ -153,7 +153,7 @@ jobs:
   python-tests:
     name: 🐍 Test
     needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-python-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
+    if: fromJSON(needs.change-detection.outputs.run-python-tests)
     strategy:
       fail-fast: false
       matrix:
@@ -162,9 +162,6 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@v1.14
     with:
       runs-on: ${{ matrix.runs-on }}
-    permissions:
-      contents: read
-      id-token: write
 
   # run extensive Python tests on PRs labeled with the `extensive-python-ci` label
   python-tests-extensive:
@@ -174,29 +171,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on:
-          [
-            ubuntu-22.04,
-            ubuntu-24.04,
-            ubuntu-22.04-arm,
-            ubuntu-24.04-arm,
-            macos-13,
-            macos-14,
-            macos-15,
-            windows-2022,
-            windows-2025,
-          ]
+        runs-on: [ubuntu-22.04, ubuntu-22.04-arm, macos-15, windows-2025]
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@v1.14
     with:
       runs-on: ${{ matrix.runs-on }}
-    permissions:
-      contents: read
-      id-token: write
 
   python-coverage:
     name: 🐍 Coverage
-    needs: [change-detection, python-tests, python-tests-extensive]
-    if: fromJSON(needs.change-detection.outputs.run-python-tests) && ${{ always() && !failure() && !cancelled() }}
+    needs: [change-detection, python-tests]
+    if: fromJSON(needs.change-detection.outputs.run-python-tests)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@v1.14
     permissions:
       contents: read
@@ -283,7 +266,7 @@ jobs:
               && '' || 'cpp-linter,'
             }}
             ${{
-              fromJSON(needs.change-detection.outputs.run-python-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-python-ci')
+              fromJSON(needs.change-detection.outputs.run-python-tests)
               && '' || 'python-tests,'
             }}
             ${{
