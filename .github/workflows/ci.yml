@@ -81,6 +81,12 @@ jobs:
           [ubuntu-22.04, ubuntu-24.04, ubuntu-22.04-arm, ubuntu-24.04-arm]
         compiler: [gcc, clang, clang-19, clang-20]
         config: [Release, Debug]
+        exclude:
+          # Both combinations do not support C++20 due to the compiler being too old
+          - runs-on: ubuntu-22.04
+            compiler: clang
+          - runs-on: ubuntu-22.04-arm
+            compiler: clang
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@v1.14
     with:
       runs-on: ${{ matrix.runs-on }}
