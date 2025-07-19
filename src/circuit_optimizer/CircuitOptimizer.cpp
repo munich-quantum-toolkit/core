@@ -1443,7 +1443,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
         if (!candidate.isCliffordBlock)
           continue;
 
-        // 1) Check if merging would exceed maxBlockSize qubits
+        // Check if merging would exceed maxBlockSize qubits
         std::size_t newQubitCount = candidate.qubitSet.size();
         for (auto q : usedSet) {
           if (!candidate.qubitSet.count(q))
