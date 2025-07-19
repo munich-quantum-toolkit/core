@@ -1423,7 +1423,8 @@ struct DSU {
 void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc) {
   using OperationIterator = decltype(qc.begin());
 
-  // Each Block holds the iterators to ops in that block, and whether it’s a Clifford Block or not
+  // Each Block holds the iterators to ops in that block, and whether it's a
+  // Clifford Block or not
   struct Block {
     std::vector<OperationIterator> operationIterators;
     bool isCliffordBlock;
@@ -1432,12 +1433,11 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc) {
 
   // Partition into commute‑aware blocks
   for (auto opIt = qc.begin(); opIt != qc.end(); ++opIt) {
-    Operation* op         = opIt->get();
-    bool isClifford       = op->isClifford();
-    auto usedQubits       = op->getUsedQubits();
-    std::unordered_set<Qubit> usedQubitSet(
-      usedQubits.begin(), usedQubits.end()
-    );
+    Operation* op = opIt->get();
+    bool isClifford = op->isClifford();
+    auto usedQubits = op->getUsedQubits();
+    std::unordered_set<Qubit> usedQubitSet(usedQubits.begin(),
+                                           usedQubits.end());
 
     if (isClifford) {
       bool mergedIntoExisting = false;
@@ -1445,12 +1445,14 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc) {
       // Try to merge into an earlier Clifford block if qubits commute past
       for (size_t blockIndex = 0; blockIndex < blocks.size(); ++blockIndex) {
         Block& candidateBlock = blocks[blockIndex];
-        if (!candidateBlock.isCliffordBlock) 
+        if (!candidateBlock.isCliffordBlock)
           continue;
 
-        // Build the set of qubits touched by any non‑Clifford blocks after this one
+        // Build the set of qubits touched by any non‑Clifford blocks after this
+        // one
         std::unordered_set<Qubit> nonCliffordBarrierQubits;
-        for (size_t laterIndex = blockIndex + 1; laterIndex < blocks.size(); ++laterIndex) {
+        for (size_t laterIndex = blockIndex + 1; laterIndex < blocks.size();
+             ++laterIndex) {
           if (!blocks[laterIndex].isCliffordBlock) {
             auto laterOpIt = blocks[laterIndex].operationIterators.front();
             auto laterUsed = (*laterOpIt)->getUsedQubits();
@@ -1473,7 +1475,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc) {
         }
       }
 
-      // If we didn’t merge, start a fresh Clifford block
+      // If we didn't merge, start a fresh Clifford block
       if (!mergedIntoExisting) {
         blocks.push_back(Block{{opIt}, /*isCliffordBlock=*/true});
       }
@@ -1488,14 +1490,14 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc) {
   for (int blockIndex = int(blocks.size()) - 1; blockIndex >= 0; --blockIndex) {
     Block& block = blocks[blockIndex];
 
-    // Only collapse if it’s a Clifford block with more than one gate
-    if (!block.isCliffordBlock || block.operationIterators.size() <= 1) 
+    // Only collapse if it's a Clifford block with more than one gate
+    if (!block.isCliffordBlock || block.operationIterators.size() <= 1)
       continue;
 
     // Build a CompoundOperation out of all those gates
     auto compoundOp = std::make_unique<CompoundOperation>();
     for (auto opIt : block.operationIterators) {
-      compoundOp->emplace_back( (*opIt)->clone() );
+      compoundOp->emplace_back((*opIt)->clone());
     }
 
     // Replace the first gate in‑place with our new CompoundOperation

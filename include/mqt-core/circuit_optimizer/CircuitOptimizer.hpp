@@ -80,7 +80,6 @@ public:
    */
   static void backpropagateOutputPermutation(QuantumComputation& qc);
 
-
   static void collectCliffordBlocks(QuantumComputation& qc);
 
   /**
