@@ -1509,7 +1509,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
 
   // Finalize blocks in reverse order
   for (int b = int(blocks.size()) - 1; b >= 0; --b) {
-    Block &blk = blocks[b];
+    Block& blk = blocks[b];
 
     // Only collapse multi‑gate Clifford blocks
     if (!blk.isCliffordBlock || blk.operationIterators.size() <= 1)

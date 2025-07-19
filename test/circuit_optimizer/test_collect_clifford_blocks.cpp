@@ -33,7 +33,7 @@ TEST(CliffordBlocks, nonCliffordOnAll) {
   qc.x(1);
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc,2);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc, 2);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 4);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -47,7 +47,7 @@ TEST(CliffordBlocks, nonCliffordSingleQubit) {
   qc.t(0);
   qc.x(0);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc,2);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc, 2);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -62,7 +62,7 @@ TEST(CliffordBlocks, collectTwoQubitCliffordGates) {
   qc.x(0);
   qc.y(1);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc,2);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc, 2);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -78,7 +78,7 @@ TEST(CliffordBlocks, TwoQubitnonClifford) {
   qc.i(0);
   qc.y(1);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc,2);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc, 2);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -94,7 +94,7 @@ TEST(CliffordBlocks, mergeBlocksnonClifford) {
   qc.cx(0, 1);
   qc.cx(1, 2);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc,3);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc, 3);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 4);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -108,7 +108,7 @@ TEST(CliffordBlocks, nonCliffordBeginning) {
   qc.ecr(0, 1);
   qc.x(0);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc,2);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc, 2);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isStandardOperation());
@@ -132,7 +132,4 @@ TEST(CliffordBlocks, threeQubitnonClifford) {
   EXPECT_TRUE(qc.back()->isCompoundOperation());
 }
 
-
-
-
-}
+} // namespace qc
