@@ -1430,16 +1430,16 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
 
   // Build blocks
   for (auto opIt = qc.begin(); opIt != qc.end(); ++opIt) {
-    Operation* op   = opIt->get();
+    Operation* op = opIt->get();
     bool isClifford = op->isClifford();
-    auto used       = op->getUsedQubits();
+    auto used = op->getUsedQubits();
     std::unordered_set<Qubit> usedSet(used.begin(), used.end());
 
     if (isClifford) {
       bool merged = false;
 
       // Try merging into an existing Clifford block
-      for (auto &candidate : blocks) {
+      for (auto& candidate : blocks) {
         if (!candidate.isCliffordBlock)
           continue;
 
@@ -1450,11 +1450,11 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
             ++newQubitCount;
         }
         if (newQubitCount > maxBlockSize)
-          continue;  // too many qubits, skip this block
+          continue; // too many qubits, skip this block
 
-        // Build a barrier of qubits from *non‑Clifford* blocks 
+        // Build a barrier of qubits from *non‑Clifford* blocks
         std::unordered_set<Qubit> barrier;
-        // find candidate’s index
+        // find candidate's index
         auto idx = &candidate - &blocks[0];
         for (std::size_t j = idx + 1; j < blocks.size(); ++j) {
           if (!blocks[j].isCliffordBlock) {
@@ -1484,26 +1484,20 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
       if (!merged) {
         // Only start if the single gate itself is ≤ maxBlockSize qubits
         if (usedSet.size() <= maxBlockSize) {
-          blocks.push_back(Block{
-            /*operationIterators=*/{opIt},
-            /*qubitSet=*/usedSet,
-            /*isCliffordBlock=*/true
-          });
+          blocks.push_back(Block{/*operationIterators=*/{opIt},
+                                 /*qubitSet=*/usedSet,
+                                 /*isCliffordBlock=*/true});
         } else {
           // Gate alone exceeds your budget; treat it as non‑collapsible
-          blocks.push_back(Block{
-            {opIt}, usedSet, /*isCliffordBlock=*/false
-          });
+          blocks.push_back(Block{{opIt}, usedSet, /*isCliffordBlock=*/false});
         }
       }
 
     } else {
       // Non‑Clifford always a singleton block
-      blocks.push_back(Block{
-        /*operationIterators=*/{opIt},
-        /*qubitSet=*/usedSet,
-        /*isCliffordBlock=*/false
-      });
+      blocks.push_back(Block{/*operationIterators=*/{opIt},
+                             /*qubitSet=*/usedSet,
+                             /*isCliffordBlock=*/false});
     }
   }
 
@@ -1518,7 +1512,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
     // Build the CompoundOperation
     auto compoundOp = std::make_unique<CompoundOperation>();
     for (auto git : blk.operationIterators) {
-      compoundOp->emplace_back( (*git)->clone() );
+      compoundOp->emplace_back((*git)->clone());
     }
 
     // Overwrite the first op
