@@ -1488,7 +1488,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
 
   // Finalize blocks
   for (int b = int(blocks.size()) - 1; b >= 0; --b) {
-    Block &blk = blocks[b];
+    Block& blk = blocks[b];
 
     // Only collapse if it's a Clifford block with more than one gate
     if (!block.isCliffordBlock || block.operationIterators.size() <= 1)
