@@ -1419,11 +1419,8 @@ struct DSU {
 
 void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
                                              std::size_t maxBlockSize) {
-
   using OperationIterator = decltype(qc.begin());
 
-  // Each Block holds the iterators to ops in that block, and whether it's a
-  // Clifford Block or not
   struct Block {
     std::vector<OperationIterator> operationIterators;
     std::unordered_set<Qubit> qubitSet;
@@ -1433,71 +1430,95 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
 
   // Build blocks
   for (auto opIt = qc.begin(); opIt != qc.end(); ++opIt) {
-    Operation* op = opIt->get();
+    Operation* op   = opIt->get();
     bool isClifford = op->isClifford();
-    auto usedQubits = op->getUsedQubits();
-    std::unordered_set<Qubit> usedQubitSet(usedQubits.begin(),
-                                           usedQubits.end());
+    auto used       = op->getUsedQubits();
+    std::unordered_set<Qubit> usedSet(used.begin(), used.end());
 
     if (isClifford) {
       bool merged = false;
 
-      // Try to merge into an earlier Clifford block if qubits commute past
-      for (size_t blockIndex = 0; blockIndex < blocks.size(); ++blockIndex) {
-        Block& candidateBlock = blocks[blockIndex];
-        if (!candidateBlock.isCliffordBlock)
+      // Try merging into an existing Clifford block
+      for (auto &candidate : blocks) {
+        if (!candidate.isCliffordBlock)
           continue;
 
-        // Build the set of qubits touched by any non‑Clifford blocks after this
-        // one
-        std::unordered_set<Qubit> nonCliffordBarrierQubits;
-        for (size_t laterIndex = blockIndex + 1; laterIndex < blocks.size();
-             ++laterIndex) {
-          if (!blocks[laterIndex].isCliffordBlock) {
-            auto laterOpIt = blocks[laterIndex].operationIterators.front();
-            auto laterUsed = (*laterOpIt)->getUsedQubits();
-            nonCliffordBarrierQubits.insert(laterUsed.begin(), laterUsed.end());
+        // 1) Check if merging would exceed maxBlockSize qubits
+        std::size_t newQubitCount = candidate.qubitSet.size();
+        for (auto q : usedSet) {
+          if (!candidate.qubitSet.count(q))
+            ++newQubitCount;
+        }
+        if (newQubitCount > maxBlockSize)
+          continue;  // too many qubits, skip this block
+
+        // Build a barrier of qubits from *non‑Clifford* blocks 
+        std::unordered_set<Qubit> barrier;
+        // find candidate’s index
+        auto idx = &candidate - &blocks[0];
+        for (std::size_t j = idx + 1; j < blocks.size(); ++j) {
+          if (!blocks[j].isCliffordBlock) {
+            auto laterIt = blocks[j].operationIterators.front();
+            auto laterUsed = (*laterIt)->getUsedQubits();
+            barrier.insert(laterUsed.begin(), laterUsed.end());
           }
         }
-
-        // If none of our qubits are blocked, merge here
-        bool qubitsAreDisjoint = true;
-        for (auto q : usedQubitSet) {
-          if (nonCliffordBarrierQubits.count(q)) {
-            qubitsAreDisjoint = false;
+        bool disjoint = true;
+        for (auto q : usedSet) {
+          if (barrier.count(q)) {
+            disjoint = false;
             break;
           }
         }
-        if (qubitsAreDisjoint) {
-          candidateBlock.operationIterators.push_back(opIt);
-          mergedIntoExisting = true;
-          break;
+        if (!disjoint)
+          continue;
+
+        // Add the op and update qubitSet
+        candidate.operationIterators.push_back(opIt);
+        candidate.qubitSet.insert(usedSet.begin(), usedSet.end());
+        merged = true;
+        break;
+      }
+
+      // If we couldn't merge, start a new block
+      if (!merged) {
+        // Only start if the single gate itself is ≤ maxBlockSize qubits
+        if (usedSet.size() <= maxBlockSize) {
+          blocks.push_back(Block{
+            /*operationIterators=*/{opIt},
+            /*qubitSet=*/usedSet,
+            /*isCliffordBlock=*/true
+          });
+        } else {
+          // Gate alone exceeds your budget; treat it as non‑collapsible
+          blocks.push_back(Block{
+            {opIt}, usedSet, /*isCliffordBlock=*/false
+          });
         }
       }
 
-      // If we didn't merge, start a fresh Clifford block
-      if (!mergedIntoExisting) {
-        blocks.push_back(Block{{opIt}, /*isCliffordBlock=*/true});
-      }
-
     } else {
-      // Non‑Clifford gates each get their own singleton block
-      blocks.push_back(Block{{opIt}, /*isCliffordBlock=*/false});
+      // Non‑Clifford always a singleton block
+      blocks.push_back(Block{
+        /*operationIterators=*/{opIt},
+        /*qubitSet=*/usedSet,
+        /*isCliffordBlock=*/false
+      });
     }
   }
 
-  // Finalize blocks
+  // Finalize blocks in reverse order
   for (int b = int(blocks.size()) - 1; b >= 0; --b) {
     Block &blk = blocks[b];
 
-    // Only collapse if it's a Clifford block with more than one gate
-    if (!block.isCliffordBlock || block.operationIterators.size() <= 1)
+    // Only collapse multi‑gate Clifford blocks
+    if (!blk.isCliffordBlock || blk.operationIterators.size() <= 1)
       continue;
 
     // Build the CompoundOperation
     auto compoundOp = std::make_unique<CompoundOperation>();
-    for (auto opIt : block.operationIterators) {
-      compoundOp->emplace_back((*opIt)->clone());
+    for (auto git : blk.operationIterators) {
+      compoundOp->emplace_back( (*git)->clone() );
     }
 
     // Overwrite the first op
