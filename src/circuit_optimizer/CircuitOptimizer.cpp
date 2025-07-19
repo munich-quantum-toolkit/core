@@ -1324,10 +1324,9 @@ struct DSU {
   std::unordered_map<Qubit, std::unique_ptr<CompoundOperation>>
       currentBlockOperations;
   std::size_t maxBlockSize = 0;
-  //list of qubits that are currently in a block
+  // list of qubits that are currently in a block
   std::unordered_set<Qubit> currentBlockQubits;
   std::unordered_set<Qubit> alreadyfinalizedQubits;
-  
 
   /**
    * @brief Check if a block is empty.
@@ -1511,7 +1510,6 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc) {
 
   removeIdentities(qc);
 }
-
 
 void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
                                      const std::size_t maxBlockSize,
