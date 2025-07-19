@@ -56,9 +56,9 @@ TEST(CollectBlocks, nonCliffordOnAll) {
   qc.x(1);
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 3);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc);
   std::cout << qc << "\n";
-  EXPECT_EQ(qc.size(), 3);
+  EXPECT_EQ(qc.size(), 4);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
   EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 3);
 }
@@ -70,7 +70,7 @@ TEST(CollectBlocks, nonCliffordSingleQubit) {
   qc.t(0);
   qc.x(0);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 2, true);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -85,12 +85,12 @@ TEST(CollectBlocks, collectTwoQubitCliffordGates) {
   qc.x(0);
   qc.y(1);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 3, true);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
   EXPECT_TRUE(qc.back()->isStandardOperation());
-  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 3);
+  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 4);
 }
 
 TEST(CollectBlocks, TwoQubitnonClifford) {
@@ -101,7 +101,7 @@ TEST(CollectBlocks, TwoQubitnonClifford) {
   qc.i(0);
   qc.y(1);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 2, true);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -117,7 +117,7 @@ TEST(CollectBlocks, mergeBlocksnonClifford) {
   qc.cx(0, 1);
   qc.cx(1, 2);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 3, true);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 4);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -131,7 +131,7 @@ TEST(CollectBlocks, nonCliffordBeginning) {
   qc.ecr(0, 1);
   qc.x(0);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 2, true);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isStandardOperation());
@@ -148,7 +148,7 @@ TEST(CollectBlocks, threeQubitnonClifford) {
   qc.dcx(0, 1);
   qc.dcx(1, 2);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectBlocks(qc, 3, true);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 4);
   EXPECT_TRUE(qc.front()->isCompoundOperation());

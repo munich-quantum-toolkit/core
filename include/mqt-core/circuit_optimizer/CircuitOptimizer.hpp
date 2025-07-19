@@ -81,8 +81,7 @@ public:
   static void backpropagateOutputPermutation(QuantumComputation& qc);
 
 
-  static void collectCliffordBlocks(QuantumComputation& qc,
-                                const std::size_t maxBlockSize);
+  static void collectCliffordBlocks(QuantumComputation& qc);
 
   /**
    * @brief Collects all operations in the circuit into blocks of a maximum
