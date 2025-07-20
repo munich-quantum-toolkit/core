@@ -1440,17 +1440,17 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
 
       // Try merging into an existing Clifford block
       for (auto& candidate : blocks) {
-        if (!candidate.isCliffordBlock){
+        if (!candidate.isCliffordBlock) {
           continue;
         }
         // Check if merging would exceed maxBlockSize qubits
         std::size_t newQubitCount = candidate.qubitSet.size();
         for (auto q : usedSet) {
-          if (candidate.qubitSet.count(q) == 0){
+          if (candidate.qubitSet.count(q) == 0) {
             ++newQubitCount;
           }
         }
-        if (newQubitCount > maxBlockSize){
+        if (newQubitCount > maxBlockSize) {
           continue; // too many qubits, skip this block
         }
 
@@ -1458,7 +1458,8 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
         std::unordered_set<Qubit> barrier;
         // find candidate's index
         auto idx = &candidate - blocks.data();
-        for (std::size_t j = static_cast<std::size_t>(idx) + 1; j < blocks.size(); ++j) {
+        for (std::size_t j = static_cast<std::size_t>(idx) + 1;
+             j < blocks.size(); ++j) {
           if (!blocks[j].isCliffordBlock) {
             auto laterIt = blocks[j].operationIterators.front();
             auto laterUsed = (*laterIt)->getUsedQubits();
@@ -1523,7 +1524,8 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
     *blk.operationIterators.front() = std::move(compoundOp);
 
     // Erase the remaining ops in reverse order
-    for (int i = static_cast<int>(blk.operationIterators.size()) - 1; i > 0; --i) {
+    for (int i = static_cast<int>(blk.operationIterators.size()) - 1; i > 0;
+         --i) {
       qc.erase(blk.operationIterators[static_cast<std::size_t>(i)]);
     }
   }
