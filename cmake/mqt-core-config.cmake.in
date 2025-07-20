@@ -30,6 +30,7 @@ if(TARGET MQT::Core)
   return()
 endif()
 
+include("${CMAKE_CURRENT_LIST_DIR}/AddMQTPythonBinding.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/Cache.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/PackageAddTest.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/PreventInSourceBuilds.cmake")

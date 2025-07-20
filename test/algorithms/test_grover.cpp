@@ -12,6 +12,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Package.hpp"
+#include "dd/RealNumberUniqueTable.hpp"
 #include "dd/Simulation.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
@@ -31,11 +32,8 @@ class Grover
     : public testing::TestWithParam<std::tuple<qc::Qubit, std::size_t>> {
 protected:
   void TearDown() override {
-    dd->decRef(sim);
-    dd->decRef(func);
     dd->garbageCollect(true);
-    // number of complex table entries after clean-up should equal 1
-    EXPECT_EQ(dd->cn.realCount(), 1);
+    EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
   }
 
   void SetUp() override {
@@ -54,7 +52,6 @@ protected:
   std::size_t seed = 0;
   std::unique_ptr<dd::Package> dd;
   qc::QuantumComputation qc;
-  dd::VectorDD sim{};
   dd::MatrixDD func{};
   std::string expected;
   qc::GroverBitString targetValue;
@@ -99,11 +96,7 @@ TEST_P(Grover, Functionality) {
   dd->incRef(e);
   const auto iterations = qc::computeNumberOfIterations(nqubits);
   for (std::size_t i = 0U; i < iterations - 1U; ++i) {
-    auto f = dd->multiply(iteration, e);
-    dd->incRef(f);
-    dd->decRef(e);
-    e = f;
-    dd->garbageCollect();
+    e = dd->applyOperation(iteration, e);
   }
 
   qc::QuantumComputation setup(qc.getNqubits());
@@ -123,6 +116,8 @@ TEST_P(Grover, Functionality) {
   EXPECT_NEAR(std::abs(c.imag()), 0, GROVER_ACCURACY);
   const auto prob = std::norm(c);
   EXPECT_GE(prob, GROVER_GOAL_PROBABILITY);
+
+  dd->decRef(func);
 }
 
 TEST_P(Grover, FunctionalityRecursive) {
@@ -154,11 +149,7 @@ TEST_P(Grover, FunctionalityRecursive) {
         e = f;
         zero = false;
       } else {
-        auto g = dd->multiply(e, f);
-        dd->incRef(g);
-        dd->decRef(e);
-        e = g;
-        dd->garbageCollect();
+        e = dd->applyOperation(f, e);
       }
     }
   }
@@ -179,6 +170,8 @@ TEST_P(Grover, FunctionalityRecursive) {
   EXPECT_NEAR(std::abs(c.imag()), 0, GROVER_ACCURACY);
   const auto prob = std::norm(c);
   EXPECT_GE(prob, GROVER_GOAL_PROBABILITY);
+
+  dd->decRef(func);
 }
 
 TEST_P(Grover, Simulation) {

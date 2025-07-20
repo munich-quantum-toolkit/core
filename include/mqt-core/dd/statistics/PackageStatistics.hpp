@@ -20,13 +20,14 @@ namespace dd {
 
 /**
  * @brief Computes an estimate for the memory usage of active DDs.
- * @details The estimate is based on the number of active entries in the
- * respective unique tables. It accounts for the memory used by DD nodes, DD
- * edges, and real numbers.
+ * @details The estimate is based on the number of active entries which are
+ * computed by temporarily marking all nodes reachable from the current root
+ * set and subsequently counting them in the unique tables. It accounts for the
+ * memory used by DD nodes, DD edges, and real numbers.
  * @param package The package instance
  * @return The estimated memory usage in MiB
  */
-[[nodiscard]] double computeActiveMemoryMiB(const Package& package);
+[[nodiscard]] double computeActiveMemoryMiB(Package& package);
 
 /**
  * @brief Computes an estimate for the peak memory usage of DDs.
@@ -39,7 +40,7 @@ namespace dd {
 [[nodiscard]] double computePeakMemoryMiB(const Package& package);
 
 [[nodiscard]] nlohmann::basic_json<>
-getStatistics(const Package& package, bool includeIndividualTables = false);
+getStatistics(Package& package, bool includeIndividualTables = false);
 
 /**
  * @brief Get some key statistics about data structures used by the DD package
@@ -47,8 +48,8 @@ getStatistics(const Package& package, bool includeIndividualTables = false);
  */
 [[nodiscard]] nlohmann::basic_json<> getDataStructureStatistics();
 
-[[nodiscard]] std::string getStatisticsString(const Package& package);
+[[nodiscard]] std::string getStatisticsString(Package& package);
 
-void printStatistics(const Package& package, std::ostream& os = std::cout);
+void printStatistics(Package& package, std::ostream& os = std::cout);
 
 } // namespace dd

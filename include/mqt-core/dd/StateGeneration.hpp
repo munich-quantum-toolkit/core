@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#pragma once
+
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 

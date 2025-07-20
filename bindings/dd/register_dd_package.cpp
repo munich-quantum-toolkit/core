@@ -180,7 +180,9 @@ void registerDDPackage(const py::module& mod) {
               "State vector must have a length of a power of two.");
         }
         if (length == 1) {
-          return dd::vEdge::terminal(p.cn.lookup(data(0)));
+          const auto state = dd::vEdge::terminal(p.cn.lookup(data(0)));
+          p.incRef(state);
+          return state;
         }
 
         const auto level = static_cast<dd::Qubit>(std::log2(length) - 1);

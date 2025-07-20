@@ -25,7 +25,7 @@ if(BUILD_MQT_CORE_BINDINGS)
   message(STATUS "Python executable: ${Python_EXECUTABLE}")
 
   # add pybind11 library
-  find_package(pybind11 2.13.6 CONFIG REQUIRED)
+  find_package(pybind11 3.0.0 CONFIG REQUIRED)
 endif()
 
 set(JSON_VERSION
@@ -64,7 +64,7 @@ if(BUILD_MQT_CORE_TESTS)
       ON
       CACHE BOOL "" FORCE)
   set(GTEST_VERSION
-      1.16.0
+      1.17.0
       CACHE STRING "Google Test version")
   set(GTEST_URL https://github.com/google/googletest/archive/refs/tags/v${GTEST_VERSION}.tar.gz)
   FetchContent_Declare(googletest URL ${GTEST_URL} FIND_PACKAGE_ARGS ${GTEST_VERSION} NAMES GTest)

@@ -135,8 +135,9 @@ TEST_F(DDNoiseFunctionalityTest, DetSimulateAdder4TrackD) {
 }
 
 TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
-  qc::QuantumComputation qcOp{};
+  constexpr double tolerance = 1e-10;
 
+  qc::QuantumComputation qcOp{};
   qcOp.addQubitRegister(3U);
   qcOp.h(0);
   qcOp.h(1);
@@ -154,8 +155,6 @@ TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
     dd->applyOperationToDensity(rootEdge, dd::getDD(*op, *dd));
     deterministicNoiseFunctionality.applyNoiseEffects(rootEdge, op);
   }
-
-  const double tolerance = 1e-10;
 
   auto tmp = rootEdge.getSparseProbabilityVectorStrKeys(qc.getNqubits());
   auto prob = 0.125;
@@ -188,6 +187,7 @@ TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
                    prob) < tolerance);
 
   dd->measureOneCollapsing(rootEdge, 2, qc.getGenerator());
+
   auto tmp2 = rootEdge.getSparseProbabilityVectorStrKeys(qc.getNqubits());
   EXPECT_TRUE(
       fabs(tmp2["000"] - 1) < tolerance || fabs(tmp2["001"] - 1) < tolerance ||

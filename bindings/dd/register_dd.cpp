@@ -51,7 +51,7 @@ struct Matrix {
 };
 Matrix getMatrix(const dd::mEdge& m, size_t numQubits, dd::fp threshold = 0.);
 
-PYBIND11_MODULE(dd, mod, py::mod_gil_not_used()) {
+PYBIND11_MODULE(MQT_CORE_MODULE_NAME, mod, py::mod_gil_not_used()) {
   // Vector Decision Diagrams
   registerVectorDDs(mod);
 

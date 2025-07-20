@@ -44,6 +44,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -75,6 +76,7 @@ void Package::reset() {
   clearUniqueTables();
   resetMemoryManagers();
   clearComputeTables();
+  roots.reset();
 }
 
 void Package::resetMemoryManagers(const bool resizeToTotal) {
@@ -92,6 +94,8 @@ void Package::clearUniqueTables() {
 }
 
 bool Package::garbageCollect(bool force) {
+  using flags = std::tuple<bool, bool, bool, bool>;
+
   // return immediately if no table needs collection
   if (!force && !vUniqueTable.possiblyNeedsCollection() &&
       !mUniqueTable.possiblyNeedsCollection() &&
@@ -100,19 +104,20 @@ bool Package::garbageCollect(bool force) {
     return false;
   }
 
-  const auto cCollect = cUniqueTable.garbageCollect(force);
-  if (cCollect > 0) {
-    // Collecting garbage in the complex numbers table requires collecting the
-    // node tables as well
-    force = true;
-  }
-  const auto vCollect = vUniqueTable.garbageCollect(force);
-  const auto mCollect = mUniqueTable.garbageCollect(force);
-  const auto dCollect = dUniqueTable.garbageCollect(force);
+  const auto sweep = [this, &force]() -> flags {
+    const bool invC = cUniqueTable.garbageCollect(force) > 0;
+    force |= invC;
+    const bool invV = vUniqueTable.garbageCollect(force) > 0;
+    const bool invM = mUniqueTable.garbageCollect(force) > 0;
+    const bool invD = dUniqueTable.garbageCollect(force) > 0;
+    return {invC, invV, invM, invD};
+  };
+
+  const auto [invC, invV, invM, invD] = roots.execute<flags>(sweep);
 
   // invalidate all compute tables involving vectors if any vector node has
   // been collected
-  if (vCollect > 0) {
+  if (invV) {
     vectorAdd.clear();
     vectorInnerProduct.clear();
     vectorKronecker.clear();
@@ -120,7 +125,7 @@ bool Package::garbageCollect(bool force) {
   }
   // invalidate all compute tables involving matrices if any matrix node has
   // been collected
-  if (mCollect > 0) {
+  if (invM) {
     matrixAdd.clear();
     conjugateMatrixTranspose.clear();
     matrixKronecker.clear();
@@ -131,7 +136,7 @@ bool Package::garbageCollect(bool force) {
   }
   // invalidate all compute tables involving density matrices if any density
   // matrix node has been collected
-  if (dCollect > 0) {
+  if (invD) {
     densityAdd.clear();
     densityDensityMultiplication.clear();
     densityNoise.clear();
@@ -139,7 +144,7 @@ bool Package::garbageCollect(bool force) {
   }
   // invalidate all compute tables where any component of the entry contains
   // numbers from the complex table if any complex numbers were collected
-  if (cCollect > 0) {
+  if (invC) {
     matrixVectorMultiplication.clear();
     matrixMatrixMultiplication.clear();
     conjugateMatrixTranspose.clear();
@@ -153,7 +158,16 @@ bool Package::garbageCollect(bool force) {
     densityNoise.clear();
     densityTrace.clear();
   }
-  return vCollect > 0 || mCollect > 0 || cCollect > 0;
+  return invC || invV || invM || invD;
+}
+
+Package::ActiveCounts Package::computeActiveCounts() {
+  const auto count = [this]() -> ActiveCounts {
+    return {
+        vUniqueTable.countMarkedEntries(), mUniqueTable.countMarkedEntries(),
+        dUniqueTable.countMarkedEntries(), cUniqueTable.countMarkedEntries()};
+  };
+  return roots.execute<ActiveCounts>(count);
 }
 
 dEdge Package::makeZeroDensityOperator(const std::size_t n) {
@@ -614,17 +628,13 @@ char Package::measureOneCollapsing(dEdge& e, const Qubit index,
     densityMatrixTrace = trace(tmp2, nrQubits);
   }
 
-  incRef(tmp2);
   dEdge::alignDensityEdge(e);
+  tmp2.w = cn.lookup(e.w / densityMatrixTrace); // Normalize density matrix
+  incRef(tmp2);
   decRef(e);
   e = tmp2;
   dEdge::setDensityMatrixTrue(e);
 
-  // Normalize density matrix
-  auto result = e.w / densityMatrixTrace;
-  cn.decRef(e.w);
-  e.w = cn.lookup(result);
-  cn.incRef(e.w);
   return measuredResult;
 }
 void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
@@ -850,7 +860,7 @@ bool Package::isCloseToIdentity(const mEdge& m, const fp tol,
                                 const std::vector<bool>& garbage,
                                 const bool checkCloseToOne) const {
   std::unordered_set<decltype(m.p)> visited{};
-  visited.reserve(mUniqueTable.getNumActiveEntries());
+  visited.reserve(mUniqueTable.getNumEntries());
   return isCloseToIdentityRecursive(m, visited, tol, garbage, checkCloseToOne);
 }
 bool Package::isCloseToIdentityRecursive(

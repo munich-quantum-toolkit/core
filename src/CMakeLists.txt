@@ -6,7 +6,6 @@
 #
 # Licensed under the MIT License
 
-set(MQT_CORE_TARGET_NAME "mqt-core")
 set(MQT_CORE_TARGETS "")
 
 if(MQT_CORE_INSTALL)
@@ -19,15 +18,6 @@ if(MQT_CORE_INSTALL)
       "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-config-version.cmake")
   set(MQT_CORE_CMAKE_PROJECT_CONFIG_FILE "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-config.cmake")
   set(MQT_CORE_CMAKE_PROJECT_TARGETS_FILE "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-targets.cmake")
-
-  if(APPLE)
-    set(BASEPOINT @loader_path)
-  else()
-    set(BASEPOINT $ORIGIN)
-  endif()
-  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR})
-  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
 
 if(NOT TARGET MQT::ProjectWarnings)
@@ -90,10 +80,6 @@ add_subdirectory(zx)
 # add NA library
 add_subdirectory(na)
 
-if(BUILD_MQT_CORE_BINDINGS)
-  add_subdirectory(python)
-endif()
-
 # Installation instructions for the main library
 if(MQT_CORE_INSTALL)
   include(CMakePackageConfigHelpers)
@@ -107,9 +93,13 @@ if(MQT_CORE_INSTALL)
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMinorVersion)
 
-  install(FILES ${MQT_CORE_CMAKE_PROJECT_CONFIG_FILE} ${MQT_CORE_CMAKE_VERSION_CONFIG_FILE}
-          DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR})
+  install(
+    FILES ${MQT_CORE_CMAKE_PROJECT_CONFIG_FILE} ${MQT_CORE_CMAKE_VERSION_CONFIG_FILE}
+    DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
+    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 
+  # FILE_SET should be aligned with LIBRARY and ARCHIVE, so we turn cmake-format off
+  # cmake-format: off
   install(
     TARGETS ${MQT_CORE_TARGETS}
     EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
@@ -119,8 +109,10 @@ if(MQT_CORE_INSTALL)
             NAMELINK_COMPONENT ${MQT_CORE_TARGET_NAME}_Development
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
             COMPONENT ${MQT_CORE_TARGET_NAME}_Development
-            FILE_SET HEADERS
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mqt-core)
+    FILE_SET HEADERS
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mqt-core
+            COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
+  # cmake-format: on
 
   install(
     EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
@@ -130,10 +122,12 @@ if(MQT_CORE_INSTALL)
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 
   install(
-    FILES ${PROJECT_SOURCE_DIR}/cmake/Cache.cmake
+    FILES ${PROJECT_SOURCE_DIR}/cmake/AddMQTPythonBinding.cmake
+          ${PROJECT_SOURCE_DIR}/cmake/Cache.cmake
           ${PROJECT_SOURCE_DIR}/cmake/FindGMP.cmake
           ${PROJECT_SOURCE_DIR}/cmake/PackageAddTest.cmake
           ${PROJECT_SOURCE_DIR}/cmake/PreventInSourceBuilds.cmake
           ${PROJECT_SOURCE_DIR}/cmake/StandardProjectSettings.cmake
-    DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR})
+    DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
+    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 endif()

@@ -29,7 +29,7 @@ function(enable_project_options target_name)
     option(ENABLE_COVERAGE "Enable coverage reporting for gcc/clang" FALSE)
     if(ENABLE_COVERAGE)
       target_compile_options(${target_name} INTERFACE --coverage -fprofile-arcs -ftest-coverage -O0)
-      target_link_libraries(${target_name} INTERFACE gcov --coverage)
+      target_link_libraries(${target_name} INTERFACE --coverage)
     endif()
 
     if(NOT DEPLOY)
@@ -41,7 +41,8 @@ function(enable_project_options target_name)
 
       check_cxx_compiler_flag(-march=native HAS_MARCH_NATIVE)
       if(HAS_MARCH_NATIVE)
-        if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+        if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang" OR CMAKE_SYSTEM_PROCESSOR MATCHES
+                                                      "(x86)|(x86_64)|(AMD64)|(amd64)")
           target_compile_options(${target_name} INTERFACE -march=native)
         else()
           target_compile_options(${target_name} INTERFACE -mcpu=native)

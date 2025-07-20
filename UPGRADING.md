@@ -4,6 +4,14 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+## [3.1.0]
+
+The shared library ABI version (`SOVERSION`) is increased from `3.0` to `3.1`.
+Thus, consuming libraries need to update their wheel repair configuration for cibuildwheel to ensure the mqt-core libraries are properly skipped in the wheel repair step.
+
+Even tough this is not a breaking change, it is worth mentioning to developers of MQT Core that all Python code (except tests) has been moved to the top-level `python` directory.
+Furthermore, the C++ code for the Python bindings has been moved to the top-level `bindings` directory.
+
 ### DD Package
 
 The `makeZeroState`, `makeBasisState`, `makeGHZState`, `makeWState`, and `makeStateFromVector` methods have been refactored to functions taking the DD package as an argument. These functions reside in the `StateGeneration` header. Any existing code that uses these methods must replace the respective calls with their function counterpart.
@@ -60,9 +68,15 @@ Alternatively, CMake can be conveniently installed from PyPI using the [`cmake`]
 
 It also requires the `uv` library version 0.5.20 or higher.
 
+<!-- Version links -->
+
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.0...v3.1.0
+[3.0.0]: https://github.com/munich-quantum-toolkit/core/compare/v2.7.0...v3.0.0
+
+<!-- Other links -->
+
 [MQT DDSIM]: https://github.com/cda-tum/mqt-ddsim
 [MQT QMAP]: https://github.com/cda-tum/mqt-qmap
 [MQT QCEC]: https://github.com/cda-tum/mqt-qcec
 [MQT SyReC]: https://github.com/cda-tum/mqt-syrec
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.0...HEAD
-[3.0.0]: https://github.com/munich-quantum-toolkit/core/compare/v2.7.0...v3.0.0
