@@ -153,8 +153,8 @@ void ZXDiagram::removeVertex(const Vertex toRemove) {
   }
 
   const auto& incident = edges[from];
-  const auto edge = std::find_if(incident.begin(), incident.end(),
-                                 [&](const auto& e) { return e.to == to; });
+  const auto edge =
+      std::ranges::find_if(incident, [&](const auto& e) { return e.to == to; });
   return edge != incident.end();
 }
 
@@ -162,8 +162,8 @@ void ZXDiagram::removeVertex(const Vertex toRemove) {
                                                      const Vertex to) const {
   std::optional<Edge> ret;
   const auto& incident = edges[from];
-  const auto edge = std::find_if(incident.begin(), incident.end(),
-                                 [&](const auto& e) { return e.to == to; });
+  const auto edge =
+      std::ranges::find_if(incident, [&](const auto& e) { return e.to == to; });
   if (edge != incident.end()) {
     ret = *edge;
   }
@@ -173,8 +173,8 @@ void ZXDiagram::removeVertex(const Vertex toRemove) {
 std::vector<Edge>::iterator ZXDiagram::getEdgePtr(const Vertex from,
                                                   const Vertex to) {
   auto& incident = edges[from];
-  return std::find_if(incident.begin(), incident.end(),
-                      [&](const auto& e) { return e.to == to; });
+  return std::ranges::find_if(incident,
+                              [&](const auto& e) { return e.to == to; });
 }
 
 [[nodiscard]] std::vector<std::pair<Vertex, const VertexData&>>

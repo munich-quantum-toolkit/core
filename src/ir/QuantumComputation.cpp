@@ -889,10 +889,11 @@ void QuantumComputation::setLogicalQubitsGarbage(
 
 [[nodiscard]] std::pair<bool, std::optional<Qubit>>
 QuantumComputation::containsLogicalQubit(const Qubit logicalQubitIndex) const {
-  if (const auto it = std::find_if(initialLayout.cbegin(), initialLayout.cend(),
-                                   [&logicalQubitIndex](const auto& mapping) {
-                                     return mapping.second == logicalQubitIndex;
-                                   });
+  if (const auto it =
+          std::ranges::find_if(initialLayout,
+                               [&logicalQubitIndex](const auto& mapping) {
+                                 return mapping.second == logicalQubitIndex;
+                               });
       it != initialLayout.cend()) {
     return {true, it->first};
   }
