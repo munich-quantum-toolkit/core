@@ -80,7 +80,6 @@ public:
    */
   static void backpropagateOutputPermutation(QuantumComputation& qc);
 
-
   /**
    * @brief Collects all operations in the circuit into blocks of a maximum
    * size.
