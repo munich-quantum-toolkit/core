@@ -84,11 +84,13 @@ bool CompoundOperation::isGlobal(const size_t nQubits) const noexcept {
   const auto& params = ops.front()->getParameter();
   const auto& t = ops.front()->getType();
   return getUsedQubits().size() == nQubits &&
-         std::all_of(ops.cbegin() + 1, ops.cend(), [&](const auto& operation) {
-           return operation->isStandardOperation() &&
-                  operation->getNcontrols() == 0 && operation->getType() == t &&
-                  operation->getParameter() == params;
-         });
+         std::ranges::all_of(ops.cbegin() + 1, ops.cend(),
+                             [&](const auto& operation) {
+                               return operation->isStandardOperation() &&
+                                      operation->getNcontrols() == 0 &&
+                                      operation->getType() == t &&
+                                      operation->getParameter() == params;
+                             });
 }
 
 bool CompoundOperation::isSymbolicOperation() const {
@@ -203,10 +205,9 @@ auto CompoundOperation::getUsedQubitsPermuted(const Permutation& perm) const
 
 auto CompoundOperation::commutesAtQubit(const Operation& other,
                                         const Qubit& qubit) const -> bool {
-  return std::all_of(ops.cbegin(), ops.cend(),
-                     [&other, &qubit](const auto& op) {
-                       return op->commutesAtQubit(other, qubit);
-                     });
+  return std::ranges::all_of(ops, [&other, &qubit](const auto& op) {
+    return op->commutesAtQubit(other, qubit);
+  });
 }
 
 auto CompoundOperation::isInverseOf(const Operation& other) const -> bool {

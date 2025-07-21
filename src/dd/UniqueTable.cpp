@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <nlohmann/json.hpp>
 #include <numeric>
+#include <ranges>
 #include <string>
 
 namespace dd {
@@ -114,10 +115,9 @@ UniqueTable::getStats(const std::size_t idx) const noexcept {
 
 nlohmann::basic_json<>
 UniqueTable::getStatsJson(const bool includeIndividualTables) const {
-  if (std::all_of(stats.begin(), stats.end(),
-                  [](const UniqueTableStatistics& stat) {
-                    return stat.peakNumEntries == 0U;
-                  })) {
+  if (std::ranges::all_of(stats, [](const UniqueTableStatistics& stat) {
+        return stat.peakNumEntries == 0U;
+      })) {
     return "unused";
   }
 

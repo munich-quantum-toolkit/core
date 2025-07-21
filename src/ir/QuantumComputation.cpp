@@ -1089,8 +1089,8 @@ void QuantumComputation::addVariable(const SymbolOrNumber& expr) {
 }
 
 bool QuantumComputation::isVariableFree() const {
-  return std::all_of(ops.begin(), ops.end(),
-                     [](const auto& op) { return !op->isSymbolicOperation(); });
+  return std::ranges::all_of(
+      ops, [](const auto& op) { return !op->isSymbolicOperation(); });
 }
 
 // Instantiates this computation

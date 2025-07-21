@@ -325,8 +325,8 @@ bool SymbolicOperation::isSymbolicOperation() const {
                              [](const auto& sym) { return sym.has_value(); });
 }
 bool SymbolicOperation::isStandardOperation() const {
-  return std::all_of(symbolicParameter.begin(), symbolicParameter.end(),
-                     [](const auto& sym) { return !sym.has_value(); });
+  return std::ranges::all_of(symbolicParameter,
+                             [](const auto& sym) { return !sym.has_value(); });
 }
 
 bool SymbolicOperation::equals(const Operation& op, const Permutation& perm1,
