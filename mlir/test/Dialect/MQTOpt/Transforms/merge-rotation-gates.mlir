@@ -369,7 +369,7 @@ module {
   func.func @testMergeGphaseWithControls() {
     // CHECK: %[[Res_3:.*]] = arith.constant 3.000000e+00 : f64
     // CHECK: %[[ANY:.*]] = mqtopt.gphase(%[[Res_3]]) ctrl %[[ANY:.*]] : ctrl !mqtopt.Qubit
-    // CHECK-NOT: %[[ANY:.*]] = mqtopt.rx(%[[ANY:.*]]) %[[ANY:.*]] : !mqtopt.Qubit
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.gphase(%[[ANY:.*]]) %[[ANY:.*]] : !mqtopt.Qubit
 
     %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
     %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -387,14 +387,17 @@ module {
 }
 
 // -----
-// This test checks that consecutive gphase gates without controls are merged correctly.
+// This test checks that consecutive gphase gates without controls are not merged.
+// The current implementation does not support merging gates without users.
 
 module {
-  // CHECK-LABEL: func.func @testMergeGphaseWithoutControls
-  func.func @testMergeGphaseWithoutControls() {
-    // CHECK: %[[Res_3:.*]] = arith.constant 3.000000e+00 : f64
-    // CHECK: %[[ANY:.*]] = mqtopt.gphase(%[[Res_3]]) : ()
-    // CHECK-NOT: %[[ANY:.*]] = mqtopt.rx(%[[ANY:.*]]) %[[ANY:.*]] : !mqtopt.Qubit
+  // CHECK-LABEL: func.func @testDoNotMergeGphaseWithoutControls
+  func.func @testDoNotMergeGphaseWithoutControls() {
+    // CHECK: %[[Res_1:.*]] = arith.constant 1.000000e+00 : f64
+    // CHECK: mqtopt.gphase(%[[Res_1]])
+    // CHECK: mqtopt.gphase(%[[Res_1]])
+    // CHECK: mqtopt.gphase(%[[Res_1]])
+    // CHECK-NOT: mqtopt.gphase(%[[ANY:.*]])
 
     %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
     %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
