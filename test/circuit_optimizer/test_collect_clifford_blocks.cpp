@@ -28,12 +28,11 @@ TEST(CliffordBlocks, nonCliffordOnAll) {
   qc.cx(0, 1);
   qc.sxdg(1);
   qc.t(0);
-  qc.t(1);
   qc.x(0);
+  qc.t(1);
   qc.x(1);
-
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 2);
+  qc::CircuitOptimizer::collectCliffordBlocks(qc, 3);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 4);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
@@ -51,6 +50,7 @@ TEST(CliffordBlocks, nonCliffordSingleQubit) {
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
+  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 2);
 }
 
 TEST(CliffordBlocks, collectTwoQubitCliffordGates) {
@@ -66,8 +66,8 @@ TEST(CliffordBlocks, collectTwoQubitCliffordGates) {
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
-  EXPECT_TRUE(qc.back()->isStandardOperation());
-  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 4);
+  EXPECT_TRUE(qc.back()->isCompoundOperation());
+  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 3);
 }
 
 TEST(CliffordBlocks, TwoQubitnonClifford) {
@@ -82,6 +82,7 @@ TEST(CliffordBlocks, TwoQubitnonClifford) {
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
+  EXPECT_TRUE(qc.back()->isStandardOperation());
 }
 
 TEST(CliffordBlocks, mergeBlocksnonClifford) {
@@ -98,7 +99,9 @@ TEST(CliffordBlocks, mergeBlocksnonClifford) {
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 4);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
+  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 3);
   EXPECT_TRUE(qc.back()->isCompoundOperation());
+  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.back()).size(), 2);
 }
 
 TEST(CliffordBlocks, nonCliffordBeginning) {
@@ -113,6 +116,7 @@ TEST(CliffordBlocks, nonCliffordBeginning) {
   EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.front()->isStandardOperation());
   EXPECT_TRUE(qc.back()->isCompoundOperation());
+  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.back()).size(), 2);
 }
 
 TEST(CliffordBlocks, threeQubitnonClifford) {
@@ -130,6 +134,8 @@ TEST(CliffordBlocks, threeQubitnonClifford) {
   EXPECT_EQ(qc.size(), 4);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
   EXPECT_TRUE(qc.back()->isCompoundOperation());
+  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 3);
+  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.back()).size(), 2);
 }
 
 } // namespace qc

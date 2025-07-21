@@ -1419,114 +1419,138 @@ struct DSU {
 
 void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
                                              std::size_t maxBlockSize) {
-  using OperationIterator = decltype(qc.begin());
+                                              
+  deferMeasurements(qc);
+  using OpIter = decltype(qc.begin());   
 
-  struct Block {
-    std::vector<OperationIterator> operationIterators;
-    std::unordered_set<Qubit> qubitSet;
-    bool isCliffordBlock;
+  // Pull everything into a small array so we can index by integer
+  // and each Operation has a unique index
+  struct OperationData {
+    OpIter it;
+    bool   isCliff;
+    std::vector<Qubit> qubits;
   };
-  std::vector<Block> blocks;
-
-  // Build blocks
-  for (auto opIt = qc.begin(); opIt != qc.end(); ++opIt) {
-    Operation* op = opIt->get();
-    const bool isClifford = op->isClifford();
-    auto used = op->getUsedQubits();
-    std::unordered_set<Qubit> usedSet(used.begin(), used.end());
-
-    if (isClifford) {
-      bool merged = false;
-
-      // Try merging into an existing Clifford block
-      for (auto& candidate : blocks) {
-        if (!candidate.isCliffordBlock) {
-          continue;
-        }
-        // Check if merging would exceed maxBlockSize qubits
-        std::size_t newQubitCount = candidate.qubitSet.size();
-        for (auto q : usedSet) {
-          if (candidate.qubitSet.count(q) == 0) {
-            ++newQubitCount;
-          }
-        }
-        if (newQubitCount > maxBlockSize) {
-          continue; // too many qubits, skip this block
-        }
-
-        // Build a barrier of qubits from *non‑Clifford* blocks
-        std::unordered_set<Qubit> barrier;
-        // find candidate's index
-        auto idx = &candidate - blocks.data();
-        for (std::size_t j = static_cast<std::size_t>(idx) + 1;
-             j < blocks.size(); ++j) {
-          if (!blocks[j].isCliffordBlock) {
-            auto laterIt = blocks[j].operationIterators.front();
-            auto laterUsed = (*laterIt)->getUsedQubits();
-            barrier.insert(laterUsed.begin(), laterUsed.end());
-          }
-        }
-        bool disjoint = true;
-        for (auto q : usedSet) {
-          if (barrier.count(q) > 0) {
-            disjoint = false;
-            break;
-          }
-        }
-        if (!disjoint) {
-          continue;
-        }
-
-        // Add the op and update qubitSet
-        candidate.operationIterators.push_back(opIt);
-        candidate.qubitSet.insert(usedSet.begin(), usedSet.end());
-        merged = true;
-        break;
-      }
-
-      // If we couldn't merge, start a new block
-      if (!merged) {
-        // Only start if the single gate itself is <= maxBlockSize qubits
-        if (usedSet.size() <= maxBlockSize) {
-          blocks.push_back(Block{/*operationIterators=*/{opIt},
-                                 /*qubitSet=*/usedSet,
-                                 /*isCliffordBlock=*/true});
-        } else {
-          // Gate alone exceeds your budget; treat it as non‑collapsible
-          blocks.push_back(Block{{opIt}, usedSet, /*isCliffordBlock=*/false});
-        }
-      }
-
-    } else {
-      // Non‑Clifford always a singleton block
-      blocks.push_back(Block{/*operationIterators=*/{opIt},
-                             /*qubitSet=*/usedSet,
-                             /*isCliffordBlock=*/false});
-    }
+  std::vector<OperationData> opData;
+  opData.reserve(qc.size());
+  for (auto it = qc.begin(); it != qc.end(); ++it) {
+    std::set<Qubit> used = it->get()->getUsedQubits();
+    opData.push_back(OperationData{
+      it,
+      it->get()->isClifford(),
+      {used.begin(), used.end()}
+    });
   }
 
-  // Finalize blocks in reverse order
-  for (int b = static_cast<int>(blocks.size()) - 1; b >= 0; --b) {
-    Block& blk = blocks[static_cast<std::size_t>(b)];
+  // Blocks store indices of OperationData and which Qubits are ready
+  // isCliff tells us if we can form this block into a compound operation later
+  struct Block {
+    std::vector<int> idx;                 
+    bool            isCliff;              
+    std::unordered_set<Qubit> qubits;     
+  };
+  std::vector<Block> blocks;
+  const int numOperations = static_cast<int>(opData.size());
 
-    // Only collapse multi‑gate Clifford blocks
-    if (!blk.isCliffordBlock || blk.operationIterators.size() <= 1) {
+  // compute its circuit depth of a block
+  auto computeDepth = [&](const std::vector<int>& seq) {
+    std::unordered_map<Qubit,int> qubitReady;  // layer each qubit becomes free
+    int depth = 0;
+    for (int k : seq) {
+      // the op at opData[k]
+      int layer = 0;
+      for (auto q : opData[static_cast<std::size_t>(k)].qubits){
+        layer = std::max(layer, qubitReady[q]);
+      }
+      // schedule it in the next layer
+      layer += 1;
+      depth = std::max(depth, layer);
+      // mark qubits busy until that layer
+      for (auto q : opData[static_cast<std::size_t>(k)].qubits){
+        qubitReady[q] = layer;
+      }
+    }
+    return depth;
+  };
+
+  // Build commute‐aware blocks, 
+  for (int i = 0; i < numOperations; ++i) {
+    auto &opD = opData[static_cast<std::size_t>(i)];
+    if (!opD.isCliff) {
+      // non‑Cliffords always singleton
+      blocks.push_back(Block{{i}, false, {opD.qubits.begin(), opD.qubits.end()}});
       continue;
     }
 
-    // Build the CompoundOperation
-    auto compoundOp = std::make_unique<CompoundOperation>();
-    for (auto git : blk.operationIterators) {
-      compoundOp->emplace_back((*git)->clone());
+    bool didMerge = false;
+    for (auto &b : blocks) {
+      if (!b.isCliff) {
+        continue;
+      }
+
+      // Check depth of the block with new operation
+      std::vector<int> testSeq = b.idx;
+      testSeq.push_back(i);
+      if (computeDepth(testSeq) > static_cast<int>(maxBlockSize)){
+        continue; // jump to next block because block is already full or too deep
+      }
+
+      // Checks if the Clifford Operation can commute with the block
+      // meaning that it doesn't jump over any non‑Clifford operations
+      bool canCommute = true;
+      int  lastPos    = b.idx.back();
+      for (int j = lastPos + 1; j < i; ++j) {
+        if (opData[static_cast<std::size_t>(j)].isCliff) {
+          continue;
+        }
+        // if this non‑Cliff touches any qubit in b.qubits, block it
+        for (auto q : opData[static_cast<std::size_t>(j)].qubits) {
+          if (b.qubits.count(q) > 0) {
+            canCommute = false;
+            break;
+          }
+        }
+        // stop because we already found a non‑Cliff that blocks this merge
+        if (!canCommute) {
+          break;
+        }
+      }
+      // skip block if we found a non‑Cliff that blocks this merge
+      if (!canCommute){
+        continue;
+      }
+      // Merge into this block
+      b.idx.push_back(i);
+      b.qubits.insert(opD.qubits.begin(), opD.qubits.end());
+      didMerge = true;
+      break; // don't need to look into other blocks
     }
 
-    // Overwrite the first op
-    *blk.operationIterators.front() = std::move(compoundOp);
+    if (!didMerge) {
+      // start a new Clifford block
+      blocks.push_back(Block{{i}, true, {opD.qubits.begin(), opD.qubits.end()}});
+    }
+  }
 
-    // Erase the remaining ops in reverse order
-    for (int i = static_cast<int>(blk.operationIterators.size()) - 1; i > 0;
-         --i) {
-      qc.erase(blk.operationIterators[static_cast<std::size_t>(i)]);
+  // Collapse each multi‑gate Clifford block in reverse order
+  // so that we can safely erase operations without invalidating iterators
+  for (int b = static_cast<int>(blocks.size()) - 1; b >= 0; --b) {
+    auto &blk = blocks[static_cast<std::size_t>(b)];
+    if (!blk.isCliff || blk.idx.size() <= 1){
+      continue; // for skipping non‑Clifford blocks or single Operations
+    }
+    // Build the compound from all ops in this block
+    auto compound = std::make_unique<CompoundOperation>();
+    for (int k : blk.idx) {
+      compound->emplace_back(opData[static_cast<std::size_t>(k)].it->get()->clone());
+    }
+
+    // Overwrite at the last op’s position
+    int lastK = blk.idx.back();
+    *opData[static_cast<std::size_t>(lastK)].it = std::move(compound);
+
+    // Erase the rest, backwards to keep iterators valid
+    for (int opD = static_cast<int>(blk.idx.size()) - 2; opD >= 0; --opD) {
+      qc.erase(opData[static_cast<std::size_t>(blk.idx[static_cast<std::size_t>(opD)])].it);
     }
   }
 
