@@ -28,6 +28,7 @@
 #include <iterator>
 #include <numeric>
 #include <random>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -133,7 +134,7 @@ VectorDD makeBasisState(const std::size_t n, const std::vector<bool>& state,
     return b ? BasisStates::one : BasisStates::zero;
   };
   std::vector<BasisStates> bState(state.size());
-  std::transform(state.begin(), state.end(), bState.begin(), op);
+  std::ranges::transform(state, bState.begin(), op);
   return makeBasisState(n, bState, dd, start);
 }
 
