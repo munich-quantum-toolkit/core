@@ -744,7 +744,7 @@ void QuantumComputation::dump(const std::string& filename,
 }
 
 bool QuantumComputation::isIdleQubit(const Qubit physicalQubit) const {
-  return std::none_of(
+  return std::ranges::none_of(
       ops.cbegin(), ops.cend(),
       [&physicalQubit](const auto& op) { return op->actsOn(physicalQubit); });
 }

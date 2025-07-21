@@ -943,8 +943,7 @@ mEdge Package::createInitialMatrix(const std::vector<bool>& ancillary) {
 mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
                               const bool regular) {
   // return if no more ancillaries left
-  if (std::none_of(ancillary.begin(), ancillary.end(),
-                   [](const bool v) { return v; }) ||
+  if (std::ranges::none_of(ancillary, [](const bool v) { return v; }) ||
       e.isZeroTerminal()) {
     return e;
   }
@@ -992,7 +991,7 @@ vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
                              const bool normalizeWeights) {
   // return if no more garbage left
   if (!normalizeWeights &&
-      (std::none_of(garbage.begin(), garbage.end(), [](bool v) { return v; }) ||
+      (std::ranges::none_of(garbage, [](bool v) { return v; }) ||
        e.isTerminal())) {
     return e;
   }
@@ -1021,7 +1020,7 @@ mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
                              const bool regular, const bool normalizeWeights) {
   // return if no more garbage left
   if (!normalizeWeights &&
-      (std::none_of(garbage.begin(), garbage.end(), [](bool v) { return v; }) ||
+      (std::ranges::none_of(garbage, [](bool v) { return v; }) ||
        e.isZeroTerminal())) {
     return e;
   }

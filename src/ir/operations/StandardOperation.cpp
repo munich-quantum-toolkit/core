@@ -24,6 +24,7 @@
 #include <iostream>
 #include <limits>
 #include <ostream>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -648,8 +649,8 @@ void StandardOperation::dumpControls(std::ostringstream& op) const {
   }
 
   // if operation is in stdgates.inc, we print a c prefix instead of ctrl @
-  if (bool printBuiltin = std::none_of(
-          controls.begin(), controls.end(),
+  if (bool printBuiltin = std::ranges::none_of(
+          controls,
           [](const Control& c) { return c.type == Control::Type::Neg; });
       printBuiltin) {
     const auto numControls = controls.size();
