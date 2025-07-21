@@ -24,6 +24,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <unordered_set>
 #include <vector>
+
 namespace mqt::ir::opt {
 
 /**
