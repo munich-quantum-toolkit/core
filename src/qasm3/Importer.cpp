@@ -36,6 +36,7 @@
 #include <istream>
 #include <map>
 #include <memory>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -450,8 +451,8 @@ void Importer::visitGateStatement(
   // first we check that all parameters and qubits are unique
   std::vector<std::string> parameterIdentifiers{};
   for (const auto& parameter : parameters->identifiers) {
-    if (std::find(parameterIdentifiers.begin(), parameterIdentifiers.end(),
-                  parameter->identifier) != parameterIdentifiers.end()) {
+    if (std::ranges::find(parameterIdentifiers, parameter->identifier) !=
+        parameterIdentifiers.end()) {
       throw CompilerError("Parameter '" + parameter->identifier +
                               "' already declared.",
                           gateStatement->debugInfo);
@@ -460,8 +461,8 @@ void Importer::visitGateStatement(
   }
   std::vector<std::string> qubitIdentifiers{};
   for (const auto& qubit : qubits->identifiers) {
-    if (std::find(qubitIdentifiers.begin(), qubitIdentifiers.end(),
-                  qubit->identifier) != qubitIdentifiers.end()) {
+    if (std::ranges::find(qubitIdentifiers, qubit->identifier) !=
+        qubitIdentifiers.end()) {
       throw CompilerError("Qubit '" + qubit->identifier + "' already declared.",
                           gateStatement->debugInfo);
     }
@@ -795,9 +796,8 @@ std::unique_ptr<qc::Operation> Importer::applyQuantumOperation(
           const auto& identifier = operand->getIdentifier();
           // OpenQASM 3.0 doesn't support indexing of gate arguments.
           if (!identifier->indices.empty() &&
-              std::find(compoundGate->targetNames.begin(),
-                        compoundGate->targetNames.end(),
-                        identifier->identifier) !=
+              std::ranges::find(compoundGate->targetNames,
+                                identifier->identifier) !=
                   compoundGate->targetNames.end()) {
             throw CompilerError(
                 "Gate arguments cannot be indexed within gate body.",

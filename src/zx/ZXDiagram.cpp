@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <optional>
+#include <ranges>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -191,10 +192,10 @@ ZXDiagram::getEdges() const {
 }
 
 bool ZXDiagram::isInput(const Vertex v) const {
-  return std::find(inputs.begin(), inputs.end(), v) != inputs.end();
+  return std::ranges::find(inputs, v) != inputs.end();
 }
 bool ZXDiagram::isOutput(const Vertex v) const {
-  return std::find(outputs.begin(), outputs.end(), v) != outputs.end();
+  return std::ranges::find(outputs, v) != outputs.end();
 }
 
 void ZXDiagram::toGraphlike() {
@@ -424,6 +425,6 @@ ZXDiagram::getConnectedSet(const std::vector<Vertex>& s,
 }
 
 bool ZXDiagram::isIn(const Vertex& v, const std::vector<Vertex>& vertices) {
-  return std::find(vertices.begin(), vertices.end(), v) != vertices.end();
+  return std::ranges::find(vertices, v) != vertices.end();
 }
 } // namespace zx

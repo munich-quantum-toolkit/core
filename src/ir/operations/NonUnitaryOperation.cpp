@@ -214,8 +214,7 @@ void NonUnitaryOperation::printReset(std::ostream& os,
                                      const std::size_t nqubits) const {
   const auto actualTargets = permutation.apply(q);
   for (std::size_t i = 0; i < nqubits; ++i) {
-    if (std::find(actualTargets.cbegin(), actualTargets.cend(), i) !=
-        actualTargets.cend()) {
+    if (std::ranges::find(actualTargets, i) != actualTargets.cend()) {
       os << "\033[31m" << std::setw(4) << shortName(type) << "\033[0m";
       continue;
     }
