@@ -549,7 +549,7 @@ void QuantumComputation::invert() {
   for (const auto& op : ops) {
     op->invert();
   }
-  std::reverse(ops.begin(), ops.end());
+  std::ranges::reverse(ops);
 
   if (initialLayout.size() == outputPermutation.size()) {
     std::swap(initialLayout, outputPermutation);
@@ -1012,7 +1012,7 @@ void QuantumComputation::checkClassicalRegister(
   }
 }
 
-void QuantumComputation::reverse() { std::reverse(ops.begin(), ops.end()); }
+void QuantumComputation::reverse() { std::ranges::reverse(ops); }
 
 QuantumComputation::QuantumComputation(const std::size_t nq,
                                        const std::size_t nc,

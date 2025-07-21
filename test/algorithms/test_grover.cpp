@@ -25,6 +25,7 @@
 #include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
+#include <ranges>
 #include <sstream>
 #include <tuple>
 
@@ -83,7 +84,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_P(Grover, Functionality) {
   auto x = '1' + expected;
-  std::reverse(x.begin(), x.end());
+  std::ranges::reverse(x);
   std::replace(x.begin(), x.end(), '1', '2');
 
   qc::QuantumComputation groverIteration(qc.getNqubits());
@@ -122,7 +123,7 @@ TEST_P(Grover, Functionality) {
 
 TEST_P(Grover, FunctionalityRecursive) {
   auto x = '1' + expected;
-  std::reverse(x.begin(), x.end());
+  std::ranges::reverse(x);
   std::replace(x.begin(), x.end(), '1', '2');
 
   qc::QuantumComputation groverIteration(qc.getNqubits());

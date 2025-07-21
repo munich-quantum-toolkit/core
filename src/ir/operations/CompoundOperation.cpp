@@ -252,7 +252,7 @@ void CompoundOperation::invert() {
   for (const auto& op : ops) {
     op->invert();
   }
-  std::reverse(ops.begin(), ops.end());
+  std::ranges::reverse(ops);
 }
 
 void CompoundOperation::apply(const Permutation& permutation) {

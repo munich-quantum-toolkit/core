@@ -27,6 +27,7 @@
 #include <gtest/gtest.h>
 #include <map>
 #include <memory>
+#include <ranges>
 #include <stdexcept>
 
 using namespace qc;
@@ -224,7 +225,7 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4TrackAPD) {
     const auto amplitudes = rootEdge.getVector();
     for (size_t m = 0U; m < amplitudes.size(); m++) {
       auto state = std::bitset<4U>(m).to_string();
-      std::reverse(state.begin(), state.end());
+      std::ranges::reverse(state);
       const auto amplitude = amplitudes[m];
       const auto prob = std::norm(amplitude);
       measSummary[state] += prob / static_cast<double>(stochRuns);
@@ -277,7 +278,7 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4IdentityError) {
     const auto amplitudes = rootEdge.getVector();
     for (size_t m = 0U; m < amplitudes.size(); m++) {
       auto state = std::bitset<4U>(m).to_string();
-      std::reverse(state.begin(), state.end());
+      std::ranges::reverse(state);
       const auto amplitude = amplitudes[m];
       const auto prob = std::norm(amplitude);
       measSummary[state] += prob / static_cast<double>(stochRuns);

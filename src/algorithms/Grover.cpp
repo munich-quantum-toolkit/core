@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstddef>
 #include <random>
+#include <ranges>
 #include <string>
 #include <type_traits>
 
@@ -93,11 +94,11 @@ namespace {
 [[nodiscard]] auto getGroverName(const GroverBitString& s, const Qubit nq)
     -> std::string {
   auto expected = s.to_string();
-  std::reverse(expected.begin(), expected.end());
+  std::ranges::reverse(expected);
   while (expected.length() > nq) {
     expected.pop_back();
   }
-  std::reverse(expected.begin(), expected.end());
+  std::ranges::reverse(expected);
   return "grover_" + std::to_string(nq) + "_" + expected;
 }
 
