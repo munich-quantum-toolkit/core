@@ -1587,7 +1587,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
   std::vector<OperationData> opData;
   opData.reserve(qc.size());
   for (auto it = qc.begin(); it != qc.end(); ++it) {
-    std::set<Qubit> used = it->get()->getUsedQubits();
+    const std::set<Qubit> used = it->get()->getUsedQubits();
     opData.push_back(
         OperationData{it, it->get()->isClifford(), {used.begin(), used.end()}});
   }
@@ -1606,7 +1606,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
   auto computeDepth = [&](const std::vector<int>& seq) {
     std::unordered_map<Qubit, int> qubitReady; // layer each qubit becomes free
     int depth = 0;
-    for (int k : seq) {
+    for (const int k : seq) {
       // the op at opData[k]
       int layer = 0;
       for (auto q : opData[static_cast<std::size_t>(k)].qubits) {
@@ -1650,7 +1650,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
       // Checks if the Clifford Operation can commute with the block
       // meaning that it doesn't jump over any non‑Clifford operations
       bool canCommute = true;
-      int lastPos = b.idx.back();
+      const int lastPos = b.idx.back();
       for (int j = lastPos + 1; j < i; ++j) {
         if (opData[static_cast<std::size_t>(j)].isCliff) {
           continue;
@@ -1694,13 +1694,13 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
     }
     // Build the compound from all ops in this block
     auto compound = std::make_unique<CompoundOperation>();
-    for (int k : blk.idx) {
+    for (const int k : blk.idx) {
       compound->emplace_back(
           opData[static_cast<std::size_t>(k)].it->get()->clone());
     }
 
     // Overwrite at the last op's position
-    int lastK = blk.idx.back();
+    const int lastK = blk.idx.back();
     *opData[static_cast<std::size_t>(lastK)].it = std::move(compound);
 
     // Erase the rest, backwards to keep iterators valid
