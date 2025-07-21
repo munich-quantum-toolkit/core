@@ -85,9 +85,6 @@ struct CancelConsecutiveInversesPattern final
       return mlir::failure();
     }
     auto user = mlir::dyn_cast<UnitaryInterface>(userOp);
-    if (!user) {
-      return mlir::failure();
-    }
     if (op.getAllOutQubits() != user.getAllInQubits()) {
       return mlir::failure();
     }
