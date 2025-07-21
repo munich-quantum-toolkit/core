@@ -169,14 +169,22 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     }
 
     const auto in = op.getInQubits()[0];
-    const auto ctrlIns = op.getAllCtrlInQubits();
+    const auto posCtrlIns = op.getPosCtrlInQubits();
+    const auto negCtrlIns = op.getNegCtrlInQubits();
     const auto outs = op.getAllOutQubits();
 
     // Get the qubit index of every control qubit.
-    std::vector<size_t> ctrlInsIndices(ctrlIns.size());
+    std::vector<size_t> posCtrlInsIndices(posCtrlIns.size());
+    std::vector<size_t> negCtrlInsIndices(negCtrlIns.size());
     size_t targetIndex = 0; // Placeholder
     try {
-      std::transform(ctrlIns.begin(), ctrlIns.end(), ctrlInsIndices.begin(),
+      std::transform(posCtrlIns.begin(), posCtrlIns.end(),
+                     posCtrlInsIndices.begin(),
+                     [&currentQubitVariables](const mlir::Value val) {
+                       return findQubitIndex(val, currentQubitVariables);
+                     });
+      std::transform(negCtrlIns.begin(), negCtrlIns.end(),
+                     negCtrlInsIndices.begin(),
                      [&currentQubitVariables](const mlir::Value val) {
                        return findQubitIndex(val, currentQubitVariables);
                      });
@@ -192,15 +200,30 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       throw; // Rethrow the exception if it's not the expected one.
     }
     // Update `currentQubitVariables` with the new qubit values.
-    for (size_t i = 0; i < ctrlInsIndices.size(); i++) {
-      currentQubitVariables[ctrlInsIndices[i]] = outs[i + 1];
+    for (size_t i = 0; i < posCtrlInsIndices.size(); i++) {
+      currentQubitVariables[posCtrlInsIndices[i]] = outs[i + 1];
+    }
+    for (size_t i = 0; i < negCtrlInsIndices.size(); i++) {
+      currentQubitVariables[negCtrlInsIndices[i]] =
+          outs[i + 1 + posCtrlInsIndices.size()];
     }
     currentQubitVariables[targetIndex] = outs[0];
 
     // Add the operation to the QuantumComputation.
-    circuit.emplace_back<qc::StandardOperation>(
-        qc::Controls{ctrlInsIndices.cbegin(), ctrlInsIndices.cend()},
-        targetIndex, opType);
+    qc::Controls controls;
+    std::transform(posCtrlInsIndices.cbegin(), posCtrlInsIndices.cend(),
+                   std::inserter(controls, controls.end()),
+                   [](const size_t index) {
+                     return qc::Control{static_cast<qc::Qubit>(index),
+                                        qc::Control::Type::Pos};
+                   });
+    std::transform(negCtrlInsIndices.cbegin(), negCtrlInsIndices.cend(),
+                   std::inserter(controls, controls.end()),
+                   [](const size_t index) {
+                     return qc::Control{static_cast<qc::Qubit>(index),
+                                        qc::Control::Type::Neg};
+                   });
+    circuit.emplace_back<qc::StandardOperation>(controls, targetIndex, opType);
 
     return true;
   }
