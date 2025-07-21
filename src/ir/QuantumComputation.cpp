@@ -246,7 +246,7 @@ std::size_t QuantumComputation::getDepth() const {
     op->addDepthContribution(depths);
   }
 
-  return *std::max_element(depths.begin(), depths.end());
+  return *std::ranges::max_element(depths);
 }
 
 void QuantumComputation::initializeIOMapping() {

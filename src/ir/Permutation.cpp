@@ -14,6 +14,7 @@
 #include "ir/operations/Control.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 namespace qc {
 [[nodiscard]] auto Permutation::apply(const Controls& controls) const
@@ -56,7 +57,7 @@ namespace qc {
   if (empty()) {
     return 0;
   }
-  return std::max_element(
+  return std::ranges::max_element(
              cbegin(), cend(),
              [](const auto& a, const auto& b) { return a.second < b.second; })
       ->second;

@@ -226,15 +226,13 @@ auto CompoundOperation::isInverseOf(const Operation& other) const -> bool {
     // the compound operations
     const auto& thisUsedQubits = getUsedQubits();
     assert(!thisUsedQubits.empty());
-    const auto thisMaxQubit =
-        *std::max_element(thisUsedQubits.cbegin(), thisUsedQubits.cend());
+    const auto thisMaxQubit = *std::ranges::max_element(thisUsedQubits);
     QuantumComputation thisQc(thisMaxQubit + 1);
     std::for_each(cbegin(), cend(),
                   [&](const auto& op) { thisQc.emplace_back(op->clone()); });
     const auto& otherUsedQubits = co.getUsedQubits();
     assert(!otherUsedQubits.empty());
-    const auto otherMaxQubit =
-        *std::max_element(otherUsedQubits.cbegin(), otherUsedQubits.cend());
+    const auto otherMaxQubit = *std::ranges::max_element(otherUsedQubits);
     QuantumComputation otherQc(otherMaxQubit + 1);
     std::for_each(co.cbegin(), co.cend(),
                   [&](const auto& op) { otherQc.emplace_back(op->clone()); });
