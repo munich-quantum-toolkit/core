@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <memory>
 #include <random>
+#include <ranges>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -306,9 +307,9 @@ dCachedEdge DeterministicNoiseFunctionality::applyNoiseEffects(
       }
     }
   }
-  if (std::any_of(
-          usedQubits.begin(), usedQubits.end(),
-          [&nextLevel](const qc::Qubit qubit) { return nextLevel == qubit; })) {
+  if (std::ranges::any_of(usedQubits, [&nextLevel](const qc::Qubit qubit) {
+        return nextLevel == qubit;
+      })) {
     for (auto const& type : noiseEffects) {
       switch (type) {
       case AmplitudeDamping:

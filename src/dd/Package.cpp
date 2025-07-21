@@ -41,6 +41,7 @@
 #include <map>
 #include <queue>
 #include <random>
+#include <ranges>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -189,10 +190,10 @@ mEdge Package::makeGateDD(const GateMatrix& mat, const qc::Control& control,
 }
 mEdge Package::makeGateDD(const GateMatrix& mat, const qc::Controls& controls,
                           const qc::Qubit target) {
-  if (std::any_of(controls.begin(), controls.end(),
-                  [this](const auto& c) {
-                    return c.qubit > static_cast<Qubit>(nqubits - 1U);
-                  }) ||
+  if (std::ranges::any_of(controls,
+                          [this](const auto& c) {
+                            return c.qubit > static_cast<Qubit>(nqubits - 1U);
+                          }) ||
       target > static_cast<Qubit>(nqubits - 1U)) {
     throw std::runtime_error{
         "Requested gate acting on qubit(s) with index larger than " +
@@ -266,10 +267,10 @@ mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
                                   const qc::Qubit target0,
                                   const qc::Qubit target1) {
   // sanity check
-  if (std::any_of(controls.begin(), controls.end(),
-                  [this](const auto& c) {
-                    return c.qubit > static_cast<Qubit>(nqubits - 1U);
-                  }) ||
+  if (std::ranges::any_of(controls,
+                          [this](const auto& c) {
+                            return c.qubit > static_cast<Qubit>(nqubits - 1U);
+                          }) ||
       target0 > static_cast<Qubit>(nqubits - 1U) ||
       target1 > static_cast<Qubit>(nqubits - 1U)) {
     throw std::runtime_error{

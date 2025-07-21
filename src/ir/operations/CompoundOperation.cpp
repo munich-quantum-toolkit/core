@@ -25,6 +25,7 @@
 #include <iterator>
 #include <memory>
 #include <ostream>
+#include <ranges>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -71,9 +72,8 @@ std::size_t CompoundOperation::getNqubits() const {
 }
 
 bool CompoundOperation::isNonUnitaryOperation() const {
-  return std::any_of(ops.cbegin(), ops.cend(), [](const auto& op) {
-    return op->isNonUnitaryOperation();
-  });
+  return std::ranges::any_of(
+      ops, [](const auto& op) { return op->isNonUnitaryOperation(); });
 }
 
 bool CompoundOperation::isCompoundOperation() const noexcept { return true; }
@@ -92,8 +92,8 @@ bool CompoundOperation::isGlobal(const size_t nQubits) const noexcept {
 }
 
 bool CompoundOperation::isSymbolicOperation() const {
-  return std::any_of(ops.begin(), ops.end(),
-                     [](const auto& op) { return op->isSymbolicOperation(); });
+  return std::ranges::any_of(
+      ops, [](const auto& op) { return op->isSymbolicOperation(); });
 }
 
 void CompoundOperation::addControl(const Control c) {
@@ -171,8 +171,8 @@ std::ostream& CompoundOperation::print(std::ostream& os,
 }
 
 bool CompoundOperation::actsOn(const Qubit i) const {
-  return std::any_of(ops.cbegin(), ops.cend(),
-                     [&i](const auto& op) { return op->actsOn(i); });
+  return std::ranges::any_of(ops,
+                             [&i](const auto& op) { return op->actsOn(i); });
 }
 
 void CompoundOperation::addDepthContribution(

@@ -38,6 +38,7 @@
 #include <optional>
 #include <ostream>
 #include <random>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -316,8 +317,8 @@ void QuantumComputation::initializeIOMapping() {
   garbage.assign(nqubits + nancillae, false);
   for (const auto& [physicalIn, logicalIn] : initialLayout) {
     // if the qubit is not an output, mark it as garbage
-    const bool isOutput = std::any_of(
-        outputPermutation.begin(), outputPermutation.end(),
+    const bool isOutput = std::ranges::any_of(
+        outputPermutation,
         [&logicIn = logicalIn](const auto& p) { return p.second == logicIn; });
     if (!isOutput) {
       setLogicalQubitGarbage(logicalIn);
@@ -842,10 +843,10 @@ Qubit QuantumComputation::getHighestPhysicalQubitIndex() const {
 
 bool QuantumComputation::physicalQubitIsAncillary(
     const Qubit physicalQubitIndex) const {
-  return std::any_of(ancillaRegisters.cbegin(), ancillaRegisters.cend(),
-                     [&physicalQubitIndex](const auto& reg) {
-                       return reg.second.contains(physicalQubitIndex);
-                     });
+  return std::ranges::any_of(ancillaRegisters,
+                             [&physicalQubitIndex](const auto& reg) {
+                               return reg.second.contains(physicalQubitIndex);
+                             });
 }
 
 void QuantumComputation::setLogicalQubitAncillary(
@@ -1227,8 +1228,8 @@ bool isDynamicCircuit(const std::unique_ptr<Operation>* op,
   if (it->isStandardOperation()) {
     // Whenever a qubit has already been measured, the circuit is dynamic
     const auto& usedQubits = it->getUsedQubits();
-    return std::any_of(usedQubits.cbegin(), usedQubits.cend(),
-                       [&measured](const auto& q) { return measured[q]; });
+    return std::ranges::any_of(
+        usedQubits, [&measured](const auto& q) { return measured[q]; });
   }
 
   if (it->getType() == Measure) {
@@ -1240,16 +1241,16 @@ bool isDynamicCircuit(const std::unique_ptr<Operation>* op,
 
   assert(it->isCompoundOperation());
   const auto& compOp = dynamic_cast<const CompoundOperation&>(*it);
-  return std::any_of(
-      compOp.cbegin(), compOp.cend(),
-      [&measured](const auto& g) { return isDynamicCircuit(&g, measured); });
+  return std::ranges::any_of(compOp, [&measured](const auto& g) {
+    return isDynamicCircuit(&g, measured);
+  });
 }
 } // namespace
 
 bool QuantumComputation::isDynamic() const {
   // marks whether a qubit in the DAG has been measured
   std::vector<bool> measured(getHighestPhysicalQubitIndex() + 1, false);
-  return std::any_of(cbegin(), cend(), [&measured](const auto& op) {
+  return std::ranges::any_of(cbegin(), cend(), [&measured](const auto& op) {
     return ::qc::isDynamicCircuit(&op, measured);
   });
 }

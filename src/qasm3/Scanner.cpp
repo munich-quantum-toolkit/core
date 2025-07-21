@@ -19,13 +19,13 @@
 #include <iostream>
 #include <istream>
 #include <optional>
+#include <ranges>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
-
 namespace qasm3 {
 char Scanner::readUtf8Codepoint(std::istream* in) {
   char c = 0;
@@ -671,9 +671,8 @@ bool Scanner::hasTimingSuffix(const char first, const char second) {
   }
   const auto suffixes = std::vector<std::pair<char, char>>{
       {'m', 's'}, {'u', 's'}, {'n', 's'}, {'p', 's'}, {'d', 't'}};
-  return std::any_of(suffixes.begin(), suffixes.end(),
-                     [first, second](const auto& suffix) {
-                       return suffix.first == first && suffix.second == second;
-                     });
+  return std::ranges::any_of(suffixes, [first, second](const auto& suffix) {
+    return suffix.first == first && suffix.second == second;
+  });
 }
 } // namespace qasm3

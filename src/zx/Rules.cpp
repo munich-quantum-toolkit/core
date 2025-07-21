@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <optional>
+#include <ranges>
 
 namespace zx {
 
@@ -237,12 +238,12 @@ bool checkPivot(const ZXDiagram& diag, const Vertex v0, const Vertex v1) {
            toType != VertexType::Boundary;
   };
 
-  if (std::any_of(v0Edges.begin(), v0Edges.end(), isInvalidEdge)) {
+  if (std::ranges::any_of(v0Edges, isInvalidEdge)) {
     return false;
   }
 
   const auto& v1Edges = diag.incidentEdges(v1);
-  if (std::any_of(v1Edges.begin(), v1Edges.end(), isInvalidEdge)) {
+  if (std::ranges::any_of(v1Edges, isInvalidEdge)) {
     return false;
   }
 
