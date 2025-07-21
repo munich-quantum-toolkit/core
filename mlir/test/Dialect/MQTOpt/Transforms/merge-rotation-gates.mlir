@@ -360,3 +360,58 @@ module {
     return
   }
 }
+
+// -----
+// This test checks that consecutive gphase gates with controls are merged correctly.
+
+module {
+  // CHECK-LABEL: func.func @testMergeGphaseWithControls
+  func.func @testMergeGphaseWithControls() {
+    // CHECK: %[[Res_3:.*]] = arith.constant 3.000000e+00 : f64
+    // CHECK: %[[ANY:.*]] = mqtopt.gphase(%[[Res_3]]) ctrl %[[ANY:.*]] : ctrl !mqtopt.Qubit
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.rx(%[[ANY:.*]]) %[[ANY:.*]] : !mqtopt.Qubit
+
+    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    %c_0 = arith.constant 1.000000e+00 : f64
+    %q0_1 = mqtopt.gphase(%c_0) ctrl %q0_0 : ctrl !mqtopt.Qubit
+    %q0_2 = mqtopt.gphase(%c_0) ctrl %q0_1 : ctrl !mqtopt.Qubit
+    %q0_3 = mqtopt.gphase(%c_0) ctrl %q0_2 : ctrl !mqtopt.Qubit
+
+    %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_3) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+    return
+  }
+}
+
+// -----
+// This test checks that controlled rotation gates that have different pos/neg ctrl distributions are not merged.
+
+module {
+  // CHECK-LABEL: func.func @testDoNotMergeMultiQubitGatesDifferentControlSizes
+  func.func @testDoNotMergeMultiQubitGatesDifferentControlSizes() {
+    // CHECK: %[[Res_2:.*]] = arith.constant 2.000000e+00 : f64
+    // CHECK: %[[Res_1:.*]] = arith.constant 1.000000e+00 : f64
+    // CHECK: %[[Q0_1:.*]]:2, %[[Q2_1:.*]] = mqtopt.gphase(%[[Res_1]]) ctrl %[[ANY:.*]], %[[ANY:.*]] nctrl %[[ANY:.*]]: ctrl !mqtopt.Qubit, !mqtopt.Qubit nctrl !mqtopt.Qubit
+    // CHECK: %[[ANY:.*]], %[[ANY:.*]]:2 = mqtopt.gphase(%[[Res_2]]) ctrl %[[Q0_1]]#0 nctrl %[[Q0_1]]#1, %[[Q2_1]] : ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit, !mqtopt.Qubit
+
+    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
+    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %reg_3, %q2_0 = "mqtopt.extractQubit"(%reg_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    %c_0 = arith.constant 1.000000e+00 : f64
+    %c_1 = arith.constant 2.000000e+00 : f64
+    %q012_1:3 = mqtopt.gphase(%c_0) ctrl %q0_0, %q1_0 nctrl %q2_0 : ctrl !mqtopt.Qubit, !mqtopt.Qubit nctrl !mqtopt.Qubit
+    %q012_2:3 = mqtopt.gphase(%c_1) ctrl %q012_1#0 nctrl %q012_1#1, %q012_1#2 : ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit, !mqtopt.Qubit
+
+    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q012_2#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    %reg_5 = "mqtopt.insertQubit"(%reg_4, %q012_2#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    %reg_6 = "mqtopt.insertQubit"(%reg_5, %q012_2#1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
+
+    return
+  }
+}
