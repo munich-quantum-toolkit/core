@@ -1589,8 +1589,8 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
   opData.reserve(qc.size());
   for (auto opIt = qc.begin(); opIt != qc.end(); ++opIt) {
     const std::set<Qubit> used = opIt->get()->getUsedQubits();
-    opData.push_back(
-        OperationData{opIt, opIt->get()->isClifford(), {used.begin(), used.end()}});
+    opData.push_back(OperationData{
+        opIt, opIt->get()->isClifford(), {used.begin(), used.end()}});
   }
 
   // Blocks store indices of OperationData and which Qubits are ready
@@ -1603,7 +1603,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
   std::vector<Block> blocks;
   const int numOperations = static_cast<int>(opData.size());
 
-  // compute depth of a block by looking until when each qubit is ocupied
+  // compute depth of a block by looking until when each qubit is occupied
   auto computeDepth = [&](const std::vector<int>& seq) {
     std::unordered_map<Qubit, int> qubitReady; // layer each qubit becomes free
     int depth = 0;
