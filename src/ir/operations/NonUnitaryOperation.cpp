@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <iomanip>
 #include <ostream>
+#include <ranges>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -56,7 +57,7 @@ NonUnitaryOperation::NonUnitaryOperation(const Qubit qubit, const Bit cbit)
 NonUnitaryOperation::NonUnitaryOperation(Targets qubits, OpType op) {
   type = op;
   targets = std::move(qubits);
-  std::sort(targets.begin(), targets.end());
+  std::ranges::sort(targets);
   name = toString(type);
 }
 

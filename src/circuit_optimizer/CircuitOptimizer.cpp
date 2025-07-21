@@ -27,6 +27,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -1477,9 +1478,9 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
         // sort blocks in descending order
         std::vector<std::pair<Qubit, std::size_t>> sortedBlocks(
             blocksAndSizes.begin(), blocksAndSizes.end());
-        std::sort(
-            sortedBlocks.begin(), sortedBlocks.end(),
-            [](const auto& a, const auto& b) { return a.second > b.second; });
+        std::ranges::sort(sortedBlocks, [](const auto& a, const auto& b) {
+          return a.second > b.second;
+        });
         for (auto it = sortedBlocks.begin(); it != sortedBlocks.end(); ++it) {
           auto& [block, size] = *it;
           // maximally large block -> nothing to do
@@ -1519,9 +1520,9 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
         // sort savings in descending order
         std::vector<std::pair<Qubit, std::size_t>> sortedSavings(
             savings.begin(), savings.end());
-        std::sort(
-            sortedSavings.begin(), sortedSavings.end(),
-            [](const auto& a, const auto& b) { return a.second > b.second; });
+        std::ranges::sort(sortedSavings, [](const auto& a, const auto& b) {
+          return a.second > b.second;
+        });
         auto savingsNeed = static_cast<std::int64_t>(totalSize - maxBlockSize);
         for (const auto& [index, saving] : sortedSavings) {
           if (savingsNeed > 0) {
