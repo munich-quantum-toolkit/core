@@ -80,18 +80,6 @@ public:
    */
   static void backpropagateOutputPermutation(QuantumComputation& qc);
 
-  /**
-   * @brief Collects all Clifford blocks in the circuit.
-   * @details The circuit is traversed and all operations that are part of a
-   * Clifford block are collected into a compound operation. All non-Clifford
-   * Blocks remain as single blocks. The compound operation is then appended to
-   * the circuit. Light optimizations are applied to the blocks, such as
-   * removing identity gates.
-   * @param qc the quantum circuit
-   * @param maxBlockSize the maximum size of a block
-   */
-  static void collectCliffordBlocks(QuantumComputation& qc,
-                                    std::size_t maxBlockSize);
 
   /**
    * @brief Collects all operations in the circuit into blocks of a maximum
@@ -105,6 +93,19 @@ public:
    * @param maxBlockSize the maximum size of a block
    */
   static void collectBlocks(QuantumComputation& qc, std::size_t maxBlockSize);
+
+  /**
+   * @brief Collects all Clifford blocks in the circuit.
+   * @details The circuit is traversed and all operations that are part of a
+   * Clifford block are collected into a compound operation. All non-Clifford
+   * Blocks remain as single blocks. The compound operation is then appended to
+   * the circuit. Light optimizations are applied to the blocks, such as
+   * removing identity gates.
+   * @param qc the quantum circuit
+   * @param maxBlockSize the maximum size of a block
+   */
+  static void collectCliffordBlocks(QuantumComputation& qc,
+                                    std::size_t maxBlockSize);
 
   /**
    * @brief Elide permutations by propagating them through the circuit.
