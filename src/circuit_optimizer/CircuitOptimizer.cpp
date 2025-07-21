@@ -1714,9 +1714,6 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
   removeIdentities(qc);
 }
 
-
-
-
 namespace {
 void elidePermutations(Iterator begin, const std::function<Iterator()>& end,
                        const std::function<Iterator(Iterator)>& erase,
