@@ -31,6 +31,7 @@
 #include <iostream>
 #include <memory>
 #include <random>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -46,7 +47,7 @@ protected:
     std::array<std::mt19937_64::result_type, std::mt19937_64::state_size>
         randomData{};
     std::random_device rd;
-    std::generate(begin(randomData), end(randomData), [&]() { return rd(); });
+    std::ranges::generate(randomData, [&]() { return rd(); });
     std::seed_seq seeds(begin(randomData), end(randomData));
     mt.seed(seeds);
     dist = std::uniform_real_distribution<fp>(0.0, 2. * qc::PI);

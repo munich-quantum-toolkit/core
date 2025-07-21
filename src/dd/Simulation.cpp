@@ -26,6 +26,7 @@
 #include <map>
 #include <memory>
 #include <random>
+#include <ranges>
 #include <string>
 #include <utility>
 #include <vector>
@@ -48,8 +49,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
     std::array<std::mt19937_64::result_type, std::mt19937_64::state_size>
         randomData{};
     std::random_device rd;
-    std::generate(std::begin(randomData), std::end(randomData),
-                  [&rd]() { return rd(); });
+    std::ranges::generate(randomData, [&rd]() { return rd(); });
     std::seed_seq seeds(std::begin(randomData), std::end(randomData));
     mt.seed(seeds);
   }
