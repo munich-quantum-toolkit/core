@@ -1211,7 +1211,7 @@ void QuantumComputation::reorderOperations() {
   // clear all the operations from the quantum circuit
   ops.clear();
   // move all operations from the newly created vector to the original one
-  std::move(newOps.begin(), newOps.end(), std::back_inserter(ops));
+  std::ranges::move(newOps, std::back_inserter(ops));
 }
 
 namespace {
