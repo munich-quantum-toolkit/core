@@ -135,7 +135,7 @@ struct QuantumSinkPushPattern final
   replaceAllChildUsesWith(mlir::Operation& original, mlir::Operation& clone,
                           mlir::Block& block,
                           std::unordered_set<mlir::Block*>& visited) const {
-    if (visited.find(&block) != visited.end()) {
+    if (visited.contains(&block)) {
       return;
     }
     visited.insert(&block);

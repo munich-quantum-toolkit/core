@@ -345,7 +345,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     mlir::Operation* current = op;
     while (current != nullptr) {
       // no need to visit non-mqtopt operations
-      if (visited.find(current) != visited.end() ||
+      if (visited.contains(current) ||
           current->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
         current = current->getNextNode();
         continue;

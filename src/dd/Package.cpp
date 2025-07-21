@@ -542,7 +542,7 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
     if (const auto s0w = static_cast<ComplexValue>(s0.w);
         !s0w.approximatelyZero()) {
       const fp tmp1 = prob * s0w.mag2();
-      if (visited.find(s0.p) != visited.end()) {
+      if (visited.contains(s0.p)) {
         measurementProbabilities[s0.p] = measurementProbabilities[s0.p] + tmp1;
       } else {
         measurementProbabilities[s0.p] = tmp1;
@@ -555,7 +555,7 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
     if (const auto s1w = static_cast<ComplexValue>(s1.w);
         !s1w.approximatelyZero()) {
       const fp tmp1 = prob * s1w.mag2();
-      if (visited.find(s1.p) != visited.end()) {
+      if (visited.contains(s1.p)) {
         measurementProbabilities[s1.p] = measurementProbabilities[s1.p] + tmp1;
       } else {
         measurementProbabilities[s1.p] = tmp1;
@@ -872,7 +872,7 @@ bool Package::isCloseToIdentityRecursive(
   }
 
   // immediately return if this node has already been visited
-  if (visited.find(m.p) != visited.end()) {
+  if (visited.contains(m.p)) {
     return true;
   }
 

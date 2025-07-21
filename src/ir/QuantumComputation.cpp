@@ -272,7 +272,7 @@ void QuantumComputation::initializeIOMapping() {
         const auto qubitidx = q;
         // only the first measurement of a qubit is used to determine the output
         // permutation
-        if (measuredQubits.count(qubitidx) != 0) {
+        if (measuredQubits.contains(qubitidx)) {
           continue;
         }
 
@@ -305,7 +305,7 @@ void QuantumComputation::initializeIOMapping() {
   if (outputPermutationFromMeasurements) {
     auto it = outputPermutation.begin();
     while (it != outputPermutation.end()) {
-      if (measuredQubits.find(it->first) == measuredQubits.end()) {
+      if (!measuredQubits.contains(it->first)) {
         it = outputPermutation.erase(it);
       } else {
         ++it;
@@ -334,7 +334,7 @@ void QuantumComputation::initializeIOMapping() {
 const QuantumRegister&
 QuantumComputation::addQubitRegister(std::size_t nq,
                                      const std::string& regName) {
-  if (quantumRegisters.count(regName) != 0) {
+  if (quantumRegisters.contains(regName)) {
     throw std::runtime_error("[addQubitRegister] Register " + regName +
                              " already exists");
   }
@@ -366,7 +366,7 @@ QuantumComputation::addQubitRegister(std::size_t nq,
 const ClassicalRegister&
 QuantumComputation::addClassicalRegister(std::size_t nc,
                                          const std::string& regName) {
-  if (classicalRegisters.count(regName) != 0) {
+  if (classicalRegisters.contains(regName)) {
     throw std::runtime_error("[addClassicalRegister] Register " + regName +
                              " already exists");
   }
@@ -385,7 +385,7 @@ QuantumComputation::addClassicalRegister(std::size_t nc,
 const QuantumRegister&
 QuantumComputation::addAncillaryRegister(std::size_t nq,
                                          const std::string& regName) {
-  if (ancillaRegisters.count(regName) != 0) {
+  if (ancillaRegisters.contains(regName)) {
     throw std::runtime_error("[addAncillaryRegister] Register " + regName +
                              " already exists");
   }
@@ -944,7 +944,7 @@ void QuantumComputation::appendMeasurementsAccordingToOutputPermutation(
     // in case there are no registers, create a new one
     addClassicalRegister(outputPermutation.size(), registerName);
   } else if (nclassics < outputPermutation.size()) {
-    if (classicalRegisters.find(registerName) != classicalRegisters.end()) {
+    if (classicalRegisters.contains(registerName)) {
       throw std::runtime_error(
           "[appendMeasurementsAccordingToOutputPermutation] Register " +
           registerName + " already exists but is too small");

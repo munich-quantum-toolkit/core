@@ -45,7 +45,7 @@ struct QuantumSinkShiftPattern final
    */
   bool isAfterOrEqual(mlir::Block& successor, mlir::Block& predecessor,
                       std::unordered_set<mlir::Block*>& visited) const {
-    if (visited.find(&successor) != visited.end()) {
+    if (visited.contains(&successor)) {
       return false;
     }
     visited.insert(&successor);

@@ -70,8 +70,7 @@ TEST(Layer, ExecutableSet1) {
   // valid anymore
   std::vector<std::shared_ptr<Layer::DAGVertex>> vList;
   for (const auto& u : layer.getExecutableSet()) {
-    if (const auto& it = (u->getOperation())->getUsedQubits();
-        it.find(0) != it.end()) {
+    if (const auto& it = (u->getOperation())->getUsedQubits(); it.contains(0)) {
       vList.emplace_back(u);
     }
   }

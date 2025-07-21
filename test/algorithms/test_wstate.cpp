@@ -51,6 +51,6 @@ TEST_P(WState, FunctionTest) {
   constexpr std::size_t shots = 4096U;
   const auto measurements = dd::sample(qc, shots);
   for (const auto& result : generateWStateStrings(nq)) {
-    EXPECT_TRUE(measurements.find(result) != measurements.end());
+    EXPECT_TRUE(measurements.contains(result));
   }
 }

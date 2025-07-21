@@ -419,7 +419,7 @@ void Importer::visitGateStatement(
     const std::shared_ptr<GateDeclaration> gateStatement) {
   auto identifier = gateStatement->identifier;
   if (gateStatement->isOpaque) {
-    if (gates.find(identifier) == gates.end()) {
+    if (!gates.contains(identifier)) {
       // only builtin gates may be declared as opaque.
       throw CompilerError("Unsupported opaque gate '" + identifier + "'.",
                           gateStatement->debugInfo);
@@ -658,14 +658,14 @@ std::unique_ptr<qc::Operation> Importer::evaluateGateCall(
     // check if any of the bits are duplicate
     std::unordered_set<qc::Qubit> allQubits;
     for (const auto& control : controlBits) {
-      if (allQubits.find(control.qubit) != allQubits.end()) {
+      if (allQubits.contains(control.qubit)) {
         throw CompilerError("Duplicate qubit in control list.",
                             gateCallStatement->debugInfo);
       }
       allQubits.emplace(control.qubit);
     }
     for (const auto& qubit : targetBits) {
-      if (allQubits.find(qubit) != allQubits.end()) {
+      if (allQubits.contains(qubit)) {
         throw CompilerError("Duplicate qubit in target list.",
                             gateCallStatement->debugInfo);
       }
@@ -959,7 +959,7 @@ Importer::parseGateIdentifierCompatMode(const std::string& identifier) {
     implicitControls++;
   }
 
-  if (gates.find(gateIdentifier) == gates.end()) {
+  if (!gates.contains(gateIdentifier)) {
     return std::pair{identifier, 0};
   }
   return std::pair{gateIdentifier, implicitControls};

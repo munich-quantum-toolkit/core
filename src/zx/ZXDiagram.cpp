@@ -359,7 +359,7 @@ void ZXDiagram::removeDisconnectedSpiders() {
       auto w = stack.back();
       stack.pop_back();
 
-      if (visited.find(w) != visited.end()) {
+      if (visited.contains(w)) {
         continue;
       }
 

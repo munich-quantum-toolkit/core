@@ -177,7 +177,7 @@ TEST_P(Grover, FunctionalityRecursive) {
 TEST_P(Grover, Simulation) {
   constexpr std::size_t shots = 1024;
   const auto measurements = dd::sample(qc, shots);
-  ASSERT_TRUE(measurements.find(expected) != measurements.end());
+  ASSERT_TRUE(measurements.contains(expected));
   const auto correctShots = measurements.at(expected);
   const auto probability =
       static_cast<double>(correctShots) / static_cast<double>(shots);

@@ -113,7 +113,7 @@ Token Scanner::consumeName() {
   }
 
   t.str = name.str();
-  if (keywords.find(t.str) != keywords.end()) {
+  if (keywords.contains(t.str)) {
     t.kind = keywords[t.str];
   } else {
     t.kind = Token::Kind::Identifier;
