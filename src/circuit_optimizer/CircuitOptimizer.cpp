@@ -1575,7 +1575,8 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
                                              std::size_t maxBlockSize) {
 
   deferMeasurements(qc);
-  // We store iterators to refer back to them later and replace/erase them in place
+  // We store iterators to refer back to them later and replace/erase them in
+  // place
   using OpIter = decltype(qc.begin());
 
   // Pull everything into a small array so we can index by integer
