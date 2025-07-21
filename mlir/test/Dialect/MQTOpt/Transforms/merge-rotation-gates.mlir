@@ -387,6 +387,31 @@ module {
 }
 
 // -----
+// This test checks that consecutive gphase gates without controls are merged correctly.
+
+module {
+  // CHECK-LABEL: func.func @testMergeGphaseWithoutControls
+  func.func @testMergeGphaseWithoutControls() {
+    // CHECK: %[[Res_3:.*]] = arith.constant 3.000000e+00 : f64
+    // CHECK: %[[ANY:.*]] = mqtopt.gphase(%[[Res_3]]) : ()
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.rx(%[[ANY:.*]]) %[[ANY:.*]] : !mqtopt.Qubit
+
+    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+    %c_0 = arith.constant 1.000000e+00 : f64
+    mqtopt.gphase(%c_0) : ()
+    mqtopt.gphase(%c_0) : ()
+    mqtopt.gphase(%c_0) : ()
+
+    %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+
+    return
+  }
+}
+
+// -----
 // This test checks that controlled rotation gates that have different pos/neg ctrl distributions are not merged.
 
 module {
