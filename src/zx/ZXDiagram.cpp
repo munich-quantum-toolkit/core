@@ -411,7 +411,7 @@ ZXDiagram::getConnectedSet(const std::vector<Vertex>& s,
         continue;
       }
 
-      const auto& p = std::lower_bound(connected.begin(), connected.end(), to);
+      const auto& p = std::ranges::lower_bound(connected, to);
       if (p == connected.end()) {
         connected.emplace_back(to);
         continue;
