@@ -121,8 +121,8 @@ void fuseSpiders(ZXDiagram& diag, const Vertex v0, const Vertex v1) {
 }
 
 bool checkLocalComp(const ZXDiagram& diag, const Vertex v) {
-  const auto vData = diag.getVData(v).value_or(
-      VertexData{0, 0, PiExpression(), VertexType::X});
+  const auto vData = diag.getVData(v).value_or(VertexData{
+      .col = 0, .qubit = 0, .phase = PiExpression(), .type = VertexType::X});
   if (vData.type != VertexType::Z || !isProperClifford(vData.phase)) {
     return false;
   }
@@ -153,10 +153,10 @@ void localComp(ZXDiagram& diag, const Vertex v) { // TODO:scalars
 }
 
 bool checkPivotPauli(const ZXDiagram& diag, const Vertex v0, const Vertex v1) {
-  const auto v0Data = diag.getVData(v0).value_or(
-      VertexData{0, 0, PiExpression(), VertexType::X});
-  const auto v1Data = diag.getVData(v0).value_or(
-      VertexData{0, 0, PiExpression(), VertexType::X});
+  const auto v0Data = diag.getVData(v0).value_or(VertexData{
+      .col = 0, .qubit = 0, .phase = PiExpression(), .type = VertexType::X});
+  const auto v1Data = diag.getVData(v1).value_or(VertexData{
+      .col = 0, .qubit = 0, .phase = PiExpression(), .type = VertexType::X});
 
   if (v0Data.type != VertexType::Z || // maybe problem if there is a self-loop?
       v1Data.type != VertexType::Z || !isPauli(diag, v0) ||

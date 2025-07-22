@@ -163,9 +163,10 @@ bool Package::garbageCollect(bool force) {
 
 Package::ActiveCounts Package::computeActiveCounts() {
   const auto count = [this]() -> ActiveCounts {
-    return {
-        vUniqueTable.countMarkedEntries(), mUniqueTable.countMarkedEntries(),
-        dUniqueTable.countMarkedEntries(), cUniqueTable.countMarkedEntries()};
+    return {.vector = vUniqueTable.countMarkedEntries(),
+            .matrix = mUniqueTable.countMarkedEntries(),
+            .density = dUniqueTable.countMarkedEntries(),
+            .reals = cUniqueTable.countMarkedEntries()};
   };
   return roots.execute<ActiveCounts>(count);
 }
@@ -788,13 +789,13 @@ ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y,
       e1 = x.p->e[i];
       e1.w = ComplexNumbers::conj(e1.w);
     } else {
-      e1 = {x.p, Complex::one()};
+      e1 = {.p = x.p, .w = Complex::one()};
     }
     vEdge e2{};
     if (!y.isTerminal() && y.p->v == w) {
       e2 = y.p->e[i];
     } else {
-      e2 = {y.p, Complex::one()};
+      e2 = {.p = y.p, .w = Complex::one()};
     }
     sum += innerProduct(e1, e2, w);
   }

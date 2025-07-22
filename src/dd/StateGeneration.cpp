@@ -200,8 +200,10 @@ VectorDD makeGHZState(const std::size_t n, Package& dd) {
   const vEdge e = dd.makeDDNode(
       static_cast<Qubit>(n - 1),
       std::array<vEdge, RADIX>{
-          {{leftSubtree.p, {&constants::sqrt2over2, &constants::zero}},
-           {rightSubtree.p, {&constants::sqrt2over2, &constants::zero}}}});
+          {{.p = leftSubtree.p,
+            .w = {.r = &constants::sqrt2over2, .i = &constants::zero}},
+           {.p = rightSubtree.p,
+            .w = {.r = &constants::sqrt2over2, .i = &constants::zero}}}});
   dd.incRef(e);
   return e;
 }

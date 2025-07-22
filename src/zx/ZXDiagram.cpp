@@ -116,7 +116,7 @@ Vertex ZXDiagram::addVertex(const VertexData& data) {
 
 Vertex ZXDiagram::addVertex(const Qubit qubit, const Col col,
                             const PiExpression& phase, const VertexType type) {
-  return addVertex({col, qubit, phase, type});
+  return addVertex({.col = col, .qubit = qubit, .phase = phase, .type = type});
 }
 
 void ZXDiagram::addQubit() {
@@ -304,8 +304,10 @@ std::vector<Vertex> ZXDiagram::initGraph(const std::size_t nqubits) {
 
   const auto nVerts = qubitVertices.size();
   for (size_t i = 0; i < nVerts; ++i) {
-    const auto v = addVertex(
-        {1, static_cast<Qubit>(i), PiExpression(), VertexType::Boundary});
+    const auto v = addVertex({.col = 1,
+                              .qubit = static_cast<Qubit>(i),
+                              .phase = PiExpression(),
+                              .type = VertexType::Boundary});
     qubitVertices[i] = v;
     inputs.push_back(v);
   }
@@ -320,8 +322,10 @@ void ZXDiagram::closeGraph(const std::vector<Vertex>& qubitVertices) {
       continue;
     }
 
-    const Vertex newV = addVertex(
-        {vData->col + 1, vData->qubit, PiExpression(), VertexType::Boundary});
+    const Vertex newV = addVertex({.col = vData->col + 1,
+                                   .qubit = vData->qubit,
+                                   .phase = PiExpression(),
+                                   .type = VertexType::Boundary});
     addEdge(v, newV);
     outputs.push_back(newV);
   }
