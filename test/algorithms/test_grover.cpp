@@ -85,7 +85,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(Grover, Functionality) {
   auto x = '1' + expected;
   std::ranges::reverse(x);
-  std::replace(x.begin(), x.end(), '1', '2');
+  std::ranges::replace(x, '1', '2');
 
   qc::QuantumComputation groverIteration(qc.getNqubits());
   qc::appendGroverOracle(groverIteration, targetValue);
@@ -124,7 +124,7 @@ TEST_P(Grover, Functionality) {
 TEST_P(Grover, FunctionalityRecursive) {
   auto x = '1' + expected;
   std::ranges::reverse(x);
-  std::replace(x.begin(), x.end(), '1', '2');
+  std::ranges::replace(x, '1', '2');
 
   qc::QuantumComputation groverIteration(qc.getNqubits());
   qc::appendGroverOracle(groverIteration, targetValue);
