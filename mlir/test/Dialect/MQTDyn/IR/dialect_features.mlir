@@ -234,7 +234,7 @@ module {
     func.func @testSingleQubitRotationOp() {
         // CHECK: %[[P0:.*]] = arith.constant 3.000000e-01
         // CHECK: mqtdyn.u(%[[P0]], %[[P0]], %[[P0]]) %[[Q0:.*]]
-        // CHECK: mqtdyn.u2(%[[P0]], %[[P0]]) %[[Q0]]
+        // CHECK: mqtdyn.u2(%[[P0]], %[[P0]] static [] mask [false, false]) %[[Q0]]
         // CHECK: mqtdyn.p(%[[P0]]) %[[Q0]]
         // CHECK: mqtdyn.rx(%[[P0]]) %[[Q0]]
         // CHECK: mqtdyn.ry(%[[P0]]) %[[Q0]]
@@ -245,7 +245,7 @@ module {
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
 
         mqtdyn.u(%p0, %p0, %p0) %q0
-        mqtdyn.u2(%p0, %p0) %q0
+        mqtdyn.u2(%p0, %p0 static [] mask [false, false]) %q0
         mqtdyn.p(%p0) %q0
         mqtdyn.rx(%p0) %q0
         mqtdyn.ry(%p0) %q0
@@ -571,6 +571,8 @@ module {
     func.func @testAllocMissingSize() {
         // expected-error-re@+1 {{'mqtdyn.allocQubitRegister' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'size'}}
         %qreg = "mqtdyn.allocQubitRegister"() : () -> !mqtdyn.QubitRegister
+
+        return
     }
 }
 
@@ -582,6 +584,8 @@ module {
 
         // expected-error-re@+1 {{'mqtdyn.allocQubitRegister' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'size'}}
         %qreg = "mqtdyn.allocQubitRegister"(%size) <{size_attr = 3 : i64}> : (i64) -> !mqtdyn.QubitRegister
+
+        return
     }
 }
 
@@ -594,6 +598,8 @@ module {
 
         // expected-error-re@+1 {{'mqtdyn.extractQubit' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'index'}}
         %q = "mqtdyn.extractQubit"(%qreg, %index) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
+
+        return
   }
 }
 
@@ -606,6 +612,8 @@ module {
 
         // expected-error-re@+1 {{'mqtdyn.extractQubit' op exactly one attribute ({{.*}}) or operand ({{.*}}) must be provided for 'index'}}
         %q = "mqtdyn.extractQubit"(%qreg) : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+
+        return
   }
 }
 
@@ -619,6 +627,8 @@ module {
 
         // expected-error@+1 {{operation expects exactly 3 parameters but got 2}}
         mqtdyn.u(%p0, %p0) %q0
+
+        return
     }
 }
 
@@ -632,6 +642,166 @@ module {
 
         // expected-error@+1 {{'mqtdyn.measure' op number of input qubits (2) and output bits (0) must be the same}}
         "mqtdyn.measure"(%q0, %q1) : (!mqtdyn.Qubit, !mqtdyn.Qubit) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if a no-target arity constraint operation detects correctly when a target is provided.
+module {
+    func.func @testNoTargetContainsTarget() {
+        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
+        %q_0 = "mqtdyn.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> (!mqtdyn.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{number of input qubits (1) must be 0}}
+        mqtdyn.gphase(%c0_f64) %q_0
+
+        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if static parameters for rotation operations are parsed correctly.
+module {
+    // CHECK-LABEL: func.func @testStaticParameters
+    func.func @testStaticParameters() {
+        // CHECK: mqtdyn.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01]) %[[ANY:.*]]
+        // CHECK: mqtdyn.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01] mask [true, true, true]) %[[ANY:.*]]
+
+        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
+        %q_0 = "mqtdyn.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> (!mqtdyn.Qubit)
+
+        mqtdyn.u(static [1.00000e-01, 2.00000e-01, 3.00000e-01]) %q_0
+        mqtdyn.u(static [1.00000e-01, 2.00000e-01, 3.00000e-01] mask [true, true, true]) %q_0
+
+        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if static parameters together with dynamic parameters for rotation operations are parsed correctly.
+module {
+    // CHECK-LABEL: func.func @testStaticAndDynamicParameters
+    func.func @testStaticAndDynamicParameters() {
+        // CHECK: mqtdyn.u(%[[ANY:.*]] static [1.000000e-01, 2.000000e-01] mask [true, false, true]) %[[ANY:.*]]
+
+        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
+        %q_0 = "mqtdyn.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> (!mqtdyn.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        mqtdyn.u(%c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, false, true]) %q_0
+
+        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if static parameters and dynamic parameters surpassing the limit of parameters together is detected correctly.
+module {
+    func.func @testTooManyStaticAndDynamicParameters() {
+        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
+        %q_0 = "mqtdyn.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> (!mqtdyn.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{operation expects exactly 3 parameters but got 4}}
+        mqtdyn.u(%c0_f64, %c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, false, true]) %q_0
+
+        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if static parameters and dynamic parameters being passed without a mask is detected correctly.
+module {
+    func.func @testStaticAndDynamicParametersNoMask() {
+        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
+        %q_0 = "mqtdyn.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> (!mqtdyn.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{operation has mixed dynamic and static parameters but no parameter mask}}
+        mqtdyn.u(%c0_f64 static [1.00000e-01, 2.00000e-01]) %q_0
+
+        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if a static parameter mask with incorrect size is detected correctly.
+module {
+    func.func @testStaticAndDynamicParametersWrongSizeMask() {
+        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
+        %q_0 = "mqtdyn.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> (!mqtdyn.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{operation expects exactly 3 parameters but has a parameter mask with 2 entries}}
+        mqtdyn.u(%c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, true]) %q_0
+
+        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if a static parameter mask with an incorrect number of true entries is detected correctly.
+module {
+    func.func @testStaticAndDynamicParametersIncorrectTrueEntriesInMask() {
+        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
+        %q_0 = "mqtdyn.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> (!mqtdyn.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{operation has 2 static parameter(s) but has a parameter mask with 3 true entries}}
+        mqtdyn.u(%c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, true, true]) %q_0
+
+        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if a static parameter mask with `true` parameters even though the operation has no static parameters is detected correctly.
+module {
+    func.func @testParametersMaskWithTrueEntriesButNoStaticParameters() {
+        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
+        %q_0 = "mqtdyn.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> (!mqtdyn.Qubit)
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        // expected-error@+1 {{operation has no static parameter but has a parameter mask with 1 true entries}}
+        mqtdyn.u(%c0_f64, %c0_f64, %c0_f64 static [] mask [true, false, false]) %q_0
+
+        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if a no-control gate being passed a control is detected correctly.
+module {
+    func.func @testNoControlWithControl() {
+        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+        %q0_0 = "mqtdyn.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> (!mqtdyn.Qubit)
+        %q1_0 = "mqtdyn.extractQubit"(%qreg)  <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> (!mqtdyn.Qubit)
+
+        // expected-error@+1 {{'mqtdyn.barrier' op Gate marked as NoControl should not have control qubits}}
+        mqtdyn.barrier() %q0_0 ctrl %q1_0
+
+        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+
+        return
     }
 }
 
@@ -659,6 +829,7 @@ module {
         %m1 = "mqtdyn.measure"(%q1) : (!mqtdyn.Qubit) -> i1
 
         "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+
         return
     }
 }

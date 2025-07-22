@@ -47,3 +47,23 @@ module {
     return
   }
 }
+
+// -----
+// Tests that nothing is done with `mqtdyn.extractQubit` if index is not a constant.
+
+module {
+  // CHECK-LABEL: @noConstantDontFold
+  func.func @noConstantDontFold() {
+    %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
+
+    %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+
+    %m = "mqtdyn.measure"(%q0) : (!mqtdyn.Qubit) -> i1
+    %i = arith.extui %m : i1 to i64
+    // CHECK: %[[Q0:.*]] = "mqtdyn.extractQubit"(%[[Reg_0:.*]], %[[i:.*]]) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
+    %q1 = "mqtdyn.extractQubit"(%r0, %i) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
+
+    mqtdyn.x () %q1
+    return
+  }
+}
