@@ -21,7 +21,6 @@
 #include <iomanip>
 #include <iostream>
 #include <ostream>
-#include <ranges>
 #include <set>
 #include <vector>
 

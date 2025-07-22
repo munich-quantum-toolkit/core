@@ -27,7 +27,6 @@
 #include <gtest/gtest.h>
 #include <map>
 #include <memory>
-#include <ranges>
 #include <stdexcept>
 
 using namespace qc;

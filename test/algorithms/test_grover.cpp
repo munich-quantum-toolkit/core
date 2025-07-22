@@ -25,7 +25,6 @@
 #include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
-#include <ranges>
 #include <sstream>
 #include <tuple>
 

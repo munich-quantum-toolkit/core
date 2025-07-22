@@ -14,7 +14,6 @@
 #include "ir/operations/Control.hpp"
 
 #include <algorithm>
-#include <ranges>
 
 namespace qc {
 [[nodiscard]] auto Permutation::apply(const Controls& controls) const

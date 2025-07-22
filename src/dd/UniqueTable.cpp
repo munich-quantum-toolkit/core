@@ -17,7 +17,6 @@
 #include <cstddef>
 #include <nlohmann/json.hpp>
 #include <numeric>
-#include <ranges>
 #include <string>
 
 namespace dd {

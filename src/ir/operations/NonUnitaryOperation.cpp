@@ -27,7 +27,6 @@
 #include <cstddef>
 #include <iomanip>
 #include <ostream>
-#include <ranges>
 #include <set>
 #include <stdexcept>
 #include <utility>

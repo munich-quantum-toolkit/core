@@ -18,7 +18,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <optional>
-#include <ranges>
 
 namespace zx {
 
