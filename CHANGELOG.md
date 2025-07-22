@@ -13,6 +13,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - ✨ Add MQT-internal MLIR dialect conversions ([#1001]) ([**@li-mingbao**])
 
+### Changed
+
+- ⬆️ Require C++20 ([#897]) ([**@burgholzer**], [**@denialhaag**])
+
 ## [3.1.0]
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#310)._
@@ -152,6 +156,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#911]: https://github.com/munich-quantum-toolkit/core/pull/911
 [#908]: https://github.com/munich-quantum-toolkit/core/pull/908
 [#900]: https://github.com/munich-quantum-toolkit/core/pull/900
+[#897]: https://github.com/munich-quantum-toolkit/core/pull/897
 [#895]: https://github.com/munich-quantum-toolkit/core/pull/895
 [#893]: https://github.com/munich-quantum-toolkit/core/pull/893
 [#892]: https://github.com/munich-quantum-toolkit/core/pull/892

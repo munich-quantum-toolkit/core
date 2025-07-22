@@ -4,6 +4,8 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+With this release, MQT Core requires C++20.
+
 ## [3.1.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.0` to `3.1`.
