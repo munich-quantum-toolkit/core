@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <random>
 #include <string>
 #include <type_traits>
@@ -71,7 +72,7 @@ auto computeNumberOfIterations(const Qubit nq) -> std::size_t {
   if (nq % 2 == 1) {
     return static_cast<std::size_t>(std::round(
         PI_4 * std::pow(2., (static_cast<double>(nq + 1) / 2.) - 1.) *
-        std::sqrt(2)));
+        std::numbers::sqrt2));
   }
   return static_cast<std::size_t>(
       std::round(PI_4 * std::pow(2., static_cast<double>(nq) / 2.)));
