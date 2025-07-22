@@ -79,7 +79,7 @@ void consolidateRegister(QuantumRegisterMap& regs) {
     for (const auto& [name, qreg] : regs) {
       finished = true;
       // check if lower part of register
-      if (name.length() > 2 && name.compare(name.size() - 2, 2, "_l") == 0) {
+      if (name.ends_with("_l")) {
         auto lowidx = qreg.getStartIndex();
         auto lownum = qreg.getSize();
         // search for higher part of register
