@@ -56,8 +56,8 @@ void compareFiles(const std::string& file1, const std::string& file2) {
   std::ifstream fstream2(file2);
   std::string str2((std::istreambuf_iterator<char>(fstream2)),
                    std::istreambuf_iterator<char>());
-  str1.erase(std::remove_if(str1.begin(), str1.end(), isspace), str1.end());
-  str2.erase(std::remove_if(str2.begin(), str2.end(), isspace), str2.end());
+  std::erase_if(str1, isspace);
+  std::erase_if(str2, isspace);
   ASSERT_EQ(str1, str2);
 }
 } // namespace

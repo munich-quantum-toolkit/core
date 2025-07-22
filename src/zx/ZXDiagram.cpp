@@ -96,9 +96,7 @@ void ZXDiagram::removeEdge(const Vertex from, const Vertex to) {
 
 void ZXDiagram::removeHalfEdge(const Vertex from, const Vertex to) {
   auto& incident = edges[from];
-  incident.erase(std::remove_if(incident.begin(), incident.end(),
-                                [&](auto& edge) { return edge.to == to; }),
-                 incident.end());
+  std::erase_if(incident, [&](const auto& edge) { return edge.to == to; });
 }
 
 Vertex ZXDiagram::addVertex(const VertexData& data) {
