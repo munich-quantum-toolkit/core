@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -41,8 +42,8 @@ bool FunctionalityConstruction::checkSwap(const op_it& it, const op_it& end,
       const auto tar2 = p.at(op2->getTargets().front());
       const auto ctrl1 = p.at((*op1->getControls().begin()).qubit);
       const auto ctrl2 = p.at((*op2->getControls().begin()).qubit);
-      return ctrl == static_cast<Qubit>(tar1) && tar1 == ctrl2 &&
-             target == static_cast<Qubit>(ctrl1) && ctrl1 == tar2;
+      return std::cmp_equal(ctrl, static_cast<Qubit>(tar1)) && tar1 == ctrl2 &&
+             std::cmp_equal(target, static_cast<Qubit>(ctrl1)) && ctrl1 == tar2;
     }
   }
   return false;

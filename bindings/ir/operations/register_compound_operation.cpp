@@ -42,7 +42,7 @@ void registerCompoundOperation(const py::module& m) {
     if (i < 0) {
       i += static_cast<DiffType>(size);
     }
-    if (i < 0 || static_cast<SizeType>(i) >= size) {
+    if (i < 0 || std::cmp_greater_equal(static_cast<SizeType>(i), size)) {
       throw py::index_error();
     }
     return i;
