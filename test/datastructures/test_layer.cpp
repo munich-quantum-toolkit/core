@@ -74,8 +74,7 @@ TEST(Layer, ExecutableSet1) {
       vList.emplace_back(u);
     }
   }
-  std::for_each(vList.cbegin(), vList.cend(),
-                [](const auto& u) { u->execute(); });
+  std::ranges::for_each(vList, [](const auto& u) { u->execute(); });
   EXPECT_EQ(layer.getExecutableSet().size(), 2); // layer (6), (9)
 }
 
