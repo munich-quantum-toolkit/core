@@ -14,7 +14,6 @@
 #include "dd/RealNumber.hpp"
 #include "ir/Definitions.hpp"
 
-#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>

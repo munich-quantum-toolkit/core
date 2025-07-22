@@ -18,7 +18,6 @@
 #include "qasm3/Exception.hpp"
 #include "qasm3/Importer.hpp"
 
-#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstddef>

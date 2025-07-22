@@ -20,7 +20,7 @@
 
 #include <pybind11/buffer_info.h>
 #include <pybind11/cast.h>
-#include <pybind11/numpy.h>
+#include <pybind11/numpy.h> // NOLINT(misc-include-cleaner)
 // clang-format on
 
 #include <cmath>

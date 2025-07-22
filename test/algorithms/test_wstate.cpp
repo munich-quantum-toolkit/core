@@ -10,7 +10,6 @@
 
 #include "algorithms/WState.hpp"
 #include "dd/Simulation.hpp"
-#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 
 #include <cstddef>
