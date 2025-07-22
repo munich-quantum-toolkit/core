@@ -10,6 +10,7 @@
 
 #include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <Quantum/IR/QuantumDialect.h>
@@ -36,6 +37,7 @@ namespace mqt::ir::conversions {
 #include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h.inc"
 
 using namespace mlir;
+using namespace mlir::arith;
 
 class MQTOptToCatalystQuantumTypeConverter : public TypeConverter {
 public:
@@ -730,8 +732,11 @@ struct ConvertMQTOptSimpleGate<::mqt::ir::opt::UOp>
     // Compute φ - π/2
     auto phiMinusPi2 = rewriter.create<arith::SubFOp>(op.getLoc(), phi, pi_2);
     // Compute π - θ/2
-    auto piMinusTheta2 =
-        rewriter.create<arith::SubFOp>(op.getLoc(), pi, theta / 2);
+    auto two = rewriter.create<arith::ConstantOp>(
+        loc, floatType, rewriter.getFloatAttr(floatType, 2.0));
+    auto theta_2 = rewriter.create<arith::DivFOp>(loc, theta, two);
+    auto piMinusTheta_2 =
+        rewriter.create<arith::SubFOp>(op.getLoc(), pi, theta_2);
     // Compute λ - π/2
     auto lambdaMinusPi2 =
         rewriter.create<arith::SubFOp>(op.getLoc(), lambda, pi_2);
