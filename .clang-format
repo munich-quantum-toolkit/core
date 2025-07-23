@@ -2,4 +2,3 @@ BasedOnStyle: LLVM
 IncludeBlocks: Regroup
 PointerAlignment: Left
 Standard: c++20
-
