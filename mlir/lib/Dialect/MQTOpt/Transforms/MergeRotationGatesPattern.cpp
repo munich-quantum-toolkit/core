@@ -12,9 +12,9 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -64,8 +64,8 @@ struct MergeRotationGatesPattern final
    */
   [[nodiscard]] static bool
   areUsersUnique(const mlir::ResultRange::user_range& users) {
-    return std::none_of(users.begin(), users.end(),
-                        [&](auto* user) { return user != *users.begin(); });
+    return llvm::none_of(users,
+                         [&](auto* user) { return user != *users.begin(); });
   }
 
   mlir::LogicalResult
@@ -174,8 +174,7 @@ struct MergeRotationGatesPattern final
     const auto& newUserAllInQubits = newUser.getAllInQubits();
     for (size_t i = 0; i < newUser->getOperands().size(); i++) {
       const auto& operand = newUser->getOperand(i);
-      const auto found = std::find(newUserAllInQubits.begin(),
-                                   newUserAllInQubits.end(), operand);
+      const auto found = llvm::find(newUserAllInQubits, operand);
       if (found == newUserAllInQubits.end()) {
         continue;
       }

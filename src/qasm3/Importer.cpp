@@ -419,7 +419,7 @@ void Importer::visitGateStatement(
     const std::shared_ptr<GateDeclaration> gateStatement) {
   auto identifier = gateStatement->identifier;
   if (gateStatement->isOpaque) {
-    if (gates.find(identifier) == gates.end()) {
+    if (!gates.contains(identifier)) {
       // only builtin gates may be declared as opaque.
       throw CompilerError("Unsupported opaque gate '" + identifier + "'.",
                           gateStatement->debugInfo);
@@ -450,8 +450,8 @@ void Importer::visitGateStatement(
   // first we check that all parameters and qubits are unique
   std::vector<std::string> parameterIdentifiers{};
   for (const auto& parameter : parameters->identifiers) {
-    if (std::find(parameterIdentifiers.begin(), parameterIdentifiers.end(),
-                  parameter->identifier) != parameterIdentifiers.end()) {
+    if (std::ranges::find(parameterIdentifiers, parameter->identifier) !=
+        parameterIdentifiers.end()) {
       throw CompilerError("Parameter '" + parameter->identifier +
                               "' already declared.",
                           gateStatement->debugInfo);
@@ -460,8 +460,8 @@ void Importer::visitGateStatement(
   }
   std::vector<std::string> qubitIdentifiers{};
   for (const auto& qubit : qubits->identifiers) {
-    if (std::find(qubitIdentifiers.begin(), qubitIdentifiers.end(),
-                  qubit->identifier) != qubitIdentifiers.end()) {
+    if (std::ranges::find(qubitIdentifiers, qubit->identifier) !=
+        qubitIdentifiers.end()) {
       throw CompilerError("Qubit '" + qubit->identifier + "' already declared.",
                           gateStatement->debugInfo);
     }
@@ -658,14 +658,14 @@ std::unique_ptr<qc::Operation> Importer::evaluateGateCall(
     // check if any of the bits are duplicate
     std::unordered_set<qc::Qubit> allQubits;
     for (const auto& control : controlBits) {
-      if (allQubits.find(control.qubit) != allQubits.end()) {
+      if (allQubits.contains(control.qubit)) {
         throw CompilerError("Duplicate qubit in control list.",
                             gateCallStatement->debugInfo);
       }
       allQubits.emplace(control.qubit);
     }
     for (const auto& qubit : targetBits) {
-      if (allQubits.find(qubit) != allQubits.end()) {
+      if (allQubits.contains(qubit)) {
         throw CompilerError("Duplicate qubit in target list.",
                             gateCallStatement->debugInfo);
       }
@@ -795,9 +795,8 @@ std::unique_ptr<qc::Operation> Importer::applyQuantumOperation(
           const auto& identifier = operand->getIdentifier();
           // OpenQASM 3.0 doesn't support indexing of gate arguments.
           if (!identifier->indices.empty() &&
-              std::find(compoundGate->targetNames.begin(),
-                        compoundGate->targetNames.end(),
-                        identifier->identifier) !=
+              std::ranges::find(compoundGate->targetNames,
+                                identifier->identifier) !=
                   compoundGate->targetNames.end()) {
             throw CompilerError(
                 "Gate arguments cannot be indexed within gate body.",
@@ -959,7 +958,7 @@ Importer::parseGateIdentifierCompatMode(const std::string& identifier) {
     implicitControls++;
   }
 
-  if (gates.find(gateIdentifier) == gates.end()) {
+  if (!gates.contains(gateIdentifier)) {
     return std::pair{identifier, 0};
   }
   return std::pair{gateIdentifier, implicitControls};

@@ -23,6 +23,7 @@
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <memory>
+#include <numbers>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -2402,7 +2403,7 @@ TEST_F(Qasm3ParserTest, TestConstEval) {
       std::pair{std::make_shared<qasm3::UnaryExpression>(
                     qasm3::UnaryExpression::Op::Exp,
                     std::make_shared<qasm3::Constant>(1.0)),
-                qasm3::const_eval::ConstEvalValue(std::exp(1.0))},
+                qasm3::const_eval::ConstEvalValue(std::numbers::e)},
       std::pair{std::make_shared<qasm3::UnaryExpression>(
                     qasm3::UnaryExpression::Op::Ln,
                     std::make_shared<qasm3::Constant>(1.0)),

@@ -46,11 +46,11 @@ namespace {
 [[nodiscard]] auto getExpected(const BVBitString& s, const Qubit nq)
     -> std::string {
   auto expected = s.to_string();
-  std::reverse(expected.begin(), expected.end());
+  std::ranges::reverse(expected);
   while (expected.length() > nq) {
     expected.pop_back();
   }
-  std::reverse(expected.begin(), expected.end());
+  std::ranges::reverse(expected);
   return expected;
 }
 
