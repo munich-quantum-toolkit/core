@@ -98,10 +98,10 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
         //===-----------------------------------------------------------------//
         // Load Operations
         //-----------------------------------------------------------------===//
-        if (std::ranges::any_of(opAtoms, [&currentlyShuttling](
-                                             const auto* atom) {
-              return currentlyShuttling.find(atom) != currentlyShuttling.end();
-            })) {
+        if (std::ranges::any_of(opAtoms,
+                                [&currentlyShuttling](const auto* atom) {
+                                  return currentlyShuttling.contains(atom);
+                                })) {
           ss << "Error in op number " << counter << " (atom already loaded)\n";
           return {false, ss.str()};
         }
@@ -112,10 +112,10 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
         //===-----------------------------------------------------------------//
         // Move and Store Operations
         //-----------------------------------------------------------------===//
-        if (std::ranges::any_of(opAtoms, [&currentlyShuttling](
-                                             const auto* atom) {
-              return currentlyShuttling.find(atom) == currentlyShuttling.end();
-            })) {
+        if (std::ranges::any_of(opAtoms,
+                                [&currentlyShuttling](const auto* atom) {
+                                  return !currentlyShuttling.contains(atom);
+                                })) {
           ss << "Error in op number " << counter << " (atom not loaded)\n";
           return {false, ss.str()};
         }
