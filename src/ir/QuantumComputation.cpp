@@ -38,6 +38,7 @@
 #include <optional>
 #include <ostream>
 #include <random>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -750,9 +751,8 @@ bool QuantumComputation::isIdleQubit(const Qubit physicalQubit) const {
 
 void QuantumComputation::stripIdleQubits(bool force) {
   auto layoutCopy = initialLayout;
-  for (auto physicalQubitIt = layoutCopy.rbegin();
-       physicalQubitIt != layoutCopy.rend(); ++physicalQubitIt) {
-    if (const auto physicalQubitIndex = physicalQubitIt->first;
+  for (auto& physicalQubitIt : std::ranges::reverse_view(layoutCopy)) {
+    if (const auto physicalQubitIndex = physicalQubitIt.first;
         isIdleQubit(physicalQubitIndex)) {
       if (auto it = outputPermutation.find(physicalQubitIndex);
           it != outputPermutation.end() && !force) {
