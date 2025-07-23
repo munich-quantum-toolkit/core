@@ -33,8 +33,7 @@ ZXDiagram makeIdentityDiagram(const std::size_t nqubits,
   }
 
   // add identity spiders
-  for (Qubit qubit = 0; std::cmp_less(static_cast<std::size_t>(qubit), nqubits);
-       ++qubit) {
+  for (Qubit qubit = 0; std::cmp_less(qubit, nqubits); ++qubit) {
     for (std::size_t j = 0; j < spidersPerQubit; ++j) {
       const Vertex v = diag.addVertex(qubit);
       diag.addEdge(rightmostVertices[static_cast<std::size_t>(qubit)], v);
