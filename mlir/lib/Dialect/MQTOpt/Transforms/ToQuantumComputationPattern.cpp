@@ -15,7 +15,6 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <llvm/ADT/STLExtras.h>

@@ -12,7 +12,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
