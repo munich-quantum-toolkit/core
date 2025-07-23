@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <llvm/ADT/STLExtras.h>
 #include <map>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -68,8 +69,8 @@ struct CancelConsecutiveInversesPattern final
    */
   [[nodiscard]] static bool
   areUsersUnique(const mlir::ResultRange::user_range& users) {
-    return std::none_of(users.begin(), users.end(),
-                        [&](auto* user) { return user != *users.begin(); });
+    return llvm::none_of(users,
+                         [&](auto* user) { return user != *users.begin(); });
   }
 
   mlir::LogicalResult
@@ -114,8 +115,7 @@ struct CancelConsecutiveInversesPattern final
     for (const auto& childUser : childUsers) {
       for (size_t i = 0; i < childUser->getOperands().size(); i++) {
         const auto& operand = childUser->getOperand(i);
-        const auto found =
-            std::find(userOutQubits.begin(), userOutQubits.end(), operand);
+        const auto found = llvm::find(userOutQubits, operand);
         if (found == userOutQubits.end()) {
           continue;
         }

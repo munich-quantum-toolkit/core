@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/MLIRContext.h>
@@ -110,11 +111,10 @@ struct QuantumSinkPushPattern final
   getNextBranchOpUser(const UnitaryInterface& op) const {
     auto allUsers = op->getUsers();
     std::vector<mlir::Operation*> output;
-    std::copy_if(allUsers.begin(), allUsers.end(), std::back_inserter(output),
-                 [&](auto* user) {
-                   return mlir::isa<mlir::cf::BranchOp>(user) ||
-                          mlir::isa<mlir::cf::CondBranchOp>(user);
-                 });
+    llvm::copy_if(allUsers, std::back_inserter(output), [&](auto* user) {
+      return mlir::isa<mlir::cf::BranchOp>(user) ||
+             mlir::isa<mlir::cf::CondBranchOp>(user);
+    });
     auto* nextBranch = getNext(allUsers, op);
     return nextBranch;
   }

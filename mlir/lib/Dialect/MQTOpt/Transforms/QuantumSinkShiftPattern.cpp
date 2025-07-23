@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -53,7 +54,7 @@ struct QuantumSinkShiftPattern final
       return true;
     }
     auto parents = successor.getPredecessors();
-    return std::any_of(parents.begin(), parents.end(), [&](auto* parent) {
+    return llvm::any_of(parents, [&](auto* parent) {
       return isAfterOrEqual(*parent, predecessor, visited);
     });
   }
@@ -70,15 +71,13 @@ struct QuantumSinkShiftPattern final
   [[nodiscard]] std::vector<mlir::Operation*>
   getEarliestUsers(mlir::ResultRange::user_range users) const {
     std::vector<mlir::Operation*> earliestUsers;
-    std::copy_if(
-        users.begin(), users.end(), std::back_inserter(earliestUsers),
-        [&](auto* user) {
-          return std::none_of(users.begin(), users.end(), [&](auto* other) {
-            std::unordered_set<mlir::Block*> visited;
-            return user != other && isAfterOrEqual(*user->getBlock(),
-                                                   *other->getBlock(), visited);
-          });
-        });
+    llvm::copy_if(users, std::back_inserter(earliestUsers), [&](auto* user) {
+      return llvm::none_of(users, [&](auto* other) {
+        std::unordered_set<mlir::Block*> visited;
+        return user != other &&
+               isAfterOrEqual(*user->getBlock(), *other->getBlock(), visited);
+      });
+    });
     return earliestUsers;
   }
 
@@ -125,7 +124,7 @@ struct QuantumSinkShiftPattern final
     // operand as pass-through and therefore removed it. If more than one user
     // is in the same block, then the `QuantumSinkShiftPattern` cannot be
     // applied.
-    if (!std::all_of(users.begin(), users.end(), [&](auto* user) {
+    if (!llvm::all_of(users, [&](auto* user) {
           return user->getBlock() != op->getBlock();
         })) {
       return mlir::failure();
