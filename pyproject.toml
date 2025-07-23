@@ -115,6 +115,7 @@ git-only = [
     "docs/*",
     "test/*",
     "mlir/*",
+    "plugins/*",
 ]
 
 [tool.scikit-build.cmake.define]
@@ -263,6 +264,7 @@ wille = "wille"
 anc = "anc"
 mch = "mch"
 ket = "ket"
+delocate = "delocate"
 
 
 [tool.repo-review]
