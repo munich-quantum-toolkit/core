@@ -227,9 +227,8 @@ auto CompoundOperation::isInverseOf(const Operation& other) const -> bool {
     assert(!thisUsedQubits.empty());
     const auto thisMaxQubit = *std::ranges::max_element(thisUsedQubits);
     QuantumComputation thisQc(thisMaxQubit + 1);
-    std::ranges::for_each(cbegin(), cend(), [&](const auto& op) {
-      thisQc.emplace_back(op->clone());
-    });
+    std::ranges::for_each(
+        ops, [&](const auto& op) { thisQc.emplace_back(op->clone()); });
     const auto& otherUsedQubits = co.getUsedQubits();
     assert(!otherUsedQubits.empty());
     const auto otherMaxQubit = *std::ranges::max_element(otherUsedQubits);

@@ -57,7 +57,7 @@ namespace qc {
     return 0;
   }
   return std::ranges::max_element(
-             cbegin(), cend(),
+             permutation,
              [](const auto& a, const auto& b) { return a.second < b.second; })
       ->second;
 }

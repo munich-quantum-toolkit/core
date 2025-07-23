@@ -743,9 +743,9 @@ void QuantumComputation::dump(const std::string& filename,
 }
 
 bool QuantumComputation::isIdleQubit(const Qubit physicalQubit) const {
-  return std::ranges::none_of(
-      ops.cbegin(), ops.cend(),
-      [&physicalQubit](const auto& op) { return op->actsOn(physicalQubit); });
+  return std::ranges::none_of(ops, [&physicalQubit](const auto& op) {
+    return op->actsOn(physicalQubit);
+  });
 }
 
 void QuantumComputation::stripIdleQubits(bool force) {
@@ -1249,7 +1249,7 @@ bool isDynamicCircuit(const std::unique_ptr<Operation>* op,
 bool QuantumComputation::isDynamic() const {
   // marks whether a qubit in the DAG has been measured
   std::vector<bool> measured(getHighestPhysicalQubitIndex() + 1, false);
-  return std::ranges::any_of(cbegin(), cend(), [&measured](const auto& op) {
+  return std::ranges::any_of(ops, [&measured](const auto& op) {
     return ::qc::isDynamicCircuit(&op, measured);
   });
 }
