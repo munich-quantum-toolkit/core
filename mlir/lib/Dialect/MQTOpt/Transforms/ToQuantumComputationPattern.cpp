@@ -160,11 +160,71 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     // Add the operation to the QuantumComputation.
     qc::OpType opType = qc::OpType::H; // init placeholder-"H" overwritten next
-    if (llvm::isa<HOp>(op)) {
+    if (llvm::isa<IOp>(op)) {
+      opType = qc::OpType::I;
+    } else if (llvm::isa<HOp>(op)) {
       opType = qc::OpType::H;
     } else if (llvm::isa<XOp>(op)) {
       opType = qc::OpType::X;
-    } else { // TODO: support for more operations
+    } else if (llvm::isa<YOp>(op)) {
+      opType = qc::OpType::Y;
+    } else if (llvm::isa<ZOp>(op)) {
+      opType = qc::OpType::Z;
+    } else if (llvm::isa<SOp>(op)) {
+      opType = qc::OpType::S;
+    } else if (llvm::isa<SdgOp>(op)) {
+      opType = qc::OpType::Sdg;
+    } else if (llvm::isa<TOp>(op)) {
+      opType = qc::OpType::T;
+    } else if (llvm::isa<TdgOp>(op)) {
+      opType = qc::OpType::Tdg;
+    } else if (llvm::isa<VOp>(op)) {
+      opType = qc::OpType::V;
+    } else if (llvm::isa<VdgOp>(op)) {
+      opType = qc::OpType::Vdg;
+    } else if (llvm::isa<UOp>(op)) {
+      opType = qc::OpType::U;
+    } else if (llvm::isa<U2Op>(op)) {
+      opType = qc::OpType::U2;
+    } else if (llvm::isa<POp>(op)) {
+      opType = qc::OpType::P;
+    } else if (llvm::isa<SXOp>(op)) {
+      opType = qc::OpType::SX;
+    } else if (llvm::isa<SXdgOp>(op)) {
+      opType = qc::OpType::SXdg;
+    } else if (llvm::isa<RXOp>(op)) {
+      opType = qc::OpType::RX;
+    } else if (llvm::isa<RYOp>(op)) {
+      opType = qc::OpType::RY;
+    } else if (llvm::isa<RZOp>(op)) {
+      opType = qc::OpType::RZ;
+    } else if (llvm::isa<SWAPOp>(op)) {
+      opType = qc::OpType::SWAP;
+    } else if (llvm::isa<iSWAPOp>(op)) {
+      opType = qc::OpType::iSWAP;
+    } else if (llvm::isa<iSWAPdgOp>(op)) {
+      opType = qc::OpType::iSWAPdg;
+    } else if (llvm::isa<PeresOp>(op)) {
+      opType = qc::OpType::Peres;
+    } else if (llvm::isa<PeresdgOp>(op)) {
+      opType = qc::OpType::Peresdg;
+    } else if (llvm::isa<DCXOp>(op)) {
+      opType = qc::OpType::DCX;
+    } else if (llvm::isa<ECROp>(op)) {
+      opType = qc::OpType::ECR;
+    } else if (llvm::isa<RXXOp>(op)) {
+      opType = qc::OpType::RXX;
+    } else if (llvm::isa<RYYOp>(op)) {
+      opType = qc::OpType::RYY;
+    } else if (llvm::isa<RZZOp>(op)) {
+      opType = qc::OpType::RZZ;
+    } else if (llvm::isa<RZXOp>(op)) {
+      opType = qc::OpType::RZX;
+    } else if (llvm::isa<XXminusYY>(op)) {
+      opType = qc::OpType::XXminusYY;
+    } else if (llvm::isa<XXplusYY>(op)) {
+      opType = qc::OpType::XXplusYY;
+    } else { // TODO: support for other types of operations
       throw std::runtime_error("Unsupported operation type!");
     }
 
@@ -359,6 +419,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         }
       }
 
+      // TODO: update this accordingly
       if (llvm::isa<XOp>(current) || llvm::isa<HOp>(current)) {
         auto unitaryOp = llvm::dyn_cast<UnitaryInterface>(current);
         handleUnitaryOp(unitaryOp, currentQubitVariables);
