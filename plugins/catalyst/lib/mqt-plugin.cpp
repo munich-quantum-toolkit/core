@@ -20,6 +20,7 @@
 #include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
+#include "mlir/Transforms/MQTQMAP/MQTQMAP.h"
 
 #include <llvm/Config/llvm-config.h>
 #include <llvm/Support/Compiler.h>
@@ -47,5 +48,6 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo mlirGetPassPluginInfo() {
             mqt::ir::opt::registerMQTOptPasses();
             mqt::ir::conversions::registerCatalystQuantumToMQTOptPasses();
             mqt::ir::conversions::registerMQTOptToCatalystQuantumPasses();
+            mqt::ir::transforms::registerMQTQMAPPasses();
           }};
 }

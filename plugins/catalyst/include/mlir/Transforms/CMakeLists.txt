@@ -6,5 +6,4 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(Conversion)
-add_subdirectory(Transforms)
+add_subdirectory(MQTQMAP)

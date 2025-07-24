@@ -41,6 +41,8 @@ include(AddLLVM)
 include(AddMLIR)
 include(HandleLLVMOptions)
 
+add_compile_options(-fexceptions)
+
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/include)

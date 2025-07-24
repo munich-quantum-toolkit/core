@@ -6,5 +6,8 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(Conversion)
-add_subdirectory(Transforms)
+set(LLVM_TARGET_DEFINITIONS MQTQMAP.td)
+mlir_tablegen(MQTQMAP.h.inc -gen-pass-decls -name MQTQMAP)
+add_public_tablegen_target(MQTQMAPIncGen)
+
+add_mlir_doc(MQTQMAP MQTQMAP ./ -gen-pass-doc)

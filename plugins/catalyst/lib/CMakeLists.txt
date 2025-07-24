@@ -19,6 +19,7 @@
 # have the catalyst target available to link against it.
 
 add_subdirectory(Conversion)
+add_subdirectory(Transforms)
 
 set(TARGET_NAME mqt-core-catalyst-plugin)
 
@@ -29,7 +30,8 @@ add_llvm_library(
   LINK_LIBS
   MLIRMQTOptTransforms
   CatalystQuantumToMQTOpt
-  MQTOptToCatalystQuantum)
+  MQTOptToCatalystQuantum
+  MQTQMAP)
 
 # set required C++ standard
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
@@ -40,3 +42,6 @@ install(
   TARGETS ${TARGET_NAME}
   DESTINATION .
   COMPONENT mqt-core-catalyst_Plugin)
+
+# Force override AFTER all other flags have been added
+target_compile_options(MQTQMAP PRIVATE "-fexceptions")
