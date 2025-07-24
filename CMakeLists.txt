@@ -111,11 +111,19 @@ if(BUILD_MQT_CORE_BENCHMARKS)
   add_subdirectory(eval)
 endif()
 
+# FIXME: Remove this option before merging
+add_compile_options(-Wno-dangling-assignment-gsl)
+
 option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
 if(BUILD_MQT_CORE_MLIR)
   include(SetupMLIR)
   add_subdirectory(mlir)
 endif()
+
+# only build MLIR plugins if the MLIR submodule is enabled
+cmake_dependent_option(BUILD_MQT_CORE_QUAKE_PLUGIN "Build the Quake plugin" OFF
+                       "BUILD_MQT_CORE_MLIR" OFF)
+add_subdirectory(plugins)
 
 if(MQT_CORE_MASTER_PROJECT)
   if(NOT TARGET mqt-core-uninstall)
