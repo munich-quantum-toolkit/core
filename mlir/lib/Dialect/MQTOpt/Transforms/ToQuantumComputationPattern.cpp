@@ -419,8 +419,22 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         }
       }
 
-      // TODO: update this accordingly
-      if (llvm::isa<XOp>(current) || llvm::isa<HOp>(current)) {
+      if (llvm::isa<IOp>(current) || llvm::isa<XOp>(current) ||
+          llvm::isa<HOp>(current) || llvm::isa<YOp>(current) ||
+          llvm::isa<ZOp>(current) || llvm::isa<SOp>(current) ||
+          llvm::isa<SdgOp>(current) || llvm::isa<TOp>(current) ||
+          llvm::isa<TdgOp>(current) || llvm::isa<VOp>(current) ||
+          llvm::isa<VdgOp>(current) || llvm::isa<UOp>(current) ||
+          llvm::isa<U2Op>(current) || llvm::isa<POp>(current) ||
+          llvm::isa<SXOp>(current) || llvm::isa<SXdgOp>(current) ||
+          llvm::isa<RXOp>(current) || llvm::isa<RYOp>(current) ||
+          llvm::isa<RZOp>(current) || llvm::isa<SWAPOp>(current) ||
+          llvm::isa<iSWAPOp>(current) || llvm::isa<iSWAPdgOp>(current) ||
+          llvm::isa<PeresOp>(current) || llvm::isa<PeresdgOp>(current) ||
+          llvm::isa<DCXOp>(current) || llvm::isa<ECROp>(current) ||
+          llvm::isa<RXXOp>(current) || llvm::isa<RYYOp>(current) ||
+          llvm::isa<RZZOp>(current) || llvm::isa<RZXOp>(current) ||
+          llvm::isa<XXminusYY>(current) || llvm::isa<XXplusYY>(current)) {
         auto unitaryOp = llvm::dyn_cast<UnitaryInterface>(current);
         handleUnitaryOp(unitaryOp, currentQubitVariables);
       } else if (auto extractOp = llvm::dyn_cast<ExtractOp>(current)) {

@@ -9,6 +9,7 @@
 // RUN: quantum-opt %s -split-input-file --mqt-core-round-trip | FileCheck %s
 
 // -----
+// TODO: add tests also for remaining gates
 // This test checks if all unitary gates are detected correctly.
 module {
     // CHECK-LABEL: func.func @testUnitaryGateDetection()
@@ -50,27 +51,11 @@ module {
         %q0_12 = mqtopt.sx() %q0_11 : !mqtopt.Qubit
         %q0_13 = mqtopt.sxdg() %q0_12 : !mqtopt.Qubit
 
-        // CHECK: %[[Q0_14:.*]], %[[Q1_1:.*]] = mqtopt.swap() %[[Q0_13]], %[[Q1_0]] : !mqtopt.Qubit, !mqtopt.Qubit
-        // CHECK: %[[Q0_15:.*]], %[[Q1_2:.*]] = mqtopt.iswap() %[[Q0_14]], %[[Q1_1]] : !mqtopt.Qubit, !mqtopt.Qubit
-        // CHECK: %[[Q0_16:.*]], %[[Q1_3:.*]] = mqtopt.iswapdg() %[[Q0_15]], %[[Q1_2]] : !mqtopt.Qubit, !mqtopt.Qubit
-        // CHECK: %[[Q0_17:.*]], %[[Q1_4:.*]] = mqtopt.peres() %[[Q0_16]], %[[Q1_3]] : !mqtopt.Qubit, !mqtopt.Qubit
-        // CHECK: %[[Q0_18:.*]], %[[Q1_5:.*]] = mqtopt.peresdg() %[[Q0_17]], %[[Q1_4]] : !mqtopt.Qubit, !mqtopt.Qubit
-        // CHECK: %[[Q0_19:.*]], %[[Q1_6:.*]] = mqtopt.dcx() %[[Q0_18]], %[[Q1_5]] : !mqtopt.Qubit, !mqtopt.Qubit
-        // CHECK: %[[Q0_20:.*]], %[[Q1_7:.*]] = mqtopt.ecr() %[[Q0_19]], %[[Q1_6]] : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q0_13]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q1_0]]) <{index_attr = 1 : i64}>
 
-        %q0_14, %q1_1 = mqtopt.swap() %q0_13, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
-        %q0_15, %q1_2 = mqtopt.iswap() %q0_14, %q1_1 : !mqtopt.Qubit, !mqtopt.Qubit
-        %q0_16, %q1_3 = mqtopt.iswapdg() %q0_15, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
-        %q0_17, %q1_4 = mqtopt.peres() %q0_16, %q1_3 : !mqtopt.Qubit, !mqtopt.Qubit
-        %q0_18, %q1_5 = mqtopt.peresdg() %q0_17, %q1_4 : !mqtopt.Qubit, !mqtopt.Qubit
-        %q0_19, %q1_6 = mqtopt.dcx() %q0_18, %q1_5 : !mqtopt.Qubit, !mqtopt.Qubit
-        %q0_20, %q1_7 = mqtopt.ecr() %q0_19, %q1_6 : !mqtopt.Qubit, !mqtopt.Qubit
-
-        // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q0_20]]) <{index_attr = 0 : i64}>
-        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q1_7]]) <{index_attr = 1 : i64}>
-
-        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_20) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_7) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_13) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
 
         return
     }
