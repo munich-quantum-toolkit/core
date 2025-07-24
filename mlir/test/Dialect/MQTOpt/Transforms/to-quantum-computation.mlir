@@ -6,8 +6,62 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s --mqt-core-round-trip | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --mqt-core-round-trip | FileCheck %s
 
+// -----
+// TODO: add tests also for remaining gates
+// This test checks if all unitary gates are detected correctly.
+module {
+    // CHECK-LABEL: func.func @testUnitaryGateDetection()
+    func.func @testUnitaryGateDetection() -> () {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}>
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
+
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        // CHECK: %[[Q0_1:.*]] = mqtopt.i() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]] = mqtopt.h() %[[Q0_1]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_3:.*]] = mqtopt.x() %[[Q0_2]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_4:.*]] = mqtopt.y() %[[Q0_3]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_5:.*]] = mqtopt.z() %[[Q0_4]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_6:.*]] = mqtopt.s() %[[Q0_5]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_7:.*]] = mqtopt.sdg() %[[Q0_6]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_8:.*]] = mqtopt.t() %[[Q0_7]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_9:.*]] = mqtopt.tdg() %[[Q0_8]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_10:.*]] = mqtopt.v() %[[Q0_9]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_11:.*]] = mqtopt.vdg() %[[Q0_10]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_12:.*]] = mqtopt.sx() %[[Q0_11]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_13:.*]] = mqtopt.sxdg() %[[Q0_12]] : !mqtopt.Qubit
+
+        %q0_1 = mqtopt.i() %q0_0 : !mqtopt.Qubit
+        %q0_2 = mqtopt.h() %q0_1 : !mqtopt.Qubit
+        %q0_3 = mqtopt.x() %q0_2 : !mqtopt.Qubit
+        %q0_4 = mqtopt.y() %q0_3 : !mqtopt.Qubit
+        %q0_5 = mqtopt.z() %q0_4 : !mqtopt.Qubit
+        %q0_6 = mqtopt.s() %q0_5 : !mqtopt.Qubit
+        %q0_7 = mqtopt.sdg() %q0_6 : !mqtopt.Qubit
+        %q0_8 = mqtopt.t() %q0_7 : !mqtopt.Qubit
+        %q0_9 = mqtopt.tdg() %q0_8 : !mqtopt.Qubit
+        %q0_10 = mqtopt.v() %q0_9 : !mqtopt.Qubit
+        %q0_11 = mqtopt.vdg() %q0_10 : !mqtopt.Qubit
+        %q0_12 = mqtopt.sx() %q0_11 : !mqtopt.Qubit
+        %q0_13 = mqtopt.sxdg() %q0_12 : !mqtopt.Qubit
+
+        // CHECK: %[[Reg_3:.*]] = "mqtopt.insertQubit"(%[[Reg_2]], %[[Q0_13]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Reg_4:.*]] = "mqtopt.insertQubit"(%[[Reg_3]], %[[Q1_0]]) <{index_attr = 1 : i64}>
+
+        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_13) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return
+    }
+}
+
+// -----
 module {
     // CHECK-LABEL: func @bell()
     func.func @bell() -> (!mqtopt.QubitRegister, i1, i1) {
