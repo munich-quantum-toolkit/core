@@ -213,18 +213,12 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     // Add the operation to the QuantumComputation.
     qc::Controls controls;
-    std::transform(posCtrlInsIndices.cbegin(), posCtrlInsIndices.cend(),
-                   std::inserter(controls, controls.end()),
-                   [](const size_t index) {
-                     return qc::Control{static_cast<qc::Qubit>(index),
-                                        qc::Control::Type::Pos};
-                   });
-    std::transform(negCtrlInsIndices.cbegin(), negCtrlInsIndices.cend(),
-                   std::inserter(controls, controls.end()),
-                   [](const size_t index) {
-                     return qc::Control{static_cast<qc::Qubit>(index),
-                                        qc::Control::Type::Neg};
-                   });
+    for (const auto& index : posCtrlInsIndices) {
+      controls.emplace(static_cast<qc::Qubit>(index), qc::Control::Type::Pos);
+    }
+    for (const auto& index : negCtrlInsIndices) {
+      controls.emplace(static_cast<qc::Qubit>(index), qc::Control::Type::Neg);
+    }
     circuit.emplace_back<qc::StandardOperation>(controls, targetIndex, opType);
 
     return true;
