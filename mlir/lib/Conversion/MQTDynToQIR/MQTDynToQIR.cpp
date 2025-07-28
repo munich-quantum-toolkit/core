@@ -41,26 +41,20 @@ public:
     addConversion([](Type type) { return type; });
     // Qubit conversion
     addConversion([ctx](dyn::QubitType /*type*/) -> Type {
-      assert(ctx->getLoadedDialect<mlir::LLVM::LLVMDialect>() &&
-             "LLVM dialect must be loaded in context!");
-
-      return LLVM::LLVMPointerType::get(ctx);
+      return LLVM::LLVMPointerType::get(ctx, 1);
     });
 
     // QregType conversion
     addConversion([ctx](dyn::QubitRegisterType /*type*/) -> Type {
-      assert(ctx->getLoadedDialect<mlir::LLVM::LLVMDialect>() &&
-             "LLVM dialect must be loaded in context!");
-
-      return LLVM::LLVMPointerType::get(ctx);
-      ;
+      return LLVM::LLVMPointerType::get(ctx, 2);
     });
   }
 };
-static LLVM::LLVMFuncOp ensureFunctionDeclaration(PatternRewriter& rewriter,
-                                                  Operation* op,
-                                                  StringRef fnSymbol,
-                                                  Type fnType) {
+namespace {
+// add function declaration at the beginning if it does not exist already
+LLVM::LLVMFuncOp ensureFunctionDeclaration(PatternRewriter& rewriter,
+                                           Operation* op, StringRef fnSymbol,
+                                           Type fnType) {
   Operation* fnDecl = SymbolTable::lookupNearestSymbolFrom(
       op, rewriter.getStringAttr(fnSymbol));
 
@@ -74,6 +68,7 @@ static LLVM::LLVMFuncOp ensureFunctionDeclaration(PatternRewriter& rewriter,
 
   return cast<LLVM::LLVMFuncOp>(fnDecl);
 }
+} // namespace
 
 struct ConvertMQTDynAllocQIR final : OpConversionPattern<dyn::AllocOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -81,20 +76,24 @@ struct ConvertMQTDynAllocQIR final : OpConversionPattern<dyn::AllocOp> {
   LogicalResult
   matchAndRewrite(dyn::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    StringRef fnName = "__quantum__rt__qubit_allocate_array";
-    const TypeConverter* conv = getTypeConverter();
-    MLIRContext* ctx = getContext();
-    Type qirSignature = LLVM::LLVMFunctionType::get(
-        conv->convertType(dyn::QubitRegisterType::get(ctx)),
-        IntegerType::get(ctx, 64));
-    LLVM::LLVMFuncOp fnDecl =
-        ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    auto* ctx = getContext();
 
+    // create name and signature of the new function
+    StringRef fnName = "__quantum__rt__qubit_allocate_array";
+    auto qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMPointerType::get(ctx, 2), IntegerType::get(ctx, 64));
+
+    // get the function declaration
+    auto fnDecl = ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
+
+    // create a constantOp if the size is an attribute
     auto size = adaptor.getSize();
     if (!size) {
       size =
           rewriter.create<LLVM::ConstantOp>(op->getLoc(), op.getSizeAttrAttr());
     }
+
+    // replace the old operation with new callOp
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, size);
     return success();
   }
@@ -105,15 +104,16 @@ struct ConvertMQTDynDeallocQIR final : OpConversionPattern<dyn::DeallocOp> {
   LogicalResult
   matchAndRewrite(dyn::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-
+    auto* ctx = getContext();
+    // create name and signature of the new function
     StringRef fnName = "__quantum__rt__qubit_release_array";
-    const TypeConverter* conv = getTypeConverter();
-    MLIRContext* ctx = getContext();
-    Type qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx),
-        conv->convertType(dyn::QubitRegisterType::get(ctx)));
-    LLVM::LLVMFuncOp fnDecl =
-        ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    auto qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx, 2));
+
+    // get the function declaration
+    auto fnDecl = ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
+
+    // replace the old operation with new callOp
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
                                               adaptor.getOperands());
     return success();
@@ -126,18 +126,18 @@ struct ConvertMQTDynExtractQIR final : OpConversionPattern<dyn::ExtractOp> {
   LogicalResult
   matchAndRewrite(dyn::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-
-    StringRef fnName = "__catalyst__rt__array_get_element_ptr_1d";
-    const TypeConverter* conv = getTypeConverter();
     MLIRContext* ctx = getContext();
+    // create name and signature of the new function
+    StringRef fnName = "__catalyst__rt__array_get_element_ptr_1d";
     Type qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMPointerType::get(ctx),
-        {conv->convertType(dyn::QubitRegisterType::get(ctx)),
-         IntegerType::get(ctx, 64)});
+        LLVM::LLVMPointerType::get(ctx, 1),
+        {LLVM::LLVMPointerType::get(ctx, 2), IntegerType::get(ctx, 64)});
 
+    // get the function declaration
     LLVM::LLVMFuncOp fnDecl =
         ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
+    // create a constantOp if the index is an attribute
     auto index = adaptor.getIndex();
     if (!index) {
       index = rewriter.create<LLVM::ConstantOp>(op->getLoc(),
@@ -145,10 +145,13 @@ struct ConvertMQTDynExtractQIR final : OpConversionPattern<dyn::ExtractOp> {
     }
 
     SmallVector<Value> operands = {adaptor.getInQreg(), index};
-    Value elemPtr = rewriter.create<LLVM::CallOp>(op.getLoc(), fnDecl, operands)
-                        .getResult();
+    // create the new callOp
+    auto elemPtr = rewriter.create<LLVM::CallOp>(op.getLoc(), fnDecl, operands)
+                       .getResult();
+
+    // replace the old operation with a loadOp
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
-        op, conv->convertType(dyn::QubitType::get(ctx)), elemPtr);
+        op, LLVM::LLVMPointerType::get(ctx, 1), elemPtr);
 
     return success();
   }
@@ -184,19 +187,26 @@ struct ConvertMQTDynGateOpQIR final : OpConversionPattern<MQTGateDynOp> {
     dynQubitsValues.append(dynNegCtrlQubitsValues.begin(),
                            dynNegCtrlQubitsValues.end());
 
+    // get the name of the gate
     StringRef name = op->getName().getStringRef().split('.').second;
     std::string fnName;
+
+    // check if the gate has any control qubits
     if (dynPosCtrlQubitsValues.size() == 0 &&
         dynNegCtrlQubitsValues.size() == 0) {
       fnName = ("__quantum__qis__" + name + "__body").str();
     } else {
       fnName = "__quantum__qis__cnot__body";
     }
-    Type qirSignature =
+
+    // create the signature of the function
+    auto qirSignature =
         LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argTypes);
 
-    LLVM::LLVMFuncOp fnDecl =
-        ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    // get the function declaration
+    auto fnDecl = ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
+
+    // creat the new operation and erase the old one
     rewriter.create<LLVM::CallOp>(loc, fnDecl, dynQubitsValues);
     rewriter.eraseOp(op);
     return success();
@@ -209,13 +219,17 @@ struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
   LogicalResult
   matchAndRewrite(dyn::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto* ctx = rewriter.getContext();
 
-    MLIRContext* ctx = rewriter.getContext();
+    // create name and signature of the new function
     StringRef fnName = "__quantum__qis__m__body";
-    Type qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx));
-    LLVM::LLVMFuncOp fnDecl =
-        ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    auto qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx, 1));
+
+    // get the function declaration
+    auto fnDecl = ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
+
+    // replace the old operation with new callOp
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
                                               adaptor.getInQubits());
 
@@ -228,8 +242,7 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
-    assert(context->getLoadedDialect<mlir::LLVM::LLVMDialect>() &&
-           "LLVM dialect smust be loaded in context!");
+
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     MQTDynToQIRTypeConverter typeConverter(context);
