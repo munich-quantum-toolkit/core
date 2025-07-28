@@ -20,7 +20,7 @@
 
 #include <pybind11/buffer_info.h>
 #include <pybind11/cast.h>
-#include <pybind11/numpy.h>
+#include <pybind11/numpy.h> // NOLINT(misc-include-cleaner)
 // clang-format on
 
 #include <cmath>
@@ -44,7 +44,7 @@ struct Matrix {
 Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
                  const dd::fp threshold = 0.) {
   if (numQubits == 0U) {
-    return Matrix{{static_cast<std::complex<dd::fp>>(m.w)}, 1};
+    return Matrix{.data = {static_cast<std::complex<dd::fp>>(m.w)}, .n = 1};
   }
   const size_t dim = 1ULL << numQubits;
   auto data = std::vector<std::complex<dd::fp>>(dim * dim);
@@ -53,7 +53,7 @@ Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
       [&data, dim](const std::size_t i, const std::size_t j,
                    const std::complex<dd::fp>& c) { data[(i * dim) + j] = c; },
       numQubits, threshold);
-  return Matrix{data, dim};
+  return Matrix{.data = data, .n = dim};
 }
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)

@@ -70,13 +70,11 @@ TEST(Layer, ExecutableSet1) {
   // valid anymore
   std::vector<std::shared_ptr<Layer::DAGVertex>> vList;
   for (const auto& u : layer.getExecutableSet()) {
-    if (const auto& it = (u->getOperation())->getUsedQubits();
-        it.find(0) != it.end()) {
+    if (const auto& it = (u->getOperation())->getUsedQubits(); it.contains(0)) {
       vList.emplace_back(u);
     }
   }
-  std::for_each(vList.cbegin(), vList.cend(),
-                [](const auto& u) { u->execute(); });
+  std::ranges::for_each(vList, [](const auto& u) { u->execute(); });
   EXPECT_EQ(layer.getExecutableSet().size(), 2); // layer (6), (9)
 }
 

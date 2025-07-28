@@ -352,7 +352,57 @@ module {
     }
 }
 
+// -----
+// This test checks if a gphaseOp with no target no controlled qubit is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertGPhaseOp()
+    func.func @testConvertGPhaseOp() {
+        // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01 : f64
+        // mqtdyn.gphase(%[[c_0]])
 
+        %cst = arith.constant 3.000000e-01 : f64
+        mqtopt.gphase(%cst)
+        return
+    }
+}
+
+// -----
+// This test checks if a gphaseOp with a controlled qubit is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertGPhaseOpControlled()
+    func.func @testConvertGPhaseOpControlled() {
+        // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01 : f64
+        // CHECK: mqtdyn.gphase(%[[c_0]]) ctrl %[[ANY:.*]]
+
+        %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %cst = arith.constant 3.000000e-01 : f64
+        %q1 = mqtopt.gphase(%cst) ctrl %q0 : ctrl !mqtopt.Qubit
+        %r2 = "mqtopt.insertQubit"(%r1, %q1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%r2) : (!mqtopt.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if a gphaseOp with a positive controlled qubit and a negative controlled qubit is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertGPhaseOpPositiveNegativeControlled()
+    func.func @testConvertGPhaseOpPositiveNegativeControlled() {
+        // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01 : f64
+        // CHECK: mqtdyn.gphase(%[[c_0]]) ctrl %[[ANY:.*]] nctrl %[[ANY:.*]]
+
+        %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %r2, %q1 = "mqtopt.extractQubit"(%r1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %cst = arith.constant 3.000000e-01 : f64
+        %q0_1, %q1_1 = mqtopt.gphase(%cst) ctrl %q0 nctrl %q1 : ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+        %r3 = "mqtopt.insertQubit"(%r2, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        %r4 = "mqtopt.insertQubit"(%r3, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%r4) : (!mqtopt.QubitRegister) -> ()
+        return
+    }
+}
 
 // -----
 // This test checks if a barrierOp is converted correctly

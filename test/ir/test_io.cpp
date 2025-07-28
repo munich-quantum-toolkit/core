@@ -18,7 +18,6 @@
 #include "qasm3/Exception.hpp"
 #include "qasm3/Importer.hpp"
 
-#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
@@ -41,8 +40,6 @@ protected:
 
   std::size_t nqubits = 0;
   std::size_t seed = 0;
-  std::string output = "tmp.txt";
-  std::string output2 = "tmp2.txt";
   std::string output3 = "tmp";
   std::string output4 = "tmp.tmp.qasm";
   std::string output5 = "./tmpdir/circuit.qasm";
@@ -58,42 +55,53 @@ void compareFiles(const std::string& file1, const std::string& file2) {
   std::ifstream fstream2(file2);
   std::string str2((std::istreambuf_iterator<char>(fstream2)),
                    std::istreambuf_iterator<char>());
-  str1.erase(std::remove_if(str1.begin(), str1.end(), isspace), str1.end());
-  str2.erase(std::remove_if(str2.begin(), str2.end(), isspace), str2.end());
+  std::erase_if(str1, isspace);
+  std::erase_if(str2, isspace);
   ASSERT_EQ(str1, str2);
 }
 } // namespace
 
 TEST_F(IO, importAndDumpQASM) {
+  // Create temporary filenames
+  const auto tempDir = std::filesystem::temp_directory_path();
+  const auto outputPath = tempDir / "tmp_importAndDumpQASM.txt";
+  const auto output2Path = tempDir / "tmp2_importAndDumpQASM.txt";
+
   constexpr auto input = "../circuits/test.qasm";
   constexpr auto format = qc::Format::OpenQASM2;
   std::cout << "FILE: " << input << "\n";
 
   qc = qasm3::Importer::importf(input);
-  qc.dump(output, format);
+  qc.dump(outputPath.string(), format);
   qc.reset();
-  qc = qasm3::Importer::importf(output);
-  qc.dump(output2, format);
+  qc = qasm3::Importer::importf(outputPath.string());
+  qc.dump(output2Path.string(), format);
 
-  compareFiles(output, output2);
-  std::filesystem::remove(output);
-  std::filesystem::remove(output2);
+  compareFiles(outputPath.string(), output2Path.string());
+  std::filesystem::remove(outputPath);
+  std::filesystem::remove(output2Path);
 }
 
 TEST_F(IO, importAndDumpQASMFromConstructor) {
+  // Create temporary filenames
+  const auto tempDir = std::filesystem::temp_directory_path();
+  const auto outputPath = tempDir / "tmp_importAndDumpQASMFromConstructor.txt";
+  const auto output2Path =
+      tempDir / "tmp2_importAndDumpQASMFromConstructor.txt";
+
   constexpr auto input = "../circuits/test.qasm";
   constexpr auto format = qc::Format::OpenQASM2;
   std::cout << "FILE: " << input << "\n";
 
   qc = qasm3::Importer::importf(input);
-  qc.dump(output, format);
+  qc.dump(outputPath.string(), format);
   qc.reset();
-  qc = qasm3::Importer::importf(output);
-  qc.dump(output2, format);
+  qc = qasm3::Importer::importf(outputPath.string());
+  qc.dump(output2Path.string(), format);
 
-  compareFiles(output, output2);
-  std::filesystem::remove(output);
-  std::filesystem::remove(output2);
+  compareFiles(outputPath.string(), output2Path.string());
+  std::filesystem::remove(outputPath);
+  std::filesystem::remove(output2Path);
 }
 
 TEST_F(IO, dumpValidFilenames) {

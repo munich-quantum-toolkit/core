@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -45,7 +46,7 @@ struct QuantumSinkShiftPattern final
    */
   bool isAfterOrEqual(mlir::Block& successor, mlir::Block& predecessor,
                       std::unordered_set<mlir::Block*>& visited) const {
-    if (visited.find(&successor) != visited.end()) {
+    if (visited.contains(&successor)) {
       return false;
     }
     visited.insert(&successor);
@@ -53,7 +54,7 @@ struct QuantumSinkShiftPattern final
       return true;
     }
     auto parents = successor.getPredecessors();
-    return std::any_of(parents.begin(), parents.end(), [&](auto* parent) {
+    return llvm::any_of(parents, [&](auto* parent) {
       return isAfterOrEqual(*parent, predecessor, visited);
     });
   }
@@ -70,39 +71,14 @@ struct QuantumSinkShiftPattern final
   [[nodiscard]] std::vector<mlir::Operation*>
   getEarliestUsers(mlir::ResultRange::user_range users) const {
     std::vector<mlir::Operation*> earliestUsers;
-    std::copy_if(
-        users.begin(), users.end(), std::back_inserter(earliestUsers),
-        [&](auto* user) {
-          return std::none_of(users.begin(), users.end(), [&](auto* other) {
-            std::unordered_set<mlir::Block*> visited;
-            return user != other && isAfterOrEqual(*user->getBlock(),
-                                                   *other->getBlock(), visited);
-          });
-        });
+    llvm::copy_if(users, std::back_inserter(earliestUsers), [&](auto* user) {
+      return llvm::none_of(users, [&](auto* other) {
+        std::unordered_set<mlir::Block*> visited;
+        return user != other &&
+               isAfterOrEqual(*user->getBlock(), *other->getBlock(), visited);
+      });
+    });
     return earliestUsers;
-  }
-
-  mlir::LogicalResult match(UnitaryInterface op) const override {
-    // We only consider 1-qubit gates.
-    if (op.getAllOutQubits().size() != 1) {
-      return mlir::failure();
-    }
-
-    // Ensure that there is at least one user.
-    const auto& users = op->getUsers();
-    if (users.empty()) {
-      return mlir::failure();
-    }
-
-    // There may be multiple users if canonicalization has deemed a branch
-    // operand as pass-through and therefore removed it. If more than one user
-    // is in the same block, then the `QuantumSinkShiftPattern` cannot be
-    // applied
-    return std::all_of(
-               users.begin(), users.end(),
-               [&](auto* user) { return user->getBlock() != op->getBlock(); })
-               ? mlir::success()
-               : mlir::failure();
   }
 
   /**
@@ -130,17 +106,52 @@ struct QuantumSinkShiftPattern final
     }
   }
 
-  void rewrite(UnitaryInterface op,
-               mlir::PatternRewriter& rewriter) const override {
-    auto users = getEarliestUsers(op->getUsers());
+  mlir::LogicalResult
+  matchAndRewrite(UnitaryInterface op,
+                  mlir::PatternRewriter& rewriter) const override {
+    // We only consider 1-qubit gates.
+    if (op.getAllOutQubits().size() != 1) {
+      return mlir::failure();
+    }
 
-    for (auto* user : users) {
+    // Ensure that there is at least one user.
+    const auto& users = op->getUsers();
+    if (users.empty()) {
+      return mlir::failure();
+    }
+
+    // There may be multiple users if canonicalization has deemed a branch
+    // operand as pass-through and therefore removed it. If more than one user
+    // is in the same block, then the `QuantumSinkShiftPattern` cannot be
+    // applied.
+    if (!llvm::all_of(users, [&](auto* user) {
+          return user->getBlock() != op->getBlock();
+        })) {
+      return mlir::failure();
+    }
+
+    // --- Begin Rewrite Phase ---
+    auto earliestUsers = getEarliestUsers(users);
+
+    for (auto* user : earliestUsers) {
       auto* block = user->getBlock();
       rewriter.setInsertionPoint(&block->front());
       auto* clone = rewriter.clone(*op);
-      replaceInputsWithClone(rewriter, *op, *clone, *user);
+      for (size_t i = 0; i < user->getOperands().size(); i++) {
+        const auto& operand = user->getOperand(i);
+        const auto found = std::find(op->getResults().begin(),
+                                     op->getResults().end(), operand);
+        if (found == op->getResults().end()) {
+          continue;
+        }
+        const auto idx = std::distance(op->getResults().begin(), found);
+        rewriter.modifyOpInPlace(
+            user, [&] { user->setOperand(i, clone->getResult(idx)); });
+      }
     }
+
     rewriter.eraseOp(op);
+    return mlir::success();
   }
 };
 

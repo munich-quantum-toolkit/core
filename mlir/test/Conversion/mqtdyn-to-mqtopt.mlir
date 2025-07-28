@@ -400,7 +400,7 @@ module {
 }
 
 // -----
-// This test checks if a barrierOp is converted correctly
+// This test checks if a gphaseOp with no target no controlled qubit is converted correctly
 module {
     // CHECK-LABEL: func.func @testConvertGPhaseOp()
     func.func @testConvertGPhaseOp() {
@@ -414,12 +414,12 @@ module {
 }
 
 // -----
-// This test checks if a barrierOp with a controlled qubit is converted correctly
+// This test checks if a gphaseOp with a controlled qubit is converted correctly
 module {
     // CHECK-LABEL: func.func @testConvertGPhaseOpControlled()
     func.func @testConvertGPhaseOpControlled() {
         // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01 : f64
-        // CHECK: %[[q_0:.*]] = mqtopt.gphase(%[[c_0]]) ctrl %[[ANY:.*]] :  ctrl !mqtopt.Qubit
+        // CHECK: %[[q_0:.*]] = mqtopt.gphase(%[[c_0]]) ctrl %[[ANY:.*]] : ctrl !mqtopt.Qubit
 
         %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -429,6 +429,25 @@ module {
         return
     }
 }
+
+// -----
+// This test checks if a gphaseOp with a positive controlled qubit and a negative controlled qubit is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertGPhaseOpPositiveNegativeControlled()
+    func.func @testConvertGPhaseOpPositiveNegativeControlled() {
+        // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01 : f64
+        // CHECK: %[[q0_1:.*]], %[[q1_1:.*]] = mqtopt.gphase(%[[c_0]]) ctrl %[[ANY:.*]] nctrl %[[ANY:.*]] : ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+        %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+        %q1 = "mqtdyn.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+        %cst = arith.constant 3.000000e-01 : f64
+        mqtdyn.gphase(%cst) ctrl %q0 nctrl %q1
+        "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
+        return
+    }
+}
+
 
 // -----
 // This test checks if a barrierOp is converted correctly
