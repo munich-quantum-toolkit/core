@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
@@ -168,17 +169,23 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     }
 
     const auto in = op.getInQubits()[0];
-    const auto ctrlIns = op.getAllCtrlInQubits();
+    const auto posCtrlIns = op.getPosCtrlInQubits();
+    const auto negCtrlIns = op.getNegCtrlInQubits();
     const auto outs = op.getAllOutQubits();
 
     // Get the qubit index of every control qubit.
-    std::vector<size_t> ctrlInsIndices(ctrlIns.size());
+    std::vector<size_t> posCtrlInsIndices;
+    std::vector<size_t> negCtrlInsIndices;
     size_t targetIndex = 0; // Placeholder
     try {
-      llvm::transform(ctrlIns, ctrlInsIndices.begin(),
-                      [&currentQubitVariables](const mlir::Value val) {
-                        return findQubitIndex(val, currentQubitVariables);
-                      });
+      for (const auto& val : posCtrlIns) {
+        posCtrlInsIndices.emplace_back(
+            findQubitIndex(val, currentQubitVariables));
+      }
+      for (const auto& val : negCtrlIns) {
+        negCtrlInsIndices.emplace_back(
+            findQubitIndex(val, currentQubitVariables));
+      }
       // Get the qubit index of the target qubit (if already collected).
       targetIndex = findQubitIndex(in, currentQubitVariables);
     } catch (const std::runtime_error& e) {
@@ -191,15 +198,24 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       throw; // Rethrow the exception if it's not the expected one.
     }
     // Update `currentQubitVariables` with the new qubit values.
-    for (size_t i = 0; i < ctrlInsIndices.size(); i++) {
-      currentQubitVariables[ctrlInsIndices[i]] = outs[i + 1];
+    for (size_t i = 0; i < posCtrlInsIndices.size(); i++) {
+      currentQubitVariables[posCtrlInsIndices[i]] = outs[i + 1];
+    }
+    for (size_t i = 0; i < negCtrlInsIndices.size(); i++) {
+      currentQubitVariables[negCtrlInsIndices[i]] =
+          outs[i + 1 + posCtrlInsIndices.size()];
     }
     currentQubitVariables[targetIndex] = outs[0];
 
     // Add the operation to the QuantumComputation.
-    circuit.emplace_back<qc::StandardOperation>(
-        qc::Controls{ctrlInsIndices.cbegin(), ctrlInsIndices.cend()},
-        targetIndex, opType);
+    qc::Controls controls;
+    for (const auto& index : posCtrlInsIndices) {
+      controls.emplace(static_cast<qc::Qubit>(index), qc::Control::Type::Pos);
+    }
+    for (const auto& index : negCtrlInsIndices) {
+      controls.emplace(static_cast<qc::Qubit>(index), qc::Control::Type::Neg);
+    }
+    circuit.emplace_back<qc::StandardOperation>(controls, targetIndex, opType);
 
     return true;
   }
