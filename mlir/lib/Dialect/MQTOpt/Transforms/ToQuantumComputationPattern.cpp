@@ -176,20 +176,18 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     const auto outs = op.getAllOutQubits();
 
     // Get the qubit index of every control qubit.
-    std::vector<size_t> posCtrlInsIndices(posCtrlIns.size());
-    std::vector<size_t> negCtrlInsIndices(negCtrlIns.size());
+    std::vector<size_t> posCtrlInsIndices;
+    std::vector<size_t> negCtrlInsIndices;
     size_t targetIndex = 0; // Placeholder
     try {
-      std::transform(posCtrlIns.begin(), posCtrlIns.end(),
-                     posCtrlInsIndices.begin(),
-                     [&currentQubitVariables](const mlir::Value val) {
-                       return findQubitIndex(val, currentQubitVariables);
-                     });
-      std::transform(negCtrlIns.begin(), negCtrlIns.end(),
-                     negCtrlInsIndices.begin(),
-                     [&currentQubitVariables](const mlir::Value val) {
-                       return findQubitIndex(val, currentQubitVariables);
-                     });
+      for (const auto& val : posCtrlIns) {
+        posCtrlInsIndices.emplace_back(
+            findQubitIndex(val, currentQubitVariables));
+      }
+      for (const auto& val : negCtrlIns) {
+        negCtrlInsIndices.emplace_back(
+            findQubitIndex(val, currentQubitVariables));
+      }
       // Get the qubit index of the target qubit (if already collected).
       targetIndex = findQubitIndex(in, currentQubitVariables);
     } catch (const std::runtime_error& e) {
