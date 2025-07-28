@@ -72,6 +72,9 @@ struct MergeRotationGatesPattern final
   matchAndRewrite(UnitaryInterface op,
                   mlir::PatternRewriter& rewriter) const override {
     const auto& users = op->getUsers();
+    if (users.empty()) {
+      return mlir::failure();
+    }
     if (!areUsersUnique(users)) {
       return mlir::failure();
     }
