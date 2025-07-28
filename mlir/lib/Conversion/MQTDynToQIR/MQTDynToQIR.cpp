@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
@@ -55,7 +56,7 @@ namespace {
 LLVM::LLVMFuncOp ensureFunctionDeclaration(PatternRewriter& rewriter,
                                            Operation* op, StringRef fnSymbol,
                                            Type fnType) {
-  Operation* fnDecl = SymbolTable::lookupNearestSymbolFrom(
+  auto* fnDecl = SymbolTable::lookupNearestSymbolFrom(
       op, rewriter.getStringAttr(fnSymbol));
 
   if (fnDecl == nullptr) {
@@ -67,6 +68,39 @@ LLVM::LLVMFuncOp ensureFunctionDeclaration(PatternRewriter& rewriter,
   }
 
   return cast<LLVM::LLVMFuncOp>(fnDecl);
+}
+void addBlocks(ModuleOp& module) {
+  // get main func op
+  auto func = module.lookupSymbol<func::FuncOp>("main");
+
+  // get the existing block
+  auto* entryBlock = &func.front();
+  mlir::OpBuilder builder(func.getBody());
+
+  // create 2 other blocks
+  mlir::Block* mainBlock = builder.createBlock(&func.getBody());
+  mlir::Block* endBlock = builder.createBlock(&func.getBody());
+
+  // add jump from main to end block
+  builder.setInsertionPointToEnd(mainBlock);
+  builder.create<cf::BranchOp>(func->getLoc(), endBlock);
+
+  // move the returnOp from the entry block to the endBlock
+  builder.setInsertionPointToEnd(endBlock);
+  auto& ops = entryBlock->getOperations();
+  auto& toOps = endBlock->getOperations();
+  auto lastOpIt = std::prev(ops.end());
+  toOps.splice(toOps.end(), ops, lastOpIt);
+
+  // add jump from entry to main block
+  builder.setInsertionPointToEnd(entryBlock);
+  builder.create<cf::BranchOp>(func->getLoc(), mainBlock);
+
+  // move every operation from the entry block except the jump to the main block
+  if (!entryBlock->empty()) {
+    mainBlock->getOperations().splice(mainBlock->begin(), ops, ops.begin(),
+                                      std::prev(ops.end()));
+  }
 }
 } // namespace
 
@@ -126,16 +160,15 @@ struct ConvertMQTDynExtractQIR final : OpConversionPattern<dyn::ExtractOp> {
   LogicalResult
   matchAndRewrite(dyn::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    MLIRContext* ctx = getContext();
+    auto* ctx = getContext();
     // create name and signature of the new function
     StringRef fnName = "__catalyst__rt__array_get_element_ptr_1d";
-    Type qirSignature = LLVM::LLVMFunctionType::get(
+    auto qirSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMPointerType::get(ctx, 1),
         {LLVM::LLVMPointerType::get(ctx, 2), IntegerType::get(ctx, 64)});
 
     // get the function declaration
-    LLVM::LLVMFuncOp fnDecl =
-        ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    auto fnDecl = ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
     // create a constantOp if the index is an attribute
     auto index = adaptor.getIndex();
@@ -242,13 +275,14 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
-
+    auto moduleOp = llvm::dyn_cast<ModuleOp>(module);
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     MQTDynToQIRTypeConverter typeConverter(context);
 
     target.addIllegalDialect<dyn::MQTDynDialect>();
     target.addLegalDialect<LLVM::LLVMDialect>();
+    addBlocks(moduleOp);
     patterns.add<ConvertMQTDynAllocQIR>(typeConverter, context);
     patterns.add<ConvertMQTDynDeallocQIR>(typeConverter, context);
     patterns.add<ConvertMQTDynExtractQIR>(typeConverter, context);
