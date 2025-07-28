@@ -1821,7 +1821,7 @@ public:
           if (edge.w.approximatelyZero()) {
             continue;
           }
-          if (mappedNode.find(edge.p) != mappedNode.end()) {
+          if (mappedNode.contains(edge.p)) {
             continue;
           }
 
@@ -1840,7 +1840,7 @@ public:
         if (edge.w.approximatelyZero()) {
           continue;
         }
-        if (mappedNode.find(edge.p) != mappedNode.end()) {
+        if (mappedNode.contains(edge.p)) {
           continue;
         }
         hasChild = edge.p == stack.top()->p;
@@ -1852,7 +1852,7 @@ public:
         stack.push(currentEdge);
         currentEdge = temp;
       } else {
-        if (mappedNode.find(currentEdge->p) != mappedNode.end()) {
+        if (!mappedNode.contains(currentEdge->p)) {
           currentEdge = nullptr;
           continue;
         }

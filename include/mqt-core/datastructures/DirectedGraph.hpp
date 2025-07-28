@@ -59,7 +59,7 @@ public:
   virtual ~DirectedGraph() = default;
   virtual auto addVertex(const V& v) -> void {
     // check whether the vertex is already in the graph, if so do nothing
-    if (mapping.find(v) != mapping.end()) {
+    if (mapping.contains(v)) {
       std::stringstream ss;
       ss << "The vertex " << v << " is already in the graph.";
       throw std::invalid_argument(ss.str());
@@ -75,10 +75,10 @@ public:
     outDegrees.emplace_back(0);
   }
   virtual auto addEdge(const V& u, const V& v) -> void {
-    if (mapping.find(u) == mapping.end()) {
+    if (!mapping.contains(u)) {
       addVertex(u);
     }
-    if (mapping.find(v) == mapping.end()) {
+    if (!mapping.contains(v)) {
       addVertex(v);
     }
     const auto i = mapping.at(u);
@@ -93,7 +93,7 @@ public:
   [[nodiscard]] auto getNVertices() const -> std::size_t { return nVertices; }
   [[nodiscard]] auto getNEdges() const -> std::size_t { return nEdges; }
   [[nodiscard]] auto getInDegree(const V& v) const -> std::size_t {
-    if (mapping.find(v) == mapping.end()) {
+    if (!mapping.contains(v)) {
       std::stringstream ss;
       ss << "The vertex " << v << " is not in the graph.";
       throw std::invalid_argument(ss.str());
@@ -102,7 +102,7 @@ public:
     return inDegrees[i];
   }
   [[nodiscard]] auto getOutDegree(const V& v) const -> std::size_t {
-    if (mapping.find(v) == mapping.end()) {
+    if (!mapping.contains(v)) {
       std::stringstream ss;
       ss << "The vertex " << v << " is not in the graph.";
       throw std::invalid_argument(ss.str());
@@ -119,12 +119,12 @@ public:
                            });
   }
   [[nodiscard]] auto isEdge(const V& u, const V& v) const -> bool {
-    if (mapping.find(u) == mapping.end()) {
+    if (!mapping.contains(u)) {
       std::stringstream ss;
       ss << "The vertex " << u << " is not in the graph.";
       throw std::invalid_argument(ss.str());
     }
-    if (mapping.find(v) == mapping.end()) {
+    if (!mapping.contains(v)) {
       std::stringstream ss;
       ss << "The vertex " << v << " is not in the graph.";
       throw std::invalid_argument(ss.str());

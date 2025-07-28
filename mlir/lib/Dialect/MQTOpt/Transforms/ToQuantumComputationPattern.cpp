@@ -16,7 +16,6 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <iterator>
@@ -123,10 +122,10 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     std::vector<size_t> insIndices(ins.size());
 
     try {
-      std::transform(ins.begin(), ins.end(), insIndices.begin(),
-                     [&currentQubitVariables](const mlir::Value val) {
-                       return findQubitIndex(val, currentQubitVariables);
-                     });
+      llvm::transform(ins, insIndices.begin(),
+                      [&currentQubitVariables](const mlir::Value val) {
+                        return findQubitIndex(val, currentQubitVariables);
+                      });
     } catch (const std::runtime_error& e) {
       if (strcmp(e.what(),
                  "Qubit was not found in list of previously defined qubits") ==
@@ -362,7 +361,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     mlir::Operation* current = op;
     while (current != nullptr) {
       // no need to visit non-mqtopt operations
-      if (visited.find(current) != visited.end() ||
+      if (visited.contains(current) ||
           current->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
         current = current->getNextNode();
         continue;

@@ -51,7 +51,7 @@ repos:
 
   # Handling unwanted unicode characters
   - repo: https://github.com/sirosen/texthooks
-    rev: 0.6.8
+    rev: 0.7.1
     hooks:
       - id: fix-ligatures
       - id: fix-smartquotes
@@ -66,7 +66,7 @@ repos:
 
   # Python linting using ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.3
+    rev: v0.12.5
     hooks:
       - id: ruff
         args: ["--fix", "--show-fixes"]
@@ -74,7 +74,7 @@ repos:
 
   # Static type checking using mypy
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.16.1
+    rev: v1.17.0
     hooks:
       - id: mypy
         files: ^(python/mqt|test/python|noxfile.py)

@@ -503,10 +503,10 @@ auto StandardOperation::commutesAtQubit(const Operation& other,
   if (!actsOn(qubit) || !other.actsOn(qubit)) {
     return true;
   }
-  if (controls.find(qubit) != controls.end()) {
+  if (controls.contains(qubit)) {
     // if this is controlled on the given qubit
     if (const auto& controls2 = other.getControls();
-        controls2.find(qubit) != controls2.end()) {
+        controls2.contains(qubit)) {
       // if other is controlled on the given qubit
       // q: ──■────■──
       //      |    |
@@ -520,8 +520,7 @@ auto StandardOperation::commutesAtQubit(const Operation& other,
     //      |  └────┘
   }
   // here: qubit is a target of this
-  if (const auto& controls2 = other.getControls();
-      controls2.find(qubit) != controls2.end()) {
+  if (const auto& controls2 = other.getControls(); controls2.contains(qubit)) {
     return isDiagonalGate();
     // true, iff qubit is a target and this is a diagonal gate and other is
     // controlled, e.g.
@@ -648,8 +647,8 @@ void StandardOperation::dumpControls(std::ostringstream& op) const {
   }
 
   // if operation is in stdgates.inc, we print a c prefix instead of ctrl @
-  if (bool printBuiltin = std::none_of(
-          controls.begin(), controls.end(),
+  if (bool printBuiltin = std::ranges::none_of(
+          controls,
           [](const Control& c) { return c.type == Control::Type::Neg; });
       printBuiltin) {
     const auto numControls = controls.size();
