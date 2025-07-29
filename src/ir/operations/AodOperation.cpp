@@ -116,7 +116,7 @@ qc::fp AodOperation::getMaxDistance(const Dimension dir) const {
   if (distances.empty()) {
     return 0;
   }
-  return *std::max_element(distances.begin(), distances.end());
+  return *std::ranges::max_element(distances);
 }
 std::vector<qc::fp> AodOperation::getDistances(const Dimension dir) const {
   std::vector<qc::fp> params;

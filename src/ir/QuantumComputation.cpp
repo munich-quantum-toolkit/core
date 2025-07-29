@@ -38,6 +38,7 @@
 #include <optional>
 #include <ostream>
 #include <random>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -79,7 +80,7 @@ void consolidateRegister(QuantumRegisterMap& regs) {
     for (const auto& [name, qreg] : regs) {
       finished = true;
       // check if lower part of register
-      if (name.length() > 2 && name.compare(name.size() - 2, 2, "_l") == 0) {
+      if (name.ends_with("_l")) {
         auto lowidx = qreg.getStartIndex();
         auto lownum = qreg.getSize();
         // search for higher part of register
@@ -245,7 +246,7 @@ std::size_t QuantumComputation::getDepth() const {
     op->addDepthContribution(depths);
   }
 
-  return *std::max_element(depths.begin(), depths.end());
+  return *std::ranges::max_element(depths);
 }
 
 void QuantumComputation::initializeIOMapping() {
@@ -272,7 +273,7 @@ void QuantumComputation::initializeIOMapping() {
         const auto qubitidx = q;
         // only the first measurement of a qubit is used to determine the output
         // permutation
-        if (measuredQubits.count(qubitidx) != 0) {
+        if (measuredQubits.contains(qubitidx)) {
           continue;
         }
 
@@ -305,7 +306,7 @@ void QuantumComputation::initializeIOMapping() {
   if (outputPermutationFromMeasurements) {
     auto it = outputPermutation.begin();
     while (it != outputPermutation.end()) {
-      if (measuredQubits.find(it->first) == measuredQubits.end()) {
+      if (!measuredQubits.contains(it->first)) {
         it = outputPermutation.erase(it);
       } else {
         ++it;
@@ -316,8 +317,8 @@ void QuantumComputation::initializeIOMapping() {
   garbage.assign(nqubits + nancillae, false);
   for (const auto& [physicalIn, logicalIn] : initialLayout) {
     // if the qubit is not an output, mark it as garbage
-    const bool isOutput = std::any_of(
-        outputPermutation.begin(), outputPermutation.end(),
+    const bool isOutput = std::ranges::any_of(
+        outputPermutation,
         [&logicIn = logicalIn](const auto& p) { return p.second == logicIn; });
     if (!isOutput) {
       setLogicalQubitGarbage(logicalIn);
@@ -334,7 +335,7 @@ void QuantumComputation::initializeIOMapping() {
 const QuantumRegister&
 QuantumComputation::addQubitRegister(std::size_t nq,
                                      const std::string& regName) {
-  if (quantumRegisters.count(regName) != 0) {
+  if (quantumRegisters.contains(regName)) {
     throw std::runtime_error("[addQubitRegister] Register " + regName +
                              " already exists");
   }
@@ -366,7 +367,7 @@ QuantumComputation::addQubitRegister(std::size_t nq,
 const ClassicalRegister&
 QuantumComputation::addClassicalRegister(std::size_t nc,
                                          const std::string& regName) {
-  if (classicalRegisters.count(regName) != 0) {
+  if (classicalRegisters.contains(regName)) {
     throw std::runtime_error("[addClassicalRegister] Register " + regName +
                              " already exists");
   }
@@ -385,7 +386,7 @@ QuantumComputation::addClassicalRegister(std::size_t nc,
 const QuantumRegister&
 QuantumComputation::addAncillaryRegister(std::size_t nq,
                                          const std::string& regName) {
-  if (ancillaRegisters.count(regName) != 0) {
+  if (ancillaRegisters.contains(regName)) {
     throw std::runtime_error("[addAncillaryRegister] Register " + regName +
                              " already exists");
   }
@@ -548,7 +549,7 @@ void QuantumComputation::invert() {
   for (const auto& op : ops) {
     op->invert();
   }
-  std::reverse(ops.begin(), ops.end());
+  std::ranges::reverse(ops);
 
   if (initialLayout.size() == outputPermutation.size()) {
     std::swap(initialLayout, outputPermutation);
@@ -743,16 +744,15 @@ void QuantumComputation::dump(const std::string& filename,
 }
 
 bool QuantumComputation::isIdleQubit(const Qubit physicalQubit) const {
-  return std::none_of(
-      ops.cbegin(), ops.cend(),
-      [&physicalQubit](const auto& op) { return op->actsOn(physicalQubit); });
+  return std::ranges::none_of(ops, [&physicalQubit](const auto& op) {
+    return op->actsOn(physicalQubit);
+  });
 }
 
 void QuantumComputation::stripIdleQubits(bool force) {
   auto layoutCopy = initialLayout;
-  for (auto physicalQubitIt = layoutCopy.rbegin();
-       physicalQubitIt != layoutCopy.rend(); ++physicalQubitIt) {
-    if (const auto physicalQubitIndex = physicalQubitIt->first;
+  for (auto& physicalQubitIt : std::ranges::reverse_view(layoutCopy)) {
+    if (const auto physicalQubitIndex = physicalQubitIt.first;
         isIdleQubit(physicalQubitIndex)) {
       if (auto it = outputPermutation.find(physicalQubitIndex);
           it != outputPermutation.end() && !force) {
@@ -842,10 +842,10 @@ Qubit QuantumComputation::getHighestPhysicalQubitIndex() const {
 
 bool QuantumComputation::physicalQubitIsAncillary(
     const Qubit physicalQubitIndex) const {
-  return std::any_of(ancillaRegisters.cbegin(), ancillaRegisters.cend(),
-                     [&physicalQubitIndex](const auto& reg) {
-                       return reg.second.contains(physicalQubitIndex);
-                     });
+  return std::ranges::any_of(ancillaRegisters,
+                             [&physicalQubitIndex](const auto& reg) {
+                               return reg.second.contains(physicalQubitIndex);
+                             });
 }
 
 void QuantumComputation::setLogicalQubitAncillary(
@@ -888,10 +888,11 @@ void QuantumComputation::setLogicalQubitsGarbage(
 
 [[nodiscard]] std::pair<bool, std::optional<Qubit>>
 QuantumComputation::containsLogicalQubit(const Qubit logicalQubitIndex) const {
-  if (const auto it = std::find_if(initialLayout.cbegin(), initialLayout.cend(),
-                                   [&logicalQubitIndex](const auto& mapping) {
-                                     return mapping.second == logicalQubitIndex;
-                                   });
+  if (const auto it =
+          std::ranges::find_if(initialLayout,
+                               [&logicalQubitIndex](const auto& mapping) {
+                                 return mapping.second == logicalQubitIndex;
+                               });
       it != initialLayout.cend()) {
     return {true, it->first};
   }
@@ -944,7 +945,7 @@ void QuantumComputation::appendMeasurementsAccordingToOutputPermutation(
     // in case there are no registers, create a new one
     addClassicalRegister(outputPermutation.size(), registerName);
   } else if (nclassics < outputPermutation.size()) {
-    if (classicalRegisters.find(registerName) != classicalRegisters.end()) {
+    if (classicalRegisters.contains(registerName)) {
       throw std::runtime_error(
           "[appendMeasurementsAccordingToOutputPermutation] Register " +
           registerName + " already exists but is too small");
@@ -1011,7 +1012,7 @@ void QuantumComputation::checkClassicalRegister(
   }
 }
 
-void QuantumComputation::reverse() { std::reverse(ops.begin(), ops.end()); }
+void QuantumComputation::reverse() { std::ranges::reverse(ops); }
 
 QuantumComputation::QuantumComputation(const std::size_t nq,
                                        const std::size_t nc,
@@ -1030,8 +1031,7 @@ QuantumComputation::QuantumComputation(const std::size_t nq,
     std::array<std::mt19937_64::result_type, std::mt19937_64::state_size>
         randomData{};
     std::random_device rd;
-    std::generate(std::begin(randomData), std::end(randomData),
-                  [&rd]() { return rd(); });
+    std::ranges::generate(randomData, [&rd]() { return rd(); });
     std::seed_seq seeds(std::begin(randomData), std::end(randomData));
     mt.seed(seeds);
   }
@@ -1088,8 +1088,8 @@ void QuantumComputation::addVariable(const SymbolOrNumber& expr) {
 }
 
 bool QuantumComputation::isVariableFree() const {
-  return std::all_of(ops.begin(), ops.end(),
-                     [](const auto& op) { return !op->isSymbolicOperation(); });
+  return std::ranges::all_of(
+      ops, [](const auto& op) { return !op->isSymbolicOperation(); });
 }
 
 // Instantiates this computation
@@ -1210,7 +1210,7 @@ void QuantumComputation::reorderOperations() {
   // clear all the operations from the quantum circuit
   ops.clear();
   // move all operations from the newly created vector to the original one
-  std::move(newOps.begin(), newOps.end(), std::back_inserter(ops));
+  std::ranges::move(newOps, std::back_inserter(ops));
 }
 
 namespace {
@@ -1227,8 +1227,8 @@ bool isDynamicCircuit(const std::unique_ptr<Operation>* op,
   if (it->isStandardOperation()) {
     // Whenever a qubit has already been measured, the circuit is dynamic
     const auto& usedQubits = it->getUsedQubits();
-    return std::any_of(usedQubits.cbegin(), usedQubits.cend(),
-                       [&measured](const auto& q) { return measured[q]; });
+    return std::ranges::any_of(
+        usedQubits, [&measured](const auto& q) { return measured[q]; });
   }
 
   if (it->getType() == Measure) {
@@ -1240,16 +1240,16 @@ bool isDynamicCircuit(const std::unique_ptr<Operation>* op,
 
   assert(it->isCompoundOperation());
   const auto& compOp = dynamic_cast<const CompoundOperation&>(*it);
-  return std::any_of(
-      compOp.cbegin(), compOp.cend(),
-      [&measured](const auto& g) { return isDynamicCircuit(&g, measured); });
+  return std::ranges::any_of(compOp, [&measured](const auto& g) {
+    return isDynamicCircuit(&g, measured);
+  });
 }
 } // namespace
 
 bool QuantumComputation::isDynamic() const {
   // marks whether a qubit in the DAG has been measured
   std::vector<bool> measured(getHighestPhysicalQubitIndex() + 1, false);
-  return std::any_of(cbegin(), cend(), [&measured](const auto& op) {
+  return std::ranges::any_of(ops, [&measured](const auto& op) {
     return ::qc::isDynamicCircuit(&op, measured);
   });
 }
