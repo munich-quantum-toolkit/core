@@ -17,6 +17,7 @@
 #include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
 
 #include <pybind11/cast.h>
+#include <pybind11/native_enum.h>
 #include <pybind11/operators.h>
 #include <pybind11/pytypes.h>
 // clang-format on
@@ -30,26 +31,12 @@ using namespace pybind11::literals;
 void registerControl(const py::module& m) {
 
   auto control = py::class_<qc::Control>(m, "Control");
-  auto controlType = py::enum_<qc::Control::Type>(control, "Type");
-  controlType.value("Pos", qc::Control::Type::Pos);
-  controlType.value("Neg", qc::Control::Type::Neg);
-  controlType.def(
-      "__str__",
-      [](const qc::Control::Type& type) {
-        return type == qc::Control::Type::Pos ? "Pos" : "Neg";
-      },
-      py::prepend());
-  controlType.def(
-      "__repr__",
-      [](const qc::Control::Type& type) {
-        return type == qc::Control::Type::Pos ? "Pos" : "Neg";
-      },
-      py::prepend());
-  controlType.def("__bool__", [](const qc::Control::Type& type) {
-    return type == qc::Control::Type::Pos;
-  });
-  py::implicitly_convertible<py::bool_, qc::Control::Type>();
-  py::implicitly_convertible<py::str, qc::Control::Type>();
+
+  py::native_enum<qc::Control::Type>(control, "Type", "enum.Enum",
+                                     "Enumeration of control types.")
+      .value("Pos", qc::Control::Type::Pos)
+      .value("Neg", qc::Control::Type::Neg)
+      .finalize();
 
   control.def(py::init<qc::Qubit, qc::Control::Type>(), "qubit"_a,
               "type_"_a = qc::Control::Type::Pos);
