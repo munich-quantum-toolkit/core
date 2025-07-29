@@ -15,6 +15,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ✨ Make Python enums PEP-435 compatible by utilizing `py::native_enum` ([#1075]) ([**@denialhaag**])
 - ⬆️ Require C++20 ([#897]) ([**@burgholzer**], [**@denialhaag**])
 
 ## [3.1.0]
@@ -134,6 +135,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1075]: https://github.com/munich-quantum-toolkit/core/pull/1075
 [#1047]: https://github.com/munich-quantum-toolkit/core/pull/1047
 [#1042]: https://github.com/munich-quantum-toolkit/core/pull/1042
 [#1020]: https://github.com/munich-quantum-toolkit/core/pull/1020

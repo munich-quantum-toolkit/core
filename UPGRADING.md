@@ -8,6 +8,8 @@ With this release, the minimum required C++ version has been raised from C++17 t
 The default compilers of our test systems support all relevant features of the standard.
 Some frameworks we plan to integrate with even require C++20 by now.
 
+The Python enums `dd.BasisStates`, `ir.operations.ComparisonKind`, `ir.operations.Control.Type`, and `ir.operations.OpType` are now PEP-435 compatible.
+
 ## [3.1.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.0` to `3.1`.
