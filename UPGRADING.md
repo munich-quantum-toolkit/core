@@ -8,7 +8,7 @@ With this release, the minimum required C++ version has been raised from C++17 t
 The default compilers of our test systems support all relevant features of the standard.
 Some frameworks we plan to integrate with even require C++20 by now.
 
-The Python enums `dd.BasisStates`, `ir.operations.ComparisonKind`, `ir.operations.Control.Type`, and `ir.operations.OpType` are now PEP-435 compatible.
+The `dd.BasisStates`, `ir.operations.ComparisonKind`, `ir.operations.Control.Type`, and `ir.operations.OpType` enums are now exposed via `pybind11`'s new `py::native_enum`, which makes them compatible with Python's `enum.Enum` class (PEP 435).
 
 ## [3.1.0]
 

@@ -15,7 +15,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- ✨ Make Python enums PEP-435 compatible by utilizing `py::native_enum` ([#1075]) ([**@denialhaag**])
+- ✨ Expose enums to Python via `pybind11`'s new (`enum.Enum`-compatible) `py::native_enum` ([#1075]) ([**@denialhaag**])
 - ⬆️ Require C++20 ([#897]) ([**@burgholzer**], [**@denialhaag**])
 
 ## [3.1.0] - 2025-07-11
