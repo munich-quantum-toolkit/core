@@ -1656,7 +1656,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
         }
         // if this non‑Cliff touches any qubit in b.qubits, block it
         for (auto q : opData[static_cast<std::size_t>(j)].qubits) {
-          if (b.qubits.count(q) > 0) {
+          if (b.qubits.contains(q)) {
             canCommute = false;
             break;
           }
