@@ -27,6 +27,7 @@
 
 #include <pybind11/attr.h>
 #include <pybind11/cast.h>
+#include <pybind11/native_enum.h>
 #include <pybind11/numpy.h>
 // clang-format on
 
@@ -131,13 +132,15 @@ void registerDDPackage(const py::module& mod) {
       // keep the DD package alive while the returned vector DD is alive.
       py::keep_alive<0, 1>());
 
-  py::enum_<dd::BasisStates>(mod, "BasisStates")
+  py::native_enum<dd::BasisStates>(mod, "BasisStates", "enum.Enum",
+                                   "Test string.")
       .value("zero", dd::BasisStates::zero)
       .value("one", dd::BasisStates::one)
       .value("plus", dd::BasisStates::plus)
       .value("minus", dd::BasisStates::minus)
       .value("right", dd::BasisStates::right)
-      .value("left", dd::BasisStates::left);
+      .value("left", dd::BasisStates::left)
+      .finalize();
 
   dd.def(
       "basis_state",
