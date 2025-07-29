@@ -16,10 +16,7 @@
 #include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
 
 #include <pybind11/native_enum.h>
-#include <pybind11/pytypes.h>
 // clang-format on
-
-#include <string>
 
 namespace mqt {
 
