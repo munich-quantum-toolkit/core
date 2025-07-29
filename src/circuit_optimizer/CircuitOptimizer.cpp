@@ -1434,9 +1434,11 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
     bool canProcess = true;
     bool makesTooBig = false;
 
+    // check if the operation can be processed
     if (!op->isUnitary()) {
       canProcess = false;
     }
+
     const auto usedQubits = op->getUsedQubits();
 
     if (canProcess) {
@@ -1544,7 +1546,6 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
         }
         prev = q;
       }
-
       const auto block = dsu.findBlock(static_cast<Qubit>(prev));
       const auto empty = dsu.blockEmpty(block);
       if (empty) {
