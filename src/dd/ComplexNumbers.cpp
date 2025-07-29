@@ -37,11 +37,12 @@ fp ComplexNumbers::arg(const Complex& a) noexcept {
 }
 
 Complex ComplexNumbers::conj(const Complex& a) noexcept {
-  return {a.r, RealNumber::flipPointerSign(a.i)};
+  return {.r = a.r, .i = RealNumber::flipPointerSign(a.i)};
 }
 
 Complex ComplexNumbers::neg(const Complex& a) noexcept {
-  return {RealNumber::flipPointerSign(a.r), RealNumber::flipPointerSign(a.i)};
+  return {.r = RealNumber::flipPointerSign(a.r),
+          .i = RealNumber::flipPointerSign(a.i)};
 }
 
 Complex ComplexNumbers::lookup(const Complex& c) {
@@ -63,11 +64,11 @@ Complex ComplexNumbers::lookup(const ComplexValue& c) {
 }
 
 Complex ComplexNumbers::lookup(const fp r) {
-  return {uniqueTable->lookup(r), &constants::zero};
+  return {.r = uniqueTable->lookup(r), .i = &constants::zero};
 }
 
 Complex ComplexNumbers::lookup(const fp r, const fp i) {
-  return {uniqueTable->lookup(r), uniqueTable->lookup(i)};
+  return {.r = uniqueTable->lookup(r), .i = uniqueTable->lookup(i)};
 }
 
 std::size_t ComplexNumbers::realCount() const noexcept {

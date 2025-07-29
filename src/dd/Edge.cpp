@@ -96,7 +96,7 @@ auto Edge<Node>::size(std::unordered_set<const Node*>& visited) const
   std::size_t sum = 1U;
   if (!isTerminal()) {
     for (const auto& e : p->e) {
-      if (visited.find(e.p) == visited.end()) {
+      if (!visited.contains(e.p)) {
         sum += e.size(visited);
       }
     }

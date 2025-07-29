@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <memory>
+#include <numbers>
 #include <stdexcept>
 #include <tuple>
 #include <vector>
@@ -84,10 +85,10 @@ TEST(StatePreparation, StatePreparationAmplitudesNotNormalized) {
 }
 
 TEST(StatePreparation, StatePreparationsAmplitudesNotPowerOf2) {
-  const auto amplitudes =
-      std::vector<std::complex<double>>{std::complex<double>{1 / std::sqrt(3)},
-                                        std::complex<double>{1 / std::sqrt(3)},
-                                        std::complex<double>{1 / std::sqrt(3)}};
+  const auto amplitudes = std::vector<std::complex<double>>{
+      std::complex<double>{std::numbers::inv_sqrt3},
+      std::complex<double>{std::numbers::inv_sqrt3},
+      std::complex<double>{std::numbers::inv_sqrt3}};
 
   ASSERT_THROW(std::ignore = qc::createStatePreparationCircuit(amplitudes),
                std::invalid_argument);

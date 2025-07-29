@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 set(CMAKE_CXX_STANDARD
-    17
+    20
     CACHE STRING "C++ standard to conform to")
 
 if(ENABLE_COVERAGE)
