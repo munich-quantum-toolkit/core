@@ -38,7 +38,6 @@ def test_mqtopt_conversion() -> None:
     # This will execute the pass and return the final MLIR
     mlir_opt = module.mlir_opt
     assert mlir_opt
-    print(mlir_opt)
 
 
 def test_mqtopt_roundtrip() -> None:
@@ -65,4 +64,23 @@ def test_mqtopt_roundtrip() -> None:
     # This will execute the pass and return the final MLIR
     mlir_opt = module.mlir_opt
     assert mlir_opt
-    print(mlir_opt)
+
+
+def test_mqtqmap() -> None:
+    """Execute the MQTQMAP pass for quantum circuit mapping."""
+
+    @apply_pass("mqt.mqtqmap")
+    @qml.qnode(qml.device("lightning.qubit", wires=2))
+    def circuit() -> None:
+        qml.Hadamard(wires=[0])
+        qml.CNOT(wires=[0, 1])
+        catalyst.measure(0)
+        catalyst.measure(1)
+
+    @qml.qjit(target="mlir", autograph=True, keep_intermediate=True)
+    def module() -> None:
+        return circuit()
+
+    # This will execute the pass and return the final MLIR
+    mlir_opt = module.mlir_opt
+    assert mlir_opt

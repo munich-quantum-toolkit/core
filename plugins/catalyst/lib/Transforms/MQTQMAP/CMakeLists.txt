@@ -8,7 +8,7 @@
 
 file(GLOB TRANSFORMS_SOURCES *.cpp)
 
-set(LIBRARIES MLIRMQTOpt)
+set(LIBRARIES MLIRMQTOpt mqt-qmap-sc mqt-qmap-sc-heuristic)
 
 add_mlir_library(MQTQMAP ${TRANSFORMS_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS MQTQMAPIncGen)
 
@@ -18,4 +18,5 @@ target_compile_options(MQTQMAP PUBLIC -fexceptions)
 target_include_directories(MQTQMAP PRIVATE ${mqt-core_SOURCE_DIR}/include)
 target_include_directories(MQTQMAP PRIVATE ${mqt-core_SOURCE_DIR}/include/mqt-core)
 
-message(STATUS "[MQTQMAP] Added MQT Core include: ${mqt-core_SOURCE_DIR}/include")
+find_package(mqt-qmap REQUIRED)
+target_include_directories(MQTQMAP PRIVATE ${mqt-qmap_SOURCE_DIR}/include)
