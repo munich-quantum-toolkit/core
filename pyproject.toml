@@ -281,7 +281,9 @@ enable = ["cpython-freethreading"]
 test-skip = [
   "cp3*t-*", # no freethreading qiskit wheels
   "cp*-win_arm64", # no numpy, qiskit, ... wheels,
-  "cp314-*", # not all dependencies support Python 3.14 yet
+  # TODO(burgholzer): Remove once all dependencies support Python 3.14.
+  #   https://github.com/munich-quantum-toolkit/core/issues/1078
+  "cp314-*",
 ]
 
 [tool.cibuildwheel.linux]
