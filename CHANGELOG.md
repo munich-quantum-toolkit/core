@@ -13,6 +13,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - ✨ Add MQT-internal MLIR dialect conversions ([#1001]) ([**@li-mingbao**])
 
+### Changed
+
+- ⬆️ Require C++20 ([#897]) ([**@burgholzer**], [**@denialhaag**])
+
 ## [3.1.0]
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#310)._
@@ -36,7 +40,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#310)._
 
 ### Changed
 
-- ⬆️ Bump shared library ABI version from `3.0` to `3.1`.
+- ⬆️ Bump shared library ABI version from `3.0` to `3.1` ([#1047]) ([**@denialhaag**])
 - ♻️ Switch from reference counting to mark-and-sweep garbage collection in decision diagram package ([#1020]) ([**@MatthiasReumann**], [**burgholzer**], [**q-inho**])
 - ♻️ Move the C++ code for the Python bindings to the top-level `bindings` directory ([#982]) ([**@denialhaag**])
 - ♻️ Move all Python code (no tests) to the top-level `python` directory ([#982]) ([**@denialhaag**])
@@ -122,14 +126,15 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- Version links -->
 
 [unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.1.0...HEAD
-[3.1.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.2...v3.1.0
-[3.0.2]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.1...v3.0.2
-[3.0.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.0...v3.0.1
-[3.0.0]: https://github.com/munich-quantum-toolkit/core/compare/v2.7.0...v3.0.0
+[3.1.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.1.0
+[3.0.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.0.2
+[3.0.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.0.1
+[3.0.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.0.0
 [2.7.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v2.7.0
 
 <!-- PR links -->
 
+[#1047]: https://github.com/munich-quantum-toolkit/core/pull/1047
 [#1042]: https://github.com/munich-quantum-toolkit/core/pull/1042
 [#1020]: https://github.com/munich-quantum-toolkit/core/pull/1020
 [#1019]: https://github.com/munich-quantum-toolkit/core/pull/1019
@@ -152,6 +157,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#911]: https://github.com/munich-quantum-toolkit/core/pull/911
 [#908]: https://github.com/munich-quantum-toolkit/core/pull/908
 [#900]: https://github.com/munich-quantum-toolkit/core/pull/900
+[#897]: https://github.com/munich-quantum-toolkit/core/pull/897
 [#895]: https://github.com/munich-quantum-toolkit/core/pull/895
 [#893]: https://github.com/munich-quantum-toolkit/core/pull/893
 [#892]: https://github.com/munich-quantum-toolkit/core/pull/892

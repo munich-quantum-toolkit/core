@@ -215,8 +215,8 @@ struct ConvertMQTDynExtract final : OpConversionPattern<dyn::ExtractOp> {
 
     // add an entry to the qubitDataMap to store the indices and the register
     // for the insertOperation
-    qubitDataMap->try_emplace(
-        dynQubit, QubitData{dynQreg, op.getIndex(), op.getIndexAttrAttr()});
+    qubitDataMap->try_emplace(dynQubit, dynQreg, op.getIndex(),
+                              op.getIndexAttrAttr());
 
     // append the entry to the qregQubitsMap to store which qubits that were
     // extracted from the register

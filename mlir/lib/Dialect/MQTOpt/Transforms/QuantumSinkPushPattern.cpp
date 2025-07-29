@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/MLIRContext.h>
@@ -24,6 +25,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <unordered_set>
 #include <vector>
+
 namespace mqt::ir::opt {
 
 /**
@@ -109,11 +111,10 @@ struct QuantumSinkPushPattern final
   getNextBranchOpUser(const UnitaryInterface& op) const {
     auto allUsers = op->getUsers();
     std::vector<mlir::Operation*> output;
-    std::copy_if(allUsers.begin(), allUsers.end(), std::back_inserter(output),
-                 [&](auto* user) {
-                   return mlir::isa<mlir::cf::BranchOp>(user) ||
-                          mlir::isa<mlir::cf::CondBranchOp>(user);
-                 });
+    llvm::copy_if(allUsers, std::back_inserter(output), [&](auto* user) {
+      return mlir::isa<mlir::cf::BranchOp>(user) ||
+             mlir::isa<mlir::cf::CondBranchOp>(user);
+    });
     auto* nextBranch = getNext(allUsers, op);
     return nextBranch;
   }
@@ -135,7 +136,7 @@ struct QuantumSinkPushPattern final
   replaceAllChildUsesWith(mlir::Operation& original, mlir::Operation& clone,
                           mlir::Block& block,
                           std::unordered_set<mlir::Block*>& visited) const {
-    if (visited.find(&block) != visited.end()) {
+    if (visited.contains(&block)) {
       return;
     }
     visited.insert(&block);

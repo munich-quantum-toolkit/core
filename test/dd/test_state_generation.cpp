@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <memory>
+#include <numbers>
 #include <numeric>
 #include <stdexcept>
 #include <vector>
@@ -169,8 +170,14 @@ TEST(StateGenerationTest, MakeW) {
 
   constexpr std::size_t nq = 3;
 
-  const CVec vec{
-      0, 1 / std::sqrt(3), 1 / std::sqrt(3), 0, 1 / std::sqrt(3), 0, 0, 0};
+  const CVec vec{0,
+                 std::numbers::inv_sqrt3,
+                 std::numbers::inv_sqrt3,
+                 0,
+                 std::numbers::inv_sqrt3,
+                 0,
+                 0,
+                 0};
 
   auto dd = std::make_unique<Package>(nq);
   auto w = makeWState(nq, *dd);

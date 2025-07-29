@@ -71,9 +71,8 @@ std::size_t CompoundOperation::getNqubits() const {
 }
 
 bool CompoundOperation::isNonUnitaryOperation() const {
-  return std::any_of(ops.cbegin(), ops.cend(), [](const auto& op) {
-    return op->isNonUnitaryOperation();
-  });
+  return std::ranges::any_of(
+      ops, [](const auto& op) { return op->isNonUnitaryOperation(); });
 }
 
 bool CompoundOperation::isCompoundOperation() const noexcept { return true; }
@@ -84,11 +83,13 @@ bool CompoundOperation::isGlobal(const size_t nQubits) const noexcept {
   const auto& params = ops.front()->getParameter();
   const auto& t = ops.front()->getType();
   return getUsedQubits().size() == nQubits &&
-         std::all_of(ops.cbegin() + 1, ops.cend(), [&](const auto& operation) {
-           return operation->isStandardOperation() &&
-                  operation->getNcontrols() == 0 && operation->getType() == t &&
-                  operation->getParameter() == params;
-         });
+         std::ranges::all_of(ops.cbegin() + 1, ops.cend(),
+                             [&](const auto& operation) {
+                               return operation->isStandardOperation() &&
+                                      operation->getNcontrols() == 0 &&
+                                      operation->getType() == t &&
+                                      operation->getParameter() == params;
+                             });
 }
 
 bool CompoundOperation::isClifford() const {
@@ -97,8 +98,8 @@ bool CompoundOperation::isClifford() const {
 }
 
 bool CompoundOperation::isSymbolicOperation() const {
-  return std::any_of(ops.begin(), ops.end(),
-                     [](const auto& op) { return op->isSymbolicOperation(); });
+  return std::ranges::any_of(
+      ops, [](const auto& op) { return op->isSymbolicOperation(); });
 }
 
 void CompoundOperation::addControl(const Control c) {
@@ -176,8 +177,8 @@ std::ostream& CompoundOperation::print(std::ostream& os,
 }
 
 bool CompoundOperation::actsOn(const Qubit i) const {
-  return std::any_of(ops.cbegin(), ops.cend(),
-                     [&i](const auto& op) { return op->actsOn(i); });
+  return std::ranges::any_of(ops,
+                             [&i](const auto& op) { return op->actsOn(i); });
 }
 
 void CompoundOperation::addDepthContribution(
@@ -208,10 +209,9 @@ auto CompoundOperation::getUsedQubitsPermuted(const Permutation& perm) const
 
 auto CompoundOperation::commutesAtQubit(const Operation& other,
                                         const Qubit& qubit) const -> bool {
-  return std::all_of(ops.cbegin(), ops.cend(),
-                     [&other, &qubit](const auto& op) {
-                       return op->commutesAtQubit(other, qubit);
-                     });
+  return std::ranges::all_of(ops, [&other, &qubit](const auto& op) {
+    return op->commutesAtQubit(other, qubit);
+  });
 }
 
 auto CompoundOperation::isInverseOf(const Operation& other) const -> bool {
@@ -230,18 +230,16 @@ auto CompoundOperation::isInverseOf(const Operation& other) const -> bool {
     // the compound operations
     const auto& thisUsedQubits = getUsedQubits();
     assert(!thisUsedQubits.empty());
-    const auto thisMaxQubit =
-        *std::max_element(thisUsedQubits.cbegin(), thisUsedQubits.cend());
+    const auto thisMaxQubit = *std::ranges::max_element(thisUsedQubits);
     QuantumComputation thisQc(thisMaxQubit + 1);
-    std::for_each(cbegin(), cend(),
-                  [&](const auto& op) { thisQc.emplace_back(op->clone()); });
+    std::ranges::for_each(
+        ops, [&](const auto& op) { thisQc.emplace_back(op->clone()); });
     const auto& otherUsedQubits = co.getUsedQubits();
     assert(!otherUsedQubits.empty());
-    const auto otherMaxQubit =
-        *std::max_element(otherUsedQubits.cbegin(), otherUsedQubits.cend());
+    const auto otherMaxQubit = *std::ranges::max_element(otherUsedQubits);
     QuantumComputation otherQc(otherMaxQubit + 1);
-    std::for_each(co.cbegin(), co.cend(),
-                  [&](const auto& op) { otherQc.emplace_back(op->clone()); });
+    std::ranges::for_each(
+        co, [&](const auto& op) { otherQc.emplace_back(op->clone()); });
     thisQc.reorderOperations();
     otherQc.invert();
     otherQc.reorderOperations();
@@ -256,7 +254,7 @@ void CompoundOperation::invert() {
   for (const auto& op : ops) {
     op->invert();
   }
-  std::reverse(ops.begin(), ops.end());
+  std::ranges::reverse(ops);
 }
 
 void CompoundOperation::apply(const Permutation& permutation) {
