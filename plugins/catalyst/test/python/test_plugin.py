@@ -77,7 +77,7 @@ def test_mqtqmap() -> None:
         catalyst.measure(0)
         catalyst.measure(1)
 
-    @qml.qjit(target="mlir", autograph=True, keep_intermediate=True)
+    @qml.qjit(target="mlir", autograph=True)
     def module() -> None:
         return circuit()
 
