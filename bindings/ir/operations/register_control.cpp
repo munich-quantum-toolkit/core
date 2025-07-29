@@ -33,7 +33,7 @@ void registerControl(const py::module& m) {
   auto control = py::class_<qc::Control>(m, "Control");
 
   py::native_enum<qc::Control::Type>(control, "Type", "enum.Enum",
-                                     "Test string.")
+                                     "Enumeration of control types.")
       .value("Pos", qc::Control::Type::Pos)
       .value("Neg", qc::Control::Type::Neg)
       .finalize();

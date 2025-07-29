@@ -33,8 +33,9 @@ using namespace pybind11::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerClassicControlledOperation(const py::module& m) {
-  py::native_enum<qc::ComparisonKind>(m, "ComparisonKind", "enum.Enum",
-                                      "Test string.")
+  py::native_enum<qc::ComparisonKind>(
+      m, "ComparisonKind", "enum.Enum",
+      "Enumeration of comparison types for classic-controlled operations.")
       .value("eq", qc::ComparisonKind::Eq)
       .value("neq", qc::ComparisonKind::Neq)
       .value("lt", qc::ComparisonKind::Lt)

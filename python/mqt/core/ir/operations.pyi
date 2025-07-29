@@ -35,7 +35,10 @@ class Control:
     """
 
     class Type(Enum):
-        """The type of a control. It can be either positive or negative."""
+        """Enumeration of control types.
+
+        It can be either positive or negative.
+        """
 
         Neg = ...
         r"""A negative control.
@@ -69,7 +72,7 @@ class Control:
         """Get the hash of the control."""
 
 class OpType(Enum):
-    """An Enum that represents the type of an operation."""
+    """Enumeration of operation types."""
 
     barrier = ...
     """
@@ -877,7 +880,7 @@ class SymbolicOperation(StandardOperation):
         """
 
 class ComparisonKind(Enum):
-    """An Enum that represents the kind of comparison for classic controlled operations."""
+    """Enumeration of comparison types for classic-controlled operations."""
 
     eq = ...
     """Equality comparison."""

@@ -25,7 +25,8 @@ using namespace pybind11::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerOptype(const py::module& m) {
-  py::native_enum<qc::OpType>(m, "OpType", "enum.Enum", "Test string.")
+  py::native_enum<qc::OpType>(m, "OpType", "enum.Enum",
+                              "Enumeration of operation types.")
       .value("none", qc::OpType::None)
       .value("gphase", qc::OpType::GPhase)
       .value("i", qc::OpType::I)

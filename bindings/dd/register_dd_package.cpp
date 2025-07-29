@@ -133,7 +133,7 @@ void registerDDPackage(const py::module& mod) {
       py::keep_alive<0, 1>());
 
   py::native_enum<dd::BasisStates>(mod, "BasisStates", "enum.Enum",
-                                   "Test string.")
+                                   "Enumeration of basis states.")
       .value("zero", dd::BasisStates::zero)
       .value("one", dd::BasisStates::one)
       .value("plus", dd::BasisStates::plus)
