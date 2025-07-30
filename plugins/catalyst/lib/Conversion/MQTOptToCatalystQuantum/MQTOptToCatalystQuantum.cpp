@@ -239,15 +239,14 @@ struct ConvertMQTOptSimpleGate final : OpConversionPattern<MQTGateOp> {
     // Output type
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const std::vector<Type> qubitTypes(
+    const SmallVector<Type> qubitTypes(
         inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    auto outQubitTypes = TypeRange(qubitTypes);
+    const auto outQubitTypes = TypeRange(qubitTypes);
 
     // Merge inQubitsValues and inCtrlQubits to form the full qubit list
-    auto allQubitsValues =
-        SmallVector<Value>(inCtrlQubits.begin(), inCtrlQubits.end());
+    auto allQubitsValues = inCtrlQubits;
     allQubitsValues.append(inQubitsValues.begin(), inQubitsValues.end());
-    auto inQubits = ValueRange(allQubitsValues);
+    const auto inQubits = ValueRange(allQubitsValues);
 
     // Determine gate name depending on control count
     const StringRef gateName = getGateName(inCtrlQubits.size());
@@ -298,18 +297,18 @@ struct ConvertMQTOptAdjointGate final : OpConversionPattern<MQTGateOp> {
     // Output type
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const std::vector<Type> qubitTypes(
+    const SmallVector<Type> qubitTypes(
         inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    auto outQubitTypes = TypeRange(qubitTypes);
+    const auto outQubitTypes = TypeRange(qubitTypes);
 
     // Merge inQubitsValues and inCtrlQubits to form the full qubit list
     auto allQubitsValues =
         SmallVector<Value>(inCtrlQubits.begin(), inCtrlQubits.end());
     allQubitsValues.append(inQubitsValues.begin(), inQubitsValues.end());
-    auto inQubits = ValueRange(allQubitsValues);
+    const auto inQubits = ValueRange(allQubitsValues);
 
     // Get the base gate name and whether it is an adjoint version
-    const std::pair<StringRef, bool> gateInfo = getGateInfo<MQTGateOp>();
+    const auto& [gateName, adjoint] = getGateInfo<MQTGateOp>();
 
     // Create the gate
     auto catalystOp = rewriter.create<catalyst::quantum::CustomOp>(
@@ -318,8 +317,8 @@ struct ConvertMQTOptAdjointGate final : OpConversionPattern<MQTGateOp> {
         /*out_ctrl_qubits=*/TypeRange{},
         /*params=*/adaptor.getParams(),
         /*in_qubits=*/inQubits,
-        /*gate_name=*/gateInfo.first,
-        /*adjoint=*/gateInfo.second,
+        /*gate_name=*/gateName,
+        /*adjoint=*/adjoint,
         /*in_ctrl_qubits=*/ValueRange{},
         /*in_ctrl_values=*/ValueRange{});
 
@@ -341,7 +340,7 @@ private:
   }
 };
 
-// Conversions of unsupported gates which need decomposition
+// Conversions of unsupported gates, which need decomposition
 template <>
 struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -354,15 +353,15 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
     const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
+                                    posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
     // Output type setup
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const std::vector qubitTypes(inQubitsValues.size() + inCtrlQubits.size(),
-                                 qubitType);
+    const SmallVector<Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
     auto outQubitTypes = TypeRange(qubitTypes);
 
     // V = RZ(π/2) RY(π/2) RZ(-π/2)
@@ -403,15 +402,15 @@ struct ConvertMQTOptSimpleGate<opt::VdgOp> final
     const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
+                                    posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
     // Output type setup
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const std::vector qubitTypes(inQubitsValues.size() + inCtrlQubits.size(),
-                                 qubitType);
+    const SmallVector<Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
     auto outQubitTypes = TypeRange(qubitTypes);
 
     // V = RZ(π/2) RY(-π/2) RZ(-π/2)
@@ -451,14 +450,15 @@ struct ConvertMQTOptSimpleGate<opt::DCXOp> final
     const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
+                                    posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
+    // Output type setup
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const std::vector qubitTypes(inQubitsValues.size() + inCtrlQubits.size(),
-                                 qubitType);
+    const SmallVector<Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
     auto outQubitTypes = TypeRange(qubitTypes);
 
     // DCX = CNOT(q2,q1) CNOT(q1,q2)
@@ -488,14 +488,15 @@ struct ConvertMQTOptSimpleGate<opt::RZXOp> final
     const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
     const auto theta = adaptor.getParams()[0];
 
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
+                                    posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
+    // Output type setup
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const std::vector qubitTypes(inQubitsValues.size() + inCtrlQubits.size(),
-                                 qubitType);
+    const SmallVector<Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
     auto outQubitTypes = TypeRange(qubitTypes);
 
     // RZX(θ) = H(q2) CNOT(q1,q2) RZ(θ)(q2) CNOT(q1,q2) H(q2)
@@ -538,14 +539,15 @@ struct ConvertMQTOptSimpleGate<opt::XXminusYY> final
     auto theta = adaptor.getParams()[0];
     auto beta = adaptor.getParams()[1];
 
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
+                                    posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
+    // Output type setup
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const std::vector qubitTypes(inQubitsValues.size() + inCtrlQubits.size(),
-                                 qubitType);
+    const SmallVector<Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
     auto outQubitTypes = TypeRange(qubitTypes);
 
     // XXminusYY(θ,β) = RX(π/2)(q1) RY(π/2)(q2) CNOT(q1,q2) RZ(θ)(q2)
@@ -644,15 +646,15 @@ struct ConvertMQTOptSimpleGate<opt::UOp> final : OpConversionPattern<opt::UOp> {
     auto phi = paramValues[1];
     auto lambda = paramValues[2];
 
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
+                                    posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
     // Output type setup
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const std::vector qubitTypes(inQubitsValues.size() + inCtrlQubits.size(),
-                                 qubitType);
+    const SmallVector<Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
     auto outQubitTypes = TypeRange(qubitTypes);
 
     // Based on
@@ -753,15 +755,15 @@ struct ConvertMQTOptSimpleGate<opt::U2Op> final
     auto phi = paramValues[0];
     auto lambda = paramValues[1];
 
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
+                                    posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
     // Output type setup
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const std::vector qubitTypes(inQubitsValues.size() + inCtrlQubits.size(),
-                                 qubitType);
+    const SmallVector<Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
     auto outQubitTypes = TypeRange(qubitTypes);
 
     // U2(φ, λ) = U(π/2, φ, λ) = RZ(φ − π⁄2) ⋅ RX(π⁄2) ⋅ RZ(3/4 π) ⋅ RX(π⁄2) ⋅
@@ -974,15 +976,15 @@ struct ConvertMQTOptSimpleGate<opt::PeresOp> final
     const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
+                                    posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
     // Output type setup
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const std::vector qubitTypes(inQubitsValues.size() + inCtrlQubits.size(),
-                                 qubitType);
+    const SmallVector<Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
     auto outQubitTypes = TypeRange(qubitTypes);
 
     // Peres = Toffoli(q2,q1,q0) CNOT(q2,q1)
@@ -1012,15 +1014,15 @@ struct ConvertMQTOptSimpleGate<opt::PeresdgOp> final
     const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
+                                    posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
     // Output type setup
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const std::vector qubitTypes(inQubitsValues.size() + inCtrlQubits.size(),
-                                 qubitType);
+    const SmallVector<Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
     auto outQubitTypes = TypeRange(qubitTypes);
 
     // Peresdg = CNOT(q2,q1) Toffoli(q2,q1,q0)
