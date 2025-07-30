@@ -16,7 +16,7 @@ project(
   DESCRIPTION "MQT Core MLIR Plugin for Catalyst")
 
 set(CMAKE_CXX_STANDARD
-    17
+    20
     CACHE STRING "C++ standard to conform to")
 
 include(cmake/ExternalDependencies.cmake)

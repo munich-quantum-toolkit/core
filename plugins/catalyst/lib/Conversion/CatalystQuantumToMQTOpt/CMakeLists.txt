@@ -13,5 +13,5 @@ set(LIBRARIES MLIRMQTOpt)
 add_mlir_library(CatalystQuantumToMQTOpt ${CONVERSION_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
                  CatalystQuantumToMQTOptIncGen)
 
-target_compile_features(CatalystQuantumToMQTOpt PUBLIC cxx_std_17)
+target_compile_features(CatalystQuantumToMQTOpt PUBLIC cxx_std_20)
 target_compile_options(CatalystQuantumToMQTOpt PUBLIC -fexceptions)
