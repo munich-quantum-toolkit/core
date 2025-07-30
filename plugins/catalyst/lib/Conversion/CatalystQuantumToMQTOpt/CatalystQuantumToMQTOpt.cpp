@@ -324,6 +324,12 @@ struct ConvertQuantumCustomOp final
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
+    } else if (gateName.compare("ISWAP") == 0) {
+      mqtoptOp = rewriter.create<opt::iSWAPOp>(
+          op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
+          inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
+          paramsValues, inQubitsValues, inCtrlQubitsValues,
+          inNegCtrlQubitsValues);
     } else if (gateName.compare("RX") == 0 || gateName.compare("CRX") == 0) {
       mqtoptOp = rewriter.create<opt::RXOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
