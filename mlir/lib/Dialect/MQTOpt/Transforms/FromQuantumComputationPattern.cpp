@@ -360,7 +360,8 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
           // qubit values.
           std::vector<mlir::Value> inQubits(2);
           if (o->getTargets().size() < 2) {
-            llvm::errs() << "Operation type: " << qc::toString(o->getType()) << "\n"
+            llvm::errs() << "Operation type: " << qc::toString(o->getType())
+                         << "\n"
                          << "Number of Qubits: " << o->getNqubits() << "\n"
                          << "Targets size:" << o->getTargets().size() << "\n";
             inQubits[0] = currentQubitVariables[o->getTargets()[0]];
