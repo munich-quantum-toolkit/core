@@ -8,15 +8,21 @@
  * Licensed under the MIT License
  */
 
+// macro to match and replace single qubit gates
+#define ADD_CONVERT_SINGLE_QUBIT_GATE(gate)                                    \
+  else if (gateName == #gate) {                                                \
+    rewriter.replaceOpWithNewOp<dyn::gate##Op>(                                \
+        op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{}, qubits,   \
+        ctrlQubits, ValueRange{});                                             \
+  }
+
 #include "mlir/Conversion/QIRToMQTDyn/QIRToMQTDyn.h"
 
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
-#include "mlir/IR/DialectRegistry.h"
-#include "mlir/IR/Visitors.h"
 
-#include "llvm/Support/Casting.h"
-
-#include <iostream>
+#include <cctype>
+#include <iterator>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
@@ -28,6 +34,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -60,6 +67,7 @@ struct AllocRegister {
   int64_t index{};
 };
 } // namespace
+
 struct ConvertQIRLoad final : OpConversionPattern<LLVM::LoadOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -82,6 +90,50 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
                           AllocRegister& allocOp)
       : OpConversionPattern(typeConverter, context), operandMap(&operandMap),
         allocOp(&allocOp) {}
+
+  // match and replace singlue qubit gates
+  static void convertSingleQubitOp(SmallVector<Value>& qubits,
+                                   SmallVector<Value>& ctrlQubits,
+                                   LLVM::CallOp& op,
+                                   ConversionPatternRewriter& rewriter,
+                                   StringRef& name) {
+    // modify the gate names for the dyn gates
+    std::string gateName(name);
+    gateName[0] = static_cast<char>(toupper(static_cast<char>(gateName[0])));
+    if (gateName.size() > 1 && gateName[1] == 'X') {
+      gateName[1] = static_cast<char>(toupper(static_cast<char>(gateName[1])));
+    }
+    // match and replace the fitting gate
+    if (gateName == "X" || gateName == "Not") {
+      rewriter.replaceOpWithNewOp<dyn::XOp>(op, DenseF64ArrayAttr{},
+                                            DenseBoolArrayAttr{}, ValueRange{},
+                                            qubits, ctrlQubits, ValueRange{});
+    }
+    ADD_CONVERT_SINGLE_QUBIT_GATE(H)
+    ADD_CONVERT_SINGLE_QUBIT_GATE(I)
+    ADD_CONVERT_SINGLE_QUBIT_GATE(Y)
+    ADD_CONVERT_SINGLE_QUBIT_GATE(Z)
+    ADD_CONVERT_SINGLE_QUBIT_GATE(S)
+    ADD_CONVERT_SINGLE_QUBIT_GATE(Sdg)
+    ADD_CONVERT_SINGLE_QUBIT_GATE(T)
+    ADD_CONVERT_SINGLE_QUBIT_GATE(Tdg)
+    ADD_CONVERT_SINGLE_QUBIT_GATE(V)
+    ADD_CONVERT_SINGLE_QUBIT_GATE(SX)
+    ADD_CONVERT_SINGLE_QUBIT_GATE(SXdg)
+  }
+  // count how many control qubits are used
+  static size_t countControlQubits(const StringRef& str) {
+    size_t count = 0;
+    for (char ch : str) {
+      if (ch == 'c') {
+        ++count;
+      } else {
+        break;
+      }
+    }
+    return count;
+  }
+
   LogicalResult
   matchAndRewrite(LLVM::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -101,6 +153,7 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
         newOperands.emplace_back(val);
       }
     }
+
     // match alloc register
     if (fnName == "__quantum__rt__qubit_allocate_array") {
       const auto newOp = rewriter.replaceOpWithNewOp<dyn::AllocOp>(
@@ -117,18 +170,9 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     }
     // match extract qubit from register
     else if (fnName == "__catalyst__rt__array_get_element_ptr_1d") {
-
       const auto newOp = rewriter.replaceOpWithNewOp<dyn::ExtractOp>(
           op, qubitType, newOperands);
       operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
-    } else if (fnName == "__quantum__qis__h__body") {
-      rewriter.replaceOpWithNewOp<dyn::HOp>(
-          op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
-          newOperands, ValueRange{}, ValueRange{});
-    } else if (fnName == "__quantum__qis__cnot__body") {
-      rewriter.replaceOpWithNewOp<dyn::HOp>(
-          op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
-          newOperands.front(), newOperands.back(), ValueRange{});
     } else if (fnName == "__quantum__qis__m__body") {
       SmallVector<Type> newBits(adaptor.getOperands().size(),
                                 IntegerType::get(rewriter.getContext(), 1));
@@ -140,8 +184,36 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     else if (fnName == "__quantum__rt__qubit_release_array") {
       rewriter.replaceOpWithNewOp<dyn::DeallocOp>(op, newOperands.front());
     } else {
+      // get the gate name and the number of control qubits
+      auto gateName(fnName->substr(16).drop_back(6));
+      const size_t ctrlQubitCount = countControlQubits(gateName);
+      gateName = gateName.substr(ctrlQubitCount);
+
+      // extract the controlqubits from the operand list
+      SmallVector<Value> ctrlQubits;
+      ctrlQubits.reserve(ctrlQubitCount);
+      ctrlQubits.insert(
+          ctrlQubits.end(),
+          std::make_move_iterator(newOperands.end() - ctrlQubitCount),
+          std::make_move_iterator(newOperands.end()));
+      newOperands.resize(newOperands.size() - ctrlQubitCount);
+      convertSingleQubitOp(newOperands, ctrlQubits, op, rewriter, gateName);
+    }
+
+    /*
+    else if (fnName == "__quantum__qis__h__body") {
+      rewriter.replaceOpWithNewOp<dyn::HOp>(
+          op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
+          newOperands, ctrlQubits, ValueRange{});
+    } else if (fnName == "__quantum__qis__cnot__body") {
+      rewriter.replaceOpWithNewOp<dyn::HOp>(
+          op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
+          newOperands.front(), newOperands.back(), ValueRange{});
+    } else {
       rewriter.eraseOp(op);
     }
+    */
+    llvm::outs() << gateName << "\n";
     return success();
   }
 };
@@ -197,7 +269,7 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
 
       // create the dealloc operation at the end of the block
       auto& ops = secondBlock.getOperations();
-      auto insertPoint = std::prev(ops.end(), 2);
+      auto insertPoint = std::prev(ops.end(), 1);
       builder.setInsertionPoint(&*insertPoint);
       builder.create<dyn::DeallocOp>(func->getLoc(), allocOp);
 
