@@ -163,9 +163,10 @@ bool Package::garbageCollect(bool force) {
 
 Package::ActiveCounts Package::computeActiveCounts() {
   const auto count = [this]() -> ActiveCounts {
-    return {
-        vUniqueTable.countMarkedEntries(), mUniqueTable.countMarkedEntries(),
-        dUniqueTable.countMarkedEntries(), cUniqueTable.countMarkedEntries()};
+    return {.vector = vUniqueTable.countMarkedEntries(),
+            .matrix = mUniqueTable.countMarkedEntries(),
+            .density = dUniqueTable.countMarkedEntries(),
+            .reals = cUniqueTable.countMarkedEntries()};
   };
   return roots.execute<ActiveCounts>(count);
 }
@@ -189,10 +190,10 @@ mEdge Package::makeGateDD(const GateMatrix& mat, const qc::Control& control,
 }
 mEdge Package::makeGateDD(const GateMatrix& mat, const qc::Controls& controls,
                           const qc::Qubit target) {
-  if (std::any_of(controls.begin(), controls.end(),
-                  [this](const auto& c) {
-                    return c.qubit > static_cast<Qubit>(nqubits - 1U);
-                  }) ||
+  if (std::ranges::any_of(controls,
+                          [this](const auto& c) {
+                            return c.qubit > static_cast<Qubit>(nqubits - 1U);
+                          }) ||
       target > static_cast<Qubit>(nqubits - 1U)) {
     throw std::runtime_error{
         "Requested gate acting on qubit(s) with index larger than " +
@@ -266,10 +267,10 @@ mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
                                   const qc::Qubit target0,
                                   const qc::Qubit target1) {
   // sanity check
-  if (std::any_of(controls.begin(), controls.end(),
-                  [this](const auto& c) {
-                    return c.qubit > static_cast<Qubit>(nqubits - 1U);
-                  }) ||
+  if (std::ranges::any_of(controls,
+                          [this](const auto& c) {
+                            return c.qubit > static_cast<Qubit>(nqubits - 1U);
+                          }) ||
       target0 > static_cast<Qubit>(nqubits - 1U) ||
       target1 > static_cast<Qubit>(nqubits - 1U)) {
     throw std::runtime_error{
@@ -542,7 +543,7 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
     if (const auto s0w = static_cast<ComplexValue>(s0.w);
         !s0w.approximatelyZero()) {
       const fp tmp1 = prob * s0w.mag2();
-      if (visited.find(s0.p) != visited.end()) {
+      if (visited.contains(s0.p)) {
         measurementProbabilities[s0.p] = measurementProbabilities[s0.p] + tmp1;
       } else {
         measurementProbabilities[s0.p] = tmp1;
@@ -555,7 +556,7 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
     if (const auto s1w = static_cast<ComplexValue>(s1.w);
         !s1w.approximatelyZero()) {
       const fp tmp1 = prob * s1w.mag2();
-      if (visited.find(s1.p) != visited.end()) {
+      if (visited.contains(s1.p)) {
         measurementProbabilities[s1.p] = measurementProbabilities[s1.p] + tmp1;
       } else {
         measurementProbabilities[s1.p] = tmp1;
@@ -788,13 +789,13 @@ ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y,
       e1 = x.p->e[i];
       e1.w = ComplexNumbers::conj(e1.w);
     } else {
-      e1 = {x.p, Complex::one()};
+      e1 = {.p = x.p, .w = Complex::one()};
     }
     vEdge e2{};
     if (!y.isTerminal() && y.p->v == w) {
       e2 = y.p->e[i];
     } else {
-      e2 = {y.p, Complex::one()};
+      e2 = {.p = y.p, .w = Complex::one()};
     }
     sum += innerProduct(e1, e2, w);
   }
@@ -872,7 +873,7 @@ bool Package::isCloseToIdentityRecursive(
   }
 
   // immediately return if this node has already been visited
-  if (visited.find(m.p) != visited.end()) {
+  if (visited.contains(m.p)) {
     return true;
   }
 
@@ -942,8 +943,7 @@ mEdge Package::createInitialMatrix(const std::vector<bool>& ancillary) {
 mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
                               const bool regular) {
   // return if no more ancillaries left
-  if (std::none_of(ancillary.begin(), ancillary.end(),
-                   [](const bool v) { return v; }) ||
+  if (std::ranges::none_of(ancillary, [](const bool v) { return v; }) ||
       e.isZeroTerminal()) {
     return e;
   }
@@ -991,7 +991,7 @@ vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
                              const bool normalizeWeights) {
   // return if no more garbage left
   if (!normalizeWeights &&
-      (std::none_of(garbage.begin(), garbage.end(), [](bool v) { return v; }) ||
+      (std::ranges::none_of(garbage, [](bool v) { return v; }) ||
        e.isTerminal())) {
     return e;
   }
@@ -1020,7 +1020,7 @@ mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
                              const bool regular, const bool normalizeWeights) {
   // return if no more garbage left
   if (!normalizeWeights &&
-      (std::none_of(garbage.begin(), garbage.end(), [](bool v) { return v; }) ||
+      (std::ranges::none_of(garbage, [](bool v) { return v; }) ||
        e.isZeroTerminal())) {
     return e;
   }

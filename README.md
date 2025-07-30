@@ -18,7 +18,7 @@
 
 # MQT Core - The Backbone of the Munich Quantum Toolkit (MQT)
 
-MQT Core is an open-source C++17 and Python library for quantum computing that forms the backbone of the quantum software tools developed as part of the [_Munich Quantum Toolkit (MQT)_](https://mqt.readthedocs.io).
+MQT Core is an open-source C++20 and Python library for quantum computing that forms the backbone of the quantum software tools developed as part of the [_Munich Quantum Toolkit (MQT)_](https://mqt.readthedocs.io).
 
 <p align="center">
   <a href="https://mqt.readthedocs.io/projects/core">
@@ -56,7 +56,7 @@ Thank you to all the contributors who have helped make MQT Core a reality!
 
 ## Getting Started
 
-`mqt.core` is available via [PyPI](https://pypi.org/project/mqt.core/) for all major operating systems and supports Python 3.9 to 3.13.
+`mqt.core` is available via [PyPI](https://pypi.org/project/mqt.core/) for all major operating systems and supports Python 3.9 to 3.14.
 
 ```console
 (.venv) $ pip install mqt.core
@@ -80,7 +80,7 @@ print(qc)
 ## System Requirements
 
 Building (and running) is continuously tested under Linux, MacOS, and Windows using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
-However, the implementation should be compatible with any current C++ compiler supporting C++17 and a minimum CMake version of 3.24.
+However, the implementation should be compatible with any current C++ compiler supporting C++20 and a minimum CMake version of 3.24.
 
 MQT Core relies on some external dependencies:
 

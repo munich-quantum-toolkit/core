@@ -56,7 +56,7 @@ void CircuitOptimizer::removeOperation(
   // opSize = 0 means that the operation can have any number of qubits
   auto it = qc.begin();
   while (it != qc.end()) {
-    if (opTypes.find((*it)->getType()) != opTypes.end() &&
+    if (opTypes.contains((*it)->getType()) &&
         (opSize == 0 || it->get()->getNqubits() == opSize)) {
       it = qc.erase(it);
     } else if ((*it)->isCompoundOperation()) {
@@ -64,7 +64,7 @@ void CircuitOptimizer::removeOperation(
       auto cit = compOp.cbegin();
       while (cit != compOp.cend()) {
         if (const auto* cop = cit->get();
-            opTypes.find(cop->getType()) != opTypes.end() &&
+            opTypes.contains(cop->getType()) &&
             (opSize == 0 || cop->getNqubits() == opSize)) {
           cit = compOp.erase(cit);
         } else {
@@ -1233,8 +1233,7 @@ void backpropagateOutputPermutation(
         // qubit as the missing physical qubit
         permutation[targets[1]] = it0->second;
 
-        if (missingLogicalQubits.find(targets[0]) !=
-            missingLogicalQubits.end()) {
+        if (missingLogicalQubits.contains(targets[0])) {
           missingLogicalQubits.erase(targets[0]);
           it0->second = targets[0];
         } else {
@@ -1250,8 +1249,7 @@ void backpropagateOutputPermutation(
         // qubit as the missing physical qubit
         permutation[targets[0]] = it1->second;
 
-        if (missingLogicalQubits.find(targets[1]) !=
-            missingLogicalQubits.end()) {
+        if (missingLogicalQubits.contains(targets[1])) {
           missingLogicalQubits.erase(targets[1]);
           it1->second = targets[1];
         } else {
@@ -1277,7 +1275,7 @@ void CircuitOptimizer::backpropagateOutputPermutation(QuantumComputation& qc) {
   }
   std::unordered_set<Qubit> missingLogicalQubits{};
   for (Qubit i = 0; i < qc.getNqubits(); ++i) {
-    if (logicalQubits.find(i) == logicalQubits.end()) {
+    if (!logicalQubits.contains(i)) {
       missingLogicalQubits.emplace(i);
     }
   }
@@ -1297,7 +1295,7 @@ void CircuitOptimizer::backpropagateOutputPermutation(QuantumComputation& qc) {
   // qubit (i.e., an identity mapping) to avoid unnecessary permutations.
   for (Qubit i = 0; i < qc.getNqubits(); ++i) {
     if (permutation.find(i) == permutation.end()) {
-      if (missingLogicalQubits.find(i) != missingLogicalQubits.end()) {
+      if (missingLogicalQubits.contains(i)) {
         permutation.emplace(i, i);
         missingLogicalQubits.erase(i);
       } else {
@@ -1340,7 +1338,7 @@ struct DSU {
    * @return The block that the qubit belongs to
    */
   Qubit findBlock(const Qubit index) {
-    if (parent.find(index) == parent.end()) {
+    if (!parent.contains(index)) {
       parent[index] = index;
       bitBlocks[index] = {index};
       currentBlockInCircuit[index] = nullptr;
@@ -1471,8 +1469,7 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
         std::unordered_map<Qubit, std::size_t> blocksAndSizes{};
         for (const auto& q : usedQubits) {
           const auto block = dsu.findBlock(q);
-          if (dsu.blockEmpty(block) ||
-              blocksAndSizes.find(block) != blocksAndSizes.end()) {
+          if (dsu.blockEmpty(block) || blocksAndSizes.contains(block)) {
             continue;
           }
           blocksAndSizes[block] = dsu.bitBlocks[block].size();
@@ -1480,9 +1477,9 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
         // sort blocks in descending order
         std::vector<std::pair<Qubit, std::size_t>> sortedBlocks(
             blocksAndSizes.begin(), blocksAndSizes.end());
-        std::sort(
-            sortedBlocks.begin(), sortedBlocks.end(),
-            [](const auto& a, const auto& b) { return a.second > b.second; });
+        std::ranges::sort(sortedBlocks, [](const auto& a, const auto& b) {
+          return a.second > b.second;
+        });
         for (auto it = sortedBlocks.begin(); it != sortedBlocks.end(); ++it) {
           auto& [block, size] = *it;
           // maximally large block -> nothing to do
@@ -1512,7 +1509,7 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
         std::size_t totalSize = 0U;
         for (const auto& q : usedQubits) {
           const auto block = dsu.findBlock(q);
-          if (savings.find(block) != savings.end()) {
+          if (savings.contains(block)) {
             savings[block] -= 1;
           } else {
             savings[block] = dsu.bitBlocks[block].size() - 1;
@@ -1522,9 +1519,9 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
         // sort savings in descending order
         std::vector<std::pair<Qubit, std::size_t>> sortedSavings(
             savings.begin(), savings.end());
-        std::sort(
-            sortedSavings.begin(), sortedSavings.end(),
-            [](const auto& a, const auto& b) { return a.second > b.second; });
+        std::ranges::sort(sortedSavings, [](const auto& a, const auto& b) {
+          return a.second > b.second;
+        });
         auto savingsNeed = static_cast<std::int64_t>(totalSize - maxBlockSize);
         for (const auto& [index, saving] : sortedSavings) {
           if (savingsNeed > 0) {

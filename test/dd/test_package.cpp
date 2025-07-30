@@ -47,12 +47,6 @@
 using namespace qc::literals;
 
 namespace dd {
-TEST(DDPackageTest, RequestInvalidPackageSize) {
-  EXPECT_THROW(auto dd =
-                   std::make_unique<Package>(Package::MAX_POSSIBLE_QUBITS + 2),
-               std::invalid_argument);
-}
-
 TEST(DDPackageTest, TrivialTest) {
   auto dd = std::make_unique<Package>(2);
   EXPECT_EQ(dd->qubits(), 2);
@@ -1357,12 +1351,13 @@ TEST(DDPackageTest, BasicNumericInstabilityTest) {
   EXPECT_EQ(SQRT2_2, std::sqrt(half));
 
   std::cout << "However, computing 1/std::sqrt(2.) leads to "
-            << one / std::sqrt(two)
+            << one / std::sqrt(two) // NOLINT(modernize-use-std-numbers)
             << ", which differs by 1 ULP from std::sqrt(0.5)\n";
   EXPECT_EQ(one / std::sqrt(two), std::nextafter(std::sqrt(half), zero));
 
   std::cout << "In the same fashion, computing std::sqrt(2.) leads to "
-            << std::sqrt(two) << ", while computing 1/std::sqrt(0.5) leads to "
+            << std::sqrt(two) // NOLINT(modernize-use-std-numbers)
+            << ", while computing 1/std::sqrt(0.5) leads to "
             << one / std::sqrt(half) << ", which differ by exactly 1 ULP\n";
   EXPECT_EQ(std::sqrt(two), std::nextafter(one / std::sqrt(half), two));
 

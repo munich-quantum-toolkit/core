@@ -22,7 +22,6 @@
 #include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
 
 #include <pybind11/cast.h>
-#include <pybind11/numpy.h>
 // clang-format on
 
 #include <complex>

@@ -83,8 +83,8 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_P(Grover, Functionality) {
   auto x = '1' + expected;
-  std::reverse(x.begin(), x.end());
-  std::replace(x.begin(), x.end(), '1', '2');
+  std::ranges::reverse(x);
+  std::ranges::replace(x, '1', '2');
 
   qc::QuantumComputation groverIteration(qc.getNqubits());
   qc::appendGroverOracle(groverIteration, targetValue);
@@ -122,8 +122,8 @@ TEST_P(Grover, Functionality) {
 
 TEST_P(Grover, FunctionalityRecursive) {
   auto x = '1' + expected;
-  std::reverse(x.begin(), x.end());
-  std::replace(x.begin(), x.end(), '1', '2');
+  std::ranges::reverse(x);
+  std::ranges::replace(x, '1', '2');
 
   qc::QuantumComputation groverIteration(qc.getNqubits());
   qc::appendGroverOracle(groverIteration, targetValue);
@@ -177,7 +177,7 @@ TEST_P(Grover, FunctionalityRecursive) {
 TEST_P(Grover, Simulation) {
   constexpr std::size_t shots = 1024;
   const auto measurements = dd::sample(qc, shots);
-  ASSERT_TRUE(measurements.find(expected) != measurements.end());
+  ASSERT_TRUE(measurements.contains(expected));
   const auto correctShots = measurements.at(expected);
   const auto probability =
       static_cast<double>(correctShots) / static_cast<double>(shots);

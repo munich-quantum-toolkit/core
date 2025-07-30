@@ -22,6 +22,7 @@
 #include <gtest/gtest.h>
 #include <iomanip>
 #include <memory>
+#include <numbers>
 #include <sstream>
 
 namespace dd {
@@ -383,7 +384,7 @@ TEST(DensityMatrixFunctionality, GetValueByIndexProperDensityMatrix) {
   state = dd->applyOperationToDensity(state, op2);
 
   const auto diagValRef = 0.5;
-  const auto offDiagValRef = 0.25 * std::sqrt(2.);
+  const auto offDiagValRef = 0.25 * std::numbers::sqrt2;
 
   const CMat dmRef = {{{diagValRef, 0.}, {offDiagValRef, -offDiagValRef}},
                       {{offDiagValRef, offDiagValRef}, {diagValRef, 0.}}};
@@ -447,7 +448,7 @@ TEST(DensityMatrixFunctionality, PrintMatrix) {
   state = dd->applyOperationToDensity(state, op2);
 
   const auto diagValRef = 0.5;
-  const auto offDiagValRef = 0.25 * std::sqrt(2.);
+  const auto offDiagValRef = 0.25 * std::numbers::sqrt2;
 
   const CMat dmRef = {{{diagValRef, 0.}, {offDiagValRef, -offDiagValRef}},
                       {{offDiagValRef, offDiagValRef}, {diagValRef, 0.}}};
