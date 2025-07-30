@@ -244,9 +244,9 @@ struct ConvertMQTOptSimpleGate final : OpConversionPattern<MQTGateOp> {
     auto outQubitTypes = TypeRange(qubitTypes);
 
     // Merge inQubitsValues and inCtrlQubits to form the full qubit list
-    auto allQubitsValues = SmallVector<Value>();
+    auto allQubitsValues =
+        SmallVector<Value>(inCtrlQubits.begin(), inCtrlQubits.end());
     allQubitsValues.append(inQubitsValues.begin(), inQubitsValues.end());
-    allQubitsValues.append(inCtrlQubits.begin(), inCtrlQubits.end());
     auto inQubits = ValueRange(allQubitsValues);
 
     // Determine gate name depending on control count
@@ -303,9 +303,9 @@ struct ConvertMQTOptAdjointGate final : OpConversionPattern<MQTGateOp> {
     auto outQubitTypes = TypeRange(qubitTypes);
 
     // Merge inQubitsValues and inCtrlQubits to form the full qubit list
-    auto allQubitsValues = SmallVector<Value>();
+    auto allQubitsValues =
+        SmallVector<Value>(inCtrlQubits.begin(), inCtrlQubits.end());
     allQubitsValues.append(inQubitsValues.begin(), inQubitsValues.end());
-    allQubitsValues.append(inCtrlQubits.begin(), inCtrlQubits.end());
     auto inQubits = ValueRange(allQubitsValues);
 
     // Get the base gate name and whether it is an adjoint version
