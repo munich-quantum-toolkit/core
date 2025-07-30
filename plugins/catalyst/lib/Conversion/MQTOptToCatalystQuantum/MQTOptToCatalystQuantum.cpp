@@ -1267,8 +1267,8 @@ struct MQTOptToCatalystQuantum final
     patterns.add<ConvertMQTOptAdjointGate<opt::iSWAPdgOp>>(typeConverter,
                                                            context);
 
-    patterns.add<ConvertMQTOptAdjointGate<opt::XXminusYY>>(typeConverter,
-                                                           context);
+    patterns.add<ConvertMQTOptSimpleGate<opt::XXminusYY>>(typeConverter,
+                                                          context);
     patterns.add<ConvertMQTOptSimpleGate<opt::XXplusYY>>(typeConverter,
                                                          context);
 
