@@ -466,7 +466,8 @@ struct ConvertMQTOptSimpleGate<opt::DCXOp> final
 
     auto cnot2 = rewriter.create<catalyst::quantum::CustomOp>(
         op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{},
-        cnot1.getResults(), "CNOT", false, inCtrlQubits, ValueRange{});
+        ValueRange{cnot1.getResult(1), cnot1.getResult(0)}, "CNOT", false,
+        inCtrlQubits, ValueRange{});
 
     rewriter.replaceOp(op, cnot2.getResults());
     return success();
