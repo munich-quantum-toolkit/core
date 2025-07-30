@@ -369,8 +369,6 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
     // V = RZ(π/2) RY(π/2) RZ(-π/2)
     auto pi2 = rewriter.create<ConstantOp>(op.getLoc(),
                                            rewriter.getF64FloatAttr(M_PI_2));
-    auto negPi2 = rewriter.create<ConstantOp>(
-        op.getLoc(), rewriter.getF64FloatAttr(-M_PI_2));
 
     // Create the decomposed operations
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
@@ -382,8 +380,8 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
         rz1.getResults(), "RY", false, inCtrlQubits, ValueRange{});
 
     auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{negPi2},
-        ry.getResults(), "RZ", false, inCtrlQubits, ValueRange{});
+        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi2},
+        ry.getResults(), "RZ", true, inCtrlQubits, ValueRange{});
 
     // Replace the original operation with the decomposition
     rewriter.replaceOp(op, rz2.getResults());
@@ -416,15 +414,13 @@ struct ConvertMQTOptSimpleGate<opt::VdgOp> final
     auto outQubitTypes = TypeRange(qubitTypes);
 
     // V = RZ(π/2) RY(-π/2) RZ(-π/2)
-    auto pi2 = rewriter.create<ConstantOp>(op.getLoc(),
-                                           rewriter.getF64FloatAttr(M_PI_2));
     auto negPi2 = rewriter.create<ConstantOp>(
         op.getLoc(), rewriter.getF64FloatAttr(-M_PI_2));
 
     // Create the decomposed operations
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi2},
-        inQubitsValues, "RZ", false, inCtrlQubits, ValueRange{});
+        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{negPi2},
+        inQubitsValues, "RZ", true, inCtrlQubits, ValueRange{});
 
     auto ry = rewriter.create<catalyst::quantum::CustomOp>(
         op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{negPi2},
