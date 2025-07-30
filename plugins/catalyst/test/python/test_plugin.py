@@ -69,7 +69,9 @@ def test_mqtopt_roundtrip() -> None:
 def test_mqtqmap() -> None:
     """Execute the MQTQMAP pass for quantum circuit mapping."""
 
-    @apply_pass("mqt.mqtqmap")
+    @apply_pass("mqt.mqtopt-to-catalystquantum")
+    @catalyst.pipeline({"mqt.mqtqmap": {"coupling-map": "[[0,3],[1,3]]"}})
+    @apply_pass("mqt.catalystquantum-to-mqtopt")
     @qml.qnode(qml.device("lightning.qubit", wires=2))
     def circuit() -> None:
         qml.Hadamard(wires=[0])
@@ -84,3 +86,6 @@ def test_mqtqmap() -> None:
     # This will execute the pass and return the final MLIR
     mlir_opt = module.mlir_opt
     assert mlir_opt
+
+
+test_mqtqmap()
