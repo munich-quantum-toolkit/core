@@ -200,8 +200,6 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "13.0" }
 
 
 [tool.uv]
-prerelease = "allow"
-
 # Only resolve on Linux (x86_64 and arm64) and macOS (arm64)
 environments = [
   "sys_platform == 'darwin' and platform_machine == 'arm64'",
@@ -209,6 +207,8 @@ environments = [
 ]
 
 # The following configuration is needed whenever one wants to build with a pre-release version of Catalyst
+#prerelease = "allow"
+#
 #[[tool.uv.index]]
 #name = "test.pypi.org"
 #url = "https://test.pypi.org/simple"
