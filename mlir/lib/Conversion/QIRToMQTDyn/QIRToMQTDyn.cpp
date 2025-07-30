@@ -8,14 +8,20 @@
  * Licensed under the MIT License
  */
 
-// macro to match and replace single qubit gates
+// macro to match and replace simple qubit gates
 #define ADD_CONVERT_SIMPLE_GATE(gate)                                          \
   else if (gateName == #gate) {                                                \
-    rewriter.replaceOpWithNewOp<dyn::gate##Op>(                                \
-        op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{}, qubits,   \
-        ctrlQubits, ValueRange{});                                             \
+    rewriter.replaceOpWithNewOp<dyn::gate>(op, DenseF64ArrayAttr{},            \
+                                           DenseBoolArrayAttr{}, ValueRange{}, \
+                                           qubits, ctrlQubits, ValueRange{});  \
   }
-
+// macro to match and replace rotation gates
+#define ADD_CONVERT_ROTATION_GATE(gate)                                        \
+  else if (gateName == #gate) {                                                \
+    rewriter.replaceOpWithNewOp<dyn::gate>(                                    \
+        op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, rotationDegrees,        \
+        operands, ctrlQubits, ValueRange{});                                   \
+  }
 #include "mlir/Conversion/QIRToMQTDyn/QIRToMQTDyn.h"
 
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
@@ -98,56 +104,119 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
                                  ConversionPatternRewriter& rewriter,
                                  StringRef& name) {
     static const std::map<std::string, std::string> GATE_NAMES = {
-        {"x", "X"},
-        {"not", "X"},
-        {"h", "H"},
-        {"i", "I"},
-        {"y", "Y"},
-        {"z", "Z"},
-        {"s", "S"},
-        {"sdg", "Sdg"},
-        {"t", "Tdg"},
-        {"v", "V"},
-        {"sx", "SX"},
-        {"sxdg", "SXdg"},
-        {"swap", "SWAP"},
-        {"iswap", "iSWAP"},
-        {"iswapdg", "iSWAPdg"},
-        {"peres", "Peres"},
-        {"peresdg", "Peresdg"},
-        {"dcx", "DCX"},
-        {"ecr", "ECR"},
+        {"x", "XOp"},
+        {"not", "XOp"},
+        {"h", "HOp"},
+        {"i", "IOp"},
+        {"y", "YOp"},
+        {"z", "ZOp"},
+        {"s", "SOp"},
+        {"sdg", "SdgOp"},
+        {"t", "TdgOp"},
+        {"v", "VOp"},
+        {"sx", "SXOp"},
+        {"sxdg", "SXdgOp"},
+        {"swap", "SWAPOp"},
+        {"iswap", "iSWAPOp"},
+        {"iswapdg", "iSWAPdgOp"},
+        {"peres", "PeresOp"},
+        {"peresdg", "PeresdgOp"},
+        {"dcx", "DCXOp"},
+        {"ecr", "ECROp"},
     };
+    // check if it is a simple gate
     if (GATE_NAMES.find(name.str()) == GATE_NAMES.end()) {
       return false;
     }
     const auto gateName = GATE_NAMES.at(name.str());
-    // swap iswap iswapdg peres peresdg dcx ecr
+
     //  match and replace the fitting gate
-    if (gateName == "X" || gateName == "Not") {
+    if (gateName == "XOp") {
       rewriter.replaceOpWithNewOp<dyn::XOp>(op, DenseF64ArrayAttr{},
                                             DenseBoolArrayAttr{}, ValueRange{},
                                             qubits, ctrlQubits, ValueRange{});
     }
-    ADD_CONVERT_SIMPLE_GATE(H)
-    ADD_CONVERT_SIMPLE_GATE(I)
-    ADD_CONVERT_SIMPLE_GATE(Y)
-    ADD_CONVERT_SIMPLE_GATE(Z)
-    ADD_CONVERT_SIMPLE_GATE(S)
-    ADD_CONVERT_SIMPLE_GATE(Sdg)
-    ADD_CONVERT_SIMPLE_GATE(T)
-    ADD_CONVERT_SIMPLE_GATE(Tdg)
-    ADD_CONVERT_SIMPLE_GATE(V)
-    ADD_CONVERT_SIMPLE_GATE(SX)
-    ADD_CONVERT_SIMPLE_GATE(SWAP)
-    ADD_CONVERT_SIMPLE_GATE(iSWAP)
-    ADD_CONVERT_SIMPLE_GATE(iSWAPdg)
-    ADD_CONVERT_SIMPLE_GATE(Peres)
-    ADD_CONVERT_SIMPLE_GATE(Peresdg)
-    ADD_CONVERT_SIMPLE_GATE(DCX)
-    ADD_CONVERT_SIMPLE_GATE(ECR)
+    ADD_CONVERT_SIMPLE_GATE(HOp)
+    ADD_CONVERT_SIMPLE_GATE(IOp)
+    ADD_CONVERT_SIMPLE_GATE(YOp)
+    ADD_CONVERT_SIMPLE_GATE(ZOp)
+    ADD_CONVERT_SIMPLE_GATE(SOp)
+    ADD_CONVERT_SIMPLE_GATE(SdgOp)
+    ADD_CONVERT_SIMPLE_GATE(TOp)
+    ADD_CONVERT_SIMPLE_GATE(TdgOp)
+    ADD_CONVERT_SIMPLE_GATE(VOp)
+    ADD_CONVERT_SIMPLE_GATE(SXOp)
+    ADD_CONVERT_SIMPLE_GATE(SWAPOp)
+    ADD_CONVERT_SIMPLE_GATE(iSWAPOp)
+    ADD_CONVERT_SIMPLE_GATE(iSWAPdgOp)
+    ADD_CONVERT_SIMPLE_GATE(PeresOp)
+    ADD_CONVERT_SIMPLE_GATE(PeresdgOp)
+    ADD_CONVERT_SIMPLE_GATE(DCXOp)
+    ADD_CONVERT_SIMPLE_GATE(ECROp)
     return true;
   }
+
+  // match and replace singlue qubit gates
+  static bool convertRotationGates(SmallVector<Value>& operands,
+                                   SmallVector<Value>& ctrlQubits,
+                                   LLVM::CallOp& op,
+                                   ConversionPatternRewriter& rewriter,
+                                   StringRef& name) {
+    static std::map<std::string, std::string> singleRotationGates = {
+        {"p", "POp"},     {"rx", "RXOp"},   {"ry", "RYOp"},
+        {"rz", "RZOp"},   {"rxx", "RXXOp"}, {"ryy", "RYYOp"},
+        {"rzz", "RZZOp"}, {"rzx", "RZXOp"}
+
+    };
+    static std::map<std::string, std::string> doubleRotationGates = {
+        {"u2", "U2Op"}, {"xxminusyy", "XXminusYY"}, {"XXPLUSYY", "XXplusYY"}
+
+    };
+    std::string gateName;
+    size_t rotationCount = 0;
+    // check if it is rotation gate and get the number of degrees
+    if (singleRotationGates.find(name.str()) != singleRotationGates.end()) {
+      gateName = singleRotationGates.at(name.str());
+
+      rotationCount = 1;
+    } else if (doubleRotationGates.find(name.str()) !=
+               doubleRotationGates.end()) {
+      gateName = doubleRotationGates.at(name.str());
+      rotationCount = 2;
+    } else if (name.str() == "u") {
+      gateName = "UOp";
+      rotationCount = 3;
+    } else {
+      return false;
+    }
+
+    // extract the degrees from the operand list
+    SmallVector<Value> rotationDegrees;
+    rotationDegrees.insert(
+        rotationDegrees.end(), std::make_move_iterator(operands.begin()),
+        std::make_move_iterator(operands.begin() + rotationCount));
+    operands.erase(operands.begin(), operands.begin() + rotationCount);
+
+    //  match and replace the fitting gate
+    if (gateName == "POp") {
+      rewriter.replaceOpWithNewOp<dyn::POp>(
+          op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, rotationDegrees,
+          operands, ctrlQubits, ValueRange{});
+    }
+    ADD_CONVERT_ROTATION_GATE(UOp)
+    ADD_CONVERT_ROTATION_GATE(U2Op)
+    ADD_CONVERT_ROTATION_GATE(RXOp)
+    ADD_CONVERT_ROTATION_GATE(RYOp)
+    ADD_CONVERT_ROTATION_GATE(RZOp)
+    ADD_CONVERT_ROTATION_GATE(RXXOp)
+    ADD_CONVERT_ROTATION_GATE(RYYOp)
+    ADD_CONVERT_ROTATION_GATE(RZZOp)
+    ADD_CONVERT_ROTATION_GATE(RZXOp)
+    ADD_CONVERT_ROTATION_GATE(XXminusYY)
+    ADD_CONVERT_ROTATION_GATE(XXplusYY)
+    return true;
+  }
+
   // count how many control qubits are used
   static size_t countControlQubits(const StringRef& str) {
     size_t count = 0;
@@ -164,11 +233,12 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
   LogicalResult
   matchAndRewrite(LLVM::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto fnName = op.getCallee();
-    auto qubitType = dyn::QubitType::get(rewriter.getContext());
-    auto qregType = dyn::QubitRegisterType::get(rewriter.getContext());
+    // get the name of the operation and prepare the return types
+    const auto fnName = op.getCallee();
+    const auto qubitType = dyn::QubitType::get(rewriter.getContext());
+    const auto qregType = dyn::QubitRegisterType::get(rewriter.getContext());
     auto& map = *operandMap;
-    auto operands = adaptor.getOperands();
+    const auto operands = adaptor.getOperands();
 
     // get the new operands
     SmallVector<Value> newOperands;
@@ -185,50 +255,67 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     if (fnName == "__quantum__rt__qubit_allocate_array") {
       const auto newOp = rewriter.replaceOpWithNewOp<dyn::AllocOp>(
           op, qregType, adaptor.getOperands());
+
+      // update the operand list
       operandMap->try_emplace(op->getResult(0), newOp->getResult(0));
+
     }
     // match alloc qubit
     else if (fnName == "__quantum__rt__qubit_allocate") {
       const auto newOp = rewriter.replaceOpWithNewOp<dyn::ExtractOp>(
           op, qubitType, allocOp->qReg, Value{},
           IntegerAttr::get(rewriter.getIntegerType(64), allocOp->index++));
-      operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
 
+      // update the operand list
+      operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
     }
     // match extract qubit from register
     else if (fnName == "__catalyst__rt__array_get_element_ptr_1d") {
       const auto newOp = rewriter.replaceOpWithNewOp<dyn::ExtractOp>(
           op, qubitType, newOperands);
       operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
-    } else if (fnName == "__quantum__qis__m__body") {
+    }
+    // match measure operation
+    else if (fnName == "__quantum__qis__m__body") {
       SmallVector<Type> newBits(adaptor.getOperands().size(),
                                 IntegerType::get(rewriter.getContext(), 1));
-      auto newOp =
+      const auto newOp =
           rewriter.replaceOpWithNewOp<dyn::MeasureOp>(op, newBits, newOperands);
       operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
     }
     // match dealloc register
     else if (fnName == "__quantum__rt__qubit_release_array") {
       rewriter.replaceOpWithNewOp<dyn::DeallocOp>(op, newOperands.front());
-    }
-    // get the gate name and the number of control qubits
-    auto gateName(fnName->substr(16).drop_back(6));
-    const size_t ctrlQubitCount = countControlQubits(gateName);
-    gateName = gateName.substr(ctrlQubitCount);
+    } else {
+      // get the gate name and the number of control qubits
+      auto gateName(fnName->substr(16).drop_back(6));
+      const size_t ctrlQubitCount = countControlQubits(gateName);
 
-    // extract the controlqubits from the operand list
-    SmallVector<Value> ctrlQubits;
-    ctrlQubits.reserve(ctrlQubitCount);
-    ctrlQubits.insert(
-        ctrlQubits.end(),
-        std::make_move_iterator(newOperands.end() - ctrlQubitCount),
-        std::make_move_iterator(newOperands.end()));
-    newOperands.resize(newOperands.size() - ctrlQubitCount);
+      // remove the control qubits from the name
+      gateName = gateName.substr(ctrlQubitCount);
 
-    if (convertSimpleGates(newOperands, ctrlQubits, op, rewriter, gateName)) {
+      // extract the controlqubits from the operand list
+      SmallVector<Value> ctrlQubits;
+      ctrlQubits.reserve(ctrlQubitCount);
+      ctrlQubits.insert(
+          ctrlQubits.end(),
+          std::make_move_iterator(newOperands.end() - ctrlQubitCount),
+          std::make_move_iterator(newOperands.end()));
+      newOperands.resize(newOperands.size() - ctrlQubitCount);
+
+      // check and match simple gate operations
+      if (convertSimpleGates(newOperands, ctrlQubits, op, rewriter, gateName)) {
+        return success();
+      }
+      // check and match rotation gate operations
+      if (convertRotationGates(newOperands, ctrlQubits, op, rewriter,
+                               gateName)) {
+        return success();
+      }
+      // otherwise erase the operation
+      rewriter.eraseOp(op);
       return success();
     }
-
     return success();
   }
 };
@@ -253,7 +340,7 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
   ensureRegisterAllocation(Operation* op) {
     int64_t num = 0;
     // walk through the IR and count all qubit allocate operations
-    auto result = op->walk([&](Operation* op) {
+    const auto result = op->walk([&](Operation* op) {
       if (auto call = llvm::dyn_cast<LLVM::CallOp>(op)) {
         auto name = call.getCallee();
 
@@ -271,7 +358,7 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
     if (!result.wasInterrupted() && num != 0) {
       // find the 2nd block of the main function
       auto module = llvm::dyn_cast<ModuleOp>(op);
-      auto func = module.lookupSymbol<func::FuncOp>("main");
+      auto func = module.lookupSymbol<LLVM::LLVMFuncOp>("main");
       auto& secondBlock = *(++func.getBlocks().begin());
       OpBuilder builder(func.getBody());
 
@@ -284,10 +371,9 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
 
       // create the dealloc operation at the end of the block
       auto& ops = secondBlock.getOperations();
-      auto insertPoint = std::prev(ops.end(), 1);
+      const auto insertPoint = std::prev(ops.end(), 1);
       builder.setInsertionPoint(&*insertPoint);
       builder.create<dyn::DeallocOp>(func->getLoc(), allocOp);
-
       return allocOp;
     }
     // otherwise return null
@@ -300,7 +386,6 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
     llvm::DenseMap<Value, Value> operandMap;
 
     auto alloc = ensureRegisterAllocation(module).value_or(nullptr);
-
     AllocRegister registerInfo{.qReg = alloc, .index = 0};
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
@@ -308,12 +393,6 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
     target.addLegalDialect<dyn::MQTDynDialect>();
     target.addIllegalOp<LLVM::CallOp>();
     target.addIllegalOp<LLVM::LoadOp>();
-    target.addLegalOp<LLVM::ConstantOp>();
-    target.addLegalOp<LLVM::GlobalOp>();
-    target.addLegalOp<LLVM::AddressOfOp>();
-    target.addLegalOp<LLVM::LLVMFuncOp>();
-    target.addLegalOp<LLVM::ZeroOp>();
-    // patterns.add<ConvertQIRFunc>(typeConverter, context);
 
     patterns.add<ConvertQIRLoad>(typeConverter, context);
     patterns.add<ConvertQIRCall>(typeConverter, context, operandMap,
