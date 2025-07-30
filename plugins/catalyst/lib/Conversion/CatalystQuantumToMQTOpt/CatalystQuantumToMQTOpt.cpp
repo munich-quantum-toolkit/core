@@ -285,6 +285,12 @@ struct ConvertQuantumCustomOp final
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
+    } else if (gateName.compare("Identity") == 0) {
+      mqtoptOp = rewriter.create<opt::IOp>(
+          op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
+          inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
+          paramsValues, inQubitsValues, inCtrlQubitsValues,
+          inNegCtrlQubitsValues);
     } else if (gateName.compare("PauliX") == 0 ||
                gateName.compare("CNOT") == 0 ||
                gateName.compare("Toffoli") == 0) {
