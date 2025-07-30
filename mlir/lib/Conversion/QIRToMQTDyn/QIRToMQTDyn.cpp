@@ -9,7 +9,7 @@
  */
 
 // macro to match and replace single qubit gates
-#define ADD_CONVERT_SINGLE_QUBIT_GATE(gate)                                    \
+#define ADD_CONVERT_SIMPLE_GATE(gate)                                          \
   else if (gateName == #gate) {                                                \
     rewriter.replaceOpWithNewOp<dyn::gate##Op>(                                \
         op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{}, qubits,   \
@@ -91,35 +91,62 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
       : OpConversionPattern(typeConverter, context), operandMap(&operandMap),
         allocOp(&allocOp) {}
 
-  // match and replace singlue qubit gates
-  static void convertSingleQubitOp(SmallVector<Value>& qubits,
-                                   SmallVector<Value>& ctrlQubits,
-                                   LLVM::CallOp& op,
-                                   ConversionPatternRewriter& rewriter,
-                                   StringRef& name) {
-    // modify the gate names for the dyn gates
-    std::string gateName(name);
-    gateName[0] = static_cast<char>(toupper(static_cast<char>(gateName[0])));
-    if (gateName.size() > 1 && gateName[1] == 'X') {
-      gateName[1] = static_cast<char>(toupper(static_cast<char>(gateName[1])));
+  // match and replace simple qubit gates
+  static bool convertSimpleGates(SmallVector<Value>& qubits,
+                                 SmallVector<Value>& ctrlQubits,
+                                 LLVM::CallOp& op,
+                                 ConversionPatternRewriter& rewriter,
+                                 StringRef& name) {
+    static const std::map<std::string, std::string> GATE_NAMES = {
+        {"x", "X"},
+        {"not", "X"},
+        {"h", "H"},
+        {"i", "I"},
+        {"y", "Y"},
+        {"z", "Z"},
+        {"s", "S"},
+        {"sdg", "Sdg"},
+        {"t", "Tdg"},
+        {"v", "V"},
+        {"sx", "SX"},
+        {"sxdg", "SXdg"},
+        {"swap", "SWAP"},
+        {"iswap", "iSWAP"},
+        {"iswapdg", "iSWAPdg"},
+        {"peres", "Peres"},
+        {"peresdg", "Peresdg"},
+        {"dcx", "DCX"},
+        {"ecr", "ECR"},
+    };
+    if (GATE_NAMES.find(name.str()) == GATE_NAMES.end()) {
+      return false;
     }
-    // match and replace the fitting gate
+    const auto gateName = GATE_NAMES.at(name.str());
+    // swap iswap iswapdg peres peresdg dcx ecr
+    //  match and replace the fitting gate
     if (gateName == "X" || gateName == "Not") {
       rewriter.replaceOpWithNewOp<dyn::XOp>(op, DenseF64ArrayAttr{},
                                             DenseBoolArrayAttr{}, ValueRange{},
                                             qubits, ctrlQubits, ValueRange{});
     }
-    ADD_CONVERT_SINGLE_QUBIT_GATE(H)
-    ADD_CONVERT_SINGLE_QUBIT_GATE(I)
-    ADD_CONVERT_SINGLE_QUBIT_GATE(Y)
-    ADD_CONVERT_SINGLE_QUBIT_GATE(Z)
-    ADD_CONVERT_SINGLE_QUBIT_GATE(S)
-    ADD_CONVERT_SINGLE_QUBIT_GATE(Sdg)
-    ADD_CONVERT_SINGLE_QUBIT_GATE(T)
-    ADD_CONVERT_SINGLE_QUBIT_GATE(Tdg)
-    ADD_CONVERT_SINGLE_QUBIT_GATE(V)
-    ADD_CONVERT_SINGLE_QUBIT_GATE(SX)
-    ADD_CONVERT_SINGLE_QUBIT_GATE(SXdg)
+    ADD_CONVERT_SIMPLE_GATE(H)
+    ADD_CONVERT_SIMPLE_GATE(I)
+    ADD_CONVERT_SIMPLE_GATE(Y)
+    ADD_CONVERT_SIMPLE_GATE(Z)
+    ADD_CONVERT_SIMPLE_GATE(S)
+    ADD_CONVERT_SIMPLE_GATE(Sdg)
+    ADD_CONVERT_SIMPLE_GATE(T)
+    ADD_CONVERT_SIMPLE_GATE(Tdg)
+    ADD_CONVERT_SIMPLE_GATE(V)
+    ADD_CONVERT_SIMPLE_GATE(SX)
+    ADD_CONVERT_SIMPLE_GATE(SWAP)
+    ADD_CONVERT_SIMPLE_GATE(iSWAP)
+    ADD_CONVERT_SIMPLE_GATE(iSWAPdg)
+    ADD_CONVERT_SIMPLE_GATE(Peres)
+    ADD_CONVERT_SIMPLE_GATE(Peresdg)
+    ADD_CONVERT_SIMPLE_GATE(DCX)
+    ADD_CONVERT_SIMPLE_GATE(ECR)
+    return true;
   }
   // count how many control qubits are used
   static size_t countControlQubits(const StringRef& str) {
@@ -183,37 +210,25 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     // match dealloc register
     else if (fnName == "__quantum__rt__qubit_release_array") {
       rewriter.replaceOpWithNewOp<dyn::DeallocOp>(op, newOperands.front());
-    } else {
-      // get the gate name and the number of control qubits
-      auto gateName(fnName->substr(16).drop_back(6));
-      const size_t ctrlQubitCount = countControlQubits(gateName);
-      gateName = gateName.substr(ctrlQubitCount);
+    }
+    // get the gate name and the number of control qubits
+    auto gateName(fnName->substr(16).drop_back(6));
+    const size_t ctrlQubitCount = countControlQubits(gateName);
+    gateName = gateName.substr(ctrlQubitCount);
 
-      // extract the controlqubits from the operand list
-      SmallVector<Value> ctrlQubits;
-      ctrlQubits.reserve(ctrlQubitCount);
-      ctrlQubits.insert(
-          ctrlQubits.end(),
-          std::make_move_iterator(newOperands.end() - ctrlQubitCount),
-          std::make_move_iterator(newOperands.end()));
-      newOperands.resize(newOperands.size() - ctrlQubitCount);
-      convertSingleQubitOp(newOperands, ctrlQubits, op, rewriter, gateName);
+    // extract the controlqubits from the operand list
+    SmallVector<Value> ctrlQubits;
+    ctrlQubits.reserve(ctrlQubitCount);
+    ctrlQubits.insert(
+        ctrlQubits.end(),
+        std::make_move_iterator(newOperands.end() - ctrlQubitCount),
+        std::make_move_iterator(newOperands.end()));
+    newOperands.resize(newOperands.size() - ctrlQubitCount);
+
+    if (convertSimpleGates(newOperands, ctrlQubits, op, rewriter, gateName)) {
+      return success();
     }
 
-    /*
-    else if (fnName == "__quantum__qis__h__body") {
-      rewriter.replaceOpWithNewOp<dyn::HOp>(
-          op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
-          newOperands, ctrlQubits, ValueRange{});
-    } else if (fnName == "__quantum__qis__cnot__body") {
-      rewriter.replaceOpWithNewOp<dyn::HOp>(
-          op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
-          newOperands.front(), newOperands.back(), ValueRange{});
-    } else {
-      rewriter.eraseOp(op);
-    }
-    */
-    llvm::outs() << gateName << "\n";
     return success();
   }
 };
