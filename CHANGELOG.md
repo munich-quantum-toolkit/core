@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- 🐍 Build Python 3.14 wheels ([#1076]) ([**@denialhaag**])
 - ✨ Add MQT-internal MLIR dialect conversions ([#1001]) ([**@li-mingbao**])
 
 ### Changed
@@ -135,6 +136,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1075]: https://github.com/munich-quantum-toolkit/core/pull/1076
 [#1075]: https://github.com/munich-quantum-toolkit/core/pull/1075
 [#1047]: https://github.com/munich-quantum-toolkit/core/pull/1047
 [#1042]: https://github.com/munich-quantum-toolkit/core/pull/1042
