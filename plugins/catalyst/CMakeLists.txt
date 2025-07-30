@@ -26,15 +26,11 @@ endif()
 
 include(cmake/ExternalDependencies.cmake)
 
-set(MQT_MLIR_MIN_VERSION 19.0)
+set(MQT_MLIR_PLUGIN_SOURCE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(MQT_MLIR_PLUGIN_BUILD_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/include")
 
 # MLIR must be installed on the system
 find_package(MLIR REQUIRED CONFIG)
-if(MLIR_VERSION VERSION_LESS MQT_MLIR_MIN_VERSION)
-  message(FATAL_ERROR "MLIR version must be at least ${MQT_MLIR_MIN_VERSION}")
-endif()
-message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
-message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
 # Add the paths to the MLIR and LLVM CMake modules.
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
@@ -48,8 +44,8 @@ include(HandleLLVMOptions)
 
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
-include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-include_directories(BEFORE ${CMAKE_CURRENT_BINARY_DIR}/include)
+include_directories(BEFORE ${MQT_MLIR_PLUGIN_SOURCE_INCLUDE_DIR})
+include_directories(BEFORE ${MQT_MLIR_PLUGIN_BUILD_INCLUDE_DIR})
 include_directories(${CATALYST_INCLUDE_DIRS})
 
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
