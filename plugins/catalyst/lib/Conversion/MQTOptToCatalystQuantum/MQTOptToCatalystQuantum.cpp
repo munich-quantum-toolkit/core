@@ -840,8 +840,6 @@ struct ConvertMQTOptSimpleGate<::mqt::ir::opt::U2Op>
 
     // U2(φ, λ) = U(π/2, φ, λ) = RZ(φ − π⁄2) ⋅ RX(π⁄2) ⋅ RZ(3/4 π) ⋅ RX(π⁄2) ⋅
     // RZ(λ − π⁄2)
-    auto pi = rewriter.create<arith::ConstantOp>(
-        op.getLoc(), rewriter.getF64FloatAttr(M_PI));
     auto pi_2 = rewriter.create<arith::ConstantOp>(
         op.getLoc(), rewriter.getF64FloatAttr(M_PI_2));
     auto pi_4 = rewriter.create<arith::ConstantOp>(
