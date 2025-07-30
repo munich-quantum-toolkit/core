@@ -65,7 +65,8 @@ struct ConvertMQTOptAlloc final : OpConversionPattern<opt::AllocOp> {
   matchAndRewrite(opt::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Prepare the result type(s)
-    auto resultType = catalyst::quantum::QuregType::get(rewriter.getContext());
+    const auto resultType =
+        catalyst::quantum::QuregType::get(rewriter.getContext());
 
     // Create the new operation
     const auto catalystOp = rewriter.create<catalyst::quantum::AllocOp>(
@@ -74,16 +75,13 @@ struct ConvertMQTOptAlloc final : OpConversionPattern<opt::AllocOp> {
     // Get the result of the new operation, which represents the qubit register
     const auto targetQreg = catalystOp->getResult(0);
 
-    // Collect the users of the original operation to update their operands and
-    // iterate over the users in reverse order
-    for (std::vector users(op->getUsers().begin(), op->getUsers().end());
-         auto* user : llvm::reverse(users)) {
+    // Iterate over the users to update their operands
+    for (auto* user : op->getUsers()) {
       // Registers should only be used in Extract, Insert or Dealloc operations
-      if (mlir::isa<opt::ExtractOp>(user) || mlir::isa<opt::InsertOp>(user) ||
-          mlir::isa<opt::DeallocOp>(user)) {
-        // Update the operand of the user operation to the new qubit register
-        user->setOperand(0, targetQreg);
-      }
+      assert(mlir::isa<opt::ExtractOp>(user) ||
+             mlir::isa<opt::InsertOp>(user) || mlir::isa<opt::DeallocOp>(user));
+      // Update the operand of the user operation to the new qubit register
+      user->setOperand(0, targetQreg);
     }
 
     rewriter.eraseOp(op);
@@ -126,46 +124,10 @@ struct ConvertMQTOptMeasure final : OpConversionPattern<opt::MeasureOp> {
         op.getLoc(), bitType, qubitType, inQubit,
         /*optional::mlir::IntegerAttr postselect=*/nullptr);
 
-    // Because the results (bit and qubit) have change order, we need to
-    // manually update their uses
-    const auto mqtQubit = op->getResult(0);
-    const auto catalystQubit = catalystOp->getResult(1);
-
-    const auto mqtMeasure = op->getResult(1);
+    // Replace all uses of both results and then erase the operation
     const auto catalystMeasure = catalystOp->getResult(0);
-
-    // Collect the users of the original input qubit register to update their
-    // operands
-    std::vector qubitUsers(mqtQubit.getUsers().begin(),
-                           mqtQubit.getUsers().end());
-
-    // Iterate over users in reverse order to update their operands properly
-    for (auto* user : llvm::reverse(qubitUsers)) {
-
-      // Only consider operations after the current operation
-      if (!user->isBeforeInBlock(catalystOp) && user != catalystOp &&
-          user != op) {
-        // Update operands in the user operation {
-        user->replaceUsesOfWith(mqtQubit, catalystQubit);
-      }
-    }
-
-    std::vector measureUsers(mqtMeasure.getUsers().begin(),
-                             mqtMeasure.getUsers().end());
-
-    // Iterate over users in reverse order to update their operands properly
-    for (auto* user : llvm::reverse(measureUsers)) {
-
-      // Only consider operations after the current operation
-      if (!user->isBeforeInBlock(catalystOp) && user != catalystOp &&
-          user != op) {
-        // Update operands in the user operation {
-        user->replaceUsesOfWith(mqtMeasure, catalystMeasure);
-      }
-    }
-
-    // Erase the old operation
-    rewriter.eraseOp(op);
+    const auto catalystQubit = catalystOp->getResult(1);
+    rewriter.replaceOp(op, ValueRange{catalystQubit, catalystMeasure});
     return success();
   }
 };
@@ -188,37 +150,27 @@ struct ConvertMQTOptExtract final : OpConversionPattern<opt::ExtractOp> {
     const auto catalystQreg = catalystOp.getOperand(0);
 
     // Collect the users of the original input qubit register to update their
-    // operands and iterate over users in reverse order to update their operands
-    // properly
-    for (std::vector users(mqtQreg.getUsers().begin(),
-                           mqtQreg.getUsers().end());
-         auto* user : llvm::reverse(users)) {
-
+    // operands and iterate over users to update their operands
+    for (auto* user : mqtQreg.getUsers()) {
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(catalystOp) && user != catalystOp &&
           user != op) {
+        assert(mlir::isa<opt::ExtractOp>(user) ||
+               mlir::isa<opt::InsertOp>(user) ||
+               mlir::isa<opt::DeallocOp>(user));
         // Update operands in the user operation
-        if (mlir::isa<opt::ExtractOp>(user) || mlir::isa<opt::InsertOp>(user) ||
-            mlir::isa<opt::DeallocOp>(user)) {
-          user->setOperand(0, catalystQreg);
-        }
+        user->setOperand(0, catalystQreg);
       }
     }
 
     // Collect the users of the original output qubit
     const auto oldQubit = op->getResult(1);
     const auto newQubit = catalystOp->getResult(0);
-
-    std::vector qubitUsers(oldQubit.getUsers().begin(),
-                           oldQubit.getUsers().end());
-
-    // Iterate over qubit users in reverse order
-    for (auto* user : llvm::reverse(qubitUsers)) {
-
+    // Iterate over qubit users to update their operands
+    for (auto* user : oldQubit.getUsers()) {
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(catalystOp) && user != catalystOp &&
           user != op) {
-
         auto operandIdx = 0;
         for (auto operand : user->getOperands()) {
           if (operand == oldQubit) {
@@ -280,8 +232,8 @@ struct ConvertMQTOptSimpleGate final : OpConversionPattern<MQTGateOp> {
     auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
+                                    posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
     // Output type
@@ -339,8 +291,8 @@ struct ConvertMQTOptAdjointGate final : OpConversionPattern<MQTGateOp> {
     auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
+                                    posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
     // Output type

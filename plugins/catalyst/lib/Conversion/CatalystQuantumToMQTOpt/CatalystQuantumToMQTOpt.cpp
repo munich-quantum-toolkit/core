@@ -71,17 +71,8 @@ struct ConvertQuantumAlloc final
         op.getLoc(), resultType, adaptor.getNqubits(),
         adaptor.getNqubitsAttrAttr());
 
-    // Get the result of the new operation, which represents the qubit register
-    const auto targetQreg = mqtoptOp->getResult(0);
-
-    // Collect the users of the original operation to update their operands
-
-    // Iterate over the users in reverse order
-    for (std::vector users(op->getUsers().begin(), op->getUsers().end());
-         auto* user : llvm::reverse(users)) {
-      // Update the operand of the user operation to the new qubit register
-      user->replaceUsesOfWith(op.getResult(), targetQreg);
-    }
+    // Exchange the result of the original operation with the new one.
+    rewriter.replaceAllUsesWith(op.getResult(), mqtoptOp->getResult(0));
 
     rewriter.eraseOp(op);
     return success();
@@ -121,44 +112,11 @@ struct ConvertQuantumMeasure final
         op.getLoc(), TypeRange{qubitType}, TypeRange{bitType},
         adaptor.getInQubit());
 
-    // Because the results (bit and qubit) have changed order, we need to
-    // manually update their uses
-    const auto catalystMeasure = op->getResult(0); // bit
-    const auto catalystQubit = op->getResult(1);   // qubit
-
+    // Replace all uses of both results and then erase the operation
     const auto mqtQubit = mqtOp->getResult(0);
     const auto mqtMeasure = mqtOp->getResult(1);
+    rewriter.replaceOp(op, ValueRange{mqtMeasure, mqtQubit});
 
-    // Collect the users of the original qubit
-    std::vector qubitUsers(catalystQubit.getUsers().begin(),
-                           catalystQubit.getUsers().end());
-
-    // Iterate over users in reverse order to update their operands properly
-    for (auto* user : llvm::reverse(qubitUsers)) {
-
-      // Only consider operations after the current operation
-      if (!user->isBeforeInBlock(mqtOp) && user != mqtOp && user != op) {
-        // Update operands in the user operation
-        user->replaceUsesOfWith(catalystQubit, mqtQubit);
-      }
-    }
-
-    // Collect the users of the original measurement bit
-    std::vector measureUsers(catalystMeasure.getUsers().begin(),
-                             catalystMeasure.getUsers().end());
-
-    // Iterate over users in reverse order to update their operands properly
-    for (auto* user : llvm::reverse(measureUsers)) {
-
-      // Only consider operations after the current operation
-      if (!user->isBeforeInBlock(mqtOp) && user != mqtOp && user != op) {
-        // Update operands in the user operation
-        user->replaceUsesOfWith(catalystMeasure, mqtMeasure);
-      }
-    }
-
-    // Erase the old operation
-    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -181,30 +139,18 @@ struct ConvertQuantumExtract final
 
     const auto inQreg = op->getOperand(0);
     const auto outQreg = mqtoptOp->getResult(0);
-
-    // Collect the users of the original input qubit register to update their
-    // operands
-    std::vector users(inQreg.getUsers().begin(), inQreg.getUsers().end());
-
-    // Iterate over users in reverse order to update their operands properly
-    for (auto* user : llvm::reverse(users)) {
-
+    // Iterate over users to update their operands
+    for (auto* user : inQreg.getUsers()) {
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
         user->replaceUsesOfWith(inQreg, outQreg);
       }
     }
 
-    // Collect the users of the original output qubit
     const auto oldQubit = op->getResult(0);
     const auto newQubit = mqtoptOp->getResult(1);
-
-    std::vector qubitUsers(oldQubit.getUsers().begin(),
-                           oldQubit.getUsers().end());
-
-    // Iterate over qubit users in reverse order
-    for (auto* user : llvm::reverse(qubitUsers)) {
-
+    // Iterate over qubit users to update their operands
+    for (auto* user : oldQubit.getUsers()) {
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
         user->replaceUsesOfWith(oldQubit, newQubit);
@@ -233,16 +179,9 @@ struct ConvertQuantumInsert final
         adaptor.getIdx(), adaptor.getIdxAttrAttr());
 
     const auto targetQreg = mqtoptOp->getResult(0);
-    const auto sourceQreg = op->getResult(0);
-
-    // Collect the users of the original out qubit register to update their
-    // operands
-    std::vector users(sourceQreg.getUsers().begin(),
-                      sourceQreg.getUsers().end());
-
-    // Iterate over users in reverse order to update their operands properly
-    for (auto* user : llvm::reverse(users)) {
-
+    // Iterate over users to update their operands
+    for (const auto sourceQreg = op->getResult(0);
+         auto* user : sourceQreg.getUsers()) {
       // Only consider operations after the current operation
       if (!user->isBeforeInBlock(mqtoptOp) && user != mqtoptOp && user != op) {
         user->replaceUsesOfWith(sourceQreg, targetQreg);
@@ -425,40 +364,15 @@ struct CatalystQuantumToMQTOpt final
         catalyst::quantum::DeviceInitOp, catalyst::quantum::DeviceReleaseOp,
         catalyst::quantum::NamedObsOp, catalyst::quantum::ExpvalOp,
         catalyst::quantum::FinalizeOp, catalyst::quantum::ComputationalBasisOp,
-        catalyst::quantum::StateOp, catalyst::quantum::InitializeOp,
-        catalyst::quantum::ComputationalBasisOp>();
+        catalyst::quantum::StateOp, catalyst::quantum::InitializeOp>();
 
     RewritePatternSet patterns(context);
-    CatalystQuantumToMQTOptTypeConverter typeConverter(context);
+    const CatalystQuantumToMQTOptTypeConverter typeConverter(context);
 
     patterns.add<ConvertQuantumAlloc, ConvertQuantumDealloc,
                  ConvertQuantumExtract, ConvertQuantumMeasure,
                  ConvertQuantumInsert, ConvertQuantumCustomOp>(typeConverter,
                                                                context);
-
-    // Boilerplate code to prevent: unresolved materialization
-    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
-        patterns, typeConverter);
-    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return typeConverter.isSignatureLegal(op.getFunctionType()) &&
-             typeConverter.isLegal(&op.getBody());
-    });
-
-    populateReturnOpTypeConversionPattern(patterns, typeConverter);
-    target.addDynamicallyLegalOp<func::ReturnOp>(
-        [&](func::ReturnOp op) { return typeConverter.isLegal(op); });
-
-    populateCallOpTypeConversionPattern(patterns, typeConverter);
-    target.addDynamicallyLegalOp<func::CallOp>(
-        [&](func::CallOp op) { return typeConverter.isLegal(op); });
-
-    populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
-    target.markUnknownOpDynamicallyLegal([&](Operation* op) {
-      return isNotBranchOpInterfaceOrReturnLikeOp(op) ||
-             isLegalForBranchOpInterfaceTypeConversionPattern(op,
-                                                              typeConverter) ||
-             isLegalForReturnOpTypeConversionPattern(op, typeConverter);
-    });
 
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
