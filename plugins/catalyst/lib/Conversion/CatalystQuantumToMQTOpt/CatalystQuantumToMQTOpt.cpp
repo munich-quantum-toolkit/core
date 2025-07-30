@@ -258,17 +258,18 @@ struct ConvertQuantumCustomOp final
     if (gateName == "CNOT" || gateName == "CY" || gateName == "CZ" ||
         gateName == "CRX" || gateName == "CRY" || gateName == "CRZ" ||
         gateName == "ControlledPhaseShift") {
-
       assert(inQubitsVec.size() == 2 && "Expected 1 control + 1 target qubit");
       inCtrlQubitsVec.emplace_back(inQubitsVec[0]);
       inQubitsVec = {inQubitsVec[1]};
-
     } else if (gateName == "Toffoli") {
-
       assert(inQubitsVec.size() == 3 && "Expected 2 controls + 1 target qubit");
       inCtrlQubitsVec.emplace_back(inQubitsVec[0]);
       inCtrlQubitsVec.emplace_back(inQubitsVec[1]);
       inQubitsVec = {inQubitsVec[2]};
+    } else if (gateName == "CSWAP") {
+      assert(inQubitsVec.size() == 3 && "Expected 1 control + 2 target qubits");
+      inCtrlQubitsVec.emplace_back(inQubitsVec[0]);
+      inQubitsVec = {inQubitsVec[1], inQubitsVec[2]};
     }
 
     // Final ValueRanges to pass into create<> ops
@@ -304,7 +305,8 @@ struct ConvertQuantumCustomOp final
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("SWAP") == 0) {
+    } else if (gateName.compare("SWAP") == 0 ||
+               gateName.compare("CSWAP") == 0) {
       mqtoptOp = rewriter.create<opt::SWAPOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
