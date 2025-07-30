@@ -279,95 +279,92 @@ struct ConvertQuantumCustomOp final
     // Create the new operation
     Operation* mqtoptOp = nullptr;
 
-    if (gateName.compare("Hadamard") == 0) {
+    if (gateName == "Hadamard") {
       mqtoptOp = rewriter.create<opt::HOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("Identity") == 0) {
+    } else if (gateName == "Identity") {
       mqtoptOp = rewriter.create<opt::IOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("PauliX") == 0 ||
-               gateName.compare("CNOT") == 0 ||
-               gateName.compare("Toffoli") == 0) {
+    } else if (gateName == "PauliX" || gateName == "CNOT" ||
+               gateName == "Toffoli") {
       mqtoptOp = rewriter.create<opt::XOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("PauliY") == 0 || gateName.compare("CY") == 0) {
+    } else if (gateName == "PauliY" || gateName == "CY") {
       mqtoptOp = rewriter.create<opt::YOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("PauliZ") == 0 || gateName.compare("CZ") == 0) {
+    } else if (gateName == "PauliZ" || gateName == "CZ") {
       mqtoptOp = rewriter.create<opt::ZOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("S") == 0) {
+    } else if (gateName == "S") {
       mqtoptOp = rewriter.create<opt::SOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("T") == 0) {
+    } else if (gateName == "T") {
       mqtoptOp = rewriter.create<opt::TOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("SX") == 0) {
+    } else if (gateName == "SX") {
       mqtoptOp = rewriter.create<opt::SXOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("ECR") == 0) {
+    } else if (gateName == "ECR") {
       mqtoptOp = rewriter.create<opt::ECROp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("SWAP") == 0 ||
-               gateName.compare("CSWAP") == 0) {
+    } else if (gateName == "SWAP" || gateName == "CSWAP") {
       mqtoptOp = rewriter.create<opt::SWAPOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("ISWAP") == 0) {
+    } else if (gateName == "ISWAP") {
       mqtoptOp = rewriter.create<opt::iSWAPOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("RX") == 0 || gateName.compare("CRX") == 0) {
+    } else if (gateName == "RX" || gateName == "CRX") {
       mqtoptOp = rewriter.create<opt::RXOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("RY") == 0 || gateName.compare("CRY") == 0) {
+    } else if (gateName == "RY" || gateName == "CRY") {
       mqtoptOp = rewriter.create<opt::RYOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("RZ") == 0 || gateName.compare("CRZ") == 0) {
+    } else if (gateName == "RZ" || gateName == "CRZ") {
       mqtoptOp = rewriter.create<opt::RZOp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
           paramsValues, inQubitsValues, inCtrlQubitsValues,
           inNegCtrlQubitsValues);
-    } else if (gateName.compare("PhaseShift") == 0 ||
-               gateName.compare("ControlledPhaseShift") == 0) {
+    } else if (gateName == "PhaseShift" || gateName == "ControlledPhaseShift") {
       mqtoptOp = rewriter.create<opt::POp>(
           op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),
           inNegCtrlQubitsValues.getType(), staticParams, paramsMask,
