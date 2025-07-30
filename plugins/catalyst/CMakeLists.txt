@@ -19,6 +19,11 @@ set(CMAKE_CXX_STANDARD
     20
     CACHE STRING "C++ standard to conform to")
 
+if(ENABLE_COVERAGE)
+  add_compile_options(--coverage -O0)
+  add_link_options(--coverage)
+endif()
+
 include(cmake/ExternalDependencies.cmake)
 
 set(MQT_MLIR_MIN_VERSION 19.0)
