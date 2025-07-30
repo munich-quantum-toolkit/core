@@ -977,8 +977,14 @@ StringRef ConvertMQTOptSimpleGate<opt::ECROp>::getGateName(
 // -- SWAPOp (SWAP)
 template <>
 StringRef ConvertMQTOptSimpleGate<opt::SWAPOp>::getGateName(
-    [[maybe_unused]] std::size_t numControls) {
-  return "SWAP";
+    const std::size_t numControls) {
+  if (numControls == 0) {
+    return "SWAP";
+  }
+  if (numControls == 1) {
+    return "CSWAP";
+  }
+  return "";
 }
 
 // -- iSWAPOp (iSWAP)
