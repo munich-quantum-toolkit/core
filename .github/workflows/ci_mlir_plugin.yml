@@ -22,7 +22,7 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     strategy:
       matrix:
-        runs-on: [ubuntu-24.04, macos-14]
+        runs-on: [ubuntu-24.04, ubuntu-24.04-arm, macos-14]
         llvm-version: [19, 20]
       fail-fast: false
     env:
@@ -124,7 +124,7 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     strategy:
       matrix:
-        runs-on: [ubuntu-24.04, macos-14]
+        runs-on: [ubuntu-24.04, ubuntu-24.04-arm, macos-14]
       fail-fast: false
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
