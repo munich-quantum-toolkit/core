@@ -11,7 +11,12 @@
 #include "mlir/Conversion/QIRToMQTDyn/QIRToMQTDyn.h"
 
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/Visitors.h"
 
+#include "llvm/Support/Casting.h"
+
+#include <iostream>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
@@ -39,16 +44,22 @@ public:
   explicit QIRToMQTDynTypeConverter(MLIRContext* ctx) {
     // Identity conversion
     addConversion([](Type type) { return type; });
-    // Pointer conversion
-    addConversion([ctx](LLVM::LLVMPointerType type) -> Type {
-      if (type.getAddressSpace() == 1) {
-        return dyn::QubitType::get(ctx);
-      }
-      return dyn::QubitRegisterType::get(ctx);
-    });
+    addConversion(
+        [](LLVM::LLVMPointerType type, SmallVectorImpl<Type>& results) {
+          results.push_back(type);
+          return success();
+        });
   }
 };
-
+namespace {
+// struct to store information for alloc register and qubits
+struct AllocRegister {
+  // dyn register
+  mqt::ir::dyn::AllocOp qReg;
+  // next index
+  int64_t index{};
+};
+} // namespace
 struct ConvertQIRLoad final : OpConversionPattern<LLVM::LoadOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -57,45 +68,77 @@ struct ConvertQIRLoad final : OpConversionPattern<LLVM::LoadOp> {
                   ConversionPatternRewriter& rewriter) const override {
 
     // erase the operation and use the operands as results
-    rewriter.replaceOp(op, adaptor.getOperands());
+    rewriter.replaceOp(op, adaptor.getOperands().front());
     return success();
   }
 };
 struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
   using OpConversionPattern::OpConversionPattern;
 
+  llvm::DenseMap<Value, Value>* operandMap;
+  AllocRegister* allocOp;
+  explicit ConvertQIRCall(TypeConverter& typeConverter, MLIRContext* context,
+                          llvm::DenseMap<Value, Value>& operandMap,
+                          AllocRegister& allocOp)
+      : OpConversionPattern(typeConverter, context), operandMap(&operandMap),
+        allocOp(&allocOp) {}
   LogicalResult
   matchAndRewrite(LLVM::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto fnName = op.getCallee();
     auto qubitType = dyn::QubitType::get(rewriter.getContext());
     auto qregType = dyn::QubitRegisterType::get(rewriter.getContext());
+    auto& map = *operandMap;
     auto operands = adaptor.getOperands();
-    if (fnName == "__quantum__rt__qubit_allocate_array") {
-      auto alloc =
-          rewriter.create<dyn::AllocOp>(op.getLoc(), qregType, operands);
-      rewriter.replaceOp(op, alloc->getResults());
-    } else if (fnName == "__catalyst__rt__array_get_element_ptr_1d") {
-      rewriter.replaceOpWithNewOp<dyn::ExtractOp>(op, qubitType,
-                                                  adaptor.getOperands());
 
+    // get the new operands
+    SmallVector<Value> newOperands;
+    newOperands.reserve(operands.size());
+    for (auto const& val : operands) {
+      if (map.contains(val)) {
+        newOperands.emplace_back(map[val]);
+      } else {
+        newOperands.emplace_back(val);
+      }
+    }
+    // match alloc register
+    if (fnName == "__quantum__rt__qubit_allocate_array") {
+      const auto newOp = rewriter.replaceOpWithNewOp<dyn::AllocOp>(
+          op, qregType, adaptor.getOperands());
+      operandMap->try_emplace(op->getResult(0), newOp->getResult(0));
+    }
+    // match alloc qubit
+    else if (fnName == "__quantum__rt__qubit_allocate") {
+      const auto newOp = rewriter.replaceOpWithNewOp<dyn::ExtractOp>(
+          op, qubitType, allocOp->qReg, Value{},
+          IntegerAttr::get(rewriter.getIntegerType(64), allocOp->index++));
+      operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
+
+    }
+    // match extract qubit from register
+    else if (fnName == "__catalyst__rt__array_get_element_ptr_1d") {
+
+      const auto newOp = rewriter.replaceOpWithNewOp<dyn::ExtractOp>(
+          op, qubitType, newOperands);
+      operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
     } else if (fnName == "__quantum__qis__h__body") {
       rewriter.replaceOpWithNewOp<dyn::HOp>(
           op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
-          adaptor.getOperands(), ValueRange{}, ValueRange{});
+          newOperands, ValueRange{}, ValueRange{});
     } else if (fnName == "__quantum__qis__cnot__body") {
       rewriter.replaceOpWithNewOp<dyn::HOp>(
           op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
-          adaptor.getOperands().front(), adaptor.getOperands().back(),
-          ValueRange{});
+          newOperands.front(), newOperands.back(), ValueRange{});
     } else if (fnName == "__quantum__qis__m__body") {
       SmallVector<Type> newBits(adaptor.getOperands().size(),
                                 IntegerType::get(rewriter.getContext(), 1));
-      rewriter.replaceOpWithNewOp<dyn::MeasureOp>(op, newBits,
-                                                  adaptor.getOperands());
-    } else if (fnName == "__quantum__rt__qubit_release_array") {
-      rewriter.replaceOpWithNewOp<dyn::DeallocOp>(
-          op, adaptor.getOperands().front());
+      auto newOp =
+          rewriter.replaceOpWithNewOp<dyn::MeasureOp>(op, newBits, newOperands);
+      operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
+    }
+    // match dealloc register
+    else if (fnName == "__quantum__rt__qubit_release_array") {
+      rewriter.replaceOpWithNewOp<dyn::DeallocOp>(op, newOperands.front());
     } else {
       rewriter.eraseOp(op);
     }
@@ -117,19 +160,77 @@ struct ConvertQIRFunc final : OpConversionPattern<LLVM::LLVMFuncOp> {
 
 struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
   using QIRToMQTDynBase::QIRToMQTDynBase;
+
+  // create and return an alloc register if it does not exist already
+  static std::optional<mqt::ir::dyn::AllocOp>
+  ensureRegisterAllocation(Operation* op) {
+    int64_t num = 0;
+    // walk through the IR and count all qubit allocate operations
+    auto result = op->walk([&](Operation* op) {
+      if (auto call = llvm::dyn_cast<LLVM::CallOp>(op)) {
+        auto name = call.getCallee();
+
+        // stop if there is an allocate array operation
+        if (name == "__quantum__rt__qubit_allocate_array") {
+          return WalkResult::interrupt();
+        }
+        if (name == "__quantum__rt__qubit_allocate") {
+          num++;
+        }
+      }
+      return mlir::WalkResult::advance();
+    });
+    // if there was no alloc register registration, create one
+    if (!result.wasInterrupted() && num != 0) {
+      // find the 2nd block of the main function
+      auto module = llvm::dyn_cast<ModuleOp>(op);
+      auto func = module.lookupSymbol<func::FuncOp>("main");
+      auto& secondBlock = *(++func.getBlocks().begin());
+      OpBuilder builder(func.getBody());
+
+      // create the alloc register operation at the start of the block
+      builder.setInsertionPointToStart(&secondBlock);
+      auto allocOp = builder.create<mqt::ir::dyn::AllocOp>(
+          func->getLoc(),
+          mqt::ir::dyn::QubitRegisterType::get(module->getContext()), Value{},
+          builder.getI64IntegerAttr(num));
+
+      // create the dealloc operation at the end of the block
+      auto& ops = secondBlock.getOperations();
+      auto insertPoint = std::prev(ops.end(), 2);
+      builder.setInsertionPoint(&*insertPoint);
+      builder.create<dyn::DeallocOp>(func->getLoc(), allocOp);
+
+      return allocOp;
+    }
+    // otherwise return null
+    return std::nullopt;
+  }
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
+    // map each initial dyn qubit to its latest opt qubit
+    llvm::DenseMap<Value, Value> operandMap;
 
+    auto alloc = ensureRegisterAllocation(module).value_or(nullptr);
+
+    AllocRegister registerInfo{.qReg = alloc, .index = 0};
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     QIRToMQTDynTypeConverter typeConverter(context);
     target.addLegalDialect<dyn::MQTDynDialect>();
-    target.addIllegalDialect<LLVM::LLVMDialect>();
+    target.addIllegalOp<LLVM::CallOp>();
+    target.addIllegalOp<LLVM::LoadOp>();
     target.addLegalOp<LLVM::ConstantOp>();
-    patterns.add<ConvertQIRFunc>(typeConverter, context);
+    target.addLegalOp<LLVM::GlobalOp>();
+    target.addLegalOp<LLVM::AddressOfOp>();
+    target.addLegalOp<LLVM::LLVMFuncOp>();
+    target.addLegalOp<LLVM::ZeroOp>();
+    // patterns.add<ConvertQIRFunc>(typeConverter, context);
+
     patterns.add<ConvertQIRLoad>(typeConverter, context);
-    patterns.add<ConvertQIRCall>(typeConverter, context);
+    patterns.add<ConvertQIRCall>(typeConverter, context, operandMap,
+                                 registerInfo);
 
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
