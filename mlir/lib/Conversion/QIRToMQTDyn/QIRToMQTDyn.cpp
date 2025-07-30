@@ -112,8 +112,10 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
         {"z", "ZOp"},
         {"s", "SOp"},
         {"sdg", "SdgOp"},
-        {"t", "TdgOp"},
+        {"t", "TOp"},
+        {"tdg", "TdgOp"},
         {"v", "VOp"},
+        {"v", "VdgOp"},
         {"sx", "SXOp"},
         {"sxdg", "SXdgOp"},
         {"swap", "SWAPOp"},
@@ -122,8 +124,7 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
         {"peres", "PeresOp"},
         {"peresdg", "PeresdgOp"},
         {"dcx", "DCXOp"},
-        {"ecr", "ECROp"},
-    };
+        {"ecr", "ECROp"}};
     // check if it is a simple gate
     if (GATE_NAMES.find(name.str()) == GATE_NAMES.end()) {
       return false;
@@ -145,7 +146,9 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     ADD_CONVERT_SIMPLE_GATE(TOp)
     ADD_CONVERT_SIMPLE_GATE(TdgOp)
     ADD_CONVERT_SIMPLE_GATE(VOp)
+    ADD_CONVERT_SIMPLE_GATE(VdgOp)
     ADD_CONVERT_SIMPLE_GATE(SXOp)
+    ADD_CONVERT_SIMPLE_GATE(SXdgOp)
     ADD_CONVERT_SIMPLE_GATE(SWAPOp)
     ADD_CONVERT_SIMPLE_GATE(iSWAPOp)
     ADD_CONVERT_SIMPLE_GATE(iSWAPdgOp)
@@ -162,26 +165,25 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
                                    LLVM::CallOp& op,
                                    ConversionPatternRewriter& rewriter,
                                    StringRef& name) {
-    static std::map<std::string, std::string> singleRotationGates = {
+    static const std::map<std::string, std::string> SINGLE_ROTATION_GATES = {
         {"p", "POp"},     {"rx", "RXOp"},   {"ry", "RYOp"},
         {"rz", "RZOp"},   {"rxx", "RXXOp"}, {"ryy", "RYYOp"},
         {"rzz", "RZZOp"}, {"rzx", "RZXOp"}
 
     };
-    static std::map<std::string, std::string> doubleRotationGates = {
+    static const std::map<std::string, std::string> DOUBLE_ROTATION_GATES = {
         {"u2", "U2Op"}, {"xxminusyy", "XXminusYY"}, {"XXPLUSYY", "XXplusYY"}
 
     };
     std::string gateName;
     size_t rotationCount = 0;
     // check if it is rotation gate and get the number of degrees
-    if (singleRotationGates.find(name.str()) != singleRotationGates.end()) {
-      gateName = singleRotationGates.at(name.str());
-
+    if (SINGLE_ROTATION_GATES.find(name.str()) != SINGLE_ROTATION_GATES.end()) {
+      gateName = SINGLE_ROTATION_GATES.at(name.str());
       rotationCount = 1;
-    } else if (doubleRotationGates.find(name.str()) !=
-               doubleRotationGates.end()) {
-      gateName = doubleRotationGates.at(name.str());
+    } else if (DOUBLE_ROTATION_GATES.find(name.str()) !=
+               DOUBLE_ROTATION_GATES.end()) {
+      gateName = DOUBLE_ROTATION_GATES.at(name.str());
       rotationCount = 2;
     } else if (name.str() == "u") {
       gateName = "UOp";
@@ -214,6 +216,7 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     ADD_CONVERT_ROTATION_GATE(RZXOp)
     ADD_CONVERT_ROTATION_GATE(XXminusYY)
     ADD_CONVERT_ROTATION_GATE(XXplusYY)
+
     return true;
   }
 
@@ -260,7 +263,7 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
       operandMap->try_emplace(op->getResult(0), newOp->getResult(0));
 
     }
-    // match alloc qubit
+    // match alloc qubit using the given allocOp and the index
     else if (fnName == "__quantum__rt__qubit_allocate") {
       const auto newOp = rewriter.replaceOpWithNewOp<dyn::ExtractOp>(
           op, qubitType, allocOp->qReg, Value{},
@@ -286,7 +289,9 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     // match dealloc register
     else if (fnName == "__quantum__rt__qubit_release_array") {
       rewriter.replaceOpWithNewOp<dyn::DeallocOp>(op, newOperands.front());
-    } else {
+    }
+
+    else {
       // get the gate name and the number of control qubits
       auto gateName(fnName->substr(16).drop_back(6));
       const size_t ctrlQubitCount = countControlQubits(gateName);
@@ -303,18 +308,24 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
           std::make_move_iterator(newOperands.end()));
       newOperands.resize(newOperands.size() - ctrlQubitCount);
 
-      // check and match simple gate operations
-      if (convertSimpleGates(newOperands, ctrlQubits, op, rewriter, gateName)) {
+      // check and match gate operations
+      if (gateName == "gphase") {
+        rewriter.replaceOpWithNewOp<dyn::GPhaseOp>(
+            op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, newOperands,
+            ValueRange{}, ctrlQubits, ValueRange{});
+      } else if (gateName == "barrier") {
+        rewriter.replaceOpWithNewOp<dyn::BarrierOp>(
+            op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
+            newOperands, ctrlQubits, ValueRange{});
+      } else if (convertSimpleGates(newOperands, ctrlQubits, op, rewriter,
+                                    gateName) ||
+                 convertRotationGates(newOperands, ctrlQubits, op, rewriter,
+                                      gateName)) {
         return success();
       }
-      // check and match rotation gate operations
-      if (convertRotationGates(newOperands, ctrlQubits, op, rewriter,
-                               gateName)) {
-        return success();
-      }
+
       // otherwise erase the operation
       rewriter.eraseOp(op);
-      return success();
     }
     return success();
   }
