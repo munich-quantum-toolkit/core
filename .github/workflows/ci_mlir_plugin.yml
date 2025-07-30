@@ -49,6 +49,7 @@ jobs:
             sudo apt-get install -y libmlir-${{ matrix.llvm-version }}-dev \
                                     mlir-${{ matrix.llvm-version }}-tools \
                                     clang-${{ matrix.llvm-version}} \
+                                    clang-tools-${{ matrix.llvm-version }} \
              || exit 1
           else
             echo "Installation from script failed."
@@ -86,10 +87,6 @@ jobs:
           prepend_symlinks_to_path: false
           override_cache_key: mlir-plugin-${{ matrix.runs-on }}-llvm-${{ matrix.llvm-version }}
 
-      # set up mold as linker for faster C++ builds
-      #      - name: Set up mold as linker
-      #        uses: rui314/setup-mold@v1
-
       # Set up uv for faster Python package management
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v6
@@ -103,101 +100,6 @@ jobs:
         run: uv sync --verbose --active
 
         # Print shared library dependencies for the plugin
-      - name: Print shared library dependencies for mqt-core-catalyst-plugin
-        run: |
-          if [ "$(uname)" = "Linux" ]; then
-              ldd .venv/lib/python3.13/site-packages/mqt/core/plugins/catalyst/mqt-core-catalyst-plugin.so || true
-          elif [ "$(uname)" = "Darwin" ]; then
-              otool -l .venv/lib/python3.13/site-packages/mqt/core/plugins/catalyst/mqt-core-catalyst-plugin.dylib || true
-          fi
-
-      # Print shared library dependencies for Catalyst
-      - name: Print shared library dependencies for Catalyst
-        run: |
-          if [ "$(uname)" = "Linux" ]; then
-              ldd $(which catalyst) || true
-          elif [ "$(uname)" = "Darwin" ]; then
-              otool -l $(which catalyst) || true
-          fi
-
-      # Run the plugin tests
-      - name: Run pytest for mqt-core-catalyst-plugin
-        working-directory: plugins/catalyst
-        run: python -m pytest -s --verbose
-
-  cpp-test-mlir-catalyst-plugin-source:
-    name: 🧩 Test MLIR Catalyst Plugin on ${{ matrix.runs-on }} from Source
-    runs-on: ${{ matrix.runs-on }}
-    strategy:
-      matrix:
-        runs-on: [ubuntu-24.04, macos-14]
-      fail-fast: false
-    env:
-      CMAKE_BUILD_PARALLEL_LEVEL: 4
-      CTEST_PARALLEL_LEVEL: 4
-      FORCE_COLOR: 3
-    steps:
-      # Check out the repository
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      # set up gcc as compiler
-      - name: Set up GCC as compiler
-        if: runner.os == 'Linux'
-        run: |
-          echo "C_COMPILER=gcc-14" >> $GITHUB_ENV
-          echo "CXX_COMPILER=g++-14" >> $GITHUB_ENV
-          echo "CC=gcc-14" >> $GITHUB_ENV
-          echo "CXX=g++-14" >> $GITHUB_ENV
-          echo "ENABLE_LLD=OFF" >> $GITHUB_ENV
-
-      # set up ccache for faster C++ builds
-      - name: Setup ccache
-        uses: Chocobo1/setup-ccache-action@v1
-        with:
-          prepend_symlinks_to_path: false
-          override_cache_key: mlir-plugin-${{ matrix.runs-on }}-source
-
-      # set up mold as linker for faster C++ builds
-      #      - name: Set up mold as linker
-      #        uses: rui314/setup-mold@v1
-
-      # Set up uv for faster Python package management
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          python-version: 3.13
-          activate-environment: true
-
-      # Check out the Catalyst repository
-      - name: Checkout catalyst
-        uses: actions/checkout@v4
-        with:
-          repository: PennyLaneAI/catalyst
-          path: catalyst
-          submodules: "recursive"
-          fetch-depth: 1
-
-      # Install Catalyst
-      - name: Install Catalyst
-        working-directory: catalyst
-        run: |
-          uv pip install -r requirements.txt
-          make mlir
-
-      - name: Set LLVM and MLIR paths
-        working-directory: catalyst
-        run: |
-          echo "MLIR_DIR=$(pwd)/mlir/llvm-project/build/lib/cmake/mlir" >> $GITHUB_ENV
-          echo "LLVM_DIR=$(pwd)/mlir/llvm-project/build/lib/cmake/llvm" >> $GITHUB_ENV
-
-      # Build the plugin package
-      - name: Build mqt-core-catalyst-plugin
-        working-directory: plugins/catalyst
-        run: uv sync --verbose --active
-
-      # Print shared library dependencies for the plugin
       - name: Print shared library dependencies for mqt-core-catalyst-plugin
         run: |
           if [ "$(uname)" = "Linux" ]; then
@@ -252,10 +154,6 @@ jobs:
         with:
           prepend_symlinks_to_path: false
           override_cache_key: mlir-plugin-${{ matrix.runs-on }}-exact-mlir
-
-      # set up mold as linker for faster C++ builds
-      #      - name: Set up mold as linker
-      #        uses: rui314/setup-mold@v1
 
       # Set up uv for faster Python package management
       - name: Install the latest version of uv
