@@ -8,10 +8,17 @@
  * Licensed under the MIT License
  */
 
+// macro to add the conversion pattern from any dyn gate operation to the same
+// gate operation in the opt dialect
+
+#define ADD_CONVERT_PATTERN(gate)                                              \
+  patterns.add<ConvertMQTDynGateOpQIR<dyn::gate>>(typeConverter, context);
+
 #include "mlir/Conversion/MQTDynToQIR/MQTDynToQIR.h"
 
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -42,12 +49,12 @@ public:
     addConversion([](Type type) { return type; });
     // Qubit conversion
     addConversion([ctx](dyn::QubitType /*type*/) -> Type {
-      return LLVM::LLVMPointerType::get(ctx, 1);
+      return LLVM::LLVMPointerType::get(ctx);
     });
 
     // QregType conversion
     addConversion([ctx](dyn::QubitRegisterType /*type*/) -> Type {
-      return LLVM::LLVMPointerType::get(ctx, 2);
+      return LLVM::LLVMPointerType::get(ctx);
     });
   }
 };
@@ -69,39 +76,7 @@ LLVM::LLVMFuncOp ensureFunctionDeclaration(PatternRewriter& rewriter,
 
   return cast<LLVM::LLVMFuncOp>(fnDecl);
 }
-void addBlocks(ModuleOp& module) {
-  // get main func op
-  auto func = module.lookupSymbol<func::FuncOp>("main");
 
-  // get the existing block
-  auto* entryBlock = &func.front();
-  mlir::OpBuilder builder(func.getBody());
-
-  // create 2 other blocks
-  mlir::Block* mainBlock = builder.createBlock(&func.getBody());
-  mlir::Block* endBlock = builder.createBlock(&func.getBody());
-
-  // add jump from main to end block
-  builder.setInsertionPointToEnd(mainBlock);
-  builder.create<cf::BranchOp>(func->getLoc(), endBlock);
-
-  // move the returnOp from the entry block to the endBlock
-  builder.setInsertionPointToEnd(endBlock);
-  auto& ops = entryBlock->getOperations();
-  auto& toOps = endBlock->getOperations();
-  auto lastOpIt = std::prev(ops.end());
-  toOps.splice(toOps.end(), ops, lastOpIt);
-
-  // add jump from entry to main block
-  builder.setInsertionPointToEnd(entryBlock);
-  builder.create<cf::BranchOp>(func->getLoc(), mainBlock);
-
-  // move every operation from the entry block except the jump to the main block
-  if (!entryBlock->empty()) {
-    mainBlock->getOperations().splice(mainBlock->begin(), ops, ops.begin(),
-                                      std::prev(ops.end()));
-  }
-}
 } // namespace
 
 struct ConvertMQTDynAllocQIR final : OpConversionPattern<dyn::AllocOp> {
@@ -115,7 +90,7 @@ struct ConvertMQTDynAllocQIR final : OpConversionPattern<dyn::AllocOp> {
     // create name and signature of the new function
     StringRef fnName = "__quantum__rt__qubit_allocate_array";
     auto qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMPointerType::get(ctx, 2), IntegerType::get(ctx, 64));
+        LLVM::LLVMPointerType::get(ctx), IntegerType::get(ctx, 64));
 
     // get the function declaration
     auto fnDecl = ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
@@ -142,7 +117,7 @@ struct ConvertMQTDynDeallocQIR final : OpConversionPattern<dyn::DeallocOp> {
     // create name and signature of the new function
     StringRef fnName = "__quantum__rt__qubit_release_array";
     auto qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx, 2));
+        LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
 
     // get the function declaration
     auto fnDecl = ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
@@ -164,8 +139,8 @@ struct ConvertMQTDynExtractQIR final : OpConversionPattern<dyn::ExtractOp> {
     // create name and signature of the new function
     StringRef fnName = "__catalyst__rt__array_get_element_ptr_1d";
     auto qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMPointerType::get(ctx, 1),
-        {LLVM::LLVMPointerType::get(ctx, 2), IntegerType::get(ctx, 64)});
+        LLVM::LLVMPointerType::get(ctx),
+        {LLVM::LLVMPointerType::get(ctx), IntegerType::get(ctx, 64)});
 
     // get the function declaration
     auto fnDecl = ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
@@ -184,7 +159,7 @@ struct ConvertMQTDynExtractQIR final : OpConversionPattern<dyn::ExtractOp> {
 
     // replace the old operation with a loadOp
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
-        op, LLVM::LLVMPointerType::get(ctx, 1), elemPtr);
+        op, LLVM::LLVMPointerType::get(ctx), elemPtr);
 
     return success();
   }
@@ -199,49 +174,52 @@ struct ConvertMQTDynGateOpQIR final : OpConversionPattern<MQTGateDynOp> {
                   ConversionPatternRewriter& rewriter) const override {
     Location loc = op.getLoc();
     MLIRContext* ctx = rewriter.getContext();
-    const auto& dynInQubitsValues = adaptor.getInQubits();
-    const auto& dynPosCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    const auto& dynNegCtrlQubitsValues = adaptor.getNegCtrlInQubits();
-    SmallVector<Type> argTypes;
-    argTypes.insert(argTypes.end(), dynInQubitsValues.getTypes().begin(),
-                    dynInQubitsValues.getTypes().end());
-    argTypes.insert(argTypes.end(), dynPosCtrlQubitsValues.getTypes().begin(),
-                    dynPosCtrlQubitsValues.getTypes().end());
-    argTypes.insert(argTypes.end(), dynNegCtrlQubitsValues.getTypes().begin(),
-                    dynNegCtrlQubitsValues.getTypes().end());
+    const auto& params = adaptor.getParams();
+    const auto& inQubits = adaptor.getInQubits();
+    const auto& posCtrlQubits = adaptor.getPosCtrlInQubits();
+    const auto& negCtrlQubits = adaptor.getNegCtrlInQubits();
 
-    SmallVector<Value> dynQubitsValues;
-    dynQubitsValues.reserve(dynInQubitsValues.size() +
-                            dynPosCtrlQubitsValues.size() +
-                            dynNegCtrlQubitsValues.size());
-    dynQubitsValues.append(dynInQubitsValues.begin(), dynInQubitsValues.end());
-    dynQubitsValues.append(dynPosCtrlQubitsValues.begin(),
-                           dynPosCtrlQubitsValues.end());
-    dynQubitsValues.append(dynNegCtrlQubitsValues.begin(),
-                           dynNegCtrlQubitsValues.end());
+    SmallVector<Type> types;
+    types.reserve(params.size() + inQubits.size() + posCtrlQubits.size() +
+                  negCtrlQubits.size());
+    types.append(params.getTypes().begin(), params.getTypes().begin());
+    types.append(inQubits.getTypes().begin(), inQubits.getTypes().begin());
+    types.append(posCtrlQubits.getTypes().begin(),
+                 posCtrlQubits.getTypes().begin());
+    types.append(negCtrlQubits.getTypes().begin(),
+                 negCtrlQubits.getTypes().begin());
+    SmallVector<Value> operands;
+    operands.reserve(params.size() + inQubits.size() + posCtrlQubits.size() +
+                     negCtrlQubits.size());
+    operands.append(params.begin(), params.end());
+    operands.append(inQubits.begin(), inQubits.end());
+    operands.append(posCtrlQubits.begin(), posCtrlQubits.end());
+    operands.append(negCtrlQubits.begin(), negCtrlQubits.end());
 
     // get the name of the gate
     StringRef name = op->getName().getStringRef().split('.').second;
     std::string fnName;
+    auto ctrQubits = posCtrlQubits.size() + negCtrlQubits.size();
+    fnName.insert(0, ctrQubits, 'c');
 
     // check if the gate has any control qubits
-    if (dynPosCtrlQubitsValues.size() == 0 &&
-        dynNegCtrlQubitsValues.size() == 0) {
-      fnName = ("__quantum__qis__" + name + "__body").str();
+    if (name == "x" && ctrQubits == 1) {
+      fnName = ("__quantum__qis__" + fnName + "not__body");
     } else {
-      fnName = "__quantum__qis__cnot__body";
+      fnName = ("__quantum__qis__" + fnName + name + "__body").str();
     }
 
     // create the signature of the function
     auto qirSignature =
-        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argTypes);
+        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), types);
 
     // get the function declaration
     auto fnDecl = ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
     // creat the new operation and erase the old one
-    rewriter.create<LLVM::CallOp>(loc, fnDecl, dynQubitsValues);
+    rewriter.create<LLVM::CallOp>(loc, fnDecl, operands);
     rewriter.eraseOp(op);
+
     return success();
   }
 };
@@ -249,6 +227,14 @@ struct ConvertMQTDynGateOpQIR final : OpConversionPattern<MQTGateDynOp> {
 struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
   using OpConversionPattern::OpConversionPattern;
 
+  SmallVector<Operation*>* measures;
+  Operation* constantOp;
+  explicit ConvertMQTDynMeasureQIR(TypeConverter& typeConverter,
+                                   MLIRContext* context,
+                                   SmallVector<Operation*>& measures,
+                                   Operation* constantOp)
+      : OpConversionPattern(typeConverter, context), measures(&measures),
+        constantOp(constantOp) {}
   LogicalResult
   matchAndRewrite(dyn::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -257,38 +243,119 @@ struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
     // create name and signature of the new function
     StringRef fnName = "__quantum__qis__m__body";
     auto qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx, 1));
+        LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx));
 
     // get the function declaration
     auto fnDecl = ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
     // replace the old operation with new callOp
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
-                                              adaptor.getInQubits());
+    auto newOp = rewriter.replaceOpWithNewOp<LLVM::CallOp>(
+        op, fnDecl, adaptor.getInQubits());
+    fnName = "__quantum__rt__result_record_output";
+    qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx),
+        {LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx)});
+    fnDecl = ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
+    rewriter.create<LLVM::CallOp>(
+        op.getLoc(), fnDecl,
+        ValueRange{newOp->getResult(0), measures->front()->getResult(0)});
+    measures->erase(&measures->front());
+
+    fnName = "__quantum__rt__result_update_reference_count";
+    qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx),
+        {LLVM::LLVMPointerType::get(ctx), IntegerType::get(ctx, 32)});
+    fnDecl = ensureFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    rewriter.create<LLVM::CallOp>(
+        op.getLoc(), fnDecl,
+        ValueRange{newOp->getResult(0), constantOp->getResult(0)});
     return success();
   }
 };
 
 struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
   using MQTDynToQIRBase::MQTDynToQIRBase;
+
+  // create and return an alloc register if it does not exist already
+  static Operation* findMeasureStores(Operation* op,
+                                      SmallVector<Operation*>& operations) {
+
+    auto module = llvm::dyn_cast<ModuleOp>(op);
+    auto func = module.lookupSymbol<LLVM::LLVMFuncOp>("main");
+    auto& firstBlock = *(func.getBlocks().begin());
+    Operation* result = nullptr;
+    // walk through the IR and count all qubit allocate operations
+    firstBlock.walk([&](mlir::Operation* op) {
+      if (auto addressOfOp = llvm::dyn_cast<LLVM::AddressOfOp>(op)) {
+        operations.emplace_back(addressOfOp);
+      } // stop if there is an allocate array operation
+
+      if (auto constantOp = llvm::dyn_cast<LLVM::ConstantOp>(op)) {
+        if (auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue())) {
+          if (intAttr.getInt() == -1) {
+            result = op;
+          }
+        }
+      }
+    });
+    // if there was no alloc register registration, create one
+
+    // otherwise return null
+    return result;
+  }
+
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
-    auto moduleOp = llvm::dyn_cast<ModuleOp>(module);
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     MQTDynToQIRTypeConverter typeConverter(context);
 
     target.addIllegalDialect<dyn::MQTDynDialect>();
     target.addLegalDialect<LLVM::LLVMDialect>();
-    addBlocks(moduleOp);
+
+    SmallVector<Operation*> operations;
+    auto* op = findMeasureStores(module, operations);
     patterns.add<ConvertMQTDynAllocQIR>(typeConverter, context);
     patterns.add<ConvertMQTDynDeallocQIR>(typeConverter, context);
     patterns.add<ConvertMQTDynExtractQIR>(typeConverter, context);
-    patterns.add<ConvertMQTDynMeasureQIR>(typeConverter, context);
-    patterns.add<ConvertMQTDynGateOpQIR<dyn::HOp>>(typeConverter, context);
-    patterns.add<ConvertMQTDynGateOpQIR<dyn::XOp>>(typeConverter, context);
+    patterns.add<ConvertMQTDynMeasureQIR>(typeConverter, context, operations,
+                                          op);
+    ADD_CONVERT_PATTERN(GPhaseOp)
+    ADD_CONVERT_PATTERN(IOp)
+    ADD_CONVERT_PATTERN(BarrierOp)
+    ADD_CONVERT_PATTERN(HOp)
+    ADD_CONVERT_PATTERN(XOp)
+    ADD_CONVERT_PATTERN(YOp)
+    ADD_CONVERT_PATTERN(ZOp)
+    ADD_CONVERT_PATTERN(SOp)
+    ADD_CONVERT_PATTERN(SdgOp)
+    ADD_CONVERT_PATTERN(TOp)
+    ADD_CONVERT_PATTERN(TdgOp)
+    ADD_CONVERT_PATTERN(VOp)
+    ADD_CONVERT_PATTERN(VdgOp)
+    ADD_CONVERT_PATTERN(UOp)
+    ADD_CONVERT_PATTERN(U2Op)
+    ADD_CONVERT_PATTERN(POp)
+    ADD_CONVERT_PATTERN(SXOp)
+    ADD_CONVERT_PATTERN(SXdgOp)
+    ADD_CONVERT_PATTERN(RXOp)
+    ADD_CONVERT_PATTERN(RYOp)
+    ADD_CONVERT_PATTERN(RZOp)
+    ADD_CONVERT_PATTERN(SWAPOp)
+    ADD_CONVERT_PATTERN(iSWAPOp)
+    ADD_CONVERT_PATTERN(iSWAPdgOp)
+    ADD_CONVERT_PATTERN(PeresOp)
+    ADD_CONVERT_PATTERN(PeresdgOp)
+    ADD_CONVERT_PATTERN(DCXOp)
+    ADD_CONVERT_PATTERN(ECROp)
+    ADD_CONVERT_PATTERN(RXXOp)
+    ADD_CONVERT_PATTERN(RYYOp)
+    ADD_CONVERT_PATTERN(RZZOp)
+    ADD_CONVERT_PATTERN(RZXOp)
+    ADD_CONVERT_PATTERN(XXminusYY)
+    ADD_CONVERT_PATTERN(XXplusYY)
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
     }

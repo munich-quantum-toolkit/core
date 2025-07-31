@@ -26,6 +26,7 @@
 
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 
+#include <algorithm>
 #include <cctype>
 #include <iterator>
 #include <llvm/Support/Casting.h>
@@ -54,21 +55,16 @@ using namespace mlir;
 
 class QIRToMQTDynTypeConverter final : public TypeConverter {
 public:
-  explicit QIRToMQTDynTypeConverter(MLIRContext* ctx) {
+  explicit QIRToMQTDynTypeConverter(MLIRContext* /*ctx*/) {
     // Identity conversion
     addConversion([](Type type) { return type; });
-    addConversion(
-        [](LLVM::LLVMPointerType type, SmallVectorImpl<Type>& results) {
-          results.push_back(type);
-          return success();
-        });
   }
 };
 namespace {
 // struct to store information for alloc register and qubits
 struct AllocRegister {
   // dyn register
-  mqt::ir::dyn::AllocOp qReg;
+  dyn::AllocOp qReg;
   // next index
   int64_t index{};
 };
@@ -191,6 +187,8 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     } else {
       return false;
     }
+    // reminder: not matched u1 and u3 gates
+    // u3 == UOp?
 
     // extract the degrees from the operand list
     SmallVector<Value> rotationDegrees;
@@ -220,19 +218,6 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     return true;
   }
 
-  // count how many control qubits are used
-  static size_t countControlQubits(const StringRef& str) {
-    size_t count = 0;
-    for (char ch : str) {
-      if (ch == 'c') {
-        ++count;
-      } else {
-        break;
-      }
-    }
-    return count;
-  }
-
   LogicalResult
   matchAndRewrite(LLVM::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -243,7 +228,9 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     auto& map = *operandMap;
     const auto operands = adaptor.getOperands();
 
-    // get the new operands
+    // get the new operands from the operandMap
+    // workaround to avoid unrealized conversion; there is probably a better
+    // solution
     SmallVector<Value> newOperands;
     newOperands.reserve(operands.size());
     for (auto const& val : operands) {
@@ -292,9 +279,14 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     }
 
     else {
-      // get the gate name and the number of control qubits
+      // remove the prefix and the suffix of the gate name
       auto gateName(fnName->substr(16).drop_back(6));
-      const size_t ctrlQubitCount = countControlQubits(gateName);
+
+      // check how many control qubits are used by counting the number of
+      // leading c's
+      const size_t ctrlQubitCount =
+          std::ranges::find_if(gateName, [](char ch) { return ch != 'c'; }) -
+          gateName.begin();
 
       // remove the control qubits from the name
       gateName = gateName.substr(ctrlQubitCount);
@@ -308,19 +300,22 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
           std::make_move_iterator(newOperands.end()));
       newOperands.resize(newOperands.size() - ctrlQubitCount);
 
-      // check and match gate operations
+      // try to match and replace gate operations
       if (gateName == "gphase") {
         rewriter.replaceOpWithNewOp<dyn::GPhaseOp>(
             op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, newOperands,
             ValueRange{}, ctrlQubits, ValueRange{});
-      } else if (gateName == "barrier") {
+        return success();
+      }
+      if (gateName == "barrier") {
         rewriter.replaceOpWithNewOp<dyn::BarrierOp>(
             op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
             newOperands, ctrlQubits, ValueRange{});
-      } else if (convertSimpleGates(newOperands, ctrlQubits, op, rewriter,
-                                    gateName) ||
-                 convertRotationGates(newOperands, ctrlQubits, op, rewriter,
-                                      gateName)) {
+        return success();
+      }
+      if (convertSimpleGates(newOperands, ctrlQubits, op, rewriter, gateName) ||
+          convertRotationGates(newOperands, ctrlQubits, op, rewriter,
+                               gateName)) {
         return success();
       }
 
@@ -331,25 +326,12 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
   }
 };
 
-struct ConvertQIRFunc final : OpConversionPattern<LLVM::LLVMFuncOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(LLVM::LLVMFuncOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    // erase the operation
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
 struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
   using QIRToMQTDynBase::QIRToMQTDynBase;
 
   // create and return an alloc register if it does not exist already
-  static std::optional<mqt::ir::dyn::AllocOp>
-  ensureRegisterAllocation(Operation* op) {
-    int64_t num = 0;
+  static std::optional<dyn::AllocOp> ensureRegisterAllocation(Operation* op) {
+    int64_t requiredQubits = 0;
     // walk through the IR and count all qubit allocate operations
     const auto result = op->walk([&](Operation* op) {
       if (auto call = llvm::dyn_cast<LLVM::CallOp>(op)) {
@@ -359,14 +341,15 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
         if (name == "__quantum__rt__qubit_allocate_array") {
           return WalkResult::interrupt();
         }
+        // increment the counter for each allocate qubit operation
         if (name == "__quantum__rt__qubit_allocate") {
-          num++;
+          requiredQubits++;
         }
       }
       return mlir::WalkResult::advance();
     });
     // if there was no alloc register registration, create one
-    if (!result.wasInterrupted() && num != 0) {
+    if (!result.wasInterrupted() && requiredQubits != 0) {
       // find the 2nd block of the main function
       auto module = llvm::dyn_cast<ModuleOp>(op);
       auto func = module.lookupSymbol<LLVM::LLVMFuncOp>("main");
@@ -375,10 +358,9 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
 
       // create the alloc register operation at the start of the block
       builder.setInsertionPointToStart(&secondBlock);
-      auto allocOp = builder.create<mqt::ir::dyn::AllocOp>(
-          func->getLoc(),
-          mqt::ir::dyn::QubitRegisterType::get(module->getContext()), Value{},
-          builder.getI64IntegerAttr(num));
+      auto allocOp = builder.create<dyn::AllocOp>(
+          func->getLoc(), dyn::QubitRegisterType::get(module->getContext()),
+          Value{}, builder.getI64IntegerAttr(requiredQubits));
 
       // create the dealloc operation at the end of the block
       auto& ops = secondBlock.getOperations();
@@ -395,13 +377,15 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
     auto* module = getOperation();
     // map each initial dyn qubit to its latest opt qubit
     llvm::DenseMap<Value, Value> operandMap;
-
+    // check if there is an alloc register operation otherwise create one
     auto alloc = ensureRegisterAllocation(module).value_or(nullptr);
     AllocRegister registerInfo{.qReg = alloc, .index = 0};
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     QIRToMQTDynTypeConverter typeConverter(context);
     target.addLegalDialect<dyn::MQTDynDialect>();
+
+    // only convert the call and load operations
     target.addIllegalOp<LLVM::CallOp>();
     target.addIllegalOp<LLVM::LoadOp>();
 
