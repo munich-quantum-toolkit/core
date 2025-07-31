@@ -15,6 +15,7 @@
 #include <Quantum/IR/QuantumDialect.h>
 #include <Quantum/IR/QuantumOps.h>
 #include <cassert>
+#include <cstddef>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
