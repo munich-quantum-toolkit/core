@@ -9,6 +9,13 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [3.2.1] - 2025-08-01
+
+### Fixed
+
+- 🐛 Fix usage of `std::accumulate` ([#1089]) ([**@denialhaag**])
+- 🐛 Fix bug in DD package ([#1088]) ([**@denialhaag**])
+
 ## [3.2.0] - 2025-07-31
 
 ### Added
@@ -139,6 +146,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1089]: https://github.com/munich-quantum-toolkit/core/pull/1089
+[#1088]: https://github.com/munich-quantum-toolkit/core/pull/1088
 [#1076]: https://github.com/munich-quantum-toolkit/core/pull/1076
 [#1075]: https://github.com/munich-quantum-toolkit/core/pull/1075
 [#1047]: https://github.com/munich-quantum-toolkit/core/pull/1047
