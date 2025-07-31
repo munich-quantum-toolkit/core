@@ -17,7 +17,6 @@ def QIRToMQTDyn : Pass<"qir-to-mqtdyn"> {
   // Define dependent dialects
   let dependentDialects = [
     "::mqt::ir::dyn::MQTDynDialect",
-    "mlir::func::FuncDialect",
     "mlir::LLVM::LLVMDialect"
   ];
 }

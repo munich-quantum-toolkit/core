@@ -260,7 +260,7 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
       operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
     }
     // match extract qubit from register
-    else if (fnName == "__catalyst__rt__array_get_element_ptr_1d") {
+    else if (fnName == "__quantum__rt__array_get_element_ptr_1d") {
       const auto newOp = rewriter.replaceOpWithNewOp<dyn::ExtractOp>(
           op, qubitType, newOperands);
       operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
