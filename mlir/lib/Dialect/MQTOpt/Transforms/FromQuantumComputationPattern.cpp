@@ -358,25 +358,19 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
           // For unitary operations, we call the `createUnitaryOp` function. We
           // then have to update the `currentQubitVariables` vector with the new
           // qubit values.
-          std::vector<mlir::Value> inQubits(2);
-          if (o->getTargets().size() < 2) {
-            llvm::errs() << "Operation type: " << qc::toString(o->getType())
-                         << "\n"
-                         << "Number of Qubits: " << o->getNqubits() << "\n"
-                         << "Targets size:" << o->getTargets().size() << "\n";
-            inQubits[0] = currentQubitVariables[o->getTargets()[0]];
-          } else {
-            inQubits[0] = currentQubitVariables[o->getTargets()[0]];
-            inQubits[1] = currentQubitVariables[o->getTargets()[1]];
+          std::vector<mlir::Value> inQubits(o->getTargets().size());
+
+          for (size_t i = 0; i < o->getTargets().size(); i++) {
+            inQubits[i] = currentQubitVariables[o->getTargets()[i]];
           }
+
           UnitaryInterface newUnitaryOp = createUnitaryOp(
               op->getLoc(), o->getType(), inQubits, controlQubitsPositive,
               controlQubitsNegative, rewriter);
-          currentQubitVariables[o->getTargets()[0]] =
-              newUnitaryOp.getAllOutQubits()[0];
-          if (o->getTargets().size() > 1) {
-            currentQubitVariables[o->getTargets()[1]] =
-                newUnitaryOp.getAllOutQubits()[1];
+
+          for (size_t i = 0; i < o->getTargets().size(); i++) {
+            currentQubitVariables[o->getTargets()[i]] =
+                newUnitaryOp.getAllOutQubits()[i];
           }
           for (size_t i = 0; i < controlQubitsPositive.size(); i++) {
             currentQubitVariables[controlQubitIndicesPositive[i]] =
