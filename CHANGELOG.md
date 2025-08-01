@@ -13,8 +13,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
-- 🐛 Fix usage of `std::accumulate` ([#1089]) ([**@denialhaag**])
+- 🐛 Fix bug where lambda passed to `std::accumulate` incorrectly took the accumulator by reference instead of by value ([#1089]) ([**@denialhaag**])
 - 🐛 Fix bug in DD package ([#1088]) ([**@denialhaag**])
+
+you need to .
 
 ## [3.2.0] - 2025-07-31
 
