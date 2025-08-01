@@ -30,10 +30,6 @@ int main(const int argc, char** argv) {
   mqt::ir::dyn::registerMQTDynPasses();
   mqt::ir::registerMQTDynToMQTOptPasses();
   mqt::ir::registerMQTOptToMQTDynPasses();
-
-  mqt::ir::registerMQTDynToMQTOptPasses();
-  mqt::ir::registerMQTOptToMQTDynPasses();
-
   mqt::ir::registerMQTDynToQIRPasses();
   mqt::ir::registerQIRToMQTDynPasses();
 
