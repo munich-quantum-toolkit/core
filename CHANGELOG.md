@@ -9,6 +9,15 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [3.2.1] - 2025-08-01
+
+### Fixed
+
+- 🐛 Fix bug where lambda passed to `std::accumulate` incorrectly took the accumulator by reference instead of by value ([#1089]) ([**@denialhaag**])
+- 🐛 Fix bug in DD package ([#1088]) ([**@denialhaag**])
+
+you need to .
+
 ## [3.2.0] - 2025-07-31
 
 ### Added
@@ -129,7 +138,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.2.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.2.1...HEAD
+[3.2.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.2.1
 [3.2.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.2.0
 [3.1.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.1.0
 [3.0.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.0.2
@@ -139,6 +149,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1089]: https://github.com/munich-quantum-toolkit/core/pull/1089
+[#1088]: https://github.com/munich-quantum-toolkit/core/pull/1088
 [#1076]: https://github.com/munich-quantum-toolkit/core/pull/1076
 [#1075]: https://github.com/munich-quantum-toolkit/core/pull/1075
 [#1047]: https://github.com/munich-quantum-toolkit/core/pull/1047
