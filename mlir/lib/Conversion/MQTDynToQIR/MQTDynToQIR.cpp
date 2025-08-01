@@ -10,11 +10,12 @@
 
 // macro to add the conversion pattern from any dyn gate operation to a llvm
 // call operation that adheres to the qir specification
-#include "mlir/IR/Visitors.h"
+
 #define ADD_CONVERT_PATTERN(gate)                                              \
   patterns.add<ConvertMQTDynGateOpQIR<dyn::gate>>(typeConverter, context);
 
 #include "mlir/Conversion/MQTDynToQIR/MQTDynToQIR.h"
+
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 
 #include <llvm/ADT/SmallVector.h>
@@ -30,6 +31,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -191,12 +193,12 @@ struct ConvertMQTDynGateOpQIR final : OpConversionPattern<MQTGateDynOp> {
     SmallVector<Type> types;
     types.reserve(params.size() + inQubits.size() + posCtrlQubits.size() +
                   negCtrlQubits.size());
-    types.append(params.getTypes().begin(), params.getTypes().begin());
-    types.append(inQubits.getTypes().begin(), inQubits.getTypes().begin());
+    types.append(params.getTypes().begin(), params.getTypes().end());
+    types.append(inQubits.getTypes().begin(), inQubits.getTypes().end());
     types.append(posCtrlQubits.getTypes().begin(),
-                 posCtrlQubits.getTypes().begin());
+                 posCtrlQubits.getTypes().end());
     types.append(negCtrlQubits.getTypes().begin(),
-                 negCtrlQubits.getTypes().begin());
+                 negCtrlQubits.getTypes().end());
 
     // concatenate all the values
     SmallVector<Value> operands;
@@ -295,14 +297,31 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
   // collect all the necessary operations for the measure operation conversion
   static Operation*
   collectMeasureConstants(Operation* op, SmallVector<Operation*>& operations) {
-    // get the first block in the main function
+
     auto module = llvm::dyn_cast<ModuleOp>(op);
-    auto func = module.lookupSymbol<LLVM::LLVMFuncOp>("main");
-    auto& firstBlock = *(func.getBlocks().begin());
+    LLVM::LLVMFuncOp main;
+
+    // find the main function
+    for (auto funcOp : module.getOps<LLVM::LLVMFuncOp>()) {
+      if (auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough")) {
+        for (auto attr : passthrough) {
+          if (auto strAttr = dyn_cast<StringAttr>(attr)) {
+
+            if (strAttr.getValue() == "entry_point") {
+
+              main = funcOp;
+            }
+          }
+        }
+      }
+    }
+
+    // get the first block in the main function
+    auto& firstBlock = *(main.getBlocks().begin());
     Operation* result = nullptr;
     // walk through the block and collect all addressOfOp and get the -1
     // constant value
-    firstBlock.walk([&](mlir::Operation* op) {
+    firstBlock.walk([&](Operation* op) {
       if (auto addressOfOp = llvm::dyn_cast<LLVM::AddressOfOp>(op)) {
         operations.emplace_back(addressOfOp);
       }
@@ -319,14 +338,29 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
 
     return result;
   }
+
   static void addInitialize(Operation* op) {
     // get the first block in the main function
     auto module = llvm::dyn_cast<ModuleOp>(op);
-    auto func = module.lookupSymbol<LLVM::LLVMFuncOp>("main");
-    auto& firstBlock = *(func.getBlocks().begin());
+    LLVM::LLVMFuncOp main;
+    // find the main function
+    for (auto funcOp : module.getOps<LLVM::LLVMFuncOp>()) {
+      if (auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough")) {
+        for (auto attr : passthrough) {
+          if (auto strAttr = dyn_cast<StringAttr>(attr)) {
+
+            if (strAttr.getValue() == "entry_point") {
+
+              main = funcOp;
+            }
+          }
+        }
+      }
+    }
+    auto& firstBlock = *(main.getBlocks().begin());
     Operation* zeroOperation = nullptr;
     // find the zeroOp
-    firstBlock.walk([&](mlir::Operation* op) {
+    firstBlock.walk([&](Operation* op) {
       if (auto zeroOp = llvm::dyn_cast<LLVM::ZeroOp>(op)) {
         zeroOperation = zeroOp;
         return WalkResult::interrupt();
@@ -334,7 +368,7 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
       return WalkResult::advance();
     });
     // set the builder to the 2nd last operation in the first block
-    OpBuilder builder(func.getBody());
+    OpBuilder builder(main.getBody());
     auto& ops = firstBlock.getOperations();
     const auto insertPoint = std::prev(ops.end(), 1);
     builder.setInsertionPoint(&*insertPoint);

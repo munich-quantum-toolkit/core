@@ -62,10 +62,10 @@ public:
 };
 namespace {
 // struct to store information for alloc register and qubits
-struct AllocRegister {
+struct AllocRegisterData {
   // dyn register
   dyn::AllocOp qReg;
-  // next index
+  // next free index
   int64_t index{};
 };
 } // namespace
@@ -86,10 +86,10 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
   using OpConversionPattern::OpConversionPattern;
 
   llvm::DenseMap<Value, Value>* operandMap;
-  AllocRegister* allocOp;
+  AllocRegisterData* allocOp;
   explicit ConvertQIRCall(TypeConverter& typeConverter, MLIRContext* context,
                           llvm::DenseMap<Value, Value>& operandMap,
-                          AllocRegister& allocOp)
+                          AllocRegisterData& allocOp)
       : OpConversionPattern(typeConverter, context), operandMap(&operandMap),
         allocOp(&allocOp) {}
 
@@ -111,7 +111,7 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
         {"t", "TOp"},
         {"tdg", "TdgOp"},
         {"v", "VOp"},
-        {"v", "VdgOp"},
+        {"vdg", "VdgOp"},
         {"sx", "SXOp"},
         {"sxdg", "SXdgOp"},
         {"swap", "SWAPOp"},
@@ -168,7 +168,7 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
 
     };
     static const std::map<std::string, std::string> DOUBLE_ROTATION_GATES = {
-        {"u2", "U2Op"}, {"xxminusyy", "XXminusYY"}, {"XXPLUSYY", "XXplusYY"}
+        {"u2", "U2Op"}, {"xxminusyy", "XXminusYY"}, {"xxplusyy", "XXplusYY"}
 
     };
     std::string gateName;
@@ -346,27 +346,42 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
           requiredQubits++;
         }
       }
-      return mlir::WalkResult::advance();
+      return WalkResult::advance();
     });
     // if there was no alloc register registration, create one
     if (!result.wasInterrupted() && requiredQubits != 0) {
-      // find the 2nd block of the main function
+
       auto module = llvm::dyn_cast<ModuleOp>(op);
-      auto func = module.lookupSymbol<LLVM::LLVMFuncOp>("main");
-      auto& secondBlock = *(++func.getBlocks().begin());
-      OpBuilder builder(func.getBody());
+
+      LLVM::LLVMFuncOp main;
+      // find the main function
+      for (auto funcOp : module.getOps<LLVM::LLVMFuncOp>()) {
+        if (auto passthrough =
+                funcOp->getAttrOfType<ArrayAttr>("passthrough")) {
+          for (auto attr : passthrough) {
+            if (auto strAttr = dyn_cast<StringAttr>(attr)) {
+              if (strAttr.getValue() == "entry_point") {
+                main = funcOp;
+              }
+            }
+          }
+        }
+      }
+      // get the 2nd block of the main function
+      auto& secondBlock = *(++main.getBlocks().begin());
+      OpBuilder builder(main.getBody());
 
       // create the alloc register operation at the start of the block
       builder.setInsertionPointToStart(&secondBlock);
       auto allocOp = builder.create<dyn::AllocOp>(
-          func->getLoc(), dyn::QubitRegisterType::get(module->getContext()),
+          main->getLoc(), dyn::QubitRegisterType::get(module->getContext()),
           Value{}, builder.getI64IntegerAttr(requiredQubits));
 
       // create the dealloc operation at the end of the block
       auto& ops = secondBlock.getOperations();
       const auto insertPoint = std::prev(ops.end(), 1);
       builder.setInsertionPoint(&*insertPoint);
-      builder.create<dyn::DeallocOp>(func->getLoc(), allocOp);
+      builder.create<dyn::DeallocOp>(main->getLoc(), allocOp);
       return allocOp;
     }
     // otherwise return null
@@ -379,7 +394,7 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
     llvm::DenseMap<Value, Value> operandMap;
     // check if there is an alloc register operation otherwise create one
     auto alloc = ensureRegisterAllocation(module).value_or(nullptr);
-    AllocRegister registerInfo{.qReg = alloc, .index = 0};
+    AllocRegisterData registerInfo{.qReg = alloc, .index = 0};
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     QIRToMQTDynTypeConverter typeConverter(context);

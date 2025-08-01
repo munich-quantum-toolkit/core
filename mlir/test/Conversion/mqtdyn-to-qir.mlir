@@ -6,18 +6,38 @@
 //
 // Licensed under the MIT License
 
+// RUN: quantum-opt %s -split-input-file --mqtdyn-to-qir | FileCheck %s
+
+// -----
+// TODO
 module {
-    func.func @bellConvertState() {
+    // CHECK-LABEL: llvm.func @testConvertAllocRegister()
+    llvm.func @testConvertAllocRegister() attributes {passthrough = ["entry_point"]}  {
+        %0 = llvm.mlir.zero : !llvm.ptr
+        llvm.br ^bb1
+      ^bb1:
 
-        %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-        %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-        %q1 = "mqtdyn.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-
-        mqtdyn.h() %q0
-        mqtdyn.x() %q1 ctrl %q0
-        %m0 = "mqtdyn.measure"(%q0) : (!mqtdyn.Qubit) -> i1
-        %m1 = "mqtdyn.measure"(%q1) : (!mqtdyn.Qubit) -> i1
-        "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
-        return
+        llvm.br ^bb2
+      ^bb2:
+        llvm.return
     }
+    llvm.func @__quantum__rt__initialize(!llvm.ptr)
+    llvm.func @__quantum__rt__qubit_allocate_array(i64) -> !llvm.ptr
+}
+
+// -----
+// TODO
+module {
+    // CHECK-LABEL: llvm.func @testConvertAllocRegister()
+    llvm.func @testConvertAllocRegister() attributes {passthrough = ["entry_point"]}  {
+        %0 = llvm.mlir.zero : !llvm.ptr
+        llvm.br ^bb1
+      ^bb1:
+
+        llvm.br ^bb2
+      ^bb2:
+        llvm.return
+    }
+    llvm.func @__quantum__rt__initialize(!llvm.ptr)
+    llvm.func @__quantum__rt__qubit_allocate_array(i64) -> !llvm.ptr
 }
