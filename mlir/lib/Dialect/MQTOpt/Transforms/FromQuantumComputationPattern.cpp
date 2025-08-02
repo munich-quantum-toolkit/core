@@ -91,31 +91,159 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    *
    * @param loc The location of the operation.
    * @param type The type of the unitary operation.
-   * @param inQubit The qubit to apply the unitary operation to.
+   * @param inQubits The qubits to apply the unitary operation to.
    * @param controlQubitsPositive The positive control qubits.
    * @param controlQubitsNegative The negative control qubits.
    * @param rewriter The pattern rewriter to use.
    *
    * @return The created UnitaryOp.
    */
-  static UnitaryInterface createUnitaryOp(
-      const mlir::Location loc, const qc::OpType type,
-      const mlir::Value inQubit, mlir::ValueRange controlQubitsPositive,
-      mlir::ValueRange controlQubitsNegative, mlir::PatternRewriter& rewriter) {
+  static UnitaryInterface
+  createUnitaryOp(const mlir::Location loc, const qc::OpType type,
+                  const std::vector<mlir::Value>& inQubits,
+                  mlir::ValueRange controlQubitsPositive,
+                  mlir::ValueRange controlQubitsNegative,
+                  mlir::PatternRewriter& rewriter) {
     switch (type) {
-    case qc::OpType::X:
-      return rewriter.create<XOp>(
-          loc, inQubit.getType(), controlQubitsPositive.getType(),
+    case qc::OpType::I:
+      return rewriter.create<IOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
           mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubit}, controlQubitsPositive,
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
           controlQubitsNegative);
     case qc::OpType::H:
       return rewriter.create<HOp>(
-          loc, inQubit.getType(), controlQubitsPositive.getType(),
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
           mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubit}, controlQubitsPositive,
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::X:
+      return rewriter.create<XOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::Y:
+      return rewriter.create<YOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::Z:
+      return rewriter.create<ZOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::S:
+      return rewriter.create<SOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::Sdg:
+      return rewriter.create<SdgOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::T:
+      return rewriter.create<TOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::Tdg:
+      return rewriter.create<TdgOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::V:
+      return rewriter.create<VOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::Vdg:
+      return rewriter.create<VdgOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::SX:
+      return rewriter.create<SXOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::SXdg:
+      return rewriter.create<SXdgOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::SWAP:
+      return rewriter.create<SWAPOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::iSWAP:
+      return rewriter.create<iSWAPOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::iSWAPdg:
+      return rewriter.create<iSWAPdgOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::Peres:
+      return rewriter.create<PeresOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::Peresdg:
+      return rewriter.create<PeresdgOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::DCX:
+      return rewriter.create<DCXOp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          controlQubitsNegative);
+    case qc::OpType::ECR:
+      return rewriter.create<ECROp>(
+          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
           controlQubitsNegative);
     default:
       throw std::runtime_error("Unsupported operation type");
@@ -213,16 +341,37 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
           }
         }
 
-        if (o->getType() == qc::OpType::X || o->getType() == qc::OpType::H) {
+        if (o->getType() == qc::OpType::I || o->getType() == qc::OpType::X ||
+            o->getType() == qc::OpType::H || o->getType() == qc::OpType::Y ||
+            o->getType() == qc::OpType::Z || o->getType() == qc::OpType::S ||
+            o->getType() == qc::OpType::Sdg || o->getType() == qc::OpType::T ||
+            o->getType() == qc::OpType::Tdg || o->getType() == qc::OpType::V ||
+            o->getType() == qc::OpType::Vdg || o->getType() == qc::OpType::SX ||
+            o->getType() == qc::OpType::SXdg ||
+            o->getType() == qc::OpType::SWAP ||
+            o->getType() == qc::OpType::iSWAP ||
+            o->getType() == qc::OpType::iSWAPdg ||
+            o->getType() == qc::OpType::Peres ||
+            o->getType() == qc::OpType::Peresdg ||
+            o->getType() == qc::OpType::DCX ||
+            o->getType() == qc::OpType::ECR) {
           // For unitary operations, we call the `createUnitaryOp` function. We
           // then have to update the `currentQubitVariables` vector with the new
           // qubit values.
+          std::vector<mlir::Value> inQubits(o->getTargets().size());
+
+          for (size_t i = 0; i < o->getTargets().size(); i++) {
+            inQubits[i] = currentQubitVariables[o->getTargets()[i]];
+          }
+
           UnitaryInterface newUnitaryOp = createUnitaryOp(
-              op->getLoc(), o->getType(),
-              currentQubitVariables[o->getTargets()[0]], controlQubitsPositive,
+              op->getLoc(), o->getType(), inQubits, controlQubitsPositive,
               controlQubitsNegative, rewriter);
-          currentQubitVariables[o->getTargets()[0]] =
-              newUnitaryOp.getAllOutQubits()[0];
+
+          for (size_t i = 0; i < o->getTargets().size(); i++) {
+            currentQubitVariables[o->getTargets()[i]] =
+                newUnitaryOp.getAllOutQubits()[i];
+          }
           for (size_t i = 0; i < controlQubitsPositive.size(); i++) {
             currentQubitVariables[controlQubitIndicesPositive[i]] =
                 newUnitaryOp.getAllOutQubits()[i + 1];

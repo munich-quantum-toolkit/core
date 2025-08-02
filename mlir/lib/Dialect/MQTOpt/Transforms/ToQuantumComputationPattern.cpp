@@ -159,16 +159,90 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
                        std::vector<mlir::Value>& currentQubitVariables) const {
 
     // Add the operation to the QuantumComputation.
+    bool twoTarget = false;
     qc::OpType opType = qc::OpType::H; // init placeholder-"H" overwritten next
-    if (llvm::isa<HOp>(op)) {
+    if (llvm::isa<IOp>(op)) {
+      opType = qc::OpType::I;
+    } else if (llvm::isa<HOp>(op)) {
       opType = qc::OpType::H;
     } else if (llvm::isa<XOp>(op)) {
       opType = qc::OpType::X;
-    } else { // TODO: support for more operations
+    } else if (llvm::isa<YOp>(op)) {
+      opType = qc::OpType::Y;
+    } else if (llvm::isa<ZOp>(op)) {
+      opType = qc::OpType::Z;
+    } else if (llvm::isa<SOp>(op)) {
+      opType = qc::OpType::S;
+    } else if (llvm::isa<SdgOp>(op)) {
+      opType = qc::OpType::Sdg;
+    } else if (llvm::isa<TOp>(op)) {
+      opType = qc::OpType::T;
+    } else if (llvm::isa<TdgOp>(op)) {
+      opType = qc::OpType::Tdg;
+    } else if (llvm::isa<VOp>(op)) {
+      opType = qc::OpType::V;
+    } else if (llvm::isa<VdgOp>(op)) {
+      opType = qc::OpType::Vdg;
+    } else if (llvm::isa<UOp>(op)) {
+      opType = qc::OpType::U;
+    } else if (llvm::isa<U2Op>(op)) {
+      opType = qc::OpType::U2;
+    } else if (llvm::isa<POp>(op)) {
+      opType = qc::OpType::P;
+    } else if (llvm::isa<SXOp>(op)) {
+      opType = qc::OpType::SX;
+    } else if (llvm::isa<SXdgOp>(op)) {
+      opType = qc::OpType::SXdg;
+    } else if (llvm::isa<RXOp>(op)) {
+      opType = qc::OpType::RX;
+    } else if (llvm::isa<RYOp>(op)) {
+      opType = qc::OpType::RY;
+    } else if (llvm::isa<RZOp>(op)) {
+      opType = qc::OpType::RZ;
+    } else if (llvm::isa<SWAPOp>(op)) {
+      opType = qc::OpType::SWAP;
+      twoTarget = true;
+    } else if (llvm::isa<iSWAPOp>(op)) {
+      opType = qc::OpType::iSWAP;
+      twoTarget = true;
+    } else if (llvm::isa<iSWAPdgOp>(op)) {
+      opType = qc::OpType::iSWAPdg;
+      twoTarget = true;
+    } else if (llvm::isa<PeresOp>(op)) {
+      opType = qc::OpType::Peres;
+      twoTarget = true;
+    } else if (llvm::isa<PeresdgOp>(op)) {
+      opType = qc::OpType::Peresdg;
+      twoTarget = true;
+    } else if (llvm::isa<DCXOp>(op)) {
+      opType = qc::OpType::DCX;
+      twoTarget = true;
+    } else if (llvm::isa<ECROp>(op)) {
+      opType = qc::OpType::ECR;
+      twoTarget = true;
+    } else if (llvm::isa<RXXOp>(op)) {
+      opType = qc::OpType::RXX;
+      twoTarget = true;
+    } else if (llvm::isa<RYYOp>(op)) {
+      opType = qc::OpType::RYY;
+      twoTarget = true;
+    } else if (llvm::isa<RZZOp>(op)) {
+      opType = qc::OpType::RZZ;
+      twoTarget = true;
+    } else if (llvm::isa<RZXOp>(op)) {
+      opType = qc::OpType::RZX;
+      twoTarget = true;
+    } else if (llvm::isa<XXminusYY>(op)) {
+      opType = qc::OpType::XXminusYY;
+      twoTarget = true;
+    } else if (llvm::isa<XXplusYY>(op)) {
+      opType = qc::OpType::XXplusYY;
+      twoTarget = true;
+    } else { // TODO: support for other types of operations
       throw std::runtime_error("Unsupported operation type!");
     }
 
-    const auto in = op.getInQubits()[0];
+    const auto in = op.getInQubits();
     const auto posCtrlIns = op.getPosCtrlInQubits();
     const auto negCtrlIns = op.getNegCtrlInQubits();
     const auto outs = op.getAllOutQubits();
@@ -176,7 +250,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // Get the qubit index of every control qubit.
     std::vector<size_t> posCtrlInsIndices;
     std::vector<size_t> negCtrlInsIndices;
-    size_t targetIndex = 0; // Placeholder
+    std::vector<size_t> targetIndex(2); // adapted for two-target gates
     try {
       for (const auto& val : posCtrlIns) {
         posCtrlInsIndices.emplace_back(
@@ -187,7 +261,11 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
             findQubitIndex(val, currentQubitVariables));
       }
       // Get the qubit index of the target qubit (if already collected).
-      targetIndex = findQubitIndex(in, currentQubitVariables);
+      targetIndex[0] = findQubitIndex(in[0], currentQubitVariables);
+      if (in.size() > 1) {
+        targetIndex[1] = findQubitIndex(in[1], currentQubitVariables);
+        twoTarget = true;
+      }
     } catch (const std::runtime_error& e) {
       if (strcmp(e.what(),
                  "Qubit was not found in list of previously defined qubits") ==
@@ -205,7 +283,10 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       currentQubitVariables[negCtrlInsIndices[i]] =
           outs[i + 1 + posCtrlInsIndices.size()];
     }
-    currentQubitVariables[targetIndex] = outs[0];
+    currentQubitVariables[targetIndex[0]] = outs[0];
+    if (twoTarget) {
+      currentQubitVariables[targetIndex[1]] = outs[1];
+    }
 
     // Add the operation to the QuantumComputation.
     qc::Controls controls;
@@ -215,7 +296,13 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     for (const auto& index : negCtrlInsIndices) {
       controls.emplace(static_cast<qc::Qubit>(index), qc::Control::Type::Neg);
     }
-    circuit.emplace_back<qc::StandardOperation>(controls, targetIndex, opType);
+    if (twoTarget) {
+      circuit.emplace_back<qc::StandardOperation>(controls, targetIndex[0],
+                                                  targetIndex[1], opType);
+    } else {
+      circuit.emplace_back<qc::StandardOperation>(controls, targetIndex[0],
+                                                  opType);
+    }
 
     return true;
   }
@@ -374,7 +461,22 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         }
       }
 
-      if (llvm::isa<XOp>(current) || llvm::isa<HOp>(current)) {
+      if (llvm::isa<IOp>(current) || llvm::isa<XOp>(current) ||
+          llvm::isa<HOp>(current) || llvm::isa<YOp>(current) ||
+          llvm::isa<ZOp>(current) || llvm::isa<SOp>(current) ||
+          llvm::isa<SdgOp>(current) || llvm::isa<TOp>(current) ||
+          llvm::isa<TdgOp>(current) || llvm::isa<VOp>(current) ||
+          llvm::isa<VdgOp>(current) || llvm::isa<UOp>(current) ||
+          llvm::isa<U2Op>(current) || llvm::isa<POp>(current) ||
+          llvm::isa<SXOp>(current) || llvm::isa<SXdgOp>(current) ||
+          llvm::isa<RXOp>(current) || llvm::isa<RYOp>(current) ||
+          llvm::isa<RZOp>(current) || llvm::isa<SWAPOp>(current) ||
+          llvm::isa<iSWAPOp>(current) || llvm::isa<iSWAPdgOp>(current) ||
+          llvm::isa<PeresOp>(current) || llvm::isa<PeresdgOp>(current) ||
+          llvm::isa<DCXOp>(current) || llvm::isa<ECROp>(current) ||
+          llvm::isa<RXXOp>(current) || llvm::isa<RYYOp>(current) ||
+          llvm::isa<RZZOp>(current) || llvm::isa<RZXOp>(current) ||
+          llvm::isa<XXminusYY>(current) || llvm::isa<XXplusYY>(current)) {
         auto unitaryOp = llvm::dyn_cast<UnitaryInterface>(current);
         handleUnitaryOp(unitaryOp, currentQubitVariables);
       } else if (auto extractOp = llvm::dyn_cast<ExtractOp>(current)) {
@@ -408,6 +510,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     const auto circuitString = ss.str();
     llvm::outs() << circuitString << "\n";
     llvm::outs() << "----------------------------------------\n\n";
+    op.emitWarning() << circuitString << '\n';
 
     // Update the inputs of all non-mqtopt operations that use mqtopt operations
     // as inputs, as these will be deleted later.
