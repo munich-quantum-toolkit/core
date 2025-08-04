@@ -27,7 +27,7 @@ RUN apt update && apt install -y lsb-release wget software-properties-common gnu
 RUN wget https://apt.llvm.org/llvm.sh -O /tmp/llvm_install.sh
 RUN chmod +x /tmp/llvm_install.sh
 RUN bash /tmp/llvm_install.sh 20
-RUN apt install -y libmlir-20-dev mlir-20-tools clang-20
+RUN apt install -y libmlir-20-dev mlir-20-tools clang-20 clang-tools-20
 
 # Set environment variables
 ENV MQT_CORE_CC=/usr/lib/llvm-20/bin/clang
