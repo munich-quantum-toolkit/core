@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -41,8 +42,8 @@ bool FunctionalityConstruction::checkSwap(const op_it& it, const op_it& end,
       const auto tar2 = p.at(op2->getTargets().front());
       const auto ctrl1 = p.at((*op1->getControls().begin()).qubit);
       const auto ctrl2 = p.at((*op2->getControls().begin()).qubit);
-      return ctrl == static_cast<Qubit>(tar1) && tar1 == ctrl2 &&
-             target == static_cast<Qubit>(ctrl1) && ctrl1 == tar2;
+      return std::cmp_equal(ctrl, tar1) && tar1 == ctrl2 &&
+             std::cmp_equal(target, ctrl1) && ctrl1 == tar2;
     }
   }
   return false;
@@ -624,19 +625,17 @@ ZXDiagram FunctionalityConstruction::buildFunctionality(
 }
 bool FunctionalityConstruction::transformableToZX(
     const qc::QuantumComputation* qc) {
-  return std::all_of(qc->cbegin(), qc->cend(), [&](const auto& op) {
-    return transformableToZX(op.get());
-  });
+  return std::ranges::all_of(
+      *qc, [&](const auto& op) { return transformableToZX(op.get()); });
 }
 
 bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
   if (op->getType() == qc::OpType::Compound) {
     const auto* compOp = dynamic_cast<const qc::CompoundOperation*>(op);
 
-    return std::all_of(compOp->cbegin(), compOp->cend(),
-                       [&](const auto& operation) {
-                         return transformableToZX(operation.get());
-                       });
+    return std::ranges::all_of(*compOp, [&](const auto& operation) {
+      return transformableToZX(operation.get());
+    });
   }
 
   if (op->getType() == qc::OpType::Barrier) {

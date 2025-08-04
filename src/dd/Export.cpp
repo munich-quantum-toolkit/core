@@ -496,7 +496,7 @@ void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
           if (edge.w.approximatelyZero()) {
             continue;
           }
-          if (nodeIndex.find(edge.p) != nodeIndex.end()) {
+          if (nodeIndex.contains(edge.p)) {
             continue;
           }
 
@@ -515,7 +515,7 @@ void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
         if (edge.w.approximatelyZero()) {
           continue;
         }
-        if (nodeIndex.find(edge.p) != nodeIndex.end()) {
+        if (nodeIndex.contains(edge.p)) {
           continue;
         }
         if (!stack.empty()) {
@@ -529,7 +529,7 @@ void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
         stack.push(node);
         node = temp;
       } else {
-        if (nodeIndex.find(node->p) != nodeIndex.end()) {
+        if (nodeIndex.contains(node->p)) {
           node = nullptr;
           continue;
         }
@@ -583,7 +583,7 @@ void serializeMatrix(const mEdge& basic, std::int64_t& idx,
       }
     }
 
-    if (nodeIndex.find(basic.p) == nodeIndex.end()) {
+    if (!nodeIndex.contains(basic.p)) {
       nodeIndex[basic.p] = idx;
       ++idx;
     }

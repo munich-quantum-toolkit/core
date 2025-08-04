@@ -62,7 +62,7 @@ protected:
 public:
   auto addVertex(const V& v) -> void {
     // check whether the vertex is already in the graph, if so do nothing
-    if (mapping.find(v) == mapping.end()) {
+    if (!mapping.contains(v)) {
       mapping[v] = nVertices;
       invMapping.emplace_back(v);
       ++nVertices;
@@ -80,10 +80,10 @@ public:
     }
   }
   auto addEdge(const V& u, const V& v, const E& e) -> void {
-    if (mapping.find(u) == mapping.end()) {
+    if (!mapping.contains(u)) {
       addVertex(u);
     }
-    if (mapping.find(v) == mapping.end()) {
+    if (!mapping.contains(v)) {
       addVertex(v);
     }
     const auto i = mapping.at(u);
@@ -132,7 +132,7 @@ public:
   }
   [[nodiscard]] auto getAdjacentEdges(const V& v) const
       -> std::unordered_set<std::pair<V, V>, PairHash<V, V>> {
-    if (mapping.find(v) == mapping.end()) {
+    if (!mapping.contains(v)) {
       std::stringstream ss;
       ss << "The vertex " << v << " is not in the graph.";
       throw std::invalid_argument(ss.str());
@@ -149,7 +149,7 @@ public:
     return result;
   }
   [[nodiscard]] auto getNeighbours(const V& v) const -> std::unordered_set<V> {
-    if (mapping.find(v) == mapping.end()) {
+    if (!mapping.contains(v)) {
       std::stringstream ss;
       ss << "The vertex " << v << " is not in the graph.";
       throw std::invalid_argument(ss.str());
@@ -165,7 +165,7 @@ public:
     return result;
   }
   [[nodiscard]] auto getDegree(const V& v) const -> std::size_t {
-    if (mapping.find(v) == mapping.end()) {
+    if (!mapping.contains(v)) {
       std::stringstream ss;
       ss << "The vertex " << v << " is not in the graph.";
       throw std::invalid_argument(ss.str());
@@ -176,18 +176,18 @@ public:
   [[nodiscard]] auto getVertices() const -> std::unordered_set<V> {
     return std::accumulate(mapping.cbegin(), mapping.cend(),
                            std::unordered_set<V>(),
-                           [](auto& acc, const auto& v) {
+                           [](auto acc, const auto& v) {
                              acc.emplace(v.first);
                              return acc;
                            });
   }
   [[nodiscard]] auto isAdjacent(const V& u, const V& v) const -> bool {
-    if (mapping.find(u) == mapping.end()) {
+    if (!mapping.contains(u)) {
       std::stringstream ss;
       ss << "The vertex " << u << " is not in the graph.";
       throw std::invalid_argument(ss.str());
     }
-    if (mapping.find(v) == mapping.end()) {
+    if (!mapping.contains(v)) {
       std::stringstream ss;
       ss << "The vertex " << v << " is not in the graph.";
       throw std::invalid_argument(ss.str());

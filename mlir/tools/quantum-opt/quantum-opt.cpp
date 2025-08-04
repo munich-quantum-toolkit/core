@@ -8,10 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"  // IWYU pragma: keep
-#include "mlir/Dialect/MQTDyn/Transforms/Passes.h" // IWYU pragma: keep
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"  // IWYU pragma: keep
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h" // IWYU pragma: keep
+#include "mlir/Conversion/MQTDynToMQTOpt/MQTDynToMQTOpt.h" // IWYU pragma: keep
+#include "mlir/Conversion/MQTOptToMQTDyn/MQTOptToMQTDyn.h" // IWYU pragma: keep
+#include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"          // IWYU pragma: keep
+#include "mlir/Dialect/MQTDyn/Transforms/Passes.h"         // IWYU pragma: keep
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"          // IWYU pragma: keep
+#include "mlir/Dialect/MQTOpt/Transforms/Passes.h"         // IWYU pragma: keep
 
 #include <mlir/Dialect/Func/Extensions/AllExtensions.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -23,6 +25,8 @@ int main(const int argc, char** argv) {
   mlir::registerAllPasses();
   mqt::ir::opt::registerMQTOptPasses();
   mqt::ir::dyn::registerMQTDynPasses();
+  mqt::ir::registerMQTDynToMQTOptPasses();
+  mqt::ir::registerMQTOptToMQTDynPasses();
 
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);

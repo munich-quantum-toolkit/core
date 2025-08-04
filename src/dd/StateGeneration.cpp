@@ -133,7 +133,7 @@ VectorDD makeBasisState(const std::size_t n, const std::vector<bool>& state,
     return b ? BasisStates::one : BasisStates::zero;
   };
   std::vector<BasisStates> bState(state.size());
-  std::transform(state.begin(), state.end(), bState.begin(), op);
+  std::ranges::transform(state, bState.begin(), op);
   return makeBasisState(n, bState, dd, start);
 }
 
@@ -200,8 +200,10 @@ VectorDD makeGHZState(const std::size_t n, Package& dd) {
   const vEdge e = dd.makeDDNode(
       static_cast<Qubit>(n - 1),
       std::array<vEdge, RADIX>{
-          {{leftSubtree.p, {&constants::sqrt2over2, &constants::zero}},
-           {rightSubtree.p, {&constants::sqrt2over2, &constants::zero}}}});
+          {{.p = leftSubtree.p,
+            .w = {.r = &constants::sqrt2over2, .i = &constants::zero}},
+           {.p = rightSubtree.p,
+            .w = {.r = &constants::sqrt2over2, .i = &constants::zero}}}});
   dd.incRef(e);
   return e;
 }
@@ -271,8 +273,8 @@ VectorDD generateExponentialState(const std::size_t levels, Package& dd) {
 VectorDD generateExponentialState(const std::size_t levels, Package& dd,
                                   const std::size_t seed) {
   std::vector<std::size_t> nodesPerLevel(levels); // [1, 2, 4, 8, ...]
-  std::generate(nodesPerLevel.begin(), nodesPerLevel.end(),
-                [exp = 0]() mutable { return 1ULL << exp++; });
+  std::ranges::generate(nodesPerLevel,
+                        [exp = 0]() mutable { return 1ULL << exp++; });
   return generateRandomState(levels, nodesPerLevel, ROUNDROBIN, dd, seed);
 }
 
@@ -304,9 +306,8 @@ VectorDD generateRandomState(const std::size_t levels,
   // Generate terminal nodes.
   constexpr vNode* terminal = vNode::getTerminal();
   std::vector<vCachedEdge> curr(nodesPerLevel.back());
-  std::generate(curr.begin(), curr.end(), [&] {
-    return randomNode(0, terminal, terminal, gen, dist, dd);
-  });
+  std::ranges::generate(
+      curr, [&] { return randomNode(0, terminal, terminal, gen, dist, dd); });
 
   Qubit v{1};
   auto it = nodesPerLevel.rbegin();
@@ -324,8 +325,8 @@ VectorDD generateRandomState(const std::size_t levels,
     std::vector<std::size_t> indices(2 * n); // Indices for wireing.
     switch (strategy) {
     case ROUNDROBIN: {
-      std::generate(indices.begin(), indices.end(),
-                    [&m, r = 0UL]() mutable { return (r++) % m; });
+      std::ranges::generate(indices,
+                            [&m, r = 0UL]() mutable { return (r++) % m; });
       break;
     }
     case RANDOM: {
@@ -337,8 +338,8 @@ VectorDD generateRandomState(const std::size_t levels,
       std::iota(indices.begin(), pivot, 0);
 
       // Choose the rest randomly.
-      std::generate(pivot, indices.end(),
-                    [&idxDist, &gen]() { return idxDist(gen); });
+      std::ranges::generate(pivot, indices.end(),
+                            [&idxDist, &gen]() { return idxDist(gen); });
 
       // Shuffle to randomly interleave the resulting indices.
       std::shuffle(indices.begin(), indices.end(), gen);

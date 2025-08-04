@@ -29,7 +29,7 @@ function(enable_project_options target_name)
     option(ENABLE_COVERAGE "Enable coverage reporting for gcc/clang" FALSE)
     if(ENABLE_COVERAGE)
       target_compile_options(${target_name} INTERFACE --coverage -fprofile-arcs -ftest-coverage -O0)
-      target_link_libraries(${target_name} INTERFACE gcov --coverage)
+      target_link_libraries(${target_name} INTERFACE --coverage)
     endif()
 
     if(NOT DEPLOY)

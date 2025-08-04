@@ -12,9 +12,9 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -64,12 +64,17 @@ struct MergeRotationGatesPattern final
    */
   [[nodiscard]] static bool
   areUsersUnique(const mlir::ResultRange::user_range& users) {
-    return std::none_of(users.begin(), users.end(),
-                        [&](auto* user) { return user != *users.begin(); });
+    return llvm::none_of(users,
+                         [&](auto* user) { return user != *users.begin(); });
   }
 
-  mlir::LogicalResult match(UnitaryInterface op) const override {
+  mlir::LogicalResult
+  matchAndRewrite(UnitaryInterface op,
+                  mlir::PatternRewriter& rewriter) const override {
     const auto& users = op->getUsers();
+    if (users.empty()) {
+      return mlir::failure();
+    }
     if (!areUsersUnique(users)) {
       return mlir::failure();
     }
@@ -89,6 +94,7 @@ struct MergeRotationGatesPattern final
       // already checked by the previous condition.
       return mlir::failure();
     }
+    rewriteAdditiveAngle(op, rewriter);
     return mlir::success();
   }
 
@@ -171,8 +177,7 @@ struct MergeRotationGatesPattern final
     const auto& newUserAllInQubits = newUser.getAllInQubits();
     for (size_t i = 0; i < newUser->getOperands().size(); i++) {
       const auto& operand = newUser->getOperand(i);
-      const auto found = std::find(newUserAllInQubits.begin(),
-                                   newUserAllInQubits.end(), operand);
+      const auto found = llvm::find(newUserAllInQubits, operand);
       if (found == newUserAllInQubits.end()) {
         continue;
       }
@@ -186,17 +191,6 @@ struct MergeRotationGatesPattern final
 
     // Erase op
     rewriter.eraseOp(op);
-  }
-
-  void rewrite(UnitaryInterface op,
-               mlir::PatternRewriter& rewriter) const override {
-    auto const type = op->getName().stripDialect().str();
-
-    if (MERGEABLE_GATES.count(type) == 1) {
-      rewriteAdditiveAngle(op, rewriter);
-    } else {
-      throw std::runtime_error("Unsupported operation type: " + type);
-    }
   }
 };
 

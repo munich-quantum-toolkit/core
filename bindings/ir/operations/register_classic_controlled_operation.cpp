@@ -19,6 +19,7 @@
 #include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
 
 #include <pybind11/cast.h>
+#include <pybind11/native_enum.h>
 // clang-format on
 
 #include <cstdint>
@@ -32,7 +33,9 @@ using namespace pybind11::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerClassicControlledOperation(const py::module& m) {
-  py::enum_<qc::ComparisonKind>(m, "ComparisonKind")
+  py::native_enum<qc::ComparisonKind>(
+      m, "ComparisonKind", "enum.Enum",
+      "Enumeration of comparison types for classic-controlled operations.")
       .value("eq", qc::ComparisonKind::Eq)
       .value("neq", qc::ComparisonKind::Neq)
       .value("lt", qc::ComparisonKind::Lt)
@@ -40,10 +43,7 @@ void registerClassicControlledOperation(const py::module& m) {
       .value("gt", qc::ComparisonKind::Gt)
       .value("geq", qc::ComparisonKind::Geq)
       .export_values()
-      .def("__str__",
-           [](const qc::ComparisonKind& cmp) { return qc::toString(cmp); })
-      .def("__repr__",
-           [](const qc::ComparisonKind& cmp) { return qc::toString(cmp); });
+      .finalize();
 
   auto ccop = py::class_<qc::ClassicControlledOperation, qc::Operation>(
       m, "ClassicControlledOperation");

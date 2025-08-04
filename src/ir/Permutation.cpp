@@ -56,8 +56,8 @@ namespace qc {
   if (empty()) {
     return 0;
   }
-  return std::max_element(
-             cbegin(), cend(),
+  return std::ranges::max_element(
+             permutation,
              [](const auto& a, const auto& b) { return a.second < b.second; })
       ->second;
 }

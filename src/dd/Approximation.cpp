@@ -86,7 +86,9 @@ ApproximationMetadata mark(VectorDD& state, const double fidelity) {
   Contributions c; // Stores contributions of the next layer.
   std::forward_list<Terminal> candidates{}; // Terminals that may be removed.
 
-  ApproximationMetadata meta{fidelity, 0, std::numeric_limits<Qubit>::max()};
+  ApproximationMetadata meta{.fidelity = fidelity,
+                             .nodesVisited = 0,
+                             .min = std::numeric_limits<Qubit>::max()};
 
   double budget = 1 - fidelity;
   while (budget > 0) {
