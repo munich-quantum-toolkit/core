@@ -55,8 +55,6 @@ struct LoweringState {
     Value index;
     /// @brief Index given as an attribute.
     IntegerAttr indexAttr;
-
-    // [[nodiscard]] Value getIndexValue() const { return indexAttr.getValue().;
   };
 
   /// @brief Map each initial dyn qubit to its latest opt qubit.
