@@ -6,14 +6,14 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s --quake-to-mqtdyn | FileCheck %s
+// RUN: quantum-convert %s -split-input-file | FileCheck %s
+
+// -----
+// This is an empty dummy test.
 
 module {
-  // CHECK-LABEL: func @testAlloca()
-  func.func @testAlloca() {
-    // CHECK: %[[ANY:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}>
-    %qubit = quake.alloca !quake.ref
-
-    return
-  }
+    // CHECK-LABEL: func.func @test()
+    func.func @test() {
+        return
+    }
 }

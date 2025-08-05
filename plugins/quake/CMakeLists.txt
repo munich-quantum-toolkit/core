@@ -13,3 +13,5 @@ include_directories(/workspaces/cuda-quantum/include)
 
 add_subdirectory(include)
 add_subdirectory(lib)
+add_subdirectory(test)
+add_subdirectory(tools)
