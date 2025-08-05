@@ -210,7 +210,7 @@ public:
    */
   [[nodiscard]] bool
   totalAssignment(const VariableAssignment& assignment) const {
-    return assignment.find(getVar()) != assignment.end();
+    return assignment.contains(getVar());
   }
 
   /**

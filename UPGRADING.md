@@ -4,6 +4,24 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+## [3.2.0]
+
+The shared library ABI version (`SOVERSION`) is increased from `3.1` to `3.2`.
+Thus, consuming libraries need to update their wheel repair configuration for `cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the wheel repair step.
+
+With this release, the minimum required C++ version has been raised from C++17 to C++20.
+The default compilers of our test systems support all relevant features of the standard.
+Some frameworks we plan to integrate with even require C++20 by now.
+
+The `dd.BasisStates`, `ir.operations.ComparisonKind`, `ir.operations.Control.Type`, and `ir.operations.OpType` enums are now exposed via `pybind11`'s new `py::native_enum`, which makes them compatible with Python's `enum.Enum` class (PEP 435).
+As a result, the enums can no longer be initialized using a string.
+Instead of `OpType("x")`, use `OpType.x`.
+
+## [3.1.0]
+
+The shared library ABI version (`SOVERSION`) is increased from `3.0` to `3.1`.
+Thus, consuming libraries need to update their wheel repair configuration for `cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the wheel repair step.
+
 Even tough this is not a breaking change, it is worth mentioning to developers of MQT Core that all Python code (except tests) has been moved to the top-level `python` directory.
 Furthermore, the C++ code for the Python bindings has been moved to the top-level `bindings` directory.
 
@@ -63,9 +81,16 @@ Alternatively, CMake can be conveniently installed from PyPI using the [`cmake`]
 
 It also requires the `uv` library version 0.5.20 or higher.
 
+<!-- Version links -->
+
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.1.0...v3.2.0
+[3.1.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.0...v3.1.0
+[3.0.0]: https://github.com/munich-quantum-toolkit/core/compare/v2.7.0...v3.0.0
+
+<!-- Other links -->
+
 [MQT DDSIM]: https://github.com/cda-tum/mqt-ddsim
 [MQT QMAP]: https://github.com/cda-tum/mqt-qmap
 [MQT QCEC]: https://github.com/cda-tum/mqt-qcec
 [MQT SyReC]: https://github.com/cda-tum/mqt-syrec
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.0...HEAD
-[3.0.0]: https://github.com/munich-quantum-toolkit/core/compare/v2.7.0...v3.0.0

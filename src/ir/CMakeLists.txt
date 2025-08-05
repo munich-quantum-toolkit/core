@@ -27,7 +27,7 @@ if(NOT TARGET MQT::CoreIR)
   target_link_libraries(${MQT_CORE_TARGET_NAME}-ir PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
 
   # set required C++ standard
-  target_compile_features(${MQT_CORE_TARGET_NAME}-ir PUBLIC cxx_std_17)
+  target_compile_features(${MQT_CORE_TARGET_NAME}-ir PUBLIC cxx_std_20)
 
   # set versioning information
   set_target_properties(

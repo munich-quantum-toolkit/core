@@ -14,7 +14,6 @@
 #include "dd/RealNumber.hpp"
 #include "ir/Definitions.hpp"
 
-#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -59,8 +58,8 @@ void ComplexValue::readBinary(std::istream& is) {
 void ComplexValue::fromString(const std::string& realStr, std::string imagStr) {
   r = realStr.empty() ? 0. : std::stod(realStr);
 
-  imagStr.erase(remove(imagStr.begin(), imagStr.end(), ' '), imagStr.end());
-  imagStr.erase(remove(imagStr.begin(), imagStr.end(), 'i'), imagStr.end());
+  std::erase(imagStr, ' ');
+  std::erase(imagStr, 'i');
   if (imagStr == "+" || imagStr == "-") {
     imagStr = imagStr + "1";
   }

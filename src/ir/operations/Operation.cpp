@@ -75,8 +75,7 @@ std::ostream& Operation::print(std::ostream& os, const Permutation& permutation,
 
   for (std::size_t i = 0; i < nqubits; ++i) {
     const auto q = static_cast<Qubit>(i);
-    if (std::find(actualTargets.cbegin(), actualTargets.cend(), q) !=
-        actualTargets.cend()) {
+    if (std::ranges::find(actualTargets, q) != actualTargets.cend()) {
       if (type == ClassicControlled) {
         const auto reducedName = name.substr(2);
         os << "\033[1m\033[35m" << std::setw(4) << reducedName;
@@ -89,8 +88,7 @@ std::ostream& Operation::print(std::ostream& os, const Permutation& permutation,
       continue;
     }
 
-    if (const auto it =
-            std::find(actualControls.cbegin(), actualControls.cend(), q);
+    if (const auto it = std::ranges::find(actualControls, q);
         it != actualControls.cend()) {
       if (it->type == Control::Type::Pos) {
         os << "\033[32m";
