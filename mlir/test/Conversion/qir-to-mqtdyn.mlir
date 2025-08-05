@@ -131,8 +131,8 @@ module {
         %1 = llvm.call @__quantum__rt__array_get_element_ptr_1d(%r0, %c1) : (!llvm.ptr, i64) -> !llvm.ptr
         %q0 = llvm.load %1 : !llvm.ptr -> !llvm.ptr
         %m0 = llvm.call @__quantum__qis__m__body(%q0) : (!llvm.ptr) -> !llvm.ptr
-        llvm.call @__quantum__rt__result_record_output(%q0, %a0) : (!llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__rt__result_update_reference_count(%q0, %c2) : (!llvm.ptr, i32) -> ()
+        llvm.call @__quantum__rt__result_record_output(%m0, %a0) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__rt__result_update_reference_count(%m0, %c2) : (!llvm.ptr, i32) -> ()
         llvm.br ^bb2
       ^bb2:
         llvm.return
@@ -507,11 +507,11 @@ module {
         llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
         llvm.call @__quantum__qis__cnot__body(%q1, %q0) : (!llvm.ptr, !llvm.ptr) -> ()
         %m0 = llvm.call @__quantum__qis__m__body(%q0) : (!llvm.ptr) -> !llvm.ptr
-        llvm.call @__quantum__rt__result_record_output(%q0, %a0) : (!llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__rt__result_update_reference_count(%q0, %c3) : (!llvm.ptr, i32) -> ()
+        llvm.call @__quantum__rt__result_record_output(%m0, %a0) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__rt__result_update_reference_count(%m0, %c3) : (!llvm.ptr, i32) -> ()
         %m1 = llvm.call @__quantum__qis__m__body(%q1) : (!llvm.ptr) -> !llvm.ptr
-        llvm.call @__quantum__rt__result_record_output(%q1, %a1) : (!llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__rt__result_update_reference_count(%q1, %c3) : (!llvm.ptr, i32) -> ()
+        llvm.call @__quantum__rt__result_record_output(%m1, %a1) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__rt__result_update_reference_count(%m1, %c3) : (!llvm.ptr, i32) -> ()
         llvm.call @__quantum__rt__qubit_release_array(%r0) : (!llvm.ptr) -> ()
         llvm.br ^bb2
       ^bb2:
