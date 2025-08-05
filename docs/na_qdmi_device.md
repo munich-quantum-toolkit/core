@@ -22,10 +22,3 @@ The struct defines functions to serialize and deserialize the data using the [nl
 During compilation, this JSON file is parsed and the corresponding C++ code is produced by an application (see `src/na/device/App.cpp`) for the actual QDMI device implementation.
 The C++ code is then compiled to a library that can be used by the QDMI driver.
 An example instance of a device JSON file can be found in `json/na/device.json`.
-
-```{doxygenstruct} na::Device
-:project: mqt.core
-:members:
-:undoc-members:
-:path: ../../include/mqt-core/na/device
-```
