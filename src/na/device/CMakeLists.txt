@@ -7,13 +7,13 @@
 # Licensed under the MIT License
 
 # Set target name
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device-gen)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-gen)
 
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
   # Add library for device generation
-  add_mqt_core_library(${TARGET_NAME})
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMINaDeviceGen)
 
   # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Generator.cpp)
@@ -36,7 +36,7 @@ if(NOT TARGET ${TARGET_NAME})
                EXPORT_NAME CoreNaDeviceGen)
 
   # set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
+  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 
   # Make version available
   target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
@@ -54,7 +54,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PRIVATE App.cpp)
 
   # Link Generator library
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreNaDeviceGen spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMINaDeviceGen spdlog::spdlog)
 
   # set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME
@@ -64,17 +64,17 @@ if(NOT TARGET ${TARGET_NAME})
                                                   "${CMAKE_BINARY_DIR}/bin")
 
   # set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
+  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 
   # Make version available
   target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
 
   # Create an alias for the target
-  add_executable(MQT::CoreQdmiNaDeviceGenerator ALIAS ${TARGET_NAME})
+  add_executable(MQT::CoreQDMINaDeviceGenerator ALIAS ${TARGET_NAME})
 endif()
 
 # Set target name
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-device)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device)
 
 # Set prefix for QDMI
 set(QDMI_PREFIX "MQT_NA")
@@ -89,14 +89,14 @@ if(NOT TARGET ${TARGET_NAME})
   # Generate definitions for device
   add_custom_command(
     OUTPUT ${DEVICE_HDR}
-    COMMAND MQT::CoreQdmiNaDeviceGenerator ARGS generate --output ${DEVICE_HDR} ${JSON_FILE}
+    COMMAND MQT::CoreQDMINaDeviceGenerator ARGS generate --output ${DEVICE_HDR} ${JSON_FILE}
     DEPENDS ${JSON_FILE}
     COMMENT "Generating C++ header from ${JSON_FILE}")
-  add_custom_target(generate_na_device_header DEPENDS ${DEVICE_HDR})
+  add_custom_target(generate_qdmi_na_device_header DEPENDS ${DEVICE_HDR})
 
   # Add library
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME NaQDMI)
-  add_dependencies(${TARGET_NAME} generate_na_device_header)
+  add_dependencies(${TARGET_NAME} generate_qdmi_na_device_header)
 
   # Generate prefixed QDMI headers
   generate_prefixed_qdmi_headers(${QDMI_PREFIX})
@@ -125,14 +125,14 @@ if(NOT TARGET ${TARGET_NAME})
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
 
   # set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
+  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 
   # set versioning information
   set_target_properties(
     ${TARGET_NAME}
     PROPERTIES VERSION ${PROJECT_VERSION}
                SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreNaQDMI)
+               EXPORT_NAME CoreQDMI)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS

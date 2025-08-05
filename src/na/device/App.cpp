@@ -300,6 +300,7 @@ auto executeSchemaCommand(const std::string& progName,
     SPDLOG_ERROR("Error generating JSON schema: {}", e.what());
     return 1;
   }
+  return 0;
 }
 
 /**
@@ -331,6 +332,7 @@ auto executeValidateCommand(const std::string& progName,
     SPDLOG_ERROR("Error validating JSON: {}", e.what());
     return 1;
   }
+  return 0;
 }
 
 /**
@@ -377,6 +379,7 @@ auto executeGenerateCommand(const std::string& progName,
     SPDLOG_ERROR("Error generating header file: {}", e.what());
     return 1;
   }
+  return 0;
 }
 } // namespace
 
