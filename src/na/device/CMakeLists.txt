@@ -84,7 +84,7 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Set paths
   set(JSON_FILE ${PROJECT_SOURCE_DIR}/json/na/device.json)
-  set(DEVICE_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/Initializer.hpp)
+  set(DEVICE_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/na/device/DeviceMemberInitializers.hpp)
 
   # Generate definitions for device
   add_custom_command(

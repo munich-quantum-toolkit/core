@@ -14,8 +14,8 @@
 
 #include "na/device/Device.hpp"
 
-#include "Initializer.hpp"
 #include "mqt_na_qdmi/device.h"
+#include "na/device/DeviceMemberInitializers.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -89,14 +89,15 @@ Device::Device() {
   INITIALIZE_OPERATIONS(operations);
   INITIALIZE_SITES(sites);
 }
-Device::~Device() { sessions.clear(); }
 auto Device::sessionAlloc(MQT_NA_QDMI_Device_Session* session) -> int {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   auto uniqueSession = std::make_unique<MQT_NA_QDMI_Device_Session_impl_d>();
-  *session = sessions.emplace(uniqueSession.get(), std::move(uniqueSession))
-                 .first->first;
+  const auto& it =
+      sessions.emplace(uniqueSession.get(), std::move(uniqueSession)).first;
+  // get the key, i.e., the raw pointer to the session from the map iterator
+  *session = it->first;
   return QDMI_SUCCESS;
 }
 auto Device::sessionFree(MQT_NA_QDMI_Device_Session session) -> void {
@@ -167,7 +168,7 @@ auto MQT_NA_QDMI_Device_Session_impl_d::createDeviceJob(
   return QDMI_SUCCESS;
 }
 auto MQT_NA_QDMI_Device_Session_impl_d::freeDeviceJob(
-    [[maybe_unused]] MQT_NA_QDMI_Device_Job job) -> void {
+    MQT_NA_QDMI_Device_Job job) -> void {
   if (job != nullptr) {
     if (const auto& it = jobs.find(job); it != jobs.end()) {
       jobs.erase(it);
@@ -208,11 +209,6 @@ auto MQT_NA_QDMI_Device_Session_impl_d::queryOperationProperty(
                                   size, value, sizeRet);
 }
 auto MQT_NA_QDMI_Device_Job_impl_d::free() -> void {
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
   session->freeDeviceJob(this);
 }
 auto MQT_NA_QDMI_Device_Job_impl_d::setParameter(
@@ -378,9 +374,9 @@ int MQT_NA_QDMI_device_job_set_parameter(MQT_NA_QDMI_Device_Job job,
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
+  // The called function is only static because jobs are not supported. However,
+  // we keep the function call for a complete implementation of QDMI and silence
+  // the respective warning.
   //===--------------------------------------------------------------------===//
   // NOLINTNEXTLINE(readability-static-accessed-through-instance)
   return job->setParameter(param, size, value);

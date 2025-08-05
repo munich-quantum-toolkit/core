@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <fstream>
 #include <istream>
-#include <nlohmann/detail/exceptions.hpp>
 #include <nlohmann/json.hpp>
 #include <ostream>
 #include <spdlog/spdlog.h>
@@ -201,10 +200,9 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
           // Only add the site if it is within the extent of the lattice
           os << "\\\n  "
                 "var.emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>("
-                "MQT_NA_QDMI_Site_impl_d{"
              << id << ", " << moduleCount << ", " << subModuleCount << ", "
              << static_cast<double>(x) * lengthUnit << ", "
-             << static_cast<double>(y) * lengthUnit << "}));";
+             << static_cast<double>(y) * lengthUnit << "));";
         }
       }
     }
@@ -224,53 +222,48 @@ auto writeOperations(const Device& device, const double timeUnit,
   os << "#define INITIALIZE_OPERATIONS(var) var.clear();";
   for (const auto& operation : device.globalSingleQubitOperations) {
     os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
        << operation.name
        << "\", MQT_NA_QDMI_Operation_impl_d::Type::GlobalSingleQubit, "
        << operation.numParameters << ", 1, "
        << static_cast<double>(operation.duration) * timeUnit << ", "
-       << operation.fidelity << "}));";
+       << operation.fidelity << "));";
   }
   for (const auto& operation : device.globalMultiQubitOperations) {
     os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
        << operation.name
        << "\", MQT_NA_QDMI_Operation_impl_d::Type::GlobalMultiQubit, "
        << operation.numParameters << ", " << operation.numQubits << ", "
        << static_cast<double>(operation.duration) * timeUnit << ", "
-       << operation.fidelity << "}));";
+       << operation.fidelity << "));";
   }
   for (const auto& operation : device.localSingleQubitOperations) {
     os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
        << operation.name
        << "\", MQT_NA_QDMI_Operation_impl_d::Type::LocalSingleQubit, "
        << operation.numParameters << ", 1, "
        << static_cast<double>(operation.duration) * timeUnit << ", "
-       << operation.fidelity << "}));";
+       << operation.fidelity << "));";
   }
   for (const auto& operation : device.localMultiQubitOperations) {
     os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
        << operation.name
        << "\", MQT_NA_QDMI_Operation_impl_d::Type::LocalMultiQubit, "
        << operation.numParameters << ", " << operation.numQubits << ", "
        << static_cast<double>(operation.duration) * timeUnit << ", "
-       << operation.fidelity << "}));";
+       << operation.fidelity << "));";
   }
   for (const auto& operation : device.shuttlingUnits) {
     os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
        << operation.name
        << " (Load)\", MQT_NA_QDMI_Operation_impl_d::Type::ShuttlingLoad, "
        << operation.numParameters << ", 0, "
        << static_cast<double>(operation.loadDuration) * timeUnit << ", "
-       << operation.loadFidelity << "}));";
+       << operation.loadFidelity << "));";
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
@@ -278,13 +271,12 @@ auto writeOperations(const Device& device, const double timeUnit,
        << " (Move)\", MQT_NA_QDMI_Operation_impl_d::Type::ShuttlingMove, "
        << operation.numParameters << ", 0, 0, 0}));";
     os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
        << operation.name
        << " (Store)\", MQT_NA_QDMI_Operation_impl_d::Type::ShuttlingStore, "
        << operation.numParameters << ", 0, "
        << static_cast<double>(operation.storeDuration) * timeUnit << ", "
-       << operation.storeFidelity << "}));";
+       << operation.storeFidelity << "));";
   }
   os << "\n";
 }
@@ -337,6 +329,7 @@ auto writeJSONSchema(const std::string& path) -> void {
   nlohmann::json json;
   try {
     is >> json;
+    // NOLINTNEXTLINE(misc-include-cleaner)
   } catch (const nlohmann::detail::parse_error& e) {
     std::stringstream ss;
     ss << "Failed to parse JSON string: " << e.what();
