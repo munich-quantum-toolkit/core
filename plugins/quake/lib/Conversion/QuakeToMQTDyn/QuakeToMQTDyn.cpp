@@ -39,20 +39,13 @@ using namespace mlir;
 #define GEN_PASS_DEF_QUAKETOMQTDYN
 #include "mlir/Conversion/QuakeToMQTDyn/QuakeToMQTDyn.h.inc"
 
-struct ConvertQuakeAlloca : public OpConversionPattern<quake::AllocaOp> {
-public:
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertQuakeAllocaOp final : OpConversionPattern<quake::AllocaOp> {
+  using OpConversionPattern<quake::AllocaOp>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(quake::AllocaOp op, OpAdaptor adaptor,
+  matchAndRewrite(quake::AllocaOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto& qregType =
-        ::mqt::ir::dyn::QubitRegisterType::get(rewriter.getContext());
-
-    auto sizeAttr = IntegerAttr{}; // TODO
-
-    rewriter.replaceOpWithNewOp<::mqt::ir::dyn::AllocOp>(
-        op, qregType, op.getSize(), sizeAttr);
+    // TODO: Implement the conversion
 
     return success();
   }
@@ -68,7 +61,7 @@ struct QuakeToMQTDynTypeConverter : public TypeConverter {
 void populateQuakeToMQTDynPatterns(TypeConverter& converter,
                                    RewritePatternSet& patterns) {
   auto* context = patterns.getContext();
-  patterns.insert<ConvertQuakeAlloca>(converter, context);
+  // patterns.insert<ConvertQuakeAllocaOp>(converter, context);
 }
 
 struct QuakeToMQTDyn : impl::QuakeToMQTDynBase<QuakeToMQTDyn> {
