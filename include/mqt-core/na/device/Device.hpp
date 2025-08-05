@@ -42,7 +42,7 @@ class Device final {
   /// @brief The number of qubits in the device.
   size_t qubitsNum = 0;
 
-  /// @brief The lists of sites and operations.
+  /// @brief The list of sites.
   std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>> sites;
 
   /// @brief The list of operations.
@@ -57,6 +57,9 @@ class Device final {
   Device();
 
 public:
+  // Default move constructor and move assignment operator.
+  Device(Device&&) = default;
+  Device& operator=(Device&&) = default;
   // Delete copy constructor and assignment operator to enforce singleton.
   Device(const Device&) = delete;
   Device& operator=(const Device&) = delete;
@@ -234,11 +237,11 @@ public:
  */
 struct MQT_NA_QDMI_Site_impl_d {
 private:
-  size_t id = 0;        ///< Unique identifier of the site
-  size_t module = 0;    ///< Identifier of the module the site belongs to
-  size_t subModule = 0; ///< Identifier of the sub-module the site belongs to
-  int64_t x = 0;        ///< X coordinate of the site in the lattice
-  int64_t y = 0;        ///< Y coordinate of the site in the lattice
+  size_t id = 0;          ///< Unique identifier of the site
+  size_t moduleId = 0;    ///< Identifier of the module the site belongs to
+  size_t subModuleId = 0; ///< Identifier of the sub-module the site belongs to
+  int64_t x = 0;          ///< X coordinate of the site in the lattice
+  int64_t y = 0;          ///< Y coordinate of the site in the lattice
   /// @brief Collects decoherence times for the device.
   struct DecoherenceTimes {
     double t1 = 0.0; ///< T1 time in microseconds

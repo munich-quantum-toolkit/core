@@ -12,7 +12,6 @@
 
 #include <cstdint>
 #include <istream>
-#include <nlohmann/detail/macro_scope.hpp>
 #include <ostream>
 #include <stdexcept>
 #include <string>
@@ -24,9 +23,9 @@
 namespace na {
 /**
  * @brief Represents a neutral atom device configuration.
- * @details This structs defines the schema for the JSON representation of a
- * neutral atom device configuration. This struct including all its
- * sub-structs implement functions to serialize and deserialize to and from
+ * @details This struct defines the schema for the JSON representation of a
+ * neutral atom device configuration. This struct, including all its
+ * sub-structs, implements functions to serialize and deserialize to and from
  * JSON using the nlohmann::json library.
  * @note All duration and length values are in multiples of the time unit and
  * the length unit, respectively.
@@ -44,6 +43,7 @@ struct Device {
     /// @brief The y-coordinate of the vector.
     int64_t y = 0;
 
+    // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Vector, x, y)
   };
   /// @brief Represents a region in the device.
@@ -58,11 +58,13 @@ struct Device {
       /// @brief The height of the region.
       uint64_t height = 0;
 
+      // NOLINTNEXTLINE(misc-include-cleaner)
       NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Size, width, height)
     };
     /// @brief The size of the region.
     Size size;
 
+    // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Region, origin, size)
   };
   /// @brief Represents a lattice of traps in the device.
@@ -98,6 +100,7 @@ struct Device {
      */
     Region extent;
 
+    // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Lattice, latticeOrigin,
                                                 latticeVector1, latticeVector2,
                                                 sublatticeOffsets, extent)
@@ -122,6 +125,8 @@ private:
     double fidelity = 0.0;
     /// @brief The number of parameters the operation takes.
     uint64_t numParameters = 0;
+
+    // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Operation, name, region,
                                                 duration, fidelity);
   };
@@ -149,6 +154,7 @@ public:
     /// @brief The number of qubits involved in the operation.
     uint64_t numQubits = 0;
 
+    // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_DERIVED_TYPE_INTRUSIVE_WITH_DEFAULT(
         GlobalMultiQubitOperation, Operation, interactionRadius, blockingRadius,
         idlingFidelity, numQubits)
@@ -163,6 +169,7 @@ public:
     /// @brief The number of columns in the operation.
     uint64_t numColumns = 0;
 
+    // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_DERIVED_TYPE_INTRUSIVE_WITH_DEFAULT(
         LocalSingleQubitOperation, Operation, numRows, numColumns)
   };
@@ -188,6 +195,7 @@ public:
     /// @brief The number of qubits involved in the operation.
     uint64_t numQubits = 0;
 
+    // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_DERIVED_TYPE_INTRUSIVE_WITH_DEFAULT(
         LocalMultiQubitOperation, Operation, interactionRadius, blockingRadius,
         numRows, numColumns, numQubits)
@@ -218,6 +226,7 @@ public:
     /// @brief The number of parameters the shuttling unit takes.
     uint64_t numParameters = 0;
 
+    // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(ShuttlingUnit, name, region,
                                                 numRows, numColumns,
                                                 movingSpeed, loadDuration,
@@ -234,6 +243,7 @@ public:
     /// @brief The T2 time.
     uint64_t t2 = 0;
 
+    // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(DecoherenceTimes, t1, t2)
   };
   /// @brief The decoherence times of the device.
@@ -247,6 +257,7 @@ public:
     /// nanoseconds).
     std::string unit;
 
+    // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Unit, scaleFactor, unit)
   };
 
@@ -255,6 +266,7 @@ public:
   /// @brief The unit of measurement for time in the device.
   Unit timeUnit;
 
+  // NOLINTNEXTLINE(misc-include-cleaner)
   NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(
       Device, name, numQubits, traps, minAtomDistance,
       globalSingleQubitOperations, globalMultiQubitOperations,

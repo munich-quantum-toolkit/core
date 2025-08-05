@@ -264,7 +264,7 @@ MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(const size_t id,
                                                  const size_t subModule,
                                                  const int64_t x,
                                                  const int64_t y)
-    : id(id), module(module), subModule(subModule), x(x), y(y) {
+    : id(id), moduleId(module), subModuleId(subModule), x(x), y(y) {
   INITIALIZE_T1(decoherenceTimes.t1);
   INITIALIZE_T2(decoherenceTimes.t2);
 }
@@ -280,10 +280,10 @@ auto MQT_NA_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, size_t, id, prop, size,
                             value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM1, size_t, module, prop,
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM1, size_t, moduleId, prop,
                             size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM2, size_t, subModule, prop,
-                            size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM2, size_t, subModuleId,
+                            prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM3, int64_t, x, prop, size,
                             value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM4, int64_t, y, prop, size,
