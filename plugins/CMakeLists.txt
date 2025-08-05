@@ -6,6 +6,8 @@
 #
 # Licensed under the MIT License
 
+set(CMAKE_CXX_STANDARD 20)
+
 if(BUILD_MQT_CORE_QUAKE_PLUGIN)
   add_subdirectory(quake)
 endif()
