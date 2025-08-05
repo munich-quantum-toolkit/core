@@ -110,8 +110,8 @@ struct Device {
    */
   uint64_t minAtomDistance = 0;
 
-  /// @brief Represents a global single-qubit operation.
-  struct GlobalSingleQubitOperation {
+private:
+  struct Operation {
     /// @brief The name of the operation.
     std::string name;
     /// @brief The region in which the operation can be performed.
@@ -122,20 +122,18 @@ struct Device {
     double fidelity = 0.0;
     /// @brief The number of parameters the operation takes.
     uint64_t numParameters = 0;
-
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(GlobalSingleQubitOperation,
-                                                name, region, duration,
-                                                fidelity, numParameters)
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Operation, name, region,
+                                                duration, fidelity);
   };
+
+public:
+  /// @brief Represents a global single-qubit operation.
+  struct GlobalSingleQubitOperation : Operation {};
   /// @brief The list of global single-qubit operations supported by the device.
   std::vector<GlobalSingleQubitOperation> globalSingleQubitOperations;
 
   /// @brief Represents a global multi-qubit operation.
-  struct GlobalMultiQubitOperation {
-    /// @brief The name of the operation.
-    std::string name;
-    /// @brief The region in which the operation can be performed.
-    Region region;
+  struct GlobalMultiQubitOperation : Operation {
     /**
      * @brief The interaction radius of the operation within which two qubits
      * can interact.
@@ -146,57 +144,33 @@ struct Device {
      * operation can be performed to avoid interference.
      */
     double blockingRadius = 0.0;
-    /// @brief The duration of the operation.
-    uint64_t duration = 0;
-    /// @brief The fidelity of the operation.
-    double fidelity = 0.0;
     /// @brief The fidelity of the operation when no qubits are interacting.
     double idlingFidelity = 0.0;
     /// @brief The number of qubits involved in the operation.
     uint64_t numQubits = 0;
-    /// @brief The number of parameters the operation takes.
-    uint64_t numParameters = 0;
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(GlobalMultiQubitOperation, name,
-                                                region, interactionRadius,
-                                                blockingRadius, duration,
-                                                fidelity, idlingFidelity,
-                                                numQubits, numParameters)
+    NLOHMANN_DEFINE_DERIVED_TYPE_INTRUSIVE_WITH_DEFAULT(
+        GlobalMultiQubitOperation, Operation, interactionRadius, blockingRadius,
+        idlingFidelity, numQubits)
   };
   /// @brief The list of global multi-qubit operations supported by the device.
   std::vector<GlobalMultiQubitOperation> globalMultiQubitOperations;
 
   /// @brief Represents a local single-qubit operation.
-  struct LocalSingleQubitOperation {
-    /// @brief The name of the operation.
-    std::string name;
-    /// @brief The region in which the operation can be performed.
-    Region region;
+  struct LocalSingleQubitOperation : Operation {
     /// @brief The number of rows in the operation.
     uint64_t numRows = 0;
     /// @brief The number of columns in the operation.
     uint64_t numColumns = 0;
-    /// @brief The duration of the operation.
-    uint64_t duration = 0;
-    /// @brief The fidelity of the operation.
-    double fidelity = 0.0;
-    /// @brief The number of parameters the operation takes.
-    uint64_t numParameters = 0;
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(LocalSingleQubitOperation, name,
-                                                region, numRows, numColumns,
-                                                duration, fidelity,
-                                                numParameters)
+    NLOHMANN_DEFINE_DERIVED_TYPE_INTRUSIVE_WITH_DEFAULT(
+        LocalSingleQubitOperation, Operation, numRows, numColumns)
   };
   /// @brief The list of local single-qubit operations supported by the device.
   std::vector<LocalSingleQubitOperation> localSingleQubitOperations;
 
   /// @brief Represents a local multi-qubit operation.
-  struct LocalMultiQubitOperation {
-    /// @brief The name of the operation.
-    std::string name;
-    /// @brief The region in which the operation can be performed.
-    Region region;
+  struct LocalMultiQubitOperation : Operation {
     /**
      * @brief The interaction radius of the operation within which two qubits
      * can interact.
@@ -211,20 +185,12 @@ struct Device {
     uint64_t numRows = 0;
     /// @brief The number of columns in the operation.
     uint64_t numColumns = 0;
-    /// @brief The duration of the operation.
-    uint64_t duration = 0;
-    /// @brief The fidelity of the operation.
-    double fidelity = 0.0;
     /// @brief The number of qubits involved in the operation.
     uint64_t numQubits = 0;
-    /// @brief The number of parameters the operation takes.
-    uint64_t numParameters = 0;
 
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(LocalMultiQubitOperation, name,
-                                                region, interactionRadius,
-                                                blockingRadius, numRows,
-                                                numColumns, duration, fidelity,
-                                                numQubits, numParameters)
+    NLOHMANN_DEFINE_DERIVED_TYPE_INTRUSIVE_WITH_DEFAULT(
+        LocalMultiQubitOperation, Operation, interactionRadius, blockingRadius,
+        numRows, numColumns, numQubits)
   };
   /// @brief The list of local multi-qubit operations supported by the device.
   std::vector<LocalMultiQubitOperation> localMultiQubitOperations;
