@@ -71,7 +71,7 @@ public:
   }
 
   /// @brief Destructor for the Device class.
-  ~Device();
+  ~Device() = default;
 
   /**
    * @brief Allocates a new device session.
