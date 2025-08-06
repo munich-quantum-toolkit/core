@@ -12,7 +12,7 @@
 // call operation that adheres to the qir specification
 
 #define ADD_CONVERT_PATTERN(gate)                                              \
-  patterns.add<ConvertMQTDynGateOpQIR<dyn::gate>>(typeConverter, context);
+  mqtPatterns.add<ConvertMQTDynGateOpQIR<dyn::gate>>(typeConverter, context);
 
 #include "mlir/Conversion/MQTDynToQIR/MQTDynToQIR.h"
 
@@ -413,20 +413,34 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
     ConversionTarget target(*context);
-    RewritePatternSet patterns(context);
+    RewritePatternSet stdPatterns(context);
+    RewritePatternSet mqtPatterns(context);
     MQTDynToQIRTypeConverter typeConverter(context);
-    target.addIllegalDialect<dyn::MQTDynDialect>();
+
+    // transform the default dialects first
+    // maybe need to add more?
     target.addLegalDialect<LLVM::LLVMDialect>();
+    cf::populateControlFlowToLLVMConversionPatterns(typeConverter, stdPatterns);
+    populateFuncToLLVMConversionPatterns(typeConverter, stdPatterns);
+    arith::populateArithToLLVMConversionPatterns(typeConverter, stdPatterns);
+    target.addIllegalDialect<arith::ArithDialect>();
+    target.addIllegalDialect<func::FuncDialect>();
+    target.addIllegalDialect<cf::ControlFlowDialect>();
+    if (failed(
+            applyPartialConversion(module, target, std::move(stdPatterns)))) {
+      signalPassFailure();
+    }
+    target.addIllegalDialect<dyn::MQTDynDialect>();
 
     SmallVector<Operation*> addressOfOps;
     auto* constantOp = collectMeasureConstants(module, addressOfOps, context);
     addInitialize(module, context);
 
-    patterns.add<ConvertMQTDynAllocQIR>(typeConverter, context);
-    patterns.add<ConvertMQTDynDeallocQIR>(typeConverter, context);
-    patterns.add<ConvertMQTDynExtractQIR>(typeConverter, context);
-    patterns.add<ConvertMQTDynMeasureQIR>(typeConverter, context, addressOfOps,
-                                          constantOp);
+    mqtPatterns.add<ConvertMQTDynAllocQIR>(typeConverter, context);
+    mqtPatterns.add<ConvertMQTDynDeallocQIR>(typeConverter, context);
+    mqtPatterns.add<ConvertMQTDynExtractQIR>(typeConverter, context);
+    mqtPatterns.add<ConvertMQTDynMeasureQIR>(typeConverter, context,
+                                             addressOfOps, constantOp);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)
@@ -463,15 +477,8 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     ADD_CONVERT_PATTERN(XXminusYY)
     ADD_CONVERT_PATTERN(XXplusYY)
 
-    // add some std dialect conversions
-    // maybe need to add more?
-    cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
-    populateFuncToLLVMConversionPatterns(typeConverter, patterns);
-    arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
-    target.addIllegalDialect<arith::ArithDialect>();
-    target.addIllegalDialect<func::FuncDialect>();
-    target.addIllegalDialect<cf::ControlFlowDialect>();
-    if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
+    if (failed(
+            applyPartialConversion(module, target, std::move(mqtPatterns)))) {
       signalPassFailure();
     }
   };
