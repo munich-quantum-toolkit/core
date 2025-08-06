@@ -21,7 +21,13 @@
 #include <iterator>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
+#include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
+#include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
+#include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
+#include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -39,7 +45,6 @@
 #include <mlir/Transforms/DialectConversion.h>
 #include <string>
 #include <utility>
-
 namespace mqt::ir {
 
 using namespace mlir;
@@ -67,23 +72,20 @@ LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
   return cast<LLVM::LLVMFuncOp>(fnDecl);
 }
 
-class MQTDynToQIRTypeConverter final : public TypeConverter {
-public:
-  explicit MQTDynToQIRTypeConverter(MLIRContext* ctx) {
-    // Identity conversion
-    addConversion([](Type type) { return type; });
-    // Qubit conversion
-    addConversion([ctx](dyn::QubitType /*type*/) -> Type {
+} // namespace
+
+struct MQTDynToQIRTypeConverter final : public LLVMTypeConverter {
+  explicit MQTDynToQIRTypeConverter(MLIRContext* ctx) : LLVMTypeConverter(ctx) {
+    // QubitType conversion
+    addConversion([ctx](dyn::QubitType /*type*/) {
       return LLVM::LLVMPointerType::get(ctx);
     });
-    // QregType conversion
-    addConversion([ctx](dyn::QubitRegisterType /*type*/) -> Type {
+    // QregType Conversion
+    addConversion([ctx](dyn::QubitRegisterType /*type*/) {
       return LLVM::LLVMPointerType::get(ctx);
     });
   }
 };
-
-} // namespace
 
 struct ConvertMQTDynAllocQIR final : OpConversionPattern<dyn::AllocOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -425,6 +427,7 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     patterns.add<ConvertMQTDynExtractQIR>(typeConverter, context);
     patterns.add<ConvertMQTDynMeasureQIR>(typeConverter, context, addressOfOps,
                                           constantOp);
+
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)
     ADD_CONVERT_PATTERN(BarrierOp)
@@ -459,6 +462,15 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     ADD_CONVERT_PATTERN(RZXOp)
     ADD_CONVERT_PATTERN(XXminusYY)
     ADD_CONVERT_PATTERN(XXplusYY)
+
+    // add some std dialect conversions
+    // maybe need to add more?
+    cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
+    populateFuncToLLVMConversionPatterns(typeConverter, patterns);
+    arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
+    target.addIllegalDialect<arith::ArithDialect>();
+    target.addIllegalDialect<func::FuncDialect>();
+    target.addIllegalDialect<cf::ControlFlowDialect>();
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
     }
