@@ -430,12 +430,12 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
             applyPartialConversion(module, target, std::move(stdPatterns)))) {
       signalPassFailure();
     }
-    target.addIllegalDialect<dyn::MQTDynDialect>();
 
+    // get the operations for measure conversions
     SmallVector<Operation*> addressOfOps;
     auto* constantOp = collectMeasureConstants(module, addressOfOps, context);
     addInitialize(module, context);
-
+    target.addIllegalDialect<dyn::MQTDynDialect>();
     mqtPatterns.add<ConvertMQTDynAllocQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTDynDeallocQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTDynExtractQIR>(typeConverter, context);

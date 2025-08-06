@@ -8,7 +8,6 @@
 
 // RUN: quantum-opt %s -split-input-file --qir-to-mqtdyn | FileCheck %s
 
-// -----
 // This test checks if the alloc register call is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertAllocRegister()
@@ -60,7 +59,7 @@ module {
 }
 
 // -----
-// This test checks if the alloc qubit call is correctly converted in an allocOp and extractQubit operations
+// This test checks if the alloc qubit call is correctly converted in an alloc operation and extractQubit operations
 module {
     // CHECK-LABEL: llvm.func @testConvertAllocateQubit()
     llvm.func @testConvertAllocateQubit() attributes {passthrough = ["entry_point"]}  {
@@ -108,7 +107,7 @@ module {
 }
 
 // -----
-// This test checks if the extract from register call is correctly converted
+// This test checks if the measure operation is correctly converted
 module {
     llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
     // CHECK-LABEL: llvm.func @testConvertMeasure()
@@ -146,7 +145,7 @@ module {
 }
 
 // -----
-// This test checks if the dealloc register call is correctly converted
+// This test checks if the single qubit gates are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertSingleQubitOp()
     llvm.func @testConvertSingleQubitOp() attributes {passthrough = ["entry_point"]}  {
@@ -209,7 +208,7 @@ module {
 }
 
 // -----
-// This test checks if the dealloc register call is correctly converted
+// This test checks if the two target gates are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertTwoTargetOp()
     llvm.func @testConvertTwoTargetOp() attributes {passthrough = ["entry_point"]}  {
@@ -257,7 +256,7 @@ module {
 }
 
 // -----
-// This test checks if the dealloc register call is correctly converted
+// This test checks if the single qubit rotation gates are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testSingleQubitRotationOp()
     llvm.func @testSingleQubitRotationOp() attributes {passthrough = ["entry_point"]}  {
@@ -300,7 +299,7 @@ module {
 }
 
 // -----
-// This test checks if the dealloc register call is correctly converted
+// This test checks if the multiple qubit rotation gates are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testMultipleQubitRotationOp()
     llvm.func @testMultipleQubitRotationOp() attributes {passthrough = ["entry_point"]}  {
@@ -350,7 +349,7 @@ module {
 }
 
 // -----
-// This test checks if the dealloc register call is correctly converted
+// This test checks if controlled gates are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertControlledOp()
     llvm.func @testConvertControlledOp() attributes {passthrough = ["entry_point"]}  {
@@ -394,7 +393,7 @@ module {
 }
 
 // -----
-// This test checks if the dealloc register call is correctly converted
+// This test checks if the gphase operation is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertGPhaseOp()
     llvm.func @testConvertGPhaseOp() attributes {passthrough = ["entry_point"]}  {
@@ -416,7 +415,7 @@ module {
 }
 
 // -----
-// This test checks if the dealloc register call is correctly converted
+// This test checks if the controlled gphase operation is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertGPhaseOpControlled()
     llvm.func @testConvertGPhaseOpControlled() attributes {passthrough = ["entry_point"]}  {
@@ -445,7 +444,7 @@ module {
 }
 
 // -----
-// This test checks if a barrierOp is converted correctly
+// This test checks if the barrierOp is converted correctly
 module {
     // CHECK-LABEL: llvm.func @testConvertBarrierOp()
     llvm.func @testConvertBarrierOp() attributes {passthrough = ["entry_point"]}  {
