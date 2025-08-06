@@ -15,7 +15,7 @@ include "mlir/IR/DialectBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 include "mlir/Dialect/Common/IR/CommonTraits.td"
-// include "mlir/Dialect/MQTOpt/IR/MQTOptInterfaces.td"
+include "mlir/Dialect/MQTMem/IR/MQTMemInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // Dialect
@@ -28,27 +28,7 @@ def MQTMemDialect : Dialect {
     let summary = "The MQT memory (mqtmem) dialect.";
 
     let description = [{
-        This dialect is using value semantics for qubits. This means that
-        variables of type qubit and the elements of qubit registers do not
-        identify a physical, they rather refer to the state of a qubit. A qubit
-        state can be assigned only once and can also be used only once.
-        Otherwise, the no-cloning theorem would be violated.
-
-        The first requirement is enforced by the SSA form of MLIR. The second
-        requirement is not explicitly enforced. However, when converting the
-        input dialect mqt that is using reference semantics to the mqtopt dialect,
-        qubit state values will only be used once by construction. This is also
-        the reason why the mqtopt dialect is not meant to be used by hand, but
-        rather as an intermediate representation for optimization passes.
-
-        Due to the value semantics, the mqtopt dialect allows dataflow analysis
-        and optimizations. Those are very common in classical compiler
-        optimizations. Hence, the existing classical compiler optimizations can
-        easier be reused for quantum programs.
-
-        For more information, see the paper "QIRO:A Static Single Assignment
-        based Quantum Program Representation for Optimization"
-        (https://doi.org/10.1145/3491247)
+        TODO
     }];
 
     // The C++ namespace that the dialect, and all sub-components, get placed
@@ -89,12 +69,13 @@ class GateOp<string mnemonic, list<Trait> traits = [NoMemoryEffect]> :
 }
 
 class UnitaryOp<string mnemonic, list<Trait> traits = []> :
-    GateOp<mnemonic, traits # [AttrSizedOperandSegments]> {
+    GateOp<mnemonic, traits # [AttrSizedOperandSegments, UnitaryInterface]> {
     let arguments = (ins
         OptionalAttr<DenseF64ArrayAttr>:$static_params,
         OptionalAttr<DenseBoolArrayAttr>:$params_mask,
         Variadic<F64>:$params,
         DeviceQubitType:$primary,
+        Optional<DeviceQubitType>:$ctrl_primary,
         Optional<DeviceQubitType>:$secondary
     );
 
@@ -102,8 +83,20 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
 
     let assemblyFormat = [{
         `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)`
-        attr-dict $primary ( `,` $secondary^ )?
+        attr-dict $primary ( `,` $secondary^ )? ( `ctrl` $ctrl_primary^ )?
     }];
+
+    let hasVerifier = 1;
+    let extraClassDefinition = [{
+        ::llvm::LogicalResult mqt::ir::mem::$cppClass::verify() {
+            if (getCtrlPrimary() && getSecondary()) {
+                return emitOpError() << "A unitary op in the mem dialect has "
+                                           << "either a secondary OR a control qubit.";
+            }
+            return mlir::success();
+        }
+    }];
+
 }
 
 include "mlir/Dialect/MQTMem/IR/MQTMemStdOps.td"
@@ -126,8 +119,8 @@ def MeasureOp : GateOp<"measure", [SameVariadicResultSize, MatchingMeasureInOuts
         ```
     }];
 
-    let arguments = (ins Variadic<DeviceQubitType>:$qubits);
-    let results = (outs Variadic<I1>:$bits);
+    let arguments = (ins Variadic<DeviceQubitType>:$in_qubits);
+    let results = (outs Variadic<I1>:$out_bits);
 }
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTMemOp<mnemonic, traits>;
