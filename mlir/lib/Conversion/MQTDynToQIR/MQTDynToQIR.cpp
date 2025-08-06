@@ -18,9 +18,10 @@
 
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 
+#include <iterator>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -29,12 +30,15 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <string>
+#include <utility>
 
 namespace mqt::ir {
 
@@ -44,20 +48,20 @@ using namespace mlir;
 #include "mlir/Conversion/MQTDynToQIR/MQTDynToQIR.h.inc"
 
 namespace {
-// add function declaration at the beginning if it does not exist already and
+// add function declaration at the end if it does not exist already and
 // return the function declaration
 LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
-                                        Operation* op, StringRef fnSymbol,
+                                        Operation* op, StringRef fnName,
                                         Type fnType) {
-  auto* fnDecl = SymbolTable::lookupNearestSymbolFrom(
-      op, rewriter.getStringAttr(fnSymbol));
+  auto* fnDecl =
+      SymbolTable::lookupNearestSymbolFrom(op, rewriter.getStringAttr(fnName));
 
   if (fnDecl == nullptr) {
-    PatternRewriter::InsertionGuard insertGuard(rewriter);
-    auto mod = op->getParentOfType<ModuleOp>();
-    rewriter.setInsertionPointToEnd(mod.getBody());
+    const PatternRewriter::InsertionGuard insertGuard(rewriter);
+    auto module = op->getParentOfType<ModuleOp>();
+    rewriter.setInsertionPointToEnd(module.getBody());
 
-    fnDecl = rewriter.create<LLVM::LLVMFuncOp>(op->getLoc(), fnSymbol, fnType);
+    fnDecl = rewriter.create<LLVM::LLVMFuncOp>(op->getLoc(), fnName, fnType);
   }
 
   return cast<LLVM::LLVMFuncOp>(fnDecl);
@@ -264,8 +268,10 @@ struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
     auto fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
     // replace the old operation with new callOp
-    auto newOp = rewriter.replaceOpWithNewOp<LLVM::CallOp>(
-        op, fnDecl, adaptor.getInQubits());
+    auto newOp = rewriter.create<LLVM::CallOp>(op->getLoc(), fnDecl,
+                                               adaptor.getInQubits());
+
+    // create record result output
     fnName = "__quantum__rt__result_record_output";
     qirSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx),
@@ -278,6 +284,7 @@ struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
                    measureConstants->front()->getResult(0)});
     measureConstants->erase(&measureConstants->front());
 
+    // create record update reference count
     fnName = "__quantum__rt__result_update_reference_count";
     qirSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx),
@@ -287,6 +294,13 @@ struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
         op.getLoc(), fnDecl,
         ValueRange{newOp->getResult(0), constantOp->getResult(0)});
 
+    // create read result op
+    fnName = "__quantum__rt__read_result";
+    qirSignature = LLVM::LLVMFunctionType::get(
+        IntegerType::get(ctx, 1), {LLVM::LLVMPointerType::get(ctx)});
+    fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
+                                              ValueRange{newOp->getResult(0)});
     return success();
   }
 };
@@ -294,27 +308,29 @@ struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
 struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
   using MQTDynToQIRBase::MQTDynToQIRBase;
 
-  // collect all the necessary operations for the measure operation conversion
-  static Operation*
-  collectMeasureConstants(Operation* op, SmallVector<Operation*>& operations) {
-
+  static LLVM::LLVMFuncOp getMainFunction(Operation* op) {
     auto module = llvm::dyn_cast<ModuleOp>(op);
-    LLVM::LLVMFuncOp main;
-
     // find the main function
     for (auto funcOp : module.getOps<LLVM::LLVMFuncOp>()) {
-      if (auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough")) {
-        for (auto attr : passthrough) {
-          if (auto strAttr = dyn_cast<StringAttr>(attr)) {
-
-            if (strAttr.getValue() == "entry_point") {
-
-              main = funcOp;
-            }
-          }
-        }
+      auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
+      if (!passthrough) {
+        continue;
+      }
+      if (llvm::any_of(passthrough, [](Attribute attr) {
+            auto strAttr = dyn_cast<StringAttr>(attr);
+            return strAttr && strAttr.getValue() == "entry_point";
+          })) {
+        return funcOp;
       }
     }
+    return nullptr;
+  }
+  // collect all the necessary operations for the measure operation conversion
+  static Operation* collectMeasureConstants(Operation* op,
+                                            SmallVector<Operation*>& operations,
+                                            MLIRContext* ctx) {
+
+    LLVM::LLVMFuncOp main = getMainFunction(op);
 
     // get the first block in the main function
     auto& firstBlock = *(main.getBlocks().begin());
@@ -335,31 +351,26 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
         }
       }
     });
-
+    // create constant -1 value if there is none
+    if (result == nullptr) {
+      OpBuilder builder(main.getBody());
+      builder.setInsertionPointToStart(&firstBlock);
+      result = builder.create<LLVM::ConstantOp>(main->getLoc(),
+                                                IntegerType::get(ctx, 32),
+                                                builder.getI32IntegerAttr(-1));
+    }
     return result;
   }
 
-  static void addInitialize(Operation* op) {
-    // get the first block in the main function
+  // create the quantum initialize op
+  static void addInitialize(Operation* op, MLIRContext* ctx) {
     auto module = llvm::dyn_cast<ModuleOp>(op);
-    LLVM::LLVMFuncOp main;
-    // find the main function
-    for (auto funcOp : module.getOps<LLVM::LLVMFuncOp>()) {
-      if (auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough")) {
-        for (auto attr : passthrough) {
-          if (auto strAttr = dyn_cast<StringAttr>(attr)) {
+    LLVM::LLVMFuncOp main = getMainFunction(op);
 
-            if (strAttr.getValue() == "entry_point") {
-
-              main = funcOp;
-            }
-          }
-        }
-      }
-    }
     auto& firstBlock = *(main.getBlocks().begin());
+    OpBuilder builder(main.getBody());
     Operation* zeroOperation = nullptr;
-    // find the zeroOp
+    // find the zeroOp or create one
     firstBlock.walk([&](Operation* op) {
       if (auto zeroOp = llvm::dyn_cast<LLVM::ZeroOp>(op)) {
         zeroOperation = zeroOp;
@@ -367,17 +378,29 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
       }
       return WalkResult::advance();
     });
+    if (zeroOperation == nullptr) {
+      builder.setInsertionPointToStart(&firstBlock);
+      zeroOperation = builder.create<LLVM::ZeroOp>(
+          main->getLoc(), LLVM::LLVMPointerType::get(ctx));
+    }
+
     // set the builder to the 2nd last operation in the first block
-    OpBuilder builder(main.getBody());
     auto& ops = firstBlock.getOperations();
     const auto insertPoint = std::prev(ops.end(), 1);
     builder.setInsertionPoint(&*insertPoint);
 
-    // get the function declaration
+    // get the function declaration of initialize otherwise create one
     const StringRef fnName = "__quantum__rt__initialize";
     auto* fnDecl =
         SymbolTable::lookupNearestSymbolFrom(op, builder.getStringAttr(fnName));
-
+    if (fnDecl == nullptr) {
+      const PatternRewriter::InsertionGuard insertGuard(builder);
+      builder.setInsertionPointToEnd(module.getBody());
+      auto fnSignature = LLVM::LLVMFunctionType::get(
+          LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
+      fnDecl =
+          builder.create<LLVM::LLVMFuncOp>(op->getLoc(), fnName, fnSignature);
+    }
     // create and insert the initialize operation
     builder.create<LLVM::CallOp>(op->getLoc(),
                                  static_cast<LLVM::LLVMFuncOp>(fnDecl),
@@ -394,8 +417,8 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     target.addLegalDialect<LLVM::LLVMDialect>();
 
     SmallVector<Operation*> addressOfOps;
-    auto* constantOp = collectMeasureConstants(module, addressOfOps);
-    addInitialize(module);
+    auto* constantOp = collectMeasureConstants(module, addressOfOps, context);
+    addInitialize(module, context);
 
     patterns.add<ConvertMQTDynAllocQIR>(typeConverter, context);
     patterns.add<ConvertMQTDynDeallocQIR>(typeConverter, context);
