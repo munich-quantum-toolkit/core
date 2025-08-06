@@ -127,7 +127,7 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
         {"dcx", "DCXOp"},
         {"ecr", "ECROp"}};
     // check if it is a simple gate
-    if (GATE_NAMES.contains(name.str())) {
+    if (!GATE_NAMES.contains(name.str())) {
       return false;
     }
     const auto gateName = GATE_NAMES.at(name.str());
