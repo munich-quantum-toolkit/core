@@ -187,8 +187,7 @@ module {
         %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
         %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
         %q1 = "mqtdyn.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-        %m0 = "mqtdyn.measure"(%q0) : (!mqtdyn.Qubit) -> i1
-        %m1 = "mqtdyn.measure"(%q1) : (!mqtdyn.Qubit) -> i1
+        %m0, %m1 = "mqtdyn.measure"(%q0, %q1) : (!mqtdyn.Qubit, !mqtdyn.Qubit) -> (i1, i1)
         "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
         cf.br ^bb2
       ^bb2:

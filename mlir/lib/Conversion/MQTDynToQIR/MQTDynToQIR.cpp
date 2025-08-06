@@ -261,48 +261,57 @@ struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = rewriter.getContext();
 
-    // create name and signature of the new function
-    StringRef fnName = "__quantum__qis__m__body";
-    auto qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx));
+    const auto inQubits = adaptor.getInQubits();
+    const auto resultBits = op->getResults();
+    StringRef fnName;
+    LLVM::LLVMFunctionType qirSignature;
+    LLVM::LLVMFuncOp fnDecl;
+    for (size_t i = 0; i < inQubits.size(); i++) {
 
-    // get the function declaration
-    auto fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+      // create measure operation
+      fnName = "__quantum__qis__m__body";
+      qirSignature = LLVM::LLVMFunctionType::get(
+          LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx));
+      fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
-    // replace the old operation with new callOp
-    auto newOp = rewriter.create<LLVM::CallOp>(op->getLoc(), fnDecl,
-                                               adaptor.getInQubits());
+      auto newOp =
+          rewriter.create<LLVM::CallOp>(op->getLoc(), fnDecl, inQubits[i]);
 
-    // create record result output
-    fnName = "__quantum__rt__result_record_output";
-    qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx),
-        {LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx)});
-    fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+      // create record result output
+      fnName = "__quantum__rt__result_record_output";
+      qirSignature = LLVM::LLVMFunctionType::get(
+          LLVM::LLVMVoidType::get(ctx),
+          {LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx)});
+      fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
-    rewriter.create<LLVM::CallOp>(
-        op.getLoc(), fnDecl,
-        ValueRange{newOp->getResult(0),
-                   measureConstants->front()->getResult(0)});
-    measureConstants->erase(&measureConstants->front());
+      rewriter.create<LLVM::CallOp>(
+          op.getLoc(), fnDecl,
+          ValueRange{newOp->getResult(0),
+                     measureConstants->front()->getResult(0)});
+      measureConstants->erase(&measureConstants->front());
 
-    // create record update reference count
-    fnName = "__quantum__rt__result_update_reference_count";
-    qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx),
-        {LLVM::LLVMPointerType::get(ctx), IntegerType::get(ctx, 32)});
-    fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
-    rewriter.create<LLVM::CallOp>(
-        op.getLoc(), fnDecl,
-        ValueRange{newOp->getResult(0), constantOp->getResult(0)});
+      // create record update reference count
+      fnName = "__quantum__rt__result_update_reference_count";
+      qirSignature = LLVM::LLVMFunctionType::get(
+          LLVM::LLVMVoidType::get(ctx),
+          {LLVM::LLVMPointerType::get(ctx), IntegerType::get(ctx, 32)});
+      fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
-    // create read result op
-    fnName = "__quantum__rt__read_result";
-    qirSignature = LLVM::LLVMFunctionType::get(
-        IntegerType::get(ctx, 1), {LLVM::LLVMPointerType::get(ctx)});
-    fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
-                                              ValueRange{newOp->getResult(0)});
+      rewriter.create<LLVM::CallOp>(
+          op.getLoc(), fnDecl,
+          ValueRange{newOp->getResult(0), constantOp->getResult(0)});
+
+      // create read result op and replace the old result with new result
+      fnName = "__quantum__rt__read_result";
+      qirSignature = LLVM::LLVMFunctionType::get(
+          IntegerType::get(ctx, 1), {LLVM::LLVMPointerType::get(ctx)});
+      fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+
+      auto resultOp = rewriter.create<LLVM::CallOp>(
+          op->getLoc(), fnDecl, ValueRange{newOp->getResult(0)});
+      op->replaceUsesOfWith(resultBits[i], resultOp.getResult());
+    }
+    rewriter.eraseOp(op);
     return success();
   }
 };
