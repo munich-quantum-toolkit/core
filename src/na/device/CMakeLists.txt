@@ -86,6 +86,9 @@ if(NOT TARGET ${TARGET_NAME})
   set(JSON_FILE ${PROJECT_SOURCE_DIR}/json/na/device.json)
   set(DEVICE_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/na/device/DeviceMemberInitializers.hpp)
 
+  # Create include directory
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/na/device)
+
   # Generate definitions for device
   add_custom_command(
     OUTPUT ${DEVICE_HDR}
