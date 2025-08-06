@@ -43,7 +43,7 @@ void mqt::ir::dyn::MQTDynDialect::initialize() {
 #include "mlir/Dialect/MQTDyn/IR/MQTDynOpsTypes.cpp.inc"
 
 //===----------------------------------------------------------------------===//
-// Types
+// Interfaces
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Dialect/MQTDyn/IR/MQTDynInterfaces.cpp.inc"
