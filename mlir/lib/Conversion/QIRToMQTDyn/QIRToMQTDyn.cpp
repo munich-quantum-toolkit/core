@@ -31,12 +31,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
 #include <map>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -50,6 +50,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+
 namespace mqt::ir {
 
 using namespace mlir;
@@ -126,7 +127,7 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
         {"dcx", "DCXOp"},
         {"ecr", "ECROp"}};
     // check if it is a simple gate
-    if (GATE_NAMES.find(name.str()) == GATE_NAMES.end()) {
+    if (GATE_NAMES.contains(name.str())) {
       return false;
     }
     const auto gateName = GATE_NAMES.at(name.str());
@@ -178,11 +179,10 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     std::string gateName;
     size_t rotationCount = 0;
     // check if it is rotation gate and get the number of degrees
-    if (SINGLE_ROTATION_GATES.find(name.str()) != SINGLE_ROTATION_GATES.end()) {
+    if (SINGLE_ROTATION_GATES.contains(name.str())) {
       gateName = SINGLE_ROTATION_GATES.at(name.str());
       rotationCount = 1;
-    } else if (DOUBLE_ROTATION_GATES.find(name.str()) !=
-               DOUBLE_ROTATION_GATES.end()) {
+    } else if (DOUBLE_ROTATION_GATES.contains(name.str())) {
       gateName = DOUBLE_ROTATION_GATES.at(name.str());
       rotationCount = 2;
     } else if (name.str() == "u") {
