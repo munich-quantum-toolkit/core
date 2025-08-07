@@ -24,8 +24,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
-- 🐛 Fix bug where lambda passed to `std::accumulate` incorrectly took the accumulator by reference instead of by value ([#1089]) ([**@denialhaag**])
-- 🐛 Fix bug in DD package ([#1088]) ([**@denialhaag**])
+- 🐛 Fix usage of `std::accumulate` by changing accumulator parameter from reference to value ([#1089]) ([**@denialhaag**])
+- 🐛 Fix erroneous `contains` check in DD package ([#1088]) ([**@denialhaag**])
 
 you need to .
 
