@@ -15,10 +15,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
 
-#include <pybind11/pytypes.h>
+#include <pybind11/native_enum.h>
 // clang-format on
-
-#include <string>
 
 namespace mqt {
 
@@ -27,7 +25,8 @@ using namespace pybind11::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerOptype(const py::module& m) {
-  py::enum_<qc::OpType>(m, "OpType")
+  py::native_enum<qc::OpType>(m, "OpType", "enum.Enum",
+                              "Enumeration of operation types.")
       .value("none", qc::OpType::None)
       .value("gphase", qc::OpType::GPhase)
       .value("i", qc::OpType::I)
@@ -68,12 +67,7 @@ void registerOptype(const py::module& m) {
       .value("barrier", qc::OpType::Barrier)
       .value("classic_controlled", qc::OpType::ClassicControlled)
       .export_values()
-      .def("__str__", [](const qc::OpType& op) { return qc::toString(op); })
-      .def("__repr__", [](const qc::OpType& op) { return qc::toString(op); })
-      .def(py::init([](const std::string& str) -> qc::OpType {
-        return qc::opTypeFromString(str);
-      }));
-  py::implicitly_convertible<py::str, qc::OpType>();
+      .finalize();
 }
 
 } // namespace mqt

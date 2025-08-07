@@ -176,7 +176,7 @@ public:
   [[nodiscard]] auto getVertices() const -> std::unordered_set<V> {
     return std::accumulate(mapping.cbegin(), mapping.cend(),
                            std::unordered_set<V>(),
-                           [](auto& acc, const auto& v) {
+                           [](auto acc, const auto& v) {
                              acc.emplace(v.first);
                              return acc;
                            });
