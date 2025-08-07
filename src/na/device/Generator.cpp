@@ -14,8 +14,6 @@
 
 #include "na/device/Generator.hpp"
 
-#include "../../../cmake-build-debug/src/na/device/include/mqt_na_qdmi/types.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cmath>
