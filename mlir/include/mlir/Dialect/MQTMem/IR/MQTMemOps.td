@@ -28,7 +28,15 @@ def MQTMemDialect : Dialect {
     let summary = "The MQT memory (mqtmem) dialect.";
 
     let description = [{
-        TODO
+        The `mqtmem` dialect provides operations to build quantum
+        hardware-aware programs. Ideally, these programs fit the hardware's
+        topology and native gate set requirements. Consequently, this dialect
+        closes the gap between a program and a specific quantum accelerator.
+
+        This dialect addresses qubits statically. Moreover, it assumes that
+        multi-controlled multi-target gates are already decomposed into one
+        and two-qubit gates. Negatively controlled gates must be converted
+        to positively-controlled ones beforehand.
     }];
 
     // The C++ namespace that the dialect, and all sub-components, get placed

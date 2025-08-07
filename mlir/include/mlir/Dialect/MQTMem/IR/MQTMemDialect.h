@@ -36,7 +36,6 @@
 
 #include "mlir/Dialect/Common/IR/CommonTraits.h"         // IWYU pragma: export
 #include "mlir/Dialect/MQTMem/IR/MQTMemInterfaces.h.inc" // IWYU pragma: export
-// TODO
 
 //===----------------------------------------------------------------------===//
 // Operations
