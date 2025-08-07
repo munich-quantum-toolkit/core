@@ -33,7 +33,6 @@
 #include <cstdint>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/Casting.h>
 #include <map>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
