@@ -104,147 +104,136 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
                   mlir::ValueRange controlQubitsPositive,
                   mlir::ValueRange controlQubitsNegative,
                   mlir::PatternRewriter& rewriter) {
+    // Create result types for all output qubits
+    auto qubitType = QubitType::get(rewriter.getContext());
+    const mlir::SmallVector<mlir::Type> outQubitTypes(inQubits.size(),
+                                                      qubitType);
+    const mlir::SmallVector<mlir::Type> posCtrlOutTypes(
+        controlQubitsPositive.size(), qubitType);
+    const mlir::SmallVector<mlir::Type> negCtrlOutTypes(
+        controlQubitsNegative.size(), qubitType);
+
     switch (type) {
     case qc::OpType::I:
-      return rewriter.create<IOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
-          controlQubitsNegative);
+      return rewriter.create<IOp>(loc, outQubitTypes, posCtrlOutTypes,
+                                  negCtrlOutTypes, nullptr, nullptr,
+                                  mlir::ValueRange{}, inQubits,
+                                  controlQubitsPositive, controlQubitsNegative);
+
     case qc::OpType::H:
-      return rewriter.create<HOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
-          controlQubitsNegative);
+      return rewriter.create<HOp>(loc, outQubitTypes, posCtrlOutTypes,
+                                  negCtrlOutTypes, nullptr, nullptr,
+                                  mlir::ValueRange{}, inQubits,
+                                  controlQubitsPositive, controlQubitsNegative);
+
     case qc::OpType::X:
-      return rewriter.create<XOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
-          controlQubitsNegative);
+      return rewriter.create<XOp>(loc, outQubitTypes, posCtrlOutTypes,
+                                  negCtrlOutTypes, nullptr, nullptr,
+                                  mlir::ValueRange{}, inQubits,
+                                  controlQubitsPositive, controlQubitsNegative);
+
     case qc::OpType::Y:
-      return rewriter.create<YOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
-          controlQubitsNegative);
+      return rewriter.create<YOp>(loc, outQubitTypes, posCtrlOutTypes,
+                                  negCtrlOutTypes, nullptr, nullptr,
+                                  mlir::ValueRange{}, inQubits,
+                                  controlQubitsPositive, controlQubitsNegative);
+
     case qc::OpType::Z:
-      return rewriter.create<ZOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
-          controlQubitsNegative);
+      return rewriter.create<ZOp>(loc, outQubitTypes, posCtrlOutTypes,
+                                  negCtrlOutTypes, nullptr, nullptr,
+                                  mlir::ValueRange{}, inQubits,
+                                  controlQubitsPositive, controlQubitsNegative);
+
     case qc::OpType::S:
-      return rewriter.create<SOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
-          controlQubitsNegative);
+      return rewriter.create<SOp>(loc, outQubitTypes, posCtrlOutTypes,
+                                  negCtrlOutTypes, nullptr, nullptr,
+                                  mlir::ValueRange{}, inQubits,
+                                  controlQubitsPositive, controlQubitsNegative);
+
     case qc::OpType::Sdg:
       return rewriter.create<SdgOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          loc, outQubitTypes, posCtrlOutTypes, negCtrlOutTypes, nullptr,
+          nullptr, mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
     case qc::OpType::T:
-      return rewriter.create<TOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
-          controlQubitsNegative);
+      return rewriter.create<TOp>(loc, outQubitTypes, posCtrlOutTypes,
+                                  negCtrlOutTypes, nullptr, nullptr,
+                                  mlir::ValueRange{}, inQubits,
+                                  controlQubitsPositive, controlQubitsNegative);
+
     case qc::OpType::Tdg:
       return rewriter.create<TdgOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          loc, outQubitTypes, posCtrlOutTypes, negCtrlOutTypes, nullptr,
+          nullptr, mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
     case qc::OpType::V:
-      return rewriter.create<VOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
-          controlQubitsNegative);
+      return rewriter.create<VOp>(loc, outQubitTypes, posCtrlOutTypes,
+                                  negCtrlOutTypes, nullptr, nullptr,
+                                  mlir::ValueRange{}, inQubits,
+                                  controlQubitsPositive, controlQubitsNegative);
+
     case qc::OpType::Vdg:
       return rewriter.create<VdgOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          loc, outQubitTypes, posCtrlOutTypes, negCtrlOutTypes, nullptr,
+          nullptr, mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
     case qc::OpType::SX:
       return rewriter.create<SXOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          loc, outQubitTypes, posCtrlOutTypes, negCtrlOutTypes, nullptr,
+          nullptr, mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
     case qc::OpType::SXdg:
       return rewriter.create<SXdgOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0]}, controlQubitsPositive,
+          loc, outQubitTypes, posCtrlOutTypes, negCtrlOutTypes, nullptr,
+          nullptr, mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
     case qc::OpType::SWAP:
       return rewriter.create<SWAPOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          loc, outQubitTypes, posCtrlOutTypes, negCtrlOutTypes, nullptr,
+          nullptr, mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
     case qc::OpType::iSWAP:
       return rewriter.create<iSWAPOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          loc, outQubitTypes, posCtrlOutTypes, negCtrlOutTypes, nullptr,
+          nullptr, mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
     case qc::OpType::iSWAPdg:
       return rewriter.create<iSWAPdgOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          loc, outQubitTypes, posCtrlOutTypes, negCtrlOutTypes, nullptr,
+          nullptr, mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
     case qc::OpType::Peres:
       return rewriter.create<PeresOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          loc, outQubitTypes, posCtrlOutTypes, negCtrlOutTypes, nullptr,
+          nullptr, mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
     case qc::OpType::Peresdg:
       return rewriter.create<PeresdgOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          loc, outQubitTypes, posCtrlOutTypes, negCtrlOutTypes, nullptr,
+          nullptr, mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
     case qc::OpType::DCX:
       return rewriter.create<DCXOp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          loc, outQubitTypes, posCtrlOutTypes, negCtrlOutTypes, nullptr,
+          nullptr, mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
     case qc::OpType::ECR:
       return rewriter.create<ECROp>(
-          loc, inQubits[0].getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubits[0], inQubits[1]}, controlQubitsPositive,
+          loc, outQubitTypes, posCtrlOutTypes, negCtrlOutTypes, nullptr,
+          nullptr, mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
     default:
       throw std::runtime_error("Unsupported operation type");
     }
