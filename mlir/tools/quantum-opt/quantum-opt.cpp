@@ -12,6 +12,7 @@
 #include "mlir/Conversion/MQTOptToMQTDyn/MQTOptToMQTDyn.h" // IWYU pragma: keep
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"          // IWYU pragma: keep
 #include "mlir/Dialect/MQTDyn/Transforms/Passes.h"         // IWYU pragma: keep
+#include "mlir/Dialect/MQTMem/IR/MQTMemDialect.h"          // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"          // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"         // IWYU pragma: keep
 
@@ -33,6 +34,7 @@ int main(const int argc, char** argv) {
   mlir::func::registerAllExtensions(registry);
   registry.insert<mqt::ir::opt::MQTOptDialect>();
   registry.insert<mqt::ir::dyn::MQTDynDialect>();
+  registry.insert<mqt::ir::mem::MQTMemDialect>();
 
   return mlir::asMainReturnCode(
       MlirOptMain(argc, argv, "Quantum optimizer driver\n", registry));

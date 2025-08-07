@@ -29,27 +29,28 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
     let methods = [
         InterfaceMethod<
             /*desc=*/        "Returns all qubits of the operation excl. controlling qubits.",
-            /*returnType=*/  "::llvm::SmallVector<::mlir::Value>",
+            /*returnType=*/  "std::vector<::mlir::Value>",
             /*methodName=*/  "getInQubits",
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
-                ::llvm::SmallVector<::mlir::Value, 2> in_qubits{$_op.getPrimary()};
+                std::vector<::mlir::Value> in_qubits;
+                if (auto p = $_op.getPrimary()) { in_qubits.push_back(p); }
                 if (auto s = $_op.getSecondary()) { in_qubits.push_back(s); }
                 return in_qubits;
             }]>,
         InterfaceMethod<
             /*desc=*/        "Returns all positively-controlling qubits of the operation.",
-            /*returnType=*/  "::llvm::SmallVector<::mlir::Value>",
+            /*returnType=*/  "std::vector<::mlir::Value>",
             /*methodName=*/  "getPosCtrlInQubits",
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
-                return ::llvm::SmallVector<::mlir::Value, 1> {$_op.getCtrlPrimary()};
+                return { $_op.getCtrlPrimary() };
             }]>,
         InterfaceMethod<
             /*desc=*/        "Returns all negatively-controlling qubits of the operation.",
-            /*returnType=*/  "::llvm::SmallVector<::mlir::Value>",
+            /*returnType=*/  "std::vector<::mlir::Value>",
             /*methodName=*/  "getNegCtrlInQubits",
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
@@ -58,7 +59,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             }]>,
         InterfaceMethod<
             /*desc=*/        "Returns all controlling qubits of the operation.",
-            /*returnType=*/  "::llvm::SmallVector<::mlir::Value>",
+            /*returnType=*/  "std::vector<::mlir::Value>",
             /*methodName=*/  "getCtrlInQubits",
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
@@ -67,14 +68,14 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             }]>,
         InterfaceMethod<
             /*desc=*/        "Returns all input qubits of the operation incl. all controlling qubits.",
-            /*returnType=*/  "::llvm::SmallVector<::mlir::Value>",
+            /*returnType=*/  "std::vector<::mlir::Value>",
             /*methodName=*/  "getAllInQubits",
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
                 const auto& inQubits = $_op.getInQubits();
                 const auto& controls = $_op.getCtrlInQubits();
-                ::llvm::SmallVector<::mlir::Value, 2> operands{};
+                std::vector<::mlir::Value> operands{};
                 operands.insert(operands.end(), inQubits.begin(), inQubits.end());
                 operands.insert(operands.end(), controls.begin(), controls.end());
                 return operands;

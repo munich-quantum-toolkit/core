@@ -74,24 +74,23 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
         OptionalAttr<DenseF64ArrayAttr>:$static_params,
         OptionalAttr<DenseBoolArrayAttr>:$params_mask,
         Variadic<F64>:$params,
-        DeviceQubitType:$primary,
-        Optional<DeviceQubitType>:$ctrl_primary,
-        Optional<DeviceQubitType>:$secondary
+        Optional<DeviceQubitType>:$primary,
+        Optional<DeviceQubitType>:$secondary,
+        Optional<DeviceQubitType>:$ctrl_primary
     );
 
     let results = (outs);
 
     let assemblyFormat = [{
         `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)`
-        attr-dict $primary ( `,` $secondary^ )? ( `ctrl` $ctrl_primary^ )?
+        attr-dict ( $primary^ )? ( `,` $secondary^ )? ( `ctrl` $ctrl_primary^ )?
     }];
 
     let hasVerifier = 1;
     let extraClassDefinition = [{
         ::llvm::LogicalResult mqt::ir::mem::$cppClass::verify() {
             if (getCtrlPrimary() && getSecondary()) {
-                return emitOpError() << "A unitary op in the mem dialect has "
-                                           << "either a secondary OR a control qubit.";
+                return emitOpError() << "expects either a secondary OR a control qubit.";
             }
             return mlir::success();
         }
@@ -130,6 +129,15 @@ def QubitOp : ResourceOp<"qubit"> {
     let description = [{
         The `mqtmem.qubit` operation produces an SSA value from the given index
         to a static (device) qubit.
+
+        Example:
+        ```mlir
+        // Static (device) qubit with address '0'.
+        %q = "mqtmem.qubit"() <{index = 0 : i64}> : () -> !mqtmem.DeviceQubit
+
+        // Using custom assembly.
+        %q = mqtmem.qubit 0
+        ```
     }];
     let arguments = (ins I64Attr:$index);
     let results = (outs DeviceQubitType:$qubit);
