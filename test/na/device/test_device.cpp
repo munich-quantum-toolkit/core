@@ -530,7 +530,6 @@ TEST_F(NADeviceTest, QueryOperationData) {
   std::vector<MQT_NA_QDMI_Site> sites;
   EXPECT_NO_THROW(sites = querySites(session));
   EXPECT_NO_THROW(for (auto* operation : queryOperations(session)) {
-    std::cout << "\n";
     EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
                     session, operation, 0, nullptr, 0, nullptr,
                     QDMI_OPERATION_PROPERTY_DURATION, sizeof(double), &duration,
@@ -552,7 +551,6 @@ TEST_F(NADeviceTest, QueryOperationData) {
                     &numParameters, nullptr),
                 testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
     for (const auto& site : sites) {
-      std::cout << ".";
       size_t nameSize = 0;
       const auto result = MQT_NA_QDMI_device_session_query_operation_property(
           session, operation, 1, &site, 0, nullptr,
