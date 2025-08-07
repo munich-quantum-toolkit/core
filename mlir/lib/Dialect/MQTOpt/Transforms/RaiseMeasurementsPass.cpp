@@ -35,7 +35,7 @@ struct RaiseMeasurementsPass final
     mlir::RewritePatternSet patterns(ctx);
     populateRaiseMeasurementsAboveControlsPatterns(patterns);
     populateReplaceClassicalControlsWithIfPatterns(patterns);
-    populateRaiseMeasurementsAbovePhaseGatesPatterns(patterns);
+    populateRaiseMeasurementsAboveGatesPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
     if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
