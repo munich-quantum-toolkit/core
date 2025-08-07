@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996]) ([**@li-mingbao**])
+- ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996]) ([**@ystade**])
 
 ## [3.2.1] - 2025-08-01
 
