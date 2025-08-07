@@ -17,11 +17,9 @@
 #include "mqt_na_qdmi/device.h"
 #include "na/device/DeviceMemberInitializers.hpp"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <iterator>
 #include <memory>
 #include <unordered_set>
 #include <utility>
@@ -285,16 +283,16 @@ auto MQT_NA_QDMI_Site_impl_d::makeUniqueSite(const size_t id,
                                              const size_t subModuleId,
                                              const int64_t x, const int64_t y)
     -> std::unique_ptr<MQT_NA_QDMI_Site_impl_d> {
-  MQT_NA_QDMI_Site_impl_d site(id, moduleId, subModuleId, x, y);
-  return std::make_unique<MQT_NA_QDMI_Site_impl_d>(std::move(site));
+  const MQT_NA_QDMI_Site_impl_d site(id, moduleId, subModuleId, x, y);
+  return std::make_unique<MQT_NA_QDMI_Site_impl_d>(site);
 }
 auto MQT_NA_QDMI_Site_impl_d::makeUniqueZone(const size_t id, const int64_t x,
                                              const int64_t y,
                                              const uint64_t width,
                                              const uint64_t height)
     -> std::unique_ptr<MQT_NA_QDMI_Site_impl_d> {
-  MQT_NA_QDMI_Site_impl_d site(id, x, y, width, height);
-  return std::make_unique<MQT_NA_QDMI_Site_impl_d>(std::move(site));
+  const MQT_NA_QDMI_Site_impl_d site(id, x, y, width, height);
+  return std::make_unique<MQT_NA_QDMI_Site_impl_d>(site);
 }
 auto MQT_NA_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
                                             const size_t size, void* value,

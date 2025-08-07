@@ -134,7 +134,7 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
     const auto width = region.size.width;
     const auto height = region.size.height;
     os << ";\\\n  "
-          "MQT_NA_QDMI_Site globalOp"
+          "const MQT_NA_QDMI_Site globalOp"
        << operation.name
        << "ZoneSite = "
           "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueZone("
