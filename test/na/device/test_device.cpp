@@ -9,7 +9,9 @@
  */
 
 #include "mqt_na_qdmi/device.h"
+#include "na/device/Generator.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -416,7 +418,7 @@ TEST_F(QDMISpecificationTest, QueryDeviceQubitNum) {
 class NADeviceTest : public QDMISpecificationTest {
 protected:
   // NOLINTNEXTLINE(misc-include-cleaner)
-  nlohmann::json json;
+  na::Device device;
 
   void SetUp() override {
     QDMISpecificationTest::SetUp();
@@ -427,7 +429,7 @@ protected:
 
     // Parse the JSON file
     try {
-      file >> json;
+      device = nlohmann::json::parse(file);
     } catch (const nlohmann::json::parse_error& e) {
       GTEST_FAIL() << "JSON parsing error: " << e.what();
     }
@@ -446,53 +448,77 @@ TEST_F(NADeviceTest, QuerySiteData) {
   std::vector<MQT_NA_QDMI_Site> sites;
   EXPECT_NO_THROW(sites = querySites(session))
       << "Devices must provide a sites";
-  EXPECT_EQ(sites.size(), 100);
   for (auto* site : sites) {
-    EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
-                  session, site, QDMI_SITE_PROPERTY_MODULEINDEX,
-                  sizeof(uint64_t), &module, nullptr),
-              QDMI_SUCCESS);
-    EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
-                  session, site, QDMI_SITE_PROPERTY_SUBMODULEINDEX,
-                  sizeof(uint64_t), &subModule, nullptr),
-              QDMI_SUCCESS);
+    int64_t x = 0;
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
                   session, site, QDMI_SITE_PROPERTY_XCOORDINATE,
                   sizeof(int64_t), &x, nullptr),
               QDMI_SUCCESS);
+    int64_t y = 0;
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
                   session, site, QDMI_SITE_PROPERTY_YCOORDINATE,
                   sizeof(int64_t), &y, nullptr),
               QDMI_SUCCESS);
-    int64_t originX = 0;
-    int64_t width = 0;
-    ASSERT_NO_THROW(
-        originX =
-            json["traps"][module]["extent"]["origin"]["x"].get<int64_t>());
-    ASSERT_NO_THROW(
-        width =
-            json["traps"][module]["extent"]["size"]["width"].get<int64_t>());
-    EXPECT_THAT(x, ::testing::IsBetween(originX, originX + width));
-    int64_t originY = 0;
-    int64_t height = 0;
-    ASSERT_NO_THROW(
-        originY =
-            json["traps"][module]["extent"]["origin"]["y"].get<int64_t>());
-    ASSERT_NO_THROW(
-        height =
-            json["traps"][module]["extent"]["size"]["height"].get<int64_t>());
-    EXPECT_THAT(y, ::testing::IsBetween(originY, height));
-
+    bool isZone = false;
+    EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                  session, site, QDMI_SITE_PROPERTY_ISZONE, sizeof(bool),
+                  &isZone, nullptr),
+              QDMI_SUCCESS);
+    if (isZone) {
+      uint64_t width = 0;
+      EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                    session, site, QDMI_SITE_PROPERTY_XEXTENT, sizeof(uint64_t),
+                    &width, nullptr),
+                QDMI_SUCCESS);
+      uint64_t height = 0;
+      EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                    session, site, QDMI_SITE_PROPERTY_YEXTENT, sizeof(uint64_t),
+                    &height, nullptr),
+                QDMI_SUCCESS);
+    } else {
+      uint64_t module = 0;
+      EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                    session, site, QDMI_SITE_PROPERTY_MODULEINDEX,
+                    sizeof(uint64_t), &module, nullptr),
+                QDMI_SUCCESS);
+      uint64_t subModule = 0;
+      EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                    session, site, QDMI_SITE_PROPERTY_SUBMODULEINDEX,
+                    sizeof(uint64_t), &subModule, nullptr),
+                QDMI_SUCCESS);
+      int64_t originX = 0;
+      uint64_t width = 0;
+      originX = device.traps[module].extent.origin.x;
+      width = device.traps[module].extent.size.width;
+      EXPECT_THAT(x, ::testing::IsBetween(
+                         originX, originX + static_cast<int64_t>(width)));
+      int64_t originY = 0;
+      uint64_t height = 0;
+      originY = device.traps[module].extent.origin.y;
+      height = device.traps[module].extent.size.height;
+      EXPECT_THAT(y, ::testing::IsBetween(
+                         originY, originY + static_cast<int64_t>(height)));
+      EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                    session, site, QDMI_SITE_PROPERTY_XEXTENT, sizeof(uint64_t),
+                    nullptr, nullptr),
+                QDMI_ERROR_NOTSUPPORTED);
+      EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                    session, site, QDMI_SITE_PROPERTY_YEXTENT, sizeof(uint64_t),
+                    nullptr, nullptr),
+                QDMI_ERROR_NOTSUPPORTED);
+    }
+    double t1 = 0;
     EXPECT_EQ(
         MQT_NA_QDMI_device_session_query_site_property(
             session, site, QDMI_SITE_PROPERTY_T1, sizeof(double), &t1, nullptr),
         QDMI_SUCCESS);
-    EXPECT_DOUBLE_EQ(t1, json["decoherenceTimes"]["t1"]);
+    EXPECT_DOUBLE_EQ(t1, static_cast<double>(device.decoherenceTimes.t1));
+    double t2 = 0;
     EXPECT_EQ(
         MQT_NA_QDMI_device_session_query_site_property(
             session, site, QDMI_SITE_PROPERTY_T2, sizeof(double), &t2, nullptr),
         QDMI_SUCCESS);
-    EXPECT_DOUBLE_EQ(t2, json["decoherenceTimes"]["t2"]);
+    EXPECT_DOUBLE_EQ(t2, static_cast<double>(device.decoherenceTimes.t2));
   }
 }
 
@@ -501,7 +527,10 @@ TEST_F(NADeviceTest, QueryOperationData) {
   double fidelity = 0;
   size_t numQubits = 0;
   size_t numParameters = 0;
+  std::vector<MQT_NA_QDMI_Site> sites;
+  EXPECT_NO_THROW(sites = querySites(session));
   EXPECT_NO_THROW(for (auto* operation : queryOperations(session)) {
+    std::cout << "\n";
     EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
                     session, operation, 0, nullptr, 0, nullptr,
                     QDMI_OPERATION_PROPERTY_DURATION, sizeof(double), &duration,
@@ -522,5 +551,64 @@ TEST_F(NADeviceTest, QueryOperationData) {
                     QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sizeof(size_t),
                     &numParameters, nullptr),
                 testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    for (const auto& site : sites) {
+      std::cout << ".";
+      size_t nameSize = 0;
+      const auto result = MQT_NA_QDMI_device_session_query_operation_property(
+          session, operation, 1, &site, 0, nullptr,
+          QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, &nameSize);
+      ASSERT_THAT(result,
+                  testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+      if (result == QDMI_SUCCESS) {
+        std::string name(nameSize - 1, '\0');
+        EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                      session, operation, 0, nullptr, 0, nullptr,
+                      QDMI_OPERATION_PROPERTY_NAME, nameSize, name.data(),
+                      nullptr),
+                  QDMI_SUCCESS);
+        bool isZone = false;
+        EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                      session, site, QDMI_SITE_PROPERTY_ISZONE, sizeof(bool),
+                      &isZone, nullptr),
+                  QDMI_SUCCESS);
+        if (!isZone) {
+          // operation is a local one
+          int64_t x = 0;
+          EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                        session, site, QDMI_SITE_PROPERTY_XCOORDINATE,
+                        sizeof(int64_t), &x, nullptr),
+                    QDMI_SUCCESS);
+          int64_t y = 0;
+          EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                        session, site, QDMI_SITE_PROPERTY_YCOORDINATE,
+                        sizeof(int64_t), &y, nullptr),
+                    QDMI_SUCCESS);
+          int64_t minX = 0;
+          int64_t maxX = 0;
+          int64_t minY = 0;
+          int64_t maxY = 0;
+          if (const auto it = std::ranges::find_if(
+                  device.localSingleQubitOperations,
+                  [&name](const auto& op) { return op.name == name; });
+              it != device.localSingleQubitOperations.end()) {
+            minX = it->region.origin.x;
+            maxX = minX + static_cast<int64_t>(it->region.size.width);
+            minY = it->region.origin.y;
+            maxY = minY + static_cast<int64_t>(it->region.size.height);
+          } else {
+            const auto it2 = std::ranges::find_if(
+                device.localMultiQubitOperations,
+                [&name](const auto& op) { return op.name == name; });
+            ASSERT_NE(it2, device.localMultiQubitOperations.end());
+            minX = it2->region.origin.x;
+            maxX = minX + static_cast<int64_t>(it2->region.size.width);
+            minY = it2->region.origin.y;
+            maxY = minY + static_cast<int64_t>(it2->region.size.height);
+          }
+          EXPECT_THAT(x, ::testing::IsBetween(minX, maxX));
+          EXPECT_THAT(y, ::testing::IsBetween(minY, maxY));
+        }
+      }
+    }
   }) << "Devices must provide a list of operations";
 }
