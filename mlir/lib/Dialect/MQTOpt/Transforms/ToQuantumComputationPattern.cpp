@@ -238,7 +238,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     } else if (llvm::isa<XXplusYY>(op)) {
       opType = qc::OpType::XXplusYY;
       twoTarget = true;
-    } else { // TODO: support for other types of operations
+    } else {
       throw std::runtime_error("Unsupported operation type!");
     }
 
@@ -296,12 +296,16 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     for (const auto& index : negCtrlInsIndices) {
       controls.emplace(static_cast<qc::Qubit>(index), qc::Control::Type::Neg);
     }
+
+    // TODO: Extract parameters used for rotation gates
+    std::vector<double> parameters;
+
     if (twoTarget) {
-      circuit.emplace_back<qc::StandardOperation>(controls, targetIndex[0],
-                                                  targetIndex[1], opType);
+      circuit.emplace_back<qc::StandardOperation>(
+          controls, targetIndex[0], targetIndex[1], opType, parameters);
     } else {
       circuit.emplace_back<qc::StandardOperation>(controls, targetIndex[0],
-                                                  opType);
+                                                  opType, parameters);
     }
 
     return true;
