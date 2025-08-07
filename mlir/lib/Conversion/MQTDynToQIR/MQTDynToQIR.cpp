@@ -10,7 +10,6 @@
 
 // macro to add the conversion pattern from any dyn gate operation to a llvm
 // call operation that adheres to the qir specification
-
 #define ADD_CONVERT_PATTERN(gate)                                              \
   mqtPatterns.add<ConvertMQTDynGateOpQIR<dyn::gate>>(typeConverter, context);
 
@@ -56,7 +55,7 @@ using namespace mlir;
 
 namespace {
 // add function declaration at the end if it does not exist already and
-// return the function declaration
+// return the function
 LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
                                         Operation* op, StringRef fnName,
                                         Type fnType) {
@@ -71,7 +70,7 @@ LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
     fnDecl = rewriter.create<LLVM::LLVMFuncOp>(op->getLoc(), fnName, fnType);
   }
 
-  return cast<LLVM::LLVMFuncOp>(fnDecl);
+  return dyn_cast<LLVM::LLVMFuncOp>(fnDecl);
 }
 
 } // namespace
@@ -313,7 +312,6 @@ struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
           op->getLoc(), fnDecl, ValueRange{newOp->getResult(0)});
       op->replaceUsesOfWith(resultBits[i], resultOp.getResult());
     }
-    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -321,8 +319,9 @@ struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
 struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
   using MQTDynToQIRBase::MQTDynToQIRBase;
 
+  // returns the main function with entry_point attribute
   static LLVM::LLVMFuncOp getMainFunction(Operation* op) {
-    auto module = llvm::dyn_cast<ModuleOp>(op);
+    auto module = dyn_cast<ModuleOp>(op);
     // find the main function
     for (auto funcOp : module.getOps<LLVM::LLVMFuncOp>()) {
       auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
@@ -351,11 +350,11 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     // walk through the block and collect all addressOfOp and get the -1
     // constant value
     firstBlock.walk([&](Operation* op) {
-      if (auto addressOfOp = llvm::dyn_cast<LLVM::AddressOfOp>(op)) {
+      if (auto addressOfOp = dyn_cast<LLVM::AddressOfOp>(op)) {
         operations.emplace_back(addressOfOp);
       }
 
-      if (auto constantOp = llvm::dyn_cast<LLVM::ConstantOp>(op)) {
+      if (auto constantOp = dyn_cast<LLVM::ConstantOp>(op)) {
         if (auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue())) {
           // check if the value is -1
           if (intAttr.getInt() == -1) {
@@ -377,15 +376,16 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
 
   // create the quantum initialize op
   static void addInitialize(Operation* op, MLIRContext* ctx) {
-    auto module = llvm::dyn_cast<ModuleOp>(op);
+    auto module = dyn_cast<ModuleOp>(op);
     LLVM::LLVMFuncOp main = getMainFunction(op);
 
     auto& firstBlock = *(main.getBlocks().begin());
     OpBuilder builder(main.getBody());
     Operation* zeroOperation = nullptr;
+
     // find the zeroOp or create one
     firstBlock.walk([&](Operation* op) {
-      if (auto zeroOp = llvm::dyn_cast<LLVM::ZeroOp>(op)) {
+      if (auto zeroOp = dyn_cast<LLVM::ZeroOp>(op)) {
         zeroOperation = zeroOp;
         return WalkResult::interrupt();
       }
@@ -416,7 +416,7 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     }
     // create and insert the initialize operation
     builder.create<LLVM::CallOp>(op->getLoc(),
-                                 static_cast<LLVM::LLVMFuncOp>(fnDecl),
+                                 dyn_cast<LLVM::LLVMFuncOp>(fnDecl),
                                  ValueRange{zeroOperation->getResult(0)});
   }
 

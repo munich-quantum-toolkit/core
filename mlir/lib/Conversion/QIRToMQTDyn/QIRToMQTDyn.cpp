@@ -15,6 +15,7 @@
                                            DenseBoolArrayAttr{}, ValueRange{}, \
                                            qubits, ctrlQubits, ValueRange{});  \
   }
+
 // macro to match and replace rotation gates
 #define ADD_CONVERT_ROTATION_GATE(gate)                                        \
   else if (gateName == #gate) {                                                \
@@ -65,6 +66,7 @@ public:
     addConversion([](Type type) { return type; });
   }
 };
+
 namespace {
 // struct to store information for alloc register and qubits
 struct AllocRegisterData {
@@ -90,10 +92,10 @@ struct ConvertQIRLoad final : OpConversionPattern<LLVM::LoadOp> {
 struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
   using OpConversionPattern::OpConversionPattern;
 
-  llvm::DenseMap<Value, Value>* operandMap;
+  DenseMap<Value, Value>* operandMap;
   AllocRegisterData* allocOp;
   explicit ConvertQIRCall(TypeConverter& typeConverter, MLIRContext* context,
-                          llvm::DenseMap<Value, Value>& operandMap,
+                          DenseMap<Value, Value>& operandMap,
                           AllocRegisterData& allocOp)
       : OpConversionPattern(typeConverter, context), operandMap(&operandMap),
         allocOp(&allocOp) {}
@@ -267,6 +269,8 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     else if (fnName == "__quantum__rt__array_get_element_ptr_1d") {
       const auto newOp = rewriter.replaceOpWithNewOp<dyn::ExtractOp>(
           op, qubitType, newOperands);
+
+      // update the operand list
       operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
     }
     // match measure operation
@@ -278,11 +282,10 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
       bool foundUser = false;
       for (auto* user : op->getUsers()) {
         if (auto callOp = dyn_cast<LLVM::CallOp>(user)) {
+          // check if there is read result operation to replace the result uses
           if (callOp.getCallee() == "__quantum__rt__read_result") {
-            const auto newOp = rewriter.replaceOpWithNewOp<dyn::MeasureOp>(
-                callOp, newBits, newOperands);
-            operandMap->try_emplace(callOp->getResult(0),
-                                    newOp->getOpResult(0));
+            rewriter.replaceOpWithNewOp<dyn::MeasureOp>(callOp, newBits,
+                                                        newOperands);
             foundUser = true;
             rewriter.eraseOp(op);
             break;
@@ -290,9 +293,8 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
         }
       }
       if (!foundUser) {
-        const auto newOp = rewriter.replaceOpWithNewOp<dyn::MeasureOp>(
-            op, newBits, newOperands);
-        operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
+        // otherwise just create the measure operation
+        rewriter.replaceOpWithNewOp<dyn::MeasureOp>(op, newBits, newOperands);
       }
     }
     // match dealloc register
@@ -349,14 +351,33 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
 struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
   using QIRToMQTDynBase::QIRToMQTDynBase;
 
+  // returns the main function with entry_point attribute
+  static LLVM::LLVMFuncOp getMainFunction(Operation* op) {
+    auto module = dyn_cast<ModuleOp>(op);
+    // find the main function
+    for (auto funcOp : module.getOps<LLVM::LLVMFuncOp>()) {
+      auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
+      if (!passthrough) {
+        continue;
+      }
+      if (llvm::any_of(passthrough, [](Attribute attr) {
+            auto strAttr = dyn_cast<StringAttr>(attr);
+            return strAttr && strAttr.getValue() == "entry_point";
+          })) {
+        return funcOp;
+      }
+    }
+    return nullptr;
+  }
+
   // create and return an alloc register if it does not exist already
   static std::optional<dyn::AllocOp> ensureRegisterAllocation(Operation* op) {
     int64_t requiredQubits = 0;
-    auto module = llvm::dyn_cast<ModuleOp>(op);
+    auto module = dyn_cast<ModuleOp>(op);
 
     // walk through the IR and count all qubit allocate operations
     const auto result = module->walk([&](Operation* op) {
-      if (auto call = llvm::dyn_cast<LLVM::CallOp>(op)) {
+      if (auto call = dyn_cast<LLVM::CallOp>(op)) {
         auto name = call.getCallee();
 
         // stop if there is an allocate array operation
@@ -373,21 +394,7 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
     // if there was no alloc register registration, create one
     if (!result.wasInterrupted() && requiredQubits != 0) {
 
-      LLVM::LLVMFuncOp main;
-      // find the main function
-      for (auto funcOp : module.getOps<LLVM::LLVMFuncOp>()) {
-        auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
-        if (!passthrough) {
-          continue;
-        }
-        if (llvm::any_of(passthrough, [](Attribute attr) {
-              auto strAttr = dyn_cast<StringAttr>(attr);
-              return strAttr && strAttr.getValue() == "entry_point";
-            })) {
-          main = funcOp;
-          break;
-        }
-      }
+      LLVM::LLVMFuncOp main = getMainFunction(op);
 
       // get the 2nd block of the main function
       auto& secondBlock = *(++main.getBlocks().begin());
@@ -414,7 +421,7 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
     // map each initial dyn qubit to its latest opt qubit
-    llvm::DenseMap<Value, Value> operandMap;
+    DenseMap<Value, Value> operandMap;
     // create an allocOp if necessary
     auto alloc = ensureRegisterAllocation(module).value_or(nullptr);
     AllocRegisterData registerInfo{.qReg = alloc, .index = 0};
