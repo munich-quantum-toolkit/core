@@ -178,3 +178,31 @@ module {
         return %reg_4, %c0_0, %c1_0 : !mqtopt.QubitRegister, i1, i1
     }
 }
+
+// -----
+// This test checks if single target rotation gates are parsed correctly by the QuantumComputation roundtrip pass.
+module {
+    // CHECK-LABEL: func.func @testSingleTargetRotationGates()
+    func.func @testSingleTargetRotationGates() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+
+        // CHECK: %[[Q0_1:.*]] = mqtopt.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01]) %[[Q0_0]] : !mqtopt.Qubit
+
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.u( static [1.00000e-01, 2.00000e-01, 3.00000e-01]) %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
