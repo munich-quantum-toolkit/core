@@ -39,23 +39,27 @@
 
 namespace mqt::ir::opt {
 
-static const std::unordered_map<std::string, qc::OpType>
-    SINGLE_TARGET_GATES_MAP = {
-        {"i", qc::OpType::I},      {"h", qc::OpType::H},
-        {"x", qc::OpType::X},      {"y", qc::OpType::Y},
-        {"z", qc::OpType::Z},      {"s", qc::OpType::S},
-        {"sdg", qc::OpType::Sdg},  {"t", qc::OpType::T},
-        {"tdg", qc::OpType::Tdg},  {"v", qc::OpType::V},
-        {"vdg", qc::OpType::Vdg},  {"sx", qc::OpType::SX},
-        {"sxdg", qc::OpType::SXdg}};
-
-static const std::unordered_map<std::string, qc::OpType> TWO_TARGET_GATES_MAP =
-    {{"swap", qc::OpType::SWAP},       {"iswap", qc::OpType::iSWAP},
-     {"iswapdg", qc::OpType::iSWAPdg}, {"peres", qc::OpType::Peres},
-     {"peresdg", qc::OpType::Peresdg}, {"dcx", qc::OpType::DCX},
-     {"ecr", qc::OpType::ECR}};
-
-static const std::unordered_map<std::string, qc::OpType> ROTATION_GATES_MAP = {
+static const std::unordered_map<std::string, qc::OpType> UNITARY_GATES_MAP = {
+    {"i", qc::OpType::I},
+    {"h", qc::OpType::H},
+    {"x", qc::OpType::X},
+    {"y", qc::OpType::Y},
+    {"z", qc::OpType::Z},
+    {"s", qc::OpType::S},
+    {"sdg", qc::OpType::Sdg},
+    {"t", qc::OpType::T},
+    {"tdg", qc::OpType::Tdg},
+    {"v", qc::OpType::V},
+    {"vdg", qc::OpType::Vdg},
+    {"sx", qc::OpType::SX},
+    {"sxdg", qc::OpType::SXdg},
+    {"swap", qc::OpType::SWAP},
+    {"iswap", qc::OpType::iSWAP},
+    {"iswapdg", qc::OpType::iSWAPdg},
+    {"peres", qc::OpType::Peres},
+    {"peresdg", qc::OpType::Peresdg},
+    {"dcx", qc::OpType::DCX},
+    {"ecr", qc::OpType::ECR},
     {"u", qc::OpType::U},
     {"u2", qc::OpType::U2},
     {"p", qc::OpType::P},
@@ -431,12 +435,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         }
       }
 
-      if (SINGLE_TARGET_GATES_MAP.contains(
-              current->getName().stripDialect().str()) ||
-          TWO_TARGET_GATES_MAP.contains(
-              current->getName().stripDialect().str()) ||
-          ROTATION_GATES_MAP.contains(
-              current->getName().stripDialect().str())) {
+      if (UNITARY_GATES_MAP.contains(current->getName().stripDialect().str())) {
         auto unitaryOp = llvm::dyn_cast<UnitaryInterface>(current);
         handleUnitaryOp(unitaryOp, currentQubitVariables);
       } else if (auto extractOp = llvm::dyn_cast<ExtractOp>(current)) {
