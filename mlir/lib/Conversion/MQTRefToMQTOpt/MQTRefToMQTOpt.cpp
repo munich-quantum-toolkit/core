@@ -13,7 +13,7 @@
 #define ADD_CONVERT_PATTERN(gate)                                              \
   patterns                                                                     \
       .add<ConvertMQTRefGateOp<::mqt::ir::ref::gate, ::mqt::ir::opt::gate>>(   \
-          typeConverter, context, qubitMap);
+          typeConverter, context, &state);
 
 #include "mlir/Conversion/MQTRefToMQTOpt/MQTRefToMQTOpt.h"
 
@@ -45,14 +45,43 @@ using namespace mlir;
 #include "mlir/Conversion/MQTRefToMQTOpt/MQTRefToMQTOpt.h.inc"
 
 namespace {
-// struct to store the metadata for qubits
-struct QubitData {
-  // ref register from where the qubit was extracted
-  Value qReg;
-  // index given as a value
-  Value index;
-  // index given as an attribute
-  IntegerAttr indexAttr;
+
+struct LoweringState {
+  /// @brief Holds metadata for qubits.
+  struct QubitData {
+    /// @brief The ref register from which the qubit was extracted.
+    Value qReg;
+    /// @brief Index given as a value.
+    Value index;
+    /// @brief Index given as an attribute.
+    IntegerAttr indexAttr;
+  };
+
+  /// @brief Map each initial ref qubit to its latest opt qubit.
+  llvm::DenseMap<Value, Value> qubitMap;
+  /// @brief Map each initial ref qubit to its metadata.
+  llvm::DenseMap<Value, QubitData> qubitDataMap;
+  /// @brief Map each initial ref register to its latest opt register.
+  llvm::DenseMap<Value, Value> qregMap;
+  /// @brief Map each initial ref register to its refQubits.
+  llvm::DenseMap<Value, std::vector<Value>> qregQubitsMap;
+};
+
+template <typename OpType>
+class StatefulOpConversionPattern : public mlir::OpConversionPattern<OpType> {
+  using mlir::OpConversionPattern<OpType>::OpConversionPattern;
+
+public:
+  StatefulOpConversionPattern(mlir::TypeConverter& typeConverter,
+                              mlir::MLIRContext* context, LoweringState* state)
+      : mlir::OpConversionPattern<OpType>(typeConverter, context),
+        state_(state) {}
+
+  /// @brief Return the state object as reference.
+  [[nodiscard]] LoweringState& getState() const { return *state_; }
+
+private:
+  LoweringState* state_;
 };
 } // namespace
 
@@ -74,13 +103,8 @@ public:
   }
 };
 
-struct ConvertMQTRefAlloc final : OpConversionPattern<ref::AllocOp> {
-  llvm::DenseMap<Value, Value>* qregMap;
-
-  explicit ConvertMQTRefAlloc(const TypeConverter& typeConverter,
-                              MLIRContext* context,
-                              llvm::DenseMap<Value, Value>& qregMap)
-      : OpConversionPattern(typeConverter, context), qregMap(&qregMap) {}
+struct ConvertMQTRefAlloc final : StatefulOpConversionPattern<ref::AllocOp> {
+  using StatefulOpConversionPattern<ref::AllocOp>::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(ref::AllocOp op, OpAdaptor /*adaptor*/,
@@ -102,28 +126,16 @@ struct ConvertMQTRefAlloc final : OpConversionPattern<ref::AllocOp> {
         op, qregType, op.getSize(), sizeAttr);
 
     // put the pair of the ref register and the latest opt register in the map
-    qregMap->try_emplace(refQreg, mqtoptOp.getQreg());
+    getState().qregMap.try_emplace(refQreg, mqtoptOp.getQreg());
 
     return success();
   }
 };
 
-struct ConvertMQTRefDealloc final : OpConversionPattern<ref::DeallocOp> {
-
-  llvm::DenseMap<Value, Value>* qubitMap;
-  llvm::DenseMap<Value, QubitData>* qubitDataMap;
-  llvm::DenseMap<Value, Value>* qregMap;
-  llvm::DenseMap<Value, std::vector<Value>>* qregQubitsMap;
-
-  explicit ConvertMQTRefDealloc(
-      const TypeConverter& typeConverter, MLIRContext* context,
-      llvm::DenseMap<Value, Value>& qubitMap,
-      llvm::DenseMap<Value, QubitData>& qubitDataMap,
-      llvm::DenseMap<Value, Value>& qregMap,
-      llvm::DenseMap<Value, std::vector<Value>>& qregQubitsMap)
-      : OpConversionPattern(typeConverter, context), qubitMap(&qubitMap),
-        qubitDataMap(&qubitDataMap), qregMap(&qregMap),
-        qregQubitsMap(&qregQubitsMap) {}
+struct ConvertMQTRefDealloc final
+    : StatefulOpConversionPattern<ref::DeallocOp> {
+  using StatefulOpConversionPattern<
+      ref::DeallocOp>::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(ref::DeallocOp op, OpAdaptor /*adaptor*/,
@@ -133,17 +145,12 @@ struct ConvertMQTRefDealloc final : OpConversionPattern<ref::DeallocOp> {
     const auto& qregType = opt::QubitRegisterType::get(rewriter.getContext());
 
     const auto& refQreg = op.getQreg();
-    auto& optQreg = (*qregMap)[refQreg];
-
-    // get a reference to avoid dereferencing multiple times in loops
-    auto& qubitDataMapRef = *qubitDataMap;
-    auto& qubitMapRef = *qubitMap;
-    auto& refQubits = (*qregQubitsMap)[refQreg];
+    auto& optQreg = getState().qregMap[refQreg];
 
     // iterate over all the qubits that were extracted from the register
-    for (const auto& refQubit : refQubits) {
-      const auto& qubitData = qubitDataMapRef[refQubit];
-      const auto& optQubit = qubitMapRef[refQubit];
+    for (const auto& refQubit : getState().qregQubitsMap[refQreg]) {
+      const auto& qubitData = getState().qubitDataMap[refQubit];
+      const auto& optQubit = getState().qubitMap[refQubit];
 
       auto optInsertOp = rewriter.create<opt::InsertOp>(
           op.getLoc(), qregType, optQreg, optQubit, qubitData.index,
@@ -156,13 +163,13 @@ struct ConvertMQTRefDealloc final : OpConversionPattern<ref::DeallocOp> {
       optQreg = optInsertOp.getOutQreg();
 
       // erase the refQubit entry from the maps
-      qubitMapRef.erase(refQubit);
-      qubitDataMapRef.erase(refQubit);
+      getState().qubitMap.erase(refQubit);
+      getState().qubitDataMap.erase(refQubit);
     }
 
     // erase the register from the maps
-    qregMap->erase(refQreg);
-    qregQubitsMap->erase(refQreg);
+    getState().qregMap.erase(refQreg);
+    getState().qregQubitsMap.erase(refQreg);
 
     // replace the ref dealloc operation with an opt dealloc operation
     rewriter.replaceOpWithNewOp<opt::DeallocOp>(op, optQreg);
@@ -171,21 +178,10 @@ struct ConvertMQTRefDealloc final : OpConversionPattern<ref::DeallocOp> {
   }
 };
 
-struct ConvertMQTRefExtract final : OpConversionPattern<ref::ExtractOp> {
-  llvm::DenseMap<Value, Value>* qubitMap;
-  llvm::DenseMap<Value, QubitData>* qubitDataMap;
-  llvm::DenseMap<Value, Value>* qregMap;
-  llvm::DenseMap<Value, std::vector<Value>>* qregQubitsMap;
-
-  explicit ConvertMQTRefExtract(
-      const TypeConverter& typeConverter, MLIRContext* context,
-      llvm::DenseMap<Value, Value>& qubitMap,
-      llvm::DenseMap<Value, QubitData>& qubitDataMap,
-      llvm::DenseMap<Value, Value>& qregMap,
-      llvm::DenseMap<Value, std::vector<Value>>& qregQubitsMap)
-      : OpConversionPattern(typeConverter, context), qubitMap(&qubitMap),
-        qubitDataMap(&qubitDataMap), qregMap(&qregMap),
-        qregQubitsMap(&qregQubitsMap) {}
+struct ConvertMQTRefExtract final
+    : StatefulOpConversionPattern<ref::ExtractOp> {
+  using StatefulOpConversionPattern<
+      ref::ExtractOp>::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(ref::ExtractOp op, OpAdaptor /*adaptor*/,
@@ -196,7 +192,7 @@ struct ConvertMQTRefExtract final : OpConversionPattern<ref::ExtractOp> {
     const auto& qubitType = opt::QubitType::get(rewriter.getContext());
 
     const auto& refQreg = op.getInQreg();
-    const auto& optQreg = (*qregMap)[refQreg];
+    const auto& optQreg = getState().qregMap[refQreg];
 
     // create new operation
     auto mqtoptOp = rewriter.create<opt::ExtractOp>(
@@ -208,19 +204,19 @@ struct ConvertMQTRefExtract final : OpConversionPattern<ref::ExtractOp> {
     const auto& newOptQreg = mqtoptOp.getOutQreg();
 
     // put the pair of the ref qubit and the latest opt qubit in the map
-    qubitMap->try_emplace(refQubit, optQubit);
+    getState().qubitMap.try_emplace(refQubit, optQubit);
 
     // update the latest opt register of the initial ref register
-    (*qregMap)[refQreg] = newOptQreg;
+    getState().qregMap[refQreg] = newOptQreg;
 
     // add an entry to the qubitDataMap to store the indices and the register
     // for the insertOperation
-    qubitDataMap->try_emplace(refQubit, refQreg, op.getIndex(),
-                              op.getIndexAttrAttr());
+    getState().qubitDataMap.try_emplace(refQubit, refQreg, op.getIndex(),
+                                        op.getIndexAttrAttr());
 
     // append the entry to the qregQubitsMap to store which qubits that were
     // extracted from the register
-    (*qregQubitsMap)[refQreg].emplace_back(refQubit);
+    getState().qregQubitsMap[refQreg].emplace_back(refQubit);
 
     // replace the old operation result with the new result and delete
     // old operation
@@ -230,13 +226,10 @@ struct ConvertMQTRefExtract final : OpConversionPattern<ref::ExtractOp> {
   }
 };
 
-struct ConvertMQTRefMeasure final : OpConversionPattern<ref::MeasureOp> {
-  llvm::DenseMap<Value, Value>* qubitMap;
-
-  explicit ConvertMQTRefMeasure(const TypeConverter& typeConverter,
-                                MLIRContext* context,
-                                llvm::DenseMap<Value, Value>& qubitMap)
-      : OpConversionPattern(typeConverter, context), qubitMap(&qubitMap) {}
+struct ConvertMQTRefMeasure final
+    : StatefulOpConversionPattern<ref::MeasureOp> {
+  using StatefulOpConversionPattern<
+      ref::MeasureOp>::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(ref::MeasureOp op, OpAdaptor /*adaptor*/,
@@ -246,14 +239,11 @@ struct ConvertMQTRefMeasure final : OpConversionPattern<ref::MeasureOp> {
     const auto& qubitType = opt::QubitType::get(rewriter.getContext());
 
     const auto& refQubits = op.getInQubits();
-    // get a reference to avoid dereferencing multiple times in loops
-    auto& qubitMapRef = *qubitMap;
-
-    std::vector<Value> optQubits;
 
     // get the latest opt qubit from the map and add them to the vector
+    std::vector<Value> optQubits;
     for (const auto& refQubit : refQubits) {
-      optQubits.emplace_back(qubitMapRef[refQubit]);
+      optQubits.emplace_back(getState().qubitMap[refQubit]);
     }
     // create the result types
     const std::vector<Type> qubitTypes(optQubits.size(), qubitType);
@@ -268,7 +258,7 @@ struct ConvertMQTRefMeasure final : OpConversionPattern<ref::MeasureOp> {
     // iterate over all qubits
     for (size_t i = 0; i < refQubits.size(); i++) {
       // update the latest opt qubit of the initial ref qubit
-      qubitMapRef[refQubits[i]] = outOptQubits[i];
+      getState().qubitMap[refQubits[i]] = outOptQubits[i];
     }
 
     // replace the old operation results with the new bits and delete
@@ -280,26 +270,17 @@ struct ConvertMQTRefMeasure final : OpConversionPattern<ref::MeasureOp> {
 };
 
 template <typename MQTGateRefOp, typename MQTGateOptOp>
-struct ConvertMQTRefGateOp final : OpConversionPattern<MQTGateRefOp> {
-  llvm::DenseMap<Value, Value>* qubitMap;
-
-  explicit ConvertMQTRefGateOp(TypeConverter& typeConverter,
-                               MLIRContext* context,
-                               llvm::DenseMap<Value, Value>& qubitMap)
-      : OpConversionPattern<MQTGateRefOp>(typeConverter, context),
-        qubitMap(&qubitMap) {}
+struct ConvertMQTRefGateOp final : StatefulOpConversionPattern<MQTGateRefOp> {
+  using StatefulOpConversionPattern<MQTGateRefOp>::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(MQTGateRefOp op, typename MQTGateRefOp::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    // get a reference to avoid dereferencing multiple times in loops
-    auto& qubitMapRef = *qubitMap;
-
     // Map ref qubits to opt qubits
     auto mapQubits = [&](const auto& refQubits) {
       std::vector<Value> optQubits;
       for (const auto& refQubit : refQubits) {
-        optQubits.emplace_back(qubitMapRef[refQubit]);
+        optQubits.emplace_back(this->getState().qubitMap[refQubit]);
       }
       return optQubits;
     };
@@ -329,7 +310,7 @@ struct ConvertMQTRefGateOp final : OpConversionPattern<MQTGateRefOp> {
     // Update qubit map
     const auto& optResults = mqtoptOp.getAllOutQubits();
     for (size_t i = 0; i < op.getAllInQubits().size(); i++) {
-      qubitMapRef[op.getAllInQubits()[i]] = optResults[i];
+      this->getState().qubitMap[op.getAllInQubits()[i]] = optResults[i];
     }
 
     rewriter.eraseOp(op);
@@ -340,18 +321,11 @@ struct ConvertMQTRefGateOp final : OpConversionPattern<MQTGateRefOp> {
 struct MQTRefToMQTOpt final : impl::MQTRefToMQTOptBase<MQTRefToMQTOpt> {
   using MQTRefToMQTOptBase::MQTRefToMQTOptBase;
 
-  // map each initial ref qubit to its latest opt qubit
-  llvm::DenseMap<Value, Value> qubitMap;
-  // map each initial ref qubit to its metadata
-  llvm::DenseMap<Value, QubitData> qubitDataMap;
-  // map each initial ref register to its latest opt register
-  llvm::DenseMap<Value, Value> qregMap;
-  // map each initial ref register to its refQubits
-  llvm::DenseMap<Value, std::vector<Value>> qregQubitsMap;
-
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
+
+    LoweringState state;
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
@@ -359,12 +333,10 @@ struct MQTRefToMQTOpt final : impl::MQTRefToMQTOptBase<MQTRefToMQTOpt> {
 
     target.addIllegalDialect<ref::MQTRefDialect>();
     target.addLegalDialect<opt::MQTOptDialect>();
-    patterns.add<ConvertMQTRefAlloc>(typeConverter, context, qregMap);
-    patterns.add<ConvertMQTRefDealloc>(typeConverter, context, qubitMap,
-                                       qubitDataMap, qregMap, qregQubitsMap);
-    patterns.add<ConvertMQTRefExtract>(typeConverter, context, qubitMap,
-                                       qubitDataMap, qregMap, qregQubitsMap);
-    patterns.add<ConvertMQTRefMeasure>(typeConverter, context, qubitMap);
+    patterns.add<ConvertMQTRefAlloc>(typeConverter, context, &state);
+    patterns.add<ConvertMQTRefDealloc>(typeConverter, context, &state);
+    patterns.add<ConvertMQTRefExtract>(typeConverter, context, &state);
+    patterns.add<ConvertMQTRefMeasure>(typeConverter, context, &state);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)
