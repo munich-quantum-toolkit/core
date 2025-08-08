@@ -10,6 +10,7 @@
 
 // -----
 // This test checks that the QuantumComputation roundtrip works generally.
+
 module {
     // CHECK-LABEL: func @circuit()
     func.func @circuit() -> (!mqtopt.QubitRegister, i1, i1) {
@@ -50,6 +51,7 @@ module {
 
 // -----
 // This test checks that the QuantumComputation roundtrip works with negative controls.
+
 module {
     // CHECK-LABEL: func @negativeControls()
     func.func @negativeControls() -> (!mqtopt.QubitRegister, i1, i1) {
@@ -86,50 +88,325 @@ module {
 }
 
 // -----
-// This test checks if single target unitary gates are parsed correctly by the QuantumComputation roundtrip pass.
+// This test checks if the identity gate is parsed correctly by the QuantumComputation roundtrip pass.
+
 module {
-    // CHECK-LABEL: func.func @testSingleTargetUnitaryGates()
-    func.func @testSingleTargetUnitaryGates() -> (!mqtopt.QubitRegister, i1) {
+    // CHECK-LABEL: func.func @testIGate()
+    func.func @testIGate() -> (!mqtopt.QubitRegister, i1) {
         // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
         // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
         // CHECK: %[[Q0_1:.*]] = mqtopt.i() %[[Q0_0]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_2:.*]] = mqtopt.h() %[[Q0_1]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_3:.*]] = mqtopt.x() %[[Q0_2]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_4:.*]] = mqtopt.y() %[[Q0_3]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_5:.*]] = mqtopt.z() %[[Q0_4]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_6:.*]] = mqtopt.s() %[[Q0_5]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_7:.*]] = mqtopt.sdg() %[[Q0_6]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_8:.*]] = mqtopt.t() %[[Q0_7]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_9:.*]] = mqtopt.tdg() %[[Q0_8]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_10:.*]] = mqtopt.v() %[[Q0_9]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_11:.*]] = mqtopt.vdg() %[[Q0_10]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_12:.*]] = mqtopt.sx() %[[Q0_11]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_13:.*]] = mqtopt.sxdg() %[[Q0_12]] : !mqtopt.Qubit
-        // CHECK: %[[Q0_14:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_13]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_14]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
         // CHECK: return %[[Reg_2]], %[[C0_0]]
 
         %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
         %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
         %q0_1 = mqtopt.i() %q0_0 : !mqtopt.Qubit
-        %q0_2 = mqtopt.h() %q0_1 : !mqtopt.Qubit
-        %q0_3 = mqtopt.x() %q0_2 : !mqtopt.Qubit
-        %q0_4 = mqtopt.y() %q0_3 : !mqtopt.Qubit
-        %q0_5 = mqtopt.z() %q0_4 : !mqtopt.Qubit
-        %q0_6 = mqtopt.s() %q0_5 : !mqtopt.Qubit
-        %q0_7 = mqtopt.sdg() %q0_6 : !mqtopt.Qubit
-        %q0_8 = mqtopt.t() %q0_7 : !mqtopt.Qubit
-        %q0_9 = mqtopt.tdg() %q0_8 : !mqtopt.Qubit
-        %q0_10 = mqtopt.v() %q0_9 : !mqtopt.Qubit
-        %q0_11 = mqtopt.vdg() %q0_10 : !mqtopt.Qubit
-        %q0_12 = mqtopt.sx() %q0_11 : !mqtopt.Qubit
-        %q0_13 = mqtopt.sxdg() %q0_12 : !mqtopt.Qubit
 
-        %q0_14, %c0_0 = "mqtopt.measure"(%q0_13) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
 
-        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_14) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
+
+// -----
+// This test checks if the Hadamard gate is parsed correctly by the QuantumComputation roundtrip pass.
+
+module {
+    // CHECK-LABEL: func.func @testHGate()
+    func.func @testHGate() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_1:.*]] = mqtopt.h() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
+
+// -----
+// This test checks if the x gate is parsed correctly by the QuantumComputation roundtrip pass.
+
+module {
+    // CHECK-LABEL: func.func @testXGate()
+    func.func @testXGate() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_1:.*]] = mqtopt.x() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.x() %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
+
+// -----
+// This test checks if the y gate is parsed correctly by the QuantumComputation roundtrip pass.
+
+module {
+    // CHECK-LABEL: func.func @testYGate()
+    func.func @testYGate() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_1:.*]] = mqtopt.y() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.y() %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
+
+// -----
+// This test checks if the z gate is parsed correctly by the QuantumComputation roundtrip pass.
+
+module {
+    // CHECK-LABEL: func.func @testZGate()
+    func.func @testZGate() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_1:.*]] = mqtopt.z() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.z() %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
+
+// -----
+// This test checks if the s gate is parsed correctly by the QuantumComputation roundtrip pass.
+
+module {
+    // CHECK-LABEL: func.func @testSGate()
+    func.func @testSGate() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_1:.*]] = mqtopt.s() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.s() %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
+
+// -----
+// This test checks if the sdg gate is parsed correctly by the QuantumComputation roundtrip pass.
+
+module {
+    // CHECK-LABEL: func.func @testSdgGate()
+    func.func @testSdgGate() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_1:.*]] = mqtopt.sdg() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.sdg() %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
+
+// -----
+// This test checks if the t gate is parsed correctly by the QuantumComputation roundtrip pass.
+
+module {
+    // CHECK-LABEL: func.func @testTGate()
+    func.func @testTGate() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_1:.*]] = mqtopt.t() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.t() %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
+
+// -----
+// This test checks if the tdg gate is parsed correctly by the QuantumComputation roundtrip pass.
+
+module {
+    // CHECK-LABEL: func.func @testTdgGate()
+    func.func @testTdgGate() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_1:.*]] = mqtopt.tdg() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.tdg() %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
+
+// -----
+// This test checks if the v gate is parsed correctly by the QuantumComputation roundtrip pass.
+
+module {
+    // CHECK-LABEL: func.func @testVGate()
+    func.func @testVGate() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_1:.*]] = mqtopt.v() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.v() %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
+
+// -----
+// This test checks if the vdg gate is parsed correctly by the QuantumComputation roundtrip pass.
+
+module {
+    // CHECK-LABEL: func.func @testVdgGate()
+    func.func @testVdgGate() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_1:.*]] = mqtopt.vdg() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.vdg() %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
+
+// -----
+// This test checks if the sx gate is parsed correctly by the QuantumComputation roundtrip pass.
+
+module {
+    // CHECK-LABEL: func.func @testSXGate()
+    func.func @testSXGate() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_1:.*]] = mqtopt.sx() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.sx() %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+
+        return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
+    }
+}
+
+// -----
+// This test checks if the sxdg gate is parsed correctly by the QuantumComputation roundtrip pass.
+
+module {
+    // CHECK-LABEL: func.func @testSXdgGate()
+    func.func @testSXdgGate() -> (!mqtopt.QubitRegister, i1) {
+        // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}>
+        // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[Q0_1:.*]] = mqtopt.sxdg() %[[Q0_0]] : !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        // CHECK: %[[Reg_2:.*]] = "mqtopt.insertQubit"(%[[Reg_1]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+        // CHECK: return %[[Reg_2]], %[[C0_0]]
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+
+        %q0_1 = mqtopt.sxdg() %q0_0 : !mqtopt.Qubit
+
+        %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
 
         return %reg_2, %c0_0 : !mqtopt.QubitRegister, i1
     }
