@@ -194,7 +194,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
                        std::vector<mlir::Value>& currentQubitVariables) const {
 
     // Add the operation to the QuantumComputation.
-    qc::OpType opType;
+    qc::OpType opType; // NOLINT(*-init-variables)
 
     if (auto const type = op->getName().stripDialect().str();
         UNITARY_GATES_MAP.contains(type)) {
