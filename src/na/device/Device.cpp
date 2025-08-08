@@ -270,7 +270,7 @@ MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(const uint64_t id,
     : id(id), moduleId(module), subModuleId(subModule), x(x), y(y) {
   INITIALIZE_DECOHERENCETIMES(decoherenceTimes);
 }
-MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(const size_t id,
+MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(const uint64_t id,
                                                  const int64_t x,
                                                  const int64_t y,
                                                  const uint64_t width,
@@ -278,15 +278,15 @@ MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(const size_t id,
     : id(id), x(x), y(y), width(width), height(height), isZone(true) {
   INITIALIZE_DECOHERENCETIMES(decoherenceTimes);
 }
-auto MQT_NA_QDMI_Site_impl_d::makeUniqueSite(const size_t id,
-                                             const size_t moduleId,
-                                             const size_t subModuleId,
+auto MQT_NA_QDMI_Site_impl_d::makeUniqueSite(const uint64_t id,
+                                             const uint64_t moduleId,
+                                             const uint64_t subModuleId,
                                              const int64_t x, const int64_t y)
     -> std::unique_ptr<MQT_NA_QDMI_Site_impl_d> {
   const MQT_NA_QDMI_Site_impl_d site(id, moduleId, subModuleId, x, y);
   return std::make_unique<MQT_NA_QDMI_Site_impl_d>(site);
 }
-auto MQT_NA_QDMI_Site_impl_d::makeUniqueZone(const size_t id, const int64_t x,
+auto MQT_NA_QDMI_Site_impl_d::makeUniqueZone(const uint64_t id, const int64_t x,
                                              const int64_t y,
                                              const uint64_t width,
                                              const uint64_t height)
