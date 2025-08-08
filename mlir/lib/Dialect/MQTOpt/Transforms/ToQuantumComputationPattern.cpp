@@ -38,6 +38,37 @@
 #include <vector>
 
 namespace mqt::ir::opt {
+
+static const std::unordered_map<std::string, qc::OpType>
+    SINGLE_TARGET_GATES_MAP = {
+        {"i", qc::OpType::I},      {"h", qc::OpType::H},
+        {"x", qc::OpType::X},      {"y", qc::OpType::Y},
+        {"z", qc::OpType::Z},      {"s", qc::OpType::S},
+        {"sdg", qc::OpType::Sdg},  {"t", qc::OpType::T},
+        {"tdg", qc::OpType::Tdg},  {"v", qc::OpType::V},
+        {"vdg", qc::OpType::Vdg},  {"sx", qc::OpType::SX},
+        {"sxdg", qc::OpType::SXdg}};
+
+static const std::unordered_map<std::string, qc::OpType> TWO_TARGET_GATES_MAP =
+    {{"swap", qc::OpType::SWAP},       {"iswap", qc::OpType::iSWAP},
+     {"iswapdg", qc::OpType::iSWAPdg}, {"peres", qc::OpType::Peres},
+     {"peresdg", qc::OpType::Peresdg}, {"dcx", qc::OpType::DCX},
+     {"ecr", qc::OpType::ECR}};
+
+static const std::unordered_map<std::string, qc::OpType> ROTATION_GATES_MAP = {
+    {"u", qc::OpType::U},
+    {"u2", qc::OpType::U2},
+    {"p", qc::OpType::P},
+    {"rx", qc::OpType::RX},
+    {"ry", qc::OpType::RY},
+    {"rz", qc::OpType::RZ},
+    {"rxx", qc::OpType::RXX},
+    {"ryy", qc::OpType::RYY},
+    {"rzz", qc::OpType::RZZ},
+    {"rzx", qc::OpType::RZX},
+    {"xxminusyy", qc::OpType::XXminusYY},
+    {"xxplusyy", qc::OpType::XXplusYY}};
+
 /// Analysis pattern that filters out all quantum operations from a given
 /// program and creates a quantum computation from them.
 struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
@@ -160,70 +191,14 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     // Add the operation to the QuantumComputation.
     qc::OpType opType;
-    if (llvm::isa<IOp>(op)) {
-      opType = qc::OpType::I;
-    } else if (llvm::isa<HOp>(op)) {
-      opType = qc::OpType::H;
-    } else if (llvm::isa<XOp>(op)) {
-      opType = qc::OpType::X;
-    } else if (llvm::isa<YOp>(op)) {
-      opType = qc::OpType::Y;
-    } else if (llvm::isa<ZOp>(op)) {
-      opType = qc::OpType::Z;
-    } else if (llvm::isa<SOp>(op)) {
-      opType = qc::OpType::S;
-    } else if (llvm::isa<SdgOp>(op)) {
-      opType = qc::OpType::Sdg;
-    } else if (llvm::isa<TOp>(op)) {
-      opType = qc::OpType::T;
-    } else if (llvm::isa<TdgOp>(op)) {
-      opType = qc::OpType::Tdg;
-    } else if (llvm::isa<VOp>(op)) {
-      opType = qc::OpType::V;
-    } else if (llvm::isa<VdgOp>(op)) {
-      opType = qc::OpType::Vdg;
-    } else if (llvm::isa<UOp>(op)) {
-      opType = qc::OpType::U;
-    } else if (llvm::isa<U2Op>(op)) {
-      opType = qc::OpType::U2;
-    } else if (llvm::isa<POp>(op)) {
-      opType = qc::OpType::P;
-    } else if (llvm::isa<SXOp>(op)) {
-      opType = qc::OpType::SX;
-    } else if (llvm::isa<SXdgOp>(op)) {
-      opType = qc::OpType::SXdg;
-    } else if (llvm::isa<RXOp>(op)) {
-      opType = qc::OpType::RX;
-    } else if (llvm::isa<RYOp>(op)) {
-      opType = qc::OpType::RY;
-    } else if (llvm::isa<RZOp>(op)) {
-      opType = qc::OpType::RZ;
-    } else if (llvm::isa<SWAPOp>(op)) {
-      opType = qc::OpType::SWAP;
-    } else if (llvm::isa<iSWAPOp>(op)) {
-      opType = qc::OpType::iSWAP;
-    } else if (llvm::isa<iSWAPdgOp>(op)) {
-      opType = qc::OpType::iSWAPdg;
-    } else if (llvm::isa<PeresOp>(op)) {
-      opType = qc::OpType::Peres;
-    } else if (llvm::isa<PeresdgOp>(op)) {
-      opType = qc::OpType::Peresdg;
-    } else if (llvm::isa<DCXOp>(op)) {
-      opType = qc::OpType::DCX;
-    } else if (llvm::isa<ECROp>(op)) {
-      opType = qc::OpType::ECR;
-    } else if (llvm::isa<RXXOp>(op)) {
-      opType = qc::OpType::RXX;
-    } else if (llvm::isa<RYYOp>(op)) {
-      opType = qc::OpType::RYY;
-    } else if (llvm::isa<RZZOp>(op)) {
-      opType = qc::OpType::RZZ;
-    } else if (llvm::isa<RZXOp>(op)) {
-      opType = qc::OpType::RZX;
-    } else if (llvm::isa<XXminusYY>(op)) {
-      opType = qc::OpType::XXminusYY;
-    } else if (llvm::isa<XXplusYY>(op)) {
-      opType = qc::OpType::XXplusYY;
+
+    if (auto const type = op->getName().stripDialect().str();
+        SINGLE_TARGET_GATES_MAP.contains(type)) {
+      opType = SINGLE_TARGET_GATES_MAP.at(type);
+    } else if (TWO_TARGET_GATES_MAP.contains(type)) {
+      opType = TWO_TARGET_GATES_MAP.at(type);
+    } else if (ROTATION_GATES_MAP.contains(type)) {
+      opType = ROTATION_GATES_MAP.at(type);
     } else {
       throw std::runtime_error("Unsupported operation type!");
     }
@@ -282,8 +257,14 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       controls.emplace(static_cast<qc::Qubit>(index), qc::Control::Type::Neg);
     }
 
-    // TODO: Extract parameters used for rotation gates
     std::vector<double> parameters;
+    if (const auto staticParamsAttr =
+            op->getAttrOfType<mlir::DenseF64ArrayAttr>("static_params")) {
+      parameters.reserve(staticParamsAttr.size());
+      for (const auto& param : staticParamsAttr.asArrayRef()) {
+        parameters.emplace_back(param);
+      }
+    }
 
     if (op.getOutQubits().size() > 1) {
       circuit.emplace_back<qc::StandardOperation>(
@@ -450,22 +431,12 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         }
       }
 
-      if (llvm::isa<IOp>(current) || llvm::isa<XOp>(current) ||
-          llvm::isa<HOp>(current) || llvm::isa<YOp>(current) ||
-          llvm::isa<ZOp>(current) || llvm::isa<SOp>(current) ||
-          llvm::isa<SdgOp>(current) || llvm::isa<TOp>(current) ||
-          llvm::isa<TdgOp>(current) || llvm::isa<VOp>(current) ||
-          llvm::isa<VdgOp>(current) || llvm::isa<UOp>(current) ||
-          llvm::isa<U2Op>(current) || llvm::isa<POp>(current) ||
-          llvm::isa<SXOp>(current) || llvm::isa<SXdgOp>(current) ||
-          llvm::isa<RXOp>(current) || llvm::isa<RYOp>(current) ||
-          llvm::isa<RZOp>(current) || llvm::isa<SWAPOp>(current) ||
-          llvm::isa<iSWAPOp>(current) || llvm::isa<iSWAPdgOp>(current) ||
-          llvm::isa<PeresOp>(current) || llvm::isa<PeresdgOp>(current) ||
-          llvm::isa<DCXOp>(current) || llvm::isa<ECROp>(current) ||
-          llvm::isa<RXXOp>(current) || llvm::isa<RYYOp>(current) ||
-          llvm::isa<RZZOp>(current) || llvm::isa<RZXOp>(current) ||
-          llvm::isa<XXminusYY>(current) || llvm::isa<XXplusYY>(current)) {
+      if (SINGLE_TARGET_GATES_MAP.contains(
+              current->getName().stripDialect().str()) ||
+          TWO_TARGET_GATES_MAP.contains(
+              current->getName().stripDialect().str()) ||
+          ROTATION_GATES_MAP.contains(
+              current->getName().stripDialect().str())) {
         auto unitaryOp = llvm::dyn_cast<UnitaryInterface>(current);
         handleUnitaryOp(unitaryOp, currentQubitVariables);
       } else if (auto extractOp = llvm::dyn_cast<ExtractOp>(current)) {
