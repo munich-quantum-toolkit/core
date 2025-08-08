@@ -163,16 +163,7 @@ public:
   std::vector<GlobalMultiQubitOperation> globalMultiQubitOperations;
 
   /// @brief Represents a local single-qubit operation.
-  struct LocalSingleQubitOperation : Operation {
-    /// @brief The number of rows in the operation.
-    uint64_t numRows = 0;
-    /// @brief The number of columns in the operation.
-    uint64_t numColumns = 0;
-
-    // NOLINTNEXTLINE(misc-include-cleaner)
-    NLOHMANN_DEFINE_DERIVED_TYPE_INTRUSIVE_WITH_DEFAULT(
-        LocalSingleQubitOperation, Operation, numRows, numColumns)
-  };
+  struct LocalSingleQubitOperation : Operation {};
   /// @brief The list of local single-qubit operations supported by the device.
   std::vector<LocalSingleQubitOperation> localSingleQubitOperations;
 
@@ -188,17 +179,13 @@ public:
      * operation can be performed to avoid interference.
      */
     double blockingRadius = 0.0;
-    /// @brief The number of rows in the operation.
-    uint64_t numRows = 0;
-    /// @brief The number of columns in the operation.
-    uint64_t numColumns = 0;
     /// @brief The number of qubits involved in the operation.
     uint64_t numQubits = 0;
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_DERIVED_TYPE_INTRUSIVE_WITH_DEFAULT(
         LocalMultiQubitOperation, Operation, interactionRadius, blockingRadius,
-        numRows, numColumns, numQubits)
+        numQubits)
   };
   /// @brief The list of local multi-qubit operations supported by the device.
   std::vector<LocalMultiQubitOperation> localMultiQubitOperations;
@@ -209,10 +196,6 @@ public:
     std::string name;
     /// @brief The region in which the shuttling unit operates.
     Region region;
-    /// @brief The number of rows in the shuttling unit.
-    uint64_t numRows = 0;
-    /// @brief The number of columns in the shuttling unit.
-    uint64_t numColumns = 0;
     /// @brief The speed at which the shuttling unit moves.
     double movingSpeed = 0.0;
     /// @brief The duration of the load operation in the shuttling unit.
@@ -228,7 +211,6 @@ public:
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(ShuttlingUnit, name, region,
-                                                numRows, numColumns,
                                                 movingSpeed, loadDuration,
                                                 storeDuration, loadFidelity,
                                                 storeFidelity, numParameters)

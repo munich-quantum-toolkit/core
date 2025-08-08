@@ -87,8 +87,6 @@
           "height": 10
         }
       },
-      "numRows": 10,
-      "numColumns": 10,
       "duration": 2,
       "fidelity": 0.999,
       "numParameters": 1
@@ -109,8 +107,6 @@
       },
       "interactionRadius": 2,
       "blockingRadius": 4,
-      "numRows": 10,
-      "numColumns": 10,
       "duration": 1,
       "fidelity": 0.994,
       "numQubits": 2,
@@ -130,9 +126,8 @@
           "height": 10
         }
       },
-      "numRows": 10,
-      "numColumns": 10,
-      "movingSpeed": 55,
+      "maximumJerk": 55,
+      "maximumSpeed": 55,
       "loadDuration": 20,
       "storeDuration": 20,
       "loadFidelity": 0.99,
