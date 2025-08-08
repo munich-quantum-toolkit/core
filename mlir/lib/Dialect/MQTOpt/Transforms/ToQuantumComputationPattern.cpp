@@ -197,12 +197,8 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     qc::OpType opType;
 
     if (auto const type = op->getName().stripDialect().str();
-        SINGLE_TARGET_GATES_MAP.contains(type)) {
-      opType = SINGLE_TARGET_GATES_MAP.at(type);
-    } else if (TWO_TARGET_GATES_MAP.contains(type)) {
-      opType = TWO_TARGET_GATES_MAP.at(type);
-    } else if (ROTATION_GATES_MAP.contains(type)) {
-      opType = ROTATION_GATES_MAP.at(type);
+        UNITARY_GATES_MAP.contains(type)) {
+      opType = UNITARY_GATES_MAP.at(type);
     } else {
       throw std::runtime_error("Unsupported operation type!");
     }
