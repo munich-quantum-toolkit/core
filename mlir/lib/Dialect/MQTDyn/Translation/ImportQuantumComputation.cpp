@@ -12,6 +12,7 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 
 #include <cstddef>
@@ -24,6 +25,8 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <vector>
+
+namespace {
 
 /**
  * @brief Adds a quantum register to the MLIR module.
@@ -88,7 +91,7 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
 
   // Define input qubits
   auto target = operation.getTargets()[0];
-  const mlir::SmallVector<mlir::Value, 1> inQubitsVec = {qubits[target]};
+  const llvm::SmallVector<mlir::Value, 1> inQubitsVec = {qubits[target]};
   const mlir::ValueRange inQubits = {inQubitsVec};
 
   // Define positive control qubits
@@ -129,6 +132,8 @@ void addOperations(mlir::OpBuilder& builder,
     }
   }
 }
+
+} // namespace
 
 /**
  * @brief Translates a QuantumComputation to MQTDyn.
