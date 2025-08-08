@@ -25,6 +25,14 @@
 #include <mlir/IR/ValueRange.h>
 #include <vector>
 
+/**
+ * @brief Adds a quantum register to the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder.
+ * @param context The MLIR context.
+ * @param numQubits The number of qubits in the quantum register.
+ * @return The allocated quantum register.
+ */
 mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext& context,
                          std::size_t numQubits) {
   const auto& qregType = mqt::ir::dyn::QubitRegisterType::get(&context);
@@ -36,6 +44,15 @@ mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext& context,
   return allocOp.getResult();
 }
 
+/**
+ * @brief Adds qubits to the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder.
+ * @param context The MLIR context.
+ * @param quantumRegister The quantum register to extract qubits from.
+ * @param numQubits The number of qubits to extract.
+ * @return The extracted qubits.
+ */
 std::vector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
                                        mlir::MLIRContext& context,
                                        mlir::Value quantumRegister,
@@ -55,6 +72,14 @@ std::vector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
   return qubits;
 }
 
+/**
+ * @brief Adds a single QuantumComputation operation to the MLIR module.
+ *
+ * @tparam OpType The type of the operation to create.
+ * @param builder The MLIR OpBuilder.
+ * @param operation The QuantumComputation quantum operation to add.
+ * @param qubits The qubits of the quantum register.
+ */
 template <typename OpType>
 void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
                   const std::vector<mlir::Value>& qubits) {
@@ -86,6 +111,13 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
                          inQubits, posCtrlQubits, negCtrlQubits);
 }
 
+/**
+ * @brief Adds QuantumComputation operations to the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder.
+ * @param quantumComputation The QuantumComputation to translate.
+ * @param qubits The qubits of the quantum register.
+ */
 void addOperations(mlir::OpBuilder& builder,
                    const qc::QuantumComputation& quantumComputation,
                    const std::vector<mlir::Value>& qubits) {
@@ -98,6 +130,13 @@ void addOperations(mlir::OpBuilder& builder,
   }
 }
 
+/**
+ * @brief Translates a QuantumComputation to MQTDyn.
+ *
+ * @param context The MLIR context.
+ * @param quantumComputation The QuantumComputation to translate.
+ * @return The translated MLIR module.
+ */
 mlir::OwningOpRef<mlir::ModuleOp>
 translateQuantumComputationToMLIR(mlir::MLIRContext& context,
                                   qc::QuantumComputation& quantumComputation) {
