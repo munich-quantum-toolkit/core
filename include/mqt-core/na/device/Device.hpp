@@ -255,10 +255,10 @@ private:
   uint64_t id = 0;       ///< Unique identifier of the site
   uint64_t moduleId = 0; ///< Identifier of the module the site belongs to
   uint64_t subModuleId =
-      0;         ///< Identifier of the sub-module the site belongs to
-  int64_t x = 0; ///< X coordinate of the site in the lattice
-  int64_t y = 0; ///< Y coordinate of the site in the lattice
-  uint64_t width = 0;     ///< Width of the site in the lattice (for zone sites)
+      0;               ///< Identifier of the sub-module the site belongs to
+  int64_t x = 0;       ///< X coordinate of the site in the lattice
+  int64_t y = 0;       ///< Y coordinate of the site in the lattice
+  uint64_t width = 0;  ///< Width of the site in the lattice (for zone sites)
   uint64_t height = 0; ///< Height of the site in the lattice (for zone sites)
   /// @brief Collects decoherence times for the device.
   struct DecoherenceTimes {
