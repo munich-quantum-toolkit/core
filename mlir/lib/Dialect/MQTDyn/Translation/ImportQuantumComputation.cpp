@@ -72,6 +72,28 @@ translateQuantumComputationToMLIR(mlir::MLIRContext& context,
       builder.create<mqt::ir::dyn::HOp>(builder.getUnknownLoc(), nullptr,
                                         nullptr, params, inQubits,
                                         posCtrlQubits, negCtrlQubits);
+    } else if (operation->getType() == qc::OpType::X) {
+      mlir::ValueRange params;
+      mlir::ValueRange posCtrlQubits;
+      mlir::ValueRange negCtrlQubits;
+
+      auto target = operation->getTargets()[0];
+      mlir::SmallVector<mlir::Value, 1> inQubitsVec = {allQubits[target]};
+      mlir::ValueRange inQubits = {inQubitsVec};
+
+      std::vector<mlir::Value> controlsVec;
+      auto controls = operation->getControls();
+      if (!controls.empty()) {
+        controlsVec.reserve(controls.size());
+        for (const auto& control : controls) {
+          controlsVec.push_back(allQubits[control.qubit]);
+        }
+        posCtrlQubits = mlir::ValueRange{controlsVec};
+      }
+
+      builder.create<mqt::ir::dyn::XOp>(builder.getUnknownLoc(), nullptr,
+                                        nullptr, params, inQubits,
+                                        posCtrlQubits, negCtrlQubits);
     }
   }
 
