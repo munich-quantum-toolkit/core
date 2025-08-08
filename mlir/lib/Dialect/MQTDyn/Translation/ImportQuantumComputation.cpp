@@ -11,12 +11,19 @@
 #include "mlir/Dialect/MQTDyn/Translation/ImportQuantumComputation.h"
 
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 
+#include <cstddef>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
+#include <vector>
 
 mlir::OwningOpRef<mlir::ModuleOp>
 translateQuantumComputationToMLIR(mlir::MLIRContext& context,
@@ -61,25 +68,25 @@ translateQuantumComputationToMLIR(mlir::MLIRContext& context,
   // Add gates
   for (const auto& operation : quantumComputation) {
     if (operation->getType() == qc::OpType::H) {
-      mlir::ValueRange params;
-      mlir::ValueRange posCtrlQubits;
-      mlir::ValueRange negCtrlQubits;
+      const mlir::ValueRange params;
+      const mlir::ValueRange posCtrlQubits;
+      const mlir::ValueRange negCtrlQubits;
 
       auto target = operation->getTargets()[0];
-      mlir::SmallVector<mlir::Value, 1> inQubitsVec = {allQubits[target]};
-      mlir::ValueRange inQubits = {inQubitsVec};
+      const mlir::SmallVector<mlir::Value, 1> inQubitsVec = {allQubits[target]};
+      const mlir::ValueRange inQubits = {inQubitsVec};
 
       builder.create<mqt::ir::dyn::HOp>(builder.getUnknownLoc(), nullptr,
                                         nullptr, params, inQubits,
                                         posCtrlQubits, negCtrlQubits);
     } else if (operation->getType() == qc::OpType::X) {
-      mlir::ValueRange params;
+      const mlir::ValueRange params;
       mlir::ValueRange posCtrlQubits;
-      mlir::ValueRange negCtrlQubits;
+      const mlir::ValueRange negCtrlQubits;
 
       auto target = operation->getTargets()[0];
-      mlir::SmallVector<mlir::Value, 1> inQubitsVec = {allQubits[target]};
-      mlir::ValueRange inQubits = {inQubitsVec};
+      const mlir::SmallVector<mlir::Value, 1> inQubitsVec = {allQubits[target]};
+      const mlir::ValueRange inQubits = {inQubitsVec};
 
       std::vector<mlir::Value> controlsVec;
       auto controls = operation->getControls();
