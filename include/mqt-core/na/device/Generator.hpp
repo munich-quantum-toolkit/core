@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <istream>
 #include <ostream>
@@ -192,8 +193,7 @@ public:
 
   /// @brief Represents a shuttling unit in the device.
   struct ShuttlingUnit {
-    /// @brief The name of the shuttling unit.
-    std::string name;
+    size_t id = 0; ///< @brief Unique identifier for the shuttling unit.
     /// @brief The region in which the shuttling unit operates.
     Region region;
     /// @brief The speed at which the shuttling unit moves.
@@ -210,7 +210,7 @@ public:
     uint64_t numParameters = 0;
 
     // NOLINTNEXTLINE(misc-include-cleaner)
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(ShuttlingUnit, name, region,
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(ShuttlingUnit, region,
                                                 movingSpeed, loadDuration,
                                                 storeDuration, loadFidelity,
                                                 storeFidelity, numParameters)
@@ -248,12 +248,63 @@ public:
   /// @brief The unit of measurement for time in the device.
   Unit timeUnit;
 
+  // Before we used the macro NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT here,
+  // too. Now, we added an id to shuttling units that must be initialized
+  // in a custom routine, so we can only use the serialize macro.
   // NOLINTNEXTLINE(misc-include-cleaner)
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(
+  NLOHMANN_DEFINE_TYPE_INTRUSIVE_ONLY_SERIALIZE(
       Device, name, numQubits, traps, minAtomDistance,
       globalSingleQubitOperations, globalMultiQubitOperations,
       localSingleQubitOperations, localMultiQubitOperations, shuttlingUnits,
       decoherenceTimes, lengthUnit, timeUnit)
+
+  template <typename BasicJsonType>
+  friend void from_json(const BasicJsonType& json, Device& device) {
+    const Device defaultDevice{};
+    device.name = !json.is_null() ? json.value("name", defaultDevice.name)
+                                  : defaultDevice.name;
+    device.numQubits = !json.is_null()
+                           ? json.value("numQubits", defaultDevice.numQubits)
+                           : defaultDevice.numQubits;
+    device.traps = !json.is_null() ? json.value("traps", defaultDevice.traps)
+                                   : defaultDevice.traps;
+    device.minAtomDistance =
+        !json.is_null()
+            ? json.value("minAtomDistance", defaultDevice.minAtomDistance)
+            : defaultDevice.minAtomDistance;
+    device.globalSingleQubitOperations =
+        !json.is_null() ? json.value("globalSingleQubitOperations",
+                                     defaultDevice.globalSingleQubitOperations)
+                        : defaultDevice.globalSingleQubitOperations;
+    device.globalMultiQubitOperations =
+        !json.is_null() ? json.value("globalMultiQubitOperations",
+                                     defaultDevice.globalMultiQubitOperations)
+                        : defaultDevice.globalMultiQubitOperations;
+    device.localSingleQubitOperations =
+        !json.is_null() ? json.value("localSingleQubitOperations",
+                                     defaultDevice.localSingleQubitOperations)
+                        : defaultDevice.localSingleQubitOperations;
+    device.localMultiQubitOperations =
+        !json.is_null() ? json.value("localMultiQubitOperations",
+                                     defaultDevice.localMultiQubitOperations)
+                        : defaultDevice.localMultiQubitOperations;
+    device.shuttlingUnits =
+        !json.is_null()
+            ? json.value("shuttlingUnits", defaultDevice.shuttlingUnits)
+            : defaultDevice.shuttlingUnits;
+    std::ranges::for_each(device.shuttlingUnits,
+                          [i = 0UL](auto& unit) mutable { unit.id = i++; });
+    device.decoherenceTimes =
+        !json.is_null()
+            ? json.value("decoherenceTimes", defaultDevice.decoherenceTimes)
+            : defaultDevice.decoherenceTimes;
+    device.lengthUnit = !json.is_null()
+                            ? json.value("lengthUnit", defaultDevice.lengthUnit)
+                            : defaultDevice.lengthUnit;
+    device.timeUnit = !json.is_null()
+                          ? json.value("timeUnit", defaultDevice.timeUnit)
+                          : defaultDevice.timeUnit;
+  }
 };
 
 /**

@@ -115,7 +115,6 @@
   ],
   "shuttlingUnits": [
     {
-      "name": "aod",
       "region": {
         "origin": {
           "x": 0,

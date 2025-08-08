@@ -165,7 +165,7 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
     const auto height = region.size.height;
     os << ";\\\n  "
           "MQT_NA_QDMI_Site shuttlingUnit"
-       << shuttlingUnit.name
+       << shuttlingUnit.id
        << "ZoneSite = "
           "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueZone("
        << id << "U, " << x << ", " << y << ", " << width << "U, " << height
@@ -319,25 +319,25 @@ auto writeOperations(const Device& device, const double timeUnit,
     os << ";\\\n"
           "  "
           "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
-          "makeUniqueShuttlingLoad(\""
-       << shuttlingUnit.name << " (load)\", " << shuttlingUnit.numParameters
-       << ", " << static_cast<double>(shuttlingUnit.loadDuration) * timeUnit
-       << ", " << shuttlingUnit.loadFidelity << ", shuttlingUnit"
-       << shuttlingUnit.name << "ZoneSite))";
+          "makeUniqueShuttlingLoad(\"load<"
+       << shuttlingUnit.id << ">\", " << shuttlingUnit.numParameters << ", "
+       << static_cast<double>(shuttlingUnit.loadDuration) * timeUnit << ", "
+       << shuttlingUnit.loadFidelity << ", shuttlingUnit" << shuttlingUnit.id
+       << "ZoneSite))";
     os << ";\\\n"
           "  "
           "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
-          "makeUniqueShuttlingMove(\""
-       << shuttlingUnit.name << " (move)\", " << shuttlingUnit.numParameters
-       << ", shuttlingUnit" << shuttlingUnit.name << "ZoneSite))";
+          "makeUniqueShuttlingMove(\"move<"
+       << shuttlingUnit.id << ">\", " << shuttlingUnit.numParameters
+       << ", shuttlingUnit" << shuttlingUnit.id << "ZoneSite))";
     os << ";\\\n"
           "  "
           "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
-          "makeUniqueShuttlingStore(\""
-       << shuttlingUnit.name << " (store)\", " << shuttlingUnit.numParameters
-       << ", " << static_cast<double>(shuttlingUnit.storeDuration) * timeUnit
-       << ", " << shuttlingUnit.storeFidelity << ", shuttlingUnit"
-       << shuttlingUnit.name << "ZoneSite))";
+          "makeUniqueShuttlingStore(\"store<"
+       << shuttlingUnit.id << ">\", " << shuttlingUnit.numParameters << ", "
+       << static_cast<double>(shuttlingUnit.storeDuration) * timeUnit << ", "
+       << shuttlingUnit.storeFidelity << ", shuttlingUnit" << shuttlingUnit.id
+       << "ZoneSite))";
   }
   os << "\n";
 }
