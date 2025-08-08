@@ -437,8 +437,8 @@ protected:
 };
 
 TEST_F(NADeviceTest, QuerySiteData) {
-  size_t module = 0;
-  size_t subModule = 0;
+  uint64_t module = 0;
+  uint64_t subModule = 0;
   int64_t x = 0;
   int64_t y = 0;
   double t1 = 0;
@@ -449,20 +449,20 @@ TEST_F(NADeviceTest, QuerySiteData) {
   EXPECT_EQ(sites.size(), 100);
   for (auto* site : sites) {
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
-                  session, site, QDMI_SITE_PROPERTY_CUSTOM1, sizeof(size_t),
-                  &module, nullptr),
+                  session, site, QDMI_SITE_PROPERTY_MODULEINDEX,
+                  sizeof(uint64_t), &module, nullptr),
               QDMI_SUCCESS);
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
-                  session, site, QDMI_SITE_PROPERTY_CUSTOM2, sizeof(int64_t),
-                  &subModule, nullptr),
+                  session, site, QDMI_SITE_PROPERTY_SUBMODULEINDEX,
+                  sizeof(uint64_t), &subModule, nullptr),
               QDMI_SUCCESS);
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
-                  session, site, QDMI_SITE_PROPERTY_CUSTOM3, sizeof(int64_t),
-                  &x, nullptr),
+                  session, site, QDMI_SITE_PROPERTY_XCOORDINATE,
+                  sizeof(int64_t), &x, nullptr),
               QDMI_SUCCESS);
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
-                  session, site, QDMI_SITE_PROPERTY_CUSTOM4, sizeof(int64_t),
-                  &y, nullptr),
+                  session, site, QDMI_SITE_PROPERTY_YCOORDINATE,
+                  sizeof(int64_t), &y, nullptr),
               QDMI_SUCCESS);
     int64_t originX = 0;
     int64_t width = 0;

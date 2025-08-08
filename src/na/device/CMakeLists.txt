@@ -93,7 +93,7 @@ if(NOT TARGET ${TARGET_NAME})
   add_custom_command(
     OUTPUT ${DEVICE_HDR}
     COMMAND MQT::CoreQDMINaDeviceGenerator ARGS generate --output ${DEVICE_HDR} ${JSON_FILE}
-    DEPENDS ${JSON_FILE}
+    DEPENDS ${JSON_FILE} MQT::CoreQDMINaDeviceGenerator
     COMMENT "Generating C++ header from ${JSON_FILE}")
   add_custom_target(generate_qdmi_na_device_header DEPENDS ${DEVICE_HDR})
 

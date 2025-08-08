@@ -255,9 +255,9 @@ auto MQT_NA_QDMI_Device_Job_impl_d::getResults(
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
-MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(const size_t id,
-                                                 const size_t module,
-                                                 const size_t subModule,
+MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(const uint64_t id,
+                                                 const uint64_t module,
+                                                 const uint64_t subModule,
                                                  const int64_t x,
                                                  const int64_t y)
     : id(id), moduleId(module), subModuleId(subModule), x(x), y(y) {
@@ -267,23 +267,19 @@ MQT_NA_QDMI_Site_impl_d::MQT_NA_QDMI_Site_impl_d(const size_t id,
 auto MQT_NA_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
                                             const size_t size, void* value,
                                             size_t* sizeRet) const -> int {
-  if ((value != nullptr && size == 0) ||
-      (prop != QDMI_SITE_PROPERTY_CUSTOM1 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM2 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM3 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM4 && prop >= QDMI_SITE_PROPERTY_MAX)) {
+  if ((value != nullptr && size == 0) || prop >= QDMI_SITE_PROPERTY_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, size_t, id, prop, size,
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, uint64_t, id, prop, size,
                             value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM1, size_t, moduleId, prop,
-                            size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM2, size_t, subModuleId,
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_MODULEINDEX, uint64_t, moduleId,
                             prop, size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM3, int64_t, x, prop, size,
-                            value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_CUSTOM4, int64_t, y, prop, size,
-                            value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_SUBMODULEINDEX, uint64_t,
+                            subModuleId, prop, size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_XCOORDINATE, int64_t, x, prop,
+                            size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_YCOORDINATE, int64_t, y, prop,
+                            size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T1, double, decoherenceTimes.t1,
                             prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T2, double, decoherenceTimes.t2,

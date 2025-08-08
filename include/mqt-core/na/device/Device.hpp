@@ -237,11 +237,12 @@ public:
  */
 struct MQT_NA_QDMI_Site_impl_d {
 private:
-  size_t id = 0;          ///< Unique identifier of the site
-  size_t moduleId = 0;    ///< Identifier of the module the site belongs to
-  size_t subModuleId = 0; ///< Identifier of the sub-module the site belongs to
-  int64_t x = 0;          ///< X coordinate of the site in the lattice
-  int64_t y = 0;          ///< Y coordinate of the site in the lattice
+  uint64_t id = 0;       ///< Unique identifier of the site
+  uint64_t moduleId = 0; ///< Identifier of the module the site belongs to
+  uint64_t subModuleId =
+      0;         ///< Identifier of the sub-module the site belongs to
+  int64_t x = 0; ///< X coordinate of the site in the lattice
+  int64_t y = 0; ///< Y coordinate of the site in the lattice
   /// @brief Collects decoherence times for the device.
   struct DecoherenceTimes {
     double t1 = 0.0; ///< T1 time in microseconds
@@ -252,8 +253,8 @@ private:
 
 public:
   /// @brief Constructor for the MQT_NA_QDMI_Site_impl_d.
-  MQT_NA_QDMI_Site_impl_d(size_t id, size_t module, size_t subModule, int64_t x,
-                          int64_t y);
+  MQT_NA_QDMI_Site_impl_d(uint64_t id, uint64_t module, uint64_t subModule,
+                          int64_t x, int64_t y);
   /**
    * @brief Queries a property of the site.
    * @see MQT_NA_QDMI_device_session_query_site_property
