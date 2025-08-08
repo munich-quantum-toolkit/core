@@ -160,7 +160,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
     // Add the operation to the QuantumComputation.
     bool twoTarget = false;
-    qc::OpType opType = qc::OpType::H; // init placeholder-"H" overwritten next
+    qc::OpType opType;
     if (llvm::isa<IOp>(op)) {
       opType = qc::OpType::I;
     } else if (llvm::isa<HOp>(op)) {
@@ -514,7 +514,6 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     const auto circuitString = ss.str();
     llvm::outs() << circuitString << "\n";
     llvm::outs() << "----------------------------------------\n\n";
-    op.emitWarning() << circuitString << '\n';
 
     // Update the inputs of all non-mqtopt operations that use mqtopt operations
     // as inputs, as these will be deleted later.
