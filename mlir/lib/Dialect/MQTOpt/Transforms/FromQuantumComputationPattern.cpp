@@ -424,7 +424,8 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
             o->getType() == qc::OpType::Sdg || o->getType() == qc::OpType::T ||
             o->getType() == qc::OpType::Tdg || o->getType() == qc::OpType::V ||
             o->getType() == qc::OpType::Vdg || o->getType() == qc::OpType::U ||
-            o->getType() == qc::OpType::U2 || o->getType() == qc::OpType::SX ||
+            o->getType() == qc::OpType::U2 || o->getType() == qc::OpType::P ||
+            o->getType() == qc::OpType::SX ||
             o->getType() == qc::OpType::SXdg ||
             o->getType() == qc::OpType::RX || o->getType() == qc::OpType::RY ||
             o->getType() == qc::OpType::RZ ||
