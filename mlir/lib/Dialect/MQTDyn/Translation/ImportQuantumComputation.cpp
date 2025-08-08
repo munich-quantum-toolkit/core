@@ -13,6 +13,7 @@
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
@@ -26,7 +27,16 @@ translateQuantumComputationToMLIR(mlir::MLIRContext& context,
   auto module = builder.create<mlir::ModuleOp>(builder.getUnknownLoc());
   builder.setInsertionPointToStart(module.getBody());
 
-  // Create a register
+  // Create function
+  auto funcType = builder.getFunctionType({}, {});
+
+  auto mainFunc = builder.create<mlir::func::FuncOp>(builder.getUnknownLoc(),
+                                                     "main", funcType);
+
+  auto& entryBlock = mainFunc.getBody().emplaceBlock();
+  builder.setInsertionPointToStart(&entryBlock);
+
+  // Define register
   const auto& qregType = mqt::ir::dyn::QubitRegisterType::get(&context);
   auto numQubits = quantumComputation.getNqubits();
   auto sizeAttr = builder.getI64IntegerAttr(numQubits);
@@ -48,7 +58,7 @@ translateQuantumComputationToMLIR(mlir::MLIRContext& context,
     allQubits.push_back(extractOp.getResult());
   }
 
-  // Add operations
+  // Add gates
   for (const auto& operation : quantumComputation) {
     if (operation->getType() == qc::OpType::H) {
       mlir::ValueRange params;
@@ -64,6 +74,9 @@ translateQuantumComputationToMLIR(mlir::MLIRContext& context,
                                         posCtrlQubits, negCtrlQubits);
     }
   }
+
+  // Create terminator
+  builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());
 
   return module;
 }
