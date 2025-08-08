@@ -55,45 +55,45 @@ std::vector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
   return qubits;
 }
 
+template <typename OpType>
+void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
+                  const std::vector<mlir::Value>& qubits) {
+  // Define operation parameters
+  const mlir::ValueRange params;
+
+  // Define input qubits
+  auto target = operation.getTargets()[0];
+  const mlir::SmallVector<mlir::Value, 1> inQubitsVec = {qubits[target]};
+  const mlir::ValueRange inQubits = {inQubitsVec};
+
+  // Define positive control qubits
+  mlir::ValueRange posCtrlQubits;
+  std::vector<mlir::Value> controlsVec;
+  auto controls = operation.getControls();
+  if (!controls.empty()) {
+    controlsVec.reserve(controls.size());
+    for (const auto& control : controls) {
+      controlsVec.push_back(qubits[control.qubit]);
+    }
+    posCtrlQubits = mlir::ValueRange{controlsVec};
+  }
+
+  // Define negative control qubits
+  const mlir::ValueRange negCtrlQubits;
+
+  // Create operation
+  builder.create<OpType>(builder.getUnknownLoc(), nullptr, nullptr, params,
+                         inQubits, posCtrlQubits, negCtrlQubits);
+}
+
 void addOperations(mlir::OpBuilder& builder,
                    const qc::QuantumComputation& quantumComputation,
                    const std::vector<mlir::Value>& qubits) {
-
   for (const auto& operation : quantumComputation) {
     if (operation->getType() == qc::OpType::H) {
-      const mlir::ValueRange params;
-      const mlir::ValueRange posCtrlQubits;
-      const mlir::ValueRange negCtrlQubits;
-
-      auto target = operation->getTargets()[0];
-      const mlir::SmallVector<mlir::Value, 1> inQubitsVec = {qubits[target]};
-      const mlir::ValueRange inQubits = {inQubitsVec};
-
-      builder.create<mqt::ir::dyn::HOp>(builder.getUnknownLoc(), nullptr,
-                                        nullptr, params, inQubits,
-                                        posCtrlQubits, negCtrlQubits);
+      addOperation<mqt::ir::dyn::HOp>(builder, *operation, qubits);
     } else if (operation->getType() == qc::OpType::X) {
-      const mlir::ValueRange params;
-      mlir::ValueRange posCtrlQubits;
-      const mlir::ValueRange negCtrlQubits;
-
-      auto target = operation->getTargets()[0];
-      const mlir::SmallVector<mlir::Value, 1> inQubitsVec = {qubits[target]};
-      const mlir::ValueRange inQubits = {inQubitsVec};
-
-      std::vector<mlir::Value> controlsVec;
-      auto controls = operation->getControls();
-      if (!controls.empty()) {
-        controlsVec.reserve(controls.size());
-        for (const auto& control : controls) {
-          controlsVec.push_back(qubits[control.qubit]);
-        }
-        posCtrlQubits = mlir::ValueRange{controlsVec};
-      }
-
-      builder.create<mqt::ir::dyn::XOp>(builder.getUnknownLoc(), nullptr,
-                                        nullptr, params, inQubits,
-                                        posCtrlQubits, negCtrlQubits);
+      addOperation<mqt::ir::dyn::XOp>(builder, *operation, qubits);
     }
   }
 }
@@ -101,7 +101,6 @@ void addOperations(mlir::OpBuilder& builder,
 mlir::OwningOpRef<mlir::ModuleOp>
 translateQuantumComputationToMLIR(mlir::MLIRContext& context,
                                   qc::QuantumComputation& quantumComputation) {
-
   mlir::OpBuilder builder(&context);
 
   // Create module
@@ -120,7 +119,6 @@ translateQuantumComputationToMLIR(mlir::MLIRContext& context,
   // Parse quantum computation
   auto numQubits = quantumComputation.getNqubits();
   auto qreg = allocateQreg(builder, context, numQubits);
-
   auto qubits = extractQubits(builder, context, qreg, numQubits);
 
   addOperations(builder, quantumComputation, qubits);
