@@ -26,31 +26,44 @@ translateQuantumComputationToMLIR(mlir::MLIRContext& context,
   auto module = builder.create<mlir::ModuleOp>(builder.getUnknownLoc());
   builder.setInsertionPointToStart(module.getBody());
 
+  // Create a register
   const auto& qregType = mqt::ir::dyn::QubitRegisterType::get(&context);
   auto numQubits = quantumComputation.getNqubits();
   auto sizeAttr = builder.getI64IntegerAttr(numQubits);
 
-  builder.create<mqt::ir::dyn::AllocOp>(builder.getUnknownLoc(), qregType,
-                                        nullptr, sizeAttr);
+  auto allocOp = builder.create<mqt::ir::dyn::AllocOp>(
+      builder.getUnknownLoc(), qregType, nullptr, sizeAttr);
 
-  //   for (const auto& operation : quantumComputation) {
-  //     if (operation->getType() == qc::OpType::X) {
-  //       auto staticParamsAttr = builder.getDenseF64ArrayAttr({});
-  //       auto paramsMaskAttr = builder.getDenseBoolArrayAttr({});
-  //       mlir::ValueRange params;
-  //       mlir::ValueRange posCtrlQubits;
-  //       mlir::ValueRange negCtrlQubits;
+  // Extract qubits
+  const auto& qubitType = mqt::ir::dyn::QubitType::get(&context);
 
-  //       auto target = operation->getTargets()[0];
-  //       mlir::Value inQubit = allQubits[target];
-  //       mlir::ValueRange inQubits = {inQubit};
+  std::vector<mlir::Value> allQubits = {};
+  allQubits.reserve(numQubits);
 
-  //       auto xOp = builder.create<mqt::ir::dyn::XOp>(
-  //           builder.getUnknownLoc(), staticParamsAttr, paramsMaskAttr,
-  //           params, inQubits, posCtrlQubits, negCtrlQubits);
-  //       module.push_back(xOp);
-  //     }
-  //   }
+  for (std::size_t qubit = 0; qubit < numQubits; ++qubit) {
+    auto indexAttr = builder.getI64IntegerAttr(qubit);
+    auto extractOp = builder.create<mqt::ir::dyn::ExtractOp>(
+        builder.getUnknownLoc(), qubitType, allocOp.getResult(), nullptr,
+        indexAttr);
+    allQubits.push_back(extractOp.getResult());
+  }
+
+  // Add operations
+  for (const auto& operation : quantumComputation) {
+    if (operation->getType() == qc::OpType::H) {
+      mlir::ValueRange params;
+      mlir::ValueRange posCtrlQubits;
+      mlir::ValueRange negCtrlQubits;
+
+      auto target = operation->getTargets()[0];
+      mlir::SmallVector<mlir::Value, 1> inQubitsVec = {allQubits[target]};
+      mlir::ValueRange inQubits = {inQubitsVec};
+
+      builder.create<mqt::ir::dyn::HOp>(builder.getUnknownLoc(), nullptr,
+                                        nullptr, params, inQubits,
+                                        posCtrlQubits, negCtrlQubits);
+    }
+  }
 
   return module;
 }
