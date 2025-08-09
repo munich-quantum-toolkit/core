@@ -8,4 +8,3 @@
 
 add_subdirectory(MQTOpt)
 add_subdirectory(MQTRef)
-add_subdirectory(MQTMem)

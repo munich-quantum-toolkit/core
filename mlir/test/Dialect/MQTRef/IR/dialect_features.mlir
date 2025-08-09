@@ -76,7 +76,7 @@ module {
 }
 
 // -----
-// This test checks that all resources defined in the MQTDyn dialect are parsed and handled correctly using dynamic operands.
+// This test checks that all resources defined in the MQTRef dialect are parsed and handled correctly using dynamic operands.
 module {
     // CHECK-LABEL: func.func @testAllResourcesUsingOperands
     func.func @testAllResourcesUsingOperands() {
