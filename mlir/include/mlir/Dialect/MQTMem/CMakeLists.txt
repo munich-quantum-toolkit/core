@@ -6,5 +6,4 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(MQTRefToMQTOpt)
-add_subdirectory(MQTOptToMQTRef)
+add_subdirectory(IR)
