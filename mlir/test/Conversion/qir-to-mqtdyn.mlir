@@ -303,6 +303,8 @@ module {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: mqtdyn.u2(%[[c_0]], %[[c_0]]) %[[q_0:.*]]
         // CHECK: mqtdyn.p(%[[c_0]]) %[[q_0]]
+        // CHECK: mqtdyn.u(%[[c_0]], %[[c_0]], %[[c_0]]) %[[q_0]]
+        // CHECK: mqtdyn.p(%[[c_0]]) %[[q_0]]
         // CHECK: mqtdyn.rx(%[[c_0]]) %[[q_0]]
         // CHECK: mqtdyn.ry(%[[c_0]]) %[[q_0]]
         // CHECK: mqtdyn.rz(%[[c_0]]) %[[q_0]]
@@ -319,6 +321,8 @@ module {
         %q0 = llvm.load %1 : !llvm.ptr -> !llvm.ptr
 
         llvm.call @__quantum__qis__u2__body(%c2, %c2, %q0) : (f64, f64, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__u1__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__u3__body(%c2, %c2, %c2, %q0) : (f64, f64, f64, !llvm.ptr) -> ()
         llvm.call @__quantum__qis__p__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
         llvm.call @__quantum__qis__rx__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
         llvm.call @__quantum__qis__ry__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
@@ -328,7 +332,9 @@ module {
       ^bb2:
         llvm.return
     }
+    llvm.func @__quantum__qis__u1__body(f64, !llvm.ptr)
     llvm.func @__quantum__qis__u2__body(f64, f64, !llvm.ptr)
+    llvm.func @__quantum__qis__u3__body(f64, f64, f64, !llvm.ptr)
     llvm.func @__quantum__qis__p__body(f64, !llvm.ptr)
     llvm.func @__quantum__qis__rx__body(f64, !llvm.ptr)
     llvm.func @__quantum__qis__ry__body(f64, !llvm.ptr)
@@ -402,8 +408,7 @@ module {
         %c0 = llvm.mlir.constant(3 : i64) : i64
         %c1 = llvm.mlir.constant(0 : i64) : i64
         %c2 = llvm.mlir.constant(1 : i64) : i64
-        %c3 = llvm.mlir.constant(1 : i64) : i64
-        %c4 = llvm.mlir.constant(3.000000e-01 : f64) : f64
+        %c3 = llvm.mlir.constant(3.000000e-01 : f64) : f64
         llvm.call @__quantum__rt__initialize(%0) : (!llvm.ptr) -> ()
         llvm.br ^bb1
       ^bb1:
@@ -418,7 +423,7 @@ module {
         llvm.call @__quantum__qis__cnot__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) -> ()
         llvm.call @__quantum__qis__ccx__body(%q0, %q1, %q2) : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
         llvm.call @__quantum__qis__cz__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__crx__body(%c4, %q0, %q1) : (f64, !llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__crx__body(%c3, %q0, %q1) : (f64, !llvm.ptr, !llvm.ptr) -> ()
         llvm.br ^bb2
       ^bb2:
         llvm.return
