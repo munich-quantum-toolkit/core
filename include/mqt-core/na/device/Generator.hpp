@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <istream>
@@ -258,7 +259,10 @@ public:
       localSingleQubitOperations, localMultiQubitOperations, shuttlingUnits,
       decoherenceTimes, lengthUnit, timeUnit)
 
+  // the name of the following function is given by the nlohmann::json library
+  // and must not be changed
   template <typename BasicJsonType>
+  // NOLINTNEXTLINE(readability-identifier-naming)
   friend void from_json(const BasicJsonType& json, Device& device) {
     const Device defaultDevice{};
     device.name = !json.is_null() ? json.value("name", defaultDevice.name)
