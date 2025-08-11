@@ -93,6 +93,10 @@ jobs:
       - name: Build MLIR components and directly run lit tests
         run: cmake --build build --config Release --target check-quantum-opt
 
+      # run unit tests
+      - name: Run unit tests
+        run: ctest -C $CONFIG --output-on-failure --test-dir build --repeat until-pass:3 --timeout 600
+
   cpp-test-mlir-windows:
     name: 🏁 Test MLIR with LLVM@${{ matrix.llvm-version }}
     runs-on: windows-latest
@@ -347,10 +351,13 @@ jobs:
 
       # build the project and run the tests with coverage
       - name: Build MLIR components and run tests with coverage
-        run: |
-          cmake --build build --config Debug --target check-quantum-opt
+        run: cmake --build build --config Debug --target check-quantum-opt
 
-      # Run gcovr to generate coverage data
+      # run unit tests
+      - name: Run unit tests
+        run: ctest -C Debug --output-on-failure --test-dir build --repeat until-pass:3 --timeout 600
+
+      # run gcovr to generate coverage data
       - name: Generate coverage data as XML
         run: |
           gcovr \
