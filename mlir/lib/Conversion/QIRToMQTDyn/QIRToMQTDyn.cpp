@@ -8,8 +8,7 @@
  * Licensed under the MIT License
  */
 
-// macro to match and replace simple qubit gates
-
+// macro to check the gatename and to replace the simple gate
 #define ADD_CONVERT_SIMPLE_GATE(gate)                                          \
   else if (gateName == #gate) {                                                \
     rewriter.replaceOpWithNewOp<dyn::gate>(op, DenseF64ArrayAttr{},            \
@@ -17,7 +16,7 @@
                                            qubits, ctrlQubits, ValueRange{});  \
   }
 
-// macro to match and replace rotation gates
+// macro to check the gateName and to replace the rotation gate
 #define ADD_CONVERT_ROTATION_GATE(gate)                                        \
   else if (gateName == #gate) {                                                \
     rewriter.replaceOpWithNewOp<dyn::gate>(                                    \
@@ -95,6 +94,39 @@ public:
   /// @brief Return the state object as reference.
   [[nodiscard]] LoweringState& getState() const { return *state_; }
 
+  inline static const std::unordered_map<std::string, std::string>
+      SINGLE_ROTATION_GATES = {
+          {"p", "POp"},     {"rx", "RXOp"},   {"ry", "RYOp"},
+          {"rz", "RZOp"},   {"rxx", "RXXOp"}, {"ryy", "RYYOp"},
+          {"rzz", "RZZOp"}, {"rzx", "RZXOp"}, {"u1", "POp"}};
+
+  inline static const std::unordered_map<std::string, std::string>
+      SIMPLE_GATES = {{"x", "XOp"},
+                      {"not", "XOp"},
+                      {"h", "HOp"},
+                      {"i", "IOp"},
+                      {"y", "YOp"},
+                      {"z", "ZOp"},
+                      {"s", "SOp"},
+                      {"sdg", "SdgOp"},
+                      {"t", "TOp"},
+                      {"tdg", "TdgOp"},
+                      {"v", "VOp"},
+                      {"vdg", "VdgOp"},
+                      {"sx", "SXOp"},
+                      {"sxdg", "SXdgOp"},
+                      {"swap", "SWAPOp"},
+                      {"iswap", "iSWAPOp"},
+                      {"iswapdg", "iSWAPdgOp"},
+                      {"peres", "PeresOp"},
+                      {"peresdg", "PeresdgOp"},
+                      {"dcx", "DCXOp"},
+                      {"ecr", "ECROp"}};
+
+  inline static const std::unordered_map<std::string, std::string>
+      DOUBLE_ROTATION_GATES = {
+          {"u2", "U2Op"}, {"xxminusyy", "XXminusYY"}, {"xxplusyy", "XXplusYY"}};
+
 private:
   LoweringState* state_;
 };
@@ -115,41 +147,25 @@ struct ConvertQIRLoad final : OpConversionPattern<LLVM::LoadOp> {
 struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
   using StatefulOpConversionPattern<LLVM::CallOp>::StatefulOpConversionPattern;
 
-  // match and replace simple qubit gates
-  static bool convertSimpleGates(const SmallVector<Value>& qubits,
-                                 const SmallVector<Value>& ctrlQubits,
-                                 LLVM::CallOp& op,
-                                 ConversionPatternRewriter& rewriter,
-                                 const StringRef& name) {
-    static const std::unordered_map<std::string, std::string> GATE_NAMES = {
-        {"x", "XOp"},
-        {"not", "XOp"},
-        {"h", "HOp"},
-        {"i", "IOp"},
-        {"y", "YOp"},
-        {"z", "ZOp"},
-        {"s", "SOp"},
-        {"sdg", "SdgOp"},
-        {"t", "TOp"},
-        {"tdg", "TdgOp"},
-        {"v", "VOp"},
-        {"vdg", "VdgOp"},
-        {"sx", "SXOp"},
-        {"sxdg", "SXdgOp"},
-        {"swap", "SWAPOp"},
-        {"iswap", "iSWAPOp"},
-        {"iswapdg", "iSWAPdgOp"},
-        {"peres", "PeresOp"},
-        {"peresdg", "PeresdgOp"},
-        {"dcx", "DCXOp"},
-        {"ecr", "ECROp"}};
-    // check if it is a simple gate
-    if (!GATE_NAMES.contains(name.str())) {
-      return false;
-    }
-    const auto gateName = GATE_NAMES.at(name.str());
+  /**
+   * @brief Replaces the call operation with a matching simple gate operation
+   * from the mqtdyn dialect
+   *
+   * @param op The call operation that is replaced.
+   * @param gateName The name of the gate.
+   * @param qubits The Qubits of the given operation.
+   * @param ctrlQubits The control Qubits of the given operation.
+   * @param rewriter The PatternRewriter to use.
+   */
+  static void convertSimpleGate(LLVM::CallOp& op, const std::string& gateName,
+                                const SmallVector<Value>& qubits,
+                                const SmallVector<Value>& ctrlQubits,
+                                ConversionPatternRewriter& rewriter) {
 
-    //  match and replace the fitting gate
+    // match and replace the fitting gate
+    // macro contains the else if statements to check the gateName in addition
+    // to the replacement, therefore the first operation in the chain is
+    // manually replaced
     if (gateName == "XOp") {
       rewriter.replaceOpWithNewOp<dyn::XOp>(op, DenseF64ArrayAttr{},
                                             DenseBoolArrayAttr{}, ValueRange{},
@@ -174,43 +190,26 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     ADD_CONVERT_SIMPLE_GATE(PeresdgOp)
     ADD_CONVERT_SIMPLE_GATE(DCXOp)
     ADD_CONVERT_SIMPLE_GATE(ECROp)
-    return true;
   }
 
-  // match and replace single qubit gates
-  static bool convertRotationGates(SmallVector<Value>& operands,
-                                   const SmallVector<Value>& ctrlQubits,
-                                   LLVM::CallOp& op,
-                                   ConversionPatternRewriter& rewriter,
-                                   const StringRef& name) {
-    static const std::unordered_map<std::string, std::string>
-        SINGLE_ROTATION_GATES = {{"p", "POp"},     {"rx", "RXOp"},
-                                 {"ry", "RYOp"},   {"rz", "RZOp"},
-                                 {"rxx", "RXXOp"}, {"ryy", "RYYOp"},
-                                 {"rzz", "RZZOp"}, {"rzx", "RZXOp"},
-                                 {"u1", "POp"}
+  /**
+   * @brief Replaces the call operation with a matching rotation gate operation
+   * from the mqtdyn dialect
+   *
+   * @param op The call operation that is replaced.
+   * @param gateName The name of the gate.
+   * @param operands The operands of the given operation.
+   * @param ctrlQubits The control Qubits of the given operation.
+   * @param rotationCount The number of rotation degrees.
+   * @param rewriter The PatternRewriter to use.
+   */
+  static void convertRotationGate(LLVM::CallOp& op, const std::string& gateName,
+                                  SmallVector<Value>& operands,
+                                  const SmallVector<Value>& ctrlQubits,
+                                  const size_t rotationCount,
+                                  ConversionPatternRewriter& rewriter
 
-        };
-    static const std::unordered_map<std::string, std::string>
-        DOUBLE_ROTATION_GATES = {
-            {"u2", "U2Op"}, {"xxminusyy", "XXminusYY"}, {"xxplusyy", "XXplusYY"}
-
-        };
-    std::string gateName;
-    size_t rotationCount = 0;
-    // check if it is rotation gate and get the number of degrees
-    if (SINGLE_ROTATION_GATES.contains(name.str())) {
-      gateName = SINGLE_ROTATION_GATES.at(name.str());
-      rotationCount = 1;
-    } else if (DOUBLE_ROTATION_GATES.contains(name.str())) {
-      gateName = DOUBLE_ROTATION_GATES.at(name.str());
-      rotationCount = 2;
-    } else if (name.str() == "u3") {
-      gateName = "UOp";
-      rotationCount = 3;
-    } else {
-      return false;
-    }
+  ) {
 
     // extract the degrees from the operand list
     SmallVector<Value> rotationDegrees;
@@ -220,6 +219,9 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     operands.erase(operands.begin(), operands.begin() + rotationCount);
 
     //  match and replace the fitting gate
+    // macro contains the else if statements to check the gateName in addition
+    // to the replacement, therefore the first operation in the chain is
+    // manually replaced
     if (gateName == "POp") {
       rewriter.replaceOpWithNewOp<dyn::POp>(
           op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, rotationDegrees,
@@ -236,8 +238,6 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     ADD_CONVERT_ROTATION_GATE(RZXOp)
     ADD_CONVERT_ROTATION_GATE(XXminusYY)
     ADD_CONVERT_ROTATION_GATE(XXplusYY)
-
-    return true;
   }
 
   LogicalResult
@@ -353,12 +353,25 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
             newOperands, ctrlQubits, ValueRange{});
         return success();
       }
-      if (convertSimpleGates(newOperands, ctrlQubits, op, rewriter, gateName) ||
-          convertRotationGates(newOperands, ctrlQubits, op, rewriter,
-                               gateName)) {
+      if (SIMPLE_GATES.contains(gateName.str())) {
+        const auto name = SIMPLE_GATES.at(gateName.str());
+        convertSimpleGate(op, name, newOperands, ctrlQubits, rewriter);
         return success();
       }
-
+      if (SINGLE_ROTATION_GATES.contains(gateName.str())) {
+        const auto name = SINGLE_ROTATION_GATES.at(gateName.str());
+        convertRotationGate(op, name, newOperands, ctrlQubits, 1, rewriter);
+        return success();
+      }
+      if (DOUBLE_ROTATION_GATES.contains(gateName.str())) {
+        const auto name = DOUBLE_ROTATION_GATES.at(gateName.str());
+        convertRotationGate(op, name, newOperands, ctrlQubits, 2, rewriter);
+        return success();
+      }
+      if (gateName == "u3") {
+        convertRotationGate(op, "UOp", newOperands, ctrlQubits, 3, rewriter);
+        return success();
+      }
       // otherwise erase the operation
       rewriter.eraseOp(op);
     }
