@@ -11,6 +11,7 @@
 #include "mlir/Dialect/MQTDyn/Translation/ImportQuantumComputation.h"
 
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
@@ -94,20 +95,25 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
   const llvm::SmallVector<mlir::Value, 1> inQubitsVec = {qubits[target]};
   const mlir::ValueRange inQubits = {inQubitsVec};
 
-  // Define positive control qubits
+  // Define control qubits
   mlir::ValueRange posCtrlQubits;
-  std::vector<mlir::Value> controlsVec;
+  mlir::ValueRange negCtrlQubits;
+  std::vector<mlir::Value> posCtrlVec;
+  std::vector<mlir::Value> negCtrlVec;
   auto controls = operation.getControls();
   if (!controls.empty()) {
-    controlsVec.reserve(controls.size());
+    posCtrlVec.reserve(controls.size());
+    negCtrlVec.reserve(controls.size());
     for (const auto& control : controls) {
-      controlsVec.push_back(qubits[control.qubit]);
+      if (control.type == qc::Control::Type::Pos) {
+        posCtrlVec.push_back(qubits[control.qubit]);
+      } else if (control.type == qc::Control::Type::Neg) {
+        negCtrlVec.push_back(qubits[control.qubit]);
+      }
     }
-    posCtrlQubits = mlir::ValueRange{controlsVec};
+    posCtrlQubits = mlir::ValueRange{posCtrlVec};
+    negCtrlQubits = mlir::ValueRange{negCtrlVec};
   }
-
-  // Define negative control qubits
-  const mlir::ValueRange negCtrlQubits;
 
   // Create operation
   builder.create<OpType>(builder.getUnknownLoc(), nullptr, nullptr, params,
