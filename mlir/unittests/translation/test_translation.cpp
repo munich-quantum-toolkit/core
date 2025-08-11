@@ -12,6 +12,12 @@
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 #include "mlir/Dialect/MQTDyn/Translation/ImportQuantumComputation.h"
 
+#include "llvm/ADT/StringRef.h"
+#include "llvm/FileCheck/FileCheck.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -45,7 +51,56 @@ protected:
   }
 };
 
+std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>* module) {
+  std::string outputString;
+  llvm::raw_string_ostream os(outputString);
+  (*module)->print(os);
+  os.flush();
+  return outputString;
+}
+
+// Adapted from
+// https://github.com/llvm/llvm-project/blob/d2b3e86321eaf954451e0a49534fa654dd67421e/llvm/unittests/MIR/MachineMetadata.cpp#L181
+bool checkOutput(std::string checkString, std::string outputString) {
+  auto checkBuffer = llvm::MemoryBuffer::getMemBuffer(checkString, "");
+  auto outputBuffer =
+      llvm::MemoryBuffer::getMemBuffer(outputString, "Output", false);
+
+  llvm::SmallString<4096> checkFileBuffer;
+  llvm::FileCheckRequest request;
+  llvm::FileCheck fc(request);
+  llvm::StringRef checkFileText =
+      fc.CanonicalizeFile(*checkBuffer, checkFileBuffer);
+
+  llvm::SourceMgr sm;
+  sm.AddNewSourceBuffer(
+      llvm::MemoryBuffer::getMemBuffer(checkFileText, "CheckFile"),
+      llvm::SMLoc());
+  if (fc.readCheckFile(sm, checkFileText))
+    return false;
+
+  auto outputBufferBuffer = outputBuffer->getBuffer();
+  sm.AddNewSourceBuffer(std::move(outputBuffer), llvm::SMLoc());
+  return fc.checkInput(sm, outputBufferBuffer);
+}
+
 } // namespace
+
+TEST_F(ImportTest, Allocation) {
+  qc::QuantumComputation qc(3);
+
+  auto module = translateQuantumComputationToMLIR(*context, qc);
+
+  auto outputString = getOutputString(&module);
+  auto checkString = R"(
+    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
+    CHECK: "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
 
 TEST_F(ImportTest, HOperation) {
   qc::QuantumComputation qc(1);
@@ -53,22 +108,10 @@ TEST_F(ImportTest, HOperation) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  std::string moduleStr;
-  llvm::raw_string_ostream os(moduleStr);
-  module->print(os);
-  os.flush();
+  auto outputString = getOutputString(&module);
+  auto checkString = "CHECK: mqtdyn.h()";
 
-  auto expectedStr = R"(module {
-  func.func @main() {
-    %0 = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
-    %1 = "mqtdyn.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    mqtdyn.h() %1
-    return
-  }
-}
-)";
-
-  ASSERT_EQ(moduleStr, expectedStr);
+  ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
 TEST_F(ImportTest, RxOperation) {
@@ -77,23 +120,13 @@ TEST_F(ImportTest, RxOperation) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  std::string moduleStr;
-  llvm::raw_string_ostream os(moduleStr);
-  module->print(os);
-  os.flush();
+  auto outputString = getOutputString(&module);
+  auto checkString = R"(
+    CHECK: %[[Cst:.*]] = arith.constant 5.000000e-01 : f64
+    CHECK: mqtdyn.rx(%[[Cst]])
+  )";
 
-  auto expectedStr = R"(module {
-  func.func @main() {
-    %0 = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
-    %1 = "mqtdyn.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    %cst = arith.constant 5.000000e-01 : f64
-    mqtdyn.rx(%cst) %1
-    return
-  }
-}
-)";
-
-  ASSERT_EQ(moduleStr, expectedStr);
+  ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
 TEST_F(ImportTest, SwapOperation) {
@@ -102,23 +135,10 @@ TEST_F(ImportTest, SwapOperation) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  std::string moduleStr;
-  llvm::raw_string_ostream os(moduleStr);
-  module->print(os);
-  os.flush();
+  auto outputString = getOutputString(&module);
+  auto checkString = "CHECK: mqtdyn.swap()";
 
-  auto expectedStr = R"(module {
-  func.func @main() {
-    %0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-    %1 = "mqtdyn.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    %2 = "mqtdyn.extractQubit"(%0) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    mqtdyn.swap() %1, %2
-    return
-  }
-}
-)";
-
-  ASSERT_EQ(moduleStr, expectedStr);
+  ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
 TEST_F(ImportTest, CXOperation) {
@@ -127,21 +147,13 @@ TEST_F(ImportTest, CXOperation) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  std::string moduleStr;
-  llvm::raw_string_ostream os(moduleStr);
-  module->print(os);
-  os.flush();
+  auto outputString = getOutputString(&module);
+  auto checkString = R"(
+    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: %[[Q_2:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: mqtdyn.x() %[[Q_2]] ctrl %[[Q_1]]
+  )";
 
-  auto expectedStr = R"(module {
-  func.func @main() {
-    %0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-    %1 = "mqtdyn.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    %2 = "mqtdyn.extractQubit"(%0) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    mqtdyn.x() %2 ctrl %1
-    return
-  }
-}
-)";
-
-  ASSERT_EQ(moduleStr, expectedStr);
+  ASSERT_TRUE(checkOutput(checkString, outputString));
 }
