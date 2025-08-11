@@ -11,6 +11,7 @@
 #include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <utility>
@@ -26,6 +27,10 @@ namespace mqt::ir::opt {
 struct RaiseMeasurementsPass final
     : impl::RaiseMeasurementsPassBase<RaiseMeasurementsPass> {
 
+  void getDependentDialects(mlir::DialectRegistry& registry) const override {
+    registry.insert<mlir::scf::SCFDialect>();
+  }
+
   void runOnOperation() override {
     // Get the current operation being operated on.
     auto op = getOperation();
@@ -33,8 +38,8 @@ struct RaiseMeasurementsPass final
 
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
-    populateRaiseMeasurementsAboveControlsPatterns(patterns);
     populateReplaceClassicalControlsWithIfPatterns(patterns);
+    populateRaiseMeasurementsAboveControlsPatterns(patterns);
     populateRaiseMeasurementsAboveGatesPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.

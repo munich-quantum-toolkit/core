@@ -32,15 +32,51 @@ namespace mqt::ir::opt {
  * principle", raising measurements above controls.
  */
 struct RaiseMeasurementsAboveControlsPattern final
-    : mlir::OpInterfaceRewritePattern<UnitaryInterface> {
+    : mlir::OpRewritePattern<MeasureOp> {
 
   explicit RaiseMeasurementsAboveControlsPattern(mlir::MLIRContext* context)
-      : OpInterfaceRewritePattern(context) {}
+      : OpRewritePattern(context) {}
 
   mlir::LogicalResult
-  matchAndRewrite(UnitaryInterface op,
+  matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
-    return mlir::failure();
+    const auto qubitVariable = op.getInQubit();
+    auto* predecessor = qubitVariable.getDefiningOp();
+    auto predecessorUnitary = mlir::dyn_cast<UnitaryInterface>(predecessor);
+
+    if (!predecessorUnitary) {
+      return mlir::failure();
+    }
+
+    if (std::find(predecessorUnitary.getOutQubits().begin(),
+                  predecessorUnitary.getOutQubits().end(),
+                  qubitVariable) != predecessorUnitary.getOutQubits().end()) {
+      // The measured qubit is a target, not a control of the gate.
+      return mlir::failure();
+    }
+
+    const auto correspondingInput =
+        predecessorUnitary.getCorrespondingInput(qubitVariable);
+
+    rewriter.replaceUsesWithIf(qubitVariable, correspondingInput,
+                               [&](mlir::OpOperand& operand) {
+                                 // We only replace the single use by the
+                                 // measure op
+                                 return operand.getOwner() == op;
+                               });
+    rewriter.replaceUsesWithIf(
+        correspondingInput, op.getOutQubit(), [&](mlir::OpOperand& operand) {
+          // We only replace the single use by the predecessor
+          return operand.getOwner() == predecessorUnitary;
+        });
+    rewriter.replaceUsesWithIf(
+        op.getOutQubit(), qubitVariable, [&](mlir::OpOperand& operand) {
+          // All further uses of the measurement output now use the gate output
+          return operand.getOwner() != predecessorUnitary;
+        });
+    rewriter.moveOpBefore(op, predecessor);
+
+    return mlir::success();
   }
 };
 

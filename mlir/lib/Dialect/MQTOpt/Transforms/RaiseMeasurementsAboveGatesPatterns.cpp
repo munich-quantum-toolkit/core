@@ -45,22 +45,19 @@ struct RaiseMeasurementsAbovePhaseGatesPattern final
   mlir::LogicalResult
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
-    if (op.getInQubits().size() != 1) {
-      return mlir::failure(); // only support single-qubit measurements.
-    }
-    const auto qubitVariable = op.getInQubits().front();
+    const auto qubitVariable = op.getInQubit();
     auto* predecessor = qubitVariable.getDefiningOp();
     const auto name = predecessor->getName().stripDialect().str();
 
-    auto predecessorOp = mlir::dyn_cast<UnitaryInterface>(predecessor);
+    auto predecessorUnitary = mlir::dyn_cast<UnitaryInterface>(predecessor);
 
-    if (!predecessorOp) {
+    if (!predecessorUnitary) {
       return mlir::failure();
     }
 
     if (DIAGONAL_GATES.count(name) == 1) {
       rewriter.replaceAllUsesWith(qubitVariable,
-                                  predecessorOp.getInQubits().front());
+                                  predecessorUnitary.getInQubits().front());
       rewriter.eraseOp(predecessor);
       return mlir::success();
     }
@@ -73,41 +70,54 @@ struct RaiseMeasurementsAbovePhaseGatesPattern final
  * @brief This pattern is responsible for raising measurements above any
  * non-phase gates.
  */
-struct RaiseMeasurementsAboveOtherGatesPattern final
+struct RaiseMeasurementsAboveInvertingGatesPattern final
     : mlir::OpRewritePattern<MeasureOp> {
 
-  explicit RaiseMeasurementsAboveOtherGatesPattern(mlir::MLIRContext* context)
+  explicit RaiseMeasurementsAboveInvertingGatesPattern(
+      mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
+
+  /**
+   * @brief Checks if the users of the measured qubit are all resets.
+   * @param op The MeasureOp to check.
+   * @return True if all users are resets, false otherwise.
+   */
+  static bool checkUsersAreResets(MeasureOp op) {
+    return llvm::all_of(op.getOutQubit().getUsers(), [](mlir::Operation* user) {
+      return mlir::isa<ResetOp>(user);
+    });
+  }
 
   mlir::LogicalResult
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
-    if (op.getInQubits().size() != 1) {
-      return mlir::failure(); // only support single-qubit measurements.
+    if (!checkUsersAreResets(op)) {
+      return mlir::failure(); // if the qubit is still used after the
+                              // measurement, we cannot raise it above the gate.
     }
-    const auto qubitVariable = op.getInQubits().front();
+    const auto qubitVariable = op.getInQubit();
     auto* predecessor = qubitVariable.getDefiningOp();
     const auto name = predecessor->getName().stripDialect().str();
 
-    auto predecessorOp = mlir::dyn_cast<UnitaryInterface>(predecessor);
+    auto predecessorUnitary = mlir::dyn_cast<UnitaryInterface>(predecessor);
 
-    if (!predecessorOp) {
+    if (!predecessorUnitary) {
       return mlir::failure();
     }
 
     if (INVERTING_GATES.count(name) == 1 &&
-        predecessorOp.getAllInQubits().size() == 1) {
+        predecessorUnitary.getAllInQubits().size() == 1) {
       rewriter.replaceAllUsesWith(qubitVariable,
-                                  predecessorOp.getInQubits().front());
+                                  predecessorUnitary.getInQubits().front());
       rewriter.eraseOp(predecessor);
       rewriter.setInsertionPointAfter(op);
       const mlir::Value trueConstant = rewriter.create<mlir::arith::ConstantOp>(
           op.getLoc(), rewriter.getBoolAttr(true));
       auto inversion = rewriter.create<mlir::arith::XOrIOp>(
-          op.getLoc(), op.getOutBits().front(), trueConstant);
+          op.getLoc(), op.getOutBit(), trueConstant);
       // We need `replaceUsesWithIf` so that we can replace all uses except for
       // the one use that defines the inverted bit.
-      rewriter.replaceUsesWithIf(op.getOutBits().front(), inversion.getResult(),
+      rewriter.replaceUsesWithIf(op.getOutBit(), inversion.getResult(),
                                  [&](mlir::OpOperand& operand) {
                                    return operand.getOwner() != inversion;
                                  });
@@ -121,14 +131,15 @@ struct RaiseMeasurementsAboveOtherGatesPattern final
 /**
  * @brief Populates the given pattern set with the
  * `RaiseMeasurementsAbovePhaseGatesPattern` and
- * `RaiseMeasurementsAboveOtherGatesPattern`.
+ * `RaiseMeasurementsAboveInvertingGatesPattern`.
  *
  * @param patterns The pattern set to populate.
  */
 void populateRaiseMeasurementsAboveGatesPatterns(
     mlir::RewritePatternSet& patterns) {
   patterns.add<RaiseMeasurementsAbovePhaseGatesPattern>(patterns.getContext());
-  patterns.add<RaiseMeasurementsAboveOtherGatesPattern>(patterns.getContext());
+  patterns.add<RaiseMeasurementsAboveInvertingGatesPattern>(
+      patterns.getContext());
 }
 
 } // namespace mqt::ir::opt
