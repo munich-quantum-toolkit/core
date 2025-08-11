@@ -18,6 +18,7 @@
 
 #include <cstddef>
 #include <llvm/ADT/SmallVector.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -88,7 +89,19 @@ template <typename OpType>
 void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
                   const std::vector<mlir::Value>& qubits) {
   // Define operation parameters
-  const mlir::ValueRange params;
+  mlir::ValueRange params;
+  auto parameters = operation.getParameter();
+  std::vector<mlir::Value> paramsVec;
+  if (!parameters.empty()) {
+    paramsVec.reserve(parameters.size());
+    for (const auto& parameter : parameters) {
+      auto param = builder.create<mlir::arith::ConstantOp>(
+          builder.getUnknownLoc(), builder.getF64Type(),
+          builder.getF64FloatAttr(parameter));
+      paramsVec.push_back(param.getResult());
+    }
+    params = mlir::ValueRange(paramsVec);
+  }
 
   // Define input qubits
   std::vector<mlir::Value> inQubitsVec;
@@ -137,6 +150,8 @@ void addOperations(mlir::OpBuilder& builder,
   for (const auto& operation : quantumComputation) {
     if (operation->getType() == qc::OpType::H) {
       addOperation<mqt::ir::dyn::HOp>(builder, *operation, qubits);
+    } else if (operation->getType() == qc::OpType::RX) {
+      addOperation<mqt::ir::dyn::RXOp>(builder, *operation, qubits);
     } else if (operation->getType() == qc::OpType::X) {
       addOperation<mqt::ir::dyn::XOp>(builder, *operation, qubits);
     }
