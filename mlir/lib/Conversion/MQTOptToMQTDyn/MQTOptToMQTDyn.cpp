@@ -136,24 +136,43 @@ struct ConvertMQTOptMeasure final : OpConversionPattern<opt::MeasureOp> {
   matchAndRewrite(opt::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
 
-    const auto& oldBits = op.getOutBits();
-    const auto& dynQubits = adaptor.getInQubits();
+    const auto& oldBit = op.getOutBit();
+    const auto& dynQubit = adaptor.getInQubit();
 
     // create new operation
-    auto mqtdynOp = rewriter.create<dyn::MeasureOp>(
-        op.getLoc(), oldBits.getTypes(), dynQubits);
+    auto mqtdynOp = rewriter.create<dyn::MeasureOp>(op.getLoc(),
+                                                    oldBit.getType(), dynQubit);
 
-    const auto& newBits = mqtdynOp.getOutBits();
+    const auto& newBit = mqtdynOp.getOutBit();
 
     // concatenate the dyn qubits and the bits
     SmallVector<Value> newValues;
-    newValues.reserve(dynQubits.size() + newBits.size());
-    newValues.append(dynQubits.begin(), dynQubits.end());
-    newValues.append(newBits.begin(), newBits.end());
+    newValues.reserve(2);
+    newValues.emplace_back(dynQubit);
+    newValues.emplace_back(newBit);
 
     // replace the results of the old operation with the new results and delete
     // old operation
     rewriter.replaceOp(op, newValues);
+    return success();
+  }
+};
+
+struct ConvertMQTOptReset final : OpConversionPattern<opt::ResetOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(opt::ResetOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    const auto& dynQubit = adaptor.getInQubit();
+
+    // create new operation
+    auto mqtdynOp = rewriter.create<dyn::ResetOp>(op.getLoc(), dynQubit);
+
+    // replace the results of the old operation with the new results and delete
+    // old operation
+    rewriter.replaceOp(op, dynQubit);
     return success();
   }
 };
@@ -217,9 +236,10 @@ struct MQTOptToMQTDyn final : impl::MQTOptToMQTDynBase<MQTOptToMQTDyn> {
     target.addIllegalDialect<opt::MQTOptDialect>();
     target.addLegalDialect<dyn::MQTDynDialect>();
 
-    patterns.add<ConvertMQTOptAlloc, ConvertMQTOptDealloc, ConvertMQTOptInsert,
-                 ConvertMQTOptExtract, ConvertMQTOptMeasure>(typeConverter,
-                                                             context);
+    patterns
+        .add<ConvertMQTOptAlloc, ConvertMQTOptDealloc, ConvertMQTOptInsert,
+             ConvertMQTOptExtract, ConvertMQTOptMeasure, ConvertMQTOptReset>(
+            typeConverter, context);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)

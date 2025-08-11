@@ -37,10 +37,6 @@ def NoControl : NativeOpTrait<"NoControlTrait"> {
     let cppNamespace = "::mqt::ir::common";
 }
 
-def MatchingMeasureInOuts : NativeOpTrait<"MatchingMeasureInOutsTrait"> {
-    let cppNamespace = "::mqt::ir::common";
-}
-
 def UniqueSizeDefinition : NativeOpTrait<"UniqueSizeDefinitionTrait"> {
     let cppNamespace = "::mqt::ir::common";
 }
