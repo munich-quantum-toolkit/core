@@ -71,7 +71,28 @@ LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
 
   return static_cast<LLVM::LLVMFuncOp>(fnDecl);
 }
+struct LoweringState {
 
+  SmallVector<Operation*> measureConstants;
+  Operation* constantOp{};
+};
+
+template <typename OpType>
+class StatefulOpConversionPattern : public mlir::OpConversionPattern<OpType> {
+  using mlir::OpConversionPattern<OpType>::OpConversionPattern;
+
+public:
+  StatefulOpConversionPattern(mlir::TypeConverter& typeConverter,
+                              mlir::MLIRContext* context, LoweringState* state)
+      : mlir::OpConversionPattern<OpType>(typeConverter, context),
+        state_(state) {}
+
+  /// @brief Return the state object as reference.
+  [[nodiscard]] LoweringState& getState() const { return *state_; }
+
+private:
+  LoweringState* state_;
+};
 } // namespace
 
 struct MQTDynToQIRTypeConverter final : public LLVMTypeConverter {
@@ -245,17 +266,10 @@ struct ConvertMQTDynGateOpQIR final : OpConversionPattern<MQTDynGateOp> {
   }
 };
 
-struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  SmallVector<Operation*>* measureConstants;
-  Operation* constantOp;
-  explicit ConvertMQTDynMeasureQIR(TypeConverter& typeConverter,
-                                   MLIRContext* context,
-                                   SmallVector<Operation*>& measureConstants,
-                                   Operation* constantOp)
-      : OpConversionPattern(typeConverter, context),
-        measureConstants(&measureConstants), constantOp(constantOp) {}
+struct ConvertMQTDynMeasureQIR final
+    : StatefulOpConversionPattern<dyn::MeasureOp> {
+  using StatefulOpConversionPattern<
+      dyn::MeasureOp>::StatefulOpConversionPattern;
   LogicalResult
   matchAndRewrite(dyn::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -287,8 +301,8 @@ struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
       rewriter.create<LLVM::CallOp>(
           op.getLoc(), fnDecl,
           ValueRange{newOp->getResult(0),
-                     measureConstants->front()->getResult(0)});
-      measureConstants->erase(&measureConstants->front());
+                     getState().measureConstants.front()->getResult(0)});
+      getState().measureConstants.erase(&getState().measureConstants.front());
 
       // create record update reference count
       fnName = "__quantum__rt__result_update_reference_count";
@@ -299,7 +313,7 @@ struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
 
       rewriter.create<LLVM::CallOp>(
           op.getLoc(), fnDecl,
-          ValueRange{newOp->getResult(0), constantOp->getResult(0)});
+          ValueRange{newOp->getResult(0), getState().constantOp->getResult(0)});
 
       // create read result op and replace the old result with new result
       fnName = "__quantum__rt__read_result";
@@ -461,16 +475,18 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
       signalPassFailure();
     }
 
-    // get the operations for measure conversions
-    SmallVector<Operation*> addressOfOps;
-    auto* constantOp = collectMeasureConstants(module, addressOfOps, context);
+    // get the operations for measure conversions and store them in the
+    // loweringstate struct
+    LoweringState state;
+    state.constantOp =
+        collectMeasureConstants(module, state.measureConstants, context);
+
     addInitialize(module, context);
     target.addIllegalDialect<dyn::MQTDynDialect>();
     mqtPatterns.add<ConvertMQTDynAllocQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTDynDeallocQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTDynExtractQIR>(typeConverter, context);
-    mqtPatterns.add<ConvertMQTDynMeasureQIR>(typeConverter, context,
-                                             addressOfOps, constantOp);
+    mqtPatterns.add<ConvertMQTDynMeasureQIR>(typeConverter, context, &state);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)
