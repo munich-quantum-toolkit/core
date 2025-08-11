@@ -105,7 +105,34 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
         custom<QubitTypes>(type($in_qubits), type($pos_ctrl_in_qubits), type($neg_ctrl_in_qubits))
     }];
 
+    let extraClassDefinition = [{
+        ::llvm::LogicalResult mqt::ir::ref::$cppClass::verify() {
+            ::llvm::SmallVector<::mlir::Type, 4> types;
+
+            ::mlir::TypeRange qubits = getInQubits().getType();
+            ::mlir::TypeRange ctrl = getPosCtrlInQubits().getType();
+            ::mlir::TypeRange nctrl = getNegCtrlInQubits().getType();
+
+            types.insert(types.begin(), qubits.begin(), qubits.end());
+            types.insert(types.begin(), ctrl.begin(), ctrl.end());
+            types.insert(types.begin(), nctrl.begin(), nctrl.end());
+
+            if (types.empty()) {
+                return ::mlir::success();
+            }
+
+            ::mlir::Type first = types.front();
+            if (!llvm::all_of(types, [&](::mlir::Type t){ return t == first; })) {
+                return emitOpError() << "expects the use of either 'DynamicQubit' or 'StaticQubit'"
+                                     << " but not a combination of both";
+            }
+
+            return ::mlir::success();
+        }
+    }];
+
     let hasCustomAssemblyFormat = 1;
+    let hasVerifier = 1;
 }
 
 include "mlir/Dialect/MQTRef/IR/MQTRefStdOps.td"

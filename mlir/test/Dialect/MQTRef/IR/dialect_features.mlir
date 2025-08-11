@@ -565,6 +565,79 @@ module {
 }
 
 // -----
+// This test checks if two-qubit gates detect the mixed use of dynamic and static qubits.
+module {
+    func.func @testNoMixOfStaticDynamicTwoQubitGate() {
+        %qreg = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+        %qd0 = "mqtref.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> (!mqtref.DynamicQubit)
+
+        %qs1 = mqtref.qubit 1
+
+        // expected-error@+1 {{'mqtref.swap' op expects the use of either 'DynamicQubit' or 'StaticQubit' but not a combination of both}}
+        mqtref.swap() %qd0, %qs1 : !mqtref.DynamicQubit, !mqtref.StaticQubit
+
+        "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if controlled gates detect the mixed use of dynamic and static qubits.
+module {
+    func.func @testNoMixOfStaticDynamicCtrlGate() {
+        %qreg = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+        %qd0 = "mqtref.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> (!mqtref.DynamicQubit)
+
+        %qs1 = mqtref.qubit 1
+
+        // expected-error@+1 {{'mqtref.x' op expects the use of either 'DynamicQubit' or 'StaticQubit' but not a combination of both}}
+        mqtref.x() %qd0 ctrl %qs1 : !mqtref.DynamicQubit ctrl !mqtref.StaticQubit
+
+        "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if neg. controlled gates detect the mixed use of dynamic and static qubits.
+module {
+    func.func @testNoMixOfStaticDynamicNctrlGate() {
+        %qreg = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+        %qd0 = "mqtref.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> (!mqtref.DynamicQubit)
+
+        %qs1 = mqtref.qubit 1
+
+        // expected-error@+1 {{'mqtref.x' op expects the use of either 'DynamicQubit' or 'StaticQubit' but not a combination of both}}
+        mqtref.x() %qd0 nctrl %qs1 : !mqtref.DynamicQubit nctrl !mqtref.StaticQubit
+
+        "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if multi-controlled gates detect the mixed use of dynamic and static qubits.
+module {
+    func.func @testNoMixOfStaticDynamicNctrlGate() {
+        %qreg = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+        %qd0 = "mqtref.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> (!mqtref.DynamicQubit)
+        %qd1 = "mqtref.extractQubit"(%qreg)  <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> (!mqtref.DynamicQubit)
+
+        %qs1 = mqtref.qubit 1
+
+        // expected-error@+1 {{'mqtref.x' op expects the use of either 'DynamicQubit' or 'StaticQubit' but not a combination of both}}
+        mqtref.x() %qd0 ctrl %qd1 nctrl %qs1 : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit nctrl !mqtref.StaticQubit
+
+        "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
 // This test expects an error to be thrown when an alloc op does not define size operands nor attributes.
 module {
     func.func @testAllocMissingSize() {
