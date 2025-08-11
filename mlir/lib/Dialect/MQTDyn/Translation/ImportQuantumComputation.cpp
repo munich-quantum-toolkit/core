@@ -147,34 +147,49 @@ void addOperations(mlir::OpBuilder& builder,
                    const qc::QuantumComputation& quantumComputation,
                    const std::vector<mlir::Value>& qubits) {
   for (const auto& operation : quantumComputation) {
-    if (operation->getType() == qc::OpType::I) {
+    switch (operation->getType()) {
+    case qc::OpType::I:
       addOperation<mqt::ir::dyn::IOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::H) {
+      break;
+    case qc::OpType::H:
       addOperation<mqt::ir::dyn::HOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::X) {
+      break;
+    case qc::OpType::X:
       addOperation<mqt::ir::dyn::XOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::Y) {
+      break;
+    case qc::OpType::Y:
       addOperation<mqt::ir::dyn::YOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::Z) {
+      break;
+    case qc::OpType::Z:
       addOperation<mqt::ir::dyn::ZOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::S) {
+      break;
+    case qc::OpType::S:
       addOperation<mqt::ir::dyn::SOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::Sdg) {
+      break;
+    case qc::OpType::Sdg:
       addOperation<mqt::ir::dyn::SdgOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::T) {
+      break;
+    case qc::OpType::T:
       addOperation<mqt::ir::dyn::TOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::Tdg) {
+      break;
+    case qc::OpType::Tdg:
       addOperation<mqt::ir::dyn::TdgOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::V) {
+      break;
+    case qc::OpType::V:
       addOperation<mqt::ir::dyn::VOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::Vdg) {
+      break;
+    case qc::OpType::Vdg:
       addOperation<mqt::ir::dyn::VdgOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::RX) {
+      break;
+    case qc::OpType::RX:
       addOperation<mqt::ir::dyn::RXOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::SWAP) {
+      break;
+    case qc::OpType::SWAP:
       addOperation<mqt::ir::dyn::SWAPOp>(builder, *operation, qubits);
-    } else if (operation->getType() == qc::OpType::X) {
-      addOperation<mqt::ir::dyn::XOp>(builder, *operation, qubits);
+      break;
+    default:
+      throw std::runtime_error("Unsupported operation type: " +
+                               operation->getName());
     }
   }
 }
