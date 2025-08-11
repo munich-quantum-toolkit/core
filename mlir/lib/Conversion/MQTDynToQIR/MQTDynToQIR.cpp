@@ -18,6 +18,7 @@
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -30,6 +31,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
+#include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -274,7 +276,7 @@ struct ConvertMQTDynMeasureQIR final
 
   /**
    * @brief returns the next addressOfOp for a global constant to store the
-   * results of the measure operation
+   * results of the measure operation.
    *
    * @param op The current measure operation that is converted.
    * @param rewriter The PatternRewriter to use.
@@ -307,12 +309,12 @@ struct ConvertMQTDynMeasureQIR final
       // create the necessary names and types for the global operation
       // symbol name should be mlir.llvm.nameless_global_0,
       // mlir.llvm.nameless_global_1 etc.
-      auto symbolName = rewriter.getStringAttr("mlir.llvm.nameless_global_" +
-                                               std::to_string(state.index));
-      auto llvmArrayType =
+      const auto symbolName = rewriter.getStringAttr(
+          "mlir.llvm.nameless_global_" + std::to_string(state.index));
+      const auto llvmArrayType =
           LLVM::LLVMArrayType::get(rewriter.getIntegerType(8), digits + 2);
       // initializer name should be r0\00, r1\00 etc.
-      auto stringInitializer =
+      const auto stringInitializer =
           rewriter.getStringAttr("r" + std::to_string(state.index) + '\0');
 
       // create the global operation
@@ -342,6 +344,7 @@ struct ConvertMQTDynMeasureQIR final
 
     return addressOfOp;
   }
+
   LogicalResult
   matchAndRewrite(dyn::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
