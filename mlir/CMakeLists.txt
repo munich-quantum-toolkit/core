@@ -22,3 +22,4 @@ add_subdirectory(tools)
 
 # add test code
 add_subdirectory(test)
+add_subdirectory(unittests)

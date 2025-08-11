@@ -6,7 +6,6 @@
 #
 # Licensed under the MIT License
 
-include(GoogleTest)
 file(GLOB_RECURSE TRANSLATION_TEST_SOURCES *.cpp)
 package_add_test_with_working_dir(mqt-mlir-translation-test MLIRMQTDynImportQuantumComputation
                                   ${CMAKE_CURRENT_BINARY_DIR} ${TRANSLATION_TEST_SOURCES})

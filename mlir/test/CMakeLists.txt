@@ -22,5 +22,3 @@ add_lit_testsuite(check-quantum-opt "Running the quantum-opt regression tests"
 set_target_properties(check-quantum-opt PROPERTIES FOLDER "Tests" EXCLUDE_FROM_ALL ON)
 
 add_lit_testsuites(QUANTUM_OPT ${CMAKE_CURRENT_SOURCE_DIR} DEPENDS ${QUANTUM_OPT_TEST_DEPENDS})
-
-add_subdirectory(Translation)
