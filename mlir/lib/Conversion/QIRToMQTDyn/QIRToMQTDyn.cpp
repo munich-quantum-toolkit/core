@@ -69,16 +69,13 @@ public:
 namespace {
 
 struct LoweringState {
-  // struct to store information for alloc register and qubits
-  struct AllocRegisterData {
-    // dyn register
-    dyn::AllocOp qReg;
-    // next free index
-    int64_t index{};
-  };
-
+  // map each llvm qir result to the new mqtdyn result
   DenseMap<Value, Value> operandMap;
-  AllocRegisterData allocOp;
+  // the newly created alloc register if it does not exist already, otherwise
+  // this is a nullptr and will not be used
+  dyn::AllocOp qReg;
+  // next free allocate index
+  int64_t index{};
 };
 
 template <typename OpType>
@@ -274,9 +271,8 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     // match alloc qubit using the given allocOp and the index
     else if (fnName == "__quantum__rt__qubit_allocate") {
       const auto newOp = rewriter.replaceOpWithNewOp<dyn::ExtractOp>(
-          op, qubitType, getState().allocOp.qReg, Value{},
-          IntegerAttr::get(rewriter.getIntegerType(64),
-                           getState().allocOp.index++));
+          op, qubitType, getState().qReg, Value{},
+          IntegerAttr::get(rewriter.getIntegerType(64), getState().index++));
 
       // update the operand list
       getState().operandMap.try_emplace(op->getResult(0),
@@ -414,7 +410,7 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
    * @return An optional that either contains the newly created allocate
    * operation or std::nullopt.
    */
-  static std::optional<dyn::AllocOp> ensureRegisterAllocation(Operation* op) {
+  static dyn::AllocOp ensureRegisterAllocation(Operation* op) {
     int64_t requiredQubits = 0;
     auto module = dyn_cast<ModuleOp>(op);
 
@@ -456,20 +452,17 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
       builder.create<dyn::DeallocOp>(main->getLoc(), allocOp);
       return allocOp;
     }
-    // otherwise return null
-    return std::nullopt;
+    // otherwise return nullptr
+    return nullptr;
   }
 
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
-    // map each initial dyn qubit to its latest opt qubit
-    DenseMap<Value, Value> operandMap;
+
     LoweringState state;
-    // create an allocOp if necessary
-    auto alloc = ensureRegisterAllocation(module).value_or(nullptr);
-    LoweringState::AllocRegisterData registerInfo{.qReg = alloc, .index = 0};
-    state.allocOp = registerInfo;
+    // create an allocOp and store it in the loweringState if necessary
+    state.qReg = ensureRegisterAllocation(module);
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
