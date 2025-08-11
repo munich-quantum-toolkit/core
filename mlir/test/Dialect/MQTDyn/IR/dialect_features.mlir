@@ -96,7 +96,7 @@ module {
 }
 
 // -----
-// This test checks if the MeasureOp applied to a single qubit is parsed and handled correctly.
+// This test checks if the MeasureOp is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMeasureOp
     func.func @testMeasureOp() {
@@ -106,6 +106,23 @@ module {
         %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
 
         %m0 = "mqtdyn.measure"(%q0) : (!mqtdyn.Qubit) -> i1
+
+        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if the ResetOp is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testResetOp
+    func.func @testResetOp() {
+        // CHECK: "mqtdyn.reset"(%[[ANY:.*]])
+
+        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
+        %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+
+        "mqtdyn.reset"(%q0) : (!mqtdyn.Qubit) -> ()
 
         "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
         return

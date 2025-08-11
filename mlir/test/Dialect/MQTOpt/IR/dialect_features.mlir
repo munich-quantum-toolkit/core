@@ -144,6 +144,22 @@ module {
 }
 
 // -----
+// This test checks if the ResetOp is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testResetOp
+    func.func @testResetOp() {
+        // CHECK: %[[Q_1:.*]] = "mqtopt.reset"(%[[ANY:.*]])
+
+        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+        %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %q_1 = "mqtopt.reset"(%q_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit)
+        %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
 // This test checks if no-target operations without controls are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testNoTargetNoControls

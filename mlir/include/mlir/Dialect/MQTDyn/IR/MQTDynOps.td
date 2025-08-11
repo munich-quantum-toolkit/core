@@ -122,6 +122,26 @@ def MeasureOp : GateOp<"measure", []> {
     );
 }
 
+def ResetOp : GateOp<"reset", []> {
+    let summary = "A reset operation";
+
+    let description = [{
+        This class represents a reset operation. It takes a single qubit as
+        input and and resets its value |0>.
+
+        Example:
+        ```mlir
+        "mqtdyn.reset"(%0) : (!mqtopt.Qubit) -> ()
+        ```
+    }];
+
+    let arguments = (ins
+        QubitType:$in_qubit
+    );
+
+    let results = (outs);
+}
+
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTDynOp<mnemonic, traits>;
 
 def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
