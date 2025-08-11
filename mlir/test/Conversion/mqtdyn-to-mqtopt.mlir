@@ -169,6 +169,21 @@ module {
 }
 
 // -----
+// This test checks if the ResetOp is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertResetOp
+    func.func @testConvertResetOp() {
+        // CHECK: %[[q_0:.*]] = "mqtopt.reset"(%[[ANY:.*]])
+
+        %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtdyn.QubitRegister
+        %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+        "mqtdyn.reset"(%q0) : (!mqtdyn.Qubit) -> ()
+        "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
 // This test checks if single qubit gates are converted correctly
 module {
     // CHECK-LABEL: func.func @testConvertSingleQubitOp

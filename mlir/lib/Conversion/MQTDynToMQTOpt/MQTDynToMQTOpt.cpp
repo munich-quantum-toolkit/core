@@ -261,6 +261,38 @@ struct ConvertMQTDynMeasure final
   }
 };
 
+struct ConvertMQTDynReset final : StatefulOpConversionPattern<dyn::ResetOp> {
+  using StatefulOpConversionPattern<dyn::ResetOp>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(dyn::ResetOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    // prepare result type
+    const auto& qubitType = opt::QubitType::get(rewriter.getContext());
+
+    const auto& dynQubit = op.getInQubit();
+
+    // get the latest opt qubit from the map and add them to the vector
+    const Value optQubit = getState().qubitMap[dynQubit];
+    // create the result types
+
+    // create new operation
+    auto mqtoptOp =
+        rewriter.create<opt::ResetOp>(op.getLoc(), qubitType, optQubit);
+
+    auto outOptQubit = mqtoptOp.getOutQubit();
+
+    getState().qubitMap[dynQubit] = outOptQubit;
+
+    // replace the old operation results with the new bits and delete
+    // old operation
+    rewriter.replaceOp(op, outOptQubit);
+
+    return success();
+  }
+};
+
 template <typename MQTGateDynOp, typename MQTGateOptOp>
 struct ConvertMQTDynGateOp final : StatefulOpConversionPattern<MQTGateDynOp> {
   using StatefulOpConversionPattern<MQTGateDynOp>::StatefulOpConversionPattern;
@@ -329,6 +361,7 @@ struct MQTDynToMQTOpt final : impl::MQTDynToMQTOptBase<MQTDynToMQTOpt> {
     patterns.add<ConvertMQTDynDealloc>(typeConverter, context, &state);
     patterns.add<ConvertMQTDynExtract>(typeConverter, context, &state);
     patterns.add<ConvertMQTDynMeasure>(typeConverter, context, &state);
+    patterns.add<ConvertMQTDynReset>(typeConverter, context, &state);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)
