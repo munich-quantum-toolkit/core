@@ -105,7 +105,19 @@ TEST_F(ImportTest, Allocation) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, HOperation) {
+TEST_F(ImportTest, I) {
+  qc::QuantumComputation qc(1);
+  qc.i(0);
+
+  auto module = translateQuantumComputationToMLIR(*context, qc);
+
+  auto outputString = getOutputString(&module);
+  const auto* checkString = "CHECK: mqtdyn.i()";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, H) {
   qc::QuantumComputation qc(1);
   qc.h(0);
 
@@ -117,7 +129,115 @@ TEST_F(ImportTest, HOperation) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, RxOperation) {
+TEST_F(ImportTest, X) {
+  qc::QuantumComputation qc(1);
+  qc.x(0);
+
+  auto module = translateQuantumComputationToMLIR(*context, qc);
+
+  auto outputString = getOutputString(&module);
+  const auto* checkString = "CHECK: mqtdyn.x()";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, Y) {
+  qc::QuantumComputation qc(1);
+  qc.y(0);
+
+  auto module = translateQuantumComputationToMLIR(*context, qc);
+
+  auto outputString = getOutputString(&module);
+  const auto* checkString = "CHECK: mqtdyn.y()";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, Z) {
+  qc::QuantumComputation qc(1);
+  qc.z(0);
+
+  auto module = translateQuantumComputationToMLIR(*context, qc);
+
+  auto outputString = getOutputString(&module);
+  const auto* checkString = "CHECK: mqtdyn.z()";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, S) {
+  qc::QuantumComputation qc(1);
+  qc.s(0);
+
+  auto module = translateQuantumComputationToMLIR(*context, qc);
+
+  auto outputString = getOutputString(&module);
+  const auto* checkString = "CHECK: mqtdyn.s()";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, Sdg) {
+  qc::QuantumComputation qc(1);
+  qc.sdg(0);
+
+  auto module = translateQuantumComputationToMLIR(*context, qc);
+
+  auto outputString = getOutputString(&module);
+  const auto* checkString = "CHECK: mqtdyn.sdg()";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, T) {
+  qc::QuantumComputation qc(1);
+  qc.t(0);
+
+  auto module = translateQuantumComputationToMLIR(*context, qc);
+
+  auto outputString = getOutputString(&module);
+  const auto* checkString = "CHECK: mqtdyn.t()";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, Tdg) {
+  qc::QuantumComputation qc(1);
+  qc.tdg(0);
+
+  auto module = translateQuantumComputationToMLIR(*context, qc);
+
+  auto outputString = getOutputString(&module);
+  const auto* checkString = "CHECK: mqtdyn.tdg()";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, V) {
+  qc::QuantumComputation qc(1);
+  qc.v(0);
+
+  auto module = translateQuantumComputationToMLIR(*context, qc);
+
+  auto outputString = getOutputString(&module);
+  const auto* checkString = "CHECK: mqtdyn.v()";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, Vdg) {
+  qc::QuantumComputation qc(1);
+  qc.vdg(0);
+
+  auto module = translateQuantumComputationToMLIR(*context, qc);
+
+  auto outputString = getOutputString(&module);
+  const auto* checkString = "CHECK: mqtdyn.vdg()";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, Rx) {
   qc::QuantumComputation qc(1);
   qc.rx(0.5, 0);
 
@@ -132,7 +252,7 @@ TEST_F(ImportTest, RxOperation) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, SwapOperation) {
+TEST_F(ImportTest, Swap) {
   qc::QuantumComputation qc(2);
   qc.swap(0, 1);
 
@@ -144,7 +264,7 @@ TEST_F(ImportTest, SwapOperation) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, CXOperation) {
+TEST_F(ImportTest, CX) {
   qc::QuantumComputation qc(2);
   qc.cx(0, 1);
 
