@@ -113,24 +113,6 @@ module {
 }
 
 // -----
-// This test checks if the MeasureOp applied to multiple qubits is parsed and handled correctly.
-module {
-    // CHECK-LABEL: func.func @testMeasureOpOnMultipleInputs
-    func.func @testMeasureOpOnMultipleInputs() {
-        // CHECK: [[M:.*]]:2 = "mqtdyn.measure"(%[[ANY:.*]], %[[ANY:.*]])
-
-        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-        %q0 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-        %q1 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-
-        %m:2 = "mqtdyn.measure"(%q0, %q1) : (!mqtdyn.Qubit, !mqtdyn.Qubit) -> (i1, i1)
-
-        "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
-        return
-    }
-}
-
-// -----
 // This test checks if no-target operations without controls are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testNoTargetNoControls
@@ -627,21 +609,6 @@ module {
 
         // expected-error@+1 {{operation expects exactly 3 parameters but got 2}}
         mqtdyn.u(%p0, %p0) %q0
-
-        return
-    }
-}
-
-// -----
-// This test checks if a measurement op with a mismatch between in-qubits and out-bits throws an error as expected.
-module {
-    func.func @testMeasureMismatchInOutBits() {
-        %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-        %q0 = "mqtdyn.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-        %q1 = "mqtdyn.extractQubit"(%qreg) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-
-        // expected-error@+1 {{'mqtdyn.measure' op number of input qubits (2) and output bits (0) must be the same}}
-        "mqtdyn.measure"(%q0, %q1) : (!mqtdyn.Qubit, !mqtdyn.Qubit) -> ()
 
         return
     }

@@ -144,24 +144,6 @@ module {
 }
 
 // -----
-// This test checks if the MeasureOp applied to multiple qubits is parsed and handled correctly.
-module {
-    // CHECK-LABEL: func.func @testMeasureOpOnMultipleInputs
-    func.func @testMeasureOpOnMultipleInputs() {
-        // CHECK: %[[Q01_1:.*]]:2, [[M01_0:.*]]:2 = "mqtopt.measure"(%[[ANY:.*]], %[[ANY:.*]])
-
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-        %q01_1:2, %m01_0:2 = "mqtopt.measure"(%q0_0, %q1_0) : (!mqtopt.Qubit, !mqtopt.Qubit) -> (!mqtopt.Qubit, !mqtopt.Qubit, i1, i1)
-        %reg_3 = "mqtopt.insertQubit"(%reg_2, %q01_1#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-        %reg_4 = "mqtopt.insertQubit"(%reg_3, %q01_1#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-        "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
-        return
-    }
-}
-
-// -----
 // This test checks if no-target operations without controls are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testNoTargetNoControls
@@ -773,21 +755,6 @@ module {
 
         // expected-error@+1 {{operation expects exactly 3 parameters but got 2}}
         %q_1 = mqtopt.u(%c0_f64, %c0_f64) %q_0 : !mqtopt.Qubit
-
-        return
-    }
-}
-
-// -----
-// This test checks if a measurement op with a mismatch between in-qubits and out-bits throws an error as expected.
-module {
-    func.func @testMeasureMismatchInOutBits() {
-        %reg = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-        %reg1, %q0 = "mqtopt.extractQubit"(%reg)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-        %reg2, %q1 = "mqtopt.extractQubit"(%reg1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
-        // expected-error@+1 {{'mqtopt.measure' op number of input qubits (2) and output bits (0) must be the same}}
-        %reg_out = "mqtopt.measure"(%q0, %q1) : (!mqtopt.Qubit, !mqtopt.Qubit) -> (!mqtopt.Qubit)
 
         return
     }

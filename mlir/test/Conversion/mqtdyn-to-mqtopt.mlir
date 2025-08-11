@@ -169,23 +169,6 @@ module {
 }
 
 // -----
-// This test checks if the ExtractOp is converted correctly for multiple qubits
-module {
-    // CHECK-LABEL: func.func @testConvertMeasureOpOnMultipleInputs
-    func.func @testConvertMeasureOpOnMultipleInputs() {
-         // CHECK: %[[q01_1:.*]]:2, [[m01_1:.*]]:2 = "mqtopt.measure"(%[[ANY:.*]], %[[ANY:.*]])
-
-        %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-        %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-        %q1 = "mqtdyn.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-
-        %m:2 = "mqtdyn.measure"(%q0, %q1) : (!mqtdyn.Qubit, !mqtdyn.Qubit) -> (i1, i1)
-        "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
-        return
-    }
-}
-
-// -----
 // This test checks if single qubit gates are converted correctly
 module {
     // CHECK-LABEL: func.func @testConvertSingleQubitOp

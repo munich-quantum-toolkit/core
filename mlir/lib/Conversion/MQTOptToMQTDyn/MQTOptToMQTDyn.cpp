@@ -136,20 +136,20 @@ struct ConvertMQTOptMeasure final : OpConversionPattern<opt::MeasureOp> {
   matchAndRewrite(opt::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
 
-    const auto& oldBits = op.getOutBits();
-    const auto& dynQubits = adaptor.getInQubits();
+    const auto& oldBit = op.getOutBit();
+    const auto& dynQubit = adaptor.getInQubit();
 
     // create new operation
-    auto mqtdynOp = rewriter.create<dyn::MeasureOp>(
-        op.getLoc(), oldBits.getTypes(), dynQubits);
+    auto mqtdynOp = rewriter.create<dyn::MeasureOp>(op.getLoc(),
+                                                    oldBit.getType(), dynQubit);
 
-    const auto& newBits = mqtdynOp.getOutBits();
+    const auto& newBit = mqtdynOp.getOutBit();
 
     // concatenate the dyn qubits and the bits
     SmallVector<Value> newValues;
-    newValues.reserve(dynQubits.size() + newBits.size());
-    newValues.append(dynQubits.begin(), dynQubits.end());
-    newValues.append(newBits.begin(), newBits.end());
+    newValues.reserve(2);
+    newValues.emplace_back(dynQubit);
+    newValues.emplace_back(newBit);
 
     // replace the results of the old operation with the new results and delete
     // old operation

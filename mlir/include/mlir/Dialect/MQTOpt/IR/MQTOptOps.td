@@ -118,7 +118,7 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
 
 include "mlir/Dialect/MQTOpt/IR/MQTOptStdOps.td"
 
-def MeasureOp : GateOp<"measure", [SameVariadicResultSize, MatchingMeasureInOuts]> {
+def MeasureOp : GateOp<"measure", []> {
     let summary = "A measure operation";
 
     let description = [{
@@ -134,12 +134,12 @@ def MeasureOp : GateOp<"measure", [SameVariadicResultSize, MatchingMeasureInOuts
     }];
 
     let arguments = (ins
-        Variadic<QubitType>:$in_qubits
+        QubitType:$in_qubit
     );
 
     let results = (outs
-        Variadic<QubitType>:$out_qubits,
-        Variadic<I1>:$out_bits
+        QubitType:$out_qubit,
+        I1:$out_bit
     );
 }
 

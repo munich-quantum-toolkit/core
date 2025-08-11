@@ -238,32 +238,24 @@ struct ConvertMQTDynMeasure final
     // prepare result type
     const auto& qubitType = opt::QubitType::get(rewriter.getContext());
 
-    const auto& dynQubits = op.getInQubits();
+    const auto& dynQubit = op.getInQubit();
 
     // get the latest opt qubit from the map and add them to the vector
-    std::vector<Value> optQubits;
-    for (const auto& dynQubit : dynQubits) {
-      optQubits.emplace_back(getState().qubitMap[dynQubit]);
-    }
+    const Value optQubit = getState().qubitMap[dynQubit];
     // create the result types
-    const std::vector<Type> qubitTypes(optQubits.size(), qubitType);
 
     // create new operation
     auto mqtoptOp = rewriter.create<opt::MeasureOp>(
-        op.getLoc(), qubitTypes, op.getOutBits().getTypes(), optQubits);
+        op.getLoc(), qubitType, op.getOutBit().getType(), optQubit);
 
-    const auto& outOptQubits = mqtoptOp.getOutQubits();
-    const auto& newBits = mqtoptOp.getOutBits();
+    auto outOptQubit = mqtoptOp.getOutQubit();
+    auto newBit = mqtoptOp.getOutBit();
 
-    // iterate over all qubits
-    for (size_t i = 0; i < dynQubits.size(); i++) {
-      // update the latest opt qubit of the initial dyn qubit
-      getState().qubitMap[dynQubits[i]] = outOptQubits[i];
-    }
+    getState().qubitMap[dynQubit] = outOptQubit;
 
     // replace the old operation results with the new bits and delete
     // old operation
-    rewriter.replaceOp(op, newBits);
+    rewriter.replaceOp(op, newBit);
 
     return success();
   }
