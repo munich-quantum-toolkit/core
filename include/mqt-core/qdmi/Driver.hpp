@@ -93,7 +93,7 @@ struct DeviceLibrary {
  * from a dynamic library at runtime. It inherits from DeviceLibrary and
  * overrides the constructor and destructor to open and close the library.
  */
-class DynamicDeviceLibrary : public DeviceLibrary {
+class DynamicDeviceLibrary final : public DeviceLibrary {
   /// @brief Handle to the dynamic library returned by `dlopen`.
   void* libHandle;
 
@@ -137,7 +137,7 @@ public:
 // It binds all device library functions to the functions of the static library.
 // @param prefix is the prefix used for the function names in the library.
 #define ADD_STATIC_LIBRARY(prefix)                                             \
-  class prefix##DeviceLibrary : public DeviceLibrary {                         \
+  class prefix##DeviceLibrary final : public DeviceLibrary {                   \
   public:                                                                      \
     prefix##DeviceLibrary() {                                                  \
       /* NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast) */           \
