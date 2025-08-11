@@ -12,17 +12,19 @@
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 #include "mlir/Dialect/MQTDyn/Translation/ImportQuantumComputation.h"
 
-#include "llvm/ADT/StringRef.h"
-#include "llvm/FileCheck/FileCheck.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/raw_ostream.h"
-
 #include <gtest/gtest.h>
+#include <llvm/ADT/SmallString.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/FileCheck/FileCheck.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <string>
 
 namespace {
 
@@ -61,13 +63,14 @@ std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>* module) {
 
 // Adapted from
 // https://github.com/llvm/llvm-project/blob/d2b3e86321eaf954451e0a49534fa654dd67421e/llvm/unittests/MIR/MachineMetadata.cpp#L181
-bool checkOutput(std::string checkString, std::string outputString) {
+bool checkOutput(const std::string& checkString,
+                 const std::string& outputString) {
   auto checkBuffer = llvm::MemoryBuffer::getMemBuffer(checkString, "");
   auto outputBuffer =
       llvm::MemoryBuffer::getMemBuffer(outputString, "Output", false);
 
   llvm::SmallString<4096> checkFileBuffer;
-  llvm::FileCheckRequest request;
+  const llvm::FileCheckRequest request;
   llvm::FileCheck fc(request);
   llvm::StringRef checkFileText =
       fc.CanonicalizeFile(*checkBuffer, checkFileBuffer);
@@ -92,7 +95,7 @@ TEST_F(ImportTest, Allocation) {
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
   auto outputString = getOutputString(&module);
-  auto checkString = R"(
+  const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
     CHECK: "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
     CHECK: "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -109,7 +112,7 @@ TEST_F(ImportTest, HOperation) {
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
   auto outputString = getOutputString(&module);
-  auto checkString = "CHECK: mqtdyn.h()";
+  const auto* checkString = "CHECK: mqtdyn.h()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -121,7 +124,7 @@ TEST_F(ImportTest, RxOperation) {
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
   auto outputString = getOutputString(&module);
-  auto checkString = R"(
+  const auto* checkString = R"(
     CHECK: %[[Cst:.*]] = arith.constant 5.000000e-01 : f64
     CHECK: mqtdyn.rx(%[[Cst]])
   )";
@@ -136,7 +139,7 @@ TEST_F(ImportTest, SwapOperation) {
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
   auto outputString = getOutputString(&module);
-  auto checkString = "CHECK: mqtdyn.swap()";
+  const auto* checkString = "CHECK: mqtdyn.swap()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -148,7 +151,7 @@ TEST_F(ImportTest, CXOperation) {
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
   auto outputString = getOutputString(&module);
-  auto checkString = R"(
+  const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
     CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
     CHECK: %[[Q_2:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
