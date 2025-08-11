@@ -96,7 +96,7 @@ module {
 }
 
 // -----
-// This test checks if the MeasureOp applied to a single qubit is parsed and handled correctly.
+// This test checks if the MeasureOp applied to a single dynamic qubit is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMeasureOp
     func.func @testMeasureOp() {
@@ -113,7 +113,7 @@ module {
 }
 
 // -----
-// This test checks if the MeasureOp applied to multiple qubits is parsed and handled correctly.
+// This test checks if the MeasureOp applied to multiple dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMeasureOpOnMultipleInputs
     func.func @testMeasureOpOnMultipleInputs() {
@@ -126,6 +126,37 @@ module {
         %m:2 = "mqtref.measure"(%q0, %q1) : (!mqtref.DynamicQubit, !mqtref.DynamicQubit) -> (i1, i1)
 
         "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if the MeasureOp applied to a single static qubit is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testMeasureOpStatic
+    func.func @testMeasureOpStatic() {
+        // CHECK: [[M0:.*]] = "mqtref.measure"(%[[ANY:.*]])
+
+        %q0 = mqtref.qubit 0
+
+        %m0 = "mqtref.measure"(%q0) : (!mqtref.StaticQubit) -> i1
+
+        return
+    }
+}
+
+// -----
+// This test checks if the MeasureOp applied to multiple static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testMeasureOpOnMultipleStaticInputs
+    func.func @testMeasureOpOnMultipleStaticInputs() {
+        // CHECK: [[M:.*]]:2 = "mqtref.measure"(%[[ANY:.*]], %[[ANY:.*]])
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+
+        %m:2 = "mqtref.measure"(%q0, %q1) : (!mqtref.StaticQubit, !mqtref.StaticQubit) -> (i1, i1)
+
         return
     }
 }
@@ -187,23 +218,61 @@ module {
 }
 
 // -----
-// This test checks if single qubit gates are parsed and handled correctly.
+// This test checks if no-target operations with static controls are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNoTargetWithStaticControls
+    func.func @testNoTargetWithStaticControls() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: mqtref.gphase(%[[C0_F64]]) ctrl %[[Q0:.*]] : ctrl !mqtref.StaticQubit
+        // CHECK: mqtref.gphase(%[[C0_F64]]) ctrl %[[Q0]], %[[ANY:.*]] : ctrl !mqtref.StaticQubit, !mqtref.StaticQubit
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        mqtref.gphase(%c0_f64) ctrl %q0 : ctrl !mqtref.StaticQubit
+        mqtref.gphase(%c0_f64) ctrl %q0, %q1 : ctrl !mqtref.StaticQubit, !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if no-target operations with positive and negative static controls are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNoTargetPositiveNegativeStaticControls
+    func.func @testNoTargetPositiveNegativeStaticControls() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: mqtref.gphase(%[[C0_F64]]) ctrl %[[ANY:.*]] : ctrl !mqtref.StaticQubit nctrl !mqtref.StaticQubit
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        mqtref.gphase(%c0_f64) ctrl %q0 nctrl %q1 : ctrl !mqtref.StaticQubit nctrl !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if single qubit gates on dynamic qubits are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testSingleQubitOp
     func.func @testSingleQubitOp() {
-        // CHECK: mqtref.i() %[[Q0:.*]]
-        // CHECK: mqtref.h() %[[Q0]]
-        // CHECK: mqtref.x() %[[Q0]]
-        // CHECK: mqtref.y() %[[Q0]]
-        // CHECK: mqtref.z() %[[Q0]]
-        // CHECK: mqtref.s() %[[Q0]]
-        // CHECK: mqtref.sdg() %[[Q0]]
-        // CHECK: mqtref.t() %[[Q0]]
-        // CHECK: mqtref.tdg() %[[Q0]]
-        // CHECK: mqtref.v() %[[Q0]]
-        // CHECK: mqtref.vdg() %[[Q0]]
-        // CHECK: mqtref.sx() %[[Q0]]
-        // CHECK: mqtref.sxdg() %[[Q0]]
+        // CHECK: mqtref.i() %[[Q0:.*]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.h() %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.x() %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.y() %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.z() %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.s() %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.sdg() %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.t() %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.tdg() %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.v() %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.vdg() %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.sx() %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.sxdg() %[[Q0]] : !mqtref.DynamicQubit
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
@@ -228,17 +297,56 @@ module {
 }
 
 // -----
-// This test checks if parameterized single qubit gates are parsed and handled correctly.
+// This test checks if single qubit gates on static qubits are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testSingleQubitOpStatic
+    func.func @testSingleQubitOpStatic() {
+        // CHECK: mqtref.i() %[[Q0:.*]] : !mqtref.StaticQubit
+        // CHECK: mqtref.h() %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.x() %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.y() %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.z() %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.s() %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.sdg() %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.t() %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.tdg() %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.v() %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.vdg() %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.sx() %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.sxdg() %[[Q0]] : !mqtref.StaticQubit
+
+        %q0 = mqtref.qubit 0
+
+        mqtref.i() %q0 : !mqtref.StaticQubit
+        mqtref.h() %q0 : !mqtref.StaticQubit
+        mqtref.x() %q0 : !mqtref.StaticQubit
+        mqtref.y() %q0 : !mqtref.StaticQubit
+        mqtref.z() %q0 : !mqtref.StaticQubit
+        mqtref.s() %q0 : !mqtref.StaticQubit
+        mqtref.sdg() %q0 : !mqtref.StaticQubit
+        mqtref.t() %q0 : !mqtref.StaticQubit
+        mqtref.tdg() %q0 : !mqtref.StaticQubit
+        mqtref.v() %q0 : !mqtref.StaticQubit
+        mqtref.vdg() %q0 : !mqtref.StaticQubit
+        mqtref.sx() %q0 : !mqtref.StaticQubit
+        mqtref.sxdg() %q0 : !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if parameterized single qubit gates on dynamic qubits are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testSingleQubitRotationOp
     func.func @testSingleQubitRotationOp() {
         // CHECK: %[[P0:.*]] = arith.constant 3.000000e-01
-        // CHECK: mqtref.u(%[[P0]], %[[P0]], %[[P0]]) %[[Q0:.*]]
-        // CHECK: mqtref.u2(%[[P0]], %[[P0]] static [] mask [false, false]) %[[Q0]]
-        // CHECK: mqtref.p(%[[P0]]) %[[Q0]]
-        // CHECK: mqtref.rx(%[[P0]]) %[[Q0]]
-        // CHECK: mqtref.ry(%[[P0]]) %[[Q0]]
-        // CHECK: mqtref.rz(%[[P0]]) %[[Q0]]
+        // CHECK: mqtref.u(%[[P0]], %[[P0]], %[[P0]]) %[[Q0:.*]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.u2(%[[P0]], %[[P0]] static [] mask [false, false]) %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.p(%[[P0]]) %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.rx(%[[P0]]) %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.ry(%[[P0]]) %[[Q0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.rz(%[[P0]]) %[[Q0]] : !mqtref.DynamicQubit
 
         %p0 = arith.constant 3.000000e-01 : f64
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
@@ -257,17 +365,44 @@ module {
 }
 
 // -----
-// This test checks if controlled parameterized single qubit gates are parsed and handled correctly.
+// This test checks if parameterized single qubit gates on static qubits are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testSingleQubitRotationOpStatic
+    func.func @testSingleQubitRotationOpStatic() {
+        // CHECK: %[[P0:.*]] = arith.constant 3.000000e-01
+        // CHECK: mqtref.u(%[[P0]], %[[P0]], %[[P0]]) %[[Q0:.*]] : !mqtref.StaticQubit
+        // CHECK: mqtref.u2(%[[P0]], %[[P0]] static [] mask [false, false]) %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.p(%[[P0]]) %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.rx(%[[P0]]) %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.ry(%[[P0]]) %[[Q0]] : !mqtref.StaticQubit
+        // CHECK: mqtref.rz(%[[P0]]) %[[Q0]] : !mqtref.StaticQubit
+
+        %p0 = arith.constant 3.000000e-01 : f64
+        %q0 = mqtref.qubit 0
+
+        mqtref.u(%p0, %p0, %p0) %q0 : !mqtref.StaticQubit
+        mqtref.u2(%p0, %p0 static [] mask [false, false]) %q0 : !mqtref.StaticQubit
+        mqtref.p(%p0) %q0 : !mqtref.StaticQubit
+        mqtref.rx(%p0) %q0 : !mqtref.StaticQubit
+        mqtref.ry(%p0) %q0 : !mqtref.StaticQubit
+        mqtref.rz(%p0) %q0 : !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if controlled parameterized single qubit gates on dynamic qubits are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testControlledSingleQubitRotationOp
     func.func @testControlledSingleQubitRotationOp() {
         // CHECK: %[[P0:.*]] = arith.constant 3.000000e-01
-        // CHECK: mqtref.u(%[[P0]], %[[P0]], %[[P0]]) %[[Q0:.*]] ctrl %[[Q1:.*]]
-        // CHECK: mqtref.u2(%[[P0]], %[[P0]]) %[[Q0]] ctrl %[[Q1]]
-        // CHECK: mqtref.p(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
-        // CHECK: mqtref.rx(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
-        // CHECK: mqtref.ry(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
-        // CHECK: mqtref.rz(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
+        // CHECK: mqtref.u(%[[P0]], %[[P0]], %[[P0]]) %[[Q0:.*]] ctrl %[[Q1:.*]] : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
+        // CHECK: mqtref.u2(%[[P0]], %[[P0]]) %[[Q0]] ctrl %[[Q1]] : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
+        // CHECK: mqtref.p(%[[P0]]) %[[Q0]] ctrl %[[Q1]] : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
+        // CHECK: mqtref.rx(%[[P0]]) %[[Q0]] ctrl %[[Q1]] : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
+        // CHECK: mqtref.ry(%[[P0]]) %[[Q0]] ctrl %[[Q1]] : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
+        // CHECK: mqtref.rz(%[[P0]]) %[[Q0]] ctrl %[[Q1]] : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
 
         %p0 = arith.constant 3.000000e-01 : f64
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
@@ -287,11 +422,39 @@ module {
 }
 
 // -----
-// This test checks if an CX gate is parsed and handled correctly.
+// This test checks if controlled parameterized single qubit gates on static qubits are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testControlledSingleQubitRotationOpStatic
+    func.func @testControlledSingleQubitRotationOpStatic() {
+        // CHECK: %[[P0:.*]] = arith.constant 3.000000e-01
+        // CHECK: mqtref.u(%[[P0]], %[[P0]], %[[P0]]) %[[Q0:.*]] ctrl %[[Q1:.*]] : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        // CHECK: mqtref.u2(%[[P0]], %[[P0]]) %[[Q0]] ctrl %[[Q1]] : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        // CHECK: mqtref.p(%[[P0]]) %[[Q0]] ctrl %[[Q1]] : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        // CHECK: mqtref.rx(%[[P0]]) %[[Q0]] ctrl %[[Q1]] : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        // CHECK: mqtref.ry(%[[P0]]) %[[Q0]] ctrl %[[Q1]] : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        // CHECK: mqtref.rz(%[[P0]]) %[[Q0]] ctrl %[[Q1]] : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+
+        %p0 = arith.constant 3.000000e-01 : f64
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+
+        mqtref.u(%p0, %p0, %p0) %q0 ctrl %q1 : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        mqtref.u2(%p0, %p0) %q0 ctrl %q1 : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        mqtref.p(%p0) %q0 ctrl %q1 : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        mqtref.rx(%p0) %q0 ctrl %q1 : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        mqtref.ry(%p0) %q0 ctrl %q1 : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        mqtref.rz(%p0) %q0 ctrl %q1 : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if an CX gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testCXOp
     func.func @testCXOp() {
-        // CHECK: mqtref.x() %[[Q0:.*]] ctrl %[[Q1:.*]]
+        // CHECK: mqtref.x() %[[Q0:.*]] ctrl %[[Q1:.*]] : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
@@ -305,11 +468,11 @@ module {
 }
 
 // -----
-// This test checks if a negative CX gate is parsed and handled correctly.
+// This test checks if a negative CX gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testNegativeCXOp
     func.func @testNegativeCXOp() {
-        // CHECK: mqtref.x() %[[Q1:.*]] nctrl %[[Q0:.*]]
+        // CHECK: mqtref.x() %[[Q1:.*]] nctrl %[[Q0:.*]] : !mqtref.DynamicQubit nctrl !mqtref.DynamicQubit
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
@@ -323,11 +486,43 @@ module {
 }
 
 // -----
-// This test checks if an MCX gate is parsed and handled correctly.
+// This test checks if an CX gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testCXOpStatic
+    func.func @testCXOpStatic() {
+        // CHECK: mqtref.x() %[[Q0:.*]] ctrl %[[Q1:.*]] : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+
+        mqtref.x() %q0 ctrl %q1 : !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if a negative CX gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNegativeCXOpStatic
+    func.func @testNegativeCXOpStatic() {
+        // CHECK: mqtref.x() %[[Q1:.*]] nctrl %[[Q0:.*]] : !mqtref.StaticQubit nctrl !mqtref.StaticQubit
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+
+        mqtref.x() %q1 nctrl %q0 : !mqtref.StaticQubit nctrl !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if an MCX gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMCXOp
     func.func @testMCXOp() {
-        // CHECK: mqtref.x() %[[Q1:.*]] ctrl %[[Q0:.*]], %[[Q2:.*]]
+        // CHECK: mqtref.x() %[[Q1:.*]] ctrl %[[Q0:.*]], %[[Q2:.*]] : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit, !mqtref.DynamicQubit
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
@@ -350,11 +545,11 @@ module {
 }
 
 // -----
-// This test checks if a negative MCX gate is parsed and handled correctly.
+// This test checks if a negative MCX gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testNegativeMCXOp
     func.func @testNegativeMCXOp() {
-        // CHECK: mqtref.x() %[[Q1:.*]] nctrl %[[Q0:.*]], %[[Q2:.*]]
+        // CHECK: mqtref.x() %[[Q1:.*]] nctrl %[[Q0:.*]], %[[Q2:.*]] : !mqtref.DynamicQubit nctrl !mqtref.DynamicQubit, !mqtref.DynamicQubit
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
@@ -377,11 +572,61 @@ module {
 }
 
 // -----
-// This test checks if an MCX gate is parsed and handled correctly using different types of controls.
+// This test checks if an MCX gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testMCXOpStatic
+    func.func @testMCXOpStatic() {
+        // CHECK: mqtref.x() %[[Q1:.*]] ctrl %[[Q0:.*]], %[[Q2:.*]] : !mqtref.StaticQubit ctrl !mqtref.StaticQubit, !mqtref.StaticQubit
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+        %q2 = mqtref.qubit 2
+
+        //===------------------------------------------------------------------===//
+        // q0: ──■── q0
+        //     ┌─┴─┐
+        // q1: ┤ X ├ q1
+        //     └─┬─┘
+        // q2: ──■── q2
+        //===----------------------------------------------------------------===//
+
+        mqtref.x() %q1 ctrl %q0, %q2 : !mqtref.StaticQubit ctrl !mqtref.StaticQubit, !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if a negative MCX gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNegativeMCXOpStatic
+    func.func @testNegativeMCXOpStatic() {
+        // CHECK: mqtref.x() %[[Q1:.*]] nctrl %[[Q0:.*]], %[[Q2:.*]] : !mqtref.StaticQubit nctrl !mqtref.StaticQubit, !mqtref.StaticQubit
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+        %q2 = mqtref.qubit 2
+
+        //===------------------------------------------------------------------===//
+        // q0: ──○── q0
+        //     ┌─┴─┐
+        // q1: ┤ X ├ q1
+        //     └─┬─┘
+        // q2: ──○── q2
+        //===----------------------------------------------------------------===//
+
+        mqtref.x() %q1 nctrl %q0, %q2 : !mqtref.StaticQubit nctrl !mqtref.StaticQubit, !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if an MCX gate on dynamic qubits is parsed and handled correctly using different types of controls.
 module {
     // CHECK-LABEL: func.func @testMixedMCXOp
     func.func @testMixedMCXOp() {
-        // CHECK: mqtref.x() %[[Q1:.*]] ctrl %[[Q0:.*]] nctrl %[[Q2:.*]]
+        // CHECK: mqtref.x() %[[Q1:.*]] ctrl %[[Q0:.*]] nctrl %[[Q2:.*]] : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit nctrl !mqtref.DynamicQubit
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
@@ -403,18 +648,44 @@ module {
     }
 }
 
+
 // -----
-// This test checks if two target gates are parsed and handled correctly.
+// This test checks if an MCX gate on static qubits is parsed and handled correctly using different types of controls.
+module {
+    // CHECK-LABEL: func.func @testMixedMCXOpStatic
+    func.func @testMixedMCXOpStatic() {
+        // CHECK: mqtref.x() %[[Q1:.*]] ctrl %[[Q0:.*]] nctrl %[[Q2:.*]] : !mqtref.StaticQubit ctrl !mqtref.StaticQubit nctrl !mqtref.StaticQubit
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+        %q2 = mqtref.qubit 2
+
+        //===------------------------------------------------------------------===//
+        // q0: ──■── q0
+        //     ┌─┴─┐
+        // q1: ┤ X ├ q1
+        //     └─┬─┘
+        // q2: ──○-─ q2
+        //===----------------------------------------------------------------===//
+
+        mqtref.x() %q1 ctrl %q0 nctrl %q2 : !mqtref.StaticQubit ctrl !mqtref.StaticQubit nctrl !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if two target gates on dynamic qubits are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testTwoTargetOp
     func.func @testTwoTargetOp() {
-        // CHECK: mqtref.swap() %[[Q0:.*]], %[[Q1:.*]]
-        // CHECK: mqtref.iswap() %[[Q0]], %[[Q1]]
-        // CHECK: mqtref.iswapdg() %[[Q0]], %[[Q1]]
-        // CHECK: mqtref.peres() %[[Q0]], %[[Q1]]
-        // CHECK: mqtref.peresdg() %[[Q0]], %[[Q1]]
-        // CHECK: mqtref.dcx() %[[Q0]], %[[Q1]]
-        // CHECK: mqtref.ecr() %[[Q0]], %[[Q1]]
+        // CHECK: mqtref.swap() %[[Q0:.*]], %[[Q1:.*]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.iswap() %[[Q0]], %[[Q1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.iswapdg() %[[Q0]], %[[Q1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.peres() %[[Q0]], %[[Q1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.peresdg() %[[Q0]], %[[Q1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.dcx() %[[Q0]], %[[Q1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.ecr() %[[Q0]], %[[Q1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
@@ -434,11 +705,39 @@ module {
 }
 
 // -----
-// This test checks if a controlled SWAP gate is parsed and handled correctly.
+// This test checks if two target gates on static qubits are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testTwoTargetOpStatic
+    func.func @testTwoTargetOpStatic() {
+        // CHECK: mqtref.swap() %[[Q0:.*]], %[[Q1:.*]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+        // CHECK: mqtref.iswap() %[[Q0]], %[[Q1]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+        // CHECK: mqtref.iswapdg() %[[Q0]], %[[Q1]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+        // CHECK: mqtref.peres() %[[Q0]], %[[Q1]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+        // CHECK: mqtref.peresdg() %[[Q0]], %[[Q1]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+        // CHECK: mqtref.dcx() %[[Q0]], %[[Q1]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+        // CHECK: mqtref.ecr() %[[Q0]], %[[Q1]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+
+        mqtref.swap() %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+        mqtref.iswap() %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+        mqtref.iswapdg() %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+        mqtref.peres() %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+        mqtref.peresdg() %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+        mqtref.dcx() %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+        mqtref.ecr() %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if a controlled SWAP gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testControlledSWAPOp
     func.func @testControlledSWAPOp() {
-        // CHECK: mqtref.swap() %[[Q0:.*]], %[[Q1:.*]] ctrl %[[Q2:.*]]
+        // CHECK: mqtref.swap() %[[Q0:.*]], %[[Q1:.*]] ctrl %[[Q2:.*]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
@@ -453,11 +752,11 @@ module {
 }
 
 // -----
-// This test checks if a negative controlled SWAP gate is parsed and handled correctly.
+// This test checks if a negative controlled SWAP gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testNegativeControlledSWAPOp
     func.func @testNegativeControlledSWAPOp() {
-        // CHECK: mqtref.swap() %[[Q0:.*]], %[[Q1:.*]] nctrl %[[Q2:.*]]
+        // CHECK: mqtref.swap() %[[Q0:.*]], %[[Q1:.*]] nctrl %[[Q2:.*]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit nctrl !mqtref.DynamicQubit
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
@@ -472,11 +771,45 @@ module {
 }
 
 // -----
-// This test checks if a mixed controlled SWAP gate is parsed and handled correctly.
+// This test checks if a controlled SWAP gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testControlledSWAPOpStatic
+    func.func @testControlledSWAPOpStatic() {
+        // CHECK: mqtref.swap() %[[Q0:.*]], %[[Q1:.*]] ctrl %[[Q2:.*]] : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+        %q2 = mqtref.qubit 2
+
+        mqtref.swap() %q0, %q1 ctrl %q2 : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if a negative controlled SWAP gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNegativeControlledSWAPOpStatic
+    func.func @testNegativeControlledSWAPOpStatic() {
+        // CHECK: mqtref.swap() %[[Q0:.*]], %[[Q1:.*]] nctrl %[[Q2:.*]] : !mqtref.StaticQubit, !mqtref.StaticQubit nctrl !mqtref.StaticQubit
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+        %q2 = mqtref.qubit 2
+
+        mqtref.swap() %q0, %q1 nctrl %q2 : !mqtref.StaticQubit, !mqtref.StaticQubit nctrl !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if a mixed controlled SWAP gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMixedControlledSWAPOp
     func.func @testMixedControlledSWAPOp() {
-        // CHECK: mqtref.swap() %[[Q0:.*]], %[[Q1:.*]] ctrl %[[Q2:.*]] nctrl %[[Q3:.*]]
+        // CHECK: mqtref.swap() %[[Q0:.*]], %[[Q1:.*]] ctrl %[[Q2:.*]] nctrl %[[Q3:.*]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit nctrl !mqtref.DynamicQubit
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 4 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
@@ -498,23 +831,53 @@ module {
         mqtref.swap() %q0, %q1 ctrl %q2 nctrl %q3 : !mqtref.DynamicQubit, !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit nctrl !mqtref.DynamicQubit
 
         "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
+
+        return
+    }
+}
+
+// -----
+// This test checks if a mixed controlled SWAP gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testMixedControlledSWAPOpStatic
+    func.func @testMixedControlledSWAPOpStatic() {
+        // CHECK: mqtref.swap() %[[Q0:.*]], %[[Q1:.*]] ctrl %[[Q2:.*]] nctrl %[[Q3:.*]] : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit nctrl !mqtref.StaticQubit
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+        %q2 = mqtref.qubit 2
+        %q3 = mqtref.qubit 3
+
+        //===------------------------------------------------------------------===//
+        //      ┌──────┐
+        // q0:  ┤      ├ q0
+        //      │ SWAP │
+        // q1:  ┤      ├ q1
+        //      └───┬──┘
+        // q2:  ────■─── q2
+        //          │
+        // q3:  ────○─── q3
+        //===----------------------------------------------------------------===//
+
+        mqtref.swap() %q0, %q1 ctrl %q2 nctrl %q3 : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit nctrl !mqtref.StaticQubit
+
         return
     }
 }
 
 
 // -----
-// This test checks if parameterized multiple qubit gates are parsed and handled correctly.
+// This test checks if parameterized multiple qubit gates on dynamic qubits are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMultipleQubitRotationOp
     func.func @testMultipleQubitRotationOp() {
         // CHECK: %[[P0:.*]] = arith.constant 3.000000e-01 : f64
-        // CHECK: mqtref.rxx(%[[P0]]) %[[Q0:.*]], %[[Q1:.*]]
-        // CHECK: mqtref.ryy(%[[P0]]) %[[Q0]], %[[Q1]]
-        // CHECK: mqtref.rzz(%[[P0]]) %[[Q0]], %[[Q1]]
-        // CHECK: mqtref.rzx(%[[P0]]) %[[Q0]], %[[Q1]]
-        // CHECK: mqtref.xxminusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]]
-        // CHECK: mqtref.xxplusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]]
+        // CHECK: mqtref.rxx(%[[P0]]) %[[Q0:.*]], %[[Q1:.*]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.ryy(%[[P0]]) %[[Q0]], %[[Q1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.rzz(%[[P0]]) %[[Q0]], %[[Q1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.rzx(%[[P0]]) %[[Q0]], %[[Q1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.xxminusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.xxplusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
 
         %p0 = arith.constant 3.000000e-01 : f64
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
@@ -534,17 +897,45 @@ module {
 }
 
 // -----
-// This test checks if parameterized multiple qubit gates are parsed and handled correctly.
+// This test checks if parameterized multiple qubit gates on static qubits are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testMultipleQubitRotationOpStatic
+    func.func @testMultipleQubitRotationOpStatic() {
+        // CHECK: %[[P0:.*]] = arith.constant 3.000000e-01 : f64
+        // CHECK: mqtref.rxx(%[[P0]]) %[[Q0:.*]], %[[Q1:.*]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+        // CHECK: mqtref.ryy(%[[P0]]) %[[Q0]], %[[Q1]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+        // CHECK: mqtref.rzz(%[[P0]]) %[[Q0]], %[[Q1]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+        // CHECK: mqtref.rzx(%[[P0]]) %[[Q0]], %[[Q1]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+        // CHECK: mqtref.xxminusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+        // CHECK: mqtref.xxplusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] : !mqtref.StaticQubit, !mqtref.StaticQubit
+
+        %p0 = arith.constant 3.000000e-01 : f64
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+
+        mqtref.rxx(%p0) %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+        mqtref.ryy(%p0) %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+        mqtref.rzz(%p0) %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+        mqtref.rzx(%p0) %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+        mqtref.xxminusyy(%p0, %p0) %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+        mqtref.xxplusyy(%p0, %p0) %q0, %q1 : !mqtref.StaticQubit, !mqtref.StaticQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if parameterized multiple qubit gates on dynamic qubits are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testControlledMultipleQubitRotationOp
     func.func @testControlledMultipleQubitRotationOp() {
         // CHECK: %[[P0:.*]] = arith.constant 3.000000e-01 : f64
-        // CHECK: mqtref.rxx(%[[P0]]) %[[Q0:.*]], %[[Q1:.*]] ctrl %[[Q2:.*]]
-        // CHECK: mqtref.ryy(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
-        // CHECK: mqtref.rzz(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
-        // CHECK: mqtref.rzx(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
-        // CHECK: mqtref.xxminusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
-        // CHECK: mqtref.xxplusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
+        // CHECK: mqtref.rxx(%[[P0]]) %[[Q0:.*]], %[[Q1:.*]] ctrl %[[Q2:.*]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
+        // CHECK: mqtref.ryy(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
+        // CHECK: mqtref.rzz(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
+        // CHECK: mqtref.rzx(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
+        // CHECK: mqtref.xxminusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
+        // CHECK: mqtref.xxplusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
 
         %p0 = arith.constant 3.000000e-01 : f64
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
@@ -560,6 +951,35 @@ module {
         mqtref.xxplusyy(%p0, %p0) %q0, %q1 ctrl %q2 : !mqtref.DynamicQubit, !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
 
         "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if parameterized multiple qubit gates on static qubits are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testControlledMultipleQubitRotationOpStatic
+    func.func @testControlledMultipleQubitRotationOpStatic() {
+        // CHECK: %[[P0:.*]] = arith.constant 3.000000e-01 : f64
+        // CHECK: mqtref.rxx(%[[P0]]) %[[Q0:.*]], %[[Q1:.*]] ctrl %[[Q2:.*]] : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        // CHECK: mqtref.ryy(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]] : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        // CHECK: mqtref.rzz(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]] : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        // CHECK: mqtref.rzx(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]] : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        // CHECK: mqtref.xxminusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]] : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        // CHECK: mqtref.xxplusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]] : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+
+        %p0 = arith.constant 3.000000e-01 : f64
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+        %q2 = mqtref.qubit 2
+
+        mqtref.rxx(%p0) %q0, %q1 ctrl %q2 : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        mqtref.ryy(%p0) %q0, %q1 ctrl %q2 : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        mqtref.rzz(%p0) %q0, %q1 ctrl %q2 : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        mqtref.rzx(%p0) %q0, %q1 ctrl %q2 : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        mqtref.xxminusyy(%p0, %p0) %q0, %q1 ctrl %q2 : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+        mqtref.xxplusyy(%p0, %p0) %q0, %q1 ctrl %q2 : !mqtref.StaticQubit, !mqtref.StaticQubit ctrl !mqtref.StaticQubit
+
         return
     }
 }
