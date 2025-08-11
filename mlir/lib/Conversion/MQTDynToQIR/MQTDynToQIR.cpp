@@ -75,6 +75,7 @@ struct LoweringState {
 
   SmallVector<Operation*> measureConstants;
   Operation* constantOp{};
+  size_t index{};
 };
 
 template <typename OpType>
@@ -270,6 +271,77 @@ struct ConvertMQTDynMeasureQIR final
     : StatefulOpConversionPattern<dyn::MeasureOp> {
   using StatefulOpConversionPattern<
       dyn::MeasureOp>::StatefulOpConversionPattern;
+
+  /**
+   * @brief returns the next addressOfOp for a global constant to store the
+   * results of the measure operation
+   *
+   * @param op The current measure operation that is converted.
+   * @param rewriter The PatternRewriter to use.
+   * @param state The LoweringState of the current conversion pass.
+   * @return The addressOfOp of the next global constant.
+   */
+  static Operation* getAddressOfOp(Operation* op,
+                                   ConversionPatternRewriter& rewriter,
+                                   LoweringState& state) {
+    Operation* addressOfOp = nullptr;
+    // get the next addressOfOp from the vector if it exists
+    if (!state.measureConstants.empty()) {
+      addressOfOp = state.measureConstants.front();
+      // pop the next addressOfOp from the vector
+      state.measureConstants.erase(&state.measureConstants.front());
+    }
+    // otherwise create a new globalOp and a addressOfOp
+    else {
+      // check how many digits the next index has for the array allocation
+      auto num = state.index;
+      int64_t digits = 1;
+      while (num >= 10) {
+        num /= 10;
+        ++digits;
+      }
+      // set the insertionpoint to the beginning of the module
+      auto module = op->getParentOfType<ModuleOp>();
+      rewriter.setInsertionPointToStart(module.getBody());
+
+      // create the necessary names and types for the global operation
+      // symbol name should be mlir.llvm.nameless_global_0,
+      // mlir.llvm.nameless_global_1 etc.
+      auto symbolName = rewriter.getStringAttr("mlir.llvm.nameless_global_" +
+                                               std::to_string(state.index));
+      auto llvmArrayType =
+          LLVM::LLVMArrayType::get(rewriter.getIntegerType(8), digits + 2);
+      // initializer name should be r0\00, r1\00 etc.
+      auto stringInitializer =
+          rewriter.getStringAttr("r" + std::to_string(state.index) + '\0');
+
+      // create the global operation
+      auto globalOp = rewriter.create<LLVM::GlobalOp>(
+          op->getLoc(), llvmArrayType,
+          /*isConstant=*/true, LLVM::Linkage::Internal, symbolName,
+          stringInitializer);
+      globalOp->setAttr("addr_space", rewriter.getI32IntegerAttr(0));
+      globalOp->setAttr("dso_local", rewriter.getUnitAttr());
+
+      // get the first block of the main function
+      auto main = op->getParentOfType<LLVM::LLVMFuncOp>();
+      auto& firstBlock = *(main.getBlocks().begin());
+
+      // insert the addressOfOp of the newly created global op at the beginning
+      // of the block
+      rewriter.setInsertionPointToStart(&firstBlock);
+      addressOfOp = rewriter.create<LLVM::AddressOfOp>(
+          op->getLoc(), LLVM::LLVMPointerType::get(rewriter.getContext()),
+          symbolName);
+
+      // reset the insertionpoint to the initial operation again
+      rewriter.setInsertionPoint(op);
+    }
+    // increment the index of the next addressOfOp
+    state.index++;
+
+    return addressOfOp;
+  }
   LogicalResult
   matchAndRewrite(dyn::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -298,11 +370,10 @@ struct ConvertMQTDynMeasureQIR final
           {LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx)});
       fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
+      Operation* addressOfOp = getAddressOfOp(op, rewriter, getState());
       rewriter.create<LLVM::CallOp>(
           op.getLoc(), fnDecl,
-          ValueRange{newOp->getResult(0),
-                     getState().measureConstants.front()->getResult(0)});
-      getState().measureConstants.erase(&getState().measureConstants.front());
+          ValueRange{newOp->getResult(0), addressOfOp->getResult(0)});
 
       // create record update reference count
       fnName = "__quantum__rt__result_update_reference_count";
@@ -325,6 +396,7 @@ struct ConvertMQTDynMeasureQIR final
           op->getLoc(), fnDecl, ValueRange{newOp->getResult(0)});
       op->replaceUsesOfWith(resultBits[i], resultOp.getResult());
     }
+    rewriter.eraseOp(op);
     return success();
   }
 };

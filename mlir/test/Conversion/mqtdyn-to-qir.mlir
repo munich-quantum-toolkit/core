@@ -215,6 +215,46 @@ module {
 }
 
 // -----
+// This test checks if measure operations without previously created addressOfOp and globalOp are converted correctly
+module {
+    // CHECK: llvm.mlir.global internal constant @mlir.llvm.nameless_global_1("r1\00") {addr_space = 0 : i32, dso_local}
+    // CHECK: llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
+
+    // CHECK-LABEL: llvm.func @testMeasureOpWithoutPreviousOperations()
+    func.func @testMeasureOpWithoutPreviousOperations() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[a_1:.*]] = llvm.mlir.addressof @mlir.llvm.nameless_global_1 : !llvm.ptr
+        // CHECK: %[[a_0:.*]] = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
+        // CHECK: %[[c_0:.*]] = llvm.mlir.constant(-1 : i32) : i32
+
+        // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[ANY:.*]]) : (i64) -> !llvm.ptr
+        // CHECK: %[[ptr_0:.*]] = llvm.call @__quantum__rt__array_get_element_ptr_1d(%[[r_0]], %[[ANY:.*]]) : (!llvm.ptr, i64) -> !llvm.ptr
+        // CHECK: %[[q_0:.*]] = llvm.load %[[ptr_0]] : !llvm.ptr -> !llvm.ptr
+        // CHECK: %[[ptr_1:.*]] = llvm.call @__quantum__rt__array_get_element_ptr_1d(%[[r_0]], %[[ANY:.*]]) : (!llvm.ptr, i64) -> !llvm.ptr
+        // CHECK: %[[q_1:.*]] = llvm.load %[[ptr_1]] : !llvm.ptr -> !llvm.ptr
+        // CHECK: %[[m_0:.*]] = llvm.call @__quantum__qis__m__body(%[[q_0]]) : (!llvm.ptr) -> !llvm.ptr
+        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[m_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__result_update_reference_count(%[[m_0]], %[[c_0]]) : (!llvm.ptr, i32) -> ()
+        // CHECK: %[[i_0:.*]] = llvm.call @__quantum__rt__read_result(%[[m_0]]) : (!llvm.ptr) -> i1
+        // CHECK: %[[m_1:.*]] = llvm.call @__quantum__qis__m__body(%[[q_1]]) : (!llvm.ptr) -> !llvm.ptr
+        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[m_1]], %[[a_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__result_update_reference_count(%[[m_1]], %[[c_0]]) : (!llvm.ptr, i32) -> ()
+        // CHECK: %[[i_1:.*]] = llvm.call @__quantum__rt__read_result(%[[m_1]]) : (!llvm.ptr) -> i1
+
+        %c0 = arith.constant -1  : i32
+        cf.br ^bb1
+      ^bb1:
+        %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+        %q0 = "mqtdyn.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+        %q1 = "mqtdyn.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+        %m0, %m1 = "mqtdyn.measure"(%q0, %q1) : (!mqtdyn.Qubit, !mqtdyn.Qubit) -> (i1, i1)
+        "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
+        cf.br ^bb2
+      ^bb2:
+        return
+    }
+}
+
+// -----
 // This test checks if the single qubit gates are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertSingleQubitOp()
