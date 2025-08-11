@@ -152,6 +152,8 @@ void addOperations(mlir::OpBuilder& builder,
       addOperation<mqt::ir::dyn::HOp>(builder, *operation, qubits);
     } else if (operation->getType() == qc::OpType::RX) {
       addOperation<mqt::ir::dyn::RXOp>(builder, *operation, qubits);
+    } else if (operation->getType() == qc::OpType::SWAP) {
+      addOperation<mqt::ir::dyn::SWAPOp>(builder, *operation, qubits);
     } else if (operation->getType() == qc::OpType::X) {
       addOperation<mqt::ir::dyn::XOp>(builder, *operation, qubits);
     }
