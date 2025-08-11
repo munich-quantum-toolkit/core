@@ -91,11 +91,15 @@ jobs:
             -DBUILD_MQT_CORE_MLIR_TESTS=ON \
             -DLLVM_EXTERNAL_LIT=$(which lit)
 
-      # build the project and run the tests
-      - name: Build MLIR components and directly run lit tests
+      # build the project
+      - name: Build project
+        run: cmake --build build --config Release
+
+      # run the lit tests
+      - name: Run lit tests
         run: cmake --build build --config Release --target check-quantum-opt
 
-      # run unit tests
+      # run the unit tests
       - name: Run unit tests
         run: ctest -C Release --output-on-failure --test-dir build --repeat until-pass:3 --timeout 600
 
@@ -176,8 +180,7 @@ jobs:
 
       # make sure the lit test runner is installed
       - name: Install lit
-        run: |
-          uv pip install lit
+        run: uv pip install lit
 
       # configure the project with CMake
       - name: Configure CMake for MLIR
@@ -353,11 +356,15 @@ jobs:
             -DLLVM_EXTERNAL_LIT=$(which lit) \
             -DENABLE_COVERAGE=ON
 
-      # build the project and run the tests with coverage
-      - name: Build MLIR components and run tests with coverage
+      # build the project
+      - name: Build project
+        run: cmake --build build --config Debug
+
+      # run the lit tests
+      - name: Run lit tests
         run: cmake --build build --config Debug --target check-quantum-opt
 
-      # run unit tests
+      # run the unit tests
       - name: Run unit tests
         run: ctest -C Debug --output-on-failure --test-dir build --repeat until-pass:3 --timeout 600
 
