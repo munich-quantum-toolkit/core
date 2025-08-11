@@ -87,8 +87,7 @@ class GateOp<string mnemonic, list<Trait> traits = []> :
 }
 
 class UnitaryOp<string mnemonic, list<Trait> traits = []> :
-    GateOp<mnemonic, traits # [AttrSizedOperandSegments,
-                               UnitaryInterface]> {
+    GateOp<mnemonic, traits # [AttrSizedOperandSegments, UnitaryInterface]> {
     let arguments = (ins
         OptionalAttr<DenseF64ArrayAttr>:$static_params,
         OptionalAttr<DenseBoolArrayAttr>:$params_mask,

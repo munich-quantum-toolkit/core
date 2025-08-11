@@ -10,14 +10,6 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h" // IWYU pragma: associated
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/OpImplementation.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/Types.h>
-#include <mlir/Support/LogicalResult.h>
-
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
 #include <llvm/ADT/TypeSwitch.h>
