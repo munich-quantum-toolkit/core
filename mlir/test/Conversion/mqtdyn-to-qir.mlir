@@ -25,6 +25,25 @@ module {
 }
 
 // -----
+// This test checks if the blocks for the base profile of QIR are correctly created
+module {
+    // CHECK-LABEL: llvm.func @testBlockCreation()
+    func.func @testBlockCreation() attributes {passthrough = ["entry_point"]}  {
+      // CHECK: llvm.br ^[[main:.*]]
+      // CHECK: ^[[main]]:
+      // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
+      // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
+      // CHECK: llvm.br ^[[end:.*]]
+      // CHECK: ^[[end]]:
+      // CHECK: llvm.return
+
+      %r0 = "mqtdyn.allocQubitRegister" () {"size_attr" = 2 : i64} : () -> !mqtdyn.QubitRegister
+      return
+    }
+
+}
+
+// -----
 // This test checks if the initialize operation and zero operation is inserted
 module {
     // CHECK-LABEL: llvm.func @testInitialize()

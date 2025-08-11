@@ -355,21 +355,67 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     }
     return nullptr;
   }
+
+  /**
+   * @brief Makes sure that the different blocks for the base profile of QIR
+   * exist
+   *
+   * The first block should only contain constant operations for the initialize
+   * operation. The second block contains all the quantum operation. The final
+   * block should only contain the return operation. The blocks are connected
+   * with an unconditional jump operation to the next block.
+   *
+   * @param main The main function of the module.
+   */
+  static void ensureBlocks(LLVM::LLVMFuncOp& main) {
+    // return if there are more blocks already
+    if (main.getBlocks().size() > 1) {
+      return;
+    }
+    // get the existing block
+    auto* entryBlock = &main.front();
+    OpBuilder builder(main.getBody());
+
+    // create the main and the endblock
+    Block* mainBlock = builder.createBlock(&main.getBody());
+    Block* endBlock = builder.createBlock(&main.getBody());
+
+    // add jump from main to endBlock
+    builder.setInsertionPointToEnd(mainBlock);
+    builder.create<LLVM::BrOp>(main->getLoc(), endBlock);
+
+    // move the returnOp from the entryBlock to the endBlock
+    builder.setInsertionPointToEnd(endBlock);
+    auto& entryOperations = entryBlock->getOperations();
+    auto& endOperations = endBlock->getOperations();
+    auto lastOperation = std::prev(entryOperations.end());
+    endOperations.splice(endOperations.end(), entryOperations, lastOperation);
+
+    // add jump from entryBlock to mainBlock
+    builder.setInsertionPointToEnd(entryBlock);
+    builder.create<LLVM::BrOp>(main->getLoc(), mainBlock);
+
+    // move every operation from the entry block except the jump operation to
+    // the main block
+    if (!entryBlock->empty()) {
+      mainBlock->getOperations().splice(mainBlock->begin(), entryOperations,
+                                        entryOperations.begin(),
+                                        std::prev(entryOperations.end()));
+    }
+  }
+
   /**
    * @brief Collects the existing operations for the measure operation
    * conversion
    *
-   * @param op The module operation that holds all operations.
+   * @param main The main function of the module.
    * @param operations The vector to store the found addressOf operations.
    * @param ctx The context of the module.
    * @return The LLVM constant operation with the value -1.
    */
-  static Operation* collectMeasureConstants(Operation* op,
+  static Operation* collectMeasureConstants(LLVM::LLVMFuncOp& main,
                                             SmallVector<Operation*>& operations,
                                             MLIRContext* ctx) {
-
-    LLVM::LLVMFuncOp main = getMainFunction(op);
-
     // get the first block in the main function
     auto& firstBlock = *(main.getBlocks().begin());
     Operation* result = nullptr;
@@ -404,12 +450,11 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
    * @brief Adds the initialize operation to the first block of the main
    * function.
    *
-   * @param op The module operation that holds all operations.
+   * @param main The main function of the module.
    * @param ctx The context of the module.
    */
-  static void addInitialize(Operation* op, MLIRContext* ctx) {
-    auto module = dyn_cast<ModuleOp>(op);
-    LLVM::LLVMFuncOp main = getMainFunction(op);
+  static void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx) {
+    auto module = main->getParentOfType<ModuleOp>();
 
     auto& firstBlock = *(main.getBlocks().begin());
     OpBuilder builder(main.getBody());
@@ -437,18 +482,18 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
 
     // get the function declaration of initialize otherwise create one
     const StringRef fnName = "__quantum__rt__initialize";
-    auto* fnDecl =
-        SymbolTable::lookupNearestSymbolFrom(op, builder.getStringAttr(fnName));
+    auto* fnDecl = SymbolTable::lookupNearestSymbolFrom(
+        main, builder.getStringAttr(fnName));
     if (fnDecl == nullptr) {
       const PatternRewriter::InsertionGuard insertGuard(builder);
       builder.setInsertionPointToEnd(module.getBody());
       auto fnSignature = LLVM::LLVMFunctionType::get(
           LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
       fnDecl =
-          builder.create<LLVM::LLVMFuncOp>(op->getLoc(), fnName, fnSignature);
+          builder.create<LLVM::LLVMFuncOp>(main->getLoc(), fnName, fnSignature);
     }
     // create and insert the initialize operation
-    builder.create<LLVM::CallOp>(op->getLoc(),
+    builder.create<LLVM::CallOp>(main->getLoc(),
                                  static_cast<LLVM::LLVMFuncOp>(fnDecl),
                                  ValueRange{zeroOperation->getResult(0)});
   }
@@ -475,13 +520,18 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
       signalPassFailure();
     }
 
+    // get the main function of the module
+    auto main = getMainFunction(module);
+    // make sure that the blocks for the QIR base profile exist
+    ensureBlocks(main);
     // get the operations for measure conversions and store them in the
     // loweringstate struct
     LoweringState state;
     state.constantOp =
-        collectMeasureConstants(module, state.measureConstants, context);
+        collectMeasureConstants(main, state.measureConstants, context);
+    // add the initialize operation
+    addInitialize(main, context);
 
-    addInitialize(module, context);
     target.addIllegalDialect<dyn::MQTDynDialect>();
     mqtPatterns.add<ConvertMQTDynAllocQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTDynDeallocQIR>(typeConverter, context);
