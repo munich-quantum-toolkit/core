@@ -374,6 +374,7 @@ jobs:
           gcovr \
              --gcov-executable "/usr/lib/llvm-${{ matrix.llvm-version }}/bin/llvm-cov gcov" \
              --exclude build \
+             --exclude mlir/unittests \
              --exclude-unreachable-branches \
              --exclude-noncode-lines \
              --exclude-throw-branches \
