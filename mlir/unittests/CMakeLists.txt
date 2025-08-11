@@ -6,5 +6,6 @@
 #
 # Licensed under the MIT License
 
-include(GoogleTest)
-add_subdirectory(translation)
+if(BUILD_MQT_CORE_MLIR_TESTS)
+  add_subdirectory(translation)
+endif()

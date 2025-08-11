@@ -59,7 +59,7 @@ else()
   list(APPEND FETCH_PACKAGES boost_mp)
 endif()
 
-if(BUILD_MQT_CORE_TESTS)
+if(BUILD_MQT_CORE_TESTS OR BUILD_MQT_CORE_MLIR_TESTS)
   set(gtest_force_shared_crt
       ON
       CACHE BOOL "" FORCE)

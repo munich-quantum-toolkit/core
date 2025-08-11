@@ -88,6 +88,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_MQT_CORE_TESTS=OFF \
             -DBUILD_MQT_CORE_MLIR=ON \
+            -DBUILD_MQT_CORE_MLIR_TESTS=ON \
             -DLLVM_EXTERNAL_LIT=$(which lit)
 
       # build the project and run the tests
@@ -96,7 +97,7 @@ jobs:
 
       # run unit tests
       - name: Run unit tests
-        run: ctest -C $CONFIG --output-on-failure --test-dir build --repeat until-pass:3 --timeout 600
+        run: ctest -C Release --output-on-failure --test-dir build --repeat until-pass:3 --timeout 600
 
   cpp-test-mlir-windows:
     name: 🏁 Test MLIR with LLVM@${{ matrix.llvm-version }}
@@ -348,6 +349,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DBUILD_MQT_CORE_TESTS=OFF \
             -DBUILD_MQT_CORE_MLIR=ON \
+            -DBUILD_MQT_CORE_MLIR_TESTS=ON \
             -DLLVM_EXTERNAL_LIT=$(which lit) \
             -DENABLE_COVERAGE=ON
 
