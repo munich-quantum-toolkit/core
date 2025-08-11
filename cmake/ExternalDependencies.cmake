@@ -59,35 +59,14 @@ else()
   list(APPEND FETCH_PACKAGES boost_mp)
 endif()
 
-# Abseil is required by GTest and Protobuf. To avoid version conflicts, we add this dependency
-# centrally.
-set(ABSL_VERSION
-    20250512.1
-    CACHE STRING "abseil-cpp version")
-set(ABSL_URL https://github.com/abseil/abseil-cpp/archive/refs/tags/${ABSL_VERSION}.tar.gz)
-# The install instruction for re2 cannot be disabled and they require the export targets from
-# abseil.
-set(ABSL_ENABLE_INSTALL
-    ON
-    CACHE BOOL "" FORCE)
-FetchContent_Declare(abseil-cpp URL ${ABSL_URL} FIND_PACKAGE_ARGS ${ABSL_VERSION} CONFIG NAMES absl)
-list(APPEND FETCH_PACKAGES abseil-cpp)
-
 if(BUILD_MQT_CORE_TESTS)
-  # When adding abseil manually, GTest also requires re2
-  set(RE2_VERSION
-      2024-07-02
-      CACHE STRING "re2 version")
-  set(RE2_URL https://github.com/google/re2/archive/refs/tags/${RE2_VERSION}.tar.gz)
-  # remove '-' from version
-  string(REPLACE "-" "" RE2_VERSION "${RE2_VERSION}")
-  FetchContent_Declare(re2 URL ${RE2_URL} FIND_PACKAGE_ARGS ${RE2_VERSION} CONFIG)
-  list(APPEND FETCH_PACKAGES re2)
-
   set(gtest_force_shared_crt
       ON
       CACHE BOOL "" FORCE)
-  set(GTEST_HAS_ABSL ON)
+  # Disable the install instructions for GTest, as we do not need them.
+  set(INSTALL_GTEST
+      OFF
+      CACHE BOOL "" FORCE)
   set(GTEST_VERSION
       1.17.0
       CACHE STRING "Google Test version")
@@ -96,27 +75,10 @@ if(BUILD_MQT_CORE_TESTS)
   list(APPEND FETCH_PACKAGES googletest)
 endif()
 
-set(Protobuf_VERSION
-    31.1
-    CACHE STRING "protobuf version")
-set(Protobuf_URL
-    https://github.com/protocolbuffers/protobuf/releases/download/v${Protobuf_VERSION}/protobuf-${Protobuf_VERSION}.tar.gz
-)
-# the default of the following is ON, they are just here to make more explicit that they are
-# required
-set(protobuf_BUILD_PROTOBUF_BINARIES ON)
-set(protobuf_BUILD_PROTOC_BINARIES ON)
-set(protobuf_BUILD_LIBUPB ON)
-# the default of the following is ON, but we do not need the tests
-set(protobuf_BUILD_TESTS OFF)
-FetchContent_Declare(protobuf URL ${Protobuf_URL} FIND_PACKAGE_ARGS ${Protobuf_VERSION} CONFIG
-                                  NAMES protobuf)
-list(APPEND FETCH_PACKAGES protobuf)
-
 # cmake-format: off
 set(QDMI_VERSION 1.2.0
         CACHE STRING "QDMI version")
-set(QDMI_REV "9034e653a6e368579d99e352ecd8390e6e947bc6"
+set(QDMI_REV "8a92790b1d99ab35d05078390c562f0e76e563de"
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")

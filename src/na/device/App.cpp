@@ -9,10 +9,16 @@
  */
 
 #include "na/device/Generator.hpp"
-#include "spdlog/spdlog.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <exception>
 #include <iostream>
 #include <optional>
+#include <spdlog/spdlog.h>
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -22,7 +28,8 @@ namespace {
  */
 auto printUsage(const std::string& programName) -> void {
   std::cout
-      << "Generator of a header file from a JSON file for neutral atom QDMI\n"
+      << "Generator for turning neutral atom computer JSON specifications into "
+         "header files to be used as part of a neutral atom QDMI device "
          "implementation.\n"
          "\n"
          "Usage: "
@@ -105,7 +112,9 @@ auto printGenerateUsage(const std::string& programName) -> void {
  * Prints the version information for the command line tool.
  */
 auto printVersion() -> void {
-  std::cout << "MQT QDMI NA Device Generator Version " MQT_CORE_VERSION "\n";
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  std::cout << "MQT QDMI NA Device Generator (MQT Version " MQT_CORE_VERSION
+               ")\n";
 }
 
 /// Enum to represent the different commands that can be executed.
@@ -221,11 +230,6 @@ auto parseValidateArguments(const std::vector<std::string>& args, size_t i)
   while (i < args.size()) {
     if (const std::string& arg = args.at(i); arg == "-h" || arg == "--help") {
       validateArgs.help = true;
-    } else if (arg == "-o" || arg == "--output") {
-      if (++i >= args.size()) {
-        throw std::invalid_argument("Missing value for output option.");
-      }
-      validateArgs.jsonFile = args.at(i);
     } else {
       validateArgs.jsonFile = arg;
     }
@@ -259,6 +263,124 @@ auto parseGenerateArguments(const std::vector<std::string>& args, size_t i)
   }
   return generateArgs;
 }
+
+/**
+ * Executes the schema command, generating a JSON schema and writing it to the
+ * specified output file or stdout.
+ * @param progName is the name of the program executable.
+ * @param argVec is the vector of command line arguments.
+ * @param i is the index to the first sub-command argument within @p argVec
+ * @return 0 on success, 1 on error.
+ */
+auto executeSchemaCommand(const std::string& progName,
+                          const std::vector<std::string>& argVec,
+                          const size_t i) -> int {
+  SchemaArguments schemaArgs;
+  // parse the rest of the command line arguments for the schema command
+  try {
+    schemaArgs = parseSchemaArguments(argVec, i);
+  } catch (const std::exception& e) {
+    SPDLOG_ERROR("Error parsing schema arguments: {}", e.what());
+    printSchemaUsage(progName);
+    return 1;
+  }
+  // if the help flag is set, print the schema usage information and exit
+  if (schemaArgs.help) {
+    printSchemaUsage(progName);
+    return 0;
+  }
+  // generate the JSON schema and write it to the output file or stdout
+  try {
+    if (schemaArgs.outputFile.has_value()) {
+      na::writeJSONSchema(schemaArgs.outputFile.value());
+    } else {
+      na::writeJSONSchema(std::cout);
+    }
+  } catch (const std::exception& e) {
+    SPDLOG_ERROR("Error generating JSON schema: {}", e.what());
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * Executes the validate command, validating a JSON file or JSON string from
+ * stdin.
+ * @param progName is the name of the program executable.
+ * @param argVec is the vector of command line arguments.
+ * @param i is the index to the first sub-command argument within @p argVec
+ * @return 0 on success, 1 on error.
+ */
+auto executeValidateCommand(const std::string& progName,
+                            const std::vector<std::string>& argVec,
+                            const size_t i) -> int {
+  // parse the rest of the command line arguments for the validate command
+  const ValidateArguments validateArgs = parseValidateArguments(argVec, i);
+  //
+  if (validateArgs.help) {
+    printValidateUsage(progName);
+    return 0;
+  }
+  // validate the JSON file or the JSON string from stdin
+  try {
+    if (validateArgs.jsonFile.has_value()) {
+      std::ignore = na::readJSON(validateArgs.jsonFile.value());
+    } else {
+      std::ignore = na::readJSON(std::cin);
+    }
+  } catch (const std::exception& e) {
+    SPDLOG_ERROR("Error validating JSON: {}", e.what());
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * Executes the generate command, generating a header file from a JSON file or
+ * JSON string from stdin.
+ * @param progName is the name of the program executable.
+ * @param argVec is the vector of command line arguments.
+ * @param i is the index to the first sub-command argument within @p argVec
+ * @return 0 on success, 1 on error.
+ */
+auto executeGenerateCommand(const std::string& progName,
+                            const std::vector<std::string>& argVec,
+                            const size_t i) -> int {
+  GenerateArguments generateArgs;
+  // parse the rest of the command line arguments for the generate command
+  try {
+    generateArgs = parseGenerateArguments(argVec, i);
+  } catch (const std::exception& e) {
+    SPDLOG_ERROR("Error parsing generate arguments: {}", e.what());
+    printGenerateUsage(progName);
+    return 1;
+  }
+  // if the help flag is set, print the generate usage information and exit
+  if (generateArgs.help) {
+    printGenerateUsage(progName);
+    return 0;
+  }
+  // generate the header file from the JSON specification
+  try {
+    na::Device device;
+    // read the JSON file or the JSON string from stdin
+    if (generateArgs.jsonFile.has_value()) {
+      device = na::readJSON(generateArgs.jsonFile.value());
+    } else {
+      device = na::readJSON(std::cin);
+    }
+    // write the header file to the output file or stdout
+    if (generateArgs.outputFile.has_value()) {
+      na::writeHeader(device, generateArgs.outputFile.value());
+    } else {
+      na::writeHeader(device, std::cout);
+    }
+  } catch (const std::exception& e) {
+    SPDLOG_ERROR("Error generating header file: {}", e.what());
+    return 1;
+  }
+  return 0;
+}
 } // namespace
 
 /**
@@ -273,80 +395,49 @@ auto parseGenerateArguments(const std::vector<std::string>& args, size_t i)
  * @param argv is the array of command line arguments.
  */
 int main(int argc, char* argv[]) {
-  const std::vector<std::string> argVec(argv, argv + argc);
-  const auto& [args, i] = parseArguments(argVec);
+  std::vector<std::string> argVec;
+  std::pair<Arguments, size_t> parsedArgs;
+  // `main` functions should not throw exceptions. Apparently, the
+  // initialization of a vector can throw exceptions, so we catch them here.
+  try {
+    argVec = std::vector<std::string>(argv, argv + argc);
+  } catch (std::exception& e) {
+    SPDLOG_ERROR("Error parsing arguments into vector: {}", e.what());
+    return 1;
+  }
+  // parse the command line arguments up to the first sub-command
+  try {
+    parsedArgs = parseArguments(argVec);
+  } catch (const std::exception& e) {
+    SPDLOG_ERROR("Error parsing arguments: {}", e.what());
+    printUsage(argVec.empty() ? "mqt-core-na-device-gen" : argVec.front());
+    return 1;
+  }
+  // unpack the parsed arguments and the index of the first sub-command here
+  // because structured bindings only work with fresh variables
+  const auto& [args, i] = parsedArgs;
+  // print help or version information if requested
   if (args.help) {
     printUsage(args.programName);
     return 0;
   }
+  // if the version flag is set, print the version information and exit
   if (args.version) {
     printVersion();
     return 0;
   }
+  // if no command is specified, print the usage information
   if (!args.command.has_value()) {
     printUsage(args.programName);
     return 1;
   }
-  switch (args.command.value()) {
-  case Command::Schema: {
-    const auto& schemaArgs = parseSchemaArguments(argVec, i);
-    if (schemaArgs.help) {
-      printSchemaUsage(args.programName);
-      return 0;
-    }
-    try {
-      if (schemaArgs.outputFile.has_value()) {
-        na::writeJSONSchema(schemaArgs.outputFile.value());
-      } else {
-        na::writeJSONSchema(std::cout);
-      }
-    } catch (const std::exception& e) {
-      SPDLOG_ERROR("Error generating JSON schema: {}", e.what());
-      return 1;
-    }
-    break;
-  }
-  case Command::Validate: {
-    const auto& validateArgs = parseValidateArguments(argVec, i);
-    if (validateArgs.help) {
-      printValidateUsage(args.programName);
-      return 0;
-    }
-    try {
-      if (validateArgs.jsonFile.has_value()) {
-        std::ignore = na::readJSON(validateArgs.jsonFile.value());
-      } else {
-        std::ignore = na::readJSON(std::cin);
-      }
-    } catch (const std::exception& e) {
-      SPDLOG_ERROR("Error validating JSON: {}", e.what());
-      return 1;
-    }
-    break;
-  }
-  case Command::Generate: {
-    const auto& generateArgs = parseGenerateArguments(argVec, i);
-    if (generateArgs.help) {
-      printGenerateUsage(args.programName);
-      return 0;
-    }
-    try {
-      na::Device device;
-      if (generateArgs.jsonFile.has_value()) {
-        device = na::readJSON(generateArgs.jsonFile.value());
-      } else {
-        device = na::readJSON(std::cin);
-      }
-      if (generateArgs.outputFile.has_value()) {
-        na::writeHeader(device, generateArgs.outputFile.value());
-      } else {
-        na::writeHeader(device, std::cout);
-      }
-    } catch (const std::exception& e) {
-      SPDLOG_ERROR("Error generating header file: {}", e.what());
-      return 1;
-    }
-  }
+  switch (*args.command) {
+  case Command::Schema:
+    return executeSchemaCommand(args.programName, argVec, i);
+  case Command::Validate:
+    return executeValidateCommand(args.programName, argVec, i);
+  case Command::Generate:
+    return executeGenerateCommand(args.programName, argVec, i);
   }
   return 0;
 }

@@ -14,15 +14,14 @@
 
 #include "na/device/Generator.hpp"
 
-#include "na/device/device.pb.h"
-
+#include <algorithm>
+#include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/message.h>
-#include <google/protobuf/util/json_util.h>
 #include <istream>
+#include <nlohmann/json.hpp>
 #include <ostream>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -33,36 +32,17 @@
 namespace na {
 namespace {
 /**
- * @brief Populates all repeated fields of the message type in the given
- * Protobuf message with empty messages.
- * @param message The Protobuf message to populate.
- * @throws std::runtime_error if a repeated field has an unsupported type, i.e.,
- * not a message type.
- * @note This is a recursive auxiliary function used by @ref writeJSONSchema
+ * @brief Populates all array fields in the device object with default values.
+ * @param device is the device object to populate.
+ * @note This is a recursive auxiliary function used by @ref writeJSONSchema.
  */
-auto populateRepeatedFields(google::protobuf::Message* message) -> void {
-  const google::protobuf::Descriptor* descriptor = message->GetDescriptor();
-  const google::protobuf::Reflection* reflection = message->GetReflection();
-
-  for (int i = 0; i < descriptor->field_count(); ++i) {
-    const google::protobuf::FieldDescriptor* field = descriptor->field(i);
-    if (field->is_repeated()) {
-      if (field->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE) {
-        populateRepeatedFields(reflection->AddMessage(message, field));
-      } else {
-        std::stringstream ss;
-        ss << "Unsupported repeated field type in device configuration: "
-           << field->cpp_type();
-        throw std::runtime_error(ss.str());
-      }
-    } else if (field->type() ==
-               google::protobuf::FieldDescriptor::TYPE_MESSAGE) {
-      // Message fields must be explicitly initialized such that they appear in
-      // the written JSON schema, primitive fields are automatically
-      // initialized
-      populateRepeatedFields(reflection->MutableMessage(message, field));
-    }
-  }
+auto populateArrayFields(Device& device) -> void {
+  device.traps.emplace_back().sublatticeOffsets.emplace_back();
+  device.globalMultiQubitOperations.emplace_back();
+  device.globalSingleQubitOperations.emplace_back();
+  device.localMultiQubitOperations.emplace_back();
+  device.localSingleQubitOperations.emplace_back();
+  device.shuttlingUnits.emplace_back();
 }
 
 /**
@@ -74,8 +54,8 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
  * @returns true if the increment was successful, false if all indices have
  * reached their limits.
  */
-[[nodiscard]] auto increment(std::vector<size_t>& indices,
-                             const std::vector<size_t>& limits) -> bool {
+[[nodiscard]] auto increment(std::vector<int64_t>& indices,
+                             const std::vector<int64_t>& limits) -> bool {
   size_t i = 0;
   for (; i < indices.size() && indices[i] == limits[i]; ++i) {
   }
@@ -92,181 +72,227 @@ auto populateRepeatedFields(google::protobuf::Message* message) -> void {
 
 /**
  * Computes the time unit factor based on the device configuration.
- * @param device is the Protobuf message containing the device configuration.
+ * @param device is the device object containing the time unit.
  * @returns a factor every time value must be multiplied with to convert it to
  * microseconds.
  */
 [[nodiscard]] auto getTimeUnit(const Device& device) -> double {
-  if (device.time_unit().unit() == "us") {
-    return static_cast<double>(device.time_unit().value());
+  if (device.timeUnit.unit == "us") {
+    return static_cast<double>(device.timeUnit.scaleFactor);
   }
-  if (device.time_unit().unit() == "ns") {
-    return static_cast<double>(device.time_unit().value()) * 1e-3;
+  if (device.timeUnit.unit == "ns") {
+    return static_cast<double>(device.timeUnit.scaleFactor) * 1e-3;
   }
   std::stringstream ss;
-  ss << "Unsupported time unit: " << device.time_unit().unit();
+  ss << "Unsupported time unit: " << device.timeUnit.unit;
   throw std::runtime_error(ss.str());
 }
 
 /**
  * Computes the length unit factor based on the device configuration.
- * @param device is the Protobuf message containing the device configuration.
+ * @param device is the device object containing the length unit.
  * @returns a factor every length value must be multiplied with to convert it to
  * micrometers.
  */
 [[nodiscard]] auto getLengthUnit(const Device& device) -> double {
-  if (device.length_unit().unit() == "um") {
-    return static_cast<double>(device.length_unit().value());
+  if (device.lengthUnit.unit == "um") {
+    return static_cast<double>(device.lengthUnit.scaleFactor);
   }
-  if (device.length_unit().unit() == "nm") {
-    return static_cast<double>(device.length_unit().value()) * 1e-3;
+  if (device.lengthUnit.unit == "nm") {
+    return static_cast<double>(device.lengthUnit.scaleFactor) * 1e-3;
   }
   std::stringstream ss;
-  ss << "Unsupported length unit: " << device.length_unit().unit();
+  ss << "Unsupported length unit: " << device.lengthUnit.unit;
   throw std::runtime_error(ss.str());
 }
 
 /**
- * @brief Writes the name from the Protobuf message.
- * @param device The Protobuf message containing the device configuration.
- * @param os The output stream to write the sites to.
+ * @brief Writes the name from the device object.
+ * @param device is the device object containing the name.
+ * @param os is the output stream to write the sites to.
  */
 auto writeName(const Device& device, std::ostream& os) -> void {
-  os << "#define INITIALIZE_NAME(var) var = \"" << device.name() << "\"\n";
+  os << "#define INITIALIZE_NAME(var) var = \"" << device.name << "\"\n";
 }
 
 /**
- * @brief Writes the qubits number from the Protobuf message.
- * @param device The Protobuf message containing the device configuration.
- * @param os The output stream to write the sites to.
+ * @brief Writes the qubits number from the device object.
+ * @param device is the device object containing the number of qubits.
+ * @param os is the output stream to write the sites to.
  */
 auto writeQubitsNum(const Device& device, std::ostream& os) -> void {
-  os << "#define INITIALIZE_QUBITSNUM(var) var = " << device.num_qubits()
+  os << "#define INITIALIZE_QUBITSNUM(var) var = " << device.numQubits
      << "UL\n";
 }
 
 /**
- * @brief Writes the sites from the Protobuf message.
- * @param device The Protobuf message containing the device configuration.
- * @param os The output stream to write the sites to.
+ * @brief Writes the sites from the device object.
+ * @param device is the device object containing the sites configuration.
+ * @param os is the output stream to write the sites to.
  */
 auto writeSites(const Device& device, std::ostream& os) -> void {
   size_t count = 0;
+  size_t moduleCount = 0;
+  const auto lengthUnit = getLengthUnit(device);
+
   os << "#define INITIALIZE_SITES(var) var.clear();";
-  for (const auto& lattice : device.traps()) {
-    const auto originX = lattice.lattice_origin().x();
-    const auto originY = lattice.lattice_origin().y();
-    const std::vector limits{
-        static_cast<size_t>(lattice.lattice_vector_1().repeat()),
-        static_cast<size_t>(lattice.lattice_vector_2().repeat())};
-    std::vector indices(2, 0UL);
-    for (bool loop = true; loop; loop = increment(indices, limits)) {
+  for (const auto& lattice : device.traps) {
+    size_t subModuleCount = 0;
+
+    const auto latticeOriginX = lattice.latticeOrigin.x;
+    const auto latticeOriginY = lattice.latticeOrigin.y;
+    const auto baseVector1X = lattice.latticeVector1.x;
+    const auto baseVector1Y = lattice.latticeVector1.y;
+    const auto baseVector2X = lattice.latticeVector2.x;
+    const auto baseVector2Y = lattice.latticeVector2.y;
+    const auto extentOriginX = lattice.extent.origin.x;
+    const auto extentOriginY = lattice.extent.origin.y;
+    const auto extentWidth = static_cast<int64_t>(lattice.extent.size.width);
+    const auto extentHeight = static_cast<int64_t>(lattice.extent.size.height);
+
+    // approximate indices of the bottom left corner
+    const auto& [bottomLeftI, bottomLeftJ] = solve2DLinearEquation<int64_t>(
+        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
+        extentOriginX - latticeOriginX, extentOriginY - latticeOriginY);
+
+    // approximate indices of the bottom right corner
+    const auto& [bottomRightI, bottomRightJ] = solve2DLinearEquation<int64_t>(
+        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
+        extentOriginX + extentWidth - latticeOriginX,
+        extentOriginY - latticeOriginY);
+
+    // approximate indices of the top left corner
+    const auto& [topLeftI, topLeftJ] = solve2DLinearEquation<int64_t>(
+        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
+        extentOriginX - latticeOriginX,
+        extentOriginY + extentHeight - latticeOriginY);
+
+    // approximate indices of the top right corner
+    const auto& [topRightI, topRightJ] = solve2DLinearEquation<int64_t>(
+        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
+        extentOriginX + extentWidth - latticeOriginX,
+        extentOriginY + extentHeight - latticeOriginY);
+
+    const auto minI = static_cast<int64_t>(
+        std::floor(std::min({bottomLeftI, bottomRightI, topLeftI, topRightI})));
+    const auto minJ = static_cast<int64_t>(
+        std::floor(std::min({bottomLeftJ, bottomRightJ, topLeftJ, topRightJ})));
+    const auto maxI = static_cast<int64_t>(
+        std::floor(std::max({bottomLeftI, bottomRightI, topLeftI, topRightI})));
+    const auto maxJ = static_cast<int64_t>(
+        std::floor(std::max({bottomLeftJ, bottomRightJ, topLeftJ, topRightJ})));
+
+    const std::vector limits{maxI, maxJ};
+    std::vector indices{minI, minJ};
+    for (bool loop = true; loop;
+         loop = increment(indices, limits), ++subModuleCount) {
       // For every sublattice offset, add a site for repetition indices
-      for (const auto& offset : lattice.sublattice_offsets()) {
+      for (const auto& offset : lattice.sublatticeOffsets) {
         const auto id = count++;
-        auto x = originX + offset.x();
-        auto y = originY + offset.y();
-        x += static_cast<int64_t>(indices[0]) *
-             lattice.lattice_vector_1().vector().x();
-        y += static_cast<int64_t>(indices[0]) *
-             lattice.lattice_vector_1().vector().y();
-        x += static_cast<int64_t>(indices[1]) *
-             lattice.lattice_vector_2().vector().x();
-        y += static_cast<int64_t>(indices[1]) *
-             lattice.lattice_vector_2().vector().y();
-        os << "\\\n  "
-              "var.emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>("
-              "MQT_NA_QDMI_Site_impl_d{"
-           << id << ", " << x << ", " << y << "}));";
+        auto x = latticeOriginX + offset.x;
+        auto y = latticeOriginY + offset.y;
+        x += indices[0] * baseVector1X;
+        y += indices[0] * baseVector1Y;
+        x += indices[1] * baseVector2X;
+        y += indices[1] * baseVector2Y;
+        if (extentOriginX <= x && x < extentOriginX + extentWidth &&
+            extentOriginY <= y && y < extentOriginY + extentHeight) {
+          // Only add the site if it is within the extent of the lattice
+          os << "\\\n  "
+                "var.emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>("
+             << id << ", " << moduleCount << ", " << subModuleCount << ", "
+             << static_cast<double>(x) * lengthUnit << ", "
+             << static_cast<double>(y) * lengthUnit << "));";
+        }
       }
     }
+    ++moduleCount;
   }
   os << "\n";
 }
 
 /**
- * @brief Imports the operations from the Protobuf message into the device.
- * @param device The Protobuf message containing the device configuration.
- * @param timeUnit The time unit to use for the operations.
- * @param os The output stream to write the sites to.
+ * @brief Writes the operations from the device object.
+ * @param device is the device object containing the operations configuration.
+ * @param timeUnit is the time unit to use for the operations durations.
+ * @param os is the output stream to write the operations to.
  */
 auto writeOperations(const Device& device, const double timeUnit,
                      std::ostream& os) -> void {
   os << "#define INITIALIZE_OPERATIONS(var) var.clear();";
-  for (const auto& operation : device.global_single_qubit_operations()) {
+  for (const auto& operation : device.globalSingleQubitOperations) {
     os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << "\", OperationType::GLOBAL_SINGLE_QUBIT, "
-       << operation.num_parameters() << ", 1, "
-       << static_cast<double>(operation.duration()) * timeUnit << ", "
-       << operation.fidelity() << "}));";
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
+       << operation.name
+       << "\", MQT_NA_QDMI_Operation_impl_d::Type::GlobalSingleQubit, "
+       << operation.numParameters << ", 1, "
+       << static_cast<double>(operation.duration) * timeUnit << ", "
+       << operation.fidelity << "));";
   }
-  for (const auto& operation : device.global_multi_qubit_operations()) {
+  for (const auto& operation : device.globalMultiQubitOperations) {
     os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << "\", OperationType::GLOBAL_MULTI_QUBIT, "
-       << operation.num_parameters() << ", " << operation.num_qubits() << ", "
-       << static_cast<double>(operation.duration()) * timeUnit << ", "
-       << operation.fidelity() << "}));";
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
+       << operation.name
+       << "\", MQT_NA_QDMI_Operation_impl_d::Type::GlobalMultiQubit, "
+       << operation.numParameters << ", " << operation.numQubits << ", "
+       << static_cast<double>(operation.duration) * timeUnit << ", "
+       << operation.fidelity << "));";
   }
-  for (const auto& operation : device.local_single_qubit_operations()) {
+  for (const auto& operation : device.localSingleQubitOperations) {
     os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << "\", OperationType::LOCAL_SINGLE_QUBIT, "
-       << operation.num_parameters() << ", 1, "
-       << static_cast<double>(operation.duration()) * timeUnit << ", "
-       << operation.fidelity() << "}));";
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
+       << operation.name
+       << "\", MQT_NA_QDMI_Operation_impl_d::Type::LocalSingleQubit, "
+       << operation.numParameters << ", 1, "
+       << static_cast<double>(operation.duration) * timeUnit << ", "
+       << operation.fidelity << "));";
   }
-  for (const auto& operation : device.local_multi_qubit_operations()) {
+  for (const auto& operation : device.localMultiQubitOperations) {
     os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << "\", OperationType::LOCAL_MULTI_QUBIT, "
-       << operation.num_parameters() << ", " << operation.num_qubits() << ", "
-       << static_cast<double>(operation.duration()) * timeUnit << ", "
-       << operation.fidelity() << "}));";
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
+       << operation.name
+       << "\", MQT_NA_QDMI_Operation_impl_d::Type::LocalMultiQubit, "
+       << operation.numParameters << ", " << operation.numQubits << ", "
+       << static_cast<double>(operation.duration) * timeUnit << ", "
+       << operation.fidelity << "));";
   }
-  for (const auto& operation : device.shuttling_units()) {
+  for (const auto& operation : device.shuttlingUnits) {
+    os << "\\\n"
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
+       << operation.name
+       << " (Load)\", MQT_NA_QDMI_Operation_impl_d::Type::ShuttlingLoad, "
+       << operation.numParameters << ", 0, "
+       << static_cast<double>(operation.loadDuration) * timeUnit << ", "
+       << operation.loadFidelity << "));";
     os << "\\\n"
           "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
           "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << " (Load)\", OperationType::SHUTTLING_LOAD, "
-       << operation.num_parameters() << ", 0, "
-       << static_cast<double>(operation.load_duration()) * timeUnit << ", "
-       << operation.load_fidelity() << "}));";
+       << operation.name
+       << " (Move)\", MQT_NA_QDMI_Operation_impl_d::Type::ShuttlingMove, "
+       << operation.numParameters << ", 0, 0, 0}));";
     os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << " (Move)\", OperationType::SHUTTLING_MOVE, "
-       << operation.num_parameters() << ", 0, 0, 0}));";
-    os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name() << " (Store)\", OperationType::SHUTTLING_STORE, "
-       << operation.num_parameters() << ", 0, "
-       << static_cast<double>(operation.store_duration()) * timeUnit << ", "
-       << operation.store_fidelity() << "}));";
+          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
+       << operation.name
+       << " (Store)\", MQT_NA_QDMI_Operation_impl_d::Type::ShuttlingStore, "
+       << operation.numParameters << ", 0, "
+       << static_cast<double>(operation.storeDuration) * timeUnit << ", "
+       << operation.storeFidelity << "));";
   }
   os << "\n";
 }
 
 /**
- * @brief Writes the decoherence times from the Protobuf message.
- * @param device The Protobuf message containing the device configuration.
- * @param timeUnit The time unit to use for the decoherence times.
- * @param os The output stream to write the sites to.
+ * @brief Writes the decoherence times from the device object.
+ * @param device is the device object containing the decoherence times.
+ * @param timeUnit is the time unit to use for the decoherence times.
+ * @param os is the output stream to write the sites to.
  */
 auto writeDecoherenceTimes(const Device& device, const double timeUnit,
                            std::ostream& os) -> void {
   os << "#define INITIALIZE_T1(var) var = "
-     << static_cast<double>(device.decoherence_times().t1()) * timeUnit
-     << ";\n";
+     << static_cast<double>(device.decoherenceTimes.t1) * timeUnit << ";\n";
   os << "#define INITIALIZE_T2(var) var = "
-     << static_cast<double>(device.decoherence_times().t2()) * timeUnit
-     << ";\n";
+     << static_cast<double>(device.decoherenceTimes.t2) * timeUnit << ";\n";
 }
 } // namespace
 
@@ -274,22 +300,12 @@ auto writeJSONSchema(std::ostream& os) -> void {
   // Create a default device configuration
   Device device;
 
-  // Fill each repeated field with an empty message
-  populateRepeatedFields(&device);
+  // Fill each array field with default values
+  populateArrayFields(device);
 
-  // Set print options
-  google::protobuf::util::JsonPrintOptions options;
-  options.always_print_fields_with_no_presence = true;
-
-  // Convert to JSON
-  std::string json;
-  const auto status =
-      google::protobuf::util::MessageToJsonString(device, &json, options);
-  if (!status.ok()) {
-    std::stringstream ss;
-    ss << "Failed to convert Protobuf message to JSON: " << status.ToString();
-    throw std::runtime_error(ss.str());
-  }
+  // Convert the device configuration to a JSON object
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  const nlohmann::json json = device;
 
   // Write to output stream
   os << json;
@@ -298,41 +314,34 @@ auto writeJSONSchema(std::ostream& os) -> void {
 auto writeJSONSchema(const std::string& path) -> void {
   // Write to file
   std::ofstream ofs(path);
-  if (ofs.is_open()) {
-    writeJSONSchema(ofs);
-    ofs.close();
-    SPDLOG_INFO("JSON template written to {}", path);
-  } else {
+  if (!ofs.good()) {
     std::stringstream ss;
     ss << "Failed to open file for writing: " << path;
     throw std::runtime_error(ss.str());
   }
+  writeJSONSchema(ofs);
+  ofs.close();
+  SPDLOG_INFO("JSON template written to {}", path);
 }
 
 [[nodiscard]] auto readJSON(std::istream& is) -> Device {
   // Read the device configuration from the input stream
-  std::stringstream buffer;
-  buffer << is.rdbuf();
-  const std::string json = buffer.str();
-  // Parse the JSON string into the protobuf message
-  google::protobuf::util::JsonParseOptions options;
-  options.ignore_unknown_fields = true;
-  Device device;
-  const auto status =
-      google::protobuf::util::JsonStringToMessage(json, &device);
-  if (!status.ok()) {
+  nlohmann::json json;
+  try {
+    is >> json;
+    // NOLINTNEXTLINE(misc-include-cleaner)
+  } catch (const nlohmann::detail::parse_error& e) {
     std::stringstream ss;
-    ss << "Failed to parse JSON string into Protobuf message: "
-       << status.ToString();
+    ss << "Failed to parse JSON string: " << e.what();
     throw std::runtime_error(ss.str());
   }
-  return device;
+  return json;
 }
 
 [[nodiscard]] auto readJSON(const std::string& path) -> Device {
   // Read the device configuration from a JSON file
   std::ifstream ifs(path);
-  if (!ifs.is_open()) {
+  if (!ifs.good()) {
     throw std::runtime_error("Failed to open JSON file: " + std::string(path));
   }
   const auto& device = readJSON(ifs);
@@ -352,7 +361,7 @@ auto writeHeader(const Device& device, std::ostream& os) -> void {
 
 auto writeHeader(const Device& device, const std::string& path) -> void {
   std::ofstream ofs(path);
-  if (!ofs.is_open()) {
+  if (!ofs.good()) {
     std::stringstream ss;
     ss << "Failed to open header file for writing: " << path;
     throw std::runtime_error(ss.str());

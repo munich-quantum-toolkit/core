@@ -1,6 +1,6 @@
 {
   "name": "MQT NA QDMI Default Device",
-  "num_qubits": 100,
+  "numQubits": 100,
   "traps": [
     {
       "latticeOrigin": {
@@ -8,31 +8,35 @@
         "y": 0
       },
       "latticeVector1": {
-        "vector": {
-          "x": 1,
-          "y": 0
-        },
-        "repeat": 10
+        "x": 1,
+        "y": 0
       },
       "latticeVector2": {
-        "vector": {
-          "x": 0,
-          "y": 1
-        },
-        "repeat": 10
+        "x": 0,
+        "y": 1
       },
       "sublatticeOffsets": [
         {
           "x": 0,
           "y": 0
         }
-      ]
+      ],
+      "extent": {
+        "origin": {
+          "x": 0,
+          "y": 0
+        },
+        "size": {
+          "width": 10,
+          "height": 10
+        }
+      }
     }
   ],
   "minAtomDistance": 1,
   "globalSingleQubitOperations": [
     {
-      "name": "RY",
+      "name": "ry",
       "region": {
         "origin": {
           "x": 0,
@@ -50,7 +54,7 @@
   ],
   "globalMultiQubitOperations": [
     {
-      "name": "CZ",
+      "name": "cz",
       "region": {
         "origin": {
           "x": 0,
@@ -72,7 +76,7 @@
   ],
   "localSingleQubitOperations": [
     {
-      "name": "RZ",
+      "name": "rz",
       "region": {
         "origin": {
           "x": 0,
@@ -92,7 +96,7 @@
   ],
   "localMultiQubitOperations": [
     {
-      "name": "CZ",
+      "name": "cz",
       "region": {
         "origin": {
           "x": 0,
@@ -115,7 +119,7 @@
   ],
   "shuttlingUnits": [
     {
-      "name": "AOD",
+      "name": "aod",
       "region": {
         "origin": {
           "x": 0,
@@ -141,11 +145,11 @@
     "t2": 1500000
   },
   "lengthUnit": {
-    "value": 1,
+    "scaleFactor": 1.0,
     "unit": "um"
   },
   "timeUnit": {
-    "value": 1,
+    "scaleFactor": 1.0,
     "unit": "us"
   }
 }
