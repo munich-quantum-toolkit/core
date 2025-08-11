@@ -69,7 +69,7 @@ LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
     fnDecl = rewriter.create<LLVM::LLVMFuncOp>(op->getLoc(), fnName, fnType);
   }
 
-  return dyn_cast<LLVM::LLVMFuncOp>(fnDecl);
+  return static_cast<LLVM::LLVMFuncOp>(fnDecl);
 }
 
 } // namespace
@@ -180,12 +180,12 @@ struct ConvertMQTDynExtractQIR final : OpConversionPattern<dyn::ExtractOp> {
   }
 };
 
-template <typename MQTGateDynOp>
-struct ConvertMQTDynGateOpQIR final : OpConversionPattern<MQTGateDynOp> {
-  using OpConversionPattern<MQTGateDynOp>::OpConversionPattern;
+template <typename MQTDynGateOp>
+struct ConvertMQTDynGateOpQIR final : OpConversionPattern<MQTDynGateOp> {
+  using OpConversionPattern<MQTDynGateOp>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(MQTGateDynOp op, typename MQTGateDynOp::Adaptor adaptor,
+  matchAndRewrite(MQTDynGateOp op, typename MQTDynGateOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = rewriter.getContext();
 
@@ -318,7 +318,12 @@ struct ConvertMQTDynMeasureQIR final : OpConversionPattern<dyn::MeasureOp> {
 struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
   using MQTDynToQIRBase::MQTDynToQIRBase;
 
-  // returns the main function with entry_point attribute
+  /**
+   * @brief Finds the main function in the module
+   *
+   * @param op The module operation that holds all operations.
+   * @return The main function.
+   */
   static LLVM::LLVMFuncOp getMainFunction(Operation* op) {
     auto module = dyn_cast<ModuleOp>(op);
     // find the main function
@@ -336,7 +341,15 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     }
     return nullptr;
   }
-  // collect all the necessary operations for the measure operation conversion
+  /**
+   * @brief Collects the existing operations for the measure operation
+   * conversion
+   *
+   * @param op The module operation that holds all operations.
+   * @param operations The vector to store the found addressOf operations.
+   * @param ctx The context of the module.
+   * @return The LLVM constant operation with the value -1.
+   */
   static Operation* collectMeasureConstants(Operation* op,
                                             SmallVector<Operation*>& operations,
                                             MLIRContext* ctx) {
@@ -373,7 +386,13 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     return result;
   }
 
-  // create the quantum initialize op
+  /**
+   * @brief Adds the initialize operation to the first block of the main
+   * function.
+   *
+   * @param op The module operation that holds all operations.
+   * @param ctx The context of the module.
+   */
   static void addInitialize(Operation* op, MLIRContext* ctx) {
     auto module = dyn_cast<ModuleOp>(op);
     LLVM::LLVMFuncOp main = getMainFunction(op);
@@ -396,7 +415,8 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
           main->getLoc(), LLVM::LLVMPointerType::get(ctx));
     }
 
-    // set the builder to the 2nd last operation in the first block
+    // create the initialize operation as the 2nd last operation in the first
+    // block after all constant operations and before the last jump operation
     auto& ops = firstBlock.getOperations();
     const auto insertPoint = std::prev(ops.end(), 1);
     builder.setInsertionPoint(&*insertPoint);
@@ -415,7 +435,7 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     }
     // create and insert the initialize operation
     builder.create<LLVM::CallOp>(op->getLoc(),
-                                 dyn_cast<LLVM::LLVMFuncOp>(fnDecl),
+                                 static_cast<LLVM::LLVMFuncOp>(fnDecl),
                                  ValueRange{zeroOperation->getResult(0)});
   }
 

@@ -9,6 +9,7 @@
  */
 
 // macro to match and replace simple qubit gates
+
 #define ADD_CONVERT_SIMPLE_GATE(gate)                                          \
   else if (gateName == #gate) {                                                \
     rewriter.replaceOpWithNewOp<dyn::gate>(op, DenseF64ArrayAttr{},            \
@@ -33,7 +34,6 @@
 #include <cstdint>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
-#include <map>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -49,6 +49,7 @@
 #include <mlir/Transforms/DialectConversion.h>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace mqt::ir {
@@ -67,12 +68,35 @@ public:
 };
 
 namespace {
-// struct to store information for alloc register and qubits
-struct AllocRegisterData {
-  // dyn register
-  dyn::AllocOp qReg;
-  // next free index
-  int64_t index{};
+
+struct LoweringState {
+  // struct to store information for alloc register and qubits
+  struct AllocRegisterData {
+    // dyn register
+    dyn::AllocOp qReg;
+    // next free index
+    int64_t index{};
+  };
+
+  DenseMap<Value, Value> operandMap;
+  AllocRegisterData allocOp;
+};
+
+template <typename OpType>
+class StatefulOpConversionPattern : public mlir::OpConversionPattern<OpType> {
+  using mlir::OpConversionPattern<OpType>::OpConversionPattern;
+
+public:
+  StatefulOpConversionPattern(mlir::TypeConverter& typeConverter,
+                              mlir::MLIRContext* context, LoweringState* state)
+      : mlir::OpConversionPattern<OpType>(typeConverter, context),
+        state_(state) {}
+
+  /// @brief Return the state object as reference.
+  [[nodiscard]] LoweringState& getState() const { return *state_; }
+
+private:
+  LoweringState* state_;
 };
 } // namespace
 
@@ -88,16 +112,8 @@ struct ConvertQIRLoad final : OpConversionPattern<LLVM::LoadOp> {
     return success();
   }
 };
-struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  DenseMap<Value, Value>* operandMap;
-  AllocRegisterData* allocOp;
-  explicit ConvertQIRCall(TypeConverter& typeConverter, MLIRContext* context,
-                          DenseMap<Value, Value>& operandMap,
-                          AllocRegisterData& allocOp)
-      : OpConversionPattern(typeConverter, context), operandMap(&operandMap),
-        allocOp(&allocOp) {}
+struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
+  using StatefulOpConversionPattern<LLVM::CallOp>::StatefulOpConversionPattern;
 
   // match and replace simple qubit gates
   static bool convertSimpleGates(const SmallVector<Value>& qubits,
@@ -105,7 +121,7 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
                                  LLVM::CallOp& op,
                                  ConversionPatternRewriter& rewriter,
                                  const StringRef& name) {
-    static const std::map<std::string, std::string> GATE_NAMES = {
+    static const std::unordered_map<std::string, std::string> GATE_NAMES = {
         {"x", "XOp"},
         {"not", "XOp"},
         {"h", "HOp"},
@@ -161,22 +177,25 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     return true;
   }
 
-  // match and replace singlue qubit gates
+  // match and replace single qubit gates
   static bool convertRotationGates(SmallVector<Value>& operands,
                                    const SmallVector<Value>& ctrlQubits,
                                    LLVM::CallOp& op,
                                    ConversionPatternRewriter& rewriter,
                                    const StringRef& name) {
-    static const std::map<std::string, std::string> SINGLE_ROTATION_GATES = {
-        {"p", "POp"},     {"rx", "RXOp"},   {"ry", "RYOp"},
-        {"rz", "RZOp"},   {"rxx", "RXXOp"}, {"ryy", "RYYOp"},
-        {"rzz", "RZZOp"}, {"rzx", "RZXOp"}
+    static const std::unordered_map<std::string, std::string>
+        SINGLE_ROTATION_GATES = {{"p", "POp"},     {"rx", "RXOp"},
+                                 {"ry", "RYOp"},   {"rz", "RZOp"},
+                                 {"rxx", "RXXOp"}, {"ryy", "RYYOp"},
+                                 {"rzz", "RZZOp"}, {"rzx", "RZXOp"},
+                                 {"u1", "POp"}
 
-    };
-    static const std::map<std::string, std::string> DOUBLE_ROTATION_GATES = {
-        {"u2", "U2Op"}, {"xxminusyy", "XXminusYY"}, {"xxplusyy", "XXplusYY"}
+        };
+    static const std::unordered_map<std::string, std::string>
+        DOUBLE_ROTATION_GATES = {
+            {"u2", "U2Op"}, {"xxminusyy", "XXminusYY"}, {"xxplusyy", "XXplusYY"}
 
-    };
+        };
     std::string gateName;
     size_t rotationCount = 0;
     // check if it is rotation gate and get the number of degrees
@@ -186,14 +205,12 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     } else if (DOUBLE_ROTATION_GATES.contains(name.str())) {
       gateName = DOUBLE_ROTATION_GATES.at(name.str());
       rotationCount = 2;
-    } else if (name.str() == "u") {
+    } else if (name.str() == "u3") {
       gateName = "UOp";
       rotationCount = 3;
     } else {
       return false;
     }
-    // reminder: not matched u1 and u3 gates
-    // u3 == UOp?
 
     // extract the degrees from the operand list
     SmallVector<Value> rotationDegrees;
@@ -230,7 +247,6 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     const auto fnName = op.getCallee();
     const auto qubitType = dyn::QubitType::get(rewriter.getContext());
     const auto qregType = dyn::QubitRegisterType::get(rewriter.getContext());
-    auto& operandMapRef = *operandMap;
     const auto operands = adaptor.getOperands();
 
     // get the new operands from the operandMap
@@ -239,8 +255,8 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
     SmallVector<Value> newOperands;
     newOperands.reserve(operands.size());
     for (auto const& val : operands) {
-      if (operandMapRef.contains(val)) {
-        newOperands.emplace_back(operandMapRef[val]);
+      if (getState().operandMap.contains(val)) {
+        newOperands.emplace_back(getState().operandMap.at(val));
       } else {
         newOperands.emplace_back(val);
       }
@@ -252,17 +268,19 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
           op, qregType, adaptor.getOperands());
 
       // update the operand list
-      operandMap->try_emplace(op->getResult(0), newOp->getResult(0));
+      getState().operandMap.try_emplace(op->getResult(0), newOp->getResult(0));
 
     }
     // match alloc qubit using the given allocOp and the index
     else if (fnName == "__quantum__rt__qubit_allocate") {
       const auto newOp = rewriter.replaceOpWithNewOp<dyn::ExtractOp>(
-          op, qubitType, allocOp->qReg, Value{},
-          IntegerAttr::get(rewriter.getIntegerType(64), allocOp->index++));
+          op, qubitType, getState().allocOp.qReg, Value{},
+          IntegerAttr::get(rewriter.getIntegerType(64),
+                           getState().allocOp.index++));
 
       // update the operand list
-      operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
+      getState().operandMap.try_emplace(op->getResult(0),
+                                        newOp->getOpResult(0));
     }
     // match extract qubit from register
     else if (fnName == "__quantum__rt__array_get_element_ptr_1d") {
@@ -270,7 +288,8 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
           op, qubitType, newOperands);
 
       // update the operand list
-      operandMap->try_emplace(op->getResult(0), newOp->getOpResult(0));
+      getState().operandMap.try_emplace(op->getResult(0),
+                                        newOp->getOpResult(0));
     }
     // match measure operation
     else if (fnName == "__quantum__qis__m__body") {
@@ -350,7 +369,12 @@ struct ConvertQIRCall final : OpConversionPattern<LLVM::CallOp> {
 struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
   using QIRToMQTDynBase::QIRToMQTDynBase;
 
-  // returns the main function with entry_point attribute
+  /**
+   * @brief Finds the main function in the module
+   *
+   * @param op The module operation that holds all operations.
+   * @return The main function.
+   */
   static LLVM::LLVMFuncOp getMainFunction(Operation* op) {
     auto module = dyn_cast<ModuleOp>(op);
     // find the main function
@@ -369,7 +393,14 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
     return nullptr;
   }
 
-  // create and return an alloc register if it does not exist already
+  /**
+   * @brief Creates the Allocate register operation if it does not exist
+   * already.
+   *
+   * @param op The module operation that holds all operations.
+   * @return An optional that either contains the newly created allocate
+   * operation or std::nullopt.
+   */
   static std::optional<dyn::AllocOp> ensureRegisterAllocation(Operation* op) {
     int64_t requiredQubits = 0;
     auto module = dyn_cast<ModuleOp>(op);
@@ -421,9 +452,11 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
     auto* module = getOperation();
     // map each initial dyn qubit to its latest opt qubit
     DenseMap<Value, Value> operandMap;
+    LoweringState state;
     // create an allocOp if necessary
     auto alloc = ensureRegisterAllocation(module).value_or(nullptr);
-    AllocRegisterData registerInfo{.qReg = alloc, .index = 0};
+    LoweringState::AllocRegisterData registerInfo{.qReg = alloc, .index = 0};
+    state.allocOp = registerInfo;
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
@@ -435,8 +468,7 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
     target.addIllegalOp<LLVM::LoadOp>();
 
     patterns.add<ConvertQIRLoad>(typeConverter, context);
-    patterns.add<ConvertQIRCall>(typeConverter, context, operandMap,
-                                 registerInfo);
+    patterns.add<ConvertQIRCall>(typeConverter, context, &state);
 
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
