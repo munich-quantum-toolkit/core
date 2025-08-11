@@ -86,6 +86,7 @@ jobs:
         run: |
           cmake -G Ninja -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_MQT_CORE_TESTS=OFF \
             -DBUILD_MQT_CORE_MLIR=ON \
             -DLLVM_EXTERNAL_LIT=$(which lit)
 
@@ -345,6 +346,7 @@ jobs:
         run: |
           cmake -G Ninja -S . -B build \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_MQT_CORE_TESTS=OFF \
             -DBUILD_MQT_CORE_MLIR=ON \
             -DLLVM_EXTERNAL_LIT=$(which lit) \
             -DENABLE_COVERAGE=ON
