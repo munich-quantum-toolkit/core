@@ -17,7 +17,6 @@
 #include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
 
 #include <cstddef>
-#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
