@@ -49,7 +49,7 @@ public:
 
     // QubitType conversion
     addConversion([ctx](opt::QubitType /*type*/) -> Type {
-      return ref::QubitType::get(ctx);
+      return ref::DynamicQubitType::get(ctx);
     });
 
     // QregType conversion
@@ -100,7 +100,7 @@ struct ConvertMQTOptExtract final : OpConversionPattern<opt::ExtractOp> {
   matchAndRewrite(opt::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // create result type
-    const auto& qubitType = ref::QubitType::get(rewriter.getContext());
+    const auto& qubitType = ref::DynamicQubitType::get(rewriter.getContext());
 
     const auto& refQreg = adaptor.getInQreg();
 

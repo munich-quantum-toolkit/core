@@ -36,6 +36,9 @@ def MQTRefDialect : Dialect {
         translations from and to existing languages such as QASM or QIR.
         Its optimization capabilities are more limited compared to the
         `mqtopt` dialect, which is designed for optimization.
+
+        The `mqtref` dialect supports dynamic as well as static qubit
+        addressing.
     }];
 
     // The C++ namespace that the dialect, and all sub-components, get placed
@@ -57,8 +60,12 @@ class MQTRefType<string name, string typeMnemonic, list<Trait> traits = []>
     let mnemonic = typeMnemonic;
 }
 
-def QubitType : MQTRefType<"Qubit", "Qubit"> {
-    let summary = "A qubit reference.";
+def DynamicQubitType : MQTRefType<"DynamicQubit", "DynamicQubit"> {
+    let summary = "A reference to a dynamic (software) qubit.";
+}
+
+def StaticQubitType : MQTRefType<"StaticQubit", "StaticQubit"> {
+    let summary = "A reference to a static (hardware) qubit.";
 }
 
 def QregType : MQTRefType<"QubitRegister", "QubitRegister"> {
@@ -80,21 +87,26 @@ class GateOp<string mnemonic, list<Trait> traits = []> :
 }
 
 class UnitaryOp<string mnemonic, list<Trait> traits = []> :
-    GateOp<mnemonic, traits # [AttrSizedOperandSegments, UnitaryInterface]> {
+    GateOp<mnemonic, traits # [AttrSizedOperandSegments,
+                               UnitaryInterface]> {
     let arguments = (ins
         OptionalAttr<DenseF64ArrayAttr>:$static_params,
         OptionalAttr<DenseBoolArrayAttr>:$params_mask,
         Variadic<F64>:$params,
-        Variadic<QubitType>:$in_qubits,
-        Variadic<QubitType>:$pos_ctrl_in_qubits,
-        Variadic<QubitType>:$neg_ctrl_in_qubits
+        Variadic<AnyTypeOf<[DynamicQubitType, StaticQubitType]>>:$in_qubits,
+        Variadic<AnyTypeOf<[DynamicQubitType, StaticQubitType]>>:$pos_ctrl_in_qubits,
+        Variadic<AnyTypeOf<[DynamicQubitType, StaticQubitType]>>:$neg_ctrl_in_qubits
     );
 
     let results = (outs);
 
     let assemblyFormat = [{
-        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
+        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict
+        $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
+        custom<QubitTypes>(type($in_qubits), type($pos_ctrl_in_qubits), type($neg_ctrl_in_qubits))
     }];
+
+    let hasCustomAssemblyFormat = 1;
 }
 
 include "mlir/Dialect/MQTRef/IR/MQTRefStdOps.td"
@@ -109,12 +121,16 @@ def MeasureOp : GateOp<"measure", [MatchingMeasureInOuts]> {
 
         Example:
         ```mlir
-        %1 = "mqtref.measure"(%0) : (!mqtref.Qubit) -> (i1)
+        // Measure dynamic qubit %0.
+        %1 = "mqtref.measure"(%0) : (!mqtref.DynamicQubit) -> (i1)
+
+        // Measure static qubit %0.
+        %1 = "mqtref.measure"(%0) : (!mqtref.StaticQubit) -> (i1)
         ```
     }];
 
     let arguments = (ins
-        Variadic<QubitType>:$in_qubits
+        Variadic<AnyTypeOf<[DynamicQubitType, StaticQubitType]>>:$in_qubits
     );
 
     let results = (outs
@@ -161,7 +177,7 @@ def DeallocOp : ResourceOp<"deallocQubitRegister"> {
         The qubit register is no longer valid after this operation.
 
         Example:
-        ```
+        ```mlir
         "mqtref.deallocQubitRegister"(%0) : (!mqtref.QubitRegister) -> ()
         ```
     }];
@@ -181,10 +197,10 @@ def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
         of this operation, the returned qubit reference can be used in
         operations.
 
-        Extract:
-
-        %out_qubit = "mqtref.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-
+        Example:
+        ```mlir
+        %out_qubit = "mqtref.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        ```
     }];
 
     let arguments = (ins
@@ -194,8 +210,28 @@ def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
     );
 
     let results = (outs
-        QubitType:$out_qubit
+        DynamicQubitType:$out_qubit
     );
+}
+
+def QubitOp : ResourceOp<"qubit"> {
+    let summary = "Assign static (hardware) qubit address";
+    let description = [{
+        The `mqtref.qubit` operation produces an SSA value from the given index
+        to a static (hardware) qubit.
+
+        Example:
+        ```mlir
+        // Static (hardware) qubit with address '0'.
+        %q = "mqtref.qubit"() <{index = 0 : i64}> : () -> !mqtref.StaticQubit
+
+        // Using custom assembly.
+        %q = mqtref.qubit 0
+        ```
+    }];
+    let arguments = (ins OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index);
+    let results = (outs StaticQubitType:$qubit);
+    let assemblyFormat = " attr-dict $index ";
 }
 
 #endif // MQTREF_OPS

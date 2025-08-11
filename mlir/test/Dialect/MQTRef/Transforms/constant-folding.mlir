@@ -19,12 +19,12 @@ module {
     %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
 
     %i = arith.constant 0 : i64
-    %q0 = "mqtref.extractQubit"(%r0, %i) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
+    %q0 = "mqtref.extractQubit"(%r0, %i) : (!mqtref.QubitRegister, i64) -> !mqtref.DynamicQubit
     // CHECK-NOT: arith.constant
-    // CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    // CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
 
     // CHECK: mqtref.x() %[[Q0]]
-    mqtref.x () %q0
+    mqtref.x () %q0 : !mqtref.DynamicQubit
     return
   }
 }
@@ -39,11 +39,11 @@ module {
     // CHECK: %[[Reg_0:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}>
     %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
 
-    %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    // CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+    // CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
 
     // CHECK: mqtref.x() %[[Q0]]
-    mqtref.x () %q0
+    mqtref.x () %q0 : !mqtref.DynamicQubit
     return
   }
 }
@@ -56,14 +56,14 @@ module {
   func.func @noConstantDontFold() {
     %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
 
-    %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
 
-    %m = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+    %m = "mqtref.measure"(%q0) : (!mqtref.DynamicQubit) -> i1
     %i = arith.extui %m : i1 to i64
-    // CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg_0:.*]], %[[i:.*]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
-    %q1 = "mqtref.extractQubit"(%r0, %i) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
+    // CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg_0:.*]], %[[i:.*]]) : (!mqtref.QubitRegister, i64) -> !mqtref.DynamicQubit
+    %q1 = "mqtref.extractQubit"(%r0, %i) : (!mqtref.QubitRegister, i64) -> !mqtref.DynamicQubit
 
-    mqtref.x () %q1
+    mqtref.x () %q1 : !mqtref.DynamicQubit
     return
   }
 }

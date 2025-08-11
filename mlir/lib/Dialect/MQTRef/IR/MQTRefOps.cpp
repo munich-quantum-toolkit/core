@@ -12,10 +12,13 @@
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
+#include <algorithm>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/DialectImplementation.h>
 // IWYU pragma: end_keep
+
+using namespace mqt::ir::common;
 
 //===----------------------------------------------------------------------===//
 // Dialect

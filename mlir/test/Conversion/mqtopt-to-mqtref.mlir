@@ -54,7 +54,7 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertExtractOpAttribute
     func.func @testConvertExtractOpAttribute() {
-        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[ANY:.*]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[ANY:.*]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
         //CHECK-NOT: %[[ANY:.*]] = mqtopt.insertQubit (%[[ANY:.*]], %[[ANY:.*]]) <{index_attr = 0 : i64}>
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
@@ -71,7 +71,7 @@ module {
     // CHECK-LABEL: func.func @testConvertExtractOpOperand
     func.func @testConvertExtractOpOperand() {
         // CHECK: %[[index:.*]] = arith.constant 0
-        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[ANY:.*]], %[[index]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
+        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[ANY:.*]], %[[index]]) : (!mqtref.QubitRegister, i64) -> !mqtref.DynamicQubit
         //CHECK-NOT: %[[ANY:.*]] = mqtopt.insertQubit (%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]])
 
         %index = arith.constant 0 : i64
@@ -147,19 +147,19 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertSingleQubitOp
     func.func @testConvertSingleQubitOp() {
-        // CHECK: mqtref.i() %[[q_0:.*]]
-        // CHECK: mqtref.h() %[[q_0]]
-        // CHECK: mqtref.x() %[[q_0]]
-        // CHECK: mqtref.y() %[[q_0]]
-        // CHECK: mqtref.z() %[[q_0]]
-        // CHECK: mqtref.s() %[[q_0]]
-        // CHECK: mqtref.sdg() %[[q_0]]
-        // CHECK: mqtref.t() %[[q_0]]
-        // CHECK: mqtref.tdg() %[[q_0]]
-        // CHECK: mqtref.v() %[[q_0]]
-        // CHECK: mqtref.vdg() %[[q_0]]
-        // CHECK: mqtref.sx() %[[q_0]]
-        // CHECK: mqtref.sxdg() %[[q_0]]
+        // CHECK: mqtref.i() %[[q_0:.*]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.h() %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.x() %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.y() %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.z() %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.s() %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.sdg() %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.t() %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.tdg() %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.v() %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.vdg() %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.sx() %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.sxdg() %[[q_0]] : !mqtref.DynamicQubit
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -188,13 +188,13 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertTwoTargetOp
     func.func @testConvertTwoTargetOp() {
-        // CHECK: mqtref.swap() %[[q_0:.*]], %[[q_1:.*]]
-        // CHECK: mqtref.iswap() %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.iswapdg() %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.peres() %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.peresdg() %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.dcx() %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.ecr() %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.swap() %[[q_0:.*]], %[[q_1:.*]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.iswap() %[[q_0]], %[[q_1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.iswapdg() %[[q_0]], %[[q_1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.peres() %[[q_0]], %[[q_1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.peresdg() %[[q_0]], %[[q_1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.dcx() %[[q_0]], %[[q_1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.ecr() %[[q_0]], %[[q_1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0_0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -219,12 +219,12 @@ module {
     // CHECK-LABEL: func.func @testSingleQubitRotationOp
     func.func @testSingleQubitRotationOp() {
         // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01
-        // CHECK: mqtref.u(%[[c_0]], %[[c_0]], %[[c_0]]) %[[q_0:.*]]
-        // CHECK: mqtref.u2(%[[c_0]], %[[c_0]]) %[[q_0]]
-        // CHECK: mqtref.p(%[[c_0]]) %[[q_0]]
-        // CHECK: mqtref.rx(%[[c_0]]) %[[q_0]]
-        // CHECK: mqtref.ry(%[[c_0]]) %[[q_0]]
-        // CHECK: mqtref.rz(%[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.u(%[[c_0]], %[[c_0]], %[[c_0]]) %[[q_0:.*]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.u2(%[[c_0]], %[[c_0]]) %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.p(%[[c_0]]) %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.rx(%[[c_0]]) %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.ry(%[[c_0]]) %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.rz(%[[c_0]]) %[[q_0]] : !mqtref.DynamicQubit
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -247,12 +247,12 @@ module {
     // CHECK-LABEL: func.func @testMultipleQubitRotationOp
     func.func @testMultipleQubitRotationOp() {
         // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01 : f64
-        // CHECK: mqtref.rxx(%[[c_0]]) %[[q_0:.*]], %[[q_1:.*]]
-        // CHECK: mqtref.ryy(%[[c_0]]) %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.rzz(%[[c_0]]) %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.rzx(%[[c_0]]) %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.xxminusyy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.xxplusyy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.rxx(%[[c_0]]) %[[q_0:.*]], %[[q_1:.*]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.ryy(%[[c_0]]) %[[q_0]], %[[q_1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.rzz(%[[c_0]]) %[[q_0]], %[[q_1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.rzx(%[[c_0]]) %[[q_0]], %[[q_1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.xxminusyy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        // CHECK: mqtref.xxplusyy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -276,7 +276,7 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertStaticParams
     func.func @testConvertStaticParams() {
-        // CHECK:  mqtref.u(%[[ANY:.*]], %[[ANY:.*]] static [3.000000e-01] mask [false, true, false]) %[[ANY:.*]]
+        // CHECK:  mqtref.u(%[[ANY:.*]], %[[ANY:.*]] static [3.000000e-01] mask [false, true, false]) %[[ANY:.*]] : !mqtref.DynamicQubit
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -293,7 +293,7 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertControlledOp
     func.func @testConvertControlledOp() {
-        // CHECK: mqtref.x() %[[q_0:.*]] ctrl %[[q_1:.*]]
+        // CHECK: mqtref.x() %[[q_0:.*]] ctrl %[[q_1:.*]] : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -311,7 +311,7 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertNegativeControlledOp
     func.func @testConvertNegativeControlledOp() {
-        // CHECK: mqtref.x() %[[q_0:.*]] nctrl %[[q_1:.*]]
+        // CHECK: mqtref.x() %[[q_0:.*]] nctrl %[[q_1:.*]] : !mqtref.DynamicQubit nctrl !mqtref.DynamicQubit
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -332,10 +332,10 @@ module {
         // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}>
         // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 0 : i64}>
         // CHECK: %[[q_1:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 1 : i64}>
-        // CHECK: mqtref.h() %[[q_0]]
-        // CHECK: mqtref.x() %[[q_1]] ctrl %[[q_0]]
-        // CHECK: %[[m_0:.*]] = "mqtref.measure"(%[[q_0]]) : (!mqtref.Qubit) -> i1
-        // CHECK: %[[m_1:.*]] = "mqtref.measure"(%[[q_1]]) : (!mqtref.Qubit) -> i1
+        // CHECK: mqtref.h() %[[q_0]] : !mqtref.DynamicQubit
+        // CHECK: mqtref.x() %[[q_1]] ctrl %[[q_0]] : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
+        // CHECK: %[[m_0:.*]] = "mqtref.measure"(%[[q_0]]) : (!mqtref.DynamicQubit) -> i1
+        // CHECK: %[[m_1:.*]] = "mqtref.measure"(%[[q_1]]) : (!mqtref.DynamicQubit) -> i1
         // CHECK: "mqtref.deallocQubitRegister"(%[[r_0]]) : (!mqtref.QubitRegister) -> ()
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
@@ -372,7 +372,7 @@ module {
     // CHECK-LABEL: func.func @testConvertGPhaseOpControlled()
     func.func @testConvertGPhaseOpControlled() {
         // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01 : f64
-        // CHECK: mqtref.gphase(%[[c_0]]) ctrl %[[ANY:.*]]
+        // CHECK: mqtref.gphase(%[[c_0]]) ctrl %[[ANY:.*]] : ctrl !mqtref.DynamicQubit
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -390,7 +390,7 @@ module {
     // CHECK-LABEL: func.func @testConvertGPhaseOpPositiveNegativeControlled()
     func.func @testConvertGPhaseOpPositiveNegativeControlled() {
         // CHECK: %[[c_0:.*]] = arith.constant 3.000000e-01 : f64
-        // CHECK: mqtref.gphase(%[[c_0]]) ctrl %[[ANY:.*]] nctrl %[[ANY:.*]]
+        // CHECK: mqtref.gphase(%[[c_0]]) ctrl %[[ANY:.*]] nctrl %[[ANY:.*]] : ctrl !mqtref.DynamicQubit nctrl !mqtref.DynamicQubit
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -409,7 +409,7 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertBarrierOp()
     func.func @testConvertBarrierOp() {
-        // CHECK: mqtref.barrier() %[[ANY:.*]]
+        // CHECK: mqtref.barrier() %[[ANY:.*]] : !mqtref.DynamicQubit
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -425,7 +425,7 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertBarrierOpMultipleInputs()
     func.func @testConvertBarrierOpMultipleInputs() {
-        // CHECK: mqtref.barrier() %[[ANY:.*]], %[[ANY:.*]]
+        // CHECK: mqtref.barrier() %[[ANY:.*]], %[[ANY:.*]] : !mqtref.DynamicQubit, !mqtref.DynamicQubit
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
