@@ -90,18 +90,17 @@ template <typename OpType>
 void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
                   const llvm::SmallVector<mlir::Value>& qubits) {
   // Define operation parameters
-  llvm::SmallVector<mlir::Value> paramsVec;
+  llvm::SmallVector<mlir::Value> params;
   if (const auto& parameters = operation.getParameter(); !parameters.empty()) {
-    paramsVec.reserve(parameters.size());
+    params.reserve(parameters.size());
     for (const auto& parameter : parameters) {
-      paramsVec.emplace_back(
+      params.emplace_back(
           builder
               .create<mlir::arith::ConstantOp>(
                   builder.getUnknownLoc(), builder.getF64FloatAttr(parameter))
               .getResult());
     }
   }
-  const mlir::ValueRange params(paramsVec);
 
   // Define input qubits
   const auto& targets = operation.getTargets();
@@ -113,21 +112,19 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
   const mlir::ValueRange inQubits(inQubitsVec);
 
   // Define control qubits
-  llvm::SmallVector<mlir::Value> posCtrlVec;
-  llvm::SmallVector<mlir::Value> negCtrlVec;
+  llvm::SmallVector<mlir::Value> posCtrlQubits;
+  llvm::SmallVector<mlir::Value> negCtrlQubits;
   if (const auto& controls = operation.getControls(); !controls.empty()) {
-    posCtrlVec.reserve(controls.size());
-    negCtrlVec.reserve(controls.size());
+    posCtrlQubits.reserve(controls.size());
+    negCtrlQubits.reserve(controls.size());
     for (const auto& [qubit, type] : controls) {
       if (type == qc::Control::Type::Pos) {
-        posCtrlVec.emplace_back(qubits[qubit]);
+        posCtrlQubits.emplace_back(qubits[qubit]);
       } else if (type == qc::Control::Type::Neg) {
-        negCtrlVec.emplace_back(qubits[qubit]);
+        negCtrlQubits.emplace_back(qubits[qubit]);
       }
     }
   }
-  const mlir::ValueRange posCtrlQubits{posCtrlVec};
-  const mlir::ValueRange negCtrlQubits{negCtrlVec};
 
   // Create operation
   builder.create<OpType>(builder.getUnknownLoc(), nullptr, nullptr, params,
