@@ -173,11 +173,68 @@ addOperations(mlir::OpBuilder& builder,
     case qc::OpType::Vdg:
       addOperation<mqt::ir::dyn::VdgOp>(builder, *operation, qubits);
       break;
+    case qc::OpType::U:
+      addOperation<mqt::ir::dyn::UOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::U2:
+      addOperation<mqt::ir::dyn::U2Op>(builder, *operation, qubits);
+      break;
+    case qc::OpType::P:
+      addOperation<mqt::ir::dyn::POp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::SX:
+      addOperation<mqt::ir::dyn::SXOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::SXdg:
+      addOperation<mqt::ir::dyn::SXdgOp>(builder, *operation, qubits);
+      break;
     case qc::OpType::RX:
       addOperation<mqt::ir::dyn::RXOp>(builder, *operation, qubits);
       break;
+    case qc::OpType::RY:
+      addOperation<mqt::ir::dyn::RYOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::RZ:
+      addOperation<mqt::ir::dyn::RZOp>(builder, *operation, qubits);
+      break;
     case qc::OpType::SWAP:
       addOperation<mqt::ir::dyn::SWAPOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::iSWAP:
+      addOperation<mqt::ir::dyn::iSWAPOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::iSWAPdg:
+      addOperation<mqt::ir::dyn::iSWAPdgOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::Peres:
+      addOperation<mqt::ir::dyn::PeresOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::Peresdg:
+      addOperation<mqt::ir::dyn::PeresdgOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::DCX:
+      addOperation<mqt::ir::dyn::DCXOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::ECR:
+      addOperation<mqt::ir::dyn::ECROp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::RXX:
+      addOperation<mqt::ir::dyn::RXXOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::RYY:
+      addOperation<mqt::ir::dyn::RYYOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::RZZ:
+      addOperation<mqt::ir::dyn::RZZOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::RZX:
+      addOperation<mqt::ir::dyn::RZXOp>(builder, *operation, qubits);
+      break;
+    case qc::OpType::XXminusYY:
+      addOperation<mqt::ir::dyn::XXminusYY>(builder, *operation, qubits);
+      break;
+    case qc::OpType::XXplusYY:
+      addOperation<mqt::ir::dyn::XXplusYY>(builder, *operation, qubits);
       break;
     default:
       return llvm::failure();
