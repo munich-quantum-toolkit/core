@@ -8,8 +8,7 @@
  * Licensed under the MIT License
  */
 
-#ifndef IMPORT_QUANTUM_COMPUTATION
-#define IMPORT_QUANTUM_COMPUTATION
+#pragma once
 
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
@@ -21,5 +20,3 @@ class QuantumComputation;
 mlir::OwningOpRef<mlir::ModuleOp>
 translateQuantumComputationToMLIR(mlir::MLIRContext& context,
                                   qc::QuantumComputation& qc);
-
-#endif // IMPORT_QUANTUM_COMPUTATION
