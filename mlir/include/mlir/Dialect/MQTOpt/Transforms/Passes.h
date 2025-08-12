@@ -29,11 +29,11 @@ void populateCancelInversesPatterns(mlir::RewritePatternSet& patterns);
 void populateMergeRotationGatesPatterns(mlir::RewritePatternSet& patterns);
 void populateQuantumSinkShiftPatterns(mlir::RewritePatternSet& patterns);
 void populateQuantumSinkPushPatterns(mlir::RewritePatternSet& patterns);
-void populateRaiseMeasurementsAboveControlsPatterns(
+void populateLiftMeasurementsAboveControlsPatterns(
     mlir::RewritePatternSet& patterns);
 void populateReplaceClassicalControlsWithIfPatterns(
     mlir::RewritePatternSet& patterns);
-void populateRaiseMeasurementsAboveGatesPatterns(
+void populateLiftMeasurementsAboveGatesPatterns(
     mlir::RewritePatternSet& patterns);
 void populateToQuantumComputationPatterns(mlir::RewritePatternSet& patterns,
                                           qc::QuantumComputation& circuit);

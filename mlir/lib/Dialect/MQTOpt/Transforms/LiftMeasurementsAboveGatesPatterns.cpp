@@ -33,13 +33,13 @@ static const std::unordered_set<std::string> DIAGONAL_GATES = {
     "i", "z", "s", "sdg", "t", "tdg", "p", "rz"};
 
 /**
- * @brief This pattern is responsible for raising measurements above any phase
+ * @brief This pattern is responsible for lifting measurements above any phase
  * gates.
  */
-struct RaiseMeasurementsAbovePhaseGatesPattern final
+struct LiftMeasurementsAbovePhaseGatesPattern final
     : mlir::OpRewritePattern<MeasureOp> {
 
-  explicit RaiseMeasurementsAbovePhaseGatesPattern(mlir::MLIRContext* context)
+  explicit LiftMeasurementsAbovePhaseGatesPattern(mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
   mlir::LogicalResult
@@ -67,13 +67,13 @@ struct RaiseMeasurementsAbovePhaseGatesPattern final
 };
 
 /**
- * @brief This pattern is responsible for raising measurements above any
+ * @brief This pattern is responsible for lifting measurements above any
  * non-phase gates.
  */
-struct RaiseMeasurementsAboveInvertingGatesPattern final
+struct LiftMeasurementsAboveInvertingGatesPattern final
     : mlir::OpRewritePattern<MeasureOp> {
 
-  explicit RaiseMeasurementsAboveInvertingGatesPattern(
+  explicit LiftMeasurementsAboveInvertingGatesPattern(
       mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
@@ -173,7 +173,7 @@ struct RaiseMeasurementsAboveInvertingGatesPattern final
                   mlir::PatternRewriter& rewriter) const override {
     if (!outputQubitRemainsUnused(op.getOutQubit())) {
       return mlir::failure(); // if the qubit is still used after the
-                              // measurement, we cannot raise it above the gate.
+                              // measurement, we cannot lift it above the gate.
     }
     const auto qubitVariable = op.getInQubit();
     auto* predecessor = qubitVariable.getDefiningOp();
@@ -210,15 +210,15 @@ struct RaiseMeasurementsAboveInvertingGatesPattern final
 
 /**
  * @brief Populates the given pattern set with the
- * `RaiseMeasurementsAbovePhaseGatesPattern` and
- * `RaiseMeasurementsAboveInvertingGatesPattern`.
+ * `LiftMeasurementsAbovePhaseGatesPattern` and
+ * `LiftMeasurementsAboveInvertingGatesPattern`.
  *
  * @param patterns The pattern set to populate.
  */
-void populateRaiseMeasurementsAboveGatesPatterns(
+void populateLiftMeasurementsAboveGatesPatterns(
     mlir::RewritePatternSet& patterns) {
-  patterns.add<RaiseMeasurementsAbovePhaseGatesPattern>(patterns.getContext());
-  patterns.add<RaiseMeasurementsAboveInvertingGatesPattern>(
+  patterns.add<LiftMeasurementsAbovePhaseGatesPattern>(patterns.getContext());
+  patterns.add<LiftMeasurementsAboveInvertingGatesPattern>(
       patterns.getContext());
 }
 

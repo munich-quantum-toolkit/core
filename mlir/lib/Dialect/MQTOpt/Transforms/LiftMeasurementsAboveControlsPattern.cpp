@@ -29,12 +29,12 @@ namespace mqt::ir::opt {
 
 /**
  * @brief This pattern is responsible for applying the "deferred measurement
- * principle", raising measurements above controls.
+ * principle", lifting measurements above controls.
  */
-struct RaiseMeasurementsAboveControlsPattern final
+struct LiftMeasurementsAboveControlsPattern final
     : mlir::OpRewritePattern<MeasureOp> {
 
-  explicit RaiseMeasurementsAboveControlsPattern(mlir::MLIRContext* context)
+  explicit LiftMeasurementsAboveControlsPattern(mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
   mlir::LogicalResult
@@ -82,13 +82,13 @@ struct RaiseMeasurementsAboveControlsPattern final
 
 /**
  * @brief Populates the given pattern set with the
- * `RaiseMeasurementsAboveControlsPattern`.
+ * `LiftMeasurementsAboveControlsPattern`.
  *
  * @param patterns The pattern set to populate.
  */
-void populateRaiseMeasurementsAboveControlsPatterns(
+void populateLiftMeasurementsAboveControlsPatterns(
     mlir::RewritePatternSet& patterns) {
-  patterns.add<RaiseMeasurementsAboveControlsPattern>(patterns.getContext());
+  patterns.add<LiftMeasurementsAboveControlsPattern>(patterns.getContext());
 }
 
 } // namespace mqt::ir::opt

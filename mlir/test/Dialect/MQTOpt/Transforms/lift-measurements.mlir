@@ -6,16 +6,16 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file --raise-measurements | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --lift-measurements | FileCheck %s
 
-// =================================================== Raise over Controls =========================================================================
+// =================================================== Lift over Controls =========================================================================
 // -----
-// This test checks that measurements can be raised over controlled gates if the measurement target is a positive control and the only control of the gate.
+// This test checks that measurements can be lifted over controlled gates if the measurement target is a positive control and the only control of the gate.
 // In this case, the controlled gate is replaced by a conditional gate that uses the measurement outcome as a condition.
 
 module {
-  // CHECK-LABEL: func.func @testRaiseOverPositiveControl
-  func.func @testRaiseOverPositiveControl() -> i1 {
+  // CHECK-LABEL: func.func @testLiftOverPositiveControl
+  func.func @testLiftOverPositiveControl() -> i1 {
     // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[Q0_2:.*]], %[[C0:.*]] = "mqtopt.measure"(%[[Q0_1:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[Q1_2:.*]] = scf.if %[[C0]] -> (!mqtopt.Qubit) {
@@ -51,12 +51,12 @@ module {
 }
 
 // -----
-// This test checks that measurements can be raised over controlled gates if the measurement target is a negative control and the only control of the gate.
+// This test checks that measurements can be lifted over controlled gates if the measurement target is a negative control and the only control of the gate.
 // In this case, the controlled gate is replaced by a conditional gate that uses the negated measurement outcome as a condition.
 
 module {
-  // CHECK-LABEL: func.func @testRaiseOverNegativeControl
-  func.func @testRaiseOverNegativeControl() -> i1 {
+  // CHECK-LABEL: func.func @testLiftOverNegativeControl
+  func.func @testLiftOverNegativeControl() -> i1 {
     // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[ANY:.*]] nctrl %[[ANY:.*]] : !mqtopt.Qubit nctrl !mqtopt.Qubit
     // CHECK: %[[Q0_2:.*]], %[[C0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[Q1_2:.*]] = scf.if %[[C0]] -> (!mqtopt.Qubit) {
@@ -92,12 +92,12 @@ module {
 }
 
 // -----
-// This test checks that measurements can be raised over controlled gates if the measurement target is one of multiple controls of the gate.
+// This test checks that measurements can be lifted over controlled gates if the measurement target is one of multiple controls of the gate.
 // In this case, the controlled gate is replaced by a conditional gate that uses the measurement outcome as a condition and still uses the remaining controls.
 
 module {
-  // CHECK-LABEL: func.func @testRaiseOverOneOfMultipleControls
-  func.func @testRaiseOverOneOfMultipleControls() -> i1 {
+  // CHECK-LABEL: func.func @testLiftOverOneOfMultipleControls
+  func.func @testLiftOverOneOfMultipleControls() -> i1 {
     // CHECK: %[[Q1_1:.*]], %[[C1:.*]] = "mqtopt.measure"(%[[Q1_0:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[Q02_1:.*]]:2 = scf.if %[[C1]] ->
     // CHECK-NEXT: %[[Q0_1IF:.*]], %[[Q2_1IF:.*]] = mqtopt.x() %[[Q0_0:.*]] ctrl %[[Q2_0:.*]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
@@ -142,12 +142,12 @@ module {
 }
 
 // -----
-// This test checks that several measurements can be raised over the same controlled gate if the measurement targets are controls of the gate.
+// This test checks that several measurements can be lifted over the same controlled gate if the measurement targets are controls of the gate.
 // In this case, the controlled gate is replaced by a conditional gate that uses the measurement outcomes as conditions.
 
 module {
-  // CHECK-LABEL: func.func @testRaiseMultipleMeasuresOverControlledGate
-  func.func @testRaiseMultipleMeasuresOverControlledGate() -> (i1, i1) {
+  // CHECK-LABEL: func.func @testLiftMultipleMeasuresOverControlledGate
+  func.func @testLiftMultipleMeasuresOverControlledGate() -> (i1, i1) {
     // CHECK: %[[Reg_ANY:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[REG_ANY:.*]]) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
     // CHECK: %[[Reg_ANY:.*]], %[[Q2_0:.*]] = "mqtopt.extractQubit"(%[[REG_ANY:.*]]) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
     // CHECK: %[[Q2_1:.*]], %[[C2:.*]] = "mqtopt.measure"(%[[Q2_0]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
@@ -186,14 +186,14 @@ module {
   }
 }
 
-// =================================================== Raise over 1Q Gates =========================================================================
+// =================================================== Lift over 1Q Gates =========================================================================
 
 // -----
-// This test checks that measurements can be raised over a single X Gate by adding a classical negation afterwards.
+// This test checks that measurements can be lifted over a single X Gate by adding a classical negation afterwards.
 
 module {
-  // CHECK-LABEL: func.func @testRaiseOverSingleX
-  func.func @testRaiseOverSingleX() -> i1 {
+  // CHECK-LABEL: func.func @testLiftOverSingleX
+  func.func @testLiftOverSingleX() -> i1 {
     // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[ANY:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK-NOT: mqtopt.x
     // CHECK: %[[C0_1:.*]] = arith.xori %[[C0_0]], %[[TRUE:.*]] : i1
@@ -215,12 +215,12 @@ module {
 }
 
 // -----
-// This test checks that measurements can be raised over a single Y Gate by adding a classical negation afterwards.
+// This test checks that measurements can be lifted over a single Y Gate by adding a classical negation afterwards.
 // Essentially, a Y Gate before a measurement can be treated just like an X Gate
 
 module {
-  // CHECK-LABEL: func.func @testRaiseOverSingleY
-  func.func @testRaiseOverSingleY() -> i1 {
+  // CHECK-LABEL: func.func @testLiftOverSingleY
+  func.func @testLiftOverSingleY() -> i1 {
     // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[ANY:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK-NOT: mqtopt.y
     // CHECK: %[[C0_1:.*]] = arith.xori %[[C0_0]], %[[TRUE:.*]] : i1
@@ -242,11 +242,11 @@ module {
 }
 
 // -----
-// This test checks that measurements can be raised over local phase gates (Z, etc.) without further classical operations.
+// This test checks that measurements can be lifted over local phase gates (Z, etc.) without further classical operations.
 
 module {
-  // CHECK-LABEL: func.func @testRaiseOverZ
-  func.func @testRaiseOverZ() -> i1 {
+  // CHECK-LABEL: func.func @testLiftOverZ
+  func.func @testLiftOverZ() -> i1 {
     // CHECK: %[[Q0_1:.*]], %[[C0:.*]] = "mqtopt.measure"(%[[ANY:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_2:.*]], %[[Q0_1]]) <{index_attr = 0 : i64}>
     // CHECK-NOT: mqtopt.z
@@ -275,11 +275,11 @@ module {
 }
 
 // -----
-// This test checks that measurements can be raised over multiple X Gates by adding classical negations afterwards.
+// This test checks that measurements can be lifted over multiple X Gates by adding classical negations afterwards.
 
 module {
-  // CHECK-LABEL: func.func @testRaiseOverMultipleX
-  func.func @testRaiseOverMultipleX() -> i1 {
+  // CHECK-LABEL: func.func @testLiftOverMultipleX
+  func.func @testLiftOverMultipleX() -> i1 {
     // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[ANY:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_2:.*]], %[[Q0_1]]) <{index_attr = 0 : i64}>
     // CHECK-NOT: mqtopt.x
@@ -301,11 +301,11 @@ module {
 }
 
 // -----
-// This test checks that measurements can be raised over X Gates as well as controlled gates where the measurement target is a control at the same time.
+// This test checks that measurements can be lifted over X Gates as well as controlled gates where the measurement target is a control at the same time.
 
 module {
-  // CHECK-LABEL: func.func @testRaiseOverXAndControlledGates
-  func.func @testRaiseOverXAndControlledGates() -> i1 {
+  // CHECK-LABEL: func.func @testLiftOverXAndControlledGates
+  func.func @testLiftOverXAndControlledGates() -> i1 {
     // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[ANY:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[Q1_1:.*]] = scf.if %[[C0_0]] -> (!mqtopt.Qubit) {
     // CHECK-NEXT: %[[Q1_1IF:.*]] = mqtopt.y() %[[ANY:.*]] : !mqtopt.Qubit

@@ -18,14 +18,14 @@
 
 namespace mqt::ir::opt {
 
-#define GEN_PASS_DEF_RAISEMEASUREMENTSPASS
+#define GEN_PASS_DEF_LIFTMEASUREMENTSPASS
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 /**
- * @brief This pass attempts to raise measurements above certain operations.
+ * @brief This pass attempts to lift measurements above certain operations.
  */
-struct RaiseMeasurementsPass final
-    : impl::RaiseMeasurementsPassBase<RaiseMeasurementsPass> {
+struct LiftMeasurementsPass final
+    : impl::LiftMeasurementsPassBase<LiftMeasurementsPass> {
 
   void getDependentDialects(mlir::DialectRegistry& registry) const override {
     registry.insert<mlir::scf::SCFDialect>();
@@ -39,8 +39,8 @@ struct RaiseMeasurementsPass final
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
     populateReplaceClassicalControlsWithIfPatterns(patterns);
-    populateRaiseMeasurementsAboveControlsPatterns(patterns);
-    populateRaiseMeasurementsAboveGatesPatterns(patterns);
+    populateLiftMeasurementsAboveControlsPatterns(patterns);
+    populateLiftMeasurementsAboveGatesPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
     if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {

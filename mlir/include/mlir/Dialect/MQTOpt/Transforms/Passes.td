@@ -53,8 +53,8 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   }];
 }
 
-def RaiseMeasurementsPass : Pass<"raise-measurements", "mlir::ModuleOp"> {
-  let summary = "This pass attempts to raise measurements as much as possible by replacing quantum operations with classical operations where possible.";
+def LiftMeasurementsPass : Pass<"lift-measurements", "mlir::ModuleOp"> {
+  let summary = "This pass attempts to lift measurements as much as possible by replacing quantum operations with classical operations where possible.";
   let description = [{
     This pass consists of several patterns that attempt to push different structures of quantum gates below measurements.
   }];
