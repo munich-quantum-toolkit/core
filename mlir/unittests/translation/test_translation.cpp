@@ -137,7 +137,7 @@ TEST_F(ImportTest, X) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, CX_0_1) {
+TEST_F(ImportTest, CX01) {
   qc::QuantumComputation qc(2);
   qc.cx(0, 1);
 
@@ -154,7 +154,7 @@ TEST_F(ImportTest, CX_0_1) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, CX_1_0) {
+TEST_F(ImportTest, CX10) {
   qc::QuantumComputation qc(2);
   qc.cx(1, 0);
 
@@ -171,7 +171,7 @@ TEST_F(ImportTest, CX_1_0) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, CX_0N_1) {
+TEST_F(ImportTest, CX0N1) {
   qc::QuantumComputation qc(2);
   qc.cx(0_nc, 1);
 
@@ -188,7 +188,7 @@ TEST_F(ImportTest, CX_0N_1) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, MCX_0_1_2) {
+TEST_F(ImportTest, MCX012) {
   qc::QuantumComputation qc(3);
   qc.mcx({0, 1}, 2);
 
@@ -206,7 +206,7 @@ TEST_F(ImportTest, MCX_0_1_2) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, MCX_0N21) {
+TEST_F(ImportTest, MCX0N2P1) {
   qc::QuantumComputation qc(3);
   qc.mcx({0_nc, 2}, 1);
 
@@ -224,7 +224,7 @@ TEST_F(ImportTest, MCX_0N21) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, MCX_2N_1N_0) {
+TEST_F(ImportTest, MCX2N1N0) {
   qc::QuantumComputation qc(3);
   qc.mcx({2_nc, 1_nc}, 0);
 
@@ -436,7 +436,7 @@ TEST_F(ImportTest, Rz) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, SWAP_0_1) {
+TEST_F(ImportTest, SWAP01) {
   qc::QuantumComputation qc(2);
   qc.swap(0, 1);
 
@@ -453,7 +453,7 @@ TEST_F(ImportTest, SWAP_0_1) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, SWAP_1_0) {
+TEST_F(ImportTest, SWAP10) {
   qc::QuantumComputation qc(2);
   qc.swap(1, 0);
 
