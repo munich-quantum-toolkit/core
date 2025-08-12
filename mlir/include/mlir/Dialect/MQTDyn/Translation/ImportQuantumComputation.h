@@ -19,4 +19,4 @@ class QuantumComputation;
 
 mlir::OwningOpRef<mlir::ModuleOp>
 translateQuantumComputationToMLIR(mlir::MLIRContext& context,
-                                  qc::QuantumComputation& qc);
+                                  const qc::QuantumComputation& qc);
