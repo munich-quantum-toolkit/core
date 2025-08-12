@@ -168,7 +168,7 @@ struct ConvertMQTOptReset final : OpConversionPattern<opt::ResetOp> {
 
     // replace the results of the old operation with the new results and delete
     // old operation
-    rewriter.eraseOp(op);
+    rewriter.replaceOp(op, dynQubit);
     return success();
   }
 };
