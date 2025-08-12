@@ -102,7 +102,7 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
 
 include "mlir/Dialect/MQTRef/IR/MQTRefStdOps.td"
 
-def MeasureOp : GateOp<"measure", [MatchingMeasureInOuts]> {
+def MeasureOp : GateOp<"measure", []> {
     let summary = "A measure operation";
 
     let description = [{
@@ -117,12 +117,32 @@ def MeasureOp : GateOp<"measure", [MatchingMeasureInOuts]> {
     }];
 
     let arguments = (ins
-        Variadic<QubitType>:$in_qubits
+        QubitType:$in_qubit
     );
 
     let results = (outs
-        Variadic<I1>:$out_bits
+        I1:$out_bit
     );
+}
+
+def ResetOp : GateOp<"reset", []> {
+    let summary = "A reset operation";
+
+    let description = [{
+        This class represents a reset operation. It takes a single qubit as
+        input and and resets its value |0>.
+
+        Example:
+        ```mlir
+        "mqtdyn.reset"(%0) : (!mqtopt.Qubit) -> ()
+        ```
+    }];
+
+    let arguments = (ins
+        QubitType:$in_qubit
+    );
+
+    let results = (outs);
 }
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTRefOp<mnemonic, traits>;

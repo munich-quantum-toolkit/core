@@ -238,32 +238,54 @@ struct ConvertMQTRefMeasure final
     // prepare result type
     const auto& qubitType = opt::QubitType::get(rewriter.getContext());
 
-    const auto& refQubits = op.getInQubits();
+    const auto& refQubit = op.getInQubit();
 
     // get the latest opt qubit from the map and add them to the vector
-    std::vector<Value> optQubits;
-    for (const auto& refQubit : refQubits) {
-      optQubits.emplace_back(getState().qubitMap[refQubit]);
-    }
+    const Value optQubit = getState().qubitMap[refQubit];
     // create the result types
-    const std::vector<Type> qubitTypes(optQubits.size(), qubitType);
 
     // create new operation
     auto mqtoptOp = rewriter.create<opt::MeasureOp>(
-        op.getLoc(), qubitTypes, op.getOutBits().getTypes(), optQubits);
+        op.getLoc(), qubitType, op.getOutBit().getType(), optQubit);
 
-    const auto& outOptQubits = mqtoptOp.getOutQubits();
-    const auto& newBits = mqtoptOp.getOutBits();
+    auto outOptQubit = mqtoptOp.getOutQubit();
+    auto newBit = mqtoptOp.getOutBit();
 
-    // iterate over all qubits
-    for (size_t i = 0; i < refQubits.size(); i++) {
-      // update the latest opt qubit of the initial ref qubit
-      getState().qubitMap[refQubits[i]] = outOptQubits[i];
-    }
+    getState().qubitMap[refQubit] = outOptQubit;
 
     // replace the old operation results with the new bits and delete
     // old operation
-    rewriter.replaceOp(op, newBits);
+    rewriter.replaceOp(op, newBit);
+
+    return success();
+  }
+};
+
+struct ConvertMQTRefReset final : StatefulOpConversionPattern<ref::ResetOp> {
+  using StatefulOpConversionPattern<ref::ResetOp>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ref::ResetOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    // prepare result type
+    const auto& qubitType = opt::QubitType::get(rewriter.getContext());
+
+    const auto& refQubit = op.getInQubit();
+
+    // get the latest opt qubit from the map and add them to the vector
+    const Value optQubit = getState().qubitMap[refQubit];
+
+    // create new operation
+    auto mqtoptOp =
+        rewriter.create<opt::ResetOp>(op.getLoc(), qubitType, optQubit);
+
+    auto outOptQubit = mqtoptOp.getOutQubit();
+
+    getState().qubitMap[refQubit] = outOptQubit;
+
+    // delete the old operation
+    rewriter.eraseOp(op);
 
     return success();
   }
@@ -337,6 +359,7 @@ struct MQTRefToMQTOpt final : impl::MQTRefToMQTOptBase<MQTRefToMQTOpt> {
     patterns.add<ConvertMQTRefDealloc>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefExtract>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefMeasure>(typeConverter, context, &state);
+    patterns.add<ConvertMQTRefReset>(typeConverter, context, &state);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)

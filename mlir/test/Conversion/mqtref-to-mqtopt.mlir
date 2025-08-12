@@ -169,17 +169,15 @@ module {
 }
 
 // -----
-// This test checks if the ExtractOp is converted correctly for multiple qubits
+// This test checks if the ResetOp is converted correctly
 module {
-    // CHECK-LABEL: func.func @testConvertMeasureOpOnMultipleInputs
-    func.func @testConvertMeasureOpOnMultipleInputs() {
-         // CHECK: %[[q01_1:.*]]:2, [[m01_1:.*]]:2 = "mqtopt.measure"(%[[ANY:.*]], %[[ANY:.*]])
+    // CHECK-LABEL: func.func @testConvertResetOp
+    func.func @testConvertResetOp() {
+        // CHECK: %[[q_0:.*]] = "mqtopt.reset"(%[[ANY:.*]])
 
-        %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+        %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-
-        %m:2 = "mqtref.measure"(%q0, %q1) : (!mqtref.Qubit, !mqtref.Qubit) -> (i1, i1)
+        "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
     }
