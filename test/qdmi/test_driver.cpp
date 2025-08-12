@@ -379,10 +379,10 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<std::string>& info) {
       std::string name = info.param;
       // Replace spaces with underscores for valid test names
-      std::replace(name.begin(), name.end(), ' ', '_');
+      std::ranges::replace(name, ' ', '_');
       // Remove parentheses for valid test names
-      name.erase(std::remove(name.begin(), name.end(), '('), name.end());
-      name.erase(std::remove(name.begin(), name.end(), ')'), name.end());
+      std::erase(name, '(');
+      std::erase(name, ')');
       return name;
     });
 } // namespace qc
