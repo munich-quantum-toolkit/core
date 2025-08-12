@@ -146,7 +146,7 @@ struct ConvertMQTOptMeasure final : OpConversionPattern<opt::MeasureOp> {
     const auto& newBit = mqtdynOp.getOutBit();
 
     // concatenate the dyn qubit and the bit
-    SmallVector<Value> newValues{dynQubit, newBit};
+    const SmallVector<Value> newValues{dynQubit, newBit};
 
     // replace the results of the old operation with the new results and delete
     // old operation
@@ -164,7 +164,7 @@ struct ConvertMQTOptReset final : OpConversionPattern<opt::ResetOp> {
     const auto& dynQubit = adaptor.getInQubit();
 
     // create new operation
-    auto mqtdynOp = rewriter.create<dyn::ResetOp>(op.getLoc(), dynQubit);
+    rewriter.create<dyn::ResetOp>(op.getLoc(), dynQubit);
 
     // replace the results of the old operation with the new results and delete
     // old operation
