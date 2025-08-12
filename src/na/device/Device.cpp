@@ -83,11 +83,7 @@
 namespace qdmi {
 Device::Device() {
   // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
-#ifdef MQT_CORE_QDMI_NA_STATIC_DEFINE
-  INITIALIZE_NAME(name) " (static)";
-#else
   INITIALIZE_NAME(name);
-#endif
   INITIALIZE_QUBITSNUM(qubitsNum);
   // NOLINTEND(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_OPERATIONS(operations);

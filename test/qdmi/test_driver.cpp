@@ -29,7 +29,7 @@ protected:
   QDMI_Device device = nullptr;
 
   static void SetUpTestSuite() {
-    qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA");
+    qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN");
   }
 
   void SetUp() override {
@@ -374,8 +374,8 @@ INSTANTIATE_TEST_SUITE_P(
     // Test suite name
     DriverTest,
     // Parameters to test with
-    ::testing::Values("MQT NA QDMI Default Device (static)",
-                      "MQT NA QDMI Default Device"),
+    ::testing::Values("MQT NA Default QDMI Device",
+                      "MQT NA Dynamic QDMI Device"),
     [](const testing::TestParamInfo<std::string>& info) {
       std::string name = info.param;
       // Replace spaces with underscores for valid test names
