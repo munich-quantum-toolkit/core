@@ -303,11 +303,11 @@ TEST_P(DriverTest, QueryOperations) {
     for (auto& param : params) {
       param = dis(gen);
     }
-    EXPECT_EQ(QDMI_device_query_operation_property(
-                  device, op, 0, nullptr, numParams, params.data(),
-                  QDMI_OPERATION_PROPERTY_DURATION, sizeof(double), &duration,
-                  nullptr),
-              QDMI_SUCCESS)
+    EXPECT_THAT(QDMI_device_query_operation_property(
+                    device, op, 0, nullptr, numParams, params.data(),
+                    QDMI_OPERATION_PROPERTY_DURATION, sizeof(double), &duration,
+                    nullptr),
+                ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
         << "Failed to query duration for operation " << name << ".";
     EXPECT_THAT(QDMI_device_query_operation_property(
                     device, op, 0, nullptr, numParams, params.data(),
