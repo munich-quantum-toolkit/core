@@ -61,7 +61,7 @@ class MQTRefType<string name, string typeMnemonic, list<Trait> traits = []>
 }
 
 def QubitType : MQTRefType<"Qubit", "Qubit"> {
-    let summary = "A reference to a (dynamic or static) qubit.";
+    let summary = "A (dynamic or static) qubit reference.";
 }
 
 def QregType : MQTRefType<"QubitRegister", "QubitRegister"> {
@@ -96,8 +96,7 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
     let results = (outs);
 
     let assemblyFormat = [{
-        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict
-        $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
+        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
     }];
 }
 
@@ -203,7 +202,7 @@ def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
 }
 
 def QubitOp : ResourceOp<"qubit"> {
-    let summary = "Assign static (hardware) qubit address";
+    let summary = "Assign static qubit reference";
     let description = [{
         The `mqtref.qubit` operation produces an SSA value from the given index
         to a static (hardware) qubit.
