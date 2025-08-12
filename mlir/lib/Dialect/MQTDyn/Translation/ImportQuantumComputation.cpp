@@ -32,12 +32,12 @@
 namespace {
 
 /**
- * @brief Adds a quantum register to the MLIR module.
+ * @brief Allocates a quantum register in the MLIR module.
  *
- * @param builder The MLIR OpBuilder.
- * @param context The MLIR context.
- * @param numQubits The number of qubits in the quantum register.
- * @return The allocated quantum register.
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param context The MLIR context in which types are created
+ * @param numQubits The number of qubits to allocate in the register
+ * @return mlir::Value The allocated quantum register value
  */
 mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
                          const std::size_t numQubits) {
@@ -51,13 +51,13 @@ mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
 }
 
 /**
- * @brief Adds qubits to the MLIR module.
+ * @brief Extracts individual qubits from a quantum register.
  *
- * @param builder The MLIR OpBuilder.
- * @param context The MLIR context.
- * @param quantumRegister The quantum register to extract qubits from.
- * @param numQubits The number of qubits to extract.
- * @return The extracted qubits.
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param context The MLIR context in which types are created
+ * @param quantumRegister The quantum register from which to extract qubits
+ * @param numQubits The number of qubits to extract
+ * @return llvm::SmallVector<mlir::Value> Vector of extracted qubit values
  */
 llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
                                              mlir::MLIRContext* context,
@@ -67,11 +67,11 @@ llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
   llvm::SmallVector<mlir::Value> qubits;
   qubits.reserve(numQubits);
 
+  const auto loc = builder.getUnknownLoc();
   for (std::size_t qubit = 0; qubit < numQubits; ++qubit) {
     auto indexAttr = builder.getI64IntegerAttr(static_cast<int64_t>(qubit));
     auto extractOp = builder.create<mqt::ir::dyn::ExtractOp>(
-        builder.getUnknownLoc(), qubitType, quantumRegister, nullptr,
-        indexAttr);
+        loc, qubitType, quantumRegister, nullptr, indexAttr);
     qubits.emplace_back(extractOp.getResult());
   }
 
@@ -135,15 +135,18 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
 }
 
 /**
- * @brief Adds QuantumComputation operations to the MLIR module.
+ * @brief Adds quantum operations to the MLIR module.
  *
- * @param builder The MLIR OpBuilder.
- * @param quantumComputation The QuantumComputation to translate.
- * @param qubits The qubits of the quantum register.
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param quantumComputation The quantum computation to translate
+ * @param qubits The qubits of the quantum register
+ * @return mlir::LogicalResult Success if all operations were added, failure
+ * otherwise
  */
-void addOperations(mlir::OpBuilder& builder,
-                   const qc::QuantumComputation& quantumComputation,
-                   const llvm::SmallVector<mlir::Value>& qubits) {
+mlir::LogicalResult
+addOperations(mlir::OpBuilder& builder,
+              const qc::QuantumComputation& quantumComputation,
+              const llvm::SmallVector<mlir::Value>& qubits) {
   for (const auto& operation : quantumComputation) {
     switch (operation->getType()) {
     case qc::OpType::I:
@@ -186,20 +189,24 @@ void addOperations(mlir::OpBuilder& builder,
       addOperation<mqt::ir::dyn::SWAPOp>(builder, *operation, qubits);
       break;
     default:
-      throw std::runtime_error("Unsupported operation type: " +
-                               operation->getName());
+      return mlir::failure();
     }
   }
+  return mlir::success();
 }
-
 } // namespace
 
 /**
- * @brief Translates a QuantumComputation to MQTDyn.
+ * @brief Translates a QuantumComputation to an MLIR module with MQTDyn
+ * operations.
  *
- * @param context The MLIR context.
- * @param quantumComputation The QuantumComputation to translate.
- * @return The translated MLIR module.
+ * This function takes a quantum computation and translates it into an MLIR
+ * module containing MQTDyn dialect operations. It creates a main function that
+ * contains all quantum operations from the input computation.
+ *
+ * @param context The MLIR context in which the module will be created
+ * @param quantumComputation The quantum computation to translate
+ * @return mlir::OwningOpRef<mlir::ModuleOp> The translated MLIR module
  */
 mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
     mlir::MLIRContext* context,
@@ -213,7 +220,6 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
 
   // Create main function as entry point
   auto funcType = builder.getFunctionType({}, {});
-
   auto mainFunc = builder.create<mlir::func::FuncOp>(loc, "main", funcType);
 
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
@@ -224,7 +230,11 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   const auto qreg = allocateQreg(builder, context, numQubits);
   const auto qubits = extractQubits(builder, context, qreg, numQubits);
 
-  addOperations(builder, quantumComputation, qubits);
+  // Add operations and handle potential failures
+  if (failed(addOperations(builder, quantumComputation, qubits))) {
+    // Even if operations fail, return the module with what we could translate
+    emitError(loc) << "Failed to translate some quantum operations";
+  }
 
   // Create terminator
   builder.create<mlir::func::ReturnOp>(loc);
