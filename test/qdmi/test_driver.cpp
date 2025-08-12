@@ -85,6 +85,9 @@ class DriverJobTest : public DriverTest {
 protected:
   QDMI_Job job = nullptr;
 
+  // Override SetUpTestSuite to avoid adding the dynamic device library twice
+  static void SetUpTestSuite() {}
+
   void SetUp() override {
     DriverTest::SetUp();
     ASSERT_EQ(QDMI_device_create_job(device, &job), QDMI_SUCCESS)
