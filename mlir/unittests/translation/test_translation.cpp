@@ -19,7 +19,6 @@
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
@@ -35,7 +34,6 @@ protected:
   void SetUp() override {
     mlir::DialectRegistry registry;
     registry.insert<mqt::ir::dyn::MQTDynDialect>();
-    registry.insert<mlir::arith::ArithDialect>();
     registry.insert<mlir::func::FuncDialect>();
 
     context = std::make_unique<mlir::MLIRContext>();
