@@ -96,34 +96,16 @@ module {
 }
 
 // -----
-// This test checks if the MeasureOp applied to a single dynamic qubit is parsed and handled correctly.
+// This test checks if the MeasureOp is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMeasureOp
     func.func @testMeasureOp() {
-        // CHECK: [[M0:.*]] = "mqtref.measure"(%[[ANY:.*]]) : (!mqtref.Qubit) -> i1
+        // CHECK: [[M0:.*]] = "mqtref.measure"(%[[ANY:.*]])
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
         %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
-
-        "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
-        return
-    }
-}
-
-// -----
-// This test checks if the MeasureOp applied to multiple dynamic qubits is parsed and handled correctly.
-module {
-    // CHECK-LABEL: func.func @testMeasureOpOnMultipleInputs
-    func.func @testMeasureOpOnMultipleInputs() {
-        // CHECK: [[M:.*]]:2 = "mqtref.measure"(%[[ANY:.*]], %[[ANY:.*]]) : (!mqtref.Qubit, !mqtref.Qubit) -> (i1, i1)
-
-        %qreg = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-        %q1 = "mqtref.extractQubit"(%qreg) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-
-        %m:2 = "mqtref.measure"(%q0, %q1) : (!mqtref.Qubit, !mqtref.Qubit) -> (i1, i1)
 
         "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
         return
@@ -146,16 +128,32 @@ module {
 }
 
 // -----
-// This test checks if the MeasureOp applied to multiple static qubits is parsed and handled correctly.
+// This test checks if the ResetOp is parsed and handled correctly.
 module {
-    // CHECK-LABEL: func.func @testMeasureOpOnMultipleStaticInputs
-    func.func @testMeasureOpOnMultipleStaticInputs() {
-        // CHECK: [[M:.*]]:2 = "mqtref.measure"(%[[ANY:.*]], %[[ANY:.*]]) : (!mqtref.Qubit, !mqtref.Qubit) -> (i1, i1)
+    // CHECK-LABEL: func.func @testResetOp
+    func.func @testResetOp() {
+        // CHECK: "mqtref.reset"(%[[ANY:.*]])
+
+        %qreg = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+        %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+
+        "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
+
+        "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if the MeasureOp applied to a static qubit is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testMeasureOpOnStaticInput
+    func.func @testMeasureOpOnStaticInput() {
+        // CHECK: %[[M0:.*]] = "mqtref.measure"(%[[ANY:.*]]) : (!mqtref.Qubit) -> i1
 
         %q0 = mqtref.qubit 0
-        %q1 = mqtref.qubit 1
 
-        %m:2 = "mqtref.measure"(%q0, %q1) : (!mqtref.Qubit, !mqtref.Qubit) -> (i1, i1)
+        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
 
         return
     }
@@ -1046,21 +1044,6 @@ module {
 
         // expected-error@+1 {{operation expects exactly 3 parameters but got 2}}
         mqtref.u(%p0, %p0) %q0
-
-        return
-    }
-}
-
-// -----
-// This test checks if a measurement op with a mismatch between in-qubits and out-bits throws an error as expected.
-module {
-    func.func @testMeasureMismatchInOutBits() {
-        %qreg = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-        %q1 = "mqtref.extractQubit"(%qreg) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-
-        // expected-error@+1 {{'mqtref.measure' op number of input qubits (2) and output bits (0) must be the same}}
-        "mqtref.measure"(%q0, %q1) : (!mqtref.Qubit, !mqtref.Qubit) -> ()
 
         return
     }

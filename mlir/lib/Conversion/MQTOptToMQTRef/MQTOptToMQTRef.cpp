@@ -161,14 +161,14 @@ struct ConvertMQTOptReset final : OpConversionPattern<opt::ResetOp> {
   LogicalResult
   matchAndRewrite(opt::ResetOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto& dynQubit = adaptor.getInQubit();
+    const auto& refQubit = adaptor.getInQubit();
 
     // create new operation
-    rewriter.create<dyn::ResetOp>(op.getLoc(), dynQubit);
+    rewriter.create<ref::ResetOp>(op.getLoc(), refQubit);
 
     // replace the results of the old operation with the new results and delete
     // old operation
-    rewriter.replaceOp(op, dynQubit);
+    rewriter.replaceOp(op, refQubit);
     return success();
   }
 };
