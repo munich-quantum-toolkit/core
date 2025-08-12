@@ -19,15 +19,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
-#include <stdexcept>
 
 namespace {
 
@@ -140,7 +141,7 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
  * @return mlir::LogicalResult Success if all operations were added, failure
  * otherwise
  */
-mlir::LogicalResult
+llvm::LogicalResult
 addOperations(mlir::OpBuilder& builder,
               const qc::QuantumComputation& quantumComputation,
               const llvm::SmallVector<mlir::Value>& qubits) {
@@ -186,10 +187,10 @@ addOperations(mlir::OpBuilder& builder,
       addOperation<mqt::ir::dyn::SWAPOp>(builder, *operation, qubits);
       break;
     default:
-      return mlir::failure();
+      return llvm::failure();
     }
   }
-  return mlir::success();
+  return llvm::success();
 }
 } // namespace
 
@@ -225,10 +226,10 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   // Parse quantum computation
   const auto numQubits = quantumComputation.getNqubits();
   const auto qreg = allocateQreg(builder, context, numQubits);
-  const auto qubits = extractQubits(builder, context, qreg, numQubits);
 
   // Add operations and handle potential failures
-  if (failed(addOperations(builder, quantumComputation, qubits))) {
+  if (const auto qubits = extractQubits(builder, context, qreg, numQubits);
+      failed(addOperations(builder, quantumComputation, qubits))) {
     // Even if operations fail, return the module with what we could translate
     emitError(loc) << "Failed to translate some quantum operations";
   }
