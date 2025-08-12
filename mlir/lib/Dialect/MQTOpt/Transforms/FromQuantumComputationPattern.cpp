@@ -476,8 +476,8 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
               op->getLoc(), currentQubitVariables[o->getTargets()[0]],
               rewriter);
           currentQubitVariables[o->getTargets()[0]] =
-              newMeasureOp.getOutQubits()[0];
-          measurementValues[o->getTargets()[0]] = newMeasureOp.getOutBits()[0];
+              newMeasureOp.getOutQubit();
+          measurementValues[o->getTargets()[0]] = newMeasureOp.getOutBit();
         } else {
           llvm::outs() << "ERROR: Unsupported operation type " << o->getType()
                        << "\n";

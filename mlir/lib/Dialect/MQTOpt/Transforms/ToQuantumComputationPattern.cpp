@@ -150,16 +150,13 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    */
   bool handleMeasureOp(MeasureOp& op,
                        std::vector<mlir::Value>& currentQubitVariables) const {
-    const auto ins = op.getInQubits();
-    const auto outs = op.getOutQubits();
+    const auto in = op.getInQubit();
+    const auto out = op.getOutQubit();
 
-    std::vector<size_t> insIndices(ins.size());
+    size_t inIndex = 0;
 
     try {
-      llvm::transform(ins, insIndices.begin(),
-                      [&currentQubitVariables](const mlir::Value val) {
-                        return findQubitIndex(val, currentQubitVariables);
-                      });
+      inIndex = findQubitIndex(in, currentQubitVariables);
     } catch (const std::runtime_error& e) {
       if (strcmp(e.what(),
                  "Qubit was not found in list of previously defined qubits") ==
@@ -170,11 +167,8 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       throw; // Rethrow the exception if it's not the expected one.
     }
 
-    for (size_t i = 0; i < insIndices.size(); i++) {
-      currentQubitVariables[insIndices[i]] = outs[i];
-      circuit.measure(insIndices[i], insIndices[i]);
-    }
-
+    currentQubitVariables[inIndex] = out;
+    circuit.measure(inIndex, inIndex);
     return true;
   }
 

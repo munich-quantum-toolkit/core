@@ -63,6 +63,10 @@ if(BUILD_MQT_CORE_TESTS)
   set(gtest_force_shared_crt
       ON
       CACHE BOOL "" FORCE)
+  # Disable the install instructions for GTest, as we do not need them.
+  set(INSTALL_GTEST
+      OFF
+      CACHE BOOL "" FORCE)
   set(GTEST_VERSION
       1.17.0
       CACHE STRING "Google Test version")
@@ -70,6 +74,30 @@ if(BUILD_MQT_CORE_TESTS)
   FetchContent_Declare(googletest URL ${GTEST_URL} FIND_PACKAGE_ARGS ${GTEST_VERSION} NAMES GTest)
   list(APPEND FETCH_PACKAGES googletest)
 endif()
+
+# cmake-format: off
+set(QDMI_VERSION 1.2.0
+        CACHE STRING "QDMI version")
+set(QDMI_REV "8a92790b1d99ab35d05078390c562f0e76e563de"
+        CACHE STRING "QDMI identifier (tag, branch or commit hash)")
+set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
+        CACHE STRING "QDMI repository owner (change when using a fork)")
+# cmake-format: on
+FetchContent_Declare(
+  qdmi
+  GIT_REPOSITORY https://github.com/${QDMI_REPO_OWNER}/qdmi.git
+  GIT_TAG ${QDMI_REV}
+  FIND_PACKAGE_ARGS ${QDMI_VERSION})
+list(APPEND FETCH_PACKAGES qdmi)
+
+set(SPDLOG_VERSION
+    1.15.3
+    CACHE STRING "spdlog version")
+set(SPDLOG_URL https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz)
+# Add position independent code for spdlog, this is required for python bindings on linux
+set(SPDLOG_BUILD_PIC ON)
+FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
+list(APPEND FETCH_PACKAGES spdlog)
 
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
