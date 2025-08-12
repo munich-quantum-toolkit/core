@@ -13,7 +13,8 @@
     ".mlir": "SLASH_STYLE",
     ".td": "SLASH_STYLE",
     ".yaml": "POUND_STYLE",
-    ".toml": "POUND_STYLE"
+    ".toml": "POUND_STYLE",
+    ".proto": "SLASH_STYLE"
   },
   "exclude": [
     "^\\.[^/]+",
