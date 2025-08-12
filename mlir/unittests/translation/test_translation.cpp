@@ -86,7 +86,7 @@ bool checkOutput(const std::string& checkString,
 TEST_F(ImportTest, Allocation) {
   const qc::QuantumComputation qc(3);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -103,7 +103,7 @@ TEST_F(ImportTest, I) {
   qc::QuantumComputation qc(1);
   qc.i(0);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.i()";
@@ -115,7 +115,7 @@ TEST_F(ImportTest, H) {
   qc::QuantumComputation qc(1);
   qc.h(0);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.h()";
@@ -127,7 +127,7 @@ TEST_F(ImportTest, X) {
   qc::QuantumComputation qc(1);
   qc.x(0);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.x()";
@@ -139,7 +139,7 @@ TEST_F(ImportTest, Y) {
   qc::QuantumComputation qc(1);
   qc.y(0);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.y()";
@@ -151,7 +151,7 @@ TEST_F(ImportTest, Z) {
   qc::QuantumComputation qc(1);
   qc.z(0);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.z()";
@@ -163,7 +163,7 @@ TEST_F(ImportTest, S) {
   qc::QuantumComputation qc(1);
   qc.s(0);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.s()";
@@ -175,7 +175,7 @@ TEST_F(ImportTest, Sdg) {
   qc::QuantumComputation qc(1);
   qc.sdg(0);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.sdg()";
@@ -187,7 +187,7 @@ TEST_F(ImportTest, T) {
   qc::QuantumComputation qc(1);
   qc.t(0);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.t()";
@@ -199,7 +199,7 @@ TEST_F(ImportTest, Tdg) {
   qc::QuantumComputation qc(1);
   qc.tdg(0);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.tdg()";
@@ -211,7 +211,7 @@ TEST_F(ImportTest, V) {
   qc::QuantumComputation qc(1);
   qc.v(0);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.v()";
@@ -223,7 +223,7 @@ TEST_F(ImportTest, Vdg) {
   qc::QuantumComputation qc(1);
   qc.vdg(0);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.vdg()";
@@ -235,7 +235,7 @@ TEST_F(ImportTest, Rx) {
   qc::QuantumComputation qc(1);
   qc.rx(0.5, 0);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -250,7 +250,7 @@ TEST_F(ImportTest, Swap) {
   qc::QuantumComputation qc(2);
   qc.swap(0, 1);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.swap()";
@@ -262,7 +262,7 @@ TEST_F(ImportTest, CX) {
   qc::QuantumComputation qc(2);
   qc.cx(0, 1);
 
-  auto module = translateQuantumComputationToMLIR(*context, qc);
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(

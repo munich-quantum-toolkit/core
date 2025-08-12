@@ -39,9 +39,9 @@ namespace {
  * @param numQubits The number of qubits in the quantum register.
  * @return The allocated quantum register.
  */
-mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext& context,
+mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
                          const std::size_t numQubits) {
-  const auto& qregType = mqt::ir::dyn::QubitRegisterType::get(&context);
+  const auto& qregType = mqt::ir::dyn::QubitRegisterType::get(context);
   auto sizeAttr = builder.getI64IntegerAttr(static_cast<int64_t>(numQubits));
 
   auto allocOp = builder.create<mqt::ir::dyn::AllocOp>(
@@ -60,10 +60,10 @@ mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext& context,
  * @return The extracted qubits.
  */
 llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
-                                             mlir::MLIRContext& context,
+                                             mlir::MLIRContext* context,
                                              mlir::Value quantumRegister,
                                              const std::size_t numQubits) {
-  const auto& qubitType = mqt::ir::dyn::QubitType::get(&context);
+  const auto& qubitType = mqt::ir::dyn::QubitType::get(context);
   llvm::SmallVector<mlir::Value> qubits;
   qubits.reserve(numQubits);
 
@@ -202,9 +202,9 @@ void addOperations(mlir::OpBuilder& builder,
  * @return The translated MLIR module.
  */
 mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
-    mlir::MLIRContext& context,
+    mlir::MLIRContext* context,
     const qc::QuantumComputation& quantumComputation) {
-  mlir::OpBuilder builder(&context);
+  mlir::OpBuilder builder(context);
   const auto loc = builder.getUnknownLoc();
 
   // Create module
