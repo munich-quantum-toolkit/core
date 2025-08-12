@@ -92,7 +92,7 @@ public:
     addConversion([](Type type) { return type; });
 
     // QubitType conversion
-    addConversion([ctx](ref::DynamicQubitType /*type*/) -> Type {
+    addConversion([ctx](ref::QubitType /*type*/) -> Type {
       return opt::QubitType::get(ctx);
     });
 

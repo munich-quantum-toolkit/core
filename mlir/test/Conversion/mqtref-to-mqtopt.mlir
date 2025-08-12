@@ -55,7 +55,7 @@ module {
         // CHECK: %[[r_0:.*]], %[[q_0:.*]] = "mqtopt.extractQubit"(%[[ANY:.*]]) <{index_attr = 0 : i64}>
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         return
     }
 }
@@ -70,7 +70,7 @@ module {
 
         %index = arith.constant 0 : i64
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0, %index) : (!mqtref.QubitRegister, i64) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0, %index) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
         return
     }
 }
@@ -86,9 +86,9 @@ module {
         // CHECK: %[[r_3:.*]], %[[q_2:.*]] = "mqtopt.extractQubit"(%[[r_2]]) <{index_attr = 2 : i64}>
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        %q2 = "mqtref.extractQubit"(%r0) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %q2 = "mqtref.extractQubit"(%r0) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         return
     }
 }
@@ -104,7 +104,7 @@ module {
         // CHECK: "mqtopt.deallocQubitRegister"(%[[r_2]])
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
     }
@@ -123,7 +123,7 @@ module {
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %index = arith.constant 0 : i64
-         %q0 = "mqtref.extractQubit"(%r0, %index) : (!mqtref.QubitRegister, i64) -> !mqtref.DynamicQubit
+         %q0 = "mqtref.extractQubit"(%r0, %index) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
     }
@@ -145,8 +145,8 @@ module {
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %r1 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        %q1 = "mqtref.extractQubit"(%r1) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %q1 = "mqtref.extractQubit"(%r1) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         "mqtref.deallocQubitRegister"(%r1) : (!mqtref.QubitRegister) -> ()
         return
@@ -161,8 +161,8 @@ module {
         // CHECK: %[[q_0:.*]], [[m_0:.*]] = "mqtopt.measure"(%[[ANY:.*]])
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.DynamicQubit) -> i1
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
     }
@@ -176,10 +176,10 @@ module {
          // CHECK: %[[q01_1:.*]]:2, [[m01_1:.*]]:2 = "mqtopt.measure"(%[[ANY:.*]], %[[ANY:.*]])
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
-        %m:2 = "mqtref.measure"(%q0, %q1) : (!mqtref.DynamicQubit, !mqtref.DynamicQubit) -> (i1, i1)
+        %m:2 = "mqtref.measure"(%q0, %q1) : (!mqtref.Qubit, !mqtref.Qubit) -> (i1, i1)
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
     }
@@ -205,21 +205,21 @@ module {
         // CHECK: %[[q_12:.*]] = mqtopt.sxdg() %[[q_11]] : !mqtopt.Qubit
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
-        mqtref.i() %q0 : !mqtref.DynamicQubit
-        mqtref.h() %q0 : !mqtref.DynamicQubit
-        mqtref.x() %q0 : !mqtref.DynamicQubit
-        mqtref.y() %q0 : !mqtref.DynamicQubit
-        mqtref.z() %q0 : !mqtref.DynamicQubit
-        mqtref.s() %q0 : !mqtref.DynamicQubit
-        mqtref.sdg() %q0 : !mqtref.DynamicQubit
-        mqtref.t() %q0 : !mqtref.DynamicQubit
-        mqtref.tdg() %q0 : !mqtref.DynamicQubit
-        mqtref.v() %q0 : !mqtref.DynamicQubit
-        mqtref.vdg() %q0 : !mqtref.DynamicQubit
-        mqtref.sx() %q0 : !mqtref.DynamicQubit
-        mqtref.sxdg() %q0 : !mqtref.DynamicQubit
+        mqtref.i() %q0
+        mqtref.h() %q0
+        mqtref.x() %q0
+        mqtref.y() %q0
+        mqtref.z() %q0
+        mqtref.s() %q0
+        mqtref.sdg() %q0
+        mqtref.t() %q0
+        mqtref.tdg() %q0
+        mqtref.v() %q0
+        mqtref.vdg() %q0
+        mqtref.sx() %q0
+        mqtref.sxdg() %q0
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
@@ -240,16 +240,16 @@ module {
         // CHECK: %[[q01_7:.*]]:2 = mqtopt.ecr() %[[q01_6]]#0, %[[q01_6]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
-        mqtref.swap() %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
-        mqtref.iswap() %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
-        mqtref.iswapdg() %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
-        mqtref.peres() %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
-        mqtref.peresdg() %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
-        mqtref.dcx() %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
-        mqtref.ecr() %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        mqtref.swap() %q0, %q1
+        mqtref.iswap() %q0, %q1
+        mqtref.iswapdg() %q0, %q1
+        mqtref.peres() %q0, %q1
+        mqtref.peresdg() %q0, %q1
+        mqtref.dcx() %q0, %q1
+        mqtref.ecr() %q0, %q1
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
@@ -271,14 +271,14 @@ module {
 
         %cst = arith.constant 3.000000e-01 : f64
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
-        mqtref.u(%cst, %cst, %cst) %q0 : !mqtref.DynamicQubit
-        mqtref.u2(%cst, %cst) %q0 : !mqtref.DynamicQubit
-        mqtref.p(%cst) %q0 : !mqtref.DynamicQubit
-        mqtref.rx(%cst) %q0 : !mqtref.DynamicQubit
-        mqtref.ry(%cst) %q0 : !mqtref.DynamicQubit
-        mqtref.rz(%cst) %q0 : !mqtref.DynamicQubit
+        mqtref.u(%cst, %cst, %cst) %q0
+        mqtref.u2(%cst, %cst) %q0
+        mqtref.p(%cst) %q0
+        mqtref.rx(%cst) %q0
+        mqtref.ry(%cst) %q0
+        mqtref.rz(%cst) %q0
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
@@ -300,15 +300,15 @@ module {
 
         %cst = arith.constant 3.000000e-01 : f64
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
-        mqtref.rxx(%cst) %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
-        mqtref.ryy(%cst) %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
-        mqtref.rzz(%cst) %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
-        mqtref.rzx(%cst) %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
-        mqtref.xxminusyy(%cst, %cst) %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
-        mqtref.xxplusyy(%cst, %cst) %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        mqtref.rxx(%cst) %q0, %q1
+        mqtref.ryy(%cst) %q0, %q1
+        mqtref.rzz(%cst) %q0, %q1
+        mqtref.rzx(%cst) %q0, %q1
+        mqtref.xxminusyy(%cst, %cst) %q0, %q1
+        mqtref.xxplusyy(%cst, %cst) %q0, %q1
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
@@ -323,10 +323,10 @@ module {
         // CHECK: %[[q_0:.*]] = mqtopt.u(%[[ANY:.*]], %[[ANY:.*]] static [3.000000e-01] mask [false, true, false]) %[[ANY:.*]]
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
         %cst = arith.constant 3.000000e-01 : f64
-        mqtref.u(%cst, %cst static [3.000000e-01] mask [false, true, false]) %q0 : !mqtref.DynamicQubit
+        mqtref.u(%cst, %cst static [3.000000e-01] mask [false, true, false]) %q0
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
@@ -341,10 +341,10 @@ module {
         // CHECK: %[[q0_1:.*]], %[[q1_1:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
-        mqtref.x() %q1 ctrl %q0 : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
+        mqtref.x() %q1 ctrl %q0
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
@@ -359,10 +359,10 @@ module {
         // CHECK: %[[q0_1:.*]], %[[q1_1:.*]] = mqtopt.x() %[[ANY:.*]] nctrl %[[ANY:.*]] : !mqtopt.Qubit nctrl !mqtopt.Qubit
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
-        mqtref.x() %q1 nctrl %q0 : !mqtref.DynamicQubit nctrl !mqtref.DynamicQubit
+        mqtref.x() %q1 nctrl %q0
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
@@ -386,13 +386,13 @@ module {
         // CHECK: "mqtopt.deallocQubitRegister"(%[[r_4]]) : (!mqtopt.QubitRegister) -> ()
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
-        mqtref.h() %q0 : !mqtref.DynamicQubit
-        mqtref.x() %q1 ctrl %q0 : !mqtref.DynamicQubit ctrl !mqtref.DynamicQubit
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.DynamicQubit) -> i1
-        %m1 = "mqtref.measure"(%q1) : (!mqtref.DynamicQubit) -> i1
+        mqtref.h() %q0
+        mqtref.x() %q1 ctrl %q0
+        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> i1
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
@@ -422,9 +422,9 @@ module {
         // CHECK: %[[q_0:.*]] = mqtopt.gphase(%[[c_0]]) ctrl %[[ANY:.*]] : ctrl !mqtopt.Qubit
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         %cst = arith.constant 3.000000e-01 : f64
-        mqtref.gphase(%cst) ctrl %q0 : ctrl !mqtref.DynamicQubit
+        mqtref.gphase(%cst) ctrl %q0
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
     }
@@ -439,10 +439,10 @@ module {
         // CHECK: %[[q0_1:.*]], %[[q1_1:.*]] = mqtopt.gphase(%[[c_0]]) ctrl %[[ANY:.*]] nctrl %[[ANY:.*]] : ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         %cst = arith.constant 3.000000e-01 : f64
-        mqtref.gphase(%cst) ctrl %q0 nctrl %q1 : ctrl !mqtref.DynamicQubit nctrl !mqtref.DynamicQubit
+        mqtref.gphase(%cst) ctrl %q0 nctrl %q1
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
     }
@@ -457,8 +457,8 @@ module {
         // CHECK: %[[q_0:.*]] = mqtopt.barrier() %[[ANY:.*]] : !mqtopt.Qubit
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        mqtref.barrier() %q0 : !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        mqtref.barrier() %q0
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
     }
@@ -471,9 +471,9 @@ module {
         // CHECK: %[[q01_1:.*]]:2 = mqtopt.barrier() %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
-        mqtref.barrier() %q0, %q1 : !mqtref.DynamicQubit, !mqtref.DynamicQubit
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        mqtref.barrier() %q0, %q1
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
     }

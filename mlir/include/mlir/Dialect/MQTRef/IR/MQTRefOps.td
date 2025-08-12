@@ -60,12 +60,8 @@ class MQTRefType<string name, string typeMnemonic, list<Trait> traits = []>
     let mnemonic = typeMnemonic;
 }
 
-def DynamicQubitType : MQTRefType<"DynamicQubit", "DynamicQubit"> {
-    let summary = "A reference to a dynamic (software) qubit.";
-}
-
-def StaticQubitType : MQTRefType<"StaticQubit", "StaticQubit"> {
-    let summary = "A reference to a static (hardware) qubit.";
+def QubitType : MQTRefType<"Qubit", "Qubit"> {
+    let summary = "A reference to a (dynamic or static) qubit.";
 }
 
 def QregType : MQTRefType<"QubitRegister", "QubitRegister"> {
@@ -92,9 +88,9 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
         OptionalAttr<DenseF64ArrayAttr>:$static_params,
         OptionalAttr<DenseBoolArrayAttr>:$params_mask,
         Variadic<F64>:$params,
-        Variadic<AnyTypeOf<[DynamicQubitType, StaticQubitType]>>:$in_qubits,
-        Variadic<AnyTypeOf<[DynamicQubitType, StaticQubitType]>>:$pos_ctrl_in_qubits,
-        Variadic<AnyTypeOf<[DynamicQubitType, StaticQubitType]>>:$neg_ctrl_in_qubits
+        Variadic<QubitType>:$in_qubits,
+        Variadic<QubitType>:$pos_ctrl_in_qubits,
+        Variadic<QubitType>:$neg_ctrl_in_qubits
     );
 
     let results = (outs);
@@ -102,37 +98,7 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
     let assemblyFormat = [{
         `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict
         $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
-        custom<QubitTypes>(type($in_qubits), type($pos_ctrl_in_qubits), type($neg_ctrl_in_qubits))
     }];
-
-    let extraClassDefinition = [{
-        ::llvm::LogicalResult mqt::ir::ref::$cppClass::verify() {
-            ::llvm::SmallVector<::mlir::Type, 4> types;
-
-            ::mlir::TypeRange qubits = getInQubits().getType();
-            ::mlir::TypeRange ctrl = getPosCtrlInQubits().getType();
-            ::mlir::TypeRange nctrl = getNegCtrlInQubits().getType();
-
-            types.insert(types.begin(), qubits.begin(), qubits.end());
-            types.insert(types.begin(), ctrl.begin(), ctrl.end());
-            types.insert(types.begin(), nctrl.begin(), nctrl.end());
-
-            if (types.empty()) {
-                return ::mlir::success();
-            }
-
-            ::mlir::Type first = types.front();
-            if (!llvm::all_of(types, [&](::mlir::Type t){ return t == first; })) {
-                return emitOpError() << "expects the use of either 'DynamicQubit' or 'StaticQubit'"
-                                     << " but not a combination of both";
-            }
-
-            return ::mlir::success();
-        }
-    }];
-
-    let hasCustomAssemblyFormat = 1;
-    let hasVerifier = 1;
 }
 
 include "mlir/Dialect/MQTRef/IR/MQTRefStdOps.td"
@@ -147,16 +113,12 @@ def MeasureOp : GateOp<"measure", [MatchingMeasureInOuts]> {
 
         Example:
         ```mlir
-        // Measure dynamic qubit %0.
-        %1 = "mqtref.measure"(%0) : (!mqtref.DynamicQubit) -> (i1)
-
-        // Measure static qubit %0.
-        %1 = "mqtref.measure"(%0) : (!mqtref.StaticQubit) -> (i1)
+        %1 = "mqtref.measure"(%0) : (!mqtref.Qubit) -> (i1)
         ```
     }];
 
     let arguments = (ins
-        Variadic<AnyTypeOf<[DynamicQubitType, StaticQubitType]>>:$in_qubits
+        Variadic<QubitType>:$in_qubits
     );
 
     let results = (outs
@@ -236,7 +198,7 @@ def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
     );
 
     let results = (outs
-        DynamicQubitType:$out_qubit
+        QubitType:$out_qubit
     );
 }
 
@@ -249,14 +211,14 @@ def QubitOp : ResourceOp<"qubit"> {
         Example:
         ```mlir
         // Static (hardware) qubit with address '0'.
-        %q = "mqtref.qubit"() <{index = 0 : i64}> : () -> !mqtref.StaticQubit
+        %q = "mqtref.qubit"() <{index = 0 : i64}> : () -> !mqtref.Qubit
 
         // Using custom assembly.
         %q = mqtref.qubit 0
         ```
     }];
     let arguments = (ins OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index);
-    let results = (outs StaticQubitType:$qubit);
+    let results = (outs QubitType:$qubit);
     let assemblyFormat = " attr-dict $index ";
 }
 

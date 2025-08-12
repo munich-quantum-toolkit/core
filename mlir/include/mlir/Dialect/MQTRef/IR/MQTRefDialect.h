@@ -34,7 +34,6 @@
 // Interfaces
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/Common/IR/CommonDirectives.h"     // IWYU pragma: export
 #include "mlir/Dialect/Common/IR/CommonTraits.h"         // IWYU pragma: export
 #include "mlir/Dialect/MQTRef/IR/MQTRefInterfaces.h.inc" // IWYU pragma: export
 
