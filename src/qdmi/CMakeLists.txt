@@ -12,13 +12,12 @@ if(NOT TARGET ${TARGET_NAME})
 
   add_mqt_core_library(${TARGET_NAME})
   target_sources(${TARGET_NAME} PRIVATE Driver.cpp)
-  # todo: should the header actually be public?
   target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
                                        FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Driver.hpp)
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC qdmi::qdmi MQT::CoreNaQDMI
-    PRIVATE qdmi::project_warnings MQT::ProjectOptions MQT::ProjectWarnings)
+    PUBLIC qdmi::qdmi
+    PRIVATE MQT::CoreNaQDMI qdmi::project_warnings MQT::ProjectOptions MQT::ProjectWarnings)
 
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
 

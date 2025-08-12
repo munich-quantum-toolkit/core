@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mqt_na_qdmi/device.h"
-
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -125,59 +123,19 @@ public:
   ~DynamicDeviceLibrary() override;
 };
 
-// Macro to load a static symbol from a statically linked library.
-// @param prefix is the prefix used for the function names in the library.
-// @param symbol is the name of the symbol to load.
-#define LOAD_STATIC_SYMBOL(prefix, symbol)                                     \
-  {                                                                            \
-    (symbol) = reinterpret_cast<decltype(symbol)>(prefix##_QDMI_##symbol);     \
-  }
-
 // Macro to define a static library class that inherits from DeviceLibrary.
 // It binds all device library functions to the functions of the static library.
 // @param prefix is the prefix used for the function names in the library.
-#define ADD_STATIC_LIBRARY(prefix)                                             \
+#define DECLARE_STATIC_LIBRARY(prefix)                                         \
   class prefix##DeviceLibrary final : public DeviceLibrary {                   \
   public:                                                                      \
-    prefix##DeviceLibrary() {                                                  \
-      /* NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast) */           \
-      /* load the function symbols from the static library */                  \
-      LOAD_STATIC_SYMBOL(prefix, device_initialize)                            \
-      LOAD_STATIC_SYMBOL(prefix, device_finalize)                              \
-      /* device session interface */                                           \
-      LOAD_STATIC_SYMBOL(prefix, device_session_alloc)                         \
-      LOAD_STATIC_SYMBOL(prefix, device_session_init)                          \
-      LOAD_STATIC_SYMBOL(prefix, device_session_free)                          \
-      LOAD_STATIC_SYMBOL(prefix, device_session_set_parameter)                 \
-      /* device job interface */                                               \
-      LOAD_STATIC_SYMBOL(prefix, device_session_create_device_job)             \
-      LOAD_STATIC_SYMBOL(prefix, device_job_free)                              \
-      LOAD_STATIC_SYMBOL(prefix, device_job_set_parameter)                     \
-      LOAD_STATIC_SYMBOL(prefix, device_job_query_property)                    \
-      LOAD_STATIC_SYMBOL(prefix, device_job_submit)                            \
-      LOAD_STATIC_SYMBOL(prefix, device_job_cancel)                            \
-      LOAD_STATIC_SYMBOL(prefix, device_job_check)                             \
-      LOAD_STATIC_SYMBOL(prefix, device_job_wait)                              \
-      LOAD_STATIC_SYMBOL(prefix, device_job_get_results)                       \
-      /* device query interface */                                             \
-      LOAD_STATIC_SYMBOL(prefix, device_session_query_device_property)         \
-      LOAD_STATIC_SYMBOL(prefix, device_session_query_site_property)           \
-      LOAD_STATIC_SYMBOL(prefix, device_session_query_operation_property)      \
-      /* NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast) */             \
-      /* initialize the device */                                              \
-      device_initialize();                                                     \
-    }                                                                          \
+    prefix##DeviceLibrary();                                                   \
                                                                                \
-    ~prefix##DeviceLibrary() override {                                        \
-      /* Check if QDMI_device_finalize is not NULL before calling it. */       \
-      if (device_finalize != nullptr) {                                        \
-        device_finalize();                                                     \
-      }                                                                        \
-    }                                                                          \
+    ~prefix##DeviceLibrary() override;                                         \
   };
 
 // Call the above macro for all static libraries that we want to support.
-ADD_STATIC_LIBRARY(MQT_NA)
+DECLARE_STATIC_LIBRARY(MQT_NA)
 
 /**
  * @brief The status of a session.

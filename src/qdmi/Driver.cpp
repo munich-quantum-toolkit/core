@@ -10,6 +10,8 @@
 
 #include "qdmi/Driver.hpp"
 
+#include "mqt_na_qdmi/device.h"
+
 #include <cassert>
 #include <cstddef>
 #include <cstring>
@@ -25,6 +27,50 @@
 #include <vector>
 
 namespace qdmi {
+// Macro to load a static symbol from a statically linked library.
+// @param prefix is the prefix used for the function names in the library.
+// @param symbol is the name of the symbol to load.
+#define LOAD_STATIC_SYMBOL(prefix, symbol)                                     \
+  {                                                                            \
+    (symbol) = reinterpret_cast<decltype(symbol)>(prefix##_QDMI_##symbol);     \
+  }
+#define DEFINE_STATIC_LIBRARY(prefix)                                          \
+  prefix##DeviceLibrary::prefix##DeviceLibrary() {                             \
+    /* NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast) */             \
+    /* load the function symbols from the static library */                    \
+    LOAD_STATIC_SYMBOL(prefix, device_initialize)                              \
+    LOAD_STATIC_SYMBOL(prefix, device_finalize)                                \
+    /* device session interface */                                             \
+    LOAD_STATIC_SYMBOL(prefix, device_session_alloc)                           \
+    LOAD_STATIC_SYMBOL(prefix, device_session_init)                            \
+    LOAD_STATIC_SYMBOL(prefix, device_session_free)                            \
+    LOAD_STATIC_SYMBOL(prefix, device_session_set_parameter)                   \
+    /* device job interface */                                                 \
+    LOAD_STATIC_SYMBOL(prefix, device_session_create_device_job)               \
+    LOAD_STATIC_SYMBOL(prefix, device_job_free)                                \
+    LOAD_STATIC_SYMBOL(prefix, device_job_set_parameter)                       \
+    LOAD_STATIC_SYMBOL(prefix, device_job_query_property)                      \
+    LOAD_STATIC_SYMBOL(prefix, device_job_submit)                              \
+    LOAD_STATIC_SYMBOL(prefix, device_job_cancel)                              \
+    LOAD_STATIC_SYMBOL(prefix, device_job_check)                               \
+    LOAD_STATIC_SYMBOL(prefix, device_job_wait)                                \
+    LOAD_STATIC_SYMBOL(prefix, device_job_get_results)                         \
+    /* device query interface */                                               \
+    LOAD_STATIC_SYMBOL(prefix, device_session_query_device_property)           \
+    LOAD_STATIC_SYMBOL(prefix, device_session_query_site_property)             \
+    LOAD_STATIC_SYMBOL(prefix, device_session_query_operation_property)        \
+    /* NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast) */               \
+    /* initialize the device */                                                \
+    device_initialize();                                                       \
+  }                                                                            \
+                                                                               \
+  prefix##DeviceLibrary::~prefix##DeviceLibrary() {                            \
+    /* Check if QDMI_device_finalize is not NULL before calling it. */         \
+    if (device_finalize != nullptr) {                                          \
+      device_finalize();                                                       \
+    }                                                                          \
+  }
+DEFINE_STATIC_LIBRARY(MQT_NA)
 DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
                                            const std::string& prefix)
     : libHandle(dlopen(libName.c_str(), RTLD_NOW | RTLD_LOCAL)) {

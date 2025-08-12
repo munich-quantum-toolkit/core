@@ -71,9 +71,11 @@ protected:
 
       if (name == deviceName) {
         device = dev;
-        break;
+        return;
       }
     }
+    FAIL() << "Device with name '" << deviceName
+           << "' not found in the session.";
   }
 
   void TearDown() override { QDMI_session_free(session); }
