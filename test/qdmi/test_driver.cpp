@@ -81,82 +81,127 @@ protected:
   void TearDown() override { QDMI_session_free(session); }
 };
 
-TEST_P(DriverTest, SessionSetParameterImplemented) {
+class DriverJobTest : public DriverTest {
+protected:
+  QDMI_Job job = nullptr;
+
+  void SetUp() override {
+    DriverTest::SetUp();
+    ASSERT_EQ(QDMI_device_create_job(device, &job), QDMI_SUCCESS)
+        << "Failed to create a device job.";
+  }
+
+  void TearDown() override {
+    if (job != nullptr) {
+      QDMI_job_free(job);
+      job = nullptr;
+    }
+    DriverTest::TearDown();
+  }
+};
+
+TEST_P(DriverTest, SessionSetParameter) {
   EXPECT_EQ(QDMI_session_set_parameter(session, QDMI_SESSION_PARAMETER_MAX, 0,
                                        nullptr),
-            QDMI_ERROR_INVALIDARGUMENT)
-      << "Devices must implement `QDMI_session_set_parameter`.";
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_P(DriverTest, JobCreateImplemented) {
+TEST_P(DriverTest, JobCreate) {
   QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_SUCCESS)
-      << "Devices must implement `QDMI_device_create_job`.";
+  EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_SUCCESS);
   QDMI_job_free(job);
 }
 
-TEST_P(DriverTest, JobSetParameterImplemented) {
-  QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_MAX, 0, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT)
-      << "Devices must implement `QDMI_job_set_parameter`.";
+TEST_P(DriverTest, JobSetParameter) {
+  EXPECT_EQ(QDMI_job_set_parameter(nullptr, QDMI_JOB_PARAMETER_MAX, 0, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_P(DriverTest, JobQueryPropertyImplemented) {
-  QDMI_Job job = nullptr;
-  EXPECT_EQ(
-      QDMI_job_query_property(job, QDMI_JOB_PROPERTY_MAX, 0, nullptr, nullptr),
-      QDMI_ERROR_INVALIDARGUMENT)
-      << "Devices must implement `QDMI_job_set_parameter`.";
+TEST_P(DriverJobTest, JobSetParameter) {
+  QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
+  EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
+                                     sizeof(QDMI_Program_Format), &value),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
-TEST_P(DriverTest, JobSubmitImplemented) {
-  QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_job_submit(job), QDMI_ERROR_INVALIDARGUMENT)
-      << "Devices must implement `QDMI_job_submit`.";
+TEST_P(DriverTest, JobQueryProperty) {
+  EXPECT_EQ(QDMI_job_query_property(nullptr, QDMI_JOB_PROPERTY_MAX, 0, nullptr,
+                                    nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_P(DriverTest, JobCancelImplemented) {
-  QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_job_cancel(job), QDMI_ERROR_INVALIDARGUMENT)
-      << "Devices must implement `QDMI_job_cancel`.";
+TEST_P(DriverJobTest, JobQueryProperty) {
+  EXPECT_THAT(
+      QDMI_job_query_property(job, QDMI_JOB_PROPERTY_ID, 0, nullptr, nullptr),
+      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
-TEST_P(DriverTest, JobCheckImplemented) {
-  QDMI_Job job = nullptr;
+TEST_P(DriverTest, JobSubmit) {
+  EXPECT_EQ(QDMI_job_submit(nullptr), QDMI_ERROR_INVALIDARGUMENT);
+}
+
+TEST_P(DriverJobTest, JobSubmit) {
+  EXPECT_THAT(QDMI_job_submit(job),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+}
+
+TEST_P(DriverTest, JobCancel) {
+  EXPECT_EQ(QDMI_job_cancel(nullptr), QDMI_ERROR_INVALIDARGUMENT);
+}
+
+TEST_P(DriverJobTest, JobCancel) {
+  EXPECT_THAT(QDMI_job_cancel(job),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_INVALIDARGUMENT,
+                             QDMI_ERROR_NOTSUPPORTED));
+}
+
+TEST_P(DriverTest, JobCheck) {
+  EXPECT_EQ(QDMI_job_check(nullptr, nullptr), QDMI_ERROR_INVALIDARGUMENT);
+}
+
+TEST_P(DriverJobTest, JobCheck) {
   QDMI_Job_Status status = QDMI_JOB_STATUS_RUNNING;
-  EXPECT_EQ(QDMI_job_check(job, &status), QDMI_ERROR_INVALIDARGUMENT)
-      << "Devices must implement `QDMI_job_check`.";
+  EXPECT_THAT(QDMI_job_check(job, &status),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
-TEST_P(DriverTest, JobWaitImplemented) {
-  QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_job_wait(job, 0), QDMI_ERROR_INVALIDARGUMENT)
-      << "Devices must implement `QDMI_job_wait`.";
+TEST_P(DriverTest, JobWait) {
+  EXPECT_EQ(QDMI_job_wait(nullptr, 0), QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_P(DriverTest, JobGetResultsImplemented) {
-  QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_job_get_results(job, QDMI_JOB_RESULT_MAX, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT)
-      << "Devices must implement `QDMI_job_get_results`.";
+TEST_P(DriverJobTest, JobWait) {
+  EXPECT_THAT(QDMI_job_wait(job, 1),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED,
+                             QDMI_ERROR_TIMEOUT));
 }
 
-TEST_P(DriverTest, QueryDevicePropertyImplemented) {
+TEST_P(DriverTest, JobGetResults) {
+  EXPECT_EQ(
+      QDMI_job_get_results(nullptr, QDMI_JOB_RESULT_MAX, 0, nullptr, nullptr),
+      QDMI_ERROR_INVALIDARGUMENT);
+}
+
+TEST_P(DriverJobTest, JobGetResults) {
+  EXPECT_THAT(
+      QDMI_job_get_results(job, QDMI_JOB_RESULT_SHOTS, 0, nullptr, nullptr),
+      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+}
+
+TEST_P(DriverTest, QueryDeviceProperty) {
   EXPECT_EQ(QDMI_device_query_device_property(device, QDMI_DEVICE_PROPERTY_MAX,
                                               0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT)
       << "Devices must implement `QDMI_device_query_device_property`.";
 }
 
-TEST_P(DriverTest, QuerySitePropertyImplemented) {
+TEST_P(DriverTest, QuerySiteProperty) {
   EXPECT_EQ(QDMI_device_query_site_property(
                 device, nullptr, QDMI_SITE_PROPERTY_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT)
       << "Devices must implement `QDMI_device_query_site_property`.";
 }
 
-TEST_P(DriverTest, QueryOperationPropertyImplemented) {
+TEST_P(DriverTest, QueryOperationProperty) {
   EXPECT_EQ(QDMI_device_query_operation_property(
                 device, nullptr, 0, nullptr, 0, nullptr,
                 QDMI_OPERATION_PROPERTY_MAX, 0, nullptr, nullptr),
@@ -373,6 +418,23 @@ INSTANTIATE_TEST_SUITE_P(
     DefaultDevices,
     // Test suite name
     DriverTest,
+    // Parameters to test with
+    ::testing::Values("MQT NA Default QDMI Device",
+                      "MQT NA Dynamic QDMI Device"),
+    [](const testing::TestParamInfo<std::string>& info) {
+      std::string name = info.param;
+      // Replace spaces with underscores for valid test names
+      std::ranges::replace(name, ' ', '_');
+      // Remove parentheses for valid test names
+      std::erase(name, '(');
+      std::erase(name, ')');
+      return name;
+    });
+INSTANTIATE_TEST_SUITE_P(
+    // Custom instantiation name
+    DefaultDevices,
+    // Test suite name
+    DriverJobTest,
     // Parameters to test with
     ::testing::Values("MQT NA Default QDMI Device",
                       "MQT NA Dynamic QDMI Device"),
