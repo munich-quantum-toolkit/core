@@ -239,8 +239,7 @@ TEST_F(ImportTest, Rx) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Cst:.*]] = arith.constant 5.000000e-01 : f64
-    CHECK: mqtdyn.rx(%[[Cst]])
+    CHECK: mqtdyn.rx( static [5.000000e-01]) %[[Q:.*]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));

@@ -91,16 +91,9 @@ template <typename OpType>
 void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
                   const llvm::SmallVector<mlir::Value>& qubits) {
   // Define operation parameters
-  llvm::SmallVector<mlir::Value> params;
+  mlir::DenseF64ArrayAttr staticParamsAttr = nullptr;
   if (const auto& parameters = operation.getParameter(); !parameters.empty()) {
-    params.reserve(parameters.size());
-    for (const auto& parameter : parameters) {
-      params.emplace_back(
-          builder
-              .create<mlir::arith::ConstantOp>(
-                  builder.getUnknownLoc(), builder.getF64FloatAttr(parameter))
-              .getResult());
-    }
+    staticParamsAttr = builder.getDenseF64ArrayAttr(parameters);
   }
 
   // Define input qubits
@@ -128,8 +121,9 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
   }
 
   // Create operation
-  builder.create<OpType>(builder.getUnknownLoc(), nullptr, nullptr, params,
-                         inQubits, posCtrlQubits, negCtrlQubits);
+  builder.create<OpType>(builder.getUnknownLoc(), staticParamsAttr, nullptr,
+                         mlir::ValueRange{}, inQubits, posCtrlQubits,
+                         negCtrlQubits);
 }
 
 /**
