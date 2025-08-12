@@ -287,7 +287,7 @@ struct ConvertMQTDynReset final : StatefulOpConversionPattern<dyn::ResetOp> {
 
     // replace the old operation results with the new bits and delete
     // old operation
-    rewriter.replaceOp(op, mqtoptOp);
+    rewriter.eraseOp(op);
 
     return success();
   }
