@@ -187,7 +187,7 @@ def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
 
         Example:
         ```mlir
-        %out_qubit = "mqtref.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.DynamicQubit
+        %out_qubit = "mqtref.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         ```
     }];
 
