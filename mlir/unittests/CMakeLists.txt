@@ -6,6 +6,4 @@
 #
 # Licensed under the MIT License
 
-if(BUILD_MQT_CORE_MLIR_TESTS)
-  add_subdirectory(translation)
-endif()
+add_subdirectory(translation)

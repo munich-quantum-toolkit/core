@@ -86,9 +86,7 @@ jobs:
         run: |
           cmake -G Ninja -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_MQT_CORE_TESTS=OFF \
             -DBUILD_MQT_CORE_MLIR=ON \
-            -DBUILD_MQT_CORE_MLIR_TESTS=ON \
             -DLLVM_EXTERNAL_LIT=$(which lit)
 
       # build project
@@ -187,9 +185,7 @@ jobs:
         run: |
           cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=Release `
-            -DBUILD_MQT_CORE_TESTS=OFF `
             -DBUILD_MQT_CORE_MLIR=ON `
-            -DBUILD_MQT_CORE_MLIR_TESTS=ON `
             -DCMAKE_PREFIX_PATH=${{ github.workspace }}\llvm-install `
             -DLLVM_EXTERNAL_LIT=${{ github.workspace }}\.venv\Scripts\lit.exe
 
@@ -273,9 +269,7 @@ jobs:
         run: |
           cmake -G Ninja -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_MQT_CORE_TESTS=OFF \
             -DBUILD_MQT_CORE_MLIR=ON \
-            -DBUILD_MQT_CORE_MLIR_TESTS=ON \
             -DCMAKE_C_COMPILER=$CC \
             -DCMAKE_CXX_COMPILER=$CXX \
             -DLLVM_DIR=$LLVM_DIR \
@@ -371,9 +365,7 @@ jobs:
         run: |
           cmake -G Ninja -S . -B build \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DBUILD_MQT_CORE_TESTS=OFF \
             -DBUILD_MQT_CORE_MLIR=ON \
-            -DBUILD_MQT_CORE_MLIR_TESTS=ON \
             -DLLVM_EXTERNAL_LIT=$(which lit) \
             -DENABLE_COVERAGE=ON
 

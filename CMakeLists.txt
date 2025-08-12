@@ -63,9 +63,6 @@ option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${MQT_CORE_MA
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
 
-option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
-option(BUILD_MQT_CORE_MLIR_TESTS "Build tests for the MLIR submodule" OFF)
-
 # try to determine the project version
 include(GetVersion)
 get_mqt_core_version()
@@ -114,11 +111,8 @@ if(BUILD_MQT_CORE_BENCHMARKS)
   add_subdirectory(eval)
 endif()
 
+option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
 if(BUILD_MQT_CORE_MLIR)
-  if(BUILD_MQT_CORE_MLIR_TESTS)
-    enable_testing()
-    include(GoogleTest)
-  endif()
   include(SetupMLIR)
   add_subdirectory(mlir)
 endif()
