@@ -101,7 +101,7 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
               .getResult());
     }
   }
-  mlir::ValueRange params(paramsVec);
+  const mlir::ValueRange params(paramsVec);
 
   // Define input qubits
   const auto& targets = operation.getTargets();
@@ -126,8 +126,8 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
       }
     }
   }
-  mlir::ValueRange posCtrlQubits{posCtrlVec};
-  mlir::ValueRange negCtrlQubits{negCtrlVec};
+  const mlir::ValueRange posCtrlQubits{posCtrlVec};
+  const mlir::ValueRange negCtrlQubits{negCtrlVec};
 
   // Create operation
   builder.create<OpType>(builder.getUnknownLoc(), nullptr, nullptr, params,
