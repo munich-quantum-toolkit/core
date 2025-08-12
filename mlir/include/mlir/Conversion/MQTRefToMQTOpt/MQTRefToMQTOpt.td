@@ -12,7 +12,7 @@ def MQTRefToMQTOpt : Pass<"mqtref-to-mqtopt"> {
     let summary = "Convert MQT's `Ref` to MQT's `Opt` dialect.";
 
     let description = [{
-      This pass converts all current MQTRef operations to an equivalent MQTRef operation.
+      This pass converts all current MQTRef operations to an equivalent MQTOpt operation.
       To convert them to the opt dialect, the conversion pass maintains a map that matches each ref qubit
       and ref qubit register to its latest state value when replacing them with an opt operation. These state values
       are obtained by updating the map with the return values of the newly created opt operations. The MQTOpt insert
