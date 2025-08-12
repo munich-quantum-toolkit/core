@@ -6,15 +6,19 @@
 #
 # Licensed under the MIT License
 
+get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
+set(LIBRARIES ${dialect_libs} MQT::CoreIR)
 add_compile_options(-fexceptions)
 
-add_mlir_dialect_library(
-  MLIRMQTDynImportQuantumComputation
-  ImportQuantumComputation.cpp
-  LINK_LIBS
-  MQT::CoreIR
-  DEPENDS
-  MLIRIR
-  MLIRSupport)
+file(GLOB TRANSLATION_SOURCES *.cpp)
 
-target_include_directories(MLIRMQTDynImportQuantumComputation PRIVATE ${MLIR_MAIN_INCLUDE_DIR})
+add_mlir_library(MLIRMQTDynTranslation ${TRANSLATION_SOURCES} LINK_LIBS ${LIBRARIES})
+
+# collect header files
+file(GLOB_RECURSE TRANSLATION_HEADERS_SOURCE
+     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQTDyn/Translation/*.h)
+
+# add public headers using file sets
+target_sources(
+  MLIRMQTDynTranslation PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
+                               ${TRANSLATION_HEADERS_SOURCE})
