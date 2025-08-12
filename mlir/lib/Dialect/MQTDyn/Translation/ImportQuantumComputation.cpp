@@ -98,12 +98,11 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
 
   // Define input qubits
   const auto& targets = operation.getTargets();
-  llvm::SmallVector<mlir::Value> inQubitsVec;
-  inQubitsVec.reserve(targets.size());
+  llvm::SmallVector<mlir::Value> inQubits;
+  inQubits.reserve(targets.size());
   for (const auto& t : targets) {
-    inQubitsVec.emplace_back(qubits[t]);
+    inQubits.emplace_back(qubits[t]);
   }
-  const mlir::ValueRange inQubits(inQubitsVec);
 
   // Define control qubits
   llvm::SmallVector<mlir::Value> posCtrlQubits;
