@@ -8,21 +8,29 @@
  * Licensed under the MIT License
  */
 
-#include "gmock/gmock-matchers.h"
+#include "qdmi/Driver.hpp"
+
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <qdmi/client.h>
 #include <random>
 #include <string>
-#include <tuple>
 #include <unordered_set>
+#include <vector>
 
 namespace qc {
 class DriverTest : public ::testing::TestWithParam<std::string> {
 protected:
   QDMI_Session session = nullptr;
   QDMI_Device device = nullptr;
+
+  static void SetUpTestSuite() {
+    qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA");
+  }
 
   void SetUp() override {
     const auto& deviceName = GetParam();
@@ -80,7 +88,7 @@ TEST_P(DriverTest, SessionSetParameterImplemented) {
 
 TEST_P(DriverTest, JobCreateImplemented) {
   QDMI_Job job = nullptr;
-  EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_ERROR_NOTSUPPORTED)
+  EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_SUCCESS)
       << "Devices must implement `QDMI_device_create_job`.";
   QDMI_job_free(job);
 }
@@ -364,10 +372,15 @@ INSTANTIATE_TEST_SUITE_P(
     // Test suite name
     DriverTest,
     // Parameters to test with
-    ::testing::Values("MQT NA QDMI Default Device"),
+    ::testing::Values("MQT NA QDMI Default Device (static)",
+                      "MQT NA QDMI Default Device"),
     [](const testing::TestParamInfo<std::string>& info) {
       std::string name = info.param;
+      // Replace spaces with underscores for valid test names
       std::replace(name.begin(), name.end(), ' ', '_');
+      // Remove parentheses for valid test names
+      name.erase(std::remove(name.begin(), name.end(), '('), name.end());
+      name.erase(std::remove(name.begin(), name.end(), ')'), name.end());
       return name;
     });
 } // namespace qc

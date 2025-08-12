@@ -143,9 +143,11 @@ if(NOT TARGET ${TARGET_NAME})
       PARENT_SCOPE)
 
   # Make QDMI and MQT Core Version available
-  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
-  target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
-
+  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
+                                                    MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+  if(NOT BUILD_MQT_CORE_SHARED_LIBS)
+    target_compile_definitions(${TARGET_NAME} PUBLIC MQT_CORE_QDMI_NA_STATIC_DEFINE)
+  endif()
   # Generate additional alias for the target
   add_library(qdmi::mqt_na_device ALIAS ${TARGET_NAME})
 
@@ -184,8 +186,8 @@ if(NOT TARGET ${TARGET_NAME})
                    SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
                    EXPORT_NAME CoreQDMI)
       # Make QDMI and MQT Core Version available
-      target_compile_definitions(${DYN_TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
-      target_compile_definitions(${DYN_TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+      target_compile_definitions(${DYN_TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
+                                                            MQT_CORE_VERSION="${MQT_CORE_VERSION}")
     else()
       add_library(${DYN_TARGET_NAME} ALIAS ${TARGET_NAME})
     endif()
