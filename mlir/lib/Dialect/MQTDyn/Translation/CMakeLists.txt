@@ -6,6 +6,9 @@
 #
 # Licensed under the MIT License
 
+# FIXME: This seems to be needed for the build to succeed
+add_compile_options(-fexceptions)
+
 add_mlir_library(MLIRMQTDynTranslation ImportQuantumComputation.cpp LINK_LIBS MLIRMQTDyn
                  MLIRFuncDialect MQT::CoreIR)
 
