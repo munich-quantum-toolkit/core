@@ -99,7 +99,7 @@ jobs:
 
       # run unit tests
       - name: Run unit tests
-        run: ctest -C Release --output-on-failure --test-dir build --repeat until-pass:3 --timeout 600
+        run: ctest -C Release --output-on-failure --test-dir build/mlir --repeat until-pass:3 --timeout 600
 
   cpp-test-mlir-windows:
     name: 🏁 Test MLIR with LLVM@${{ matrix.llvm-version }}
@@ -212,7 +212,7 @@ jobs:
 
       # run unit tests
       - name: Run unit tests
-        run: ctest -C Release --output-on-failure --test-dir build --repeat until-pass:3 --timeout 600
+        run: ctest -C Release --output-on-failure --test-dir build/mlir --repeat until-pass:3 --timeout 600
 
   cpp-test-mlir-macos:
     name: 🍎 Test MLIR with LLVM@${{ matrix.llvm-version }} on ${{ matrix.macos-version }}
@@ -285,7 +285,7 @@ jobs:
 
       # Run unit tests
       - name: Run unit tests
-        run: ctest -C Release --output-on-failure --test-dir build --repeat until-pass:3 --timeout 600
+        run: ctest -C Release --output-on-failure --test-dir build/mlir --repeat until-pass:3 --timeout 600
 
   cpp-test-mlir-coverage:
     name: 📊 MLIR Coverage with LLVM@${{ matrix.llvm-version }}
@@ -378,7 +378,7 @@ jobs:
 
       # run unit tests
       - name: Run unit tests
-        run: ctest -C Debug --output-on-failure --test-dir build --repeat until-pass:3 --timeout 600
+        run: ctest -C Debug --output-on-failure --test-dir build/mlir --repeat until-pass:3 --timeout 600
 
       # run gcovr to generate coverage data
       - name: Generate coverage data as XML
