@@ -18,38 +18,32 @@
 #include <llvm/FileCheck/FileCheck.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
+#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <string>
+#include <utility>
 
 namespace {
-
-mlir::MLIRContext* getMLIRContext() {
-  mlir::DialectRegistry registry;
-  registry.insert<mqt::ir::dyn::MQTDynDialect>();
-  registry.insert<mlir::arith::ArithDialect>();
-  registry.insert<mlir::func::FuncDialect>();
-
-  auto* context = new mlir::MLIRContext();
-  context->appendDialectRegistry(registry);
-  context->loadAllAvailableDialects();
-
-  return context;
-}
-
 class ImportTest : public ::testing::Test {
 protected:
-  mlir::MLIRContext* context = nullptr;
+  std::unique_ptr<mlir::MLIRContext> context;
 
-  void SetUp() override { context = getMLIRContext(); }
+  void SetUp() override {
+    mlir::DialectRegistry registry;
+    registry.insert<mqt::ir::dyn::MQTDynDialect>();
+    registry.insert<mlir::arith::ArithDialect>();
+    registry.insert<mlir::func::FuncDialect>();
 
-  void TearDown() override {
-    delete context;
-    context = nullptr;
+    context = std::make_unique<mlir::MLIRContext>();
+    context->appendDialectRegistry(registry);
+    context->loadAllAvailableDialects();
   }
+
+  void TearDown() override {}
 };
 
 std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>* module) {
@@ -71,15 +65,16 @@ bool checkOutput(const std::string& checkString,
   llvm::SmallString<4096> checkFileBuffer;
   const llvm::FileCheckRequest request;
   llvm::FileCheck fc(request);
-  llvm::StringRef checkFileText =
+  const llvm::StringRef checkFileText =
       fc.CanonicalizeFile(*checkBuffer, checkFileBuffer);
 
   llvm::SourceMgr sm;
   sm.AddNewSourceBuffer(
       llvm::MemoryBuffer::getMemBuffer(checkFileText, "CheckFile"),
       llvm::SMLoc());
-  if (fc.readCheckFile(sm, checkFileText))
+  if (fc.readCheckFile(sm, checkFileText)) {
     return false;
+  }
 
   auto outputBufferBuffer = outputBuffer->getBuffer();
   sm.AddNewSourceBuffer(std::move(outputBuffer), llvm::SMLoc());
@@ -89,11 +84,11 @@ bool checkOutput(const std::string& checkString,
 } // namespace
 
 TEST_F(ImportTest, Allocation) {
-  qc::QuantumComputation qc(3);
+  const qc::QuantumComputation qc(3);
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
     CHECK: "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
@@ -110,7 +105,7 @@ TEST_F(ImportTest, I) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.i()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -122,7 +117,7 @@ TEST_F(ImportTest, H) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.h()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -134,7 +129,7 @@ TEST_F(ImportTest, X) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.x()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -146,7 +141,7 @@ TEST_F(ImportTest, Y) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.y()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -158,7 +153,7 @@ TEST_F(ImportTest, Z) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.z()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -170,7 +165,7 @@ TEST_F(ImportTest, S) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.s()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -182,7 +177,7 @@ TEST_F(ImportTest, Sdg) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.sdg()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -194,7 +189,7 @@ TEST_F(ImportTest, T) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.t()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -206,7 +201,7 @@ TEST_F(ImportTest, Tdg) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.tdg()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -218,7 +213,7 @@ TEST_F(ImportTest, V) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.v()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -230,7 +225,7 @@ TEST_F(ImportTest, Vdg) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.vdg()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -242,7 +237,7 @@ TEST_F(ImportTest, Rx) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Cst:.*]] = arith.constant 5.000000e-01 : f64
     CHECK: mqtdyn.rx(%[[Cst]])
@@ -257,7 +252,7 @@ TEST_F(ImportTest, Swap) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = "CHECK: mqtdyn.swap()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -269,7 +264,7 @@ TEST_F(ImportTest, CX) {
 
   auto module = translateQuantumComputationToMLIR(*context, qc);
 
-  auto outputString = getOutputString(&module);
+  const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
     CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
