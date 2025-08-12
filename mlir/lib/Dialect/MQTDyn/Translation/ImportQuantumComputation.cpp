@@ -80,11 +80,11 @@ llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
 }
 
 /**
- * @brief Adds a single QuantumComputation operation to the MLIR module.
+ * @brief Adds a single quantum operation to the MLIR module.
  *
  * @tparam OpType The type of the operation to create.
  * @param builder The MLIR OpBuilder.
- * @param operation The QuantumComputation quantum operation to add.
+ * @param operation The quantum operation to add.
  * @param qubits The qubits of the quantum register.
  */
 template <typename OpType>
@@ -123,6 +123,40 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
   builder.create<OpType>(builder.getUnknownLoc(), staticParamsAttr, nullptr,
                          mlir::ValueRange{}, inQubits, posCtrlQubits,
                          negCtrlQubits);
+}
+
+/**
+ * @brief Adds a measure operation to the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder.
+ * @param operation The measure operation to add.
+ * @param qubits The qubits of the quantum register.
+ */
+void addMeasureOp(mlir::OpBuilder& builder, const qc::Operation& operation,
+                  const llvm::SmallVector<mlir::Value>& qubits) {
+  const auto& bitType = mlir::IntegerType::get(builder.getContext(), 1);
+  const auto& targets = operation.getTargets();
+  for (const auto& target : targets) {
+    const mlir::Value inQubit = qubits[target];
+    builder.create<mqt::ir::dyn::MeasureOp>(builder.getUnknownLoc(), bitType,
+                                            inQubit);
+  }
+}
+
+/**
+ * @brief Adds a reset operation to the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder.
+ * @param operation The reset operation to add.
+ * @param qubits The qubits of the quantum register.
+ */
+void addResetOp(mlir::OpBuilder& builder, const qc::Operation& operation,
+                const llvm::SmallVector<mlir::Value>& qubits) {
+  const auto& targets = operation.getTargets();
+  for (const auto& target : targets) {
+    const mlir::Value inQubit = qubits[target];
+    builder.create<mqt::ir::dyn::ResetOp>(builder.getUnknownLoc(), inQubit);
+  }
 }
 
 /**
@@ -235,6 +269,12 @@ addOperations(mlir::OpBuilder& builder,
       break;
     case qc::OpType::XXplusYY:
       addOperation<mqt::ir::dyn::XXplusYY>(builder, *operation, qubits);
+      break;
+    case qc::OpType::Measure:
+      addMeasureOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::Reset:
+      addResetOp(builder, *operation, qubits);
       break;
     default:
       return llvm::failure();

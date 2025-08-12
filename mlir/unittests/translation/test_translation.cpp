@@ -101,6 +101,78 @@ TEST_F(ImportTest, Allocation) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
+TEST_F(ImportTest, Measure01) {
+  qc::QuantumComputation qc(2, 2);
+  qc.measure({0, 1}, {0, 1});
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: "mqtdyn.measure"(%[[Q_0]]) : (!mqtdyn.Qubit) -> i1
+    CHECK: "mqtdyn.measure"(%[[Q_1]]) : (!mqtdyn.Qubit) -> i1
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, Measure0) {
+  qc::QuantumComputation qc(2, 2);
+  qc.measure(0, 0);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: "mqtdyn.measure"(%[[Q_0]]) : (!mqtdyn.Qubit) -> i1
+    CHECK-NOT: "mqtdyn.measure"(%[[Q_1]]) : (!mqtdyn.Qubit) -> i1
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, Reset01) {
+  qc::QuantumComputation qc(2);
+  qc.reset({0, 1});
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: "mqtdyn.reset"(%[[Q_0]]) : (!mqtdyn.Qubit) -> ()
+    CHECK: "mqtdyn.reset"(%[[Q_1]]) : (!mqtdyn.Qubit) -> ()
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, Reset0) {
+  qc::QuantumComputation qc(2);
+  qc.reset(0);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: "mqtdyn.reset"(%[[Q_0]]) : (!mqtdyn.Qubit) -> ()
+    CHECK-NOT: "mqtdyn.reset"(%[[Q_1]]) : (!mqtdyn.Qubit) -> ()
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
 TEST_F(ImportTest, I) {
   qc::QuantumComputation qc(1);
   qc.i(0);
