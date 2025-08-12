@@ -205,16 +205,16 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
     mlir::MLIRContext& context,
     const qc::QuantumComputation& quantumComputation) {
   mlir::OpBuilder builder(&context);
+  const auto loc = builder.getUnknownLoc();
 
   // Create module
-  auto module = builder.create<mlir::ModuleOp>(builder.getUnknownLoc());
+  auto module = builder.create<mlir::ModuleOp>(loc);
   builder.setInsertionPointToStart(module.getBody());
 
   // Create main function as entry point
   auto funcType = builder.getFunctionType({}, {});
 
-  auto mainFunc = builder.create<mlir::func::FuncOp>(builder.getUnknownLoc(),
-                                                     "main", funcType);
+  auto mainFunc = builder.create<mlir::func::FuncOp>(loc, "main", funcType);
 
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   builder.setInsertionPointToStart(&entryBlock);
@@ -227,7 +227,7 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   addOperations(builder, quantumComputation, qubits);
 
   // Create terminator
-  builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());
+  builder.create<mlir::func::ReturnOp>(loc);
 
   return module;
 }
