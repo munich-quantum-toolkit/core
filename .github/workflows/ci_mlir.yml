@@ -89,13 +89,13 @@ jobs:
             -DBUILD_MQT_CORE_MLIR=ON \
             -DLLVM_EXTERNAL_LIT=$(which lit)
 
-      # build project
-      - name: Build project
-        run: cmake --build build --config Release
-
-      # run lit tests
-      - name: Run lit tests
+      # build the project and run the tests
+      - name: Build MLIR components and directly run lit tests
         run: cmake --build build --config Release --target check-quantum-opt
+
+      # build the MLIR unittests
+      - name: Build MLIR unittests
+        run: cmake --build build --config Release --target mqt-core-mlir-translation-test
 
       # run unit tests
       - name: Run unit tests
@@ -189,14 +189,9 @@ jobs:
             -DCMAKE_PREFIX_PATH=${{ github.workspace }}\llvm-install `
             -DLLVM_EXTERNAL_LIT=${{ github.workspace }}\.venv\Scripts\lit.exe
 
-      # build project
-      - name: Build project
-        run: cmake --build build --config Release
-
-      # run lit tests
-      - name: Run lit tests
+      # build the project and run the lit tests
+      - name: Build MLIR components and directly run lit tests
         run: |
-          cmake --build build --config Release
           cmake --build build --config Release --target quantum-opt
 
           $targetPath = "${{ github.workspace }}\\build\\mlir\\tools\\quantum-opt\\Release\\quantum-opt.exe"
@@ -210,6 +205,10 @@ jobs:
           Write-Output "Batch file created at C:\Windows\quantum-opt pointing to $targetPath"
 
           cmake --build build --config Release --target check-quantum-opt
+
+      # build the MLIR unittests
+      - name: Build MLIR unittests
+        run: cmake --build build --config Release --target mqt-core-mlir-translation-test
 
       # run unit tests
       - name: Run unit tests
@@ -276,13 +275,13 @@ jobs:
             -DMLIR_DIR=$MLIR_DIR \
             -DLLVM_EXTERNAL_LIT=$(which lit)
 
-      # Build project
-      - name: Build project
-        run: cmake --build build --config Release
-
-      # Run lit tests
-      - name: Run lit tests
+      # Build and run tests
+      - name: Build MLIR components and directly run lit tests
         run: cmake --build build --config Release --target check-quantum-opt
+
+      # Build the MLIR unittests
+      - name: Build MLIR unittests
+        run: cmake --build build --config Release --target mqt-core-mlir-translation-test
 
       # Run unit tests
       - name: Run unit tests
@@ -369,13 +368,13 @@ jobs:
             -DLLVM_EXTERNAL_LIT=$(which lit) \
             -DENABLE_COVERAGE=ON
 
-      # build project
-      - name: Build project
-        run: cmake --build build --config Debug
-
-      # run lit tests
-      - name: Run lit tests
+      # build the project and run the tests with coverage
+      - name: Build MLIR components and run tests with coverage
         run: cmake --build build --config Debug --target check-quantum-opt
+
+      # build the MLIR unittests
+      - name: Build MLIR unittests
+        run: cmake --build build --config Debug --target mqt-core-mlir-translation-test
 
       # run unit tests
       - name: Run unit tests
@@ -387,7 +386,6 @@ jobs:
           gcovr \
              --gcov-executable "/usr/lib/llvm-${{ matrix.llvm-version }}/bin/llvm-cov gcov" \
              --exclude build \
-             --exclude mlir/unittests \
              --exclude-unreachable-branches \
              --exclude-noncode-lines \
              --exclude-throw-branches \
