@@ -275,7 +275,6 @@ struct ConvertMQTDynReset final : StatefulOpConversionPattern<dyn::ResetOp> {
 
     // get the latest opt qubit from the map and add them to the vector
     const Value optQubit = getState().qubitMap[dynQubit];
-    // create the result types
 
     // create new operation
     auto mqtoptOp =
@@ -285,8 +284,7 @@ struct ConvertMQTDynReset final : StatefulOpConversionPattern<dyn::ResetOp> {
 
     getState().qubitMap[dynQubit] = outOptQubit;
 
-    // replace the old operation results with the new bits and delete
-    // old operation
+    // delete the old operation
     rewriter.eraseOp(op);
 
     return success();
