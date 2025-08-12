@@ -12,6 +12,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/iterator_range.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
