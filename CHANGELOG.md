@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add translation from `QuantumComputation` to the `MQTDyn` MLIR dialect ([#1099]) ([**@denialhaag**])
 - ✨ Add `reset` operations to the MLIR dialects `MQTDyn` and `MQTOpt` ([#1106]) ([**@DRovara**])
 - ♻️ Update the `measure` operations in the MLIR dialects to no longer support more than one qubit being measured at once ([#1106]) ([**@DRovara**])
 - ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996]) ([**@ystade**])
@@ -161,6 +162,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#1106]: https://github.com/munich-quantum-toolkit/core/pull/1106
+[#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099
 [#1098]: https://github.com/munich-quantum-toolkit/core/pull/1098
 [#1089]: https://github.com/munich-quantum-toolkit/core/pull/1089
 [#1088]: https://github.com/munich-quantum-toolkit/core/pull/1088
