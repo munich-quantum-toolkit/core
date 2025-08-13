@@ -236,7 +236,7 @@ def QubitOp : ResourceOp<"qubit"> {
         %q = mqtref.qubit 0
         ```
     }];
-    let arguments = (ins OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index);
+    let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
     let results = (outs QubitType:$qubit);
     let assemblyFormat = " attr-dict $index ";
 }
