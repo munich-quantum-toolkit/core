@@ -447,8 +447,8 @@ INSTANTIATE_TEST_SUITE_P(
     // Parameters to test with
     ::testing::Values("MQT NA Default QDMI Device",
                       "MQT NA Dynamic QDMI Device"),
-    [](const testing::TestParamInfo<std::string>& info) {
-      std::string name = info.param;
+    [](const testing::TestParamInfo<std::string>& parmInfo) {
+      std::string name = parmInfo.param;
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
       // Remove parentheses for valid test names
@@ -464,8 +464,8 @@ INSTANTIATE_TEST_SUITE_P(
     // Parameters to test with
     ::testing::Values("MQT NA Default QDMI Device",
                       "MQT NA Dynamic QDMI Device"),
-    [](const testing::TestParamInfo<std::string>& info) {
-      std::string name = info.param;
+    [](const testing::TestParamInfo<std::string>& parmInfo) {
+      std::string name = parmInfo.param;
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
       // Remove parentheses for valid test names
