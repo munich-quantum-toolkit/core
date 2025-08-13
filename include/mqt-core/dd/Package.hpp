@@ -1852,7 +1852,7 @@ public:
         stack.push(currentEdge);
         currentEdge = temp;
       } else {
-        if (!mappedNode.contains(currentEdge->p)) {
+        if (mappedNode.contains(currentEdge->p)) {
           currentEdge = nullptr;
           continue;
         }
