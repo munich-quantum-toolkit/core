@@ -340,29 +340,38 @@ void removeDiagonalGatesBeforeMeasureRecursive(
         }
       }
     } else if (op->isIfElseOperation()) {
-      // treat then branch as above
       auto* thenBranch = dynamic_cast<IfElseOperation*>(op)->getThenBranch();
-      const bool onlyDiagonalGatesThen =
-          removeDiagonalGate(dag, dagIterators, idx, it, thenBranch);
-      if (onlyDiagonalGatesThen) {
-        for (const auto& control : thenBranch->getControls()) {
-          ++(dagIterators.at(control.qubit));
-        }
-        for (const auto& target : thenBranch->getTargets()) {
-          ++(dagIterators.at(target));
+      auto* elseBranch = dynamic_cast<IfElseOperation*>(op)->getElseBranch();
+
+      if (thenBranch != nullptr && elseBranch != nullptr) {
+        throw std::runtime_error("This is currently not supported");
+      }
+
+      // treat then branch as above
+      if (thenBranch) {
+        const bool onlyDiagonalGatesThen =
+            removeDiagonalGate(dag, dagIterators, idx, it, thenBranch);
+        if (onlyDiagonalGatesThen) {
+          for (const auto& control : thenBranch->getControls()) {
+            ++(dagIterators.at(control.qubit));
+          }
+          for (const auto& target : thenBranch->getTargets()) {
+            ++(dagIterators.at(target));
+          }
         }
       }
 
       // treat else branch as above
-      auto* elseBranch = dynamic_cast<IfElseOperation*>(op)->getElseBranch();
-      const bool onlyDiagonalGatesElse =
-          removeDiagonalGate(dag, dagIterators, idx, it, elseBranch);
-      if (onlyDiagonalGatesElse) {
-        for (const auto& control : elseBranch->getControls()) {
-          ++(dagIterators.at(control.qubit));
-        }
-        for (const auto& target : elseBranch->getTargets()) {
-          ++(dagIterators.at(target));
+      if (elseBranch) {
+        const bool onlyDiagonalGatesElse =
+            removeDiagonalGate(dag, dagIterators, idx, it, elseBranch);
+        if (onlyDiagonalGatesElse) {
+          for (const auto& control : elseBranch->getControls()) {
+            ++(dagIterators.at(control.qubit));
+          }
+          for (const auto& target : elseBranch->getTargets()) {
+            ++(dagIterators.at(target));
+          }
         }
       }
     } else if (op->isNonUnitaryOperation()) {
@@ -734,6 +743,7 @@ void CircuitOptimizer::eliminateResets(QuantumComputation& qc) {
             }
             compOpIt = compOp.erase(compOpIt);
           } else {
+            // TODO: Consider IfElseOperation here
             if ((*compOpIt)->isStandardOperation()) {
               auto& targets = (*compOpIt)->getTargets();
               auto& controls = (*compOpIt)->getControls();
@@ -747,6 +757,7 @@ void CircuitOptimizer::eliminateResets(QuantumComputation& qc) {
           }
         }
       }
+      // TODO: Consider IfElseOperation here
       if ((*it)->isStandardOperation()) {
         auto& targets = (*it)->getTargets();
         auto& controls = (*it)->getControls();
@@ -826,6 +837,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
 
         if (operation->isIfElseOperation()) {
           // TODO: Implement this
+          ++opIt;
           continue;
         }
 
