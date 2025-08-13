@@ -63,6 +63,7 @@ import catalyst
 import pennylane as qml
 from catalyst.passes import apply_pass
 
+
 @apply_pass("mqt.mqtopt-to-catalystquantum")
 @apply_pass("mqt.mqt-core-round-trip")
 @apply_pass("mqt.catalystquantum-to-mqtopt")
@@ -72,6 +73,7 @@ def circuit() -> None:
     qml.CNOT(wires=[0, 1])
     catalyst.measure(0)
     catalyst.measure(1)
+
 
 @qml.qjit(target="mlir", autograph=True)
 def module() -> None:
