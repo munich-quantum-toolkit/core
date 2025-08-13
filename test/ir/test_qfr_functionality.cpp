@@ -339,7 +339,9 @@ TEST_F(QFRFunctionality, cloningDifferentOperations) {
   comp.barrier(0);
   comp.h(0);
   qc.emplace_back(comp.asOperation());
-  qc.classicControlled(X, 0, qc.getClassicalRegisters().at("c"), 1);
+  StandardOperation xOp(0, X);
+  StandardOperation iOp(0, I);
+  qc.ifElse(xOp, iOp, qc.getClassicalRegisters().at("c"), 1);
 
   const auto qcCloned = qc;
   ASSERT_EQ(qc.size(), qcCloned.size());
@@ -542,7 +544,9 @@ TEST_F(QFRFunctionality, CircuitToOperation) {
   EXPECT_TRUE(qc.empty());
   qc.x(0);
   qc.h(0);
-  qc.classicControlled(X, 0, 1, {0, 1U}, 1U);
+  StandardOperation cxOp(1, 0, X);
+  StandardOperation iOp(0, I);
+  qc.ifElse(cxOp, iOp, {0, 1U}, 1U);
   const auto& op2 = qc.asOperation();
   ASSERT_NE(op2, nullptr);
   EXPECT_EQ(op2->getType(), Compound);
@@ -988,7 +992,9 @@ TEST_F(QFRFunctionality, measureAllInsufficientRegisterSize) {
 
 TEST_F(QFRFunctionality, checkClassicalRegisters) {
   QuantumComputation qc(1U, 1U);
-  EXPECT_THROW(qc.classicControlled(X, 0U, {0U, 2U}), std::runtime_error);
+  StandardOperation xOp(0, X);
+  StandardOperation iOp(0, I);
+  EXPECT_THROW(qc.ifElse(xOp, iOp, {0U, 2U}, 1U), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, testSettingAncillariesProperlyCreatesRegisters) {
@@ -1300,7 +1306,9 @@ TEST_F(QFRFunctionality, CopyConstructor) {
   qc.swap(0, 1);
   qc.barrier();
   qc.measure(0, 0);
-  qc.classicControlled(X, 0, {0, 1});
+  StandardOperation xOp(0, X);
+  StandardOperation iOp(0, I);
+  qc.ifElse(xOp, iOp, {0, 1}, 1U);
   const sym::Variable theta{"theta"};
   qc.rx(Symbolic{theta}, 0);
 
