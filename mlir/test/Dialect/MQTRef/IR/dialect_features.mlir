@@ -128,7 +128,7 @@ module {
 }
 
 // -----
-// This test checks if the ResetOp is parsed and handled correctly.
+// This test checks if the ResetOp on a dynamic qubit is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testResetOp
     func.func @testResetOp() {
@@ -140,6 +140,21 @@ module {
         "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
 
         "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if the ResetOp on a static qubit is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testResetOpStatic
+    func.func @testResetOpStatic() {
+        // CHECK: "mqtref.reset"(%[[ANY:.*]])
+
+        %q0 = mqtref.qubit 0
+
+        "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
+
         return
     }
 }
