@@ -168,7 +168,7 @@ auto QDMI_Device_impl_d::createJob(QDMI_Job* job) -> int {
   return QDMI_SUCCESS;
 }
 
-auto QDMI_Device_impl_d::jobFree(QDMI_Job job) -> void {
+auto QDMI_Device_impl_d::freeJob(QDMI_Job job) -> void {
   if (job != nullptr) {
     jobs.erase(job);
   }
@@ -259,7 +259,7 @@ auto QDMI_Job_impl_d::getResults(QDMI_Job_Result result, const size_t size,
                                          sizeRet);
 }
 
-auto QDMI_Job_impl_d::free() -> void { device->jobFree(this); }
+auto QDMI_Job_impl_d::free() -> void { device->freeJob(this); }
 
 auto QDMI_Session_impl_d::init() -> int {
   if (status != qdmi::SessionStatus::ALLOCATED) {

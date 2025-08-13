@@ -198,7 +198,7 @@ public:
    * @brief Frees the job associated with the device.
    * @see QDMI_job_free
    */
-  auto jobFree(QDMI_Job job) -> void;
+  auto freeJob(QDMI_Job job) -> void;
 
   /**
    * @brief Queries a device property.
@@ -306,10 +306,10 @@ public:
 
   /**
    * @brief Frees the job.
-   * @note This function just forwards to the device's jobFree function. This
-   * function is needed because the interface only provides the job handle to
-   * the @ref QDMI_job_free function and the job's device handle is private.
-   * @see QDMI_job_free
+   * @note This function just forwards to the device's @ref Device::freeJob
+   * function. This function is needed because the interface only provides the
+   * job handle to the @ref QDMI_job_free function and the job's device handle
+   * is private.
    */
   auto free() -> void;
 };
