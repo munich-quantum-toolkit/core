@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 #include <qdmi/client.h>
 #include <random>
+#include <sstream>
 #include <string>
 #include <unordered_set>
 #include <vector>
