@@ -90,7 +90,7 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
   {                                                                            \
     const std::string symbolName = std::string(prefix) + "_QDMI_" + #symbol;   \
     (symbol) = reinterpret_cast<decltype(symbol)>(                             \
-        dlsym(libHandle_, symbolName.c_str()));                                 \
+        dlsym(libHandle_, symbolName.c_str()));                                \
     if ((symbol) == nullptr) {                                                 \
       throw std::runtime_error("Failed to load symbol: " + symbolName);        \
     }                                                                          \
