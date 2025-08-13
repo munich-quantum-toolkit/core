@@ -159,6 +159,11 @@ void addResetOp(mlir::OpBuilder& builder, const qc::Operation& operation,
   }
 }
 
+#define ADD_OP_CASE(op)                                                        \
+  case qc::OpType::op:                                                         \
+    addOperation<mqt::ir::ref::op##Op>(builder, *operation, qubits);           \
+    break;
+
 /**
  * @brief Adds quantum operations to the MLIR module.
  *
@@ -174,96 +179,36 @@ addOperations(mlir::OpBuilder& builder,
               const llvm::SmallVector<mlir::Value>& qubits) {
   for (const auto& operation : quantumComputation) {
     switch (operation->getType()) {
-    case qc::OpType::I:
-      addOperation<mqt::ir::ref::IOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::H:
-      addOperation<mqt::ir::ref::HOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::X:
-      addOperation<mqt::ir::ref::XOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::Y:
-      addOperation<mqt::ir::ref::YOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::Z:
-      addOperation<mqt::ir::ref::ZOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::S:
-      addOperation<mqt::ir::ref::SOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::Sdg:
-      addOperation<mqt::ir::ref::SdgOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::T:
-      addOperation<mqt::ir::ref::TOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::Tdg:
-      addOperation<mqt::ir::ref::TdgOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::V:
-      addOperation<mqt::ir::ref::VOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::Vdg:
-      addOperation<mqt::ir::ref::VdgOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::U:
-      addOperation<mqt::ir::ref::UOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::U2:
-      addOperation<mqt::ir::ref::U2Op>(builder, *operation, qubits);
-      break;
-    case qc::OpType::P:
-      addOperation<mqt::ir::ref::POp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::SX:
-      addOperation<mqt::ir::ref::SXOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::SXdg:
-      addOperation<mqt::ir::ref::SXdgOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::RX:
-      addOperation<mqt::ir::ref::RXOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::RY:
-      addOperation<mqt::ir::ref::RYOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::RZ:
-      addOperation<mqt::ir::ref::RZOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::SWAP:
-      addOperation<mqt::ir::ref::SWAPOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::iSWAP:
-      addOperation<mqt::ir::ref::iSWAPOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::iSWAPdg:
-      addOperation<mqt::ir::ref::iSWAPdgOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::Peres:
-      addOperation<mqt::ir::ref::PeresOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::Peresdg:
-      addOperation<mqt::ir::ref::PeresdgOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::DCX:
-      addOperation<mqt::ir::ref::DCXOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::ECR:
-      addOperation<mqt::ir::ref::ECROp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::RXX:
-      addOperation<mqt::ir::ref::RXXOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::RYY:
-      addOperation<mqt::ir::ref::RYYOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::RZZ:
-      addOperation<mqt::ir::ref::RZZOp>(builder, *operation, qubits);
-      break;
-    case qc::OpType::RZX:
-      addOperation<mqt::ir::ref::RZXOp>(builder, *operation, qubits);
-      break;
+      ADD_OP_CASE(I)
+      ADD_OP_CASE(H)
+      ADD_OP_CASE(X)
+      ADD_OP_CASE(Y)
+      ADD_OP_CASE(Z)
+      ADD_OP_CASE(S)
+      ADD_OP_CASE(Sdg)
+      ADD_OP_CASE(T)
+      ADD_OP_CASE(Tdg)
+      ADD_OP_CASE(V)
+      ADD_OP_CASE(Vdg)
+      ADD_OP_CASE(U)
+      ADD_OP_CASE(U2)
+      ADD_OP_CASE(P)
+      ADD_OP_CASE(SX)
+      ADD_OP_CASE(SXdg)
+      ADD_OP_CASE(RX)
+      ADD_OP_CASE(RY)
+      ADD_OP_CASE(RZ)
+      ADD_OP_CASE(SWAP)
+      ADD_OP_CASE(iSWAP)
+      ADD_OP_CASE(iSWAPdg)
+      ADD_OP_CASE(Peres)
+      ADD_OP_CASE(Peresdg)
+      ADD_OP_CASE(DCX)
+      ADD_OP_CASE(ECR)
+      ADD_OP_CASE(RXX)
+      ADD_OP_CASE(RYY)
+      ADD_OP_CASE(RZZ)
+      ADD_OP_CASE(RZX)
     case qc::OpType::XXminusYY:
       addOperation<mqt::ir::ref::XXminusYY>(builder, *operation, qubits);
       break;
