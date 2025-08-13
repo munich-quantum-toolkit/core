@@ -201,6 +201,10 @@ auto QDMI_Device_impl_d::queryOperationProperty(
 QDMI_Job_impl_d::~QDMI_Job_impl_d() { library_->device_job_free(deviceJob_); }
 auto QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
                                    const void* value) const -> int {
+  if ((value != nullptr && size == 0) ||
+      param >= QDMI_JOB_PARAMETER_MAX) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
   switch (param) {
   case QDMI_JOB_PARAMETER_PROGRAM:
     return library_->device_job_set_parameter(

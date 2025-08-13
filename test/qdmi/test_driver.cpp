@@ -163,17 +163,17 @@ TEST_P(DriverTest, JobSetParameter) {
 TEST_P(DriverJobTest, JobSetParameter) {
   EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAM,
                                      sizeof(QDMI_Program_Format), nullptr),
-              QDMI_ERROR_INVALIDARGUMENT);
+              QDMI_ERROR_NOTSUPPORTED);
   const QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
   EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
                                      sizeof(QDMI_Program_Format), &value),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   const size_t numShots = 1;
   EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
-                                     sizeof(QDMI_Program_Format), &numShots),
+                                     sizeof(size_t), &numShots),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_MAX,
-                                     sizeof(QDMI_Program_Format), nullptr),
+                                     0, nullptr),
               QDMI_ERROR_INVALIDARGUMENT);
 }
 
