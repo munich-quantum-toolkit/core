@@ -124,10 +124,10 @@ TEST_F(ImportTest, Measure01) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[C_0:.*]] = mqtref.measure %[[Q_0]]
-    CHECK: %[[C_1:.*]] = mqtref.measure %[[Q_1]]
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -142,10 +142,10 @@ TEST_F(ImportTest, Measure0) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[C_0:.*]] = mqtref.measure %[[Q_0]]
-    CHECK-NOT: %[[C_1:.*]] = mqtref.measure %[[Q_1]]
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK-NOT: %[[M1:.*]] = mqtref.measure %[[Q1]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -160,10 +160,10 @@ TEST_F(ImportTest, Reset01) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: "mqtref.reset"(%[[Q_0]]) : (!mqtref.Qubit) -> ()
-    CHECK: "mqtref.reset"(%[[Q_1]]) : (!mqtref.Qubit) -> ()
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: "mqtref.reset"(%[[Q0]]) : (!mqtref.Qubit) -> ()
+    CHECK: "mqtref.reset"(%[[Q1]]) : (!mqtref.Qubit) -> ()
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -178,10 +178,10 @@ TEST_F(ImportTest, Reset0) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: "mqtref.reset"(%[[Q_0]]) : (!mqtref.Qubit) -> ()
-    CHECK-NOT: "mqtref.reset"(%[[Q_1]]) : (!mqtref.Qubit) -> ()
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: "mqtref.reset"(%[[Q0]]) : (!mqtref.Qubit) -> ()
+    CHECK-NOT: "mqtref.reset"(%[[Q1]]) : (!mqtref.Qubit) -> ()
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -232,9 +232,9 @@ TEST_F(ImportTest, CX01) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q_1]] ctrl %[[Q_0]]
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.x() %[[Q1]] ctrl %[[Q0]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -249,9 +249,9 @@ TEST_F(ImportTest, CX10) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q_0]] ctrl %[[Q_1]]
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.x() %[[Q0]] ctrl %[[Q1]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -266,9 +266,9 @@ TEST_F(ImportTest, CX0N1) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q_1]] nctrl %[[Q_0]]
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.x() %[[Q1]] nctrl %[[Q0]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -283,10 +283,10 @@ TEST_F(ImportTest, MCX012) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q_2]] ctrl %[[Q_0]], %[[Q_1]]
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.x() %[[Q2]] ctrl %[[Q0]], %[[Q1]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -301,10 +301,10 @@ TEST_F(ImportTest, MCX0N2P1) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q_1]] ctrl %[[Q_2]] nctrl %[[Q_0]]
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.x() %[[Q1]] ctrl %[[Q2]] nctrl %[[Q0]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -319,10 +319,10 @@ TEST_F(ImportTest, MCX2N1N0) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q_0]] nctrl %[[Q_1]], %[[Q_2]]
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.x() %[[Q0]] nctrl %[[Q1]], %[[Q2]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -531,9 +531,9 @@ TEST_F(ImportTest, SWAP01) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.swap() %[[Q_0]], %[[Q_1]]
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.swap() %[[Q0]], %[[Q1]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -548,9 +548,9 @@ TEST_F(ImportTest, SWAP10) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.swap() %[[Q_1]], %[[Q_0]]
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.swap() %[[Q1]], %[[Q0]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -649,10 +649,10 @@ TEST_F(ImportTest, CRXX) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.rxx( static [1.000000e-01]) %[[Q_1]], %[[Q_2]] ctrl %[[Q_0]]
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.rxx( static [1.000000e-01]) %[[Q1]], %[[Q2]] ctrl %[[Q0]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -732,15 +732,15 @@ TEST_F(ImportTest, GHZ) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q_2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.h() %[[Q_0]]
-    CHECK: mqtref.x() %[[Q_1]] ctrl %[[Q_0]]
-    CHECK: mqtref.x() %[[Q_2]] ctrl %[[Q_0]]
-    CHECK: %[[C_0:.*]] = mqtref.measure %[[Q_0]]
-    CHECK: %[[C_1:.*]] = mqtref.measure %[[Q_1]]
-    CHECK: %[[C_2:.*]] = mqtref.measure %[[Q_2]]
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.h() %[[Q0]]
+    CHECK: mqtref.x() %[[Q1]] ctrl %[[Q0]]
+    CHECK: mqtref.x() %[[Q2]] ctrl %[[Q0]]
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
+    CHECK: %[[M2:.*]] = mqtref.measure %[[Q2]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
