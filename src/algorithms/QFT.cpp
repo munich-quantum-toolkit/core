@@ -79,20 +79,15 @@ auto createIterativeQFT(const Qubit nq) -> QuantumComputation {
     for (Qubit j = 1; j <= i; ++j) {
       const auto d = nq - j;
       if (j == i) {
-        StandardOperation sOp(0, S);
-        StandardOperation iOp(0, I);
-        qc.ifElse(sOp, iOp, d, 1U);
+        qc.ifElse(std::make_unique<StandardOperation>(0, S), nullptr, d, 1U);
       } else if (j == i - 1) {
-        StandardOperation tOp(0, T);
-        StandardOperation iOp(0, I);
-        qc.ifElse(tOp, iOp, d, 1U);
+        qc.ifElse(std::make_unique<StandardOperation>(0, T), nullptr, d, 1U);
       } else {
         const auto powerOfTwo = std::pow(2., i - j + 1);
         const auto lambda = PI / powerOfTwo;
         const auto params = std::vector<fp>{lambda};
-        StandardOperation pOp(0, P, params);
-        StandardOperation iOp(0, I);
-        qc.ifElse(pOp, iOp, d, 1U);
+        qc.ifElse(std::make_unique<StandardOperation>(0, P, params), nullptr, d,
+                  1U);
       }
     }
 

@@ -281,10 +281,18 @@ VectorDD applyIfElseOperation(const qc::IfElseOperation& op, const VectorDD& in,
   }();
 
   if (!control) {
-    return applyUnitaryOperation(*op.getElseBranch(), in, dd, permutation);
+    auto elseBranch = op.getElseBranch();
+    if (!elseBranch) {
+      return in;
+    }
+    return applyUnitaryOperation(*elseBranch, in, dd, permutation);
   }
 
-  return applyUnitaryOperation(*op.getThenBranch(), in, dd, permutation);
+  auto thenBranch = op.getThenBranch();
+  if (!thenBranch) {
+    return in;
+  }
+  return applyUnitaryOperation(*thenBranch, in, dd, permutation);
 }
 
 bool isExecutableVirtually(const qc::Operation& op) noexcept {

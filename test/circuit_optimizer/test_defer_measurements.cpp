@@ -42,9 +42,7 @@ TEST(DeferMeasurements, DISABLED_basicTest) {
   const auto& creg = qc.addClassicalRegister(1);
   qc.h(0);
   qc.measure(0, 0U);
-  StandardOperation xOp(0, X);
-  StandardOperation iOp(0, I);
-  qc.ifElse(xOp, iOp, creg, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, creg, 1U);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());
@@ -110,9 +108,7 @@ TEST(DeferMeasurements, DISABLED_measurementBetweenMeasurementAndClassic) {
   qc.h(0);
   qc.measure(0, 0U);
   qc.h(0);
-  StandardOperation xOp(1, X);
-  StandardOperation iOp(1, I);
-  qc.ifElse(xOp, iOp, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, 0, 1U);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());
@@ -187,11 +183,8 @@ TEST(DeferMeasurements, DISABLED_twoClassic) {
   qc.h(0);
   qc.measure(0, 0U);
   qc.h(0);
-  StandardOperation xOp(1, X);
-  StandardOperation zOp(1, Z);
-  StandardOperation iOp(1, I);
-  qc.ifElse(xOp, iOp, 0, 1U);
-  qc.ifElse(zOp, iOp, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(1, Z), nullptr, 0, 1U);
 
   std::cout << qc << "\n";
 
@@ -274,9 +267,7 @@ TEST(DeferMeasurements, DISABLED_correctOrder) {
   qc.h(0);
   qc.measure(0, 0U);
   qc.h(1);
-  StandardOperation xOp(1, X);
-  StandardOperation iOp(1, I);
-  qc.ifElse(xOp, iOp, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, 0, 1U);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());
@@ -351,11 +342,8 @@ TEST(DeferMeasurements, DISABLED_twoClassicCorrectOrder) {
   qc.h(0);
   qc.measure(0, 0U);
   qc.h(1);
-  StandardOperation xOp(1, X);
-  StandardOperation zOp(1, Z);
-  StandardOperation iOp(1, I);
-  qc.ifElse(xOp, iOp, 0, 1U);
-  qc.ifElse(zOp, iOp, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(1, Z), nullptr, 0, 1U);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());
@@ -429,9 +417,7 @@ TEST(DeferMeasurements, DISABLED_errorOnImplicitReset) {
   QuantumComputation qc(1U, 1U);
   qc.h(0);
   qc.measure(0, 0U);
-  StandardOperation xOp(0, X);
-  StandardOperation iOp(0, I);
-  qc.ifElse(xOp, iOp, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0, 1U);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());
@@ -461,9 +447,7 @@ TEST(DeferMeasurements, DISABLED_errorOnMultiQubitRegister) {
   qc.x(1);
   qc.measure(0, 0U);
   qc.measure(1, 1U);
-  StandardOperation xOp(2, X);
-  StandardOperation iOp(2, I);
-  qc.ifElse(xOp, iOp, creg, 3U);
+  qc.ifElse(std::make_unique<StandardOperation>(2, X), nullptr, creg, 3U);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());

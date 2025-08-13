@@ -334,10 +334,12 @@ public:
   void barrier(Qubit target);
   void barrier(const Targets& targets);
 
-  void ifElse(StandardOperation& thenOp, StandardOperation& elseOp,
+  void ifElse(std::unique_ptr<Operation>&& thenOp,
+              std::unique_ptr<Operation>&& elseOp,
               const ClassicalRegister& controlRegister,
               std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq);
-  void ifElse(StandardOperation& thenOp, StandardOperation& elseOp, Bit cBit,
+  void ifElse(std::unique_ptr<Operation>&& thenOp,
+              std::unique_ptr<Operation>&& elseOp, Bit cBit,
               std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq);
 
   /// strip away qubits with no operations applied to them and which do not pop
