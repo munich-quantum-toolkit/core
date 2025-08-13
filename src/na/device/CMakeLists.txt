@@ -127,7 +127,8 @@ if(NOT TARGET ${TARGET_NAME})
     PUBLIC qdmi::qdmi
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
 
-  # Always compile with position independent code such that the library can be used in shared libraries
+  # Always compile with position independent code such that the library can be used in shared
+  # libraries
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
   # set c++ standard

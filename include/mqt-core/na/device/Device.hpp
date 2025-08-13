@@ -230,7 +230,7 @@ private:
   uint64_t id_ = 0;       ///< Unique identifier of the site
   uint64_t moduleId_ = 0; ///< Identifier of the module the site belongs to
   uint64_t subModuleId_ =
-      0;         ///< Identifier of the sub-module the site belongs to
+      0;          ///< Identifier of the sub-module the site belongs to
   int64_t x_ = 0; ///< X coordinate of the site in the lattice
   int64_t y_ = 0; ///< Y coordinate of the site in the lattice
   /// @brief Collects decoherence times for the device.

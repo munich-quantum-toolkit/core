@@ -280,10 +280,10 @@ auto MQT_NA_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
                             size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_YCOORDINATE, int64_t, y_, prop,
                             size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T1, double, decoherenceTimes_.t1_,
-                            prop, size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T2, double, decoherenceTimes_.t2_,
-                            prop, size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T1, double,
+                            decoherenceTimes_.t1_, prop, size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T2, double,
+                            decoherenceTimes_.t2_, prop, size, value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
 }
 auto MQT_NA_QDMI_Operation_impl_d::isShuttling(const Type type) -> bool {

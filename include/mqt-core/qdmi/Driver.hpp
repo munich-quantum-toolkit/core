@@ -229,7 +229,7 @@ public:
 
 /**
  * @brief Definition of the QDMI Job.
-*/
+ */
 // Since we treat this struct as a class, we apply also the naming scheme for
 // classes, i.e., an underscore at the end of member names.
 struct QDMI_Job_impl_d {
@@ -320,7 +320,7 @@ public:
 
 /**
  * @brief Definition of the QDMI Session.
-*/
+ */
 // Since we treat this struct as a class, we apply also the naming scheme for
 // classes, i.e., an underscore at the end of member names.
 struct QDMI_Session_impl_d {

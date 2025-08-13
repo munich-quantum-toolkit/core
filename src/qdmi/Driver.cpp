@@ -178,15 +178,15 @@ auto QDMI_Device_impl_d::queryDeviceProperty(QDMI_Device_Property prop,
                                              const size_t size, void* value,
                                              size_t* sizeRet) const -> int {
   return library_->device_session_query_device_property(deviceSession_, prop,
-                                                       size, value, sizeRet);
+                                                        size, value, sizeRet);
 }
 
 auto QDMI_Device_impl_d::querySiteProperty(QDMI_Site site,
                                            QDMI_Site_Property prop,
                                            const size_t size, void* value,
                                            size_t* sizeRet) const -> int {
-  return library_->device_session_query_site_property(deviceSession_, site, prop,
-                                                     size, value, sizeRet);
+  return library_->device_session_query_site_property(
+      deviceSession_, site, prop, size, value, sizeRet);
 }
 
 auto QDMI_Device_impl_d::queryOperationProperty(
@@ -256,7 +256,7 @@ auto QDMI_Job_impl_d::wait(size_t timeout) const -> int {
 auto QDMI_Job_impl_d::getResults(QDMI_Job_Result result, const size_t size,
                                  void* data, size_t* sizeRet) const -> int {
   return library_->device_job_get_results(deviceJob_, result, size, data,
-                                         sizeRet);
+                                          sizeRet);
 }
 
 auto QDMI_Job_impl_d::free() -> void { device_->freeJob(this); }
