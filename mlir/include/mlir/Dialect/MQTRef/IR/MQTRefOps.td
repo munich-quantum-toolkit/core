@@ -134,7 +134,7 @@ def ResetOp : GateOp<"reset", []> {
 
         Example:
         ```mlir
-        "mqtdyn.reset"(%0) : (!mqtopt.Qubit) -> ()
+        "mqtref.reset"(%0) : (!mqtopt.Qubit) -> ()
         ```
     }];
 

@@ -10,8 +10,8 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
-#include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
-#include "mlir/Dialect/MQTDyn/Translation/ImportQuantumComputation.h"
+#include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
+#include "mlir/Dialect/MQTRef/Translation/ImportQuantumComputation.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallString.h>
@@ -35,7 +35,7 @@ protected:
 
   void SetUp() override {
     mlir::DialectRegistry registry;
-    registry.insert<mqt::ir::dyn::MQTDynDialect>();
+    registry.insert<mqt::ir::ref::MQTRefDialect>();
     registry.insert<mlir::func::FuncDialect>();
 
     context = std::make_unique<mlir::MLIRContext>();
@@ -92,10 +92,10 @@ TEST_F(ImportTest, Allocation) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -109,11 +109,11 @@ TEST_F(ImportTest, Measure01) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: "mqtdyn.measure"(%[[Q_0]]) : (!mqtdyn.Qubit) -> i1
-    CHECK: "mqtdyn.measure"(%[[Q_1]]) : (!mqtdyn.Qubit) -> i1
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: "mqtref.measure"(%[[Q_0]]) : (!mqtref.Qubit) -> i1
+    CHECK: "mqtref.measure"(%[[Q_1]]) : (!mqtref.Qubit) -> i1
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -127,11 +127,11 @@ TEST_F(ImportTest, Measure0) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: "mqtdyn.measure"(%[[Q_0]]) : (!mqtdyn.Qubit) -> i1
-    CHECK-NOT: "mqtdyn.measure"(%[[Q_1]]) : (!mqtdyn.Qubit) -> i1
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: "mqtref.measure"(%[[Q_0]]) : (!mqtref.Qubit) -> i1
+    CHECK-NOT: "mqtref.measure"(%[[Q_1]]) : (!mqtref.Qubit) -> i1
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -145,11 +145,11 @@ TEST_F(ImportTest, Reset01) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: "mqtdyn.reset"(%[[Q_0]]) : (!mqtdyn.Qubit) -> ()
-    CHECK: "mqtdyn.reset"(%[[Q_1]]) : (!mqtdyn.Qubit) -> ()
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: "mqtref.reset"(%[[Q_0]]) : (!mqtref.Qubit) -> ()
+    CHECK: "mqtref.reset"(%[[Q_1]]) : (!mqtref.Qubit) -> ()
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -163,11 +163,11 @@ TEST_F(ImportTest, Reset0) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: "mqtdyn.reset"(%[[Q_0]]) : (!mqtdyn.Qubit) -> ()
-    CHECK-NOT: "mqtdyn.reset"(%[[Q_1]]) : (!mqtdyn.Qubit) -> ()
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: "mqtref.reset"(%[[Q_0]]) : (!mqtref.Qubit) -> ()
+    CHECK-NOT: "mqtref.reset"(%[[Q_1]]) : (!mqtref.Qubit) -> ()
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -180,7 +180,7 @@ TEST_F(ImportTest, I) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.i()";
+  const auto* checkString = "CHECK: mqtref.i()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -192,7 +192,7 @@ TEST_F(ImportTest, H) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.h()";
+  const auto* checkString = "CHECK: mqtref.h()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -204,7 +204,7 @@ TEST_F(ImportTest, X) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.x()";
+  const auto* checkString = "CHECK: mqtref.x()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -217,10 +217,10 @@ TEST_F(ImportTest, CX01) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: mqtdyn.x() %[[Q_1]] ctrl %[[Q_0]]
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.x() %[[Q_1]] ctrl %[[Q_0]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -234,10 +234,10 @@ TEST_F(ImportTest, CX10) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: mqtdyn.x() %[[Q_0]] ctrl %[[Q_1]]
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.x() %[[Q_0]] ctrl %[[Q_1]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -251,10 +251,10 @@ TEST_F(ImportTest, CX0N1) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: mqtdyn.x() %[[Q_1]] nctrl %[[Q_0]]
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.x() %[[Q_1]] nctrl %[[Q_0]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -268,11 +268,11 @@ TEST_F(ImportTest, MCX012) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_2:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: mqtdyn.x() %[[Q_2]] ctrl %[[Q_0]], %[[Q_1]]
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.x() %[[Q_2]] ctrl %[[Q_0]], %[[Q_1]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -286,11 +286,11 @@ TEST_F(ImportTest, MCX0N2P1) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_2:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: mqtdyn.x() %[[Q_1]] ctrl %[[Q_2]] nctrl %[[Q_0]]
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.x() %[[Q_1]] ctrl %[[Q_2]] nctrl %[[Q_0]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -304,11 +304,11 @@ TEST_F(ImportTest, MCX2N1N0) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_2:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: mqtdyn.x() %[[Q_0]] nctrl %[[Q_1]], %[[Q_2]]
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.x() %[[Q_0]] nctrl %[[Q_1]], %[[Q_2]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -321,7 +321,7 @@ TEST_F(ImportTest, Y) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.y()";
+  const auto* checkString = "CHECK: mqtref.y()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -333,7 +333,7 @@ TEST_F(ImportTest, Z) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.z()";
+  const auto* checkString = "CHECK: mqtref.z()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -345,7 +345,7 @@ TEST_F(ImportTest, S) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.s()";
+  const auto* checkString = "CHECK: mqtref.s()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -357,7 +357,7 @@ TEST_F(ImportTest, Sdg) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.sdg()";
+  const auto* checkString = "CHECK: mqtref.sdg()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -369,7 +369,7 @@ TEST_F(ImportTest, T) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.t()";
+  const auto* checkString = "CHECK: mqtref.t()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -381,7 +381,7 @@ TEST_F(ImportTest, Tdg) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.tdg()";
+  const auto* checkString = "CHECK: mqtref.tdg()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -393,7 +393,7 @@ TEST_F(ImportTest, V) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.v()";
+  const auto* checkString = "CHECK: mqtref.v()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -405,7 +405,7 @@ TEST_F(ImportTest, Vdg) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.vdg()";
+  const auto* checkString = "CHECK: mqtref.vdg()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -418,7 +418,7 @@ TEST_F(ImportTest, U) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString =
-      "CHECK: mqtdyn.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01])";
+      "CHECK: mqtref.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -431,7 +431,7 @@ TEST_F(ImportTest, U2) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString =
-      "CHECK: mqtdyn.u2( static [1.000000e-01, 2.000000e-01])";
+      "CHECK: mqtref.u2( static [1.000000e-01, 2.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -443,7 +443,7 @@ TEST_F(ImportTest, P) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.p( static [1.000000e-01])";
+  const auto* checkString = "CHECK: mqtref.p( static [1.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -455,7 +455,7 @@ TEST_F(ImportTest, SX) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.sx()";
+  const auto* checkString = "CHECK: mqtref.sx()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -467,7 +467,7 @@ TEST_F(ImportTest, SXdg) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.sxdg()";
+  const auto* checkString = "CHECK: mqtref.sxdg()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -479,7 +479,7 @@ TEST_F(ImportTest, Rx) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.rx( static [1.000000e-01])";
+  const auto* checkString = "CHECK: mqtref.rx( static [1.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -491,7 +491,7 @@ TEST_F(ImportTest, Ry) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.ry( static [1.000000e-01])";
+  const auto* checkString = "CHECK: mqtref.ry( static [1.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -503,7 +503,7 @@ TEST_F(ImportTest, Rz) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.rz( static [1.000000e-01])";
+  const auto* checkString = "CHECK: mqtref.rz( static [1.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -516,10 +516,10 @@ TEST_F(ImportTest, SWAP01) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: mqtdyn.swap() %[[Q_0]], %[[Q_1]]
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.swap() %[[Q_0]], %[[Q_1]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -533,10 +533,10 @@ TEST_F(ImportTest, SWAP10) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: mqtdyn.swap() %[[Q_1]], %[[Q_0]]
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.swap() %[[Q_1]], %[[Q_0]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -549,7 +549,7 @@ TEST_F(ImportTest, iSWAP) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.iswap()";
+  const auto* checkString = "CHECK: mqtref.iswap()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -561,7 +561,7 @@ TEST_F(ImportTest, iSWAPdg) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.iswapdg()";
+  const auto* checkString = "CHECK: mqtref.iswapdg()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -573,7 +573,7 @@ TEST_F(ImportTest, Peres) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.peres()";
+  const auto* checkString = "CHECK: mqtref.peres()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -585,7 +585,7 @@ TEST_F(ImportTest, Peresdg) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.peresdg()";
+  const auto* checkString = "CHECK: mqtref.peresdg()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -597,7 +597,7 @@ TEST_F(ImportTest, DCX) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.dcx()";
+  const auto* checkString = "CHECK: mqtref.dcx()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -609,7 +609,7 @@ TEST_F(ImportTest, ECR) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.ecr()";
+  const auto* checkString = "CHECK: mqtref.ecr()";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -621,7 +621,7 @@ TEST_F(ImportTest, RXX) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.rxx( static [1.000000e-01])";
+  const auto* checkString = "CHECK: mqtref.rxx( static [1.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -634,11 +634,11 @@ TEST_F(ImportTest, CRXX) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
-    CHECK: %[[Q_0:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_1:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: %[[Q_2:.*]] = "mqtdyn.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-    CHECK: mqtdyn.rxx( static [1.000000e-01]) %[[Q_1]], %[[Q_2]] ctrl %[[Q_0]]
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.rxx( static [1.000000e-01]) %[[Q_1]], %[[Q_2]] ctrl %[[Q_0]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -651,7 +651,7 @@ TEST_F(ImportTest, RYY) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.ryy( static [1.000000e-01])";
+  const auto* checkString = "CHECK: mqtref.ryy( static [1.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -663,7 +663,7 @@ TEST_F(ImportTest, RZZ) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.rzz( static [1.000000e-01])";
+  const auto* checkString = "CHECK: mqtref.rzz( static [1.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -675,7 +675,7 @@ TEST_F(ImportTest, RZX) {
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtdyn.rzx( static [1.000000e-01])";
+  const auto* checkString = "CHECK: mqtref.rzx( static [1.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -688,7 +688,7 @@ TEST_F(ImportTest, XXminusYY) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString =
-      "CHECK: mqtdyn.xxminusyy( static [1.000000e-01, 2.000000e-01])";
+      "CHECK: mqtref.xxminusyy( static [1.000000e-01, 2.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -701,7 +701,7 @@ TEST_F(ImportTest, XXplusYY) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString =
-      "CHECK: mqtdyn.xxplusyy( static [1.000000e-01, 2.000000e-01])";
+      "CHECK: mqtref.xxplusyy( static [1.000000e-01, 2.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }

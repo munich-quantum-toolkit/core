@@ -8,13 +8,13 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQTDyn/Translation/ImportQuantumComputation.h"
+#include "mlir/Dialect/MQTRef/Translation/ImportQuantumComputation.h"
 
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
-#include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
+#include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -42,10 +42,10 @@ namespace {
  */
 mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
                          const std::size_t numQubits) {
-  const auto& qregType = mqt::ir::dyn::QubitRegisterType::get(context);
+  const auto& qregType = mqt::ir::ref::QubitRegisterType::get(context);
   auto sizeAttr = builder.getI64IntegerAttr(static_cast<int64_t>(numQubits));
 
-  auto allocOp = builder.create<mqt::ir::dyn::AllocOp>(
+  auto allocOp = builder.create<mqt::ir::ref::AllocOp>(
       builder.getUnknownLoc(), qregType, nullptr, sizeAttr);
 
   return allocOp.getResult();
@@ -64,14 +64,14 @@ llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
                                              mlir::MLIRContext* context,
                                              mlir::Value quantumRegister,
                                              const std::size_t numQubits) {
-  const auto& qubitType = mqt::ir::dyn::QubitType::get(context);
+  const auto& qubitType = mqt::ir::ref::QubitType::get(context);
   llvm::SmallVector<mlir::Value> qubits;
   qubits.reserve(numQubits);
 
   const auto loc = builder.getUnknownLoc();
   for (std::size_t qubit = 0; qubit < numQubits; ++qubit) {
     auto indexAttr = builder.getI64IntegerAttr(static_cast<int64_t>(qubit));
-    auto extractOp = builder.create<mqt::ir::dyn::ExtractOp>(
+    auto extractOp = builder.create<mqt::ir::ref::ExtractOp>(
         loc, qubitType, quantumRegister, nullptr, indexAttr);
     qubits.emplace_back(extractOp.getResult());
   }
@@ -138,7 +138,7 @@ void addMeasureOp(mlir::OpBuilder& builder, const qc::Operation& operation,
   const auto& targets = operation.getTargets();
   for (const auto& target : targets) {
     const mlir::Value inQubit = qubits[target];
-    builder.create<mqt::ir::dyn::MeasureOp>(builder.getUnknownLoc(), bitType,
+    builder.create<mqt::ir::ref::MeasureOp>(builder.getUnknownLoc(), bitType,
                                             inQubit);
   }
 }
@@ -155,7 +155,7 @@ void addResetOp(mlir::OpBuilder& builder, const qc::Operation& operation,
   const auto& targets = operation.getTargets();
   for (const auto& target : targets) {
     const mlir::Value inQubit = qubits[target];
-    builder.create<mqt::ir::dyn::ResetOp>(builder.getUnknownLoc(), inQubit);
+    builder.create<mqt::ir::ref::ResetOp>(builder.getUnknownLoc(), inQubit);
   }
 }
 
@@ -175,100 +175,100 @@ addOperations(mlir::OpBuilder& builder,
   for (const auto& operation : quantumComputation) {
     switch (operation->getType()) {
     case qc::OpType::I:
-      addOperation<mqt::ir::dyn::IOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::IOp>(builder, *operation, qubits);
       break;
     case qc::OpType::H:
-      addOperation<mqt::ir::dyn::HOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::HOp>(builder, *operation, qubits);
       break;
     case qc::OpType::X:
-      addOperation<mqt::ir::dyn::XOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::XOp>(builder, *operation, qubits);
       break;
     case qc::OpType::Y:
-      addOperation<mqt::ir::dyn::YOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::YOp>(builder, *operation, qubits);
       break;
     case qc::OpType::Z:
-      addOperation<mqt::ir::dyn::ZOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::ZOp>(builder, *operation, qubits);
       break;
     case qc::OpType::S:
-      addOperation<mqt::ir::dyn::SOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::SOp>(builder, *operation, qubits);
       break;
     case qc::OpType::Sdg:
-      addOperation<mqt::ir::dyn::SdgOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::SdgOp>(builder, *operation, qubits);
       break;
     case qc::OpType::T:
-      addOperation<mqt::ir::dyn::TOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::TOp>(builder, *operation, qubits);
       break;
     case qc::OpType::Tdg:
-      addOperation<mqt::ir::dyn::TdgOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::TdgOp>(builder, *operation, qubits);
       break;
     case qc::OpType::V:
-      addOperation<mqt::ir::dyn::VOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::VOp>(builder, *operation, qubits);
       break;
     case qc::OpType::Vdg:
-      addOperation<mqt::ir::dyn::VdgOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::VdgOp>(builder, *operation, qubits);
       break;
     case qc::OpType::U:
-      addOperation<mqt::ir::dyn::UOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::UOp>(builder, *operation, qubits);
       break;
     case qc::OpType::U2:
-      addOperation<mqt::ir::dyn::U2Op>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::U2Op>(builder, *operation, qubits);
       break;
     case qc::OpType::P:
-      addOperation<mqt::ir::dyn::POp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::POp>(builder, *operation, qubits);
       break;
     case qc::OpType::SX:
-      addOperation<mqt::ir::dyn::SXOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::SXOp>(builder, *operation, qubits);
       break;
     case qc::OpType::SXdg:
-      addOperation<mqt::ir::dyn::SXdgOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::SXdgOp>(builder, *operation, qubits);
       break;
     case qc::OpType::RX:
-      addOperation<mqt::ir::dyn::RXOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::RXOp>(builder, *operation, qubits);
       break;
     case qc::OpType::RY:
-      addOperation<mqt::ir::dyn::RYOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::RYOp>(builder, *operation, qubits);
       break;
     case qc::OpType::RZ:
-      addOperation<mqt::ir::dyn::RZOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::RZOp>(builder, *operation, qubits);
       break;
     case qc::OpType::SWAP:
-      addOperation<mqt::ir::dyn::SWAPOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::SWAPOp>(builder, *operation, qubits);
       break;
     case qc::OpType::iSWAP:
-      addOperation<mqt::ir::dyn::iSWAPOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::iSWAPOp>(builder, *operation, qubits);
       break;
     case qc::OpType::iSWAPdg:
-      addOperation<mqt::ir::dyn::iSWAPdgOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::iSWAPdgOp>(builder, *operation, qubits);
       break;
     case qc::OpType::Peres:
-      addOperation<mqt::ir::dyn::PeresOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::PeresOp>(builder, *operation, qubits);
       break;
     case qc::OpType::Peresdg:
-      addOperation<mqt::ir::dyn::PeresdgOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::PeresdgOp>(builder, *operation, qubits);
       break;
     case qc::OpType::DCX:
-      addOperation<mqt::ir::dyn::DCXOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::DCXOp>(builder, *operation, qubits);
       break;
     case qc::OpType::ECR:
-      addOperation<mqt::ir::dyn::ECROp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::ECROp>(builder, *operation, qubits);
       break;
     case qc::OpType::RXX:
-      addOperation<mqt::ir::dyn::RXXOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::RXXOp>(builder, *operation, qubits);
       break;
     case qc::OpType::RYY:
-      addOperation<mqt::ir::dyn::RYYOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::RYYOp>(builder, *operation, qubits);
       break;
     case qc::OpType::RZZ:
-      addOperation<mqt::ir::dyn::RZZOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::RZZOp>(builder, *operation, qubits);
       break;
     case qc::OpType::RZX:
-      addOperation<mqt::ir::dyn::RZXOp>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::RZXOp>(builder, *operation, qubits);
       break;
     case qc::OpType::XXminusYY:
-      addOperation<mqt::ir::dyn::XXminusYY>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::XXminusYY>(builder, *operation, qubits);
       break;
     case qc::OpType::XXplusYY:
-      addOperation<mqt::ir::dyn::XXplusYY>(builder, *operation, qubits);
+      addOperation<mqt::ir::ref::XXplusYY>(builder, *operation, qubits);
       break;
     case qc::OpType::Measure:
       addMeasureOp(builder, *operation, qubits);
@@ -285,11 +285,11 @@ addOperations(mlir::OpBuilder& builder,
 } // namespace
 
 /**
- * @brief Translates a QuantumComputation to an MLIR module with MQTDyn
+ * @brief Translates a QuantumComputation to an MLIR module with MQTRef
  * operations.
  *
  * This function takes a quantum computation and translates it into an MLIR
- * module containing MQTDyn dialect operations. It creates a main function that
+ * module containing MQTRef dialect operations. It creates a main function that
  * contains all quantum operations from the input computation.
  *
  * @param context The MLIR context in which the module will be created
