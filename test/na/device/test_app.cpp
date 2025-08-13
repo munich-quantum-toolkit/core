@@ -330,6 +330,8 @@ TEST(ExecutableTest, RoundTripFile) {
     std::cout << "Captured Output:\n" << output.str() << "\n";
     ASSERT_EQ(returnCode, 0)
         << "Executable failed with return code: " << returnCode;
+    // Remove created file
+    std::remove("schema.json");
   }
   // Validate the output
   {
