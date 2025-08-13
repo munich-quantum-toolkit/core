@@ -97,6 +97,7 @@ set(SPDLOG_VERSION
 set(SPDLOG_URL https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz)
 # Add position independent code for spdlog, this is required for python bindings on linux
 set(SPDLOG_BUILD_PIC ON)
+cmake_dependent_option(SPDLOG_INSTALL "Install spdlog library" ON "MQT_CORE_INSTALL" OFF)
 FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
 list(APPEND FETCH_PACKAGES spdlog)
 
