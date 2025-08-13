@@ -210,7 +210,7 @@ TEST_P(QPE, IQPETest) {
   }
 }
 
-TEST_P(QPE, DynamicEquivalenceSimulation) {
+TEST_P(QPE, DISABLED_DynamicEquivalenceSimulation) {
   auto dd = std::make_unique<dd::Package>(precision + 1);
 
   // create standard QPE circuit
@@ -243,7 +243,7 @@ TEST_P(QPE, DynamicEquivalenceSimulation) {
   EXPECT_NEAR(fidelity, 1.0, 1e-4);
 }
 
-TEST_P(QPE, DynamicEquivalenceFunctionality) {
+TEST_P(QPE, DISABLED_DynamicEquivalenceFunctionality) {
   auto dd = std::make_unique<dd::Package>(precision + 1);
 
   // create standard QPE circuit

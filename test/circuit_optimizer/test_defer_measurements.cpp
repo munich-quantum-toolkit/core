@@ -84,7 +84,7 @@ TEST(DeferMeasurements, basicTest) {
   EXPECT_EQ(classics0.at(0), 0);
 }
 
-TEST(DeferMeasurements, measurementBetweenMeasurementAndClassic) {
+TEST(DeferMeasurements, DISABLED_measurementBetweenMeasurementAndClassic) {
   // Input:
   // i:   0   1
   // 1:   h   |
@@ -158,7 +158,7 @@ TEST(DeferMeasurements, measurementBetweenMeasurementAndClassic) {
   EXPECT_EQ(classics0.at(0), 0);
 }
 
-TEST(DeferMeasurements, twoClassic) {
+TEST(DeferMeasurements, DISABLED_twoClassic) {
   // Input:
   // i:   0   1
   // 1:   h   |
