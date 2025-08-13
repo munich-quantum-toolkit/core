@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add translation from `QuantumComputation` to the `MQTRef` MLIR dialect ([#1099]) ([**@denialhaag**])
+- ✨ Add translation from `QuantumComputation` to the `MQTRef` MLIR dialect ([#1099]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add `reset` operations to the MLIR dialects `MQTDyn` and `MQTOpt` ([#1106]) ([**@DRovara**])
 - ♻️ Update the `measure` operations in the MLIR dialects to no longer support more than one qubit being measured at once ([#1106]) ([**@DRovara**])
 - ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996]) ([**@ystade**])
