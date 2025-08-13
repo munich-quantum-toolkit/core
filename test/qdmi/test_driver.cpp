@@ -42,7 +42,7 @@ MATCHER_P2(IsBetween, a, b,
 } // namespace
 } // namespace testing
 namespace qc {
-class DriverTest : public ::testing::TestWithParam<std::string> {
+class DriverTest : public testing::TestWithParam<std::string> {
 protected:
   QDMI_Session session = nullptr;
   QDMI_Device device = nullptr;
@@ -193,24 +193,28 @@ TEST_P(DriverJobTest, JobQueryProperty) {
       testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 
   QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
-  EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
-                                     sizeof(QDMI_Program_Format), &value),
-              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-  value = QDMI_PROGRAM_FORMAT_MAX;
-  EXPECT_THAT(
-      QDMI_job_query_property(job, QDMI_JOB_PROPERTY_PROGRAMFORMAT, sizeof(QDMI_Program_Format), &value, nullptr),
-      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-  EXPECT_EQ(value, QDMI_PROGRAM_FORMAT_QASM2);
-
+  auto result = QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
+                                     sizeof(QDMI_Program_Format), &value);
+              EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  if (result == QDMI_SUCCESS) {
+    value = QDMI_PROGRAM_FORMAT_MAX;
+    EXPECT_EQ(
+        QDMI_job_query_property(job, QDMI_JOB_PROPERTY_PROGRAMFORMAT, sizeof(QDMI_Program_Format), &value, nullptr),
+        QDMI_SUCCESS);
+    EXPECT_EQ(value, QDMI_PROGRAM_FORMAT_QASM2);
+  }
   size_t numShots = 1;
-  EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
-                                     sizeof(QDMI_Program_Format), &numShots),
+  result = QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
+                                     sizeof(QDMI_Program_Format), &numShots);
+  EXPECT_THAT(result,
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-  numShots = 0;
-  EXPECT_THAT(
-      QDMI_job_query_property(job, QDMI_JOB_PROPERTY_SHOTSNUM, sizeof(size_t), &numShots, nullptr),
-      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-  EXPECT_EQ(numShots, 1);
+  if (result == QDMI_SUCCESS) {
+    numShots = 0;
+    EXPECT_EQ(
+        QDMI_job_query_property(job, QDMI_JOB_PROPERTY_SHOTSNUM, sizeof(size_t), &numShots, nullptr),
+        QDMI_SUCCESS);
+    EXPECT_EQ(numShots, 1);
+  }
 }
 
 TEST_P(DriverTest, JobSubmit) {
@@ -361,14 +365,14 @@ TEST_P(DriverTest, QuerySites) {
     auto result = QDMI_device_query_site_property(
         device, site, QDMI_SITE_PROPERTY_T1, sizeof(double), &t1, nullptr);
     ASSERT_THAT(result,
-                ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+                testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
     if (result == QDMI_SUCCESS) {
       EXPECT_GT(t1, 0) << "Devices must provide a site T1 time larger than 0.";
     }
     result = QDMI_device_query_site_property(
         device, site, QDMI_SITE_PROPERTY_T2, sizeof(double), &t2, nullptr);
     ASSERT_THAT(result,
-                ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+                testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
     if (result == QDMI_SUCCESS) {
       EXPECT_GT(t2, 0) << "Devices must provide a site T2 time larger than 0.";
     }
@@ -430,7 +434,7 @@ TEST_P(DriverTest, QueryOperations) {
     auto result = QDMI_device_query_operation_property(
         device, op, 0, nullptr, numParams, params.data(),
         QDMI_OPERATION_PROPERTY_DURATION, sizeof(double), &duration, nullptr);
-    ASSERT_THAT(result, ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
+    ASSERT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
         << "Failed to query duration for operation " << name << ".";
     if (result == QDMI_SUCCESS) {
       EXPECT_GT(duration, 0)
@@ -439,10 +443,10 @@ TEST_P(DriverTest, QueryOperations) {
     result = QDMI_device_query_operation_property(
         device, op, 0, nullptr, numParams, params.data(),
         QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity, nullptr);
-    ASSERT_THAT(result, ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
+    ASSERT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
         << "Failed to query fidelity for operation " << name << ".";
     if (result == QDMI_SUCCESS) {
-      EXPECT_THAT(fidelity, ::testing::IsBetween(0, 1))
+      EXPECT_THAT(fidelity, testing::IsBetween(0, 1))
           << "Fidelity must be between 0 and 1 for operation " << name << ".";
     }
 
@@ -498,7 +502,7 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
       device, QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION, sizeof(size_t),
       &needsCalibration, nullptr);
   EXPECT_EQ(ret, QDMI_SUCCESS);
-  EXPECT_THAT(needsCalibration, ::testing::AnyOf(0, 1));
+  EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
 }
 
 // Instantiate the test suite with different parameters
@@ -508,7 +512,7 @@ INSTANTIATE_TEST_SUITE_P(
     // Test suite name
     DriverTest,
     // Parameters to test with
-    ::testing::Values("MQT NA Default QDMI Device",
+    testing::Values("MQT NA Default QDMI Device",
                       "MQT NA Dynamic QDMI Device"),
     [](const testing::TestParamInfo<std::string>& parmInfo) {
       std::string name = parmInfo.param;
@@ -525,7 +529,7 @@ INSTANTIATE_TEST_SUITE_P(
     // Test suite name
     DriverJobTest,
     // Parameters to test with
-    ::testing::Values("MQT NA Default QDMI Device",
+    testing::Values("MQT NA Default QDMI Device",
                       "MQT NA Dynamic QDMI Device"),
     [](const testing::TestParamInfo<std::string>& parmInfo) {
       std::string name = parmInfo.param;
