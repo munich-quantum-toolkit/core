@@ -93,7 +93,7 @@ struct DeviceLibrary {
  */
 class DynamicDeviceLibrary final : public DeviceLibrary {
   /// @brief Handle to the dynamic library returned by `dlopen`.
-  void* libHandle;
+  void* libHandle_;
 
   /**
    * @brief Returns a reference to the set of open library handles.
@@ -151,6 +151,8 @@ enum class SessionStatus : uint8_t {
 /**
  * @brief Definition of the QDMI Device.
  */
+// Since we treat this struct as a class, we apply also the naming scheme for
+// classes, i.e., an underscore at the end of member names.
 struct QDMI_Device_impl_d {
 private:
   /**
@@ -158,14 +160,14 @@ private:
    * @note This must be a pointer type as we need access to dynamic and static
    * libraries that are subclasses of qdmi::DeviceLibrary.
    */
-  std::unique_ptr<qdmi::DeviceLibrary> library;
+  std::unique_ptr<qdmi::DeviceLibrary> library_;
   /// @brief The device session handle.
-  QDMI_Device_Session deviceSession = nullptr;
+  QDMI_Device_Session deviceSession_ = nullptr;
   /**
    * @brief Map of jobs to their corresponding unique pointers of
    * QDMI_Job_impl_d objects.
    */
-  std::unordered_map<QDMI_Job, std::unique_ptr<QDMI_Job_impl_d>> jobs;
+  std::unordered_map<QDMI_Job, std::unique_ptr<QDMI_Job_impl_d>> jobs_;
 
 public:
   /**
@@ -182,9 +184,9 @@ public:
    * @details This destructor frees the device session and clears the jobs map.
    */
   ~QDMI_Device_impl_d() {
-    jobs.clear();
-    if (deviceSession != nullptr) {
-      library->device_session_free(deviceSession);
+    jobs_.clear();
+    if (deviceSession_ != nullptr) {
+      library_->device_session_free(deviceSession_);
     }
   }
 
@@ -227,15 +229,17 @@ public:
 
 /**
  * @brief Definition of the QDMI Job.
- */
+*/
+// Since we treat this struct as a class, we apply also the naming scheme for
+// classes, i.e., an underscore at the end of member names.
 struct QDMI_Job_impl_d {
 private:
   /// @brief The device library that provides the device interface functions.
-  const qdmi::DeviceLibrary* library = nullptr;
+  const qdmi::DeviceLibrary* library_ = nullptr;
   /// @brief The device job handle.
-  QDMI_Device_Job deviceJob = nullptr;
+  QDMI_Device_Job deviceJob_ = nullptr;
   /// @brief The device associated with the job.
-  QDMI_Device device = nullptr;
+  QDMI_Device device_ = nullptr;
 
 public:
   /**
@@ -249,7 +253,7 @@ public:
    */
   explicit QDMI_Job_impl_d(const qdmi::DeviceLibrary* library,
                            QDMI_Device_Job deviceJob, QDMI_Device device)
-      : library(library), deviceJob(deviceJob), device(device) {}
+      : library_(library), deviceJob_(deviceJob), device_(device) {}
 
   /**
    * @brief Destructor for the QDMI job.
@@ -316,19 +320,21 @@ public:
 
 /**
  * @brief Definition of the QDMI Session.
- */
+*/
+// Since we treat this struct as a class, we apply also the naming scheme for
+// classes, i.e., an underscore at the end of member names.
 struct QDMI_Session_impl_d {
 private:
   /// @brief The status of the session.
-  qdmi::SessionStatus status = qdmi::SessionStatus::ALLOCATED;
+  qdmi::SessionStatus status_ = qdmi::SessionStatus::ALLOCATED;
   /// @brief A pointer to the list of all devices.
-  const std::vector<std::unique_ptr<QDMI_Device_impl_d>>* devices;
+  const std::vector<std::unique_ptr<QDMI_Device_impl_d>>* devices_;
 
 public:
   /// @brief Constructor for the QDMI session.
   explicit QDMI_Session_impl_d(
       const std::vector<std::unique_ptr<QDMI_Device_impl_d>>& devices)
-      : devices(&devices) {}
+      : devices_(&devices) {}
 
   /**
    * @brief Initializes the session.
@@ -369,12 +375,12 @@ class Driver final {
    * QDMI_Session_impl_d objects.
    */
   std::unordered_map<QDMI_Session, std::unique_ptr<QDMI_Session_impl_d>>
-      sessions;
+      sessions_;
 
   /**
    * @brief Vector of unique pointers to QDMI_Device_impl_d objects.
    */
-  std::vector<std::unique_ptr<QDMI_Device_impl_d>> devices;
+  std::vector<std::unique_ptr<QDMI_Device_impl_d>> devices_;
 
 public:
   // Delete copy constructors and assignment operators to prevent copying the
