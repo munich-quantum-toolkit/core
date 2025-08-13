@@ -78,8 +78,7 @@ TEST(EliminateResets, eliminateResetsBasicTest) {
   EXPECT_EQ(classics1.at(0), 1);
 }
 
-// TODO: Enable this test again
-TEST(EliminateResets, DISABLED_eliminateResetsIfElseOperation) {
+TEST(EliminateResets, eliminateResetsIfElseOperation) {
   QuantumComputation qc{};
   qc.addQubitRegister(1);
   qc.addClassicalRegister(2);
@@ -165,8 +164,7 @@ TEST(EliminateResets, eliminateResetsMultipleTargetReset) {
   EXPECT_EQ(controls2.count(3), 1);
 }
 
-// TODO: Enable this test again
-TEST(EliminateResets, DISABLED_eliminateResetsCompoundOperation) {
+TEST(EliminateResets, eliminateResetsCompoundOperation) {
   QuantumComputation qc(2U, 2U);
 
   qc.reset(0);
