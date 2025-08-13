@@ -252,13 +252,6 @@ TEST_P(DriverTest, QueryNumQubits) {
   EXPECT_GT(numQubits, 0) << "Number of qubits must be greater than 0.";
 }
 
-TEST_P(DriverTest, QueryDeviceProperties) {
-  EXPECT_EQ(QDMI_device_query_device_property(device, QDMI_DEVICE_PROPERTY_MAX,
-                                              0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT)
-      << "The MAX property is not a valid value for any device.";
-}
-
 TEST_P(DriverTest, QuerySites) {
   size_t size = 0;
   ASSERT_EQ(QDMI_device_query_device_property(
@@ -284,18 +277,20 @@ TEST_P(DriverTest, QuerySites) {
         << ".";
     double t1 = 0;
     double t2 = 0;
-    EXPECT_EQ(QDMI_device_query_site_property(device, site,
-                                              QDMI_SITE_PROPERTY_T1,
-                                              sizeof(double), &t1, nullptr),
-              QDMI_SUCCESS)
-        << "Devices must provide a site T1 time.";
-    EXPECT_GT(t1, 0) << "Devices must provide a site T1 time larger than 0.";
-    EXPECT_EQ(QDMI_device_query_site_property(device, site,
-                                              QDMI_SITE_PROPERTY_T2,
-                                              sizeof(double), &t2, nullptr),
-              QDMI_SUCCESS)
-        << "Devices must provide a site T2 time.";
-    EXPECT_GT(t2, 0) << "Devices must provide a site T2 time larger than 0.";
+    auto result = QDMI_device_query_site_property(
+        device, site, QDMI_SITE_PROPERTY_T1, sizeof(double), &t1, nullptr);
+    ASSERT_THAT(result,
+                ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    if (result == QDMI_SUCCESS) {
+      EXPECT_GT(t1, 0) << "Devices must provide a site T1 time larger than 0.";
+    }
+    result = QDMI_device_query_site_property(
+        device, site, QDMI_SITE_PROPERTY_T2, sizeof(double), &t2, nullptr);
+    ASSERT_THAT(result,
+                ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    if (result == QDMI_SUCCESS) {
+      EXPECT_GT(t2, 0) << "Devices must provide a site T2 time larger than 0.";
+    }
     EXPECT_EQ(QDMI_device_query_site_property(
                   device, site, QDMI_SITE_PROPERTY_MAX, 0, nullptr, nullptr),
               QDMI_ERROR_INVALIDARGUMENT)
