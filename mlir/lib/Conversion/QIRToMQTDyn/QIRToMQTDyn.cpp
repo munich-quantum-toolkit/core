@@ -289,16 +289,14 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     }
     // match measure operation
     else if (fnName == "__quantum__qis__m__body") {
-      const SmallVector<Type> newBits(
-          adaptor.getOperands().size(),
-          IntegerType::get(rewriter.getContext(), 1));
+      const auto bitType = IntegerType::get(rewriter.getContext(), 1);
 
       bool foundUser = false;
       for (auto* user : op->getUsers()) {
         if (auto callOp = dyn_cast<LLVM::CallOp>(user)) {
           // check if there is read result operation to replace the result uses
           if (callOp.getCallee() == "__quantum__rt__read_result") {
-            rewriter.replaceOpWithNewOp<dyn::MeasureOp>(callOp, newBits,
+            rewriter.replaceOpWithNewOp<dyn::MeasureOp>(callOp, bitType,
                                                         newOperands);
             foundUser = true;
             rewriter.eraseOp(op);
@@ -308,7 +306,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
       }
       if (!foundUser) {
         // otherwise just create the measure operation
-        rewriter.replaceOpWithNewOp<dyn::MeasureOp>(op, newBits, newOperands);
+        rewriter.replaceOpWithNewOp<dyn::MeasureOp>(op, bitType, newOperands);
       }
     }
     // match dealloc register

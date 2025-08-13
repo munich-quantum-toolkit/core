@@ -350,55 +350,51 @@ struct ConvertMQTDynMeasureQIR final
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = rewriter.getContext();
 
-    const auto inQubits = adaptor.getInQubits();
-    const auto resultBits = op->getResults();
     StringRef fnName;
     LLVM::LLVMFunctionType qirSignature;
     LLVM::LLVMFuncOp fnDecl;
-    for (size_t i = 0; i < inQubits.size(); i++) {
 
-      // create measure operation
-      fnName = "__quantum__qis__m__body";
-      qirSignature = LLVM::LLVMFunctionType::get(
-          LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx));
-      fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    // create measure operation
+    fnName = "__quantum__qis__m__body";
+    qirSignature = LLVM::LLVMFunctionType::get(LLVM::LLVMPointerType::get(ctx),
+                                               LLVM::LLVMPointerType::get(ctx));
+    fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
-      auto newOp =
-          rewriter.create<LLVM::CallOp>(op->getLoc(), fnDecl, inQubits[i]);
+    auto newOp = rewriter.create<LLVM::CallOp>(op->getLoc(), fnDecl,
+                                               adaptor.getInQubit());
 
-      // create record result output
-      fnName = "__quantum__rt__result_record_output";
-      qirSignature = LLVM::LLVMFunctionType::get(
-          LLVM::LLVMVoidType::get(ctx),
-          {LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx)});
-      fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    // create record result output
+    fnName = "__quantum__rt__result_record_output";
+    qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx),
+        {LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx)});
+    fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
-      Operation* addressOfOp = getAddressOfOp(op, rewriter, getState());
-      rewriter.create<LLVM::CallOp>(
-          op.getLoc(), fnDecl,
-          ValueRange{newOp->getResult(0), addressOfOp->getResult(0)});
+    Operation* addressOfOp = getAddressOfOp(op, rewriter, getState());
+    rewriter.create<LLVM::CallOp>(
+        op.getLoc(), fnDecl,
+        ValueRange{newOp->getResult(0), addressOfOp->getResult(0)});
 
-      // create record update reference count
-      fnName = "__quantum__rt__result_update_reference_count";
-      qirSignature = LLVM::LLVMFunctionType::get(
-          LLVM::LLVMVoidType::get(ctx),
-          {LLVM::LLVMPointerType::get(ctx), IntegerType::get(ctx, 32)});
-      fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    // create record update reference count
+    fnName = "__quantum__rt__result_update_reference_count";
+    qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx),
+        {LLVM::LLVMPointerType::get(ctx), IntegerType::get(ctx, 32)});
+    fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
-      rewriter.create<LLVM::CallOp>(
-          op.getLoc(), fnDecl,
-          ValueRange{newOp->getResult(0), getState().constantOp->getResult(0)});
+    rewriter.create<LLVM::CallOp>(
+        op.getLoc(), fnDecl,
+        ValueRange{newOp->getResult(0), getState().constantOp->getResult(0)});
 
-      // create read result op and replace the old result with new result
-      fnName = "__quantum__rt__read_result";
-      qirSignature = LLVM::LLVMFunctionType::get(
-          IntegerType::get(ctx, 1), {LLVM::LLVMPointerType::get(ctx)});
-      fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    // create read result op and replace the old result with new result
+    fnName = "__quantum__rt__read_result";
+    qirSignature = LLVM::LLVMFunctionType::get(
+        IntegerType::get(ctx, 1), {LLVM::LLVMPointerType::get(ctx)});
+    fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
-      auto resultOp = rewriter.create<LLVM::CallOp>(
-          op->getLoc(), fnDecl, ValueRange{newOp->getResult(0)});
-      op->replaceUsesOfWith(resultBits[i], resultOp.getResult());
-    }
+    auto resultOp = rewriter.create<LLVM::CallOp>(
+        op->getLoc(), fnDecl, ValueRange{newOp->getResult(0)});
+    op->replaceUsesOfWith(op->getResult(0), resultOp.getResult());
     rewriter.eraseOp(op);
     return success();
   }
