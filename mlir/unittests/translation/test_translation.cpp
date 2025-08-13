@@ -85,6 +85,20 @@ bool checkOutput(const std::string& checkString,
 
 using namespace qc;
 
+TEST_F(ImportTest, EntryPoint) {
+  const qc::QuantumComputation qc(1);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: func.func @main()
+    CHECK: return
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
 TEST_F(ImportTest, Allocation) {
   const qc::QuantumComputation qc(3);
 
