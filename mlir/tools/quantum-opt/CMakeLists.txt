@@ -17,9 +17,9 @@ set(LIBS
     ${passes_libs}
     MLIROptLib
     MLIRMQTOptTransforms
-    MLIRMQTDynTransforms
-    MQTDynToMQTOpt
-    MQTOptToMQTDyn
+    MLIRMQTRefTransforms
+    MQTRefToMQTOpt
+    MQTOptToMQTRef
     MQTDynToQIR
     QIRToMQTDyn)
 

@@ -12,6 +12,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/iterator_range.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
@@ -64,6 +65,7 @@ void mqt::ir::opt::MQTOptDialect::initialize() {
 #define GET_OP_CLASSES
 #include "mlir/Dialect/MQTOpt/IR/MQTOptOps.cpp.inc"
 
+namespace mqt::ir::opt {
 namespace {
 /**
  * @brief Prints the given list of types as a comma-separated list
@@ -72,24 +74,17 @@ namespace {
  * @param types The types to print.
  **/
 void printCommaSeparated(mlir::OpAsmPrinter& printer, mlir::TypeRange types) {
-  if (types.empty()) {
-    return;
-  }
-
-  printer.printType(types.front());
-  for (auto type : llvm::drop_begin(types)) {
-    printer << ", ";
-    printer.printType(type);
-  }
+  llvm::interleaveComma(llvm::make_range(types.begin(), types.end()),
+                        printer.getStream(),
+                        [&printer](mlir::Type t) { printer.printType(t); });
 }
 } // namespace
 
-namespace mqt::ir::opt {
 mlir::ParseResult
 parseOptOutputTypes(mlir::OpAsmParser& parser,
-                    llvm::SmallVectorImpl<::mlir::Type>& outQubits,
-                    llvm::SmallVectorImpl<::mlir::Type>& posCtrlOutQubits,
-                    llvm::SmallVectorImpl<::mlir::Type>& negCtrlOutQubits) {
+                    llvm::SmallVectorImpl<mlir::Type>& outQubits,
+                    llvm::SmallVectorImpl<mlir::Type>& posCtrlOutQubits,
+                    llvm::SmallVectorImpl<mlir::Type>& negCtrlOutQubits) {
   // No ":" delimiter -> no output types.
   if (parser.parseOptionalColon().failed()) {
     return mlir::success();

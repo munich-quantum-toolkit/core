@@ -8,15 +8,14 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/MQTDynToMQTOpt/MQTDynToMQTOpt.h" // IWYU pragma: keep
 #include "mlir/Conversion/MQTDynToQIR/MQTDynToQIR.h"       // IWYU pragma: keep
-#include "mlir/Conversion/MQTOptToMQTDyn/MQTOptToMQTDyn.h" // IWYU pragma: keep
+#include "mlir/Conversion/MQTOptToMQTRef/MQTOptToMQTRef.h" // IWYU pragma: keep
+#include "mlir/Conversion/MQTRefToMQTOpt/MQTRefToMQTOpt.h" // IWYU pragma: keep
 #include "mlir/Conversion/QIRToMQTDyn/QIRToMQTDyn.h"       // IWYU pragma: keep
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"  // IWYU pragma: keep
-#include "mlir/Dialect/MQTDyn/Transforms/Passes.h" // IWYU pragma: keep
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"  // IWYU pragma: keep
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h" // IWYU pragma: keep
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"          // IWYU pragma: keep
+#include "mlir/Dialect/MQTOpt/Transforms/Passes.h"         // IWYU pragma: keep
+#include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"          // IWYU pragma: keep
+#include "mlir/Dialect/MQTRef/Transforms/Passes.h"         // IWYU pragma: keep
 
 #include <mlir/Dialect/Func/Extensions/AllExtensions.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -27,18 +26,16 @@
 int main(const int argc, char** argv) {
   mlir::registerAllPasses();
   mqt::ir::opt::registerMQTOptPasses();
-  mqt::ir::dyn::registerMQTDynPasses();
-  mqt::ir::registerMQTDynToMQTOptPasses();
-  mqt::ir::registerMQTOptToMQTDynPasses();
-  mqt::ir::registerMQTDynToQIRPasses();
-  mqt::ir::registerQIRToMQTDynPasses();
+  mqt::ir::ref::registerMQTRefPasses();
+  mqt::ir::registerMQTRefToMQTOptPasses();
+  mqt::ir::registerMQTOptToMQTRefPasses();
 
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);
   mlir::func::registerAllExtensions(registry);
   registry.insert<mqt::ir::opt::MQTOptDialect>();
-  registry.insert<mqt::ir::dyn::MQTDynDialect>();
   registry.insert<mlir::LLVM::LLVMDialect>();
+  registry.insert<mqt::ir::ref::MQTRefDialect>();
 
   return mlir::asMainReturnCode(
       MlirOptMain(argc, argv, "Quantum optimizer driver\n", registry));
