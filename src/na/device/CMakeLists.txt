@@ -148,6 +148,7 @@ if(NOT TARGET ${TARGET_NAME})
   if(NOT BUILD_MQT_CORE_SHARED_LIBS)
     target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_QDMI_NA_STATIC_DEFINE)
   endif()
+
   # Generate additional alias for the target
   add_library(qdmi::mqt_na_device ALIAS ${TARGET_NAME})
 
