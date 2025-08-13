@@ -15,9 +15,9 @@
 namespace mqt::ir {
 
 #define GEN_PASS_DECL
-#include "mlir/Conversion/MQTDynToQIR/MQTDynToQIR.h.inc"
+#include "mlir/Conversion/QIRToMQTRef/QIRToMQTRef.h.inc"
 
 #define GEN_PASS_REGISTRATION
-#include "mlir/Conversion/MQTDynToQIR/MQTDynToQIR.h.inc"
+#include "mlir/Conversion/QIRToMQTRef/QIRToMQTRef.h.inc"
 
 } // namespace mqt::ir

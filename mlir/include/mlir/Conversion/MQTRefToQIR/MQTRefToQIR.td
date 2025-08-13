@@ -8,15 +8,15 @@
 
 include "mlir/Pass/PassBase.td"
 
-def MQTDynToQIR : Pass<"mqtdyn-to-qir"> {
-    let summary = "Convert MQT's `Dyn` to qir";
+def MQTRefToQIR : Pass<"mqtref-to-qir"> {
+    let summary = "Convert MQT's `Ref` to qir";
 
     let description = [{
    }];
 
   // Define dependent dialects
   let dependentDialects = [
-     "::mqt::ir::dyn::MQTDynDialect",
+     "::mqt::ir::ref::MQTRefDialect",
      "mlir::LLVM::LLVMDialect"
   ];
 }

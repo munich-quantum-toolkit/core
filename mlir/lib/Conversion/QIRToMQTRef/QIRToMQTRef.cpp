@@ -11,7 +11,7 @@
 // macro to check the gatename and to replace the simple gate
 #define ADD_CONVERT_SIMPLE_GATE(gate)                                          \
   else if (gateName == #gate) {                                                \
-    rewriter.replaceOpWithNewOp<dyn::gate>(op, DenseF64ArrayAttr{},            \
+    rewriter.replaceOpWithNewOp<ref::gate>(op, DenseF64ArrayAttr{},            \
                                            DenseBoolArrayAttr{}, ValueRange{}, \
                                            qubits, ctrlQubits, ValueRange{});  \
   }
@@ -19,13 +19,13 @@
 // macro to check the gateName and to replace the rotation gate
 #define ADD_CONVERT_ROTATION_GATE(gate)                                        \
   else if (gateName == #gate) {                                                \
-    rewriter.replaceOpWithNewOp<dyn::gate>(                                    \
+    rewriter.replaceOpWithNewOp<ref::gate>(                                    \
         op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, rotationDegrees,        \
         operands, ctrlQubits, ValueRange{});                                   \
   }
-#include "mlir/Conversion/QIRToMQTDyn/QIRToMQTDyn.h"
+#include "mlir/Conversion/QIRToMQTRef/QIRToMQTRef.h"
 
-#include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
+#include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
 #include <algorithm>
 #include <cctype>
@@ -55,12 +55,12 @@ namespace mqt::ir {
 
 using namespace mlir;
 
-#define GEN_PASS_DEF_QIRTOMQTDYN
-#include "mlir/Conversion/QIRToMQTDyn/QIRToMQTDyn.h.inc"
+#define GEN_PASS_DEF_QIRTOMQTREF
+#include "mlir/Conversion/QIRToMQTRef/QIRToMQTRef.h.inc"
 
-class QIRToMQTDynTypeConverter final : public TypeConverter {
+class QIRToMQTRefTypeConverter final : public TypeConverter {
 public:
-  explicit QIRToMQTDynTypeConverter(MLIRContext* /*ctx*/) {
+  explicit QIRToMQTRefTypeConverter(MLIRContext* /*ctx*/) {
     // Identity conversion
     addConversion([](Type type) { return type; });
   }
@@ -69,11 +69,11 @@ public:
 namespace {
 
 struct LoweringState {
-  // map each llvm qir result to the new mqtdyn result
+  // map each llvm qir result to the new mqtref result
   DenseMap<Value, Value> operandMap;
   // the newly created alloc register if it does not exist already, otherwise
   // this is a nullptr and will not be used
-  dyn::AllocOp qReg;
+  ref::AllocOp qReg;
   // next free allocate index
   int64_t index{};
 };
@@ -146,7 +146,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
 
   /**
    * @brief Replaces the call operation with a matching simple gate operation
-   * from the mqtdyn dialect
+   * from the mqtref dialect
    *
    * @param op The call operation that is replaced.
    * @param gateName The name of the gate.
@@ -164,7 +164,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     // to the replacement, therefore the first operation in the chain is
     // manually replaced
     if (gateName == "XOp") {
-      rewriter.replaceOpWithNewOp<dyn::XOp>(op, DenseF64ArrayAttr{},
+      rewriter.replaceOpWithNewOp<ref::XOp>(op, DenseF64ArrayAttr{},
                                             DenseBoolArrayAttr{}, ValueRange{},
                                             qubits, ctrlQubits, ValueRange{});
     }
@@ -191,7 +191,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
 
   /**
    * @brief Replaces the call operation with a matching rotation gate operation
-   * from the mqtdyn dialect
+   * from the mqtref dialect
    *
    * @param op The call operation that is replaced.
    * @param gateName The name of the gate.
@@ -220,7 +220,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     // to the replacement, therefore the first operation in the chain is
     // manually replaced
     if (gateName == "POp") {
-      rewriter.replaceOpWithNewOp<dyn::POp>(
+      rewriter.replaceOpWithNewOp<ref::POp>(
           op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, rotationDegrees,
           operands, ctrlQubits, ValueRange{});
     }
@@ -242,8 +242,8 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
                   ConversionPatternRewriter& rewriter) const override {
     // get the name of the operation and prepare the return types
     const auto fnName = op.getCallee();
-    const auto qubitType = dyn::QubitType::get(rewriter.getContext());
-    const auto qregType = dyn::QubitRegisterType::get(rewriter.getContext());
+    const auto qubitType = ref::QubitType::get(rewriter.getContext());
+    const auto qregType = ref::QubitRegisterType::get(rewriter.getContext());
     const auto operands = adaptor.getOperands();
 
     // get the new operands from the operandMap
@@ -261,7 +261,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
 
     // match alloc register
     if (fnName == "__quantum__rt__qubit_allocate_array") {
-      const auto newOp = rewriter.replaceOpWithNewOp<dyn::AllocOp>(
+      const auto newOp = rewriter.replaceOpWithNewOp<ref::AllocOp>(
           op, qregType, adaptor.getOperands());
 
       // update the operand list
@@ -270,7 +270,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     }
     // match alloc qubit using the given allocOp and the index
     else if (fnName == "__quantum__rt__qubit_allocate") {
-      const auto newOp = rewriter.replaceOpWithNewOp<dyn::ExtractOp>(
+      const auto newOp = rewriter.replaceOpWithNewOp<ref::ExtractOp>(
           op, qubitType, getState().qReg, Value{},
           IntegerAttr::get(rewriter.getIntegerType(64), getState().index++));
 
@@ -280,7 +280,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     }
     // match extract qubit from register
     else if (fnName == "__quantum__rt__array_get_element_ptr_1d") {
-      const auto newOp = rewriter.replaceOpWithNewOp<dyn::ExtractOp>(
+      const auto newOp = rewriter.replaceOpWithNewOp<ref::ExtractOp>(
           op, qubitType, newOperands);
 
       // update the operand list
@@ -296,7 +296,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
         if (auto callOp = dyn_cast<LLVM::CallOp>(user)) {
           // check if there is read result operation to replace the result uses
           if (callOp.getCallee() == "__quantum__rt__read_result") {
-            rewriter.replaceOpWithNewOp<dyn::MeasureOp>(callOp, bitType,
+            rewriter.replaceOpWithNewOp<ref::MeasureOp>(callOp, bitType,
                                                         newOperands);
             foundUser = true;
             rewriter.eraseOp(op);
@@ -306,16 +306,16 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
       }
       if (!foundUser) {
         // otherwise just create the measure operation
-        rewriter.replaceOpWithNewOp<dyn::MeasureOp>(op, bitType, newOperands);
+        rewriter.replaceOpWithNewOp<ref::MeasureOp>(op, bitType, newOperands);
       }
     }
     // match dealloc register
     else if (fnName == "__quantum__rt__qubit_release_array") {
-      rewriter.replaceOpWithNewOp<dyn::DeallocOp>(op, newOperands.front());
+      rewriter.replaceOpWithNewOp<ref::DeallocOp>(op, newOperands.front());
     }
     // match reset operation
     else if (fnName == "__quantum__qis__reset__body") {
-      rewriter.replaceOpWithNewOp<dyn::ResetOp>(op, newOperands.front());
+      rewriter.replaceOpWithNewOp<ref::ResetOp>(op, newOperands.front());
     } else {
       // remove the prefix and the suffix of the gate name
       auto gateName(fnName->substr(16).drop_back(6));
@@ -340,13 +340,13 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
 
       // try to match and replace gate operations
       if (gateName == "gphase") {
-        rewriter.replaceOpWithNewOp<dyn::GPhaseOp>(
+        rewriter.replaceOpWithNewOp<ref::GPhaseOp>(
             op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, newOperands,
             ValueRange{}, ctrlQubits, ValueRange{});
         return success();
       }
       if (gateName == "barrier") {
-        rewriter.replaceOpWithNewOp<dyn::BarrierOp>(
+        rewriter.replaceOpWithNewOp<ref::BarrierOp>(
             op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
             newOperands, ctrlQubits, ValueRange{});
         return success();
@@ -377,8 +377,8 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
   }
 };
 
-struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
-  using QIRToMQTDynBase::QIRToMQTDynBase;
+struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
+  using QIRToMQTRefBase::QIRToMQTRefBase;
 
   /**
    * @brief Finds the main function in the module
@@ -412,7 +412,7 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
    * @return An optional that either contains the newly created allocate
    * operation or std::nullopt.
    */
-  static dyn::AllocOp ensureRegisterAllocation(Operation* op) {
+  static ref::AllocOp ensureRegisterAllocation(Operation* op) {
     int64_t requiredQubits = 0;
     auto module = dyn_cast<ModuleOp>(op);
 
@@ -443,15 +443,15 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
 
       // create the alloc register operation at the start of the block
       builder.setInsertionPointToStart(&secondBlock);
-      auto allocOp = builder.create<dyn::AllocOp>(
-          main->getLoc(), dyn::QubitRegisterType::get(module->getContext()),
+      auto allocOp = builder.create<ref::AllocOp>(
+          main->getLoc(), ref::QubitRegisterType::get(module->getContext()),
           Value{}, builder.getI64IntegerAttr(requiredQubits));
 
       // create the dealloc operation at the end of the block
       auto& ops = secondBlock.getOperations();
       const auto insertPoint = std::prev(ops.end(), 1);
       builder.setInsertionPoint(&*insertPoint);
-      builder.create<dyn::DeallocOp>(main->getLoc(), allocOp);
+      builder.create<ref::DeallocOp>(main->getLoc(), allocOp);
       return allocOp;
     }
     // otherwise return nullptr
@@ -468,8 +468,8 @@ struct QIRToMQTDyn final : impl::QIRToMQTDynBase<QIRToMQTDyn> {
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
-    QIRToMQTDynTypeConverter typeConverter(context);
-    target.addLegalDialect<dyn::MQTDynDialect>();
+    QIRToMQTRefTypeConverter typeConverter(context);
+    target.addLegalDialect<ref::MQTRefDialect>();
 
     // only convert the call and load operations for now
     target.addIllegalOp<LLVM::CallOp>();

@@ -8,14 +8,14 @@
  * Licensed under the MIT License
  */
 
-// macro to add the conversion pattern from any dyn gate operation to a llvm
+// macro to add the conversion pattern from any ref gate operation to a llvm
 // call operation that adheres to the qir specification
 #define ADD_CONVERT_PATTERN(gate)                                              \
-  mqtPatterns.add<ConvertMQTDynGateOpQIR<dyn::gate>>(typeConverter, context);
+  mqtPatterns.add<ConvertMQTRefGateOpQIR<ref::gate>>(typeConverter, context);
 
-#include "mlir/Conversion/MQTDynToQIR/MQTDynToQIR.h"
+#include "mlir/Conversion/MQTRefToQIR/MQTRefToQIR.h"
 
-#include "mlir/Dialect/MQTDyn/IR/MQTDynDialect.h"
+#include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -51,8 +51,8 @@ namespace mqt::ir {
 
 using namespace mlir;
 
-#define GEN_PASS_DEF_MQTDYNTOQIR
-#include "mlir/Conversion/MQTDynToQIR/MQTDynToQIR.h.inc"
+#define GEN_PASS_DEF_MQTREFTOQIR
+#include "mlir/Conversion/MQTRefToQIR/MQTRefToQIR.h.inc"
 
 namespace {
 // add function declaration at the end if it does not exist already and
@@ -98,24 +98,24 @@ private:
 };
 } // namespace
 
-struct MQTDynToQIRTypeConverter final : public LLVMTypeConverter {
-  explicit MQTDynToQIRTypeConverter(MLIRContext* ctx) : LLVMTypeConverter(ctx) {
+struct MQTRefToQIRTypeConverter final : public LLVMTypeConverter {
+  explicit MQTRefToQIRTypeConverter(MLIRContext* ctx) : LLVMTypeConverter(ctx) {
     // QubitType conversion
-    addConversion([ctx](dyn::QubitType /*type*/) {
+    addConversion([ctx](ref::QubitType /*type*/) {
       return LLVM::LLVMPointerType::get(ctx);
     });
     // QregType Conversion
-    addConversion([ctx](dyn::QubitRegisterType /*type*/) {
+    addConversion([ctx](ref::QubitRegisterType /*type*/) {
       return LLVM::LLVMPointerType::get(ctx);
     });
   }
 };
 
-struct ConvertMQTDynAllocQIR final : OpConversionPattern<dyn::AllocOp> {
+struct ConvertMQTRefAllocQIR final : OpConversionPattern<ref::AllocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(dyn::AllocOp op, OpAdaptor adaptor,
+  matchAndRewrite(ref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
 
@@ -140,11 +140,11 @@ struct ConvertMQTDynAllocQIR final : OpConversionPattern<dyn::AllocOp> {
     return success();
   }
 };
-struct ConvertMQTDynDeallocQIR final : OpConversionPattern<dyn::DeallocOp> {
+struct ConvertMQTRefDeallocQIR final : OpConversionPattern<ref::DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(dyn::DeallocOp op, OpAdaptor adaptor,
+  matchAndRewrite(ref::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
 
@@ -164,11 +164,11 @@ struct ConvertMQTDynDeallocQIR final : OpConversionPattern<dyn::DeallocOp> {
   }
 };
 
-struct ConvertMQTDynResetQIR final : OpConversionPattern<dyn::ResetOp> {
+struct ConvertMQTRefResetQIR final : OpConversionPattern<ref::ResetOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(dyn::ResetOp op, OpAdaptor adaptor,
+  matchAndRewrite(ref::ResetOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
 
@@ -187,11 +187,11 @@ struct ConvertMQTDynResetQIR final : OpConversionPattern<dyn::ResetOp> {
     return success();
   }
 };
-struct ConvertMQTDynExtractQIR final : OpConversionPattern<dyn::ExtractOp> {
+struct ConvertMQTRefExtractQIR final : OpConversionPattern<ref::ExtractOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(dyn::ExtractOp op, OpAdaptor adaptor,
+  matchAndRewrite(ref::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
 
@@ -227,12 +227,12 @@ struct ConvertMQTDynExtractQIR final : OpConversionPattern<dyn::ExtractOp> {
   }
 };
 
-template <typename MQTDynGateOp>
-struct ConvertMQTDynGateOpQIR final : OpConversionPattern<MQTDynGateOp> {
-  using OpConversionPattern<MQTDynGateOp>::OpConversionPattern;
+template <typename MQTRefGateOp>
+struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
+  using OpConversionPattern<MQTRefGateOp>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(MQTDynGateOp op, typename MQTDynGateOp::Adaptor adaptor,
+  matchAndRewrite(MQTRefGateOp op, typename MQTRefGateOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = rewriter.getContext();
 
@@ -292,10 +292,10 @@ struct ConvertMQTDynGateOpQIR final : OpConversionPattern<MQTDynGateOp> {
   }
 };
 
-struct ConvertMQTDynMeasureQIR final
-    : StatefulOpConversionPattern<dyn::MeasureOp> {
+struct ConvertMQTRefMeasureQIR final
+    : StatefulOpConversionPattern<ref::MeasureOp> {
   using StatefulOpConversionPattern<
-      dyn::MeasureOp>::StatefulOpConversionPattern;
+      ref::MeasureOp>::StatefulOpConversionPattern;
 
   /**
    * @brief returns the next addressOfOp for a global constant to store the
@@ -369,7 +369,7 @@ struct ConvertMQTDynMeasureQIR final
   }
 
   LogicalResult
-  matchAndRewrite(dyn::MeasureOp op, OpAdaptor adaptor,
+  matchAndRewrite(ref::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = rewriter.getContext();
 
@@ -423,8 +423,8 @@ struct ConvertMQTDynMeasureQIR final
   }
 };
 
-struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
-  using MQTDynToQIRBase::MQTDynToQIRBase;
+struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
+  using MQTRefToQIRBase::MQTRefToQIRBase;
 
   /**
    * @brief Finds the main function in the module
@@ -598,7 +598,7 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     ConversionTarget target(*context);
     RewritePatternSet stdPatterns(context);
     RewritePatternSet mqtPatterns(context);
-    MQTDynToQIRTypeConverter typeConverter(context);
+    MQTRefToQIRTypeConverter typeConverter(context);
 
     // transform the default dialects first
     // maybe need to add more?
@@ -626,12 +626,12 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     // add the initialize operation
     addInitialize(main, context);
 
-    target.addIllegalDialect<dyn::MQTDynDialect>();
-    mqtPatterns.add<ConvertMQTDynAllocQIR>(typeConverter, context);
-    mqtPatterns.add<ConvertMQTDynDeallocQIR>(typeConverter, context);
-    mqtPatterns.add<ConvertMQTDynExtractQIR>(typeConverter, context);
-    mqtPatterns.add<ConvertMQTDynResetQIR>(typeConverter, context);
-    mqtPatterns.add<ConvertMQTDynMeasureQIR>(typeConverter, context, &state);
+    target.addIllegalDialect<ref::MQTRefDialect>();
+    mqtPatterns.add<ConvertMQTRefAllocQIR>(typeConverter, context);
+    mqtPatterns.add<ConvertMQTRefDeallocQIR>(typeConverter, context);
+    mqtPatterns.add<ConvertMQTRefExtractQIR>(typeConverter, context);
+    mqtPatterns.add<ConvertMQTRefResetQIR>(typeConverter, context);
+    mqtPatterns.add<ConvertMQTRefMeasureQIR>(typeConverter, context, &state);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)

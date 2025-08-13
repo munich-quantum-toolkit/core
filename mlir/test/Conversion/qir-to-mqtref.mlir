@@ -6,14 +6,14 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file --qir-to-mqtdyn | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --qir-to-mqtref | FileCheck %s
 
 // This test checks if the alloc register call is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertAllocRegister()
     llvm.func @testConvertAllocRegister() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
-        // CHECK: %[[r_0:.*]] = "mqtdyn.allocQubitRegister"(%[[size]]) : (i64) -> !mqtdyn.QubitRegister
+        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c = llvm.mlir.constant(14 : i64) : i64
@@ -37,8 +37,8 @@ module {
     llvm.func @testConvertExtractFromRegister() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
         // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
-        // CHECK: %[[r_0:.*]] = "mqtdyn.allocQubitRegister"(%[[size]]) : (i64) -> !mqtdyn.QubitRegister
-        // CHECK: %[[q_0:.*]] = "mqtdyn.extractQubit"(%[[r_0]], %[[index]]) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
+        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
+        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]], %[[index]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(14 : i64) : i64
@@ -63,9 +63,9 @@ module {
 module {
     // CHECK-LABEL: llvm.func @testConvertAllocateQubit()
     llvm.func @testConvertAllocateQubit() attributes {passthrough = ["entry_point"]}  {
-      // CHECK: %[[r_0:.*]] = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}>
-      // CHECK: %[[q_0:.*]] = "mqtdyn.extractQubit"(%[[r_0]]) <{index_attr = 0 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
-      // CHECK: %[[q_1:.*]] = "mqtdyn.extractQubit"(%[[r_0]]) <{index_attr = 1 : i64}> : (!mqtdyn.QubitRegister) -> !mqtdyn.Qubit
+      // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}>
+      // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+      // CHECK: %[[q_1:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
         %0 = llvm.mlir.zero : !llvm.ptr
         llvm.call @__quantum__rt__initialize(%0) : (!llvm.ptr) -> ()
@@ -87,8 +87,8 @@ module {
     // CHECK-LABEL: llvm.func @testConvertDeallocRegister()
     llvm.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
-        // CHECK: %[[r_0:.*]] = "mqtdyn.allocQubitRegister"(%[[size]]) : (i64) -> !mqtdyn.QubitRegister
-        // CHECK: "mqtdyn.deallocQubitRegister"(%[[r_0]])
+        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
+        // CHECK: "mqtref.deallocQubitRegister"(%[[r_0]])
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(14 : i64) : i64
@@ -113,9 +113,9 @@ module {
     llvm.func @testConvertResetOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
         // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
-        // CHECK: %[[r_0:.*]] = "mqtdyn.allocQubitRegister"(%[[size]]) : (i64) -> !mqtdyn.QubitRegister
-        // CHECK: %[[q_0:.*]] = "mqtdyn.extractQubit"(%[[r_0]], %[[index]]) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
-        // CHECK: "mqtdyn.reset"(%[[q_0]])
+        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
+        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]], %[[index]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
+        // CHECK: "mqtref.reset"(%[[q_0]])
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(14 : i64) : i64
@@ -146,9 +146,9 @@ module {
     llvm.func @testConvertMeasure() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
         // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
-        // CHECK: %[[r_0:.*]] = "mqtdyn.allocQubitRegister"(%[[size]]) : (i64) -> !mqtdyn.QubitRegister
-        // CHECK: %[[q_0:.*]] = "mqtdyn.extractQubit"(%[[r_0]], %[[index]]) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
-        // CHECK:  [[m_0:.*]] = "mqtdyn.measure"(%[[q_0]])
+        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
+        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]], %[[index]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
+        // CHECK:  [[m_0:.*]] = "mqtref.measure"(%[[q_0]])
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %a0 = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
@@ -184,9 +184,9 @@ module {
     llvm.func @testConvertReadResult() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
         // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
-        // CHECK: %[[r_0:.*]] = "mqtdyn.allocQubitRegister"(%[[size]]) : (i64) -> !mqtdyn.QubitRegister
-        // CHECK: %[[q_0:.*]] = "mqtdyn.extractQubit"(%[[r_0]], %[[index]]) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
-        // CHECK:  [[m_0:.*]] = "mqtdyn.measure"(%[[q_0]])
+        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
+        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]], %[[index]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
+        // CHECK:  [[m_0:.*]] = "mqtref.measure"(%[[q_0]])
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %a0 = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
@@ -221,19 +221,19 @@ module {
 module {
     // CHECK-LABEL: llvm.func @testConvertSingleQubitOp()
     llvm.func @testConvertSingleQubitOp() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: mqtdyn.h() %[[q_0:.*]]
-        // CHECK: mqtdyn.i() %[[q_0]]
-        // CHECK: mqtdyn.x() %[[q_0]]
-        // CHECK: mqtdyn.y() %[[q_0]]
-        // CHECK: mqtdyn.z() %[[q_0]]
-        // CHECK: mqtdyn.s() %[[q_0]]
-        // CHECK: mqtdyn.sdg() %[[q_0]]
-        // CHECK: mqtdyn.t() %[[q_0]]
-        // CHECK: mqtdyn.tdg() %[[q_0]]
-        // CHECK: mqtdyn.v() %[[q_0]]
-        // CHECK: mqtdyn.vdg() %[[q_0]]
-        // CHECK: mqtdyn.sx() %[[q_0]]
-        // CHECK: mqtdyn.sxdg() %[[q_0]]
+        // CHECK: mqtref.h() %[[q_0:.*]]
+        // CHECK: mqtref.i() %[[q_0]]
+        // CHECK: mqtref.x() %[[q_0]]
+        // CHECK: mqtref.y() %[[q_0]]
+        // CHECK: mqtref.z() %[[q_0]]
+        // CHECK: mqtref.s() %[[q_0]]
+        // CHECK: mqtref.sdg() %[[q_0]]
+        // CHECK: mqtref.t() %[[q_0]]
+        // CHECK: mqtref.tdg() %[[q_0]]
+        // CHECK: mqtref.v() %[[q_0]]
+        // CHECK: mqtref.vdg() %[[q_0]]
+        // CHECK: mqtref.sx() %[[q_0]]
+        // CHECK: mqtref.sxdg() %[[q_0]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(1 : i64) : i64
@@ -284,13 +284,13 @@ module {
 module {
     // CHECK-LABEL: llvm.func @testConvertTwoTargetOp()
     llvm.func @testConvertTwoTargetOp() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: mqtdyn.swap() %[[q_0:.*]], %[[q_1:.*]]
-        // CHECK: mqtdyn.iswap() %[[q_0]], %[[q_1]]
-        // CHECK: mqtdyn.iswapdg() %[[q_0]], %[[q_1]]
-        // CHECK: mqtdyn.peres() %[[q_0]], %[[q_1]]
-        // CHECK: mqtdyn.peresdg() %[[q_0]], %[[q_1]]
-        // CHECK: mqtdyn.dcx() %[[q_0]], %[[q_1]]
-        // CHECK: mqtdyn.ecr() %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.swap() %[[q_0:.*]], %[[q_1:.*]]
+        // CHECK: mqtref.iswap() %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.iswapdg() %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.peres() %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.peresdg() %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.dcx() %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.ecr() %[[q_0]], %[[q_1]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(2 : i64) : i64
@@ -333,13 +333,13 @@ module {
     // CHECK-LABEL: llvm.func @testSingleQubitRotationOp()
     llvm.func @testSingleQubitRotationOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
-        // CHECK: mqtdyn.u2(%[[c_0]], %[[c_0]]) %[[q_0:.*]]
-        // CHECK: mqtdyn.p(%[[c_0]]) %[[q_0]]
-        // CHECK: mqtdyn.u(%[[c_0]], %[[c_0]], %[[c_0]]) %[[q_0]]
-        // CHECK: mqtdyn.p(%[[c_0]]) %[[q_0]]
-        // CHECK: mqtdyn.rx(%[[c_0]]) %[[q_0]]
-        // CHECK: mqtdyn.ry(%[[c_0]]) %[[q_0]]
-        // CHECK: mqtdyn.rz(%[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.u2(%[[c_0]], %[[c_0]]) %[[q_0:.*]]
+        // CHECK: mqtref.p(%[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.u(%[[c_0]], %[[c_0]], %[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.p(%[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.rx(%[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.ry(%[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.rz(%[[c_0]]) %[[q_0]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(2 : i64) : i64
@@ -382,12 +382,12 @@ module {
     // CHECK-LABEL: llvm.func @testMultipleQubitRotationOp()
     llvm.func @testMultipleQubitRotationOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
-        // CHECK: mqtdyn.rxx(%[[c_0]]) %[[q_0:.*]], %[[q_1:.*]]
-        // CHECK: mqtdyn.ryy(%[[c_0]]) %[[q_0]], %[[q_1]]
-        // CHECK: mqtdyn.rzz(%[[c_0]]) %[[q_0]], %[[q_1]]
-        // CHECK: mqtdyn.rzx(%[[c_0]]) %[[q_0]], %[[q_1]]
-        // CHECK: mqtdyn.xxminusyy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]]
-        // CHECK: mqtdyn.xxplusyy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.rxx(%[[c_0]]) %[[q_0:.*]], %[[q_1:.*]]
+        // CHECK: mqtref.ryy(%[[c_0]]) %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.rzz(%[[c_0]]) %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.rzx(%[[c_0]]) %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.xxminusyy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.xxplusyy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]]
 
 
         %0 = llvm.mlir.zero : !llvm.ptr
@@ -431,10 +431,10 @@ module {
 module {
     // CHECK-LABEL: llvm.func @testConvertControlledOp()
     llvm.func @testConvertControlledOp() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: mqtdyn.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
-        // CHECK: mqtdyn.x() %[[ANY:.*]] ctrl %[[ANY:.*]], %[[ANY:.*]]
-        // CHECK: mqtdyn.z() %[[ANY:.*]] ctrl %[[ANY:.*]]
-        // CHECK: mqtdyn.rx(%[[ANY:.*]]) %[[ANY:.*]] ctrl %[[ANY:.*]]
+        // CHECK: mqtref.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
+        // CHECK: mqtref.x() %[[ANY:.*]] ctrl %[[ANY:.*]], %[[ANY:.*]]
+        // CHECK: mqtref.z() %[[ANY:.*]] ctrl %[[ANY:.*]]
+        // CHECK: mqtref.rx(%[[ANY:.*]]) %[[ANY:.*]] ctrl %[[ANY:.*]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(3 : i64) : i64
@@ -475,7 +475,7 @@ module {
     // CHECK-LABEL: llvm.func @testConvertGPhaseOp()
     llvm.func @testConvertGPhaseOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
-        // CHECK: mqtdyn.gphase(%[[c_0]])
+        // CHECK: mqtref.gphase(%[[c_0]])
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(3.000000e-01 : f64) : f64
@@ -497,7 +497,7 @@ module {
     // CHECK-LABEL: llvm.func @testConvertGPhaseOpControlled()
     llvm.func @testConvertGPhaseOpControlled() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
-        // CHECK: mqtdyn.gphase(%[[c_0]]) ctrl %[[ANY:.*]]
+        // CHECK: mqtref.gphase(%[[c_0]]) ctrl %[[ANY:.*]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(1 : i64) : i64
@@ -525,7 +525,7 @@ module {
 module {
     // CHECK-LABEL: llvm.func @testConvertBarrierOp()
     llvm.func @testConvertBarrierOp() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: mqtdyn.barrier() %[[ANY:.*]]
+        // CHECK: mqtref.barrier() %[[ANY:.*]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(1 : i64) : i64
@@ -555,14 +555,14 @@ module {
 
     // CHECK-LABEL: llvm.func @bellState()
     llvm.func @bellState() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: %[[r_0:.*]] = "mqtdyn.allocQubitRegister"(%[[ANY:.*]]) : (i64) -> !mqtdyn.QubitRegister
-        // CHECK: %[[q_0:.*]] = "mqtdyn.extractQubit"(%[[r_0]], %[[ANY:.*]]) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
-        // CHECK: %[[q_1:.*]] = "mqtdyn.extractQubit"(%[[r_0]], %[[ANY:.*]]) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
-        // CHECK: mqtdyn.h() %[[q_0]]
-        // CHECK: mqtdyn.x() %[[q_1]] ctrl %[[q_0]]
-        // CHECK: %[[m_0:.*]] = "mqtdyn.measure"(%[[q_0]]) : (!mqtdyn.Qubit) -> i1
-        // CHECK: %[[m_1:.*]] = "mqtdyn.measure"(%[[q_1]]) : (!mqtdyn.Qubit) -> i1
-        // CHECK: "mqtdyn.deallocQubitRegister"(%[[r_0]]) : (!mqtdyn.QubitRegister) -> ()
+        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[ANY:.*]]) : (i64) -> !mqtref.QubitRegister
+        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]], %[[ANY:.*]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
+        // CHECK: %[[q_1:.*]] = "mqtref.extractQubit"(%[[r_0]], %[[ANY:.*]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
+        // CHECK: mqtref.h() %[[q_0]]
+        // CHECK: mqtref.x() %[[q_1]] ctrl %[[q_0]]
+        // CHECK: %[[m_0:.*]] = "mqtref.measure"(%[[q_0]]) : (!mqtref.Qubit) -> i1
+        // CHECK: %[[m_1:.*]] = "mqtref.measure"(%[[q_1]]) : (!mqtref.Qubit) -> i1
+        // CHECK: "mqtref.deallocQubitRegister"(%[[r_0]]) : (!mqtref.QubitRegister) -> ()
 
 
         %0 = llvm.mlir.zero : !llvm.ptr
