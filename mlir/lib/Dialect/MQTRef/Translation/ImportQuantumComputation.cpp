@@ -209,12 +209,8 @@ addOperations(mlir::OpBuilder& builder,
       ADD_OP_CASE(RYY)
       ADD_OP_CASE(RZZ)
       ADD_OP_CASE(RZX)
-    case qc::OpType::XXminusYY:
-      addOperation<mqt::ir::ref::XXminusYY>(builder, *operation, qubits);
-      break;
-    case qc::OpType::XXplusYY:
-      addOperation<mqt::ir::ref::XXplusYY>(builder, *operation, qubits);
-      break;
+      ADD_OP_CASE(XXminusYY)
+      ADD_OP_CASE(XXplusYY)
     case qc::OpType::Measure:
       addMeasureOp(builder, *operation, qubits);
       break;
