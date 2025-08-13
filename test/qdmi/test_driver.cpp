@@ -520,8 +520,8 @@ INSTANTIATE_TEST_SUITE_P(
     DriverTest,
     // Parameters to test with
     testing::ValuesIn(DEVICES),
-    [](const testing::TestParamInfo<std::string>& parmInfo) {
-      std::string name = parmInfo.param;
+    [](const testing::TestParamInfo<std::string>& paramInfo) {
+      std::string name = paramInfo.param;
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
       // Remove parentheses for valid test names
@@ -536,8 +536,8 @@ INSTANTIATE_TEST_SUITE_P(
     DriverJobTest,
     // Parameters to test with
     testing::ValuesIn(DEVICES),
-    [](const testing::TestParamInfo<std::string>& parmInfo) {
-      std::string name = parmInfo.param;
+    [](const testing::TestParamInfo<std::string>& paramInfo) {
+      std::string name = paramInfo.param;
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
       // Remove parentheses for valid test names
