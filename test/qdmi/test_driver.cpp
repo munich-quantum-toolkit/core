@@ -126,9 +126,25 @@ protected:
   }
 };
 
+TEST_P(DriverTest, LoadLibraryTwice) {
+  EXPECT_THROW(qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN"), std::runtime_error);
+}
+
 TEST_P(DriverTest, SessionSetParameter) {
-  EXPECT_EQ(QDMI_session_set_parameter(session, QDMI_SESSION_PARAMETER_MAX, 0,
+  const std::string authFile = "authfile.txt";
+  QDMI_Session uninitializedSession = nullptr;
+  ASSERT_EQ(QDMI_session_alloc(&uninitializedSession), QDMI_SUCCESS);
+  EXPECT_EQ(QDMI_session_set_parameter(uninitializedSession, QDMI_SESSION_PARAMETER_AUTHFILE, 13,
+                                       authFile.c_str()),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(QDMI_session_set_parameter(uninitializedSession, QDMI_SESSION_PARAMETER_MAX, 0,
                                        nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_session_set_parameter(session,
+                                       QDMI_SESSION_PARAMETER_AUTHFILE, 13, authFile.c_str()),
+            QDMI_ERROR_BADSTATE);
+  EXPECT_EQ(QDMI_session_set_parameter(nullptr,
+                                       QDMI_SESSION_PARAMETER_AUTHFILE, 13, authFile.c_str()),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
@@ -136,6 +152,7 @@ TEST_P(DriverTest, JobCreate) {
   QDMI_Job job = nullptr;
   EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_SUCCESS);
   QDMI_job_free(job);
+  EXPECT_EQ(QDMI_device_create_job(device, nullptr), QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST_P(DriverTest, JobSetParameter) {
@@ -144,10 +161,20 @@ TEST_P(DriverTest, JobSetParameter) {
 }
 
 TEST_P(DriverJobTest, JobSetParameter) {
-  QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
+  EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAM,
+                                     sizeof(QDMI_Program_Format), nullptr),
+              QDMI_ERROR_INVALIDARGUMENT);
+  const QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
   EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
                                      sizeof(QDMI_Program_Format), &value),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  const size_t numShots = 1;
+  EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
+                                     sizeof(QDMI_Program_Format), &numShots),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_MAX,
+                                     sizeof(QDMI_Program_Format), nullptr),
+              QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST_P(DriverTest, JobQueryProperty) {
@@ -160,6 +187,30 @@ TEST_P(DriverJobTest, JobQueryProperty) {
   EXPECT_THAT(
       QDMI_job_query_property(job, QDMI_JOB_PROPERTY_ID, 0, nullptr, nullptr),
       testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+
+  EXPECT_THAT(
+      QDMI_job_query_property(job, QDMI_JOB_PROPERTY_PROGRAM, 0, nullptr, nullptr),
+      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+
+  QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
+  EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
+                                     sizeof(QDMI_Program_Format), &value),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  value = QDMI_PROGRAM_FORMAT_MAX;
+  EXPECT_THAT(
+      QDMI_job_query_property(job, QDMI_JOB_PROPERTY_PROGRAMFORMAT, sizeof(QDMI_Program_Format), &value, nullptr),
+      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  EXPECT_EQ(value, QDMI_PROGRAM_FORMAT_QASM2);
+
+  size_t numShots = 1;
+  EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
+                                     sizeof(QDMI_Program_Format), &numShots),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  numShots = 0;
+  EXPECT_THAT(
+      QDMI_job_query_property(job, QDMI_JOB_PROPERTY_SHOTSNUM, sizeof(size_t), &numShots, nullptr),
+      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  EXPECT_EQ(numShots, 1);
 }
 
 TEST_P(DriverTest, JobSubmit) {
@@ -216,23 +267,30 @@ TEST_P(DriverJobTest, JobGetResults) {
 TEST_P(DriverTest, QueryDeviceProperty) {
   EXPECT_EQ(QDMI_device_query_device_property(device, QDMI_DEVICE_PROPERTY_MAX,
                                               0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT)
-      << "Devices must implement `QDMI_device_query_device_property`.";
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_query_device_property(nullptr, QDMI_DEVICE_PROPERTY_MAX,
+                                              0, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST_P(DriverTest, QuerySiteProperty) {
   EXPECT_EQ(QDMI_device_query_site_property(
                 device, nullptr, QDMI_SITE_PROPERTY_MAX, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT)
-      << "Devices must implement `QDMI_device_query_site_property`.";
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_query_site_property(
+                nullptr, nullptr, QDMI_SITE_PROPERTY_MAX, 0, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST_P(DriverTest, QueryOperationProperty) {
   EXPECT_EQ(QDMI_device_query_operation_property(
                 device, nullptr, 0, nullptr, 0, nullptr,
                 QDMI_OPERATION_PROPERTY_MAX, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT)
-      << "Devices must implement `QDMI_device_query_operation_property`.";
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_query_operation_property(
+                nullptr, nullptr, 0, nullptr, 0, nullptr,
+                QDMI_OPERATION_PROPERTY_MAX, 0, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST_P(DriverTest, QueryDeviceVersion) {
@@ -396,6 +454,10 @@ TEST_P(DriverTest, QueryOperations) {
   }
 }
 
+TEST_P(DriverTest, SessionAlloc) {
+  EXPECT_EQ(QDMI_session_alloc(nullptr), QDMI_ERROR_INVALIDARGUMENT);
+}
+
 TEST_P(DriverTest, SessionInit) {
   EXPECT_EQ(QDMI_session_init(nullptr), QDMI_ERROR_INVALIDARGUMENT)
       << "`session == nullptr` is not a valid argument.";
@@ -403,7 +465,7 @@ TEST_P(DriverTest, SessionInit) {
       << "Session must return `BADSTATE` if it is initialized again.";
 }
 
-TEST_P(DriverTest, QuerySessionProperties) {
+TEST_P(DriverTest, QuerySessionProperty) {
   EXPECT_EQ(QDMI_session_query_session_property(
                 nullptr, QDMI_SESSION_PROPERTY_DEVICES, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT)
