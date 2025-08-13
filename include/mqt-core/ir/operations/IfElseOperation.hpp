@@ -13,13 +13,26 @@
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/Register.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/Operation.hpp"
 
 #include <memory>
 #include <optional>
 
 namespace qc {
+
+enum ComparisonKind : std::uint8_t {
+  Eq,
+  Neq,
+  Lt,
+  Leq,
+  Gt,
+  Geq,
+};
+
+std::string toString(const ComparisonKind& kind);
+
+std::ostream& operator<<(std::ostream& os, const ComparisonKind& kind);
+
 class IfElseOperation final : public Operation {
 public:
   IfElseOperation(std::unique_ptr<Operation>&& thenOp,

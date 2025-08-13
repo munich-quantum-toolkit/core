@@ -10,7 +10,7 @@
 
 #include "qasm3/Statement.hpp"
 
-#include "ir/operations/ClassicControlledOperation.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "qasm3/InstVisitor.hpp"
 
 #include <cassert>

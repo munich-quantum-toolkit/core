@@ -17,6 +17,30 @@
 
 namespace qc {
 
+std::string toString(const ComparisonKind& kind) {
+  switch (kind) {
+  case Eq:
+    return "==";
+  case Neq:
+    return "!=";
+  case Lt:
+    return "<";
+  case Leq:
+    return "<=";
+  case Gt:
+    return ">";
+  case Geq:
+    return ">=";
+  default:
+    unreachable();
+  }
+}
+
+std::ostream& operator<<(std::ostream& os, const ComparisonKind& kind) {
+  os << toString(kind);
+  return os;
+}
+
 IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                                  std::unique_ptr<Operation>&& elseOp,
                                  ClassicalRegister controlReg,
