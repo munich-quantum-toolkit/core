@@ -449,10 +449,10 @@ module {
 }
 
 // -----
-// This test checks if a Bell state is converted correctly.
+// This test checks if a Bell state is converted correctly for static qubits.
 module {
-    // CHECK-LABEL: func.func @bellState()
-    func.func @bellState() {
+    // CHECK-LABEL: func.func @bellStateStatic()
+    func.func @bellStateStatic() {
         // CHECK: %[[q_0:.*]] = mqtref.qubit 0
         // CHECK: %[[q_1:.*]] = mqtref.qubit 1
         // CHECK: mqtref.h() %[[q_0]]
