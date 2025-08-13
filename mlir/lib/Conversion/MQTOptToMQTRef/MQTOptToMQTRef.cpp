@@ -137,21 +137,6 @@ struct ConvertMQTOptMeasure final : OpConversionPattern<opt::MeasureOp> {
                   ConversionPatternRewriter& rewriter) const override {
 
     const auto& oldBit = op.getOutBit();
-<<<<<<< HEAD:mlir/lib/Conversion/MQTOptToMQTDyn/MQTOptToMQTDyn.cpp
-    const auto& dynQubit = adaptor.getInQubit();
-
-    // create new operation
-    auto mqtdynOp = rewriter.create<dyn::MeasureOp>(op.getLoc(),
-                                                    oldBit.getType(), dynQubit);
-
-    const auto& newBit = mqtdynOp.getOutBit();
-
-    // concatenate the dyn qubits and the bits
-    SmallVector<Value> newValues;
-    newValues.reserve(2);
-    newValues.emplace_back(dynQubit);
-    newValues.emplace_back(newBit);
-=======
     const auto& refQubit = adaptor.getInQubit();
 
     // create new operation
@@ -162,7 +147,6 @@ struct ConvertMQTOptMeasure final : OpConversionPattern<opt::MeasureOp> {
 
     // concatenate the ref qubit and the bit
     const SmallVector<Value> newValues{refQubit, newBit};
->>>>>>> main:mlir/lib/Conversion/MQTOptToMQTRef/MQTOptToMQTRef.cpp
 
     // replace the results of the old operation with the new results and delete
     // old operation
