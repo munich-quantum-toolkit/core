@@ -369,27 +369,23 @@ TEST_P(DriverTest, QueryOperations) {
       param = dis(gen);
     }
     auto result = QDMI_device_query_operation_property(
-                    device, op, 0, nullptr, numParams, params.data(),
-                    QDMI_OPERATION_PROPERTY_DURATION, sizeof(double), &duration,
-                    nullptr);
-                    ASSERT_THAT(result,
-                ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
+        device, op, 0, nullptr, numParams, params.data(),
+        QDMI_OPERATION_PROPERTY_DURATION, sizeof(double), &duration, nullptr);
+    ASSERT_THAT(result, ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
         << "Failed to query duration for operation " << name << ".";
-        if (result == QDMI_SUCCESS) {
-        EXPECT_GT(duration, 0) << "Duration must be larger than 0 for operation "
-            << name << ".";
-        }
+    if (result == QDMI_SUCCESS) {
+      EXPECT_GT(duration, 0)
+          << "Duration must be larger than 0 for operation " << name << ".";
+    }
     result = QDMI_device_query_operation_property(
-                    device, op, 0, nullptr, numParams, params.data(),
-                    QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity,
-                    nullptr);
-                    ASSERT_THAT(result,
-                ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
+        device, op, 0, nullptr, numParams, params.data(),
+        QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity, nullptr);
+    ASSERT_THAT(result, ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
         << "Failed to query fidelity for operation " << name << ".";
-        if (result == QDMI_SUCCESS) {
-        EXPECT_THAT(fidelity, ::testing::IsBetween(0, 1))
-            << "Fidelity must be between 0 and 1 for operation " << name << ".";
-        }
+    if (result == QDMI_SUCCESS) {
+      EXPECT_THAT(fidelity, ::testing::IsBetween(0, 1))
+          << "Fidelity must be between 0 and 1 for operation " << name << ".";
+    }
 
     EXPECT_EQ(QDMI_device_query_operation_property(
                   device, op, 0, nullptr, 0, nullptr,
