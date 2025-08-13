@@ -52,17 +52,27 @@ mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
 }
 
 /**
+ * @brief Deallocates a quantum register in the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param quantumRegister The quantum register to deallocate
+ */
+void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
+  builder.create<mqt::ir::ref::DeallocOp>(builder.getUnknownLoc(), qreg);
+}
+
+/**
  * @brief Extracts individual qubits from a quantum register.
  *
  * @param builder The MLIR OpBuilder used to create operations
  * @param context The MLIR context in which types are created
- * @param quantumRegister The quantum register from which to extract qubits
+ * @param qreg The quantum register from which to extract qubits
  * @param numQubits The number of qubits to extract
  * @return llvm::SmallVector<mlir::Value> Vector of extracted qubit values
  */
 llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
                                              mlir::MLIRContext* context,
-                                             mlir::Value quantumRegister,
+                                             mlir::Value qreg,
                                              const std::size_t numQubits) {
   const auto& qubitType = mqt::ir::ref::QubitType::get(context);
   llvm::SmallVector<mlir::Value> qubits;
@@ -72,7 +82,7 @@ llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
   for (std::size_t qubit = 0; qubit < numQubits; ++qubit) {
     auto indexAttr = builder.getI64IntegerAttr(static_cast<int64_t>(qubit));
     auto extractOp = builder.create<mqt::ir::ref::ExtractOp>(
-        loc, qubitType, quantumRegister, nullptr, indexAttr);
+        loc, qubitType, qreg, nullptr, indexAttr);
     qubits.emplace_back(extractOp.getResult());
   }
 
@@ -82,10 +92,10 @@ llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
 /**
  * @brief Adds a single quantum operation to the MLIR module.
  *
- * @tparam OpType The type of the operation to create.
- * @param builder The MLIR OpBuilder.
- * @param operation The quantum operation to add.
- * @param qubits The qubits of the quantum register.
+ * @tparam OpType The type of the operation to create
+ * @param builder The MLIR OpBuilder
+ * @param operation The quantum operation to add
+ * @param qubits The qubits of the quantum register
  */
 template <typename OpType>
 void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
@@ -128,9 +138,9 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
 /**
  * @brief Adds a measure operation to the MLIR module.
  *
- * @param builder The MLIR OpBuilder.
- * @param operation The measure operation to add.
- * @param qubits The qubits of the quantum register.
+ * @param builder The MLIR OpBuilder
+ * @param operation The measure operation to add
+ * @param qubits The qubits of the quantum register
  */
 void addMeasureOp(mlir::OpBuilder& builder, const qc::Operation& operation,
                   const llvm::SmallVector<mlir::Value>& qubits) {
@@ -146,9 +156,9 @@ void addMeasureOp(mlir::OpBuilder& builder, const qc::Operation& operation,
 /**
  * @brief Adds a reset operation to the MLIR module.
  *
- * @param builder The MLIR OpBuilder.
- * @param operation The reset operation to add.
- * @param qubits The qubits of the quantum register.
+ * @param builder The MLIR OpBuilder
+ * @param operation The reset operation to add
+ * @param qubits The qubits of the quantum register
  */
 void addResetOp(mlir::OpBuilder& builder, const qc::Operation& operation,
                 const llvm::SmallVector<mlir::Value>& qubits) {
@@ -264,6 +274,8 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
     // Even if operations fail, return the module with what we could translate
     emitError(loc) << "Failed to translate some quantum operations";
   }
+
+  deallocateQreg(builder, qreg);
 
   // Create terminator
   builder.create<mlir::func::ReturnOp>(loc);

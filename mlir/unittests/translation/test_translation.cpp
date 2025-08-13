@@ -99,7 +99,7 @@ TEST_F(ImportTest, EntryPoint) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, Allocation) {
+TEST_F(ImportTest, AllocationAndDeallocation) {
   const qc::QuantumComputation qc(3);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -110,6 +110,7 @@ TEST_F(ImportTest, Allocation) {
     CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
     CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
     CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: "mqtref.deallocQubitRegister"(%[[Reg]]) : (!mqtref.QubitRegister) -> ()
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -741,6 +742,7 @@ TEST_F(ImportTest, GHZ) {
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
     CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
     CHECK: %[[M2:.*]] = mqtref.measure %[[Q2]]
+    CHECK: "mqtref.deallocQubitRegister"(%[[Reg]]) : (!mqtref.QubitRegister) -> ()
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
