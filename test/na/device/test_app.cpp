@@ -25,7 +25,7 @@
 #define PLATFORM_POPEN popen
 #define PLATFORM_PCLOSE pclose
 // NOLINTEND(misc-include-cleaner)
-#endif
+#endif // _WIN32
 
 TEST(ExecutableTest, Version) {
   // Command to execute

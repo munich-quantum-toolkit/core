@@ -85,6 +85,7 @@ struct DeviceLibrary {
   virtual ~DeviceLibrary() = default;
 };
 
+#ifndef _WIN32
 /**
  * @brief Definition of the dynamic device library.
  * @details This class is used to load the QDMI device interface functions
@@ -122,6 +123,7 @@ public:
    */
   ~DynamicDeviceLibrary() override;
 };
+#endif // _WIN32
 
 // Macro to define a static library class that inherits from DeviceLibrary.
 // It binds all device library functions to the functions of the static library.
@@ -396,7 +398,7 @@ public:
 
   /// @brief Destructor for the Driver class.
   ~Driver();
-
+#ifndef _WIN32
   /**
    * @brief Adds a dynamic device library to the driver.
    * @param libName is the path to the dynamic library to load.
@@ -404,7 +406,7 @@ public:
    */
   auto addDynamicDeviceLibrary(const std::string& libName,
                                const std::string& prefix) -> void;
-
+#endif // _WIN32
   /**
    * @brief Allocates a new session.
    * @see QDMI_session_alloc

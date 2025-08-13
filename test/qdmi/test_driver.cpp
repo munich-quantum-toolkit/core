@@ -46,7 +46,7 @@ class DriverTest : public testing::TestWithParam<std::string> {
 protected:
   QDMI_Session session = nullptr;
   QDMI_Device device = nullptr;
-
+#ifndef _WIN32
   static void SetUpTestSuite() {
     // avoid loading the same dynamic library twice as it would cause an
     // exception; this only happens, because the `DriveJobTest` inherits from
@@ -57,6 +57,7 @@ protected:
       added = true;
     }
   }
+#endif // _WIN32
 
   void SetUp() override {
     const auto& deviceName = GetParam();
@@ -504,7 +505,16 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
   EXPECT_EQ(ret, QDMI_SUCCESS);
   EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
 }
-
+#ifdef _WIN32
+const std::array<std::string, 2> DEVICES{
+    "MQT NA Default QDMI Device"
+};
+#else
+const std::array<std::string, 2> DEVICES{
+    "MQT NA Default QDMI Device",
+    "MQT NA Dynamic QDMI Device"
+};
+#endif
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
@@ -512,8 +522,7 @@ INSTANTIATE_TEST_SUITE_P(
     // Test suite name
     DriverTest,
     // Parameters to test with
-    testing::Values("MQT NA Default QDMI Device",
-                      "MQT NA Dynamic QDMI Device"),
+    testing::ValuesIn(DEVICES),
     [](const testing::TestParamInfo<std::string>& parmInfo) {
       std::string name = parmInfo.param;
       // Replace spaces with underscores for valid test names
@@ -529,8 +538,7 @@ INSTANTIATE_TEST_SUITE_P(
     // Test suite name
     DriverJobTest,
     // Parameters to test with
-    testing::Values("MQT NA Default QDMI Device",
-                      "MQT NA Dynamic QDMI Device"),
+    testing::ValuesIn(DEVICES),
     [](const testing::TestParamInfo<std::string>& parmInfo) {
       std::string name = parmInfo.param;
       // Replace spaces with underscores for valid test names

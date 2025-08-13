@@ -71,6 +71,8 @@ namespace qdmi {
     }                                                                          \
   }
 DEFINE_STATIC_LIBRARY(MQT_NA)
+
+#ifndef _WIN32
 DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
                                            const std::string& prefix)
     : libHandle_(dlopen(libName.c_str(), RTLD_NOW | RTLD_LOCAL)) {
@@ -84,8 +86,9 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
     throw std::runtime_error("Device library already loaded: " + libName);
   }
   openLibHandles().emplace(libHandle_);
-  // Macro for loading a symbol from the dynamic library.
-  // @param symbol is the name of the symbol to load.
+
+// Macro for loading a symbol from the dynamic library.
+// @param symbol is the name of the symbol to load.
 #define LOAD_DYNAMIC_SYMBOL(symbol)                                            \
   {                                                                            \
     const std::string symbolName = std::string(prefix) + "_QDMI_" + #symbol;   \
@@ -139,6 +142,7 @@ DynamicDeviceLibrary::~DynamicDeviceLibrary() {
   }
 }
 } // namespace qdmi
+#endif // _WIN32
 
 QDMI_Device_impl_d::QDMI_Device_impl_d(
     std::unique_ptr<qdmi::DeviceLibrary>&& lib)
