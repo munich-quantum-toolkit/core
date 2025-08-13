@@ -86,7 +86,7 @@ bool checkOutput(const std::string& checkString,
 using namespace qc;
 
 TEST_F(ImportTest, EntryPoint) {
-  const qc::QuantumComputation qc(1);
+  const qc::QuantumComputation qc{};
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
