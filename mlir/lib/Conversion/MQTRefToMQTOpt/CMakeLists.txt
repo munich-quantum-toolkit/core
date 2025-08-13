@@ -6,5 +6,6 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(MQTOpt)
-add_subdirectory(MQTRef)
+file(GLOB CONVERSION_SOURCES *.cpp)
+
+add_mlir_library(MQTRefToMQTOpt ${CONVERSION_SOURCES} DEPENDS MQTRefToMQTOptIncGen)
