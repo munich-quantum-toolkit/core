@@ -127,8 +127,8 @@ module {
 // -----
 // This test checks if the dealloc register call is correctly converted
 module {
-    // CHECK-LABEL: llvm.func @testDeallocRegister()
-    func.func @testDeallocRegister() attributes {passthrough = ["entry_point"]}  {
+    // CHECK-LABEL: llvm.func @testConvertDeallocRegister()
+    func.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[ANY:.*]]) : (i64) -> !llvm.ptr
         // CHECK: llvm.call @__quantum__rt__qubit_release_array(%[[r_0]]) : (!llvm.ptr) -> ()
 
@@ -136,6 +136,31 @@ module {
       ^bb1:
          %r0 = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
         "mqtdyn.deallocQubitRegister"(%r0) : (!mqtdyn.QubitRegister) -> ()
+        cf.br ^bb2
+      ^bb2:
+        return
+    }
+}
+
+// -----
+// This test checks if the reset operation is correctly converted
+module {
+    // CHECK-LABEL: llvm.func @testConvertResetOp()
+    func.func @testConvertResetOp() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
+        // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
+        // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
+        // CHECK: %[[ptr_0:.*]] = llvm.call @__quantum__rt__array_get_element_ptr_1d(%[[r_0]], %[[index]]) : (!llvm.ptr, i64) -> !llvm.ptr
+        // CHECK: %[[q_0:.*]] = llvm.load %[[ptr_0]] : !llvm.ptr -> !llvm.ptr
+        // CHECK: llvm.call @__quantum__qis__reset__body(%[[q_0]]) : (!llvm.ptr) -> ()
+
+        %c0 = arith.constant 2 : i64
+        %c1 = arith.constant 0 : i64
+        cf.br ^bb1
+      ^bb1:
+        %r0 = "mqtdyn.allocQubitRegister" (%c0) : (i64) -> !mqtdyn.QubitRegister
+        %q0 = "mqtdyn.extractQubit"(%r0, %c1) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
+        "mqtdyn.reset"(%q0) : (!mqtdyn.Qubit) -> ()
         cf.br ^bb2
       ^bb2:
         return

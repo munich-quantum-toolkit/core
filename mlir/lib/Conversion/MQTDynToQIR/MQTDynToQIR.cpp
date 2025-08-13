@@ -164,6 +164,29 @@ struct ConvertMQTDynDeallocQIR final : OpConversionPattern<dyn::DeallocOp> {
   }
 };
 
+struct ConvertMQTDynResetQIR final : OpConversionPattern<dyn::ResetOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(dyn::ResetOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto* ctx = getContext();
+
+    // create name and signature of the new function
+    const StringRef fnName = "__quantum__qis__reset__body";
+    const auto qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
+
+    // get the function declaration
+    const auto fnDecl =
+        getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+
+    // replace the old operation with new callOp
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
+                                              adaptor.getOperands());
+    return success();
+  }
+};
 struct ConvertMQTDynExtractQIR final : OpConversionPattern<dyn::ExtractOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -607,6 +630,7 @@ struct MQTDynToQIR final : impl::MQTDynToQIRBase<MQTDynToQIR> {
     mqtPatterns.add<ConvertMQTDynAllocQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTDynDeallocQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTDynExtractQIR>(typeConverter, context);
+    mqtPatterns.add<ConvertMQTDynResetQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTDynMeasureQIR>(typeConverter, context, &state);
 
     ADD_CONVERT_PATTERN(GPhaseOp)

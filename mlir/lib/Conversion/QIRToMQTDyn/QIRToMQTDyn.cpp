@@ -312,6 +312,10 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     // match dealloc register
     else if (fnName == "__quantum__rt__qubit_release_array") {
       rewriter.replaceOpWithNewOp<dyn::DeallocOp>(op, newOperands.front());
+    }
+    // match reset operation
+    else if (fnName == "__quantum__qis__reset__body") {
+      rewriter.replaceOpWithNewOp<dyn::ResetOp>(op, newOperands.front());
     } else {
       // remove the prefix and the suffix of the gate name
       auto gateName(fnName->substr(16).drop_back(6));

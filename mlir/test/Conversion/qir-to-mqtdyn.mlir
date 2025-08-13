@@ -84,8 +84,8 @@ module {
 // -----
 // This test checks if the dealloc register call is correctly converted
 module {
-    // CHECK-LABEL: llvm.func @testDeallocRegister()
-    llvm.func @testDeallocRegister() attributes {passthrough = ["entry_point"]}  {
+    // CHECK-LABEL: llvm.func @testConvertDeallocRegister()
+    llvm.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
         // CHECK: %[[r_0:.*]] = "mqtdyn.allocQubitRegister"(%[[size]]) : (i64) -> !mqtdyn.QubitRegister
         // CHECK: "mqtdyn.deallocQubitRegister"(%[[r_0]])
@@ -101,6 +101,38 @@ module {
       ^bb2:
         llvm.return
     }
+    llvm.func @__quantum__rt__qubit_release_array(!llvm.ptr)
+    llvm.func @__quantum__rt__initialize(!llvm.ptr)
+    llvm.func @__quantum__rt__qubit_allocate_array(i64) -> !llvm.ptr
+}
+
+// -----
+// This test checks if the reset operation is correctly converted
+module {
+    // CHECK-LABEL: llvm.func @testConvertResetOp()
+    llvm.func @testConvertResetOp() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
+        // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
+        // CHECK: %[[r_0:.*]] = "mqtdyn.allocQubitRegister"(%[[size]]) : (i64) -> !mqtdyn.QubitRegister
+        // CHECK: %[[q_0:.*]] = "mqtdyn.extractQubit"(%[[r_0]], %[[index]]) : (!mqtdyn.QubitRegister, i64) -> !mqtdyn.Qubit
+        // CHECK: "mqtdyn.reset"(%[[q_0]])
+
+        %0 = llvm.mlir.zero : !llvm.ptr
+        %c0 = llvm.mlir.constant(14 : i64) : i64
+        %c1 = llvm.mlir.constant(0 : i64) : i64
+        llvm.call @__quantum__rt__initialize(%0) : (!llvm.ptr) -> ()
+        llvm.br ^bb1
+      ^bb1:
+        %r0 = llvm.call @__quantum__rt__qubit_allocate_array(%c0) : (i64) -> !llvm.ptr
+        %1 = llvm.call @__quantum__rt__array_get_element_ptr_1d(%r0, %c1) : (!llvm.ptr, i64) -> !llvm.ptr
+        %q0 = llvm.load %1 : !llvm.ptr -> !llvm.ptr
+        llvm.call @__quantum__qis__reset__body(%q0) : (!llvm.ptr) -> ()
+        llvm.br ^bb2
+      ^bb2:
+        llvm.return
+    }
+    llvm.func @__quantum__qis__reset__body(!llvm.ptr)
+    llvm.func @__quantum__rt__array_get_element_ptr_1d(!llvm.ptr, i64) -> !llvm.ptr
     llvm.func @__quantum__rt__qubit_release_array(!llvm.ptr)
     llvm.func @__quantum__rt__initialize(!llvm.ptr)
     llvm.func @__quantum__rt__qubit_allocate_array(i64) -> !llvm.ptr
