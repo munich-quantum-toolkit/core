@@ -705,3 +705,29 @@ TEST_F(ImportTest, XXplusYY) {
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
+
+TEST_F(ImportTest, GHZ) {
+  qc::QuantumComputation qc(3, 3);
+  qc.h(0);
+  qc.cx(0, 1);
+  qc.cx(0, 2);
+  qc.measure({0, 1, 2}, {0, 1, 2});
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q_0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q_2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: mqtref.h() %[[Q_0]]
+    CHECK: mqtref.x() %[[Q_1]] ctrl %[[Q_0]]
+    CHECK: mqtref.x() %[[Q_2]] ctrl %[[Q_0]]
+    CHECK: "mqtref.measure"(%[[Q_0]]) : (!mqtref.Qubit) -> i1
+    CHECK: "mqtref.measure"(%[[Q_1]]) : (!mqtref.Qubit) -> i1
+    CHECK: "mqtref.measure"(%[[Q_2]]) : (!mqtref.Qubit) -> i1
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
