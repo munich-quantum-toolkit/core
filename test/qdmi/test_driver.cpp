@@ -47,7 +47,14 @@ protected:
   QDMI_Device device = nullptr;
 
   static void SetUpTestSuite() {
-    qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN");
+    // avoid loading the same dynamic library twice as it would cause an
+    // exception; this only happens, because the `DriveJobTest` inherits from
+    // `DriverTest` and both call `SetUpTestSuite()` when instantiated
+    static bool added = false;
+    if (!added) {
+      qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN");
+      added = true;
+    }
   }
 
   void SetUp() override {
@@ -102,9 +109,6 @@ protected:
 class DriverJobTest : public DriverTest {
 protected:
   QDMI_Job job = nullptr;
-
-  // Override SetUpTestSuite to avoid adding the dynamic device library twice
-  static void SetUpTestSuite() {}
 
   void SetUp() override {
     DriverTest::SetUp();
