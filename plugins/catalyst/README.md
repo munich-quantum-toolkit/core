@@ -50,6 +50,33 @@ Thank you to all the contributors who have helped make MQT Core a reality!
 ## Getting Started
 
 TODO
+`mqt.core.catalyst` is available via [PyPI](https://pypi.org/project/mqt.core/) for all major operating systems and supports Python 3.10 to 3.13.
+
+```console
+(.venv) $ pip install TODO
+```
+
+The following code gives an example on how to use an MQT pass with PennyLane's Catalyst
+
+```python3
+import catalyst
+import pennylane as qml
+from catalyst.passes import apply_pass
+
+@apply_pass("mqt.mqtopt-to-catalystquantum")
+@apply_pass("mqt.mqt-core-round-trip")
+@apply_pass("mqt.catalystquantum-to-mqtopt")
+@qml.qnode(qml.device("lightning.qubit", wires=2))
+def circuit() -> None:
+    qml.Hadamard(wires=[0])
+    qml.CNOT(wires=[0, 1])
+    catalyst.measure(0)
+    catalyst.measure(1)
+
+@qml.qjit(target="mlir", autograph=True)
+def module() -> None:
+    return circuit()
+```
 
 ## System Requirements
 
