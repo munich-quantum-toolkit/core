@@ -77,7 +77,7 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
   if (libHandle == nullptr) {
     throw std::runtime_error("Couldn't open the device library: " + libName);
   }
-  if (openLibHandles().find(libHandle) != openLibHandles().end()) {
+  if (openLibHandles().contains(libHandle)) {
     // dlopen uses reference counting, so we need to decrement the reference
     // count that was increased by dlopen.
     dlclose(libHandle);
