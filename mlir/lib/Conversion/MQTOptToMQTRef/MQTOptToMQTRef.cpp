@@ -140,12 +140,12 @@ struct ConvertMQTOptMeasure final : OpConversionPattern<opt::MeasureOp> {
     const auto& refQubit = adaptor.getInQubit();
 
     // create new operation
-    auto mqtdynOp = rewriter.create<ref::MeasureOp>(op.getLoc(),
+    auto mqtrefOp = rewriter.create<ref::MeasureOp>(op.getLoc(),
                                                     oldBit.getType(), refQubit);
 
-    const auto& newBit = mqtdynOp.getOutBit();
+    const auto& newBit = mqtrefOp.getOutBit();
 
-    // concatenate the dyn qubit and the bit
+    // concatenate the ref qubit and the bit
     const SmallVector<Value> newValues{refQubit, newBit};
 
     // replace the results of the old operation with the new results and delete
