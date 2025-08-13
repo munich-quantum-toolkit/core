@@ -30,13 +30,13 @@ if(NOT TARGET ${TARGET_NAME})
 
   # set versioning information
   set_target_properties(
-          ${TARGET_NAME}
-          PROPERTIES VERSION ${PROJECT_VERSION}
-          SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-          EXPORT_NAME CoreQDMI)
+    ${TARGET_NAME}
+    PROPERTIES VERSION ${PROJECT_VERSION}
+               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+               EXPORT_NAME CoreQDMI)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
-          ${MQT_CORE_TARGETS} ${TARGET_NAME}
-          PARENT_SCOPE)
+      ${MQT_CORE_TARGETS} ${TARGET_NAME}
+      PARENT_SCOPE)
 endif()
