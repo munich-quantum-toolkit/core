@@ -6,6 +6,8 @@
 #
 # Licensed under the MIT License
 
+find_library(CUDAQ_MLIR_RUNTIME_LIB cudaq-mlir-runtime PATHS /workspaces/cuda-quantum/build/lib)
+
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(/workspaces/cuda-quantum/build/include)

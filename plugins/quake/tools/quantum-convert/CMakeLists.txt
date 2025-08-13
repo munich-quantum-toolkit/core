@@ -20,7 +20,7 @@ set(LIBS
 
 add_mlir_tool(quantum-convert quantum-convert.cpp DEPENDS ${LIBS} SUPPORT_PLUGINS)
 target_compile_options(quantum-convert PRIVATE -fexceptions)
-target_link_libraries(quantum-convert PUBLIC ${LIBS})
+target_link_libraries(quantum-convert PUBLIC ${LIBS} ${CUDAQ_MLIR_RUNTIME_LIB})
 llvm_update_compile_flags(quantum-convert)
 mlir_check_all_link_libraries(quantum-convert)
 export_executable_symbols_for_plugins(quantum-convert)
