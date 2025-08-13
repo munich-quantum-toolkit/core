@@ -16,6 +16,7 @@
 #include <utility>
 
 namespace qc {
+
 IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                                  std::unique_ptr<Operation>&& elseOp,
                                  ClassicalRegister controlReg,
@@ -34,7 +35,19 @@ IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                                  ComparisonKind kind)
     : thenBranch(std::move(thenOp)), elseBranch(std::move(elseOp)),
       controlBit(cBit), expectedValue(expectedVal), comparisonKind(kind) {
-  assert(expectedVal <= 1);
+  if (expectedVal > 1) {
+    throw std::invalid_argument(
+        "Expected value for single bit comparison must be 0 or 1.");
+  }
+  // Canonicalize comparisons on a single bit.
+  if (comparisonKind == Neq) {
+    comparisonKind = Eq;
+    expectedValue = 1 - expectedValue;
+  }
+  if (comparisonKind != Eq) {
+    throw std::invalid_argument(
+        "Inequality comparisons on a single bit are not supported.");
+  }
   name = "if_else";
   type = IfElse;
 }
@@ -123,6 +136,7 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
     of << "\n";
   }
 }
+
 } // namespace qc
 
 std::size_t std::hash<qc::IfElseOperation>::operator()(

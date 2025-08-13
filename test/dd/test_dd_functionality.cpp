@@ -556,7 +556,9 @@ TEST_F(DDFunctionality, ClassicControlledOperationConditions) {
     qc.measure(0, 0);
     // apply a classic-controlled X gate whenever the measured result compares
     // as specified by kind with the previously measured result.
-    qc.classicControlled(X, 0, 0, 1U, kind);
+    StandardOperation xOp(0, X);
+    StandardOperation iOp(0, I);
+    qc.ifElse(xOp, iOp, 0, 1U, kind);
     // measure into the same register to check the result.
     qc.measure(0, 0);
 
@@ -599,7 +601,9 @@ TEST_F(DDFunctionality, DynamicCircuitSimulationWithSWAP) {
   qc.x(0);
   qc.swap(0, 1);
   qc.measure(1, 0);
-  qc.classicControlled(X, 0, 0);
+  StandardOperation xOp(0, X);
+  StandardOperation iOp(0, I);
+  qc.ifElse(xOp, iOp, 0, 1U);
   qc.measure(0, 1);
 
   constexpr auto shots = 16U;

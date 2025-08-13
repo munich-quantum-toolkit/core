@@ -13,12 +13,13 @@
 #include "Definitions.hpp"
 #include "Permutation.hpp"
 #include "Register.hpp"
-#include "operations/ClassicControlledOperation.hpp"
 #include "operations/CompoundOperation.hpp"
 #include "operations/Control.hpp"
 #include "operations/Expression.hpp"
+#include "operations/IfElseOperation.hpp"
 #include "operations/OpType.hpp"
 #include "operations/Operation.hpp"
+#include "operations/StandardOperation.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -333,33 +334,11 @@ public:
   void barrier(Qubit target);
   void barrier(const Targets& targets);
 
-  void classicControlled(OpType op, Qubit target,
-                         const ClassicalRegister& controlRegister,
-                         std::uint64_t expectedValue = 1U,
-                         ComparisonKind cmp = Eq,
-                         const std::vector<fp>& params = {});
-  void classicControlled(OpType op, Qubit target, Control control,
-                         const ClassicalRegister& controlRegister,
-                         std::uint64_t expectedValue = 1U,
-                         ComparisonKind cmp = Eq,
-                         const std::vector<fp>& params = {});
-  void classicControlled(OpType op, Qubit target, const Controls& controls,
-                         const ClassicalRegister& controlRegister,
-                         std::uint64_t expectedValue = 1U,
-                         ComparisonKind cmp = Eq,
-                         const std::vector<fp>& params = {});
-  void classicControlled(OpType op, Qubit target, Bit cBit,
-                         std::uint64_t expectedValue = 1U,
-                         ComparisonKind cmp = Eq,
-                         const std::vector<fp>& params = {});
-  void classicControlled(OpType op, Qubit target, Control control, Bit cBit,
-                         std::uint64_t expectedValue = 1U,
-                         ComparisonKind cmp = Eq,
-                         const std::vector<fp>& params = {});
-  void classicControlled(OpType op, Qubit target, const Controls& controls,
-                         Bit cBit, std::uint64_t expectedValue = 1U,
-                         ComparisonKind cmp = Eq,
-                         const std::vector<fp>& params = {});
+  void ifElse(StandardOperation& thenOp, StandardOperation& elseOp,
+              const ClassicalRegister& controlRegister,
+              std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq);
+  void ifElse(StandardOperation& thenOp, StandardOperation& elseOp, Bit cBit,
+              std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq);
 
   /// strip away qubits with no operations applied to them and which do not pop
   /// up in the output permutation \param force if true, also strip away idle

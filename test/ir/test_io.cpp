@@ -608,11 +608,15 @@ TEST_F(IO, fromCompoundOperation) {
   EXPECT_EQ(expected, actual);
 }
 
-TEST_F(IO, classicalControlledOperationToOpenQASM3) {
+TEST_F(IO, ifElseOperationOperationToOpenQASM3) {
   qc.addQubitRegister(2);
   const auto& creg = qc.addClassicalRegister(2);
-  qc.classicControlled(qc::X, 0, 0);
-  qc.classicControlled(qc::X, 1, creg);
+  qc::StandardOperation x0Op(0, qc::X);
+  qc::StandardOperation i0Op(0, qc::I);
+  qc.ifElse(x0Op, i0Op, 0, 1);
+  qc::StandardOperation x1Op(1, qc::X);
+  qc::StandardOperation i1Op(1, qc::I);
+  qc.ifElse(x1Op, i1Op, creg, 1U);
   const std::string expected = "// i 0 1\n"
                                "// o 0 1\n"
                                "OPENQASM 3.0;\n"
@@ -621,20 +625,26 @@ TEST_F(IO, classicalControlledOperationToOpenQASM3) {
                                "bit[2] c;\n"
                                "if (c[0]) {\n"
                                "  x q[0];\n"
+                               "} else {\n"
+                               "  id q[0];\n"
                                "}\n"
                                "if (c == 1) {\n"
                                "  x q[1];\n"
+                               "} else {\n"
+                               "  id q[1];\n"
                                "}\n";
 
   const auto actual = qc.toQASM();
   EXPECT_EQ(expected, actual);
 }
 
-TEST_F(IO, classicalControlledOperationExpectedValueTooLarge) {
+TEST_F(IO, ifElseOperationExpectedValueTooLarge) {
   qc.addQubitRegister(1);
   qc.addClassicalRegister(1);
+  qc::StandardOperation xOp(0, qc::X);
+  qc::StandardOperation iOp(0, qc::I);
   try {
-    qc.classicControlled(qc::X, 0, 0, 2);
+    qc.ifElse(xOp, iOp, 0, 2);
     FAIL() << "Expected an exception for invalid expected value.";
   } catch (const std::invalid_argument& e) {
     EXPECT_STREQ(e.what(),
@@ -645,11 +655,14 @@ TEST_F(IO, classicalControlledOperationExpectedValueTooLarge) {
   }
 }
 
-TEST_F(IO, classicalControlledOperationInvalidBitComparison) {
+TEST_F(IO, ifElseOperationInvalidBitComparison) {
   qc.addQubitRegister(1);
   qc.addClassicalRegister(1);
+  qc::StandardOperation xOp(0, qc::X);
+  qc::StandardOperation iOp(0, qc::I);
   try {
-    qc.classicControlled(qc::X, 0, 0, 1, qc::Lt);
+    qc.ifElse(xOp, iOp, 0, 1, qc::Lt);
+    ;
     FAIL() << "Expected an exception for invalid expected value.";
   } catch (const std::invalid_argument& e) {
     EXPECT_STREQ(e.what(),

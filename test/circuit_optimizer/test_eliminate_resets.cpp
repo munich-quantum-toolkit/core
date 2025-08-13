@@ -15,6 +15,7 @@
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/StandardOperation.hpp"
 
 #include <gtest/gtest.h>
 #include <iostream>
@@ -85,7 +86,9 @@ TEST(EliminateResets, eliminateResetsClassicControlled) {
   qc.h(0);
   qc.measure(0, 0U);
   qc.reset(0);
-  qc.classicControlled(qc::X, 0, 0, 1U);
+  StandardOperation xOp(0, X);
+  StandardOperation iOp(0, I);
+  qc.ifElse(xOp, iOp, 0, 1U);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());
@@ -181,7 +184,9 @@ TEST(EliminateResets, eliminateResetsCompoundOperation) {
   comp.cx(1, 0);
   comp.reset(0);
   comp.measure(0, 0);
-  comp.classicControlled(qc::X, 0, 0, 1U);
+  StandardOperation xOp(0, X);
+  StandardOperation iOp(0, I);
+  comp.ifElse(xOp, iOp, 0, 1U);
   qc.emplace_back(comp.asOperation());
 
   std::cout << qc << "\n";

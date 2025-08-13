@@ -14,6 +14,7 @@
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/StandardOperation.hpp"
 
 #include <cmath>
 #include <string>
@@ -79,13 +80,20 @@ auto createIterativeQFT(const Qubit nq) -> QuantumComputation {
     for (Qubit j = 1; j <= i; ++j) {
       const auto d = nq - j;
       if (j == i) {
-        qc.classicControlled(S, 0, d, 1U);
+        StandardOperation sOp(0, S);
+        StandardOperation iOp(0, I);
+        qc.ifElse(sOp, iOp, d, 1U);
       } else if (j == i - 1) {
-        qc.classicControlled(T, 0, d, 1U);
+        StandardOperation tOp(0, T);
+        StandardOperation iOp(0, I);
+        qc.ifElse(tOp, iOp, d, 1U);
       } else {
         const auto powerOfTwo = std::pow(2., i - j + 1);
         const auto lambda = PI / powerOfTwo;
-        qc.classicControlled(P, 0, d, 1U, Eq, {lambda});
+        const auto params = std::vector<fp>{lambda};
+        StandardOperation pOp(0, P, params);
+        StandardOperation iOp(0, I);
+        qc.ifElse(pOp, iOp, d, 1U);
       }
     }
 
