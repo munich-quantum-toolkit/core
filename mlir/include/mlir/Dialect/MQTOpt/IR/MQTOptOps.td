@@ -272,7 +272,7 @@ def InsertOp : ResourceOp<"insertQubit", [UniqueIndexDefinition]> {
 }
 
 def QubitOp : ResourceOp<"qubit"> {
-    let summary = "Assign static qubit reference";
+    let summary = "Retrieve static qubit";
     let description = [{
         The `mqtopt.qubit` operation produces an SSA value from the given index
         to a static (hardware) qubit.

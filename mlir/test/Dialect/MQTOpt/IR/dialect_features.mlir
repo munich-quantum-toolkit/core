@@ -151,8 +151,8 @@ module {
         // CHECK: %[[Q_1:.*]], [[M0_0:.*]] = "mqtopt.measure"(%[[ANY:.*]])
 
         %q_0 = mqtopt.qubit 0
-
         %q_1, %m0_0 = "mqtopt.measure"(%q_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
         return
     }
 }
@@ -181,7 +181,6 @@ module {
         // CHECK: %[[Q_1:.*]] = "mqtopt.reset"(%[[ANY:.*]])
 
         %q_0 = mqtopt.qubit 0
-
         %q_1 = "mqtopt.reset"(%q_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit)
 
         return

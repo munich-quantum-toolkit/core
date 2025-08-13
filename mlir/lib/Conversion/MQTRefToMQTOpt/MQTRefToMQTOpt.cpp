@@ -290,6 +290,34 @@ struct ConvertMQTRefReset final : StatefulOpConversionPattern<ref::ResetOp> {
   }
 };
 
+struct ConvertMQTRefQubit final : StatefulOpConversionPattern<ref::QubitOp> {
+  using StatefulOpConversionPattern<ref::QubitOp>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ref::QubitOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    // prepare result type
+    const auto& qubitType = opt::QubitType::get(rewriter.getContext());
+
+    // create new operation
+    auto mqtoptOp =
+        rewriter.create<opt::QubitOp>(op.getLoc(), qubitType, op.getIndex());
+
+    // collect ref and opt SSA value
+    const auto& refQubit = op.getQubit();
+    const auto& optQubit = mqtoptOp.getQubit();
+
+    // map ref to opt
+    getState().qubitMap[refQubit] = optQubit;
+
+    // delete the old operation
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
 template <typename MQTGateRefOp, typename MQTGateOptOp>
 struct ConvertMQTRefGateOp final : StatefulOpConversionPattern<MQTGateRefOp> {
   using StatefulOpConversionPattern<MQTGateRefOp>::StatefulOpConversionPattern;
@@ -359,6 +387,7 @@ struct MQTRefToMQTOpt final : impl::MQTRefToMQTOptBase<MQTRefToMQTOpt> {
     patterns.add<ConvertMQTRefExtract>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefMeasure>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefReset>(typeConverter, context, &state);
+    patterns.add<ConvertMQTRefQubit>(typeConverter, context, &state);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)
