@@ -22,6 +22,24 @@
 #include <unordered_set>
 #include <vector>
 
+namespace testing {
+namespace {
+auto stringConcat5(const std::string& a, const std::string& b,
+                   const std::string& c, const std::string& d,
+                   const std::string& e) -> std::string {
+  std::stringstream ss;
+  ss << a << b << c << d << e;
+  return ss.str();
+}
+// NOLINTBEGIN(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
+MATCHER_P2(IsBetween, a, b,
+           stringConcat5(negation ? "isn't" : "is", " between ",
+                         PrintToString(a), " and ", PrintToString(b))) {
+  return a <= arg && arg <= b;
+}
+// NOLINTEND(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
+} // namespace
+} // namespace testing
 namespace qc {
 class DriverTest : public ::testing::TestWithParam<std::string> {
 protected:
@@ -346,18 +364,28 @@ TEST_P(DriverTest, QueryOperations) {
     for (auto& param : params) {
       param = dis(gen);
     }
-    EXPECT_THAT(QDMI_device_query_operation_property(
+    auto result = QDMI_device_query_operation_property(
                     device, op, 0, nullptr, numParams, params.data(),
                     QDMI_OPERATION_PROPERTY_DURATION, sizeof(double), &duration,
-                    nullptr),
+                    nullptr);
+                    ASSERT_THAT(result,
                 ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
         << "Failed to query duration for operation " << name << ".";
-    EXPECT_THAT(QDMI_device_query_operation_property(
+        if (result == QDMI_SUCCESS) {
+        EXPECT_GT(duration, 0) << "Duration must be larger than 0 for operation "
+            << name << ".";
+        }
+    result = QDMI_device_query_operation_property(
                     device, op, 0, nullptr, numParams, params.data(),
                     QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity,
-                    nullptr),
+                    nullptr);
+                    ASSERT_THAT(result,
                 ::testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED))
         << "Failed to query fidelity for operation " << name << ".";
+        if (result == QDMI_SUCCESS) {
+        EXPECT_THAT(fidelity, ::testing::IsBetween(0, 1))
+            << "Fidelity must be between 0 and 1 for operation " << name << ".";
+        }
 
     EXPECT_EQ(QDMI_device_query_operation_property(
                   device, op, 0, nullptr, 0, nullptr,
