@@ -112,7 +112,7 @@ def MeasureOp : GateOp<"measure", []> {
 
         Example:
         ```mlir
-        %1 = "mqtref.measure"(%0) : (!mqtref.Qubit) -> (i1)
+        %1 = mqtref.measure %0
         ```
     }];
 
@@ -123,6 +123,10 @@ def MeasureOp : GateOp<"measure", []> {
     let results = (outs
         I1:$out_bit
     );
+
+    let assemblyFormat = [{
+        attr-dict $in_qubit
+    }];
 }
 
 def ResetOp : GateOp<"reset", []> {
