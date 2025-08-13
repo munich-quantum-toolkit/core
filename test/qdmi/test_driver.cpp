@@ -128,24 +128,27 @@ protected:
 };
 
 TEST_P(DriverTest, LoadLibraryTwice) {
-  EXPECT_THROW(qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN"), std::runtime_error);
+  EXPECT_THROW(
+      qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN"),
+      std::runtime_error);
 }
 
 TEST_P(DriverTest, SessionSetParameter) {
   const std::string authFile = "authfile.txt";
   QDMI_Session uninitializedSession = nullptr;
   ASSERT_EQ(QDMI_session_alloc(&uninitializedSession), QDMI_SUCCESS);
-  EXPECT_EQ(QDMI_session_set_parameter(uninitializedSession, QDMI_SESSION_PARAMETER_AUTHFILE, 13,
+  EXPECT_EQ(QDMI_session_set_parameter(uninitializedSession,
+                                       QDMI_SESSION_PARAMETER_AUTHFILE, 13,
                                        authFile.c_str()),
             QDMI_ERROR_NOTSUPPORTED);
-  EXPECT_EQ(QDMI_session_set_parameter(uninitializedSession, QDMI_SESSION_PARAMETER_MAX, 0,
-                                       nullptr),
+  EXPECT_EQ(QDMI_session_set_parameter(uninitializedSession,
+                                       QDMI_SESSION_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(QDMI_session_set_parameter(session,
-                                       QDMI_SESSION_PARAMETER_AUTHFILE, 13, authFile.c_str()),
+  EXPECT_EQ(QDMI_session_set_parameter(session, QDMI_SESSION_PARAMETER_AUTHFILE,
+                                       13, authFile.c_str()),
             QDMI_ERROR_BADSTATE);
-  EXPECT_EQ(QDMI_session_set_parameter(nullptr,
-                                       QDMI_SESSION_PARAMETER_AUTHFILE, 13, authFile.c_str()),
+  EXPECT_EQ(QDMI_session_set_parameter(nullptr, QDMI_SESSION_PARAMETER_AUTHFILE,
+                                       13, authFile.c_str()),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
@@ -153,7 +156,8 @@ TEST_P(DriverTest, JobCreate) {
   QDMI_Job job = nullptr;
   EXPECT_EQ(QDMI_device_create_job(device, &job), QDMI_SUCCESS);
   QDMI_job_free(job);
-  EXPECT_EQ(QDMI_device_create_job(device, nullptr), QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_device_create_job(device, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST_P(DriverTest, JobSetParameter) {
@@ -163,8 +167,8 @@ TEST_P(DriverTest, JobSetParameter) {
 
 TEST_P(DriverJobTest, JobSetParameter) {
   EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAM,
-                                     sizeof(QDMI_Program_Format), nullptr),
-              QDMI_ERROR_NOTSUPPORTED);
+                                   sizeof(QDMI_Program_Format), nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
   const QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
   EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
                                      sizeof(QDMI_Program_Format), &value),
@@ -173,9 +177,8 @@ TEST_P(DriverJobTest, JobSetParameter) {
   EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
                                      sizeof(size_t), &numShots),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-  EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_MAX,
-                                     0, nullptr),
-              QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_MAX, 0, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST_P(DriverTest, JobQueryProperty) {
@@ -189,31 +192,31 @@ TEST_P(DriverJobTest, JobQueryProperty) {
       QDMI_job_query_property(job, QDMI_JOB_PROPERTY_ID, 0, nullptr, nullptr),
       testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 
-  EXPECT_THAT(
-      QDMI_job_query_property(job, QDMI_JOB_PROPERTY_PROGRAM, 0, nullptr, nullptr),
-      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  EXPECT_THAT(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_PROGRAM, 0,
+                                      nullptr, nullptr),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 
   QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
   auto result = QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
-                                     sizeof(QDMI_Program_Format), &value);
-              EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+                                       sizeof(QDMI_Program_Format), &value);
+  EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   if (result == QDMI_SUCCESS) {
     value = QDMI_PROGRAM_FORMAT_MAX;
-    EXPECT_EQ(
-        QDMI_job_query_property(job, QDMI_JOB_PROPERTY_PROGRAMFORMAT, sizeof(QDMI_Program_Format), &value, nullptr),
-        QDMI_SUCCESS);
+    EXPECT_EQ(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_PROGRAMFORMAT,
+                                      sizeof(QDMI_Program_Format), &value,
+                                      nullptr),
+              QDMI_SUCCESS);
     EXPECT_EQ(value, QDMI_PROGRAM_FORMAT_QASM2);
   }
   size_t numShots = 1;
   result = QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
-                                     sizeof(QDMI_Program_Format), &numShots);
-  EXPECT_THAT(result,
-              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+                                  sizeof(QDMI_Program_Format), &numShots);
+  EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   if (result == QDMI_SUCCESS) {
     numShots = 0;
-    EXPECT_EQ(
-        QDMI_job_query_property(job, QDMI_JOB_PROPERTY_SHOTSNUM, sizeof(size_t), &numShots, nullptr),
-        QDMI_SUCCESS);
+    EXPECT_EQ(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_SHOTSNUM,
+                                      sizeof(size_t), &numShots, nullptr),
+              QDMI_SUCCESS);
     EXPECT_EQ(numShots, 1);
   }
 }
@@ -365,15 +368,13 @@ TEST_P(DriverTest, QuerySites) {
     double t2 = 0;
     auto result = QDMI_device_query_site_property(
         device, site, QDMI_SITE_PROPERTY_T1, sizeof(double), &t1, nullptr);
-    ASSERT_THAT(result,
-                testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    ASSERT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
     if (result == QDMI_SUCCESS) {
       EXPECT_GT(t1, 0) << "Devices must provide a site T1 time larger than 0.";
     }
     result = QDMI_device_query_site_property(
         device, site, QDMI_SITE_PROPERTY_T2, sizeof(double), &t2, nullptr);
-    ASSERT_THAT(result,
-                testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    ASSERT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
     if (result == QDMI_SUCCESS) {
       EXPECT_GT(t2, 0) << "Devices must provide a site T2 time larger than 0.";
     }
@@ -506,14 +507,10 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
   EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
 }
 #ifdef _WIN32
-const std::array<std::string, 2> DEVICES{
-    "MQT NA Default QDMI Device"
-};
+const std::array<std::string, 2> DEVICES{"MQT NA Default QDMI Device"};
 #else
-const std::array<std::string, 2> DEVICES{
-    "MQT NA Default QDMI Device",
-    "MQT NA Dynamic QDMI Device"
-};
+const std::array<std::string, 2> DEVICES{"MQT NA Default QDMI Device",
+                                         "MQT NA Dynamic QDMI Device"};
 #endif
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(
