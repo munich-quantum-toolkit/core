@@ -1220,7 +1220,7 @@ bool isDynamicCircuit(const std::unique_ptr<Operation>* op,
   const auto& it = *op;
   // whenever a classic-controlled or a reset operation are encountered
   // the circuit has to be dynamic.
-  if (it->getType() == Reset || it->isClassicControlledOperation()) {
+  if (it->getType() == Reset || it->isIfElseOperation()) {
     return true;
   }
 

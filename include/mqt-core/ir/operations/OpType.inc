@@ -53,8 +53,8 @@ HANDLE_OP_TYPE(29, Compound, OpTypeNone, "compound")
 HANDLE_OP_TYPE(30, Measure, OpTypeNone, "measure")
 HANDLE_OP_TYPE(31, Reset, OpTypeNone, "reset")
 
-// Classically-controlled Operation
-HANDLE_OP_TYPE(32, ClassicControlled, OpTypeNone, "classic_controlled")
+// Control flow operations
+HANDLE_OP_TYPE(32, IfElse, OpTypeNone, "if_else")
 
 // Noise operations
 HANDLE_OP_TYPE(33, ATrue, 0, "a_true")
@@ -68,10 +68,7 @@ HANDLE_OP_TYPE(38, AodActivate, 0, "aod_activate")
 HANDLE_OP_TYPE(39, AodDeactivate, 0, "aod_deactivate")
 HANDLE_OP_TYPE(40, AodMove, 0, "aod_move")
 
-// Control flow operations
-HANDLE_OP_TYPE(41, IfElse, OpTypeNone, "if_else")
-
-LAST_OP_TYPE(42)
+LAST_OP_TYPE(41)
 
 
 #undef OpTypeInv

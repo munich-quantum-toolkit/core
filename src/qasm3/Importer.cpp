@@ -12,7 +12,6 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
@@ -907,31 +906,21 @@ void Importer::visitIfStatement(
     thenOps = std::make_unique<qc::CompoundOperation>();
   }
 
+  std::unique_ptr<qc::Operation> elseOps = nullptr;
   if (!ifStatement->elseStatements.empty()) {
-    auto elseOps = translateBlockOperations(ifStatement->elseStatements);
-    if (std::holds_alternative<std::pair<qc::Bit, bool>>(condition)) {
-      const auto& [bit, val] = std::get<std::pair<qc::Bit, bool>>(condition);
-      qc->emplace_back<qc::IfElseOperation>(
-          std::move(thenOps), std::move(elseOps), bit, val ? 1 : 0);
-    } else {
-      const auto& [creg, comparisonKind, rhs] = std::get<
-          std::tuple<qc::ClassicalRegister, qc::ComparisonKind, uint64_t>>(
-          condition);
-      qc->emplace_back<qc::IfElseOperation>(
-          std::move(thenOps), std::move(elseOps), creg, rhs, comparisonKind);
-    }
+    elseOps = translateBlockOperations(ifStatement->elseStatements);
+  }
+
+  if (std::holds_alternative<std::pair<qc::Bit, bool>>(condition)) {
+    const auto& [bit, val] = std::get<std::pair<qc::Bit, bool>>(condition);
+    qc->emplace_back<qc::IfElseOperation>(std::move(thenOps),
+                                          std::move(elseOps), bit, val ? 1 : 0);
   } else {
-    if (std::holds_alternative<std::pair<qc::Bit, bool>>(condition)) {
-      const auto& [bit, val] = std::get<std::pair<qc::Bit, bool>>(condition);
-      qc->emplace_back<qc::ClassicControlledOperation>(std::move(thenOps), bit,
-                                                       val ? 1 : 0);
-    } else {
-      const auto& [creg, comparisonKind, rhs] = std::get<
-          std::tuple<qc::ClassicalRegister, qc::ComparisonKind, uint64_t>>(
-          condition);
-      qc->emplace_back<qc::ClassicControlledOperation>(std::move(thenOps), creg,
-                                                       rhs, comparisonKind);
-    }
+    const auto& [creg, comparisonKind, rhs] = std::get<
+        std::tuple<qc::ClassicalRegister, qc::ComparisonKind, uint64_t>>(
+        condition);
+    qc->emplace_back<qc::IfElseOperation>(
+        std::move(thenOps), std::move(elseOps), creg, rhs, comparisonKind);
   }
 }
 

@@ -210,6 +210,7 @@ TEST_P(QPE, IQPETest) {
   }
 }
 
+// TODO: Enable this test again
 TEST_P(QPE, DISABLED_DynamicEquivalenceSimulation) {
   auto dd = std::make_unique<dd::Package>(precision + 1);
 
@@ -243,6 +244,7 @@ TEST_P(QPE, DISABLED_DynamicEquivalenceSimulation) {
   EXPECT_NEAR(fidelity, 1.0, 1e-4);
 }
 
+// TODO: Enable this test again
 TEST_P(QPE, DISABLED_DynamicEquivalenceFunctionality) {
   auto dd = std::make_unique<dd::Package>(precision + 1);
 

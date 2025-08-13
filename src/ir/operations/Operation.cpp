@@ -27,18 +27,6 @@
 namespace qc {
 
 std::ostream& Operation::printParameters(std::ostream& os) const {
-  if (isClassicControlledOperation()) {
-
-    os << "  c[" << parameter[0];
-    if (parameter.size() == 2) {
-      os << "] == " << parameter[1];
-    } else {
-      os << "..." << (parameter[0] + parameter[1] - 1)
-         << "] == " << parameter[2];
-    }
-    return os;
-  }
-
   bool isZero = true;
   for (const auto& p : parameter) {
     if (p != static_cast<fp>(0)) {
@@ -46,6 +34,7 @@ std::ostream& Operation::printParameters(std::ostream& os) const {
       break;
     }
   }
+
   if (!isZero) {
     os << "  p: (" << parameter[0] << ") ";
     for (size_t j = 1; j < parameter.size(); ++j) {
@@ -76,10 +65,7 @@ std::ostream& Operation::print(std::ostream& os, const Permutation& permutation,
   for (std::size_t i = 0; i < nqubits; ++i) {
     const auto q = static_cast<Qubit>(i);
     if (std::ranges::find(actualTargets, q) != actualTargets.cend()) {
-      if (type == ClassicControlled) {
-        const auto reducedName = name.substr(2);
-        os << "\033[1m\033[35m" << std::setw(4) << reducedName;
-      } else if (type == Barrier) {
+      if (type == Barrier) {
         os << "\033[1m\033[32m" << std::setw(4) << shortName(type);
       } else {
         os << "\033[1m\033[36m" << std::setw(4) << shortName(type);

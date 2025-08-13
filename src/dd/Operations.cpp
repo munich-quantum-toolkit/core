@@ -17,7 +17,6 @@
 #include "dd/Package.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
@@ -184,12 +183,6 @@ MatrixDD getDD(const qc::Operation& op, Package& dd,
     return e;
   }
 
-  if (op.isClassicControlledOperation()) {
-    const auto& classicOp =
-        dynamic_cast<const qc::ClassicControlledOperation&>(op);
-    return getDD(*classicOp.getOperation(), dd, permutation, inverse);
-  }
-
   assert(op.isNonUnitaryOperation());
   throw std::invalid_argument("DD for non-unitary operation not available!");
 }
@@ -242,9 +235,10 @@ VectorDD applyReset(const qc::NonUnitaryOperation& op, VectorDD in, Package& dd,
   return in;
 }
 
-VectorDD applyClassicControlledOperation(
-    const qc::ClassicControlledOperation& op, const VectorDD& in, Package& dd,
-    const std::vector<bool>& measurements, const qc::Permutation& permutation) {
+VectorDD applyIfElseOperation(const qc::IfElseOperation& op, const VectorDD& in,
+                              Package& dd,
+                              const std::vector<bool>& measurements,
+                              const qc::Permutation& permutation) {
   const auto& expectedValue = op.getExpectedValue();
   const auto& comparisonKind = op.getComparisonKind();
 
@@ -287,10 +281,10 @@ VectorDD applyClassicControlledOperation(
   }();
 
   if (!control) {
-    return in;
+    return applyUnitaryOperation(*op.getElseBranch(), in, dd, permutation);
   }
 
-  return applyUnitaryOperation(op, in, dd, permutation);
+  return applyUnitaryOperation(*op.getThenBranch(), in, dd, permutation);
 }
 
 bool isExecutableVirtually(const qc::Operation& op) noexcept {
