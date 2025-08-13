@@ -242,7 +242,6 @@ struct ConvertMQTRefMeasure final
 
     // get the latest opt qubit from the map and add them to the vector
     const Value optQubit = getState().qubitMap[refQubit];
-    // create the result types
 
     // create new operation
     auto mqtoptOp = rewriter.create<opt::MeasureOp>(
