@@ -39,5 +39,4 @@ if(NOT TARGET ${TARGET_NAME})
   set(MQT_CORE_TARGETS
           ${MQT_CORE_TARGETS} ${TARGET_NAME}
           PARENT_SCOPE)
-
 endif()
