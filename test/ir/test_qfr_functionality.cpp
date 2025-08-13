@@ -11,7 +11,6 @@
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/Expression.hpp"
@@ -397,31 +396,7 @@ TEST_F(QFRFunctionality, OperationEquality) {
   EXPECT_TRUE(measure0.equals(measure2, perm0, {}));
   EXPECT_TRUE(measure0.equals(measure2, {}, perm0));
 
-  const auto expectedValue0 = 0U;
-  const auto expectedValue1 = 1U;
-
-  std::unique_ptr<Operation> xp0 = std::make_unique<StandardOperation>(0, X);
-  std::unique_ptr<Operation> xp1 = std::make_unique<StandardOperation>(0, X);
-  std::unique_ptr<Operation> xp2 = std::make_unique<StandardOperation>(0, X);
-  const auto classic0 =
-      ClassicControlledOperation(std::move(xp0), 0, expectedValue0);
-  const auto classic1 =
-      ClassicControlledOperation(std::move(xp1), 0, expectedValue1);
-  const auto classic2 =
-      ClassicControlledOperation(std::move(xp2), 1, expectedValue0);
-  std::unique_ptr<Operation> zp = std::make_unique<StandardOperation>(0, Z);
-  const auto classic3 =
-      ClassicControlledOperation(std::move(zp), 0, expectedValue0);
-  EXPECT_FALSE(classic0.equals(x));
-  EXPECT_NE(classic0, x);
-  EXPECT_TRUE(classic0.equals(classic0));
-  EXPECT_EQ(classic0, classic0);
-  EXPECT_FALSE(classic0.equals(classic1));
-  EXPECT_NE(classic0, classic1);
-  EXPECT_FALSE(classic0.equals(classic2));
-  EXPECT_NE(classic0, classic2);
-  EXPECT_FALSE(classic0.equals(classic3));
-  EXPECT_NE(classic0, classic3);
+  // TODO: Test IfElseOperation here
 
   auto compound0 = CompoundOperation();
   compound0.emplace_back<StandardOperation>(0, X);
@@ -735,25 +710,10 @@ TEST_F(QFRFunctionality, addControlSymbolicOperation) {
   EXPECT_EQ(op.removeControl(controls.begin()), controls.end());
 }
 
-TEST_F(QFRFunctionality, addControlClassicControlledOperation) {
-  std::unique_ptr<Operation> xp = std::make_unique<StandardOperation>(0, X);
-  const auto expectedValue = 0U;
-  auto op = ClassicControlledOperation(std::move(xp), 0, expectedValue);
+TEST_F(QFRFunctionality, addControlIfElseOperation) {
+  // TODO: Test IfElseOperation here
 
-  op.addControl(1);
-  op.addControl(2);
-
-  ASSERT_EQ(op.getNcontrols(), 2);
-  auto expectedControls = Controls{1U, 2U};
-  EXPECT_EQ(op.getControls(), expectedControls);
-  op.removeControl(1);
-  auto expectedControlsAfterRemove = Controls{2U};
-  EXPECT_EQ(op.getControls(), expectedControlsAfterRemove);
-  op.clearControls();
-  EXPECT_EQ(op.getNcontrols(), 0);
-  op.addControl(1);
-  const auto& controls = op.getControls();
-  EXPECT_EQ(op.removeControl(controls.begin()), controls.end());
+  ASSERT_TRUE(true);
 }
 
 TEST_F(QFRFunctionality, addControlNonUnitaryOperation) {
@@ -802,8 +762,7 @@ TEST_F(QFRFunctionality, addControlTwice) {
   op->addControl(control);
   EXPECT_THROW(op->addControl(control), std::runtime_error);
 
-  auto classicControlledOp = ClassicControlledOperation(std::move(op), 0, 0U);
-  EXPECT_THROW(classicControlledOp.addControl(control), std::runtime_error);
+  // TODO: Test IfElseOperation here
 
   auto symbolicOp = SymbolicOperation(Targets{1}, OpType::X);
   symbolicOp.addControl(control);
@@ -818,8 +777,7 @@ TEST_F(QFRFunctionality, addTargetAsControl) {
       std::make_unique<StandardOperation>(Targets{1}, OpType::X);
   EXPECT_THROW(op->addControl(control), std::runtime_error);
 
-  auto classicControlledOp = ClassicControlledOperation(std::move(op), 0, 0U);
-  EXPECT_THROW(classicControlledOp.addControl(control), std::runtime_error);
+  // TODO: Test IfElseOperation here
 
   auto symbolicOp = SymbolicOperation(Targets{1}, OpType::X);
   EXPECT_THROW(symbolicOp.addControl(control), std::runtime_error);

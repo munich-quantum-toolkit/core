@@ -97,10 +97,6 @@ public:
 
   [[nodiscard]] bool isUnitary() const override { return false; }
 
-  [[nodiscard]] bool isClassicControlledOperation() const noexcept override {
-    return true;
-  }
-
   [[nodiscard]] bool actsOn(const Qubit i) const override {
     return op->actsOn(i);
   }

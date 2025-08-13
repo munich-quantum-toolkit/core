@@ -15,8 +15,8 @@
 #include "dd/Package.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/Control.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
@@ -181,16 +181,15 @@ VectorDD applyReset(const qc::NonUnitaryOperation& op, VectorDD in, Package& dd,
                     const qc::Permutation& permutation = {});
 
 /**
- * @brief Apply a classic controlled operation to a given DD.
+ * @brief Apply an if-else operation to a given DD.
  *
- * @details This is a convenience function that realizes the classic controlled
- * operation @p op on @p in. It applies the underlying operation if the actual
- * value stored in the measurement results matches the expected value according
- * to the comparison kind. The function correctly accounts for the permutation
- * of the operation's qubits as well as automatically handles reference
- * counting.
+ * @details This is a convenience function that realizes the if-else operation
+ * @p op on @p in. It applies the underlying operation if the actual value
+ * stored in the measurement results matches the expected value according to the
+ * comparison kind. The function correctly accounts for the permutation of the
+ * operation's qubits as well as automatically handles reference counting.
  *
- * @param op The classic controlled operation to apply
+ * @param op The if-else operation to apply
  * @param in The input DD
  * @param dd The DD package to use
  * @param measurements The vector of measurement results
@@ -198,11 +197,10 @@ VectorDD applyReset(const qc::NonUnitaryOperation& op, VectorDD in, Package& dd,
  * empty permutation marks the identity permutation.
  * @return The output DD
  */
-VectorDD
-applyClassicControlledOperation(const qc::ClassicControlledOperation& op,
-                                const VectorDD& in, Package& dd,
-                                const std::vector<bool>& measurements,
-                                const qc::Permutation& permutation = {});
+VectorDD applyIfElseOperation(const qc::IfElseOperation& op, const VectorDD& in,
+                              Package& dd,
+                              const std::vector<bool>& measurements,
+                              const qc::Permutation& permutation = {});
 
 /**
  * @brief Check whether @p op is virtually executable.

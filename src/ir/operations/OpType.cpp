@@ -131,7 +131,6 @@ OpType opTypeFromString(const std::string& opType) {
       {"measure", OpType::Measure},
       {"reset", OpType::Reset},
       {"barrier", OpType::Barrier},
-      {"classic_controlled", OpType::ClassicControlled},
       {"if_else", OpType::IfElse},
       {"compound", OpType::Compound},
       {"move", OpType::Move},

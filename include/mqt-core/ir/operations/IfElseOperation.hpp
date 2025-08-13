@@ -26,10 +26,13 @@ public:
                   std::unique_ptr<Operation>&& elseOp,
                   ClassicalRegister controlReg, std::uint64_t expectedVal = 1U,
                   ComparisonKind kind = Eq);
+
   IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                   std::unique_ptr<Operation>&& elseOp, Bit cBit,
                   std::uint64_t expectedVal = 1U, ComparisonKind kind = Eq);
+
   IfElseOperation(const IfElseOperation& op);
+
   IfElseOperation& operator=(const IfElseOperation& op);
 
   [[nodiscard]] std::unique_ptr<Operation> clone() const override {
@@ -37,22 +40,27 @@ public:
   }
 
   [[nodiscard]] bool isUnitary() const override { return false; }
+
   [[nodiscard]] bool isNonUnitaryOperation() const override { return true; }
 
-  [[nodiscard]] const Operation* getThenBranch() const {
-    return thenBranch.get();
+  [[nodiscard]] bool isIfElseOperation() const noexcept override {
+    return true;
   }
-  [[nodiscard]] const Operation* getElseBranch() const {
-    return elseBranch.get();
-  }
+
+  [[nodiscard]] auto getThenBranch() const { return thenBranch.get(); }
+
+  [[nodiscard]] auto getElseBranch() const { return elseBranch.get(); }
 
   [[nodiscard]] const auto& getControlRegister() const noexcept {
     return controlRegister;
   }
+
   [[nodiscard]] const auto& getControlBit() const noexcept {
     return controlBit;
   }
+
   [[nodiscard]] auto getExpectedValue() const noexcept { return expectedValue; }
+
   [[nodiscard]] auto getComparisonKind() const noexcept {
     return comparisonKind;
   }
