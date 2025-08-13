@@ -1586,23 +1586,21 @@ void QuantumComputation::barrier(const Targets& targets) {
   checkQubitRange(targets);
   emplace_back<StandardOperation>(targets, Barrier);
 }
-void QuantumComputation::ifElse(StandardOperation& thenOp,
-                                StandardOperation& elseOp,
+void QuantumComputation::ifElse(std::unique_ptr<Operation>&& thenOp,
+                                std::unique_ptr<Operation>&& elseOp,
                                 const ClassicalRegister& controlRegister,
                                 const std::uint64_t expectedValue,
                                 const ComparisonKind cmp) {
   checkClassicalRegister(controlRegister);
-  emplace_back<IfElseOperation>(std::make_unique<StandardOperation>(thenOp),
-                                std::make_unique<StandardOperation>(elseOp),
+  emplace_back<IfElseOperation>(std::move(thenOp), std::move(elseOp),
                                 controlRegister, expectedValue, cmp);
 }
-void QuantumComputation::ifElse(StandardOperation& thenOp,
-                                StandardOperation& elseOp, Bit cBit,
+void QuantumComputation::ifElse(std::unique_ptr<Operation>&& thenOp,
+                                std::unique_ptr<Operation>&& elseOp, Bit cBit,
                                 const std::uint64_t expectedValue,
                                 const ComparisonKind cmp) {
-  emplace_back<IfElseOperation>(std::make_unique<StandardOperation>(thenOp),
-                                std::make_unique<StandardOperation>(elseOp),
-                                cBit, expectedValue, cmp);
+  emplace_back<IfElseOperation>(std::move(thenOp), std::move(elseOp), cBit,
+                                expectedValue, cmp);
 }
 
 } // namespace qc
