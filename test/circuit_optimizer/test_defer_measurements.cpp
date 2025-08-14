@@ -21,8 +21,7 @@
 
 namespace qc {
 
-// TODO: Enable this test again
-TEST(DeferMeasurements, DISABLED_basicTest) {
+TEST(DeferMeasurements, basicTest) {
   // Input:
   // i:   0   1
   // 1:   h   |
@@ -42,7 +41,7 @@ TEST(DeferMeasurements, DISABLED_basicTest) {
   const auto& creg = qc.addClassicalRegister(1);
   qc.h(0);
   qc.measure(0, 0U);
-  qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, creg, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, creg, 1U);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());
@@ -84,8 +83,7 @@ TEST(DeferMeasurements, DISABLED_basicTest) {
   EXPECT_EQ(classics0.at(0), 0);
 }
 
-// TODO: Enable this test again
-TEST(DeferMeasurements, DISABLED_measurementBetweenMeasurementAndClassic) {
+TEST(DeferMeasurements, measurementBetweenMeasurementAndClassic) {
   // Input:
   // i:   0   1
   // 1:   h   |
@@ -157,8 +155,7 @@ TEST(DeferMeasurements, DISABLED_measurementBetweenMeasurementAndClassic) {
   EXPECT_EQ(classics0.at(0), 0);
 }
 
-// TODO: Enable this test again
-TEST(DeferMeasurements, DISABLED_twoClassic) {
+TEST(DeferMeasurements, twoClassic) {
   // Input:
   // i:   0   1
   // 1:   h   |
@@ -243,8 +240,7 @@ TEST(DeferMeasurements, DISABLED_twoClassic) {
   EXPECT_EQ(classics0.at(0), 0);
 }
 
-// TODO: Enable this test again
-TEST(DeferMeasurements, DISABLED_correctOrder) {
+TEST(DeferMeasurements, correctOrder) {
   // Input:
   // i:   0   1
   // 1:   h   |
@@ -316,8 +312,7 @@ TEST(DeferMeasurements, DISABLED_correctOrder) {
   EXPECT_EQ(classics0.at(0), 0);
 }
 
-// TODO: Enable this test again
-TEST(DeferMeasurements, DISABLED_twoClassicCorrectOrder) {
+TEST(DeferMeasurements, twoClassicCorrectOrder) {
   // Input:
   // i:   0   1
   // 1:   h   |
@@ -401,8 +396,7 @@ TEST(DeferMeasurements, DISABLED_twoClassicCorrectOrder) {
   EXPECT_EQ(classics0.at(0), 0);
 }
 
-// TODO: Enable this test again
-TEST(DeferMeasurements, DISABLED_errorOnImplicitReset) {
+TEST(DeferMeasurements, errorOnImplicitReset) {
   // Input:
   // i:   0
   // 1:   h
@@ -425,8 +419,7 @@ TEST(DeferMeasurements, DISABLED_errorOnImplicitReset) {
   EXPECT_THROW(CircuitOptimizer::deferMeasurements(qc), std::runtime_error);
 }
 
-// TODO: Enable this test again
-TEST(DeferMeasurements, DISABLED_errorOnMultiQubitRegister) {
+TEST(DeferMeasurements, errorOnMultiQubitRegister) {
   // Input:
   // i: 0 1 2
   // 1: x | |
