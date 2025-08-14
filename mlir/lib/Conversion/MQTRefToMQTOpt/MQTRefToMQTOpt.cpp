@@ -392,8 +392,8 @@ struct MQTRefToMQTOpt final : impl::MQTRefToMQTOptBase<MQTRefToMQTOpt> {
     ADD_CONVERT_PATTERN(RYYOp)
     ADD_CONVERT_PATTERN(RZZOp)
     ADD_CONVERT_PATTERN(RZXOp)
-    ADD_CONVERT_PATTERN(XXminusYY)
-    ADD_CONVERT_PATTERN(XXplusYY)
+    ADD_CONVERT_PATTERN(XXminusYYOp)
+    ADD_CONVERT_PATTERN(XXplusYYOp)
 
     // conversion of mqtopt types in func.func signatures
     // does not work for now as signature needs to be changed
