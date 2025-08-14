@@ -146,8 +146,8 @@ DynamicDeviceLibrary::~DynamicDeviceLibrary() {
     dlclose(libHandle_);
   }
 }
-} // namespace qdmi
 #endif // _WIN32
+} // namespace qdmi
 
 QDMI_Device_impl_d::QDMI_Device_impl_d(
     std::unique_ptr<qdmi::DeviceLibrary>&& lib)
