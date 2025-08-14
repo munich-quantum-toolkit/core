@@ -38,7 +38,8 @@ TEST(ExecutableTest, Version) {
   std::array<char, 128> buffer{};
   buffer.fill('\0');
   std::stringstream output;
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+         nullptr) {
     output << buffer.data();
   }
   // Close the pipe
@@ -65,7 +66,8 @@ TEST(ExecutableTest, MissingSubcommand) {
   std::array<char, 128> buffer{};
   buffer.fill('\0');
   std::stringstream output;
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+         nullptr) {
     output << buffer.data();
   }
   // Close the pipe
@@ -86,7 +88,8 @@ TEST(ExecutableTest, UnknownSubcommand) {
   std::array<char, 128> buffer{};
   buffer.fill('\0');
   std::stringstream output;
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+         nullptr) {
     output << buffer.data();
   }
   // Close the pipe
@@ -107,7 +110,8 @@ TEST(ExecutableTest, SchemaUnknownOption) {
   std::array<char, 128> buffer{};
   buffer.fill('\0');
   std::stringstream output;
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+         nullptr) {
     output << buffer.data();
   }
   // Close the pipe
@@ -128,7 +132,8 @@ TEST(ExecutableTest, SchemaMissingFile) {
   std::array<char, 128> buffer{};
   buffer.fill('\0');
   std::stringstream output;
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+         nullptr) {
     output << buffer.data();
   }
   // Close the pipe
@@ -164,7 +169,8 @@ TEST(ExecutableTest, GenerateMissingFile) {
   std::array<char, 128> buffer{};
   buffer.fill('\0');
   std::stringstream output;
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+         nullptr) {
     output << buffer.data();
   }
   // Close the pipe
@@ -185,7 +191,8 @@ TEST(ExecutableTest, Usage) {
   std::array<char, 128> buffer{};
   buffer.fill('\0');
   std::stringstream output;
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+         nullptr) {
     output << buffer.data();
   }
   // Close the pipe
@@ -208,7 +215,8 @@ TEST(ExecutableTest, SchemaUsage) {
   std::array<char, 128> buffer{};
   buffer.fill('\0');
   std::stringstream output;
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+         nullptr) {
     output << buffer.data();
   }
   // Close the pipe
@@ -231,7 +239,8 @@ TEST(ExecutableTest, ValidateUsage) {
   std::array<char, 128> buffer{};
   buffer.fill('\0');
   std::stringstream output;
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+         nullptr) {
     output << buffer.data();
   }
   // Close the pipe
@@ -254,7 +263,8 @@ TEST(ExecutableTest, GenerateUsage) {
   std::array<char, 128> buffer{};
   buffer.fill('\0');
   std::stringstream output;
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+         nullptr) {
     output << buffer.data();
   }
   // Close the pipe
@@ -280,7 +290,8 @@ TEST(ExecutableTest, RoundTrip) {
     std::array<char, 128> buffer{};
     buffer.fill('\0');
     std::stringstream output;
-    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+           nullptr) {
       output << buffer.data();
     }
     // Close the pipe
@@ -321,7 +332,8 @@ TEST(ExecutableTest, RoundTripFile) {
     std::array<char, 128> buffer{};
     buffer.fill('\0');
     std::stringstream output;
-    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+           nullptr) {
       output << buffer.data();
     }
     // Close the pipe
@@ -343,7 +355,8 @@ TEST(ExecutableTest, RoundTripFile) {
     std::array<char, 128> buffer{};
     buffer.fill('\0');
     std::stringstream output;
-    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+           nullptr) {
       output << buffer.data();
     }
     // Close the pipe

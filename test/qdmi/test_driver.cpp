@@ -120,10 +120,12 @@ protected:
   }
 };
 
+#ifndef _WIN32
 TEST_P(DriverTest, LoadLibraryTwice) {
   EXPECT_NO_THROW(
       qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN"));
 }
+#endif // _WIN32
 
 TEST_P(DriverTest, SessionSetParameter) {
   const std::string authFile = "authfile.txt";
