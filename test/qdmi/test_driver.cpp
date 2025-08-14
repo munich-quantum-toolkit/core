@@ -32,13 +32,13 @@ auto stringConcat5(const std::string& a, const std::string& b,
   ss << a << b << c << d << e;
   return ss.str();
 }
-// NOLINTBEGIN(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
+// NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
 MATCHER_P2(IsBetween, a, b,
            stringConcat5(negation ? "isn't" : "is", " between ",
                          PrintToString(a), " and ", PrintToString(b))) {
   return a <= arg && arg <= b;
 }
-// NOLINTEND(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
+// NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 } // namespace
 } // namespace testing
 namespace qc {
@@ -48,14 +48,7 @@ protected:
   QDMI_Device device = nullptr;
 #ifndef _WIN32
   static void SetUpTestSuite() {
-    // avoid loading the same dynamic library twice as it would cause an
-    // exception; this only happens, because the `DriveJobTest` inherits from
-    // `DriverTest` and both call `SetUpTestSuite()` when instantiated
-    static bool added = false;
-    if (!added) {
-      qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN");
-      added = true;
-    }
+    qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN");
   }
 #endif // _WIN32
 
@@ -128,9 +121,8 @@ protected:
 };
 
 TEST_P(DriverTest, LoadLibraryTwice) {
-  EXPECT_THROW(
-      qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN"),
-      std::runtime_error);
+  EXPECT_NO_THROW(
+      qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN"));
 }
 
 TEST_P(DriverTest, SessionSetParameter) {
@@ -507,7 +499,7 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
   EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
 }
 #ifdef _WIN32
-const std::array<std::string, 2> DEVICES{"MQT NA Default QDMI Device"};
+const std::array<std::string, 1> DEVICES{"MQT NA Default QDMI Device"};
 #else
 const std::array<std::string, 2> DEVICES{"MQT NA Default QDMI Device",
                                          "MQT NA Dynamic QDMI Device"};

@@ -91,6 +91,7 @@ struct DeviceLibrary {
  * @details This class is used to load the QDMI device interface functions
  * from a dynamic library at runtime. It inherits from DeviceLibrary and
  * overrides the constructor and destructor to open and close the library.
+ * @note This class is only available on non-Windows platforms.
  */
 class DynamicDeviceLibrary final : public DeviceLibrary {
   /// @brief Handle to the dynamic library returned by `dlopen`.
@@ -153,10 +154,11 @@ enum class SessionStatus : uint8_t {
 /**
  * @brief Definition of the QDMI Device.
  */
-// Since we treat this struct as a class, we apply also the naming scheme for
-// classes, i.e., an underscore at the end of member names.
 struct QDMI_Device_impl_d {
 private:
+  // Since we treat this struct as a class, we apply also the naming scheme for
+  // classes, i.e., an underscore at the end of member names.
+
   /**
    * @brief The device library that provides the device interface functions.
    * @note This must be a pointer type as we need access to dynamic and static
@@ -190,6 +192,11 @@ public:
     if (deviceSession_ != nullptr) {
       library_->device_session_free(deviceSession_);
     }
+  }
+
+  /// @returns the library with the device interface functions pointers.
+  [[nodiscard]] auto getLibrary() const -> const qdmi::DeviceLibrary& {
+    return *library_;
   }
 
   /**
@@ -232,12 +239,11 @@ public:
 /**
  * @brief Definition of the QDMI Job.
  */
-// Since we treat this struct as a class, we apply also the naming scheme for
-// classes, i.e., an underscore at the end of member names.
 struct QDMI_Job_impl_d {
 private:
-  /// @brief The device library that provides the device interface functions.
-  const qdmi::DeviceLibrary* library_ = nullptr;
+  // Since we treat this struct as a class, we apply also the naming scheme for
+  // classes, i.e., an underscore at the end of member names.
+
   /// @brief The device job handle.
   QDMI_Device_Job deviceJob_ = nullptr;
   /// @brief The device associated with the job.
@@ -248,14 +254,11 @@ public:
    * @brief Constructor for the QDMI job.
    * @details This constructor initializes the job with the device job handle
    * and the device library.
-   * @param library is a pointer to the device library that provides the
-   * device interface functions.
    * @param deviceJob is the handle to the device job.
    * @param device is the device associated with the job.
    */
-  explicit QDMI_Job_impl_d(const qdmi::DeviceLibrary* library,
-                           QDMI_Device_Job deviceJob, QDMI_Device device)
-      : library_(library), deviceJob_(deviceJob), device_(device) {}
+  explicit QDMI_Job_impl_d(QDMI_Device_Job deviceJob, QDMI_Device device)
+      : deviceJob_(deviceJob), device_(device) {}
 
   /**
    * @brief Destructor for the QDMI job.
@@ -389,6 +392,8 @@ public:
   // singleton instance.
   Driver(const Driver&) = delete;
   Driver& operator=(const Driver&) = delete;
+  Driver(Driver&&) = default;
+  Driver& operator=(Driver&&) = default;
 
   /// @brief Returns the singleton instance.
   static auto get() -> Driver& {
@@ -403,9 +408,12 @@ public:
    * @brief Adds a dynamic device library to the driver.
    * @param libName is the path to the dynamic library to load.
    * @param prefix is the prefix used for the device interface functions.
+   * @returns `true` if the library was successfully loaded, `false`
+   * if it was already loaded.
+   * @note This function is only available on non-Windows platforms.
    */
   auto addDynamicDeviceLibrary(const std::string& libName,
-                               const std::string& prefix) -> void;
+                               const std::string& prefix) -> bool;
 #endif // _WIN32
   /**
    * @brief Allocates a new session.

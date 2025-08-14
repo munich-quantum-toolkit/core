@@ -139,7 +139,7 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PROPERTIES VERSION ${PROJECT_VERSION}
                SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreQDMI)
+               EXPORT_NAME CoreNaQDMIDevice)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
@@ -149,9 +149,6 @@ if(NOT TARGET ${TARGET_NAME})
   # Make QDMI and MQT Core Version available
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
                                                     MQT_CORE_VERSION="${MQT_CORE_VERSION}")
-  if(NOT BUILD_MQT_CORE_SHARED_LIBS)
-    target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_QDMI_NA_STATIC_DEFINE)
-  endif()
 
   # Generate additional alias for the target
   add_library(qdmi::mqt_na_device ALIAS ${TARGET_NAME})
@@ -194,7 +191,7 @@ if(NOT TARGET ${TARGET_NAME})
         ${DYN_TARGET_NAME}
         PROPERTIES VERSION ${PROJECT_VERSION}
                    SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-                   EXPORT_NAME CoreQDMI)
+                   EXPORT_NAME CoreDynNaQDMIDevice)
       add_library(MQT::CoreDynNaQDMI ALIAS ${DYN_TARGET_NAME})
     endif()
   endif()

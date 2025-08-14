@@ -33,7 +33,7 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PROPERTIES VERSION ${PROJECT_VERSION}
                SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreQDMI)
+               EXPORT_NAME CoreQDMIDriver)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
