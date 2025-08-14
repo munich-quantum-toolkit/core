@@ -14,7 +14,7 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Add library for device generation
   add_library(${TARGET_NAME} STATIC)
-  add_library(MQT::Core${QDMINaDeviceGen} ALIAS ${TARGET_NAME})
+  add_library(MQT::CoreQDMINaDeviceGen ALIAS ${TARGET_NAME})
 
   # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Generator.cpp)
