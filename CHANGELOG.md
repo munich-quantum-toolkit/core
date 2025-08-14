@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - ✨ Add MQT's implementation of a QDMI Driver ([#1010]) ([**@ystade**])
+- ✨ Add a copy of the NA QDMI Device that is always a shared library ([#1010]) ([**@ystade**])
 - ✨ Add translation from `QuantumComputation` to the `MQTRef` MLIR dialect ([#1099]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add `reset` operations to the `MQTDyn` and `MQTOpt` MLIR dialects ([#1106]) ([**@DRovara**])
 - ♻️ Update the `measure` operations in the MLIR dialects to no longer support more than one qubit being measured at once ([#1106]) ([**@DRovara**])
@@ -22,6 +23,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - **Breaking**: 🚚 Rename `XXminusYY` to `XXminusYYOp` and `XXplusYY` to `XXplusYYOp` in `MQTRef` and `MQTOpt` MLIR dialects ([#1099]) ([**@denialhaag**])
 - **Breaking**: 🚚 Rename `MQTDyn` MLIR dialect to `MQTRef` ([#1098]) ([**@MatthiasReumann**])
+
+### Fixed
+
+- ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing in the Python Wheel ([#1010]) ([**@ystade**])
 
 ## [3.2.1] - 2025-08-01
 
