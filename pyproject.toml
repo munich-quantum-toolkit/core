@@ -91,6 +91,7 @@ build.targets = [
   "mqt-core-na",
   "mqt-core-ir-bindings",
   "mqt-core-dd-bindings",
+  "mqt-core-qdmi-na-device",
 ]
 
 # Only install the mqt-core library and Python package components
