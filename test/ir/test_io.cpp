@@ -651,7 +651,6 @@ TEST_F(IO, ifElseOperationInvalidBitComparison) {
   try {
     qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0, 1,
               qc::Lt);
-    ;
     FAIL() << "Expected an exception for invalid expected value.";
   } catch (const std::invalid_argument& e) {
     EXPECT_STREQ(e.what(),
