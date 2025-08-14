@@ -41,6 +41,13 @@
     }                                                                          \
   }
 
+#ifdef _WIN32
+#define STRNCPY(dest, src, size)                                               \
+  strncpy_s(static_cast<char*>(dest), size, src, size);
+#else
+#define STRNCPY(dest, src, size) strncpy(static_cast<char*>(dest), src, size);
+#endif
+
 #define ADD_STRING_PROPERTY(prop_name, prop_value, prop, size, value,          \
                             size_ret)                                          \
   {                                                                            \
@@ -49,7 +56,7 @@
         if ((size) < strlen(prop_value) + 1) {                                 \
           return QDMI_ERROR_INVALIDARGUMENT;                                   \
         }                                                                      \
-        strncpy(static_cast<char*>(value), prop_value, size);                  \
+        STRNCPY(value, prop_value, size);                                      \
         /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) */  \
         static_cast<char*>(value)[size - 1] = '\0';                            \
       }                                                                        \
