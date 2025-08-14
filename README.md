@@ -63,6 +63,7 @@ To support this endeavor, please consider:
 - Starring and sharing our repositories: https://github.com/munich-quantum-toolkit
 - Contributing code, documentation, tests, or examples via issues and pull requests
 - Citing the MQT in your publications (see [Cite This](#cite-this))
+- Citing our research in your publications (see [References](https://mqt.readthedocs.io/projects/core/en/latest/references.html))
 - Using the MQT in research and teaching, and sharing feedback and use cases
 
 <p align="center">
@@ -117,17 +118,33 @@ If you want to use the ZX library, it is recommended (although not strictly nece
 If you want to cite MQT Core, please use the following BibTeX entry:
 
 ```bibtex
-@article{burgholzer2025MQTCore,
-    title     = {{{MQT Core}}: {{The}} Backbone of the {{Munich Quantum Toolkit (MQT)}}},
-    author    = {Lukas Burgholzer and Yannick Stade and Tom Peham and Robert Wille},
-    year      = {2025},
-    journal   = {Journal of Open Source Software},
-    publisher = {The Open Journal},
-    volume    = {10},
-    number    = {108},
-    pages     = {7478},
-    doi       = {10.21105/joss.07478},
-    url       = {https://doi.org/10.21105/joss.07478},
+@article{core,
+    title        = {{{MQT Core}}: {{The}} Backbone of the {{Munich Quantum Toolkit (MQT)}}},
+    author       = {Lukas Burgholzer and Yannick Stade and Tom Peham and Robert Wille},
+    year         = 2025,
+    journal      = {Journal of Open Source Software},
+    publisher    = {The Open Journal},
+    volume       = 10,
+    number       = 108,
+    pages        = 7478,
+    doi          = {10.21105/joss.07478},
+    url          = {https://doi.org/10.21105/joss.07478},
+}
+```
+
+If you want to cite the MQT, please use the following BibTeX entry:
+
+```bibtex
+@inproceedings{mqt,
+    title        = {The {{MQT}} Handbook: {{A}} Summary of Design Automation Tools and Software for Quantum Computing},
+    shorttitle   = {{The MQT Handbook}},
+    author       = {Robert Wille and Lucas Berent and Tobias Forster and Jagatheesan Kunasaikaran and Kevin Mato and Tom Peham and Nils Quetschlich and Damian Rovara and Aaron Sander and Ludwig Schmid and Daniel Schoenberger and Yannick Stade and Lukas Burgholzer},
+    booktitle    = {IEEE International Conference on Quantum Software (QSW)},
+    doi          = {10.1109/QSW62656.2024.00013},
+    date         = 2024,
+    eprint       = {2405.17543},
+    eprinttype   = {arxiv},
+    addendum     = {A live version of this document is available at \url{https://mqt.readthedocs.io}},
 }
 ```
 

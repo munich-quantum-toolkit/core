@@ -84,7 +84,7 @@ api/mqt/core/index
 api/cpp/namespacelist
 ```
 
-````{only} html
+```{only} html
 ## Contributors and Supporters
 
 The _[Munich Quantum Toolkit (MQT)](https://mqt.readthedocs.io)_ is developed by the [Chair for Design Automation](https://www.cda.cit.tum.de/) at the [Technical University of Munich](https://www.tum.de/) and supported by the [Munich Quantum Software Company (MQSC)](https://munichquantum.software).
@@ -115,29 +115,10 @@ To support this endeavor, please consider:
 - [Sponsoring us on GitHub](https://github.com/sponsors/munich-quantum-toolkit)
 - [Starring and sharing our repositories](https://github.com/munich-quantum-toolkit)
 - Contributing code, documentation, tests, or examples via issues and pull requests
-- Citing the MQT in your publications (see [Cite This](#cite-this))
+- Citing the MQT in your publications (see {doc}`References <references>`)
 - Using the MQT in research and teaching, and sharing feedback and use cases
 
 <p align="center">
 <iframe src="https://github.com/sponsors/munich-quantum-toolkit/button" title="Sponsor munich-quantum-toolkit" height="32" width="114" style="border: 0; border-radius: 6px;"></iframe>
 </p>
-
-## Cite This
-
-If you want to cite MQT Core, please use the following BibTeX entry:
-
-```bibtex
-@article{burgholzer2025MQTCore,
-  title     = {{{MQT Core}}: {{The}} Backbone of the {{Munich Quantum Toolkit (MQT)}}},
-  author    = {Lukas Burgholzer and Yannick Stade and Tom Peham and Robert Wille},
-  year      = {2025},
-  journal   = {Journal of Open Source Software},
-  publisher = {The Open Journal},
-  volume    = {10},
-  number    = {108},
-  pages     = {7478},
-  doi       = {10.21105/joss.07478},
-  url       = {https://doi.org/10.21105/joss.07478},
-}
 ```
-````
