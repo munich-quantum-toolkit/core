@@ -149,6 +149,44 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
                 return $_op.getParams();
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Get the corresponding input qubit for a given output qubit.",
+            /*returnType=*/  "mlir::Value",
+            /*methodName=*/  "getCorrespondingInput",
+            /*args=*/        (ins "mlir::Value":$outQubit),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                auto op = $_op;
+
+                auto inQubits = op.getAllInQubits();
+                auto outQubits = op.getAllOutQubits();
+
+                auto it = std::find(outQubits.begin(), outQubits.end(), outQubit);
+                if (it == outQubits.end()) {
+                    llvm::report_fatal_error("output qubit not found in operation");
+                }
+                size_t index = std::distance(outQubits.begin(), it);
+                return inQubits[index];
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Get the corresponding output qubit for a given input qubit.",
+            /*returnType=*/  "mlir::Value",
+            /*methodName=*/  "getCorrespondingOutput",
+            /*args=*/        (ins "mlir::Value":$inQubit),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                auto op = $_op;
+
+                auto inQubits = op.getAllInQubits();
+                auto outQubits = op.getAllOutQubits();
+
+                auto it = std::find(inQubits.begin(), inQubits.end(), inQubit);
+                if (it == inQubits.end()) {
+                    llvm::report_fatal_error("input qubit not found in operation");
+                }
+                size_t index = std::distance(inQubits.begin(), it);
+                return outQubits[index];
             }]>
     ];
 
