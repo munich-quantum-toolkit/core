@@ -13,7 +13,8 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-gen)
 if(NOT TARGET ${TARGET_NAME})
 
   # Add library for device generation
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMINaDeviceGen)
+  add_library(${TARGET_NAME} STATIC)
+  add_library(MQT::Core${QDMINaDeviceGen} ALIAS ${TARGET_NAME})
 
   # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Generator.cpp)
