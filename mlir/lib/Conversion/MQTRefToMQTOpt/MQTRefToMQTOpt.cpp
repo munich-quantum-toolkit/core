@@ -311,8 +311,9 @@ struct ConvertMQTRefQubit final : StatefulOpConversionPattern<ref::QubitOp> {
     // map ref to opt
     getState().qubitMap[refQubit] = optQubit;
 
-    // delete the old operation
-    rewriter.eraseOp(op);
+    // replace the old operation result with the new result and delete
+    // old operation
+    rewriter.replaceOp(op, optQubit);
 
     return success();
   }
