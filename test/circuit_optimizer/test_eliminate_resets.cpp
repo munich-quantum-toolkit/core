@@ -119,6 +119,12 @@ TEST(EliminateResets, eliminateResetsIfElseOperation) {
   EXPECT_TRUE(op2->isIfElseOperation());
   auto* ifElse = dynamic_cast<qc::IfElseOperation*>(op2.get());
   ASSERT_NE(ifElse, nullptr);
+  const auto& thenBranch = ifElse->getThenBranch();
+  EXPECT_TRUE(thenBranch->getType() == qc::X);
+  EXPECT_EQ(thenBranch->getNtargets(), 1);
+  const auto& targets = thenBranch->getTargets();
+  EXPECT_EQ(targets.at(0), 1);
+  EXPECT_EQ(thenBranch->getNcontrols(), 0);
 }
 
 TEST(EliminateResets, eliminateResetsMultipleTargetReset) {
@@ -219,5 +225,11 @@ TEST(EliminateResets, eliminateResetsCompoundOperation) {
   EXPECT_TRUE(op2->isIfElseOperation());
   auto* ifElse = dynamic_cast<qc::IfElseOperation*>(op2.get());
   ASSERT_NE(ifElse, nullptr);
+  const auto& thenBranch = ifElse->getThenBranch();
+  EXPECT_TRUE(thenBranch->getType() == qc::X);
+  EXPECT_EQ(thenBranch->getNtargets(), 1);
+  const auto& targets = thenBranch->getTargets();
+  EXPECT_EQ(targets.at(0), 4);
+  EXPECT_EQ(thenBranch->getNcontrols(), 0);
 }
 } // namespace qc
