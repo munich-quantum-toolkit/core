@@ -339,6 +339,7 @@ Driver::~Driver() {
   devices_.clear();
 }
 
+#ifndef _WIN32
 auto Driver::addDynamicDeviceLibrary(const std::string& libName,
                                      const std::string& prefix) -> bool {
   try {
@@ -353,6 +354,7 @@ auto Driver::addDynamicDeviceLibrary(const std::string& libName,
   }
   return true;
 }
+#endif
 
 auto Driver::sessionAlloc(QDMI_Session* session) -> int {
   if (session == nullptr) {
