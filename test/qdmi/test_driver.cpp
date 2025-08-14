@@ -32,13 +32,13 @@ auto stringConcat5(const std::string& a, const std::string& b,
   ss << a << b << c << d << e;
   return ss.str();
 }
-// NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
+// NOLINTBEGIN(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
 MATCHER_P2(IsBetween, a, b,
            stringConcat5(negation ? "isn't" : "is", " between ",
                          PrintToString(a), " and ", PrintToString(b))) {
   return a <= arg && arg <= b;
 }
-// NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
+// NOLINTEND(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
 } // namespace
 } // namespace testing
 namespace qc {
