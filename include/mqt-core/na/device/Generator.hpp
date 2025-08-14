@@ -128,7 +128,7 @@ private:
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Operation, name, region,
-                                                duration, fidelity);
+                                                duration, fidelity)
   };
 
 public:
