@@ -13,7 +13,8 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-gen)
 if(NOT TARGET ${TARGET_NAME})
 
   # Add library for device generation
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMINaDeviceGen)
+  add_library(${TARGET_NAME} STATIC)
+  add_library(MQT::CoreQDMINaDeviceGen ALIAS ${TARGET_NAME})
 
   # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Generator.cpp)
@@ -127,6 +128,10 @@ if(NOT TARGET ${TARGET_NAME})
     PUBLIC qdmi::qdmi
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
 
+  # Always compile with position independent code such that the library can be used in shared
+  # libraries
+  set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
   # set c++ standard
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 
@@ -135,7 +140,7 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PROPERTIES VERSION ${PROJECT_VERSION}
                SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreQDMI)
+               EXPORT_NAME CoreNaQDMIDevice)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
@@ -143,9 +148,52 @@ if(NOT TARGET ${TARGET_NAME})
       PARENT_SCOPE)
 
   # Make QDMI and MQT Core Version available
-  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
-  target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
+                                                    MQT_CORE_VERSION="${MQT_CORE_VERSION}")
 
   # Generate additional alias for the target
   add_library(qdmi::mqt_na_device ALIAS ${TARGET_NAME})
+
+  # Do not build dynamic NA device on Windows because it cannot be used anyways in the current setup
+  if(NOT WIN32)
+    set(DYN_TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-dyn)
+    if(NOT TARGET ${DYN_TARGET_NAME})
+      # Set prefix for QDMI
+      set(QDMI_PREFIX "MQT_NA_DYN")
+      # Generate prefixed QDMI headers
+      generate_prefixed_qdmi_headers(${QDMI_PREFIX})
+      file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_na_dyn_qdmi/**.hpp)
+      # Add dynamic library target
+      add_library(${DYN_TARGET_NAME} SHARED)
+      add_dependencies(${DYN_TARGET_NAME} ${TARGET_NAME})
+      # add sources to target
+      target_sources(${DYN_TARGET_NAME} PRIVATE DynDevice.cpp)
+      # add headers using file sets
+      target_sources(
+        ${DYN_TARGET_NAME}
+        PUBLIC FILE_SET
+               HEADERS
+               BASE_DIRS
+               ${MQT_CORE_INCLUDE_BUILD_DIR}
+               ${CMAKE_CURRENT_BINARY_DIR}/include
+               FILES
+               ${DEVICE_HDR}
+               ${MQT_CORE_INCLUDE_BUILD_DIR}/na/device/Device.hpp
+               ${QDMI_HDRS})
+      # add link libraries
+      target_link_libraries(
+        ${DYN_TARGET_NAME}
+        PUBLIC qdmi::qdmi
+        PRIVATE ${TARGET_NAME} MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
+      # set c++ standard
+      target_compile_features(${DYN_TARGET_NAME} PRIVATE cxx_std_20)
+      # set versioning information
+      set_target_properties(
+        ${DYN_TARGET_NAME}
+        PROPERTIES VERSION ${PROJECT_VERSION}
+                   SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+                   EXPORT_NAME CoreDynNaQDMIDevice)
+      add_library(MQT::CoreDynNaQDMI ALIAS ${DYN_TARGET_NAME})
+    endif()
+  endif()
 endif()

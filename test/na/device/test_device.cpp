@@ -117,9 +117,9 @@ protected:
 
   void SetUp() override {
     QDMISpecificationTest::SetUp();
-    ASSERT_THAT(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-                testing::AnyOf(QDMI_SUCCESS))
-        << "Failed to create a device job";
+    ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
+              QDMI_SUCCESS)
+        << "Failed to create a device job.";
   }
 
   void TearDown() override {
@@ -439,9 +439,16 @@ protected:
 };
 
 TEST_F(NADeviceTest, QuerySiteData) {
+  uint64_t module = 0;
+  uint64_t subModule = 0;
+  int64_t x = 0;
+  int64_t y = 0;
+  double t1 = 0;
+  double t2 = 0;
   std::vector<MQT_NA_QDMI_Site> sites;
   EXPECT_NO_THROW(sites = querySites(session))
       << "Devices must provide a sites";
+  EXPECT_EQ(sites.size(), 100);
   for (auto* site : sites) {
     int64_t x = 0;
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(

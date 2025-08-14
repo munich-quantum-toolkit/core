@@ -78,10 +78,11 @@ endif()
 # cmake-format: off
 set(QDMI_VERSION 1.2.0
         CACHE STRING "QDMI version")
-set(QDMI_REV "8a92790b1d99ab35d05078390c562f0e76e563de"
+set(QDMI_REV "ef24581bdd746d068261a0600dbb6167befe9c5a"
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")
+cmake_dependent_option(QDMI_INSTALL "Install QDMI library" ON "MQT_CORE_INSTALL" OFF)
 # cmake-format: on
 FetchContent_Declare(
   qdmi
@@ -96,6 +97,7 @@ set(SPDLOG_VERSION
 set(SPDLOG_URL https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz)
 # Add position independent code for spdlog, this is required for python bindings on linux
 set(SPDLOG_BUILD_PIC ON)
+cmake_dependent_option(SPDLOG_INSTALL "Install spdlog library" ON "MQT_CORE_INSTALL" OFF)
 FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
 list(APPEND FETCH_PACKAGES spdlog)
 

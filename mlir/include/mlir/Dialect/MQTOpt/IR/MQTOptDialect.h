@@ -44,9 +44,9 @@
 namespace mqt::ir::opt {
 mlir::ParseResult
 parseOptOutputTypes(mlir::OpAsmParser& parser,
-                    llvm::SmallVectorImpl<::mlir::Type>& out_qubits,
-                    llvm::SmallVectorImpl<::mlir::Type>& pos_ctrl_out_qubits,
-                    llvm::SmallVectorImpl<::mlir::Type>& neg_ctrl_out_qubits);
+                    llvm::SmallVectorImpl<mlir::Type>& out_qubits,
+                    llvm::SmallVectorImpl<mlir::Type>& pos_ctrl_out_qubits,
+                    llvm::SmallVectorImpl<mlir::Type>& neg_ctrl_out_qubits);
 
 void printOptOutputTypes(mlir::OpAsmPrinter& printer, mlir::Operation* op,
                          mlir::TypeRange out_qubits,

@@ -89,6 +89,24 @@ auto populateArrayFields(Device& device) -> void {
 }
 
 /**
+ * Computes the length unit factor based on the device configuration.
+ * @param device is the device object containing the length unit.
+ * @returns a factor every length value must be multiplied with to convert it to
+ * micrometers.
+ */
+[[nodiscard]] auto getLengthUnit(const Device& device) -> double {
+  if (device.lengthUnit.unit == "um") {
+    return static_cast<double>(device.lengthUnit.scaleFactor);
+  }
+  if (device.lengthUnit.unit == "nm") {
+    return static_cast<double>(device.lengthUnit.scaleFactor) * 1e-3;
+  }
+  std::stringstream ss;
+  ss << "Unsupported length unit: " << device.lengthUnit.unit;
+  throw std::runtime_error(ss.str());
+}
+
+/**
  * @brief Writes the name from the device object.
  * @param device is the device object containing the name.
  * @param os is the output stream to write the name to.
@@ -181,6 +199,9 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
   }
   // then write all regular sites
   size_t moduleCount = 0;
+  const auto lengthUnit = getLengthUnit(device);
+
+  os << "#define INITIALIZE_SITES(var) var.clear();";
   for (const auto& lattice : device.traps) {
     size_t subModuleCount = 0;
 

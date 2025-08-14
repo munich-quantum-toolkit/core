@@ -6,6 +6,9 @@
 #
 # Licensed under the MIT License
 
+# add subdirectories
+add_subdirectory(device)
+
 if(NOT TARGET ${MQT_CORE_TARGET_NAME}-na)
   # collect headers and source files
   file(GLOB NA_HEADERS ${MQT_CORE_INCLUDE_BUILD_DIR}/na/*.hpp
