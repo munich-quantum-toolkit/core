@@ -12,8 +12,8 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/StandardOperation.hpp"
 
 #include <cmath>
 #include <cstddef>
@@ -177,7 +177,9 @@ auto constructIterativeQPECircuit(QuantumComputation& qc, const fp lambda,
     // hybrid quantum-classical inverse QFT
     for (std::size_t j = 0; j < i; j++) {
       auto iQFTLambda = -PI / static_cast<double>(1ULL << (i - j));
-      qc.classicControlled(P, 1, j, 1U, Eq, {iQFTLambda});
+      const auto params = std::vector<fp>{iQFTLambda};
+      qc.ifElse(std::make_unique<StandardOperation>(1, P, params), nullptr, j,
+                1U);
     }
     qc.h(1);
 

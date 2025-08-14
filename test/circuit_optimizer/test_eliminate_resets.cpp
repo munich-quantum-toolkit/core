@@ -11,10 +11,10 @@
 #include "circuit_optimizer/CircuitOptimizer.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/StandardOperation.hpp"
 
 #include <gtest/gtest.h>
 #include <iostream>
@@ -78,14 +78,14 @@ TEST(EliminateResets, eliminateResetsBasicTest) {
   EXPECT_EQ(classics1.at(0), 1);
 }
 
-TEST(EliminateResets, eliminateResetsClassicControlled) {
+TEST(EliminateResets, eliminateResetsIfElseOperation) {
   QuantumComputation qc{};
   qc.addQubitRegister(1);
   qc.addClassicalRegister(2);
   qc.h(0);
   qc.measure(0, 0U);
   qc.reset(0);
-  qc.classicControlled(qc::X, 0, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0, 1U);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());
@@ -116,16 +116,15 @@ TEST(EliminateResets, eliminateResetsClassicControlled) {
   EXPECT_EQ(classics0.size(), 1);
   EXPECT_EQ(classics0.at(0), 0);
 
-  EXPECT_TRUE(op2->isClassicControlledOperation());
-  auto* classicControlled =
-      dynamic_cast<qc::ClassicControlledOperation*>(op2.get());
-  ASSERT_NE(classicControlled, nullptr);
-  const auto& operation = classicControlled->getOperation();
-  EXPECT_TRUE(operation->getType() == qc::X);
-  EXPECT_EQ(classicControlled->getNtargets(), 1);
-  const auto& targets = classicControlled->getTargets();
+  EXPECT_TRUE(op2->isIfElseOperation());
+  auto* ifElse = dynamic_cast<qc::IfElseOperation*>(op2.get());
+  ASSERT_NE(ifElse, nullptr);
+  const auto& thenBranch = ifElse->getThenBranch();
+  EXPECT_TRUE(thenBranch->getType() == qc::X);
+  EXPECT_EQ(thenBranch->getNtargets(), 1);
+  const auto& targets = thenBranch->getTargets();
   EXPECT_EQ(targets.at(0), 1);
-  EXPECT_EQ(classicControlled->getNcontrols(), 0);
+  EXPECT_EQ(thenBranch->getNcontrols(), 0);
 }
 
 TEST(EliminateResets, eliminateResetsMultipleTargetReset) {
@@ -181,7 +180,7 @@ TEST(EliminateResets, eliminateResetsCompoundOperation) {
   comp.cx(1, 0);
   comp.reset(0);
   comp.measure(0, 0);
-  comp.classicControlled(qc::X, 0, 0, 1U);
+  comp.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0, 1U);
   qc.emplace_back(comp.asOperation());
 
   std::cout << qc << "\n";
@@ -223,15 +222,14 @@ TEST(EliminateResets, eliminateResetsCompoundOperation) {
   EXPECT_EQ(classics0.size(), 1);
   EXPECT_EQ(classics0.at(0), 0);
 
-  EXPECT_TRUE(op2->isClassicControlledOperation());
-  auto* classicControlled =
-      dynamic_cast<qc::ClassicControlledOperation*>(op2.get());
-  ASSERT_NE(classicControlled, nullptr);
-  const auto& operation = classicControlled->getOperation();
-  EXPECT_TRUE(operation->getType() == qc::X);
-  EXPECT_EQ(classicControlled->getNtargets(), 1);
-  const auto& targets = classicControlled->getTargets();
+  EXPECT_TRUE(op2->isIfElseOperation());
+  auto* ifElse = dynamic_cast<qc::IfElseOperation*>(op2.get());
+  ASSERT_NE(ifElse, nullptr);
+  const auto& thenBranch = ifElse->getThenBranch();
+  EXPECT_TRUE(thenBranch->getType() == qc::X);
+  EXPECT_EQ(thenBranch->getNtargets(), 1);
+  const auto& targets = thenBranch->getTargets();
   EXPECT_EQ(targets.at(0), 4);
-  EXPECT_EQ(classicControlled->getNcontrols(), 0);
+  EXPECT_EQ(thenBranch->getNcontrols(), 0);
 }
 } // namespace qc

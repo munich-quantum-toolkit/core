@@ -10,7 +10,6 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
@@ -608,11 +607,12 @@ TEST_F(IO, fromCompoundOperation) {
   EXPECT_EQ(expected, actual);
 }
 
-TEST_F(IO, classicalControlledOperationToOpenQASM3) {
+TEST_F(IO, ifElseOperationOperationToOpenQASM3) {
   qc.addQubitRegister(2);
   const auto& creg = qc.addClassicalRegister(2);
-  qc.classicControlled(qc::X, 0, 0);
-  qc.classicControlled(qc::X, 1, creg);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0, 1);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(1, qc::X), nullptr, creg,
+            1U);
   const std::string expected = "// i 0 1\n"
                                "// o 0 1\n"
                                "OPENQASM 3.0;\n"
@@ -630,11 +630,11 @@ TEST_F(IO, classicalControlledOperationToOpenQASM3) {
   EXPECT_EQ(expected, actual);
 }
 
-TEST_F(IO, classicalControlledOperationExpectedValueTooLarge) {
+TEST_F(IO, ifElseOperationExpectedValueTooLarge) {
   qc.addQubitRegister(1);
   qc.addClassicalRegister(1);
   try {
-    qc.classicControlled(qc::X, 0, 0, 2);
+    qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0, 2);
     FAIL() << "Expected an exception for invalid expected value.";
   } catch (const std::invalid_argument& e) {
     EXPECT_STREQ(e.what(),
@@ -645,11 +645,12 @@ TEST_F(IO, classicalControlledOperationExpectedValueTooLarge) {
   }
 }
 
-TEST_F(IO, classicalControlledOperationInvalidBitComparison) {
+TEST_F(IO, ifElseOperationInvalidBitComparison) {
   qc.addQubitRegister(1);
   qc.addClassicalRegister(1);
   try {
-    qc.classicControlled(qc::X, 0, 0, 1, qc::Lt);
+    qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0, 1,
+              qc::Lt);
     FAIL() << "Expected an exception for invalid expected value.";
   } catch (const std::invalid_argument& e) {
     EXPECT_STREQ(e.what(),

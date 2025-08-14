@@ -339,18 +339,25 @@ void removeDiagonalGatesBeforeMeasureRecursive(
           }
         }
       }
-    } else if (op->isClassicControlledOperation()) {
-      // consider the operation that is classically controlled and proceed as
-      // above
-      auto* cop = dynamic_cast<ClassicControlledOperation*>(op)->getOperation();
-      const bool onlyDiagonalGates =
-          removeDiagonalGate(dag, dagIterators, idx, it, cop);
-      if (onlyDiagonalGates) {
-        for (const auto& control : cop->getControls()) {
-          ++(dagIterators.at(control.qubit));
-        }
-        for (const auto& target : cop->getTargets()) {
-          ++(dagIterators.at(target));
+    } else if (op->isIfElseOperation()) {
+      auto* thenBranch = dynamic_cast<IfElseOperation*>(op)->getThenBranch();
+      auto* elseBranch = dynamic_cast<IfElseOperation*>(op)->getElseBranch();
+      if (thenBranch == nullptr || elseBranch != nullptr) {
+        throw std::runtime_error("If-else operations with non-trivial else "
+                                 "branches are currently not supported.");
+      }
+
+      // treat then branch as above
+      if (thenBranch) {
+        const bool onlyDiagonalGates =
+            removeDiagonalGate(dag, dagIterators, idx, it, thenBranch);
+        if (onlyDiagonalGates) {
+          for (const auto& control : thenBranch->getControls()) {
+            ++(dagIterators.at(control.qubit));
+          }
+          for (const auto& target : thenBranch->getTargets()) {
+            ++(dagIterators.at(target));
+          }
         }
       }
     } else if (op->isNonUnitaryOperation()) {
@@ -722,10 +729,23 @@ void CircuitOptimizer::eliminateResets(QuantumComputation& qc) {
             }
             compOpIt = compOp.erase(compOpIt);
           } else {
-            if ((*compOpIt)->isStandardOperation() ||
-                (*compOpIt)->isClassicControlledOperation()) {
+            if ((*compOpIt)->isStandardOperation()) {
               auto& targets = (*compOpIt)->getTargets();
               auto& controls = (*compOpIt)->getControls();
+              changeTargets(targets, replacementMap);
+              changeControls(controls, replacementMap);
+            } else if (auto* ifElse =
+                           dynamic_cast<IfElseOperation*>(compOpIt->get());
+                       ifElse != nullptr) {
+              auto thenBranch = ifElse->getThenBranch();
+              auto elseBranch = ifElse->getElseBranch();
+              if (thenBranch == nullptr || elseBranch != nullptr) {
+                throw std::runtime_error(
+                    "If-else operations with non-trivial else branches are "
+                    "currently not supported.");
+              }
+              auto& targets = thenBranch->getTargets();
+              auto& controls = thenBranch->getControls();
               changeTargets(targets, replacementMap);
               changeControls(controls, replacementMap);
             } else if ((*compOpIt)->isNonUnitaryOperation()) {
@@ -736,12 +756,21 @@ void CircuitOptimizer::eliminateResets(QuantumComputation& qc) {
           }
         }
       }
-      if ((*it)->isStandardOperation() ||
-          (*it)->isClassicControlledOperation()) {
+      if ((*it)->isStandardOperation()) {
         auto& targets = (*it)->getTargets();
         auto& controls = (*it)->getControls();
         changeTargets(targets, replacementMap);
         changeControls(controls, replacementMap);
+      } else if (auto* ifElse = dynamic_cast<IfElseOperation*>(it->get());
+                 ifElse != nullptr) {
+        auto thenBranch = ifElse->getThenBranch();
+        auto elseBranch = ifElse->getElseBranch();
+        if (thenBranch == nullptr || elseBranch != nullptr) {
+          throw std::runtime_error("If-else operations with non-trivial else "
+                                   "branches are currently not supported.");
+        }
+        auto& targets = thenBranch->getTargets();
+        changeTargets(targets, replacementMap);
       } else if ((*it)->isNonUnitaryOperation()) {
         auto& targets = (*it)->getTargets();
         changeTargets(targets, replacementMap);
@@ -814,42 +843,32 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
               "eliminateResets method before deferring measurements.");
         }
 
-        if (const auto* measurement2 =
-                dynamic_cast<NonUnitaryOperation*>(opIt->get());
-            measurement2 != nullptr && operation->getType() == Measure) {
-          const auto& targets2 = measurement2->getTargets();
-          const auto& classics2 = measurement2->getClassics();
-
-          // if this is the same measurement a breakpoint has been reached
-          if (targets == targets2 && classics == classics2) {
-            break;
+        if (auto* ifElse = dynamic_cast<IfElseOperation*>(opIt->get());
+            ifElse != nullptr) {
+          auto thenBranch = ifElse->getThenBranch();
+          auto elseBranch = ifElse->getElseBranch();
+          if (thenBranch == nullptr || elseBranch != nullptr) {
+            throw std::runtime_error("If-else operations with non-trivial else "
+                                     "branches are currently not supported.");
           }
 
-          ++currentInsertionPoint;
-          ++opIt;
-          continue;
-        }
-
-        if (const auto* classicOp =
-                dynamic_cast<ClassicControlledOperation*>(opIt->get());
-            classicOp != nullptr) {
-          const auto& expectedValue = classicOp->getExpectedValue();
+          const auto& expectedValue = ifElse->getExpectedValue();
 
           Bit cBit = 0;
-          if (const auto& controlRegister = classicOp->getControlRegister();
+          if (const auto& controlRegister = ifElse->getControlRegister();
               controlRegister.has_value()) {
-            assert(!classicOp->getControlBit().has_value());
+            assert(!ifElse->getControlBit().has_value());
             if (controlRegister->getSize() != 1) {
               throw std::runtime_error(
-                  "Classic-controlled operations targeted at more than one bit "
-                  "are currently not supported. Try decomposing the operation "
-                  "into individual contributions.");
+                  "If-else operations targeted at more than one bit are "
+                  "currently not supported. Try decomposing the operation into "
+                  "individual contributions.");
             }
             cBit = controlRegister->getStartIndex();
           }
-          if (const auto& controlBit = classicOp->getControlBit();
+          if (const auto& controlBit = ifElse->getControlBit();
               controlBit.has_value()) {
-            assert(!classicOp->getControlRegister().has_value());
+            assert(!ifElse->getControlRegister().has_value());
             cBit = controlBit.value();
           }
 
@@ -863,13 +882,12 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
           }
 
           // get the underlying operation
-          const auto* standardOp =
-              dynamic_cast<StandardOperation*>(classicOp->getOperation());
+          const auto* standardOp = dynamic_cast<StandardOperation*>(thenBranch);
           if (standardOp == nullptr) {
             std::stringstream ss{};
-            ss << "Underlying operation of classic-controlled operation is "
-                  "not a StandardOperation.\n";
-            classicOp->print(ss, qc.getNqubits());
+            ss << "Then branch of if-else operation is not a "
+                  "StandardOperation.\n";
+            thenBranch->print(ss, qc.getNqubits());
             throw std::runtime_error(ss.str());
           }
 
@@ -881,9 +899,8 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
             if (target == measurementQubit) {
               throw std::runtime_error(
                   "Implicit reset operation in circuit detected. Measuring a "
-                  "qubit and then targeting the same qubit with a "
-                  "classic-controlled operation is not allowed at the "
-                  "moment.");
+                  "qubit and then targeting the same qubit with an if-else "
+                  "operation is not allowed at the moment.");
             }
           }
 
@@ -928,6 +945,22 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
           // the inner loop also has to restart from here due to the
           // invalidation of the iterators
           opIt = currentInsertionPoint;
+        }
+
+        if (const auto* measurement2 =
+                dynamic_cast<NonUnitaryOperation*>(opIt->get());
+            measurement2 != nullptr && operation->getType() == Measure) {
+          const auto& targets2 = measurement2->getTargets();
+          const auto& classics2 = measurement2->getClassics();
+
+          // if this is the same measurement a breakpoint has been reached
+          if (targets == targets2 && classics == classics2) {
+            break;
+          }
+
+          ++currentInsertionPoint;
+          ++opIt;
+          continue;
         }
       }
     }

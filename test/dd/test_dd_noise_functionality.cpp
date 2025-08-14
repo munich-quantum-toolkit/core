@@ -303,7 +303,6 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4IdentityError) {
 }
 
 TEST_F(DDNoiseFunctionalityTest, testingUsedQubits) {
-  constexpr std::size_t nqubits = 1;
   auto standardOp = StandardOperation(1, qc::Z);
   EXPECT_EQ(standardOp.getUsedQubits().size(), 1);
   EXPECT_TRUE(standardOp.getUsedQubits().count(1));
@@ -320,10 +319,7 @@ TEST_F(DDNoiseFunctionalityTest, testingUsedQubits) {
   EXPECT_TRUE(compoundOp.getUsedQubits().count(0));
   EXPECT_TRUE(compoundOp.getUsedQubits().count(1));
 
-  auto classicalControlledOp = qc::ClassicControlledOperation(
-      std::make_unique<qc::StandardOperation>(0, qc::X), {0, nqubits}, 1U);
-  EXPECT_EQ(classicalControlledOp.getUsedQubits().size(), 1);
-  EXPECT_TRUE(classicalControlledOp.getUsedQubits().count(0) == 1U);
+  // TODO: Test IfElseOperation here
 }
 
 TEST_F(DDNoiseFunctionalityTest, invalidNoiseEffect) {
