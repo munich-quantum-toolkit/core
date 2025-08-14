@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  cpp-test-mlir:
+  cpp-test-mlir-ubuntu:
     name: 🐧 Test MLIR with LLVM@${{ matrix.llvm-version }}
     runs-on: ubuntu-24.04
     strategy:
@@ -92,6 +92,14 @@ jobs:
       # build the project and run the tests
       - name: Build MLIR components and directly run lit tests
         run: cmake --build build --config Release --target check-quantum-opt
+
+      # build the MLIR unittests
+      - name: Build MLIR unittests
+        run: cmake --build build --config Release --target mqt-core-mlir-translation-test
+
+      # run unit tests
+      - name: Run unit tests
+        run: ctest -C Release --output-on-failure --test-dir build/mlir --repeat until-pass:3 --timeout 600
 
   cpp-test-mlir-windows:
     name: 🏁 Test MLIR with LLVM@${{ matrix.llvm-version }}
@@ -170,8 +178,7 @@ jobs:
 
       # make sure the lit test runner is installed
       - name: Install lit
-        run: |
-          uv pip install lit
+        run: uv pip install lit
 
       # configure the project with CMake
       - name: Configure CMake for MLIR
@@ -182,7 +189,7 @@ jobs:
             -DCMAKE_PREFIX_PATH=${{ github.workspace }}\llvm-install `
             -DLLVM_EXTERNAL_LIT=${{ github.workspace }}\.venv\Scripts\lit.exe
 
-      # build the project and run the tests
+      # build the project and run the lit tests
       - name: Build MLIR components and directly run lit tests
         run: |
           cmake --build build --config Release --target quantum-opt
@@ -198,6 +205,14 @@ jobs:
           Write-Output "Batch file created at C:\Windows\quantum-opt pointing to $targetPath"
 
           cmake --build build --config Release --target check-quantum-opt
+
+      # build the MLIR unittests
+      - name: Build MLIR unittests
+        run: cmake --build build --config Release --target mqt-core-mlir-translation-test
+
+      # run unit tests
+      - name: Run unit tests
+        run: ctest -C Release --output-on-failure --test-dir build/mlir --repeat until-pass:3 --timeout 600
 
   cpp-test-mlir-macos:
     name: 🍎 Test MLIR with LLVM@${{ matrix.llvm-version }} on ${{ matrix.macos-version }}
@@ -263,6 +278,14 @@ jobs:
       # Build and run tests
       - name: Build MLIR components and directly run lit tests
         run: cmake --build build --config Release --target check-quantum-opt
+
+      # Build the MLIR unittests
+      - name: Build MLIR unittests
+        run: cmake --build build --config Release --target mqt-core-mlir-translation-test
+
+      # Run unit tests
+      - name: Run unit tests
+        run: ctest -C Release --output-on-failure --test-dir build/mlir --repeat until-pass:3 --timeout 600
 
   cpp-test-mlir-coverage:
     name: 📊 MLIR Coverage with LLVM@${{ matrix.llvm-version }}
@@ -347,10 +370,17 @@ jobs:
 
       # build the project and run the tests with coverage
       - name: Build MLIR components and run tests with coverage
-        run: |
-          cmake --build build --config Debug --target check-quantum-opt
+        run: cmake --build build --config Debug --target check-quantum-opt
 
-      # Run gcovr to generate coverage data
+      # build the MLIR unittests
+      - name: Build MLIR unittests
+        run: cmake --build build --config Debug --target mqt-core-mlir-translation-test
+
+      # run unit tests
+      - name: Run unit tests
+        run: ctest -C Debug --output-on-failure --test-dir build/mlir --repeat until-pass:3 --timeout 600
+
+      # run gcovr to generate coverage data
       - name: Generate coverage data as XML
         run: |
           gcovr \

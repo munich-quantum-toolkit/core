@@ -112,7 +112,7 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertMeasureOp
     func.func @testConvertMeasureOp() {
-        // CHECK:  [[m_0:.*]] = "mqtref.measure"(%[[ANY:.*]])
+        // CHECK: [[m_0:.*]] = mqtref.measure %[[ANY:.*]]
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -331,8 +331,8 @@ module {
         // CHECK: %[[q_1:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 1 : i64}>
         // CHECK: mqtref.h() %[[q_0]]
         // CHECK: mqtref.x() %[[q_1]] ctrl %[[q_0]]
-        // CHECK: %[[m_0:.*]] = "mqtref.measure"(%[[q_0]]) : (!mqtref.Qubit) -> i1
-        // CHECK: %[[m_1:.*]] = "mqtref.measure"(%[[q_1]]) : (!mqtref.Qubit) -> i1
+        // CHECK: %[[m_0:.*]] = mqtref.measure %[[q_0]]
+        // CHECK: %[[m_1:.*]] = mqtref.measure %[[q_1]]
         // CHECK: "mqtref.deallocQubitRegister"(%[[r_0]]) : (!mqtref.QubitRegister) -> ()
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister

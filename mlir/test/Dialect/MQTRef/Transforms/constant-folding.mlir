@@ -58,7 +58,7 @@ module {
 
     %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
-    %m = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+    %m = mqtref.measure %q0
     %i = arith.extui %m : i1 to i64
     // CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg_0:.*]], %[[i:.*]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
     %q1 = "mqtref.extractQubit"(%r0, %i) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit

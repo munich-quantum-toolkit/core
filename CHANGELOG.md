@@ -11,21 +11,23 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add `reset` operations to the MLIR dialects `MQTDyn` and `MQTOpt` ([#1106]) ([**@DRovara**])
+- ✨ Add translation from `QuantumComputation` to the `MQTRef` MLIR dialect ([#1099]) ([**@denialhaag**], [**@burgholzer**])
+- ✨ Add `reset` operations to the `MQTDyn` and `MQTOpt` MLIR dialects ([#1106]) ([**@DRovara**])
 - ♻️ Update the `measure` operations in the MLIR dialects to no longer support more than one qubit being measured at once ([#1106]) ([**@DRovara**])
 - ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996]) ([**@ystade**])
 - ✨ Add `qubit` operation to the `MQTRef` (previously `MQTDyn`) dialect for static qubit addressing ([#1098]) ([**@MatthiasReumann**])
 
 ### Changed
 
-- **Breaking**: 🚛 Rename `MQTDyn` dialect to `MQTRef` ([#1098]) ([**@MatthiasReumann**])
+- **Breaking**: 🚚 Rename `XXminusYY` to `XXminusYYOp` and `XXplusYY` to `XXplusYYOp` in `MQTRef` and `MQTOpt` MLIR dialects ([#1099]) ([**@denialhaag**])
+- **Breaking**: 🚚 Rename `MQTDyn` MLIR dialect to `MQTRef` ([#1098]) ([**@MatthiasReumann**])
 
 ## [3.2.1] - 2025-08-01
 
 ### Fixed
 
-- 🐛 Fix bug where lambda passed to `std::accumulate` incorrectly took the accumulator by reference instead of by value ([#1089]) ([**@denialhaag**])
-- 🐛 Fix bug in DD package ([#1088]) ([**@denialhaag**])
+- 🐛 Fix usage of `std::accumulate` by changing accumulator parameter from reference to value ([#1089]) ([**@denialhaag**])
+- 🐛 Fix erroneous `contains` check in DD package ([#1088]) ([**@denialhaag**])
 
 you need to .
 
@@ -161,6 +163,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#1106]: https://github.com/munich-quantum-toolkit/core/pull/1106
+[#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099
 [#1098]: https://github.com/munich-quantum-toolkit/core/pull/1098
 [#1089]: https://github.com/munich-quantum-toolkit/core/pull/1089
 [#1088]: https://github.com/munich-quantum-toolkit/core/pull/1088
