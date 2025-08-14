@@ -162,7 +162,7 @@ module {
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+        %m0 = mqtref.measure %q0
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
     }
@@ -389,8 +389,8 @@ module {
 
         mqtref.h() %q0
         mqtref.x() %q1 ctrl %q0
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
-        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> i1
+        %m0 = mqtref.measure %q0
+        %m1 = mqtref.measure %q1
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return

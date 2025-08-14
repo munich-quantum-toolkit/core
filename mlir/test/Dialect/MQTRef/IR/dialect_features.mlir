@@ -100,12 +100,12 @@ module {
 module {
     // CHECK-LABEL: func.func @testMeasureOp
     func.func @testMeasureOp() {
-        // CHECK: [[M0:.*]] = "mqtref.measure"(%[[ANY:.*]])
+        // CHECK: [[M0:.*]] = mqtref.measure %[[ANY:.*]]
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+        %m0 = mqtref.measure %q0
 
         "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
         return
@@ -117,11 +117,11 @@ module {
 module {
     // CHECK-LABEL: func.func @testMeasureOpStatic
     func.func @testMeasureOpStatic() {
-        // CHECK: [[M0:.*]] = "mqtref.measure"(%[[ANY:.*]]) : (!mqtref.Qubit) -> i1
+        // CHECK: [[M0:.*]] = mqtref.measure %[[ANY:.*]]
 
         %q0 = mqtref.qubit 0
 
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+        %m0 = mqtref.measure %q0
 
         return
     }
@@ -132,11 +132,11 @@ module {
 module {
     // CHECK-LABEL: func.func @testMeasureOpOnStaticInput
     func.func @testMeasureOpOnStaticInput() {
-        // CHECK: %[[M0:.*]] = "mqtref.measure"(%[[ANY:.*]]) : (!mqtref.Qubit) -> i1
+        // CHECK: %[[M0:.*]] = mqtref.measure %[[ANY:.*]]
 
         %q0 = mqtref.qubit 0
 
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+        %m0 = mqtref.measure %q0
 
         return
     }
@@ -162,9 +162,9 @@ module {
 // -----
 // This test checks if the ResetOp on a static qubit is parsed and handled correctly.
 module {
-    // CHECK-LABEL: func.func @testResetOpStatic
-    func.func @testResetOpStatic() {
-        // CHECK: "mqtref.reset"(%[[ANY:.*]])
+    // CHECK-LABEL: func.func @testResetOpOnStaticInput
+    func.func @testResetOpOnStaticInput() {
+        // CHECK: "mqtref.reset"(%[[ANY:.*]]) : (!mqtref.Qubit) -> ()
 
         %q0 = mqtref.qubit 0
 
@@ -1232,8 +1232,8 @@ module {
         // CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[QREG]]) <{index_attr = 1 : i64}>
         // CHECK: mqtref.h() %[[Q0]]
         // CHECK: mqtref.x() %[[Q1]] ctrl %[[Q0]]
-        // CHECK: %[[M0:.*]] = "mqtref.measure"(%[[Q0]]) : (!mqtref.Qubit) -> i1
-        // CHECK: %[[M1:.*]] = "mqtref.measure"(%[[Q1]]) : (!mqtref.Qubit) -> i1
+        // CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+        // CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
         // CHECK: "mqtref.deallocQubitRegister"(%[[QREG]]) : (!mqtref.QubitRegister) -> ()
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
@@ -1242,8 +1242,8 @@ module {
 
         mqtref.h() %q0
         mqtref.x() %q1 ctrl %q0
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> (i1)
-        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> (i1)
+        %m0 = mqtref.measure %q0
+        %m1 = mqtref.measure %q1
 
         "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
 
