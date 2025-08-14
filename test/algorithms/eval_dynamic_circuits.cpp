@@ -114,8 +114,7 @@ INSTANTIATE_TEST_SUITE_P(
       return ss.str();
     });
 
-// TODO: Enable this test again
-TEST_P(DynamicCircuitEvalExactQPE, DISABLED_UnitaryTransformation) {
+TEST_P(DynamicCircuitEvalExactQPE, UnitaryTransformation) {
   qpe.reorderOperations();
   const auto start = std::chrono::steady_clock::now();
   // transform dynamic circuit to unitary circuit by first eliminating reset
@@ -284,8 +283,7 @@ INSTANTIATE_TEST_SUITE_P(
       return ss.str();
     });
 
-// TODO: Enable this test again
-TEST_P(DynamicCircuitEvalInexactQPE, DISABLED_UnitaryTransformation) {
+TEST_P(DynamicCircuitEvalInexactQPE, UnitaryTransformation) {
   qpe.reorderOperations();
   const auto start = std::chrono::steady_clock::now();
   // transform dynamic circuit to unitary circuit by first eliminating reset
@@ -507,8 +505,7 @@ INSTANTIATE_TEST_SUITE_P(
       return ss.str();
     });
 
-// TODO: Enable this test again
-TEST_P(DynamicCircuitEvalQFT, DISABLED_UnitaryTransformation) {
+TEST_P(DynamicCircuitEvalQFT, UnitaryTransformation) {
   qft.reorderOperations();
   const auto start = std::chrono::steady_clock::now();
   // transform dynamic circuit to unitary circuit by first eliminating reset
