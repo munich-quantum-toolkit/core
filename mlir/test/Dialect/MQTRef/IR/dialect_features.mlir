@@ -120,9 +120,7 @@ module {
         // CHECK: [[M0:.*]] = mqtref.measure %[[ANY:.*]]
 
         %q0 = mqtref.qubit 0
-
         %m0 = mqtref.measure %q0
-
         return
     }
 }
@@ -135,9 +133,7 @@ module {
         // CHECK: %[[M0:.*]] = mqtref.measure %[[ANY:.*]]
 
         %q0 = mqtref.qubit 0
-
         %m0 = mqtref.measure %q0
-
         return
     }
 }
@@ -167,9 +163,7 @@ module {
         // CHECK: "mqtref.reset"(%[[ANY:.*]]) : (!mqtref.Qubit) -> ()
 
         %q0 = mqtref.qubit 0
-
         "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
-
         return
     }
 }

@@ -296,7 +296,6 @@ struct ConvertMQTRefQubit final : StatefulOpConversionPattern<ref::QubitOp> {
   LogicalResult
   matchAndRewrite(ref::QubitOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-
     // prepare result type
     const auto& qubitType = opt::QubitType::get(rewriter.getContext());
 

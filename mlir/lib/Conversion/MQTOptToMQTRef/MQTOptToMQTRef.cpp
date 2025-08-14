@@ -179,11 +179,8 @@ struct ConvertMQTOptQubit final : OpConversionPattern<opt::QubitOp> {
   LogicalResult
   matchAndRewrite(opt::QubitOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    // prepare result type
     const auto& qubitType = ref::QubitType::get(rewriter.getContext());
-
     rewriter.replaceOpWithNewOp<ref::QubitOp>(op, qubitType, op.getIndex());
-
     return success();
   }
 };
