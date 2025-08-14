@@ -55,6 +55,3 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-na)
       ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-na
       PARENT_SCOPE)
 endif()
-
-# add subdirectories
-add_subdirectory(device)

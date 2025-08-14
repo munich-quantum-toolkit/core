@@ -152,7 +152,7 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
     const auto width = region.size.width;
     const auto height = region.size.height;
     os << ";\\\n  "
-          "const MQT_NA_QDMI_Site globalOp"
+          "MQT_NA_QDMI_Site globalOp"
        << operation.name
        << "ZoneSite = "
           "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueZone("
@@ -200,8 +200,6 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
   // then write all regular sites
   size_t moduleCount = 0;
   const auto lengthUnit = getLengthUnit(device);
-
-  os << "#define INITIALIZE_SITES(var) var.clear();";
   for (const auto& lattice : device.traps) {
     size_t subModuleCount = 0;
 

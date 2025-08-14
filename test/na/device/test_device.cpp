@@ -439,12 +439,6 @@ protected:
 };
 
 TEST_F(NADeviceTest, QuerySiteData) {
-  uint64_t module = 0;
-  uint64_t subModule = 0;
-  int64_t x = 0;
-  int64_t y = 0;
-  double t1 = 0;
-  double t2 = 0;
   std::vector<MQT_NA_QDMI_Site> sites;
   EXPECT_NO_THROW(sites = querySites(session))
       << "Devices must provide a sites";
