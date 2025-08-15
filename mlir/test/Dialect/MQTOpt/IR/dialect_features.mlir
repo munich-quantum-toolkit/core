@@ -144,7 +144,21 @@ module {
 }
 
 // -----
-// This test checks if the ResetOp is parsed and handled correctly.
+// This test checks if the MeasureOp on a static qubit is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testMeasureOpStatic
+    func.func @testMeasureOpStatic() {
+        // CHECK: %[[Q_1:.*]], [[M0_0:.*]] = "mqtopt.measure"(%[[ANY:.*]])
+
+        %q_0 = mqtopt.qubit 0
+        %q_1, %m0_0 = "mqtopt.measure"(%q_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+        return
+    }
+}
+
+// -----
+// This test checks if the ResetOp on a dynamic qubit is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testResetOp
     func.func @testResetOp() {
@@ -155,6 +169,20 @@ module {
         %q_1 = "mqtopt.reset"(%q_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit)
         %reg_2 = "mqtopt.insertQubit"(%reg_1, %q_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if the ResetOp on a static qubit is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testResetOpStatic
+    func.func @testResetOpStatic() {
+        // CHECK: %[[Q_1:.*]] = "mqtopt.reset"(%[[ANY:.*]])
+
+        %q_0 = mqtopt.qubit 0
+        %q_1 = "mqtopt.reset"(%q_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit)
+
         return
     }
 }
@@ -218,7 +246,45 @@ module {
 }
 
 // -----
-// This test checks if single qubit gates are parsed and handled correctly.
+// This test checks if no-target operations with static controls are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNoTargetWithStaticControls
+    func.func @testNoTargetWithStaticControls() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: %[[Q0_1:.*]] = mqtopt.gphase(%[[C0_F64]]) ctrl %[[ANY:.*]] : ctrl !mqtopt.Qubit
+        // CHECK: %[[Q01:.*]]:2 = mqtopt.gphase(%[[C0_F64]]) ctrl %[[Q0_1]], %[[ANY:.*]] : ctrl !mqtopt.Qubit, !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        %q0_1 = mqtopt.gphase(%c0_f64) ctrl %q0_0 : ctrl !mqtopt.Qubit
+        %q0_2, %q1_1 = mqtopt.gphase(%c0_f64) ctrl %q0_1, %q1_0 : ctrl !mqtopt.Qubit, !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if no-target operations with positive and negative static controls are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNoTargetPositiveNegativeStaticControls
+    func.func @testNoTargetPositiveNegativeStaticControls() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.gphase(%[[C0_F64]]) ctrl %[[ANY:.*]] : ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        %q0_1, %q1_1 = mqtopt.gphase(%c0_f64) ctrl %q0_0 nctrl %q1_0 : ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if single qubit gates on dynamic qubits are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testSingleQubitOp
     func.func @testSingleQubitOp() {
@@ -258,7 +324,46 @@ module {
 }
 
 // -----
-// This test checks if parameterized single qubit gates are parsed and handled correctly.
+// This test checks if single qubit gates on static qubits are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testSingleQubitOpStatic
+    func.func @testSingleQubitOpStatic() {
+        // CHECK: %[[Q_1:.*]] = mqtopt.i() %[[ANY:.*]] : !mqtopt.Qubit
+        // CHECK: %[[Q_2:.*]] = mqtopt.h() %[[Q_1]] : !mqtopt.Qubit
+        // CHECK: %[[Q_3:.*]] = mqtopt.x() %[[Q_2]] : !mqtopt.Qubit
+        // CHECK: %[[Q_4:.*]] = mqtopt.y() %[[Q_3]] : !mqtopt.Qubit
+        // CHECK: %[[Q_5:.*]] = mqtopt.z() %[[Q_4]] : !mqtopt.Qubit
+        // CHECK: %[[Q_6:.*]] = mqtopt.s() %[[Q_5]] : !mqtopt.Qubit
+        // CHECK: %[[Q_7:.*]] = mqtopt.sdg() %[[Q_6]] : !mqtopt.Qubit
+        // CHECK: %[[Q_8:.*]] = mqtopt.t() %[[Q_7]] : !mqtopt.Qubit
+        // CHECK: %[[Q_9:.*]] = mqtopt.tdg() %[[Q_8]] : !mqtopt.Qubit
+        // CHECK: %[[Q_10:.*]] = mqtopt.v() %[[Q_9]] : !mqtopt.Qubit
+        // CHECK: %[[Q_11:.*]] = mqtopt.vdg() %[[Q_10]] : !mqtopt.Qubit
+        // CHECK: %[[Q_12:.*]] = mqtopt.sx() %[[Q_11]] : !mqtopt.Qubit
+        // CHECK: %[[Q_13:.*]] = mqtopt.sxdg() %[[Q_12]] : !mqtopt.Qubit
+
+        %q_0 = mqtopt.qubit 0
+
+        %q_1 = mqtopt.i() %q_0 : !mqtopt.Qubit
+        %q_2 = mqtopt.h() %q_1 : !mqtopt.Qubit
+        %q_3 = mqtopt.x() %q_2 : !mqtopt.Qubit
+        %q_4 = mqtopt.y() %q_3 : !mqtopt.Qubit
+        %q_5 = mqtopt.z() %q_4 : !mqtopt.Qubit
+        %q_6 = mqtopt.s() %q_5 : !mqtopt.Qubit
+        %q_7 = mqtopt.sdg() %q_6 : !mqtopt.Qubit
+        %q_8 = mqtopt.t() %q_7 : !mqtopt.Qubit
+        %q_9 = mqtopt.tdg() %q_8 : !mqtopt.Qubit
+        %q_10 = mqtopt.v() %q_9 : !mqtopt.Qubit
+        %q_11 = mqtopt.vdg() %q_10 : !mqtopt.Qubit
+        %q_12 = mqtopt.sx() %q_11 : !mqtopt.Qubit
+        %q_13 = mqtopt.sxdg() %q_12 : !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if parameterized single qubit gates on dynamic qubits are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testSingleQubitRotationOp
     func.func @testSingleQubitRotationOp() {
@@ -286,7 +391,35 @@ module {
 }
 
 // -----
-// This test checks if controlled parameterized single qubit gates are parsed and handled correctly.
+// This test checks if parameterized single qubit gates on static qubits are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testSingleQubitRotationOpStatic
+    func.func @testSingleQubitRotationOpStatic() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: %[[Q_1:.*]] = mqtopt.u(%[[C0_F64]], %[[C0_F64]], %[[C0_F64]]) %[[ANY:.*]] : !mqtopt.Qubit
+        // CHECK: %[[Q_2:.*]] = mqtopt.u2(%[[C0_F64]], %[[C0_F64]] static [] mask [false, false]) %[[Q_1]] : !mqtopt.Qubit
+        // CHECK: %[[Q_3:.*]] = mqtopt.p(%[[C0_F64]]) %[[Q_2]] : !mqtopt.Qubit
+        // CHECK: %[[Q_4:.*]] = mqtopt.rx(%[[C0_F64]]) %[[Q_3]] : !mqtopt.Qubit
+        // CHECK: %[[Q_5:.*]] = mqtopt.ry(%[[C0_F64]]) %[[Q_4]] : !mqtopt.Qubit
+        // CHECK: %[[Q_6:.*]] = mqtopt.rz(%[[C0_F64]]) %[[Q_5]] : !mqtopt.Qubit
+
+        %q_0 = mqtopt.qubit 0
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        %q_1 = mqtopt.u(%c0_f64, %c0_f64, %c0_f64) %q_0 : !mqtopt.Qubit
+        %q_2 = mqtopt.u2(%c0_f64, %c0_f64 static [] mask [false, false]) %q_1 : !mqtopt.Qubit
+        %q_3 = mqtopt.p(%c0_f64) %q_2 : !mqtopt.Qubit
+        %q_4 = mqtopt.rx(%c0_f64) %q_3 : !mqtopt.Qubit
+        %q_5 = mqtopt.ry(%c0_f64) %q_4 : !mqtopt.Qubit
+        %q_6 = mqtopt.rz(%c0_f64) %q_5 : !mqtopt.Qubit
+
+        return
+    }
+}
+
+
+// -----
+// This test checks if controlled parameterized single qubit gates on dynamic qubits are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testControlledSingleQubitRotationOp
     func.func @testControlledSingleQubitRotationOp() {
@@ -316,7 +449,35 @@ module {
 }
 
 // -----
-// This test checks if an CX gate is parsed and handled correctly.
+// This test checks if controlled parameterized single qubit gates on static qubits are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testControlledSingleQubitRotationOpStatic
+    func.func @testControlledSingleQubitRotationOpStatic() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01
+        // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.u(%[[C0_F64]], %[[C0_F64]], %[[C0_F64]]) %[[ANY:.*]] ctrl %[[ANY:.*]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q0_2:.*]], %[[Q1_2:.*]] = mqtopt.u2(%[[C0_F64]], %[[C0_F64]]) %[[Q0_1]] ctrl %[[Q1_1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q0_3:.*]], %[[Q1_3:.*]] = mqtopt.p(%[[C0_F64]]) %[[Q0_2]] ctrl %[[Q1_2]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q0_4:.*]], %[[Q1_4:.*]] = mqtopt.rx(%[[C0_F64]]) %[[Q0_3]] ctrl %[[Q1_3]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q0_5:.*]], %[[Q1_5:.*]] = mqtopt.ry(%[[C0_F64]]) %[[Q0_4]] ctrl %[[Q1_4]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q0_6:.*]], %[[Q1_6:.*]] = mqtopt.rz(%[[C0_F64]]) %[[Q0_5]] ctrl %[[Q1_5]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        %q0_1, %q1_1 = mqtopt.u(%c0_f64, %c0_f64, %c0_f64) %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_2, %q1_2 = mqtopt.u2(%c0_f64, %c0_f64) %q0_1 ctrl %q1_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_3, %q1_3 = mqtopt.p(%c0_f64) %q0_2 ctrl %q1_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_4, %q1_4 = mqtopt.rx(%c0_f64) %q0_3 ctrl %q1_3 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_5, %q1_5 = mqtopt.ry(%c0_f64) %q0_4 ctrl %q1_4 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_6, %q1_6 = mqtopt.rz(%c0_f64) %q0_5 ctrl %q1_5 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if an CX gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testCXOp
     func.func @testCXOp() {
@@ -334,7 +495,7 @@ module {
 }
 
 // -----
-// This test checks if a negative CX gate is parsed and handled correctly.
+// This test checks if a negative CX gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testNegativeCXOp
     func.func @testNegativeCXOp() {
@@ -352,7 +513,39 @@ module {
 }
 
 // -----
-// This test checks if an MCX gate is parsed and handled correctly.
+// This test checks if an CX gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testCXOpStatic
+    func.func @testCXOpStatic() {
+        // CHECK: %[[Q1_1:.*]], %[[Q0_1:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+
+        %q1_1, %q0_1 = mqtopt.x() %q1_0 ctrl %q0_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if a negative CX gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNegativeCXOpStatic
+    func.func @testNegativeCXOpStatic() {
+        // CHECK: %[[Q1_1:.*]], %[[Q0_1:.*]] = mqtopt.x() %[[ANY:.*]] nctrl %[[ANY:.*]] : !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+
+        %q1_1, %q0_1 = mqtopt.x() %q1_0 nctrl %q0_0 : !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if an MCX gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMCXOp
     func.func @testMCXOp() {
@@ -380,8 +573,34 @@ module {
     }
 }
 
+
 // -----
-// This test checks if an MCX gate is parsed and handled correctly.
+// This test checks if an MCX gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testMCXOpStatic
+    func.func @testMCXOpStatic() {
+        // CHECK: %[[Q1_1:.*]], %[[Q02_1:.*]]:2 = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+        %q2_0 = mqtopt.qubit 2
+
+        //===------------------------------------------------------------------===//
+        // q0_0: ──■── q02_1#0
+        //       ┌─┴─┐
+        // q1_0: ┤ X ├ q1_1
+        //       └─┬─┘
+        // q2_0: ──■── q02_1#1
+        //===----------------------------------------------------------------===//
+
+        %q1_1, %q02_1:2 = mqtopt.x() %q1_0 ctrl %q0_0, %q2_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if an MCX gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMCXOpAlternativeFormat
     func.func @testMCXOpAlternativeFormat() {
@@ -411,7 +630,32 @@ module {
 }
 
 // -----
-// This test checks if a negative MCX gate is parsed and handled correctly.
+// This test checks if an MCX gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testMCXOpAlternativeFormatStatic
+    func.func @testMCXOpAlternativeFormatStatic() {
+        // CHECK: %[[Q1_1:.*]], %[[Q02_1:.*]]:2 = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+        %q2_0 = mqtopt.qubit 2
+
+        //===------------------------------------------------------------------===//
+        // q0_0: ──■── q102_1#0
+        //       ┌─┴─┐
+        // q1_0: ┤ X ├ q102_1#1
+        //       └─┬─┘
+        // q2_0: ──■── q102_1#2
+        //===----------------------------------------------------------------===//
+
+        %q102_1:3 = mqtopt.x() %q1_0 ctrl %q0_0, %q2_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if a negative MCX gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testNegativeMCXOp
     func.func @testNegativeMCXOp() {
@@ -440,7 +684,32 @@ module {
 }
 
 // -----
-// This test checks if an MCX gate is parsed and handled correctly using different types of controls.
+// This test checks if a negative MCX gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNegativeMCXOpStatic
+    func.func @testNegativeMCXOpStatic() {
+        // CHECK: %[[Q1_1:.*]], %[[Q02_1:.*]]:2 = mqtopt.x() %[[ANY:.*]] nctrl %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit nctrl !mqtopt.Qubit, !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+        %q2_0 = mqtopt.qubit 2
+
+        //===------------------------------------------------------------------===//
+        // q0_0: ──○── q02_1#0
+        //       ┌─┴─┐
+        // q1_0: ┤ X ├ q1_1
+        //       └─┬─┘
+        // q2_0: ──○── q02_1#1
+        //===----------------------------------------------------------------===//
+
+        %q1_1, %q02_1:2 = mqtopt.x() %q1_0 nctrl %q0_0, %q2_0 : !mqtopt.Qubit nctrl !mqtopt.Qubit, !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if an MCX gate on dynamic qubits is parsed and handled correctly using different types of controls.
 module {
     // CHECK-LABEL: func.func @testMixedMCXOp
     func.func @testMixedMCXOp() {
@@ -469,7 +738,32 @@ module {
 }
 
 // -----
-// This test checks if two target gates are parsed and handled correctly.
+// This test checks if an MCX gate on static qubits is parsed and handled correctly using different types of controls.
+module {
+    // CHECK-LABEL: func.func @testMixedMCXOpStatic
+    func.func @testMixedMCXOpStatic() {
+        // CHECK: %[[Q1_1:.*]], %[[Q0_1:.*]], %[[Q2_1:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]] nctrl %[[ANY:.*]] : !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+        %q2_0 = mqtopt.qubit 2
+
+        //===------------------------------------------------------------------===//
+        // q0_0: ──■── q0_1
+        //       ┌─┴─┐
+        // q1_0: ┤ X ├ q1_1
+        //       └─┬─┘
+        // q2_0: ──○── q2_1
+        //===----------------------------------------------------------------===//
+
+        %q1_1, %q0_1, %q2_1 = mqtopt.x() %q1_0 ctrl %q0_0 nctrl %q2_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if two target gates on dynamic qubits are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testTwoTargetOp
     func.func @testTwoTargetOp() {
@@ -499,7 +793,35 @@ module {
 }
 
 // -----
-// This test checks if a controlled SWAP gate is parsed and handled correctly.
+// This test checks if two target gates on static qubits are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testTwoTargetOpStatic
+    func.func @testTwoTargetOpStatic() {
+        // CHECK: %[[Q01_1:.*]]:2 = mqtopt.swap() %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_2:.*]]:2 = mqtopt.iswap() %[[Q01_1]]#0, %[[Q01_1]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_3:.*]]:2 = mqtopt.iswapdg() %[[Q01_2]]#0, %[[Q01_2]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_4:.*]]:2 = mqtopt.peres() %[[Q01_3]]#0, %[[Q01_3]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_5:.*]]:2 = mqtopt.peresdg() %[[Q01_4]]#0, %[[Q01_4]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_6:.*]]:2 = mqtopt.dcx() %[[Q01_5]]#0, %[[Q01_5]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_7:.*]]:2 = mqtopt.ecr() %[[Q01_6]]#0, %[[Q01_6]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+
+        %q0_1, %q1_1 = mqtopt.swap() %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q0_2, %q1_2 = mqtopt.iswap() %q0_1, %q1_1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q0_3, %q1_3 = mqtopt.iswapdg() %q0_2, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q0_4, %q1_4 = mqtopt.peres() %q0_3, %q1_3 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q0_5, %q1_5 = mqtopt.peresdg() %q0_4, %q1_4 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q0_6, %q1_6 = mqtopt.dcx() %q0_5, %q1_5 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q0_7, %q1_7 = mqtopt.ecr() %q0_6, %q1_6 : !mqtopt.Qubit, !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if a controlled SWAP gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testControlledSWAPOp
     func.func @testControlledSWAPOp() {
@@ -519,7 +841,7 @@ module {
 }
 
 // -----
-// This test checks if a negative controlled SWAP gate is parsed and handled correctly.
+// This test checks if a negative controlled SWAP gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testNegativeControlledSWAPOp
     func.func @testNegativeControlledSWAPOp() {
@@ -539,7 +861,41 @@ module {
 }
 
 // -----
-// This test checks if a mixed controlled SWAP gate is parsed and handled correctly.
+// This test checks if a controlled SWAP gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testControlledSWAPOpStatic
+    func.func @testControlledSWAPOpStatic() {
+        // CHECK: %[[Q01_1:.*]]:2, %[[Q2_1:.*]] = mqtopt.swap() %[[ANY:.*]], %[[ANY:.*]] ctrl %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+        %q2_0 = mqtopt.qubit 2
+
+        %q0_1, %q1_1, %q2_1 = mqtopt.swap() %q0_0, %q1_0 ctrl %q2_0 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if a negative controlled SWAP gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testNegativeControlledSWAPOpStatic
+    func.func @testNegativeControlledSWAPOpStatic() {
+        // CHECK: %[[Q01_1:.*]]:2, %[[Q2_1:.*]] = mqtopt.swap() %[[ANY:.*]], %[[ANY:.*]] nctrl %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+        %q2_0 = mqtopt.qubit 2
+
+        %q0_1, %q1_1, %q2_1 = mqtopt.swap() %q0_0, %q1_0 nctrl %q2_0 : !mqtopt.Qubit, !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if a mixed controlled SWAP gate on dynamic qubits is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMixedControlledSWAPOp
     func.func @testMixedControlledSWAPOp() {
@@ -573,7 +929,36 @@ module {
 }
 
 // -----
-// This test checks if parameterized multiple qubit gates are parsed and handled correctly.
+// This test checks if a mixed controlled SWAP gate on static qubits is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testMixedControlledSWAPOpStatic
+    func.func @testMixedControlledSWAPOpStatic() {
+        // CHECK: %[[Q01_1:.*]]:2, %[[Q2_1:.*]], %[[Q3_1:.*]] = mqtopt.swap() %[[ANY:.*]], %[[ANY:.*]] ctrl %[[ANY:.*]] nctrl %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+        %q2_0 = mqtopt.qubit 2
+        %q3_0 = mqtopt.qubit 3
+
+        //===------------------------------------------------------------------===//
+        //       ┌──────┐
+        // q0_0: ┤      ├ q0_1
+        //       │ SWAP │
+        // q1_0: ┤      ├ q1_1
+        //       └───┬──┘
+        // q2_0: ────■─── q2_1
+        //           │
+        // q3_0: ────■─── q3_1
+        //===----------------------------------------------------------------===//
+
+        %q0_1, %q1_1, %q2_1, %q3_1 = mqtopt.swap() %q0_0, %q1_0 ctrl %q2_0 nctrl %q3_0 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if parameterized multiple qubit gates on dynamic qubits are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMultipleQubitRotationOp
     func.func @testMultipleQubitRotationOp() {
@@ -603,7 +988,35 @@ module {
 }
 
 // -----
-// This test checks if parameterized multiple qubit gates are parsed and handled correctly.
+// This test checks if parameterized multiple qubit gates on static qubits are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testMultipleQubitRotationOpStatic
+    func.func @testMultipleQubitRotationOpStatic() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01 : f64
+        // CHECK: %[[Q01_1:.*]]:2 = mqtopt.rxx(%[[C0_F64]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_2:.*]]:2 = mqtopt.ryy(%[[C0_F64]]) %[[Q01_1]]#0, %[[Q01_1]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_3:.*]]:2 = mqtopt.rzz(%[[C0_F64]]) %[[Q01_2]]#0, %[[Q01_2]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_4:.*]]:2 = mqtopt.rzx(%[[C0_F64]]) %[[Q01_3]]#0, %[[Q01_3]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_5:.*]]:2 = mqtopt.xxminusyy(%[[C0_F64]], %[[C0_F64]]) %[[Q01_4]]#0, %[[Q01_4]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_6:.*]]:2 = mqtopt.xxplusyy(%[[C0_F64]], %[[C0_F64]]) %[[Q01_5]]#0, %[[Q01_5]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        %q01_1:2 = mqtopt.rxx(%c0_f64) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q01_2:2 = mqtopt.ryy(%c0_f64) %q01_1#0, %q01_1#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q01_3:2 = mqtopt.rzz(%c0_f64) %q01_2#0, %q01_2#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q01_4:2 = mqtopt.rzx(%c0_f64) %q01_3#0, %q01_3#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q01_5:2 = mqtopt.xxminusyy(%c0_f64, %c0_f64) %q01_4#0, %q01_4#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q01_6:2 = mqtopt.xxplusyy(%c0_f64, %c0_f64) %q01_5#0, %q01_5#1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if parameterized multiple qubit gates on dynamic qubits are parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testControlledMultipleQubitRotationOp
     func.func @testControlledMultipleQubitRotationOp() {
@@ -630,6 +1043,35 @@ module {
         %reg_5 = "mqtopt.insertQubit"(%reg_4, %q01_6#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         %reg_6 = "mqtopt.insertQubit"(%reg_5, %q2_6) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if parameterized multiple qubit gates on static qubits are parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testControlledMultipleQubitRotationOp
+    func.func @testControlledMultipleQubitRotationOp() {
+        // CHECK: %[[C0_F64:.*]] = arith.constant 3.000000e-01 : f64
+        // CHECK: %[[Q01_1:.*]]:2, %[[Q2_1:.*]] = mqtopt.rxx(%[[C0_F64]]) %[[ANY:.*]], %[[ANY:.*]] ctrl %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q01_2:.*]]:2, %[[Q2_2:.*]] = mqtopt.ryy(%[[C0_F64]]) %[[Q01_1]]#0, %[[Q01_1]]#1 ctrl %[[Q2_1]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q01_3:.*]]:2, %[[Q2_3:.*]] = mqtopt.rzz(%[[C0_F64]]) %[[Q01_2]]#0, %[[Q01_2]]#1 ctrl %[[Q2_2]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q01_4:.*]]:2, %[[Q2_4:.*]] = mqtopt.rzx(%[[C0_F64]]) %[[Q01_3]]#0, %[[Q01_3]]#1 ctrl %[[Q2_3]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q01_5:.*]]:2, %[[Q2_5:.*]] = mqtopt.xxminusyy(%[[C0_F64]], %[[C0_F64]]) %[[Q01_4]]#0, %[[Q01_4]]#1 ctrl %[[Q2_4]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q01_6:.*]]:2, %[[Q2_6:.*]] = mqtopt.xxplusyy(%[[C0_F64]], %[[C0_F64]]) %[[Q01_5]]#0, %[[Q01_5]]#1 ctrl %[[Q2_5]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        %q0_0 = mqtopt.qubit 0
+        %q1_0 = mqtopt.qubit 1
+        %q2_0 = mqtopt.qubit 2
+
+        %c0_f64 = arith.constant 3.000000e-01 : f64
+        %q01_1:2, %q2_1 = mqtopt.rxx(%c0_f64) %q0_0, %q1_0 ctrl %q2_0 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q01_2:2, %q2_2 = mqtopt.ryy(%c0_f64) %q01_1#0, %q01_1#1 ctrl %q2_1 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q01_3:2, %q2_3 = mqtopt.rzz(%c0_f64) %q01_2#0, %q01_2#1 ctrl %q2_2 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q01_4:2, %q2_4 = mqtopt.rzx(%c0_f64) %q01_3#0, %q01_3#1 ctrl %q2_3 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q01_5:2, %q2_5 = mqtopt.xxminusyy(%c0_f64, %c0_f64) %q01_4#0, %q01_4#1 ctrl %q2_4 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q01_6:2, %q2_6 = mqtopt.xxplusyy(%c0_f64, %c0_f64) %q01_5#0, %q01_5#1 ctrl %q2_5 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+
         return
     }
 }
