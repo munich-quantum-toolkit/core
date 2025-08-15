@@ -148,7 +148,7 @@ module {
         // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
         // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
         // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]], %[[index]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
-        // CHECK:  [[m_0:.*]] = "mqtref.measure"(%[[q_0]])
+        // CHECK:  [[m_0:.*]] = mqtref.measure %[[q_0]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %a0 = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
@@ -186,7 +186,7 @@ module {
         // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
         // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
         // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]], %[[index]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
-        // CHECK:  [[m_0:.*]] = "mqtref.measure"(%[[q_0]])
+        // CHECK:  [[m_0:.*]] = mqtref.measure %[[q_0]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %a0 = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
@@ -560,8 +560,8 @@ module {
         // CHECK: %[[q_1:.*]] = "mqtref.extractQubit"(%[[r_0]], %[[ANY:.*]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
         // CHECK: mqtref.h() %[[q_0]]
         // CHECK: mqtref.x() %[[q_1]] ctrl %[[q_0]]
-        // CHECK: %[[m_0:.*]] = "mqtref.measure"(%[[q_0]]) : (!mqtref.Qubit) -> i1
-        // CHECK: %[[m_1:.*]] = "mqtref.measure"(%[[q_1]]) : (!mqtref.Qubit) -> i1
+        // CHECK: %[[m_0:.*]] = mqtref.measure %[[q_0]]
+        // CHECK: %[[m_1:.*]] = mqtref.measure %[[q_1]]
         // CHECK: "mqtref.deallocQubitRegister"(%[[r_0]]) : (!mqtref.QubitRegister) -> ()
 
 
