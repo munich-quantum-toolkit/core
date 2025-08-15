@@ -6,7 +6,13 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s --mqtopt-to-catalystquantum | FileCheck %s
+// RUN: catalyst --tool=opt \
+// RUN:   --load-pass-plugin=%mqt_plugin_path% \
+// RUN:   --load-dialect-plugin=%mqt_plugin_path% \
+// RUN:   --debug \
+// RUN:   --catalyst-pipeline="builtin.module(mqtopt-to-catalystquantum)" \
+// RUN:   %s | FileCheck %s
+
 
 // CHECK-LABEL: func @bar()
 func.func @bar() {
@@ -24,9 +30,9 @@ func.func @bar() {
   %1 = mqtopt.h() %out_qubit : !mqtopt.Qubit
 
   // CHECK: %[[CX1:.*]]:2 = quantum.custom "CNOT"() %[[H]], %[[Q1]] : !quantum.bit, !quantum.bit
-  // CHECK: %[[CX2:.*]]:2 = quantum.custom "CNOT"() %[[CX1]]#1, %[[Q2]] : !quantum.bit, !quantum.bit
-  %20, %21 = mqtopt.x() %1 ctrl %out_qubit_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
-  %30, %31 = mqtopt.x() %21 ctrl %out_qubit_3 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+  // CHECK: %[[CX2:.*]]:2 = quantum.custom "CNOT"() %[[CX1]]#0, %[[Q2]] : !quantum.bit, !quantum.bit
+  %21, %20 = mqtopt.x() %out_qubit_1 ctrl %1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+  %31, %30 = mqtopt.x() %out_qubit_3 ctrl %20 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
   // CHECK: %[[R0:.*]] = quantum.insert %[[QREG]][ 0], %[[CX1]]#0 : !quantum.reg, !quantum.bit
   // CHECK: %[[R1:.*]] = quantum.insert %[[R0]][ 1], %[[CX2]]#0 : !quantum.reg, !quantum.bit

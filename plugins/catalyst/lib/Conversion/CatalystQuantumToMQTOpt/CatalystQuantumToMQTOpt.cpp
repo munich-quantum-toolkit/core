@@ -110,8 +110,7 @@ struct ConvertQuantumMeasure final
 
     // Create the new operation
     const auto mqtOp = rewriter.create<opt::MeasureOp>(
-        op.getLoc(), TypeRange{qubitType}, TypeRange{bitType},
-        adaptor.getInQubit());
+        op.getLoc(), qubitType, bitType, adaptor.getInQubit());
 
     // Replace all uses of both results and then erase the operation
     const auto mqtQubit = mqtOp->getResult(0);

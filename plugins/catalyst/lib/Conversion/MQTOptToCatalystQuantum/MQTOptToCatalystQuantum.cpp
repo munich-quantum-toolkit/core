@@ -113,7 +113,7 @@ struct ConvertMQTOptMeasure final : OpConversionPattern<opt::MeasureOp> {
                   ConversionPatternRewriter& rewriter) const override {
 
     // Extract operand(s)
-    auto inQubit = adaptor.getInQubits()[0];
+    auto inQubit = adaptor.getInQubit();
 
     // Prepare the result type(s)
     auto qubitType = catalyst::quantum::QubitType::get(rewriter.getContext());
@@ -268,8 +268,21 @@ struct ConvertMQTOptSimpleGate final : OpConversionPattern<MQTGateOp> {
         /*in_ctrl_qubits=*/ValueRange({}),
         /*in_ctrl_values=*/ValueRange());
 
+    // The result order of mqt.opt ops is (targets, controls), while the
+    // catalyst.quantum.CustomOp has (controls, targets). We need to swap them.
+    SmallVector<Value> swappedResults;
+    auto catalystResults = catalystOp->getResults();
+    const size_t nCtrl = inCtrlQubits.size();
+
+    // Add targets first (which are at the end of the catalyst op results)
+    swappedResults.append(catalystResults.begin() + nCtrl,
+                          catalystResults.end());
+    // Add controls (which are at the beginning of the catalyst op results)
+    swappedResults.append(catalystResults.begin(),
+                          catalystResults.begin() + nCtrl);
+
     // Replace the original with the new operation
-    rewriter.replaceOp(op, catalystOp);
+    rewriter.replaceOp(op, swappedResults);
     return success();
   }
 
@@ -598,6 +611,47 @@ struct ConvertMQTOptSimpleGate<opt::XXminusYY> final
 };
 
 template <>
+struct ConvertMQTOptSimpleGate<opt::GPhaseOp> final
+    : OpConversionPattern<opt::GPhaseOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(opt::GPhaseOp op, opt::GPhaseOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operand(s) and attribute(s)
+    auto inQubitsValues = adaptor.getInQubits();
+    const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+    const auto params = adaptor.getParams();
+    const bool adjoint = false;
+    const ValueRange inCtrlValues{};
+
+    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
+                                    posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // Output type setup
+    const Type qubitType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
+    const SmallVector<Type> qubitTypes(
+        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
+    auto outQubitTypes = TypeRange(qubitTypes);
+
+    // static void build(::mlir::OpBuilder &odsBuilder, ::mlir::OperationState
+    // &odsState, ::mlir::TypeRange out_ctrl_qubits, ::mlir::Value params,
+    // /*optional*/bool adjoint, ::mlir::ValueRange in_ctrl_qubits,
+    // ::mlir::ValueRange in_ctrl_values);
+    auto gphase = rewriter.create<catalyst::quantum::GlobalPhaseOp>(
+        op.getLoc(), outQubitTypes, params[0], adjoint,
+        ValueRange(inCtrlQubits), inCtrlValues);
+
+    // Replace the original operation with the decomposition
+    rewriter.replaceOp(op, gphase.getResults());
+    return success();
+  }
+};
+
+template <>
 struct ConvertMQTOptSimpleGate<opt::UOp> final : OpConversionPattern<opt::UOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -886,13 +940,6 @@ struct ConvertMQTOptSimpleGate<opt::PeresdgOp> final
     return success();
   }
 };
-
-// -- GPhaseOp (gphase)
-template <>
-StringRef ConvertMQTOptSimpleGate<opt::GPhaseOp>::getGateName(
-    [[maybe_unused]] std::size_t numControls) {
-  return "gphase";
-}
 
 // -- IOp (Identity)
 template <>

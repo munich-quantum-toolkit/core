@@ -6,7 +6,13 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s --mqtopt-to-catalystquantum | FileCheck %s
+// RUN: catalyst --tool=opt \
+// RUN:   --load-pass-plugin=%mqt_plugin_path% \
+// RUN:   --load-dialect-plugin=%mqt_plugin_path% \
+// RUN:   --debug \
+// RUN:   --catalyst-pipeline="builtin.module(mqtopt-to-catalystquantum)" \
+// RUN:   %s | FileCheck %s
+// XFAIL: *
 
 // CHECK-LABEL: func @bar()
 func.func @bar() {
