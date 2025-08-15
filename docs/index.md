@@ -107,13 +107,13 @@ Thank you to all the contributors who have helped make MQT Core a reality!
 </a>
 </p>
 
-The MQT will remain free, open-source, and permissively licensednow—and in the future.
+The MQT will remain free, open-source, and permissively licensed—now and in the future.
 We are firmly committed to keeping it open and actively maintained for the quantum computing community.
 
 To support this endeavor, please consider:
 
-- [Sponsoring us on GitHub](https://github.com/sponsors/munich-quantum-toolkit)
-- [Starring and sharing our repositories](https://github.com/munich-quantum-toolkit)
+- Sponsoring us on GitHub: [https://github.com/sponsors/munich-quantum-toolkit](https://github.com/sponsors/munich-quantum-toolkit)
+- Starring and sharing our repositories: [https://github.com/munich-quantum-toolkit](https://github.com/munich-quantum-toolkit)
 - Contributing code, documentation, tests, or examples via issues and pull requests
 - Citing the MQT in your publications (see {doc}`References <references>`)
 - Using the MQT in research and teaching, and sharing feedback and use cases
