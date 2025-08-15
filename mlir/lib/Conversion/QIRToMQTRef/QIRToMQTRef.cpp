@@ -124,8 +124,9 @@ public:
                       {"ecr", "ECROp"}};
 
   inline static const std::unordered_map<std::string, std::string>
-      DOUBLE_ROTATION_GATES = {
-          {"u2", "U2Op"}, {"xxminusyy", "XXminusYY"}, {"xxplusyy", "XXplusYY"}};
+      DOUBLE_ROTATION_GATES = {{"u2", "U2Op"},
+                               {"xxminusyy", "XXminusYYOp"},
+                               {"xxplusyy", "XXplusYYOp"}};
 
 private:
   LoweringState* state_;
@@ -219,8 +220,8 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     ADD_CONVERT_ROTATION_GATE(RYYOp)
     ADD_CONVERT_ROTATION_GATE(RZZOp)
     ADD_CONVERT_ROTATION_GATE(RZXOp)
-    ADD_CONVERT_ROTATION_GATE(XXminusYY)
-    ADD_CONVERT_ROTATION_GATE(XXplusYY)
+    ADD_CONVERT_ROTATION_GATE(XXminusYYOp)
+    ADD_CONVERT_ROTATION_GATE(XXplusYYOp)
   }
 
   LogicalResult

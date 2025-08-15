@@ -667,8 +667,8 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     ADD_CONVERT_PATTERN(RYYOp)
     ADD_CONVERT_PATTERN(RZZOp)
     ADD_CONVERT_PATTERN(RZXOp)
-    ADD_CONVERT_PATTERN(XXminusYY)
-    ADD_CONVERT_PATTERN(XXplusYY)
+    ADD_CONVERT_PATTERN(XXminusYYOp)
+    ADD_CONVERT_PATTERN(XXplusYYOp)
 
     if (failed(
             applyPartialConversion(module, target, std::move(mqtPatterns)))) {
