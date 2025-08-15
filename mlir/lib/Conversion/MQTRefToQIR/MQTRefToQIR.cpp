@@ -240,26 +240,45 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
     const auto& inQubits = adaptor.getInQubits();
     const auto& posCtrlQubits = adaptor.getPosCtrlInQubits();
     const auto& negCtrlQubits = adaptor.getNegCtrlInQubits();
+    auto staticParams = op.getStaticParams()
+                            ? DenseF64ArrayAttr::get(rewriter.getContext(),
+                                                     *op.getStaticParams())
+                            : DenseF64ArrayAttr{};
+    SmallVector<Value> staticParamValues;
 
-    // concatenate all the types
-    SmallVector<Type> types;
-    types.reserve(params.size() + inQubits.size() + posCtrlQubits.size() +
-                  negCtrlQubits.size());
-    types.append(params.getTypes().begin(), params.getTypes().end());
-    types.append(inQubits.getTypes().begin(), inQubits.getTypes().end());
-    types.append(posCtrlQubits.getTypes().begin(),
-                 posCtrlQubits.getTypes().end());
-    types.append(negCtrlQubits.getTypes().begin(),
-                 negCtrlQubits.getTypes().end());
+    // check for static parameters
+    if (staticParams) {
+      // set the insertionpoint to the beginning of the first block
+      auto funcOp = op->template getParentOfType<LLVM::LLVMFuncOp>();
+      auto& firstBlock = *(funcOp.getBlocks().begin());
+      rewriter.setInsertionPointToStart(&firstBlock);
+
+      // create constant operations for every static parameter
+      auto createF64Const = [&](double v) {
+        auto fAttr = rewriter.getF64FloatAttr(v);
+        return rewriter.create<LLVM::ConstantOp>(op.getLoc(), fAttr);
+      };
+      staticParamValues = llvm::to_vector_of<Value>(
+          llvm::map_range(staticParams.asArrayRef(),
+                          [&](double v) { return createF64Const(v); }));
+
+      // reset the insertionpoint after creating the constants
+      rewriter.setInsertionPoint(op);
+    }
 
     // concatenate all the values
     SmallVector<Value> operands;
-    operands.reserve(params.size() + inQubits.size() + posCtrlQubits.size() +
+    operands.reserve(params.size() + staticParamValues.size() +
+                     inQubits.size() + posCtrlQubits.size() +
                      negCtrlQubits.size());
     operands.append(params.begin(), params.end());
+    operands.append(staticParamValues.begin(), staticParamValues.end());
     operands.append(inQubits.begin(), inQubits.end());
     operands.append(posCtrlQubits.begin(), posCtrlQubits.end());
     operands.append(negCtrlQubits.begin(), negCtrlQubits.end());
+
+    // get the types of the values
+    SmallVector<Type> types = llvm::to_vector(ValueRange(operands).getTypes());
 
     // get the name of the gate
     const StringRef name = op->getName().getStringRef().split('.').second;
@@ -270,8 +289,8 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
     std::string fnName(ctrQubitsCount, 'c');
 
     // check if it is a cnot gate
-    if (name == "x" && ctrQubitsCount == 1) {
-      fnName = ("__quantum__qis__" + fnName + "not__body");
+    if (name == "u") {
+      fnName = ("__quantum__qis__" + fnName + "u3__body");
     } else {
       fnName = ("__quantum__qis__" + fnName + name + "__body").str();
     }
