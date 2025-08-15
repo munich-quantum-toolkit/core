@@ -31,7 +31,6 @@
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -49,7 +48,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -406,8 +404,7 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
    * already.
    *
    * @param op The module operation that holds all operations.
-   * @return An optional that either contains the newly created allocate
-   * operation or std::nullopt.
+   * @return The allocOp for the create allocate operation or nullptr.
    */
   static ref::AllocOp ensureRegisterAllocation(Operation* op) {
     int64_t requiredQubits = 0;
