@@ -12,7 +12,6 @@
 // RUN:   --debug \
 // RUN:   --catalyst-pipeline="builtin.module(catalystquantum-to-mqtopt)" \
 // RUN:   %s | FileCheck %s
-// XFAIL: *
 
 module {
   // CHECK-LABEL: func @bar()
@@ -61,7 +60,7 @@ module {
 
     // CHECK: %[[CRX0:.*]], %[[CRX1:.*]] = mqtopt.rx(%[[PHI]] static [] mask [false]) %[[P]] ctrl %[[TOFPACKED]]#0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[CRY0:.*]], %[[CRY1:.*]] = mqtopt.ry(%[[PHI]] static [] mask [false]) %[[CRX0]] ctrl %[[CRX1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
-    // CHECK: %[[CRZ0:.*]], %[[CRZ1:.*]] = mqtopt.ry(%[[PHI]] static [] mask [false]) %[[CRY0]] ctrl %[[CRY1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[CRZ0:.*]], %[[CRZ1:.*]] = mqtopt.rz(%[[PHI]] static [] mask [false]) %[[CRY0]] ctrl %[[CRY1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[CPS0:.*]], %[[CPS1:.*]] = mqtopt.p(%[[PHI]] static [] mask [false]) %[[CRZ0]] ctrl %[[CRZ1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     %crx:2 = quantum.custom "CRX"(%phi0) %toffoli#1, %phaseShift : !quantum.bit, !quantum.bit
     %cry:2 = quantum.custom "CRY"(%phi0) %crx#1, %crx#0 : !quantum.bit, !quantum.bit
