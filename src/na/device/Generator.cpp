@@ -348,7 +348,8 @@ auto writeOperations(const Device& device, const double timeUnit,
           "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
           "makeUniqueShuttlingMove(\"move<"
        << shuttlingUnit.id << ">\", " << shuttlingUnit.numParameters
-       << ", shuttlingUnit" << shuttlingUnit.id << "ZoneSite))";
+       << ", shuttlingUnit" << shuttlingUnit.id << "ZoneSite, "
+       << shuttlingUnit.meanShuttlingSpeed << "))";
     os << ";\\\n"
           "  "
           "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
@@ -370,8 +371,8 @@ auto writeOperations(const Device& device, const double timeUnit,
 auto writeDecoherenceTimes(const Device& device, const double timeUnit,
                            std::ostream& os) -> void {
   os << "#define INITIALIZE_DECOHERENCETIMES(var) var = {"
-     << static_cast<double>(device.decoherenceTimes.t1) * timeUnit << ", "
-     << static_cast<double>(device.decoherenceTimes.t2) * timeUnit << "}\n";
+     << device.decoherenceTimes.t1 << ", " << device.decoherenceTimes.t2
+     << "}\n";
 }
 } // namespace
 

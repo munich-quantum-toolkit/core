@@ -329,6 +329,8 @@ private:
   uint64_t interactionRadius = 0;
   /// Blocking radius for multi-qubit operations
   uint64_t blockingRadius = 0;
+  /// Mean shuttling speed
+  uint64_t meanShuttlingSpeed_ = 0;
   /// The zone global operations are performed in.
   std::unordered_set<MQT_NA_QDMI_Site> supportedSites;
 
@@ -340,10 +342,10 @@ private:
    */
   [[nodiscard]] static auto isShuttling(Type type) -> bool;
 
-  /// @brief Constructor for the global single-qubit and shuttling operations.
-  MQT_NA_QDMI_Operation_impl_d(std::string name, Type type,
-                               size_t numParameters, uint64_t duration,
-                               double fidelity, MQT_NA_QDMI_Site zone);
+  /// @brief Constructor for the global single-qubit
+  MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
+                               uint64_t duration, double fidelity,
+                               MQT_NA_QDMI_Site zone);
   /// @brief Constructor for the global multi-qubit operations.
   MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
                                size_t numQubits, uint64_t duration,
@@ -359,6 +361,11 @@ private:
       uint64_t duration, double fidelity, uint64_t interactionRadius,
       uint64_t blockingRadius,
       const std::unordered_set<MQT_NA_QDMI_Site>& sites);
+  /// @brief Constructor for the shuttling operations.
+  MQT_NA_QDMI_Operation_impl_d(std::string name, Type type,
+                               size_t numParameters, uint64_t duration,
+                               double fidelity, MQT_NA_QDMI_Site zone,
+                               uint64_t meanShuttlingSpeed);
 
 public:
   /// @brief Factory function for the global single-qubit operations.
@@ -395,9 +402,9 @@ public:
                           MQT_NA_QDMI_Site zone)
       -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>;
   /// @brief Factory function for the shuttling move operations.
-  [[nodiscard]] static auto makeUniqueShuttlingMove(const std::string& name,
-                                                    size_t numParameters,
-                                                    MQT_NA_QDMI_Site zone)
+  [[nodiscard]] static auto
+  makeUniqueShuttlingMove(const std::string& name, size_t numParameters,
+                          MQT_NA_QDMI_Site zone, uint64_t meanShuttlingSpeed)
       -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>;
   /// @brief Factory function for the shuttling store operations.
   [[nodiscard]] static auto

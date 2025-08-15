@@ -209,12 +209,18 @@ public:
     double storeFidelity = 0.0;
     /// @brief The number of parameters the shuttling unit takes.
     uint64_t numParameters = 0;
+    /**
+     * @brief The mean shuttling speed.
+     * @note Only for shuttling operations.
+     */
+    uint64_t meanShuttlingSpeed = 0;
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(ShuttlingUnit, region,
                                                 movingSpeed, loadDuration,
                                                 storeDuration, loadFidelity,
-                                                storeFidelity, numParameters)
+                                                storeFidelity, numParameters,
+                                                meanShuttlingSpeed)
   };
   /// @brief The list of shuttling units supported by the device.
   std::vector<ShuttlingUnit> shuttlingUnits;

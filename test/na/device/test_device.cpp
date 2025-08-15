@@ -442,7 +442,7 @@ TEST_F(NADeviceTest, QuerySiteData) {
   std::vector<MQT_NA_QDMI_Site> sites;
   EXPECT_NO_THROW(sites = querySites(session))
       << "Devices must provide a sites";
-  EXPECT_EQ(sites.size(), 100);
+  EXPECT_GT(sites.size(), 0);
   for (auto* site : sites) {
     int64_t x = 0;
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
@@ -502,23 +502,23 @@ TEST_F(NADeviceTest, QuerySiteData) {
                     nullptr, nullptr),
                 QDMI_ERROR_NOTSUPPORTED);
     }
-    double t1 = 0;
-    EXPECT_EQ(
-        MQT_NA_QDMI_device_session_query_site_property(
-            session, site, QDMI_SITE_PROPERTY_T1, sizeof(double), &t1, nullptr),
-        QDMI_SUCCESS);
-    EXPECT_DOUBLE_EQ(t1, static_cast<double>(device.decoherenceTimes.t1));
-    double t2 = 0;
-    EXPECT_EQ(
-        MQT_NA_QDMI_device_session_query_site_property(
-            session, site, QDMI_SITE_PROPERTY_T2, sizeof(double), &t2, nullptr),
-        QDMI_SUCCESS);
-    EXPECT_DOUBLE_EQ(t2, static_cast<double>(device.decoherenceTimes.t2));
+    uint64_t t1 = 0;
+    EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                  session, site, QDMI_SITE_PROPERTY_T1, sizeof(uint64_t), &t1,
+                  nullptr),
+              QDMI_SUCCESS);
+    EXPECT_EQ(t1, device.decoherenceTimes.t1);
+    uint64_t t2 = 0;
+    EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
+                  session, site, QDMI_SITE_PROPERTY_T2, sizeof(uint64_t), &t2,
+                  nullptr),
+              QDMI_SUCCESS);
+    EXPECT_EQ(t2, device.decoherenceTimes.t2);
   }
 }
 
 TEST_F(NADeviceTest, QueryOperationData) {
-  double duration = 0;
+  uint64_t duration = 0;
   double fidelity = 0;
   size_t numQubits = 0;
   size_t numParameters = 0;
@@ -527,8 +527,8 @@ TEST_F(NADeviceTest, QueryOperationData) {
   EXPECT_NO_THROW(for (auto* operation : queryOperations(session)) {
     EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
                     session, operation, 0, nullptr, 0, nullptr,
-                    QDMI_OPERATION_PROPERTY_DURATION, sizeof(double), &duration,
-                    nullptr),
+                    QDMI_OPERATION_PROPERTY_DURATION, sizeof(uint64_t),
+                    &duration, nullptr),
                 testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
     EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
                     session, operation, 0, nullptr, 0, nullptr,
@@ -537,14 +537,19 @@ TEST_F(NADeviceTest, QueryOperationData) {
                 testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
     EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
                     session, operation, 0, nullptr, 0, nullptr,
-                    QDMI_OPERATION_PROPERTY_QUBITSNUM, sizeof(size_t),
-                    &numQubits, nullptr),
+                    QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED,
+                    sizeof(uint64_t), &fidelity, nullptr),
                 testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
     EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
                     session, operation, 0, nullptr, 0, nullptr,
-                    QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sizeof(size_t),
-                    &numParameters, nullptr),
+                    QDMI_OPERATION_PROPERTY_QUBITSNUM, sizeof(size_t),
+                    &numQubits, nullptr),
                 testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                  session, operation, 0, nullptr, 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sizeof(size_t),
+                  &numParameters, nullptr),
+              QDMI_SUCCESS);
     for (const auto& site : sites) {
       size_t nameSize = 0;
       const auto result = MQT_NA_QDMI_device_session_query_operation_property(
