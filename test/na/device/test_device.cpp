@@ -676,6 +676,16 @@ TEST_F(NADeviceTest, QueryOperationData) {
           EXPECT_EQ(isZone, isZoned);
           EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                         session, operation, 0, nullptr, 0, nullptr,
+                        QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS, 0, nullptr,
+                        nullptr),
+                    QDMI_ERROR_NOTSUPPORTED);
+          EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                        session, operation, 0, nullptr, 0, nullptr,
+                        QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, 0, nullptr,
+                        nullptr),
+                    QDMI_ERROR_NOTSUPPORTED);
+          EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                        session, operation, 0, nullptr, 0, nullptr,
                         QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, 0, nullptr,
                         nullptr),
                     QDMI_ERROR_NOTSUPPORTED);
@@ -730,6 +740,16 @@ TEST_F(NADeviceTest, QueryOperationData) {
       EXPECT_EQ(queriedSupportedSitesSet, supportedSites);
     } else if (numQubits == 2) {
       if (!isZoned) {
+        EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                      session, operation, 0, nullptr, 0, nullptr,
+                      QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS, 0, nullptr,
+                      nullptr),
+                  QDMI_ERROR_NOTSUPPORTED);
+        EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                      session, operation, 0, nullptr, 0, nullptr,
+                      QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, 0, nullptr,
+                      nullptr),
+                  QDMI_ERROR_NOTSUPPORTED);
         EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                       session, operation, 0, nullptr, 0, nullptr,
                       QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, 0, nullptr,
@@ -841,6 +861,20 @@ TEST_F(NADeviceTest, QueryOperationData) {
                                      queriedSupportedSitesVec.cend());
         EXPECT_EQ(queriedSupportedSitesSet, supportedSites);
       } else {
+        uint64_t interactionRadius = 0;
+        EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                      session, operation, 0, nullptr, 0, nullptr,
+                      QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS,
+                      sizeof(uint64_t), &interactionRadius, nullptr),
+                  QDMI_SUCCESS);
+        EXPECT_GT(interactionRadius, 0);
+        uint64_t blockingRadius = 0;
+        EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                      session, operation, 0, nullptr, 0, nullptr,
+                      QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, sizeof(uint64_t),
+                      &blockingRadius, nullptr),
+                  QDMI_SUCCESS);
+        EXPECT_GE(blockingRadius, interactionRadius);
         double idlingFidelity = .0;
         EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                       session, operation, 0, nullptr, 0, nullptr,
