@@ -10,12 +10,15 @@
 
 #include "mlir/Conversion/MQTOptToMQTRef/MQTOptToMQTRef.h" // IWYU pragma: keep
 #include "mlir/Conversion/MQTRefToMQTOpt/MQTRefToMQTOpt.h" // IWYU pragma: keep
+#include "mlir/Conversion/MQTRefToQIR/MQTRefToQIR.h"       // IWYU pragma: keep
+#include "mlir/Conversion/QIRToMQTRef/QIRToMQTRef.h"       // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"          // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"         // IWYU pragma: keep
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"          // IWYU pragma: keep
 #include "mlir/Dialect/MQTRef/Transforms/Passes.h"         // IWYU pragma: keep
 
 #include <mlir/Dialect/Func/Extensions/AllExtensions.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/InitAllDialects.h>
 #include <mlir/InitAllPasses.h>
@@ -27,11 +30,14 @@ int main(const int argc, char** argv) {
   mqt::ir::ref::registerMQTRefPasses();
   mqt::ir::registerMQTRefToMQTOptPasses();
   mqt::ir::registerMQTOptToMQTRefPasses();
+  mqt::ir::registerQIRToMQTRefPasses();
+  mqt::ir::registerMQTRefToQIRPass();
 
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);
   mlir::func::registerAllExtensions(registry);
   registry.insert<mqt::ir::opt::MQTOptDialect>();
+  registry.insert<mlir::LLVM::LLVMDialect>();
   registry.insert<mqt::ir::ref::MQTRefDialect>();
 
   return mlir::asMainReturnCode(
