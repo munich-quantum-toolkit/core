@@ -27,21 +27,21 @@
 namespace qdmi {
 class Device final {
   /// @brief Provides access to the device name.
-  std::string name;
+  std::string name_;
 
   /// @brief The number of qubits in the device.
-  size_t qubitsNum = 0;
+  size_t qubitsNum_ = 0;
 
   /// @brief The list of sites.
-  std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>> sites;
+  std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>> sites_;
 
   /// @brief The list of operations.
-  std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>> operations;
+  std::vector<std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>> operations_;
 
   /// @brief The list of device sessions.
   std::unordered_map<MQT_NA_QDMI_Device_Session,
                      std::unique_ptr<MQT_NA_QDMI_Device_Session_impl_d>>
-      sessions;
+      sessions_;
 
   /// @brief Private constructor to enforce the singleton pattern.
   Device();
@@ -95,11 +95,11 @@ private:
     INITIALIZED, ///< The session has been initialized and is ready for use
   };
   /// @brief The current status of the session.
-  Status status = Status::ALLOCATED;
+  Status status_ = Status::ALLOCATED;
   /// @brief The device jobs associated with this session.
   std::unordered_map<MQT_NA_QDMI_Device_Job,
                      std::unique_ptr<MQT_NA_QDMI_Device_Job_impl_d>>
-      jobs;
+      jobs_;
 
 public:
   /**
@@ -159,13 +159,13 @@ public:
 struct MQT_NA_QDMI_Device_Job_impl_d {
 private:
   /// @brief The device session associated with the job.
-  MQT_NA_QDMI_Device_Session_impl_d* session;
+  MQT_NA_QDMI_Device_Session_impl_d* session_;
 
 public:
   /// @brief Constructor for the MQT_NA_QDMI_Device_Job_impl_d.
   explicit MQT_NA_QDMI_Device_Job_impl_d(
       MQT_NA_QDMI_Device_Session_impl_d* session)
-      : session(session) {}
+      : session_(session) {}
   /**
    * @brief Frees the device job.
    * @note This function just forwards to the session's @ref freeDeviceJob
@@ -227,19 +227,19 @@ public:
  */
 struct MQT_NA_QDMI_Site_impl_d {
 private:
-  uint64_t id = 0;       ///< Unique identifier of the site
-  uint64_t moduleId = 0; ///< Identifier of the module the site belongs to
-  uint64_t subModuleId =
-      0;         ///< Identifier of the sub-module the site belongs to
-  int64_t x = 0; ///< X coordinate of the site in the lattice
-  int64_t y = 0; ///< Y coordinate of the site in the lattice
+  uint64_t id_ = 0;       ///< Unique identifier of the site
+  uint64_t moduleId_ = 0; ///< Identifier of the module the site belongs to
+  uint64_t subModuleId_ =
+      0;          ///< Identifier of the sub-module the site belongs to
+  int64_t x_ = 0; ///< X coordinate of the site in the lattice
+  int64_t y_ = 0; ///< Y coordinate of the site in the lattice
   /// @brief Collects decoherence times for the device.
   struct DecoherenceTimes {
-    double t1 = 0.0; ///< T1 time in microseconds
-    double t2 = 0.0; ///< T2 time in microseconds
+    double t1_ = 0.0; ///< T1 time in microseconds
+    double t2_ = 0.0; ///< T2 time in microseconds
   };
   /// @brief The decoherence times of the device.
-  DecoherenceTimes decoherenceTimes{};
+  DecoherenceTimes decoherenceTimes_{};
 
 public:
   /// @brief Constructor for the MQT_NA_QDMI_Site_impl_d.
@@ -269,17 +269,17 @@ struct MQT_NA_QDMI_Operation_impl_d {
   };
 
 private:
-  std::string name;     ///< Name of the operation
-  Type type;            ///< Type of the operation
-  size_t numParameters; ///< Number of parameters for the operation
+  std::string name_;     ///< Name of the operation
+  Type type_;            ///< Type of the operation
+  size_t numParameters_; ///< Number of parameters for the operation
   /**
    * @brief Number of qubits involved in the operation
    * @note This number is only valid if the operation is a multi-qubit
    * operation.
    */
-  size_t numQubits;
-  double duration; ///< Duration of the operation in microseconds
-  double fidelity; ///< Fidelity of the operation
+  size_t numQubits_;
+  double duration_; ///< Duration of the operation in microseconds
+  double fidelity_; ///< Fidelity of the operation
 
   /**
    * @brief Checks if the operation type is a shuttling operation.
@@ -294,8 +294,8 @@ public:
   MQT_NA_QDMI_Operation_impl_d(std::string name, Type type,
                                size_t numParameters, size_t numQubits,
                                double duration, double fidelity)
-      : name(std::move(name)), type(type), numParameters(numParameters),
-        numQubits(numQubits), duration(duration), fidelity(fidelity) {}
+      : name_(std::move(name)), type_(type), numParameters_(numParameters),
+        numQubits_(numQubits), duration_(duration), fidelity_(fidelity) {}
 
   /**
    * @brief Queries a property of the operation.

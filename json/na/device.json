@@ -1,5 +1,5 @@
 {
-  "name": "MQT NA QDMI Default Device",
+  "name": "MQT NA Default QDMI Device",
   "numQubits": 100,
   "traps": [
     {

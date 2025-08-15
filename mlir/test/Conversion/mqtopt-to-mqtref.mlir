@@ -112,7 +112,7 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertMeasureOp
     func.func @testConvertMeasureOp() {
-        // CHECK:  [[m_0:.*]] = "mqtref.measure"(%[[ANY:.*]])
+        // CHECK: [[m_0:.*]] = mqtref.measure %[[ANY:.*]]
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -331,8 +331,8 @@ module {
         // CHECK: %[[q_1:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 1 : i64}>
         // CHECK: mqtref.h() %[[q_0]]
         // CHECK: mqtref.x() %[[q_1]] ctrl %[[q_0]]
-        // CHECK: %[[m_0:.*]] = "mqtref.measure"(%[[q_0]]) : (!mqtref.Qubit) -> i1
-        // CHECK: %[[m_1:.*]] = "mqtref.measure"(%[[q_1]]) : (!mqtref.Qubit) -> i1
+        // CHECK: %[[m_0:.*]] = mqtref.measure %[[q_0]]
+        // CHECK: %[[m_1:.*]] = mqtref.measure %[[q_1]]
         // CHECK: "mqtref.deallocQubitRegister"(%[[r_0]]) : (!mqtref.QubitRegister) -> ()
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
@@ -431,6 +431,43 @@ module {
         %r3 = "mqtopt.insertQubit"(%r2, %q01_1#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         %r4 = "mqtopt.insertQubit"(%r3, %q01_1#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%r4) : (!mqtopt.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if the QubitOp is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertQubitOp
+    func.func @testConvertQubitOp() {
+        // CHECK: %[[Q0:.*]] = mqtref.qubit 0
+        // CHECK-NOT: %[[ANY:.*]] = mqtopt.qubit 0
+
+        %q0 = mqtopt.qubit 0
+        return
+    }
+}
+
+// -----
+// This test checks if a Bell state is converted correctly for static qubits.
+module {
+    // CHECK-LABEL: func.func @bellStateStatic()
+    func.func @bellStateStatic() {
+        // CHECK: %[[q_0:.*]] = mqtref.qubit 0
+        // CHECK: %[[q_1:.*]] = mqtref.qubit 1
+        // CHECK: mqtref.h() %[[q_0]]
+        // CHECK: mqtref.x() %[[q_1]] ctrl %[[q_0]]
+        // CHECK: %[[m_0:.*]] = mqtref.measure %[[q_0]]
+        // CHECK: %[[m_1:.*]] = mqtref.measure %[[q_1]]
+
+        %q0 = mqtopt.qubit 0
+        %q1 = mqtopt.qubit 1
+
+        %q0_1 = mqtopt.h() %q0 : !mqtopt.Qubit
+        %q1_1, %q0_2 = mqtopt.x() %q1 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_3, %m0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %q1_2, %m1 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
         return
     }
 }

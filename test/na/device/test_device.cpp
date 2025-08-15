@@ -115,9 +115,9 @@ protected:
 
   void SetUp() override {
     QDMISpecificationTest::SetUp();
-    ASSERT_THAT(MQT_NA_QDMI_device_session_create_device_job(session, &job),
-                testing::AnyOf(QDMI_SUCCESS))
-        << "Failed to create a device job";
+    ASSERT_EQ(MQT_NA_QDMI_device_session_create_device_job(session, &job),
+              QDMI_SUCCESS)
+        << "Failed to create a device job.";
   }
 
   void TearDown() override {
