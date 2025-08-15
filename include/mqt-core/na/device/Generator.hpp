@@ -253,7 +253,7 @@ public:
   /// @brief The unit of measurement for lengths in the device.
   Unit lengthUnit;
   /// @brief The unit of measurement for time in the device.
-  Unit timeUnit;
+  Unit durationUnit;
 
   // Before we used the macro NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT here,
   // too. Now, we added an id to shuttling units that must be initialized
@@ -263,7 +263,7 @@ public:
       Device, name, numQubits, traps, minAtomDistance,
       globalSingleQubitOperations, globalMultiQubitOperations,
       localSingleQubitOperations, localMultiQubitOperations, shuttlingUnits,
-      decoherenceTimes, lengthUnit, timeUnit)
+      decoherenceTimes, lengthUnit, durationUnit)
 
   // the name of the following function is given by the nlohmann::json library
   // and must not be changed
@@ -311,9 +311,9 @@ public:
     device.lengthUnit = !json.is_null()
                             ? json.value("lengthUnit", defaultDevice.lengthUnit)
                             : defaultDevice.lengthUnit;
-    device.timeUnit = !json.is_null()
-                          ? json.value("timeUnit", defaultDevice.timeUnit)
-                          : defaultDevice.timeUnit;
+    device.durationUnit =
+        !json.is_null() ? json.value("timeUnit", defaultDevice.durationUnit)
+                        : defaultDevice.durationUnit;
   }
 };
 

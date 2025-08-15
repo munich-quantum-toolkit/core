@@ -97,6 +97,7 @@ Device::Device() {
   INITIALIZE_QUBITSNUM(qubitsNum_);
   // NOLINTEND(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_LENGTHUNIT(lengthUnit_);
+  INITIALIZE_DURATIONUNIT(durationUnit_);
   // NOLINTNEXTLINE(misc-const-correctness)
   INITIALIZE_SITES(sites_);
   INITIALIZE_OPERATIONS(operations_);
@@ -143,6 +144,15 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
   ADD_SINGLE_VALUE_PROPERTY(
       QDMI_DEVICE_PROPERTY_PULSESUPPORT, QDMI_Device_Pulse_Support_Level,
       QDMI_DEVICE_PULSE_SUPPORT_LEVEL_NONE, prop, size, value, sizeRet)
+  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_LENGTHUNIT, lengthUnit_.unit.c_str(),
+                      prop, size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR, double,
+                            lengthUnit_.scaleFactor, prop, size, value, sizeRet)
+  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_DURATIONUNIT,
+                      durationUnit_.unit.c_str(), prop, size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR, double,
+                            durationUnit_.scaleFactor, prop, size, value,
+                            sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SITES, MQT_NA_QDMI_Site, sites_, prop,
                     size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_NA_QDMI_Operation,

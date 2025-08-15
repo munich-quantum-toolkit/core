@@ -389,6 +389,48 @@ TEST_F(QDMISpecificationTest, QueryDeviceLibraryVersion) {
   EXPECT_FALSE(value.empty()) << "Devices must provide a library version";
 }
 
+TEST_F(QDMISpecificationTest, QueryDeviceLengthUnit) {
+  size_t size = 0;
+  ASSERT_EQ(MQT_NA_QDMI_device_session_query_device_property(
+                session, QDMI_DEVICE_PROPERTY_LENGTHUNIT, 0, nullptr, &size),
+            QDMI_SUCCESS);
+  std::string value(size - 1, '\0');
+  ASSERT_EQ(MQT_NA_QDMI_device_session_query_device_property(
+                session, QDMI_DEVICE_PROPERTY_LENGTHUNIT, size, value.data(),
+                nullptr),
+            QDMI_SUCCESS);
+  EXPECT_THAT(value, testing::AnyOf("nm", "um", "mm"));
+  double scaleFactor = .0;
+  const auto result = MQT_NA_QDMI_device_session_query_device_property(
+      session, QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR, sizeof(double),
+      &scaleFactor, nullptr);
+  EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  if (result == QDMI_SUCCESS) {
+    EXPECT_GT(scaleFactor, .0);
+  }
+}
+
+TEST_F(QDMISpecificationTest, QueryDeviceDurationUnit) {
+  size_t size = 0;
+  ASSERT_EQ(MQT_NA_QDMI_device_session_query_device_property(
+                session, QDMI_DEVICE_PROPERTY_DURATIONUNIT, 0, nullptr, &size),
+            QDMI_SUCCESS);
+  std::string value(size - 1, '\0');
+  ASSERT_EQ(MQT_NA_QDMI_device_session_query_device_property(
+                session, QDMI_DEVICE_PROPERTY_DURATIONUNIT, size, value.data(),
+                nullptr),
+            QDMI_SUCCESS);
+  EXPECT_THAT(value, testing::AnyOf("ns", "us", "ms"));
+  double scaleFactor = .0;
+  const auto result = MQT_NA_QDMI_device_session_query_device_property(
+      session, QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR, sizeof(double),
+      &scaleFactor, nullptr);
+  EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  if (result == QDMI_SUCCESS) {
+    EXPECT_GT(scaleFactor, .0);
+  }
+}
+
 TEST_F(QDMISpecificationTest, QuerySiteIndex) {
   size_t id = 0;
   EXPECT_NO_THROW(for (auto* site : querySites(session)) {

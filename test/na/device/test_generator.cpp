@@ -62,8 +62,8 @@ TEST(GeneratorTest, TimeUnitNanosecond) {
 })");
   Device device;
   ASSERT_NO_THROW(device = readJSON(is));
-  EXPECT_EQ(device.timeUnit.scaleFactor, 5);
-  EXPECT_EQ(device.timeUnit.unit, "ns");
+  EXPECT_EQ(device.durationUnit.scaleFactor, 5);
+  EXPECT_EQ(device.durationUnit.unit, "ns");
 }
 
 TEST(GeneratorTest, TimeUnitInvalid) {

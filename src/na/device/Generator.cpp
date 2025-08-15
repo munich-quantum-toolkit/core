@@ -100,6 +100,17 @@ auto writeLengthUnit(const Device& device, std::ostream& os) -> void {
 }
 
 /**
+ * @brief Writes the duration unit from the device object.
+ * @param device is the device object containing the duration unit.
+ * @param os is the output stream to write the duration unit to.
+ */
+auto writeDurationUnit(const Device& device, std::ostream& os) -> void {
+  os << "#define INITIALIZE_DURATIONUNIT(var) var = {\""
+     << device.durationUnit.unit << "\", " << device.durationUnit.scaleFactor
+     << "}\n";
+}
+
+/**
  * @brief Writes the sites from the device object.
  * @param device is the device object containing the sites configuration.
  * @param os is the output stream to write the sites to.
@@ -390,6 +401,7 @@ auto writeHeader(const Device& device, std::ostream& os) -> void {
   writeName(device, os);
   writeQubitsNum(device, os);
   writeLengthUnit(device, os);
+  writeDurationUnit(device, os);
   writeSites(device, os);
   writeOperations(device, os);
   writeDecoherenceTimes(device, os);
