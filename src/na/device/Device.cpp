@@ -357,11 +357,11 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     std::string name, const size_t numParameters, const size_t numQubits,
     const uint64_t duration, const double fidelity,
     const uint64_t interactionRadius, uint64_t blockingRadius,
-    MQT_NA_QDMI_Site zone)
+    const double idlingFidelity, MQT_NA_QDMI_Site zone)
     : name_(std::move(name)), numParameters_(numParameters),
       numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
       interactionRadius_(interactionRadius), blockingRadius_(blockingRadius),
-      isZoned_(true) {
+      idlingFidelity_(idlingFidelity), isZoned_(true) {
   supportedSites_.emplace_back(zone);
 }
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
@@ -395,35 +395,37 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
   supportedSites_.emplace_back(zone);
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueGlobalSingleQubit(
-    const std::string& name, size_t numParameters, uint64_t duration,
-    double fidelity, MQT_NA_QDMI_Site zone)
+    const std::string& name, const size_t numParameters,
+    const uint64_t duration, const double fidelity, MQT_NA_QDMI_Site zone)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
   MQT_NA_QDMI_Operation_impl_d op(name, numParameters, 1, duration, fidelity,
                                   zone);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueGlobalMultiQubit(
-    const std::string& name, size_t numParameters, size_t numQubits,
-    uint64_t duration, double fidelity, uint64_t interactionRadius,
-    uint64_t blockingRadius, MQT_NA_QDMI_Site zone)
+    const std::string& name, const size_t numParameters, const size_t numQubits,
+    const uint64_t duration, const double fidelity,
+    const uint64_t interactionRadius, const uint64_t blockingRadius,
+    const double idlingFidelity, MQT_NA_QDMI_Site zone)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
   MQT_NA_QDMI_Operation_impl_d op(name, numParameters, numQubits, duration,
                                   fidelity, interactionRadius, blockingRadius,
-                                  zone);
+                                  idlingFidelity, zone);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueLocalSingleQubit(
-    const std::string& name, size_t numParameters, uint64_t duration,
-    double fidelity, const std::vector<MQT_NA_QDMI_Site>& sites)
+    const std::string& name, const size_t numParameters,
+    const uint64_t duration, const double fidelity,
+    const std::vector<MQT_NA_QDMI_Site>& sites)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
   MQT_NA_QDMI_Operation_impl_d op(name, numParameters, 1, duration, fidelity,
                                   sites);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueLocalTwoQubit(
-    const std::string& name, size_t numParameters, size_t numQubits,
-    uint64_t duration, double fidelity, uint64_t interactionRadius,
-    uint64_t blockingRadius,
+    const std::string& name, const size_t numParameters, const size_t numQubits,
+    const uint64_t duration, const double fidelity,
+    const uint64_t interactionRadius, const uint64_t blockingRadius,
     const std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>& sites)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
   // TODO: can that be solved by a cast from one vector to the other
@@ -438,15 +440,15 @@ auto MQT_NA_QDMI_Operation_impl_d::makeUniqueLocalTwoQubit(
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingLoad(
-    const std::string& name, size_t numParameters, uint64_t duration,
-    double fidelity, MQT_NA_QDMI_Site zone)
+    const std::string& name, const size_t numParameters,
+    const uint64_t duration, const double fidelity, MQT_NA_QDMI_Site zone)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
   MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
                                   zone);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingMove(
-    const std::string& name, size_t numParameters, MQT_NA_QDMI_Site zone,
+    const std::string& name, const size_t numParameters, MQT_NA_QDMI_Site zone,
     const uint64_t meanShuttlingSpeed)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
   MQT_NA_QDMI_Operation_impl_d op(name, numParameters, zone,
@@ -454,7 +456,7 @@ auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingMove(
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingStore(
-    const std::string& name, size_t numParameters, uint64_t duration,
+    const std::string& name, const size_t numParameters, uint64_t duration,
     double fidelity, MQT_NA_QDMI_Site zone)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
   MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
@@ -528,6 +530,10 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
   if (numQubits_) {
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
                               *numQubits_, prop, size, value, sizeRet)
+  }
+  if (idlingFidelity_) {
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, double,
+                              *idlingFidelity_, prop, size, value, sizeRet)
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_ISZONED, bool, isZoned_,
                             prop, size, value, sizeRet)

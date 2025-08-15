@@ -23,10 +23,6 @@
 #include <unordered_map>
 #include <vector>
 
-// TODO
-//  - QDMI_OPERATION_PROPERTY_IDLINGFIDELITY
-//  - QDMI_OPERATION_PROPERTY_ISZONED
-
 namespace qdmi {
 class Device final {
   /// @brief Provides access to the device name.
@@ -307,16 +303,18 @@ private:
    * operation.
    */
   std::optional<size_t> numQubits_ = std::nullopt;
-  std::optional<uint64_t> duration_ =
-      std::nullopt;                               ///< Duration of the operation
+  /// Duration of the operation
+  std::optional<uint64_t> duration_ = std::nullopt;
   std::optional<double> fidelity_ = std::nullopt; ///< Fidelity of the operation
   /// Interaction radius for multi-qubit operations
   std::optional<uint64_t> interactionRadius_ = std::nullopt;
   /// Blocking radius for multi-qubit operations
   std::optional<uint64_t> blockingRadius_ = std::nullopt;
-  std::optional<uint64_t> meanShuttlingSpeed_ =
-      std::nullopt; ///< Mean shuttling speed
-  /// The zone global operations are performed in.
+  /// Mean shuttling speed
+  std::optional<uint64_t> meanShuttlingSpeed_ = std::nullopt;
+  /// Mean shuttling speed
+  std::optional<double> idlingFidelity_ = std::nullopt;
+  /// The operation's supported sites.
   std::vector<MQT_NA_QDMI_Site> supportedSites_;
   /// Indicates if this operation is zoned (global)
   bool isZoned_ = false;
@@ -329,7 +327,8 @@ private:
   MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
                                size_t numQubits, uint64_t duration,
                                double fidelity, uint64_t interactionRadius,
-                               uint64_t blockingRadius, MQT_NA_QDMI_Site zone);
+                               uint64_t blockingRadius, double idlingFidelity,
+                               MQT_NA_QDMI_Site zone);
   /// @brief Constructor for the single-qubit operations.
   MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
                                size_t numQubits, uint64_t duration,
@@ -358,11 +357,10 @@ public:
                               MQT_NA_QDMI_Site zone)
       -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>;
   /// @brief Factory function for the global multi-qubit operations.
-  [[nodiscard]] static auto
-  makeUniqueGlobalMultiQubit(const std::string& name, size_t numParameters,
-                             size_t numQubits, uint64_t duration,
-                             double fidelity, uint64_t interactionRadius,
-                             uint64_t blockingRadius, MQT_NA_QDMI_Site zone)
+  [[nodiscard]] static auto makeUniqueGlobalMultiQubit(
+      const std::string& name, size_t numParameters, size_t numQubits,
+      uint64_t duration, double fidelity, uint64_t interactionRadius,
+      uint64_t blockingRadius, double idlingFidelity, MQT_NA_QDMI_Site zone)
       -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d>;
   /// @brief Factory function for the local single-qubit operations.
   [[nodiscard]] static auto

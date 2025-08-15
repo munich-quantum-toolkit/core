@@ -292,8 +292,8 @@ auto writeOperations(const Device& device, std::ostream& os) -> void {
        << operation.name << "\", " << operation.numParameters << ", "
        << operation.numQubits << ", " << operation.duration << ", "
        << operation.fidelity << ", " << operation.interactionRadius << ", "
-       << operation.blockingRadius << ", globalOp" << operation.name
-       << "ZoneSite))";
+       << operation.blockingRadius << ", " << operation.idlingFidelity
+       << ", globalOp" << operation.name << "ZoneSite))";
   }
   for (const auto& operation : device.localSingleQubitOperations) {
     os << ";\\\n"

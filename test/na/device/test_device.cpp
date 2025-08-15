@@ -609,6 +609,7 @@ TEST_F(NADeviceTest, QueryOperationData) {
     if (result == QDMI_SUCCESS) {
       isFidelitySupported = true;
       EXPECT_GT(fidelity, .0);
+      EXPECT_THAT(fidelity, testing::IsBetween(.0, .1));
     }
     result = MQT_NA_QDMI_device_session_query_operation_property(
         session, operation, 0, nullptr, 0, nullptr,
@@ -673,6 +674,11 @@ TEST_F(NADeviceTest, QueryOperationData) {
                         &isZone, nullptr),
                     QDMI_SUCCESS);
           EXPECT_EQ(isZone, isZoned);
+          EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                        session, operation, 0, nullptr, 0, nullptr,
+                        QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, 0, nullptr,
+                        nullptr),
+                    QDMI_ERROR_NOTSUPPORTED);
           if (!isZoned) {
             // operation is a local one
             int64_t x = 0;
@@ -724,6 +730,11 @@ TEST_F(NADeviceTest, QueryOperationData) {
       EXPECT_EQ(queriedSupportedSitesSet, supportedSites);
     } else if (numQubits == 2) {
       if (!isZoned) {
+        EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                      session, operation, 0, nullptr, 0, nullptr,
+                      QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, 0, nullptr,
+                      nullptr),
+                  QDMI_ERROR_NOTSUPPORTED);
         std::unordered_set<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>,
                            PairHash>
             supportedSites;
@@ -830,6 +841,14 @@ TEST_F(NADeviceTest, QueryOperationData) {
                                      queriedSupportedSitesVec.cend());
         EXPECT_EQ(queriedSupportedSitesSet, supportedSites);
       } else {
+        double idlingFidelity = .0;
+        EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                      session, operation, 0, nullptr, 0, nullptr,
+                      QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, 0, nullptr,
+                      nullptr),
+                  QDMI_SUCCESS);
+        EXPECT_GT(idlingFidelity, .0);
+        EXPECT_THAT(idlingFidelity, testing::IsBetween(.0, .1));
         std::unordered_set<MQT_NA_QDMI_Site> supportedSites;
         for (const auto& site : sites) {
           size_t nameSize = 0;
