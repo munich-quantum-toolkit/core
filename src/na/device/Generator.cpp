@@ -111,6 +111,16 @@ auto writeDurationUnit(const Device& device, std::ostream& os) -> void {
 }
 
 /**
+ * @brief Writes the minimum atom distance from the device object.
+ * @param device is the device object containing the minimum atom distance.
+ * @param os is the output stream to write the minimum atom distance to.
+ */
+auto writeMinAtomDistance(const Device& device, std::ostream& os) -> void {
+  os << "#define INITIALIZE_MINATOMDISTANCE(var) var = "
+     << device.minAtomDistance << "\n";
+}
+
+/**
  * @brief Writes the sites from the device object.
  * @param device is the device object containing the sites configuration.
  * @param os is the output stream to write the sites to.
@@ -402,6 +412,7 @@ auto writeHeader(const Device& device, std::ostream& os) -> void {
   writeQubitsNum(device, os);
   writeLengthUnit(device, os);
   writeDurationUnit(device, os);
+  writeMinAtomDistance(device, os);
   writeSites(device, os);
   writeOperations(device, os);
   writeDecoherenceTimes(device, os);

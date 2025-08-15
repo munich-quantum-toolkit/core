@@ -98,6 +98,7 @@ Device::Device() {
   // NOLINTEND(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_LENGTHUNIT(lengthUnit_);
   INITIALIZE_DURATIONUNIT(durationUnit_);
+  INITIALIZE_MINATOMDISTANCE(minAtomDistance_);
   // NOLINTNEXTLINE(misc-const-correctness)
   INITIALIZE_SITES(sites_);
   INITIALIZE_OPERATIONS(operations_);
@@ -153,6 +154,8 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR, double,
                             durationUnit_.scaleFactor, prop, size, value,
                             sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_MINATOMDISTANCE, uint64_t,
+                            minAtomDistance_, prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SITES, MQT_NA_QDMI_Site, sites_, prop,
                     size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_NA_QDMI_Operation,

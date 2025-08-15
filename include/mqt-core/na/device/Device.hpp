@@ -24,7 +24,6 @@
 #include <vector>
 
 // TODO
-//  - QDMI_DEVICE_PROPERTY_MINATOMDISTANCE
 //  - QDMI_OPERATION_PROPERTY_IDLINGFIDELITY
 //  - QDMI_OPERATION_PROPERTY_ISZONED
 
@@ -52,6 +51,9 @@ class Device final {
 
   /// @brief The unit used to interpret duration values.
   Unit durationUnit_;
+
+  /// @brief The minimum atom distance that must be maintained.
+  uint64_t minAtomDistance_;
 
   /// @brief The list of sites.
   std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>> sites_;

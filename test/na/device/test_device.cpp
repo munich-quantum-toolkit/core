@@ -431,6 +431,14 @@ TEST_F(QDMISpecificationTest, QueryDeviceDurationUnit) {
   }
 }
 
+TEST_F(QDMISpecificationTest, QueryDeviceMinAtomDistance) {
+  uint64_t minAtomDistance = 0;
+  EXPECT_EQ(MQT_NA_QDMI_device_session_query_device_property(
+                session, QDMI_DEVICE_PROPERTY_MINATOMDISTANCE, sizeof(uint64_t),
+                &minAtomDistance, nullptr),
+            QDMI_SUCCESS);
+}
+
 TEST_F(QDMISpecificationTest, QuerySiteIndex) {
   size_t id = 0;
   EXPECT_NO_THROW(for (auto* site : querySites(session)) {
