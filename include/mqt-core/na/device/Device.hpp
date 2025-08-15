@@ -34,7 +34,6 @@
 //  - QDMI_OPERATION_PROPERTY_IDLINGFIDELITY
 //  - QDMI_OPERATION_PROPERTY_ISZONED
 //  - QDMI_OPERATION_PROPERTY_SITES
-//  - QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED
 
 namespace qdmi {
 class Device final {
@@ -59,7 +58,7 @@ class Device final {
   Unit lengthUnit_;
 
   /// @brief The unit used to interpret duration values.
-  Unit durationUnit;
+  Unit durationUnit_;
 
   /// @brief The list of sites.
   std::vector<std::unique_ptr<MQT_NA_QDMI_Site_impl_d>> sites_;
@@ -260,10 +259,10 @@ private:
   uint64_t moduleId_ = 0; ///< Identifier of the module the site belongs to
   /// Identifier of the submodule the site belongs to
   uint64_t subModuleId_ = 0;
-  int64_t x_ = 0;      ///< X coordinate of the site in the lattice
-  int64_t y_ = 0;      ///< Y coordinate of the site in the lattice
-  uint64_t width = 0;  ///< Width of the site in the lattice (for zone sites)
-  uint64_t height = 0; ///< Height of the site in the lattice (for zone sites)
+  int64_t x_ = 0;        ///< X coordinate of the site in the lattice
+  int64_t y_ = 0;        ///< Y coordinate of the site in the lattice
+  uint64_t xExtent_ = 0; ///< Width of the site in the lattice (for zone sites)
+  uint64_t yExtent_ = 0; ///< Height of the site in the lattice (for zone sites)
   /// @brief Collects decoherence times for the device.
   struct DecoherenceTimes {
     uint64_t t1_ = 0; ///< T1 time
@@ -326,13 +325,13 @@ private:
   uint64_t duration_; ///< Duration of the operation
   double fidelity_;   ///< Fidelity of the operation
   /// Interaction radius for multi-qubit operations
-  uint64_t interactionRadius = 0;
+  uint64_t interactionRadius_ = 0;
   /// Blocking radius for multi-qubit operations
-  uint64_t blockingRadius = 0;
+  uint64_t blockingRadius_ = 0;
   /// Mean shuttling speed
   uint64_t meanShuttlingSpeed_ = 0;
   /// The zone global operations are performed in.
-  std::unordered_set<MQT_NA_QDMI_Site> supportedSites;
+  std::unordered_set<MQT_NA_QDMI_Site> supportedSites_;
 
   /**
    * @brief Checks if the operation type is a shuttling operation.

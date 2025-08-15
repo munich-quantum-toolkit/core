@@ -22,6 +22,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace testing {
@@ -562,6 +563,7 @@ TEST_F(NADeviceTest, QueryOperationData) {
                   QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sizeof(size_t),
                   &numParameters, nullptr),
               QDMI_SUCCESS);
+    std::unordered_set<MQT_NA_QDMI_Site> supportedSites;
     for (const auto& site : sites) {
       size_t nameSize = 0;
       result = MQT_NA_QDMI_device_session_query_operation_property(
@@ -570,6 +572,7 @@ TEST_F(NADeviceTest, QueryOperationData) {
       ASSERT_THAT(result,
                   testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
       if (result == QDMI_SUCCESS) {
+        supportedSites.emplace(site);
         std::string name(nameSize - 1, '\0');
         EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                       session, operation, 0, nullptr, 0, nullptr,
@@ -620,5 +623,20 @@ TEST_F(NADeviceTest, QueryOperationData) {
         }
       }
     }
+    size_t size = 0;
+    EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                  session, operation, 0, nullptr, 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_SITES, 0, nullptr, &size),
+              QDMI_SUCCESS);
+    std::vector<MQT_NA_QDMI_Site> queriedSupportedSitesVec(
+        size / sizeof(MQT_NA_QDMI_Site), nullptr);
+    EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                  session, operation, 0, nullptr, 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_SITES, size,
+                  queriedSupportedSitesVec.data(), nullptr),
+              QDMI_SUCCESS);
+    const std::unordered_set queriedSupportedSitesSet(
+        queriedSupportedSitesVec.cbegin(), queriedSupportedSitesVec.cend());
+    EXPECT_EQ(queriedSupportedSitesSet, supportedSites);
   }) << "Devices must provide a list of operations";
 }
