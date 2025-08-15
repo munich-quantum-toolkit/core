@@ -17,6 +17,7 @@
 #include <fstream>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+// NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <stdexcept>
@@ -429,6 +430,7 @@ protected:
 
     // Parse the JSON file
     try {
+      // NOLINTNEXTLINE(misc-include-cleaner)
       device = nlohmann::json::parse(file);
     } catch (const nlohmann::json::parse_error& e) {
       GTEST_FAIL() << "JSON parsing error: " << e.what();
@@ -519,32 +521,42 @@ TEST_F(NADeviceTest, QuerySiteData) {
 
 TEST_F(NADeviceTest, QueryOperationData) {
   uint64_t duration = 0;
+  uint64_t meanShuttlingSpeed = 0;
   double fidelity = 0;
   size_t numQubits = 0;
   size_t numParameters = 0;
   std::vector<MQT_NA_QDMI_Site> sites;
   EXPECT_NO_THROW(sites = querySites(session));
   EXPECT_NO_THROW(for (auto* operation : queryOperations(session)) {
-    EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
-                    session, operation, 0, nullptr, 0, nullptr,
-                    QDMI_OPERATION_PROPERTY_DURATION, sizeof(uint64_t),
-                    &duration, nullptr),
-                testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-    EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
-                    session, operation, 0, nullptr, 0, nullptr,
-                    QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity,
-                    nullptr),
-                testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-    EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
-                    session, operation, 0, nullptr, 0, nullptr,
-                    QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED,
-                    sizeof(uint64_t), &fidelity, nullptr),
-                testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-    EXPECT_THAT(MQT_NA_QDMI_device_session_query_operation_property(
-                    session, operation, 0, nullptr, 0, nullptr,
-                    QDMI_OPERATION_PROPERTY_QUBITSNUM, sizeof(size_t),
-                    &numQubits, nullptr),
-                testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    auto result = MQT_NA_QDMI_device_session_query_operation_property(
+        session, operation, 0, nullptr, 0, nullptr,
+        QDMI_OPERATION_PROPERTY_DURATION, sizeof(uint64_t), &duration, nullptr);
+    EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    if (result == QDMI_SUCCESS) {
+      EXPECT_GT(duration, 0);
+    }
+    result = MQT_NA_QDMI_device_session_query_operation_property(
+        session, operation, 0, nullptr, 0, nullptr,
+        QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity, nullptr);
+    EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    if (result == QDMI_SUCCESS) {
+      EXPECT_GT(fidelity, .0);
+    }
+    result = MQT_NA_QDMI_device_session_query_operation_property(
+        session, operation, 0, nullptr, 0, nullptr,
+        QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED, sizeof(uint64_t),
+        &meanShuttlingSpeed, nullptr);
+    EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    if (result == QDMI_SUCCESS) {
+      EXPECT_GT(meanShuttlingSpeed, 0);
+    }
+    result = MQT_NA_QDMI_device_session_query_operation_property(
+        session, operation, 0, nullptr, 0, nullptr,
+        QDMI_OPERATION_PROPERTY_QUBITSNUM, sizeof(size_t), &numQubits, nullptr);
+    EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    if (result == QDMI_SUCCESS) {
+      EXPECT_GT(numQubits, 0);
+    }
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                   session, operation, 0, nullptr, 0, nullptr,
                   QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sizeof(size_t),
@@ -552,7 +564,7 @@ TEST_F(NADeviceTest, QueryOperationData) {
               QDMI_SUCCESS);
     for (const auto& site : sites) {
       size_t nameSize = 0;
-      const auto result = MQT_NA_QDMI_device_session_query_operation_property(
+      result = MQT_NA_QDMI_device_session_query_operation_property(
           session, operation, 1, &site, 0, nullptr,
           QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, &nameSize);
       ASSERT_THAT(result,

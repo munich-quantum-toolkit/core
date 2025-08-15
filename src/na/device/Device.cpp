@@ -473,14 +473,15 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, uint64_t,
                               blockingRadius, prop, size, value, sizeRet)
   }
-  if (type_ != Type::ShuttlingMove) {
+  if (type_ == Type::ShuttlingMove) {
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED,
+                              uint64_t, meanShuttlingSpeed_, prop, size, value,
+                              sizeRet)
+  } else {
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_DURATION, uint64_t,
                               duration_, prop, size, value, sizeRet)
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double,
                               fidelity_, prop, size, value, sizeRet)
-    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED,
-                              uint64_t, meanShuttlingSpeed_, prop, size, value,
-                              sizeRet)
   }
   if (!isShuttling(type_)) {
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
