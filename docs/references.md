@@ -4,13 +4,46 @@
 \phantomsection
 ```
 
-```{only} html
+````{only} html
 # References
+*MQT Core* is academic software. Thus, many of its built-in algorithms have been published as scientific papers.
+See {cite:p}`burgholzer2025MQTCore` for a general overview of *MQT Core* and its features.
+If you want to cite this article, please use the following BibTeX entry:
 
-If you use *MQT Core* in your work, we would appreciate if you cited {cite:p}`burgholzer2025MQTCore`.
+```bibtex
+@article{burgholzer2025MQTCore,
+    title        = {{{MQT Core}}: {{The}} Backbone of the {{Munich Quantum Toolkit (MQT)}}},
+    author       = {Lukas Burgholzer and Yannick Stade and Tom Peham and Robert Wille},
+    year         = 2025,
+    journal      = {Journal of Open Source Software},
+    publisher    = {The Open Journal},
+    volume       = 10,
+    number       = 108,
+    pages        = 7478,
+    doi          = {10.21105/joss.07478},
+    url          = {https://doi.org/10.21105/joss.07478},
+}
+```
+
+*MQT Core* is part of the Munich Quantum Toolkit, which is described in {cite:p}`mqt`.
+If you want to cite the Munich Quantum Toolkit, please use the following BibTeX entry:
+
+```bibtex
+@inproceedings{mqt,
+    title        = {The {{MQT}} Handbook: {{A}} Summary of Design Automation Tools and Software for Quantum Computing},
+    shorttitle   = {{The MQT Handbook}},
+    author       = {Robert Wille and Lucas Berent and Tobias Forster and Jagatheesan Kunasaikaran and Kevin Mato and Tom Peham and Nils Quetschlich and Damian Rovara and Aaron Sander and Ludwig Schmid and Daniel Schoenberger and Yannick Stade and Lukas Burgholzer},
+    booktitle    = {IEEE International Conference on Quantum Software (QSW)},
+    doi          = {10.1109/QSW62656.2024.00013},
+    year         = 2024,
+    eprint       = {2405.17543},
+    eprinttype   = {arxiv},
+    addendum     = {A live version of this document is available at \url{https://mqt.readthedocs.io}},
+}
+```
 
 A full list of references is given below.
-```
+````
 
 ```{bibliography}
 
