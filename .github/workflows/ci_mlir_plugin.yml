@@ -212,7 +212,24 @@ jobs:
               otool -l $(which catalyst) || true
           fi
 
-      # Run the plugin tests
+      # Reconfigure CMake for LIT
+      - name: Reconfigure CMake for LIT
+        working-directory: plugins/catalyst
+        run: |
+          BUILD_DIR=$(find build -type d -name Release | head -n1)
+          cmake -S . \
+            -B "$BUILD_DIR" \
+            -DLLVM_EXTERNAL_LIT=$(which lit) \
+            -DPython3_EXECUTABLE=$(which python)
+
+      # Run the MLIR LIT tests
+      - name: Run LIT tests
+        working-directory: plugins/catalyst
+        run: |
+          BUILD_DIR=$(find build -type d -name Release | head -n1)
+          ninja -C "$BUILD_DIR" check-mqt-core-catalyst-plugin
+
+      # Run the plugin Python tests
       - name: Run pytest for mqt-core-catalyst-plugin
         working-directory: plugins/catalyst
         run: python -m pytest -s --verbose
