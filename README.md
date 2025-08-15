@@ -115,7 +115,11 @@ If you want to use the ZX library, it is recommended (although not strictly nece
 
 ## Cite This
 
-If you want to cite MQT Core, please use the following BibTeX entry:
+Please cite the work that best fits your use case.
+
+### MQT Core (the tool)
+
+When citing the software itself or results produced with it, cite the MQT Core paper:
 
 ```bibtex
 @article{core,
@@ -132,7 +136,9 @@ If you want to cite MQT Core, please use the following BibTeX entry:
 }
 ```
 
-If you want to cite the MQT, please use the following BibTeX entry:
+### The Munich Quantum Toolkit (the project)
+
+When discussing the overall MQT project or its ecosystem, cite the MQT Handbook:
 
 ```bibtex
 @inproceedings{mqt,
@@ -147,6 +153,8 @@ If you want to cite the MQT, please use the following BibTeX entry:
     addendum     = {A live version of this document is available at \url{https://mqt.readthedocs.io}},
 }
 ```
+
+If both apply, include both references.
 
 ---
 
