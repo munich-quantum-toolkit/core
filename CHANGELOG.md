@@ -16,6 +16,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ♻️ Update the `measure` operations in the MLIR dialects to no longer support more than one qubit being measured at once ([#1106]) ([**@DRovara**])
 - ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996]) ([**@ystade**])
 - ✨ Add `qubit` operation to the `MQTRef` (previously `MQTDyn`) dialect for static qubit addressing ([#1098]) ([**@MatthiasReumann**])
+- ✨ Add `qubit` operation to the `MQTOpt` dialect for static qubit addressing ([#1116]) ([**@MatthiasReumann**])
 
 ### Changed
 
@@ -162,6 +163,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1116]: https://github.com/munich-quantum-toolkit/core/pull/1116
 [#1106]: https://github.com/munich-quantum-toolkit/core/pull/1106
 [#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099
 [#1098]: https://github.com/munich-quantum-toolkit/core/pull/1098
