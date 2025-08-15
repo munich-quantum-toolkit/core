@@ -10,19 +10,22 @@
 
 // macro to check the gatename and to replace the simple gate
 #define ADD_CONVERT_SIMPLE_GATE(gate)                                          \
-  else if (gateName == #gate) {                                                \
+  if (gateName == #gate) {                                                     \
     rewriter.replaceOpWithNewOp<ref::gate>(op, DenseF64ArrayAttr{},            \
                                            DenseBoolArrayAttr{}, ValueRange{}, \
                                            qubits, ctrlQubits, ValueRange{});  \
+    return;                                                                    \
   }
 
 // macro to check the gateName and to replace the rotation gate
 #define ADD_CONVERT_ROTATION_GATE(gate)                                        \
-  else if (gateName == #gate) {                                                \
+  if (gateName == #gate) {                                                     \
     rewriter.replaceOpWithNewOp<ref::gate>(                                    \
         op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, rotationDegrees,        \
         operands, ctrlQubits, ValueRange{});                                   \
+    return;                                                                    \
   }
+
 #include "mlir/Conversion/QIRToMQTRef/QIRToMQTRef.h"
 
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
@@ -160,14 +163,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
                                 ConversionPatternRewriter& rewriter) {
 
     // match and replace the fitting gate
-    // macro contains the else if statements to check the gateName in addition
-    // to the replacement, therefore the first operation in the chain is
-    // manually replaced
-    if (gateName == "XOp") {
-      rewriter.replaceOpWithNewOp<ref::XOp>(op, DenseF64ArrayAttr{},
-                                            DenseBoolArrayAttr{}, ValueRange{},
-                                            qubits, ctrlQubits, ValueRange{});
-    }
+    ADD_CONVERT_SIMPLE_GATE(XOp)
     ADD_CONVERT_SIMPLE_GATE(HOp)
     ADD_CONVERT_SIMPLE_GATE(IOp)
     ADD_CONVERT_SIMPLE_GATE(YOp)
@@ -204,10 +200,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
                                   SmallVector<Value>& operands,
                                   const SmallVector<Value>& ctrlQubits,
                                   const size_t rotationCount,
-                                  ConversionPatternRewriter& rewriter
-
-  ) {
-
+                                  ConversionPatternRewriter& rewriter) {
     // extract the degrees from the operand list
     SmallVector<Value> rotationDegrees;
     rotationDegrees.insert(
@@ -215,15 +208,8 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
         std::make_move_iterator(operands.begin() + rotationCount));
     operands.erase(operands.begin(), operands.begin() + rotationCount);
 
-    //  match and replace the fitting gate
-    // macro contains the else if statements to check the gateName in addition
-    // to the replacement, therefore the first operation in the chain is
-    // manually replaced
-    if (gateName == "POp") {
-      rewriter.replaceOpWithNewOp<ref::POp>(
-          op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, rotationDegrees,
-          operands, ctrlQubits, ValueRange{});
-    }
+    // match and replace the fitting gate
+    ADD_CONVERT_ROTATION_GATE(POp)
     ADD_CONVERT_ROTATION_GATE(UOp)
     ADD_CONVERT_ROTATION_GATE(U2Op)
     ADD_CONVERT_ROTATION_GATE(RXOp)
@@ -247,8 +233,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     const auto operands = adaptor.getOperands();
 
     // get the new operands from the operandMap
-    // workaround to avoid unrealized conversion; there is probably a better
-    // solution
+    // workaround to avoid unrealized conversion
     SmallVector<Value> newOperands;
     newOperands.reserve(operands.size());
     for (auto const& val : operands) {
@@ -266,10 +251,11 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
 
       // update the operand list
       getState().operandMap.try_emplace(op->getResult(0), newOp->getResult(0));
-
+      return success();
     }
+
     // match alloc qubit using the given allocOp and the index
-    else if (fnName == "__quantum__rt__qubit_allocate") {
+    if (fnName == "__quantum__rt__qubit_allocate") {
       const auto newOp = rewriter.replaceOpWithNewOp<ref::ExtractOp>(
           op, qubitType, getState().qReg, Value{},
           IntegerAttr::get(rewriter.getIntegerType(64), getState().index++));
@@ -277,18 +263,21 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
       // update the operand list
       getState().operandMap.try_emplace(op->getResult(0),
                                         newOp->getOpResult(0));
+      return success();
     }
+
     // match extract qubit from register
-    else if (fnName == "__quantum__rt__array_get_element_ptr_1d") {
+    if (fnName == "__quantum__rt__array_get_element_ptr_1d") {
       const auto newOp = rewriter.replaceOpWithNewOp<ref::ExtractOp>(
           op, qubitType, newOperands);
 
       // update the operand list
       getState().operandMap.try_emplace(op->getResult(0),
                                         newOp->getOpResult(0));
+      return success();
     }
     // match measure operation
-    else if (fnName == "__quantum__qis__m__body") {
+    if (fnName == "__quantum__qis__m__body") {
       const auto bitType = IntegerType::get(rewriter.getContext(), 1);
 
       bool foundUser = false;
@@ -308,71 +297,78 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
         // otherwise just create the measure operation
         rewriter.replaceOpWithNewOp<ref::MeasureOp>(op, bitType, newOperands);
       }
+      return success();
     }
+
     // match dealloc register
-    else if (fnName == "__quantum__rt__qubit_release_array") {
+    if (fnName == "__quantum__rt__qubit_release_array") {
       rewriter.replaceOpWithNewOp<ref::DeallocOp>(op, newOperands.front());
+      return success();
     }
+
     // match reset operation
-    else if (fnName == "__quantum__qis__reset__body") {
+    if (fnName == "__quantum__qis__reset__body") {
       rewriter.replaceOpWithNewOp<ref::ResetOp>(op, newOperands.front());
-    } else {
-      // remove the prefix and the suffix of the gate name
-      auto gateName(fnName->substr(16).drop_back(6));
-
-      // check how many control qubits are used by counting the number of
-      // leading c's
-      const size_t ctrlQubitCount =
-          std::ranges::find_if(gateName, [](char ch) { return ch != 'c'; }) -
-          gateName.begin();
-
-      // remove the control qubits from the name
-      gateName = gateName.substr(ctrlQubitCount);
-
-      // extract the controlqubits from the operand list
-      SmallVector<Value> ctrlQubits;
-      ctrlQubits.reserve(ctrlQubitCount);
-      ctrlQubits.insert(
-          ctrlQubits.end(),
-          std::make_move_iterator(newOperands.end() - ctrlQubitCount),
-          std::make_move_iterator(newOperands.end()));
-      newOperands.resize(newOperands.size() - ctrlQubitCount);
-
-      // try to match and replace gate operations
-      if (gateName == "gphase") {
-        rewriter.replaceOpWithNewOp<ref::GPhaseOp>(
-            op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, newOperands,
-            ValueRange{}, ctrlQubits, ValueRange{});
-        return success();
-      }
-      if (gateName == "barrier") {
-        rewriter.replaceOpWithNewOp<ref::BarrierOp>(
-            op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
-            newOperands, ctrlQubits, ValueRange{});
-        return success();
-      }
-      if (SIMPLE_GATES.contains(gateName.str())) {
-        const auto name = SIMPLE_GATES.at(gateName.str());
-        convertSimpleGate(op, name, newOperands, ctrlQubits, rewriter);
-        return success();
-      }
-      if (SINGLE_ROTATION_GATES.contains(gateName.str())) {
-        const auto name = SINGLE_ROTATION_GATES.at(gateName.str());
-        convertRotationGate(op, name, newOperands, ctrlQubits, 1, rewriter);
-        return success();
-      }
-      if (DOUBLE_ROTATION_GATES.contains(gateName.str())) {
-        const auto name = DOUBLE_ROTATION_GATES.at(gateName.str());
-        convertRotationGate(op, name, newOperands, ctrlQubits, 2, rewriter);
-        return success();
-      }
-      if (gateName == "u3") {
-        convertRotationGate(op, "UOp", newOperands, ctrlQubits, 3, rewriter);
-        return success();
-      }
-      // otherwise erase the operation
-      rewriter.eraseOp(op);
+      return success();
     }
+
+    // remove the prefix and the suffix of the gate name
+    auto gateName(fnName->substr(16).drop_back(6));
+
+    // check how many control qubits are used by counting the number of
+    // leading c's
+    const size_t ctrlQubitCount =
+        std::ranges::find_if(gateName, [](char ch) { return ch != 'c'; }) -
+        gateName.begin();
+
+    // remove the control qubits from the name
+    gateName = gateName.substr(ctrlQubitCount);
+
+    // extract the controlqubits from the operand list
+    SmallVector<Value> ctrlQubits;
+    ctrlQubits.reserve(ctrlQubitCount);
+    ctrlQubits.insert(
+        ctrlQubits.end(),
+        std::make_move_iterator(newOperands.end() - ctrlQubitCount),
+        std::make_move_iterator(newOperands.end()));
+    newOperands.resize(newOperands.size() - ctrlQubitCount);
+
+    // try to match and replace gate operations
+    if (gateName == "gphase") {
+      rewriter.replaceOpWithNewOp<ref::GPhaseOp>(
+          op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, newOperands,
+          ValueRange{}, ctrlQubits, ValueRange{});
+      return success();
+    }
+    if (gateName == "barrier") {
+      rewriter.replaceOpWithNewOp<ref::BarrierOp>(
+          op, DenseF64ArrayAttr{}, DenseBoolArrayAttr{}, ValueRange{},
+          newOperands, ctrlQubits, ValueRange{});
+      return success();
+    }
+    if (SIMPLE_GATES.contains(gateName.str())) {
+      convertSimpleGate(op, SIMPLE_GATES.at(gateName.str()), newOperands,
+                        ctrlQubits, rewriter);
+      return success();
+    }
+    if (SINGLE_ROTATION_GATES.contains(gateName.str())) {
+      convertRotationGate(op, SINGLE_ROTATION_GATES.at(gateName.str()),
+                          newOperands, ctrlQubits, 1, rewriter);
+      return success();
+    }
+    if (DOUBLE_ROTATION_GATES.contains(gateName.str())) {
+      convertRotationGate(op, DOUBLE_ROTATION_GATES.at(gateName.str()),
+                          newOperands, ctrlQubits, 2, rewriter);
+      return success();
+    }
+    if (gateName == "u3") {
+      convertRotationGate(op, "UOp", newOperands, ctrlQubits, 3, rewriter);
+      return success();
+    }
+
+    // otherwise erase the operation
+    rewriter.eraseOp(op);
+
     return success();
   }
 };

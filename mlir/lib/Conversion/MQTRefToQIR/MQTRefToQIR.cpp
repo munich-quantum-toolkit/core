@@ -264,11 +264,11 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
 
     // get the name of the gate
     const StringRef name = op->getName().getStringRef().split('.').second;
-    std::string fnName;
 
-    // add leading c's depending on the number of control qubits
+    // add leading c's to the function name depending on the number of control
+    // qubits
     const auto ctrQubitsCount = posCtrlQubits.size() + negCtrlQubits.size();
-    fnName.insert(0, ctrQubitsCount, 'c');
+    std::string fnName(ctrQubitsCount, 'c');
 
     // check if it is a cnot gate
     if (name == "x" && ctrQubitsCount == 1) {
@@ -310,58 +310,61 @@ struct ConvertMQTRefMeasureQIR final
                                    ConversionPatternRewriter& rewriter,
                                    LoweringState& state) {
     Operation* addressOfOp = nullptr;
-    // get the next addressOfOp from the vector if it exists
+    // reuse existing addressOfOp if it is available
     if (!state.measureConstants.empty()) {
       addressOfOp = state.measureConstants.front();
       // pop the next addressOfOp from the vector
       state.measureConstants.erase(&state.measureConstants.front());
+      state.index++;
+      return addressOfOp;
     }
+
     // otherwise create a new globalOp and a addressOfOp
-    else {
-      // check how many digits the next index has for the array allocation
-      auto num = state.index;
-      int64_t digits = 1;
-      while (num >= 10) {
-        num /= 10;
-        ++digits;
-      }
-      // set the insertionpoint to the beginning of the module
-      auto module = op->getParentOfType<ModuleOp>();
-      rewriter.setInsertionPointToStart(module.getBody());
+    // set the insertionpoint to the beginning of the module
+    auto module = op->getParentOfType<ModuleOp>();
+    rewriter.setInsertionPointToStart(module.getBody());
 
-      // create the necessary names and types for the global operation
-      // symbol name should be mlir.llvm.nameless_global_0,
-      // mlir.llvm.nameless_global_1 etc.
-      const auto symbolName = rewriter.getStringAttr(
-          "mlir.llvm.nameless_global_" + std::to_string(state.index));
-      const auto llvmArrayType =
-          LLVM::LLVMArrayType::get(rewriter.getIntegerType(8), digits + 2);
-      // initializer name should be r0\00, r1\00 etc.
-      const auto stringInitializer =
-          rewriter.getStringAttr("r" + std::to_string(state.index) + '\0');
-
-      // create the global operation
-      auto globalOp = rewriter.create<LLVM::GlobalOp>(
-          op->getLoc(), llvmArrayType,
-          /*isConstant=*/true, LLVM::Linkage::Internal, symbolName,
-          stringInitializer);
-      globalOp->setAttr("addr_space", rewriter.getI32IntegerAttr(0));
-      globalOp->setAttr("dso_local", rewriter.getUnitAttr());
-
-      // get the first block of the main function
-      auto main = op->getParentOfType<LLVM::LLVMFuncOp>();
-      auto& firstBlock = *(main.getBlocks().begin());
-
-      // insert the addressOfOp of the newly created global op at the beginning
-      // of the block
-      rewriter.setInsertionPointToStart(&firstBlock);
-      addressOfOp = rewriter.create<LLVM::AddressOfOp>(
-          op->getLoc(), LLVM::LLVMPointerType::get(rewriter.getContext()),
-          symbolName);
-
-      // reset the insertionpoint to the initial operation again
-      rewriter.setInsertionPoint(op);
+    // check how many digits the next index has for the array allocation
+    auto num = state.index;
+    auto digits = 1;
+    while (num >= 10) {
+      num /= 10;
+      ++digits;
     }
+
+    // create the necessary names and types for the global operation
+    // symbol name should be mlir.llvm.nameless_global_0,
+    // mlir.llvm.nameless_global_1 etc.
+    const auto symbolName = rewriter.getStringAttr(
+        "mlir.llvm.nameless_global_" + std::to_string(state.index));
+    const auto llvmArrayType =
+        LLVM::LLVMArrayType::get(rewriter.getIntegerType(8), digits + 2);
+    // initializer name should be r0\00, r1\00 etc.
+    const auto stringInitializer =
+        rewriter.getStringAttr("r" + std::to_string(state.index) + '\0');
+
+    // create the global operation
+    auto globalOp = rewriter.create<LLVM::GlobalOp>(
+        op->getLoc(), llvmArrayType,
+        /*isConstant=*/true, LLVM::Linkage::Internal, symbolName,
+        stringInitializer);
+    globalOp->setAttr("addr_space", rewriter.getI32IntegerAttr(0));
+    globalOp->setAttr("dso_local", rewriter.getUnitAttr());
+
+    // get the first block of the main function
+    auto main = op->getParentOfType<LLVM::LLVMFuncOp>();
+    auto& firstBlock = *(main.getBlocks().begin());
+
+    // insert the addressOfOp of the newly created global op at the beginning
+    // of the block
+    rewriter.setInsertionPointToStart(&firstBlock);
+    addressOfOp = rewriter.create<LLVM::AddressOfOp>(
+        op->getLoc(), LLVM::LLVMPointerType::get(rewriter.getContext()),
+        symbolName);
+
+    // reset the insertionpoint to the initial operation again
+    rewriter.setInsertionPoint(op);
+
     // increment the index of the next addressOfOp
     state.index++;
 
@@ -419,6 +422,7 @@ struct ConvertMQTRefMeasureQIR final
         op->getLoc(), fnDecl, ValueRange{newOp->getResult(0)});
     op->replaceUsesOfWith(op->getResult(0), resultOp.getResult());
     rewriter.eraseOp(op);
+
     return success();
   }
 };
@@ -474,16 +478,11 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     Block* mainBlock = builder.createBlock(&main.getBody());
     Block* endBlock = builder.createBlock(&main.getBody());
 
-    // add jump from main to endBlock
-    builder.setInsertionPointToEnd(mainBlock);
-    builder.create<LLVM::BrOp>(main->getLoc(), endBlock);
-
     // move the returnOp from the entryBlock to the endBlock
-    builder.setInsertionPointToEnd(endBlock);
     auto& entryOperations = entryBlock->getOperations();
     auto& endOperations = endBlock->getOperations();
-    auto lastOperation = std::prev(entryOperations.end());
-    endOperations.splice(endOperations.end(), entryOperations, lastOperation);
+    endOperations.splice(endOperations.end(), entryOperations,
+                         std::prev(entryOperations.end()));
 
     // add jump from entryBlock to mainBlock
     builder.setInsertionPointToEnd(entryBlock);
@@ -496,6 +495,10 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
                                         entryOperations.begin(),
                                         std::prev(entryOperations.end()));
     }
+
+    // add jump from main to endBlock
+    builder.setInsertionPointToEnd(mainBlock);
+    builder.create<LLVM::BrOp>(main->getLoc(), endBlock);
   }
 
   /**
@@ -552,9 +555,9 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
 
     auto& firstBlock = *(main.getBlocks().begin());
     OpBuilder builder(main.getBody());
-    Operation* zeroOperation = nullptr;
 
     // find the zeroOp or create one
+    Operation* zeroOperation = nullptr;
     firstBlock.walk([&](Operation* op) {
       if (auto zeroOp = dyn_cast<LLVM::ZeroOp>(op)) {
         zeroOperation = zeroOp;
@@ -570,8 +573,7 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
 
     // create the initialize operation as the 2nd last operation in the first
     // block after all constant operations and before the last jump operation
-    auto& ops = firstBlock.getOperations();
-    const auto insertPoint = std::prev(ops.end(), 1);
+    const auto insertPoint = std::prev(firstBlock.getOperations().end(), 1);
     builder.setInsertionPoint(&*insertPoint);
 
     // get the function declaration of initialize otherwise create one
