@@ -122,7 +122,7 @@ Please cite the work that best fits your use case.
 When citing the software itself or results produced with it, cite the MQT Core paper:
 
 ```bibtex
-@article{core,
+@article{burgholzer2025MQTCore,
     title        = {{{MQT Core}}: {{The}} Backbone of the {{Munich Quantum Toolkit (MQT)}}},
     author       = {Lukas Burgholzer and Yannick Stade and Tom Peham and Robert Wille},
     year         = 2025,
@@ -147,7 +147,7 @@ When discussing the overall MQT project or its ecosystem, cite the MQT Handbook:
     author       = {Robert Wille and Lucas Berent and Tobias Forster and Jagatheesan Kunasaikaran and Kevin Mato and Tom Peham and Nils Quetschlich and Damian Rovara and Aaron Sander and Ludwig Schmid and Daniel Schoenberger and Yannick Stade and Lukas Burgholzer},
     booktitle    = {IEEE International Conference on Quantum Software (QSW)},
     doi          = {10.1109/QSW62656.2024.00013},
-    date         = 2024,
+    year         = 2024,
     eprint       = {2405.17543},
     eprinttype   = {arxiv},
     addendum     = {A live version of this document is available at \url{https://mqt.readthedocs.io}},
