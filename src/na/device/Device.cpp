@@ -331,22 +331,12 @@ auto MQT_NA_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
-auto MQT_NA_QDMI_Operation_impl_d::isShuttling(const Type type) -> bool {
-  switch (type) {
-  case Type::ShuttlingLoad:
-  case Type::ShuttlingMove:
-  case Type::ShuttlingStore:
-    return true;
-  default:
-    return false;
-  }
-}
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
-    std::string name, const size_t numParameters, const uint64_t duration,
-    const double fidelity, MQT_NA_QDMI_Site zone)
-    : name_(std::move(name)), type_(Type::GlobalSingleQubit),
-      numParameters_(numParameters), numQubits_(1), duration_(duration),
-      fidelity_(fidelity) {
+    std::string name, const size_t numParameters, const size_t numQubits,
+    const uint64_t duration, const double fidelity, MQT_NA_QDMI_Site zone)
+    : name_(std::move(name)), numParameters_(numParameters),
+      numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
+      isZoned_(true) {
   supportedSites_.emplace(zone);
 }
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
@@ -354,40 +344,47 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     const uint64_t duration, const double fidelity,
     const uint64_t interactionRadius, uint64_t blockingRadius,
     MQT_NA_QDMI_Site zone)
-    : name_(std::move(name)), type_(Type::GlobalMultiQubit),
-      numParameters_(numParameters), numQubits_(numQubits), duration_(duration),
-      fidelity_(fidelity), interactionRadius_(interactionRadius),
-      blockingRadius_(blockingRadius) {
+    : name_(std::move(name)), numParameters_(numParameters),
+      numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
+      interactionRadius_(interactionRadius), blockingRadius_(blockingRadius),
+      isZoned_(true) {
   supportedSites_.emplace(zone);
 }
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
-    std::string name, const size_t numParameters, const uint64_t duration,
-    const double fidelity, const std::unordered_set<MQT_NA_QDMI_Site>& sites)
-    : name_(std::move(name)), type_(Type::LocalSingleQubit),
-      numParameters_(numParameters), numQubits_(1), duration_(duration),
-      fidelity_(fidelity), supportedSites_(sites) {}
+    std::string name, const size_t numParameters, const size_t numQubits,
+    const uint64_t duration, const double fidelity,
+    const std::unordered_set<MQT_NA_QDMI_Site>& sites)
+    : name_(std::move(name)), numParameters_(numParameters),
+      numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
+      supportedSites_(sites) {}
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     std::string name, const size_t numParameters, const size_t numQubits,
     const uint64_t duration, const double fidelity,
     const uint64_t interactionRadius, uint64_t blockingRadius,
     const std::unordered_set<MQT_NA_QDMI_Site>& sites)
-    : name_(std::move(name)), type_(Type::LocalMultiQubit),
-      numParameters_(numParameters), numQubits_(numQubits), duration_(duration),
-      fidelity_(fidelity), interactionRadius_(interactionRadius),
-      blockingRadius_(blockingRadius), supportedSites_(sites) {}
+    : name_(std::move(name)), numParameters_(numParameters),
+      numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
+      interactionRadius_(interactionRadius), blockingRadius_(blockingRadius),
+      supportedSites_(sites) {}
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
-    std::string name, Type type, size_t numParameters, uint64_t duration,
-    double fidelity, MQT_NA_QDMI_Site zone, uint64_t meanShuttlingSpeed)
-    : name_(std::move(name)), type_(type), numParameters_(numParameters),
-      numQubits_(0), duration_(duration), fidelity_(fidelity),
-      meanShuttlingSpeed_(meanShuttlingSpeed) {
+    std::string name, size_t numParameters, uint64_t duration, double fidelity,
+    MQT_NA_QDMI_Site zone)
+    : name_(std::move(name)), numParameters_(numParameters),
+      duration_(duration), fidelity_(fidelity), isZoned_(true) {
+  supportedSites_.emplace(zone);
+}
+MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
+    std::string name, size_t numParameters, MQT_NA_QDMI_Site zone,
+    uint64_t meanShuttlingSpeed)
+    : name_(std::move(name)), numParameters_(numParameters), numQubits_(0),
+      meanShuttlingSpeed_(meanShuttlingSpeed), isZoned_(true) {
   supportedSites_.emplace(zone);
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueGlobalSingleQubit(
     const std::string& name, size_t numParameters, uint64_t duration,
     double fidelity, MQT_NA_QDMI_Site zone)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
+  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, 1, duration, fidelity,
                                   zone);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
@@ -405,7 +402,7 @@ auto MQT_NA_QDMI_Operation_impl_d::makeUniqueLocalSingleQubit(
     const std::string& name, size_t numParameters, uint64_t duration,
     double fidelity, const std::unordered_set<MQT_NA_QDMI_Site>& sites)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
+  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, 1, duration, fidelity,
                                   sites);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
@@ -423,24 +420,24 @@ auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingLoad(
     const std::string& name, size_t numParameters, uint64_t duration,
     double fidelity, MQT_NA_QDMI_Site zone)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, Type::ShuttlingLoad, numParameters,
-                                  duration, fidelity, zone, 0);
+  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
+                                  zone);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingMove(
     const std::string& name, size_t numParameters, MQT_NA_QDMI_Site zone,
     const uint64_t meanShuttlingSpeed)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, Type::ShuttlingMove, numParameters, 0,
-                                  0, zone, meanShuttlingSpeed);
+  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, zone,
+                                  meanShuttlingSpeed);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingStore(
     const std::string& name, size_t numParameters, uint64_t duration,
     double fidelity, MQT_NA_QDMI_Site zone)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, Type::ShuttlingStore, numParameters,
-                                  duration, fidelity, zone, 0);
+  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
+                                  zone);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
 auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
@@ -469,27 +466,34 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
   const std::vector sitesVec(supportedSites_.cbegin(), supportedSites_.cend());
   ADD_LIST_PROPERTY(QDMI_OPERATION_PROPERTY_SITES, MQT_NA_QDMI_Site, sitesVec,
                     prop, size, value, sizeRet)
-  if (numQubits_ > 1) {
+  if (interactionRadius_) {
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS,
-                              uint64_t, interactionRadius_, prop, size, value,
+                              uint64_t, *interactionRadius_, prop, size, value,
                               sizeRet)
+  }
+  if (blockingRadius_) {
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, uint64_t,
-                              blockingRadius_, prop, size, value, sizeRet)
+                              *blockingRadius_, prop, size, value, sizeRet)
   }
-  if (type_ == Type::ShuttlingMove) {
+  if (meanShuttlingSpeed_) {
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED,
-                              uint64_t, meanShuttlingSpeed_, prop, size, value,
+                              uint64_t, *meanShuttlingSpeed_, prop, size, value,
                               sizeRet)
-  } else {
+  }
+  if (duration_) {
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_DURATION, uint64_t,
-                              duration_, prop, size, value, sizeRet)
+                              *duration_, prop, size, value, sizeRet)
+  }
+  if (fidelity_) {
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double,
-                              fidelity_, prop, size, value, sizeRet)
+                              *fidelity_, prop, size, value, sizeRet)
   }
-  if (!isShuttling(type_)) {
+  if (numQubits_) {
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
-                              numQubits_, prop, size, value, sizeRet)
+                              *numQubits_, prop, size, value, sizeRet)
   }
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_ISZONED, bool, isZoned_,
+                            prop, size, value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
 }
 

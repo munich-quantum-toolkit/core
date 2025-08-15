@@ -33,7 +33,6 @@
 //  - QDMI_DEVICE_PROPERTY_MINATOMDISTANCE
 //  - QDMI_OPERATION_PROPERTY_IDLINGFIDELITY
 //  - QDMI_OPERATION_PROPERTY_ISZONED
-//  - QDMI_OPERATION_PROPERTY_SITES
 
 namespace qdmi {
 class Device final {
@@ -301,50 +300,33 @@ public:
  * @brief Implementation of the MQT_NA_QDMI_Device_Operation structure.
  */
 struct MQT_NA_QDMI_Operation_impl_d {
-  /// The type of operation.
-  enum class Type : uint8_t {
-    GlobalSingleQubit, ///< Global single-qubit operation
-    GlobalMultiQubit,  ///< Global multi-qubit operation
-    LocalSingleQubit,  ///< Local single-qubit operation
-    LocalMultiQubit,   ///< Local multi-qubit operation
-    ShuttlingLoad,     ///< Shuttling load operation
-    ShuttlingMove,     ///< Shuttling move operation
-    ShuttlingStore,    ///< Shuttling store operation
-  };
-
 private:
   std::string name_;     ///< Name of the operation
-  Type type_;            ///< Type of the operation
   size_t numParameters_; ///< Number of parameters for the operation
   /**
    * @brief Number of qubits involved in the operation
    * @note This number is only valid if the operation is a multi-qubit
    * operation.
    */
-  size_t numQubits_;
-  uint64_t duration_; ///< Duration of the operation
-  double fidelity_;   ///< Fidelity of the operation
+  std::optional<size_t> numQubits_ = std::nullopt;
+  std::optional<uint64_t> duration_ =
+      std::nullopt;                               ///< Duration of the operation
+  std::optional<double> fidelity_ = std::nullopt; ///< Fidelity of the operation
   /// Interaction radius for multi-qubit operations
-  uint64_t interactionRadius_ = 0;
+  std::optional<uint64_t> interactionRadius_ = std::nullopt;
   /// Blocking radius for multi-qubit operations
-  uint64_t blockingRadius_ = 0;
-  /// Mean shuttling speed
-  uint64_t meanShuttlingSpeed_ = 0;
+  std::optional<uint64_t> blockingRadius_ = std::nullopt;
+  std::optional<uint64_t> meanShuttlingSpeed_ =
+      std::nullopt; ///< Mean shuttling speed
   /// The zone global operations are performed in.
   std::unordered_set<MQT_NA_QDMI_Site> supportedSites_;
-
-  /**
-   * @brief Checks if the operation type is a shuttling operation.
-   * @param type The operation type to check.
-   * @return true if the operation type is a shuttling operation, false
-   * otherwise.
-   */
-  [[nodiscard]] static auto isShuttling(Type type) -> bool;
+  /// Indicates if this operation is zoned (global)
+  bool isZoned_ = false;
 
   /// @brief Constructor for the global single-qubit
   MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
-                               uint64_t duration, double fidelity,
-                               MQT_NA_QDMI_Site zone);
+                               size_t numQubits, uint64_t duration,
+                               double fidelity, MQT_NA_QDMI_Site zone);
   /// @brief Constructor for the global multi-qubit operations.
   MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
                                size_t numQubits, uint64_t duration,
@@ -352,18 +334,22 @@ private:
                                uint64_t blockingRadius, MQT_NA_QDMI_Site zone);
   /// @brief Constructor for the single-qubit operations.
   MQT_NA_QDMI_Operation_impl_d(
-      std::string name, size_t numParameters, uint64_t duration,
-      double fidelity, const std::unordered_set<MQT_NA_QDMI_Site>& sites);
+      std::string name, size_t numParameters, size_t numQubits,
+      uint64_t duration, double fidelity,
+      const std::unordered_set<MQT_NA_QDMI_Site>& sites);
   /// @brief Constructor for the multi-qubit operations.
   MQT_NA_QDMI_Operation_impl_d(
       std::string name, size_t numParameters, size_t numQubits,
       uint64_t duration, double fidelity, uint64_t interactionRadius,
       uint64_t blockingRadius,
       const std::unordered_set<MQT_NA_QDMI_Site>& sites);
+  /// @brief Constructor for load and store operations
+  MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
+                               uint64_t duration, double fidelity,
+                               MQT_NA_QDMI_Site zone);
   /// @brief Constructor for the shuttling operations.
-  MQT_NA_QDMI_Operation_impl_d(std::string name, Type type,
-                               size_t numParameters, uint64_t duration,
-                               double fidelity, MQT_NA_QDMI_Site zone,
+  MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
+                               MQT_NA_QDMI_Site zone,
                                uint64_t meanShuttlingSpeed);
 
 public:
