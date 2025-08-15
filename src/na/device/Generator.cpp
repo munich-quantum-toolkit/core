@@ -236,7 +236,7 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
                 y >= operation.region.origin.y &&
                 y <= operation.region.origin.y + operation.region.size.height) {
               os << ";\\\n  localOp" << operation.name
-                 << "Sites.emplace(var.back().get())";
+                 << "Sites.emplace_back(var.back().get())";
             }
           }
         }
@@ -287,7 +287,7 @@ auto writeOperations(const Device& device, std::ostream& os) -> void {
     os << ";\\\n"
           "  "
           "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
-          "makeUniqueLocalMultiQubit(\""
+          "makeUniqueLocalTwoQubit(\""
        << operation.name << "\", " << operation.numParameters << ", "
        << operation.numQubits << ", " << operation.duration << ", "
        << operation.fidelity << "," << operation.interactionRadius << ", "
