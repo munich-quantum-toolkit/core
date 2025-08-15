@@ -17,6 +17,7 @@
 #include "mqt_na_qdmi/device.h"
 #include "na/device/DeviceMemberInitializers.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -337,7 +338,7 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     : name_(std::move(name)), numParameters_(numParameters),
       numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
       isZoned_(true) {
-  supportedSites_.emplace(zone);
+  supportedSites_.emplace_back(zone);
 }
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     std::string name, const size_t numParameters, const size_t numQubits,
@@ -348,12 +349,12 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
       numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
       interactionRadius_(interactionRadius), blockingRadius_(blockingRadius),
       isZoned_(true) {
-  supportedSites_.emplace(zone);
+  supportedSites_.emplace_back(zone);
 }
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     std::string name, const size_t numParameters, const size_t numQubits,
     const uint64_t duration, const double fidelity,
-    const std::unordered_set<MQT_NA_QDMI_Site>& sites)
+    const std::vector<MQT_NA_QDMI_Site>& sites)
     : name_(std::move(name)), numParameters_(numParameters),
       numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
       supportedSites_(sites) {}
@@ -361,7 +362,7 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     std::string name, const size_t numParameters, const size_t numQubits,
     const uint64_t duration, const double fidelity,
     const uint64_t interactionRadius, uint64_t blockingRadius,
-    const std::unordered_set<MQT_NA_QDMI_Site>& sites)
+    const std::vector<MQT_NA_QDMI_Site>& sites)
     : name_(std::move(name)), numParameters_(numParameters),
       numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
       interactionRadius_(interactionRadius), blockingRadius_(blockingRadius),
@@ -371,14 +372,14 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     MQT_NA_QDMI_Site zone)
     : name_(std::move(name)), numParameters_(numParameters),
       duration_(duration), fidelity_(fidelity), isZoned_(true) {
-  supportedSites_.emplace(zone);
+  supportedSites_.emplace_back(zone);
 }
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     std::string name, size_t numParameters, MQT_NA_QDMI_Site zone,
     uint64_t meanShuttlingSpeed)
     : name_(std::move(name)), numParameters_(numParameters), numQubits_(0),
       meanShuttlingSpeed_(meanShuttlingSpeed), isZoned_(true) {
-  supportedSites_.emplace(zone);
+  supportedSites_.emplace_back(zone);
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueGlobalSingleQubit(
     const std::string& name, size_t numParameters, uint64_t duration,
@@ -400,20 +401,27 @@ auto MQT_NA_QDMI_Operation_impl_d::makeUniqueGlobalMultiQubit(
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueLocalSingleQubit(
     const std::string& name, size_t numParameters, uint64_t duration,
-    double fidelity, const std::unordered_set<MQT_NA_QDMI_Site>& sites)
+    double fidelity, const std::vector<MQT_NA_QDMI_Site>& sites)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
   MQT_NA_QDMI_Operation_impl_d op(name, numParameters, 1, duration, fidelity,
                                   sites);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
-auto MQT_NA_QDMI_Operation_impl_d::makeUniqueLocalMultiQubit(
+auto MQT_NA_QDMI_Operation_impl_d::makeUniqueLocalTwoQubit(
     const std::string& name, size_t numParameters, size_t numQubits,
     uint64_t duration, double fidelity, uint64_t interactionRadius,
-    uint64_t blockingRadius, const std::unordered_set<MQT_NA_QDMI_Site>& sites)
+    uint64_t blockingRadius,
+    const std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>& sites)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
+  // TODO: can that be solved by a cast from one vector to the other
+  std::vector<MQT_NA_QDMI_Site> sitesFlattened;
+  std::ranges::for_each(sites, [&sitesFlattened](const auto& sitePair) {
+    sitesFlattened.emplace_back(sitePair.first);
+    sitesFlattened.emplace_back(sitePair.second);
+  });
   MQT_NA_QDMI_Operation_impl_d op(name, numParameters, numQubits, duration,
                                   fidelity, interactionRadius, blockingRadius,
-                                  sites);
+                                  sitesFlattened);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingLoad(
@@ -447,14 +455,30 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
     size_t* sizeRet) const -> int {
   if ((sites != nullptr && numSites == 0) ||
       (params != nullptr && numParams == 0) ||
-      (value != nullptr && size == 0) || prop >= QDMI_OPERATION_PROPERTY_MAX) {
+      (value != nullptr && size == 0) || prop >= QDMI_OPERATION_PROPERTY_MAX ||
+      (isZoned_ && numSites > 1) ||
+      (!isZoned_ && numSites > 0 && numQubits_ != numSites)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (sites != nullptr) {
+    // todo: Can this be improves, esp. the linear running time to
+    // constant/logartihmic
     for (const MQT_NA_QDMI_Site* site = sites;
          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
          std::cmp_less(site - sites, numSites); ++site) {
-      if (!supportedSites_.contains(*site)) {
+      if (std::ranges::find(supportedSites_, *site) == supportedSites_.cend()) {
+        return QDMI_ERROR_NOTSUPPORTED;
+      }
+    }
+    // Check for 2-qubit gates whether sites are within interaction radius
+    if (numSites == 2) {
+      const auto* sitePair = reinterpret_cast<
+          const std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>*>(sites);
+      const auto xDistance = sitePair->second->x_ - sitePair->first->x_;
+      const auto yDistance = sitePair->second->y_ - sitePair->first->y_;
+      const auto distance =
+          std::sqrt(std::pow(xDistance, 2) + std::pow(yDistance, 2));
+      if (distance > interactionRadius_) {
         return QDMI_ERROR_NOTSUPPORTED;
       }
     }
