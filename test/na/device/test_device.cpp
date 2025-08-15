@@ -577,6 +577,14 @@ TEST_F(NADeviceTest, QueryOperationData) {
       isNumQubitsSupported = true;
       EXPECT_GT(numQubits, 0);
     }
+    // isDurationSupported <==> isFidelitySupported
+    EXPECT_EQ(isDurationSupported, isFidelitySupported);
+    // isMeanShuttlingSpeedSupported <==> not isDurationSupported
+    EXPECT_EQ(isMeanShuttlingSpeedSupported, !isDurationSupported);
+    // isNumQubitsSupported ==> isMeanShuttlingSpeedSupported
+    EXPECT_TRUE(!isNumQubitsSupported || isMeanShuttlingSpeedSupported);
+    // isMeanShuttlingSpeedSupported ==> isZoned
+    EXPECT_TRUE(!isMeanShuttlingSpeedSupported || isZoned);
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                   session, operation, 0, nullptr, 0, nullptr,
                   QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sizeof(size_t),
@@ -808,5 +816,5 @@ TEST_F(NADeviceTest, QueryOperationData) {
         EXPECT_EQ(queriedSupportedSitesSet, supportedSites);
       }
     } // we do not test operations with more than two qubits
-  };
+  }
 }
