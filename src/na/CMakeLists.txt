@@ -6,10 +6,15 @@
 #
 # Licensed under the MIT License
 
+# add subdirectories
+add_subdirectory(device)
+
 if(NOT TARGET ${MQT_CORE_TARGET_NAME}-na)
   # collect headers and source files
-  file(GLOB_RECURSE NA_HEADERS ${MQT_CORE_INCLUDE_BUILD_DIR}/na/**.hpp)
-  file(GLOB_RECURSE NA_SOURCES **.cpp)
+  file(GLOB NA_HEADERS ${MQT_CORE_INCLUDE_BUILD_DIR}/na/*.hpp
+       ${MQT_CORE_INCLUDE_BUILD_DIR}/na/entities/*.hpp
+       ${MQT_CORE_INCLUDE_BUILD_DIR}/na/operations/*.hpp)
+  file(GLOB NA_SOURCES *.cpp entities/*.cpp operations/*.cpp)
 
   # create the library target (initially empty)
   add_mqt_core_library(${MQT_CORE_TARGET_NAME}-na ALIAS_NAME NA)

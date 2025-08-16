@@ -16,7 +16,7 @@ ci:
 repos:
   # Check for merge conflicts
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-merge-conflict
         args: ["--assume-in-merge"]
@@ -24,7 +24,7 @@ repos:
 
   # Standard hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-added-large-files
       - id: check-case-conflict
@@ -66,7 +66,7 @@ repos:
 
   # Python linting using ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.5
+    rev: v0.12.9
     hooks:
       - id: ruff
         args: ["--fix", "--show-fixes"]
@@ -74,7 +74,7 @@ repos:
 
   # Static type checking using mypy
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.17.0
+    rev: v1.17.1
     hooks:
       - id: mypy
         files: ^(python/mqt|test/python|noxfile.py)
@@ -122,7 +122,7 @@ repos:
 
   # Check for spelling
   - repo: https://github.com/crate-ci/typos
-    rev: v1.34.0
+    rev: v1.35.4
     hooks:
       - id: typos
 
@@ -132,7 +132,7 @@ repos:
       - id: disallow-caps
         name: Disallow improper capitalization
         language: pygrep
-        entry: PyBind|Numpy|Cmake|CCache|Github|PyTest|Mqt|Tum|MQTopt|MQTdyn
+        entry: PyBind|Numpy|Cmake|CCache|Github|PyTest|Mqt|Tum|MQTopt|MQTref
         exclude: .pre-commit-config.yaml
 
   # Check best practices for scientific Python code

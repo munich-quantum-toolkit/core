@@ -11,13 +11,46 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add `qubit` operation to the `MQTOpt` dialect for static qubit addressing ([#1116]) ([**@MatthiasReumann**])
+- ✨ Add MQT's implementation of a QDMI Driver ([#1010]) ([**@ystade**])
+- ✨ Add a copy of the NA QDMI Device that is always a shared library ([#1010]) ([**@ystade**])
+- ✨ Add translation from `QuantumComputation` to the `MQTRef` MLIR dialect ([#1099]) ([**@denialhaag**], [**@burgholzer**])
+- ✨ Add `reset` operations to the `MQTDyn` and `MQTOpt` MLIR dialects ([#1106]) ([**@DRovara**])
+- ♻️ Update the `measure` operations in the MLIR dialects to no longer support more than one qubit being measured at once ([#1106]) ([**@DRovara**])
+- ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996]) ([**@ystade**])
+- ✨ Add `qubit` operation to the `MQTRef` (previously `MQTDyn`) dialect for static qubit addressing ([#1098]) ([**@MatthiasReumann**])
+
+### Changed
+
+- **Breaking**: 🚚 Rename `XXminusYY` to `XXminusYYOp` and `XXplusYY` to `XXplusYYOp` in `MQTRef` and `MQTOpt` MLIR dialects ([#1099]) ([**@denialhaag**])
+- **Breaking**: 🚚 Rename `MQTDyn` MLIR dialect to `MQTRef` ([#1098]) ([**@MatthiasReumann**])
+
+### Fixed
+
+- ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing in the Python Wheel ([#1010]) ([**@ystade**])
+
+## [3.2.1] - 2025-08-01
+
+### Fixed
+
+- 🐛 Fix usage of `std::accumulate` by changing accumulator parameter from reference to value ([#1089]) ([**@denialhaag**])
+- 🐛 Fix erroneous `contains` check in DD package ([#1088]) ([**@denialhaag**])
+
+you need to .
+
+## [3.2.0] - 2025-07-31
+
+### Added
+
+- 🐍 Build Python 3.14 wheels ([#1076]) ([**@denialhaag**])
 - ✨ Add MQT-internal MLIR dialect conversions ([#1001]) ([**@li-mingbao**])
 
 ### Changed
 
+- ✨ Expose enums to Python via `pybind11`'s new (`enum.Enum`-compatible) `py::native_enum` ([#1075]) ([**@denialhaag**])
 - ⬆️ Require C++20 ([#897]) ([**@burgholzer**], [**@denialhaag**])
 
-## [3.1.0]
+## [3.1.0] - 2025-07-11
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#310)._
 
@@ -125,7 +158,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.1.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.2.1...HEAD
+[3.2.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.2.1
+[3.2.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.2.0
 [3.1.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.1.0
 [3.0.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.0.2
 [3.0.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.0.1
@@ -134,11 +169,21 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1116]: https://github.com/munich-quantum-toolkit/core/pull/1116
+[#1106]: https://github.com/munich-quantum-toolkit/core/pull/1106
+[#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099
+[#1098]: https://github.com/munich-quantum-toolkit/core/pull/1098
+[#1089]: https://github.com/munich-quantum-toolkit/core/pull/1089
+[#1088]: https://github.com/munich-quantum-toolkit/core/pull/1088
+[#1076]: https://github.com/munich-quantum-toolkit/core/pull/1076
+[#1075]: https://github.com/munich-quantum-toolkit/core/pull/1075
 [#1047]: https://github.com/munich-quantum-toolkit/core/pull/1047
 [#1042]: https://github.com/munich-quantum-toolkit/core/pull/1042
 [#1020]: https://github.com/munich-quantum-toolkit/core/pull/1020
 [#1019]: https://github.com/munich-quantum-toolkit/core/pull/1019
+[#1010]: https://github.com/munich-quantum-toolkit/core/pull/1010
 [#1001]: https://github.com/munich-quantum-toolkit/core/pull/1001
+[#996]: https://github.com/munich-quantum-toolkit/core/pull/996
 [#984]: https://github.com/munich-quantum-toolkit/core/pull/984
 [#982]: https://github.com/munich-quantum-toolkit/core/pull/982
 [#975]: https://github.com/munich-quantum-toolkit/core/pull/975
