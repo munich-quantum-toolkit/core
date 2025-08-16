@@ -16,12 +16,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LogicalResult.h>
@@ -91,32 +94,236 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    *
    * @param loc The location of the operation.
    * @param type The type of the unitary operation.
-   * @param inQubit The qubit to apply the unitary operation to.
+   * @param inQubits The qubits to apply the unitary operation to.
    * @param controlQubitsPositive The positive control qubits.
    * @param controlQubitsNegative The negative control qubits.
    * @param rewriter The pattern rewriter to use.
    *
    * @return The created UnitaryOp.
    */
-  static UnitaryInterface createUnitaryOp(
-      const mlir::Location loc, const qc::OpType type,
-      const mlir::Value inQubit, mlir::ValueRange controlQubitsPositive,
-      mlir::ValueRange controlQubitsNegative, mlir::PatternRewriter& rewriter) {
+  static UnitaryInterface
+  createUnitaryOp(const mlir::Location loc, const qc::OpType type,
+                  const std::vector<mlir::Value>& inQubits,
+                  mlir::ValueRange controlQubitsPositive,
+                  mlir::ValueRange controlQubitsNegative,
+                  mlir::PatternRewriter& rewriter,
+                  const std::vector<double>& parameters = {}) {
+    // Create result types for all output qubits
+    auto qubitType = QubitType::get(rewriter.getContext());
+    const llvm::SmallVector<mlir::Type> outQubitTypes(inQubits.size(),
+                                                      qubitType);
+
+    // For all parametric gates, turn parameters vector into DenseF64ArrayAttr
+    auto denseParamsAttr =
+        parameters.empty()
+            ? nullptr
+            : mlir::DenseF64ArrayAttr::get(rewriter.getContext(), parameters);
+
     switch (type) {
-    case qc::OpType::X:
-      return rewriter.create<XOp>(
-          loc, inQubit.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubit}, controlQubitsPositive,
-          controlQubitsNegative);
+    case qc::OpType::I:
+      return rewriter.create<IOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
     case qc::OpType::H:
       return rewriter.create<HOp>(
-          loc, inQubit.getType(), controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          mlir::ValueRange{inQubit}, controlQubitsPositive,
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::X:
+      return rewriter.create<XOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::Y:
+      return rewriter.create<YOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::Z:
+      return rewriter.create<ZOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::S:
+      return rewriter.create<SOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::Sdg:
+      return rewriter.create<SdgOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::T:
+      return rewriter.create<TOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::Tdg:
+      return rewriter.create<TdgOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::V:
+      return rewriter.create<VOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::Vdg:
+      return rewriter.create<VdgOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::U:
+      return rewriter.create<UOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
+          mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
+
+    case qc::OpType::U2:
+      return rewriter.create<U2Op>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
+          mlir::ValueRange{}, inQubits, controlQubitsPositive,
+          controlQubitsNegative);
+
+    case qc::OpType::P:
+      return rewriter.create<POp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
+          mlir::ValueRange{}, inQubits, controlQubitsPositive,
+          controlQubitsNegative);
+
+    case qc::OpType::SX:
+      return rewriter.create<SXOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::SXdg:
+      return rewriter.create<SXdgOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::RX:
+      return rewriter.create<RXOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
+          mlir::ValueRange{}, inQubits, controlQubitsPositive,
+          controlQubitsNegative);
+
+    case qc::OpType::RY:
+      return rewriter.create<RYOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
+          mlir::ValueRange{}, inQubits, controlQubitsPositive,
+          controlQubitsNegative);
+
+    case qc::OpType::RZ:
+      return rewriter.create<RZOp>(
+          loc, qubitType, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
+          mlir::ValueRange{}, inQubits, controlQubitsPositive,
+          controlQubitsNegative);
+
+    case qc::OpType::SWAP:
+      return rewriter.create<SWAPOp>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::iSWAP:
+      return rewriter.create<iSWAPOp>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::iSWAPdg:
+      return rewriter.create<iSWAPdgOp>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::Peres:
+      return rewriter.create<PeresOp>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::Peresdg:
+      return rewriter.create<PeresdgOp>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::DCX:
+      return rewriter.create<DCXOp>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::ECR:
+      return rewriter.create<ECROp>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
+          inQubits, controlQubitsPositive, controlQubitsNegative);
+
+    case qc::OpType::RXX:
+      return rewriter.create<RXXOp>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
+          mlir::ValueRange{}, inQubits, controlQubitsPositive,
+          controlQubitsNegative);
+
+    case qc::OpType::RYY:
+      return rewriter.create<RYYOp>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
+          mlir::ValueRange{}, inQubits, controlQubitsPositive,
+          controlQubitsNegative);
+
+    case qc::OpType::RZZ:
+      return rewriter.create<RZZOp>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
+          mlir::ValueRange{}, inQubits, controlQubitsPositive,
+          controlQubitsNegative);
+
+    case qc::OpType::RZX:
+      return rewriter.create<RZXOp>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
+          mlir::ValueRange{}, inQubits, controlQubitsPositive,
+          controlQubitsNegative);
+
+    case qc::OpType::XXminusYY:
+      return rewriter.create<XXminusYY>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
+          mlir::ValueRange{}, inQubits, controlQubitsPositive,
+          controlQubitsNegative);
+
+    case qc::OpType::XXplusYY:
+      return rewriter.create<XXplusYY>(
+          loc, outQubitTypes, controlQubitsPositive.getType(),
+          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
+          mlir::ValueRange{}, inQubits, controlQubitsPositive,
+          controlQubitsNegative);
+
     default:
       throw std::runtime_error("Unsupported operation type");
     }
@@ -213,16 +420,47 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
           }
         }
 
-        if (o->getType() == qc::OpType::X || o->getType() == qc::OpType::H) {
+        if (o->getType() == qc::OpType::I || o->getType() == qc::OpType::X ||
+            o->getType() == qc::OpType::H || o->getType() == qc::OpType::Y ||
+            o->getType() == qc::OpType::Z || o->getType() == qc::OpType::S ||
+            o->getType() == qc::OpType::Sdg || o->getType() == qc::OpType::T ||
+            o->getType() == qc::OpType::Tdg || o->getType() == qc::OpType::V ||
+            o->getType() == qc::OpType::Vdg || o->getType() == qc::OpType::U ||
+            o->getType() == qc::OpType::U2 || o->getType() == qc::OpType::P ||
+            o->getType() == qc::OpType::SX ||
+            o->getType() == qc::OpType::SXdg ||
+            o->getType() == qc::OpType::RX || o->getType() == qc::OpType::RY ||
+            o->getType() == qc::OpType::RZ ||
+            o->getType() == qc::OpType::SWAP ||
+            o->getType() == qc::OpType::iSWAP ||
+            o->getType() == qc::OpType::iSWAPdg ||
+            o->getType() == qc::OpType::Peres ||
+            o->getType() == qc::OpType::Peresdg ||
+            o->getType() == qc::OpType::DCX ||
+            o->getType() == qc::OpType::ECR ||
+            o->getType() == qc::OpType::RXX ||
+            o->getType() == qc::OpType::RYY ||
+            o->getType() == qc::OpType::RZZ ||
+            o->getType() == qc::OpType::RZX ||
+            o->getType() == qc::OpType::XXminusYY ||
+            o->getType() == qc::OpType::XXplusYY) {
           // For unitary operations, we call the `createUnitaryOp` function. We
           // then have to update the `currentQubitVariables` vector with the new
           // qubit values.
+          std::vector<mlir::Value> inQubits(o->getTargets().size());
+
+          for (size_t i = 0; i < o->getTargets().size(); i++) {
+            inQubits[i] = currentQubitVariables[o->getTargets()[i]];
+          }
+
           UnitaryInterface newUnitaryOp = createUnitaryOp(
-              op->getLoc(), o->getType(),
-              currentQubitVariables[o->getTargets()[0]], controlQubitsPositive,
-              controlQubitsNegative, rewriter);
-          currentQubitVariables[o->getTargets()[0]] =
-              newUnitaryOp.getAllOutQubits()[0];
+              op->getLoc(), o->getType(), inQubits, controlQubitsPositive,
+              controlQubitsNegative, rewriter, o->getParameter());
+
+          for (size_t i = 0; i < o->getTargets().size(); i++) {
+            currentQubitVariables[o->getTargets()[i]] =
+                newUnitaryOp.getAllOutQubits()[i];
+          }
           for (size_t i = 0; i < controlQubitsPositive.size(); i++) {
             currentQubitVariables[controlQubitIndicesPositive[i]] =
                 newUnitaryOp.getAllOutQubits()[i + 1];

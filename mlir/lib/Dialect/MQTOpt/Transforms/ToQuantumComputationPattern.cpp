@@ -34,10 +34,46 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 namespace mqt::ir::opt {
+
+static const std::unordered_map<std::string, qc::OpType> UNITARY_GATES_MAP = {
+    {"i", qc::OpType::I},
+    {"h", qc::OpType::H},
+    {"x", qc::OpType::X},
+    {"y", qc::OpType::Y},
+    {"z", qc::OpType::Z},
+    {"s", qc::OpType::S},
+    {"sdg", qc::OpType::Sdg},
+    {"t", qc::OpType::T},
+    {"tdg", qc::OpType::Tdg},
+    {"v", qc::OpType::V},
+    {"vdg", qc::OpType::Vdg},
+    {"sx", qc::OpType::SX},
+    {"sxdg", qc::OpType::SXdg},
+    {"swap", qc::OpType::SWAP},
+    {"iswap", qc::OpType::iSWAP},
+    {"iswapdg", qc::OpType::iSWAPdg},
+    {"peres", qc::OpType::Peres},
+    {"peresdg", qc::OpType::Peresdg},
+    {"dcx", qc::OpType::DCX},
+    {"ecr", qc::OpType::ECR},
+    {"u", qc::OpType::U},
+    {"u2", qc::OpType::U2},
+    {"p", qc::OpType::P},
+    {"rx", qc::OpType::RX},
+    {"ry", qc::OpType::RY},
+    {"rz", qc::OpType::RZ},
+    {"rxx", qc::OpType::RXX},
+    {"ryy", qc::OpType::RYY},
+    {"rzz", qc::OpType::RZZ},
+    {"rzx", qc::OpType::RZX},
+    {"xxminusyy", qc::OpType::XXminusYY},
+    {"xxplusyy", qc::OpType::XXplusYY}};
+
 /// Analysis pattern that filters out all quantum operations from a given
 /// program and creates a quantum computation from them.
 struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
@@ -153,16 +189,16 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
                        std::vector<mlir::Value>& currentQubitVariables) const {
 
     // Add the operation to the QuantumComputation.
-    qc::OpType opType = qc::OpType::H; // init placeholder-"H" overwritten next
-    if (llvm::isa<HOp>(op)) {
-      opType = qc::OpType::H;
-    } else if (llvm::isa<XOp>(op)) {
-      opType = qc::OpType::X;
-    } else { // TODO: support for more operations
+    qc::OpType opType; // NOLINT(*-init-variables)
+
+    if (auto const type = op->getName().stripDialect().str();
+        UNITARY_GATES_MAP.contains(type)) {
+      opType = UNITARY_GATES_MAP.at(type);
+    } else {
       throw std::runtime_error("Unsupported operation type!");
     }
 
-    const auto in = op.getInQubits()[0];
+    const auto in = op.getInQubits();
     const auto posCtrlIns = op.getPosCtrlInQubits();
     const auto negCtrlIns = op.getNegCtrlInQubits();
     const auto outs = op.getAllOutQubits();
@@ -170,7 +206,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // Get the qubit index of every control qubit.
     std::vector<size_t> posCtrlInsIndices;
     std::vector<size_t> negCtrlInsIndices;
-    size_t targetIndex = 0; // Placeholder
+    std::vector<size_t> targetIndex(2); // adapted for two-target gates
     try {
       for (const auto& val : posCtrlIns) {
         posCtrlInsIndices.emplace_back(
@@ -181,7 +217,10 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
             findQubitIndex(val, currentQubitVariables));
       }
       // Get the qubit index of the target qubit (if already collected).
-      targetIndex = findQubitIndex(in, currentQubitVariables);
+      targetIndex[0] = findQubitIndex(in[0], currentQubitVariables);
+      if (in.size() > 1) {
+        targetIndex[1] = findQubitIndex(in[1], currentQubitVariables);
+      }
     } catch (const std::runtime_error& e) {
       if (strcmp(e.what(),
                  "Qubit was not found in list of previously defined qubits") ==
@@ -199,7 +238,10 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       currentQubitVariables[negCtrlInsIndices[i]] =
           outs[i + 1 + posCtrlInsIndices.size()];
     }
-    currentQubitVariables[targetIndex] = outs[0];
+    currentQubitVariables[targetIndex[0]] = outs[0];
+    if (op.getOutQubits().size() > 1) {
+      currentQubitVariables[targetIndex[1]] = outs[1];
+    }
 
     // Add the operation to the QuantumComputation.
     qc::Controls controls;
@@ -209,7 +251,23 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     for (const auto& index : negCtrlInsIndices) {
       controls.emplace(static_cast<qc::Qubit>(index), qc::Control::Type::Neg);
     }
-    circuit.emplace_back<qc::StandardOperation>(controls, targetIndex, opType);
+
+    std::vector<double> parameters;
+    if (const auto staticParamsAttr =
+            op->getAttrOfType<mlir::DenseF64ArrayAttr>("static_params")) {
+      parameters.reserve(staticParamsAttr.size());
+      for (const auto& param : staticParamsAttr.asArrayRef()) {
+        parameters.emplace_back(param);
+      }
+    }
+
+    if (op.getOutQubits().size() > 1) {
+      circuit.emplace_back<qc::StandardOperation>(
+          controls, targetIndex[0], targetIndex[1], opType, parameters);
+    } else {
+      circuit.emplace_back<qc::StandardOperation>(controls, targetIndex[0],
+                                                  opType, parameters);
+    }
 
     return true;
   }
@@ -368,7 +426,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         }
       }
 
-      if (llvm::isa<XOp>(current) || llvm::isa<HOp>(current)) {
+      if (UNITARY_GATES_MAP.contains(current->getName().stripDialect().str())) {
         auto unitaryOp = llvm::dyn_cast<UnitaryInterface>(current);
         handleUnitaryOp(unitaryOp, currentQubitVariables);
       } else if (auto extractOp = llvm::dyn_cast<ExtractOp>(current)) {
