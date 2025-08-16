@@ -30,7 +30,7 @@ jobs:
       FORCE_COLOR: 3
     steps:
       # check out the repository
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -116,7 +116,7 @@ jobs:
       llvm-latest-tag: ${{ steps.get-latest.outputs.latest }}
     steps:
       # check out the repository
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -228,7 +228,7 @@ jobs:
       FORCE_COLOR: 3
     steps:
       # Check out the repository
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -303,7 +303,7 @@ jobs:
       id-token: write
     steps:
       # check out the repository
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
