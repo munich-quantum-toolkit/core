@@ -276,7 +276,6 @@ TEST(CliffordBlocks, threeQubitnonClifford) {
   op2.dcx(1, 2);
   qc2.emplace_back(op2.asCompoundOperation());
 
-
   std::cout << qc << "\n";
   qc::CircuitOptimizer::collectCliffordBlocks(qc, 3);
   std::cout << qc << "\n";
