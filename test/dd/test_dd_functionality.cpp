@@ -545,7 +545,7 @@ TEST_F(DDFunctionality, FuseSingleQubitGatesAcrossOtherGates) {
   EXPECT_EQ(counts.reals, 0);
 }
 
-TEST_F(DDFunctionality, ClassicControlledOperationConditions) {
+TEST_F(DDFunctionality, IfElseOperationConditions) {
   const auto cmpKinds = {ComparisonKind::Eq, ComparisonKind::Neq};
   for (const auto kind : cmpKinds) {
     QuantumComputation qc(1U, 1U);
