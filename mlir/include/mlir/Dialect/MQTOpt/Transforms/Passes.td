@@ -53,4 +53,11 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   }];
 }
 
+def RoutingPass : Pass<"routing", "mlir::ModuleOp"> {
+  let summary = "This pass ensures that the connectivity constraints of the target architecture are met.";
+  let description = [{
+    TODO
+  }];
+}
+
 #endif // MQTO_PASSES
