@@ -57,8 +57,7 @@ void registerOperation(const py::module& m) {
       .def("is_standard_operation", &qc::Operation::isStandardOperation)
       .def("is_compound_operation", &qc::Operation::isCompoundOperation)
       .def("is_non_unitary_operation", &qc::Operation::isNonUnitaryOperation)
-      .def("is_classic_controlled_operation",
-           &qc::Operation::isClassicControlledOperation)
+      .def("is_if_else_operation", &qc::Operation::isIfElseOperation)
       .def("is_symbolic_operation", &qc::Operation::isSymbolicOperation)
       .def("is_controlled", &qc::Operation::isControlled)
       .def("get_inverted", &qc::Operation::getInverted)

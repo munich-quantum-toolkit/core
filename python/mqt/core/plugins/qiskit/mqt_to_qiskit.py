@@ -12,7 +12,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from qiskit.circuit import AncillaRegister, ClassicalRegister, Clbit, QuantumCircuit, QuantumRegister, Qubit
+from qiskit.circuit import (
+    AncillaRegister,
+    ClassicalRegister,
+    Clbit,
+    QuantumCircuit,
+    QuantumRegister,
+    Qubit,
+)
 from qiskit.circuit.library import (
     DCXGate,
     ECRGate,
@@ -46,7 +53,6 @@ from qiskit.transpiler.layout import Layout, TranspileLayout
 
 from ...ir import Permutation
 from ...ir.operations import (
-    ClassicControlledOperation,
     CompoundOperation,
     Control,
     NonUnitaryOperation,
@@ -205,7 +211,10 @@ def _add_standard_operation(circ: QuantumCircuit, op: StandardOperation, qubit_m
 
 
 def _add_non_unitary_operation(
-    circ: QuantumCircuit, op: NonUnitaryOperation, qubit_map: Mapping[int, Qubit], clbit_map: Mapping[int, Clbit]
+    circ: QuantumCircuit,
+    op: NonUnitaryOperation,
+    qubit_map: Mapping[int, Qubit],
+    clbit_map: Mapping[int, Clbit],
 ) -> None:
     """Add a :class:`~mqt.core.ir.operations.NonUnitaryOperation`.
 
@@ -227,7 +236,10 @@ def _add_non_unitary_operation(
 
 
 def _add_compound_operation(
-    circ: QuantumCircuit, op: CompoundOperation, qubit_map: Mapping[int, Qubit], clbit_map: Mapping[int, Clbit]
+    circ: QuantumCircuit,
+    op: CompoundOperation,
+    qubit_map: Mapping[int, Qubit],
+    clbit_map: Mapping[int, Clbit],
 ) -> None:
     """Add a :class:`~mqt.core.ir.operations.CompoundOperation`.
 
@@ -244,7 +256,10 @@ def _add_compound_operation(
 
 
 def _add_operation(
-    circ: QuantumCircuit, op: Operation, qubit_map: Mapping[int, Qubit], clbit_map: Mapping[int, Clbit]
+    circ: QuantumCircuit,
+    op: Operation,
+    qubit_map: Mapping[int, Qubit],
+    clbit_map: Mapping[int, Clbit],
 ) -> None:
     """Add an operation to a Qiskit circuit.
 
@@ -256,7 +271,6 @@ def _add_operation(
 
     Raises:
         TypeError: If the operation type is not supported.
-        NotImplementedError: If the operation type is not yet supported.
     """
     if isinstance(op, StandardOperation):
         _add_standard_operation(circ, op, qubit_map)
@@ -264,9 +278,6 @@ def _add_operation(
         _add_non_unitary_operation(circ, op, qubit_map, clbit_map)
     elif isinstance(op, CompoundOperation):
         _add_compound_operation(circ, op, qubit_map, clbit_map)
-    elif isinstance(op, ClassicControlledOperation):
-        msg = "Conversion of classic-controlled operations to Qiskit is not yet supported."
-        raise NotImplementedError(msg)
     else:
         msg = f"Unsupported operation type: {type(op)}"
         raise TypeError(msg)

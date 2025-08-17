@@ -15,10 +15,10 @@ from .registers import ClassicalRegister
 from .symbolic import Expression, Variable
 
 __all__ = [
-    "ClassicControlledOperation",
     "ComparisonKind",
     "CompoundOperation",
     "Control",
+    "IfElseOperation",
     "NonUnitaryOperation",
     "OpType",
     "Operation",
@@ -81,14 +81,14 @@ class OpType(Enum):
     See Also:
         :meth:`mqt.core.ir.QuantumComputation.barrier`
     """
-    classic_controlled = ...
+    if_else = ...
     """
-    A classic controlled operation.
+    An if-else operation.
 
-    It is used to control the execution of an operation based on the value of a classical register.
+    Used to control the execution of an operation based on the value of a classical register.
 
     See Also:
-        :meth:`mqt.core.ir.QuantumComputation.classic_controlled`
+        :meth:`mqt.core.ir.QuantumComputation.if_else`
     """
     compound = ...
     """
@@ -439,11 +439,11 @@ class Operation(ABC):
             The set of qubits that are used by the operation.
         """
 
-    def is_classic_controlled_operation(self) -> bool:
-        """Check if the operation is a :class:`ClassicControlledOperation`.
+    def is_if_else_operation(self) -> bool:
+        """Check if the operation is a :class:`IfElseOperation`.
 
         Returns:
-            True if the operation is a :class:`ClassicControlledOperation`, False otherwise.
+            True if the operation is a :class:`IfElseOperation`, False otherwise.
         """
 
     def is_compound_operation(self) -> bool:
@@ -895,15 +895,15 @@ class ComparisonKind(Enum):
     geq = ...
     """Greater than or equal comparison."""
 
-class ClassicControlledOperation(Operation):
-    """Classic controlled quantum operation.
+class IfElseOperation(Operation):
+    """If-else quantum operation.
 
-    This class is used to represent quantum operations that are controlled by
-    the value of a classical register. The operation is only executed if the
-    value of the classical register matches the expected value.
+    This class is used to represent an if-else operation. The then operation is executed if the
+    value of the classical register matches the expected value. Otherwise, the else operation is executed.
 
     Args:
-        operation: The operation that is controlled.
+        then_operation: The operation that is executed if the condition is met.
+        else_operation: The operation that is executed if the condition is not met.
         control_register: The classical register that controls the operation.
         expected_value: The expected value of the classical register.
         comparison_kind: The kind of comparison (default is equality).
@@ -912,7 +912,8 @@ class ClassicControlledOperation(Operation):
     @overload
     def __init__(
         self,
-        operation: Operation,
+        if_operation: Operation,
+        else_operation: Operation | None,
         control_register: ClassicalRegister,
         expected_value: int = 1,
         comparison_kind: ComparisonKind = ...,
@@ -920,14 +921,19 @@ class ClassicControlledOperation(Operation):
     @overload
     def __init__(
         self,
-        operation: Operation,
+        if_operation: Operation,
+        else_operation: Operation | None,
         control_bit: int,
         expected_value: int = 1,
         comparison_kind: ComparisonKind = ...,
     ) -> None: ...
     @property
-    def operation(self) -> Operation:
-        """The operation that is classically controlled."""
+    def then_operation(self) -> Operation:
+        """The operation that is executed if the condition is met."""
+
+    @property
+    def else_operation(self) -> Operation | None:
+        """The operation that is executed if the condition is not met."""
 
     @property
     def control_register(self) -> ClassicalRegister | None:
