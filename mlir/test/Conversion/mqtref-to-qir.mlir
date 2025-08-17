@@ -14,11 +14,9 @@ module {
     func.func @testConvertAllocRegisterAttribute() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
-        cf.br ^bb1
-      ^bb1:
+
         %r0 = "mqtref.allocQubitRegister" () {"size_attr" = 2 : i64} : () -> !mqtref.QubitRegister
-        cf.br ^bb2
-      ^bb2:
+
         return
     }
 
@@ -38,6 +36,7 @@ module {
       // CHECK: llvm.return
 
       %r0 = "mqtref.allocQubitRegister" () {"size_attr" = 2 : i64} : () -> !mqtref.QubitRegister
+
       return
     }
 
@@ -51,10 +50,6 @@ module {
         // CHECK: %[[z_0:.*]] = llvm.mlir.zero : !llvm.ptr
         // CHECK: llvm.call @__quantum__rt__initialize(%[[z_0]]) : (!llvm.ptr) -> ()
 
-        cf.br ^bb1
-      ^bb1:
-        cf.br ^bb2
-      ^bb2:
         return
     }
 
@@ -69,11 +64,8 @@ module {
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
 
         %c0 = arith.constant 2 : i64
-        cf.br ^bb1
-      ^bb1:
         %r0 = "mqtref.allocQubitRegister" (%c0) : (i64) -> !mqtref.QubitRegister
-        cf.br ^bb2
-      ^bb2:
+
         return
     }
 
@@ -91,12 +83,9 @@ module {
         // CHECK: %[[q_0:.*]] = llvm.load %[[ptr_0]] : !llvm.ptr -> !llvm.ptr
 
         %c0 = arith.constant 2 : i64
-        cf.br ^bb1
-      ^bb1:
         %r0 = "mqtref.allocQubitRegister" (%c0) : (i64) -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-        cf.br ^bb2
-      ^bb2:
+
         return
     }
 }
@@ -114,12 +103,9 @@ module {
 
         %c0 = arith.constant 2 : i64
         %c1 = arith.constant 0 : i64
-        cf.br ^bb1
-      ^bb1:
         %r0 = "mqtref.allocQubitRegister" (%c0) : (i64) -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0, %c1) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
-        cf.br ^bb2
-      ^bb2:
+
         return
     }
 }
@@ -132,12 +118,9 @@ module {
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[ANY:.*]]) : (i64) -> !llvm.ptr
         // CHECK: llvm.call @__quantum__rt__qubit_release_array(%[[r_0]]) : (!llvm.ptr) -> ()
 
-        cf.br ^bb1
-      ^bb1:
          %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
-        cf.br ^bb2
-      ^bb2:
         return
     }
 }
@@ -156,13 +139,11 @@ module {
 
         %c0 = arith.constant 2 : i64
         %c1 = arith.constant 0 : i64
-        cf.br ^bb1
-      ^bb1:
         %r0 = "mqtref.allocQubitRegister" (%c0) : (i64) -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0, %c1) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
+
         "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
-        cf.br ^bb2
-      ^bb2:
+
         return
     }
 }
@@ -225,16 +206,14 @@ module {
         // CHECK: %[[i_1:.*]] = llvm.call @__quantum__rt__read_result(%[[m_1]]) : (!llvm.ptr) -> i1
 
         %c0 = arith.constant -1  : i32
-        cf.br ^bb1
-      ^bb1:
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+
         %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> (i1)
         %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> (i1)
+
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
-        cf.br ^bb2
-      ^bb2:
         return
     }
 }
@@ -258,8 +237,6 @@ module {
         // CHECK: llvm.call @__quantum__qis__sx__body(%[[q_0]]) : (!llvm.ptr) -> ()
         // CHECK: llvm.call @__quantum__qis__sxdg__body(%[[q_0]]) : (!llvm.ptr) -> ()
 
-        cf.br ^bb1
-      ^bb1:
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
@@ -278,8 +255,6 @@ module {
         mqtref.sxdg() %q0
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
-        cf.br ^bb2
-      ^bb2:
         return
     }
 }
@@ -297,8 +272,6 @@ module {
         // CHECK: llvm.call @__quantum__qis__dcx__body(%[[q_0]], %[[q_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
         // CHECK: llvm.call @__quantum__qis__ecr__body(%[[q_0]], %[[q_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
 
-        cf.br ^bb1
-      ^bb1:
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
@@ -312,8 +285,6 @@ module {
         mqtref.ecr() %q0, %q1
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
-        cf.br ^bb2
-      ^bb2:
         return
     }
 }
@@ -332,9 +303,6 @@ module {
         // CHECK: llvm.call @__quantum__qis__rz__body(%[[c_0]], %[[q_0]]) : (f64, !llvm.ptr) -> ()
 
         %c0 = arith.constant 3.000000e-01 : f64
-        cf.br ^bb1
-      ^bb1:
-
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
@@ -346,9 +314,6 @@ module {
         mqtref.rz(%c0) %q0
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
-
-        cf.br ^bb2
-      ^bb2:
         return
     }
 }
@@ -367,8 +332,6 @@ module {
         // CHECK: llvm.call @__quantum__qis__xxplusyy__body(%[[c_0]], %[[c_0]], %[[q_0]], %[[q_1]]) : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
 
         %c0 = arith.constant 3.000000e-01 : f64
-        cf.br ^bb1
-      ^bb1:
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
@@ -381,8 +344,6 @@ module {
         mqtref.xxplusyy(%c0, %c0) %q0, %q1
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
-        cf.br ^bb2
-      ^bb2:
         return
     }
 }
@@ -398,20 +359,17 @@ module {
         // CHECK: llvm.call @__quantum__qis__crx__body(%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]]) : (f64, !llvm.ptr, !llvm.ptr) -> ()
 
         %c0 = arith.constant 3.000000e-01 : f64
-        cf.br ^bb1
-      ^bb1:
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         %q2 = "mqtref.extractQubit"(%r0) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+
         mqtref.x() %q0 ctrl %q1
         mqtref.x() %q0 ctrl %q1, %q2
         mqtref.z() %q0 nctrl %q1
         mqtref.rx(%c0) %q0 ctrl %q1
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
-        cf.br ^bb2
-      ^bb2:
         return
     }
 }
@@ -441,13 +399,10 @@ module {
     func.func @testConvertGPhaseOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: llvm.call @__quantum__qis__gphase__body(%[[ANY:.*]]) : (f64) -> ()
 
-        %0 = llvm.mlir.zero : !llvm.ptr
         %cst = llvm.mlir.constant(3.000000e-01 : f64) : f64
-        cf.br ^bb1
-      ^bb1:
+
         mqtref.gphase(%cst)
-        cf.br ^bb2
-      ^bb2:
+
         return
     }
 }
@@ -460,14 +415,12 @@ module {
         // CHECK: llvm.call @__quantum__qis__cgphase__body(%[[ANY:.*]], %[[ANY:.*]]) : (f64, !llvm.ptr) -> ()
 
         %cst = arith.constant 3.000000e-01 : f64
-        cf.br ^bb1
-      ^bb1:
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+
         mqtref.gphase(%cst) ctrl %q0
+
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
-        cf.br ^bb2
-      ^bb2:
         return
     }
 }
@@ -479,14 +432,12 @@ module {
     func.func @testConvertBarrierOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: llvm.call @__quantum__qis__barrier__body(%[[ANY:.*]]) : (!llvm.ptr) -> ()
 
-        cf.br ^bb1
-      ^bb1:
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+
         mqtref.barrier() %q0
+
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
-        cf.br ^bb2
-      ^bb2:
         return
     }
 }
@@ -494,8 +445,6 @@ module {
 // -----
 // This test checks if a Bell state is converted correctly.
 module {
-    llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
-    llvm.mlir.global internal constant @mlir.llvm.nameless_global_1("r1\00") {addr_space = 0 : i32, dso_local}
 
     // CHECK-LABEL: llvm.func @bellState()
     func.func @bellState() attributes {passthrough = ["entry_point"]}  {
@@ -518,12 +467,6 @@ module {
         // CHECK: %[[i_1:.*]] = llvm.call @__quantum__rt__read_result(%[[m_1]]) : (!llvm.ptr) -> i1
         // CHECK: llvm.call @__quantum__rt__qubit_release_array(%[[r_0]]) : (!llvm.ptr) -> ()
 
-        %a0 = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
-        %a1 = llvm.mlir.addressof @mlir.llvm.nameless_global_1 : !llvm.ptr
-
-        %c3 = arith.constant -1 : i32
-        cf.br ^bb1
-      ^bb1:
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
         %q1 = "mqtref.extractQubit"(%r0) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
@@ -534,8 +477,6 @@ module {
         %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> i1
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
-        cf.br ^bb2
-      ^bb2:
         return
     }
 }

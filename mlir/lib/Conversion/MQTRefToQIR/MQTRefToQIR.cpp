@@ -288,7 +288,7 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
     const auto ctrQubitsCount = posCtrlQubits.size() + negCtrlQubits.size();
     std::string fnName(ctrQubitsCount, 'c');
 
-    // check if it is a cnot gate
+    // check if it is a u gate
     if (name == "u") {
       fnName = ("__quantum__qis__" + fnName + "u3__body");
     } else {
@@ -621,7 +621,6 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     MQTRefToQIRTypeConverter typeConverter(context);
 
     // transform the default dialects first
-    // maybe need to add more?
     target.addLegalDialect<LLVM::LLVMDialect>();
     cf::populateControlFlowToLLVMConversionPatterns(typeConverter, stdPatterns);
     populateFuncToLLVMConversionPatterns(typeConverter, stdPatterns);
