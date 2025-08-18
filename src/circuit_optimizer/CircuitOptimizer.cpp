@@ -348,16 +348,14 @@ void removeDiagonalGatesBeforeMeasureRecursive(
       }
 
       // treat then branch as above
-      if (thenBranch != nullptr) {
-        const bool onlyDiagonalGates =
-            removeDiagonalGate(dag, dagIterators, idx, it, thenBranch);
-        if (onlyDiagonalGates) {
-          for (const auto& control : thenBranch->getControls()) {
-            ++(dagIterators.at(control.qubit));
-          }
-          for (const auto& target : thenBranch->getTargets()) {
-            ++(dagIterators.at(target));
-          }
+      const bool onlyDiagonalGates =
+          removeDiagonalGate(dag, dagIterators, idx, it, thenBranch);
+      if (onlyDiagonalGates) {
+        for (const auto& control : thenBranch->getControls()) {
+          ++(dagIterators.at(control.qubit));
+        }
+        for (const auto& target : thenBranch->getTargets()) {
+          ++(dagIterators.at(target));
         }
       }
     } else if (op->isNonUnitaryOperation()) {
@@ -830,8 +828,8 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
       while (opIt != qc.end()) {
         const auto* operation = opIt->get();
         if (operation->isUnitary()) {
-          // if an operation does not act on the measured qubit, the insert
-          // location for potential operations has to be updated
+          // if an operation does not act on the measured qubit, the insertion
+          // point for potential operations has to be updated
           if (!operation->actsOn(measurementQubit)) {
             ++currentInsertionPoint;
           }
@@ -843,6 +841,22 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
           throw std::runtime_error(
               "Reset encountered in deferMeasurements routine. Please use the "
               "eliminateResets method before deferring measurements.");
+        }
+
+        if (const auto* measurement2 =
+                dynamic_cast<NonUnitaryOperation*>(opIt->get());
+            measurement2 != nullptr && operation->getType() == Measure) {
+          const auto& targets2 = measurement2->getTargets();
+          const auto& classics2 = measurement2->getClassics();
+
+          // if this is the same measurement a breakpoint has been reached
+          if (targets == targets2 && classics == classics2) {
+            break;
+          }
+
+          ++currentInsertionPoint;
+          ++opIt;
+          continue;
         }
 
         if (auto* ifElse = dynamic_cast<IfElseOperation*>(opIt->get());
@@ -893,8 +907,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
             throw std::runtime_error(ss.str());
           }
 
-          // get all the necessary information for reconstructing the
-          // operation
+          // get necessary information for reconstructing the operation
           const auto type = standardOp->getType();
           const auto targs = standardOp->getTargets();
           for (const auto& target : targs) {
@@ -915,10 +928,9 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
 
           const auto parameters = standardOp->getParameter();
 
-          // remove the classic-controlled operation
-          // carefully handle iterator invalidation.
-          // if the current insertion point is the same as the current
-          // iterator the insertion point has to be updated to the new
+          // Remove the if-else operation carefully and handle iterator
+          // invalidation. If the current insertion point is the same as the
+          // current iterator, the insertion point has to be updated to the new
           // operation as well.
           auto itInvalidated = (it >= opIt);
           const auto insertionPointInvalidated =
@@ -947,22 +959,6 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
           // the inner loop also has to restart from here due to the
           // invalidation of the iterators
           opIt = currentInsertionPoint;
-        }
-
-        if (const auto* measurement2 =
-                dynamic_cast<NonUnitaryOperation*>(opIt->get());
-            measurement2 != nullptr && operation->getType() == Measure) {
-          const auto& targets2 = measurement2->getTargets();
-          const auto& classics2 = measurement2->getClassics();
-
-          // if this is the same measurement a breakpoint has been reached
-          if (targets == targets2 && classics == classics2) {
-            break;
-          }
-
-          ++currentInsertionPoint;
-          ++opIt;
-          continue;
         }
       }
     }

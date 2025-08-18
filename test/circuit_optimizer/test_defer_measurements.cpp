@@ -84,7 +84,7 @@ TEST(DeferMeasurements, basicTest) {
   EXPECT_EQ(classics0.at(0), 0);
 }
 
-TEST(DeferMeasurements, measurementBetweenMeasurementAndClassic) {
+TEST(DeferMeasurements, measurementBetweenMeasurementAndIfElse) {
   // Input:
   // i:   0   1
   // 1:   h   |
@@ -156,7 +156,7 @@ TEST(DeferMeasurements, measurementBetweenMeasurementAndClassic) {
   EXPECT_EQ(classics0.at(0), 0);
 }
 
-TEST(DeferMeasurements, twoClassic) {
+TEST(DeferMeasurements, twoIfElse) {
   // Input:
   // i:   0   1
   // 1:   h   |
@@ -313,7 +313,7 @@ TEST(DeferMeasurements, correctOrder) {
   EXPECT_EQ(classics0.at(0), 0);
 }
 
-TEST(DeferMeasurements, twoClassicCorrectOrder) {
+TEST(DeferMeasurements, twoIfElseCorrectOrder) {
   // Input:
   // i:   0   1
   // 1:   h   |
