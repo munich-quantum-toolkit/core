@@ -278,7 +278,8 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
     operands.append(negCtrlQubits.begin(), negCtrlQubits.end());
 
     // get the types of the values
-    SmallVector<Type> types = llvm::to_vector(ValueRange(operands).getTypes());
+    const SmallVector<Type> types =
+        llvm::to_vector(ValueRange(operands).getTypes());
 
     // get the name of the gate
     const StringRef name = op->getName().getStringRef().split('.').second;
@@ -414,7 +415,7 @@ struct ConvertMQTRefMeasureQIR final
         {LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx)});
     fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
-    Operation* addressOfOp = getAddressOfOp(op, rewriter, getState());
+    auto* addressOfOp = getAddressOfOp(op, rewriter, getState());
     rewriter.create<LLVM::CallOp>(
         op.getLoc(), fnDecl,
         ValueRange{newOp->getResult(0), addressOfOp->getResult(0)});
