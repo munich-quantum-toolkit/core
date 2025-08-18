@@ -316,6 +316,8 @@ struct ConvertQuantumCustomOp final
       mqtoptOp = CREATE_GATE_OP(RZ);
     } else if (gateName == "PhaseShift" || gateName == "ControlledPhaseShift") {
       mqtoptOp = CREATE_GATE_OP(P);
+    } else if (gateName == "IsingXY") {
+      mqtoptOp = CREATE_GATE_OP(XXplusYY);
     } else {
       llvm::errs() << "Unsupported gate: " << gateName << "\n";
       return failure();
