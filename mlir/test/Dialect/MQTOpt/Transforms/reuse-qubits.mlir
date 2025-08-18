@@ -19,7 +19,7 @@ module {
     // CHECK: %[[Q0_1:.*]] = mqtopt.h() %[[Q0_0]] : !mqtopt.Qubit
     // CHECK: %[[Q0_2:.*]], %[[C0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[Q0_3:.*]] = "mqtopt.reset"(%[[Q0_2]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
-    // CHECK: %[[Q0_4:.*]] = "mqtopt.h"(%[[Q0_3]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
+    // CHECK: %[[Q0_4:.*]] = mqtopt.h() %[[Q0_3]] : !mqtopt.Qubit
     // CHECK: %[[Q0_5:.*]], %[[C1:.*]] = "mqtopt.measure"(%[[Q0_4]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: "mqtopt.deallocQubit"(%[[Q0_5]]) : (!mqtopt.Qubit) -> ()
     // CHECK: return %[[C0]], %[[C1]] : i1, i1
