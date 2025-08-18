@@ -309,7 +309,7 @@ def RZXOp : UnitaryOp<"rzx", [TwoTarget, OneParameter]> {
     }];
 }
 
-def XXminusYY : UnitaryOp<"xxminusyy", [TwoTarget, TwoParameters]> {
+def XXminusYYOp : UnitaryOp<"xxminusyy", [TwoTarget, TwoParameters]> {
     let summary = "XXminusYY operation";
 
     let description = [{
@@ -319,7 +319,7 @@ def XXminusYY : UnitaryOp<"xxminusyy", [TwoTarget, TwoParameters]> {
     }];
 }
 
-def XXplusYY : UnitaryOp<"xxplusyy", [TwoTarget, TwoParameters]> {
+def XXplusYYOp : UnitaryOp<"xxplusyy", [TwoTarget, TwoParameters]> {
     let summary = "XXplusYY operation";
 
     let description = [{
