@@ -538,12 +538,12 @@ struct ConvertMQTOptSimpleGate<opt::RZXOp> final
 };
 
 template <>
-struct ConvertMQTOptSimpleGate<opt::XXminusYY> final
-    : OpConversionPattern<opt::XXminusYY> {
+struct ConvertMQTOptSimpleGate<opt::XXminusYYOp> final
+    : OpConversionPattern<opt::XXminusYYOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(opt::XXminusYY op, opt::XXminusYY::Adaptor adaptor,
+  matchAndRewrite(opt::XXminusYYOp op, opt::XXminusYYOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto inQubitsValues = adaptor.getInQubits();
     auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
@@ -1113,7 +1113,7 @@ StringRef ConvertMQTOptSimpleGate<opt::RZZOp>::getGateName(
 
 // -- XXplusYY (IsingXY)
 template <>
-StringRef ConvertMQTOptSimpleGate<opt::XXplusYY>::getGateName(
+StringRef ConvertMQTOptSimpleGate<opt::XXplusYYOp>::getGateName(
     [[maybe_unused]] std::size_t numControls) {
   return "IsingXY";
 }
@@ -1177,10 +1177,10 @@ struct MQTOptToCatalystQuantum final
     patterns.add<ConvertMQTOptAdjointGate<opt::iSWAPdgOp>>(typeConverter,
                                                            context);
 
-    patterns.add<ConvertMQTOptSimpleGate<opt::XXminusYY>>(typeConverter,
-                                                          context);
-    patterns.add<ConvertMQTOptSimpleGate<opt::XXplusYY>>(typeConverter,
-                                                         context);
+    patterns.add<ConvertMQTOptSimpleGate<opt::XXminusYYOp>>(typeConverter,
+                                                            context);
+    patterns.add<ConvertMQTOptSimpleGate<opt::XXplusYYOp>>(typeConverter,
+                                                           context);
 
     // Boilerplate code to prevent "unresolved materialization" errors when the
     // IR contains ops with signature or operand/result types not yet rewritten:
