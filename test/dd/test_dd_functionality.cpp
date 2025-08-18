@@ -573,6 +573,23 @@ TEST_F(DDFunctionality, IfElseOperationConditions) {
   }
 }
 
+TEST_F(DDFunctionality, IfElseOperationElseBranch) {
+  QuantumComputation qc(1U, 1U);
+  qc.x(0);
+  qc.measure(0, 0);
+  qc.ifElse(std::make_unique<StandardOperation>(0, I),
+            std::make_unique<StandardOperation>(0, X), 0, 0);
+  qc.measure(0, 0);
+
+  constexpr auto shots = 16U;
+  const auto hist = sample(qc, shots);
+
+  EXPECT_EQ(hist.size(), 1);
+  const auto& [key, value] = *hist.begin();
+  EXPECT_EQ(value, shots);
+  EXPECT_EQ(key, "0");
+}
+
 TEST_F(DDFunctionality, VectorKroneckerWithTerminal) {
   constexpr std::size_t nq = 1;
   constexpr auto root = vEdge::one();
