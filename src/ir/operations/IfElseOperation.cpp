@@ -11,12 +11,15 @@
 #include "ir/operations/IfElseOperation.hpp"
 
 #include "ir/Definitions.hpp"
+#include "ir/Permutation.hpp"
 #include "ir/Register.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <stdexcept>
