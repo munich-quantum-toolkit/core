@@ -770,7 +770,9 @@ void CircuitOptimizer::eliminateResets(QuantumComputation& qc) {
                                    "branches are currently not supported.");
         }
         auto& targets = thenBranch->getTargets();
+        auto& controls = thenBranch->getControls();
         changeTargets(targets, replacementMap);
+        changeControls(controls, replacementMap);
       } else if ((*it)->isNonUnitaryOperation()) {
         auto& targets = (*it)->getTargets();
         changeTargets(targets, replacementMap);
