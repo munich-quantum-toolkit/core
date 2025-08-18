@@ -78,93 +78,13 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
       : OpRewritePattern(context) {}
 
   /**
-   * @brief Checks if the register index remains unused until de-allocation.
-   *
-   * If the specific index is not known, any access to the register will be
-   * checked instead.
-   *
-   * @param reg The register to check.
-   * @param index The index of the qubit in the register to check, if known.
-   * @param indexPresent True if the index is known, false otherwise.
-   * @return
-   */
-  static bool registerIndexRemainsUnused(const mlir::Value reg, size_t index,
-                                         bool indexPresent) {
-    const auto numUsers =
-        std::distance(reg.getUsers().begin(), reg.getUsers().end());
-    if (numUsers == 0) {
-      // No more users, so the qubit is trivially unused.
-      return true;
-    }
-    if (numUsers > 1) {
-      llvm::report_fatal_error(
-          "Register has more than one user. This should never happen.");
-      return false;
-    }
-    const auto* user = *reg.getUsers().begin();
-
-    if (mlir::isa<DeallocOp>(user)) {
-      // De-allocs clear the register, so the qubit is unused.
-      return true;
-    }
-
-    if (auto insertOp = mlir::dyn_cast<InsertOp>(user)) {
-      // The value of the register changes but we still look for the same index.
-      return registerIndexRemainsUnused(insertOp.getOutQreg(), index,
-                                        indexPresent);
-    }
-
-    if (auto extractOp = mlir::dyn_cast<ExtractOp>(user)) {
-      // A qubit is extracted again. This can lead to two scenarios:
-      // 1) A different index is extracted: This changes the register value but
-      // we do not care about it otherwise. 2) The searched index is extracted:
-      // If the qubit gets reset, this guarantees it is unused. If it is
-      // inserted again, we continue the search. 3) We don't know the searched
-      // or extracted index: If the qubit is reset or inserted again, we
-      // continue the search.
-
-      if (extractOp.getIndexAttr().has_value() && indexPresent) {
-        const size_t extractedIndex = extractOp.getIndexAttr().value();
-        if (extractedIndex != index) {
-          // Scenario 1
-          return registerIndexRemainsUnused(extractOp.getOutQreg(), index,
-                                            indexPresent);
-        }
-        // Scenario 2
-        return outputQubitRemainsUnused(extractOp.getOutQubit());
-      }
-      // Scenario 3
-      if (!outputQubitRemainsUnused(extractOp.getOutQubit())) {
-        // This check can only give negative results
-        return false;
-      }
-      return registerIndexRemainsUnused(extractOp.getOutQreg(), index,
-                                        indexPresent);
-    }
-
-    return true;
-  }
-
-  /**
-   * @brief Checks if the users of the measured qubit are all resets.
+   * @brief Checks if the given qubit is not used anymore.
    * @param outQubit The output qubit to check.
-   * @return True if all users are resets, false otherwise.
+   * @return True if all users are resets/deallocs, false otherwise.
    */
   static bool outputQubitRemainsUnused(mlir::Value outQubit) {
     return llvm::all_of(outQubit.getUsers(), [](mlir::Operation* user) {
-      if (mlir::isa<ResetOp>(user)) {
-        return true;
-      }
-      auto insertOp = mlir::dyn_cast<InsertOp>(user);
-      if (!insertOp) {
-        return false;
-      }
-      const mlir::Value outQreg = insertOp.getOutQreg();
-      if (insertOp.getIndexAttr().has_value()) {
-        return registerIndexRemainsUnused(
-            outQreg, insertOp.getIndexAttr().value(), true);
-      }
-      return registerIndexRemainsUnused(outQreg, 0, false);
+      return mlir::isa<ResetOp>(user) || mlir::isa<DeallocQubitOp>(user);
     });
   }
 

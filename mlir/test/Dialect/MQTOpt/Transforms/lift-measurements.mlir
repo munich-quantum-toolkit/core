@@ -30,12 +30,10 @@ module {
     // CHECK-NEXT: } else {
     // CHECK-NEXT: scf.yield %[[Q1_2]]
     // CHECK-NEXT: }
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_2:.*]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+    // CHECK: "mqtopt.deallocQubit"(%[[Q0_2]])
 
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q1_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
 
     %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
     %q1_2, %q0_2 = mqtopt.h() %q1_1 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
@@ -43,9 +41,8 @@ module {
 
     %q0_4, %c0 = "mqtopt.measure"(%q0_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_4) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_3) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+    "mqtopt.deallocQubit"(%q0_4) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q1_3) : (!mqtopt.Qubit) -> ()
     return %c0 : i1
   }
 }
@@ -71,12 +68,10 @@ module {
     // CHECK-NEXT: %[[Q1_3IF:.*]] = mqtopt.x() %[[Q1_2]] : !mqtopt.Qubit
     // CHECK-NEXT: scf.yield %[[Q1_3IF]]
     // CHECK-NEXT: }
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_2:.*]], %[[Q0_2]]) <{index_attr = 0 : i64}>
+    // CHECK: "mqtopt.deallocQubit"(%[[Q0_2]])
 
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q1_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
 
     %q0_1, %q1_1 = mqtopt.x() %q0_0 nctrl %q1_0 : !mqtopt.Qubit nctrl !mqtopt.Qubit
     %q1_2, %q0_2 = mqtopt.h() %q1_1 nctrl %q0_1 : !mqtopt.Qubit nctrl !mqtopt.Qubit
@@ -84,9 +79,8 @@ module {
 
     %q0_4, %c0 = "mqtopt.measure"(%q0_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_4) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_3) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+    "mqtopt.deallocQubit"(%q0_4) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q1_3) : (!mqtopt.Qubit) -> ()
     return %c0 : i1
   }
 }
@@ -117,15 +111,13 @@ module {
     // CHECK-NEXT: } else {
     // CHECK-NEXT: scf.yield %[[Q02_2]]#0, %[[Q02_2]]#1
     // CHECK-NEXT: }
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_2:.*]], %[[Q02_3]]#0) <{index_attr = 0 : i64}>
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_2:.*]], %[[Q1_1]]) <{index_attr = 1 : i64}>
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_2:.*]], %[[Q02_3]]#1) <{index_attr = 2 : i64}>
+    // CHECK: "mqtopt.deallocQubit"(%[[Q02_3]]#0)
+    // CHECK: "mqtopt.deallocQubit"(%[[Q1_1]])
+    // CHECK: "mqtopt.deallocQubit"(%[[Q02_3]]#1)
 
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
-
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    %reg_3, %q2_0 = "mqtopt.extractQubit"(%reg_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q1_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q2_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
 
     %q0_1, %q12_0:2 = mqtopt.x() %q0_0 ctrl %q1_0, %q2_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
     %q0_2, %q12_1:2 = mqtopt.x() %q0_1 nctrl %q12_0#1, %q12_0#0 : !mqtopt.Qubit nctrl !mqtopt.Qubit, !mqtopt.Qubit
@@ -133,10 +125,9 @@ module {
 
     %q1_4, %c0 = "mqtopt.measure"(%q1_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q0_3) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %reg_5 = "mqtopt.insertQubit"(%reg_4, %q1_4) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %reg_6 = "mqtopt.insertQubit"(%reg_5, %q2_3) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
+    "mqtopt.deallocQubit"(%q0_3) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q1_4) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q2_3) : (!mqtopt.Qubit) -> ()
     return %c0 : i1
   }
 }
@@ -148,8 +139,9 @@ module {
 module {
   // CHECK-LABEL: func.func @testLiftMultipleMeasuresOverControlledGate
   func.func @testLiftMultipleMeasuresOverControlledGate() -> (i1, i1) {
-    // CHECK: %[[Reg_ANY:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[REG_ANY:.*]]) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    // CHECK: %[[Reg_ANY:.*]], %[[Q2_0:.*]] = "mqtopt.extractQubit"(%[[REG_ANY:.*]]) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // CHECK: %[[Q0_0:.*]] = "mqtopt.allocQubit"
+    // CHECK: %[[Q1_0:.*]] = "mqtopt.allocQubit"
+    // CHECK: %[[Q2_0:.*]] = "mqtopt.allocQubit"
     // CHECK: %[[Q2_1:.*]], %[[C2:.*]] = "mqtopt.measure"(%[[Q2_0]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[Q1_1:.*]], %[[C1:.*]] = "mqtopt.measure"(%[[Q1_0]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[Q02_1:.*]]:2 = scf.if %[[C1]] -> (!mqtopt.Qubit, !mqtopt.Qubit) {
@@ -163,25 +155,22 @@ module {
     // CHECK-NEXT: } else {
       // CHECK-NEXT: scf.yield %[[ANY:.*]], %[[Q2_1]]
     // CHECK-NEXT: }
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_2:.*]], %[[Q02_1]]#0) <{index_attr = 0 : i64}>
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_3:.*]], %[[Q1_1]]) <{index_attr = 1 : i64}>
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_4:.*]], %[[Q02_1]]#1) <{index_attr = 2 : i64}>
+    // CHECK: "mqtopt.deallocQubit"(%[[Q02_1]]#0)
+    // CHECK: "mqtopt.deallocQubit"(%[[Q1_1]])
+    // CHECK: "mqtopt.deallocQubit"(%[[Q02_1]]#1)
 
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
-
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    %reg_3, %q2_0 = "mqtopt.extractQubit"(%reg_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q1_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q2_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
 
     %q0_1, %q12_0:2 = mqtopt.x() %q0_0 ctrl %q1_0, %q2_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
 
     %q1_1, %c1 = "mqtopt.measure"(%q12_0#0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     %q2_1, %c2 = "mqtopt.measure"(%q12_0#1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %reg_5 = "mqtopt.insertQubit"(%reg_4, %q1_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %reg_6 = "mqtopt.insertQubit"(%reg_5, %q2_1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
+    "mqtopt.deallocQubit"(%q0_1) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q1_1) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q2_1) : (!mqtopt.Qubit) -> ()
     return %c1, %c2 : i1, i1
   }
 }
@@ -197,19 +186,16 @@ module {
     // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[ANY:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK-NOT: mqtopt.x
     // CHECK: %[[C0_1:.*]] = arith.xori %[[C0_0]], %[[TRUE:.*]] : i1
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_2:.*]], %[[Q0_1]]) <{index_attr = 0 : i64}>
+    // CHECK: "mqtopt.deallocQubit"(%[[Q0_1]])
     // CHECK: return %[[C0_1]]
 
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
 
     %q0_1 = mqtopt.x() %q0_0 : !mqtopt.Qubit
 
     %q0_2, %c0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-    %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+    "mqtopt.deallocQubit"(%q0_2) : (!mqtopt.Qubit) -> ()
     return %c0 : i1
   }
 }
@@ -224,19 +210,16 @@ module {
     // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[ANY:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK-NOT: mqtopt.y
     // CHECK: %[[C0_1:.*]] = arith.xori %[[C0_0]], %[[TRUE:.*]] : i1
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_2:.*]], %[[Q0_1]]) <{index_attr = 0 : i64}>
+    // CHECK: "mqtopt.deallocQubit"(%[[Q0_1]])
     // CHECK: return %[[C0_1]]
 
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
 
     %q0_1 = mqtopt.y() %q0_0 : !mqtopt.Qubit
 
     %q0_2, %c0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-    %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+    "mqtopt.deallocQubit"(%q0_2) : (!mqtopt.Qubit) -> ()
     return %c0 : i1
   }
 }
@@ -248,14 +231,12 @@ module {
   // CHECK-LABEL: func.func @testLiftOverZ
   func.func @testLiftOverZ() -> i1 {
     // CHECK: %[[Q0_1:.*]], %[[C0:.*]] = "mqtopt.measure"(%[[ANY:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_2:.*]], %[[Q0_1]]) <{index_attr = 0 : i64}>
+    // CHECK: "mqtopt.deallocQubit"(%[[Q0_1]])
     // CHECK-NOT: mqtopt.z
     // CHECK: return %[[C0]]
 
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
     %angle = arith.constant 3.000000e-01 : f64
-
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
     %q0_1 = mqtopt.i() %q0_0 : !mqtopt.Qubit
     %q0_2 = mqtopt.z() %q0_1 : !mqtopt.Qubit
@@ -268,8 +249,7 @@ module {
 
     %q0_9, %c0 = "mqtopt.measure"(%q0_8) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-    %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_9) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+    "mqtopt.deallocQubit"(%q0_9) : (!mqtopt.Qubit) -> ()
     return %c0 : i1
   }
 }
@@ -281,21 +261,18 @@ module {
   // CHECK-LABEL: func.func @testLiftOverMultipleX
   func.func @testLiftOverMultipleX() -> i1 {
     // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[ANY:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[Reg_2:.*]], %[[Q0_1]]) <{index_attr = 0 : i64}>
+    // CHECK: "mqtopt.deallocQubit"(%[[Q0_1]])
     // CHECK-NOT: mqtopt.x
     // CHECK: return %[[C0_0]]
 
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
-
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
 
     %q0_1 = mqtopt.x() %q0_0 : !mqtopt.Qubit
     %q0_2 = mqtopt.x() %q0_1 : !mqtopt.Qubit
 
     %q0_3, %c0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-    %reg_2 = "mqtopt.insertQubit"(%reg_1, %q0_3) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_2) : (!mqtopt.QubitRegister) -> ()
+    "mqtopt.deallocQubit"(%q0_3) : (!mqtopt.Qubit) -> ()
     return %c0 : i1
   }
 }
@@ -320,14 +297,13 @@ module {
     // CHECK-NEXT: scf.yield %[[Q1_2IF]]
     // CHECK-NEXT: }
     // CHECK-NOT: mqtopt.x
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[ANY:.*]], %[[Q0_1]]) <{index_attr = 0 : i64}>
-    // CHECK: %[[ANY:.*]] = "mqtopt.insertQubit"(%[[ANY:.*]], %[[Q1_2]]) <{index_attr = 1 : i64}>
+    // CHECK: "mqtopt.deallocQubit"(%[[Q0_1]])
+    // CHECK: "mqtopt.deallocQubit"(%[[Q1_2]])
     // CHECK: return %[[C0_0]]
 
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q1_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
 
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
     %q1_1, %q0_1 = mqtopt.y() %q1_0 ctrl %q0_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
     %q0_2 = mqtopt.x() %q0_1 : !mqtopt.Qubit
@@ -336,9 +312,8 @@ module {
 
     %q0_5, %c0 = "mqtopt.measure"(%q0_4) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_5) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_2) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+    "mqtopt.deallocQubit"(%q0_5) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q1_2) : (!mqtopt.Qubit) -> ()
     return %c0 : i1
   }
 }
