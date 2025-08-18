@@ -201,6 +201,18 @@ struct ConvertMQTOptReset final : OpConversionPattern<opt::ResetOp> {
   }
 };
 
+struct ConvertMQTOptQubit final : OpConversionPattern<opt::QubitOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(opt::QubitOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto& qubitType = ref::QubitType::get(rewriter.getContext());
+    rewriter.replaceOpWithNewOp<ref::QubitOp>(op, qubitType, op.getIndex());
+    return success();
+  }
+};
+
 template <typename MQTGateOptOp, typename MQTGateRefOp>
 struct ConvertMQTOptGateOp final : OpConversionPattern<MQTGateOptOp> {
   using OpConversionPattern<MQTGateOptOp>::OpConversionPattern;
@@ -260,10 +272,9 @@ struct MQTOptToMQTRef final : impl::MQTOptToMQTRefBase<MQTOptToMQTRef> {
     target.addIllegalDialect<opt::MQTOptDialect>();
     target.addLegalDialect<ref::MQTRefDialect>();
 
-    patterns
-        .add<ConvertMQTOptAlloc, ConvertMQTOptDealloc, ConvertMQTOptInsert,
-             ConvertMQTOptExtract, ConvertMQTOptMeasure, ConvertMQTOptReset>(
-            typeConverter, context);
+    patterns.add<ConvertMQTOptAlloc, ConvertMQTOptDealloc, ConvertMQTOptInsert,
+                 ConvertMQTOptExtract, ConvertMQTOptMeasure, ConvertMQTOptReset,
+                 ConvertMQTOptQubit>(typeConverter, context);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)
@@ -297,8 +308,8 @@ struct MQTOptToMQTRef final : impl::MQTOptToMQTRefBase<MQTOptToMQTRef> {
     ADD_CONVERT_PATTERN(RYYOp)
     ADD_CONVERT_PATTERN(RZZOp)
     ADD_CONVERT_PATTERN(RZXOp)
-    ADD_CONVERT_PATTERN(XXminusYY)
-    ADD_CONVERT_PATTERN(XXplusYY)
+    ADD_CONVERT_PATTERN(XXminusYYOp)
+    ADD_CONVERT_PATTERN(XXplusYYOp)
 
     // conversion of mqtopt types in func.func signatures
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
