@@ -280,19 +280,25 @@ qc.append(comp.to_operation())
 print(qc)
 ```
 
-### `ClassicControlledOperation`
+### `IfElseOperation`
 
-A {py:class}`~mqt.core.ir.operations.ClassicControlledOperation` is a controlled operation where the control is a classical bit or a classical register.
+A {py:class}`~mqt.core.ir.operations.IfElseOperation` is an operation controlled by a classical bit or a classical register.
+If a given condition is met, the {py:attr}`~mqt.core.ir.operations.IfElseOperation.then_operation` is applied.
+If the condition is not met, the {py:attr}`~mqt.core.ir.operations.IfElseOperation.else_operation` is applied.
 
 ```{code-cell} ipython3
-from mqt.core.ir.operations import ClassicControlledOperation
+from mqt.core.ir.operations import IfElseOperation
 
 qc = QuantumComputation(1, 1)
 
 qc.h(0)
 qc.measure(0, 0)
 
-classic_controlled = ClassicControlledOperation(operation=StandardOperation(target=0, op_type=OpType.x), control_bit=0)
+classic_controlled = IfElseOperation(
+    then_operation=StandardOperation(target=0, op_type=OpType.x),
+    else_operation=None,
+    control_bit=0,
+)
 qc.append(classic_controlled)
 
 print(qc)
