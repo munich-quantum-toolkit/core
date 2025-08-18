@@ -9,8 +9,7 @@
 // RUN: quantum-opt %s -split-input-file --reuse-qubits | FileCheck %s
 
 // -----
-// This test checks that measurements can be lifted over controlled gates if the measurement target is a positive control and the only control of the gate.
-// In this case, the controlled gate is replaced by a conditional gate that uses the measurement outcome as a condition.
+// This test checks that qubits are reused if they are disjointly used.
 
 module {
   // CHECK-LABEL: func.func @testSimple
@@ -35,5 +34,111 @@ module {
     "mqtopt.deallocQubit"(%q0_2) : (!mqtopt.Qubit) -> ()
     "mqtopt.deallocQubit"(%q1_2) : (!mqtopt.Qubit) -> ()
     return %c0, %c1 : i1, i1
+  }
+}
+
+// -----
+// This test checks that qubit reuse is not applied if the used qubits intersect.
+
+module {
+  // CHECK-LABEL: func.func @testNoReuse
+  func.func @testNoReuse() -> (i1, i1) {
+    // CHECK: %[[q0_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[q1_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[q0_1:.*]] = mqtopt.h() %[[q0_0]] : !mqtopt.Qubit
+    // CHECK: %[[q1_1:.*]], %[[q0_2:.*]] = mqtopt.h() %[[q1_0]] ctrl %[[q0_1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[q0_3:.*]], %[[c0:.*]] = "mqtopt.measure"(%[[q0_2]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[q1_2:.*]], %[[c1:.*]] = "mqtopt.measure"(%[[q1_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: "mqtopt.deallocQubit"(%[[q0_3]]) : (!mqtopt.Qubit) -> ()
+    // CHECK: "mqtopt.deallocQubit"(%[[q1_2]]) : (!mqtopt.Qubit) -> ()
+    // CHECK: return %[[c0]], %[[c1]] : i1, i1
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q1_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+
+    %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
+    %q1_1, %q0_2 = mqtopt.h() %q1_0 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+    %q0_3, %c0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    %q1_2, %c1 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+    "mqtopt.deallocQubit"(%q0_3) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q1_2) : (!mqtopt.Qubit) -> ()
+    return %c0, %c1 : i1, i1
+  }
+}
+
+// -----
+// This test checks that qubit reuse is applied correctly in a context with several qubits.
+
+module {
+  // CHECK-LABEL: func.func @testReuseOne
+  func.func @testReuseOne() -> (i1, i1, i1) {
+    // CHECK: %[[q0_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[q1_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[q0_1:.*]] = mqtopt.h() %[[q0_0]] : !mqtopt.Qubit
+    // CHECK: %[[q1_1:.*]], %[[q0_2:.*]] = mqtopt.h() %[[q1_0]] ctrl %[[q0_1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[q0_3:.*]], %[[c0:.*]] = "mqtopt.measure"(%[[q0_2]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[q1_2:.*]], %[[c1:.*]] = "mqtopt.measure"(%[[q1_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[q2_0:.*]] = "mqtopt.reset"(%[[q0_3]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
+    // CHECK: %[[q2_1:.*]] = mqtopt.h() %[[q2_0]] : !mqtopt.Qubit
+    // CHECK: %[[q2_2:.*]], %[[c2:.*]] = "mqtopt.measure"(%[[q2_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: "mqtopt.deallocQubit"(%[[q1_2]]) : (!mqtopt.Qubit) -> ()
+    // CHECK: "mqtopt.deallocQubit"(%[[q2_2]]) : (!mqtopt.Qubit) -> ()
+    // CHECK: return %[[c0]], %[[c1]], %[[c2]] : i1, i1, i1
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q1_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q2_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+
+    %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
+    %q1_1, %q0_2 = mqtopt.h() %q1_0 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q2_1 = mqtopt.h() %q2_0 : !mqtopt.Qubit
+
+    %q0_3, %c0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    %q1_2, %c1 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    %q2_2, %c2 = "mqtopt.measure"(%q2_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+    "mqtopt.deallocQubit"(%q0_3) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q1_2) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q2_2) : (!mqtopt.Qubit) -> ()
+    return %c0, %c1, %c2 : i1, i1, i1
+  }
+}
+
+// -----
+// This test checks that qubit reuse is even applied correctly if the reused qubit appears after the alloc but could be moved above it.
+
+module {
+  // CHECK-LABEL: func.func @testReuseOneWithBadOrdering
+  func.func @testReuseOneWithBadOrdering() -> (i1, i1, i1) {
+    // CHECK: %[[q0_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[q1_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[q0_1:.*]] = mqtopt.h() %[[q0_0]] : !mqtopt.Qubit
+    // CHECK: %[[q1_1:.*]], %[[q0_2:.*]] = mqtopt.h() %[[q1_0]] ctrl %[[q0_1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[q0_3:.*]], %[[c0:.*]] = "mqtopt.measure"(%[[q0_2]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[q1_2:.*]], %[[c1:.*]] = "mqtopt.measure"(%[[q1_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[q2_0:.*]] = "mqtopt.reset"(%[[q0_3]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
+    // CHECK: %[[q2_1:.*]] = mqtopt.h() %[[q2_0]] : !mqtopt.Qubit
+    // CHECK: %[[q2_2:.*]], %[[c2:.*]] = "mqtopt.measure"(%[[q2_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: "mqtopt.deallocQubit"(%[[q2_2]]) : (!mqtopt.Qubit) -> ()
+    // CHECK: "mqtopt.deallocQubit"(%[[q1_2]]) : (!mqtopt.Qubit) -> ()
+    // CHECK: return %[[c0]], %[[c1]], %[[c2]] : i1, i1, i1
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q1_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q2_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+
+    %q2_1 = mqtopt.h() %q2_0 : !mqtopt.Qubit
+
+    %q2_2, %c2 = "mqtopt.measure"(%q2_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+    "mqtopt.deallocQubit"(%q2_2) : (!mqtopt.Qubit) -> ()
+
+    %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
+    %q1_1, %q0_2 = mqtopt.h() %q1_0 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_3, %c0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    %q1_2, %c1 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+    "mqtopt.deallocQubit"(%q0_3) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q1_2) : (!mqtopt.Qubit) -> ()
+    return %c0, %c1, %c2 : i1, i1, i1
   }
 }
