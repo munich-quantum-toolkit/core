@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <memory>
 #include <sstream>
+#include <utility>
 
 namespace mqt {
 
@@ -49,7 +50,7 @@ void registerIfElseOperation(const py::module& m) {
       py::class_<qc::IfElseOperation, qc::Operation>(m, "IfElseOperation");
 
   ifElse.def(py::init([](qc::Operation* thenOp, qc::Operation* elseOp,
-                         qc::ClassicalRegister controlReg,
+                         qc::ClassicalRegister& controlReg,
                          const std::uint64_t expectedVal,
                          const qc::ComparisonKind kind) {
                std::unique_ptr<qc::Operation> thenPtr =

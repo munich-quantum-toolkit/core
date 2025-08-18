@@ -16,7 +16,9 @@
 #include "ir/operations/StandardOperation.hpp"
 
 #include <cmath>
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace qc {
 

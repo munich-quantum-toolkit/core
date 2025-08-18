@@ -19,9 +19,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <random>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace qc {
 

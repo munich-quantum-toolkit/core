@@ -348,7 +348,7 @@ void removeDiagonalGatesBeforeMeasureRecursive(
       }
 
       // treat then branch as above
-      if (thenBranch) {
+      if (thenBranch != nullptr) {
         const bool onlyDiagonalGates =
             removeDiagonalGate(dag, dagIterators, idx, it, thenBranch);
         if (onlyDiagonalGates) {
@@ -737,8 +737,8 @@ void CircuitOptimizer::eliminateResets(QuantumComputation& qc) {
             } else if (auto* ifElse =
                            dynamic_cast<IfElseOperation*>(compOpIt->get());
                        ifElse != nullptr) {
-              auto thenBranch = ifElse->getThenBranch();
-              auto elseBranch = ifElse->getElseBranch();
+              auto* thenBranch = ifElse->getThenBranch();
+              auto* elseBranch = ifElse->getElseBranch();
               if (thenBranch == nullptr || elseBranch != nullptr) {
                 throw std::runtime_error(
                     "If-else operations with non-trivial else branches are "
@@ -763,8 +763,8 @@ void CircuitOptimizer::eliminateResets(QuantumComputation& qc) {
         changeControls(controls, replacementMap);
       } else if (auto* ifElse = dynamic_cast<IfElseOperation*>(it->get());
                  ifElse != nullptr) {
-        auto thenBranch = ifElse->getThenBranch();
-        auto elseBranch = ifElse->getElseBranch();
+        auto* thenBranch = ifElse->getThenBranch();
+        auto* elseBranch = ifElse->getElseBranch();
         if (thenBranch == nullptr || elseBranch != nullptr) {
           throw std::runtime_error("If-else operations with non-trivial else "
                                    "branches are currently not supported.");
@@ -845,8 +845,8 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
 
         if (auto* ifElse = dynamic_cast<IfElseOperation*>(opIt->get());
             ifElse != nullptr) {
-          auto thenBranch = ifElse->getThenBranch();
-          auto elseBranch = ifElse->getElseBranch();
+          auto* thenBranch = ifElse->getThenBranch();
+          auto* elseBranch = ifElse->getElseBranch();
           if (thenBranch == nullptr || elseBranch != nullptr) {
             throw std::runtime_error("If-else operations with non-trivial else "
                                      "branches are currently not supported.");

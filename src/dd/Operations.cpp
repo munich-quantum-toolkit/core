@@ -19,6 +19,7 @@
 #include "ir/Permutation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
@@ -185,8 +186,8 @@ MatrixDD getDD(const qc::Operation& op, Package& dd,
 
   if (op.isIfElseOperation()) {
     const auto& ifElse = dynamic_cast<const qc::IfElseOperation&>(op);
-    auto thenBranch = ifElse.getThenBranch();
-    auto elseBranch = ifElse.getElseBranch();
+    auto* thenBranch = ifElse.getThenBranch();
+    auto* elseBranch = ifElse.getElseBranch();
     if (thenBranch == nullptr || elseBranch != nullptr) {
       throw std::runtime_error("If-else operations with non-trivial else "
                                "branches are currently not supported.");
@@ -292,15 +293,15 @@ VectorDD applyIfElseOperation(const qc::IfElseOperation& op, const VectorDD& in,
   }();
 
   if (!control) {
-    auto elseBranch = op.getElseBranch();
-    if (!elseBranch) {
+    auto* elseBranch = op.getElseBranch();
+    if (elseBranch == nullptr) {
       return in;
     }
     return applyUnitaryOperation(*elseBranch, in, dd, permutation);
   }
 
-  auto thenBranch = op.getThenBranch();
-  if (!thenBranch) {
+  auto* thenBranch = op.getThenBranch();
+  if (thenBranch == nullptr) {
     return in;
   }
   return applyUnitaryOperation(*thenBranch, in, dd, permutation);

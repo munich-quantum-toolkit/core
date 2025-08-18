@@ -10,9 +10,17 @@
 
 #include "ir/operations/IfElseOperation.hpp"
 
+#include "ir/Definitions.hpp"
+#include "ir/Register.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/Operation.hpp"
 
 #include <cassert>
+#include <cstdint>
+#include <memory>
+#include <ostream>
+#include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace qc {
@@ -166,10 +174,10 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
 std::size_t std::hash<qc::IfElseOperation>::operator()(
     qc::IfElseOperation const& op) const noexcept {
   std::size_t seed = 0U;
-  if (op.getThenBranch()) {
+  if (op.getThenBranch() != nullptr) {
     qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getThenBranch()));
   }
-  if (op.getElseBranch()) {
+  if (op.getElseBranch() != nullptr) {
     qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getElseBranch()));
   }
   if (const auto& reg = op.getControlRegister(); reg.has_value()) {
