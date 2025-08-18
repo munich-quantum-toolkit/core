@@ -16,11 +16,24 @@ import pytest
 from packaging import version
 from qiskit import __version__ as qiskit_version
 from qiskit import transpile
-from qiskit.circuit import AncillaRegister, ClassicalRegister, Parameter, QuantumCircuit, QuantumRegister
+from qiskit.circuit import (
+    AncillaRegister,
+    ClassicalRegister,
+    Parameter,
+    QuantumCircuit,
+    QuantumRegister,
+)
 from qiskit.circuit.library import U2Gate, XXMinusYYGate, XXPlusYYGate
 from qiskit.providers.fake_provider import GenericBackendV2
 
-from mqt.core.ir.operations import CompoundOperation, StandardOperation, SymbolicOperation
+from mqt.core.ir.operations import (
+    ComparisonKind,
+    CompoundOperation,
+    IfElseOperation,
+    OpType,
+    StandardOperation,
+    SymbolicOperation,
+)
 from mqt.core.ir.symbolic import Expression
 from mqt.core.plugins.qiskit import mqt_to_qiskit, qiskit_to_mqt
 
@@ -459,6 +472,55 @@ def test_symbolic_two_qubit() -> None:
 
     with pytest.raises(NotImplementedError):
         mqt_to_qiskit(mqt_qc)
+
+
+def test_if_else_operation() -> None:
+    """Test import of if-else operation."""
+    from qiskit.qasm3 import dumps
+
+    then_qc = QuantumCircuit(1)
+    then_qc.x(0)
+
+    else_qc = QuantumCircuit(1)
+    else_qc.y(0)
+
+    qc = QuantumCircuit(1, 1)
+    qc.if_else(
+        (qc.clbits[0], True),
+        then_qc,
+        else_qc,
+        [qc.qubits[0]],
+        [],
+    )
+    print(qc)
+
+    mqt_qc = qiskit_to_mqt(qc)
+    print(mqt_qc)
+    assert mqt_qc.num_qubits == 1
+    assert mqt_qc.num_ops == 1
+    if_else_operation = mqt_qc[0]
+    assert isinstance(if_else_operation, IfElseOperation)
+    assert if_else_operation.control_register is None
+    assert if_else_operation.control_bit == 0
+    assert if_else_operation.expected_value == 1
+    assert if_else_operation.comparison_kind == ComparisonKind.eq
+    then_operation = if_else_operation.then_operation
+    assert isinstance(then_operation, StandardOperation)
+    then_operation.type_ = OpType.x
+    else_operation = if_else_operation.else_operation
+    assert isinstance(else_operation, StandardOperation)
+    else_operation.type_ = OpType.y
+
+    qiskit_qc = mqt_to_qiskit(mqt_qc)
+    print(qiskit_qc)
+
+    qasm_input = dumps(qc)
+    qasm_input = qasm_input.replace("if (c[0]) {\n", "")
+
+    qasm_output = dumps(qiskit_qc)
+    qasm_output = qasm_output.replace("if (c[0] == true) {\n", "")
+
+    assert qasm_input == qasm_output
 
 
 def test_trivial_initial_layout_multiple_registers() -> None:

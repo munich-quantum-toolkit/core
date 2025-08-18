@@ -16,10 +16,12 @@ from qiskit.circuit import (
     AncillaRegister,
     ClassicalRegister,
     Clbit,
+    IfElseOp,
     QuantumCircuit,
     QuantumRegister,
     Qubit,
 )
+from qiskit.circuit.classical import expr
 from qiskit.circuit.library import (
     DCXGate,
     ECRGate,
@@ -53,8 +55,10 @@ from qiskit.transpiler.layout import Layout, TranspileLayout
 
 from ...ir import Permutation
 from ...ir.operations import (
+    ComparisonKind,
     CompoundOperation,
     Control,
+    IfElseOperation,
     NonUnitaryOperation,
     Operation,
     OpType,
@@ -255,6 +259,53 @@ def _add_compound_operation(
     circ.append(inner_circ.to_instruction(), circ.qubits, circ.clbits)
 
 
+def _add_if_else_operation(
+    circ: QuantumCircuit,
+    op: IfElseOperation,
+    qubit_map: Mapping[int, Qubit],
+    clbit_map: Mapping[int, Clbit],
+) -> None:
+    """Add a :class:`~.IfElseOperation`.
+
+    Args:
+        circ: The Qiskit circuit to add the operation to.
+        op: The :class:`~.IfElseOperation` operation to add.
+        qubit_map: A mapping from qubit indices to Qiskit :class:`~qiskit.circuit.Qubit`.
+        clbit_map: A mapping from classical bit indices to Qiskit :class:`~qiskit.circuit.Clbit`.
+    """
+    left_hand_side = None
+    converter: type
+    if op.control_register is not None:
+        left_hand_side = circ.cregs[op.control_register.name]
+        converter = int
+    elif op.control_bit is not None:
+        left_hand_side = clbit_map[op.control_bit]
+        converter = bool
+
+    if op.comparison_kind == ComparisonKind.eq:
+        condition = expr.equal(left_hand_side, converter(op.expected_value))
+    elif op.comparison_kind == ComparisonKind.neq:
+        condition = expr.not_equal(left_hand_side, converter(op.expected_value))
+    elif op.comparison_kind == ComparisonKind.lt:
+        condition = expr.less(left_hand_side, op.expected_value)
+    elif op.comparison_kind == ComparisonKind.leq:
+        condition = expr.less_equal(left_hand_side, op.expected_value)
+    elif op.comparison_kind == ComparisonKind.gt:
+        condition = expr.greater(left_hand_side, op.expected_value)
+    elif op.comparison_kind == ComparisonKind.geq:
+        condition = expr.greater_equal(left_hand_side, op.expected_value)
+
+    then_circ = QuantumCircuit(*circ.qregs, *circ.cregs)
+    _add_operation(then_circ, op.then_operation, qubit_map, clbit_map)
+
+    else_circ: QuantumCircuit | None = None
+    if op.else_operation is not None:
+        else_circ = QuantumCircuit(*circ.qregs, *circ.cregs)
+        _add_operation(else_circ, op.else_operation, qubit_map, clbit_map)
+
+    circ.append(IfElseOp(condition, then_circ, else_circ), circ.qubits, circ.clbits)
+
+
 def _add_operation(
     circ: QuantumCircuit,
     op: Operation,
@@ -278,6 +329,8 @@ def _add_operation(
         _add_non_unitary_operation(circ, op, qubit_map, clbit_map)
     elif isinstance(op, CompoundOperation):
         _add_compound_operation(circ, op, qubit_map, clbit_map)
+    elif isinstance(op, IfElseOperation):
+        _add_if_else_operation(circ, op, qubit_map, clbit_map)
     else:
         msg = f"Unsupported operation type: {type(op)}"
         raise TypeError(msg)

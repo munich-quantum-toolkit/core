@@ -14,13 +14,16 @@ import re
 import warnings
 from typing import TYPE_CHECKING, cast
 
-from qiskit.circuit import AncillaRegister, Clbit, Qubit
+from qiskit.circuit import AncillaRegister, Clbit, IfElseOp, Qubit
+from qiskit.circuit import ClassicalRegister as QiskitClassicalRegister
 
 from ...ir import QuantumComputation
 from ...ir.operations import (
     CompoundOperation,
     Control,
+    IfElseOperation,
     NonUnitaryOperation,
+    Operation,
     OpType,
     StandardOperation,
     SymbolicOperation,
@@ -31,6 +34,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from qiskit.circuit import Instruction, ParameterExpression, QuantumCircuit
+
+    from ...ir.registers import ClassicalRegister
 
 
 __all__ = ["qiskit_to_mqt"]
@@ -98,6 +103,7 @@ def qiskit_to_mqt(circ: QuantumCircuit) -> QuantumComputation:
             instruction.operation.params,
             qubit_map,
             clbit_map,
+            qc.cregs,
         )
         for symb_param in symb_params:
             qc.add_variable(symb_param)
@@ -166,6 +172,7 @@ _NATIVELY_SUPPORTED_GATES = frozenset({
     "rzz",
     "xx_minus_yy",
     "xx_plus_yy",
+    "if_else",
     "reset",
     "barrier",
     "measure",
@@ -180,12 +187,13 @@ def _emplace_operation(
     params: Sequence[float | ParameterExpression],
     qubit_map: Mapping[Qubit, int],
     clbit_map: Mapping[Clbit, int],
+    cregs: Mapping[str, ClassicalRegister],
 ) -> list[float | ParameterExpression]:
     name = instr.name
 
     if name not in _NATIVELY_SUPPORTED_GATES:
         try:
-            return _import_definition(qc, instr.definition, qargs, cargs, qubit_map, clbit_map)
+            return _import_definition(qc, instr.definition, qargs, cargs, qubit_map, clbit_map, cregs)
         except Exception as ex:  # PRAGMA: NO COVER
             msg = f"Unsupported gate {name} with definition {instr.definition}"
             raise NotImplementedError(msg) from ex
@@ -303,6 +311,9 @@ def _emplace_operation(
     if name == "xx_plus_yy":
         return _add_two_target_operation(qc, OpType.xx_plus_yy, qargs, params, qubit_map)
 
+    if name == "if_else":
+        return _add_if_else_operation(qc, instr, qargs, cargs, qubit_map, clbit_map, cregs)
+
     msg = f"Unsupported gate {name}"  # pragma: no cover
     raise NotImplementedError(msg)
 
@@ -393,6 +404,62 @@ def _add_two_target_operation(
     return parameters
 
 
+def _add_if_else_operation(
+    qc: QuantumComputation | CompoundOperation,
+    if_else_op: IfElseOp,
+    qargs: Sequence[Qubit],
+    cargs: Sequence[Clbit],
+    qubit_map: Mapping[Qubit, int],
+    clbit_map: Mapping[Clbit, int],
+    cregs: Mapping[str, ClassicalRegister],
+) -> list[float | ParameterExpression]:
+    then_branch_compound = CompoundOperation()
+    then_params = _import_definition(
+        then_branch_compound,
+        if_else_op.params[0],
+        qargs,
+        cargs,
+        qubit_map,
+        clbit_map,
+        cregs,
+    )
+    then_branch: Operation = then_branch_compound[0]
+    if isinstance(then_branch, CompoundOperation) and len(then_branch) == 1:
+        then_branch = then_branch[0]
+
+    else_branch: Operation | None = None
+    else_params: list[float | ParameterExpression] = []
+    if if_else_op.params[1] is not None:
+        else_branch_compound = CompoundOperation()
+        else_params = _import_definition(
+            else_branch_compound,
+            if_else_op.params[1],
+            qargs,
+            cargs,
+            qubit_map,
+            clbit_map,
+            cregs,
+        )
+        else_branch = else_branch_compound[0]
+        if isinstance(else_branch, CompoundOperation) and len(else_branch) == 1:
+            else_branch = else_branch[0]
+
+    condition = if_else_op.condition
+    assert isinstance(condition, tuple)
+    assert len(condition) == 2
+    if isinstance(condition[0], Clbit):
+        control_bit = clbit_map[condition[0]]
+        expected_value = condition[1]
+        if_else_operation = IfElseOperation(then_branch, else_branch, control_bit, expected_value)
+    elif isinstance(condition[0], QiskitClassicalRegister):
+        control_register = cregs[condition[0].name]
+        expected_value = condition[1]
+        if_else_operation = IfElseOperation(then_branch, else_branch, control_register, expected_value)
+    qc.append(if_else_operation)
+
+    return then_params + else_params
+
+
 def _import_layouts(qc: QuantumComputation, circ: QuantumCircuit) -> None:
     qc.initial_layout.clear()
     initial_index_layout = circ.layout.initial_index_layout()
@@ -430,6 +497,7 @@ def _import_definition(
     cargs: Sequence[Clbit],
     qubit_map: Mapping[Qubit, int],
     clbit_map: Mapping[Clbit, int],
+    cregs: Mapping[str, ClassicalRegister],
 ) -> list[float | ParameterExpression]:
     qarg_map = dict(zip(circ.qubits, qargs))
     carg_map = dict(zip(circ.clbits, cargs))
@@ -450,6 +518,7 @@ def _import_definition(
             operation.params,
             qubit_map,
             clbit_map,
+            cregs,
         )
         params.extend(new_params)
     return params
