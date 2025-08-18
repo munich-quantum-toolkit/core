@@ -167,6 +167,27 @@ def ResetOp : GateOp<"reset", []> {
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTOptOp<mnemonic, traits>;
 
+def AllocQubitOp : ResourceOp<"allocQubit"> {
+    let summary = "Allocates a single qubit";
+
+    let description = [{
+        This class represents an operation that allocates a single qubit.
+        The qubit can be used immediately and must be deallocated at a
+        later point using the corresponding operation.
+
+        Example:
+        ```mlir
+        %0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+        ```
+    }];
+
+    let arguments = (ins);
+
+    let results = (outs
+        QubitType:$qubit
+    );
+}
+
 def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
     let summary = "Allocates a qubit register";
 
@@ -193,6 +214,25 @@ def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
 
     let results = (outs
         QregType:$qreg
+    );
+}
+
+def DeallocQubitOp : ResourceOp<"deallocQubit"> {
+    let summary = "Deallocates a single qubit";
+
+    let description = [{
+        This class represents an operation that deallocates a single qubit.
+        The qubit must have previously been created using some allocation operation
+        and is consumed by this operation, so it cannot be used further.
+
+        Example:
+        ```
+        "mqtopt.deallocQubit"(%0) : (!mqtopt.Qubit) -> ()
+        ```
+    }];
+
+    let arguments = (ins
+        QubitType:$qubit
     );
 }
 

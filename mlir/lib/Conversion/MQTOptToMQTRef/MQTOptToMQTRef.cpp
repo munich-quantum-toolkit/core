@@ -93,6 +93,34 @@ struct ConvertMQTOptDealloc final : OpConversionPattern<opt::DeallocOp> {
   }
 };
 
+struct ConvertMQTOptAllocQubit final : OpConversionPattern<opt::AllocQubitOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(opt::AllocQubitOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    // prepare return type
+    const auto& qubitType = ref::QubitType::get(rewriter.getContext());
+
+    // replace the opt alloc operation with a ref alloc operation
+    rewriter.replaceOpWithNewOp<ref::AllocQubitOp>(op, qubitType);
+
+    return success();
+  }
+};
+
+struct ConvertMQTOptDeallocQubit final
+    : OpConversionPattern<opt::DeallocQubitOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(const opt::DeallocQubitOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<ref::DeallocQubitOp>(op, adaptor.getQubit());
+    return success();
+  }
+};
+
 struct ConvertMQTOptExtract final : OpConversionPattern<opt::ExtractOp> {
   using OpConversionPattern::OpConversionPattern;
 
