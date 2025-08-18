@@ -78,11 +78,17 @@ public:
     return comparisonKind;
   }
 
-  void addControl(Control) override {}
-  void clearControls() override {}
-  void removeControl(Control) override {}
-  Controls::iterator removeControl(Controls::iterator it) override {
-    return it;
+  void addControl(Control) override {
+    throw std::runtime_error("IfElseOperation does not support controls.");
+  }
+  void clearControls() override {
+    throw std::runtime_error("IfElseOperation does not support controls.");
+  }
+  void removeControl(Control) override {
+    throw std::runtime_error("IfElseOperation does not support controls.");
+  }
+  Controls::iterator removeControl(Controls::iterator) override {
+    throw std::runtime_error("IfElseOperation does not support controls.");
   }
 
   [[nodiscard]] bool equals(const Operation& op, const Permutation& perm1,

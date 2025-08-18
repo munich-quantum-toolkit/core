@@ -16,6 +16,7 @@
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 
 #include <algorithm>
@@ -319,7 +320,12 @@ TEST_F(DDNoiseFunctionalityTest, testingUsedQubits) {
   EXPECT_TRUE(compoundOp.getUsedQubits().count(0));
   EXPECT_TRUE(compoundOp.getUsedQubits().count(1));
 
-  // TODO: Test IfElseOperation here
+  auto ifElseOp = qc::IfElseOperation(
+      std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0, 1U);
+  EXPECT_EQ(ifElseOp.getUsedQubits().size(), 0);
+  auto xOp = ifElseOp.getThenBranch();
+  EXPECT_EQ(xOp->getUsedQubits().size(), 1);
+  EXPECT_TRUE(xOp->getUsedQubits().count(0) == 1U);
 }
 
 TEST_F(DDNoiseFunctionalityTest, invalidNoiseEffect) {

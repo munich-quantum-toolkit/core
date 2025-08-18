@@ -14,6 +14,7 @@
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/Expression.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
@@ -395,7 +396,31 @@ TEST_F(QFRFunctionality, OperationEquality) {
   EXPECT_TRUE(measure0.equals(measure2, perm0, {}));
   EXPECT_TRUE(measure0.equals(measure2, {}, perm0));
 
-  // TODO: Test IfElseOperation here
+  const auto expectedValue0 = 0U;
+  const auto expectedValue1 = 1U;
+
+  std::unique_ptr<Operation> xp0 = std::make_unique<StandardOperation>(0, X);
+  std::unique_ptr<Operation> xp1 = std::make_unique<StandardOperation>(0, X);
+  std::unique_ptr<Operation> xp2 = std::make_unique<StandardOperation>(0, X);
+  const auto ifElse0 =
+      IfElseOperation(std::move(xp0), nullptr, 0, expectedValue0);
+  const auto ifElse1 =
+      IfElseOperation(std::move(xp1), nullptr, 0, expectedValue1);
+  const auto ifElse2 =
+      IfElseOperation(std::move(xp2), nullptr, 1, expectedValue0);
+  std::unique_ptr<Operation> zp = std::make_unique<StandardOperation>(0, Z);
+  const auto ifElse3 =
+      IfElseOperation(std::move(zp), nullptr, 0, expectedValue0);
+  EXPECT_FALSE(ifElse0.equals(x));
+  EXPECT_NE(ifElse0, x);
+  EXPECT_TRUE(ifElse0.equals(ifElse0));
+  EXPECT_EQ(ifElse0, ifElse0);
+  EXPECT_FALSE(ifElse0.equals(ifElse1));
+  EXPECT_NE(ifElse0, ifElse1);
+  EXPECT_FALSE(ifElse0.equals(ifElse2));
+  EXPECT_NE(ifElse0, ifElse2);
+  EXPECT_FALSE(ifElse0.equals(ifElse3));
+  EXPECT_NE(ifElse0, ifElse3);
 
   auto compound0 = CompoundOperation();
   compound0.emplace_back<StandardOperation>(0, X);
@@ -707,12 +732,6 @@ TEST_F(QFRFunctionality, addControlSymbolicOperation) {
   EXPECT_EQ(op.removeControl(controls.begin()), controls.end());
 }
 
-TEST_F(QFRFunctionality, addControlIfElseOperation) {
-  // TODO: Test IfElseOperation here
-
-  ASSERT_TRUE(true);
-}
-
 TEST_F(QFRFunctionality, addControlNonUnitaryOperation) {
   auto op = NonUnitaryOperation(0U, Measure);
 
@@ -759,8 +778,6 @@ TEST_F(QFRFunctionality, addControlTwice) {
   op->addControl(control);
   EXPECT_THROW(op->addControl(control), std::runtime_error);
 
-  // TODO: Test IfElseOperation here
-
   auto symbolicOp = SymbolicOperation(Targets{1}, OpType::X);
   symbolicOp.addControl(control);
   EXPECT_THROW(symbolicOp.addControl(control), std::runtime_error);
@@ -773,8 +790,6 @@ TEST_F(QFRFunctionality, addTargetAsControl) {
   std::unique_ptr<Operation> op =
       std::make_unique<StandardOperation>(Targets{1}, OpType::X);
   EXPECT_THROW(op->addControl(control), std::runtime_error);
-
-  // TODO: Test IfElseOperation here
 
   auto symbolicOp = SymbolicOperation(Targets{1}, OpType::X);
   EXPECT_THROW(symbolicOp.addControl(control), std::runtime_error);
