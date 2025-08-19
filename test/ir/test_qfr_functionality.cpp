@@ -340,7 +340,7 @@ TEST_F(QFRFunctionality, cloningDifferentOperations) {
   comp.h(0);
   qc.emplace_back(comp.asOperation());
   qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr,
-            qc.getClassicalRegisters().at("c"), 1);
+            qc.getClassicalRegisters().at("c"), 1U);
 
   const auto qcCloned = qc;
   ASSERT_EQ(qc.size(), qcCloned.size());
@@ -543,7 +543,7 @@ TEST_F(QFRFunctionality, CircuitToOperation) {
   EXPECT_TRUE(qc.empty());
   qc.x(0);
   qc.h(0);
-  qc.ifElse(std::make_unique<StandardOperation>(1, 0, X), nullptr, {0, 1U}, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(1, 0, X), nullptr, {0, 1}, 1U);
   const auto& op2 = qc.asOperation();
   ASSERT_NE(op2, nullptr);
   EXPECT_EQ(op2->getType(), Compound);

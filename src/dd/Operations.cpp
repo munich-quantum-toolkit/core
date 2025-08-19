@@ -251,14 +251,15 @@ VectorDD applyIfElseOperation(const qc::IfElseOperation& op, const VectorDD& in,
                               Package& dd,
                               const std::vector<bool>& measurements,
                               const qc::Permutation& permutation) {
-  const auto& expectedValue = op.getExpectedValue();
   const auto& comparisonKind = op.getComparisonKind();
 
   // determine the actual value from measurements
+  std::uint64_t expectedValue;
   auto actualValue = 0ULL;
   if (const auto& controlRegister = op.getControlRegister();
       controlRegister.has_value()) {
     assert(!op.getControlBit().has_value());
+    expectedValue = op.getExpectedValueRegister();
     const auto regStart = controlRegister->getStartIndex();
     const auto regSize = controlRegister->getSize();
     for (std::size_t j = 0; j < regSize; ++j) {
@@ -269,6 +270,7 @@ VectorDD applyIfElseOperation(const qc::IfElseOperation& op, const VectorDD& in,
   }
   if (const auto& controlBit = op.getControlBit(); controlBit.has_value()) {
     assert(!op.getControlRegister().has_value());
+    expectedValue = op.getExpectedValueBit() ? 1U : 0U;
     actualValue = measurements[*controlBit] ? 1U : 0U;
   }
 

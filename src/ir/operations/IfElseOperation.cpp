@@ -54,7 +54,7 @@ std::ostream& operator<<(std::ostream& os, const ComparisonKind& kind) {
 
 IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                                  std::unique_ptr<Operation>&& elseOp,
-                                 ClassicalRegister controlReg,
+                                 const ClassicalRegister controlReg,
                                  const std::uint64_t expectedVal,
                                  const ComparisonKind kind)
     : thenOp(std::move(thenOp)), elseOp(std::move(elseOp)),
@@ -65,19 +65,15 @@ IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
 }
 
 IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
-                                 std::unique_ptr<Operation>&& elseOp, Bit cBit,
-                                 const std::uint64_t expectedVal,
-                                 ComparisonKind kind)
-    : thenOp(std::move(thenOp)), elseOp(std::move(elseOp)), controlBit(cBit),
-      expectedValue(expectedVal), comparisonKind(kind) {
-  if (expectedVal > 1) {
-    throw std::invalid_argument(
-        "Expected value for single bit comparison must be 0 or 1.");
-  }
+                                 std::unique_ptr<Operation>&& elseOp,
+                                 const Bit controlBit, const bool expectedVal,
+                                 const ComparisonKind kind)
+    : thenOp(std::move(thenOp)), elseOp(std::move(elseOp)),
+      controlBit(controlBit), expectedValue(expectedVal), comparisonKind(kind) {
   // Canonicalize comparisons on a single bit
   if (comparisonKind == Neq) {
     comparisonKind = Eq;
-    expectedValue = 1 - expectedValue;
+    expectedValue = !expectedVal;
   }
   if (comparisonKind != Eq) {
     throw std::invalid_argument(
@@ -151,7 +147,7 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
     of << controlRegister->getName() << ' ' << comparisonKind << ' '
        << expectedValue;
   } else if (controlBit.has_value()) {
-    of << (expectedValue == 0 ? "!" : "") << bitMap.at(*controlBit).second;
+    of << (!expectedValueBit ? "!" : "") << bitMap.at(*controlBit).second;
   }
   of << ") ";
   if (openQASM3) {
@@ -182,11 +178,12 @@ std::size_t std::hash<qc::IfElseOperation>::operator()(
   }
   if (const auto& reg = op.getControlRegister(); reg.has_value()) {
     qc::hashCombine(seed, std::hash<qc::ClassicalRegister>{}(reg.value()));
+    qc::hashCombine(seed, op.getExpectedValueRegister());
   }
   if (const auto& bit = op.getControlBit(); bit.has_value()) {
     qc::hashCombine(seed, bit.value());
+    qc::hashCombine(seed, op.getExpectedValueBit());
   }
-  qc::hashCombine(seed, op.getExpectedValue());
   qc::hashCombine(seed, op.getComparisonKind());
   return seed;
 }

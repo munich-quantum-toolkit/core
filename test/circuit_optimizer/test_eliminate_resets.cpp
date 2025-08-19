@@ -87,7 +87,7 @@ TEST(EliminateResets, eliminateResetsIfElseOperation) {
   qc.h(0);
   qc.measure(0, 0U);
   qc.reset(0);
-  qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());
@@ -182,7 +182,7 @@ TEST(EliminateResets, eliminateResetsCompoundOperation) {
   comp.cx(1, 0);
   comp.reset(0);
   comp.measure(0, 0);
-  comp.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0, 1U);
+  comp.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0);
   qc.emplace_back(comp.asOperation());
 
   std::cout << qc << "\n";

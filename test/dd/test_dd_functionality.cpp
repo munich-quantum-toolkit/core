@@ -555,7 +555,8 @@ TEST_F(DDFunctionality, IfElseOperationConditions) {
     qc.measure(0, 0);
     // apply a classic-controlled X gate whenever the measured result compares
     // as specified by kind with the previously measured result.
-    qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0, 1U, kind);
+    qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0, true,
+              kind);
     // measure into the same register to check the result.
     qc.measure(0, 0);
 
@@ -578,7 +579,7 @@ TEST_F(DDFunctionality, IfElseOperationElseBranch) {
   qc.x(0);
   qc.measure(0, 0);
   qc.ifElse(std::make_unique<StandardOperation>(0, I),
-            std::make_unique<StandardOperation>(0, X), 0, 0);
+            std::make_unique<StandardOperation>(0, X), 0, false);
   qc.measure(0, 0);
 
   constexpr auto shots = 16U;
@@ -615,7 +616,7 @@ TEST_F(DDFunctionality, DynamicCircuitSimulationWithSWAP) {
   qc.x(0);
   qc.swap(0, 1);
   qc.measure(1, 0);
-  qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0);
   qc.measure(0, 1);
 
   constexpr auto shots = 16U;

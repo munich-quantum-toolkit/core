@@ -64,18 +64,20 @@ void registerIfElseOperation(const py::module& m) {
              "then_operation"_a, "else_operation"_a, "control_register"_a,
              "expected_value"_a = 1U,
              "comparison_kind"_a = qc::ComparisonKind::Eq);
-  ifElse.def(
-      py::init([](qc::Operation* thenOp, qc::Operation* elseOp, qc::Bit cBit,
-                  std::uint64_t expectedVal, qc::ComparisonKind kind) {
-        std::unique_ptr<qc::Operation> thenPtr =
-            thenOp ? thenOp->clone() : nullptr;
-        std::unique_ptr<qc::Operation> elsePtr =
-            elseOp ? elseOp->clone() : nullptr;
-        return std::make_unique<qc::IfElseOperation>(
-            std::move(thenPtr), std::move(elsePtr), cBit, expectedVal, kind);
-      }),
-      "then_operation"_a, "else_operation"_a, "control_bit"_a,
-      "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq);
+  ifElse.def(py::init([](qc::Operation* thenOp, qc::Operation* elseOp,
+                         qc::Bit controlBit, std::uint64_t expectedVal,
+                         qc::ComparisonKind kind) {
+               std::unique_ptr<qc::Operation> thenPtr =
+                   thenOp ? thenOp->clone() : nullptr;
+               std::unique_ptr<qc::Operation> elsePtr =
+                   elseOp ? elseOp->clone() : nullptr;
+               return std::make_unique<qc::IfElseOperation>(
+                   std::move(thenPtr), std::move(elsePtr), controlBit,
+                   expectedVal, kind);
+             }),
+             "then_operation"_a, "else_operation"_a, "control_bit"_a,
+             "expected_value"_a = 1U,
+             "comparison_kind"_a = qc::ComparisonKind::Eq);
   ifElse.def_property_readonly("then_operation",
                                &qc::IfElseOperation::getThenOp,
                                py::return_value_policy::reference_internal);

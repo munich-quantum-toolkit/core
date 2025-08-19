@@ -868,12 +868,12 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
                                      "branches are currently not supported.");
           }
 
-          const auto& expectedValue = ifElse->getExpectedValue();
-
+          std::uint64_t expectedValue;
           Bit cBit = 0;
           if (const auto& controlRegister = ifElse->getControlRegister();
               controlRegister.has_value()) {
             assert(!ifElse->getControlBit().has_value());
+            expectedValue = ifElse->getExpectedValueRegister();
             if (controlRegister->getSize() != 1) {
               throw std::runtime_error(
                   "If-else operations targeted at more than one bit are "
@@ -885,6 +885,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
           if (const auto& controlBit = ifElse->getControlBit();
               controlBit.has_value()) {
             assert(!ifElse->getControlRegister().has_value());
+            expectedValue = ifElse->getExpectedValueBit() ? 1U : 0U;
             cBit = controlBit.value();
           }
 
@@ -923,7 +924,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
           auto controls = standardOp->getControls();
           const auto controlQubit = measurementQubit;
           const auto controlType =
-              (expectedValue == 1) ? Control::Type::Pos : Control::Type::Neg;
+              (expectedValue == 1U) ? Control::Type::Pos : Control::Type::Neg;
           controls.emplace(controlQubit, controlType);
 
           const auto parameters = standardOp->getParameter();

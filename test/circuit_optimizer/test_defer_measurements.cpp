@@ -107,7 +107,7 @@ TEST(DeferMeasurements, measurementBetweenMeasurementAndIfElse) {
   qc.h(0);
   qc.measure(0, 0U);
   qc.h(0);
-  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, 0);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());
@@ -181,8 +181,8 @@ TEST(DeferMeasurements, twoIfElse) {
   qc.h(0);
   qc.measure(0, 0U);
   qc.h(0);
-  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, 0, 1U);
-  qc.ifElse(std::make_unique<StandardOperation>(1, Z), nullptr, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, 0);
+  qc.ifElse(std::make_unique<StandardOperation>(1, Z), nullptr, 0);
 
   std::cout << qc << "\n";
 
@@ -264,7 +264,7 @@ TEST(DeferMeasurements, correctOrder) {
   qc.h(0);
   qc.measure(0, 0U);
   qc.h(1);
-  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, 0);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());
@@ -338,8 +338,8 @@ TEST(DeferMeasurements, twoIfElseCorrectOrder) {
   qc.h(0);
   qc.measure(0, 0U);
   qc.h(1);
-  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, 0, 1U);
-  qc.ifElse(std::make_unique<StandardOperation>(1, Z), nullptr, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(1, X), nullptr, 0);
+  qc.ifElse(std::make_unique<StandardOperation>(1, Z), nullptr, 0);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());
@@ -412,7 +412,7 @@ TEST(DeferMeasurements, errorOnImplicitReset) {
   QuantumComputation qc(1U, 1U);
   qc.h(0);
   qc.measure(0, 0U);
-  qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0, 1U);
+  qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, 0);
   std::cout << qc << "\n";
 
   EXPECT_TRUE(qc.isDynamic());

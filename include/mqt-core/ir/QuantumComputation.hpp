@@ -337,10 +337,11 @@ public:
   void ifElse(std::unique_ptr<Operation>&& thenOp,
               std::unique_ptr<Operation>&& elseOp,
               const ClassicalRegister& controlRegister,
-              std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq);
+              const std::uint64_t expectedValue = 1U,
+              const ComparisonKind cmp = Eq);
   void ifElse(std::unique_ptr<Operation>&& thenOp,
-              std::unique_ptr<Operation>&& elseOp, Bit cBit,
-              std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq);
+              std::unique_ptr<Operation>&& elseOp, const Bit controlBit,
+              const bool expectedValue = true, const ComparisonKind cmp = Eq);
 
   /// strip away qubits with no operations applied to them and which do not pop
   /// up in the output permutation \param force if true, also strip away idle

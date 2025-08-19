@@ -37,12 +37,14 @@ class IfElseOperation final : public Operation {
 public:
   IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                   std::unique_ptr<Operation>&& elseOp,
-                  ClassicalRegister controlReg, std::uint64_t expectedVal = 1U,
-                  ComparisonKind kind = Eq);
+                  const ClassicalRegister controlReg,
+                  const std::uint64_t expectedVal = 1U,
+                  const ComparisonKind kind = Eq);
 
   IfElseOperation(std::unique_ptr<Operation>&& thenOp,
-                  std::unique_ptr<Operation>&& elseOp, Bit cBit,
-                  std::uint64_t expectedVal = 1U, ComparisonKind kind = Eq);
+                  std::unique_ptr<Operation>&& elseOp, const Bit controlBit,
+                  const bool expectedVal = true,
+                  const ComparisonKind kind = Eq);
 
   IfElseOperation(const IfElseOperation& op);
 

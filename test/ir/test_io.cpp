@@ -611,7 +611,7 @@ TEST_F(IO, fromCompoundOperation) {
 TEST_F(IO, ifElseOperationOperationToOpenQASM3) {
   qc.addQubitRegister(2);
   const auto& creg = qc.addClassicalRegister(2);
-  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0, 1);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0);
   qc.ifElse(std::make_unique<qc::StandardOperation>(1, qc::X), nullptr, creg,
             1U);
   const std::string expected = "// i 0 1\n"
@@ -631,27 +631,12 @@ TEST_F(IO, ifElseOperationOperationToOpenQASM3) {
   EXPECT_EQ(expected, actual);
 }
 
-TEST_F(IO, ifElseOperationExpectedValueTooLarge) {
-  qc.addQubitRegister(1);
-  qc.addClassicalRegister(1);
-  try {
-    qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0, 2);
-    FAIL() << "Expected an exception for invalid expected value.";
-  } catch (const std::invalid_argument& e) {
-    EXPECT_STREQ(e.what(),
-                 "Expected value for single bit comparison must be 0 or 1.");
-    SUCCEED();
-  } catch (...) {
-    FAIL() << "Expected an invalid_argument exception.";
-  }
-}
-
 TEST_F(IO, ifElseOperationInvalidBitComparison) {
   qc.addQubitRegister(1);
   qc.addClassicalRegister(1);
   try {
-    qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0, 1,
-              qc::Lt);
+    qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0,
+              true, qc::Lt);
     FAIL() << "Expected an exception for invalid expected value.";
   } catch (const std::invalid_argument& e) {
     EXPECT_STREQ(e.what(),

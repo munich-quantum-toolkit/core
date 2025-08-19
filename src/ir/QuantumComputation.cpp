@@ -1596,11 +1596,11 @@ void QuantumComputation::ifElse(std::unique_ptr<Operation>&& thenOp,
                                 controlRegister, expectedValue, cmp);
 }
 void QuantumComputation::ifElse(std::unique_ptr<Operation>&& thenOp,
-                                std::unique_ptr<Operation>&& elseOp, Bit cBit,
-                                const std::uint64_t expectedValue,
+                                std::unique_ptr<Operation>&& elseOp,
+                                const Bit controlBit, const bool expectedValue,
                                 const ComparisonKind cmp) {
-  emplace_back<IfElseOperation>(std::move(thenOp), std::move(elseOp), cBit,
-                                expectedValue, cmp);
+  emplace_back<IfElseOperation>(std::move(thenOp), std::move(elseOp),
+                                controlBit, expectedValue, cmp);
 }
 
 } // namespace qc
