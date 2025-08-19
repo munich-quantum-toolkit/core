@@ -396,12 +396,11 @@ TEST_F(QFRFunctionality, OperationEquality) {
   EXPECT_TRUE(measure0.equals(measure2, perm0, {}));
   EXPECT_TRUE(measure0.equals(measure2, {}, perm0));
 
-  const auto expectedValue0 = 0U;
-  const auto expectedValue1 = 1U;
-
   std::unique_ptr<Operation> xp0 = std::make_unique<StandardOperation>(0, X);
   std::unique_ptr<Operation> xp1 = std::make_unique<StandardOperation>(0, X);
   std::unique_ptr<Operation> xp2 = std::make_unique<StandardOperation>(0, X);
+  const auto expectedValue0 = false;
+  const auto expectedValue1 = true;
   const auto ifElse0 =
       IfElseOperation(std::move(xp0), nullptr, 0, expectedValue0);
   const auto ifElse1 =
@@ -962,7 +961,7 @@ TEST_F(QFRFunctionality, measureAllInsufficientRegisterSize) {
 
 TEST_F(QFRFunctionality, checkClassicalRegisters) {
   QuantumComputation qc(1U, 1U);
-  ClassicalRegister creg = {0U, 2U};
+  const ClassicalRegister creg = {0U, 2U};
   EXPECT_THROW(qc.if_(X, 0, creg, 1U), std::runtime_error);
 }
 
@@ -1275,7 +1274,7 @@ TEST_F(QFRFunctionality, CopyConstructor) {
   qc.swap(0, 1);
   qc.barrier();
   qc.measure(0, 0);
-  ClassicalRegister creg = {0U, 1U};
+  const ClassicalRegister creg = {0U, 1U};
   qc.if_(X, 0, creg, 1U);
   const sym::Variable theta{"theta"};
   qc.rx(Symbolic{theta}, 0);

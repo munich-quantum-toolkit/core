@@ -12,14 +12,13 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
-#include "ir/operations/StandardOperation.hpp"
 
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory>
 #include <random>
 #include <sstream>
 #include <string>

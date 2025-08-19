@@ -54,11 +54,11 @@ std::ostream& operator<<(std::ostream& os, const ComparisonKind& kind) {
 
 IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                                  std::unique_ptr<Operation>&& elseOp,
-                                 const ClassicalRegister controlReg,
-                                 const std::uint64_t expectedVal,
+                                 const ClassicalRegister& controlRegister,
+                                 const std::uint64_t expectedValue,
                                  const ComparisonKind kind)
     : thenOp(std::move(thenOp)), elseOp(std::move(elseOp)),
-      controlRegister(std::move(controlReg)), expectedValue(expectedVal),
+      controlRegister(controlRegister), expectedValueRegister(expectedValue),
       comparisonKind(kind) {
   name = "if_else";
   type = IfElse;
@@ -66,14 +66,15 @@ IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
 
 IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                                  std::unique_ptr<Operation>&& elseOp,
-                                 const Bit controlBit, const bool expectedVal,
+                                 const Bit controlBit, const bool expectedValue,
                                  const ComparisonKind kind)
     : thenOp(std::move(thenOp)), elseOp(std::move(elseOp)),
-      controlBit(controlBit), expectedValue(expectedVal), comparisonKind(kind) {
+      controlBit(controlBit), expectedValueBit(expectedValue),
+      comparisonKind(kind) {
   // Canonicalize comparisons on a single bit
   if (comparisonKind == Neq) {
     comparisonKind = Eq;
-    expectedValue = !expectedVal;
+    expectedValueBit = !expectedValueBit;
   }
   if (comparisonKind != Eq) {
     throw std::invalid_argument(
@@ -87,7 +88,9 @@ IfElseOperation::IfElseOperation(const IfElseOperation& op)
     : Operation(op), thenOp(op.thenOp ? op.thenOp->clone() : nullptr),
       elseOp(op.elseOp ? op.elseOp->clone() : nullptr),
       controlRegister(op.controlRegister), controlBit(op.controlBit),
-      expectedValue(op.expectedValue), comparisonKind(op.comparisonKind) {}
+      expectedValueRegister(op.expectedValueRegister),
+      expectedValueBit(op.expectedValueBit), comparisonKind(op.comparisonKind) {
+}
 
 IfElseOperation& IfElseOperation::operator=(const IfElseOperation& op) {
   if (this != &op) {
@@ -96,7 +99,8 @@ IfElseOperation& IfElseOperation::operator=(const IfElseOperation& op) {
     elseOp = op.elseOp ? op.elseOp->clone() : nullptr;
     controlRegister = op.controlRegister;
     controlBit = op.controlBit;
-    expectedValue = op.expectedValue;
+    expectedValueRegister = op.expectedValueRegister;
+    expectedValueBit = op.expectedValueBit;
     comparisonKind = op.comparisonKind;
   }
   return *this;
@@ -112,8 +116,13 @@ bool IfElseOperation::equals(const Operation& operation,
     if (controlBit != other->controlBit) {
       return false;
     }
-    if (expectedValue != other->expectedValue ||
-        comparisonKind != other->comparisonKind) {
+    if (expectedValueRegister != other->expectedValueRegister) {
+      return false;
+    }
+    if (expectedValueBit != other->expectedValueBit) {
+      return false;
+    }
+    if (comparisonKind != other->comparisonKind) {
       return false;
     }
     if (thenOp && other->thenOp) {
@@ -145,7 +154,7 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
   if (controlRegister.has_value()) {
     assert(!controlBit.has_value());
     of << controlRegister->getName() << ' ' << comparisonKind << ' '
-       << expectedValue;
+       << expectedValueRegister;
   } else if (controlBit.has_value()) {
     of << (!expectedValueBit ? "!" : "") << bitMap.at(*controlBit).second;
   }

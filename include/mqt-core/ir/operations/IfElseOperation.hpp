@@ -37,13 +37,13 @@ class IfElseOperation final : public Operation {
 public:
   IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                   std::unique_ptr<Operation>&& elseOp,
-                  const ClassicalRegister controlReg,
-                  const std::uint64_t expectedVal = 1U,
+                  const ClassicalRegister& controlRegister,
+                  const std::uint64_t expectedValue = 1U,
                   const ComparisonKind kind = Eq);
 
   IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                   std::unique_ptr<Operation>&& elseOp, const Bit controlBit,
-                  const bool expectedVal = true,
+                  const bool expectedValue = true,
                   const ComparisonKind kind = Eq);
 
   IfElseOperation(const IfElseOperation& op);
@@ -76,7 +76,13 @@ public:
     return controlBit;
   }
 
-  [[nodiscard]] auto getExpectedValue() const noexcept { return expectedValue; }
+  [[nodiscard]] auto getExpectedValueRegister() const noexcept {
+    return expectedValueRegister;
+  }
+
+  [[nodiscard]] bool getExpectedValueBit() const noexcept {
+    return expectedValueBit;
+  }
 
   [[nodiscard]] auto getComparisonKind() const noexcept {
     return comparisonKind;
@@ -138,7 +144,8 @@ private:
   std::unique_ptr<Operation> elseOp;
   std::optional<ClassicalRegister> controlRegister;
   std::optional<Bit> controlBit;
-  std::uint64_t expectedValue = 1U;
+  std::uint64_t expectedValueRegister = 1U;
+  bool expectedValueBit = true;
   ComparisonKind comparisonKind = Eq;
 };
 } // namespace qc
