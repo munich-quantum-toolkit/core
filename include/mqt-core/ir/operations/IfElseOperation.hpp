@@ -60,6 +60,8 @@ public:
     return true;
   }
 
+  [[nodiscard]] bool isControlled() const override { return false; }
+
   [[nodiscard]] auto getThenBranch() const { return thenBranch.get(); }
 
   [[nodiscard]] auto getElseBranch() const { return elseBranch.get(); }
@@ -78,19 +80,6 @@ public:
     return comparisonKind;
   }
 
-  void addControl(Control) override {
-    throw std::runtime_error("IfElseOperation does not support controls.");
-  }
-  void clearControls() override {
-    throw std::runtime_error("IfElseOperation does not support controls.");
-  }
-  void removeControl(Control) override {
-    throw std::runtime_error("IfElseOperation does not support controls.");
-  }
-  Controls::iterator removeControl(Controls::iterator) override {
-    throw std::runtime_error("IfElseOperation does not support controls.");
-  }
-
   [[nodiscard]] bool equals(const Operation& op, const Permutation& perm1,
                             const Permutation& perm2) const override;
   [[nodiscard]] bool equals(const Operation& op) const override {
@@ -106,6 +95,40 @@ public:
     if (elseBranch) {
       elseBranch->invert();
     }
+  }
+
+  // Override invalid Operation setters
+  void setTargets(const Targets&) override {
+    throw std::runtime_error("An IfElseOperation does not have a target.");
+  }
+
+  void setControls(const Controls&) override {
+    throw std::runtime_error("An IfElseOperation cannot be controlled.");
+  }
+  void addControl(Control) override {
+    throw std::runtime_error("An IfElseOperation cannot be controlled.");
+  }
+  void clearControls() override {
+    throw std::runtime_error("An IfElseOperation cannot be controlled.");
+  }
+  void removeControl(Control) override {
+    throw std::runtime_error("An IfElseOperation cannot be controlled.");
+  }
+  Controls::iterator removeControl(Controls::iterator) override {
+    throw std::runtime_error("An IfElseOperation cannot be controlled.");
+  }
+
+  void setGate(const OpType) override {
+    throw std::runtime_error(
+        "Cannot set operation type of an IfElseOperation.");
+  }
+
+  void setParameter(const std::vector<fp>&) override {
+    throw std::runtime_error("An IfElseOperation cannot be parameterized.");
+  }
+
+  void apply(const Permutation&) override {
+    throw std::runtime_error("Cannot apply permutation to an IfElseOperation.");
   }
 
 private:

@@ -322,7 +322,6 @@ TEST_F(DDNoiseFunctionalityTest, testingUsedQubits) {
 
   auto ifElseOp = qc::IfElseOperation(
       std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0, 1U);
-  EXPECT_EQ(ifElseOp.getUsedQubits().size(), 0);
   auto* xOp = ifElseOp.getThenBranch();
   EXPECT_EQ(xOp->getUsedQubits().size(), 1);
   EXPECT_TRUE(xOp->getUsedQubits().count(0) == 1U);

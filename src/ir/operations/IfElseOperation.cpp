@@ -74,7 +74,7 @@ IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
     throw std::invalid_argument(
         "Expected value for single bit comparison must be 0 or 1.");
   }
-  // Canonicalize comparisons on a single bit.
+  // Canonicalize comparisons on a single bit
   if (comparisonKind == Neq) {
     comparisonKind = Eq;
     expectedValue = 1 - expectedValue;
@@ -177,9 +177,7 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
 std::size_t std::hash<qc::IfElseOperation>::operator()(
     qc::IfElseOperation const& op) const noexcept {
   std::size_t seed = 0U;
-  if (op.getThenBranch() != nullptr) {
-    qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getThenBranch()));
-  }
+  qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getThenBranch()));
   if (op.getElseBranch() != nullptr) {
     qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getElseBranch()));
   }
