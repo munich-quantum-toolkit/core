@@ -333,9 +333,11 @@ module {
     // CHECK-LABEL: llvm.func @testSingleQubitRotationOp()
     llvm.func @testSingleQubitRotationOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
-        // CHECK: mqtref.u2(%[[c_0]], %[[c_0]]) %[[q_0:.*]]
+        // CHECK: %[[c_1:.*]] = llvm.mlir.constant(1.000000e-01 : f64) : f64
+        // CHECK: %[[c_2:.*]] = llvm.mlir.constant(2.000000e-01 : f64) : f64
+        // CHECK: mqtref.u2(%[[c_0]], %[[c_1]]) %[[q_0:.*]]
         // CHECK: mqtref.p(%[[c_0]]) %[[q_0]]
-        // CHECK: mqtref.u(%[[c_0]], %[[c_0]], %[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.u(%[[c_0]], %[[c_1]], %[[c_2]]) %[[q_0]]
         // CHECK: mqtref.p(%[[c_0]]) %[[q_0]]
         // CHECK: mqtref.rx(%[[c_0]]) %[[q_0]]
         // CHECK: mqtref.ry(%[[c_0]]) %[[q_0]]
@@ -345,6 +347,8 @@ module {
         %c0 = llvm.mlir.constant(2 : i64) : i64
         %c1 = llvm.mlir.constant(0 : i64) : i64
         %c2 = llvm.mlir.constant(3.000000e-01 : f64) : f64
+        %c3 = llvm.mlir.constant(1.000000e-01 : f64) : f64
+        %c4 = llvm.mlir.constant(2.000000e-01 : f64) : f64
         llvm.call @__quantum__rt__initialize(%0) : (!llvm.ptr) -> ()
         llvm.br ^bb1
       ^bb1:
@@ -352,9 +356,9 @@ module {
         %1 = llvm.call @__quantum__rt__array_get_element_ptr_1d(%r0, %c1) : (!llvm.ptr, i64) -> !llvm.ptr
         %q0 = llvm.load %1 : !llvm.ptr -> !llvm.ptr
 
-        llvm.call @__quantum__qis__u2__body(%c2, %c2, %q0) : (f64, f64, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__u2__body(%c2, %c3, %q0) : (f64, f64, !llvm.ptr) -> ()
         llvm.call @__quantum__qis__u1__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__u3__body(%c2, %c2, %c2, %q0) : (f64, f64, f64, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__u3__body(%c2, %c3, %c4, %q0) : (f64, f64, f64, !llvm.ptr) -> ()
         llvm.call @__quantum__qis__p__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
         llvm.call @__quantum__qis__rx__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
         llvm.call @__quantum__qis__ry__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
@@ -382,19 +386,20 @@ module {
     // CHECK-LABEL: llvm.func @testMultipleQubitRotationOp()
     llvm.func @testMultipleQubitRotationOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
+        // CHECK: %[[c_1:.*]] = llvm.mlir.constant(2.000000e-01 : f64) : f64
         // CHECK: mqtref.rxx(%[[c_0]]) %[[q_0:.*]], %[[q_1:.*]]
         // CHECK: mqtref.ryy(%[[c_0]]) %[[q_0]], %[[q_1]]
         // CHECK: mqtref.rzz(%[[c_0]]) %[[q_0]], %[[q_1]]
         // CHECK: mqtref.rzx(%[[c_0]]) %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.xxminusyy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.xxplusyy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]]
-
+        // CHECK: mqtref.xxminusyy(%[[c_0]], %[[c_1]]) %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.xxplusyy(%[[c_0]], %[[c_1]]) %[[q_0]], %[[q_1]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(2 : i64) : i64
         %c1 = llvm.mlir.constant(0 : i64) : i64
         %c2 = llvm.mlir.constant(1 : i64) : i64
         %c3 = llvm.mlir.constant(3.000000e-01 : f64) : f64
+        %c4 = llvm.mlir.constant(2.000000e-01 : f64) : f64
         llvm.call @__quantum__rt__initialize(%0) : (!llvm.ptr) -> ()
         llvm.br ^bb1
       ^bb1:
@@ -408,8 +413,8 @@ module {
         llvm.call @__quantum__qis__ryy__body(%c3, %q0, %q1) : (f64, !llvm.ptr, !llvm.ptr) -> ()
         llvm.call @__quantum__qis__rzz__body(%c3, %q0, %q1) : (f64, !llvm.ptr, !llvm.ptr) -> ()
         llvm.call @__quantum__qis__rzx__body(%c3, %q0, %q1) : (f64, !llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__xxminusyy__body(%c3, %c3, %q0, %q1) : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__xxplusyy__body(%c3, %c3, %q0, %q1) : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__xxminusyy__body(%c3, %c4, %q0, %q1) : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__xxplusyy__body(%c3, %c4, %q0, %q1) : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
 
         llvm.br ^bb2
       ^bb2:

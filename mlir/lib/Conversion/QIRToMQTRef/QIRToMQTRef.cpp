@@ -143,6 +143,31 @@ struct ConvertQIRLoad final : OpConversionPattern<LLVM::LoadOp> {
     return success();
   }
 };
+
+struct ConvertQIRAddressOf final : OpConversionPattern<LLVM::AddressOfOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(LLVM::AddressOfOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    // erase the operation and use the operands as results
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+struct ConvertQIRGlobal final : OpConversionPattern<LLVM::GlobalOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(LLVM::GlobalOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
   using StatefulOpConversionPattern<LLVM::CallOp>::StatefulOpConversionPattern;
 
@@ -482,9 +507,13 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
     // only convert the call and load operations for now
     target.addIllegalOp<LLVM::CallOp>();
     target.addIllegalOp<LLVM::LoadOp>();
+    target.addIllegalOp<LLVM::AddressOfOp>();
+    target.addIllegalOp<LLVM::GlobalOp>();
 
-    patterns.add<ConvertQIRLoad>(typeConverter, context);
     patterns.add<ConvertQIRCall>(typeConverter, context, &state);
+    patterns.add<ConvertQIRLoad>(typeConverter, context);
+    patterns.add<ConvertQIRAddressOf>(typeConverter, context);
+    patterns.add<ConvertQIRGlobal>(typeConverter, context);
 
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
