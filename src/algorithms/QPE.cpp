@@ -180,8 +180,7 @@ auto constructIterativeQPECircuit(QuantumComputation& qc, const fp lambda,
     for (std::size_t j = 0; j < i; j++) {
       auto iQFTLambda = -PI / static_cast<double>(1ULL << (i - j));
       const auto params = std::vector<fp>{iQFTLambda};
-      qc.ifElse(std::make_unique<StandardOperation>(1, P, params), nullptr, j,
-                1U);
+      qc.if_(P, 1, j, true, Eq, params);
     }
     qc.h(1);
 

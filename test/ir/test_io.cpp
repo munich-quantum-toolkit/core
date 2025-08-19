@@ -611,9 +611,8 @@ TEST_F(IO, fromCompoundOperation) {
 TEST_F(IO, ifElseOperationOperationToOpenQASM3) {
   qc.addQubitRegister(2);
   const auto& creg = qc.addClassicalRegister(2);
-  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0);
-  qc.ifElse(std::make_unique<qc::StandardOperation>(1, qc::X), nullptr, creg,
-            1U);
+  qc.if_(qc::X, 0, 0);
+  qc.if_(qc::X, 1, creg, 1U);
   const std::string expected = "// i 0 1\n"
                                "// o 0 1\n"
                                "OPENQASM 3.0;\n"
@@ -635,8 +634,7 @@ TEST_F(IO, ifElseOperationInvalidBitComparison) {
   qc.addQubitRegister(1);
   qc.addClassicalRegister(1);
   try {
-    qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0,
-              true, qc::Lt);
+    qc.if_(qc::X, 0, 0, true, qc::Lt);
     FAIL() << "Expected an exception for invalid expected value.";
   } catch (const std::invalid_argument& e) {
     EXPECT_STREQ(e.what(),

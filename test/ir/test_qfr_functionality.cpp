@@ -339,8 +339,8 @@ TEST_F(QFRFunctionality, cloningDifferentOperations) {
   comp.barrier(0);
   comp.h(0);
   qc.emplace_back(comp.asOperation());
-  qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr,
-            qc.getClassicalRegisters().at("c"), 1U);
+  auto creg = qc.getClassicalRegisters().at("c");
+  qc.if_(X, 0, creg, 1U);
 
   const auto qcCloned = qc;
   ASSERT_EQ(qc.size(), qcCloned.size());
@@ -543,7 +543,7 @@ TEST_F(QFRFunctionality, CircuitToOperation) {
   EXPECT_TRUE(qc.empty());
   qc.x(0);
   qc.h(0);
-  qc.ifElse(std::make_unique<StandardOperation>(1, 0, X), nullptr, {0, 1}, 1U);
+  qc.if_(X, 0, 1, {0U, 1U}, 1U);
   const auto& op2 = qc.asOperation();
   ASSERT_NE(op2, nullptr);
   EXPECT_EQ(op2->getType(), Compound);
@@ -962,9 +962,8 @@ TEST_F(QFRFunctionality, measureAllInsufficientRegisterSize) {
 
 TEST_F(QFRFunctionality, checkClassicalRegisters) {
   QuantumComputation qc(1U, 1U);
-  EXPECT_THROW(qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr,
-                         {0U, 2U}, 1U),
-               std::runtime_error);
+  ClassicalRegister creg = {0U, 2U};
+  EXPECT_THROW(qc.if_(X, 0, creg, 1U), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, testSettingAncillariesProperlyCreatesRegisters) {
@@ -1276,7 +1275,8 @@ TEST_F(QFRFunctionality, CopyConstructor) {
   qc.swap(0, 1);
   qc.barrier();
   qc.measure(0, 0);
-  qc.ifElse(std::make_unique<StandardOperation>(0, X), nullptr, {0, 1}, 1U);
+  ClassicalRegister creg = {0U, 1U};
+  qc.if_(X, 0, creg, 1U);
   const sym::Variable theta{"theta"};
   qc.rx(Symbolic{theta}, 0);
 
