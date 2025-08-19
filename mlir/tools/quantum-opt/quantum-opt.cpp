@@ -18,7 +18,6 @@
 #include "mlir/Dialect/MQTRef/Transforms/Passes.h"         // IWYU pragma: keep
 
 #include <mlir/Dialect/Func/Extensions/AllExtensions.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/InitAllDialects.h>
 #include <mlir/InitAllPasses.h>
@@ -37,7 +36,6 @@ int main(const int argc, char** argv) {
   mlir::registerAllDialects(registry);
   mlir::func::registerAllExtensions(registry);
   registry.insert<mqt::ir::opt::MQTOptDialect>();
-  registry.insert<mlir::LLVM::LLVMDialect>();
   registry.insert<mqt::ir::ref::MQTRefDialect>();
 
   return mlir::asMainReturnCode(

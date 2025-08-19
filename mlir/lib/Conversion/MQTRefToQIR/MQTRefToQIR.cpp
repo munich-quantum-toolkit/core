@@ -286,6 +286,30 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
     operands.append(posCtrlQubits.begin(), posCtrlQubits.end());
     operands.append(negCtrlQubits.begin(), negCtrlQubits.end());
 
+    // check for negative controlled qubits
+    // for any negative controlled qubits place an NOT operation before and
+    // after the matched gate operation
+    if (negCtrlQubits.size() > 0) {
+      // create name and signature of the NOT operation
+      const StringRef notGate = "__quantum__qis__x__body";
+      const auto notGateSignature = LLVM::LLVMFunctionType::get(
+          LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
+
+      // get the function declaration
+      const auto notGateDecl =
+          getFunctionDeclaration(rewriter, op, notGate, notGateSignature);
+
+      // place a NOT operation before and after the operation for each negative
+      // controlled qubit
+      for (const auto negCtrlQubit : negCtrlQubits) {
+        rewriter.setInsertionPoint(op);
+        rewriter.create<LLVM::CallOp>(op.getLoc(), notGateDecl, negCtrlQubit);
+        rewriter.setInsertionPointAfter(op);
+        rewriter.create<LLVM::CallOp>(op.getLoc(), notGateDecl, negCtrlQubit);
+      }
+      // reset the insertionpoint
+      rewriter.setInsertionPoint(op);
+    }
     // get the types of the values
     const SmallVector<Type> types =
         llvm::to_vector(ValueRange(operands).getTypes());

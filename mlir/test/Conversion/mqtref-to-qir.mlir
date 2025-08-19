@@ -352,10 +352,15 @@ module {
 module {
     // CHECK-LABEL: llvm.func @testConvertControlledOp()
     func.func @testConvertControlledOp() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: llvm.call @__quantum__qis__cx__body(%[[ANY:.*]], %[[ANY:.*]]) : (!llvm.ptr, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__ccx__body(%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]]) : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__cz__body(%[[ANY:.*]], %[[ANY:.*]]) : (!llvm.ptr, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__crx__body(%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]]) : (f64, !llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__cx__body(%[[q_0:.*]], %[[q_1:.*]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__ccx__body(%[[q_0]], %[[q_1]], %[[q_2:.*]]) : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__x__body(%[[q_1]]) : (!llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__cz__body(%[[q_0]], %[[q_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__x__body(%[[q_1]]) : (!llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__x__body(%[[q_1]]) : (!llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__ccx__body(%[[q_0]], %[[q_2]], %[[q_1]]) : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__x__body(%[[q_1]]) : (!llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__crx__body(%[[c_0:.*]], %[[q_0]], %[[q_1]]) : (f64, !llvm.ptr, !llvm.ptr) -> ()
 
         %c0 = arith.constant 3.000000e-01 : f64
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
@@ -366,6 +371,7 @@ module {
         mqtref.x() %q0 ctrl %q1
         mqtref.x() %q0 ctrl %q1, %q2
         mqtref.z() %q0 nctrl %q1
+        mqtref.x() %q0 ctrl %q2 nctrl %q1
         mqtref.rx(%c0) %q0 ctrl %q1
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
