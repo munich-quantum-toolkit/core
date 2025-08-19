@@ -8,20 +8,27 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
-#include "mlir/IR/Attributes.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/Value.h"
 
-#include <algorithm>
 #include <cstddef>
+#include <iterator>
 #include <memory>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/WalkPatternRewriteDriver.h>
+#include <optional>
+#include <queue>
+#include <span>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -45,115 +52,309 @@ private:
   uint64_t nqubits_;
 };
 
-struct RoutingContext {
-  explicit RoutingContext(std::unique_ptr<Architecture> target)
-      : target_(std::move(target)) {
-    available_.reserve(target_->nqubits());
+struct RoutingState {
+  using MapType = llvm::DenseMap<mlir::Value, std::size_t>;
+  using InvMapType = llvm::DenseMap<std::size_t, mlir::Value>;
+
+  explicit RoutingState() = default;
+
+  /// @brief Return reference to static qubit pool.
+  [[nodiscard]] std::queue<mlir::Value>& pool() { return pool_; }
+
+  /// @brief If possible, retrieve a free static qubit from the static pool.
+  [[nodiscard]] std::optional<mlir::Value> getFromPool() {
+    if (pool_.empty()) {
+      return std::nullopt;
+    }
+
+    auto q = pool_.front();
+    pool_.pop();
+    return q;
   }
-  /// @brief Return the target architecture as reference.
-  [[nodiscard]] Architecture& target() { return *target_; }
-  /// @brief Return all available static qubits.
-  [[nodiscard]] std::vector<mlir::Value> available() { return available_; }
+
+  /// @brief Add static qubit to the pool.
+  void addToPool(mlir::Value q) { pool().push(q); }
+
+  /// @brief Return the mapping from values to indices.
+  [[nodiscard]] MapType& map() { return map_; }
+
+  /// @brief Return the mapping from indices to values.
+  [[nodiscard]] InvMapType& invMap() { return invMap_; }
+
+  [[nodiscard]] llvm::DenseSet<mlir::Value>& executables() {
+    return executables_;
+  }
+
+  void clear() {
+    map_.clear();
+    invMap_.clear();
+    std::queue<mlir::Value>().swap(pool_); // clear queue.
+  }
 
 private:
-  std::vector<mlir::Value> available_;
   std::unique_ptr<Architecture> target_;
-};
 
-template <typename OpType>
-class StatefulOpRewritePattern : public mlir::OpRewritePattern<OpType> {
-  using mlir::OpRewritePattern<OpType>::OpRewritePattern;
+  llvm::DenseMap<mlir::Value, std::size_t> map_;
+  llvm::DenseMap<std::size_t, mlir::Value> invMap_;
 
-public:
-  StatefulOpRewritePattern(mlir::MLIRContext* context,
-                           const std::shared_ptr<RoutingContext>& state)
-      : mlir::OpRewritePattern<OpType>(context), state_(state) {}
+  llvm::DenseSet<mlir::Value> executables_;
 
-  /// @brief Return the state object as reference.
-  [[nodiscard]] RoutingContext& state() const { return *state_; }
-
-private:
-  std::shared_ptr<RoutingContext> state_;
+  std::queue<mlir::Value> pool_;
 };
 
 namespace attribute_names {
-constexpr std::string TARGET_NAME = "mqtopt.target.name";
-constexpr std::string TARGET_NQUBITS = "mqtopt.target.nqubits";
+constexpr std::string TARGET = "mqtopt.target";
 } // namespace attribute_names
 
 } // namespace
 
-/// @brief This pattern removes the `allocQubitRegister` operation and assigns
-/// static qubits.
-struct RewriteAlloc final : StatefulOpRewritePattern<AllocOp> {
-  using StatefulOpRewritePattern<AllocOp>::StatefulOpRewritePattern;
+// namespace {
+// mlir::LogicalResult
+// walkDefUseAndApply(mlir::Operation* op,
+//                    const std::shared_ptr<RoutingContext>& state) {
+//   mlir::MLIRContext* ctx = op->getContext();
+//   mlir::PatternRewriter rewriter(ctx);
 
-  mlir::LogicalResult
-  matchAndRewrite(AllocOp op, mlir::PatternRewriter& rewriter) const override {
-    auto module = op->getParentOfType<mlir::ModuleOp>();
-    assert(module && "Expecting module");
+//   auto result = op->walk([&](mlir::Operation* walkOp) {
+//     rewriter.setInsertionPoint(walkOp);
 
-    // At first, we create as many static qubits as the architecture supports.
-    // This aligns with qiskit's 'Layout' stage. Moreover, we add module
-    // attributes specifying the architecture.
-    if (!module->hasAttr(attribute_names::TARGET_NAME)) {
-      const auto& target = state().target();
+//     if (auto alloc = mlir::dyn_cast<AllocOp>(walkOp)) {
 
-      // Add architecture information to routed module.
-      const auto nameAttr = rewriter.getStringAttr(target.name());
-      module->setAttr(attribute_names::TARGET_NAME, nameAttr);
+//       // Bootstrap: Create as many static qubits as the architecture
+//       supports.
+//       // This aligns with qiskit's 'Layout' stage.
+//       // Moreover, add attributes to module specifying the architecture.
 
-      const auto nqubits = target.nqubits();
-      const auto nqubitsType = rewriter.getIntegerType(64);
-      const auto nqubitsAttr = rewriter.getIntegerAttr(nqubitsType, nqubits);
-      module->setAttr(attribute_names::TARGET_NQUBITS, nqubitsAttr);
+//       mlir::Operation* module =
+//           walkOp->getParentWithTrait<mlir::SymbolOpInterface::Trait>();
+//       assert(module);
 
-      // Create and collect static qubits for routed module.
-      const auto& qubit = QubitType::get(rewriter.getContext());
-      for (std::size_t i = 0; i < target.nqubits(); ++i) {
-        auto qubitOp = rewriter.create<QubitOp>(module->getLoc(), qubit, i);
-        state().available().push_back(qubitOp);
+//       if (!module->hasAttr(attribute_names::TARGET)) {
+//         const auto& target = state->target();
+
+//         // Add architecture information to routed module.
+//         const auto nameAttr = rewriter.getStringAttr(target.name());
+//         module->setAttr(attribute_names::TARGET, nameAttr);
+
+//         // Create and collect static qubits for routed module.
+//         const auto& qubit = QubitType::get(ctx);
+//         for (std::size_t i = 0; i < target.nqubits(); ++i) {
+//           auto qubitOp = rewriter.create<QubitOp>(module->getLoc(), qubit,
+//           i); state->addFree(qubitOp); state->map()[qubitOp] = i;
+//           state->invMap()[i] = qubitOp;
+//         }
+//       }
+//     } else if (auto extract = mlir::dyn_cast<ExtractOp>(walkOp)) {
+
+//       // 1) Get available (free) static qubit and replace extracted qubit.
+//       // We can't use the indices here since they may be operands.
+
+//       auto outQubit = extract.getOutQubit();
+//       auto avail = state->getFree();
+//       if (!avail) {
+//         return mlir::WalkResult(
+//             extract.emitOpError()
+//             << "requires one more qubit than the architecture supports.");
+//       }
+//       rewriter.replaceAllUsesWith(outQubit, avail.value());
+
+//       auto inQreq = extract.getInQreg();
+//       auto outQreq = extract.getOutQreg();
+//       rewriter.replaceAllUsesWith(outQreq, inQreq);
+//       rewriter.eraseOp(extract);
+
+//     } else if (auto ui = mlir::dyn_cast<UnitaryInterface>(walkOp)) {
+//       if (ui.getNegCtrlInQubits().size() > 0) {
+//         return mlir::WalkResult(
+//             extract.emitOpError()
+//             << "expects only gates with positive controls qubits.");
+//       }
+
+//       if (ui.getPosCtrlInQubits().size() > 1) {
+//         return mlir::WalkResult(
+//             extract.emitOpError()
+//             << "expects only gates with one positive control qubit.");
+//       }
+
+//       if (ui.getInQubits().size() > 1) {
+//         return mlir::WalkResult(extract.emitOpError()
+//                                 << "expects only one target qubit.");
+//       }
+
+//       const auto updateMaps = [&](mlir::Value in, mlir::Value out) {
+//         const auto index = state->map()[in];
+//         state->map().erase(in);
+//         state->map()[out] = index;
+//         state->invMap()[index] = out;
+//       };
+
+//       if (ui.getPosCtrlInQubits().size() == 1) { // Control Qubit.
+//         const auto& inQubit = ui.getPosCtrlInQubits().front();
+//         const auto& outQubit = ui.getPosCtrlOutQubits().front();
+//         updateMaps(inQubit, outQubit);
+//       }
+
+//       // Target Qubit.
+//       const auto& inQubit = ui.getInQubits().front();
+//       const auto& outQubit = ui.getOutQubits().front();
+//       updateMaps(inQubit, outQubit);
+
+//     } else if (auto insert = mlir::dyn_cast<InsertOp>(walkOp)) {
+
+//       // 1) Releases static qubit.
+//       // 2) Erases the InsertOp.
+//       // Replaces 'out' with 'in' registers to keep valid MLIR program.
+//       // Otherwise MLIR segfaults.
+
+//       state->addFree(insert.getInQubit());
+
+//       auto inQreq = insert.getInQreg();
+//       auto outQreq = insert.getOutQreg();
+//       rewriter.replaceAllUsesWith(outQreq, inQreq);
+//       rewriter.eraseOp(insert);
+
+//     } else if (auto dealloc = mlir::dyn_cast<DeallocOp>(walkOp)) {
+
+//       // 1) Clear state. TODO: This should clear qubits belonging to
+//       register.
+//       // 2) Erases the DeallocOp.
+
+//       state->clear();
+
+//       rewriter.eraseOp(dealloc);
+//     }
+
+//     return mlir::WalkResult::advance();
+//   });
+
+//   return result.wasInterrupted() ? mlir::failure() : mlir::success();
+// }
+// }; // namespace
+
+namespace {
+using namespace mlir;
+
+/// @brief Add attributes to module-like parent specifying the architecture.
+void setModuleTarget(Operation* moduleLike, PatternRewriter& rewriter,
+                     const Architecture& target) {
+  const auto nameAttr = rewriter.getStringAttr(target.name());
+  moduleLike->setAttr(attribute_names::TARGET, nameAttr);
+}
+
+/// @brief Create @p nqubits static qubits in module-like parent.
+void addModuleQubits(Operation* moduleLike, const uint64_t nqubits,
+                     RoutingState& state, PatternRewriter& rewriter) {
+  const auto& qubit = QubitType::get(moduleLike->getContext());
+  for (std::size_t i = 0; i < nqubits; ++i) {
+    auto qubitOp = rewriter.create<QubitOp>(moduleLike->getLoc(), qubit, i);
+    state.addToPool(qubitOp);
+  }
+}
+
+/// @brief Absorb single qubit gates on a wire for a single qubit @p q.
+Value absorb1QGates(Value q) {
+  assert(!q.getUsers().empty());
+
+  Operation* nextOnWire = *(q.getUsers().begin());
+  auto unitary = dyn_cast<UnitaryInterface>(nextOnWire);
+
+  if (!unitary) {
+    return q;
+  }
+
+  if (!unitary.getAllCtrlInQubits().empty()) {
+    return q;
+  }
+
+  return absorb1QGates(unitary.getOutQubits().front());
+}
+
+LogicalResult spanAndFold(Operation* base,
+                          std::unique_ptr<Architecture> target) {
+  MLIRContext* ctx = base->getContext();
+  PatternRewriter rewriter(ctx);
+
+  RoutingState state{};
+
+  auto result = base->walk([&](Operation* op) {
+    rewriter.setInsertionPoint(op);
+
+    if (auto extract = dyn_cast<ExtractOp>(op)) {
+      // TODO: What trait to use here best?
+      Operation* moduleLike = op->getParentOp();
+      assert(moduleLike);
+      if (!moduleLike->hasAttr(attribute_names::TARGET)) {
+        setModuleTarget(moduleLike, rewriter, *target);
+        addModuleQubits(moduleLike, target->nqubits(), state, rewriter);
       }
+
+      auto qubit = state.getFromPool();
+      if (!qubit) {
+        return WalkResult(
+            extract.emitOpError()
+            << "requires one more qubit than the architecture supports");
+      }
+      state.executables().insert(qubit.value());
+
+      rewriter.replaceAllUsesWith(extract.getOutQubit(), qubit.value());
+      rewriter.replaceAllUsesWith(extract.getOutQreg(), extract.getInQreg());
+
+      Operation* successor = extract->getNextNode();
+      if (successor && dyn_cast<ExtractOp>(successor)) {
+        return WalkResult::advance();
+      }
+
+      // Extract phase over.
+      // Mapping circuit until inserts arrive.
+
+      while (successor && !dyn_cast<InsertOp>(successor)) { // This is not right. Walking Ops twice.
+        auto absorbed = llvm::map_range(state.executables(), absorb1QGates);
+        state.executables() =
+            llvm::DenseSet<Value>(absorbed.begin(), absorbed.end());
+
+        llvm::DenseSet<UnitaryInterface> layer{};
+        for (auto ready : state.executables()) {
+          // This could be an insertion, measurement, ...
+          Operation* user = *(ready.getUsers().begin());
+          if (auto unitary = dyn_cast<UnitaryInterface>(user)) {
+            auto target = unitary.getInQubits().front();
+            if (auto control = unitary.getAllCtrlInQubits().front()) {
+              if (state.executables().contains(target) &&
+                  state.executables().contains(control)) {
+                layer.insert(unitary);
+              }
+            }
+          }
+        }
+
+        llvm::outs() << "LAYER:\n";
+        for (auto unitary : layer) {
+          llvm::outs() << '\t' << unitary->getLoc() << '\n';
+            
+          // Insert 'out's.
+          state.executables().insert(unitary.getOutQubits().front());
+          state.executables().insert(unitary.getAllCtrlOutQubits().front());
+          // Remove 'in's.
+          state.executables().erase(unitary.getInQubits().front());
+          state.executables().erase(unitary.getAllCtrlInQubits().front());
+        }
+        llvm::outs() << "-----------\n";
+
+        successor = successor->getNextNode();
+      }
+
+    } else if (auto insert = dyn_cast<InsertOp>(op)) {
+      return WalkResult::advance();
+    } else if (auto dealloc = dyn_cast<DeallocOp>(op)) {
+      return WalkResult::advance();
     }
 
-    // The 'alloc' Op won't be needed anymore.
-    rewriter.eraseOp(op);
+    return WalkResult::advance();
+  });
 
-    return mlir::success();
-  }
-};
-
-struct RewriteExtract final : StatefulOpRewritePattern<ExtractOp> {
-  using StatefulOpRewritePattern<ExtractOp>::StatefulOpRewritePattern;
-
-  mlir::LogicalResult
-  matchAndRewrite(ExtractOp op,
-                  mlir::PatternRewriter& rewriter) const override {
-    rewriter.eraseOp(op);
-    return mlir::success();
-  }
-};
-
-struct RewriteInsert final : StatefulOpRewritePattern<InsertOp> {
-  using StatefulOpRewritePattern<InsertOp>::StatefulOpRewritePattern;
-
-  mlir::LogicalResult
-  matchAndRewrite(InsertOp op, mlir::PatternRewriter& rewriter) const override {
-    rewriter.eraseOp(op);
-    return mlir::success();
-  }
-};
-
-struct RewriteDealloc final : StatefulOpRewritePattern<DeallocOp> {
-  using StatefulOpRewritePattern<DeallocOp>::StatefulOpRewritePattern;
-
-  mlir::LogicalResult
-  matchAndRewrite(DeallocOp op,
-                  mlir::PatternRewriter& rewriter) const override {
-    rewriter.eraseOp(op);
-    return mlir::success();
-  }
-};
+  return result.wasInterrupted() ? failure() : success();
+}
+} // namespace
 
 /**
  * @brief This pass ensures that the connectivity constraints of the target
@@ -161,20 +362,8 @@ struct RewriteDealloc final : StatefulOpRewritePattern<DeallocOp> {
  */
 struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
-    // Get the current operation being operated on.
-    auto op = getOperation();
-    auto* ctx = &getContext();
-
-    auto target = std::make_unique<Architecture>("iqm-spark", 5);
-    auto state = std::make_shared<RoutingContext>(std::move(target));
-
-    // Define the set of patterns to use.
-    mlir::RewritePatternSet patterns(ctx);
-    patterns.add<RewriteAlloc, RewriteExtract, RewriteInsert, RewriteDealloc>(
-        ctx, state);
-
-    // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
+    auto target = std::make_unique<Architecture>("iqm-spark+1", 6);
+    if (spanAndFold(getOperation(), std::move(target)).failed()) {
       signalPassFailure();
     }
   }
