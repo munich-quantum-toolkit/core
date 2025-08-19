@@ -108,129 +108,6 @@ constexpr std::string TARGET = "mqtopt.target";
 
 } // namespace
 
-// namespace {
-// mlir::LogicalResult
-// walkDefUseAndApply(mlir::Operation* op,
-//                    const std::shared_ptr<RoutingContext>& state) {
-//   mlir::MLIRContext* ctx = op->getContext();
-//   mlir::PatternRewriter rewriter(ctx);
-
-//   auto result = op->walk([&](mlir::Operation* walkOp) {
-//     rewriter.setInsertionPoint(walkOp);
-
-//     if (auto alloc = mlir::dyn_cast<AllocOp>(walkOp)) {
-
-//       // Bootstrap: Create as many static qubits as the architecture
-//       supports.
-//       // This aligns with qiskit's 'Layout' stage.
-//       // Moreover, add attributes to module specifying the architecture.
-
-//       mlir::Operation* module =
-//           walkOp->getParentWithTrait<mlir::SymbolOpInterface::Trait>();
-//       assert(module);
-
-//       if (!module->hasAttr(attribute_names::TARGET)) {
-//         const auto& target = state->target();
-
-//         // Add architecture information to routed module.
-//         const auto nameAttr = rewriter.getStringAttr(target.name());
-//         module->setAttr(attribute_names::TARGET, nameAttr);
-
-//         // Create and collect static qubits for routed module.
-//         const auto& qubit = QubitType::get(ctx);
-//         for (std::size_t i = 0; i < target.nqubits(); ++i) {
-//           auto qubitOp = rewriter.create<QubitOp>(module->getLoc(), qubit,
-//           i); state->addFree(qubitOp); state->map()[qubitOp] = i;
-//           state->invMap()[i] = qubitOp;
-//         }
-//       }
-//     } else if (auto extract = mlir::dyn_cast<ExtractOp>(walkOp)) {
-
-//       // 1) Get available (free) static qubit and replace extracted qubit.
-//       // We can't use the indices here since they may be operands.
-
-//       auto outQubit = extract.getOutQubit();
-//       auto avail = state->getFree();
-//       if (!avail) {
-//         return mlir::WalkResult(
-//             extract.emitOpError()
-//             << "requires one more qubit than the architecture supports.");
-//       }
-//       rewriter.replaceAllUsesWith(outQubit, avail.value());
-
-//       auto inQreq = extract.getInQreg();
-//       auto outQreq = extract.getOutQreg();
-//       rewriter.replaceAllUsesWith(outQreq, inQreq);
-//       rewriter.eraseOp(extract);
-
-//     } else if (auto ui = mlir::dyn_cast<UnitaryInterface>(walkOp)) {
-//       if (ui.getNegCtrlInQubits().size() > 0) {
-//         return mlir::WalkResult(
-//             extract.emitOpError()
-//             << "expects only gates with positive controls qubits.");
-//       }
-
-//       if (ui.getPosCtrlInQubits().size() > 1) {
-//         return mlir::WalkResult(
-//             extract.emitOpError()
-//             << "expects only gates with one positive control qubit.");
-//       }
-
-//       if (ui.getInQubits().size() > 1) {
-//         return mlir::WalkResult(extract.emitOpError()
-//                                 << "expects only one target qubit.");
-//       }
-
-//       const auto updateMaps = [&](mlir::Value in, mlir::Value out) {
-//         const auto index = state->map()[in];
-//         state->map().erase(in);
-//         state->map()[out] = index;
-//         state->invMap()[index] = out;
-//       };
-
-//       if (ui.getPosCtrlInQubits().size() == 1) { // Control Qubit.
-//         const auto& inQubit = ui.getPosCtrlInQubits().front();
-//         const auto& outQubit = ui.getPosCtrlOutQubits().front();
-//         updateMaps(inQubit, outQubit);
-//       }
-
-//       // Target Qubit.
-//       const auto& inQubit = ui.getInQubits().front();
-//       const auto& outQubit = ui.getOutQubits().front();
-//       updateMaps(inQubit, outQubit);
-
-//     } else if (auto insert = mlir::dyn_cast<InsertOp>(walkOp)) {
-
-//       // 1) Releases static qubit.
-//       // 2) Erases the InsertOp.
-//       // Replaces 'out' with 'in' registers to keep valid MLIR program.
-//       // Otherwise MLIR segfaults.
-
-//       state->addFree(insert.getInQubit());
-
-//       auto inQreq = insert.getInQreg();
-//       auto outQreq = insert.getOutQreg();
-//       rewriter.replaceAllUsesWith(outQreq, inQreq);
-//       rewriter.eraseOp(insert);
-
-//     } else if (auto dealloc = mlir::dyn_cast<DeallocOp>(walkOp)) {
-
-//       // 1) Clear state. TODO: This should clear qubits belonging to
-//       register.
-//       // 2) Erases the DeallocOp.
-
-//       state->clear();
-
-//       rewriter.eraseOp(dealloc);
-//     }
-
-//     return mlir::WalkResult::advance();
-//   });
-
-//   return result.wasInterrupted() ? mlir::failure() : mlir::success();
-// }
-// }; // namespace
-
 namespace {
 using namespace mlir;
 
@@ -307,7 +184,9 @@ LogicalResult spanAndFold(Operation* base,
       // Extract phase over.
       // Mapping circuit until inserts arrive.
 
-      while (successor && !dyn_cast<InsertOp>(successor)) { // This is not right. Walking Ops twice.
+      while (successor &&
+             !dyn_cast<InsertOp>(
+                 successor)) { // This is not right. Walking Ops twice.
         auto absorbed = llvm::map_range(state.executables(), absorb1QGates);
         state.executables() =
             llvm::DenseSet<Value>(absorbed.begin(), absorbed.end());
@@ -330,7 +209,7 @@ LogicalResult spanAndFold(Operation* base,
         llvm::outs() << "LAYER:\n";
         for (auto unitary : layer) {
           llvm::outs() << '\t' << unitary->getLoc() << '\n';
-            
+
           // Insert 'out's.
           state.executables().insert(unitary.getOutQubits().front());
           state.executables().insert(unitary.getAllCtrlOutQubits().front());
