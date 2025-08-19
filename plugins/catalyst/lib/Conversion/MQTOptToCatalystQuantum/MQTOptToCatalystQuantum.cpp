@@ -382,6 +382,8 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
     // V = RZ(π/2) RY(π/2) RZ(-π/2)
     auto pi2 = rewriter.create<ConstantOp>(op.getLoc(),
                                            rewriter.getF64FloatAttr(M_PI_2));
+    auto negPi2 = rewriter.create<ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(-M_PI_2));
 
     // Create the decomposed operations
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
@@ -393,7 +395,7 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
         rz1.getResults(), "RY", false, inCtrlQubits, ValueRange{});
 
     auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi2},
+        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{negPi2},
         ry.getResults(), "RZ", true, inCtrlQubits, ValueRange{});
 
     // Replace the original operation with the decomposition
@@ -495,44 +497,39 @@ struct ConvertMQTOptSimpleGate<opt::RZXOp> final
   LogicalResult
   matchAndRewrite(opt::RZXOp op, opt::RZXOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto inQubitsValues = adaptor.getInQubits();
-    const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
-    const auto theta = adaptor.getParams()[0];
+    auto inQubit0 = adaptor.getInQubits()[0];
+    auto inQubit1 = adaptor.getInQubits()[1];
+    // TODO: add support for control qubits
 
-    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
-                                    posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+    const auto theta = adaptor.getParams()[0];
 
     // Output type setup
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const SmallVector<Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    auto outQubitTypes = TypeRange(qubitTypes);
 
-    // RZX(θ) = H(q2) CNOT(q1,q2) RZ(θ)(q2) CNOT(q1,q2) H(q2)
+    // Single qubit type for Hadamard gates
+    const auto singleOutType = TypeRange(SmallVector<Type>{qubitType});
+
+    // Two qubit types for IsingZZ gate
+    const auto twoOutTypes = TypeRange(SmallVector<Type>{qubitType, qubitType});
+
+    // RZX(θ) = H(q2) RZZ(θ) H(q2)
     auto h1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{}, inQubitsValues,
-        "H", false, inCtrlQubits, ValueRange{});
+        op.getLoc(), singleOutType, TypeRange{}, ValueRange{},
+        ValueRange{inQubit1}, "Hadamard", false, ValueRange{}, ValueRange{});
 
-    auto cnot1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{}, h1.getResults(),
-        "CNOT", false, inCtrlQubits, ValueRange{});
-
-    auto rz = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{theta},
-        cnot1.getResults(), "RZ", false, inCtrlQubits, ValueRange{});
-
-    auto cnot2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{}, rz.getResults(),
-        "CNOT", false, inCtrlQubits, ValueRange{});
+    auto rzz = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(), twoOutTypes, TypeRange{}, ValueRange{theta},
+        ValueRange{inQubit0, h1.getResult(0)}, "IsingZZ", false, ValueRange{},
+        ValueRange{});
 
     auto h2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{},
-        cnot2.getResults(), "H", false, inCtrlQubits, ValueRange{});
+        op.getLoc(), singleOutType, TypeRange{}, ValueRange{},
+        ValueRange{rzz.getResult(1)}, "Hadamard", false, ValueRange{},
+        ValueRange{});
 
-    rewriter.replaceOp(op, h2.getResults());
+    // Replace original operation with results in correct order
+    rewriter.replaceOp(op, ValueRange{rzz.getResult(0), h2.getResult(0)});
     return success();
   }
 };
@@ -637,10 +634,6 @@ struct ConvertMQTOptSimpleGate<opt::GPhaseOp> final
         inQubitsValues.size() + inCtrlQubits.size(), qubitType);
     auto outQubitTypes = TypeRange(qubitTypes);
 
-    // static void build(::mlir::OpBuilder &odsBuilder, ::mlir::OperationState
-    // &odsState, ::mlir::TypeRange out_ctrl_qubits, ::mlir::Value params,
-    // /*optional*/bool adjoint, ::mlir::ValueRange in_ctrl_qubits,
-    // ::mlir::ValueRange in_ctrl_values);
     auto gphase = rewriter.create<catalyst::quantum::GlobalPhaseOp>(
         op.getLoc(), outQubitTypes, params[0], adjoint,
         ValueRange(inCtrlQubits), inCtrlValues);

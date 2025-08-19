@@ -68,17 +68,22 @@ func.func @bar() {
   %230, %231 = mqtopt.p(%cst) %220 ctrl %221 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
   // CHECK: %[[XY:.*]]:2 = quantum.custom "IsingXY"(%cst, %cst) %[[CPS]]#1, %[[CPS]]#0 : !quantum.bit, !quantum.bit
+  // CHECK: %[[H1:.*]] = quantum.custom "Hadamard"() %[[XY]]#1 : !quantum.bit
+  // CHECK: %[[RZZ:.*]]:2 = quantum.custom "IsingZZ"(%cst) %[[XY]]#0, %[[H1]] : !quantum.bit, !quantum.bit
+  // CHECK: %[[H2:.*]] = quantum.custom "Hadamard"() %[[RZZ]]#1 : !quantum.bit
   %xy:2 = mqtopt.xxplusyy(%cst, %cst) %230, %231 : !mqtopt.Qubit, !mqtopt.Qubit
+  %rzx0, %rzx1 = mqtopt.rzx(%cst) %xy#0, %xy#1 : !mqtopt.Qubit, !mqtopt.Qubit
+
 
   // CHECK: %[[MRES:.*]], %[[QMEAS:.*]] = quantum.measure %[[TOF]]#1 : i1, !quantum.bit
   %q_meas, %c0_0 = "mqtopt.measure"(%15) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
   // CHECK: %[[R1:.*]] = quantum.insert %[[QREG]][ 2], %[[QMEAS]] : !quantum.reg, !quantum.bit
-  // CHECK: %[[R2:.*]] = quantum.insert %[[R1]][ 1], %[[XY]]#0 : !quantum.reg, !quantum.bit
-  // CHECK: %[[R3:.*]] = quantum.insert %[[R2]][ 0], %[[XY]]#1 : !quantum.reg, !quantum.bit
+  // CHECK: %[[R2:.*]] = quantum.insert %[[R1]][ 1], %[[RZZ]]#0 : !quantum.reg, !quantum.bit
+  // CHECK: %[[R3:.*]] = quantum.insert %[[R2]][ 0], %[[H2]] : !quantum.reg, !quantum.bit
   %240 = "mqtopt.insertQubit"(%out_qureg_2, %q_meas) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-  %250 = "mqtopt.insertQubit"(%240, %xy#0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-  %260 = "mqtopt.insertQubit"(%250, %xy#1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+  %250 = "mqtopt.insertQubit"(%240, %rzx0) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+  %260 = "mqtopt.insertQubit"(%250, %rzx1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
 
   // CHECK: quantum.dealloc %[[R3]] : !quantum.reg
   "mqtopt.deallocQubitRegister"(%260) : (!mqtopt.QubitRegister) -> ()
