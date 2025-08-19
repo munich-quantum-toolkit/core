@@ -324,6 +324,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     }
 
     // match alloc qubit using the given allocOp and the index
+    // TODO replace later on
     if (fnName == "__quantum__rt__qubit_allocate") {
       const auto newOp = rewriter.replaceOpWithNewOp<ref::ExtractOp>(
           op, qubitType, getState().qReg, Value{},

@@ -81,11 +81,16 @@ LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
   return static_cast<LLVM::LLVMFuncOp>(fnDecl);
 }
 struct LoweringState {
-  SmallVector<Operation*> measureConstants;
+  // the zero operation that is used multiple times
+  Operation* zeroOp{};
   // the constant operation with a value of -1 that is used multiple items
   Operation* constantOp{};
   // Index for the next measure operation
   size_t index{};
+  // number of stored results in the module
+  size_t numResults{};
+  // number of qubits in the module
+  size_t numQubits{};
 };
 
 template <typename OpType>
@@ -119,8 +124,8 @@ struct MQTRefToQIRTypeConverter final : public LLVMTypeConverter {
   }
 };
 
-struct ConvertMQTRefAllocQIR final : OpConversionPattern<ref::AllocOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertMQTRefAllocQIR final : StatefulOpConversionPattern<ref::AllocOp> {
+  using StatefulOpConversionPattern<ref::AllocOp>::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(ref::AllocOp op, OpAdaptor adaptor,
@@ -142,26 +147,29 @@ struct ConvertMQTRefAllocQIR final : OpConversionPattern<ref::AllocOp> {
       size =
           rewriter.create<LLVM::ConstantOp>(op.getLoc(), op.getSizeAttrAttr());
     }
-
+    // get the int value of the operation and increase the number of required
+    // qubits
+    auto constantOp = size.getDefiningOp<LLVM::ConstantOp>();
+    const auto value = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
+    getState().numQubits += value;
     // replace the old operation with new callOp
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, size);
     return success();
   }
 };
 
-struct ConvertMQTRefQubitQIR final : OpConversionPattern<ref::QubitOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertMQTRefQubitQIR final : StatefulOpConversionPattern<ref::QubitOp> {
+  using StatefulOpConversionPattern<ref::QubitOp>::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(ref::QubitOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
     const auto index = adaptor.getIndex();
-    // if the index is zero create a zero operation
+    // if the index is zero replace the uses with the zeroOp from the
+    // loweringState
     if (index == 0) {
-      // create name and signature of the new function
-      rewriter.replaceOpWithNewOp<LLVM::ZeroOp>(
-          op, LLVM::LLVMPointerType::get(ctx));
+      rewriter.replaceOp(op, getState().zeroOp);
     }
     // otherwise create an constant operation with the index as value and an int
     // to ptr operation
@@ -171,7 +179,8 @@ struct ConvertMQTRefQubitQIR final : OpConversionPattern<ref::QubitOp> {
       rewriter.replaceOpWithNewOp<LLVM::IntToPtrOp>(
           op, LLVM::LLVMPointerType::get(ctx), constantOp->getResult(0));
     }
-
+    // increase the number of required qubits
+    getState().numQubits++;
     return success();
   }
 };
@@ -390,16 +399,8 @@ struct ConvertMQTRefMeasureQIR final
                                    ConversionPatternRewriter& rewriter,
                                    LoweringState& state) {
     Operation* addressOfOp = nullptr;
-    // reuse existing addressOfOp if it is available
-    if (!state.measureConstants.empty()) {
-      addressOfOp = state.measureConstants.front();
-      // pop the next addressOfOp from the vector
-      state.measureConstants.erase(&state.measureConstants.front());
-      state.index++;
-      return addressOfOp;
-    }
 
-    // otherwise create a new globalOp and a addressOfOp
+    // create a new globalOp and a addressOfOp
     // set the insertionpoint to the beginning of the module
     auto module = op->getParentOfType<ModuleOp>();
     rewriter.setInsertionPointToStart(module.getBody());
@@ -503,6 +504,9 @@ struct ConvertMQTRefMeasureQIR final
     op->replaceUsesOfWith(op->getResult(0), resultOp.getResult());
     rewriter.eraseOp(op);
 
+    // increase the number of required results
+    getState().numResults++;
+
     return success();
   }
 };
@@ -591,18 +595,13 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
    * @return The LLVM constant operation with the value -1.
    */
   static Operation* collectMeasureConstants(LLVM::LLVMFuncOp& main,
-                                            SmallVector<Operation*>& operations,
+
                                             MLIRContext* ctx) {
     // get the first block in the main function
     auto& firstBlock = *(main.getBlocks().begin());
     Operation* result = nullptr;
-    // walk through the block and collect all addressOfOp and get the -1
-    // constant value
+    // walk through the block and get the -1 constant value
     firstBlock.walk([&](Operation* op) {
-      if (auto addressOfOp = dyn_cast<LLVM::AddressOfOp>(op)) {
-        operations.emplace_back(addressOfOp);
-      }
-
       if (auto constantOp = dyn_cast<LLVM::ConstantOp>(op)) {
         if (auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue())) {
           // check if the value is -1
@@ -630,7 +629,8 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
    * @param main The main function of the module.
    * @param ctx The context of the module.
    */
-  static void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx) {
+  static void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
+                            LoweringState* state) {
     auto module = main->getParentOfType<ModuleOp>();
 
     auto& firstBlock = *(main.getBlocks().begin());
@@ -650,6 +650,8 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
       zeroOperation = builder.create<LLVM::ZeroOp>(
           main->getLoc(), LLVM::LLVMPointerType::get(ctx));
     }
+    // set the zeroOperation in the state
+    state->zeroOp = zeroOperation;
 
     // create the initialize operation as the 2nd last operation in the first
     // block after all constant operations and before the last jump operation
@@ -672,6 +674,31 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     builder.create<LLVM::CallOp>(main->getLoc(),
                                  static_cast<LLVM::LLVMFuncOp>(fnDecl),
                                  ValueRange{zeroOperation->getResult(0)});
+  }
+  /**
+   * @brief Collects the existing operations for the measure operation
+   * conversion
+   *
+   * @param main The main function of the module.
+   * @param operations The vector to store the found addressOf operations.
+   * @param ctx The context of the module.
+   * @return The LLVM constant operation with the value -1.
+   */
+  static void setAttributes(LLVM::LLVMFuncOp& main, LoweringState* state) {
+    OpBuilder builder(main.getBody());
+    SmallVector<Attribute, 4> nested;
+    nested.emplace_back(
+        builder.getStrArrayAttr({"output_labeling_schema", "schema_id"}));
+    nested.emplace_back(
+        builder.getStrArrayAttr({"qir_profiles", "base_profile"}));
+    nested.emplace_back(builder.getStrArrayAttr(
+        {"required_num_qubits", std::to_string(state->numQubits)}));
+    nested.emplace_back(builder.getStrArrayAttr(
+        {"required_num_results", std::to_string(state->numResults)}));
+    SmallVector<Attribute, 8> topLevel;
+    topLevel.push_back(builder.getStringAttr("entry_point"));
+    topLevel.append(nested.begin(), nested.end());
+    main->setAttr("passthrough", builder.getArrayAttr(topLevel));
   }
 
   void runOnOperation() override {
@@ -702,17 +729,16 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     // get the operations for measure conversions and store them in the
     // loweringstate struct
     LoweringState state;
-    state.constantOp =
-        collectMeasureConstants(main, state.measureConstants, context);
+    state.constantOp = collectMeasureConstants(main, context);
     // add the initialize operation
-    addInitialize(main, context);
+    addInitialize(main, context, &state);
 
     target.addIllegalDialect<ref::MQTRefDialect>();
-    mqtPatterns.add<ConvertMQTRefAllocQIR>(typeConverter, context);
+    mqtPatterns.add<ConvertMQTRefAllocQIR>(typeConverter, context, &state);
     mqtPatterns.add<ConvertMQTRefDeallocQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTRefExtractQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTRefResetQIR>(typeConverter, context);
-    mqtPatterns.add<ConvertMQTRefQubitQIR>(typeConverter, context);
+    mqtPatterns.add<ConvertMQTRefQubitQIR>(typeConverter, context, &state);
     mqtPatterns.add<ConvertMQTRefMeasureQIR>(typeConverter, context, &state);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
@@ -754,6 +780,7 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
             applyPartialConversion(module, target, std::move(mqtPatterns)))) {
       signalPassFailure();
     }
+    setAttributes(main, &state);
   };
 };
 
