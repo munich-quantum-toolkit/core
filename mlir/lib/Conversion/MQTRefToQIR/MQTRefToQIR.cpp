@@ -558,8 +558,9 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     auto* entryBlock = &main.front();
     OpBuilder builder(main.getBody());
 
-    // create the main and the endblock
+    // create the main blocks and the endblock
     Block* mainBlock = builder.createBlock(&main.getBody());
+    Block* irreversibleMainBlock = builder.createBlock(&main.getBody());
     Block* endBlock = builder.createBlock(&main.getBody());
 
     // move the returnOp from the entryBlock to the endBlock
@@ -568,20 +569,36 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     endOperations.splice(endOperations.end(), entryOperations,
                          std::prev(entryOperations.end()));
 
+    // get all quantum operations until the measure operation
+    SmallVector<Operation*> opsToMove;
+    for (auto& op : entryOperations) {
+      if (dyn_cast<ref::MeasureOp>(op)) {
+        break;
+      }
+      opsToMove.emplace_back(&op);
+    }
+    // move them to the 2nd block
+    for (Operation* op : opsToMove) {
+      op->moveBefore(mainBlock, mainBlock->end());
+    }
+
+    // move the remaining operations to the third block
+    if (!entryBlock->empty()) {
+      irreversibleMainBlock->getOperations().splice(
+          irreversibleMainBlock->begin(), entryOperations,
+          entryOperations.begin(), entryOperations.end());
+    }
+
     // add jump from entryBlock to mainBlock
     builder.setInsertionPointToEnd(entryBlock);
     builder.create<LLVM::BrOp>(main->getLoc(), mainBlock);
 
-    // move every operation from the entry block except the jump operation to
-    // the main block
-    if (!entryBlock->empty()) {
-      mainBlock->getOperations().splice(mainBlock->begin(), entryOperations,
-                                        entryOperations.begin(),
-                                        std::prev(entryOperations.end()));
-    }
-
-    // add jump from main to endBlock
+    // add jump from main to irreversibleMain
     builder.setInsertionPointToEnd(mainBlock);
+    builder.create<LLVM::BrOp>(main->getLoc(), irreversibleMainBlock);
+
+    // add jump from irreversibleMain to endBlock
+    builder.setInsertionPointToEnd(irreversibleMainBlock);
     builder.create<LLVM::BrOp>(main->getLoc(), endBlock);
   }
 
