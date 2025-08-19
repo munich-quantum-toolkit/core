@@ -57,7 +57,7 @@ IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                                  ClassicalRegister controlReg,
                                  const std::uint64_t expectedVal,
                                  const ComparisonKind kind)
-    : thenBranch(std::move(thenOp)), elseBranch(std::move(elseOp)),
+    : thenOp(std::move(thenOp)), elseOp(std::move(elseOp)),
       controlRegister(std::move(controlReg)), expectedValue(expectedVal),
       comparisonKind(kind) {
   name = "if_else";
@@ -68,8 +68,8 @@ IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                                  std::unique_ptr<Operation>&& elseOp, Bit cBit,
                                  const std::uint64_t expectedVal,
                                  ComparisonKind kind)
-    : thenBranch(std::move(thenOp)), elseBranch(std::move(elseOp)),
-      controlBit(cBit), expectedValue(expectedVal), comparisonKind(kind) {
+    : thenOp(std::move(thenOp)), elseOp(std::move(elseOp)), controlBit(cBit),
+      expectedValue(expectedVal), comparisonKind(kind) {
   if (expectedVal > 1) {
     throw std::invalid_argument(
         "Expected value for single bit comparison must be 0 or 1.");
@@ -88,17 +88,16 @@ IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
 }
 
 IfElseOperation::IfElseOperation(const IfElseOperation& op)
-    : Operation(op),
-      thenBranch(op.thenBranch ? op.thenBranch->clone() : nullptr),
-      elseBranch(op.elseBranch ? op.elseBranch->clone() : nullptr),
+    : Operation(op), thenOp(op.thenOp ? op.thenOp->clone() : nullptr),
+      elseOp(op.elseOp ? op.elseOp->clone() : nullptr),
       controlRegister(op.controlRegister), controlBit(op.controlBit),
       expectedValue(op.expectedValue), comparisonKind(op.comparisonKind) {}
 
 IfElseOperation& IfElseOperation::operator=(const IfElseOperation& op) {
   if (this != &op) {
     Operation::operator=(op);
-    thenBranch = op.thenBranch ? op.thenBranch->clone() : nullptr;
-    elseBranch = op.elseBranch ? op.elseBranch->clone() : nullptr;
+    thenOp = op.thenOp ? op.thenOp->clone() : nullptr;
+    elseOp = op.elseOp ? op.elseOp->clone() : nullptr;
     controlRegister = op.controlRegister;
     controlBit = op.controlBit;
     expectedValue = op.expectedValue;
@@ -121,18 +120,18 @@ bool IfElseOperation::equals(const Operation& operation,
         comparisonKind != other->comparisonKind) {
       return false;
     }
-    if (thenBranch && other->thenBranch) {
-      if (!thenBranch->equals(*other->thenBranch, perm1, perm2)) {
+    if (thenOp && other->thenOp) {
+      if (!thenOp->equals(*other->thenOp, perm1, perm2)) {
         return false;
       }
-    } else if (thenBranch || other->thenBranch) {
+    } else if (thenOp || other->thenOp) {
       return false;
     }
-    if (elseBranch && other->elseBranch) {
-      if (!elseBranch->equals(*other->elseBranch, perm1, perm2)) {
+    if (elseOp && other->elseOp) {
+      if (!elseOp->equals(*other->elseOp, perm1, perm2)) {
         return false;
       }
-    } else if (elseBranch || other->elseBranch) {
+    } else if (elseOp || other->elseOp) {
       return false;
     }
     return true;
@@ -158,14 +157,14 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
   if (openQASM3) {
     of << "{\n";
   }
-  if (thenBranch) {
-    thenBranch->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
+  if (thenOp) {
+    thenOp->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
   }
   if (openQASM3) {
     of << "}";
-    if (elseBranch) {
+    if (elseOp) {
       of << " else {\n";
-      elseBranch->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
+      elseOp->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
       of << "}";
     }
     of << "\n";
@@ -177,9 +176,9 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
 std::size_t std::hash<qc::IfElseOperation>::operator()(
     qc::IfElseOperation const& op) const noexcept {
   std::size_t seed = 0U;
-  qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getThenBranch()));
-  if (op.getElseBranch() != nullptr) {
-    qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getElseBranch()));
+  qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getThenOp()));
+  if (op.getElseOp() != nullptr) {
+    qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getElseOp()));
   }
   if (const auto& reg = op.getControlRegister(); reg.has_value()) {
     qc::hashCombine(seed, std::hash<qc::ClassicalRegister>{}(reg.value()));

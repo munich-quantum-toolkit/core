@@ -62,9 +62,9 @@ public:
 
   [[nodiscard]] bool isControlled() const override { return false; }
 
-  [[nodiscard]] auto getThenBranch() const { return thenBranch.get(); }
+  [[nodiscard]] auto getThenOp() const { return thenOp.get(); }
 
-  [[nodiscard]] auto getElseBranch() const { return elseBranch.get(); }
+  [[nodiscard]] auto getElseOp() const { return elseOp.get(); }
 
   [[nodiscard]] const auto& getControlRegister() const noexcept {
     return controlRegister;
@@ -91,9 +91,9 @@ public:
                     bool openQASM3) const override;
 
   void invert() override {
-    thenBranch->invert();
-    if (elseBranch) {
-      elseBranch->invert();
+    thenOp->invert();
+    if (elseOp) {
+      elseOp->invert();
     }
   }
 
@@ -132,8 +132,8 @@ public:
   }
 
 private:
-  std::unique_ptr<Operation> thenBranch;
-  std::unique_ptr<Operation> elseBranch;
+  std::unique_ptr<Operation> thenOp;
+  std::unique_ptr<Operation> elseOp;
   std::optional<ClassicalRegister> controlRegister;
   std::optional<Bit> controlBit;
   std::uint64_t expectedValue = 1U;

@@ -340,21 +340,21 @@ void removeDiagonalGatesBeforeMeasureRecursive(
         }
       }
     } else if (op->isIfElseOperation()) {
-      auto* thenBranch = dynamic_cast<IfElseOperation*>(op)->getThenBranch();
-      auto* elseBranch = dynamic_cast<IfElseOperation*>(op)->getElseBranch();
-      if (thenBranch == nullptr || elseBranch != nullptr) {
+      auto* thenOp = dynamic_cast<IfElseOperation*>(op)->getThenOp();
+      auto* elseOp = dynamic_cast<IfElseOperation*>(op)->getElseOp();
+      if (thenOp == nullptr || elseOp != nullptr) {
         throw std::runtime_error("If-else operations with non-trivial else "
                                  "branches are currently not supported.");
       }
 
       // treat then branch as above
       const bool onlyDiagonalGates =
-          removeDiagonalGate(dag, dagIterators, idx, it, thenBranch);
+          removeDiagonalGate(dag, dagIterators, idx, it, thenOp);
       if (onlyDiagonalGates) {
-        for (const auto& control : thenBranch->getControls()) {
+        for (const auto& control : thenOp->getControls()) {
           ++(dagIterators.at(control.qubit));
         }
-        for (const auto& target : thenBranch->getTargets()) {
+        for (const auto& target : thenOp->getTargets()) {
           ++(dagIterators.at(target));
         }
       }
@@ -735,15 +735,15 @@ void CircuitOptimizer::eliminateResets(QuantumComputation& qc) {
             } else if (auto* ifElse =
                            dynamic_cast<IfElseOperation*>(compOpIt->get());
                        ifElse != nullptr) {
-              auto* thenBranch = ifElse->getThenBranch();
-              auto* elseBranch = ifElse->getElseBranch();
-              if (thenBranch == nullptr || elseBranch != nullptr) {
+              auto* thenOp = ifElse->getThenOp();
+              auto* elseOp = ifElse->getElseOp();
+              if (thenOp == nullptr || elseOp != nullptr) {
                 throw std::runtime_error(
                     "If-else operations with non-trivial else branches are "
                     "currently not supported.");
               }
-              auto& targets = thenBranch->getTargets();
-              auto& controls = thenBranch->getControls();
+              auto& targets = thenOp->getTargets();
+              auto& controls = thenOp->getControls();
               changeTargets(targets, replacementMap);
               changeControls(controls, replacementMap);
             } else if ((*compOpIt)->isNonUnitaryOperation()) {
@@ -761,14 +761,14 @@ void CircuitOptimizer::eliminateResets(QuantumComputation& qc) {
         changeControls(controls, replacementMap);
       } else if (auto* ifElse = dynamic_cast<IfElseOperation*>(it->get());
                  ifElse != nullptr) {
-        auto* thenBranch = ifElse->getThenBranch();
-        auto* elseBranch = ifElse->getElseBranch();
-        if (thenBranch == nullptr || elseBranch != nullptr) {
+        auto* thenOp = ifElse->getThenOp();
+        auto* elseOp = ifElse->getElseOp();
+        if (thenOp == nullptr || elseOp != nullptr) {
           throw std::runtime_error("If-else operations with non-trivial else "
                                    "branches are currently not supported.");
         }
-        auto& targets = thenBranch->getTargets();
-        auto& controls = thenBranch->getControls();
+        auto& targets = thenOp->getTargets();
+        auto& controls = thenOp->getControls();
         changeTargets(targets, replacementMap);
         changeControls(controls, replacementMap);
       } else if ((*it)->isNonUnitaryOperation()) {
@@ -861,9 +861,9 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
 
         if (auto* ifElse = dynamic_cast<IfElseOperation*>(opIt->get());
             ifElse != nullptr) {
-          auto* thenBranch = ifElse->getThenBranch();
-          auto* elseBranch = ifElse->getElseBranch();
-          if (thenBranch == nullptr || elseBranch != nullptr) {
+          auto* thenOp = ifElse->getThenOp();
+          auto* elseOp = ifElse->getElseOp();
+          if (thenOp == nullptr || elseOp != nullptr) {
             throw std::runtime_error("If-else operations with non-trivial else "
                                      "branches are currently not supported.");
           }
@@ -898,12 +898,12 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
           }
 
           // get the underlying operation
-          const auto* standardOp = dynamic_cast<StandardOperation*>(thenBranch);
+          const auto* standardOp = dynamic_cast<StandardOperation*>(thenOp);
           if (standardOp == nullptr) {
             std::stringstream ss{};
             ss << "Then branch of if-else operation is not a "
                   "StandardOperation.\n";
-            thenBranch->print(ss, qc.getNqubits());
+            thenOp->print(ss, qc.getNqubits());
             throw std::runtime_error(ss.str());
           }
 

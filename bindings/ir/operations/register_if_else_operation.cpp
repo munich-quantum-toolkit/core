@@ -77,10 +77,10 @@ void registerIfElseOperation(const py::module& m) {
       "then_operation"_a, "else_operation"_a, "control_bit"_a,
       "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq);
   ifElse.def_property_readonly("then_operation",
-                               &qc::IfElseOperation::getThenBranch,
+                               &qc::IfElseOperation::getThenOp,
                                py::return_value_policy::reference_internal);
   ifElse.def_property_readonly("else_operation",
-                               &qc::IfElseOperation::getElseBranch,
+                               &qc::IfElseOperation::getElseOp,
                                py::return_value_policy::reference_internal);
   ifElse.def_property_readonly("control_register",
                                &qc::IfElseOperation::getControlRegister);

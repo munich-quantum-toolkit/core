@@ -186,13 +186,13 @@ MatrixDD getDD(const qc::Operation& op, Package& dd,
 
   if (op.isIfElseOperation()) {
     const auto& ifElse = dynamic_cast<const qc::IfElseOperation&>(op);
-    auto* thenBranch = ifElse.getThenBranch();
-    auto* elseBranch = ifElse.getElseBranch();
-    if (thenBranch == nullptr || elseBranch != nullptr) {
+    auto* thenOp = ifElse.getThenOp();
+    auto* elseOp = ifElse.getElseOp();
+    if (thenOp == nullptr || elseOp != nullptr) {
       throw std::runtime_error("If-else operations with non-trivial else "
                                "branches are currently not supported.");
     }
-    return getDD(*thenBranch, dd, permutation, inverse);
+    return getDD(*thenOp, dd, permutation, inverse);
   }
 
   assert(op.isNonUnitaryOperation());
@@ -293,18 +293,18 @@ VectorDD applyIfElseOperation(const qc::IfElseOperation& op, const VectorDD& in,
   }();
 
   if (!control) {
-    auto* elseBranch = op.getElseBranch();
-    if (elseBranch == nullptr) {
+    auto* elseOp = op.getElseOp();
+    if (elseOp == nullptr) {
       return in;
     }
-    return applyUnitaryOperation(*elseBranch, in, dd, permutation);
+    return applyUnitaryOperation(*elseOp, in, dd, permutation);
   }
 
-  auto* thenBranch = op.getThenBranch();
-  if (thenBranch == nullptr) {
+  auto* thenOp = op.getThenOp();
+  if (thenOp == nullptr) {
     return in;
   }
-  return applyUnitaryOperation(*thenBranch, in, dd, permutation);
+  return applyUnitaryOperation(*thenOp, in, dd, permutation);
 }
 
 bool isExecutableVirtually(const qc::Operation& op) noexcept {
