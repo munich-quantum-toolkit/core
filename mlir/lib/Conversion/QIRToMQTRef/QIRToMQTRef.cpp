@@ -143,6 +143,46 @@ struct ConvertQIRLoad final : OpConversionPattern<LLVM::LoadOp> {
     return success();
   }
 };
+struct ConvertQIRZero final : StatefulOpConversionPattern<LLVM::ZeroOp> {
+  using StatefulOpConversionPattern<LLVM::ZeroOp>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(LLVM::ZeroOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    // replace the zero operation with a static qubit with index 0
+    const auto newOp = rewriter.replaceOpWithNewOp<ref::QubitOp>(
+        op, ref::QubitType::get(rewriter.getContext()), 0);
+
+    // update the operand map
+    getState().operandMap.try_emplace(op->getResult(0), newOp->getOpResult(0));
+    return success();
+  }
+};
+
+struct ConvertQIRIntToPtr final
+    : StatefulOpConversionPattern<LLVM::IntToPtrOp> {
+  using StatefulOpConversionPattern<
+      LLVM::IntToPtrOp>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(LLVM::IntToPtrOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    // get the int value of the operation
+    auto constantOp = op->getOperand(0).getDefiningOp<LLVM::ConstantOp>();
+    const auto value = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
+
+    // replace the int to ptr operation with static qubit
+    const auto newOp = rewriter.replaceOpWithNewOp<ref::QubitOp>(
+        op, ref::QubitType::get(rewriter.getContext()), value);
+
+    // update the operand map
+    getState().operandMap.try_emplace(op->getResult(0), newOp->getOpResult(0));
+
+    return success();
+  }
+};
 
 struct ConvertQIRAddressOf final : OpConversionPattern<LLVM::AddressOfOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -254,6 +294,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     const auto fnName = op.getCallee();
     const auto qubitType = ref::QubitType::get(rewriter.getContext());
     const auto qregType = ref::QubitRegisterType::get(rewriter.getContext());
+    const auto bitType = IntegerType::get(rewriter.getContext(), 1);
     const auto operands = adaptor.getOperands();
 
     // get the new operands from the operandMap
@@ -306,7 +347,6 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     }
     // match measure operation
     if (fnName == "__quantum__qis__m__body") {
-      const auto bitType = IntegerType::get(rewriter.getContext(), 1);
 
       bool foundUser = false;
       for (auto* user : op->getUsers()) {
@@ -328,6 +368,11 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
       return success();
     }
 
+    if (fnName == "__quantum__qis__mz__body") {
+      rewriter.eraseOp(op);
+      return success();
+    }
+
     // match record result output operation
     if (fnName == "__quantum__rt__result_record_output") {
       rewriter.eraseOp(op);
@@ -336,6 +381,13 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
 
     // match result update reference count operation
     if (fnName == "__quantum__rt__result_update_reference_count") {
+      rewriter.eraseOp(op);
+      return success();
+    }
+
+    // match qubit release operation
+    // TODO will be added later
+    if (fnName == "__quantum__rt__qubit_release") {
       rewriter.eraseOp(op);
       return success();
     }
@@ -401,7 +453,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
                           newOperands, ctrlQubits, 2, rewriter);
       return success();
     }
-    if (gateName == "u3") {
+    if (gateName == "u3" || gateName == "u") {
       convertRotationGate(op, "UOp", newOperands, ctrlQubits, 3, rewriter);
       return success();
     }
@@ -509,11 +561,14 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
     target.addIllegalOp<LLVM::LoadOp>();
     target.addIllegalOp<LLVM::AddressOfOp>();
     target.addIllegalOp<LLVM::GlobalOp>();
-
+    target.addIllegalOp<LLVM::IntToPtrOp>();
+    target.addIllegalOp<LLVM::ZeroOp>();
     patterns.add<ConvertQIRCall>(typeConverter, context, &state);
     patterns.add<ConvertQIRLoad>(typeConverter, context);
     patterns.add<ConvertQIRAddressOf>(typeConverter, context);
     patterns.add<ConvertQIRGlobal>(typeConverter, context);
+    patterns.add<ConvertQIRIntToPtr>(typeConverter, context, &state);
+    patterns.add<ConvertQIRZero>(typeConverter, context, &state);
 
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
