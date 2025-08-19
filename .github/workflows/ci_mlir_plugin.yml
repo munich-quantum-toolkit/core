@@ -212,11 +212,6 @@ jobs:
               otool -l $(which catalyst) || true
           fi
 
-      # Only for debugging run lit manually
-      - name: Run lit for mqt-core-catalyst-plugin
-        working-directory: plugins/catalyst
-        run: python -m lit test/Conversion/quantum.mlir -v
-
       # Reconfigure CMake for LIT
       - name: Reconfigure CMake for LIT
         working-directory: plugins/catalyst
