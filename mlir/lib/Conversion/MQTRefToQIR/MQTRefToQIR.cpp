@@ -54,8 +54,16 @@ using namespace mlir;
 #include "mlir/Conversion/MQTRefToQIR/MQTRefToQIR.h.inc"
 
 namespace {
-// add function declaration at the end if it does not exist already and
-// return the function
+/**
+   * @brief Look up the function declaration with a given name. If it does not
+   exist create one and return it.
+   *
+   * @param rewriter The PatternRewriter to use.
+   * @param op The operation that is matched.
+   * @param fnName The name of the function.
+   * @param fnType The type signature of the function.
+   * @return The LLVM funcOp declaration with the requested name and signature.
+   */
 LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
                                         Operation* op, StringRef fnName,
                                         Type fnType) {
@@ -73,9 +81,10 @@ LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
   return static_cast<LLVM::LLVMFuncOp>(fnDecl);
 }
 struct LoweringState {
-
   SmallVector<Operation*> measureConstants;
+  // the constant operation with a value of -1 that is used multiple items
   Operation* constantOp{};
+  // Index for the next measure operation
   size_t index{};
 };
 

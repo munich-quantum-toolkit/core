@@ -9,7 +9,7 @@
 include "mlir/Pass/PassBase.td"
 
 def MQTRefToQIR : Pass<"mqtref-to-qir"> {
-   let summary = "Convert MQT's `Ref` dialect into the llvm dialect that adheres to the qir specification";
+   let summary = "Convert MQT's `Ref` dialect into the llvm dialect that adheres to the QIR specification";
 
    let description = [{
       This pass converts all operations to the llvm dialect. The quantum operations of the mqt ref dialect are converted

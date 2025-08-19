@@ -242,7 +242,11 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
         newOperands.emplace_back(val);
       }
     }
-
+    // match initialize operation
+    if (fnName == "__quantum__rt__initialize") {
+      rewriter.eraseOp(op);
+      return success();
+    }
     // match alloc register
     if (fnName == "__quantum__rt__qubit_allocate_array") {
       const auto newOp = rewriter.replaceOpWithNewOp<ref::AllocOp>(
@@ -296,6 +300,18 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
         // otherwise just create the measure operation
         rewriter.replaceOpWithNewOp<ref::MeasureOp>(op, bitType, newOperands);
       }
+      return success();
+    }
+
+    // match record result output operation
+    if (fnName == "__quantum__rt__result_record_output") {
+      rewriter.eraseOp(op);
+      return success();
+    }
+
+    // match result update reference count operation
+    if (fnName == "__quantum__rt__result_update_reference_count") {
+      rewriter.eraseOp(op);
       return success();
     }
 
@@ -366,9 +382,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     }
 
     // otherwise erase the operation
-    rewriter.eraseOp(op);
-
-    return success();
+    return failure();
   }
 };
 
