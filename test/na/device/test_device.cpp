@@ -23,6 +23,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace testing {
@@ -770,7 +771,13 @@ TEST_F(NADeviceTest, QueryOperationData) {
               ASSERT_THAT(result, testing::AnyOf(QDMI_SUCCESS,
                                                  QDMI_ERROR_NOTSUPPORTED));
               if (result == QDMI_SUCCESS) {
-                supportedSites.emplace(sitePair);
+                // Ensure the pair is always in the same order when inserted
+                // into the set, so that we can compare the sets later.
+                if (sitePair.first < sitePair.second) {
+                  supportedSites.emplace(sitePair);
+                } else {
+                  supportedSites.emplace(sitePair.second, sitePair.first);
+                }
                 std::string name(nameSize - 1, '\0');
                 EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                               session, operation, 0, nullptr, 0, nullptr,
@@ -912,7 +919,8 @@ TEST_F(NADeviceTest, QueryOperationData) {
         EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                       session, operation, 0, nullptr, 0, nullptr,
                       QDMI_OPERATION_PROPERTY_SITES, sitesSize,
-                      queriedSupportedSitesVec.data(), nullptr),
+                      static_cast<void*>(queriedSupportedSitesVec.data()),
+                      nullptr),
                   QDMI_SUCCESS);
         const std::unordered_set queriedSupportedSitesSet(
             queriedSupportedSitesVec.cbegin(), queriedSupportedSitesVec.cend());
