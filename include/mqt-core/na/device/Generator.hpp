@@ -251,13 +251,14 @@ public:
   };
 
   /// @brief The unit of measurement for lengths in the device.
-  Unit lengthUnit;
+  Unit lengthUnit = {1.0, "um"}; ///< Default is micrometers (um).
   /// @brief The unit of measurement for time in the device.
-  Unit durationUnit;
+  Unit durationUnit = {1.0, "us"}; ///< Default is microseconds (us).
 
   // Before we used the macro NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT here,
   // too. Now, we added an id to shuttling units that must be initialized
-  // in a custom routine, so we can only use the serialize macro.
+  // in a custom routine, so we can only use the serialize macro. Additionally,
+  // we check here whether the units are valid SI units.
   // NOLINTNEXTLINE(misc-include-cleaner)
   NLOHMANN_DEFINE_TYPE_INTRUSIVE_ONLY_SERIALIZE(
       Device, name, numQubits, traps, minAtomDistance,
@@ -269,7 +270,7 @@ public:
   // and must not be changed
   template <typename BasicJsonType>
   // NOLINTNEXTLINE(readability-identifier-naming)
-  friend void from_json(const BasicJsonType& json, Device& device) {
+  friend auto from_json(const BasicJsonType& json, Device& device) -> void {
     const Device defaultDevice{};
     device.name = !json.is_null() ? json.value("name", defaultDevice.name)
                                   : defaultDevice.name;
@@ -311,9 +312,21 @@ public:
     device.lengthUnit = !json.is_null()
                             ? json.value("lengthUnit", defaultDevice.lengthUnit)
                             : defaultDevice.lengthUnit;
+    if (device.lengthUnit.unit != "mm" && device.lengthUnit.unit != "um" &&
+        device.lengthUnit.unit != "nm") {
+      throw std::runtime_error(
+          "Invalid length unit: " + device.lengthUnit.unit +
+          ". Supported units are: mm, um, nm.");
+    }
     device.durationUnit =
-        !json.is_null() ? json.value("timeUnit", defaultDevice.durationUnit)
+        !json.is_null() ? json.value("durationUnit", defaultDevice.durationUnit)
                         : defaultDevice.durationUnit;
+    if (device.durationUnit.unit != "ms" && device.durationUnit.unit != "us" &&
+        device.durationUnit.unit != "ns") {
+      throw std::runtime_error(
+          "Invalid duration unit: " + device.durationUnit.unit +
+          ". Supported units are: ms, us, ns.");
+    }
   }
 };
 

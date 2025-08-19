@@ -401,13 +401,13 @@ TEST_F(QDMISpecificationTest, QueryDeviceLengthUnit) {
                 nullptr),
             QDMI_SUCCESS);
   EXPECT_THAT(value, testing::AnyOf("nm", "um", "mm"));
-  double scaleFactor = .0;
+  double scaleFactor = 0.;
   const auto result = MQT_NA_QDMI_device_session_query_device_property(
       session, QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR, sizeof(double),
       &scaleFactor, nullptr);
   EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   if (result == QDMI_SUCCESS) {
-    EXPECT_GT(scaleFactor, .0);
+    EXPECT_GT(scaleFactor, 0.);
   }
 }
 
@@ -422,13 +422,13 @@ TEST_F(QDMISpecificationTest, QueryDeviceDurationUnit) {
                 nullptr),
             QDMI_SUCCESS);
   EXPECT_THAT(value, testing::AnyOf("ns", "us", "ms"));
-  double scaleFactor = .0;
+  double scaleFactor = 0.;
   const auto result = MQT_NA_QDMI_device_session_query_device_property(
       session, QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR, sizeof(double),
       &scaleFactor, nullptr);
   EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   if (result == QDMI_SUCCESS) {
-    EXPECT_GT(scaleFactor, .0);
+    EXPECT_GT(scaleFactor, 0.);
   }
 }
 
@@ -595,6 +595,17 @@ TEST_F(NADeviceTest, QueryOperationData) {
   std::vector<MQT_NA_QDMI_Operation> operations;
   EXPECT_NO_THROW(operations = queryOperations(session));
   for (auto* operation : operations) {
+    size_t nameSize = 0;
+    ASSERT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                  session, operation, 0, nullptr, 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, &nameSize),
+              QDMI_SUCCESS);
+    std::string name(nameSize - 1, '\0');
+    EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                  session, operation, 0, nullptr, 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_NAME, nameSize, name.data(), nullptr),
+              QDMI_SUCCESS);
+    std::cout << "Querying operation: " << name << "\n";
     auto result = MQT_NA_QDMI_device_session_query_operation_property(
         session, operation, 0, nullptr, 0, nullptr,
         QDMI_OPERATION_PROPERTY_DURATION, sizeof(uint64_t), &duration, nullptr);
@@ -609,8 +620,8 @@ TEST_F(NADeviceTest, QueryOperationData) {
     EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
     if (result == QDMI_SUCCESS) {
       isFidelitySupported = true;
-      EXPECT_GT(fidelity, .0);
-      EXPECT_THAT(fidelity, testing::IsBetween(.0, .1));
+      EXPECT_GT(fidelity, 0.);
+      EXPECT_THAT(fidelity, testing::IsBetween(0., 1.));
     }
     result = MQT_NA_QDMI_device_session_query_operation_property(
         session, operation, 0, nullptr, 0, nullptr,
@@ -633,10 +644,12 @@ TEST_F(NADeviceTest, QueryOperationData) {
     EXPECT_EQ(isDurationSupported, isFidelitySupported);
     // isMeanShuttlingSpeedSupported <==> not isDurationSupported
     EXPECT_EQ(isMeanShuttlingSpeedSupported, !isDurationSupported);
-    // isNumQubitsSupported ==> isMeanShuttlingSpeedSupported
-    EXPECT_TRUE(!isNumQubitsSupported || isMeanShuttlingSpeedSupported);
+    // isMeanShuttlingSpeedSupported ==> not isNumQubitsSupported
+    EXPECT_TRUE(!isMeanShuttlingSpeedSupported || isNumQubitsSupported);
     // isMeanShuttlingSpeedSupported ==> isZoned
     EXPECT_TRUE(!isMeanShuttlingSpeedSupported || isZoned);
+    // not isZoned ==> isNumQubitsSupported
+    EXPECT_TRUE(!isZoned || isNumQubitsSupported);
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                   session, operation, 0, nullptr, 0, nullptr,
                   QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sizeof(size_t),
@@ -655,20 +668,13 @@ TEST_F(NADeviceTest, QueryOperationData) {
     if (numQubits == 1) {
       std::unordered_set<MQT_NA_QDMI_Site> supportedSites;
       for (const auto& site : sites) {
-        size_t nameSize = 0;
         result = MQT_NA_QDMI_device_session_query_operation_property(
             session, operation, 1, &site, 0, nullptr,
-            QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, &nameSize);
+            QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, nullptr);
         ASSERT_THAT(result,
                     testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
         if (result == QDMI_SUCCESS) {
           supportedSites.emplace(site);
-          std::string name(nameSize - 1, '\0');
-          EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
-                        session, operation, 0, nullptr, 0, nullptr,
-                        QDMI_OPERATION_PROPERTY_NAME, nameSize, name.data(),
-                        nullptr),
-                    QDMI_SUCCESS);
           bool isZone = false;
           EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
                         session, site, QDMI_SITE_PROPERTY_ISZONE, sizeof(bool),
@@ -734,7 +740,8 @@ TEST_F(NADeviceTest, QueryOperationData) {
       EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                     session, operation, 0, nullptr, 0, nullptr,
                     QDMI_OPERATION_PROPERTY_SITES, sitesSize,
-                    queriedSupportedSitesVec.data(), nullptr),
+                    static_cast<void*>(queriedSupportedSitesVec.data()),
+                    nullptr),
                 QDMI_SUCCESS);
       const std::unordered_set queriedSupportedSitesSet(
           queriedSupportedSitesVec.cbegin(), queriedSupportedSitesVec.cend());
@@ -763,11 +770,10 @@ TEST_F(NADeviceTest, QueryOperationData) {
           for (const auto& site2 : sites) {
             if (site1 != site2) {
               const std::pair sitePair{site1, site2};
-              size_t nameSize = 0;
               result = MQT_NA_QDMI_device_session_query_operation_property(
                   session, operation, 2,
                   reinterpret_cast<const MQT_NA_QDMI_Site*>(&sitePair), 0,
-                  nullptr, QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, &nameSize);
+                  nullptr, QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, nullptr);
               ASSERT_THAT(result, testing::AnyOf(QDMI_SUCCESS,
                                                  QDMI_ERROR_NOTSUPPORTED));
               if (result == QDMI_SUCCESS) {
@@ -778,12 +784,6 @@ TEST_F(NADeviceTest, QueryOperationData) {
                 } else {
                   supportedSites.emplace(sitePair.second, sitePair.first);
                 }
-                std::string name(nameSize - 1, '\0');
-                EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
-                              session, operation, 0, nullptr, 0, nullptr,
-                              QDMI_OPERATION_PROPERTY_NAME, nameSize,
-                              name.data(), nullptr),
-                          QDMI_SUCCESS);
                 bool isZone = false;
                 EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
                               session, sitePair.first,
@@ -882,30 +882,23 @@ TEST_F(NADeviceTest, QueryOperationData) {
                       &blockingRadius, nullptr),
                   QDMI_SUCCESS);
         EXPECT_GE(blockingRadius, interactionRadius);
-        double idlingFidelity = .0;
+        double idlingFidelity = 0.;
         EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                       session, operation, 0, nullptr, 0, nullptr,
-                      QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, 0, nullptr,
-                      nullptr),
+                      QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, sizeof(double),
+                      &idlingFidelity, nullptr),
                   QDMI_SUCCESS);
-        EXPECT_GT(idlingFidelity, .0);
-        EXPECT_THAT(idlingFidelity, testing::IsBetween(.0, .1));
+        EXPECT_GT(idlingFidelity, 0.);
+        EXPECT_THAT(idlingFidelity, testing::IsBetween(0., 1.));
         std::unordered_set<MQT_NA_QDMI_Site> supportedSites;
         for (const auto& site : sites) {
-          size_t nameSize = 0;
           result = MQT_NA_QDMI_device_session_query_operation_property(
               session, operation, 1, &site, 0, nullptr,
-              QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, &nameSize);
+              QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, nullptr);
           ASSERT_THAT(result,
                       testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
           if (result == QDMI_SUCCESS) {
             supportedSites.emplace(site);
-            std::string name(nameSize - 1, '\0');
-            EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
-                          session, operation, 0, nullptr, 0, nullptr,
-                          QDMI_OPERATION_PROPERTY_NAME, nameSize, name.data(),
-                          nullptr),
-                      QDMI_SUCCESS);
             bool isZone = false;
             EXPECT_EQ(MQT_NA_QDMI_device_session_query_site_property(
                           session, site, QDMI_SITE_PROPERTY_ISZONE,

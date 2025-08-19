@@ -53,9 +53,9 @@ TEST(GeneratorTest, WriteJSONSchema) {
   testPopulation(json);
 }
 
-TEST(GeneratorTest, TimeUnitNanosecond) {
+TEST(GeneratorTest, DurationUnitNanosecond) {
   std::istringstream is(R"({
-  "timeUnit": {
+  "durationUnit": {
     "scaleFactor": 5,
     "unit": "ns"
   }
@@ -66,16 +66,14 @@ TEST(GeneratorTest, TimeUnitNanosecond) {
   EXPECT_EQ(device.durationUnit.unit, "ns");
 }
 
-TEST(GeneratorTest, TimeUnitInvalid) {
+TEST(GeneratorTest, DurationUnitInvalid) {
   std::istringstream is(R"({
-  "timeUnit": {
+  "durationUnit": {
     "scaleFactor": 1,
     "unit": "ts"
   }
 })");
-  Device device;
-  ASSERT_NO_THROW(device = readJSON(is));
-  EXPECT_THROW(writeHeader(device, std::cout), std::runtime_error);
+  EXPECT_THROW(std::ignore = readJSON(is), std::runtime_error);
 }
 
 TEST(GeneratorTest, LengthUnitNanometer) {
@@ -98,9 +96,7 @@ TEST(GeneratorTest, LengthUnitInvalid) {
     "unit": "tm"
   }
 })");
-  Device device;
-  ASSERT_NO_THROW(device = readJSON(is));
-  EXPECT_THROW(writeHeader(device, std::cout), std::runtime_error);
+  EXPECT_THROW(std::ignore = readJSON(is), std::runtime_error);
 }
 
 } // namespace na
