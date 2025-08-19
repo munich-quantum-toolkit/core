@@ -318,11 +318,12 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
     operands.reserve(params.size() + staticParamValues.size() +
                      inQubits.size() + posCtrlQubits.size() +
                      negCtrlQubits.size());
-    operands.append(params.begin(), params.end());
-    operands.append(staticParamValues.begin(), staticParamValues.end());
-    operands.append(inQubits.begin(), inQubits.end());
+
     operands.append(posCtrlQubits.begin(), posCtrlQubits.end());
     operands.append(negCtrlQubits.begin(), negCtrlQubits.end());
+    operands.append(inQubits.begin(), inQubits.end());
+    operands.append(params.begin(), params.end());
+    operands.append(staticParamValues.begin(), staticParamValues.end());
 
     // check for negative controlled qubits
     // for any negative controlled qubits place an NOT operation before and

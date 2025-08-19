@@ -356,25 +356,25 @@ module {
         %1 = llvm.call @__quantum__rt__array_get_element_ptr_1d(%r0, %c1) : (!llvm.ptr, i64) -> !llvm.ptr
         %q0 = llvm.load %1 : !llvm.ptr -> !llvm.ptr
 
-        llvm.call @__quantum__qis__u2__body(%c2, %c3, %q0) : (f64, f64, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__u1__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__u3__body(%c2, %c3, %c4, %q0) : (f64, f64, f64, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__p__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__rx__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__ry__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__rz__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__u2__body(%q0, %c2, %c3) : (!llvm.ptr, f64, f64) -> ()
+        llvm.call @__quantum__qis__u1__body(%q0, %c2) : (!llvm.ptr, f64) -> ()
+        llvm.call @__quantum__qis__u3__body(%q0, %c2, %c3, %c4) : (!llvm.ptr, f64, f64, f64) -> ()
+        llvm.call @__quantum__qis__p__body(%q0, %c2) : (!llvm.ptr, f64) -> ()
+        llvm.call @__quantum__qis__rx__body(%q0, %c2) : (!llvm.ptr, f64) -> ()
+        llvm.call @__quantum__qis__ry__body(%q0, %c2) : (!llvm.ptr, f64) -> ()
+        llvm.call @__quantum__qis__rz__body(%q0, %c2) : (!llvm.ptr, f64) -> ()
 
         llvm.br ^bb2
       ^bb2:
         llvm.return
     }
-    llvm.func @__quantum__qis__u1__body(f64, !llvm.ptr)
-    llvm.func @__quantum__qis__u2__body(f64, f64, !llvm.ptr)
-    llvm.func @__quantum__qis__u3__body(f64, f64, f64, !llvm.ptr)
-    llvm.func @__quantum__qis__p__body(f64, !llvm.ptr)
-    llvm.func @__quantum__qis__rx__body(f64, !llvm.ptr)
-    llvm.func @__quantum__qis__ry__body(f64, !llvm.ptr)
-    llvm.func @__quantum__qis__rz__body(f64, !llvm.ptr)
+    llvm.func @__quantum__qis__u1__body(!llvm.ptr, f64)
+    llvm.func @__quantum__qis__u2__body(!llvm.ptr, f64, f64)
+    llvm.func @__quantum__qis__u3__body(!llvm.ptr, f64, f64, f64)
+    llvm.func @__quantum__qis__p__body(!llvm.ptr, f64)
+    llvm.func @__quantum__qis__rx__body(!llvm.ptr, f64)
+    llvm.func @__quantum__qis__ry__body(!llvm.ptr, f64)
+    llvm.func @__quantum__qis__rz__body(!llvm.ptr, f64)
     llvm.func @__quantum__rt__array_get_element_ptr_1d(!llvm.ptr, i64) -> !llvm.ptr
     llvm.func @__quantum__rt__initialize(!llvm.ptr)
     llvm.func @__quantum__rt__qubit_allocate_array(i64) -> !llvm.ptr
@@ -409,23 +409,23 @@ module {
         %2 = llvm.call @__quantum__rt__array_get_element_ptr_1d(%r0, %c2) : (!llvm.ptr, i64) -> !llvm.ptr
         %q1 = llvm.load %2 : !llvm.ptr -> !llvm.ptr
 
-        llvm.call @__quantum__qis__rxx__body(%c3, %q0, %q1) : (f64, !llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__ryy__body(%c3, %q0, %q1) : (f64, !llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__rzz__body(%c3, %q0, %q1) : (f64, !llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__rzx__body(%c3, %q0, %q1) : (f64, !llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__xxminusyy__body(%c3, %c4, %q0, %q1) : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__xxplusyy__body(%c3, %c4, %q0, %q1) : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__rxx__body(%q0, %q1, %c3) : (!llvm.ptr, !llvm.ptr, f64) -> ()
+        llvm.call @__quantum__qis__ryy__body(%q0, %q1, %c3) : (!llvm.ptr, !llvm.ptr, f64) -> ()
+        llvm.call @__quantum__qis__rzz__body(%q0, %q1, %c3) : (!llvm.ptr, !llvm.ptr, f64) -> ()
+        llvm.call @__quantum__qis__rzx__body(%q0, %q1, %c3) : (!llvm.ptr, !llvm.ptr, f64) -> ()
+        llvm.call @__quantum__qis__xxminusyy__body(%q0, %q1, %c3, %c4) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
+        llvm.call @__quantum__qis__xxplusyy__body(%q0, %q1, %c3, %c4) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
 
         llvm.br ^bb2
       ^bb2:
         llvm.return
     }
-    llvm.func @__quantum__qis__rxx__body(f64, !llvm.ptr, !llvm.ptr)
-    llvm.func @__quantum__qis__ryy__body(f64, !llvm.ptr, !llvm.ptr)
-    llvm.func @__quantum__qis__rzz__body(f64, !llvm.ptr, !llvm.ptr)
-    llvm.func @__quantum__qis__rzx__body(f64, !llvm.ptr, !llvm.ptr)
-    llvm.func @__quantum__qis__xxminusyy__body(f64, f64, !llvm.ptr, !llvm.ptr)
-    llvm.func @__quantum__qis__xxplusyy__body(f64, f64, !llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__qis__rxx__body(!llvm.ptr, !llvm.ptr, f64)
+    llvm.func @__quantum__qis__ryy__body(!llvm.ptr, !llvm.ptr, f64)
+    llvm.func @__quantum__qis__rzz__body(!llvm.ptr, !llvm.ptr, f64)
+    llvm.func @__quantum__qis__rzx__body(!llvm.ptr, !llvm.ptr, f64)
+    llvm.func @__quantum__qis__xxminusyy__body(!llvm.ptr, !llvm.ptr, f64, f64)
+    llvm.func @__quantum__qis__xxplusyy__body(!llvm.ptr, !llvm.ptr, f64, f64)
     llvm.func @__quantum__rt__array_get_element_ptr_1d(!llvm.ptr, i64) -> !llvm.ptr
     llvm.func @__quantum__rt__initialize(!llvm.ptr)
     llvm.func @__quantum__rt__qubit_allocate_array(i64) -> !llvm.ptr
@@ -436,10 +436,10 @@ module {
 module {
     // CHECK-LABEL: llvm.func @testConvertControlledOp()
     llvm.func @testConvertControlledOp() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: mqtref.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
-        // CHECK: mqtref.x() %[[ANY:.*]] ctrl %[[ANY:.*]], %[[ANY:.*]]
-        // CHECK: mqtref.z() %[[ANY:.*]] ctrl %[[ANY:.*]]
-        // CHECK: mqtref.rx(%[[ANY:.*]]) %[[ANY:.*]] ctrl %[[ANY:.*]]
+        // CHECK: mqtref.x() %[[q_0:.*]] ctrl %[[q_1:.*]]
+        // CHECK: mqtref.x() %[[q_0]] ctrl %[[q_1]], %[[q_2:.*]]
+        // CHECK: mqtref.z() %[[q_0]] ctrl %[[q_1]]
+        // CHECK: mqtref.rx(%[[ANY:.*]]) %[[q_0]] ctrl %[[q_1]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(3 : i64) : i64
@@ -457,10 +457,10 @@ module {
         %3 = llvm.call @__quantum__rt__array_get_element_ptr_1d(%r0, %c2) : (!llvm.ptr, i64) -> !llvm.ptr
         %q2 = llvm.load %3 : !llvm.ptr -> !llvm.ptr
 
-        llvm.call @__quantum__qis__cnot__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__ccx__body(%q0, %q1, %q2) : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__cz__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) -> ()
-        llvm.call @__quantum__qis__crx__body(%c3, %q0, %q1) : (f64, !llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__cnot__body(%q1, %q0) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__ccx__body(%q1, %q2, %q0) : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__cz__body(%q1, %q0) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__crx__body(%q1, %q0, %c3) : (!llvm.ptr, !llvm.ptr, f64) -> ()
         llvm.br ^bb2
       ^bb2:
         llvm.return
@@ -468,7 +468,7 @@ module {
     llvm.func @__quantum__qis__cnot__body(!llvm.ptr, !llvm.ptr)
     llvm.func @__quantum__qis__ccx__body(!llvm.ptr, !llvm.ptr, !llvm.ptr)
     llvm.func @__quantum__qis__cz__body(!llvm.ptr, !llvm.ptr)
-    llvm.func @__quantum__qis__crx__body(f64, !llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__qis__crx__body(!llvm.ptr, !llvm.ptr, f64)
     llvm.func @__quantum__rt__array_get_element_ptr_1d(!llvm.ptr, i64) -> !llvm.ptr
     llvm.func @__quantum__rt__initialize(!llvm.ptr)
     llvm.func @__quantum__rt__qubit_allocate_array(i64) -> !llvm.ptr
@@ -514,12 +514,12 @@ module {
         %r0 = llvm.call @__quantum__rt__qubit_allocate_array(%c0) : (i64) -> !llvm.ptr
         %1 = llvm.call @__quantum__rt__array_get_element_ptr_1d(%r0, %c1) : (!llvm.ptr, i64) -> !llvm.ptr
         %q0 = llvm.load %1 : !llvm.ptr -> !llvm.ptr
-        llvm.call @__quantum__qis__cgphase__body(%c2, %q0) : (f64, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__cgphase__body(%q0, %c2) : (!llvm.ptr, f64) -> ()
         llvm.br ^bb2
       ^bb2:
         llvm.return
     }
-    llvm.func @__quantum__qis__cgphase__body(f64, !llvm.ptr)
+    llvm.func @__quantum__qis__cgphase__body(!llvm.ptr, f64)
     llvm.func @__quantum__rt__array_get_element_ptr_1d(!llvm.ptr, i64) -> !llvm.ptr
     llvm.func @__quantum__rt__initialize(!llvm.ptr)
     llvm.func @__quantum__rt__qubit_allocate_array(i64) -> !llvm.ptr
@@ -586,7 +586,7 @@ module {
         %2 = llvm.call @__quantum__rt__array_get_element_ptr_1d(%r0, %c2) : (!llvm.ptr, i64) -> !llvm.ptr
         %q1 = llvm.load %2 : !llvm.ptr -> !llvm.ptr
         llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__cnot__body(%q1, %q0) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__cnot__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) -> ()
         %m0 = llvm.call @__quantum__qis__m__body(%q0) : (!llvm.ptr) -> !llvm.ptr
         llvm.call @__quantum__rt__result_record_output(%m0, %a0) : (!llvm.ptr, !llvm.ptr) -> ()
         llvm.call @__quantum__rt__result_update_reference_count(%m0, %c3) : (!llvm.ptr, i32) -> ()
@@ -628,7 +628,7 @@ module {
         llvm.br ^bb1
       ^bb1:
         llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__cnot__body(%q1, %q0) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__qis__cnot__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) -> ()
         llvm.br ^bb2
       ^bb2:
         %m0 = llvm.call @__quantum__qis__m__body(%q0) : (!llvm.ptr) -> !llvm.ptr

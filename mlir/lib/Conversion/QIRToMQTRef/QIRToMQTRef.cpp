@@ -267,10 +267,12 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
                                   ConversionPatternRewriter& rewriter) {
     // extract the degrees from the operand list
     SmallVector<Value> rotationDegrees;
+    rotationDegrees.reserve(rotationCount);
     rotationDegrees.insert(
-        rotationDegrees.end(), std::make_move_iterator(operands.begin()),
-        std::make_move_iterator(operands.begin() + rotationCount));
-    operands.erase(operands.begin(), operands.begin() + rotationCount);
+        rotationDegrees.end(),
+        std::make_move_iterator(operands.end() - rotationCount),
+        std::make_move_iterator(operands.end()));
+    operands.resize(operands.size() - rotationCount);
 
     // match and replace the fitting gate
     ADD_CONVERT_ROTATION_GATE(POp)
@@ -421,10 +423,10 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     SmallVector<Value> ctrlQubits;
     ctrlQubits.reserve(ctrlQubitCount);
     ctrlQubits.insert(
-        ctrlQubits.end(),
-        std::make_move_iterator(newOperands.end() - ctrlQubitCount),
-        std::make_move_iterator(newOperands.end()));
-    newOperands.resize(newOperands.size() - ctrlQubitCount);
+        ctrlQubits.end(), std::make_move_iterator(newOperands.begin()),
+        std::make_move_iterator(newOperands.begin() + ctrlQubitCount));
+    newOperands.erase(newOperands.begin(),
+                      newOperands.begin() + ctrlQubitCount);
 
     // try to match and replace gate operations
     if (gateName == "gphase") {

@@ -281,12 +281,12 @@ module {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: %[[c_1:.*]] = llvm.mlir.constant(1.000000e-01 : f64) : f64
         // CHECK: %[[c_2:.*]] = llvm.mlir.constant(2.000000e-01 : f64) : f64
-        // CHECK: llvm.call @__quantum__qis__u3__body(%[[c_0]], %[[c_1]], %[[c_2]], %[[q_0:.*]]) : (f64, f64, f64, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__u2__body(%[[c_0]], %[[c_1]], %[[q_0:.*]]) : (f64, f64, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__p__body(%[[c_0]], %[[q_0]]) : (f64, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__rx__body(%[[c_0]], %[[q_0]]) : (f64, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__ry__body(%[[c_0]], %[[q_0]]) : (f64, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__rz__body(%[[c_0]], %[[q_0]]) : (f64, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__u3__body(%[[q_0:.*]], %[[c_0]], %[[c_1]], %[[c_2]]) : (!llvm.ptr, f64, f64, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__u2__body(%[[q_0:.*]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, f64, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__p__body(%[[q_0]], %[[c_0]]) : (!llvm.ptr, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__rx__body(%[[q_0]], %[[c_0]]) : (!llvm.ptr, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__ry__body(%[[q_0]], %[[c_0]]) : (!llvm.ptr, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__rz__body(%[[q_0]], %[[c_0]]) : (!llvm.ptr, f64) -> ()
 
         %c0 = arith.constant 3.000000e-01 : f64
         %c1 = arith.constant 1.000000e-01 : f64
@@ -313,12 +313,12 @@ module {
     func.func @testMultipleQubitRotationOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: %[[c_1:.*]] = llvm.mlir.constant(1.000000e-01 : f64) : f64
-        // CHECK: llvm.call @__quantum__qis__rxx__body(%[[c_0]], %[[q_0:.*]], %[[q_1:.*]]) : (f64, !llvm.ptr, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__ryy__body(%[[c_0]], %[[q_0]], %[[q_1]]) : (f64, !llvm.ptr, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__rzz__body(%[[c_0]], %[[q_0]], %[[q_1]]) : (f64, !llvm.ptr, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__rzx__body(%[[c_0]], %[[q_0]], %[[q_1]]) : (f64, !llvm.ptr, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__xxminusyy__body(%[[c_0]], %[[c_1]], %[[q_0]], %[[q_1]]) : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__xxplusyy__body(%[[c_0]], %[[c_1]], %[[q_0]], %[[q_1]]) : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__rxx__body(%[[q_0:.*]], %[[q_1:.*]], %[[c_0]]) : (!llvm.ptr, !llvm.ptr, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__ryy__body(%[[q_0]], %[[q_1]], %[[c_0]]) : (!llvm.ptr, !llvm.ptr, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__rzz__body(%[[q_0]], %[[q_1]], %[[c_0]]) : (!llvm.ptr, !llvm.ptr, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__rzx__body(%[[q_0]], %[[q_1]], %[[c_0]]) : (!llvm.ptr, !llvm.ptr, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__xxminusyy__body(%[[q_0]], %[[q_1]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__xxplusyy__body(%[[q_0]], %[[q_1]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
 
         %c0 = arith.constant 3.000000e-01 : f64
         %c1 = arith.constant 1.000000e-01 : f64
@@ -343,15 +343,15 @@ module {
 module {
     // CHECK-LABEL: llvm.func @testConvertControlledOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "3"], ["required_num_results", "0"]]}
     func.func @testConvertControlledOp() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: llvm.call @__quantum__qis__cx__body(%[[q_0:.*]], %[[q_1:.*]]) : (!llvm.ptr, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__ccx__body(%[[q_0]], %[[q_1]], %[[q_2:.*]]) : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__cx__body(%[[q_1:.*]], %[[q_0:.*]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__ccx__body(%[[q_1]], %[[q_2:.*]], %[[q_0]]) : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
         // CHECK: llvm.call @__quantum__qis__x__body(%[[q_1]]) : (!llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__cz__body(%[[q_0]], %[[q_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__cz__body(%[[q_1]], %[[q_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
         // CHECK: llvm.call @__quantum__qis__x__body(%[[q_1]]) : (!llvm.ptr) -> ()
         // CHECK: llvm.call @__quantum__qis__x__body(%[[q_1]]) : (!llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__ccx__body(%[[q_0]], %[[q_2]], %[[q_1]]) : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__ccx__body(%[[q_2]], %[[q_1]], %[[q_0]]) : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
         // CHECK: llvm.call @__quantum__qis__x__body(%[[q_1]]) : (!llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__crx__body(%[[c_0:.*]], %[[q_0]], %[[q_1]]) : (f64, !llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__crx__body(%[[q_1]], %[[q_0]], %[[c_0:.*]]) : (!llvm.ptr, !llvm.ptr, f64) -> ()
 
         %c0 = arith.constant 3.000000e-01 : f64
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
@@ -377,7 +377,7 @@ module {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: %[[c_1:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: %[[c_2:.*]] = llvm.mlir.constant(1.000000e-01 : f64) : f64
-        // CHECK: llvm.call @__quantum__qis__u3__body(%[[c_1]], %[[c_2]], %[[c_0]], %[[q_0:.*]]) : (f64, f64, f64, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__u3__body(%[[q_0:.*]], %[[c_1]], %[[c_2]], %[[c_0]]) : (!llvm.ptr, f64, f64, f64) -> ()
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
@@ -413,7 +413,7 @@ module {
     // CHECK-LABEL: llvm.func @testConvertGPhaseOpControlled() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "1"], ["required_num_results", "0"]]}
     func.func @testConvertGPhaseOpControlled() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
-        // CHECK: llvm.call @__quantum__qis__cgphase__body(%[[c_0:.*]], %[[ANY:.*]]) : (f64, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__cgphase__body(%[[ANY:.*]], %[[c_0]]) : (!llvm.ptr, f64) -> ()
 
         %cst = arith.constant 3.000000e-01 : f64
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
@@ -457,7 +457,7 @@ module {
         // CHECK: %[[ptr_1:.*]] = llvm.call @__quantum__rt__array_get_element_ptr_1d(%[[r_0]], %[[index_1]]) : (!llvm.ptr, i64) -> !llvm.ptr
         // CHECK: %[[q_1:.*]] = llvm.load %[[ptr_1]] : !llvm.ptr -> !llvm.ptr
         // CHECK: llvm.call @__quantum__qis__h__body(%[[q_0]]) : (!llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__cx__body(%[[q_1]], %[[q_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__cx__body(%[[q_0]], %[[q_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
         // CHECK: %[[m_0:.*]] = llvm.call @__quantum__qis__m__body(%[[q_0]]) : (!llvm.ptr) -> !llvm.ptr
         // CHECK: llvm.call @__quantum__rt__result_record_output(%[[m_0]], %[[ANY:.*]]) : (!llvm.ptr, !llvm.ptr) -> ()
         // CHECK: llvm.call @__quantum__rt__result_update_reference_count(%[[m_0]], %[[ANY:.*]]) : (!llvm.ptr, i32) -> ()
@@ -492,7 +492,7 @@ module {
         // CHECK-DAG: %[[index_0:.*]] = llvm.mlir.constant(1 : i64) : i64
         // CHECK: %[[q_1:.*]] = llvm.inttoptr %[[index_0]] : i64 to !llvm.ptr
         // CHECK: llvm.call @__quantum__qis__h__body(%[[q_0]]) : (!llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__cx__body(%[[q_1]], %[[q_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__cx__body(%[[q_0]], %[[q_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
         // CHECK: %[[m_0:.*]] = llvm.call @__quantum__qis__m__body(%[[q_0]]) : (!llvm.ptr) -> !llvm.ptr
         // CHECK: llvm.call @__quantum__rt__result_record_output(%[[m_0]], %[[ANY:.*]]) : (!llvm.ptr, !llvm.ptr) -> ()
         // CHECK: llvm.call @__quantum__rt__result_update_reference_count(%[[m_0]], %[[ANY:.*]]) : (!llvm.ptr, i32) -> ()
