@@ -148,6 +148,34 @@ struct ConvertMQTRefAllocQIR final : OpConversionPattern<ref::AllocOp> {
     return success();
   }
 };
+
+struct ConvertMQTRefQubitQIR final : OpConversionPattern<ref::QubitOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ref::QubitOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto* ctx = getContext();
+    const auto index = adaptor.getIndex();
+    // if the index is zero create a zero operation
+    if (index == 0) {
+      // create name and signature of the new function
+      rewriter.replaceOpWithNewOp<LLVM::ZeroOp>(
+          op, LLVM::LLVMPointerType::get(ctx));
+    }
+    // otherwise create an constant operation with the index as value and an int
+    // to ptr operation
+    else {
+      auto constantOp = rewriter.create<LLVM::ConstantOp>(
+          op.getLoc(), rewriter.getI64IntegerAttr(static_cast<int64_t>(index)));
+      rewriter.replaceOpWithNewOp<LLVM::IntToPtrOp>(
+          op, LLVM::LLVMPointerType::get(ctx), constantOp->getResult(0));
+    }
+
+    return success();
+  }
+};
+
 struct ConvertMQTRefDeallocQIR final : OpConversionPattern<ref::DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -684,6 +712,7 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     mqtPatterns.add<ConvertMQTRefDeallocQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTRefExtractQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTRefResetQIR>(typeConverter, context);
+    mqtPatterns.add<ConvertMQTRefQubitQIR>(typeConverter, context);
     mqtPatterns.add<ConvertMQTRefMeasureQIR>(typeConverter, context, &state);
 
     ADD_CONVERT_PATTERN(GPhaseOp)

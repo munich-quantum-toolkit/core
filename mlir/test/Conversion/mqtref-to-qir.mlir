@@ -130,20 +130,35 @@ module {
 module {
     // CHECK-LABEL: llvm.func @testConvertResetOp()
     func.func @testConvertResetOp() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
+        // CHECK: %[[size:.*]] = llvm.mlir.constant(1 : i64) : i64
         // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
         // CHECK: %[[ptr_0:.*]] = llvm.call @__quantum__rt__array_get_element_ptr_1d(%[[r_0]], %[[index]]) : (!llvm.ptr, i64) -> !llvm.ptr
         // CHECK: %[[q_0:.*]] = llvm.load %[[ptr_0]] : !llvm.ptr -> !llvm.ptr
         // CHECK: llvm.call @__quantum__qis__reset__body(%[[q_0]]) : (!llvm.ptr) -> ()
 
-        %c0 = arith.constant 2 : i64
+        %c0 = arith.constant 1 : i64
         %c1 = arith.constant 0 : i64
         %r0 = "mqtref.allocQubitRegister" (%c0) : (i64) -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0, %c1) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
 
         "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
 
+        return
+    }
+}
+
+// -----
+// This test checks if the reset operation is correctly converted
+module {
+    // CHECK-LABEL: llvm.func @testConvertResetOpOnStaticAttribute()
+    func.func @testConvertResetOpOnStaticAttribute() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[q_0:.*]] = llvm.mlir.zero : !llvm.ptr
+        // CHECK: %[[q_1:.*]] = llvm.mlir.zero : !llvm.ptr
+        // CHECK: llvm.call @__quantum__qis__reset__body(%[[q_1]]) : (!llvm.ptr) -> ()
+
+        %q0 = mqtref.qubit 0
+        "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
         return
     }
 }
@@ -482,6 +497,39 @@ module {
         %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> i1
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if a Bell state is converted correctly.
+module {
+
+    // CHECK-LABEL: llvm.func @bellStateStaticQubit()
+    func.func @bellStateStaticQubit() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[z_0:.*]] = llvm.mlir.zero : !llvm.ptr
+        // CHECK: %[[q_0:.*]] = llvm.mlir.zero : !llvm.ptr
+        // CHECK-DAG: %[[index_0:.*]] = llvm.mlir.constant(1 : i64) : i64
+        // CHECK: %[[q_1:.*]] = llvm.inttoptr %[[index_0]] : i64 to !llvm.ptr
+        // CHECK: llvm.call @__quantum__qis__h__body(%[[q_0]]) : (!llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__qis__cx__body(%[[q_1]], %[[q_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: %[[m_0:.*]] = llvm.call @__quantum__qis__m__body(%[[q_0]]) : (!llvm.ptr) -> !llvm.ptr
+        // CHECK: llvm.call @__quantum__rt__result_record_output(%[[m_0]], %[[ANY:.*]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__result_update_reference_count(%[[m_0]], %[[ANY:.*]]) : (!llvm.ptr, i32) -> ()
+        // CHECK: %[[i_0:.*]] = llvm.call @__quantum__rt__read_result(%[[m_0]]) : (!llvm.ptr) -> i1
+        // CHECK: %[[m_1:.*]] = llvm.call @__quantum__qis__m__body(%[[q_1]]) : (!llvm.ptr) -> !llvm.ptr
+        // CHECK: llvm.call @__quantum__rt__result_record_output(%[[m_1]], %[[ANY:.*]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__result_update_reference_count(%[[m_1]], %[[ANY:.*]]) : (!llvm.ptr, i32) -> ()
+        // CHECK: %[[i_1:.*]] = llvm.call @__quantum__rt__read_result(%[[m_1]]) : (!llvm.ptr) -> i1
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+
+        mqtref.h() %q0
+        mqtref.x() %q1 ctrl %q0
+        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> i1
+
         return
     }
 }
