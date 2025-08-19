@@ -608,3 +608,42 @@ module {
     llvm.func @__quantum__rt__initialize(!llvm.ptr)
     llvm.func @__quantum__rt__qubit_allocate_array(i64) -> !llvm.ptr
 }
+
+// -----
+// This test checks if a Bell state with static qubit addressing is converted correctly.
+module {
+    // CHECK-LABEL: llvm.func @bellStateStaticAddressing()
+    llvm.func @bellStateStaticAddressing() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[q_0:.*]] = mqtref.qubit 0
+        // CHECK: %[[q_1:.*]] = mqtref.qubit 1
+        // CHECK: mqtref.h() %[[q_0]]
+        // CHECK: mqtref.x() %[[q_1]] ctrl %[[q_0]]
+        // CHECK: %[[m_0:.*]] = mqtref.measure %[[q_0]]
+        // CHECK: %[[m_1:.*]] = mqtref.measure %[[q_1]]
+
+        %q0 = llvm.mlir.zero : !llvm.ptr
+        %cst = llvm.mlir.constant(1 : i64) : i64
+        %q1 = llvm.inttoptr %cst : i64 to !llvm.ptr
+        llvm.call @__quantum__rt__initialize(%q0) : (!llvm.ptr) -> ()
+        llvm.br ^bb1
+      ^bb1:
+        llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__cnot__body(%q1, %q0) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.br ^bb2
+      ^bb2:
+        %m0 = llvm.call @__quantum__qis__m__body(%q0) : (!llvm.ptr) -> !llvm.ptr
+        %m1 = llvm.call @__quantum__qis__m__body(%q1) : (!llvm.ptr) -> !llvm.ptr
+        llvm.br ^bb3
+      ^bb3:  // pred: ^bb2
+        llvm.return
+    }
+    llvm.func @__quantum__rt__qubit_release_array(!llvm.ptr)
+    llvm.func @__quantum__rt__result_update_reference_count(!llvm.ptr, i32)
+    llvm.func @__quantum__qis__m__body(!llvm.ptr) -> !llvm.ptr
+    llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__qis__h__body(!llvm.ptr)
+    llvm.func @__quantum__qis__cnot__body(!llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__rt__array_get_element_ptr_1d(!llvm.ptr, i64) -> !llvm.ptr
+    llvm.func @__quantum__rt__initialize(!llvm.ptr)
+    llvm.func @__quantum__rt__qubit_allocate_array(i64) -> !llvm.ptr
+}
