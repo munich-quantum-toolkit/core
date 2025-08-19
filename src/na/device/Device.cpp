@@ -95,10 +95,10 @@ Device::Device() {
   // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_NAME(name_);
   INITIALIZE_QUBITSNUM(qubitsNum_);
+  INITIALIZE_MINATOMDISTANCE(minAtomDistance_);
   // NOLINTEND(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_LENGTHUNIT(lengthUnit_);
   INITIALIZE_DURATIONUNIT(durationUnit_);
-  INITIALIZE_MINATOMDISTANCE(minAtomDistance_);
   // NOLINTNEXTLINE(misc-const-correctness)
   INITIALIZE_SITES(sites_);
   INITIALIZE_OPERATIONS(operations_);
@@ -365,12 +365,12 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
   supportedSites_.emplace_back(zone);
 }
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
-    std::string name, const size_t numParameters, const size_t numQubits,
-    const uint64_t duration, const double fidelity,
-    const std::vector<MQT_NA_QDMI_Site>& sites)
-    : name_(std::move(name)), numParameters_(numParameters),
-      numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
-      supportedSites_(sites) {}
+    std::string name, const size_t numParameters, const uint64_t duration,
+    const double fidelity, const std::vector<MQT_NA_QDMI_Site>& sites)
+    : name_(std::move(name)), numParameters_(numParameters), numQubits_(1),
+      duration_(duration), fidelity_(fidelity), supportedSites_(sites) {
+  sortSites();
+}
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     std::string name, const size_t numParameters, const size_t numQubits,
     const uint64_t duration, const double fidelity,
@@ -379,7 +379,9 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     : name_(std::move(name)), numParameters_(numParameters),
       numQubits_(numQubits), duration_(duration), fidelity_(fidelity),
       interactionRadius_(interactionRadius), blockingRadius_(blockingRadius),
-      supportedSites_(sites) {}
+      supportedSites_(sites) {
+  sortSites();
+}
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     std::string name, size_t numParameters, uint64_t duration, double fidelity,
     MQT_NA_QDMI_Site zone)
@@ -394,11 +396,36 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
       meanShuttlingSpeed_(meanShuttlingSpeed), isZoned_(true) {
   supportedSites_.emplace_back(zone);
 }
+auto MQT_NA_QDMI_Operation_impl_d::sortSites() -> void {
+  if (!isZoned_) {
+    if (numQubits_ == 1) {
+      // sort sites by their pointer address
+      std::ranges::sort(supportedSites_);
+    } else if (numQubits_ == 2) {
+      // First ensure that in each site's pair the first site is the one
+      // with the smaller pointer address
+      std::ranges::for_each(
+          reinterpret_cast<
+              std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>&>(
+              supportedSites_),
+          [](auto& p) {
+            if (p.first < p.second) {
+              std::swap(p.first, p.second);
+            }
+          });
+      // Then sort the pairs
+      std::ranges::sort(
+          reinterpret_cast<
+              std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>&>(
+              supportedSites_));
+    }
+  }
+}
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueGlobalSingleQubit(
     const std::string& name, const size_t numParameters,
     const uint64_t duration, const double fidelity, MQT_NA_QDMI_Site zone)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, 1, duration, fidelity,
+  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
                                   zone);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
@@ -418,7 +445,7 @@ auto MQT_NA_QDMI_Operation_impl_d::makeUniqueLocalSingleQubit(
     const uint64_t duration, const double fidelity,
     const std::vector<MQT_NA_QDMI_Site>& sites)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, 1, duration, fidelity,
+  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
                                   sites);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
@@ -428,15 +455,10 @@ auto MQT_NA_QDMI_Operation_impl_d::makeUniqueLocalTwoQubit(
     const uint64_t interactionRadius, const uint64_t blockingRadius,
     const std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>& sites)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  // TODO: can that be solved by a cast from one vector to the other
-  std::vector<MQT_NA_QDMI_Site> sitesFlattened;
-  std::ranges::for_each(sites, [&sitesFlattened](const auto& sitePair) {
-    sitesFlattened.emplace_back(sitePair.first);
-    sitesFlattened.emplace_back(sitePair.second);
-  });
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, numQubits, duration,
-                                  fidelity, interactionRadius, blockingRadius,
-                                  sitesFlattened);
+  MQT_NA_QDMI_Operation_impl_d op(
+      name, numParameters, numQubits, duration, fidelity, interactionRadius,
+      blockingRadius,
+      reinterpret_cast<const std::vector<MQT_NA_QDMI_Site>&>(sites));
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingLoad(
@@ -476,27 +498,24 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (sites != nullptr) {
-    // todo: Can this be improves, esp. the linear running time to
-    // constant/logartihmic
-    for (const MQT_NA_QDMI_Site* site = sites;
-         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-         std::cmp_less(site - sites, numSites); ++site) {
-      if (std::ranges::find(supportedSites_, *site) == supportedSites_.cend()) {
+    if (numQubits_ == 1) {
+      // if the (single) site is not supported, return with an error
+      if (!std::ranges::binary_search(supportedSites_, *sites)) {
         return QDMI_ERROR_NOTSUPPORTED;
       }
-    }
-    // Check for 2-qubit gates whether sites are within interaction radius
-    if (numSites == 2) {
-      const auto* sitePair = reinterpret_cast<
-          const std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>*>(sites);
-      const auto xDistance = sitePair->second->x_ - sitePair->first->x_;
-      const auto yDistance = sitePair->second->y_ - sitePair->first->y_;
-      const auto distance =
-          std::sqrt(std::pow(xDistance, 2) + std::pow(yDistance, 2));
-      if (distance > interactionRadius_) {
+    } else if (numQubits_ == 2) {
+      const std::pair needle = sites[0] < sites[1]
+                                   ? std::make_pair(sites[0], sites[1])
+                                   : std::make_pair(sites[1], sites[0]);
+      // if the pair of sites is not supported, return with an error
+      if (!std::ranges::binary_search(
+              reinterpret_cast<const std::vector<
+                  std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>&>(
+                  supportedSites_),
+              needle)) {
         return QDMI_ERROR_NOTSUPPORTED;
       }
-    }
+    } // this device does not support operations with more than two qubits
   }
   ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, name_.c_str(), prop, size,
                       value, sizeRet)

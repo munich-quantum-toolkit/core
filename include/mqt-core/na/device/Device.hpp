@@ -16,11 +16,13 @@
 
 #include "mqt_na_qdmi/device.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace qdmi {
@@ -331,8 +333,7 @@ private:
                                MQT_NA_QDMI_Site zone);
   /// @brief Constructor for the single-qubit operations.
   MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
-                               size_t numQubits, uint64_t duration,
-                               double fidelity,
+                               uint64_t duration, double fidelity,
                                const std::vector<MQT_NA_QDMI_Site>& sites);
   /// @brief Constructor for the multi-qubit operations.
   MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
@@ -348,6 +349,10 @@ private:
   MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
                                MQT_NA_QDMI_Site zone,
                                uint64_t meanShuttlingSpeed);
+
+  /// @brief Sort the sites such that the occurrence of a given site can be
+  /// determined in O(log n) time.
+  auto sortSites() -> void;
 
 public:
   /// @brief Factory function for the global single-qubit operations.
