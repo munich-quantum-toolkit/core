@@ -20,6 +20,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <iomanip>
+#include <iostream>
 #include <memory>
 #include <ostream>
 #include <stdexcept>
@@ -125,6 +127,28 @@ IfElseOperation& IfElseOperation::operator=(const IfElseOperation& op) {
   return *this;
 }
 
+std::ostream&
+IfElseOperation::print(std::ostream& os, const Permutation& permutation,
+                       [[maybe_unused]] const std::size_t prefixWidth,
+                       const std::size_t nqubits) const {
+  if (thenOp) {
+    thenOp->print(os, permutation, prefixWidth, nqubits);
+  }
+
+  os << "  " << "\033[1m\033[35m";
+  if (controlRegister.has_value()) {
+    assert(!controlBit.has_value());
+    os << controlRegister->getName() << " == " << expectedValueRegister;
+  }
+  if (controlBit.has_value()) {
+    assert(!controlRegister.has_value());
+    os << (expectedValueBit ? "!" : "") << "c[" << controlBit.value() << "]";
+  }
+  os << "\033[0m";
+
+  return os;
+}
+
 bool IfElseOperation::equals(const Operation& operation,
                              const Permutation& perm1,
                              const Permutation& perm2) const {
@@ -197,7 +221,9 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
       of << controlRegister->getName() << ' '
          << getInvertedComparisonKind(comparisonKind) << ' '
          << expectedValueRegister;
-    } else if (controlBit.has_value()) {
+    }
+    if (controlBit.has_value()) {
+      assert(!controlRegister.has_value());
       of << (expectedValueBit ? "!" : "") << bitMap.at(*controlBit).second;
     }
     of << ") ";
@@ -219,10 +245,12 @@ std::size_t std::hash<qc::IfElseOperation>::operator()(
     qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getElseOp()));
   }
   if (const auto& reg = op.getControlRegister(); reg.has_value()) {
+    assert(!op.getControlBit().has_value());
     qc::hashCombine(seed, std::hash<qc::ClassicalRegister>{}(reg.value()));
     qc::hashCombine(seed, op.getExpectedValueRegister());
   }
   if (const auto& bit = op.getControlBit(); bit.has_value()) {
+    assert(!op.getControlRegister().has_value());
     qc::hashCombine(seed, bit.value());
     qc::hashCombine(seed, static_cast<std::size_t>(op.getExpectedValueBit()));
   }

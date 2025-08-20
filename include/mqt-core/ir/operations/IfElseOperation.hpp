@@ -96,6 +96,10 @@ public:
     return equals(op, {}, {});
   }
 
+  virtual std::ostream& print(std::ostream& os, const Permutation& permutation,
+                              std::size_t prefixWidth,
+                              std::size_t nqubits) const override;
+
   void dumpOpenQASM(std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
                     const BitIndexToRegisterMap& bitMap, std::size_t indent,
                     bool openQASM3) const override;
