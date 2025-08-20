@@ -17,6 +17,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/BuiltinAttributeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
