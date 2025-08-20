@@ -17,108 +17,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  #  cpp-test-mlir-catalyst-plugin:
-  #    name: 🧩 Test MLIR Catalyst Plugin with LLVM@${{ matrix.llvm-version }} on ${{ matrix.runs-on }}
-  #    runs-on: ${{ matrix.runs-on }}
-  #    strategy:
-  #      matrix:
-  #        runs-on: [ubuntu-24.04, ubuntu-24.04-arm, macos-14]
-  #        llvm-version: [19, 20]
-  #      fail-fast: false
-  #    env:
-  #      CMAKE_BUILD_PARALLEL_LEVEL: 4
-  #      CTEST_PARALLEL_LEVEL: 4
-  #      FORCE_COLOR: 3
-  #    steps:
-  #      # Check out the repository
-  #      - uses: actions/checkout@v4
-  #        with:
-  #          fetch-depth: 0
-  #
-  #      # install a specific version of the LLVM toolchain
-  #      - name: Install llvm and mlir
-  #        if: runner.os == 'Linux'
-  #        run: |
-  #          sudo apt-get update
-  #          wget https://apt.llvm.org/llvm.sh -O ${{ runner.temp }}/llvm_install.sh
-  #          chmod +x ${{ runner.temp }}/llvm_install.sh
-  #          if sudo ${{ runner.temp }}/llvm_install.sh ${{ matrix.llvm-version }}; then
-  #            sudo apt-get install -y libmlir-${{ matrix.llvm-version }}-dev \
-  #                                    mlir-${{ matrix.llvm-version }}-tools \
-  #                                    clang-${{ matrix.llvm-version}} \
-  #                                    clang-tools-${{ matrix.llvm-version }} \
-  #             || exit 1
-  #          else
-  #            echo "Installation from script failed."
-  #            exit 1
-  #          fi
-  #          echo "CC=gcc-14" >> $GITHUB_ENV
-  #          echo "CXX=g++-14" >> $GITHUB_ENV
-  #          echo "MLIR_DIR=/usr/lib/llvm-${{ matrix.llvm-version }}/lib/cmake/mlir" >> $GITHUB_ENV
-  #          echo "LLVM_DIR=/usr/lib/llvm-${{ matrix.llvm-version }}/lib/cmake/llvm" >> $GITHUB_ENV
-  #
-  #      # Install llvm and ninja
-  #      - name: Install llvm@${{ matrix.llvm-version }} and Ninja via Homebrew
-  #        if: runner.os == 'macOS'
-  #        run: brew install llvm@${{ matrix.llvm-version }} ninja
-  #
-  #      # Set compiler and environment variables
-  #      - name: Set compiler and CMake environment variables
-  #        if: runner.os == 'macOS'
-  #        run: |
-  #          if [ "$(uname -m)" = "x86_64" ]; then
-  #            LLVM_PREFIX="/usr/local/opt/llvm@${{ matrix.llvm-version }}"
-  #          else
-  #            LLVM_PREFIX="/opt/homebrew/opt/llvm@${{ matrix.llvm-version }}"
-  #          fi
-  #
-  #          echo "CC=$LLVM_PREFIX/bin/clang" >> $GITHUB_ENV
-  #          echo "CXX=$LLVM_PREFIX/bin/clang++" >> $GITHUB_ENV
-  #          echo "LLVM_DIR=$LLVM_PREFIX/lib/cmake/llvm" >> $GITHUB_ENV
-  #          echo "MLIR_DIR=$LLVM_PREFIX/lib/cmake/mlir" >> $GITHUB_ENV
-  #
-  #      # set up ccache for faster C++ builds
-  #      - name: Setup ccache
-  #        uses: Chocobo1/setup-ccache-action@v1
-  #        with:
-  #          prepend_symlinks_to_path: false
-  #          override_cache_key: mlir-plugin-${{ matrix.runs-on }}-llvm-${{ matrix.llvm-version }}
-  #
-  #      # Set up uv for faster Python package management
-  #      - name: Install the latest version of uv
-  #        uses: astral-sh/setup-uv@v6
-  #        with:
-  #          python-version: 3.13
-  #          activate-environment: true
-  #
-  #      # Build the plugin package
-  #      - name: Build mqt-core-catalyst-plugin
-  #        working-directory: plugins/catalyst
-  #        run: uv sync --verbose --active
-  #
-  #        # Print shared library dependencies for the plugin
-  #      - name: Print shared library dependencies for mqt-core-catalyst-plugin
-  #        run: |
-  #          if [ "$(uname)" = "Linux" ]; then
-  #              ldd .venv/lib/python3.13/site-packages/mqt/core/plugins/catalyst/mqt-core-catalyst-plugin.so || true
-  #          elif [ "$(uname)" = "Darwin" ]; then
-  #              otool -l .venv/lib/python3.13/site-packages/mqt/core/plugins/catalyst/mqt-core-catalyst-plugin.dylib || true
-  #          fi
-  #
-  #      # Print shared library dependencies for Catalyst
-  #      - name: Print shared library dependencies for Catalyst
-  #        run: |
-  #          if [ "$(uname)" = "Linux" ]; then
-  #              ldd $(which catalyst) || true
-  #          elif [ "$(uname)" = "Darwin" ]; then
-  #              otool -l $(which catalyst) || true
-  #          fi
-  #
-  #      # Run the plugin tests
-  #      - name: Run pytest for mqt-core-catalyst-plugin
-  #        working-directory: plugins/catalyst
-  #        run: python -m pytest -s --verbose
-
   cpp-test-mlir-catalyst-plugin-exact-mlir:
     name: 🧩 Test MLIR Catalyst Plugin on ${{ matrix.runs-on }} from exact MLIR source
     runs-on: ${{ matrix.runs-on }}
@@ -220,7 +118,7 @@ jobs:
           cmake -S . \
             -B "$BUILD_DIR" \
             -DLLVM_EXTERNAL_LIT=$(which lit) \
-            -DPython3_EXECUTABLE=$(which python)
+            -DPython_EXECUTABLE=$(which python)
 
       # Run the MLIR LIT tests
       - name: Run LIT tests
