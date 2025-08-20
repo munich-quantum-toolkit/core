@@ -28,6 +28,25 @@
 
 namespace qc {
 
+ComparisonKind getInvertedComparisonKind(const ComparisonKind kind) {
+  switch (kind) {
+  case Lt:
+    return Geq;
+  case Leq:
+    return Gt;
+  case Gt:
+    return Leq;
+  case Geq:
+    return Lt;
+  case Eq:
+    return Neq;
+  case Neq:
+    return Eq;
+  default:
+    unreachable();
+  }
+}
+
 std::string toString(const ComparisonKind& kind) {
   switch (kind) {
   case Eq:
@@ -159,21 +178,33 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
     of << (!expectedValueBit ? "!" : "") << bitMap.at(*controlBit).second;
   }
   of << ") ";
-  if (openQASM3) {
-    of << "{\n";
-  }
+  of << "{\n";
   if (thenOp) {
     thenOp->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
   }
-  if (openQASM3) {
-    of << "}";
-    if (elseOp) {
-      of << " else {\n";
-      elseOp->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
-      of << "}";
-    }
-    of << "\n";
+  if (!elseOp) {
+    of << "}\n";
+    return;
   }
+  of << "}";
+  if (openQASM3) {
+    of << " else {\n";
+    elseOp->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
+  } else {
+    of << " if (";
+    if (controlRegister.has_value()) {
+      assert(!controlBit.has_value());
+      of << controlRegister->getName() << ' '
+         << getInvertedComparisonKind(comparisonKind) << ' '
+         << expectedValueRegister;
+    } else if (controlBit.has_value()) {
+      of << (expectedValueBit ? "!" : "") << bitMap.at(*controlBit).second;
+    }
+    of << ") ";
+    of << "{\n";
+    elseOp->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
+  }
+  of << "}\n";
 }
 
 } // namespace qc
