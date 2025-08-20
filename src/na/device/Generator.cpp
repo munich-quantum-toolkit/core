@@ -122,7 +122,7 @@ auto writeMinAtomDistance(const Device& device, std::ostream& os) -> void {
 
 /**
  * @brief Writes the sites from the device object.
- * @param device is the device object containing the sites configuration.
+ * @param device is the device object containing the sites.
  * @param os is the output stream to write the sites to.
  */
 auto writeSites(const Device& device, std::ostream& os) -> void {
@@ -141,8 +141,8 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
        << operation.name
        << "ZoneSite = "
           "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueZone("
-       << id << ", " << x << ", " << y << ", " << width << ", " << height
-       << ")).get()";
+       << id << "U, " << x << ", " << y << ", " << width << "U, " << height
+       << "U)).get()";
   }
   for (const auto& operation : device.globalSingleQubitOperations) {
     const auto& region = operation.region;
