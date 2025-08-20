@@ -47,6 +47,14 @@ if(DEFINED Python_EXECUTABLE AND Python_EXECUTABLE)
 
         include_directories("${CATALYST_INCLUDE_DIRS}")
         include_directories("${CATALYST_BUILD_INCLUDE_DIR}")
+                include_directories("${CATALYST_INCLUDE_DIRS}")
+        include_directories("${CATALYST_BUILD_INCLUDE_DIR}")
+      else()
+        # In case of an installation from PyPI, the include path looks like: <root>/site-packages/catalyst/include
+        # Derive the site-packages root and add it to the CMAKE_PREFIX_PATH.
+        get_filename_component(CATALYST_SP_ROOT "${CATALYST_INCLUDE_DIRS}/../.." ABSOLUTE)
+        list(APPEND CMAKE_PREFIX_PATH "${CATALYST_SP_ROOT}")
+        message(STATUS "Adding Catalyst site-packages to CMAKE_PREFIX_PATH: ${CATALYST_SP_ROOT}")
       endif()
 
     endif()
