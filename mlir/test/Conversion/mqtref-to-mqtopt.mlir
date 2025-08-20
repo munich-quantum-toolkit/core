@@ -514,3 +514,16 @@ module {
         return
     }
 }
+
+// -----
+// This test checks if single-qubit allocation and deallocation are converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertAllocDeallocQubit()
+    func.func @testConvertAllocDeallocQubit() {
+        // CHECK: %[[q_0:.*]] = mqtopt.allocQubit
+        // CHECK: mqtopt.deallocQubit %[[q_0]]
+        %q0 = mqtref.allocQubit
+        mqtref.deallocQubit %q0
+        return
+    }
+}
