@@ -20,7 +20,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <ostream>

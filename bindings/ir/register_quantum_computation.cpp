@@ -10,8 +10,10 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/Control.hpp"
 #include "ir/operations/Expression.hpp"
 #include "ir/operations/IfElseOperation.hpp"
+#include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 #include "qasm3/Importer.hpp"
 

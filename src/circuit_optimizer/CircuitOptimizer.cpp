@@ -933,7 +933,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
           auto* elseOp = ifElse->getElseOp();
           Controls elseControls;
           Targets elseTargets;
-          OpType elseType;
+          OpType elseType = None;
           std::vector<fp> elseParameters;
           if (elseOp != nullptr) {
             const auto* standardElseOp =

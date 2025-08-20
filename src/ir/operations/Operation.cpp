@@ -81,7 +81,7 @@ std::ostream& Operation::print(std::ostream& os, const Permutation& permutation,
         break;
       }
     }
-    if (foundControl) {
+    if (foundControl != nullptr) {
       if (foundControl->type == Control::Type::Pos) {
         os << "\033[32m";
       } else {
