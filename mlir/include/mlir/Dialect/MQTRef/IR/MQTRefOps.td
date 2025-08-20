@@ -9,9 +9,10 @@
 #ifndef MQTREF_OPS
 #define MQTREF_OPS
 
-include "mlir/IR/OpBase.td"
-include "mlir/IR/EnumAttr.td"
 include "mlir/IR/DialectBase.td"
+include "mlir/IR/EnumAttr.td"
+include "mlir/IR/OpBase.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 include "mlir/Dialect/Common/IR/CommonTraits.td"
