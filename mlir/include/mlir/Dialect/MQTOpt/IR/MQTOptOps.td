@@ -49,6 +49,9 @@ def MQTOptDialect : Dialect {
         For more information, see the paper "QIRO:A Static Single Assignment
         based Quantum Program Representation for Optimization"
         (https://doi.org/10.1145/3491247)
+
+        The `mqtopt` dialect supports dynamic as well as static qubit
+        addressing.
     }];
 
     // The C++ namespace that the dialect, and all sub-components, get placed
@@ -71,7 +74,7 @@ class MQTOptType<string name, string typeMnemonic, list<Trait> traits = []>
 }
 
 def QubitType : MQTOptType<"Qubit", "Qubit"> {
-    let summary = "A value-semantic qubit (state).";
+    let summary = "A value-semantic (dynamic or static) qubit (state).";
 }
 
 def QregType : MQTOptType<"QubitRegister", "QubitRegister"> {
@@ -250,8 +253,10 @@ def InsertOp : ResourceOp<"insertQubit", [UniqueIndexDefinition]> {
         This class represents an operation that inserts a qubit back into a qubit
         register. Before, the same underlying qubit must have been extracted
         from the same register at the same index. However, this property is not
-        enforced by the dialect. It is naturally satisfied when a program in the
-        mqt input dialect is converted to the mqto dialect.
+        enforced by the dialect. Moreover, the dialect permits the (invalid) insertion
+        of static qubits into registers. The dialect avoids these issues by relying on
+        the fact that the conversion from `mqtref` to `mqtopt` will never produce these
+        invalid operations.
     }];
 
     let arguments = (ins
@@ -264,6 +269,26 @@ def InsertOp : ResourceOp<"insertQubit", [UniqueIndexDefinition]> {
     let results = (outs
         QregType:$out_qreg
     );
+}
+
+def QubitOp : ResourceOp<"qubit"> {
+    let summary = "Retrieve static qubit";
+    let description = [{
+        The `mqtopt.qubit` operation produces an SSA value from the given index
+        to a static (hardware) qubit.
+
+        Example:
+        ```mlir
+        // Static (hardware) qubit with address '0'.
+        %q = "mqtopt.qubit"() <{index = 0 : i64}> : () -> !mqtopt.Qubit
+
+        // Using custom assembly.
+        %q = mqtopt.qubit 0
+        ```
+    }];
+    let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
+    let results = (outs QubitType:$qubit);
+    let assemblyFormat = " attr-dict $index ";
 }
 
 #endif // MQTOPT_OPS

@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add `qubit` operation to the `MQTOpt` dialect for static qubit addressing ([#1116]) ([**@MatthiasReumann**])
 - ✨ Add MQT's implementation of a QDMI Driver ([#1010]) ([**@ystade**])
 - ✨ Add a copy of the NA QDMI Device that is always a shared library ([#1010]) ([**@ystade**])
 - ✨ Add translation from `QuantumComputation` to the `MQTRef` MLIR dialect ([#1099]) ([**@denialhaag**], [**@burgholzer**])
@@ -168,6 +169,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1116]: https://github.com/munich-quantum-toolkit/core/pull/1116
 [#1106]: https://github.com/munich-quantum-toolkit/core/pull/1106
 [#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099
 [#1098]: https://github.com/munich-quantum-toolkit/core/pull/1098

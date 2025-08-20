@@ -113,22 +113,33 @@ module {
 }
 
 // -----
-// This test checks if the MeasureOp applied to a single static qubit is parsed and handled correctly.
+// This test checks if the MeasureOp on a static qubit is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testMeasureOpStatic
     func.func @testMeasureOpStatic() {
         // CHECK: [[M0:.*]] = mqtref.measure %[[ANY:.*]]
 
         %q0 = mqtref.qubit 0
-
         %m0 = mqtref.measure %q0
-
         return
     }
 }
 
 // -----
-// This test checks if the ResetOp is parsed and handled correctly.
+// This test checks if the MeasureOp applied to a static qubit is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testMeasureOpOnStaticInput
+    func.func @testMeasureOpOnStaticInput() {
+        // CHECK: %[[M0:.*]] = mqtref.measure %[[ANY:.*]]
+
+        %q0 = mqtref.qubit 0
+        %m0 = mqtref.measure %q0
+        return
+    }
+}
+
+// -----
+// This test checks if the ResetOp on a dynamic qubit is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testResetOp
     func.func @testResetOp() {
@@ -145,16 +156,14 @@ module {
 }
 
 // -----
-// This test checks if the MeasureOp applied to a static qubit is parsed and handled correctly.
+// This test checks if the ResetOp on a static qubit is parsed and handled correctly.
 module {
-    // CHECK-LABEL: func.func @testMeasureOpOnStaticInput
-    func.func @testMeasureOpOnStaticInput() {
-        // CHECK: %[[M0:.*]] = mqtref.measure %[[ANY:.*]]
+    // CHECK-LABEL: func.func @testResetOpOnStaticInput
+    func.func @testResetOpOnStaticInput() {
+        // CHECK: "mqtref.reset"(%[[ANY:.*]]) : (!mqtref.Qubit) -> ()
 
         %q0 = mqtref.qubit 0
-
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
-
+        "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
         return
     }
 }
