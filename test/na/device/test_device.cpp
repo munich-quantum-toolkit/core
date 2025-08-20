@@ -605,7 +605,6 @@ TEST_F(NADeviceTest, QueryOperationData) {
                   session, operation, 0, nullptr, 0, nullptr,
                   QDMI_OPERATION_PROPERTY_NAME, nameSize, name.data(), nullptr),
               QDMI_SUCCESS);
-    std::cout << "Querying operation: " << name << "\n";
     auto result = MQT_NA_QDMI_device_session_query_operation_property(
         session, operation, 0, nullptr, 0, nullptr,
         QDMI_OPERATION_PROPERTY_DURATION, sizeof(uint64_t), &duration, nullptr);
