@@ -148,6 +148,15 @@ IfElseOperation::print(std::ostream& os, const Permutation& permutation,
   return os;
 }
 
+void IfElseOperation::apply(const Permutation& permutation) {
+  if (thenOp) {
+    thenOp->apply(permutation);
+  }
+  if (elseOp) {
+    elseOp->apply(permutation);
+  }
+}
+
 bool IfElseOperation::equals(const Operation& operation,
                              const Permutation& perm1,
                              const Permutation& perm2) const {

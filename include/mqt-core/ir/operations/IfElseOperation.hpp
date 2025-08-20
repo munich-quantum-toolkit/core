@@ -56,6 +56,8 @@ public:
     return std::make_unique<IfElseOperation>(*this);
   }
 
+  void apply(const Permutation& permutation) override;
+
   [[nodiscard]] bool isUnitary() const override { return false; }
 
   [[nodiscard]] bool isNonUnitaryOperation() const override { return true; }
@@ -136,10 +138,6 @@ public:
 
   void setParameter(const std::vector<fp>&) override {
     throw std::runtime_error("An IfElseOperation cannot be parameterized.");
-  }
-
-  void apply(const Permutation&) override {
-    throw std::runtime_error("Cannot apply permutation to an IfElseOperation.");
   }
 
 private:
