@@ -944,22 +944,29 @@ class IfElseOperation(Operation):
         """The classical bit that controls the operation."""
 
     @property
-    def expected_value(self) -> int:
+    def expected_value_register(self) -> int:
         """The expected value of the classical register.
 
-        The operation is only executed if the value of the classical register matches the expected value
-        based on the kind of comparison.
-        If the classical register is a single bit, the expected value is either 0 or 1.
-        Otherwise, the expected value is an integer that is interpreted as a binary number, where
-        the least significant bit is at the start index of the classical register.
+        The then-operation is executed if the value of the classical register matches the expected value based on the
+        kind of comparison.
+        The expected value is an integer that is interpreted as a binary number, where the least significant bit is at
+        the start index of the classical register.
+        """
+
+    @property
+    def expected_value_bit(self) -> bool:
+        """The expected value of the classical register.
+
+        The then-operation is executed if the value of the classical bit matches the expected value based on the
+        kind of comparison.
         """
 
     @property
     def comparison_kind(self) -> ComparisonKind:
         """The kind of comparison.
 
-        The operation is only executed if the value of the classical register matches the expected value
-        based on the kind of comparison.
+        The then-operation is executed if the value of the classical register matches the expected value based on the
+        kind of comparison.
         """
 
     def add_control(self, control: Control) -> None:

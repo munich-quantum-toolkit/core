@@ -502,7 +502,7 @@ def test_if_else_operation() -> None:
     assert isinstance(if_else_operation, IfElseOperation)
     assert if_else_operation.control_register is None
     assert if_else_operation.control_bit == 0
-    assert if_else_operation.expected_value == 1
+    assert if_else_operation.expected_value_bit is True
     assert if_else_operation.comparison_kind == ComparisonKind.eq
     then_operation = if_else_operation.then_operation
     assert isinstance(then_operation, StandardOperation)

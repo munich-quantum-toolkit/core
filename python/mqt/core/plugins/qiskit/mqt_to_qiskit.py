@@ -273,27 +273,25 @@ def _add_if_else_operation(
         qubit_map: A mapping from qubit indices to Qiskit :class:`~qiskit.circuit.Qubit`.
         clbit_map: A mapping from classical bit indices to Qiskit :class:`~qiskit.circuit.Clbit`.
     """
-    left_hand_side = None
-    converter: type
     if op.control_register is not None:
         left_hand_side = circ.cregs[op.control_register.name]
-        converter = int
+        right_hand_side = op.expected_value_register
     elif op.control_bit is not None:
         left_hand_side = clbit_map[op.control_bit]
-        converter = bool
+        right_hand_side = op.expected_value_bit
 
     if op.comparison_kind == ComparisonKind.eq:
-        condition = expr.equal(left_hand_side, converter(op.expected_value))
+        condition = expr.equal(left_hand_side, right_hand_side)
     elif op.comparison_kind == ComparisonKind.neq:
-        condition = expr.not_equal(left_hand_side, converter(op.expected_value))
+        condition = expr.not_equal(left_hand_side, right_hand_side)
     elif op.comparison_kind == ComparisonKind.lt:
-        condition = expr.less(left_hand_side, op.expected_value)
+        condition = expr.less(left_hand_side, right_hand_side)
     elif op.comparison_kind == ComparisonKind.leq:
-        condition = expr.less_equal(left_hand_side, op.expected_value)
+        condition = expr.less_equal(left_hand_side, right_hand_side)
     elif op.comparison_kind == ComparisonKind.gt:
-        condition = expr.greater(left_hand_side, op.expected_value)
+        condition = expr.greater(left_hand_side, right_hand_side)
     elif op.comparison_kind == ComparisonKind.geq:
-        condition = expr.greater_equal(left_hand_side, op.expected_value)
+        condition = expr.greater_equal(left_hand_side, right_hand_side)
 
     then_circ = QuantumCircuit(*circ.qregs, *circ.cregs)
     _add_operation(then_circ, op.then_operation, qubit_map, clbit_map)

@@ -88,8 +88,10 @@ void registerIfElseOperation(const py::module& m) {
                                &qc::IfElseOperation::getControlRegister);
   ifElse.def_property_readonly("control_bit",
                                &qc::IfElseOperation::getControlBit);
-  ifElse.def_property_readonly("expected_value",
-                               &qc::IfElseOperation::getExpectedValue);
+  ifElse.def_property_readonly("expected_value_register",
+                               &qc::IfElseOperation::getExpectedValueRegister);
+  ifElse.def_property_readonly("expected_value_bit",
+                               &qc::IfElseOperation::getExpectedValueBit);
   ifElse.def_property_readonly("comparison_kind",
                                &qc::IfElseOperation::getComparisonKind);
   ifElse.def("__repr__", [](const qc::IfElseOperation& op) {
@@ -99,13 +101,14 @@ void registerIfElseOperation(const py::module& m) {
         controlReg.has_value()) {
       ss << "control_register=ClassicalRegister(" << controlReg->getSize()
          << ", " << controlReg->getStartIndex() << ", " << controlReg->getName()
-         << "), ";
+         << "), "
+         << "expected_value=" << op.getExpectedValueRegister() << ", ";
     }
     if (const auto& controlBit = op.getControlBit(); controlBit.has_value()) {
-      ss << "control_bit=" << controlBit.value() << ", ";
+      ss << "control_bit=" << controlBit.value() << ", "
+         << "expected_value=" << op.getExpectedValueBit() << ", ";
     }
-    ss << "expected_value=" << op.getExpectedValue() << ", "
-       << "comparison_kind='" << op.getComparisonKind() << "')";
+    ss << "comparison_kind='" << op.getComparisonKind() << "')";
     return ss.str();
   });
 }
