@@ -14,7 +14,7 @@ import numpy as np
 
 from mqt.core.dd import DDPackage, build_functionality, sample, simulate
 from mqt.core.ir import QuantumComputation
-from mqt.core.ir.operations import OpType, StandardOperation
+from mqt.core.ir.operations import OpType
 
 
 def test_sample_simple_circuit() -> None:
@@ -35,7 +35,7 @@ def test_sample_dynamic_circuit() -> None:
     qc.h(0)
     # reset the qubit
     qc.measure(0, 0)
-    qc.if_else(StandardOperation(0, OpType.x), None, cbit=0, expected_value=1)
+    qc.if_(OpType.x, target=0, control_bit=0)
     # flip to |1>
     qc.x(0)
     # measure the qubit
