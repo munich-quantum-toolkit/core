@@ -87,10 +87,11 @@ module {
 
 // -----
 // This test checks that qubit reuse can be applied with the help of measurement lifting
+// over a control.
 
 module {
-  // CHECK-LABEL: func.func @testReuseThanksToMeasurementLift
-  func.func @testReuseThanksToMeasurementLift() -> (i1, i1) {
+  // CHECK-LABEL: func.func @testReuseThroughMeasurementLift
+  func.func @testReuseThroughMeasurementLift() -> (i1, i1) {
     // CHECK: %[[q0_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
     // CHECK: %[[q0_1:.*]] = mqtopt.h() %[[q0_0]] : !mqtopt.Qubit
     // CHECK: %[[q0_2:.*]], %[[c0:.*]] = "mqtopt.measure"(%[[q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
@@ -121,10 +122,11 @@ module {
 
 // -----
 // This test checks that qubit reuse can be applied with the help of measurement lifting
+// over a control and over a single-qubit gate.
 
 module {
-  // CHECK-LABEL: func.func @testReuseThanksToMeasurementLift
-  func.func @testReuseThanksToMeasurementLift() -> (i1, i1) {
+  // CHECK-LABEL: func.func @testReuseThroughComplexMeasurementLift
+  func.func @testReuseThroughComplexMeasurementLift() -> (i1, i1) {
     // CHECK: %[[q0_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
     // CHECK: %[[q0_1:.*]] = mqtopt.h() %[[q0_0]] : !mqtopt.Qubit
     // CHECK: %[[q0_2:.*]], %[[c0:.*]] = "mqtopt.measure"(%[[q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
