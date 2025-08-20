@@ -17,6 +17,7 @@
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <utility>
 
 namespace na {
 namespace {

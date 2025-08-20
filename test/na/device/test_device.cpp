@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <functional>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 // NOLINTNEXTLINE(misc-include-cleaner)
