@@ -126,28 +126,6 @@ IfElseOperation& IfElseOperation::operator=(const IfElseOperation& op) {
   return *this;
 }
 
-std::ostream&
-IfElseOperation::print(std::ostream& os, const Permutation& permutation,
-                       [[maybe_unused]] const std::size_t prefixWidth,
-                       const std::size_t nqubits) const {
-  if (thenOp) {
-    thenOp->print(os, permutation, prefixWidth, nqubits);
-  }
-
-  os << "  " << "\033[1m\033[35m";
-  if (controlRegister.has_value()) {
-    assert(!controlBit.has_value());
-    os << controlRegister->getName() << " == " << expectedValueRegister;
-  }
-  if (controlBit.has_value()) {
-    assert(!controlRegister.has_value());
-    os << (expectedValueBit ? "!" : "") << "c[" << controlBit.value() << "]";
-  }
-  os << "\033[0m";
-
-  return os;
-}
-
 void IfElseOperation::apply(const Permutation& permutation) {
   if (thenOp) {
     thenOp->apply(permutation);
@@ -193,6 +171,28 @@ bool IfElseOperation::equals(const Operation& operation,
     return true;
   }
   return false;
+}
+
+std::ostream&
+IfElseOperation::print(std::ostream& os, const Permutation& permutation,
+                       [[maybe_unused]] const std::size_t prefixWidth,
+                       const std::size_t nqubits) const {
+  if (thenOp) {
+    thenOp->print(os, permutation, prefixWidth, nqubits);
+  }
+
+  os << "  " << "\033[1m\033[35m";
+  if (controlRegister.has_value()) {
+    assert(!controlBit.has_value());
+    os << controlRegister->getName() << " == " << expectedValueRegister;
+  }
+  if (controlBit.has_value()) {
+    assert(!controlRegister.has_value());
+    os << (expectedValueBit ? "!" : "") << "c[" << controlBit.value() << "]";
+  }
+  os << "\033[0m";
+
+  return os;
 }
 
 void IfElseOperation::dumpOpenQASM(std::ostream& of,
