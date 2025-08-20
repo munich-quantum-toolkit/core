@@ -8,6 +8,20 @@
 
 // RUN: quantum-opt %s -split-input-file --mqtref-to-qir | FileCheck %s
 
+
+
+// This test checks if the initialize operation and zero operation is inserted
+module {
+    // CHECK-LABEL: llvm.func @testInitialize()
+    func.func @testInitialize() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[z_0:.*]] = llvm.mlir.zero : !llvm.ptr
+        // CHECK: llvm.call @__quantum__rt__initialize(%[[z_0]]) : (!llvm.ptr) -> ()
+
+        return
+    }
+}
+
+// -----
 // This test checks if the AllocOp is converted correctly using a static attribute
 module {
     // CHECK-LABEL: llvm.func @testConvertAllocRegisterAttribute()
@@ -19,9 +33,72 @@ module {
 
         return
     }
+}
+
+// -----
+// This test checks if the AllocOp is converted correctly using a dynamic operand
+module {
+    // CHECK-LABEL: llvm.func @testConvertAllocRegisterOperand()
+    func.func @testConvertAllocRegisterOperand() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
+        // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
+
+        %c0 = arith.constant 2 : i64
+        %r0 = "mqtref.allocQubitRegister" (%c0) : (i64) -> !mqtref.QubitRegister
+
+        return
+    }
 
 }
 
+// -----
+// This test checks if the dealloc register call is correctly converted
+module {
+    // CHECK-LABEL: llvm.func @testConvertDeallocRegister()
+    func.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[ANY:.*]]) : (i64) -> !llvm.ptr
+        // CHECK: llvm.call @__quantum__rt__qubit_release_array(%[[r_0]]) : (!llvm.ptr) -> ()
+
+         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+
+        "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
+// This test checks if the AllocOp is converted correctly using a static attribute
+module {
+    // CHECK-LABEL: llvm.func @testConvertAllocQubit()
+    func.func @testConvertAllocQubit() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[q_0:.*]] = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
+        // CHECK: %[[q_1:.*]] = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
+
+        %q0 = mqtref.allocQubit
+        %q1 = mqtref.allocQubit
+
+        return
+    }
+}
+
+// -----
+// This test checks if the dealloc register call is correctly converted
+module {
+    // CHECK-LABEL: llvm.func @testConvertDeAllocQubit()
+    func.func @testConvertDeAllocQubit() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[q_0:.*]] = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
+        // CHECK: %[[q_1:.*]] = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
+        // CHECK: llvm.call @__quantum__rt__qubit_release(%[[q_0]]) : (!llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__qubit_release(%[[q_1]]) : (!llvm.ptr) -> ()
+
+        %q0 = mqtref.allocQubit
+        %q1 = mqtref.allocQubit
+
+        mqtref.deallocQubit %q0
+        mqtref.deallocQubit %q1
+        return
+    }
+}
 // -----
 // This test checks if the blocks for the base profile of QIR are correctly created
 module {
@@ -44,34 +121,6 @@ module {
 
 }
 
-// -----
-// This test checks if the initialize operation and zero operation is inserted
-module {
-    // CHECK-LABEL: llvm.func @testInitialize()
-    func.func @testInitialize() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: %[[z_0:.*]] = llvm.mlir.zero : !llvm.ptr
-        // CHECK: llvm.call @__quantum__rt__initialize(%[[z_0]]) : (!llvm.ptr) -> ()
-
-        return
-    }
-
-}
-
-// -----
-// This test checks if the AllocOp is converted correctly using a dynamic operand
-module {
-    // CHECK-LABEL: llvm.func @testConvertAllocRegisterOperand()
-    func.func @testConvertAllocRegisterOperand() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
-        // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
-
-        %c0 = arith.constant 2 : i64
-        %r0 = "mqtref.allocQubitRegister" (%c0) : (i64) -> !mqtref.QubitRegister
-
-        return
-    }
-
-}
 
 // -----
 // This test checks if the ExtractOp is converted correctly using a static attribute
@@ -108,21 +157,6 @@ module {
         %r0 = "mqtref.allocQubitRegister" (%c0) : (i64) -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0, %c1) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
 
-        return
-    }
-}
-
-// -----
-// This test checks if the dealloc register call is correctly converted
-module {
-    // CHECK-LABEL: llvm.func @testConvertDeallocRegister()
-    func.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[ANY:.*]]) : (i64) -> !llvm.ptr
-        // CHECK: llvm.call @__quantum__rt__qubit_release_array(%[[r_0]]) : (!llvm.ptr) -> ()
-
-         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-
-        "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
     }
 }

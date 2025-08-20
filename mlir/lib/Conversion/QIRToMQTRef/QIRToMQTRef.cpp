@@ -72,9 +72,6 @@ namespace {
 struct LoweringState {
   // map each llvm qir result to the new mqtref result
   DenseMap<Value, Value> operandMap;
-  // the newly created alloc register if it does not exist already, otherwise
-  // this is a nullptr and will not be used
-  ref::AllocOp qReg;
   // next free allocate index
   int64_t index{};
 };
@@ -325,16 +322,31 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
       return success();
     }
 
-    // match alloc qubit using the given allocOp and the index
-    // TODO replace later on
+    // match alloc qubit
     if (fnName == "__quantum__rt__qubit_allocate") {
-      const auto newOp = rewriter.replaceOpWithNewOp<ref::ExtractOp>(
-          op, qubitType, getState().qReg, Value{},
-          IntegerAttr::get(rewriter.getIntegerType(64), getState().index++));
+      const auto newOp =
+          rewriter.replaceOpWithNewOp<ref::AllocQubitOp>(op, qubitType);
 
       // update the operand list
-      getState().operandMap.try_emplace(op->getResult(0),
-                                        newOp->getOpResult(0));
+      getState().operandMap.try_emplace(op->getResult(0), newOp->getResult(0));
+      return success();
+    }
+
+    // match qubit release operation
+    if (fnName == "__quantum__rt__qubit_release") {
+      rewriter.replaceOpWithNewOp<ref::DeallocQubitOp>(op, newOperands.front());
+      return success();
+    }
+
+    // match dealloc register
+    if (fnName == "__quantum__rt__qubit_release_array") {
+      rewriter.replaceOpWithNewOp<ref::DeallocOp>(op, newOperands.front());
+      return success();
+    }
+
+    // match reset operation
+    if (fnName == "__quantum__qis__reset__body") {
+      rewriter.replaceOpWithNewOp<ref::ResetOp>(op, newOperands.front());
       return success();
     }
 
@@ -360,25 +372,6 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     // match record result output operation
     if (fnName == "__quantum__rt__result_record_output") {
       rewriter.eraseOp(op);
-      return success();
-    }
-
-    // match qubit release operation
-    // TODO will be added later
-    if (fnName == "__quantum__rt__qubit_release") {
-      rewriter.eraseOp(op);
-      return success();
-    }
-
-    // match dealloc register
-    if (fnName == "__quantum__rt__qubit_release_array") {
-      rewriter.replaceOpWithNewOp<ref::DeallocOp>(op, newOperands.front());
-      return success();
-    }
-
-    // match reset operation
-    if (fnName == "__quantum__qis__reset__body") {
-      rewriter.replaceOpWithNewOp<ref::ResetOp>(op, newOperands.front());
       return success();
     }
 
@@ -468,66 +461,11 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
     return nullptr;
   }
 
-  /**
-   * @brief Creates the Allocate register operation if it does not exist
-   * already.
-   *
-   * @param op The module operation that holds all operations.
-   * @return The allocOp for the create allocate operation or nullptr.
-   */
-  static ref::AllocOp ensureRegisterAllocation(Operation* op) {
-    int64_t requiredQubits = 0;
-    auto module = dyn_cast<ModuleOp>(op);
-
-    // walk through the IR and count all qubit allocate operations
-    const auto result = module->walk([&](Operation* op) {
-      if (auto call = dyn_cast<LLVM::CallOp>(op)) {
-        auto name = call.getCallee();
-
-        // stop if there is an allocate array operation
-        if (name == "__quantum__rt__qubit_allocate_array") {
-          return WalkResult::interrupt();
-        }
-        // increment the counter for each allocate qubit operation
-        if (name == "__quantum__rt__qubit_allocate") {
-          requiredQubits++;
-        }
-      }
-      return WalkResult::advance();
-    });
-    // if there was no alloc register registration, create one
-    if (!result.wasInterrupted() && requiredQubits != 0) {
-
-      LLVM::LLVMFuncOp main = getMainFunction(op);
-
-      // get the 2nd block of the main function
-      auto& secondBlock = *(++main.getBlocks().begin());
-      OpBuilder builder(main.getBody());
-
-      // create the alloc register operation at the start of the block
-      builder.setInsertionPointToStart(&secondBlock);
-      auto allocOp = builder.create<ref::AllocOp>(
-          main->getLoc(), ref::QubitRegisterType::get(module->getContext()),
-          Value{}, builder.getI64IntegerAttr(requiredQubits));
-
-      // create the dealloc operation at the end of the block
-      auto& ops = secondBlock.getOperations();
-      const auto insertPoint = std::prev(ops.end(), 1);
-      builder.setInsertionPoint(&*insertPoint);
-      builder.create<ref::DeallocOp>(main->getLoc(), allocOp);
-      return allocOp;
-    }
-    // otherwise return nullptr
-    return nullptr;
-  }
-
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
 
     LoweringState state;
-    // create an allocOp and store it in the loweringState if necessary
-    state.qReg = ensureRegisterAllocation(module);
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);

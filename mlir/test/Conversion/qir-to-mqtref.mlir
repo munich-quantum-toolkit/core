@@ -63,13 +63,12 @@ module {
 }
 
 // -----
-// This test checks if the alloc qubit call is correctly converted in an alloc operation and extractQubit operations
+// This test checks if the alloc qubit call is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertAllocateQubit()
     llvm.func @testConvertAllocateQubit() attributes {passthrough = ["entry_point"]}  {
-      // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}>
-      // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-      // CHECK: %[[q_1:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+      // CHECK: %[[q_0:.*]] = mqtref.allocQubit
+      // CHECK: %[[q_1:.*]] = mqtref.allocQubit
 
         %0 = llvm.mlir.zero : !llvm.ptr
         llvm.call @__quantum__rt__initialize(%0) : (!llvm.ptr) -> ()
@@ -83,6 +82,35 @@ module {
       ^bb3:
         llvm.return
     }
+    llvm.func @__quantum__rt__initialize(!llvm.ptr)
+    llvm.func @__quantum__rt__qubit_allocate() -> !llvm.ptr
+}
+
+// -----
+// This test checks if the dealloc qubit call is correctly converted
+module {
+    // CHECK-LABEL: llvm.func @testConvertDeAllocateQubit()
+    llvm.func @testConvertDeAllocateQubit() attributes {passthrough = ["entry_point"]}  {
+      // CHECK: %[[q_0:.*]] = mqtref.allocQubit
+      // CHECK: %[[q_1:.*]] = mqtref.allocQubit
+      // CHECK: mqtref.deallocQubit %[[q_0]]
+      // CHECK: mqtref.deallocQubit %[[q_1]]
+
+        %0 = llvm.mlir.zero : !llvm.ptr
+        llvm.call @__quantum__rt__initialize(%0) : (!llvm.ptr) -> ()
+        llvm.br ^bb1
+      ^bb1:
+        %q0 = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
+        %q1 = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
+        llvm.br ^bb2
+      ^bb2:
+        llvm.call @__quantum__rt__qubit_release(%q0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__rt__qubit_release(%q1) : (!llvm.ptr) -> ()
+        llvm.br ^bb3
+      ^bb3:
+        llvm.return
+    }
+    llvm.func @__quantum__rt__qubit_release(!llvm.ptr)
     llvm.func @__quantum__rt__initialize(!llvm.ptr)
     llvm.func @__quantum__rt__qubit_allocate() -> !llvm.ptr
 }
@@ -154,7 +182,7 @@ module {
     llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
     // CHECK-LABEL: llvm.func @testConvertMeasure()
     llvm.func @testConvertMeasure() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
+        // CHECK: %[[size:.*]] = llvm.mlir.constant(1 : i64) : i64
         // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
         // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
         // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]], %[[index]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
@@ -162,7 +190,7 @@ module {
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %a0 = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
-        %c0 = llvm.mlir.constant(14 : i64) : i64
+        %c0 = llvm.mlir.constant(1 : i64) : i64
         %c1 = llvm.mlir.constant(0 : i64) : i64
         %c2 = llvm.mlir.constant(-1 : i32) : i32
         llvm.call @__quantum__rt__initialize(%0) : (!llvm.ptr) -> ()
@@ -179,7 +207,6 @@ module {
         llvm.call @__quantum__rt__result_record_output(%0, %a0) : (!llvm.ptr, !llvm.ptr) -> ()
         llvm.return
     }
-    llvm.func @__quantum__rt__result_update_reference_count(!llvm.ptr, i32)
     llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
     llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
     llvm.func @__quantum__rt__array_get_element_ptr_1d(!llvm.ptr, i64) -> !llvm.ptr
@@ -187,6 +214,32 @@ module {
     llvm.func @__quantum__rt__qubit_allocate_array(i64) -> !llvm.ptr
 }
 
+// -----
+// This test checks if the measure operation is correctly converted
+module {
+    llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
+    // CHECK-LABEL: llvm.func @testConvertStaticMeasure()
+    llvm.func @testConvertStaticMeasure() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[q_0:.*]] = mqtref.qubit 0
+        // CHECK:  [[m_0:.*]] = mqtref.measure %[[q_0]]
+
+        %0 = llvm.mlir.zero : !llvm.ptr
+        %a0 = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
+        llvm.call @__quantum__rt__initialize(%0) : (!llvm.ptr) -> ()
+        llvm.br ^bb1
+      ^bb1:
+        llvm.br ^bb2
+      ^bb2:
+        llvm.call @__quantum__qis__mz__body(%0, %0) : (!llvm.ptr, !llvm.ptr)  -> ()
+        llvm.br ^bb3
+      ^bb3:
+        llvm.call @__quantum__rt__result_record_output(%0, %a0) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.return
+    }
+    llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__rt__initialize(!llvm.ptr)
+}
 
 // -----
 // This test checks if the single qubit gates are correctly converted
@@ -208,27 +261,22 @@ module {
         // CHECK: mqtref.sxdg() %[[q_0]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
-        %c0 = llvm.mlir.constant(1 : i64) : i64
-        %c1 = llvm.mlir.constant(0 : i64) : i64
         llvm.call @__quantum__rt__initialize(%0) : (!llvm.ptr) -> ()
         llvm.br ^bb1
       ^bb1:
-        %r0 = llvm.call @__quantum__rt__qubit_allocate_array(%c0) : (i64) -> !llvm.ptr
-        %1 = llvm.call @__quantum__rt__array_get_element_ptr_1d(%r0, %c1) : (!llvm.ptr, i64) -> !llvm.ptr
-        %q0 = llvm.load %1 : !llvm.ptr -> !llvm.ptr
-        llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__i__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__x__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__y__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__z__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__s__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__sdg__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__t__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__tdg__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__v__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__vdg__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__sx__body(%q0) : (!llvm.ptr) -> ()
-        llvm.call @__quantum__qis__sxdg__body(%q0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__h__body(%0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__i__body(%0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__x__body(%0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__y__body(%0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__z__body(%0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__s__body(%0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__sdg__body(%0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__t__body(%0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__tdg__body(%0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__v__body(%0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__vdg__body(%0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__sx__body(%0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__qis__sxdg__body(%0) : (!llvm.ptr) -> ()
         llvm.br ^bb2
       ^bb2:
         llvm.br ^bb3
