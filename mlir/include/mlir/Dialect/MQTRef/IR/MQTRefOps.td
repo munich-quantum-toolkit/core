@@ -155,14 +155,21 @@ def AllocQubitOp : ResourceOp<"allocQubit"> {
     let summary = "Allocates a single qubit";
 
     let description = [{
-        This class represents an operation that allocates a single qubit.
-        The qubit can be used immediately and must be deallocated at a
-        later point using the corresponding operation.
+        Allocates a single qubit in the |0> state.
+        The qubit can be used in operations after allocation.
+        It must be deallocated with the `deallocQubit` operation.
 
-        Example:
+        ### Example (custom syntax)
+        ```mlir
+        %q = mqtref.allocQubit
+        ```
+
+        ### Example (generic syntax)
         ```mlir
         %q = "mqtref.allocQubit"() : () -> !mqtref.Qubit
         ```
+
+        Both are equivalent; the first form is enabled by this op's `assemblyFormat`.
     }];
 
     let arguments = (ins);
@@ -203,14 +210,21 @@ def DeallocQubitOp : ResourceOp<"deallocQubit"> {
     let summary = "Deallocates a single qubit";
 
     let description = [{
-        This class represents an operation that deallocates a single qubit.
-        The qubit must have previously been created using some allocation operation
-        and is consumed by this operation, so it cannot be used further.
+        Deallocates a single qubit that was previously allocated with the
+        `allocQubit` operation. After this operation, the qubit is no longer
+        valid and cannot be used in further operations.
 
-        Example:
+        ### Example (custom syntax)
+        ```mlir
+        mqtref.deallocQubit %q
         ```
+
+        ### Example (generic syntax)
+        ```mlir
         "mqtref.deallocQubit"(%0) : (!mqtref.Qubit) -> ()
         ```
+
+        Both are equivalent; the first form is enabled by this op's `assemblyFormat`.
     }];
 
     let arguments = (ins QubitType:$qubit);
