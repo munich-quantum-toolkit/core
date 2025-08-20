@@ -293,13 +293,11 @@ qc = QuantumComputation(1, 1)
 
 qc.h(0)
 qc.measure(0, 0)
-
-classic_controlled = IfElseOperation(
+qc.if_else(
     then_operation=StandardOperation(target=0, op_type=OpType.x),
-    else_operation=None,
+    else_operation=StandardOperation(target=0, op_type=OpType.y),
     control_bit=0,
 )
-qc.append(classic_controlled)
 
 print(qc)
 ```
