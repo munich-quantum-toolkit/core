@@ -97,14 +97,15 @@ uv venv .venv
 # Install Catalyst and build the plugin
 uv pip install pennylane-catalyst==0.12.0
 
-uv sync --verbose --active 
-  --config-settings=cmake.define.CMAKE_BUILD_TYPE=Release 
-  --config-settings=cmake.define.Python3_EXECUTABLE="$(which python)" 
-  --config-settings=cmake.define.MLIR_DIR="$MLIR_DIR" 
+uv sync --verbose --active
+  --config-settings=cmake.define.CMAKE_BUILD_TYPE=Release
+  --config-settings=cmake.define.Python3_EXECUTABLE="$(which python)"
+  --config-settings=cmake.define.MLIR_DIR="$MLIR_DIR"
   --config-settings=cmake.define.LLVM_DIR="$LLVM_DIR"
 ```
 
 ### 3) Use the MQT plugin with your PennyLane code
+
 The following code gives an example on how to use an MQT pass with PennyLane's Catalyst
 
 ```python3
@@ -135,10 +136,11 @@ Building (and running) is continuously tested under Linux, MacOS, and Windows us
 However, the implementation should be compatible with any current C++ compiler supporting C++20 and a minimum CMake version of 3.24.
 
 MQT Core relies on some external dependencies:
- - [llvm/llvm-project](https://github.com/llvm/llvm-project): A toolkit for the construction of highly optimized compilers, optimizers, and run-time environments.
- - [PennyLaneAI/catalyst](https://github.com/PennyLaneAI/catalyst): A package that enables just-in-time (JIT) compilation of hybrid quantum-classical programs implemented with PennyLane.
 
-Note, both dependencies are curretly restricted to a specific version.
+- [llvm/llvm-project](https://github.com/llvm/llvm-project): A toolkit for the construction of highly optimized compilers, optimizers, and run-time environments.
+- [PennyLaneAI/catalyst](https://github.com/PennyLaneAI/catalyst): A package that enables just-in-time (JIT) compilation of hybrid quantum-classical programs implemented with PennyLane.
+
+Note, both dependencies are currently restricted to a specific version.
 
 CMake will automatically look for installed versions of these libraries. If it does not find them, they will be fetched automatically at configure time via the [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html) module (check out the documentation for more information on how to customize this behavior).
 
