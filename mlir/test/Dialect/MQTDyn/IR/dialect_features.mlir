@@ -513,8 +513,8 @@ module {
         // CHECK: mqtdyn.ryy(%[[P0]]) %[[Q0]], %[[Q1]]
         // CHECK: mqtdyn.rzz(%[[P0]]) %[[Q0]], %[[Q1]]
         // CHECK: mqtdyn.rzx(%[[P0]]) %[[Q0]], %[[Q1]]
-        // CHECK: mqtdyn.xxminusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]]
-        // CHECK: mqtdyn.xxplusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]]
+        // CHECK: mqtdyn.xx_minus_yy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]]
+        // CHECK: mqtdyn.xx_plus_yy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]]
 
         %p0 = arith.constant 3.000000e-01 : f64
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtdyn.QubitRegister
@@ -525,8 +525,8 @@ module {
         mqtdyn.ryy(%p0) %q0, %q1
         mqtdyn.rzz(%p0) %q0, %q1
         mqtdyn.rzx(%p0) %q0, %q1
-        mqtdyn.xxminusyy(%p0, %p0) %q0, %q1
-        mqtdyn.xxplusyy(%p0, %p0) %q0, %q1
+        mqtdyn.xx_minus_yy(%p0, %p0) %q0, %q1
+        mqtdyn.xx_plus_yy(%p0, %p0) %q0, %q1
 
         "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
         return
@@ -543,8 +543,8 @@ module {
         // CHECK: mqtdyn.ryy(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
         // CHECK: mqtdyn.rzz(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
         // CHECK: mqtdyn.rzx(%[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
-        // CHECK: mqtdyn.xxminusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
-        // CHECK: mqtdyn.xxplusyy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
+        // CHECK: mqtdyn.xx_minus_yy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
+        // CHECK: mqtdyn.xx_plus_yy(%[[P0]], %[[P0]]) %[[Q0]], %[[Q1]] ctrl %[[Q2]]
 
         %p0 = arith.constant 3.000000e-01 : f64
         %qreg = "mqtdyn.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtdyn.QubitRegister
@@ -556,8 +556,8 @@ module {
         mqtdyn.ryy(%p0) %q0, %q1 ctrl %q2
         mqtdyn.rzz(%p0) %q0, %q1 ctrl %q2
         mqtdyn.rzx(%p0) %q0, %q1 ctrl %q2
-        mqtdyn.xxminusyy(%p0, %p0) %q0, %q1 ctrl %q2
-        mqtdyn.xxplusyy(%p0, %p0) %q0, %q1 ctrl %q2
+        mqtdyn.xx_minus_yy(%p0, %p0) %q0, %q1 ctrl %q2
+        mqtdyn.xx_plus_yy(%p0, %p0) %q0, %q1 ctrl %q2
 
         "mqtdyn.deallocQubitRegister"(%qreg) : (!mqtdyn.QubitRegister) -> ()
         return

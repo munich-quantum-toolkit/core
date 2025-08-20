@@ -924,7 +924,7 @@ module {
 }
 
 // -----
-// This test checks if a xxminusyy rotation gate is parsed correctly by the QuantumComputation roundtrip pass.
+// This test checks if a xx_minus_yy rotation gate is parsed correctly by the QuantumComputation roundtrip pass.
 
 module {
     // CHECK-LABEL: func.func @testXXminusYYGate()
@@ -933,7 +933,7 @@ module {
         // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
         // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
 
-        // CHECK: %[[Q01_1:.*]]:2 = mqtopt.xxminusyy( static [1.000000e-01, 2.000000e-01]) %[[Q0_0]], %[[Q1_0]] : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_1:.*]]:2 = mqtopt.xx_minus_yy( static [1.000000e-01, 2.000000e-01]) %[[Q0_0]], %[[Q1_0]] : !mqtopt.Qubit, !mqtopt.Qubit
 
         // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q01_1]]#0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         // CHECK: %[[Q1_2:.*]], %[[C1_0:.*]] = "mqtopt.measure"(%[[Q01_1]]#1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
@@ -945,7 +945,7 @@ module {
         %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
         %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
-        %q0_1, %q1_1 = mqtopt.xxminusyy( static [1.000000e-01, 2.000000e-01]) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q0_1, %q1_1 = mqtopt.xx_minus_yy( static [1.000000e-01, 2.000000e-01]) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
 
         %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         %q1_2, %c1_0 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
@@ -957,7 +957,7 @@ module {
 }
 
 // -----
-// This test checks if a xxplusyy rotation gate is parsed correctly by the QuantumComputation roundtrip pass.
+// This test checks if a xx_plus_yy rotation gate is parsed correctly by the QuantumComputation roundtrip pass.
 
 module {
     // CHECK-LABEL: func.func @testXXplusYYGate()
@@ -966,7 +966,7 @@ module {
         // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
         // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
 
-        // CHECK: %[[Q01_1:.*]]:2 = mqtopt.xxplusyy( static [1.000000e-01, 2.000000e-01]) %[[Q0_0]], %[[Q1_0]] : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[Q01_1:.*]]:2 = mqtopt.xx_plus_yy( static [1.000000e-01, 2.000000e-01]) %[[Q0_0]], %[[Q1_0]] : !mqtopt.Qubit, !mqtopt.Qubit
 
         // CHECK: %[[Q0_2:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q01_1]]#0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         // CHECK: %[[Q1_2:.*]], %[[C1_0:.*]] = "mqtopt.measure"(%[[Q01_1]]#1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
@@ -978,7 +978,7 @@ module {
         %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
         %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
-        %q0_1, %q1_1 = mqtopt.xxplusyy( static [1.000000e-01, 2.000000e-01]) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q0_1, %q1_1 = mqtopt.xx_plus_yy( static [1.000000e-01, 2.000000e-01]) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
 
         %q0_2, %c0_0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         %q1_2, %c1_0 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)

@@ -420,30 +420,8 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
           }
         }
 
-        if (o->getType() == qc::OpType::I || o->getType() == qc::OpType::X ||
-            o->getType() == qc::OpType::H || o->getType() == qc::OpType::Y ||
-            o->getType() == qc::OpType::Z || o->getType() == qc::OpType::S ||
-            o->getType() == qc::OpType::Sdg || o->getType() == qc::OpType::T ||
-            o->getType() == qc::OpType::Tdg || o->getType() == qc::OpType::V ||
-            o->getType() == qc::OpType::Vdg || o->getType() == qc::OpType::U ||
-            o->getType() == qc::OpType::U2 || o->getType() == qc::OpType::P ||
-            o->getType() == qc::OpType::SX ||
-            o->getType() == qc::OpType::SXdg ||
-            o->getType() == qc::OpType::RX || o->getType() == qc::OpType::RY ||
-            o->getType() == qc::OpType::RZ ||
-            o->getType() == qc::OpType::SWAP ||
-            o->getType() == qc::OpType::iSWAP ||
-            o->getType() == qc::OpType::iSWAPdg ||
-            o->getType() == qc::OpType::Peres ||
-            o->getType() == qc::OpType::Peresdg ||
-            o->getType() == qc::OpType::DCX ||
-            o->getType() == qc::OpType::ECR ||
-            o->getType() == qc::OpType::RXX ||
-            o->getType() == qc::OpType::RYY ||
-            o->getType() == qc::OpType::RZZ ||
-            o->getType() == qc::OpType::RZX ||
-            o->getType() == qc::OpType::XXminusYY ||
-            o->getType() == qc::OpType::XXplusYY) {
+        if (qc::isSingleQubitGate(o->getType()) ||
+            qc::isTwoQubitGate(o->getType())) {
           // For unitary operations, we call the `createUnitaryOp` function. We
           // then have to update the `currentQubitVariables` vector with the new
           // qubit values.

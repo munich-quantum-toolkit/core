@@ -39,41 +39,6 @@
 #include <vector>
 
 namespace mqt::ir::opt {
-
-static const std::unordered_map<std::string, qc::OpType> UNITARY_GATES_MAP = {
-    {"i", qc::OpType::I},
-    {"h", qc::OpType::H},
-    {"x", qc::OpType::X},
-    {"y", qc::OpType::Y},
-    {"z", qc::OpType::Z},
-    {"s", qc::OpType::S},
-    {"sdg", qc::OpType::Sdg},
-    {"t", qc::OpType::T},
-    {"tdg", qc::OpType::Tdg},
-    {"v", qc::OpType::V},
-    {"vdg", qc::OpType::Vdg},
-    {"sx", qc::OpType::SX},
-    {"sxdg", qc::OpType::SXdg},
-    {"swap", qc::OpType::SWAP},
-    {"iswap", qc::OpType::iSWAP},
-    {"iswapdg", qc::OpType::iSWAPdg},
-    {"peres", qc::OpType::Peres},
-    {"peresdg", qc::OpType::Peresdg},
-    {"dcx", qc::OpType::DCX},
-    {"ecr", qc::OpType::ECR},
-    {"u", qc::OpType::U},
-    {"u2", qc::OpType::U2},
-    {"p", qc::OpType::P},
-    {"rx", qc::OpType::RX},
-    {"ry", qc::OpType::RY},
-    {"rz", qc::OpType::RZ},
-    {"rxx", qc::OpType::RXX},
-    {"ryy", qc::OpType::RYY},
-    {"rzz", qc::OpType::RZZ},
-    {"rzx", qc::OpType::RZX},
-    {"xxminusyy", qc::OpType::XXminusYY},
-    {"xxplusyy", qc::OpType::XXplusYY}};
-
 /// Analysis pattern that filters out all quantum operations from a given
 /// program and creates a quantum computation from them.
 struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
@@ -191,11 +156,12 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // Add the operation to the QuantumComputation.
     qc::OpType opType; // NOLINT(*-init-variables)
 
-    if (auto const type = op->getName().stripDialect().str();
-        UNITARY_GATES_MAP.contains(type)) {
-      opType = UNITARY_GATES_MAP.at(type);
-    } else {
-      throw std::runtime_error("Unsupported operation type!");
+    try {
+      const std::string type = op->getName().stripDialect().str();
+      opType = qc::opTypeFromString(type);
+    } catch (const std::invalid_argument& e) {
+      throw std::runtime_error("Unsupported operation type: " +
+                               op->getName().getStringRef().str());
     }
 
     const auto in = op.getInQubits();
@@ -426,7 +392,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         }
       }
 
-      if (UNITARY_GATES_MAP.contains(current->getName().stripDialect().str())) {
+      if (llvm::isa<UnitaryInterface>(current)) {
         auto unitaryOp = llvm::dyn_cast<UnitaryInterface>(current);
         handleUnitaryOp(unitaryOp, currentQubitVariables);
       } else if (auto extractOp = llvm::dyn_cast<ExtractOp>(current)) {
