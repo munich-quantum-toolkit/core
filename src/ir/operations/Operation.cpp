@@ -74,9 +74,15 @@ std::ostream& Operation::print(std::ostream& os, const Permutation& permutation,
       continue;
     }
 
-    if (const auto it = std::ranges::find(actualControls, q);
-        it != actualControls.cend()) {
-      if (it->type == Control::Type::Pos) {
+    const qc::Control* foundControl = nullptr;
+    for (const auto& ctrl : controls) {
+      if (ctrl.qubit == q) {
+        foundControl = &ctrl;
+        break;
+      }
+    }
+    if (foundControl) {
+      if (foundControl->type == Control::Type::Pos) {
         os << "\033[32m";
       } else {
         os << "\033[31m";
