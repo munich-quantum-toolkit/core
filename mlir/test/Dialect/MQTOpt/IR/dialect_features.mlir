@@ -39,9 +39,11 @@ module {
 module {
     // CHECK-LABEL: func.func @testAllocQubitOp
     func.func @testAllocQubitOp() {
-        // CHECK: %[[Q0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+        // CHECK: %[[Q0:.*]] = mqtopt.allocQubit
+        // CHECK: %[[Q1:.*]] = mqtopt.allocQubit
 
         %q0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+        %1 = mqtopt.allocQubit
         return
     }
 }
@@ -51,11 +53,16 @@ module {
 module {
     // CHECK-LABEL: func.func @testDeallocQubitOp
     func.func @testDeallocQubitOp() {
-        // CHECK: %[[Q0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
-        // CHECK: "mqtopt.deallocQubit"(%[[Q0]]) : (!mqtopt.Qubit) -> ()
+        // CHECK: %[[Q0:.*]] = mqtopt.allocQubit
+        // CHECK: %[[Q1:.*]] = mqtopt.allocQubit
+        // CHECK: mqtopt.deallocQubit %[[Q0]]
+        // CHECK: mqtopt.deallocQubit %[[Q1]]
 
         %q0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+        %1 = mqtopt.allocQubit
+
         "mqtopt.deallocQubit"(%q0) : (!mqtopt.Qubit) -> ()
+        mqtopt.deallocQubit %1
         return
     }
 }

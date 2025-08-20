@@ -185,10 +185,8 @@ def AllocQubitOp : ResourceOp<"allocQubit"> {
     }];
 
     let arguments = (ins);
-
-    let results = (outs
-        QubitType:$qubit
-    );
+    let results = (outs QubitType:$qubit);
+    let assemblyFormat = "attr-dict";
 }
 
 def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
@@ -234,9 +232,9 @@ def DeallocQubitOp : ResourceOp<"deallocQubit"> {
         ```
     }];
 
-    let arguments = (ins
-        QubitType:$qubit
-    );
+    let arguments = (ins QubitType:$qubit);
+    let results = (outs);
+    let assemblyFormat = "$qubit attr-dict";
 }
 
 def DeallocOp : ResourceOp<"deallocQubitRegister"> {
