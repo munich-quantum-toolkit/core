@@ -902,8 +902,6 @@ void Importer::visitIfStatement(
   std::unique_ptr<qc::Operation> thenOps = nullptr;
   if (!ifStatement->thenStatements.empty()) {
     thenOps = translateBlockOperations(ifStatement->thenStatements);
-  } else {
-    thenOps = std::make_unique<qc::CompoundOperation>();
   }
 
   std::unique_ptr<qc::Operation> elseOps = nullptr;
@@ -912,15 +910,15 @@ void Importer::visitIfStatement(
   }
 
   if (std::holds_alternative<std::pair<qc::Bit, bool>>(condition)) {
-    const auto& [bit, val] = std::get<std::pair<qc::Bit, bool>>(condition);
+    const auto& [bit, value] = std::get<std::pair<qc::Bit, bool>>(condition);
     qc->emplace_back<qc::IfElseOperation>(std::move(thenOps),
-                                          std::move(elseOps), bit, val ? 1 : 0);
+                                          std::move(elseOps), bit, value);
   } else {
-    const auto& [creg, comparisonKind, rhs] = std::get<
+    const auto& [creg, comparisonKind, value] = std::get<
         std::tuple<qc::ClassicalRegister, qc::ComparisonKind, uint64_t>>(
         condition);
     qc->emplace_back<qc::IfElseOperation>(
-        std::move(thenOps), std::move(elseOps), creg, rhs, comparisonKind);
+        std::move(thenOps), std::move(elseOps), creg, value, comparisonKind);
   }
 }
 
