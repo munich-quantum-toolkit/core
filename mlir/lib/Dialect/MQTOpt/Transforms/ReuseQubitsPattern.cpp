@@ -11,20 +11,15 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
-#include <algorithm>
-#include <cstddef>
-#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
-#include <unordered_set>
-#include <vector>
 
 namespace mqt::ir::opt {
 
@@ -58,7 +53,7 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
         return false;
       }
 
-      if (auto yieldOp = llvm::dyn_cast<mlir::scf::YieldOp>(current)) {
+      if (auto yieldOp = mlir::dyn_cast<mlir::scf::YieldOp>(current)) {
         // If we reach a yield operation, we continue from the corresponding
         // `parent`.
         toVisit.push_back(yieldOp->getParentOp());
