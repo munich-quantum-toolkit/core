@@ -49,13 +49,62 @@ Thank you to all the contributors who have helped make MQT Core a reality!
 
 ## Getting Started
 
-TODO
-`mqt.core.catalyst` is available via [PyPI](https://pypi.org/project/mqt.core/) for all major operating systems and supports Python 3.10 to 3.13.
+`mqt.core.catalyst` is **NOT YET** available on [PyPI](https://pypi.org/project/mqt.core/).
 
-```console
-(.venv) $ pip install TODO
+Because `pennylane-catalyst` pins to a specific LLVM/MLIR revision, you must build that LLVM/MLIR locally and point CMake at it.
+
+### 1) Build the exact LLVM/MLIR revision (locally)
+
+```bash
+# Pick a workspace (optional)
+mkdir -p ~/dev && cd ~/dev
+
+# Clone the exact LLVM revision Catalyst expects
+git clone https://github.com/llvm/llvm-project.git
+cd llvm-project
+git checkout 179d30f8c3fddd3c85056fd2b8e877a4a8513158
+
+# Configure & build MLIR (Release is recommended)
+cmake -S llvm -B build_llvm -G Ninja \
+  -DLLVM_ENABLE_PROJECTS=mlir \
+  -DLLVM_BUILD_EXAMPLES=OFF \
+  -DLLVM_BUILD_TESTS=OFF \
+  -DLLVM_INCLUDE_TESTS=OFF \
+  -DLLVM_INCLUDE_EXAMPLES=OFF \
+  -DLLVM_ENABLE_ASSERTIONS=ON \
+  -DLLVM_ENABLE_ZLIB=FORCE_ON \
+  -DLLVM_ENABLE_ZSTD=OFF \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CXX_VISIBILITY_PRESET=default
+
+cmake --build build_llvm --config Release
+
+# Export these for your shell/session
+export MLIR_DIR="$PWD/build_llvm/lib/cmake/mlir"
+export LLVM_DIR="$PWD/build_llvm/lib/cmake/llvm"
 ```
 
+### 2) Create a local env and build the plugin
+
+```console
+# From your repo root
+cd /path/to/your/core/plugins/catalyst
+
+# Create and activate a venv (optional)
+uv venv .venv
+. .venv/bin/activate
+
+# Install Catalyst and build the plugin
+uv pip install pennylane-catalyst==0.12.0
+
+uv sync --verbose --active 
+  --config-settings=cmake.define.CMAKE_BUILD_TYPE=Release 
+  --config-settings=cmake.define.Python3_EXECUTABLE="$(which python)" 
+  --config-settings=cmake.define.MLIR_DIR="$MLIR_DIR" 
+  --config-settings=cmake.define.LLVM_DIR="$LLVM_DIR"
+```
+
+### 3) Use the MQT plugin with your PennyLane code
 The following code gives an example on how to use an MQT pass with PennyLane's Catalyst
 
 ```python3
@@ -82,11 +131,20 @@ def module() -> None:
 
 ## System Requirements
 
-TODO
+Building (and running) is continuously tested under Linux, MacOS, and Windows using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
+However, the implementation should be compatible with any current C++ compiler supporting C++20 and a minimum CMake version of 3.24.
+
+MQT Core relies on some external dependencies:
+ - [llvm/llvm-project](https://github.com/llvm/llvm-project): A toolkit for the construction of highly optimized compilers, optimizers, and run-time environments.
+ - [PennyLaneAI/catalyst](https://github.com/PennyLaneAI/catalyst): A package that enables just-in-time (JIT) compilation of hybrid quantum-classical programs implemented with PennyLane.
+
+Note, both dependencies are curretly restricted to a specific version.
+
+CMake will automatically look for installed versions of these libraries. If it does not find them, they will be fetched automatically at configure time via the [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html) module (check out the documentation for more information on how to customize this behavior).
 
 ## Cite This
 
-If you want to cite MQT Core, please use the following BibTeX entry:
+If you want to cite MQT Core's MLIR Plugin, please use the following BibTeX entry:
 
 ```bibtex
 TODO
