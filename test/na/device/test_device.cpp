@@ -580,21 +580,21 @@ TEST_F(NADeviceTest, QuerySiteData) {
 }
 
 TEST_F(NADeviceTest, QueryOperationData) {
-  uint64_t duration = 0;
-  bool isDurationSupported = false;
-  uint64_t meanShuttlingSpeed = 0;
-  bool isMeanShuttlingSpeedSupported = false;
-  double fidelity = 0;
-  bool isFidelitySupported = false;
-  size_t numQubits = 0;
-  bool isNumQubitsSupported = false;
-  size_t numParameters = 0;
-  bool isZoned = false;
   std::vector<MQT_NA_QDMI_Site> sites;
   EXPECT_NO_THROW(sites = querySites(session));
   std::vector<MQT_NA_QDMI_Operation> operations;
   EXPECT_NO_THROW(operations = queryOperations(session));
   for (auto* operation : operations) {
+    uint64_t duration = 0;
+    bool isDurationSupported = false;
+    uint64_t meanShuttlingSpeed = 0;
+    bool isMeanShuttlingSpeedSupported = false;
+    double fidelity = 0;
+    bool isFidelitySupported = false;
+    size_t numQubits = 0;
+    bool isNumQubitsSupported = false;
+    size_t numParameters = 0;
+    bool isZoned = false;
     size_t nameSize = 0;
     ASSERT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                   session, operation, 0, nullptr, 0, nullptr,
@@ -640,32 +640,37 @@ TEST_F(NADeviceTest, QueryOperationData) {
       isNumQubitsSupported = true;
       EXPECT_GT(numQubits, 0);
     }
-    // isDurationSupported <==> isFidelitySupported
-    EXPECT_EQ(isDurationSupported, isFidelitySupported);
-    // isMeanShuttlingSpeedSupported <==> not isDurationSupported
-    EXPECT_EQ(isMeanShuttlingSpeedSupported, !isDurationSupported);
-    // isMeanShuttlingSpeedSupported ==> not isNumQubitsSupported
-    EXPECT_TRUE(!isMeanShuttlingSpeedSupported || isNumQubitsSupported);
-    // isMeanShuttlingSpeedSupported ==> isZoned
-    EXPECT_TRUE(!isMeanShuttlingSpeedSupported || isZoned);
-    // not isZoned ==> isNumQubitsSupported
-    EXPECT_TRUE(!isZoned || isNumQubitsSupported);
+    EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                  session, operation, 0, nullptr, 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_ISZONED, sizeof(bool), &isZoned,
+                  nullptr),
+              QDMI_SUCCESS);
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                   session, operation, 0, nullptr, 0, nullptr,
                   QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sizeof(size_t),
                   &numParameters, nullptr),
               QDMI_SUCCESS);
+    // isDurationSupported <==> isFidelitySupported
+    EXPECT_EQ(isDurationSupported, isFidelitySupported);
+    // isMeanShuttlingSpeedSupported <==> not isDurationSupported
+    EXPECT_EQ(isMeanShuttlingSpeedSupported, !isDurationSupported);
+    // isMeanShuttlingSpeedSupported ==> not isNumQubitsSupported
+    EXPECT_TRUE(!isMeanShuttlingSpeedSupported || !isNumQubitsSupported);
+    // isMeanShuttlingSpeedSupported ==> isZoned
+    EXPECT_TRUE(!isMeanShuttlingSpeedSupported || isZoned);
+    // not isZoned ==> isNumQubitsSupported
+    EXPECT_TRUE(isZoned || isNumQubitsSupported);
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                   session, operation, 0, nullptr, 0, nullptr,
-                  QDMI_OPERATION_PROPERTY_ISZONED, sizeof(bool), &isZoned,
-                  nullptr),
+                  QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sizeof(size_t),
+                  &numParameters, nullptr),
               QDMI_SUCCESS);
     size_t sitesSize = 0;
     EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                   session, operation, 0, nullptr, 0, nullptr,
                   QDMI_OPERATION_PROPERTY_SITES, 0, nullptr, &sitesSize),
               QDMI_SUCCESS);
-    if (numQubits == 1) {
+    if (isNumQubitsSupported && numQubits == 1) {
       std::unordered_set<MQT_NA_QDMI_Site> supportedSites;
       for (const auto& site : sites) {
         result = MQT_NA_QDMI_device_session_query_operation_property(
@@ -746,18 +751,18 @@ TEST_F(NADeviceTest, QueryOperationData) {
       const std::unordered_set queriedSupportedSitesSet(
           queriedSupportedSitesVec.cbegin(), queriedSupportedSitesVec.cend());
       EXPECT_EQ(queriedSupportedSitesSet, supportedSites);
-    } else if (numQubits == 2) {
+    } else if (isNumQubitsSupported && numQubits == 2) {
       if (!isZoned) {
         EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                       session, operation, 0, nullptr, 0, nullptr,
                       QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS, 0, nullptr,
                       nullptr),
-                  QDMI_ERROR_NOTSUPPORTED);
+                  QDMI_SUCCESS);
         EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                       session, operation, 0, nullptr, 0, nullptr,
                       QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, 0, nullptr,
                       nullptr),
-                  QDMI_ERROR_NOTSUPPORTED);
+                  QDMI_SUCCESS);
         EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
                       session, operation, 0, nullptr, 0, nullptr,
                       QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, 0, nullptr,

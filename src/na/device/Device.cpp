@@ -392,40 +392,38 @@ MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
 MQT_NA_QDMI_Operation_impl_d::MQT_NA_QDMI_Operation_impl_d(
     std::string name, size_t numParameters, MQT_NA_QDMI_Site zone,
     uint64_t meanShuttlingSpeed)
-    : name_(std::move(name)), numParameters_(numParameters), numQubits_(0),
+    : name_(std::move(name)), numParameters_(numParameters),
       meanShuttlingSpeed_(meanShuttlingSpeed), isZoned_(true) {
   supportedSites_.emplace_back(zone);
 }
 auto MQT_NA_QDMI_Operation_impl_d::sortSites() -> void {
-  if (!isZoned_) {
-    if (numQubits_ == 1) {
-      // sort sites by their pointer address
-      std::ranges::sort(supportedSites_);
-    } else if (numQubits_ == 2) {
-      // First ensure that in each site's pair the first site is the one
-      // with the smaller pointer address
-      std::ranges::for_each(
-          reinterpret_cast<
-              std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>&>(
-              supportedSites_),
-          [](auto& p) {
-            if (p.first < p.second) {
-              std::swap(p.first, p.second);
-            }
-          });
-      // Then sort the pairs
-      std::ranges::sort(
-          reinterpret_cast<
-              std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>&>(
-              supportedSites_));
-    }
+  if (numQubits_ == 1) {
+    // sort sites by their pointer address
+    std::ranges::sort(supportedSites_);
+  } else if (numQubits_ == 2) {
+    // First ensure that in each site's pair the first site is the one
+    // with the smaller pointer address
+    std::ranges::for_each(
+        reinterpret_cast<
+            std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>&>(
+            supportedSites_),
+        [](auto& p) {
+          if (p.first < p.second) {
+            std::swap(p.first, p.second);
+          }
+        });
+    // Then sort the pairs
+    std::ranges::sort(
+        reinterpret_cast<
+            std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>&>(
+            supportedSites_));
   }
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueGlobalSingleQubit(
     const std::string& name, const size_t numParameters,
     const uint64_t duration, const double fidelity, MQT_NA_QDMI_Site zone)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
-  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
+  MQT_NA_QDMI_Operation_impl_d op(name, numParameters, 1U, duration, fidelity,
                                   zone);
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
@@ -498,15 +496,18 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (sites != nullptr) {
-    if (numQubits_ == 1) {
-      // if the (single) site is not supported, return with an error
+    // If numQubits_ == 1 or isZoned_ = true
+    if (numSites == 1) {
+      // If the (single) site is not supported, return with an error
       if (!std::ranges::binary_search(supportedSites_, *sites)) {
         return QDMI_ERROR_NOTSUPPORTED;
       }
-    } else if (numQubits_ == 2) {
+    } else if (numSites == 2) {
+      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
       const std::pair needle = sites[0] < sites[1]
                                    ? std::make_pair(sites[0], sites[1])
                                    : std::make_pair(sites[1], sites[0]);
+      // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
       // if the pair of sites is not supported, return with an error
       if (!std::ranges::binary_search(
               reinterpret_cast<const std::vector<
@@ -551,7 +552,7 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
                               *numQubits_, prop, size, value, sizeRet)
   }
   if (idlingFidelity_) {
-    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, double,
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, double,
                               *idlingFidelity_, prop, size, value, sizeRet)
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_ISZONED, bool, isZoned_,
