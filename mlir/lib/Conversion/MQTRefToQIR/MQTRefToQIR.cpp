@@ -157,6 +157,10 @@ struct ConvertMQTRefAllocQIR final : StatefulOpConversionPattern<ref::AllocOp> {
     getState().numQubits += value;
     // replace the old operation with new callOp
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, size);
+
+    // set bool isDynamicQubit to true
+    getState().isDynamicQubit = true;
+
     return success();
   }
 };
@@ -285,7 +289,7 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
     auto* ctx = rewriter.getContext();
 
     // get all the values
-    const auto& params = adaptor.getParams();
+    auto params = adaptor.getParams();
     const auto& inQubits = adaptor.getInQubits();
     const auto& posCtrlQubits = adaptor.getPosCtrlInQubits();
     const auto& negCtrlQubits = adaptor.getNegCtrlInQubits();
@@ -293,10 +297,14 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
                             ? DenseF64ArrayAttr::get(rewriter.getContext(),
                                                      *op.getStaticParams())
                             : DenseF64ArrayAttr{};
-    SmallVector<Value> staticParamValues;
+    auto paramMask = op.getParamsMask()
+                         ? DenseBoolArrayAttr::get(rewriter.getContext(),
+                                                   *op.getParamsMask())
+                         : DenseBoolArrayAttr{};
 
     // check for static parameters
     if (staticParams) {
+      SmallVector<Value> staticParamValues;
       // set the insertionpoint to the beginning of the first block
       auto funcOp = op->template getParentOfType<LLVM::LLVMFuncOp>();
       auto& firstBlock = *(funcOp.getBlocks().begin());
@@ -313,19 +321,39 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
 
       // reset the insertionpoint after creating the constants
       rewriter.setInsertionPoint(op);
-    }
 
+      // merge parameters with static parameters
+      if (!paramMask) {
+        // assuming every value is true when the paramMask does not exist but
+        // staticParameters do
+        params = ValueRange{staticParamValues};
+      } else {
+
+        SmallVector<Value> newParams;
+        auto paramIndex = 0;
+        auto staticParamIndex = 0;
+        // merge the parameter values depending on the paramMask
+        for (auto isStaticParam : paramMask.asArrayRef()) {
+          // push_back the values as Value is a wrapper
+          if (isStaticParam) {
+            newParams.push_back(staticParamValues[staticParamIndex++]);
+          } else {
+            newParams.push_back(params[paramIndex++]);
+          }
+        }
+        // override the old params
+        params = ValueRange(newParams);
+      }
+    }
     // concatenate all the values
     SmallVector<Value> operands;
-    operands.reserve(params.size() + staticParamValues.size() +
-                     inQubits.size() + posCtrlQubits.size() +
+    operands.reserve(params.size() + inQubits.size() + posCtrlQubits.size() +
                      negCtrlQubits.size());
 
     operands.append(posCtrlQubits.begin(), posCtrlQubits.end());
     operands.append(negCtrlQubits.begin(), negCtrlQubits.end());
     operands.append(inQubits.begin(), inQubits.end());
     operands.append(params.begin(), params.end());
-    operands.append(staticParamValues.begin(), staticParamValues.end());
 
     // check for negative controlled qubits
     // for any negative controlled qubits place an NOT operation before and
@@ -656,29 +684,35 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
                                  ValueRange{zeroOperation->getResult(0)});
   }
   /**
-   * @brief Collects the existing operations for the measure operation
-   * conversion
+   * @brief Sets the necessary attributes to the main function for the qir base
+   * profile. The required module flags are also set as attributes.
    *
    * @param main The main function of the module.
-   * @param operations The vector to store the found addressOf operations.
-   * @param ctx The context of the module.
-   * @return The LLVM constant operation with the value -1.
+   * @param state The lowering state of the conversion pass.
    */
   static void setAttributes(LLVM::LLVMFuncOp& main, LoweringState* state) {
     OpBuilder builder(main.getBody());
-    SmallVector<Attribute, 4> nested;
-    nested.emplace_back(
+    SmallVector<Attribute> attributes;
+    attributes.emplace_back(builder.getStringAttr("entry_point"));
+    attributes.emplace_back(
         builder.getStrArrayAttr({"output_labeling_schema", "schema_id"}));
-    nested.emplace_back(
+    attributes.emplace_back(
         builder.getStrArrayAttr({"qir_profiles", "base_profile"}));
-    nested.emplace_back(builder.getStrArrayAttr(
+    attributes.emplace_back(builder.getStrArrayAttr(
         {"required_num_qubits", std::to_string(state->numQubits)}));
-    nested.emplace_back(builder.getStrArrayAttr(
+    attributes.emplace_back(builder.getStrArrayAttr(
         {"required_num_results", std::to_string(state->numResults)}));
-    SmallVector<Attribute, 8> topLevel;
-    topLevel.push_back(builder.getStringAttr("entry_point"));
-    topLevel.append(nested.begin(), nested.end());
-    main->setAttr("passthrough", builder.getArrayAttr(topLevel));
+    attributes.emplace_back(
+        builder.getStrArrayAttr({"qir_major_version", "1"}));
+    attributes.emplace_back(
+        builder.getStrArrayAttr({"qir_minor_version", "0"}));
+    attributes.emplace_back(
+        builder.getStrArrayAttr({"dynamic_qubit_management",
+                                 state->isDynamicQubit ? "true" : "false"}));
+    attributes.emplace_back(
+        builder.getStrArrayAttr({"dynamic_result_management", "false"}));
+
+    main->setAttr("passthrough", builder.getArrayAttr(attributes));
   }
 
   void runOnOperation() override {

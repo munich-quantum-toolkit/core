@@ -10,7 +10,7 @@
 
 // This test checks if the AllocOp is converted correctly using a static attribute
 module {
-    // CHECK-LABEL: llvm.func @testConvertAllocRegisterAttribute() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertAllocRegisterAttribute()
     func.func @testConvertAllocRegisterAttribute() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
@@ -25,7 +25,7 @@ module {
 // -----
 // This test checks if the blocks for the base profile of QIR are correctly created
 module {
-    // CHECK-LABEL: llvm.func @testBlockCreation() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testBlockCreation()
     func.func @testBlockCreation() attributes {passthrough = ["entry_point"]}  {
       // CHECK: llvm.br ^[[main:.*]]
       // CHECK: ^[[main]]:
@@ -47,7 +47,7 @@ module {
 // -----
 // This test checks if the initialize operation and zero operation is inserted
 module {
-    // CHECK-LABEL: llvm.func @testInitialize() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "0"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testInitialize()
     func.func @testInitialize() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[z_0:.*]] = llvm.mlir.zero : !llvm.ptr
         // CHECK: llvm.call @__quantum__rt__initialize(%[[z_0]]) : (!llvm.ptr) -> ()
@@ -60,7 +60,7 @@ module {
 // -----
 // This test checks if the AllocOp is converted correctly using a dynamic operand
 module {
-    // CHECK-LABEL: llvm.func @testConvertAllocRegisterOperand() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertAllocRegisterOperand()
     func.func @testConvertAllocRegisterOperand() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
@@ -76,7 +76,7 @@ module {
 // -----
 // This test checks if the ExtractOp is converted correctly using a static attribute
 module {
-    // CHECK-LABEL: llvm.func @testConvertExtractOpAttribute() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "1"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertExtractOpAttribute()
     func.func @testConvertExtractOpAttribute() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(1 : i64) : i64
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
@@ -95,7 +95,7 @@ module {
 // -----
 // This test checks if the ExtractOp is converted correctly using a dynamic operand
 module {
-    // CHECK-LABEL: llvm.func @testConvertExtractOpAttribute() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "1"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertExtractOpAttribute()
     func.func @testConvertExtractOpAttribute() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(1 : i64) : i64
         // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
@@ -115,7 +115,7 @@ module {
 // -----
 // This test checks if the dealloc register call is correctly converted
 module {
-    // CHECK-LABEL: llvm.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertDeallocRegister()
     func.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[ANY:.*]]) : (i64) -> !llvm.ptr
         // CHECK: llvm.call @__quantum__rt__qubit_release_array(%[[r_0]]) : (!llvm.ptr) -> ()
@@ -130,7 +130,7 @@ module {
 // -----
 // This test checks if the reset operation is correctly converted
 module {
-    // CHECK-LABEL: llvm.func @testConvertResetOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "1"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertResetOp()
     func.func @testConvertResetOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(1 : i64) : i64
         // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
@@ -153,7 +153,7 @@ module {
 // -----
 // This test checks if the reset operation using a statically allocated qubit is correctly converted
 module {
-    // CHECK-LABEL: llvm.func @testConvertResetOpOnStaticAttribute() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "1"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertResetOpOnStaticAttribute()
     func.func @testConvertResetOpOnStaticAttribute() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[q_0:.*]] = llvm.mlir.zero : !llvm.ptr
         // CHECK: llvm.call @__quantum__qis__reset__body(%[[q_0]]) : (!llvm.ptr) -> ()
@@ -170,7 +170,7 @@ module {
     // CHECK: llvm.mlir.global internal constant @mlir.llvm.nameless_global_1("r1\00") {addr_space = 0 : i32, dso_local}
     // CHECK: llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
 
-    // CHECK-LABEL: llvm.func @testMeasureOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "2"]]}
+    // CHECK-LABEL: llvm.func @testMeasureOp()
     func.func @testMeasureOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK-DAG: %[[a_0:.*]] = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
         // CHECK-DAG: %[[a_1:.*]] = llvm.mlir.addressof @mlir.llvm.nameless_global_1 : !llvm.ptr
@@ -204,7 +204,7 @@ module {
 // -----
 // This test checks if the single qubit gates are correctly converted
 module {
-    // CHECK-LABEL: llvm.func @testConvertSingleQubitOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "1"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertSingleQubitOp()
     func.func @testConvertSingleQubitOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: llvm.call @__quantum__qis__i__body(%[[q_0:.*]]) : (!llvm.ptr) -> ()
         // CHECK: llvm.call @__quantum__qis__h__body(%[[q_0]]) : (!llvm.ptr) -> ()
@@ -245,7 +245,7 @@ module {
 // -----
 // This test checks if the two target gates are correctly converted
 module {
-    // CHECK-LABEL: llvm.func @testConvertTwoTargetOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertTwoTargetOp()
     func.func @testConvertTwoTargetOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: llvm.call @__quantum__qis__swap__body(%[[q_0:.*]], %[[q_1:.*]]) : (!llvm.ptr, !llvm.ptr) -> ()
         // CHECK: llvm.call @__quantum__qis__iswap__body(%[[q_0]], %[[q_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
@@ -275,7 +275,7 @@ module {
 // -----
 // This test checks if the single qubit rotation gates are correctly converted
 module {
-    // CHECK-LABEL: llvm.func @testSingleQubitRotationOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "1"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testSingleQubitRotationOp()
     func.func @testSingleQubitRotationOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: %[[c_1:.*]] = llvm.mlir.constant(1.000000e-01 : f64) : f64
@@ -308,7 +308,7 @@ module {
 // -----
 // This test checks if the multiple qubit rotation gates are correctly converted
 module {
-    // CHECK-LABEL: llvm.func @testMultipleQubitRotationOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testMultipleQubitRotationOp()
     func.func @testMultipleQubitRotationOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: %[[c_1:.*]] = llvm.mlir.constant(1.000000e-01 : f64) : f64
@@ -340,7 +340,7 @@ module {
 // -----
 // This test checks if controlled gates are correctly converted
 module {
-    // CHECK-LABEL: llvm.func @testConvertControlledOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "3"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertControlledOp()
     func.func @testConvertControlledOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: llvm.call @__quantum__qis__cx__body(%[[q_1:.*]], %[[q_0:.*]]) : (!llvm.ptr, !llvm.ptr) -> ()
         // CHECK: llvm.call @__quantum__qis__ccx__body(%[[q_1]], %[[q_2:.*]], %[[q_0]]) : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
@@ -371,19 +371,22 @@ module {
 // -----
 // This test checks if static params are converted correctly
 module {
-    // CHECK-LABEL: llvm.func @testConvertStaticParams() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "1"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertStaticParams()
     func.func @testConvertStaticParams() attributes {passthrough = ["entry_point"]} {
-        // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
-        // CHECK: %[[c_1:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
-        // CHECK: %[[c_2:.*]] = llvm.mlir.constant(1.000000e-01 : f64) : f64
-        // CHECK: llvm.call @__quantum__qis__u3__body(%[[q_0:.*]], %[[c_1]], %[[c_2]], %[[c_0]]) : (!llvm.ptr, f64, f64, f64) -> ()
+        // CHECK-DAG: %[[c_0:.*]] = llvm.mlir.constant(1.000000e-01 : f64) : f64
+        // CHECK-DAG: %[[c_1:.*]] = llvm.mlir.constant(2.000000e-01 : f64) : f64
+        // CHECK-DAG: %[[c_2:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
+        // CHECK-DAG: %[[c_3:.*]] = llvm.mlir.constant(4.000000e-01 : f64) : f64
+        // CHECK-DAG: %[[c_4:.*]] = llvm.mlir.constant(5.000000e-01 : f64) : f64
+        // CHECK-DAG: %[[c_5:.*]] = llvm.mlir.constant(6.000000e-01 : f64) : f64
+        // CHECK: llvm.call @__quantum__qis__u3__body(%[[q_0:.*]], %[[c_0]], %[[c_1]], %[[c_2]]) : (!llvm.ptr, f64, f64, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__u3__body(%[[q_0:.*]], %[[c_3]], %[[c_4]], %[[c_5]]) : (!llvm.ptr, f64, f64, f64) -> ()
 
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
-        %c0 = arith.constant 3.000000e-01 : f64
-        %c1 = arith.constant 1.000000e-01 : f64
-        mqtref.u(%c0, %c1 static [3.000000e-01] mask [false, true, false]) %q0
+        mqtref.u(static [1.00000e-01, 2.00000e-01, 3.00000e-01] mask [true, true, true]) %q0
+        mqtref.u(static [4.00000e-01, 5.00000e-01, 6.00000e-01]) %q0
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
@@ -391,9 +394,36 @@ module {
 }
 
 // -----
+// This test checks if static params are converted correctly
+module {
+    // CHECK-LABEL: llvm.func @testConvertMixedParams()
+    func.func @testConvertMixedParams() attributes {passthrough = ["entry_point"]} {
+        // CHECK-DAG: %[[c_0:.*]] = llvm.mlir.constant(1.000000e-01 : f64) : f64
+        // CHECK-DAG: %[[c_1:.*]] = llvm.mlir.constant(2.000000e-01 : f64) : f64
+        // CHECK-DAG: %[[c_2:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
+        // CHECK-DAG: %[[c_3:.*]] = llvm.mlir.constant(4.000000e-01 : f64) : f64
+        // CHECK-DAG: %[[c_4:.*]] = llvm.mlir.constant(5.000000e-01 : f64) : f64
+        // CHECK-DAG: %[[c_5:.*]] = llvm.mlir.constant(6.000000e-01 : f64) : f64
+        // CHECK: llvm.call @__quantum__qis__u3__body(%[[q_0:.*]], %[[c_0]], %[[c_1]], %[[c_2]]) : (!llvm.ptr, f64, f64, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__u3__body(%[[q_0:.*]], %[[c_3]], %[[c_4]], %[[c_5]]) : (!llvm.ptr, f64, f64, f64) -> ()
+
+        %r0 = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+
+        %c0 = arith.constant 1.000000e-01 : f64
+        %c1 = arith.constant 3.000000e-01 : f64
+        %c2 = arith.constant 4.000000e-01 : f64
+        mqtref.u(%c0, %c1 static [2.000000e-01] mask [false, true, false]) %q0
+        mqtref.u(%c2 static [5.00000e-01, 6.00000e-01] mask [false, true, true]) %q0
+
+        "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
+        return
+    }
+}
+// -----
 // This test checks if the gphase operation is correctly converted
 module {
-    // CHECK-LABEL: llvm.func @testConvertGPhaseOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "0"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertGPhaseOp()
     func.func @testConvertGPhaseOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: llvm.call @__quantum__qis__gphase__body(%[[c_0]]) : (f64) -> ()
@@ -409,7 +439,7 @@ module {
 // -----
 // This test checks if the controlled gphase operation is correctly converted
 module {
-    // CHECK-LABEL: llvm.func @testConvertGPhaseOpControlled() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "1"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertGPhaseOpControlled()
     func.func @testConvertGPhaseOpControlled() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: llvm.call @__quantum__qis__cgphase__body(%[[ANY:.*]], %[[c_0]]) : (!llvm.ptr, f64) -> ()
@@ -428,7 +458,7 @@ module {
 // -----
 // This test checks if the barrierOp is converted correctly
 module {
-    // CHECK-LABEL: llvm.func @testConvertBarrierOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "1"], ["required_num_results", "0"]]}
+    // CHECK-LABEL: llvm.func @testConvertBarrierOp()
     func.func @testConvertBarrierOp() attributes {passthrough = ["entry_point"]}  {
         // CHECK: llvm.call @__quantum__qis__barrier__body(%[[ANY:.*]]) : (!llvm.ptr) -> ()
 
@@ -448,7 +478,7 @@ module {
     // CHECK: llvm.mlir.global internal constant @mlir.llvm.nameless_global_1("r1\00") {addr_space = 0 : i32, dso_local}
     // CHECK: llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
 
-    // CHECK-LABEL: llvm.func @bellState() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "2"]]}
+    // CHECK-LABEL: llvm.func @bellState() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "2"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}
     func.func @bellState() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[a_1:.*]] = llvm.mlir.addressof @mlir.llvm.nameless_global_1 : !llvm.ptr
         // CHECK: %[[a_0:.*]] = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
@@ -500,7 +530,7 @@ module {
     // CHECK: llvm.mlir.global internal constant @mlir.llvm.nameless_global_1("r1\00") {addr_space = 0 : i32, dso_local}
     // CHECK: llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
 
-    // CHECK-LABEL: llvm.func @bellStateStaticQubit() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "2"]]}
+    // CHECK-LABEL: llvm.func @bellStateStaticQubit() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "2"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "false"], ["dynamic_result_management", "false"]]}
     func.func @bellStateStaticQubit() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[a_1:.*]] = llvm.mlir.addressof @mlir.llvm.nameless_global_1 : !llvm.ptr
         // CHECK: %[[a_0:.*]] = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
