@@ -116,6 +116,7 @@ If you want to use the ZX library, it is recommended (although not strictly nece
 ## Cite This
 
 Please cite the work that best fits your use case.
+If both apply, include both references.
 
 ### MQT Core (the tool)
 
@@ -153,8 +154,6 @@ When discussing the overall MQT project or its ecosystem, cite the MQT Handbook:
     addendum     = {A live version of this document is available at \url{https://mqt.readthedocs.io}},
 }
 ```
-
-If both apply, include both references.
 
 ---
 
