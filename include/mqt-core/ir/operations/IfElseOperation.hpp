@@ -105,10 +105,7 @@ public:
                     bool openQASM3) const override;
 
   void invert() override {
-    thenOp->invert();
-    if (elseOp) {
-      elseOp->invert();
-    }
+    throw std::runtime_error("An IfElseOperation cannot be inverted.");
   }
 
   // Override invalid Operation setters
