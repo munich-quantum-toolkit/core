@@ -74,9 +74,90 @@ func.func @bar() {
   %xy:2 = mqtopt.xxplusyy(%cst, %cst) %230, %231 : !mqtopt.Qubit, !mqtopt.Qubit
   %rzx0, %rzx1 = mqtopt.rzx(%cst) %xy#0, %xy#1 : !mqtopt.Qubit, !mqtopt.Qubit
 
+  // CHECK: %[[C1:.*]]:2 = quantum.custom "CNOT"() {{%.*}}, {{%.*}} : !quantum.bit, !quantum.bit
+  // CHECK: %[[C2:.*]]:2 = quantum.custom "CNOT"() %[[C1]]#1, %[[C1]]#0 : !quantum.bit, !quantum.bit
+  %dcx0, %dcx1 = mqtopt.dcx() %rzx0, %rzx1 : !mqtopt.Qubit, !mqtopt.Qubit
 
-  // CHECK: %[[MRES:.*]], %[[QMEAS:.*]] = quantum.measure %[[TOF]]#1 : i1, !quantum.bit
-  %q_meas, %c0_0 = "mqtopt.measure"(%15) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+  // CHECK: %[[PI2:.*]] = arith.constant 1.5707963267948966 : f64
+  // First, check the explicit Z–Y–Z sequence on some input qubit.
+  // CHECK: %[[RZ1_OUT:.*]] = quantum.custom "RZ"(%[[PI2]]) %[[C2]]#0 : !quantum.bit
+  // CHECK: %[[RY_OUT:.*]]  = quantum.custom "RY"(%[[PI2]]) %[[RZ1_OUT]] : !quantum.bit
+  // CHECK: %[[RZ2_OUT:.*]] = quantum.custom "RZ"(%[[PI2]]) %[[RY_OUT]] adj : !quantum.bit
+  %v = mqtopt.v() %dcx0 : !mqtopt.Qubit
+
+  // CHECK: %[[NPI2:.*]] = arith.constant -1.5707963267948966 : f64
+  // CHECK: %[[VDG_RZ1:.*]] = quantum.custom "RZ"(%[[NPI2]]) %[[RZ2_OUT]] adj : !quantum.bit
+  // CHECK: %[[VDG_RY:.*]] = quantum.custom "RY"(%[[NPI2]]) %[[VDG_RZ1]] : !quantum.bit
+  // CHECK: %[[VDG_RZ2:.*]] = quantum.custom "RZ"(%[[NPI2]]) %[[VDG_RY]] : !quantum.bit
+  %vdg = mqtopt.vdg() %v : !mqtopt.Qubit
+
+  // CHECK: %[[S_OUT:.*]] = quantum.custom "S"() %[[VDG_RZ2]] : !quantum.bit
+  %s = mqtopt.s() %vdg : !mqtopt.Qubit
+
+  // CHECK: %[[SDG_OUT:.*]] = quantum.custom "S"() %[[S_OUT]] adj : !quantum.bit
+  %sdg = mqtopt.sdg() %s : !mqtopt.Qubit
+
+  // CHECK: %[[T_OUT:.*]] = quantum.custom "T"() %[[SDG_OUT]] : !quantum.bit
+  %t = mqtopt.t() %sdg : !mqtopt.Qubit
+
+  // CHECK: %[[TDG_OUT:.*]] = quantum.custom "T"() %[[T_OUT]] adj : !quantum.bit
+  %tdg = mqtopt.tdg() %t : !mqtopt.Qubit
+
+  // CHECK: %[[ISWAP_OUT:.*]]:2 = quantum.custom "ISWAP"() %[[TDG_OUT]], %[[C2]]#1 : !quantum.bit, !quantum.bit
+  %iswap0, %iswap1 = mqtopt.iswap() %tdg, %dcx1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+  // CHECK: %[[ISWAPDAG_OUT:.*]]:2 = quantum.custom "ISWAP"() %[[ISWAP_OUT]]#0, %[[ISWAP_OUT]]#1 adj : !quantum.bit, !quantum.bit
+  %iswapdag0, %iswapdag1 = mqtopt.iswapdg() %iswap0, %iswap1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+  // CHECK: %[[ECR_OUT:.*]]:2 = quantum.custom "ECR"() %[[ISWAPDAG_OUT]]#0, %[[ISWAPDAG_OUT]]#1 : !quantum.bit, !quantum.bit
+  %ecr0, %ecr1 = mqtopt.ecr() %iswapdag0, %iswapdag1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+  // CHECK: %[[RXX_OUT:.*]]:2 = quantum.custom "IsingXX"(%cst) %[[ECR_OUT]]#0, %[[ECR_OUT]]#1 : !quantum.bit, !quantum.bit
+  %rxx0, %rxx1 = mqtopt.rxx(%cst) %ecr0, %ecr1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+  // CHECK: %[[RYY_OUT:.*]]:2 = quantum.custom "IsingYY"(%cst) %[[RXX_OUT]]#0, %[[RXX_OUT]]#1 : !quantum.bit, !quantum.bit
+  %ryy0, %ryy1 = mqtopt.ryy(%cst) %rxx0, %rxx1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+  // CHECK: %[[RZZ_OUT:.*]]:2 = quantum.custom "IsingZZ"(%cst) %[[RYY_OUT]]#0, %[[RYY_OUT]]#1 : !quantum.bit, !quantum.bit
+  %rzz0, %rzz1 = mqtopt.rzz(%cst) %ryy0, %ryy1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+  // XXminusYY is decomposed into a series of rotations and CNOTs
+  // CHECK: %[[PI2_XXMY:.*]] = arith.constant 1.5707963267948966 : f64
+  // CHECK: %[[NPI2_XXMY:.*]] = arith.constant -1.5707963267948966 : f64
+  // CHECK: %[[RX1_XXMY:.*]]:2 = quantum.custom "RX"(%[[PI2_XXMY]]) %[[RZZ_OUT]]#0, %[[RZZ_OUT]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[RY1_XXMY:.*]]:2 = quantum.custom "RY"(%[[PI2_XXMY]]) %[[RX1_XXMY]]#0, %[[RX1_XXMY]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[CNOT1_XXMY:.*]]:2 = quantum.custom "CNOT"() %[[RY1_XXMY]]#0, %[[RY1_XXMY]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[RZ1_XXMY:.*]]:2 = quantum.custom "RZ"(%cst) %[[CNOT1_XXMY]]#0, %[[CNOT1_XXMY]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[CNOT2_XXMY:.*]]:2 = quantum.custom "CNOT"() %[[RZ1_XXMY]]#0, %[[RZ1_XXMY]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[RZ2_XXMY:.*]]:2 = quantum.custom "RZ"(%cst) %[[CNOT2_XXMY]]#0, %[[CNOT2_XXMY]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[RZ3_XXMY:.*]]:2 = quantum.custom "RZ"(%cst) %[[RZ2_XXMY]]#0, %[[RZ2_XXMY]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[RX2_XXMY:.*]]:2 = quantum.custom "RX"(%[[NPI2_XXMY]]) %[[RZ3_XXMY]]#0, %[[RZ3_XXMY]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[RY2_XXMY:.*]]:2 = quantum.custom "RY"(%[[NPI2_XXMY]]) %[[RX2_XXMY]]#0, %[[RX2_XXMY]]#1 : !quantum.bit, !quantum.bit
+  %xxmy0, %xxmy1 = mqtopt.xxminusyy(%cst, %cst) %rzz0, %rzz1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+  // GlobalPhase doesn't take or return qubits and uses quantum.gphase directly
+  // CHECK: quantum.gphase(%cst) :
+  mqtopt.gphase(%cst) : ()
+
+  // CHECK: %[[I_OUT:.*]] = quantum.custom "Identity"() %[[RY2_XXMY]]#0 : !quantum.bit
+  %i = mqtopt.i() %xxmy0 : !mqtopt.Qubit
+
+  // CHECK: %[[U_RZ1:.*]] = quantum.custom "RZ"({{.*}}) %[[I_OUT]] : !quantum.bit
+  // CHECK: %[[U_RX1:.*]] = quantum.custom "RX"({{.*}}) %[[U_RZ1]] : !quantum.bit
+  // CHECK: %[[U_RZ2:.*]] = quantum.custom "RZ"({{.*}}) %[[U_RX1]] : !quantum.bit
+  // CHECK: %[[U_RX2:.*]] = quantum.custom "RX"({{.*}}) %[[U_RZ2]] : !quantum.bit
+  // CHECK: %[[U_OUT:.*]] = quantum.custom "RZ"({{.*}}) %[[U_RX2]] : !quantum.bit
+  %u = mqtopt.u(%cst, %cst, %cst) %i : !mqtopt.Qubit
+
+  // CHECK: %[[U2_RZ1:.*]] = quantum.custom "RZ"({{.*}}) %[[U_OUT]] : !quantum.bit
+  // CHECK: %[[U2_RX1:.*]] = quantum.custom "RX"({{.*}}) %[[U2_RZ1]] : !quantum.bit
+  // CHECK: %[[U2_RZ2:.*]] = quantum.custom "RZ"({{.*}}) %[[U2_RX1]] : !quantum.bit
+  // CHECK: %[[U2_RX2:.*]] = quantum.custom "RX"({{.*}}) %[[U2_RZ2]] : !quantum.bit
+  // CHECK: %[[U2_OUT:.*]] = quantum.custom "RZ"({{.*}}) %[[U2_RX2]] : !quantum.bit
+  %u2 = mqtopt.u2(%cst, %cst) %u : !mqtopt.Qubit
+
+  // CHECK: %[[MRES:.*]], %[[QMEAS:.*]] = quantum.measure %[[U2_OUT]] : i1, !quantum.bit
+  %q_meas, %c0_0 = "mqtopt.measure"(%u2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
   // CHECK: %[[R1:.*]] = quantum.insert %[[QREG]][ 2], %[[QMEAS]] : !quantum.reg, !quantum.bit
   // CHECK: %[[R2:.*]] = quantum.insert %[[R1]][ 1], %[[RZZ]]#0 : !quantum.reg, !quantum.bit
