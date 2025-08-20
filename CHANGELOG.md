@@ -31,7 +31,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Removed
 
-- **Breaking**: Remove `ClassicControlledOperation` from C++ library and Python package ([#1117]) ([**@denialhaag**])
+- Remove `ClassicControlledOperation` from C++ library and Python package ([#1117]) ([**@denialhaag**])
 
 ## [3.2.1] - 2025-08-01
 
