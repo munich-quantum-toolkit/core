@@ -212,7 +212,9 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
 std::size_t std::hash<qc::IfElseOperation>::operator()(
     qc::IfElseOperation const& op) const noexcept {
   std::size_t seed = 0U;
-  qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getThenOp()));
+  if (op.getThenOp() != nullptr) {
+    qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getThenOp()));
+  }
   if (op.getElseOp() != nullptr) {
     qc::hashCombine(seed, std::hash<qc::Operation>{}(*op.getElseOp()));
   }
