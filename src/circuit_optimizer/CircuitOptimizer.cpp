@@ -868,7 +868,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
                                      "branches are currently not supported.");
           }
 
-          std::uint64_t expectedValue;
+          std::uint64_t expectedValue = 0U;
           Bit cBit = 0;
           if (const auto& controlRegister = ifElse->getControlRegister();
               controlRegister.has_value()) {

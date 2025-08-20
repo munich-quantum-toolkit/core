@@ -29,6 +29,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <cstdint>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -254,7 +255,7 @@ VectorDD applyIfElseOperation(const qc::IfElseOperation& op, const VectorDD& in,
   const auto& comparisonKind = op.getComparisonKind();
 
   // determine the actual value from measurements
-  std::uint64_t expectedValue;
+  std::uint64_t expectedValue = 0U;
   auto actualValue = 0ULL;
   if (const auto& controlRegister = op.getControlRegister();
       controlRegister.has_value()) {

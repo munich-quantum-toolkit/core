@@ -191,7 +191,7 @@ std::size_t std::hash<qc::IfElseOperation>::operator()(
   }
   if (const auto& bit = op.getControlBit(); bit.has_value()) {
     qc::hashCombine(seed, bit.value());
-    qc::hashCombine(seed, op.getExpectedValueBit());
+    qc::hashCombine(seed, static_cast<std::size_t>(op.getExpectedValueBit()));
   }
   qc::hashCombine(seed, op.getComparisonKind());
   return seed;
