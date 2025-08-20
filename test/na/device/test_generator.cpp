@@ -11,7 +11,6 @@
 #include "na/device/Generator.hpp"
 
 #include <gtest/gtest.h>
-#include <iostream>
 #include <sstream>
 // clang-tidy wants to include the forward header, but we need the full
 // NOLINTNEXTLINE(misc-include-cleaner)
