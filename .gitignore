@@ -177,3 +177,8 @@ wheelhouse/
 # mlir
 
 **/.lit
+
+stage*-install/
+build_stage*/
+pgoprof/
+llvm-install/

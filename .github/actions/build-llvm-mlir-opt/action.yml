@@ -1,0 +1,241 @@
+name: "Build LLVM+MLIR Optimized (PGO+LTO+BOLT)"
+description: "Provide optimized LLVM/MLIR toolchain via prebuilt download or build (Linux in Docker manylinux_2_28, macOS/Windows host)."
+author: "mqt-core maintainers"
+
+inputs:
+  version:
+    description: "Version selector: 'latest', major (e.g., '20'), full version (e.g., '20.1.0'), or commit SHA"
+    required: true
+    default: latest
+  repo-for-assets:
+    description: "owner/repo to store prebuilt bundles"
+    required: false
+    default: "${{ github.repository }}"
+  release-tag:
+    description: "Release tag for assets"
+    required: false
+    default: "llvm-binaries-opt"
+  publish:
+    description: "Upload built bundle to releases if missing"
+    required: false
+    default: "true"
+  cache-download-only:
+    description: "If true, fail when asset is missing instead of building"
+    required: false
+    default: "false"
+  install-dir:
+    description: "Install prefix for the toolchain"
+    required: false
+    default: "${{ github.workspace }}/llvm-install"
+  targets:
+    description: "LLVM_TARGETS_TO_BUILD ('auto' to use host)"
+    required: false
+    default: "auto"
+
+outputs:
+  install-dir:
+    description: "Toolchain install prefix"
+    value: ${{ steps.outs.outputs.install_dir }}
+  llvm-dir:
+    description: "LLVM CMake package path"
+    value: ${{ steps.outs.outputs.llvm_dir }}
+  mlir-dir:
+    description: "MLIR CMake package path"
+    value: ${{ steps.outs.outputs.mlir_dir }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Ensure deps (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ "${{ runner.os }}" == "Linux" ]]; then
+          sudo apt-get update
+          sudo apt-get install -y git cmake ninja-build python3 python3-pip curl jq tar xz-utils zstd gh ccache || true
+          if ! command -v gh >/dev/null 2>&1; then
+            # fallback install of gh
+            type -p curl >/dev/null || sudo apt-get install -y curl
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt-get update && sudo apt-get install -y gh
+          fi
+          if ! command -v docker >/dev/null 2>&1; then
+            curl -fsSL https://get.docker.com | sh
+          fi
+        else
+          brew install git cmake ninja jq gnu-tar gh zstd ccache || true
+        fi
+        if ! command -v gh >/dev/null 2>&1; then echo "GitHub CLI (gh) not found" >&2; exit 1; fi
+
+    - name: Ensure deps (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        choco install -y git cmake ninja jq gh 7zip ccache zstandard gnu-tar
+
+    - name: Resolve llvm-project commit sha
+      id: resolve
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        v='${{ inputs.version }}'
+        repo='llvm/llvm-project'
+        to_commit() {
+          local tag="$1"
+          # Get ref object for tag (may be annotated)
+          type=$(gh api repos/$repo/git/ref/tags/$tag -q .object.type 2>/dev/null || echo "")
+          sha=$(gh api repos/$repo/git/ref/tags/$tag -q .object.sha 2>/dev/null || echo "")
+          if [[ -z "$sha" ]]; then echo ""; return; fi
+          if [[ "$type" == "tag" ]]; then
+            gh api repos/$repo/git/tags/$sha -q .object.sha 2>/dev/null || echo ""
+          else
+            echo "$sha"
+          fi
+        }
+        if [[ "$v" == "latest" ]]; then
+          sha=$(gh api repos/$repo/commits/main -q .sha)
+        elif [[ "$v" =~ ^[a-f0-9]{7,40}$ ]]; then
+          sha="$v"
+        else
+          # accept llvmorg-x.y.z or x.y.z
+          if [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then tag="llvmorg-$v"; else tag="$v"; fi
+          sha=$(to_commit "$tag")
+        fi
+        if [[ -z "${sha:-}" ]]; then echo "Failed to resolve version '$v' to a commit" >&2; exit 1; fi
+        echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+    - name: Compute asset key
+      id: key
+      shell: bash
+      run: |
+        set -euo pipefail
+        sha='${{ steps.resolve.outputs.sha }}'
+        os='${{ runner.os }}'
+        arch='${{ runner.arch }}'
+        in_targets='${{ inputs.targets }}'
+        # Resolve 'auto' to host target for key stability
+        case "$arch" in
+          X64) host_tgt=X86 ;;
+          ARM64) host_tgt=AArch64 ;;
+          *) host_tgt=X86 ;;
+        esac
+        if [[ "$in_targets" == "auto" || -z "$in_targets" ]]; then
+          targets="$host_tgt"
+        else
+          targets="$in_targets"
+        fi
+        sanitize() { echo "$1" | tr -c 'A-Za-z0-9_.-' '_' ; }
+        key="llvm-mlir_$(sanitize "$sha")_$(sanitize "$os")_$(sanitize "$arch")_$(sanitize "$targets")_opt"
+        echo "key=$key" >> "$GITHUB_OUTPUT"
+        # Use .tar.zst on all platforms
+        echo "asset=${key}.tar.zst" >> "$GITHUB_OUTPUT"
+
+    - name: Try download prebuilt
+      id: dl
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        asset='${{ steps.key.outputs.asset }}'
+        tag='${{ inputs.release-tag }}'
+        repo='${{ inputs.repo-for-assets }}'
+        mkdir -p '${{ inputs.install-dir }}'
+        cd '${{ inputs.install-dir }}'
+        if gh release view "$tag" -R "$repo" >/dev/null 2>&1; then
+          if gh release download "$tag" -R "$repo" -p "$asset" >/dev/null 2>&1; then
+            echo "Downloaded asset: $asset"
+            if [[ "${{ runner.os }}" == "Windows" ]]; then
+              # Extract .tar.zst with 7zip (two steps)
+              7z x -y "$asset" > NUL
+              base="${asset%.tar.zst}"
+              7z x -y "$base.tar" > NUL
+            else
+              if command -v gtar >/dev/null 2>&1; then TAR=gtar; else TAR=tar; fi
+              $TAR --zstd -xf "$asset"
+            fi
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+        fi
+        echo "found=false" >> "$GITHUB_OUTPUT"
+
+    - name: Fail (download-only)
+      if: steps.dl.outputs.found != 'true' && inputs.cache-download-only == 'true'
+      shell: bash
+      run: |
+        echo "No prebuilt available and cache-download-only is true." >&2
+        exit 1
+
+    - name: Build on Linux (Docker manylinux_2_28)
+      if: steps.dl.outputs.found != 'true' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash scripts/toolchain/linux/build.sh '${{ steps.resolve.outputs.sha }}' '${{ inputs.install-dir }}' '${{ inputs.targets }}'
+
+    - name: Build on macOS (host)
+      if: steps.dl.outputs.found != 'true' && runner.os == 'macOS'
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash scripts/toolchain/macos/build.sh '${{ steps.resolve.outputs.sha }}' '${{ inputs.install-dir }}' '${{ inputs.targets }}'
+
+    - name: Build on Windows (host)
+      if: steps.dl.outputs.found != 'true' && runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        & scripts/toolchain/windows/build.ps1 -Ref '${{ steps.resolve.outputs.sha }}' -Prefix '${{ inputs.install-dir }}' -Targets '${{ inputs.targets }}'
+
+    - name: Package and publish (Linux/macOS)
+      if: steps.dl.outputs.found != 'true' && inputs.publish == 'true' && runner.os != 'Windows'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        asset='${{ steps.key.outputs.asset }}'
+        tag='${{ inputs.release-tag }}'
+        repo='${{ inputs.repo-for-assets }}'
+        prefix='${{ inputs.install-dir }}'
+        tmp=$(mktemp -d)
+        pkg="$tmp/$asset"
+        if command -v gtar >/dev/null 2>&1; then TAR=gtar; else TAR=tar; fi
+        (cd "$prefix" && $TAR --zstd -cf "$pkg" .)
+        gh release view "$tag" -R "$repo" >/dev/null 2>&1 || gh release create "$tag" -R "$repo" -t "$tag" -n "Optimized LLVM/MLIR toolchains"
+        gh release upload "$tag" "$pkg" -R "$repo" --clobber
+
+    - name: Package and publish (Windows)
+      if: steps.dl.outputs.found != 'true' && inputs.publish == 'true' && runner.os == 'Windows'
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        $asset='${{ steps.key.outputs.asset }}'
+        $tag='${{ inputs.release-tag }}'
+        $repo='${{ inputs.repo-for-assets }}'
+        $prefix='${{ inputs.install-dir }}'
+        $pkg = Join-Path $env:TEMP $asset
+        if (Test-Path $pkg) { Remove-Item -Force $pkg }
+        Push-Location $prefix
+        try { tar -cf - . | zstd -T0 -19 -o $pkg } finally { Pop-Location }
+        if (-not (gh release view $tag -R $repo 2>$null)) { gh release create $tag -R $repo -t $tag -n 'Optimized LLVM/MLIR toolchains' }
+        gh release upload $tag $pkg -R $repo --clobber | Out-Null
+
+    - name: Set outputs
+      id: outs
+      shell: bash
+      run: |
+        set -euo pipefail
+        prefix='${{ inputs.install-dir }}'
+        echo "install_dir=$prefix" >> "$GITHUB_OUTPUT"
+        echo "llvm_dir=$prefix/lib/cmake/llvm" >> "$GITHUB_OUTPUT"
+        echo "mlir_dir=$prefix/lib/cmake/mlir" >> "$GITHUB_OUTPUT"
+        echo "LLVM_DIR=$prefix/lib/cmake/llvm" >> "$GITHUB_ENV"
+        echo "MLIR_DIR=$prefix/lib/cmake/mlir" >> "$GITHUB_ENV"
+        echo "$prefix/bin" >> "$GITHUB_PATH"
