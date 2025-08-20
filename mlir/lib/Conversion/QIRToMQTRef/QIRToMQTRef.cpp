@@ -292,11 +292,11 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
   LogicalResult
   matchAndRewrite(LLVM::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+
     // get the name of the operation and prepare the return types
     const auto fnName = op.getCallee();
     const auto qubitType = ref::QubitType::get(rewriter.getContext());
     const auto qregType = ref::QubitRegisterType::get(rewriter.getContext());
-    const auto bitType = IntegerType::get(rewriter.getContext(), 1);
     const auto operands = adaptor.getOperands();
 
     // get the new operands from the operandMap
@@ -349,41 +349,16 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
       return success();
     }
     // match measure operation
-    if (fnName == "__quantum__qis__m__body") {
-
-      bool foundUser = false;
-      for (auto* user : op->getUsers()) {
-        if (auto callOp = dyn_cast<LLVM::CallOp>(user)) {
-          // check if there is read result operation to replace the result uses
-          if (callOp.getCallee() == "__quantum__rt__read_result") {
-            rewriter.replaceOpWithNewOp<ref::MeasureOp>(callOp, bitType,
-                                                        newOperands);
-            foundUser = true;
-            rewriter.eraseOp(op);
-            break;
-          }
-        }
-      }
-      if (!foundUser) {
-        // otherwise just create the measure operation
-        rewriter.replaceOpWithNewOp<ref::MeasureOp>(op, bitType, newOperands);
-      }
-      return success();
-    }
-
     if (fnName == "__quantum__qis__mz__body") {
+      const auto bitType = IntegerType::get(rewriter.getContext(), 1);
+
+      rewriter.create<ref::MeasureOp>(op.getLoc(), bitType,
+                                      newOperands.front());
       rewriter.eraseOp(op);
       return success();
     }
-
     // match record result output operation
     if (fnName == "__quantum__rt__result_record_output") {
-      rewriter.eraseOp(op);
-      return success();
-    }
-
-    // match result update reference count operation
-    if (fnName == "__quantum__rt__result_update_reference_count") {
       rewriter.eraseOp(op);
       return success();
     }

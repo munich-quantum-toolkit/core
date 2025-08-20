@@ -84,14 +84,16 @@ LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
 struct LoweringState {
   // the zero operation that is used multiple times
   Operation* zeroOp{};
-  // the constant operation with a value of -1 that is used multiple items
-  Operation* constantOp{};
   // Index for the next measure operation
   size_t index{};
   // number of stored results in the module
   size_t numResults{};
   // number of qubits in the module
   size_t numQubits{};
+  // boolean to check if the module uses dynamically addressed qubits
+  bool isDynamicQubit{};
+  // boolean to check if the module uses dynamically addressed results
+  bool isDynamicResult{};
 };
 
 template <typename OpType>
@@ -464,15 +466,27 @@ struct ConvertMQTRefMeasureQIR final
     LLVM::LLVMFuncOp fnDecl;
 
     // create measure operation
-    fnName = "__quantum__qis__m__body";
-    qirSignature = LLVM::LLVMFunctionType::get(LLVM::LLVMPointerType::get(ctx),
-                                               LLVM::LLVMPointerType::get(ctx));
+    fnName = "__quantum__qis__mz__body";
+    qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx),
+        {LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx)});
     fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    Operation* resultOp = nullptr;
+    if (getState().numResults == 0) {
+      resultOp = getState().zeroOp;
+    } else {
+      auto constantOp = rewriter.create<LLVM::ConstantOp>(
+          op.getLoc(), rewriter.getI64IntegerAttr(
+                           static_cast<int64_t>(getState().numResults)));
+      resultOp = rewriter.create<LLVM::IntToPtrOp>(
+          op.getLoc(), LLVM::LLVMPointerType::get(ctx),
+          constantOp->getResult(0));
+    }
 
-    auto newOp = rewriter.create<LLVM::CallOp>(op->getLoc(), fnDecl,
-                                               adaptor.getInQubit());
+    rewriter.create<LLVM::CallOp>(
+        op->getLoc(), fnDecl,
+        ValueRange{adaptor.getInQubit(), resultOp->getResult(0)});
 
-    // create record result output
     fnName = "__quantum__rt__result_record_output";
     qirSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx),
@@ -480,30 +494,14 @@ struct ConvertMQTRefMeasureQIR final
     fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
 
     auto* addressOfOp = getAddressOfOp(op, rewriter, getState());
-    rewriter.create<LLVM::CallOp>(
-        op.getLoc(), fnDecl,
-        ValueRange{newOp->getResult(0), addressOfOp->getResult(0)});
 
-    // create record update reference count
-    fnName = "__quantum__rt__result_update_reference_count";
-    qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx),
-        {LLVM::LLVMPointerType::get(ctx), IntegerType::get(ctx, 32)});
-    fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    // create record result output in the last block of the main function
+    auto func = op->getParentOfType<LLVM::LLVMFuncOp>();
+    rewriter.setInsertionPointToStart(&func.back());
 
     rewriter.create<LLVM::CallOp>(
         op.getLoc(), fnDecl,
-        ValueRange{newOp->getResult(0), getState().constantOp->getResult(0)});
-
-    // create read result op and replace the old result with new result
-    fnName = "__quantum__rt__read_result";
-    qirSignature = LLVM::LLVMFunctionType::get(
-        IntegerType::get(ctx, 1), {LLVM::LLVMPointerType::get(ctx)});
-    fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
-
-    auto resultOp = rewriter.create<LLVM::CallOp>(
-        op->getLoc(), fnDecl, ValueRange{newOp->getResult(0)});
-    op->replaceUsesOfWith(op->getResult(0), resultOp.getResult());
+        ValueRange{resultOp->getResult(0), addressOfOp->getResult(0)});
     rewriter.eraseOp(op);
 
     // increase the number of required results
@@ -602,43 +600,6 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     // add jump from irreversibleMain to endBlock
     builder.setInsertionPointToEnd(irreversibleMainBlock);
     builder.create<LLVM::BrOp>(main->getLoc(), endBlock);
-  }
-
-  /**
-   * @brief Collects the existing operations for the measure operation
-   * conversion
-   *
-   * @param main The main function of the module.
-   * @param operations The vector to store the found addressOf operations.
-   * @param ctx The context of the module.
-   * @return The LLVM constant operation with the value -1.
-   */
-  static Operation* collectMeasureConstants(LLVM::LLVMFuncOp& main,
-
-                                            MLIRContext* ctx) {
-    // get the first block in the main function
-    auto& firstBlock = *(main.getBlocks().begin());
-    Operation* result = nullptr;
-    // walk through the block and get the -1 constant value
-    firstBlock.walk([&](Operation* op) {
-      if (auto constantOp = dyn_cast<LLVM::ConstantOp>(op)) {
-        if (auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue())) {
-          // check if the value is -1
-          if (intAttr.getInt() == -1) {
-            result = op;
-          }
-        }
-      }
-    });
-    // create constant -1 value if there is none
-    if (result == nullptr) {
-      OpBuilder builder(main.getBody());
-      builder.setInsertionPointToStart(&firstBlock);
-      result = builder.create<LLVM::ConstantOp>(main->getLoc(),
-                                                IntegerType::get(ctx, 32),
-                                                builder.getI32IntegerAttr(-1));
-    }
-    return result;
   }
 
   /**
@@ -745,10 +706,7 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     auto main = getMainFunction(module);
     // make sure that the blocks for the QIR base profile exist
     ensureBlocks(main);
-    // get the operations for measure conversions and store them in the
-    // loweringstate struct
     LoweringState state;
-    state.constantOp = collectMeasureConstants(main, context);
     // add the initialize operation
     addInitialize(main, context, &state);
 
