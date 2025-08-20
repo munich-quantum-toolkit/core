@@ -267,9 +267,11 @@ struct MQTOptToMQTRef final : impl::MQTOptToMQTRefBase<MQTOptToMQTRef> {
     target.addIllegalDialect<opt::MQTOptDialect>();
     target.addLegalDialect<ref::MQTRefDialect>();
 
-    patterns.add<ConvertMQTOptAlloc, ConvertMQTOptDealloc, ConvertMQTOptInsert,
-                 ConvertMQTOptExtract, ConvertMQTOptMeasure, ConvertMQTOptReset,
-                 ConvertMQTOptQubit>(typeConverter, context);
+    patterns.add<ConvertMQTOptAlloc, ConvertMQTOptDealloc,
+                 ConvertMQTOptAllocQubit, ConvertMQTOptDeallocQubit,
+                 ConvertMQTOptInsert, ConvertMQTOptExtract,
+                 ConvertMQTOptMeasure, ConvertMQTOptReset, ConvertMQTOptQubit>(
+        typeConverter, context);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)

@@ -414,6 +414,8 @@ struct MQTRefToMQTOpt final : impl::MQTRefToMQTOptBase<MQTRefToMQTOpt> {
     target.addLegalDialect<opt::MQTOptDialect>();
     patterns.add<ConvertMQTRefAlloc>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefDealloc>(typeConverter, context, &state);
+    patterns.add<ConvertMQTRefAllocQubit>(typeConverter, context, &state);
+    patterns.add<ConvertMQTRefDeallocQubit>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefExtract>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefMeasure>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefReset>(typeConverter, context, &state);
