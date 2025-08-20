@@ -178,6 +178,36 @@ struct ConvertMQTRefDealloc final
   }
 };
 
+struct ConvertMQTRefAllocQubit final
+    : StatefulOpConversionPattern<ref::AllocQubitOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ref::AllocQubitOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto& refQubit = op.getQubit();
+    auto optOp = rewriter.replaceOpWithNewOp<opt::AllocQubitOp>(op);
+    const auto& optQubit = optOp.getQubit();
+    getState().qubitMap.try_emplace(refQubit, optQubit);
+    return success();
+  }
+};
+
+struct ConvertMQTRefDeallocQubit final
+    : StatefulOpConversionPattern<ref::DeallocQubitOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ref::DeallocQubitOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto& refQubit = op.getQubit();
+    const auto& optQubit = getState().qubitMap[refQubit];
+    rewriter.replaceOpWithNewOp<opt::DeallocQubitOp>(op, optQubit);
+    getState().qubitMap.erase(refQubit);
+    return success();
+  }
+};
+
 struct ConvertMQTRefExtract final
     : StatefulOpConversionPattern<ref::ExtractOp> {
   using StatefulOpConversionPattern<
