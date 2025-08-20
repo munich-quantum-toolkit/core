@@ -185,17 +185,6 @@ MatrixDD getDD(const qc::Operation& op, Package& dd,
     return e;
   }
 
-  if (op.isIfElseOperation()) {
-    const auto& ifElse = dynamic_cast<const qc::IfElseOperation&>(op);
-    auto* thenOp = ifElse.getThenOp();
-    auto* elseOp = ifElse.getElseOp();
-    if (thenOp == nullptr || elseOp != nullptr) {
-      throw std::runtime_error("If-else operations with non-trivial else "
-                               "branches are currently not supported.");
-    }
-    return getDD(*thenOp, dd, permutation, inverse);
-  }
-
   assert(op.isNonUnitaryOperation());
   throw std::invalid_argument("DD for non-unitary operation not available!");
 }
