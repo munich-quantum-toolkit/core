@@ -736,16 +736,18 @@ void CircuitOptimizer::eliminateResets(QuantumComputation& qc) {
                            dynamic_cast<IfElseOperation*>(compOpIt->get());
                        ifElse != nullptr) {
               auto* thenOp = ifElse->getThenOp();
+              auto& thenControls = thenOp->getControls();
+              changeControls(thenControls, replacementMap);
+              auto& thenTargets = thenOp->getTargets();
+              changeTargets(thenTargets, replacementMap);
+
               auto* elseOp = ifElse->getElseOp();
-              if (thenOp == nullptr || elseOp != nullptr) {
-                throw std::runtime_error(
-                    "If-else operations with non-trivial else branches are "
-                    "currently not supported.");
+              if (elseOp != nullptr) {
+                auto& elseControls = elseOp->getControls();
+                changeControls(elseControls, replacementMap);
+                auto& elseTargets = elseOp->getTargets();
+                changeTargets(elseTargets, replacementMap);
               }
-              auto& targets = thenOp->getTargets();
-              auto& controls = thenOp->getControls();
-              changeTargets(targets, replacementMap);
-              changeControls(controls, replacementMap);
             } else if ((*compOpIt)->isNonUnitaryOperation()) {
               auto& targets = (*compOpIt)->getTargets();
               changeTargets(targets, replacementMap);
@@ -762,15 +764,18 @@ void CircuitOptimizer::eliminateResets(QuantumComputation& qc) {
       } else if (auto* ifElse = dynamic_cast<IfElseOperation*>(it->get());
                  ifElse != nullptr) {
         auto* thenOp = ifElse->getThenOp();
+        auto& thenControls = thenOp->getControls();
+        changeControls(thenControls, replacementMap);
+        auto& thenTargets = thenOp->getTargets();
+        changeTargets(thenTargets, replacementMap);
+
         auto* elseOp = ifElse->getElseOp();
-        if (thenOp == nullptr || elseOp != nullptr) {
-          throw std::runtime_error("If-else operations with non-trivial else "
-                                   "branches are currently not supported.");
+        if (elseOp != nullptr) {
+          auto& elseControls = elseOp->getControls();
+          changeControls(elseControls, replacementMap);
+          auto& elseTargets = elseOp->getTargets();
+          changeTargets(elseTargets, replacementMap);
         }
-        auto& targets = thenOp->getTargets();
-        auto& controls = thenOp->getControls();
-        changeTargets(targets, replacementMap);
-        changeControls(controls, replacementMap);
       } else if ((*it)->isNonUnitaryOperation()) {
         auto& targets = (*it)->getTargets();
         changeTargets(targets, replacementMap);
@@ -861,13 +866,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
 
         if (auto* ifElse = dynamic_cast<IfElseOperation*>(opIt->get());
             ifElse != nullptr) {
-          auto* thenOp = ifElse->getThenOp();
-          auto* elseOp = ifElse->getElseOp();
-          if (thenOp == nullptr || elseOp != nullptr) {
-            throw std::runtime_error("If-else operations with non-trivial else "
-                                     "branches are currently not supported.");
-          }
-
+          // determine control bit
           std::uint64_t expectedValue = 0U;
           Bit cBit = 0;
           if (const auto& controlRegister = ifElse->getControlRegister();
@@ -876,9 +875,9 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
             expectedValue = ifElse->getExpectedValueRegister();
             if (controlRegister->getSize() != 1) {
               throw std::runtime_error(
-                  "If-else operations targeted at more than one bit are "
-                  "currently not supported. Try decomposing the operation into "
-                  "individual contributions.");
+                  "If-else operations controlled by more than one classical "
+                  "bit are currently not supported. Try decomposing the "
+                  "operation into individual contributions.");
             }
             cBit = controlRegister->getStartIndex();
           }
@@ -889,7 +888,7 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
             cBit = controlBit.value();
           }
 
-          // if this is not the classical bit that is measured, continue
+          // continue if the control bit is not the bit being measured
           if (cBit != measurementBit) {
             if (!operation->actsOn(measurementQubit)) {
               ++currentInsertionPoint;
@@ -898,36 +897,69 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
             continue;
           }
 
-          // get the underlying operation
-          const auto* standardOp = dynamic_cast<StandardOperation*>(thenOp);
-          if (standardOp == nullptr) {
+          // determine the appropriate control to add
+          const auto controlQubit = measurementQubit;
+          const auto thenControlType =
+              (expectedValue == 1U) ? Control::Type::Pos : Control::Type::Neg;
+          const auto elseControlType =
+              (expectedValue == 1U) ? Control::Type::Neg : Control::Type::Pos;
+
+          // modify the then-operation
+          auto* thenOp = ifElse->getThenOp();
+          const auto* standardThenOp = dynamic_cast<StandardOperation*>(thenOp);
+          if (standardThenOp == nullptr) {
             std::stringstream ss{};
-            ss << "Then branch of if-else operation is not a "
+            ss << "The then-operation of the if-else operation is not a "
                   "StandardOperation.\n";
             thenOp->print(ss, qc.getNqubits());
             throw std::runtime_error(ss.str());
           }
 
-          // get necessary information for reconstructing the operation
-          const auto type = standardOp->getType();
-          const auto targs = standardOp->getTargets();
-          for (const auto& target : targs) {
-            if (target == measurementQubit) {
+          const auto thenTargets = standardThenOp->getTargets();
+          for (const auto& thenTarget : thenTargets) {
+            if (thenTarget == measurementQubit) {
               throw std::runtime_error(
                   "Implicit reset operation in circuit detected. Measuring a "
                   "qubit and then targeting the same qubit with an if-else "
-                  "operation is not allowed at the moment.");
+                  "operation is currently not supported.");
             }
           }
+          auto thenControls = standardThenOp->getControls();
+          thenControls.emplace(controlQubit, thenControlType);
+          const auto thenType = standardThenOp->getType();
+          const auto thenParameters = standardThenOp->getParameter();
 
-          // determine the appropriate control to add
-          auto controls = standardOp->getControls();
-          const auto controlQubit = measurementQubit;
-          const auto controlType =
-              (expectedValue == 1U) ? Control::Type::Pos : Control::Type::Neg;
-          controls.emplace(controlQubit, controlType);
+          // modify the else-operation
+          auto* elseOp = ifElse->getElseOp();
+          Controls elseControls;
+          Targets elseTargets;
+          OpType elseType;
+          std::vector<fp> elseParameters;
+          if (elseOp != nullptr) {
+            const auto* standardElseOp =
+                dynamic_cast<StandardOperation*>(elseOp);
+            if (standardElseOp == nullptr) {
+              std::stringstream ss{};
+              ss << "The else-operation of the if-else operation is not a "
+                    "StandardOperation.\n";
+              thenOp->print(ss, qc.getNqubits());
+              throw std::runtime_error(ss.str());
+            }
 
-          const auto parameters = standardOp->getParameter();
+            elseTargets = standardElseOp->getTargets();
+            for (const auto& elseTarget : elseTargets) {
+              if (elseTarget == measurementQubit) {
+                throw std::runtime_error(
+                    "Implicit reset operation in circuit detected. Measuring a "
+                    "qubit and then targeting the same qubit with an if-else "
+                    "operation is currently not supported.");
+              }
+            }
+            elseControls = standardElseOp->getControls();
+            elseControls.emplace(controlQubit, elseControlType);
+            elseType = standardElseOp->getType();
+            elseParameters = standardElseOp->getParameter();
+          }
 
           // Remove the if-else operation carefully and handle iterator
           // invalidation. If the current insertion point is the same as the
@@ -946,15 +978,25 @@ void CircuitOptimizer::deferMeasurements(QuantumComputation& qc) {
             currentInsertionPoint = opIt;
           }
 
+          // insert the new operations
           itInvalidated = (it >= currentInsertionPoint);
-          // insert the new operation (invalidated all pointer onwards)
+
           currentInsertionPoint = qc.insert(
-              currentInsertionPoint, std::make_unique<StandardOperation>(
-                                         controls, targs, type, parameters));
+              currentInsertionPoint,
+              std::make_unique<StandardOperation>(thenControls, thenTargets,
+                                                  thenType, thenParameters));
+          if (elseOp != nullptr) {
+            ++currentInsertionPoint;
+            currentInsertionPoint = qc.insert(
+                currentInsertionPoint,
+                std::make_unique<StandardOperation>(elseControls, elseTargets,
+                                                    elseType, elseParameters));
+          }
 
           if (itInvalidated) {
             it = currentInsertionPoint;
           }
+
           // advance just after the currently inserted operation
           ++currentInsertionPoint;
           // the inner loop also has to restart from here due to the
