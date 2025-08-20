@@ -10,11 +10,11 @@
 
 include(FetchContent)
 
-if(DEFINED Python_EXECUTABLE AND Python_EXECUTABLE)
+if(DEFINED Python3_EXECUTABLE AND Python3_EXECUTABLE)
   set(CATALYST_VERSION 0.12.0)
   # Check if the pennylane-catalyst package is installed in the python environment.
   execute_process(
-    COMMAND "${Python_EXECUTABLE}" -c "import catalyst; print(catalyst.__version__)"
+    COMMAND "${Python3_EXECUTABLE}" -c "import catalyst; print(catalyst.__version__)"
     OUTPUT_STRIP_TRAILING_WHITESPACE
     OUTPUT_VARIABLE FOUND_CATALYST_VERSION)
   if(FOUND_CATALYST_VERSION)
@@ -28,7 +28,7 @@ if(DEFINED Python_EXECUTABLE AND Python_EXECUTABLE)
     else()
       # Detect the installed catalyst include files.
       execute_process(
-        COMMAND "${Python_EXECUTABLE}" -c
+        COMMAND "${Python3_EXECUTABLE}" -c
                 "import catalyst.utils.runtime_environment as c; print(c.get_include_path())"
         OUTPUT_STRIP_TRAILING_WHITESPACE
         OUTPUT_VARIABLE CATALYST_INCLUDE_DIRS)
@@ -75,7 +75,7 @@ if(DEFINED Python_EXECUTABLE AND Python_EXECUTABLE)
 else()
   message(
     FATAL_ERROR
-      "Python executable is not defined. Please set the Python_EXECUTABLE variable to the path of the Python interpreter."
+      "Python executable is not defined. Please set the Python3_EXECUTABLE variable to the path of the Python interpreter."
   )
 endif()
 

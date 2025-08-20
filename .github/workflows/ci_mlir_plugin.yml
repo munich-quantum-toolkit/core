@@ -118,7 +118,7 @@ jobs:
           cmake -S . \
             -B "$BUILD_DIR" \
             -DLLVM_EXTERNAL_LIT=$(which lit) \
-            -DPython_EXECUTABLE=$(which python)
+            -DPython3_EXECUTABLE=$(which python)
 
       # Run the MLIR LIT tests
       - name: Run LIT tests
