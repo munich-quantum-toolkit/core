@@ -54,8 +54,10 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
     }
 
     if (DIAGONAL_GATES.count(name) == 1) {
-      rewriter.replaceAllUsesWith(qubitVariable,
-                                  predecessorUnitary.getInQubits().front());
+      for (auto outQubit : predecessorUnitary.getAllOutQubits()) {
+        auto inQubit = predecessorUnitary.getCorrespondingInput(outQubit);
+        rewriter.replaceAllUsesWith(outQubit, inQubit);
+      }
       rewriter.eraseOp(predecessor);
       return mlir::success();
     }
