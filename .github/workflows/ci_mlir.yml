@@ -91,7 +91,7 @@ jobs:
 
       # build the project and run the tests
       - name: Build MLIR components and directly run lit tests
-        run: cmake --build build --config Release --target check-quantum-opt
+        run: cmake --build build --config Release --target mqt-core-mlir-lit-test
 
       # build the MLIR unittests
       - name: Build MLIR unittests
@@ -204,7 +204,7 @@ jobs:
           Get-Content "C:\Windows\quantum-opt"
           Write-Output "Batch file created at C:\Windows\quantum-opt pointing to $targetPath"
 
-          cmake --build build --config Release --target check-quantum-opt
+          cmake --build build --config Release --target mqt-core-mlir-lit-test
 
       # build the MLIR unittests
       - name: Build MLIR unittests
@@ -277,7 +277,7 @@ jobs:
 
       # Build and run tests
       - name: Build MLIR components and directly run lit tests
-        run: cmake --build build --config Release --target check-quantum-opt
+        run: cmake --build build --config Release --target mqt-core-mlir-lit-test
 
       # Build the MLIR unittests
       - name: Build MLIR unittests
@@ -370,7 +370,7 @@ jobs:
 
       # build the project and run the tests with coverage
       - name: Build MLIR components and run tests with coverage
-        run: cmake --build build --config Debug --target check-quantum-opt
+        run: cmake --build build --config Debug --target mqt-core-mlir-lit-test
 
       # build the MLIR unittests
       - name: Build MLIR unittests

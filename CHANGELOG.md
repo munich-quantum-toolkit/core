@@ -12,27 +12,26 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - ✨ Add `IfElseOperation` to C++ library and Python package to support Qiskit's `IfElseOp` ([#1117]) ([**@denialhaag**], [**@lavanya-m-k**])
-- ✨ Add `qubit` operation to the `MQTOpt` dialect for static qubit addressing ([#1116]) ([**@MatthiasReumann**])
+- ✨ Add `allocQubit` and `deallocQubit` operations for dynamically working with single qubits to the MLIR dialects ([#1139]) ([**@DRovara**], [**@burgholzer**])
+- ✨ Add `qubit` operation for static qubit addressing to the MLIR dialects ([#1098], [#1116]) ([**@MatthiasReumann**])
 - ✨ Add MQT's implementation of a QDMI Driver ([#1010]) ([**@ystade**])
 - ✨ Add a copy of the NA QDMI Device that is always a shared library ([#1010]) ([**@ystade**])
 - ✨ Add translation from `QuantumComputation` to the `MQTRef` MLIR dialect ([#1099]) ([**@denialhaag**], [**@burgholzer**])
-- ✨ Add `qubit` operation to the `MQTRef` (previously `MQTDyn`) dialect for static qubit addressing ([#1098]) ([**@MatthiasReumann**])
-- ✨ Add `reset` operations to the `MQTDyn` and `MQTOpt` MLIR dialects ([#1106]) ([**@DRovara**])
-- ♻️ Update the `measure` operations in the MLIR dialects to no longer support more than one qubit being measured at once ([#1106]) ([**@DRovara**])
-- ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996]) ([**@ystade**])
+- ✨ Add `reset` operations to the MLIR dialects ([#1106]) ([**@DRovara**])
+- ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996], [#1010]) ([**@ystade**])
 
 ### Changed
 
-- **Breaking**: 🚚 Rename `XXminusYY` to `XXminusYYOp` and `XXplusYY` to `XXplusYYOp` in `MQTRef` and `MQTOpt` MLIR dialects ([#1099]) ([**@denialhaag**])
-- **Breaking**: 🚚 Rename `MQTDyn` MLIR dialect to `MQTRef` ([#1098]) ([**@MatthiasReumann**])
+- 🚸 Add custom assembly format for operations in the MLIR dialects ([#1139]) ([**@burgholzer**])
+- 🚸 Enable `InferTypeOpInterface` in the MLIR dialects to reduce explicit type information ([#1139]) ([**@burgholzer**])
+- 🚚 Rename `check-quantum-opt` test target to `mqt-core-mlir-lit-test` ([#1139]) ([**@burgholzer**])
+- ♻️ Update the `measure` operations in the MLIR dialects to no longer support more than one qubit being measured at once ([#1106]) ([**@DRovara**])
+- 🚚 Rename `XXminusYY` to `XXminusYYOp` and `XXplusYY` to `XXplusYYOp` in MLIR dialects ([#1099]) ([**@denialhaag**])
+- 🚚 Rename `MQTDyn` MLIR dialect to `MQTRef` ([#1098]) ([**@MatthiasReumann**])
 
 ### Removed
 
 - **Breaking**: Remove `ClassicControlledOperation` from C++ library and Python package ([#1117]) ([**@denialhaag**])
-
-### Fixed
-
-- ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing in the Python wheel ([#1010]) ([**@ystade**])
 
 ## [3.2.1] - 2025-08-01
 
@@ -172,6 +171,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1139]: https://github.com/munich-quantum-toolkit/core/pull/1139
 [#1116]: https://github.com/munich-quantum-toolkit/core/pull/1116
 [#1106]: https://github.com/munich-quantum-toolkit/core/pull/1106
 [#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099

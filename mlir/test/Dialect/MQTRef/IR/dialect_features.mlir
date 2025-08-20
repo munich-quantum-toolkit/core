@@ -35,6 +35,39 @@ module {
 }
 
 // -----
+// This test checks if the AllocQubitOp is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testAllocQubitOp
+    func.func @testAllocQubitOp() {
+        // CHECK: %[[Q0:.*]] = mqtref.allocQubit
+        // CHECK: %[[Q1:.*]] = mqtref.allocQubit
+
+        %q0 = "mqtref.allocQubit"() : () -> !mqtref.Qubit
+        %q1 = mqtref.allocQubit
+        return
+    }
+}
+
+// -----
+// This test checks if the DeallocQubitOp is parsed and handled correctly.
+module {
+    // CHECK-LABEL: func.func @testDeallocQubitOp
+    func.func @testDeallocQubitOp() {
+        // CHECK: %[[Q0:.*]] = mqtref.allocQubit
+        // CHECK: %[[Q1:.*]] = mqtref.allocQubit
+        // CHECK: mqtref.deallocQubit %[[Q0]]
+        // CHECK: mqtref.deallocQubit %[[Q1]]
+
+        %q0 = "mqtref.allocQubit"() : () -> !mqtref.Qubit
+        %q1 = mqtref.allocQubit
+
+        "mqtref.deallocQubit"(%q0) : (!mqtref.Qubit) -> ()
+        mqtref.deallocQubit %q1
+        return
+    }
+}
+
+// -----
 // This test checks if the DeallocOp is parsed and handled correctly.
 module {
     // CHECK-LABEL: func.func @testDeallocOp

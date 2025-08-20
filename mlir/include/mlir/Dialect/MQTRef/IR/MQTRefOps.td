@@ -9,9 +9,10 @@
 #ifndef MQTREF_OPS
 #define MQTREF_OPS
 
-include "mlir/IR/OpBase.td"
-include "mlir/IR/EnumAttr.td"
 include "mlir/IR/DialectBase.td"
+include "mlir/IR/EnumAttr.td"
+include "mlir/IR/OpBase.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 include "mlir/Dialect/Common/IR/CommonTraits.td"
@@ -151,6 +152,32 @@ def ResetOp : GateOp<"reset", []> {
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTRefOp<mnemonic, traits>;
 
+def AllocQubitOp : ResourceOp<"allocQubit"> {
+    let summary = "Allocates a single qubit";
+
+    let description = [{
+        Allocates a single qubit in the |0> state.
+        The qubit can be used in operations after allocation.
+        It must be deallocated with the `deallocQubit` operation.
+
+        ### Example (custom syntax)
+        ```mlir
+        %q = mqtref.allocQubit
+        ```
+
+        ### Example (generic syntax)
+        ```mlir
+        %q = "mqtref.allocQubit"() : () -> !mqtref.Qubit
+        ```
+
+        Both are equivalent; the first form is enabled by this op's `assemblyFormat`.
+    }];
+
+    let arguments = (ins);
+    let results = (outs QubitType:$qubit);
+    let assemblyFormat = "attr-dict";
+}
+
 def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
     let summary = "Allocates a qubit register";
 
@@ -178,6 +205,32 @@ def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
     let results = (outs
         QregType:$qreg
     );
+}
+
+def DeallocQubitOp : ResourceOp<"deallocQubit"> {
+    let summary = "Deallocates a single qubit";
+
+    let description = [{
+        Deallocates a single qubit that was previously allocated with the
+        `allocQubit` operation. After this operation, the qubit is no longer
+        valid and cannot be used in further operations.
+
+        ### Example (custom syntax)
+        ```mlir
+        mqtref.deallocQubit %q
+        ```
+
+        ### Example (generic syntax)
+        ```mlir
+        "mqtref.deallocQubit"(%0) : (!mqtref.Qubit) -> ()
+        ```
+
+        Both are equivalent; the first form is enabled by this op's `assemblyFormat`.
+    }];
+
+    let arguments = (ins QubitType:$qubit);
+    let results = (outs);
+    let assemblyFormat = "$qubit attr-dict";
 }
 
 def DeallocOp : ResourceOp<"deallocQubitRegister"> {
