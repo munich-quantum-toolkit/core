@@ -31,6 +31,38 @@ static const std::unordered_set<std::string> DIAGONAL_GATES = {
     "i", "z", "s", "sdg", "t", "tdg", "p", "rz"};
 
 /**
+ * @brief Moves a measurement before the given gate.
+ * @param gate The UnitaryInterface gate to swap with the measurement.
+ * @param measurement The MeasureOp measurement to swap with the gate.
+ * @param rewriter The pattern rewriter to use for the swap operation.
+ */
+static void swapGateWithMeasurement(UnitaryInterface gate,
+                                    MeasureOp measurement,
+                                    mlir::PatternRewriter& rewriter) {
+  auto measurementInput = measurement.getInQubit();
+  auto gateInput = gate.getCorrespondingInput(measurementInput);
+  rewriter.replaceUsesWithIf(measurementInput, gateInput,
+                             [&](mlir::OpOperand& operand) {
+                               // We only replace the single use by the
+                               // measure op
+                               return operand.getOwner() == measurement;
+                             });
+  rewriter.replaceUsesWithIf(gateInput, measurement.getOutQubit(),
+                             [&](mlir::OpOperand& operand) {
+                               // We only replace the single use by the
+                               // predecessor
+                               return operand.getOwner() == gate;
+                             });
+  rewriter.replaceUsesWithIf(measurement.getOutQubit(), measurementInput,
+                             [&](mlir::OpOperand& operand) {
+                               // All further uses of the measurement output now
+                               // use the gate output
+                               return operand.getOwner() != gate;
+                             });
+  rewriter.moveOpBefore(measurement, gate);
+}
+
+/**
  * @brief This pattern is responsible for lifting measurements above any phase
  * gates.
  */
@@ -54,11 +86,7 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
     }
 
     if (DIAGONAL_GATES.count(name) == 1) {
-      for (auto outQubit : predecessorUnitary.getAllOutQubits()) {
-        auto inQubit = predecessorUnitary.getCorrespondingInput(outQubit);
-        rewriter.replaceAllUsesWith(outQubit, inQubit);
-      }
-      rewriter.eraseOp(predecessor);
+      swapGateWithMeasurement(predecessorUnitary, op, rewriter);
       return mlir::success();
     }
 
@@ -107,9 +135,7 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
 
     if (INVERTING_GATES.count(name) == 1 &&
         predecessorUnitary.getAllInQubits().size() == 1) {
-      rewriter.replaceAllUsesWith(qubitVariable,
-                                  predecessorUnitary.getInQubits().front());
-      rewriter.eraseOp(predecessor);
+      swapGateWithMeasurement(predecessorUnitary, op, rewriter);
       rewriter.setInsertionPointAfter(op);
       const mlir::Value trueConstant = rewriter.create<mlir::arith::ConstantOp>(
           op.getLoc(), rewriter.getBoolAttr(true));
