@@ -369,10 +369,9 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
                          ? DenseBoolArrayAttr::get(rewriter.getContext(),
                                                    *op.getParamsMask())
                          : DenseBoolArrayAttr{};
-
+    SmallVector<Value> staticParamValues;
     // check for static parameters
     if (staticParams) {
-      SmallVector<Value> staticParamValues;
       // set the insertionpoint to the beginning of the first block
       auto funcOp = op->template getParentOfType<LLVM::LLVMFuncOp>();
       auto& firstBlock = *(funcOp.getBlocks().begin());
@@ -396,10 +395,9 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
         // staticParameters do
         params = ValueRange{staticParamValues};
       } else {
-
         SmallVector<Value> newParams;
-        auto paramIndex = 0;
         auto staticParamIndex = 0;
+        auto paramIndex = 0;
         // merge the parameter values depending on the paramMask
         for (auto isStaticParam : paramMask.asArrayRef()) {
           // push_back the values as Value is a wrapper
