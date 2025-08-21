@@ -186,25 +186,12 @@ jobs:
           cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_MQT_CORE_MLIR=ON `
-            -DCMAKE_PREFIX_PATH=${{ github.workspace }}\llvm-install `
+            -DMLIR_DIR=${{ github.workspace }}\llvm-install\lib\cmake\mlir `
             -DLLVM_EXTERNAL_LIT=${{ github.workspace }}\.venv\Scripts\lit.exe
 
       # build the project and run the lit tests
       - name: Build MLIR components and directly run lit tests
-        run: |
-          cmake --build build --config Release --target quantum-opt
-
-          $targetPath = "${{ github.workspace }}\\build\\mlir\\tools\\quantum-opt\\Release\\quantum-opt.exe"
-          $batchContent = '"{0}" "$@"' -f $targetPath
-
-          # Write to a directory that's definitely in PATH
-          $batchContent | Out-File -FilePath "C:\Windows\quantum-opt" -Encoding ascii
-
-          # Verify the batch file
-          Get-Content "C:\Windows\quantum-opt"
-          Write-Output "Batch file created at C:\Windows\quantum-opt pointing to $targetPath"
-
-          cmake --build build --config Release --target mqt-core-mlir-lit-test
+        run: cmake --build build --config Release --target mqt-core-mlir-lit-test
 
       # build the MLIR unittests
       - name: Build MLIR unittests
