@@ -521,6 +521,53 @@ def test_if_else_operation() -> None:
     assert qasm_input == qasm_output
 
 
+def test_if_else_operation_register() -> None:
+    """Test import of if-else operation on register."""
+    from qiskit.qasm3 import dumps
+
+    then_qc = QuantumCircuit(1)
+    then_qc.x(0)
+
+    else_qc = QuantumCircuit(1)
+    else_qc.y(0)
+
+    qc = QuantumCircuit(1, 1)
+    qc.if_else(
+        (qc.cregs[0], 1),
+        then_qc,
+        else_qc,
+        [qc.qubits[0]],
+        [],
+    )
+    print(qc)
+
+    mqt_qc = qiskit_to_mqt(qc)
+    print(mqt_qc)
+    assert mqt_qc.num_qubits == 1
+    assert mqt_qc.num_ops == 1
+    if_else_operation = mqt_qc[0]
+    assert isinstance(if_else_operation, IfElseOperation)
+    assert if_else_operation.control_register is not None
+    assert if_else_operation.control_bit is None
+    assert if_else_operation.expected_value_register == 1
+    assert if_else_operation.comparison_kind == ComparisonKind.eq
+    then_operation = if_else_operation.then_operation
+    assert isinstance(then_operation, StandardOperation)
+    then_operation.type_ = OpType.x
+    else_operation = if_else_operation.else_operation
+    assert isinstance(else_operation, StandardOperation)
+    else_operation.type_ = OpType.y
+
+    qiskit_qc = mqt_to_qiskit(mqt_qc)
+    print(qiskit_qc)
+
+    qasm_input = dumps(qc)
+
+    qasm_output = dumps(qiskit_qc)
+
+    assert qasm_input == qasm_output
+
+
 def test_trivial_initial_layout_multiple_registers() -> None:
     """Test that trivial initial layout import works with multiple registers.
 
