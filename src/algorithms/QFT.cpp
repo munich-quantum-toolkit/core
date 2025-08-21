@@ -17,7 +17,6 @@
 
 #include <cmath>
 #include <string>
-#include <vector>
 
 namespace qc {
 
@@ -86,8 +85,7 @@ auto createIterativeQFT(const Qubit nq) -> QuantumComputation {
       } else {
         const auto powerOfTwo = std::pow(2., i - j + 1);
         const auto lambda = PI / powerOfTwo;
-        const auto params = std::vector<fp>{lambda};
-        qc.if_(P, 0, d, true, Eq, params);
+        qc.if_(P, 0, d, true, Eq, {lambda});
       }
     }
 
