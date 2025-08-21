@@ -154,7 +154,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
                        std::vector<mlir::Value>& currentQubitVariables) const {
 
     // Add the operation to the QuantumComputation.
-    qc::OpType opType; // NOLINT(*-init-variables)
+    qc::OpType opType = qc::OpType::None;
 
     try {
       const std::string type = op->getName().stripDialect().str();
