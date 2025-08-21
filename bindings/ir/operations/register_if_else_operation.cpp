@@ -96,7 +96,7 @@ void registerIfElseOperation(const py::module& m) {
                                &qc::IfElseOperation::getComparisonKind);
   ifElse.def("__repr__", [](const qc::IfElseOperation& op) {
     std::stringstream ss;
-    ss << "IfElseOperation(<...op...>, ";
+    ss << "IfElseOperation(<...then-op...>, <...else-op...>, ";
     if (const auto& controlReg = op.getControlRegister();
         controlReg.has_value()) {
       ss << "control_register=ClassicalRegister(" << controlReg->getSize()
