@@ -128,22 +128,38 @@ void addModuleQubits(Operation* moduleLike, const uint64_t nqubits,
   }
 }
 
-/// @brief Absorb single qubit gates on a wire for a single qubit @p q.
-Value absorb1QGates(Value q) {
-  assert(!q.getUsers().empty());
+/// @brief Absorb single-qubit operations on a wire for all qubits in @p front.
+llvm::DenseSet<Value> absorbSingleQubitOps(const llvm::DenseSet<Value>& front) {
+  llvm::DenseSet<Value> result;
 
-  Operation* nextOnWire = *(q.getUsers().begin());
-  auto unitary = dyn_cast<UnitaryInterface>(nextOnWire);
+  auto absorb = [](Value q) -> Value {
+    while (!q.getUsers().empty()) {
+      Operation* nextOnWire = *q.getUsers().begin();
+      if (auto reset = dyn_cast<ResetOp>(nextOnWire)) {
+        q = reset.getOutQubit();
+      } else if (auto unitary = dyn_cast<UnitaryInterface>(nextOnWire)) {
+        if (!unitary.getAllCtrlInQubits().empty()) {
+          break;
+        }
+        q = unitary.getOutQubits().front(); // TODO: GPhase Gate.
+      } else if (auto measure = dyn_cast<MeasureOp>(nextOnWire)) {
+        q = measure.getOutQubit();
+      } else { // Insert.
+        assert(dyn_cast<InsertOp>(nextOnWire));
+        return nullptr;
+      }
+    }
 
-  if (!unitary) {
     return q;
+  };
+
+  for (const Value& exec : front) {
+    if (auto q = absorb(exec)) {
+      result.insert(q);
+    }
   }
 
-  if (!unitary.getAllCtrlInQubits().empty()) {
-    return q;
-  }
-
-  return absorb1QGates(unitary.getOutQubits().front());
+  return result;
 }
 
 LogicalResult spanAndFold(Operation* base,
@@ -184,31 +200,40 @@ LogicalResult spanAndFold(Operation* base,
       // Extract phase over.
       // Mapping circuit until inserts arrive.
 
-      while (successor &&
-             !dyn_cast<InsertOp>(
-                 successor)) { // This is not right. Walking Ops twice.
-        auto absorbed = llvm::map_range(state.executables(), absorb1QGates);
-        state.executables() =
-            llvm::DenseSet<Value>(absorbed.begin(), absorbed.end());
+      while (true) {
+        state.executables() = absorbSingleQubitOps(state.executables());
 
+        if (state.executables().empty()) {
+          break;
+        }
+
+        // Find next layer.
         llvm::DenseSet<UnitaryInterface> layer{};
         for (auto ready : state.executables()) {
-          // This could be an insertion, measurement, ...
           Operation* user = *(ready.getUsers().begin());
+          assert(dyn_cast<UnitaryInterface>(user));
+
           if (auto unitary = dyn_cast<UnitaryInterface>(user)) {
+
+            // All single qubit operations should have been absorbed. What's
+            // left are one-control one-target gates.
+
+            assert(!unitary.getInQubits().empty());
+            assert(!unitary.getAllCtrlInQubits().empty());
+            assert(unitary.getInQubits().size() == 1);
+            assert(unitary.getAllCtrlInQubits().size() == 1);
+
             auto target = unitary.getInQubits().front();
-            if (auto control = unitary.getAllCtrlInQubits().front()) {
-              if (state.executables().contains(target) &&
-                  state.executables().contains(control)) {
-                layer.insert(unitary);
-              }
+            auto control = unitary.getAllCtrlInQubits().front();
+            if (state.executables().contains(target) &&
+                state.executables().contains(control)) {
+              layer.insert(unitary);
             }
           }
         }
 
-        llvm::outs() << "LAYER:\n";
         for (auto unitary : layer) {
-          llvm::outs() << '\t' << unitary->getLoc() << '\n';
+          llvm::outs() << unitary->getLoc() << '\n';
 
           // Insert 'out's.
           state.executables().insert(unitary.getOutQubits().front());
@@ -218,14 +243,7 @@ LogicalResult spanAndFold(Operation* base,
           state.executables().erase(unitary.getAllCtrlInQubits().front());
         }
         llvm::outs() << "-----------\n";
-
-        successor = successor->getNextNode();
       }
-
-    } else if (auto insert = dyn_cast<InsertOp>(op)) {
-      return WalkResult::advance();
-    } else if (auto dealloc = dyn_cast<DeallocOp>(op)) {
-      return WalkResult::advance();
     }
 
     return WalkResult::advance();
