@@ -30,6 +30,9 @@
 
 namespace mqt::ir::opt {
 
+static const std::unordered_set<std::string> DIAGONAL_GATES = {
+    "i", "z", "s", "sdg", "t", "tdg", "p"};
+
 /**
  * @brief This pattern is responsible for replacing controls after measurements
  * with `if` constructs.
@@ -46,17 +49,55 @@ struct ReplaceClassicalControlsWithIfPattern final
    *
    * @param op The Unitary operation to clone.
    * @param operand The control operand to remove.
-   * @param positive Whether the control is positive or negative.
    * @param rewriter The pattern rewriter to use for creating the new operation.
    * @return A new operation that is a clone of `op` without the specified
    * control operand.
    */
   static mlir::Operation*
   cloneUnitaryOpWithoutControl(UnitaryInterface op, mlir::Value operand,
-                               bool positive, mlir::PatternRewriter& rewriter) {
+                               mlir::PatternRewriter& rewriter) {
     rewriter.setInsertionPointAfter(op);
     mlir::SmallVector<mlir::Value> remainingOperands;
     mlir::SmallVector<mlir::Type> remainingTypes;
+
+    // Determine whether the replaced operand is a target, positive control or
+    // negative control.
+    size_t groupIndex = 0;
+    if (llvm::find(op.getPosCtrlInQubits(), operand) !=
+        op.getPosCtrlInQubits().end()) {
+      groupIndex = 1;
+    } else if (llvm::find(op.getNegCtrlInQubits(), operand) !=
+               op.getNegCtrlInQubits().end()) {
+      groupIndex = 2;
+    }
+    if (groupIndex == 0) {
+      if (!op.getPosCtrlInQubits().empty()) {
+        // By setting the group index to 1, the first control qubit will be
+        // adapted as a target qubit when changing the variadic group sizes.
+        groupIndex = 1;
+      } else {
+        // If there are no positive controls, we can also use a negative control
+        // by setting the groupIndex to 2. In this case, however, we first need
+        // to add an x gate to8 the corresponding qubit.
+        auto targetNegCtrlInput = op.getNegCtrlInQubits().front();
+        rewriter.setInsertionPoint(op);
+        auto xGate = rewriter.create<XOp>(
+            op.getLoc(), targetNegCtrlInput.getType(), mlir::TypeRange{},
+            mlir::TypeRange{}, mlir::DenseF64ArrayAttr{},
+            mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
+            mlir::ValueRange{targetNegCtrlInput}, mlir::ValueRange{},
+            mlir::ValueRange{});
+        rewriter.replaceUsesWithIf(targetNegCtrlInput,
+                                   xGate.getOutQubits().front(),
+                                   [&](mlir::OpOperand& operand) {
+                                     // We only replace the single use by the
+                                     // modified operation.
+                                     return operand.getOwner() == op;
+                                   });
+        groupIndex = 2;
+      }
+    }
+
     for (const auto [index, otherOperand] :
          llvm::enumerate(op.getAllInQubits())) {
       if (operand != otherOperand) {
@@ -81,9 +122,9 @@ struct ReplaceClassicalControlsWithIfPattern final
     mlir::SmallVector<int32_t> outSegSizes(
         op->getAttrOfType<mlir::DenseI32ArrayAttr>("resultSegmentSizes")
             .asArrayRef());
-    inSegSizes[positive ? 2 : 3] -=
+    inSegSizes[groupIndex + 1] -=
         1; // Adjust the segment size for the removed control
-    outSegSizes[positive ? 1 : 2] -=
+    outSegSizes[groupIndex] -=
         1; // Adjust the segment size for the removed control
     state.addAttribute("operandSegmentSizes",
                        rewriter.getDenseI32ArrayAttr(inSegSizes));
@@ -106,6 +147,11 @@ struct ReplaceClassicalControlsWithIfPattern final
                                bool positive, mlir::PatternRewriter& rewriter) {
     auto* predecessor = operand.getDefiningOp();
     auto predecessorMeasurement = mlir::dyn_cast<MeasureOp>(predecessor);
+    op->print(llvm::outs());
+    llvm::outs() << "\n";
+    predecessor->print(llvm::outs());
+    llvm::outs() << "\n";
+    llvm::outs() << "\n";
     if (!predecessorMeasurement) {
       return nullptr; // The operand does not come from a measurement.
     }
@@ -116,8 +162,7 @@ struct ReplaceClassicalControlsWithIfPattern final
 
     // We first create a new operation that is the same as before, just with the
     // current control removed
-    auto* reducedOp =
-        cloneUnitaryOpWithoutControl(op, operand, positive, rewriter);
+    auto* reducedOp = cloneUnitaryOpWithoutControl(op, operand, rewriter);
 
     // Now we create the `scf.if` operation that uses the measurement result as
     // condition and yields the outcome of the reducedOp.
@@ -200,6 +245,19 @@ struct ReplaceClassicalControlsWithIfPattern final
         op = *result; // Update the operation to the new one with the control
                       // removed.
         continue;
+      }
+      if (DIAGONAL_GATES.count(op->getName().stripDialect().str()) == 1 &&
+          op.getAllInQubits().size() > op.getInQubits().size()) {
+        // For diagonal gates, targets can also be treated as controls
+        // Therefore, we also check if there are more total in qubits than
+        // target in qubits (i.e. at least one control exists).
+        if (auto result =
+                tryProcessControls(op, op.getInQubits(), true, rewriter)) {
+          foundMatch = true;
+          op = *result; // Update the operation to the new one with the target
+                        // removed.
+          continue;
+        }
       }
 
       // If no more controls can be processed, we break out of the loop.

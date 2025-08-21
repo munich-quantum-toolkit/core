@@ -325,3 +325,66 @@ module {
     return %c0 : i1
   }
 }
+
+// -----
+// This test checks that measurements can be lifted over
+// the targets of controlled gates if target and control are intercheangable.
+
+module {
+  // CHECK-LABEL: func.func @testLiftOverTargetAsControlInDiagonalGate
+  func.func @testLiftOverTargetAsControlInDiagonalGate() -> i1 {
+    // CHECK: %[[q0_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[q1_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[q0_1:.*]], %[[c0:.*]] = "mqtopt.measure"(%[[q0_0]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[q1_1:.*]] = scf.if %[[c0]] -> (!mqtopt.Qubit) {
+    // CHECK:   %[[q1_1_then:.*]] = mqtopt.z() %[[q1_0]] : !mqtopt.Qubit
+    // CHECK:   scf.yield %[[q1_1_then]] : !mqtopt.Qubit
+    // CHECK: } else {
+    // CHECK:   scf.yield %[[q1_0]] : !mqtopt.Qubit
+    // CHECK: }
+    // CHECK: "mqtopt.deallocQubit"(%[[q1_1]]) : (!mqtopt.Qubit) -> ()
+    // CHECK: "mqtopt.deallocQubit"(%[[q0_1]]) : (!mqtopt.Qubit) -> ()
+    // CHECK: return %[[c0]] : i1
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q1_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+
+    %q0_1, %q1_1 = mqtopt.z() %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_2, %c0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+    "mqtopt.deallocQubit"(%q1_1) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q0_1) : (!mqtopt.Qubit) -> ()
+    return %c0 : i1
+  }
+}
+
+// -----
+// This test checks that measurements can be lifted over
+// the targets of controlled gates if target and negative control are intercheangable.
+
+module {
+  // CHECK-LABEL: func.func @testLiftOverTargetAsNegativeControlInDiagonalGate
+  func.func @testLiftOverTargetAsNegativeControlInDiagonalGate() -> i1 {
+    // CHECK: %[[q0_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[q1_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[q0_1:.*]], %[[c0:.*]] = "mqtopt.measure"(%[[q0_0]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[q1_1:.*]] = mqtopt.x() %[[q1_0]] : !mqtopt.Qubit
+    // CHECK: %[[q1_2:.*]] = scf.if %[[c0]] -> (!mqtopt.Qubit) {
+    // CHECK:   %[[q1_2_then:.*]] = mqtopt.z() %[[q1_1]] : !mqtopt.Qubit
+    // CHECK:   scf.yield %[[q1_2_then]] : !mqtopt.Qubit
+    // CHECK: } else {
+    // CHECK:   scf.yield %[[q1_1]] : !mqtopt.Qubit
+    // CHECK: }
+    // CHECK: "mqtopt.deallocQubit"(%[[q1_2]]) : (!mqtopt.Qubit) -> ()
+    // CHECK: "mqtopt.deallocQubit"(%[[q0_1]]) : (!mqtopt.Qubit) -> ()
+    // CHECK: return %[[c0]] : i1
+    %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    %q1_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+
+    %q0_1, %q1_1 = mqtopt.z() %q0_0 nctrl %q1_0 : !mqtopt.Qubit nctrl !mqtopt.Qubit
+    %q0_2, %c0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+    "mqtopt.deallocQubit"(%q1_1) : (!mqtopt.Qubit) -> ()
+    "mqtopt.deallocQubit"(%q0_1) : (!mqtopt.Qubit) -> ()
+    return %c0 : i1
+  }
+}
