@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add missing Quantum Computation's unitary gates in MLIR Round Trip Pass ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 - ✨ Add `allocQubit` and `deallocQubit` operations for dynamically working with single qubits to the MLIR dialects ([#1139]) ([**@DRovara**], [**@burgholzer**])
 - ✨ Add `qubit` operation for static qubit addressing to the MLIR dialects ([#1098], [#1116]) ([**@MatthiasReumann**])
 - ✨ Add MQT's implementation of a QDMI Driver ([#1010]) ([**@ystade**])
@@ -18,7 +19,6 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ✨ Add translation from `QuantumComputation` to the `MQTRef` MLIR dialect ([#1099]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add `reset` operations to the MLIR dialects ([#1106]) ([**@DRovara**])
 - ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996], [#1010]) ([**@ystade**])
-- ✨ Add missing Quantum Computation's unitary gates in MLIR Round Trip Pass ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 
 ### Changed
 
