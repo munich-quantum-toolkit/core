@@ -18,6 +18,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ✨ Add translation from `QuantumComputation` to the `MQTRef` MLIR dialect ([#1099]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add `reset` operations to the MLIR dialects ([#1106]) ([**@DRovara**])
 - ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996], [#1010]) ([**@ystade**])
+- ✨ Add missing Quantum Computation's unitary gates in MLIR Round Trip Pass ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 
 ### Changed
 
@@ -175,6 +176,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1088]: https://github.com/munich-quantum-toolkit/core/pull/1088
 [#1076]: https://github.com/munich-quantum-toolkit/core/pull/1076
 [#1075]: https://github.com/munich-quantum-toolkit/core/pull/1075
+[#1071]: https://github.com/munich-quantum-toolkit/core/pull/1071
 [#1047]: https://github.com/munich-quantum-toolkit/core/pull/1047
 [#1042]: https://github.com/munich-quantum-toolkit/core/pull/1042
 [#1020]: https://github.com/munich-quantum-toolkit/core/pull/1020
