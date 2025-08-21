@@ -35,6 +35,7 @@
 #include <cstdint>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -48,8 +49,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
-#include <string>
-#include <unordered_map>
 #include <utility>
 
 namespace mqt::ir {
@@ -89,39 +88,36 @@ public:
   /// @brief Return the state object as reference.
   [[nodiscard]] LoweringState& getState() const { return *state_; }
 
-  inline static const std::unordered_map<std::string, std::string>
-      SINGLE_ROTATION_GATES = {
-          {"p", "POp"},     {"rx", "RXOp"},   {"ry", "RYOp"},
-          {"rz", "RZOp"},   {"rxx", "RXXOp"}, {"ryy", "RYYOp"},
-          {"rzz", "RZZOp"}, {"rzx", "RZXOp"}, {"u1", "POp"}};
+  inline static const llvm::StringMap<StringRef> SINGLE_ROTATION_GATES = {
+      {"p", "POp"},     {"rx", "RXOp"},   {"ry", "RYOp"},
+      {"rz", "RZOp"},   {"rxx", "RXXOp"}, {"ryy", "RYYOp"},
+      {"rzz", "RZZOp"}, {"rzx", "RZXOp"}, {"u1", "POp"}};
 
-  inline static const std::unordered_map<std::string, std::string>
-      SIMPLE_GATES = {{"x", "XOp"},
-                      {"not", "XOp"},
-                      {"h", "HOp"},
-                      {"i", "IOp"},
-                      {"y", "YOp"},
-                      {"z", "ZOp"},
-                      {"s", "SOp"},
-                      {"sdg", "SdgOp"},
-                      {"t", "TOp"},
-                      {"tdg", "TdgOp"},
-                      {"v", "VOp"},
-                      {"vdg", "VdgOp"},
-                      {"sx", "SXOp"},
-                      {"sxdg", "SXdgOp"},
-                      {"swap", "SWAPOp"},
-                      {"iswap", "iSWAPOp"},
-                      {"iswapdg", "iSWAPdgOp"},
-                      {"peres", "PeresOp"},
-                      {"peresdg", "PeresdgOp"},
-                      {"dcx", "DCXOp"},
-                      {"ecr", "ECROp"}};
+  inline static const llvm::StringMap<StringRef> SIMPLE_GATES = {
+      {"x", "XOp"},
+      {"not", "XOp"},
+      {"h", "HOp"},
+      {"i", "IOp"},
+      {"y", "YOp"},
+      {"z", "ZOp"},
+      {"s", "SOp"},
+      {"sdg", "SdgOp"},
+      {"t", "TOp"},
+      {"tdg", "TdgOp"},
+      {"v", "VOp"},
+      {"vdg", "VdgOp"},
+      {"sx", "SXOp"},
+      {"sxdg", "SXdgOp"},
+      {"swap", "SWAPOp"},
+      {"iswap", "iSWAPOp"},
+      {"iswapdg", "iSWAPdgOp"},
+      {"peres", "PeresOp"},
+      {"peresdg", "PeresdgOp"},
+      {"dcx", "DCXOp"},
+      {"ecr", "ECROp"}};
 
-  inline static const std::unordered_map<std::string, std::string>
-      DOUBLE_ROTATION_GATES = {{"u2", "U2Op"},
-                               {"xxminusyy", "XXminusYYOp"},
-                               {"xxplusyy", "XXplusYYOp"}};
+  inline static const llvm::StringMap<StringRef> DOUBLE_ROTATION_GATES = {
+      {"u2", "U2Op"}, {"xxminusyy", "XXminusYYOp"}, {"xxplusyy", "XXplusYYOp"}};
 
 private:
   LoweringState* state_;
@@ -218,7 +214,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
    * @param ctrlQubits The control Qubits of the given operation.
    * @param rewriter The PatternRewriter to use.
    */
-  static void convertSimpleGate(LLVM::CallOp& op, const std::string& gateName,
+  static void convertSimpleGate(LLVM::CallOp& op, const StringRef gateName,
                                 const SmallVector<Value>& qubits,
                                 const SmallVector<Value>& ctrlQubits,
                                 ConversionPatternRewriter& rewriter) {
@@ -257,7 +253,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
    * @param rotationCount The number of rotation degrees.
    * @param rewriter The PatternRewriter to use.
    */
-  static void convertRotationGate(LLVM::CallOp& op, const std::string& gateName,
+  static void convertRotationGate(LLVM::CallOp& op, const StringRef gateName,
                                   SmallVector<Value>& operands,
                                   const SmallVector<Value>& ctrlQubits,
                                   const size_t rotationCount,
