@@ -337,32 +337,30 @@ public:
   void ifElse(std::unique_ptr<Operation>&& thenOp,
               std::unique_ptr<Operation>&& elseOp,
               const ClassicalRegister& controlRegister,
-              const std::uint64_t expectedValue = 1U,
-              const ComparisonKind cmp = Eq);
+              std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq);
   void ifElse(std::unique_ptr<Operation>&& thenOp,
-              std::unique_ptr<Operation>&& elseOp, const Bit controlBit,
-              const bool expectedValue = true, const ComparisonKind cmp = Eq);
+              std::unique_ptr<Operation>&& elseOp, Bit controlBit,
+              bool expectedValue = true, ComparisonKind cmp = Eq);
 
   void if_(OpType op, Qubit target, const ClassicalRegister& controlRegister,
-           const std::uint64_t expectedValue = 1U,
-           const ComparisonKind cmp = Eq, const std::vector<fp>& params = {});
+           std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq,
+           const std::vector<fp>& params = {});
   void if_(OpType op, Qubit target, Control control,
            const ClassicalRegister& controlRegister,
-           const std::uint64_t expectedValue = 1U,
-           const ComparisonKind cmp = Eq, const std::vector<fp>& params = {});
+           std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq,
+           const std::vector<fp>& params = {});
   void if_(OpType op, Qubit target, const Controls& controls,
            const ClassicalRegister& controlRegister,
-           const std::uint64_t expectedValue = 1U,
-           const ComparisonKind cmp = Eq, const std::vector<fp>& params = {});
-  void if_(OpType op, Qubit target, const Bit controlBit,
-           const bool expectedValue = true, const ComparisonKind cmp = Eq,
+           std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq,
            const std::vector<fp>& params = {});
-  void if_(OpType op, Qubit target, Control control, const Bit controlBit,
-           const bool expectedValue = true, const ComparisonKind cmp = Eq,
+  void if_(OpType op, Qubit target, Bit controlBit, bool expectedValue = true,
+           ComparisonKind cmp = Eq, const std::vector<fp>& params = {});
+  void if_(OpType op, Qubit target, Control control, Bit controlBit,
+           bool expectedValue = true, ComparisonKind cmp = Eq,
            const std::vector<fp>& params = {});
-  void if_(OpType op, Qubit target, const Controls& controls,
-           const Bit controlBit, const bool expectedValue = true,
-           const ComparisonKind cmp = Eq, const std::vector<fp>& params = {});
+  void if_(OpType op, Qubit target, const Controls& controls, Bit controlBit,
+           bool expectedValue = true, ComparisonKind cmp = Eq,
+           const std::vector<fp>& params = {});
 
   /// strip away qubits with no operations applied to them and which do not pop
   /// up in the output permutation \param force if true, also strip away idle
