@@ -455,6 +455,9 @@ def _add_if_else_operation(
         control_register = cregs[condition[0].name]
         expected_value = condition[1]
         if_else_operation = IfElseOperation(then_branch, else_branch, control_register, expected_value)
+    else:
+        msg = f"Unsupported condition {condition}"
+        raise TypeError(msg)
     qc.append(if_else_operation)
 
     return then_params + else_params
