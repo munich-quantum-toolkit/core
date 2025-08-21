@@ -31,7 +31,7 @@ void populateQuantumSinkShiftPatterns(mlir::RewritePatternSet& patterns);
 void populateQuantumSinkPushPatterns(mlir::RewritePatternSet& patterns);
 void populateLiftMeasurementsAboveControlsPatterns(
     mlir::RewritePatternSet& patterns);
-void populateReplaceClassicalControlsWithIfPatterns(
+void populateReplaceBasisStateControlsWithIfPatterns(
     mlir::RewritePatternSet& patterns);
 void populateLiftMeasurementsAboveGatesPatterns(
     mlir::RewritePatternSet& patterns);

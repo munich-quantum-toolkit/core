@@ -39,7 +39,7 @@ struct LiftMeasurementsPass final
 
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
-    populateReplaceClassicalControlsWithIfPatterns(patterns);
+    populateReplaceBasisStateControlsWithIfPatterns(patterns);
     populateLiftMeasurementsAboveControlsPatterns(patterns);
     populateLiftMeasurementsAboveGatesPatterns(patterns);
     populateDeadGateEliminationPatterns(patterns);

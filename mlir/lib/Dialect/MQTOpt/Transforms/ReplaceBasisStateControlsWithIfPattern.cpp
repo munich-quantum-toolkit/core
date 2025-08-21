@@ -37,10 +37,10 @@ static const std::unordered_set<std::string> DIAGONAL_GATES = {
  * @brief This pattern is responsible for replacing controls after measurements
  * with `if` constructs.
  */
-struct ReplaceClassicalControlsWithIfPattern final
+struct ReplaceBasisStateControlsWithIfPattern final
     : mlir::OpInterfaceRewritePattern<UnitaryInterface> {
 
-  explicit ReplaceClassicalControlsWithIfPattern(mlir::MLIRContext* context)
+  explicit ReplaceBasisStateControlsWithIfPattern(mlir::MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
 
   /**
@@ -269,13 +269,13 @@ struct ReplaceClassicalControlsWithIfPattern final
 
 /**
  * @brief Populates the given pattern set with the
- * `ReplaceClassicalControlsWithIfPattern`.
+ * `ReplaceBasisStateControlsWithIfPattern`.
  *
  * @param patterns The pattern set to populate.
  */
-void populateReplaceClassicalControlsWithIfPatterns(
+void populateReplaceBasisStateControlsWithIfPatterns(
     mlir::RewritePatternSet& patterns) {
-  patterns.add<ReplaceClassicalControlsWithIfPattern>(patterns.getContext());
+  patterns.add<ReplaceBasisStateControlsWithIfPattern>(patterns.getContext());
 }
 
 } // namespace mqt::ir::opt
