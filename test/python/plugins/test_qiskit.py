@@ -515,10 +515,8 @@ def test_if_else_operation() -> None:
     print(qiskit_qc)
 
     qasm_input = dumps(qc)
-    qasm_input = qasm_input.replace("if (c[0]) {\n", "")
 
     qasm_output = dumps(qiskit_qc)
-    qasm_output = qasm_output.replace("if (c[0] == true) {\n", "")
 
     assert qasm_input == qasm_output
 

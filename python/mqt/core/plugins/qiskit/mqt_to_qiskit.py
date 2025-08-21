@@ -281,8 +281,10 @@ def _add_if_else_operation(
         left_hand_side = clbit_map[op.control_bit]
         right_hand_side = op.expected_value_bit
 
+    condition: expr.Expr | tuple[ClassicalRegister | Clbit, int]
     if op.comparison_kind == ComparisonKind.eq:
-        condition = expr.equal(left_hand_side, right_hand_side)
+        # directly handle equality conditions without expressions
+        condition = (left_hand_side, right_hand_side)
     elif op.comparison_kind == ComparisonKind.neq:
         condition = expr.not_equal(left_hand_side, right_hand_side)
     elif op.comparison_kind == ComparisonKind.lt:
