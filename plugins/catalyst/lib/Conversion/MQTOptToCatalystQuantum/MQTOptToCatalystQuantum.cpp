@@ -221,68 +221,76 @@ struct ConvertMQTOptSimpleGate final : OpConversionPattern<MQTGateOp> {
   LogicalResult
   matchAndRewrite(MQTGateOp op, typename MQTGateOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // BarrierOp has no semantic effect on the circuit. Therefore, we erase it.
+    // BarrierOp has no semantic effect.
     if (std::is_same_v<MQTGateOp, opt::BarrierOp>) {
       rewriter.eraseOp(op);
       return success();
     }
 
-    // Extract operand(s) and attribute(s)
-    auto inQubitsValues = adaptor.getInQubits(); // excl. controls
-    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+    // ---- Extract operands from the adaptor (already type-converted) ----
+    ValueRange inQubitsTargets = adaptor.getInQubits(); // targets only
+    ValueRange posCtrlQubitsValues = adaptor.getPosCtrlInQubits(); // +controls
+    ValueRange negCtrlQubitsValues = adaptor.getNegCtrlInQubits(); // -controls
 
-    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
-                                    posCtrlQubitsValues.end());
+    // Concatenate controls: [pos..., neg...]  (preserve this order
+    // consistently)
+    SmallVector<Value> inCtrlQubits;
+    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
+                         negCtrlQubitsValues.size());
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
-    // Output type
-    const Type qubitType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
-    const SmallVector<Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    const auto outQubitTypes = TypeRange(qubitTypes);
-
-    // Merge inQubitsValues and inCtrlQubits to form the full qubit list
-    auto allQubitsValues = inCtrlQubits;
-    allQubitsValues.append(inQubitsValues.begin(), inQubitsValues.end());
-    const auto inQubits = ValueRange(allQubitsValues);
-
-    // Determine gate name depending on control count
+    // Gate name may depend on number of controls
     const StringRef gateName = getGateName(inCtrlQubits.size());
     if (gateName.empty()) {
-      llvm::errs() << "Unsupported controlled gate for op: " << op->getName()
-                   << "\n";
+      op->emitError() << "Unsupported controlled gate for op: "
+                      << op->getName();
       return failure();
     }
 
-    // Create the new operation
-    auto catalystOp = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(),
-        /*out_qubits=*/outQubitTypes,
-        /*out_ctrl_qubits=*/TypeRange({}),
+    // ---- Build ctrl-values (i1) matching the exact control order ----
+    Location loc = op.getLoc();
+    Type i1Ty = rewriter.getI1Type();
+
+    // Reuse the same constants; it's fine for a variadic segment to reference
+    // the same Value multiple times.
+    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                            /*width=*/1);
+    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/1);
+
+    SmallVector<Value> inCtrlValues;
+    inCtrlValues.reserve(inCtrlQubits.size());
+    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
+    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
+
+    // Sanity: lengths must match, or the op verifier will complain.
+    if (inCtrlQubits.size() != inCtrlValues.size()) {
+      op->emitError() << "control qubits and control values size mismatch";
+      return failure();
+    }
+
+    // ---- Create CustomOp using the convenience builder ----
+    // Signature: (gate, in_qubits, in_ctrl_qubits, in_ctrl_values, params,
+    // adjoint)
+    auto custom = rewriter.create<catalyst::quantum::CustomOp>(
+        loc,
+        /*gate=*/gateName,
+        /*in_qubits=*/inQubitsTargets,
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
         /*params=*/adaptor.getParams(),
-        /*in_qubits=*/inQubits,
-        /*gate_name=*/gateName,
-        /*adjoint=*/false,
-        /*in_ctrl_qubits=*/ValueRange({}),
-        /*in_ctrl_values=*/ValueRange());
+        /*adjoint=*/false // propagate if your MQT op has an adjoint flag
+    );
 
-    // The result order of mqt.opt ops is (targets, controls), while the
-    // catalyst.quantum.CustomOp has (controls, targets). We need to swap them.
-    SmallVector<Value> swappedResults;
-    auto catalystResults = catalystOp->getResults();
-    const size_t nCtrl = inCtrlQubits.size();
+    // ---- Replace: CustomOp results are (out_qubits, out_ctrl_qubits) ----
+    SmallVector<Value> replacements;
+    replacements.append(custom.getOutQubits().begin(),
+                        custom.getOutQubits().end());
+    replacements.append(custom.getOutCtrlQubits().begin(),
+                        custom.getOutCtrlQubits().end());
 
-    // Add targets first (which are at the end of the catalyst op results)
-    swappedResults.append(catalystResults.begin() + nCtrl,
-                          catalystResults.end());
-    // Add controls (which are at the beginning of the catalyst op results)
-    swappedResults.append(catalystResults.begin(),
-                          catalystResults.begin() + nCtrl);
-
-    // Replace the original with the new operation
-    rewriter.replaceOp(op, swappedResults);
+    rewriter.replaceOp(op, replacements);
     return success();
   }
 
@@ -307,33 +315,34 @@ struct ConvertMQTOptAdjointGate final : OpConversionPattern<MQTGateOp> {
                                     posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
-    // Output type
-    const Type qubitType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
-    const SmallVector<Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    const auto outQubitTypes = TypeRange(qubitTypes);
-
-    // Merge inQubitsValues and inCtrlQubits to form the full qubit list
-    auto allQubitsValues =
-        SmallVector<Value>(inCtrlQubits.begin(), inCtrlQubits.end());
-    allQubitsValues.append(inQubitsValues.begin(), inQubitsValues.end());
-    const auto inQubits = ValueRange(allQubitsValues);
-
     // Get the base gate name and whether it is an adjoint version
     const auto& [gateName, adjoint] = getGateInfo<MQTGateOp>();
+
+    // ---- Build ctrl-values (i1) matching the exact control order ----
+    Location loc = op.getLoc();
+    Type i1Ty = rewriter.getI1Type();
+
+    // Reuse the same constants; it's fine for a variadic segment to reference
+    // the same Value multiple times.
+    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                            /*width=*/1);
+    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/1);
+
+    SmallVector<Value> inCtrlValues;
+    inCtrlValues.reserve(inCtrlQubits.size());
+    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
+    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
 
     // Create the gate
     auto catalystOp = rewriter.create<catalyst::quantum::CustomOp>(
         op.getLoc(),
-        /*out_qubits=*/outQubitTypes,
-        /*out_ctrl_qubits=*/TypeRange{},
-        /*params=*/adaptor.getParams(),
-        /*in_qubits=*/inQubits,
         /*gate_name=*/gateName,
-        /*adjoint=*/adjoint,
-        /*in_ctrl_qubits=*/ValueRange{},
-        /*in_ctrl_values=*/ValueRange{});
+        /*in_qubits=*/inQubitsValues,
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/adaptor.getParams(),
+        /*adjoint=*/adjoint);
 
     rewriter.replaceOp(op, catalystOp);
     return success();
@@ -364,20 +373,29 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
   matchAndRewrite(opt::VOp op, opt::VOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Extract operand(s) and attribute(s)
-    auto inQubitsValues = adaptor.getInQubits();
-    const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+    auto inQubitsValues = adaptor.getInQubits(); // excl. controls
+    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
     SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
                                     posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
-    // Output type setup
-    const Type qubitType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
-    const SmallVector<Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    auto outQubitTypes = TypeRange(qubitTypes);
+    // ---- Build ctrl-values (i1) matching the exact control order ----
+    Location loc = op.getLoc();
+    Type i1Ty = rewriter.getI1Type();
+
+    // Reuse the same constants; it's fine for a variadic segment to reference
+    // the same Value multiple times.
+    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                            /*width=*/1);
+    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/1);
+
+    SmallVector<Value> inCtrlValues;
+    inCtrlValues.reserve(inCtrlQubits.size());
+    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
+    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
 
     // V = RZ(π/2) RY(π/2) RZ(-π/2)
     auto pi2 = rewriter.create<ConstantOp>(op.getLoc(),
@@ -385,16 +403,31 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
 
     // Create the decomposed operations
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi2},
-        inQubitsValues, "RZ", false, inCtrlQubits, ValueRange{});
+        op.getLoc(),
+        /*gate_name=*/"RZ",
+        /*in_qubits=*/inQubitsValues,
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/adaptor.getParams(),
+        /*adjoint=*/false);
 
     auto ry = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi2},
-        rz1.getResults(), "RY", false, inCtrlQubits, ValueRange{});
+        op.getLoc(),
+        /*gate_name=*/"RY",
+        /*in_qubits=*/rz1.getResults(),
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/adaptor.getParams(),
+        /*adjoint=*/false);
 
     auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi2},
-        ry.getResults(), "RZ", true, inCtrlQubits, ValueRange{});
+        op.getLoc(),
+        /*gate_name=*/"RZ",
+        /*in_qubits=*/ry.getResults(),
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/adaptor.getParams(),
+        /*adjoint=*/true);
 
     // Replace the original operation with the decomposition
     rewriter.replaceOp(op, rz2.getResults());
@@ -415,36 +448,69 @@ struct ConvertMQTOptSimpleGate<opt::VdgOp> final
     const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
-    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
-                                    posCtrlQubitsValues.end());
+    // Concatenate controls: [pos..., neg...]  (preserve this order
+    // consistently)
+    SmallVector<Value> inCtrlQubits;
+    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
+                         negCtrlQubitsValues.size());
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
-    // Output type setup
-    const Type qubitType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
-    const SmallVector<Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    auto outQubitTypes = TypeRange(qubitTypes);
+    // ---- Build ctrl-values (i1) matching the exact control order ----
+    Location loc = op.getLoc();
+    Type i1Ty = rewriter.getI1Type();
 
-    // V = RZ(π/2) RY(-π/2) RZ(-π/2)
+    // Reuse the same constants; it's fine for a variadic segment to reference
+    // the same Value multiple times.
+    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                            /*width=*/1);
+    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/1);
+
+    SmallVector<Value> inCtrlValues;
+    inCtrlValues.reserve(inCtrlQubits.size());
+    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
+    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
+
+    // V† = RZ(π/2) RY(-π/2) RZ(-π/2)
     auto negPi2 = rewriter.create<ConstantOp>(
         op.getLoc(), rewriter.getF64FloatAttr(-M_PI_2));
 
     // Create the decomposed operations
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{negPi2},
-        inQubitsValues, "RZ", true, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RZ",
+        /*in_qubits=*/inQubitsValues,
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{negPi2},
+        /*adjoint=*/true);
 
     auto ry = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{negPi2},
-        rz1.getResults(), "RY", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RY",
+        /*in_qubits=*/rz1.getOutQubits(),
+        /*in_ctrl_qubits=*/rz1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{negPi2},
+        /*adjoint=*/false);
 
     auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{negPi2},
-        ry.getResults(), "RZ", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RZ",
+        /*in_qubits=*/ry.getOutQubits(),
+        /*in_ctrl_qubits=*/ry.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{negPi2},
+        /*adjoint=*/false);
 
-    // Replace the original operation with the decomposition
-    rewriter.replaceOp(op, rz2.getResults());
+    // ---- Replace: CustomOp results are (out_qubits, out_ctrl_qubits) ----
+    SmallVector<Value> replacements;
+    replacements.append(rz2.getOutQubits().begin(), rz2.getOutQubits().end());
+    replacements.append(rz2.getOutCtrlQubits().begin(),
+                        rz2.getOutCtrlQubits().end());
+
+    rewriter.replaceOp(op, replacements);
     return success();
   }
 };
@@ -461,28 +527,58 @@ struct ConvertMQTOptSimpleGate<opt::DCXOp> final
     const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
-    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
-                                    posCtrlQubitsValues.end());
+    // Concatenate controls: [pos..., neg...]  (preserve this order
+    // consistently)
+    SmallVector<Value> inCtrlQubits;
+    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
+                         negCtrlQubitsValues.size());
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
-    // Output type setup
-    const Type qubitType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
-    const SmallVector<Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    auto outQubitTypes = TypeRange(qubitTypes);
+    // ---- Build ctrl-values (i1) matching the exact control order ----
+    Location loc = op.getLoc();
+    Type i1Ty = rewriter.getI1Type();
+
+    // Reuse the same constants; it's fine for a variadic segment to reference
+    // the same Value multiple times.
+    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                            /*width=*/1);
+    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/1);
+
+    SmallVector<Value> inCtrlValues;
+    inCtrlValues.reserve(inCtrlQubits.size());
+    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
+    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
 
     // DCX = CNOT(q2,q1) CNOT(q1,q2)
     auto cnot1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{}, inQubitsValues,
-        "CNOT", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"CNOT",
+        /*in_qubits=*/inQubitsValues,
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
 
     auto cnot2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{},
-        ValueRange{cnot1.getResult(1), cnot1.getResult(0)}, "CNOT", false,
-        inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"CNOT",
+        /*in_qubits=*/
+        ValueRange{cnot1.getOutQubits()[1], cnot1.getOutQubits()[0]},
+        /*in_ctrl_qubits=*/cnot1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
 
-    rewriter.replaceOp(op, cnot2.getResults());
+    // ---- Replace: CustomOp results are (out_qubits, out_ctrl_qubits) ----
+    SmallVector<Value> replacements;
+    replacements.append(cnot2.getOutQubits().begin(),
+                        cnot2.getOutQubits().end());
+    replacements.append(cnot2.getOutCtrlQubits().begin(),
+                        cnot2.getOutCtrlQubits().end());
+
+    rewriter.replaceOp(op, replacements);
     return success();
   }
 };
@@ -495,39 +591,86 @@ struct ConvertMQTOptSimpleGate<opt::RZXOp> final
   LogicalResult
   matchAndRewrite(opt::RZXOp op, opt::RZXOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto inQubit0 = adaptor.getInQubits()[0];
-    auto inQubit1 = adaptor.getInQubits()[1];
-    // TODO: add support for control qubits
+    // Inputs and controls
+    auto inQubitsValues = adaptor.getInQubits(); // [q0, q1]
+    const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
+    const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    // Concatenate controls: [pos..., neg...]  (preserve this order
+    // consistently)
+    SmallVector<Value> inCtrlQubits;
+    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
+                         negCtrlQubitsValues.size());
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // ---- Build ctrl-values (i1) matching the exact control order ----
+    Location loc = op.getLoc();
+    Type i1Ty = rewriter.getI1Type();
+
+    // Reuse the same constants; it's fine for a variadic segment to reference
+    // the same Value multiple times.
+    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                            /*width=*/1);
+    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/1);
+
+    SmallVector<Value> inCtrlValues;
+    inCtrlValues.reserve(inCtrlQubits.size());
+    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
+    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
 
     const auto theta = adaptor.getParams()[0];
 
-    // Output type setup
-    const Type qubitType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
+    // RZX(q0, q1; θ) = H(q1) · RZZ(q0, q1; θ) · H(q1)
 
-    // Single qubit type for Hadamard gates
-    const auto singleOutType = TypeRange(SmallVector<Type>{qubitType});
-
-    // Two qubit types for IsingZZ gate
-    const auto twoOutTypes = TypeRange(SmallVector<Type>{qubitType, qubitType});
-
-    // RZX(θ) = H(q2) RZZ(θ) H(q2)
+    // H on q1
     auto h1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), singleOutType, TypeRange{}, ValueRange{},
-        ValueRange{inQubit1}, "Hadamard", false, ValueRange{}, ValueRange{});
+        loc,
+        /*gate=*/"Hadamard",
+        /*in_qubits=*/ValueRange{inQubitsValues[1]},
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
 
+    // Extract q1'
+    Value h1_target = h1.getOutQubits()[0];
+
+    // RZZ on (q0, q1')
     auto rzz = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), twoOutTypes, TypeRange{}, ValueRange{theta},
-        ValueRange{inQubit0, h1.getResult(0)}, "IsingZZ", false, ValueRange{},
-        ValueRange{});
+        loc,
+        /*gate=*/"IsingZZ",
+        /*in_qubits=*/ValueRange{inQubitsValues[0], h1_target},
+        /*in_ctrl_qubits=*/h1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{theta},
+        /*adjoint=*/false);
 
+    // Grab both targets from RZZ
+    Value rzz_target0 = rzz.getOutQubits()[0]; // q0''
+    Value rzz_target1 = rzz.getOutQubits()[1]; // q1''
+
+    // H on q1''
     auto h2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), singleOutType, TypeRange{}, ValueRange{},
-        ValueRange{rzz.getResult(1)}, "Hadamard", false, ValueRange{},
-        ValueRange{});
+        loc,
+        /*gate=*/"Hadamard",
+        /*in_qubits=*/ValueRange{rzz_target1},
+        /*in_ctrl_qubits=*/rzz.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
 
-    // Replace original operation with results in correct order
-    rewriter.replaceOp(op, ValueRange{rzz.getResult(0), h2.getResult(0)});
+    Value h2_target = h2.getOutQubits()[0]; // q1_final
+
+    // Final results in mqt.opt ordering (targets..., controls...)
+    SmallVector<Value> finalResults;
+    finalResults.push_back(rzz_target0); // target0 final
+    finalResults.push_back(h2_target);   // target1 final
+    finalResults.append(h2.getOutCtrlQubits().begin(),
+                        h2.getOutCtrlQubits().end()); // controls
+
+    rewriter.replaceOp(op, finalResults);
     return success();
   }
 };
@@ -546,16 +689,29 @@ struct ConvertMQTOptSimpleGate<opt::XXminusYYOp> final
     auto theta = adaptor.getParams()[0];
     auto beta = adaptor.getParams()[1];
 
-    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
-                                    posCtrlQubitsValues.end());
+    // Concatenate controls: [pos..., neg...]  (preserve this order
+    // consistently)
+    SmallVector<Value> inCtrlQubits;
+    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
+                         negCtrlQubitsValues.size());
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
-    // Output type setup
-    const Type qubitType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
-    const SmallVector<Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    auto outQubitTypes = TypeRange(qubitTypes);
+    // ---- Build ctrl-values (i1) matching the exact control order ----
+    Location loc = op.getLoc();
+    Type i1Ty = rewriter.getI1Type();
+
+    // Reuse the same constants; it's fine for a variadic segment to reference
+    // the same Value multiple times.
+    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                            /*width=*/1);
+    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/1);
+
+    SmallVector<Value> inCtrlValues;
+    inCtrlValues.reserve(inCtrlQubits.size());
+    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
+    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
 
     // XXminusYY(θ,β) = RX(π/2)(q1) RY(π/2)(q2) CNOT(q1,q2) RZ(θ)(q2)
     // CNOT(q1,q2) RZ(β)(q1) RZ(β)(q2) RX(-π/2)(q1) RY(-π/2)(q2)
@@ -565,42 +721,93 @@ struct ConvertMQTOptSimpleGate<opt::XXminusYYOp> final
         op.getLoc(), rewriter.getF64FloatAttr(-M_PI_2));
 
     auto rx1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi2},
-        inQubitsValues, "RX", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RX",
+        /*in_qubits=*/inQubitsValues,
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{pi2},
+        /*adjoint=*/false);
 
     auto ry1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi2},
-        rx1.getResults(), "RY", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RY",
+        /*in_qubits=*/rx1.getOutQubits(),
+        /*in_ctrl_qubits=*/rx1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{pi2},
+        /*adjoint=*/false);
 
     auto cnot1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{}, ry1.getResults(),
-        "CNOT", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"CNOT",
+        /*in_qubits=*/ry1.getOutQubits(),
+        /*in_ctrl_qubits=*/ry1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
 
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{theta},
-        cnot1.getResults(), "RZ", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RZ",
+        /*in_qubits=*/cnot1.getOutQubits(),
+        /*in_ctrl_qubits=*/cnot1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{theta},
+        /*adjoint=*/false);
 
     auto cnot2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{}, rz1.getResults(),
-        "CNOT", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"CNOT",
+        /*in_qubits=*/rz1.getOutQubits(),
+        /*in_ctrl_qubits=*/rz1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
 
     auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{beta},
-        cnot2.getResults(), "RZ", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RZ",
+        /*in_qubits=*/cnot2.getOutQubits(),
+        /*in_ctrl_qubits=*/cnot2.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{beta},
+        /*adjoint=*/false);
 
     auto rz3 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{beta},
-        rz2.getResults(), "RZ", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RZ",
+        /*in_qubits=*/rz2.getOutQubits(),
+        /*in_ctrl_qubits=*/rz2.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{beta},
+        /*adjoint=*/false);
 
     auto rx2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{negPi2},
-        rz3.getResults(), "RX", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RX",
+        /*in_qubits=*/rz3.getOutQubits(),
+        /*in_ctrl_qubits=*/rz3.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{negPi2},
+        /*adjoint=*/false);
 
     auto ry2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{negPi2},
-        rx2.getResults(), "RY", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RY",
+        /*in_qubits=*/rx2.getOutQubits(),
+        /*in_ctrl_qubits=*/rx2.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{negPi2},
+        /*adjoint=*/false);
 
-    rewriter.replaceOp(op, ry2.getResults());
+    // ---- Replace: CustomOp results are (out_qubits, out_ctrl_qubits) ----
+    SmallVector<Value> replacements;
+    replacements.append(ry2.getOutQubits().begin(), ry2.getOutQubits().end());
+    replacements.append(ry2.getOutCtrlQubits().begin(),
+                        ry2.getOutCtrlQubits().end());
+
+    rewriter.replaceOp(op, replacements);
     return success();
   }
 };
@@ -619,22 +826,39 @@ struct ConvertMQTOptSimpleGate<opt::GPhaseOp> final
     const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
     const auto params = adaptor.getParams();
     const bool adjoint = false;
-    const ValueRange inCtrlValues{};
 
-    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
-                                    posCtrlQubitsValues.end());
+    // Concatenate controls: [pos..., neg...]  (preserve this order
+    // consistently)
+    SmallVector<Value> inCtrlQubits;
+    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
+                         negCtrlQubitsValues.size());
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
-    // Output type setup
+    // ---- Build ctrl-values (i1) matching the exact control order ----
+    Location loc = op.getLoc();
+    Type i1Ty = rewriter.getI1Type();
+
+    // Reuse the same constants; it's fine for a variadic segment to reference
+    // the same Value multiple times.
+    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                            /*width=*/1);
+    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/1);
+
+    SmallVector<Value> inCtrlValues;
+    inCtrlValues.reserve(inCtrlQubits.size());
+    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
+    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
+
+    // Create output types for GlobalPhaseOp (control qubits only)
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    const SmallVector<Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    auto outQubitTypes = TypeRange(qubitTypes);
+    SmallVector<Type> outCtrlTypes(inCtrlQubits.size(), qubitType);
 
     auto gphase = rewriter.create<catalyst::quantum::GlobalPhaseOp>(
-        op.getLoc(), outQubitTypes, params[0], adjoint,
-        ValueRange(inCtrlQubits), inCtrlValues);
+        loc, TypeRange(outCtrlTypes), params[0], false, inCtrlQubits,
+        inCtrlValues);
 
     // Replace the original operation with the decomposition
     rewriter.replaceOp(op, gphase.getResults());
@@ -653,6 +877,30 @@ struct ConvertMQTOptSimpleGate<opt::UOp> final : OpConversionPattern<opt::UOp> {
     auto inQubitsValues = adaptor.getInQubits();
     auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    // Concatenate controls: [pos..., neg...]  (preserve this order
+    // consistently)
+    SmallVector<Value> inCtrlQubits;
+    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
+                         negCtrlQubitsValues.size());
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // ---- Build ctrl-values (i1) matching the exact control order ----
+    Location loc = op.getLoc();
+    Type i1Ty = rewriter.getI1Type();
+
+    // Reuse the same constants; it's fine for a variadic segment to reference
+    // the same Value multiple times.
+    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                            /*width=*/1);
+    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/1);
+
+    SmallVector<Value> inCtrlValues;
+    inCtrlValues.reserve(inCtrlQubits.size());
+    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
+    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
 
     // Extract parameters
     SmallVector<Value> paramValues;
@@ -690,17 +938,6 @@ struct ConvertMQTOptSimpleGate<opt::UOp> final : OpConversionPattern<opt::UOp> {
     auto phi = paramValues[1];
     auto lambda = paramValues[2];
 
-    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
-                                    posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
-    // Output type setup
-    const Type qubitType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
-    const SmallVector<Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    auto outQubitTypes = TypeRange(qubitTypes);
-
     // Based on
     // https://docs.quantum.ibm.com/api/qiskit/0.24/qiskit.circuit.library.UGate
     // U(θ, φ, λ) = RZ(φ − π⁄2) ⋅ RX(π⁄2) ⋅ RZ(π − θ) ⋅ RX(π⁄2) ⋅ RZ(λ − π⁄2)
@@ -722,31 +959,62 @@ struct ConvertMQTOptSimpleGate<opt::UOp> final : OpConversionPattern<opt::UOp> {
 
     // RZ(λ − π/2)
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{lambdaMinusPi2},
-        inQubitsValues, "RZ", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RZ",
+        /*in_qubits=*/inQubitsValues,
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{lambdaMinusPi2},
+        /*adjoint=*/false);
 
     // RX(π/2)
     auto rx1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi2},
-        rz1.getResults(), "RX", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RX",
+        /*in_qubits=*/rz1.getOutQubits(),
+        /*in_ctrl_qubits=*/rz1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{pi2},
+        /*adjoint=*/false);
 
     // RZ(π − θ)
     auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{piMinusTheta2},
-        rx1.getResults(), "RZ", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RZ",
+        /*in_qubits=*/rx1.getOutQubits(),
+        /*in_ctrl_qubits=*/rx1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{piMinusTheta2},
+        /*adjoint=*/false);
 
     // RX(π/2)
     auto rx2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi2},
-        rz2.getResults(), "RX", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RX",
+        /*in_qubits=*/rz2.getOutQubits(),
+        /*in_ctrl_qubits=*/rz2.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{pi2},
+        /*adjoint=*/false);
 
     // RZ(φ − π/2)
     auto rz3 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{phiMinusPi2},
-        rx2.getResults(), "RZ", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RZ",
+        /*in_qubits=*/rx2.getOutQubits(),
+        /*in_ctrl_qubits=*/rx2.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{phiMinusPi2},
+        /*adjoint=*/false);
+
+    // ---- Replace: CustomOp results are (out_qubits, out_ctrl_qubits) ----
+    SmallVector<Value> replacements;
+    replacements.append(rz3.getOutQubits().begin(), rz3.getOutQubits().end());
+    replacements.append(rz3.getOutCtrlQubits().begin(),
+                        rz3.getOutCtrlQubits().end());
 
     // Replace the original U gate with the decomposed sequence
-    rewriter.replaceOp(op, rz3.getResults());
+    rewriter.replaceOp(op, replacements);
     return success();
   }
 };
@@ -763,6 +1031,30 @@ struct ConvertMQTOptSimpleGate<opt::U2Op> final
     auto inQubitsValues = adaptor.getInQubits();
     auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+
+    // Concatenate controls: [pos..., neg...]  (preserve this order
+    // consistently)
+    SmallVector<Value> inCtrlQubits;
+    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
+                         negCtrlQubitsValues.size());
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
+    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+
+    // ---- Build ctrl-values (i1) matching the exact control order ----
+    Location loc = op.getLoc();
+    Type i1Ty = rewriter.getI1Type();
+
+    // Reuse the same constants; it's fine for a variadic segment to reference
+    // the same Value multiple times.
+    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                            /*width=*/1);
+    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/1);
+
+    SmallVector<Value> inCtrlValues;
+    inCtrlValues.reserve(inCtrlQubits.size());
+    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
+    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
 
     // Extract parameters
     SmallVector<Value> paramValues;
@@ -799,17 +1091,6 @@ struct ConvertMQTOptSimpleGate<opt::U2Op> final
     auto phi = paramValues[0];
     auto lambda = paramValues[1];
 
-    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
-                                    posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
-    // Output type setup
-    const Type qubitType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
-    const SmallVector<Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    auto outQubitTypes = TypeRange(qubitTypes);
-
     // U2(φ, λ) = U(π/2, φ, λ) = RZ(φ − π⁄2) ⋅ RX(π⁄2) ⋅ RZ(3/4 π) ⋅ RX(π⁄2) ⋅
     // RZ(λ − π⁄2)
     auto pi2 = rewriter.create<ConstantOp>(op.getLoc(),
@@ -827,31 +1108,62 @@ struct ConvertMQTOptSimpleGate<opt::U2Op> final
 
     // RZ(λ − π/2)
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{lambdaMinusPi2},
-        inQubitsValues, "RZ", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RZ",
+        /*in_qubits=*/inQubitsValues,
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{lambdaMinusPi2},
+        /*adjoint=*/false);
 
     // RX(π/2)
     auto rx1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi2},
-        rz1.getResults(), "RX", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RX",
+        /*in_qubits=*/rz1.getOutQubits(),
+        /*in_ctrl_qubits=*/rz1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{pi2},
+        /*adjoint=*/false);
 
     // RZ(3/4 π)
     auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi34},
-        rx1.getResults(), "RZ", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RZ",
+        /*in_qubits=*/rx1.getOutQubits(),
+        /*in_ctrl_qubits=*/rx1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{pi34},
+        /*adjoint=*/false);
 
     // RX(π/2)
     auto rx2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{pi2},
-        rz2.getResults(), "RX", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RX",
+        /*in_qubits=*/rz2.getOutQubits(),
+        /*in_ctrl_qubits=*/rz2.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{pi2},
+        /*adjoint=*/false);
 
     // RZ(φ − π/2)
     auto rz3 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{phiMinusPi2},
-        rx2.getResults(), "RZ", false, inCtrlQubits, ValueRange{});
+        loc,
+        /*gate=*/"RZ",
+        /*in_qubits=*/rx2.getOutQubits(),
+        /*in_ctrl_qubits=*/rx2.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{phiMinusPi2},
+        /*adjoint=*/false);
+
+    // ---- Replace: CustomOp results are (out_qubits, out_ctrl_qubits) ----
+    SmallVector<Value> replacements;
+    replacements.append(rz3.getOutQubits().begin(), rz3.getOutQubits().end());
+    replacements.append(rz3.getOutCtrlQubits().begin(),
+                        rz3.getOutCtrlQubits().end());
 
     // Replace the original U gate with the decomposed sequence
-    rewriter.replaceOp(op, rz3.getResults());
+    rewriter.replaceOp(op, replacements);
     return success();
   }
 };
@@ -864,32 +1176,71 @@ struct ConvertMQTOptSimpleGate<opt::PeresOp> final
   LogicalResult
   matchAndRewrite(opt::PeresOp op, opt::PeresOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Extract operands
-    auto inQubitsValues = adaptor.getInQubits();
+    // Inputs / controls
+    auto inQubitsValues = adaptor.getInQubits(); // [q0, q1]
     const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
-    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
-                                    posCtrlQubitsValues.end());
+    // Concatenate controls: [pos..., neg...]  (preserve this order
+    // consistently)
+    SmallVector<Value> inCtrlQubits;
+    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
+                         negCtrlQubitsValues.size());
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
-    // Output type setup
-    const Type qubitType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
-    const SmallVector<Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    auto outQubitTypes = TypeRange(qubitTypes);
+    // ---- Build ctrl-values (i1) matching the exact control order ----
+    Location loc = op.getLoc();
+    Type i1Ty = rewriter.getI1Type();
 
-    // Peres = Toffoli(q2,q1,q0) CNOT(q2,q1)
-    auto ccnot1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{}, inQubitsValues,
-        "Toffoli", false, inCtrlQubits, ValueRange{});
+    // Reuse the same constants; it's fine for a variadic segment to reference
+    // the same Value multiple times.
+    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                            /*width=*/1);
+    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/1);
 
-    auto cnot2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{},
-        ccnot1.getResults(), "CNOT", false, inCtrlQubits, ValueRange{});
+    SmallVector<Value> inCtrlValues;
+    inCtrlValues.reserve(inCtrlQubits.size());
+    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
+    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
 
-    rewriter.replaceOp(op, cnot2.getResults());
+    // Peres = CNOT(q0, q1) ; X(q0)
+
+    // CNOT(q0, q1)
+    auto cnot = rewriter.create<catalyst::quantum::CustomOp>(
+        loc,
+        /*gate=*/"CNOT",
+        /*in_qubits=*/ValueRange{inQubitsValues[0], inQubitsValues[1]},
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
+
+    Value q0_after_cnot = cnot.getOutQubits()[0];
+    Value q1_after_cnot = cnot.getOutQubits()[1];
+
+    // X(q0')
+    auto x = rewriter.create<catalyst::quantum::CustomOp>(
+        loc,
+        /*gate=*/"PauliX",
+        /*in_qubits=*/ValueRange{q0_after_cnot},
+        /*in_ctrl_qubits=*/cnot.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
+
+    Value q0_final = x.getOutQubits()[0]; // target0
+    Value q1_final = q1_after_cnot;       // target1
+
+    // Final: (targets..., controls...)
+    SmallVector<Value> finalResults;
+    finalResults.push_back(q0_final);
+    finalResults.push_back(q1_final);
+    finalResults.append(x.getOutCtrlQubits().begin(),
+                        x.getOutCtrlQubits().end());
+
+    rewriter.replaceOp(op, finalResults);
     return success();
   }
 };
@@ -902,32 +1253,67 @@ struct ConvertMQTOptSimpleGate<opt::PeresdgOp> final
   LogicalResult
   matchAndRewrite(opt::PeresdgOp op, opt::PeresdgOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Extract operands
-    auto inQubitsValues = adaptor.getInQubits();
+    // Inputs / controls
+    auto inQubitsValues = adaptor.getInQubits(); // [q0, q1]
     const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
     const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
 
-    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
-                                    posCtrlQubitsValues.end());
+    // Concatenate controls: [pos..., neg...]  (preserve this order
+    // consistently)
+    SmallVector<Value> inCtrlQubits;
+    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
+                         negCtrlQubitsValues.size());
+    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
     inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
 
-    // Output type setup
-    const Type qubitType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
-    const SmallVector<Type> qubitTypes(
-        inQubitsValues.size() + inCtrlQubits.size(), qubitType);
-    auto outQubitTypes = TypeRange(qubitTypes);
+    // ---- Build ctrl-values (i1) matching the exact control order ----
+    Location loc = op.getLoc();
+    Type i1Ty = rewriter.getI1Type();
 
-    // Peresdg = CNOT(q2,q1) Toffoli(q2,q1,q0)
-    auto cnot1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{}, inQubitsValues,
-        "CNOT", false, inCtrlQubits, ValueRange{});
+    // Reuse the same constants; it's fine for a variadic segment to reference
+    // the same Value multiple times.
+    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                            /*width=*/1);
+    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/1);
 
-    auto ccnot2 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(), outQubitTypes, TypeRange{}, ValueRange{},
-        cnot1.getResults(), "Toffoli", false, inCtrlQubits, ValueRange{});
+    SmallVector<Value> inCtrlValues;
+    inCtrlValues.reserve(inCtrlQubits.size());
+    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
+    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
 
-    rewriter.replaceOp(op, ccnot2.getResults());
+    // Peres† = X(q0) ; CNOT(q0, q1)
+
+    // X(q0)
+    auto x = rewriter.create<catalyst::quantum::CustomOp>(
+        loc,
+        /*gate=*/"PauliX",
+        /*in_qubits=*/ValueRange{inQubitsValues[0]},
+        /*in_ctrl_qubits=*/inCtrlQubits,
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
+
+    Value q0_after_x = x.getOutQubits()[0];
+
+    // CNOT(q0', q1)
+    auto cnot = rewriter.create<catalyst::quantum::CustomOp>(
+        loc,
+        /*gate=*/"CNOT",
+        /*in_qubits=*/ValueRange{q0_after_x, inQubitsValues[1]},
+        /*in_ctrl_qubits=*/x.getOutCtrlQubits(),
+        /*in_ctrl_values=*/inCtrlValues,
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
+
+    // Final: (targets..., controls...)
+    SmallVector<Value> finalResults;
+    finalResults.push_back(cnot.getOutQubits()[0]); // q0_final
+    finalResults.push_back(cnot.getOutQubits()[1]); // q1_final
+    finalResults.append(cnot.getOutCtrlQubits().begin(),
+                        cnot.getOutCtrlQubits().end()); // controls
+
+    rewriter.replaceOp(op, finalResults);
     return success();
   }
 };

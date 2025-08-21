@@ -12,6 +12,8 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
+#include "llvm/ADT/SmallVector.h"
+
 #include <Quantum/IR/QuantumDialect.h>
 #include <Quantum/IR/QuantumOps.h>
 #include <cassert>
@@ -203,13 +205,22 @@ struct ConvertQuantumCustomOp final
     // Extract operand(s) and attribute(s)
     auto gateName = op.getGateName();
     auto paramsValues = adaptor.getParams();
-    auto allQubitsValues = adaptor.getInQubits();
-    auto inNegCtrlQubitsValues = ValueRange(); // TODO: not available yet
+    auto inQubits = adaptor.getInQubits();
+    auto inCtrlQubits = adaptor.getInCtrlQubits();
+    auto inCtrlValues = adaptor.getInCtrlValues();
 
-    // Can be manipulated later
-    SmallVector<Value> inQubitsVec(allQubitsValues.begin(),
-                                   allQubitsValues.end());
-    SmallVector<Value> inCtrlQubitsVec;
+    // Convert to SmallVector for manipulation
+    SmallVector<Value> inPosCtrlQubitsVec;
+    SmallVector<Value> inNegCtrlQubitsVec;
+
+    // Derive positive and negative control qubits from existing control qubits
+    for (size_t i = 0; i < inCtrlQubits.size(); ++i) {
+      if (inCtrlValues[i]) {
+        inPosCtrlQubitsVec.emplace_back(inCtrlQubits[i]);
+      } else {
+        inNegCtrlQubitsVec.emplace_back(inCtrlQubits[i]);
+      }
+    }
 
     SmallVector<bool> paramsMaskVec;
     SmallVector<double> staticParamsVec;
@@ -255,35 +266,15 @@ struct ConvertQuantumCustomOp final
     auto paramsMask =
         DenseBoolArrayAttr::get(rewriter.getContext(), paramsMaskVec);
 
-    if (gateName == "CNOT" || gateName == "CY" || gateName == "CZ" ||
-        gateName == "CRX" || gateName == "CRY" || gateName == "CRZ" ||
-        gateName == "ControlledPhaseShift") {
-      assert(inQubitsVec.size() == 2 && "Expected 1 control + 1 target qubit");
-      inCtrlQubitsVec.emplace_back(inQubitsVec[0]);
-      inQubitsVec = {inQubitsVec[1]};
-    } else if (gateName == "Toffoli") {
-      assert(inQubitsVec.size() == 3 && "Expected 2 controls + 1 target qubit");
-      inCtrlQubitsVec.emplace_back(inQubitsVec[0]);
-      inCtrlQubitsVec.emplace_back(inQubitsVec[1]);
-      inQubitsVec = {inQubitsVec[2]};
-    } else if (gateName == "CSWAP") {
-      assert(inQubitsVec.size() == 3 && "Expected 1 control + 2 target qubits");
-      inCtrlQubitsVec.emplace_back(inQubitsVec[0]);
-      inQubitsVec = {inQubitsVec[1], inQubitsVec[2]};
-    }
-
-    // Final ValueRanges to pass into create<> ops
-    const ValueRange inQubitsValues(inQubitsVec);
-    const ValueRange inCtrlQubitsValues(inCtrlQubitsVec);
-
     // Create the new operation
     Operation* mqtoptOp = nullptr;
 
 #define CREATE_GATE_OP(GATE_TYPE)                                              \
   rewriter.create<opt::GATE_TYPE##Op>(                                         \
-      op.getLoc(), inQubitsValues.getType(), inCtrlQubitsValues.getType(),     \
-      inNegCtrlQubitsValues.getType(), staticParams, paramsMask, paramsValues, \
-      inQubitsValues, inCtrlQubitsValues, inNegCtrlQubitsValues)
+      op.getLoc(), inQubits.getTypes(),                                        \
+      ValueRange(inPosCtrlQubitsVec).getTypes(),                               \
+      ValueRange(inNegCtrlQubitsVec).getTypes(), staticParams, paramsMask,     \
+      finalParamValues, inQubits, inPosCtrlQubitsVec, inNegCtrlQubitsVec)
 
     if (gateName == "Hadamard") {
       mqtoptOp = CREATE_GATE_OP(H);
