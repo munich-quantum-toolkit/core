@@ -42,9 +42,8 @@ struct LiftMeasurementsAboveControlsPattern final
       return mlir::failure();
     }
 
-    if (std::find(predecessorUnitary.getOutQubits().begin(),
-                  predecessorUnitary.getOutQubits().end(),
-                  qubitVariable) != predecessorUnitary.getOutQubits().end()) {
+    if (llvm::find(predecessorUnitary.getOutQubits(), qubitVariable) !=
+        predecessorUnitary.getOutQubits().end()) {
       // The measured qubit is a target, not a control of the gate.
       return mlir::failure();
     }
