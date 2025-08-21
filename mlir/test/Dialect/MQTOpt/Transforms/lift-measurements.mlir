@@ -15,7 +15,7 @@
 
 module {
   // CHECK-LABEL: func.func @testLiftOverPositiveControl
-  func.func @testLiftOverPositiveControl() -> i1 {
+  func.func @testLiftOverPositiveControl() -> (i1, i1) {
     // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[Q0_2:.*]], %[[C0:.*]] = "mqtopt.measure"(%[[Q0_1:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[Q1_2:.*]] = scf.if %[[C0]] -> (!mqtopt.Qubit) {
@@ -40,10 +40,11 @@ module {
     %q1_3, %q0_3 = mqtopt.x() %q1_2 ctrl %q0_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
     %q0_4, %c0 = "mqtopt.measure"(%q0_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    %q1_4, %c1 = "mqtopt.measure"(%q1_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
     "mqtopt.deallocQubit"(%q0_4) : (!mqtopt.Qubit) -> ()
-    "mqtopt.deallocQubit"(%q1_3) : (!mqtopt.Qubit) -> ()
-    return %c0 : i1
+    "mqtopt.deallocQubit"(%q1_4) : (!mqtopt.Qubit) -> ()
+    return %c0, %c1 : i1, i1
   }
 }
 
@@ -53,7 +54,7 @@ module {
 
 module {
   // CHECK-LABEL: func.func @testLiftOverNegativeControl
-  func.func @testLiftOverNegativeControl() -> i1 {
+  func.func @testLiftOverNegativeControl() -> (i1, i1) {
     // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[ANY:.*]] nctrl %[[ANY:.*]] : !mqtopt.Qubit nctrl !mqtopt.Qubit
     // CHECK: %[[Q0_2:.*]], %[[C0:.*]] = "mqtopt.measure"(%[[Q0_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[Q1_2:.*]] = scf.if %[[C0]] -> (!mqtopt.Qubit) {
@@ -78,10 +79,11 @@ module {
     %q1_3, %q0_3 = mqtopt.x() %q1_2 nctrl %q0_2 : !mqtopt.Qubit nctrl !mqtopt.Qubit
 
     %q0_4, %c0 = "mqtopt.measure"(%q0_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    %q1_4, %c1 = "mqtopt.measure"(%q1_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
     "mqtopt.deallocQubit"(%q0_4) : (!mqtopt.Qubit) -> ()
-    "mqtopt.deallocQubit"(%q1_3) : (!mqtopt.Qubit) -> ()
-    return %c0 : i1
+    "mqtopt.deallocQubit"(%q1_4) : (!mqtopt.Qubit) -> ()
+    return %c0, %c1 : i1, i1
   }
 }
 
@@ -91,10 +93,13 @@ module {
 
 module {
   // CHECK-LABEL: func.func @testLiftOverOneOfMultipleControls
-  func.func @testLiftOverOneOfMultipleControls() -> i1 {
-    // CHECK: %[[Q1_1:.*]], %[[C1:.*]] = "mqtopt.measure"(%[[Q1_0:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+  func.func @testLiftOverOneOfMultipleControls() -> (i1) {
+    // CHECK: %[[Q0_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[Q1_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[Q2_0:.*]] = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
+    // CHECK: %[[Q1_1:.*]], %[[C1:.*]] = "mqtopt.measure"(%[[Q1_0]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[Q02_1:.*]]:2 = scf.if %[[C1]] ->
-    // CHECK-NEXT: %[[Q0_1IF:.*]], %[[Q2_1IF:.*]] = mqtopt.x() %[[Q0_0:.*]] ctrl %[[Q2_0:.*]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK-NEXT: %[[Q0_1IF:.*]], %[[Q2_1IF:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q2_0]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK-NEXT: scf.yield %[[Q0_1IF:.*]], %[[Q2_1IF:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK-NEXT: } else {
     // CHECK-NEXT: scf.yield %[[Q0_0]], %[[Q2_0]] : !mqtopt.Qubit, !mqtopt.Qubit
@@ -111,9 +116,7 @@ module {
     // CHECK-NEXT: } else {
     // CHECK-NEXT: scf.yield %[[Q02_2]]#0, %[[Q02_2]]#1
     // CHECK-NEXT: }
-    // CHECK: "mqtopt.deallocQubit"(%[[Q02_3]]#0)
     // CHECK: "mqtopt.deallocQubit"(%[[Q1_1]])
-    // CHECK: "mqtopt.deallocQubit"(%[[Q02_3]]#1)
 
     %q0_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
     %q1_0 = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
@@ -123,12 +126,17 @@ module {
     %q0_2, %q12_1:2 = mqtopt.x() %q0_1 nctrl %q12_0#1, %q12_0#0 : !mqtopt.Qubit nctrl !mqtopt.Qubit, !mqtopt.Qubit
     %q0_3, %q1_3, %q2_3 = mqtopt.x() %q0_2 ctrl %q12_1#1 nctrl %q12_1#0 : !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
 
-    %q1_4, %c0 = "mqtopt.measure"(%q1_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    %q1_4, %c1 = "mqtopt.measure"(%q1_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-    "mqtopt.deallocQubit"(%q0_3) : (!mqtopt.Qubit) -> ()
+    %q0_4 = mqtopt.h() %q0_3 : !mqtopt.Qubit
+    %q2_4 = mqtopt.h() %q2_3 : !mqtopt.Qubit
+    %q0_5, %c0 = "mqtopt.measure"(%q0_4) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    %q2_5, %c2 = "mqtopt.measure"(%q2_4) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+    "mqtopt.deallocQubit"(%q0_5) : (!mqtopt.Qubit) -> ()
     "mqtopt.deallocQubit"(%q1_4) : (!mqtopt.Qubit) -> ()
-    "mqtopt.deallocQubit"(%q2_3) : (!mqtopt.Qubit) -> ()
-    return %c0 : i1
+    "mqtopt.deallocQubit"(%q2_5) : (!mqtopt.Qubit) -> ()
+    return %c1 : i1
   }
 }
 

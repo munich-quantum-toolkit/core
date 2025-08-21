@@ -42,6 +42,7 @@ struct LiftMeasurementsPass final
     populateReplaceClassicalControlsWithIfPatterns(patterns);
     populateLiftMeasurementsAboveControlsPatterns(patterns);
     populateLiftMeasurementsAboveGatesPatterns(patterns);
+    populateDeadGateEliminationPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
     if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {

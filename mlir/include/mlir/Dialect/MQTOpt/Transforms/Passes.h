@@ -35,6 +35,7 @@ void populateReplaceClassicalControlsWithIfPatterns(
     mlir::RewritePatternSet& patterns);
 void populateLiftMeasurementsAboveGatesPatterns(
     mlir::RewritePatternSet& patterns);
+void populateDeadGateEliminationPatterns(mlir::RewritePatternSet& patterns);
 void populateReuseQubitsPatterns(mlir::RewritePatternSet& patterns);
 void populateToQuantumComputationPatterns(mlir::RewritePatternSet& patterns,
                                           qc::QuantumComputation& circuit);
