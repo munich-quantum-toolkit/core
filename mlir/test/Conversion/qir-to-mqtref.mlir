@@ -170,7 +170,7 @@ module {
 }
 
 // -----
-// This test checks if the reset operation is correctly converted for statically addressed qubits
+// This test checks if the reset operation using static qubits is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertResetOpStatic()
     llvm.func @testConvertResetOpStatic() attributes {passthrough = ["entry_point"]}  {
@@ -224,7 +224,7 @@ module {
 }
 
 // -----
-// This test checks if the measure operation is correctly converted
+// This test checks if the measure operation using static qubits is correctly converted
 module {
     llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
     // CHECK-LABEL: llvm.func @testConvertMeasureStatic()
@@ -314,7 +314,7 @@ module {
 }
 
 // -----
-// This test checks if the single qubit gates are correctly converted for static qubits
+// This test checks if the single qubit gates using static qubits are correctly
 module {
     // CHECK-LABEL: llvm.func @testConvertSingleQubitOpStatic()
     llvm.func @testConvertSingleQubitOpStatic() attributes {passthrough = ["entry_point"]}  {
@@ -421,7 +421,7 @@ module {
 }
 
 // -----
-// This test checks if the two target gates are correctly converted for static qubits
+// This test checks if the two target gates using static qubits are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertTwoTargetOpStatic()
     llvm.func @testConvertTwoTargetOpStatic() attributes {passthrough = ["entry_point"]}  {
@@ -516,7 +516,7 @@ module {
 }
 
 // -----
-// This test checks if the single qubit rotation gates are correctly converted
+// This test checks if the single qubit rotation gates using static qubitss are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testSingleQubitRotationOpStatic()
     llvm.func @testSingleQubitRotationOpStatic() attributes {passthrough = ["entry_point"]}  {
@@ -612,7 +612,7 @@ module {
     llvm.func @__quantum__rt__qubit_release(!llvm.ptr) -> ()
 }
 // -----
-// This test checks if the multiple qubit rotation gates are correctly converted
+// This test checks if the multiple qubit rotation gates using static qubits are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testMultipleQubitRotationOpStatic()
     llvm.func @testMultipleQubitRotationOpStatic() attributes {passthrough = ["entry_point"]}  {
@@ -701,7 +701,7 @@ module {
 }
 
 // -----
-// This test checks if controlled gates are correctly converted
+// This test checks if controlled gates using static qubits are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertControlledOpStatic()
     llvm.func @testConvertControlledOpStatic() attributes {passthrough = ["entry_point"]}  {
@@ -793,7 +793,7 @@ module {
 }
 
 // -----
-// This test checks if the controlled gphase operation is correctly converted
+// This test checks if the controlled gphase operation using static qubits is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertGPhaseOpControlledStatic()
     llvm.func @testConvertGPhaseOpControlledStatic() attributes {passthrough = ["entry_point"]}  {
@@ -845,7 +845,7 @@ module {
 }
 
 // -----
-// This test checks if the barrierOp is converted correctly
+// This test checks if the barrierOp using static qubits is converted correctly
 module {
     // CHECK-LABEL: llvm.func @testConvertBarrierOpStatic()
     llvm.func @testConvertBarrierOpStatic() attributes {passthrough = ["entry_point"]}  {
@@ -919,7 +919,7 @@ module {
 }
 
 // -----
-// This test checks if a Bell state with static qubit addressing is converted correctly.
+// This test checks if a Bell state using static qubits is converted correctly.
 module {
     llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
     llvm.mlir.global internal constant @mlir.llvm.nameless_global_1("r1\00") {addr_space = 0 : i32, dso_local}

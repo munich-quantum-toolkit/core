@@ -69,7 +69,7 @@ public:
 namespace {
 
 struct LoweringState {
-  // map each llvm qir result to the new mqtref result
+  // map each llvm QIR result to the new mqtref result
   DenseMap<Value, Value> operandMap;
   // next free allocate index
   int64_t index{};
