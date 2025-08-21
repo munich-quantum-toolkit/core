@@ -58,7 +58,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi
-    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
+    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
 
   # Set C++ standard
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
