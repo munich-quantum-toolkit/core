@@ -371,6 +371,7 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
                          : DenseBoolArrayAttr{};
 
     SmallVector<Value> newParams;
+
     // check for static parameters
     if (staticParams) {
       SmallVector<Value> staticParamValues;
@@ -397,16 +398,13 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
         // staticParameters do
         newParams = staticParamValues;
       } else {
+        newParams.reserve(paramMask.size());
         auto staticParamIndex = 0;
         auto paramIndex = 0;
         // merge the parameter values depending on the paramMask
-        for (auto isStaticParam : paramMask.asArrayRef()) {
-          // push_back the values as Value is a wrapper
-          if (isStaticParam) {
-            newParams.push_back(staticParamValues[staticParamIndex++]);
-          } else {
-            newParams.push_back(params[paramIndex++]);
-          }
+        for (bool isStatic : paramMask.asArrayRef()) {
+          newParams.push_back(isStatic ? staticParamValues[staticParamIndex++]
+                                       : params[paramIndex++]);
         }
       }
     } else {
