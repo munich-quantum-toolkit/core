@@ -17,30 +17,29 @@
 // CHECK-LABEL: func @bar()
 func.func @bar() {
   // CHECK: %[[QREG:.*]] = quantum.alloc( 3) : !quantum.reg
-  %0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
-
   // CHECK: %[[Q0:.*]] = quantum.extract %[[QREG]][ 0] : !quantum.reg -> !quantum.bit
   // CHECK: %[[Q1:.*]] = quantum.extract %[[QREG]][ 1] : !quantum.reg -> !quantum.bit
   // CHECK: %[[Q2:.*]] = quantum.extract %[[QREG]][ 2] : !quantum.reg -> !quantum.bit
-  %out_qureg, %out_qubit = "mqtopt.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-  %out_qureg_0, %out_qubit_1 = "mqtopt.extractQubit"(%out_qureg) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-  %out_qureg_2, %out_qubit_3 = "mqtopt.extractQubit"(%out_qureg_0) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+  // CHECK: %[[H_OUT:.*]] = quantum.custom "Hadamard"() %[[Q0]] : !quantum.bit
+  // CHECK: %[[TV1:.*]] = arith.constant true
+  // CHECK: %[[CNOT1_TGT:.*]], %[[CNOT1_CTRL:.*]] = quantum.custom "CNOT"() %[[Q1]] ctrls(%[[H_OUT]]) ctrlvals(%[[TV1]]) : !quantum.bit ctrls !quantum.bit
+  // CHECK: %[[TV2:.*]] = arith.constant true
+  // CHECK: %[[CNOT2_TGT:.*]], %[[CNOT2_CTRL:.*]] = quantum.custom "CNOT"() %[[Q2]] ctrls(%[[CNOT1_CTRL]]) ctrlvals(%[[TV2]]) : !quantum.bit ctrls !quantum.bit
+  // CHECK: %[[INS0:.*]] = quantum.insert %[[QREG]][ 0], %[[CNOT1_TGT]] : !quantum.reg, !quantum.bit
+  // CHECK: %[[INS1:.*]] = quantum.insert %[[INS0]][ 1], %[[CNOT2_TGT]] : !quantum.reg, !quantum.bit
+  // CHECK: %[[INS2:.*]] = quantum.insert %[[INS1]][ 2], %[[CNOT2_CTRL]] : !quantum.reg, !quantum.bit
+  // CHECK: quantum.dealloc %[[INS2]] : !quantum.reg
 
-  // CHECK: %[[H:.*]] = quantum.custom "Hadamard"() %[[Q0]] : !quantum.bit
-  %1 = mqtopt.h() %out_qubit : !mqtopt.Qubit
-
-  // CHECK: %[[CX1:.*]]:2 = quantum.custom "CNOT"() %[[H]], %[[Q1]] : !quantum.bit, !quantum.bit
-  // CHECK: %[[CX2:.*]]:2 = quantum.custom "CNOT"() %[[CX1]]#0, %[[Q2]] : !quantum.bit, !quantum.bit
-  %21, %20 = mqtopt.x() %out_qubit_1 ctrl %1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
-  %31, %30 = mqtopt.x() %out_qubit_3 ctrl %20 : !mqtopt.Qubit ctrl !mqtopt.Qubit
-
-  // CHECK: %[[R0:.*]] = quantum.insert %[[QREG]][ 0], %[[CX1]]#0 : !quantum.reg, !quantum.bit
-  // CHECK: %[[R1:.*]] = quantum.insert %[[R0]][ 1], %[[CX2]]#0 : !quantum.reg, !quantum.bit
-  // CHECK: %[[R2:.*]] = quantum.insert %[[R1]][ 2], %[[CX2]]#1 : !quantum.reg, !quantum.bit
-  %4 = "mqtopt.insertQubit"(%out_qureg_2, %20) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-  %5 = "mqtopt.insertQubit"(%4, %30) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-  %6 = "mqtopt.insertQubit"(%5, %31) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-
-  "mqtopt.deallocQubitRegister"(%6) : (!mqtopt.QubitRegister) -> ()
-  return
+    %0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
+    %out_qreg, %out_qubit = "mqtopt.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %out_qreg_0, %out_qubit_1 = "mqtopt.extractQubit"(%out_qreg) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %out_qreg_2, %out_qubit_3 = "mqtopt.extractQubit"(%out_qreg_0) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %out_qubits = mqtopt.h( static [] mask []) %out_qubit : !mqtopt.Qubit
+    %out_qubits_6, %pos_ctrl_out_qubits = mqtopt.x( static [] mask []) %out_qubit_1 ctrl %out_qubits : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %out_qubits_9, %pos_ctrl_out_qubits_10 = mqtopt.x( static [] mask []) %out_qubit_3 ctrl %pos_ctrl_out_qubits : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %1 = "mqtopt.insertQubit"(%out_qreg_2, %out_qubits_6) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    %2 = "mqtopt.insertQubit"(%1, %out_qubits_9) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    %3 = "mqtopt.insertQubit"(%2, %pos_ctrl_out_qubits_10) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
+    "mqtopt.deallocQubitRegister"(%3) : (!mqtopt.QubitRegister) -> ()
+    return
 }
