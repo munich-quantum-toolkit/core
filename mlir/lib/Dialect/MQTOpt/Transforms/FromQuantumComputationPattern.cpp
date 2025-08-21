@@ -91,7 +91,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 #define CREATE_OP_CASE(opType)                                                 \
   case qc::OpType::opType:                                                     \
     return rewriter.create<opType##Op>(                                        \
-        loc, qubitType, controlQubitsPositive.getType(),                       \
+        loc, outQubitTypes, controlQubitsPositive.getType(),                   \
         controlQubitsNegative.getType(), denseParamsAttr, nullptr,             \
         mlir::ValueRange{}, inQubits, controlQubitsPositive,                   \
         controlQubitsNegative);
@@ -271,18 +271,25 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
               op->getLoc(), o->getType(), inQubits, controlQubitsPositive,
               controlQubitsNegative, rewriter, o->getParameter());
 
-          for (size_t i = 0; i < o->getTargets().size(); i++) {
-            currentQubitVariables[o->getTargets()[i]] =
-                newUnitaryOp.getAllOutQubits()[i];
+          const size_t numTargets = o->getTargets().size();
+          auto outs = newUnitaryOp.getAllOutQubits();
+
+          // targets
+          for (size_t i = 0; i < numTargets; ++i) {
+            currentQubitVariables[o->getTargets()[i]] = outs[i];
           }
-          for (size_t i = 0; i < controlQubitsPositive.size(); i++) {
+
+          // controls
+          size_t base = numTargets;
+          for (size_t i = 0; i < controlQubitsPositive.size(); ++i) {
             currentQubitVariables[controlQubitIndicesPositive[i]] =
-                newUnitaryOp.getAllOutQubits()[i + 1];
+                outs[base + i];
           }
-          for (size_t i = 0; i < controlQubitsNegative.size(); i++) {
+
+          base += controlQubitsPositive.size();
+          for (size_t i = 0; i < controlQubitsNegative.size(); ++i) {
             currentQubitVariables[controlQubitIndicesNegative[i]] =
-                newUnitaryOp
-                    .getAllOutQubits()[i + 1 + controlQubitsPositive.size()];
+                outs[base + i];
           }
         } else if (o->getType() == qc::OpType::Measure) {
           // For measurement operations, we call the `createMeasureOp` function.
