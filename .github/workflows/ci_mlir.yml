@@ -120,6 +120,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      # set up uv for faster Python package management
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      - name: Install Ninja
+        run: uv tool install ninja
+
       - name: Find latest release of llvm-project
         id: get-latest
         run: |
@@ -155,7 +165,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/llvm/llvm-project.git --branch llvmorg-${{ steps.get-latest.outputs.latest }}
           cd llvm-project
-          cmake -S llvm -B build_llvm `
+          cmake -S llvm -B build_llvm -G Ninja `
             -DLLVM_ENABLE_PROJECTS=mlir `
             -DLLVM_BUILD_EXAMPLES=OFF `
             -DLLVM_TARGETS_TO_BUILD="X86" `
@@ -169,13 +179,6 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}\llvm-install
           cmake --build build_llvm --target install --config Release
 
-      # set up uv for faster Python package management
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          python-version: 3.13
-          activate-environment: true
-
       # make sure the lit test runner is installed
       - name: Install lit
         run: uv pip install lit
@@ -183,7 +186,7 @@ jobs:
       # configure the project with CMake
       - name: Configure CMake for MLIR
         run: |
-          cmake -S . -B build `
+          cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_MQT_CORE_MLIR=ON `
             -DMLIR_DIR=${{ github.workspace }}\llvm-install\lib\cmake\mlir `
