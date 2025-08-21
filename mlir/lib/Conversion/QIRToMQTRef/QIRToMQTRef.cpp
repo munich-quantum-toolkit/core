@@ -35,6 +35,7 @@
 #include <cstdint>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
