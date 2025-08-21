@@ -311,14 +311,14 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
           controlQubitsNegative);
 
     case qc::OpType::XXminusYY:
-      return rewriter.create<XXminusYY>(
+      return rewriter.create<XXminusYYOp>(
           loc, outQubitTypes, controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), denseParamsAttr, nullptr,
           mlir::ValueRange{}, inQubits, controlQubitsPositive,
           controlQubitsNegative);
 
     case qc::OpType::XXplusYY:
-      return rewriter.create<XXplusYY>(
+      return rewriter.create<XXplusYYOp>(
           loc, outQubitTypes, controlQubitsPositive.getType(),
           controlQubitsNegative.getType(), denseParamsAttr, nullptr,
           mlir::ValueRange{}, inQubits, controlQubitsPositive,
