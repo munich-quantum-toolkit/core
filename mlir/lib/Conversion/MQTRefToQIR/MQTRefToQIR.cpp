@@ -357,7 +357,7 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
     auto* ctx = rewriter.getContext();
 
     // get all the values
-    auto params = adaptor.getParams();
+    const auto& params = adaptor.getParams();
     const auto& inQubits = adaptor.getInQubits();
     const auto& posCtrlQubits = adaptor.getPosCtrlInQubits();
     const auto& negCtrlQubits = adaptor.getNegCtrlInQubits();
@@ -369,9 +369,11 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
                          ? DenseBoolArrayAttr::get(rewriter.getContext(),
                                                    *op.getParamsMask())
                          : DenseBoolArrayAttr{};
-    SmallVector<Value> staticParamValues;
+
+    SmallVector<Value> newParams;
     // check for static parameters
     if (staticParams) {
+      SmallVector<Value> staticParamValues;
       // set the insertionpoint to the beginning of the first block
       auto funcOp = op->template getParentOfType<LLVM::LLVMFuncOp>();
       auto& firstBlock = *(funcOp.getBlocks().begin());
@@ -393,9 +395,8 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
       if (!paramMask) {
         // assuming every value is true when the paramMask does not exist but
         // staticParameters do
-        params = ValueRange{staticParamValues};
+        newParams = staticParamValues;
       } else {
-        SmallVector<Value> newParams;
         auto staticParamIndex = 0;
         auto paramIndex = 0;
         // merge the parameter values depending on the paramMask
@@ -407,19 +408,20 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
             newParams.push_back(params[paramIndex++]);
           }
         }
-        // override the old params
-        params = ValueRange(newParams);
       }
+    } else {
+      newParams = params;
     }
+
     // concatenate all the values
     SmallVector<Value> operands;
-    operands.reserve(params.size() + inQubits.size() + posCtrlQubits.size() +
+    operands.reserve(newParams.size() + inQubits.size() + posCtrlQubits.size() +
                      negCtrlQubits.size());
 
     operands.append(posCtrlQubits.begin(), posCtrlQubits.end());
     operands.append(negCtrlQubits.begin(), negCtrlQubits.end());
     operands.append(inQubits.begin(), inQubits.end());
-    operands.append(params.begin(), params.end());
+    operands.append(newParams.begin(), newParams.end());
 
     // check for negative controlled qubits
     // for any negative controlled qubits place an NOT operation before and
