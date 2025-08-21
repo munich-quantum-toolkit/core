@@ -402,7 +402,7 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
         auto staticParamIndex = 0;
         auto paramIndex = 0;
         // merge the parameter values depending on the paramMask
-        for (bool isStatic : paramMask.asArrayRef()) {
+        for (auto isStatic : paramMask.asArrayRef()) {
           newParams.push_back(isStatic ? staticParamValues[staticParamIndex++]
                                        : params[paramIndex++]);
         }
