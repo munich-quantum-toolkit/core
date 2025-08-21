@@ -53,7 +53,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
    * @return A new operation that is a clone of `op` without the specified
    * control operand.
    */
-  static mlir::Operation*
+  static UnitaryInterface
   cloneUnitaryOpWithoutControl(UnitaryInterface op, mlir::Value operand,
                                mlir::PatternRewriter& rewriter) {
     rewriter.setInsertionPointAfter(op);
@@ -98,10 +98,15 @@ struct ReplaceBasisStateControlsWithIfPattern final
       }
     }
 
+    // First, we add all parameters.
+    for (const auto paramOperand : op.getParams()) {
+      remainingOperands.emplace_back(paramOperand);
+    }
+    // Then we add all other operands, except the one that should be removed.
     for (const auto [index, otherOperand] :
          llvm::enumerate(op.getAllInQubits())) {
       if (operand != otherOperand) {
-        remainingOperands.push_back(otherOperand);
+        remainingOperands.emplace_back(otherOperand);
       }
     }
     for (auto it = op->getResults().begin() + 1; it != op->getResults().end();
@@ -130,7 +135,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
                        rewriter.getDenseI32ArrayAttr(inSegSizes));
     state.addAttribute("resultSegmentSizes",
                        rewriter.getDenseI32ArrayAttr(outSegSizes));
-    return rewriter.create(state);
+    return mlir::dyn_cast<UnitaryInterface>(rewriter.create(state));
   }
 
   /**
@@ -147,11 +152,6 @@ struct ReplaceBasisStateControlsWithIfPattern final
                                bool positive, mlir::PatternRewriter& rewriter) {
     auto* predecessor = operand.getDefiningOp();
     auto predecessorMeasurement = mlir::dyn_cast<MeasureOp>(predecessor);
-    op->print(llvm::outs());
-    llvm::outs() << "\n";
-    predecessor->print(llvm::outs());
-    llvm::outs() << "\n";
-    llvm::outs() << "\n";
     if (!predecessorMeasurement) {
       return nullptr; // The operand does not come from a measurement.
     }
@@ -162,7 +162,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
 
     // We first create a new operation that is the same as before, just with the
     // current control removed
-    auto* reducedOp = cloneUnitaryOpWithoutControl(op, operand, rewriter);
+    auto reducedOp = cloneUnitaryOpWithoutControl(op, operand, rewriter);
 
     // Now we create the `scf.if` operation that uses the measurement result as
     // condition and yields the outcome of the reducedOp.
@@ -180,7 +180,8 @@ struct ReplaceBasisStateControlsWithIfPattern final
     // If the control is not satisfied, we yield the original values of the
     // qubits.
     rewriter.setInsertionPointToStart(nonSatisfiedBlock);
-    rewriter.create<mlir::scf::YieldOp>(op.getLoc(), reducedOp->getOperands());
+    rewriter.create<mlir::scf::YieldOp>(op.getLoc(),
+                                        reducedOp.getAllInQubits());
 
     // All remaining uses of the original op are replaced by the results of the
     // `if` operation. Then, the original operation is erased.
@@ -192,13 +193,11 @@ struct ReplaceBasisStateControlsWithIfPattern final
         offset = -1;
         continue;
       }
-      rewriter.replaceAllUsesWith(
-          value, ifOp.getResult(index - op.getParams().size() + offset));
+      rewriter.replaceAllUsesWith(value, ifOp.getResult(index + offset));
     }
     rewriter.eraseOp(op);
 
-    auto unitaryReplacedOp = mlir::dyn_cast<UnitaryInterface>(reducedOp);
-    return unitaryReplacedOp;
+    return reducedOp;
   }
 
   /**
