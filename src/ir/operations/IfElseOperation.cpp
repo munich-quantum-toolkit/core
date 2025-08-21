@@ -239,7 +239,7 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
     of << " else {\n";
     elseOp->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
   } else {
-    of << " if (";
+    of << '\n' << "if (";
     if (controlRegister.has_value()) {
       assert(!controlBit.has_value());
       of << controlRegister->getName() << ' '

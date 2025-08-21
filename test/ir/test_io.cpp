@@ -656,7 +656,8 @@ TEST_F(IO, ifElseOperationRegisterToOpenQASM2) {
                                "creg c[1];\n"
                                "if (c == 1) {\n"
                                "  x q[0];\n"
-                               "} if (c != 1) {\n"
+                               "}\n"
+                               "if (c != 1) {\n"
                                "  y q[0];\n"
                                "}\n";
   const auto actual = qc.toQASM(false);
@@ -676,7 +677,8 @@ TEST_F(IO, ifElseOperationBitToOpenQASM2) {
                                "creg c[1];\n"
                                "if (c[0]) {\n"
                                "  x q[0];\n"
-                               "} if (!c[0]) {\n"
+                               "}\n"
+                               "if (!c[0]) {\n"
                                "  y q[0];\n"
                                "}\n";
   const auto actual = qc.toQASM(false);
