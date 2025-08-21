@@ -88,6 +88,14 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     return insert;
   }
 
+#define CREATE_OP_CASE(opType)                                                 \
+  case qc::OpType::opType:                                                     \
+    return rewriter.create<opType##Op>(                                        \
+        loc, qubitType, controlQubitsPositive.getType(),                       \
+        controlQubitsNegative.getType(), denseParamsAttr, nullptr,             \
+        mlir::ValueRange{}, inQubits, controlQubitsPositive,                   \
+        controlQubitsNegative);
+
   /**
    * @brief Creates a unitary operation on a given qubit with any number of
    * positive or negative controls.
@@ -120,210 +128,38 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
             : mlir::DenseF64ArrayAttr::get(rewriter.getContext(), parameters);
 
     switch (type) {
-    case qc::OpType::I:
-      return rewriter.create<IOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::H:
-      return rewriter.create<HOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::X:
-      return rewriter.create<XOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::Y:
-      return rewriter.create<YOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::Z:
-      return rewriter.create<ZOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::S:
-      return rewriter.create<SOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::Sdg:
-      return rewriter.create<SdgOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::T:
-      return rewriter.create<TOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::Tdg:
-      return rewriter.create<TdgOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::V:
-      return rewriter.create<VOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::Vdg:
-      return rewriter.create<VdgOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::U:
-      return rewriter.create<UOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
-          mlir::ValueRange{}, inQubits, controlQubitsPositive,
-          controlQubitsNegative);
-
-    case qc::OpType::U2:
-      return rewriter.create<U2Op>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
-          mlir::ValueRange{}, inQubits, controlQubitsPositive,
-          controlQubitsNegative);
-
-    case qc::OpType::P:
-      return rewriter.create<POp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
-          mlir::ValueRange{}, inQubits, controlQubitsPositive,
-          controlQubitsNegative);
-
-    case qc::OpType::SX:
-      return rewriter.create<SXOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::SXdg:
-      return rewriter.create<SXdgOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::RX:
-      return rewriter.create<RXOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
-          mlir::ValueRange{}, inQubits, controlQubitsPositive,
-          controlQubitsNegative);
-
-    case qc::OpType::RY:
-      return rewriter.create<RYOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
-          mlir::ValueRange{}, inQubits, controlQubitsPositive,
-          controlQubitsNegative);
-
-    case qc::OpType::RZ:
-      return rewriter.create<RZOp>(
-          loc, qubitType, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
-          mlir::ValueRange{}, inQubits, controlQubitsPositive,
-          controlQubitsNegative);
-
-    case qc::OpType::SWAP:
-      return rewriter.create<SWAPOp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::iSWAP:
-      return rewriter.create<iSWAPOp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::iSWAPdg:
-      return rewriter.create<iSWAPdgOp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::Peres:
-      return rewriter.create<PeresOp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::Peresdg:
-      return rewriter.create<PeresdgOp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::DCX:
-      return rewriter.create<DCXOp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::ECR:
-      return rewriter.create<ECROp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), nullptr, nullptr, mlir::ValueRange{},
-          inQubits, controlQubitsPositive, controlQubitsNegative);
-
-    case qc::OpType::RXX:
-      return rewriter.create<RXXOp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
-          mlir::ValueRange{}, inQubits, controlQubitsPositive,
-          controlQubitsNegative);
-
-    case qc::OpType::RYY:
-      return rewriter.create<RYYOp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
-          mlir::ValueRange{}, inQubits, controlQubitsPositive,
-          controlQubitsNegative);
-
-    case qc::OpType::RZZ:
-      return rewriter.create<RZZOp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
-          mlir::ValueRange{}, inQubits, controlQubitsPositive,
-          controlQubitsNegative);
-
-    case qc::OpType::RZX:
-      return rewriter.create<RZXOp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
-          mlir::ValueRange{}, inQubits, controlQubitsPositive,
-          controlQubitsNegative);
-
-    case qc::OpType::XXminusYY:
-      return rewriter.create<XXminusYYOp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
-          mlir::ValueRange{}, inQubits, controlQubitsPositive,
-          controlQubitsNegative);
-
-    case qc::OpType::XXplusYY:
-      return rewriter.create<XXplusYYOp>(
-          loc, outQubitTypes, controlQubitsPositive.getType(),
-          controlQubitsNegative.getType(), denseParamsAttr, nullptr,
-          mlir::ValueRange{}, inQubits, controlQubitsPositive,
-          controlQubitsNegative);
-
+      CREATE_OP_CASE(I)
+      CREATE_OP_CASE(H)
+      CREATE_OP_CASE(X)
+      CREATE_OP_CASE(Y)
+      CREATE_OP_CASE(Z)
+      CREATE_OP_CASE(S)
+      CREATE_OP_CASE(Sdg)
+      CREATE_OP_CASE(T)
+      CREATE_OP_CASE(Tdg)
+      CREATE_OP_CASE(V)
+      CREATE_OP_CASE(Vdg)
+      CREATE_OP_CASE(U)
+      CREATE_OP_CASE(U2)
+      CREATE_OP_CASE(P)
+      CREATE_OP_CASE(SX)
+      CREATE_OP_CASE(SXdg)
+      CREATE_OP_CASE(RX)
+      CREATE_OP_CASE(RY)
+      CREATE_OP_CASE(RZ)
+      CREATE_OP_CASE(SWAP)
+      CREATE_OP_CASE(iSWAP)
+      CREATE_OP_CASE(iSWAPdg)
+      CREATE_OP_CASE(Peres)
+      CREATE_OP_CASE(Peresdg)
+      CREATE_OP_CASE(DCX)
+      CREATE_OP_CASE(ECR)
+      CREATE_OP_CASE(RXX)
+      CREATE_OP_CASE(RYY)
+      CREATE_OP_CASE(RZZ)
+      CREATE_OP_CASE(RZX)
+      CREATE_OP_CASE(XXminusYY)
+      CREATE_OP_CASE(XXplusYY)
     default:
       throw std::runtime_error("Unsupported operation type");
     }
