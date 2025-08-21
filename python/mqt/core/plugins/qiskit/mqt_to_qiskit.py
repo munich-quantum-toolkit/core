@@ -274,9 +274,10 @@ def _add_if_else_operation(
         clbit_map: A mapping from classical bit indices to Qiskit :class:`~qiskit.circuit.Clbit`.
     """
     if op.control_register is not None:
-        left_hand_side = circ.cregs[op.control_register.name]
+        left_hand_side = next(reg for reg in circ.cregs if reg.name == op.control_register.name)
         right_hand_side = op.expected_value_register
-    elif op.control_bit is not None:
+    else:
+        assert op.control_bit is not None
         left_hand_side = clbit_map[op.control_bit]
         right_hand_side = op.expected_value_bit
 
