@@ -48,26 +48,7 @@ struct LiftMeasurementsAboveControlsPattern final
       return mlir::failure();
     }
 
-    const auto correspondingInput =
-        predecessorUnitary.getCorrespondingInput(qubitVariable);
-
-    rewriter.replaceUsesWithIf(qubitVariable, correspondingInput,
-                               [&](mlir::OpOperand& operand) {
-                                 // We only replace the single use by the
-                                 // measure op
-                                 return operand.getOwner() == op;
-                               });
-    rewriter.replaceUsesWithIf(
-        correspondingInput, op.getOutQubit(), [&](mlir::OpOperand& operand) {
-          // We only replace the single use by the predecessor
-          return operand.getOwner() == predecessorUnitary;
-        });
-    rewriter.replaceUsesWithIf(
-        op.getOutQubit(), qubitVariable, [&](mlir::OpOperand& operand) {
-          // All further uses of the measurement output now use the gate output
-          return operand.getOwner() != predecessorUnitary;
-        });
-    rewriter.moveOpBefore(op, predecessor);
+    swapGateWithMeasurement(predecessorUnitary, op, rewriter);
 
     return mlir::success();
   }

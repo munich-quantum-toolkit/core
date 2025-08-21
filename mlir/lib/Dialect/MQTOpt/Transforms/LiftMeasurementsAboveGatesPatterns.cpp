@@ -30,15 +30,8 @@ static const std::unordered_set<std::string> INVERTING_GATES = {"x", "y"};
 static const std::unordered_set<std::string> DIAGONAL_GATES = {
     "i", "z", "s", "sdg", "t", "tdg", "p", "rz"};
 
-/**
- * @brief Moves a measurement before the given gate.
- * @param gate The UnitaryInterface gate to swap with the measurement.
- * @param measurement The MeasureOp measurement to swap with the gate.
- * @param rewriter The pattern rewriter to use for the swap operation.
- */
-static void swapGateWithMeasurement(UnitaryInterface gate,
-                                    MeasureOp measurement,
-                                    mlir::PatternRewriter& rewriter) {
+void swapGateWithMeasurement(UnitaryInterface gate, MeasureOp measurement,
+                             mlir::PatternRewriter& rewriter) {
   auto measurementInput = measurement.getInQubit();
   auto gateInput = gate.getCorrespondingInput(measurementInput);
   rewriter.replaceUsesWithIf(measurementInput, gateInput,
