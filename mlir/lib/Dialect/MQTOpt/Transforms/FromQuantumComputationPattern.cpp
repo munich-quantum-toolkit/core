@@ -103,7 +103,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    */
   static UnitaryInterface
   createUnitaryOp(const mlir::Location loc, const qc::OpType type,
-                  const std::vector<mlir::Value>& inQubits,
+                  const llvm::SmallVector<mlir::Value>& inQubits,
                   mlir::ValueRange controlQubitsPositive,
                   mlir::ValueRange controlQubitsNegative,
                   mlir::PatternRewriter& rewriter,
@@ -425,7 +425,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
           // For unitary operations, we call the `createUnitaryOp` function. We
           // then have to update the `currentQubitVariables` vector with the new
           // qubit values.
-          std::vector<mlir::Value> inQubits(o->getTargets().size());
+          llvm::SmallVector<mlir::Value> inQubits(o->getTargets().size());
 
           for (size_t i = 0; i < o->getTargets().size(); i++) {
             inQubits[i] = currentQubitVariables[o->getTargets()[i]];
