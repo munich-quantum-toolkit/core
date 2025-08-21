@@ -8,12 +8,14 @@
 
 @LIT_SITE_CFG_IN_HEADER@
 
+from pathlib import Path
+
 config.llvm_tools_dir = lit_config.substitute("@LLVM_TOOLS_DIR@")
-config.mqt_core_mlir_tools_dir = "@PROJECT_BINARY_DIR@/mlir/tools/quantum-opt"
-config.mqt_core_mlir_test_dir = "@PROJECT_BINARY_DIR@/mlir/test"
+config.mqt_core_mlir_tools_dir = str(Path("@PROJECT_BINARY_DIR@") / "mlir" / "tools" / "quantum-opt")
+config.mqt_core_mlir_test_dir = str(Path("@PROJECT_BINARY_DIR@") / "mlir" / "test")
 
 import lit.llvm
 lit.llvm.initialize(lit_config, config)
 
 # Let the main config do the real work.
-lit_config.load_config(config, "@PROJECT_SOURCE_DIR@/mlir/test/lit.cfg.py")
+lit_config.load_config(config, Path("@PROJECT_SOURCE_DIR@") / "mlir" / "test" / "lit.cfg.py")
