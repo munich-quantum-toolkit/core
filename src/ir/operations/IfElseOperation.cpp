@@ -177,20 +177,36 @@ std::ostream&
 IfElseOperation::print(std::ostream& os, const Permutation& permutation,
                        [[maybe_unused]] const std::size_t prefixWidth,
                        const std::size_t nqubits) const {
-  if (thenOp) {
-    thenOp->print(os, permutation, prefixWidth, nqubits);
-  }
+  const std::string indent(prefixWidth, ' ');
 
-  os << "  " << "\033[1m\033[35m";
+  // Print condition header line
+  os << indent << "\033[1m\033[35m" << "if (";
   if (controlRegister.has_value()) {
     assert(!controlBit.has_value());
-    os << controlRegister->getName() << " == " << expectedValueRegister;
-  }
-  if (controlBit.has_value()) {
+    os << controlRegister->getName() << ' ' << comparisonKind << ' '
+       << expectedValueRegister;
+  } else if (controlBit.has_value()) {
     assert(!controlRegister.has_value());
-    os << (expectedValueBit ? "!" : "") << "c[" << controlBit.value() << "]";
+    os << (!expectedValueBit ? "!" : "") << "c[" << controlBit.value() << "]";
   }
-  os << "\033[0m";
+  os << ") {\033[0m" << '\n'; // cyan brace
+
+  // then-block
+  if (thenOp) {
+    os << indent;
+    thenOp->print(os, permutation, prefixWidth, nqubits);
+  }
+  os << '\n';
+
+  // else-block (only if present)
+  if (elseOp) {
+    os << indent << "  \033[1m\033[35m} else {\033[0m" << '\n' << indent;
+    elseOp->print(os, permutation, prefixWidth, nqubits);
+    os << '\n';
+  }
+
+  // closing brace aligned with prefixWidth
+  os << indent << "  \033[1m\033[35m}\033[0m";
 
   return os;
 }
