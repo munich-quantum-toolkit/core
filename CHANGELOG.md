@@ -22,6 +22,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 🚚 Rename `xxminusyy` to `xx_minus_yy` and `xxplusyy` to `xx_plus_yy` in MLIR dialects ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 - 🚸 Add custom assembly format for operations in the MLIR dialects ([#1139]) ([**@burgholzer**])
 - 🚸 Enable `InferTypeOpInterface` in the MLIR dialects to reduce explicit type information ([#1139]) ([**@burgholzer**])
 - 🚚 Rename `check-quantum-opt` test target to `mqt-core-mlir-lit-test` ([#1139]) ([**@burgholzer**])
