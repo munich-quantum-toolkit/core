@@ -37,6 +37,7 @@ mystnb:
   text_lexer: 'qasm3'
 ---
 from mqt.core.ir import QuantumComputation
+from mqt.core.ir.operations import OpType
 
 from math import pi
 
@@ -67,7 +68,7 @@ for i in range(precision):
 
   # Iterative inverse QFT
   for j in range(i):
-    qc.classic_controlled(op="p", target=q[0], cbit=c[j], params=[-pi / 2**(i - j)])
+    qc.if_(op=OpType.p, target=q[0], control_bit=c[j], params=[-pi / 2**(i - j)])
   qc.h(q[0])
 
   # Measure the result
@@ -287,8 +288,6 @@ If a given condition is met, the {py:attr}`~mqt.core.ir.operations.IfElseOperati
 If the condition is not met, the {py:attr}`~mqt.core.ir.operations.IfElseOperation.else_operation` is applied.
 
 ```{code-cell} ipython3
-from mqt.core.ir.operations import IfElseOperation
-
 qc = QuantumComputation(1, 1)
 
 qc.h(0)
@@ -301,6 +300,18 @@ qc.if_else(
 
 print(qc)
 ```
+
+If you do not need an `else_operation`, the {py:class}`~mqt.core.ir.QuantumComputation` class provides a shortcut for creating an `if_` operation:
+
+```{code-cell} ipython3
+qc = QuantumComputation(1, 1)
+qc.h(0)
+qc.if_(op=OpType.x, target=0, control_bit=0)
+
+print(qc)
+```
+
+See the {py:meth}`~mqt.core.ir.QuantumComputation.if_` method for more details.
 
 ## Interfacing with other SDKs and Formats
 
