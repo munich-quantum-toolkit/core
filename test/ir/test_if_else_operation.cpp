@@ -129,11 +129,11 @@ TEST(IfElseOperation, Equals) {
       qc::ComparisonKind::Eq);
   const qc::IfElseOperation ifElseBit8(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 1, false,
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0, false,
       qc::ComparisonKind::Eq);
   const qc::IfElseOperation ifElseBit9(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 1, true,
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0, true,
       qc::ComparisonKind::Neq);
 
   const qc::ClassicalRegister controlRegister1(0, 1);
