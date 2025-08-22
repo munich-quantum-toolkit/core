@@ -12,10 +12,10 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/Register.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/Expression.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
@@ -1220,7 +1220,7 @@ bool isDynamicCircuit(const std::unique_ptr<Operation>* op,
   const auto& it = *op;
   // whenever a classic-controlled or a reset operation are encountered
   // the circuit has to be dynamic.
-  if (it->getType() == Reset || it->isClassicControlledOperation()) {
+  if (it->getType() == Reset || it->isIfElseOperation()) {
     return true;
   }
 
@@ -1573,6 +1573,7 @@ void QuantumComputation::reset(const Targets& targets) {
   checkQubitRange(targets);
   emplace_back<NonUnitaryOperation>(targets, Reset);
 }
+
 void QuantumComputation::barrier() {
   std::vector<Qubit> targets(getNqubits());
   std::iota(targets.begin(), targets.end(), 0);
@@ -1586,58 +1587,75 @@ void QuantumComputation::barrier(const Targets& targets) {
   checkQubitRange(targets);
   emplace_back<StandardOperation>(targets, Barrier);
 }
-void QuantumComputation::classicControlled(
-    const OpType op, const Qubit target,
-    const ClassicalRegister& controlRegister, const std::uint64_t expectedValue,
-    const ComparisonKind cmp, const std::vector<fp>& params) {
-  classicControlled(op, target, Controls{}, controlRegister, expectedValue, cmp,
-                    params);
+
+void QuantumComputation::ifElse(std::unique_ptr<Operation>&& thenOp,
+                                std::unique_ptr<Operation>&& elseOp,
+                                const ClassicalRegister& controlRegister,
+                                const std::uint64_t expectedValue,
+                                const ComparisonKind cmp) {
+  checkClassicalRegister(controlRegister);
+  emplace_back<IfElseOperation>(std::move(thenOp), std::move(elseOp),
+                                controlRegister, expectedValue, cmp);
 }
-void QuantumComputation::classicControlled(
-    const OpType op, const Qubit target, const Control control,
-    const ClassicalRegister& controlRegister, const std::uint64_t expectedValue,
-    const ComparisonKind cmp, const std::vector<fp>& params) {
-  classicControlled(op, target, Controls{control}, controlRegister,
-                    expectedValue, cmp, params);
+void QuantumComputation::ifElse(std::unique_ptr<Operation>&& thenOp,
+                                std::unique_ptr<Operation>&& elseOp,
+                                const Bit controlBit, const bool expectedValue,
+                                const ComparisonKind cmp) {
+  emplace_back<IfElseOperation>(std::move(thenOp), std::move(elseOp),
+                                controlBit, expectedValue, cmp);
 }
-void QuantumComputation::classicControlled(
-    const OpType op, const Qubit target, const Controls& controls,
-    const ClassicalRegister& controlRegister, const std::uint64_t expectedValue,
-    const ComparisonKind cmp, const std::vector<fp>& params) {
+
+void QuantumComputation::if_(const OpType op, const Qubit target,
+                             const ClassicalRegister& controlRegister,
+                             const std::uint64_t expectedValue,
+                             const ComparisonKind cmp,
+                             const std::vector<fp>& params) {
+  if_(op, target, Controls{}, controlRegister, expectedValue, cmp, params);
+}
+void QuantumComputation::if_(const OpType op, const Qubit target,
+                             const Control control,
+                             const ClassicalRegister& controlRegister,
+                             const std::uint64_t expectedValue,
+                             const ComparisonKind cmp,
+                             const std::vector<fp>& params) {
+  if_(op, target, Controls{control}, controlRegister, expectedValue, cmp,
+      params);
+}
+void QuantumComputation::if_(const OpType op, const Qubit target,
+                             const Controls& controls,
+                             const ClassicalRegister& controlRegister,
+                             const std::uint64_t expectedValue,
+                             const ComparisonKind cmp,
+                             const std::vector<fp>& params) {
   checkQubitRange(target, controls);
   checkClassicalRegister(controlRegister);
   std::unique_ptr<Operation> gate =
       std::make_unique<StandardOperation>(controls, target, op, params);
-  emplace_back<ClassicControlledOperation>(std::move(gate), controlRegister,
-                                           expectedValue, cmp);
+  emplace_back<IfElseOperation>(std::move(gate), nullptr, controlRegister,
+                                expectedValue, cmp);
 }
-void QuantumComputation::classicControlled(const OpType op, const Qubit target,
-                                           const Bit cBit,
-                                           const std::uint64_t expectedValue,
-                                           const ComparisonKind cmp,
-                                           const std::vector<fp>& params) {
-  classicControlled(op, target, Controls{}, cBit, expectedValue, cmp, params);
+void QuantumComputation::if_(const OpType op, const Qubit target,
+                             const Bit controlBit, const bool expectedValue,
+                             const ComparisonKind cmp,
+                             const std::vector<fp>& params) {
+  if_(op, target, Controls{}, controlBit, expectedValue, cmp, params);
 }
-void QuantumComputation::classicControlled(const OpType op, const Qubit target,
-                                           const Control control,
-                                           const Bit cBit,
-                                           const std::uint64_t expectedValue,
-                                           const ComparisonKind cmp,
-                                           const std::vector<fp>& params) {
-  classicControlled(op, target, Controls{control}, cBit, expectedValue, cmp,
-                    params);
+void QuantumComputation::if_(const OpType op, const Qubit target,
+                             const Control control, const Bit controlBit,
+                             const bool expectedValue, const ComparisonKind cmp,
+                             const std::vector<fp>& params) {
+  if_(op, target, Controls{control}, controlBit, expectedValue, cmp, params);
 }
-void QuantumComputation::classicControlled(const OpType op, const Qubit target,
-                                           const Controls& controls,
-                                           const Bit cBit,
-                                           const std::uint64_t expectedValue,
-                                           const ComparisonKind cmp,
-                                           const std::vector<fp>& params) {
+void QuantumComputation::if_(const OpType op, const Qubit target,
+                             const Controls& controls, const Bit controlBit,
+                             const bool expectedValue, const ComparisonKind cmp,
+                             const std::vector<fp>& params) {
   checkQubitRange(target, controls);
-  checkClassicalRegister({1, cBit});
+  checkClassicalRegister({1, controlBit});
   std::unique_ptr<Operation> gate =
       std::make_unique<StandardOperation>(controls, target, op, params);
-  emplace_back<ClassicControlledOperation>(std::move(gate), cBit, expectedValue,
-                                           cmp);
+  emplace_back<IfElseOperation>(std::move(gate), nullptr, controlBit,
+                                expectedValue, cmp);
 }
+
 } // namespace qc

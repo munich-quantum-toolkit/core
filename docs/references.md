@@ -6,8 +6,10 @@
 
 ````{only} html
 # References
-*MQT Core* is academic software. Thus, many of its built-in algorithms have been published as scientific papers.
-See {cite:p}`burgholzer2025MQTCore` for a general overview of *MQT Core* and its features.
+
+*MQT Core* has a strong foundation in peer‑reviewed research.
+Many of its built‑in algorithms are based on methods published in scientific journals and conferences.
+For an overview of *MQT Core* and its features, see {cite:p}`burgholzer2025MQTCore`.
 If you want to cite this article, please use the following BibTeX entry:
 
 ```bibtex

@@ -1864,33 +1864,71 @@ class QuantumComputation(MutableSequence[Operation]):
         """
 
     @overload
-    def classic_controlled(
+    def if_else(
         self,
-        op: OpType,
+        then_operation: Operation,
+        else_operation: Operation | None,
+        control_register: ClassicalRegister,
+        expected_value: int = 1,
+        comparison_kind: ComparisonKind = ComparisonKind.eq,
+    ) -> None:
+        """Add an if-else operation to the circuit.
+
+        Args:
+            then_operation: The operation to apply if the condition is met
+            else_operation: The operation to apply if the condition is not met
+            control_register: The classical register to check against
+            expected_value: The expected value of the control register
+            comparison_kind: The kind of comparison to perform
+        """
+
+    @overload
+    def if_else(
+        self,
+        then_operation: Operation,
+        else_operation: Operation | None,
+        control_bit: int,
+        expected_value: int = 1,
+        comparison_kind: ComparisonKind = ComparisonKind.eq,
+    ) -> None:
+        """Add an if-else operation to the circuit.
+
+        Args:
+            then_operation: The operation to apply if the condition is met
+            else_operation: The operation to apply if the condition is not met
+            control_bit: The index of the classical bit to check against
+            expected_value: The expected value of the control bit
+            comparison_kind: The kind of comparison to perform
+        """
+
+    @overload
+    def if_(
+        self,
+        op_type: OpType,
         target: int,
-        creg: ClassicalRegister,
+        control_register: ClassicalRegister,
         expected_value: int = 1,
         comparison_kind: ComparisonKind = ComparisonKind.eq,
         params: Sequence[float] = (),
     ) -> None:
-        """Add a classic-controlled operation to the circuit.
+        """Add an if operartion to the circuit.
 
         Args:
-            op: The operation to apply
+            op_type: The operation to apply
             target: The target qubit
-            creg: The classical register
-            expected_value: The expected value of the classical register
+            control_register: The classical register to check against
+            expected_value: The expected value of the control register
             comparison_kind: The kind of comparison to perform
             params: The parameters of the operation
         """
 
     @overload
-    def classic_controlled(
+    def if_(
         self,
-        op: OpType,
+        op_type: OpType,
         target: int,
         control: Control | int,
-        creg: ClassicalRegister,
+        control_register: ClassicalRegister,
         expected_value: int = 1,
         comparison_kind: ComparisonKind = ComparisonKind.eq,
         params: Sequence[float] = (),
@@ -1898,22 +1936,22 @@ class QuantumComputation(MutableSequence[Operation]):
         """Add a classic-controlled operation to the circuit.
 
         Args:
-            op: The operation to apply
+            op_type: The operation to apply
             target: The target qubit
             control: The control qubit
-            creg: The classical register
-            expected_value: The expected value of the classical register
+            control_register: The classical register to check against
+            expected_value: The expected value of the control register
             comparison_kind: The kind of comparison to perform
-            params: The parameters of the operation
+            params: The parameters of the operation.
         """
 
     @overload
-    def classic_controlled(
+    def if_(
         self,
-        op: OpType,
+        op_type: OpType,
         target: int,
         controls: set[Control | int],
-        creg: ClassicalRegister,
+        control_register: ClassicalRegister,
         expected_value: int = 1,
         comparison_kind: ComparisonKind = ComparisonKind.eq,
         params: Sequence[float] = (),
@@ -1921,78 +1959,78 @@ class QuantumComputation(MutableSequence[Operation]):
         """Add a classic-controlled operation to the circuit.
 
         Args:
-            op: The operation to apply
+            op_type: The operation to apply
             target: The target qubit
             controls: The control qubits
-            creg: The classical register
-            expected_value: The expected value of the classical register
+            control_register: The classical register to check against
+            expected_value: The expected value of the control register
             comparison_kind: The kind of comparison to perform
-            params: The parameters of the operation
+            params: The parameters of the operation.
         """
 
     @overload
-    def classic_controlled(
+    def if_(
         self,
-        op: OpType,
+        op_type: OpType,
         target: int,
-        cbit: int,
-        expected_value: int = 1,
+        control_bit: int,
+        expected_value: bool = True,
         comparison_kind: ComparisonKind = ComparisonKind.eq,
         params: Sequence[float] = (),
     ) -> None:
         """Add a classic-controlled operation to the circuit.
 
         Args:
-            op: The operation to apply
+            op_type: The operation to apply
             target: The target qubit
-            cbit: The classical bit index
-            expected_value: The expected value of the classical register
+            control_bit: The index of the classical bit to check against
+            expected_value: The expected value of the control bit
             comparison_kind: The kind of comparison to perform
-            params: The parameters of the operation
+            params: The parameters of the operation.
         """
 
     @overload
-    def classic_controlled(
+    def if_(
         self,
-        op: OpType,
+        op_type: OpType,
         target: int,
         control: Control | int,
-        cbit: int,
-        expected_value: int = 1,
+        control_bit: int,
+        expected_value: bool = True,
         comparison_kind: ComparisonKind = ComparisonKind.eq,
         params: Sequence[float] = (),
     ) -> None:
         """Add a classic-controlled operation to the circuit.
 
         Args:
-            op: The operation to apply
+            op_type: The operation to apply
             target: The target qubit
             control: The control qubit
-            cbit: The classical bit index
-            expected_value: The expected value of the classical register
+            control_bit: The index of the classical bit to check against
+            expected_value: The expected value of the control bit
             comparison_kind: The kind of comparison to perform
-            params: The parameters of the operation
+            params: The parameters of the operation.
         """
 
     @overload
-    def classic_controlled(
+    def if_(
         self,
-        op: OpType,
+        op_type: OpType,
         target: int,
         controls: set[Control | int],
-        cbit: int,
-        expected_value: int = 1,
+        control_bit: int,
+        expected_value: bool = True,
         comparison_kind: ComparisonKind = ComparisonKind.eq,
         params: Sequence[float] = (),
     ) -> None:
         """Add a classic-controlled operation to the circuit.
 
         Args:
-            op: The operation to apply
+            op_type: The operation to apply
             target: The target qubit
             controls: The control qubits
-            cbit: The classical bit index
-            expected_value: The expected value of the classical register
+            control_bit: The index of the classical bit to check against
+            expected_value: The expected value of the control bit
             comparison_kind: The kind of comparison to perform
-            params: The parameters of the operation
+            params: The parameters of the operation.
         """
