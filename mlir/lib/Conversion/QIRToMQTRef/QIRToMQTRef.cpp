@@ -426,7 +426,6 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
       return success();
     }
 
-    // otherwise erase the operation
     return failure();
   }
 };

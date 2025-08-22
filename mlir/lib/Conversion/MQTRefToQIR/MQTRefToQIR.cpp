@@ -374,7 +374,6 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
 
     // check for static parameters
     if (staticParams) {
-      SmallVector<Value> staticParamValues;
       // set the insertionpoint to the beginning of the first block
       auto funcOp = op->template getParentOfType<LLVM::LLVMFuncOp>();
       auto& firstBlock = *(funcOp.getBlocks().begin());
@@ -385,7 +384,7 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
         auto fAttr = rewriter.getF64FloatAttr(v);
         return rewriter.create<LLVM::ConstantOp>(op.getLoc(), fAttr);
       };
-      staticParamValues = llvm::to_vector_of<Value>(
+      auto staticParamValues = llvm::to_vector_of<Value>(
           llvm::map_range(staticParams.asArrayRef(),
                           [&](double v) { return createF64Const(v); }));
 
@@ -422,7 +421,7 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
     operands.append(newParams.begin(), newParams.end());
 
     // check for negative controlled qubits
-    // for any negative controlled qubits place an NOT operation before and
+    // for any negative controlled qubits place an X operation before and
     // after the matched gate operation
     if (negCtrlQubits.size() > 0) {
       // create name and signature of the NOT operation
@@ -498,7 +497,7 @@ struct ConvertMQTRefMeasureQIR final
                                    LoweringState& state) {
     Operation* addressOfOp = nullptr;
 
-    // create a new globalOp and a addressOfOp
+    // create a new globalOp and an addressOfOp
     // set the insertionpoint to the beginning of the module
     auto module = op->getParentOfType<ModuleOp>();
     rewriter.setInsertionPointToStart(module.getBody());
@@ -571,7 +570,7 @@ struct ConvertMQTRefMeasureQIR final
       // check if the pointer already exist, if yes reuse them
       resultValue = ptrMap.at(getState().numResults);
     } else {
-      // otherwise create a constant operation and a intToPtr operation
+      // otherwise create a constant operation and an intToPtr operation
       auto constantOp = rewriter.create<LLVM::ConstantOp>(
           op.getLoc(), rewriter.getI64IntegerAttr(
                            static_cast<int64_t>(getState().numResults)));
