@@ -11,7 +11,6 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Extend MQT's implementation of a QDMI Device for neutral atom-based quantum computing with more properties ([#1100]) ([**@ystade**])
 - ✨ Add `allocQubit` and `deallocQubit` operations for dynamically working with single qubits to the MLIR dialects ([#1139]) ([**@DRovara**], [**@burgholzer**])
 - ✨ Add `qubit` operation for static qubit addressing to the MLIR dialects ([#1098], [#1116]) ([**@MatthiasReumann**])
 - ✨ Add MQT's implementation of a QDMI Driver ([#1010]) ([**@ystade**])
@@ -22,6 +21,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ✨ Extend MQT's implementation of a QDMI Device for neutral atom-based quantum computing with more properties ([#1100]) ([**@ystade**])
 - 🚸 Add custom assembly format for operations in the MLIR dialects ([#1139]) ([**@burgholzer**])
 - 🚸 Enable `InferTypeOpInterface` in the MLIR dialects to reduce explicit type information ([#1139]) ([**@burgholzer**])
 - 🚚 Rename `check-quantum-opt` test target to `mqt-core-mlir-lit-test` ([#1139]) ([**@burgholzer**])
