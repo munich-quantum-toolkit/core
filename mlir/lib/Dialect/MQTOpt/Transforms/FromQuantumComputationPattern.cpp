@@ -256,8 +256,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
           }
         }
 
-        if (qc::isSingleQubitGate(o->getType()) ||
-            qc::isTwoQubitGate(o->getType())) {
+        if (o->isUnitary() && !o->isCompoundOperation()) {
           // For unitary operations, we call the `createUnitaryOp` function. We
           // then have to update the `currentQubitVariables` vector with the new
           // qubit values.
