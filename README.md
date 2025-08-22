@@ -116,7 +116,6 @@ If you want to use the ZX library, it is recommended (although not strictly nece
 ## Cite This
 
 Please cite the work that best fits your use case.
-If both apply, include both references.
 
 ### MQT Core (the tool)
 
