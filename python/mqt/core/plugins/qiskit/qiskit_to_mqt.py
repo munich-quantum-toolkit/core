@@ -413,9 +413,9 @@ def _add_if_else_operation(
     clbit_map: Mapping[Clbit, int],
     cregs: Mapping[str, ClassicalRegister],
 ) -> list[float | ParameterExpression]:
-    then_branch_compound = CompoundOperation()
+    then_operation_compound = CompoundOperation()
     then_params = _import_definition(
-        then_branch_compound,
+        then_operation_compound,
         if_else_op.params[0],
         qargs,
         cargs,
@@ -423,16 +423,16 @@ def _add_if_else_operation(
         clbit_map,
         cregs,
     )
-    then_branch: Operation = then_branch_compound[0]
-    if isinstance(then_branch, CompoundOperation) and len(then_branch) == 1:
-        then_branch = then_branch[0]
+    then_operation: Operation = then_operation_compound[0]
+    if isinstance(then_operation, CompoundOperation) and len(then_operation) == 1:
+        then_operation = then_operation[0]
 
-    else_branch: Operation | None = None
+    else_operation: Operation | None = None
     else_params: list[float | ParameterExpression] = []
     if if_else_op.params[1] is not None:
-        else_branch_compound = CompoundOperation()
+        else_operation_compound = CompoundOperation()
         else_params = _import_definition(
-            else_branch_compound,
+            else_operation_compound,
             if_else_op.params[1],
             qargs,
             cargs,
@@ -440,9 +440,9 @@ def _add_if_else_operation(
             clbit_map,
             cregs,
         )
-        else_branch = else_branch_compound[0]
-        if isinstance(else_branch, CompoundOperation) and len(else_branch) == 1:
-            else_branch = else_branch[0]
+        else_operation = else_operation_compound[0]
+        if isinstance(else_operation, CompoundOperation) and len(else_operation) == 1:
+            else_operation = else_operation[0]
 
     condition = if_else_op.condition
     assert isinstance(condition, tuple)
@@ -450,11 +450,11 @@ def _add_if_else_operation(
     if isinstance(condition[0], Clbit):
         control_bit = clbit_map[condition[0]]
         expected_value = condition[1]
-        if_else_operation = IfElseOperation(then_branch, else_branch, control_bit, expected_value)
+        if_else_operation = IfElseOperation(then_operation, else_operation, control_bit, expected_value)
     elif isinstance(condition[0], QiskitClassicalRegister):
         control_register = cregs[condition[0].name]
         expected_value = condition[1]
-        if_else_operation = IfElseOperation(then_branch, else_branch, control_register, expected_value)
+        if_else_operation = IfElseOperation(then_operation, else_operation, control_register, expected_value)
     else:
         msg = f"Unsupported condition {condition}"
         raise TypeError(msg)
