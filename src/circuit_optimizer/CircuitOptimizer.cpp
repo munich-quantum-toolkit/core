@@ -339,25 +339,6 @@ void removeDiagonalGatesBeforeMeasureRecursive(
           }
         }
       }
-    } else if (op->isIfElseOperation()) {
-      auto* thenOp = dynamic_cast<IfElseOperation*>(op)->getThenOp();
-      auto* elseOp = dynamic_cast<IfElseOperation*>(op)->getElseOp();
-      if (thenOp == nullptr || elseOp != nullptr) {
-        throw std::runtime_error("If-else operations with non-trivial else "
-                                 "branches are currently not supported.");
-      }
-
-      // treat then branch as above
-      const bool onlyDiagonalGates =
-          removeDiagonalGate(dag, dagIterators, idx, it, thenOp);
-      if (onlyDiagonalGates) {
-        for (const auto& control : thenOp->getControls()) {
-          ++(dagIterators.at(control.qubit));
-        }
-        for (const auto& target : thenOp->getTargets()) {
-          ++(dagIterators.at(target));
-        }
-      }
     } else if (op->isNonUnitaryOperation()) {
       // non-unitary operation is not diagonal
       it = dag.at(idx).rend();

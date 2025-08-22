@@ -179,7 +179,7 @@ IfElseOperation::print(std::ostream& os, const Permutation& permutation,
                        const std::size_t nqubits) const {
   const std::string indent(prefixWidth, ' ');
 
-  // Print condition header line
+  // print condition header line
   os << indent << "\033[1m\033[35m" << "if (";
   if (controlRegister.has_value()) {
     assert(!controlBit.has_value());

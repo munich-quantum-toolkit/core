@@ -240,7 +240,8 @@ TEST(EliminateResets, testCompoundOperation) {
   comp.cx(1, 0);
   comp.reset(0);
   comp.measure(0, 0);
-  comp.if_(X, 0, 0);
+  comp.ifElse(std::make_unique<StandardOperation>(0, X),
+              std::make_unique<StandardOperation>(0, Y), 0);
   qc.emplace_back(comp.asOperation());
 
   std::cout << qc << "\n";
@@ -288,8 +289,14 @@ TEST(EliminateResets, testCompoundOperation) {
   const auto& thenOp = ifElse->getThenOp();
   EXPECT_TRUE(thenOp->getType() == qc::X);
   EXPECT_EQ(thenOp->getNtargets(), 1);
-  const auto& targets = thenOp->getTargets();
-  EXPECT_EQ(targets.at(0), 4);
+  const auto& thenTargets = thenOp->getTargets();
+  EXPECT_EQ(thenTargets.at(0), 4);
   EXPECT_EQ(thenOp->getNcontrols(), 0);
+  const auto& elseOp = ifElse->getElseOp();
+  EXPECT_TRUE(elseOp->getType() == qc::Y);
+  EXPECT_EQ(elseOp->getNtargets(), 1);
+  const auto& elseTargets = elseOp->getTargets();
+  EXPECT_EQ(elseTargets.at(0), 4);
+  EXPECT_EQ(elseOp->getNcontrols(), 0);
 }
 } // namespace qc
