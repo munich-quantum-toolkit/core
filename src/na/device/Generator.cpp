@@ -130,12 +130,12 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
   os << "#define INITIALIZE_SITES(var) var.clear()";
   // first write all zone sites
   for (const auto& operation : device.globalMultiQubitOperations) {
-    const auto& region = operation.region;
+    const auto& [origin, size] = operation.region;
     const auto id = count++;
-    const auto x = region.origin.x;
-    const auto y = region.origin.y;
-    const auto width = region.size.width;
-    const auto height = region.size.height;
+    const auto x = origin.x;
+    const auto y = origin.y;
+    const auto width = size.width;
+    const auto height = size.height;
     os << ";\\\n  "
           "MQT_NA_QDMI_Site globalOp"
        << operation.name
@@ -145,12 +145,12 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
        << "U)).get()";
   }
   for (const auto& operation : device.globalSingleQubitOperations) {
-    const auto& region = operation.region;
+    const auto& [origin, size] = operation.region;
     const auto id = count++;
-    const auto x = region.origin.x;
-    const auto y = region.origin.y;
-    const auto width = region.size.width;
-    const auto height = region.size.height;
+    const auto x = origin.x;
+    const auto y = origin.y;
+    const auto width = size.width;
+    const auto height = size.height;
     os << ";\\\n  "
           "MQT_NA_QDMI_Site globalOp"
        << operation.name
@@ -160,12 +160,12 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
        << "U)).get()";
   }
   for (const auto& shuttlingUnit : device.shuttlingUnits) {
-    const auto& region = shuttlingUnit.region;
+    const auto& [origin, size] = shuttlingUnit.region;
     const auto id = count++;
-    const auto x = region.origin.x;
-    const auto y = region.origin.y;
-    const auto width = region.size.width;
-    const auto height = region.size.height;
+    const auto x = origin.x;
+    const auto y = origin.y;
+    const auto width = size.width;
+    const auto height = size.height;
     os << ";\\\n  "
           "MQT_NA_QDMI_Site shuttlingUnit"
        << shuttlingUnit.id
@@ -185,42 +185,33 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
   }
   // then write all regular sites
   size_t moduleCount = 0;
-  for (const auto& lattice : device.traps) {
+  for (const auto& [latticeOrigin, latticeVector1, latticeVector2,
+                    sublatticeOffsets, extent] : device.traps) {
     size_t subModuleCount = 0;
-
-    const auto latticeOriginX = lattice.latticeOrigin.x;
-    const auto latticeOriginY = lattice.latticeOrigin.y;
-    const auto baseVector1X = lattice.latticeVector1.x;
-    const auto baseVector1Y = lattice.latticeVector1.y;
-    const auto baseVector2X = lattice.latticeVector2.x;
-    const auto baseVector2Y = lattice.latticeVector2.y;
-    const auto extentOriginX = lattice.extent.origin.x;
-    const auto extentOriginY = lattice.extent.origin.y;
-    const auto extentWidth = static_cast<int64_t>(lattice.extent.size.width);
-    const auto extentHeight = static_cast<int64_t>(lattice.extent.size.height);
+    const auto& [origin, size] = extent;
+    const auto extentWidth = static_cast<int64_t>(size.width);
+    const auto extentHeight = static_cast<int64_t>(size.height);
 
     // approximate indices of the bottom left corner
     const auto& [bottomLeftI, bottomLeftJ] = solve2DLinearEquation<int64_t>(
-        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
-        extentOriginX - latticeOriginX, extentOriginY - latticeOriginY);
+        latticeVector1.x, latticeVector2.x, latticeVector1.y, latticeVector2.y,
+        origin.x - latticeOrigin.x, origin.y - latticeOrigin.y);
 
     // approximate indices of the bottom right corner
     const auto& [bottomRightI, bottomRightJ] = solve2DLinearEquation<int64_t>(
-        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
-        extentOriginX + extentWidth - latticeOriginX,
-        extentOriginY - latticeOriginY);
+        latticeVector1.x, latticeVector2.x, latticeVector1.y, latticeVector2.y,
+        origin.x + extentWidth - latticeOrigin.x, origin.y - latticeOrigin.y);
 
     // approximate indices of the top left corner
     const auto& [topLeftI, topLeftJ] = solve2DLinearEquation<int64_t>(
-        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
-        extentOriginX - latticeOriginX,
-        extentOriginY + extentHeight - latticeOriginY);
+        latticeVector1.x, latticeVector2.x, latticeVector1.y, latticeVector2.y,
+        origin.x - latticeOrigin.x, origin.y + extentHeight - latticeOrigin.y);
 
     // approximate indices of the top right corner
     const auto& [topRightI, topRightJ] = solve2DLinearEquation<int64_t>(
-        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
-        extentOriginX + extentWidth - latticeOriginX,
-        extentOriginY + extentHeight - latticeOriginY);
+        latticeVector1.x, latticeVector2.x, latticeVector1.y, latticeVector2.y,
+        origin.x + extentWidth - latticeOrigin.x,
+        origin.y + extentHeight - latticeOrigin.y);
 
     const auto minI = static_cast<int64_t>(
         std::floor(std::min({bottomLeftI, bottomRightI, topLeftI, topRightI})));
@@ -236,16 +227,16 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
     for (bool loop = true; loop;
          loop = increment(indices, limits), ++subModuleCount) {
       // For every sublattice offset, add a site for repetition indices
-      for (const auto& offset : lattice.sublatticeOffsets) {
+      for (const auto& [xOffset, yOffset] : sublatticeOffsets) {
         const auto id = count++;
-        auto x = latticeOriginX + offset.x;
-        auto y = latticeOriginY + offset.y;
-        x += indices[0] * baseVector1X;
-        y += indices[0] * baseVector1Y;
-        x += indices[1] * baseVector2X;
-        y += indices[1] * baseVector2Y;
-        if (extentOriginX <= x && x < extentOriginX + extentWidth &&
-            extentOriginY <= y && y < extentOriginY + extentHeight) {
+        auto x = latticeOrigin.x + xOffset;
+        auto y = latticeOrigin.y + yOffset;
+        x += indices[0] * latticeVector1.x;
+        y += indices[0] * latticeVector1.y;
+        x += indices[1] * latticeVector2.x;
+        y += indices[1] * latticeVector2.y;
+        if (origin.x <= x && x < origin.x + extentWidth && origin.y <= y &&
+            y < origin.y + extentHeight) {
           // Only add the site if it is within the extent of the lattice
           os << ";\\\n  "
                 "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueSite("
