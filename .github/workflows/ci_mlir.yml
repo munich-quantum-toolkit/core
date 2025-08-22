@@ -155,9 +155,7 @@ jobs:
         id: mlir-cache
         with:
           path: llvm-install
-          key: ${{ runner.os }}-llvm-${{ steps.get-latest.outputs.latest }}
-          restore-keys: |
-            ${{ runner.os }}-llvm-${{ steps.get-latest.outputs.latest }}
+          key: ${{ runner.os }}-llvm-${{ steps.get-latest.outputs.latest }}-v2
 
       # build the llvm-project from source
       - name: Install llvm and mlir
