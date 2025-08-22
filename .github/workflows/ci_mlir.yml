@@ -91,7 +91,7 @@ jobs:
 
       # build the project and run the tests
       - name: Build MLIR components and directly run lit tests
-        run: cmake --build build --config Release --target check-quantum-opt
+        run: cmake --build build --config Release --target mqt-core-mlir-lit-test
 
       # build the MLIR unittests
       - name: Build MLIR unittests
@@ -120,6 +120,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      # set up uv for faster Python package management
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      - name: Install Ninja
+        run: uv tool install ninja
+
       - name: Find latest release of llvm-project
         id: get-latest
         run: |
@@ -144,10 +154,8 @@ jobs:
         uses: actions/cache@v4
         id: mlir-cache
         with:
-          path: ${{ github.workspace }}/llvm-install
-          key: ${{ runner.os }}-llvm-${{ steps.get-latest.outputs.latest }}
-          restore-keys: |
-            ${{ runner.os }}-llvm-${{ steps.get-latest.outputs.latest }}
+          path: llvm-install
+          key: ${{ runner.os }}-llvm-${{ steps.get-latest.outputs.latest }}-v2
 
       # build the llvm-project from source
       - name: Install llvm and mlir
@@ -169,13 +177,6 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}\llvm-install
           cmake --build build_llvm --target install --config Release
 
-      # set up uv for faster Python package management
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          python-version: 3.13
-          activate-environment: true
-
       # make sure the lit test runner is installed
       - name: Install lit
         run: uv pip install lit
@@ -186,25 +187,12 @@ jobs:
           cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_MQT_CORE_MLIR=ON `
-            -DCMAKE_PREFIX_PATH=${{ github.workspace }}\llvm-install `
+            -DMLIR_DIR=${{ github.workspace }}\llvm-install\lib\cmake\mlir `
             -DLLVM_EXTERNAL_LIT=${{ github.workspace }}\.venv\Scripts\lit.exe
 
       # build the project and run the lit tests
       - name: Build MLIR components and directly run lit tests
-        run: |
-          cmake --build build --config Release --target quantum-opt
-
-          $targetPath = "${{ github.workspace }}\\build\\mlir\\tools\\quantum-opt\\Release\\quantum-opt.exe"
-          $batchContent = '"{0}" "$@"' -f $targetPath
-
-          # Write to a directory that's definitely in PATH
-          $batchContent | Out-File -FilePath "C:\Windows\quantum-opt" -Encoding ascii
-
-          # Verify the batch file
-          Get-Content "C:\Windows\quantum-opt"
-          Write-Output "Batch file created at C:\Windows\quantum-opt pointing to $targetPath"
-
-          cmake --build build --config Release --target check-quantum-opt
+        run: cmake --build build --config Release --target mqt-core-mlir-lit-test
 
       # build the MLIR unittests
       - name: Build MLIR unittests
@@ -277,7 +265,7 @@ jobs:
 
       # Build and run tests
       - name: Build MLIR components and directly run lit tests
-        run: cmake --build build --config Release --target check-quantum-opt
+        run: cmake --build build --config Release --target mqt-core-mlir-lit-test
 
       # Build the MLIR unittests
       - name: Build MLIR unittests
@@ -370,7 +358,7 @@ jobs:
 
       # build the project and run the tests with coverage
       - name: Build MLIR components and run tests with coverage
-        run: cmake --build build --config Debug --target check-quantum-opt
+        run: cmake --build build --config Debug --target mqt-core-mlir-lit-test
 
       # build the MLIR unittests
       - name: Build MLIR unittests

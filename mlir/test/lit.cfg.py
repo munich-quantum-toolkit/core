@@ -26,24 +26,19 @@ if config is None:
     msg = "LIT config object is missing. Ensure lit.site.cfg.py is loaded first."
     raise RuntimeError(msg)
 
-config.name = "MQT MLIR test suite"
-config.test_format = lit.formats.ShTest(execute_external=True)
+config.name = "MQT Core MLIR Lit Tests"
+config.test_format = lit.formats.ShTest(execute_external=False)
 
 # Define the file extensions to treat as test files.
 config.suffixes = [".mlir"]
-config.excludes = ["lit.cfg.py"]
 
 # Define the root path of where to look for tests.
 config.test_source_root = Path(__file__).parent
 
 # Define where to execute tests (and produce the output).
-config.test_exec_root = getattr(config, "quantum_test_dir", ".lit")
+config.test_exec_root = Path(config.mqt_core_mlir_test_dir)
 
-# Define PATH to include the various tools needed for our tests.
-try:
-    # From within a build target we have access to cmake variables configured in lit.site.cfg.py.in.
-    llvm_config.with_environment("PATH", config.llvm_tools_dir, append_path=True)  # FileCheck
-    llvm_config.with_environment("PATH", config.quantum_bin_dir, append_path=True)  # quantum-opt
-except AttributeError:
-    # The system PATH is available by default.
-    pass
+multi_config_path = Path(config.mqt_core_mlir_tools_dir) / config.cmake_build_type
+tool_dirs = [config.llvm_tools_dir, config.mqt_core_mlir_tools_dir, str(multi_config_path)]
+tools = ["not", "FileCheck", "quantum-opt"]
+llvm_config.add_tool_substitutions(tools, tool_dirs)
