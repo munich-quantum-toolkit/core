@@ -12,7 +12,7 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
 #include <cstddef>
-#include <iterator>
+#include <cstdint>
 #include <memory>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
@@ -22,15 +22,11 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/WalkPatternRewriteDriver.h>
+#include <numeric>
 #include <optional>
-#include <queue>
-#include <span>
 #include <string>
 #include <string_view>
-#include <unordered_set>
 #include <utility>
-#include <vector>
 
 namespace mqt::ir::opt {
 
@@ -38,6 +34,49 @@ namespace mqt::ir::opt {
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 namespace {
+using namespace mlir;
+
+namespace attribute_names {
+constexpr std::string TARGET = "mqtopt.target";
+} // namespace attribute_names
+
+namespace initial_mapping_funcs {
+/// @brief Insert identity mapping into @p perm.
+void identity(std::vector<uint64_t>& perm) {
+  std::iota(perm.begin(), perm.end(), 0);
+}
+
+/// @brief Insert random mapping into @p perm.
+void random(std::vector<uint64_t>& perm) {
+  std::random_device rd;
+  std::mt19937 g(rd());
+
+  std::iota(perm.begin(), perm.end(), 0);
+  std::shuffle(perm.begin(), perm.end(), g);
+}
+}; // namespace initial_mapping_funcs
+
+template <class T1, class T2> struct BidirectionalMap {
+  using MapType = llvm::DenseMap<T1, T2>;
+  using InvMapType = llvm::DenseMap<T2, T1>;
+
+  // Set bidirectional (T1 <-> T2) mapping.
+  void set(const T1 a, const T2 b) {
+    map_[a] = b;
+    invMap_[b] = a;
+  }
+
+  // Get reference of forward (T1 -> T2) map.
+  [[nodiscard]] MapType& getForward() { return map_; }
+
+  // Get reference of backward (T1 <- T2) map.
+  [[nodiscard]] InvMapType& getBackward() { return invMap_; }
+
+private:
+  MapType map_;
+  InvMapType invMap_;
+};
+
 /// @brief A quantum accelerator's architecture.
 struct Architecture {
   explicit Architecture(std::string name, uint64_t nqubits)
@@ -52,65 +91,6 @@ private:
   uint64_t nqubits_;
 };
 
-struct RoutingState {
-  using MapType = llvm::DenseMap<mlir::Value, std::size_t>;
-  using InvMapType = llvm::DenseMap<std::size_t, mlir::Value>;
-
-  explicit RoutingState() = default;
-
-  /// @brief Return reference to static qubit pool.
-  [[nodiscard]] std::queue<mlir::Value>& pool() { return pool_; }
-
-  /// @brief If possible, retrieve a free static qubit from the static pool.
-  [[nodiscard]] std::optional<mlir::Value> getFromPool() {
-    if (pool_.empty()) {
-      return std::nullopt;
-    }
-
-    auto q = pool_.front();
-    pool_.pop();
-    return q;
-  }
-
-  /// @brief Add static qubit to the pool.
-  void addToPool(mlir::Value q) { pool().push(q); }
-
-  /// @brief Return the mapping from values to indices.
-  [[nodiscard]] MapType& map() { return map_; }
-
-  /// @brief Return the mapping from indices to values.
-  [[nodiscard]] InvMapType& invMap() { return invMap_; }
-
-  [[nodiscard]] llvm::DenseSet<mlir::Value>& executables() {
-    return executables_;
-  }
-
-  void clear() {
-    map_.clear();
-    invMap_.clear();
-    std::queue<mlir::Value>().swap(pool_); // clear queue.
-  }
-
-private:
-  std::unique_ptr<Architecture> target_;
-
-  llvm::DenseMap<mlir::Value, std::size_t> map_;
-  llvm::DenseMap<std::size_t, mlir::Value> invMap_;
-
-  llvm::DenseSet<mlir::Value> executables_;
-
-  std::queue<mlir::Value> pool_;
-};
-
-namespace attribute_names {
-constexpr std::string TARGET = "mqtopt.target";
-} // namespace attribute_names
-
-} // namespace
-
-namespace {
-using namespace mlir;
-
 /// @brief Add attributes to module-like parent specifying the architecture.
 void setModuleTarget(Operation* moduleLike, PatternRewriter& rewriter,
                      const Architecture& target) {
@@ -120,11 +100,12 @@ void setModuleTarget(Operation* moduleLike, PatternRewriter& rewriter,
 
 /// @brief Create @p nqubits static qubits in module-like parent.
 void addModuleQubits(Operation* moduleLike, const uint64_t nqubits,
-                     RoutingState& state, PatternRewriter& rewriter) {
+                     BidirectionalMap<std::size_t, Value>& qubits,
+                     PatternRewriter& rewriter) {
   const auto& qubit = QubitType::get(moduleLike->getContext());
   for (std::size_t i = 0; i < nqubits; ++i) {
     auto qubitOp = rewriter.create<QubitOp>(moduleLike->getLoc(), qubit, i);
-    state.addToPool(qubitOp);
+    qubits.set(i, qubitOp);
   }
 }
 
@@ -167,83 +148,109 @@ LogicalResult spanAndFold(Operation* base,
   MLIRContext* ctx = base->getContext();
   PatternRewriter rewriter(ctx);
 
-  RoutingState state{};
+  // CURRENT ASSUMPTIONS
+  // 1) All extract's are BUNDLED.
+  // 2) Qubits are extracted ONCE.
+  // 3) All used qubits are extracted before any computation.
 
-  auto result = base->walk([&](Operation* op) {
-    rewriter.setInsertionPoint(op);
+  llvm::DenseSet<Value> hotQubits{};             // Currently used qubits.
+  BidirectionalMap<std::size_t, Value> qubits{}; // Index to qubit & vice versa.
+  std::vector<uint64_t> perm(target->nqubits()); // Holds initial mapping.
 
-    if (auto extract = dyn_cast<ExtractOp>(op)) {
-      // TODO: What trait to use here best?
-      Operation* moduleLike = op->getParentOp();
-      assert(moduleLike);
-      if (!moduleLike->hasAttr(attribute_names::TARGET)) {
-        setModuleTarget(moduleLike, rewriter, *target);
-        addModuleQubits(moduleLike, target->nqubits(), state, rewriter);
+  initial_mapping_funcs::identity(perm);
+
+  auto result = base->walk([&](ExtractOp extract) {
+    rewriter.setInsertionPoint(extract);
+
+    const Operation* successor = extract->getNextNode();
+
+    // TODO: What trait to use here best?
+    Operation* moduleLike = extract->getParentOp();
+    assert(moduleLike);
+    if (!moduleLike->hasAttr(attribute_names::TARGET)) {
+      setModuleTarget(moduleLike, rewriter, *target);
+      addModuleQubits(moduleLike, target->nqubits(), qubits, rewriter);
+    }
+
+    const std::optional<uint64_t> indexAttr = extract.getIndexAttr();
+    assert(indexAttr.has_value()); // Assume a static index for now.
+
+    const std::size_t idx = perm[indexAttr.value()];
+    const Value dynQ = extract.getOutQubit();     // The dynamic qubit.
+    const Value statQ = qubits.getForward()[idx]; // The static qubit.
+
+    if (hotQubits.contains(statQ)) {
+      return WalkResult(extract.emitOpError()
+                        << "extracted the same qubit twice.");
+    }
+
+    if (hotQubits.size() == target->nqubits()) {
+      return WalkResult(
+          extract.emitOpError()
+          << "requires more qubits than the architecture supports");
+    }
+
+    hotQubits.insert(statQ);
+    rewriter.replaceAllUsesWith(dynQ, statQ);
+    rewriter.replaceAllUsesWith(extract.getOutQreg(), extract.getInQreg());
+    rewriter.eraseOp(extract);
+
+    if (successor && dyn_cast<ExtractOp>(successor)) {
+      return WalkResult::advance();
+    }
+
+    // ---------------------------------------------
+    //  Extract phase over.
+    //  Mapping circuit until inserts arrive.
+    // ---------------------------------------------
+
+    llvm::DenseSet<Value> front;
+    for (const auto& pair : qubits.getForward()) {
+      front.insert(pair.second);
+    }
+
+    while (true) {
+      front = absorbSingleQubitOps(front);
+
+      if (front.empty()) {
+        break;
       }
 
-      auto qubit = state.getFromPool();
-      if (!qubit) {
-        return WalkResult(
-            extract.emitOpError()
-            << "requires one more qubit than the architecture supports");
-      }
-      state.executables().insert(qubit.value());
+      // Find next layer.
+      llvm::DenseSet<UnitaryInterface> layer{};
+      for (auto ready : front) {
+        Operation* user = *(ready.getUsers().begin());
+        assert(dyn_cast<UnitaryInterface>(user));
 
-      rewriter.replaceAllUsesWith(extract.getOutQubit(), qubit.value());
-      rewriter.replaceAllUsesWith(extract.getOutQreg(), extract.getInQreg());
+        if (auto unitary = dyn_cast<UnitaryInterface>(user)) {
 
-      Operation* successor = extract->getNextNode();
-      if (successor && dyn_cast<ExtractOp>(successor)) {
-        return WalkResult::advance();
-      }
+          // All single qubit operations should have been absorbed. What's
+          // left are one-control one-target gates.
 
-      // Extract phase over.
-      // Mapping circuit until inserts arrive.
+          assert(!unitary.getInQubits().empty());
+          assert(!unitary.getAllCtrlInQubits().empty());
+          assert(unitary.getInQubits().size() == 1);
+          assert(unitary.getAllCtrlInQubits().size() == 1);
 
-      while (true) {
-        state.executables() = absorbSingleQubitOps(state.executables());
-
-        if (state.executables().empty()) {
-          break;
-        }
-
-        // Find next layer.
-        llvm::DenseSet<UnitaryInterface> layer{};
-        for (auto ready : state.executables()) {
-          Operation* user = *(ready.getUsers().begin());
-          assert(dyn_cast<UnitaryInterface>(user));
-
-          if (auto unitary = dyn_cast<UnitaryInterface>(user)) {
-
-            // All single qubit operations should have been absorbed. What's
-            // left are one-control one-target gates.
-
-            assert(!unitary.getInQubits().empty());
-            assert(!unitary.getAllCtrlInQubits().empty());
-            assert(unitary.getInQubits().size() == 1);
-            assert(unitary.getAllCtrlInQubits().size() == 1);
-
-            auto target = unitary.getInQubits().front();
-            auto control = unitary.getAllCtrlInQubits().front();
-            if (state.executables().contains(target) &&
-                state.executables().contains(control)) {
-              layer.insert(unitary);
-            }
+          auto target = unitary.getInQubits().front();
+          auto control = unitary.getAllCtrlInQubits().front();
+          if (front.contains(target) && front.contains(control)) {
+            layer.insert(unitary);
           }
         }
-
-        for (auto unitary : layer) {
-          llvm::outs() << unitary->getLoc() << '\n';
-
-          // Insert 'out's.
-          state.executables().insert(unitary.getOutQubits().front());
-          state.executables().insert(unitary.getAllCtrlOutQubits().front());
-          // Remove 'in's.
-          state.executables().erase(unitary.getInQubits().front());
-          state.executables().erase(unitary.getAllCtrlInQubits().front());
-        }
-        llvm::outs() << "-----------\n";
       }
+
+      for (auto unitary : layer) {
+        llvm::outs() << unitary->getLoc() << '\n';
+
+        // Insert 'out's.
+        front.insert(unitary.getOutQubits().front());
+        front.insert(unitary.getAllCtrlOutQubits().front());
+        // Remove 'in's.
+        front.erase(unitary.getInQubits().front());
+        front.erase(unitary.getAllCtrlInQubits().front());
+      }
+      llvm::outs() << "-----------\n";
     }
 
     return WalkResult::advance();
