@@ -11,9 +11,11 @@
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/operations/IfElseOperation.hpp"
+#include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
 
 #include <gtest/gtest.h>
+#include <memory>
 
 TEST(IfElseOperation, GetInvertedComparisonKind) {
   EXPECT_EQ(qc::getInvertedComparisonKind(qc::ComparisonKind::Lt),
@@ -28,6 +30,23 @@ TEST(IfElseOperation, GetInvertedComparisonKind) {
             qc::ComparisonKind::Neq);
   EXPECT_EQ(qc::getInvertedComparisonKind(qc::ComparisonKind::Neq),
             qc::ComparisonKind::Eq);
+}
+
+TEST(IfElseOperation, Assignment) {
+  const qc::IfElseOperation ifElse1(
+      std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0);
+  qc::IfElseOperation ifElse2(
+      std::make_unique<qc::StandardOperation>(0, qc::OpType::Y),
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Z), 0);
+
+  ifElse2 = ifElse1;
+
+  EXPECT_TRUE(ifElse2.equals(ifElse1));
+
+  // Check that operations have been cloned
+  EXPECT_NE(ifElse2.getThenOp(), ifElse1.getThenOp());
+  EXPECT_NE(ifElse2.getElseOp(), ifElse1.getElseOp());
 }
 
 TEST(IfElseOperation, Apply) {
@@ -46,7 +65,7 @@ TEST(IfElseOperation, Apply) {
 }
 
 TEST(IfElseOperation, IsUnitary) {
-  qc::IfElseOperation ifElse(
+  const qc::IfElseOperation ifElse(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
       std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0);
 
@@ -54,7 +73,7 @@ TEST(IfElseOperation, IsUnitary) {
 }
 
 TEST(IfElseOperation, IsNonUnitaryOperation) {
-  qc::IfElseOperation ifElse(
+  const qc::IfElseOperation ifElse(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
       std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0);
 
@@ -62,7 +81,7 @@ TEST(IfElseOperation, IsNonUnitaryOperation) {
 }
 
 TEST(IfElseOperation, IsIfElseOperation) {
-  qc::IfElseOperation ifElse(
+  const qc::IfElseOperation ifElse(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
       std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0);
 
@@ -70,7 +89,7 @@ TEST(IfElseOperation, IsIfElseOperation) {
 }
 
 TEST(IfElseOperation, IsControlled) {
-  qc::IfElseOperation ifElse(
+  const qc::IfElseOperation ifElse(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
       std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0);
 
@@ -78,79 +97,90 @@ TEST(IfElseOperation, IsControlled) {
 }
 
 TEST(IfElseOperation, Equals) {
-  qc::IfElseOperation ifElse1(
+  const qc::IfElseOperation ifElseBit1(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0, 1U,
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0, true,
       qc::ComparisonKind::Eq);
-  qc::IfElseOperation ifElse2(
+  const qc::IfElseOperation ifElseBit2(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0, 1U,
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0, true,
       qc::ComparisonKind::Eq);
-  qc::IfElseOperation ifElse3(
+  const qc::IfElseOperation ifElseBit3(
       std::make_unique<qc::StandardOperation>(1, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(0, qc::OpType::Y), 0, 1U,
+      std::make_unique<qc::StandardOperation>(0, qc::OpType::Y), 0, true,
       qc::ComparisonKind::Eq);
-  qc::IfElseOperation ifElse4(
+  const qc::IfElseOperation ifElseBit4(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Z), 0, 1U,
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Z), 0, true,
       qc::ComparisonKind::Eq);
-  qc::IfElseOperation ifElse5(
+  const qc::IfElseOperation ifElseBit5(
+      nullptr, std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0,
+      true, qc::ComparisonKind::Eq);
+  const qc::IfElseOperation ifElseBit6(
+      std::make_unique<qc::StandardOperation>(0, qc::OpType::X), nullptr, 0,
+      true, qc::ComparisonKind::Eq);
+  const qc::IfElseOperation ifElseBit7(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 1, 1U,
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 1, true,
       qc::ComparisonKind::Eq);
-  qc::IfElseOperation ifElse6(
+  const qc::IfElseOperation ifElseBit8(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 1, 0U,
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 1, false,
       qc::ComparisonKind::Eq);
-  qc::IfElseOperation ifElse7(
+  const qc::IfElseOperation ifElseBit9(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 1, 1U,
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 1, true,
       qc::ComparisonKind::Neq);
 
-  EXPECT_TRUE(ifElse1.equals(ifElse2));
-  EXPECT_FALSE(ifElse1.equals(ifElse3));
-  EXPECT_FALSE(ifElse1.equals(ifElse4));
-  EXPECT_FALSE(ifElse1.equals(ifElse5));
-  EXPECT_FALSE(ifElse1.equals(ifElse6));
-  EXPECT_FALSE(ifElse1.equals(ifElse7));
-}
+  const qc::ClassicalRegister controlRegister1(0, 1);
+  const qc::ClassicalRegister controlRegister2(0, 2);
 
-TEST(IfElseOperation, Hash) {
-  qc::IfElseOperation ifElse1(
+  const qc::IfElseOperation ifElseRegister1(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0, 1U,
-      qc::ComparisonKind::Eq);
-  qc::IfElseOperation ifElse2(
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y),
+      controlRegister1, 1U, qc::ComparisonKind::Eq);
+  const qc::IfElseOperation ifElseRegister2(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0, 1U,
-      qc::ComparisonKind::Eq);
-  qc::IfElseOperation ifElse3(
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(0, qc::OpType::Y), 0, 1U,
-      qc::ComparisonKind::Eq);
-  qc::IfElseOperation ifElse4(
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y),
+      controlRegister1, 1U, qc::ComparisonKind::Eq);
+  const qc::IfElseOperation ifElseRegister3(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Z), 0, 1U,
-      qc::ComparisonKind::Eq);
-  qc::IfElseOperation ifElse5(
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y),
+      controlRegister2, 1U, qc::ComparisonKind::Eq);
+  const qc::IfElseOperation ifElseRegister4(
       std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 1, 1U,
-      qc::ComparisonKind::Eq);
-  qc::IfElseOperation ifElse6(
-      std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 1, 0U,
-      qc::ComparisonKind::Eq);
-  qc::IfElseOperation ifElse7(
-      std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
-      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 1, 1U,
-      qc::ComparisonKind::Neq);
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y),
+      controlRegister1, 2U, qc::ComparisonKind::Eq);
+
+  EXPECT_TRUE(ifElseBit1.equals(ifElseBit2));
+  EXPECT_FALSE(ifElseBit1.equals(ifElseBit3));
+  EXPECT_FALSE(ifElseBit1.equals(ifElseBit4));
+  EXPECT_FALSE(ifElseBit1.equals(ifElseBit5));
+  EXPECT_FALSE(ifElseBit1.equals(ifElseBit6));
+  EXPECT_FALSE(ifElseBit1.equals(ifElseBit7));
+  EXPECT_FALSE(ifElseBit1.equals(ifElseBit8));
+  EXPECT_FALSE(ifElseBit1.equals(ifElseBit9));
+
+  EXPECT_FALSE(ifElseBit1.equals(ifElseRegister1));
+
+  EXPECT_TRUE(ifElseRegister1.equals(ifElseRegister2));
+  EXPECT_FALSE(ifElseRegister1.equals(ifElseRegister3));
+  EXPECT_FALSE(ifElseRegister1.equals(ifElseRegister4));
 
   std::hash<qc::IfElseOperation> hasher;
 
-  EXPECT_EQ(hasher(ifElse1), hasher(ifElse2));
-  EXPECT_NE(hasher(ifElse1), hasher(ifElse3));
-  EXPECT_NE(hasher(ifElse1), hasher(ifElse4));
-  EXPECT_NE(hasher(ifElse1), hasher(ifElse5));
-  EXPECT_NE(hasher(ifElse1), hasher(ifElse6));
-  EXPECT_NE(hasher(ifElse1), hasher(ifElse7));
+  EXPECT_EQ(hasher(ifElseBit1), hasher(ifElseBit2));
+  EXPECT_NE(hasher(ifElseBit1), hasher(ifElseBit3));
+  EXPECT_NE(hasher(ifElseBit1), hasher(ifElseBit4));
+  EXPECT_NE(hasher(ifElseBit1), hasher(ifElseBit5));
+  EXPECT_NE(hasher(ifElseBit1), hasher(ifElseBit6));
+  EXPECT_NE(hasher(ifElseBit1), hasher(ifElseBit7));
+  EXPECT_NE(hasher(ifElseBit1), hasher(ifElseBit8));
+  EXPECT_NE(hasher(ifElseBit1), hasher(ifElseBit9));
+
+  EXPECT_NE(hasher(ifElseBit1), hasher(ifElseRegister1));
+
+  EXPECT_EQ(hasher(ifElseRegister1), hasher(ifElseRegister2));
+  EXPECT_NE(hasher(ifElseRegister1), hasher(ifElseRegister3));
+  EXPECT_NE(hasher(ifElseRegister1), hasher(ifElseRegister4));
 }
