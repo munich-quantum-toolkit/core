@@ -11,6 +11,7 @@
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/Register.hpp"
+#include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
