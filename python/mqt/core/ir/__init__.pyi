@@ -1904,7 +1904,7 @@ class QuantumComputation(MutableSequence[Operation]):
     @overload
     def if_(
         self,
-        op: OpType,
+        op_type: OpType,
         target: int,
         control_register: ClassicalRegister,
         expected_value: int = 1,
@@ -1914,7 +1914,7 @@ class QuantumComputation(MutableSequence[Operation]):
         """Add an if operartion to the circuit.
 
         Args:
-            op: The operation to apply
+            op_type: The operation to apply
             target: The target qubit
             control_register: The classical register to check against
             expected_value: The expected value of the control register
@@ -1925,7 +1925,7 @@ class QuantumComputation(MutableSequence[Operation]):
     @overload
     def if_(
         self,
-        op: OpType,
+        op_type: OpType,
         target: int,
         control: Control | int,
         control_register: ClassicalRegister,
@@ -1936,7 +1936,7 @@ class QuantumComputation(MutableSequence[Operation]):
         """Add a classic-controlled operation to the circuit.
 
         Args:
-            op: The operation to apply
+            op_type: The operation to apply
             target: The target qubit
             control: The control qubit
             control_register: The classical register to check against
@@ -1948,7 +1948,7 @@ class QuantumComputation(MutableSequence[Operation]):
     @overload
     def if_(
         self,
-        op: OpType,
+        op_type: OpType,
         target: int,
         controls: set[Control | int],
         control_register: ClassicalRegister,
@@ -1959,7 +1959,7 @@ class QuantumComputation(MutableSequence[Operation]):
         """Add a classic-controlled operation to the circuit.
 
         Args:
-            op: The operation to apply
+            op_type: The operation to apply
             target: The target qubit
             controls: The control qubits
             control_register: The classical register to check against
@@ -1971,7 +1971,7 @@ class QuantumComputation(MutableSequence[Operation]):
     @overload
     def if_(
         self,
-        op: OpType,
+        op_type: OpType,
         target: int,
         control_bit: int,
         expected_value: bool = True,
@@ -1981,7 +1981,7 @@ class QuantumComputation(MutableSequence[Operation]):
         """Add a classic-controlled operation to the circuit.
 
         Args:
-            op: The operation to apply
+            op_type: The operation to apply
             target: The target qubit
             control_bit: The index of the classical bit to check against
             expected_value: The expected value of the control bit
@@ -1992,7 +1992,7 @@ class QuantumComputation(MutableSequence[Operation]):
     @overload
     def if_(
         self,
-        op: OpType,
+        op_type: OpType,
         target: int,
         control: Control | int,
         control_bit: int,
@@ -2003,7 +2003,7 @@ class QuantumComputation(MutableSequence[Operation]):
         """Add a classic-controlled operation to the circuit.
 
         Args:
-            op: The operation to apply
+            op_type: The operation to apply
             target: The target qubit
             control: The control qubit
             control_bit: The index of the classical bit to check against
@@ -2015,7 +2015,7 @@ class QuantumComputation(MutableSequence[Operation]):
     @overload
     def if_(
         self,
-        op: OpType,
+        op_type: OpType,
         target: int,
         controls: set[Control | int],
         control_bit: int,
@@ -2026,7 +2026,7 @@ class QuantumComputation(MutableSequence[Operation]):
         """Add a classic-controlled operation to the circuit.
 
         Args:
-            op: The operation to apply
+            op_type: The operation to apply
             target: The target qubit
             controls: The control qubits
             control_bit: The index of the classical bit to check against

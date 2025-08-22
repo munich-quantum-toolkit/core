@@ -467,7 +467,7 @@ void registerQuantumComputation(py::module& m) {
                         const qc::ClassicalRegister&, const std::uint64_t,
                         const qc::ComparisonKind, const std::vector<qc::fp>&>(
           &qc::QuantumComputation::if_),
-      "op"_a, "target"_a, "control_register"_a, "expected_value"_a = 1U,
+      "op_type"_a, "target"_a, "control_register"_a, "expected_value"_a = 1U,
       "comparison_kind"_a = qc::ComparisonKind::Eq,
       "params"_a = std::vector<qc::fp>{});
   qc.def(
@@ -476,7 +476,7 @@ void registerQuantumComputation(py::module& m) {
                         const qc::ClassicalRegister&, const std::uint64_t,
                         const qc::ComparisonKind, const std::vector<qc::fp>&>(
           &qc::QuantumComputation::if_),
-      "op"_a, "target"_a, "control"_a, "control_register"_a,
+      "op_type"_a, "target"_a, "control"_a, "control_register"_a,
       "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq,
       "params"_a = std::vector<qc::fp>{});
   qc.def(
@@ -485,7 +485,7 @@ void registerQuantumComputation(py::module& m) {
                         const qc::ClassicalRegister&, const std::uint64_t,
                         const qc::ComparisonKind, const std::vector<qc::fp>&>(
           &qc::QuantumComputation::if_),
-      "op"_a, "target"_a, "controls"_a, "control_register"_a,
+      "op_type"_a, "target"_a, "controls"_a, "control_register"_a,
       "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq,
       "params"_a = std::vector<qc::fp>{});
   qc.def("if_",
@@ -493,7 +493,7 @@ void registerQuantumComputation(py::module& m) {
                            const bool, const qc::ComparisonKind,
                            const std::vector<qc::fp>&>(
              &qc::QuantumComputation::if_),
-         "op"_a, "target"_a, "control_bit"_a, "expected_value"_a = true,
+         "op_type"_a, "target"_a, "control_bit"_a, "expected_value"_a = true,
          "comparison_kind"_a = qc::ComparisonKind::Eq,
          "params"_a = std::vector<qc::fp>{});
   qc.def("if_",
@@ -501,7 +501,7 @@ void registerQuantumComputation(py::module& m) {
                            const qc::Bit, const bool, const qc::ComparisonKind,
                            const std::vector<qc::fp>&>(
              &qc::QuantumComputation::if_),
-         "op"_a, "target"_a, "control"_a, "control_bit"_a,
+         "op_type"_a, "target"_a, "control"_a, "control_bit"_a,
          "expected_value"_a = true,
          "comparison_kind"_a = qc::ComparisonKind::Eq,
          "params"_a = std::vector<qc::fp>{});
@@ -511,7 +511,7 @@ void registerQuantumComputation(py::module& m) {
                         const qc::Bit, const bool, const qc::ComparisonKind,
                         const std::vector<qc::fp>&>(
           &qc::QuantumComputation::if_),
-      "op"_a, "target"_a, "controls"_a, "control_bit"_a,
+      "op_type"_a, "target"_a, "controls"_a, "control_bit"_a,
       "expected_value"_a = true, "comparison_kind"_a = qc::ComparisonKind::Eq,
       "params"_a = std::vector<qc::fp>{});
 }

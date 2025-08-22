@@ -68,7 +68,7 @@ for i in range(precision):
 
   # Iterative inverse QFT
   for j in range(i):
-    qc.if_(op=OpType.p, target=q[0], control_bit=c[j], params=[-pi / 2**(i - j)])
+    qc.if_(op_type=OpType.p, target=q[0], control_bit=c[j], params=[-pi / 2**(i - j)])
   qc.h(q[0])
 
   # Measure the result
@@ -301,17 +301,17 @@ qc.if_else(
 print(qc)
 ```
 
-If you do not need an `else_operation`, the {py:class}`~mqt.core.ir.QuantumComputation` class provides a shortcut for creating an `if_` operation:
+If you do not need an `else_operation`, the {py:class}`~mqt.core.ir.QuantumComputation` class provides a shortcut for creating an {py:meth}`~mqt.core.ir.QuantumComputation.if_` operation.
 
 ```{code-cell} ipython3
 qc = QuantumComputation(1, 1)
+
 qc.h(0)
-qc.if_(op=OpType.x, target=0, control_bit=0)
+qc.measure(0, 0)
+qc.if_(op_type=OpType.x, target=0, control_bit=0)
 
 print(qc)
 ```
-
-See the {py:meth}`~mqt.core.ir.QuantumComputation.if_` method for more details.
 
 ## Interfacing with other SDKs and Formats
 
