@@ -10,12 +10,15 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
+#include "ir/Register.hpp"
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
 
+#include <functional>
 #include <gtest/gtest.h>
 #include <memory>
+#include <stdexcept>
 
 TEST(IfElseOperation, GetInvertedComparisonKind) {
   EXPECT_EQ(qc::getInvertedComparisonKind(qc::ComparisonKind::Lt),
@@ -167,7 +170,7 @@ TEST(IfElseOperation, Equals) {
   EXPECT_FALSE(ifElseRegister1.equals(ifElseRegister3));
   EXPECT_FALSE(ifElseRegister1.equals(ifElseRegister4));
 
-  std::hash<qc::IfElseOperation> hasher;
+  const std::hash<qc::IfElseOperation> hasher;
 
   EXPECT_EQ(hasher(ifElseBit1), hasher(ifElseBit2));
   EXPECT_NE(hasher(ifElseBit1), hasher(ifElseBit3));
@@ -183,4 +186,19 @@ TEST(IfElseOperation, Equals) {
   EXPECT_EQ(hasher(ifElseRegister1), hasher(ifElseRegister2));
   EXPECT_NE(hasher(ifElseRegister1), hasher(ifElseRegister3));
   EXPECT_NE(hasher(ifElseRegister1), hasher(ifElseRegister4));
+}
+
+TEST(IfElseOperation, RuntimeErrors) {
+  qc::IfElseOperation ifElse(
+      std::make_unique<qc::StandardOperation>(0, qc::OpType::X),
+      std::make_unique<qc::StandardOperation>(1, qc::OpType::Y), 0);
+
+  EXPECT_THROW(ifElse.invert(), std::runtime_error);
+  EXPECT_THROW(ifElse.setTargets({}), std::runtime_error);
+  EXPECT_THROW(ifElse.setControls({}), std::runtime_error);
+  EXPECT_THROW(ifElse.addControl(qc::Control(0)), std::runtime_error);
+  EXPECT_THROW(ifElse.clearControls(), std::runtime_error);
+  EXPECT_THROW(ifElse.removeControl(qc::Control(0)), std::runtime_error);
+  EXPECT_THROW(ifElse.setGate(qc::OpType::None), std::runtime_error);
+  EXPECT_THROW(ifElse.setParameter({}), std::runtime_error);
 }
