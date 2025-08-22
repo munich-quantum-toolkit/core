@@ -93,6 +93,29 @@ struct ConvertMQTOptDealloc final : OpConversionPattern<opt::DeallocOp> {
   }
 };
 
+struct ConvertMQTOptAllocQubit final : OpConversionPattern<opt::AllocQubitOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(const opt::AllocQubitOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<ref::AllocQubitOp>(op);
+    return success();
+  }
+};
+
+struct ConvertMQTOptDeallocQubit final
+    : OpConversionPattern<opt::DeallocQubitOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(const opt::DeallocQubitOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<ref::DeallocQubitOp>(op, adaptor.getQubit());
+    return success();
+  }
+};
+
 struct ConvertMQTOptExtract final : OpConversionPattern<opt::ExtractOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -244,9 +267,11 @@ struct MQTOptToMQTRef final : impl::MQTOptToMQTRefBase<MQTOptToMQTRef> {
     target.addIllegalDialect<opt::MQTOptDialect>();
     target.addLegalDialect<ref::MQTRefDialect>();
 
-    patterns.add<ConvertMQTOptAlloc, ConvertMQTOptDealloc, ConvertMQTOptInsert,
-                 ConvertMQTOptExtract, ConvertMQTOptMeasure, ConvertMQTOptReset,
-                 ConvertMQTOptQubit>(typeConverter, context);
+    patterns.add<ConvertMQTOptAlloc, ConvertMQTOptDealloc,
+                 ConvertMQTOptAllocQubit, ConvertMQTOptDeallocQubit,
+                 ConvertMQTOptInsert, ConvertMQTOptExtract,
+                 ConvertMQTOptMeasure, ConvertMQTOptReset, ConvertMQTOptQubit>(
+        typeConverter, context);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)

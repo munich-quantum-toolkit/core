@@ -9,10 +9,10 @@
 
 <p align="center">
   <a href="https://mqt.readthedocs.io">
-   <picture>
-     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/logo-mqt-dark.svg" width="60%">
-     <img src="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/logo-mqt-light.svg" width="60%" alt="MQT Logo">
-   </picture>
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/logo-mqt-dark.svg" width="60%">
+      <img src="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/logo-mqt-light.svg" width="60%" alt="MQT Logo">
+    </picture>
   </a>
 </p>
 
@@ -41,17 +41,35 @@ Among others, it is part of the [Munich Quantum Software Stack (MQSS)](https://w
 
 <p align="center">
   <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/mqt-logo-banner-dark.svg" width="90%">
-   <img src="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/mqt-logo-banner-light.svg" width="90%" alt="MQT Partner Logos">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/mqt-logo-banner-dark.svg" width="90%">
+    <img src="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/mqt-logo-banner-light.svg" width="90%" alt="MQT Partner Logos">
   </picture>
 </p>
 
 Thank you to all the contributors who have helped make MQT Core a reality!
 
 <p align="center">
-<a href="https://github.com/munich-quantum-toolkit/core/graphs/contributors">
+  <a href="https://github.com/munich-quantum-toolkit/core/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=munich-quantum-toolkit/core" />
-</a>
+  </a>
+</p>
+
+The MQT will remain free, open-source, and permissively licensed—now and in the future.
+We are firmly committed to keeping it open and actively maintained for the quantum computing community.
+
+To support this endeavor, please consider:
+
+- Starring and sharing our repositories: https://github.com/munich-quantum-toolkit
+- Contributing code, documentation, tests, or examples via issues and pull requests
+- Citing the MQT in your publications (see [Cite This](#cite-this))
+- Citing our research in your publications (see [References](https://mqt.readthedocs.io/projects/core/en/latest/references.html))
+- Using the MQT in research and teaching, and sharing feedback and use cases
+- Sponsoring us on GitHub: https://github.com/sponsors/munich-quantum-toolkit
+
+<p align="center">
+  <a href="https://github.com/sponsors/munich-quantum-toolkit">
+  <img width=20% src="https://img.shields.io/badge/Sponsor-white?style=for-the-badge&logo=githubsponsors&labelColor=black&color=blue" alt="Sponsor the MQT" />
+  </a>
 </p>
 
 ## Getting Started
@@ -97,20 +115,43 @@ If you want to use the ZX library, it is recommended (although not strictly nece
 
 ## Cite This
 
-If you want to cite MQT Core, please use the following BibTeX entry:
+Please cite the work that best fits your use case.
+If both apply, include both references.
+
+### MQT Core (the tool)
+
+When citing the software itself or results produced with it, cite the MQT Core paper:
 
 ```bibtex
 @article{burgholzer2025MQTCore,
-    title     = {{{MQT Core}}: {{The}} Backbone of the {{Munich Quantum Toolkit (MQT)}}},
-    author    = {Lukas Burgholzer and Yannick Stade and Tom Peham and Robert Wille},
-    year      = {2025},
-    journal   = {Journal of Open Source Software},
-    publisher = {The Open Journal},
-    volume    = {10},
-    number    = {108},
-    pages     = {7478},
-    doi       = {10.21105/joss.07478},
-    url       = {https://doi.org/10.21105/joss.07478},
+    title        = {{{MQT Core}}: {{The}} Backbone of the {{Munich Quantum Toolkit (MQT)}}},
+    author       = {Lukas Burgholzer and Yannick Stade and Tom Peham and Robert Wille},
+    year         = 2025,
+    journal      = {Journal of Open Source Software},
+    publisher    = {The Open Journal},
+    volume       = 10,
+    number       = 108,
+    pages        = 7478,
+    doi          = {10.21105/joss.07478},
+    url          = {https://doi.org/10.21105/joss.07478},
+}
+```
+
+### The Munich Quantum Toolkit (the project)
+
+When discussing the overall MQT project or its ecosystem, cite the MQT Handbook:
+
+```bibtex
+@inproceedings{mqt,
+    title        = {The {{MQT}} Handbook: {{A}} Summary of Design Automation Tools and Software for Quantum Computing},
+    shorttitle   = {{The MQT Handbook}},
+    author       = {Robert Wille and Lucas Berent and Tobias Forster and Jagatheesan Kunasaikaran and Kevin Mato and Tom Peham and Nils Quetschlich and Damian Rovara and Aaron Sander and Ludwig Schmid and Daniel Schoenberger and Yannick Stade and Lukas Burgholzer},
+    booktitle    = {IEEE International Conference on Quantum Software (QSW)},
+    doi          = {10.1109/QSW62656.2024.00013},
+    year         = 2024,
+    eprint       = {2405.17543},
+    eprinttype   = {arxiv},
+    addendum     = {A live version of this document is available at \url{https://mqt.readthedocs.io}},
 }
 ```
 
