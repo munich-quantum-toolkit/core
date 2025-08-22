@@ -22,6 +22,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 🚚 Rename `xxminusyy` to `xx_minus_yy` and `xxplusyy` to `xx_plus_yy` in MLIR dialects ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 - 🚸 Add custom assembly format for operations in the MLIR dialects ([#1139]) ([**@burgholzer**])
 - 🚸 Enable `InferTypeOpInterface` in the MLIR dialects to reduce explicit type information ([#1139]) ([**@burgholzer**])
 - 🚚 Rename `check-quantum-opt` test target to `mqt-core-mlir-lit-test` ([#1139]) ([**@burgholzer**])
@@ -32,6 +33,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Removed
 
 - Remove `ClassicControlledOperation` from C++ library and Python package ([#1117]) ([**@denialhaag**])
+
+### Fixed
+
+- ✨ Add missing `StandardOperation` conversions in MLIR roundtrip pass ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 
 ## [3.2.1] - 2025-08-01
 
@@ -181,6 +186,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1088]: https://github.com/munich-quantum-toolkit/core/pull/1088
 [#1076]: https://github.com/munich-quantum-toolkit/core/pull/1076
 [#1075]: https://github.com/munich-quantum-toolkit/core/pull/1075
+[#1071]: https://github.com/munich-quantum-toolkit/core/pull/1071
 [#1047]: https://github.com/munich-quantum-toolkit/core/pull/1047
 [#1042]: https://github.com/munich-quantum-toolkit/core/pull/1042
 [#1020]: https://github.com/munich-quantum-toolkit/core/pull/1020

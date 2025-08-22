@@ -153,16 +153,17 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
                        std::vector<mlir::Value>& currentQubitVariables) const {
 
     // Add the operation to the QuantumComputation.
-    qc::OpType opType = qc::OpType::H; // init placeholder-"H" overwritten next
-    if (llvm::isa<HOp>(op)) {
-      opType = qc::OpType::H;
-    } else if (llvm::isa<XOp>(op)) {
-      opType = qc::OpType::X;
-    } else { // TODO: support for more operations
-      throw std::runtime_error("Unsupported operation type!");
+    qc::OpType opType = qc::OpType::None;
+
+    try {
+      const std::string type = op->getName().stripDialect().str();
+      opType = qc::opTypeFromString(type);
+    } catch (const std::invalid_argument& e) {
+      throw std::runtime_error("Unsupported operation type: " +
+                               op->getName().getStringRef().str());
     }
 
-    const auto in = op.getInQubits()[0];
+    const auto in = op.getInQubits();
     const auto posCtrlIns = op.getPosCtrlInQubits();
     const auto negCtrlIns = op.getNegCtrlInQubits();
     const auto outs = op.getAllOutQubits();
@@ -170,7 +171,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // Get the qubit index of every control qubit.
     std::vector<size_t> posCtrlInsIndices;
     std::vector<size_t> negCtrlInsIndices;
-    size_t targetIndex = 0; // Placeholder
+    std::vector<size_t> targetIndex(2); // adapted for two-target gates
     try {
       for (const auto& val : posCtrlIns) {
         posCtrlInsIndices.emplace_back(
@@ -181,7 +182,10 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
             findQubitIndex(val, currentQubitVariables));
       }
       // Get the qubit index of the target qubit (if already collected).
-      targetIndex = findQubitIndex(in, currentQubitVariables);
+      targetIndex[0] = findQubitIndex(in[0], currentQubitVariables);
+      if (in.size() > 1) {
+        targetIndex[1] = findQubitIndex(in[1], currentQubitVariables);
+      }
     } catch (const std::runtime_error& e) {
       if (strcmp(e.what(),
                  "Qubit was not found in list of previously defined qubits") ==
@@ -199,7 +203,10 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       currentQubitVariables[negCtrlInsIndices[i]] =
           outs[i + 1 + posCtrlInsIndices.size()];
     }
-    currentQubitVariables[targetIndex] = outs[0];
+    currentQubitVariables[targetIndex[0]] = outs[0];
+    if (op.getOutQubits().size() > 1) {
+      currentQubitVariables[targetIndex[1]] = outs[1];
+    }
 
     // Add the operation to the QuantumComputation.
     qc::Controls controls;
@@ -209,7 +216,23 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     for (const auto& index : negCtrlInsIndices) {
       controls.emplace(static_cast<qc::Qubit>(index), qc::Control::Type::Neg);
     }
-    circuit.emplace_back<qc::StandardOperation>(controls, targetIndex, opType);
+
+    std::vector<double> parameters;
+    if (const auto staticParamsAttr =
+            op->getAttrOfType<mlir::DenseF64ArrayAttr>("static_params")) {
+      parameters.reserve(staticParamsAttr.size());
+      for (const auto& param : staticParamsAttr.asArrayRef()) {
+        parameters.emplace_back(param);
+      }
+    }
+
+    if (op.getOutQubits().size() > 1) {
+      circuit.emplace_back<qc::StandardOperation>(
+          controls, targetIndex[0], targetIndex[1], opType, parameters);
+    } else {
+      circuit.emplace_back<qc::StandardOperation>(controls, targetIndex[0],
+                                                  opType, parameters);
+    }
 
     return true;
   }
@@ -368,7 +391,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
         }
       }
 
-      if (llvm::isa<XOp>(current) || llvm::isa<HOp>(current)) {
+      if (llvm::isa<UnitaryInterface>(current)) {
         auto unitaryOp = llvm::dyn_cast<UnitaryInterface>(current);
         handleUnitaryOp(unitaryOp, currentQubitVariables);
       } else if (auto extractOp = llvm::dyn_cast<ExtractOp>(current)) {
