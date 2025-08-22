@@ -50,7 +50,7 @@ Thank you to all the contributors who have helped make MQT Core a reality!
 
 <p align="center">
   <a href="https://github.com/munich-quantum-toolkit/core/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=munich-quantum-toolkit/core" />
+  <img src="https://contrib.rocks/image?repo=munich-quantum-toolkit/core" alt="Contributors to munich-quantum-toolkit/core" />
   </a>
 </p>
 
