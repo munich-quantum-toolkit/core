@@ -10,11 +10,24 @@
 
 from __future__ import annotations
 
+import pytest
+
 from mqt.core.ir import QuantumComputation
 from mqt.core.ir.operations import ComparisonKind, OpType, StandardOperation
 
 
-def test_if_else_operation_register_eq() -> None:
+@pytest.mark.parametrize(
+    ("comparison_kind", "comparison_kind_string"),
+    [
+        (ComparisonKind.eq, "=="),
+        (ComparisonKind.neq, "!="),
+        (ComparisonKind.lt, "<"),
+        (ComparisonKind.leq, "<="),
+        (ComparisonKind.gt, ">"),
+        (ComparisonKind.geq, ">="),
+    ],
+)
+def test_if_else_operation_register(comparison_kind: ComparisonKind, comparison_kind_string: str) -> None:
     """Test the creation of an if-else operation."""
     qc = QuantumComputation()
     qc.add_qubit_register(1)
@@ -24,176 +37,22 @@ def test_if_else_operation_register_eq() -> None:
         then_operation=StandardOperation(0, OpType.x),
         else_operation=StandardOperation(0, OpType.y),
         control_register=c,
+        comparison_kind=comparison_kind,
     )
 
     qasm = qc.qasm3_str()
-    expected = """
+    expected = f"""
         // i 0
         // o 0
         OPENQASM 3.0;
         include "stdgates.inc";
         qubit[1] q;
         bit[1] c;
-        if (c == 1) {
+        if (c {comparison_kind_string} 1) {{
             x q[0];
-        } else {
+        }} else {{
             y q[0];
-        }
-    """
-    # Remove all whitespace from both strings before comparison
-    assert "".join(qasm.split()) == "".join(expected.split())
-
-
-def test_if_else_operation_register_neq() -> None:
-    """Test the creation of an if-else operation."""
-    qc = QuantumComputation()
-    qc.add_qubit_register(1)
-    c = qc.add_classical_register(1)
-
-    qc.if_else(
-        then_operation=StandardOperation(0, OpType.x),
-        else_operation=StandardOperation(0, OpType.y),
-        control_register=c,
-        comparison_kind=ComparisonKind.neq,
-    )
-
-    qasm = qc.qasm3_str()
-    expected = """
-        // i 0
-        // o 0
-        OPENQASM 3.0;
-        include "stdgates.inc";
-        qubit[1] q;
-        bit[1] c;
-        if (c != 1) {
-            x q[0];
-        } else {
-            y q[0];
-        }
-    """
-    # Remove all whitespace from both strings before comparison
-    assert "".join(qasm.split()) == "".join(expected.split())
-
-
-def test_if_else_operation_register_lt() -> None:
-    """Test the creation of an if-else operation."""
-    qc = QuantumComputation()
-    qc.add_qubit_register(1)
-    c = qc.add_classical_register(1)
-
-    qc.if_else(
-        then_operation=StandardOperation(0, OpType.x),
-        else_operation=StandardOperation(0, OpType.y),
-        control_register=c,
-        comparison_kind=ComparisonKind.lt,
-    )
-
-    qasm = qc.qasm3_str()
-    expected = """
-        // i 0
-        // o 0
-        OPENQASM 3.0;
-        include "stdgates.inc";
-        qubit[1] q;
-        bit[1] c;
-        if (c < 1) {
-            x q[0];
-        } else {
-            y q[0];
-        }
-    """
-    # Remove all whitespace from both strings before comparison
-    assert "".join(qasm.split()) == "".join(expected.split())
-
-
-def test_if_else_operation_register_leq() -> None:
-    """Test the creation of an if-else operation."""
-    qc = QuantumComputation()
-    qc.add_qubit_register(1)
-    c = qc.add_classical_register(1)
-
-    qc.if_else(
-        then_operation=StandardOperation(0, OpType.x),
-        else_operation=StandardOperation(0, OpType.y),
-        control_register=c,
-        comparison_kind=ComparisonKind.leq,
-    )
-
-    qasm = qc.qasm3_str()
-    expected = """
-        // i 0
-        // o 0
-        OPENQASM 3.0;
-        include "stdgates.inc";
-        qubit[1] q;
-        bit[1] c;
-        if (c <= 1) {
-            x q[0];
-        } else {
-            y q[0];
-        }
-    """
-    # Remove all whitespace from both strings before comparison
-    assert "".join(qasm.split()) == "".join(expected.split())
-
-
-def test_if_else_operation_register_gt() -> None:
-    """Test the creation of an if-else operation."""
-    qc = QuantumComputation()
-    qc.add_qubit_register(1)
-    c = qc.add_classical_register(1)
-
-    qc.if_else(
-        then_operation=StandardOperation(0, OpType.x),
-        else_operation=StandardOperation(0, OpType.y),
-        control_register=c,
-        comparison_kind=ComparisonKind.gt,
-    )
-
-    qasm = qc.qasm3_str()
-    expected = """
-        // i 0
-        // o 0
-        OPENQASM 3.0;
-        include "stdgates.inc";
-        qubit[1] q;
-        bit[1] c;
-        if (c > 1) {
-            x q[0];
-        } else {
-            y q[0];
-        }
-    """
-    # Remove all whitespace from both strings before comparison
-    assert "".join(qasm.split()) == "".join(expected.split())
-
-
-def test_if_else_operation_register_geq() -> None:
-    """Test the creation of an if-else operation."""
-    qc = QuantumComputation()
-    qc.add_qubit_register(1)
-    c = qc.add_classical_register(1)
-
-    qc.if_else(
-        then_operation=StandardOperation(0, OpType.x),
-        else_operation=StandardOperation(0, OpType.y),
-        control_register=c,
-        comparison_kind=ComparisonKind.geq,
-    )
-
-    qasm = qc.qasm3_str()
-    expected = """
-        // i 0
-        // o 0
-        OPENQASM 3.0;
-        include "stdgates.inc";
-        qubit[1] q;
-        bit[1] c;
-        if (c >= 1) {
-            x q[0];
-        } else {
-            y q[0];
-        }
+        }}
     """
     # Remove all whitespace from both strings before comparison
     assert "".join(qasm.split()) == "".join(expected.split())
@@ -229,7 +88,7 @@ def test_if_else_operation_bit() -> None:
     assert "".join(qasm.split()) == "".join(expected.split())
 
 
-def test_if_operation_register_eq() -> None:
+def test_if_operation_register() -> None:
     """Test the creation of an if-else operation."""
     qc = QuantumComputation()
     qc.add_qubit_register(1)
