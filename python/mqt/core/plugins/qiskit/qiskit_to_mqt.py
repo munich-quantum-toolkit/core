@@ -16,9 +16,11 @@ from typing import TYPE_CHECKING, cast
 
 from qiskit.circuit import AncillaRegister, Clbit, IfElseOp, Qubit
 from qiskit.circuit import ClassicalRegister as QiskitClassicalRegister
+from qiskit.circuit.classical import expr
 
 from ...ir import QuantumComputation
 from ...ir.operations import (
+    ComparisonKind,
     CompoundOperation,
     Control,
     IfElseOperation,
@@ -445,19 +447,48 @@ def _add_if_else_operation(
             else_operation = else_operation[0]
 
     condition = if_else_op.condition
-    assert isinstance(condition, tuple)
-    assert len(condition) == 2
-    if isinstance(condition[0], Clbit):
-        control_bit = clbit_map[condition[0]]
+    if isinstance(condition, tuple):
+        assert len(condition) == 2
+        classical_control = condition[0]
         expected_value = condition[1]
-        if_else_operation = IfElseOperation(then_operation, else_operation, control_bit, expected_value)
-    elif isinstance(condition[0], QiskitClassicalRegister):
-        control_register = cregs[condition[0].name]
-        expected_value = condition[1]
-        if_else_operation = IfElseOperation(then_operation, else_operation, control_register, expected_value)
+        comparison_kind = ComparisonKind.eq
     else:
-        msg = f"Unsupported condition {condition}"
-        raise TypeError(msg)
+        assert isinstance(condition, expr.Binary)
+        classical_control = condition.left.var
+        expected_value = condition.right.value
+        if condition.op == expr.Binary.Op.EQUAL:
+            comparison_kind = ComparisonKind.eq
+        elif condition.op == expr.Binary.Op.NOT_EQUAL:
+            comparison_kind = ComparisonKind.neq
+        elif condition.op == expr.Binary.Op.LESS:
+            comparison_kind = ComparisonKind.lt
+        elif condition.op == expr.Binary.Op.LESS_EQUAL:
+            comparison_kind = ComparisonKind.leq
+        elif condition.op == expr.Binary.Op.GREATER:
+            comparison_kind = ComparisonKind.gt
+        elif condition.op == expr.Binary.Op.GREATER_EQUAL:
+            comparison_kind = ComparisonKind.geq
+        else:
+            msg = f"Unsupported binary operation {condition.op}"
+            raise TypeError(msg)
+
+    if isinstance(classical_control, Clbit):
+        if_else_operation = IfElseOperation(
+            then_operation,
+            else_operation,
+            clbit_map[classical_control],
+            bool(expected_value),
+            comparison_kind,
+        )
+    else:
+        assert isinstance(classical_control, QiskitClassicalRegister)
+        if_else_operation = IfElseOperation(
+            then_operation,
+            else_operation,
+            cregs[classical_control.name],
+            int(expected_value),
+            comparison_kind,
+        )
     qc.append(if_else_operation)
 
     return then_params + else_params

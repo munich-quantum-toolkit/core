@@ -924,7 +924,7 @@ class IfElseOperation(Operation):
         if_operation: Operation,
         else_operation: Operation | None,
         control_bit: int,
-        expected_value: int = 1,
+        expected_value: bool = True,
         comparison_kind: ComparisonKind = ...,
     ) -> None: ...
     @property

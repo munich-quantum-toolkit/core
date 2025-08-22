@@ -19,10 +19,12 @@ from qiskit import transpile
 from qiskit.circuit import (
     AncillaRegister,
     ClassicalRegister,
+    IfElseOp,
     Parameter,
     QuantumCircuit,
     QuantumRegister,
 )
+from qiskit.circuit.classical import expr
 from qiskit.circuit.library import U2Gate, XXMinusYYGate, XXPlusYYGate
 from qiskit.providers.fake_provider import GenericBackendV2
 
@@ -474,7 +476,7 @@ def test_symbolic_two_qubit() -> None:
         mqt_to_qiskit(mqt_qc)
 
 
-def test_if_else_operation() -> None:
+def test_if_else_operation_bit() -> None:
     """Test import of if-else operation."""
     from qiskit.qasm3 import dumps
 
@@ -515,13 +517,12 @@ def test_if_else_operation() -> None:
     print(qiskit_qc)
 
     qasm_input = dumps(qc)
-
     qasm_output = dumps(qiskit_qc)
 
     assert qasm_input == qasm_output
 
 
-def test_if_else_operation_register() -> None:
+def test_if_else_operation_register_eq() -> None:
     """Test import of if-else operation on register."""
     from qiskit.qasm3 import dumps
 
@@ -562,9 +563,167 @@ def test_if_else_operation_register() -> None:
     print(qiskit_qc)
 
     qasm_input = dumps(qc)
-
     qasm_output = dumps(qiskit_qc)
+    assert qasm_input == qasm_output
 
+
+def test_if_else_operation_register_neq() -> None:
+    """Test import of if-else operation on register."""
+    from qiskit.qasm3 import dumps
+
+    then_qc = QuantumCircuit(1)
+    then_qc.x(0)
+
+    else_qc = QuantumCircuit(1)
+    else_qc.y(0)
+
+    qc = QuantumCircuit(1, 1)
+    qc.append(
+        instruction=IfElseOp(expr.not_equal(qc.cregs[0], 0), then_qc, else_qc),
+        qargs=qc.qubits,
+    )
+    print(qc)
+
+    mqt_qc = qiskit_to_mqt(qc)
+    print(mqt_qc)
+    assert mqt_qc.num_ops == 1
+    if_else_operation = mqt_qc[0]
+    assert isinstance(if_else_operation, IfElseOperation)
+    assert if_else_operation.comparison_kind == ComparisonKind.neq
+
+    qiskit_qc = mqt_to_qiskit(mqt_qc)
+    print(qiskit_qc)
+
+    qasm_input = dumps(qc)
+    qasm_output = dumps(qiskit_qc)
+    assert qasm_input == qasm_output
+
+
+def test_if_else_operation_register_lt() -> None:
+    """Test import of if-else operation on register."""
+    from qiskit.qasm3 import dumps
+
+    then_qc = QuantumCircuit(1)
+    then_qc.x(0)
+
+    else_qc = QuantumCircuit(1)
+    else_qc.y(0)
+
+    qc = QuantumCircuit(1, 1)
+    qc.append(
+        instruction=IfElseOp(expr.less(qc.cregs[0], 0), then_qc, else_qc),
+        qargs=qc.qubits,
+    )
+    print(qc)
+
+    mqt_qc = qiskit_to_mqt(qc)
+    print(mqt_qc)
+    assert mqt_qc.num_ops == 1
+    if_else_operation = mqt_qc[0]
+    assert isinstance(if_else_operation, IfElseOperation)
+    assert if_else_operation.comparison_kind == ComparisonKind.lt
+
+    qiskit_qc = mqt_to_qiskit(mqt_qc)
+    print(qiskit_qc)
+
+    qasm_input = dumps(qc)
+    qasm_output = dumps(qiskit_qc)
+    assert qasm_input == qasm_output
+
+
+def test_if_else_operation_register_leq() -> None:
+    """Test import of if-else operation on register."""
+    from qiskit.qasm3 import dumps
+
+    then_qc = QuantumCircuit(1)
+    then_qc.x(0)
+
+    else_qc = QuantumCircuit(1)
+    else_qc.y(0)
+
+    qc = QuantumCircuit(1, 1)
+    qc.append(
+        instruction=IfElseOp(expr.less_equal(qc.cregs[0], 0), then_qc, else_qc),
+        qargs=qc.qubits,
+    )
+    print(qc)
+
+    mqt_qc = qiskit_to_mqt(qc)
+    print(mqt_qc)
+    assert mqt_qc.num_ops == 1
+    if_else_operation = mqt_qc[0]
+    assert isinstance(if_else_operation, IfElseOperation)
+    assert if_else_operation.comparison_kind == ComparisonKind.leq
+
+    qiskit_qc = mqt_to_qiskit(mqt_qc)
+    print(qiskit_qc)
+
+    qasm_input = dumps(qc)
+    qasm_output = dumps(qiskit_qc)
+    assert qasm_input == qasm_output
+
+
+def test_if_else_operation_register_gt() -> None:
+    """Test import of if-else operation on register."""
+    from qiskit.qasm3 import dumps
+
+    then_qc = QuantumCircuit(1)
+    then_qc.x(0)
+
+    else_qc = QuantumCircuit(1)
+    else_qc.y(0)
+
+    qc = QuantumCircuit(1, 1)
+    qc.append(
+        instruction=IfElseOp(expr.greater(qc.cregs[0], 0), then_qc, else_qc),
+        qargs=qc.qubits,
+    )
+    print(qc)
+
+    mqt_qc = qiskit_to_mqt(qc)
+    print(mqt_qc)
+    assert mqt_qc.num_ops == 1
+    if_else_operation = mqt_qc[0]
+    assert isinstance(if_else_operation, IfElseOperation)
+    assert if_else_operation.comparison_kind == ComparisonKind.gt
+
+    qiskit_qc = mqt_to_qiskit(mqt_qc)
+    print(qiskit_qc)
+
+    qasm_input = dumps(qc)
+    qasm_output = dumps(qiskit_qc)
+    assert qasm_input == qasm_output
+
+
+def test_if_else_operation_register_geq() -> None:
+    """Test import of if-else operation on register."""
+    from qiskit.qasm3 import dumps
+
+    then_qc = QuantumCircuit(1)
+    then_qc.x(0)
+
+    else_qc = QuantumCircuit(1)
+    else_qc.y(0)
+
+    qc = QuantumCircuit(1, 1)
+    qc.append(
+        instruction=IfElseOp(expr.greater_equal(qc.cregs[0], 0), then_qc, else_qc),
+        qargs=qc.qubits,
+    )
+    print(qc)
+
+    mqt_qc = qiskit_to_mqt(qc)
+    print(mqt_qc)
+    assert mqt_qc.num_ops == 1
+    if_else_operation = mqt_qc[0]
+    assert isinstance(if_else_operation, IfElseOperation)
+    assert if_else_operation.comparison_kind == ComparisonKind.geq
+
+    qiskit_qc = mqt_to_qiskit(mqt_qc)
+    print(qiskit_qc)
+
+    qasm_input = dumps(qc)
+    qasm_output = dumps(qiskit_qc)
     assert qasm_input == qasm_output
 
 
