@@ -27,6 +27,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <optional>
+#include <string>
+#include <unordered_set>
 
 namespace mqt::ir::opt {
 
@@ -62,7 +64,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
 
     // Determine whether the replaced operand is a target, positive control or
     // negative control.
-    size_t groupIndex = 0;
+    uint8_t groupIndex = 0;
     if (llvm::find(op.getPosCtrlInQubits(), operand) !=
         op.getPosCtrlInQubits().end()) {
       groupIndex = 1;
