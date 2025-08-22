@@ -38,6 +38,7 @@ config.test_source_root = Path(__file__).parent
 # Define where to execute tests (and produce the output).
 config.test_exec_root = Path(config.mqt_core_mlir_test_dir)
 
-tool_dirs = [config.llvm_tools_dir, config.mqt_core_mlir_tools_dir]
+multi_config_path = Path(config.mqt_core_mlir_tools_dir) / config.cmake_build_type
+tool_dirs = [config.llvm_tools_dir, config.mqt_core_mlir_tools_dir, str(multi_config_path)]
 tools = ["not", "FileCheck", "quantum-opt"]
 llvm_config.add_tool_substitutions(tools, tool_dirs)

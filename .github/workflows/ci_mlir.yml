@@ -165,7 +165,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/llvm/llvm-project.git --branch llvmorg-${{ steps.get-latest.outputs.latest }}
           cd llvm-project
-          cmake -S llvm -B build_llvm -G Ninja `
+          cmake -S llvm -B build_llvm `
             -DLLVM_ENABLE_PROJECTS=mlir `
             -DLLVM_BUILD_EXAMPLES=OFF `
             -DLLVM_TARGETS_TO_BUILD="X86" `
@@ -186,7 +186,7 @@ jobs:
       # configure the project with CMake
       - name: Configure CMake for MLIR
         run: |
-          cmake -S . -B build -G Ninja `
+          cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_MQT_CORE_MLIR=ON `
             -DMLIR_DIR=${{ github.workspace }}\llvm-install\lib\cmake\mlir `
