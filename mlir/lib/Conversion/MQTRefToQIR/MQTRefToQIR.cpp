@@ -83,7 +83,8 @@ LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
     // add the irreversible attribute to irreversible quantum operations
     if (fnName == "__quantum__qis__mz__body" ||
         fnName == "__quantum__rt__qubit_release_array" ||
-        fnName == "__quantum__rt__qubit_release") {
+        fnName == "__quantum__rt__qubit_release" ||
+        fnName == "__quantum__qis__reset__body") {
       fnDecl->setAttr("passthrough",
                       rewriter.getStrArrayAttr({"irreversible"}));
     }
@@ -140,6 +141,8 @@ struct MQTRefToQIRTypeConverter final : public LLVMTypeConverter {
 
 struct ConvertMQTRefAllocQIR final : StatefulOpConversionPattern<ref::AllocOp> {
   using StatefulOpConversionPattern<ref::AllocOp>::StatefulOpConversionPattern;
+  constexpr static StringLiteral FN_NAME =
+      "__quantum__rt__qubit_allocate_array";
 
   LogicalResult
   matchAndRewrite(ref::AllocOp op, OpAdaptor adaptor,
@@ -147,13 +150,13 @@ struct ConvertMQTRefAllocQIR final : StatefulOpConversionPattern<ref::AllocOp> {
     auto* ctx = getContext();
 
     // create name and signature of the new function
-    const StringRef fnName = "__quantum__rt__qubit_allocate_array";
+
     const auto qirSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMPointerType::get(ctx), IntegerType::get(ctx, 64));
 
     // get the function declaration
     const auto fnDecl =
-        getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+        getFunctionDeclaration(rewriter, op, FN_NAME, qirSignature);
 
     // create a constantOp if the size is an attribute
     auto size = adaptor.getSize();
@@ -663,50 +666,46 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
       return;
     }
     // get the existing block
-    auto* entryBlock = &main.front();
+    auto* mainBlock = &main.front();
     OpBuilder builder(main.getBody());
 
-    // create the main blocks and the endblock
-    Block* mainBlock = builder.createBlock(&main.getBody());
-    Block* irreversibleMainBlock = builder.createBlock(&main.getBody());
+    // create the remaining blocks
+    auto* entryBlock = builder.createBlock(&main.getBody());
+    // move the entryblock before the mainblock
+    main.getBlocks().splice(Region::iterator(mainBlock), main.getBlocks(),
+                            entryBlock);
+    Block* irreversibleBlock = builder.createBlock(&main.getBody());
     Block* endBlock = builder.createBlock(&main.getBody());
 
-    // move the returnOp from the entryBlock to the endBlock
-    auto& entryOperations = entryBlock->getOperations();
-    auto& endOperations = endBlock->getOperations();
-    endOperations.splice(endOperations.end(), entryOperations,
-                         std::prev(entryOperations.end()));
+    auto& mainBlockOps = mainBlock->getOperations();
+    auto& endBlockOps = endBlock->getOperations();
+    auto& irreversibleBlockOps = irreversibleBlock->getOperations();
 
-    // get all quantum operations until the measure operation
-    SmallVector<Operation*> opsToMove;
-    for (auto& op : entryOperations) {
-      if (dyn_cast<ref::MeasureOp>(op)) {
-        break;
+    for (auto it = mainBlock->begin(); it != mainBlock->end();) {
+      // make sure that the iterator is valid
+      auto& op = *it++;
+      if (dyn_cast<ref::DeallocOp>(op) || dyn_cast<ref::DeallocQubitOp>(op) ||
+          dyn_cast<ref::ResetOp>(op) || dyn_cast<ref::MeasureOp>(op)) {
+        // move irreversible quantum operations to the irreversible block
+        irreversibleBlockOps.splice(irreversibleBlock->end(), mainBlockOps,
+                                    Block::iterator(op));
+
+      } else if (dyn_cast<LLVM::ReturnOp>(op)) {
+        // move the return op to the endblock
+        endBlockOps.splice(endBlock->end(), mainBlockOps, Block::iterator(op));
       }
-      opsToMove.emplace_back(&op);
-    }
-    // move them to the 2nd block
-    for (Operation* op : opsToMove) {
-      op->moveBefore(mainBlock, mainBlock->end());
-    }
-
-    // move the remaining operations to the third block
-    if (!entryBlock->empty()) {
-      irreversibleMainBlock->getOperations().splice(
-          irreversibleMainBlock->begin(), entryOperations,
-          entryOperations.begin(), entryOperations.end());
     }
 
     // add jump from entryBlock to mainBlock
     builder.setInsertionPointToEnd(entryBlock);
     builder.create<LLVM::BrOp>(main->getLoc(), mainBlock);
 
-    // add jump from main to irreversibleMain
+    // add jump from main to irreversibleBlock
     builder.setInsertionPointToEnd(mainBlock);
-    builder.create<LLVM::BrOp>(main->getLoc(), irreversibleMainBlock);
+    builder.create<LLVM::BrOp>(main->getLoc(), irreversibleBlock);
 
-    // add jump from irreversibleMain to endBlock
-    builder.setInsertionPointToEnd(irreversibleMainBlock);
+    // add jump from irreversibleBlock to endBlock
+    builder.setInsertionPointToEnd(irreversibleBlock);
     builder.create<LLVM::BrOp>(main->getLoc(), endBlock);
   }
 
@@ -719,7 +718,7 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
    */
   static void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                             LoweringState* state) {
-    auto module = main->getParentOfType<ModuleOp>();
+    auto moduleOp = main->getParentOfType<ModuleOp>();
 
     auto& firstBlock = *(main.getBlocks().begin());
     OpBuilder builder(main.getBody());
@@ -752,7 +751,7 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
         main, builder.getStringAttr(fnName));
     if (fnDecl == nullptr) {
       const PatternRewriter::InsertionGuard insertGuard(builder);
-      builder.setInsertionPointToEnd(module.getBody());
+      builder.setInsertionPointToEnd(moduleOp.getBody());
       auto fnSignature = LLVM::LLVMFunctionType::get(
           LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
       fnDecl =
@@ -790,14 +789,15 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
         builder.getStrArrayAttr({"dynamic_qubit_management",
                                  state->useDynamicQubit ? "true" : "false"}));
     attributes.emplace_back(
-        builder.getStrArrayAttr({"dynamic_result_management", "false"}));
+        builder.getStrArrayAttr({"dynamic_result_management",
+                                 state->useDynamicResult ? "true" : "false"}));
 
     main->setAttr("passthrough", builder.getArrayAttr(attributes));
   }
 
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* module = getOperation();
+    auto* moduleOp = getOperation();
     ConversionTarget target(*context);
     RewritePatternSet stdPatterns(context);
     RewritePatternSet mqtPatterns(context);
@@ -812,12 +812,12 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     target.addIllegalDialect<func::FuncDialect>();
     target.addIllegalDialect<cf::ControlFlowDialect>();
     if (failed(
-            applyPartialConversion(module, target, std::move(stdPatterns)))) {
+            applyPartialConversion(moduleOp, target, std::move(stdPatterns)))) {
       signalPassFailure();
     }
 
     // get the main function of the module
-    auto main = getMainFunction(module);
+    auto main = getMainFunction(moduleOp);
     // make sure that the blocks for the QIR base profile exist
     ensureBlocks(main);
     LoweringState state;
@@ -870,7 +870,7 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     ADD_CONVERT_PATTERN(XXplusYYOp)
 
     if (failed(
-            applyPartialConversion(module, target, std::move(mqtPatterns)))) {
+            applyPartialConversion(moduleOp, target, std::move(mqtPatterns)))) {
       signalPassFailure();
     }
     setAttributes(main, &state);
