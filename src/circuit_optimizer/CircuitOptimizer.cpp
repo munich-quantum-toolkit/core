@@ -1570,32 +1570,40 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
 }
 
 struct CliffordBlock {
-  std::unordered_set<Qubit>          blockQubits;     // qubits currently in this block
-  std::unordered_set<Qubit>          blocked;       // qubits blocked by barriers
-  std::unique_ptr<CompoundOperation> operations;           // collected Clifford ops
-  std::unique_ptr<Operation>*        position = nullptr;  // where we will emit this block
-  std::size_t                        logicalStep = 0;    // logical step when position is set
+  std::unordered_set<Qubit> blockQubits; // qubits currently in this block
+  std::unordered_set<Qubit> blocked;     // qubits blocked by barriers
+  std::unique_ptr<CompoundOperation> operations; // collected Clifford ops
+  std::unique_ptr<Operation>* position =
+      nullptr;                 // where we will emit this block
+  std::size_t logicalStep = 0; // logical step when position is set
 
   [[nodiscard]] bool empty() const noexcept {
     return !operations || operations->empty();
   }
 
   [[nodiscard]] bool fullyDisabled() const noexcept {
-    if (blockQubits.empty()) {return false;}
+    if (blockQubits.empty()) {
+      return false;
+    }
     for (const auto q : blockQubits) {
-      if (!blocked.contains(q)) {return false;}
+      if (!blocked.contains(q)) {
+        return false;
+      }
     }
     return true;
   }
 
   // Check if adding qubits used by gate would exceed maxBlockSize
-  [[nodiscard]] bool checkMaxBlockSize(const std::set<Qubit>& used,
-                                    const std::size_t maxBlockSize) const noexcept {
+  [[nodiscard]] bool
+  checkMaxBlockSize(const std::set<Qubit>& used,
+                    const std::size_t maxBlockSize) const noexcept {
     std::size_t extra = 0;
     for (const auto q : used) {
       if (!blockQubits.contains(q)) {
         ++extra;
-        if (blockQubits.size() + extra > maxBlockSize) {return false;}
+        if (blockQubits.size() + extra > maxBlockSize) {
+          return false;
+        }
       }
     }
     return true;
@@ -1604,18 +1612,22 @@ struct CliffordBlock {
   // Check if qubits used by gate are blocked in this block
   [[nodiscard]] bool checkBlocked(const std::set<Qubit>& used) const noexcept {
     for (const auto q : used) {
-      if (blocked.contains(q)) {return false;}
+      if (blocked.contains(q)) {
+        return false;
+      }
     }
     return true;
   }
 
   // Checks if repostion is needed to keep block valids
-  [[nodiscard]] bool checkRepositionNeeded(
-      const std::set<Qubit>& used,
-      const std::unordered_map<Qubit, std::size_t>& lastNonClifford) const noexcept {
+  [[nodiscard]] bool
+  checkRepositionNeeded(const std::set<Qubit>& used,
+                        const std::unordered_map<Qubit, std::size_t>&
+                            lastNonClifford) const noexcept {
     std::size_t required = 0;
     for (const auto q : used) {
-      if (const auto it = lastNonClifford.find(q); it != lastNonClifford.end()){
+      if (const auto it = lastNonClifford.find(q);
+          it != lastNonClifford.end()) {
         required = std::max(required, it->second);
       }
     }
@@ -1635,16 +1647,17 @@ struct CliffordBlock {
     operations->emplace_back(std::move(op));
 
     if (position == nullptr) {
-      position      = &(*it);
+      position = &(*it);
       logicalStep = step;
     } else if (movePosition) {
-      // we move block into the right position with idenites because they are removed later
-      *position     = std::make_unique<StandardOperation>(0, I);
-      position      = &(*it);
+      // we move block into the right position with idenites because they are
+      // removed later
+      *position = std::make_unique<StandardOperation>(0, I);
+      position = &(*it);
       logicalStep = step;
     } else {
       // operations is moved into compound operation so we can delete it
-      it = qc.erase(it); 
+      it = qc.erase(it);
       --it;
     }
 
@@ -1655,18 +1668,20 @@ struct CliffordBlock {
 
   // Collapse operation and reset block
   void finalize() {
-    if (position == nullptr || empty()) {return;}
+    if (position == nullptr || empty()) {
+      return;
+    }
     if (operations->isConvertibleToSingleOperation()) {
       *position = operations->collapseToSingleOperation();
     } else {
       *position = std::move(operations);
     }
     // reset
-    operations  = std::make_unique<CompoundOperation>();
+    operations = std::make_unique<CompoundOperation>();
     blockQubits.clear();
     blocked.clear();
-    position       = nullptr;
-    logicalStep  = 0;
+    position = nullptr;
+    logicalStep = 0;
   }
 };
 
@@ -1680,11 +1695,11 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
   deferMeasurements(qc);
 
   std::vector<CliffordBlock> blocks;
-  std::unordered_map<Qubit, std::size_t> lastNonClifford; 
+  std::unordered_map<Qubit, std::size_t> lastNonClifford;
 
   std::size_t step = 0;
   for (auto it = qc.begin(); it != qc.end(); ++it, ++step) {
-    auto& op  = *it;
+    auto& op = *it;
     const bool isClif = op->isClifford();
     std::set<Qubit> used = op->getUsedQubits();
 
@@ -1694,7 +1709,9 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
         lastNonClifford[q] = step;
       }
       for (auto& block : blocks) {
-        if (block.position == nullptr) {continue;}
+        if (block.position == nullptr) {
+          continue;
+        }
         bool touched = false;
         for (const auto q : used) {
           if (block.blockQubits.contains(q)) {
@@ -1717,13 +1734,19 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
     // Try to place into newest block
     auto chosen = static_cast<std::size_t>(-1);
     bool movePosition = false;
-    for (std::size_t i = blocks.size(); i-- > 0; ) {
+    for (std::size_t i = blocks.size(); i-- > 0;) {
       auto& block = blocks[i];
-      if (block.position == nullptr) {continue;}
-      if (!block.checkBlocked(used)) {continue;}
-      if (!block.checkMaxBlockSize(used, maxBlockSize)) {continue;}
+      if (block.position == nullptr) {
+        continue;
+      }
+      if (!block.checkBlocked(used)) {
+        continue;
+      }
+      if (!block.checkMaxBlockSize(used, maxBlockSize)) {
+        continue;
+      }
 
-      chosen       = i;
+      chosen = i;
       movePosition = block.checkRepositionNeeded(used, lastNonClifford);
       break;
     }
@@ -1732,7 +1755,9 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
       // Disable these qubits in all older blocks
       for (std::size_t t = 0; t < chosen; ++t) {
         auto& block = blocks[t];
-        if (block.position == nullptr) {continue;}
+        if (block.position == nullptr) {
+          continue;
+        }
         bool touches = false;
         for (const auto q : used) {
           if (block.blockQubits.contains(q)) {
@@ -1752,7 +1777,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
     // Otherwise open a new block at this slot
     CliffordBlock block{};
     block.operations = std::make_unique<CompoundOperation>();
-    block.position      = &(*it);
+    block.position = &(*it);
     block.logicalStep = step;
     block.operations->emplace_back(std::move(op));
     for (const auto q : used) {
