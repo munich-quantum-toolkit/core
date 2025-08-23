@@ -109,16 +109,18 @@ TEST(CliffordBlocks, twoCliffordBlocks) {
 
 TEST(CliffordBlocks, nonCliffordSingleQubit) {
   QuantumComputation qc(1);
-  qc.h(0);
+  qc.i(0);
   qc.t(0);
   qc.x(0);
 
-  QuantumComputation qc2(qc);
+  QuantumComputation qc2(1);
+  qc2.t(0);
+  qc2.x(0);
 
   std::cout << qc << "\n";
   qc::CircuitOptimizer::collectCliffordBlocks(qc, 2);
   std::cout << qc << "\n";
-  EXPECT_EQ(qc.size(), 3);
+  EXPECT_EQ(qc.size(), 2);
   EXPECT_TRUE(qc == qc2);
 }
 
