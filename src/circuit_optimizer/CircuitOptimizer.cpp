@@ -1624,13 +1624,11 @@ struct CliffordBlock {
     return required > logicalStep;
   }
 
-  // Append operation into block. If movePosition is true, re-position here otherwise we erase the current slot.
-  void addOp(std::unique_ptr<Operation>& op,
-             const std::set<Qubit>& used,
-             QuantumComputation& qc,
-             QuantumComputation::iterator& it,
-             const bool movePosition,
-             const std::size_t step) {
+  // Append operation into block. If movePosition is true, re-position here
+  // otherwise we erase the current slot.
+  void addOp(std::unique_ptr<Operation>& op, const std::set<Qubit>& used,
+             QuantumComputation& qc, QuantumComputation::iterator& it,
+             const bool movePosition, const std::size_t step) {
     if (!operations) {
       operations = std::make_unique<CompoundOperation>();
     }
