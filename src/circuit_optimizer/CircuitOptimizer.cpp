@@ -1569,149 +1569,201 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
   removeIdentities(qc);
 }
 
-void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
-                                             std::size_t maxBlockSize) {
+struct CliffordBlock {
+  std::unordered_set<Qubit>          blockQubits;     // qubits currently in this block
+  std::unordered_set<Qubit>          blocked;       // qubits blocked by barriers
+  std::unique_ptr<CompoundOperation> operations;           // collected Clifford ops
+  std::unique_ptr<Operation>*        position = nullptr;  // where we will emit this block
+  std::size_t                        logicalStep = 0;    // logical step when position is set
 
-  deferMeasurements(qc);
-  // We store iterators to refer back to them later and replace/erase them in
-  // place
-  using OpIter = decltype(qc.begin());
-
-  // Pull everything into a small array so we can index by integer
-  // and each Operation has a unique index
-  struct OperationData {
-    OpIter opIt;
-    bool isCliff;
-    std::vector<Qubit> qubits;
-  };
-  std::vector<OperationData> opData;
-  opData.reserve(qc.size());
-  for (auto opIt = qc.begin(); opIt != qc.end(); ++opIt) {
-    const std::set<Qubit> used = opIt->get()->getUsedQubits();
-    opData.push_back(OperationData{
-        opIt, opIt->get()->isClifford(), {used.begin(), used.end()}});
+  [[nodiscard]] bool empty() const noexcept {
+    return !operations || operations->empty();
   }
 
-  // Blocks store indices of OperationData and which Qubits are ready
-  // isCliff tells us if we can form this block into a compound operation later
-  struct Block {
-    std::vector<int> idx;
-    bool isCliff;
-    std::unordered_set<Qubit> qubits;
-  };
-  std::vector<Block> blocks;
-  const int numOperations = static_cast<int>(opData.size());
+  [[nodiscard]] bool fullyDisabled() const noexcept {
+    if (blockQubits.empty()) {return false;}
+    for (const auto q : blockQubits) {
+      if (!blocked.contains(q)) {return false;}
+    }
+    return true;
+  }
 
-  // compute depth of a block by looking until when each qubit is occupied
-  auto computeDepth = [&](const std::vector<int>& seq) {
-    std::unordered_map<Qubit, int> qubitReady; // layer each qubit becomes free
-    int depth = 0;
-    for (const int k : seq) {
-      int layer = 0;
-      for (auto q : opData[static_cast<std::size_t>(k)].qubits) {
-        layer = std::max(layer, qubitReady[q]);
-      }
-      // schedule it in the next layer
-      layer += 1;
-      depth = std::max(depth, layer);
-      // mark qubits busy until that layer
-      for (auto q : opData[static_cast<std::size_t>(k)].qubits) {
-        qubitReady[q] = layer;
+  // Check if adding qubits used by gate would exceed maxBlockSize
+  [[nodiscard]] bool checkMaxBlockSize(const std::set<Qubit>& used,
+                                    const std::size_t maxBlockSize) const noexcept {
+    std::size_t extra = 0;
+    for (const auto q : used) {
+      if (!blockQubits.contains(q)) {
+        ++extra;
+        if (blockQubits.size() + extra > maxBlockSize) {return false;}
       }
     }
-    return depth;
-  };
+    return true;
+  }
 
-  // Build commute‐aware blocks,
-  for (int i = 0; i < numOperations; ++i) {
-    OperationData& opD = opData[static_cast<std::size_t>(i)];
-    if (!opD.isCliff) {
-      // non‑Cliffords always singleton
-      blocks.push_back(
-          Block{{i}, false, {opD.qubits.begin(), opD.qubits.end()}});
+  // Check if qubits used by gate are blocked in this block
+  [[nodiscard]] bool checkBlocked(const std::set<Qubit>& used) const noexcept {
+    for (const auto q : used) {
+      if (blocked.contains(q)) {return false;}
+    }
+    return true;
+  }
+
+  // Checks if repostion is needed to keep block valids
+  [[nodiscard]] bool checkRepositionNeeded(
+      const std::set<Qubit>& used,
+      const std::unordered_map<Qubit, std::size_t>& lastNonClifford) const noexcept {
+    std::size_t required = 0;
+    for (const auto q : used) {
+      if (const auto it = lastNonClifford.find(q); it != lastNonClifford.end()){
+        required = std::max(required, it->second);
+      }
+    }
+    return required > logicalStep;
+  }
+
+  // Append op into this block. If movePosition is true, re-anchor here; else erase the current slot.
+  void addOp(std::unique_ptr<Operation>& op,
+             const std::set<Qubit>& used,
+             QuantumComputation& qc,
+             QuantumComputation::iterator& it,
+             const bool movePosition,
+             const std::size_t step) {
+    if (!operations) {
+      operations = std::make_unique<CompoundOperation>();
+    }
+    operations->emplace_back(std::move(op));
+
+    if (position == nullptr) {
+      position      = &(*it);
+      logicalStep = step;
+    } else if (movePosition) {
+      // we move block into the right position with idenites because they are removed later
+      *position     = std::make_unique<StandardOperation>(0, I);
+      position      = &(*it);
+      logicalStep = step;
+    } else {
+      // operations is moved into compound operation so we can delete it
+      it = qc.erase(it); 
+      --it;
+    }
+
+    for (const auto q : used) {
+      blockQubits.insert(q);
+    }
+  }
+
+  // Materialize the block at its position and reset state
+  void finalize() {
+    if (position == nullptr || empty()) {return;}
+    if (operations->isConvertibleToSingleOperation()) {
+      *position = operations->collapseToSingleOperation();
+    } else {
+      *position = std::move(operations);
+    }
+    // reset
+    operations  = std::make_unique<CompoundOperation>();
+    blockQubits.clear();
+    blocked.clear();
+    position       = nullptr;
+    logicalStep  = 0;
+  }
+};
+
+void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
+                                             const std::size_t maxBlockSize) {
+  if (qc.size() <= 1) {
+    return;
+  }
+
+  qc.reorderOperations();
+  deferMeasurements(qc);
+
+  std::vector<CliffordBlock> blocks;
+  std::unordered_map<Qubit, std::size_t> lastNonClifford; 
+
+  std::size_t step = 0;
+  for (auto it = qc.begin(); it != qc.end(); ++it, ++step) {
+    auto& op  = *it;
+    const bool isClif = op->isClifford();
+    std::set<Qubit> used = op->getUsedQubits();
+
+    if (!isClif) {
+      // track nonClifford and block qubits for any block
+      for (const auto q : used) {
+        lastNonClifford[q] = step;
+      }
+      for (auto& block : blocks) {
+        if (block.position == nullptr) {continue;}
+        bool touched = false;
+        for (const auto q : used) {
+          if (block.blockQubits.contains(q)) {
+            block.blocked.insert(q);
+            touched = true;
+          }
+        }
+        if (touched && block.fullyDisabled()) {
+          block.finalize();
+        }
+      }
+      continue; // keep this non-Clifford gate in place
+    }
+
+    // Gate itself is too big
+    if (used.size() > maxBlockSize) {
       continue;
     }
 
-    bool didMerge = false;
-    for (Block& b : blocks) {
-      if (!b.isCliff) {
-        continue;
-      }
+    // Try to place into newest block
+    auto chosen = static_cast<std::size_t>(-1);
+    bool movePosition = false;
+    for (std::size_t i = blocks.size(); i-- > 0; ) {
+      auto& block = blocks[i];
+      if (block.position == nullptr) {continue;}
+      if (!block.checkBlocked(used)) {continue;}
+      if (!block.checkMaxBlockSize(used, maxBlockSize)) {continue;}
 
-      // Check depth of the block with new operation
-      std::vector<int> testSeq = b.idx;
-      testSeq.push_back(i);
-      if (computeDepth(testSeq) > static_cast<int>(maxBlockSize)) {
-        continue; // jump to next block because block is already full or too
-                  // deep
-      }
+      chosen       = i;
+      movePosition = block.checkRepositionNeeded(used, lastNonClifford);
+      break;
+    }
 
-      // Checks if the Clifford Operation can commute with the block
-      // meaning that it doesn't jump over any non‑Clifford operations
-      bool canCommute = true;
-      const int lastPos = b.idx.back();
-      for (int j = lastPos + 1; j < i; ++j) {
-        if (opData[static_cast<std::size_t>(j)].isCliff) {
-          continue;
-        }
-        // if this non‑Cliff touches any qubit in b.qubits, block it
-        for (auto q : opData[static_cast<std::size_t>(j)].qubits) {
-          if (b.qubits.contains(q)) {
-            canCommute = false;
-            break;
+    if (chosen != static_cast<std::size_t>(-1)) {
+      // Disable these qubits in all older blocks
+      for (std::size_t t = 0; t < chosen; ++t) {
+        auto& block = blocks[t];
+        if (block.position == nullptr) {continue;}
+        bool touches = false;
+        for (const auto q : used) {
+          if (block.blockQubits.contains(q)) {
+            block.blocked.insert(q);
+            touches = true;
           }
         }
-        // stop because we already found a non‑Cliff that blocks this merge
-        if (!canCommute) {
-          break;
+        if (touches && block.fullyDisabled()) {
+          block.finalize();
         }
       }
-      // skip block if we found a non‑Cliff that blocks this merge
-      if (!canCommute) {
-        continue;
-      }
-      // Here we have found a valid block to merge into
-      b.idx.push_back(i);
-      b.qubits.insert(opD.qubits.begin(), opD.qubits.end());
-      didMerge = true;
-      break; // don't need to look into other blocks
+
+      blocks[chosen].addOp(op, used, qc, it, movePosition, step);
+      continue;
     }
 
-    // If we didn't merge into any block, we need to start a new one
-    // and it is for sure Clifford because we already checkked non Clifford
-    if (!didMerge) {
-      blocks.push_back(
-          Block{{i}, true, {opD.qubits.begin(), opD.qubits.end()}});
+    // Otherwise open a new block at this slot
+    CliffordBlock block{};
+    block.operations = std::make_unique<CompoundOperation>();
+    block.position      = &(*it);
+    block.logicalStep = step;
+    block.operations->emplace_back(std::move(op));
+    for (const auto q : used) {
+      block.blockQubits.insert(q);
     }
+    blocks.emplace_back(std::move(block));
   }
 
-  // Collapse each multi‑gate Clifford block in reverse order
-  // so that we can safely erase operations without invalidating iterators
-  for (int b = static_cast<int>(blocks.size()) - 1; b >= 0; --b) {
-    Block& block = blocks[static_cast<std::size_t>(b)];
-    if (!block.isCliff || block.idx.size() <= 1) {
-      continue; // for skipping non‑Clifford blocks or single Operations
-    }
-    // Build the compound from all ops in this block
-    auto compound = std::make_unique<CompoundOperation>();
-    for (const int k : block.idx) {
-      // Need to clone because later we erase the original operations iterators
-      compound->emplace_back(
-          opData[static_cast<std::size_t>(k)].opIt->get()->clone());
-    }
-
-    // Overwrite at the last op's position
-    const int lastK = block.idx.back();
-    *opData[static_cast<std::size_t>(lastK)].opIt = std::move(compound);
-
-    // Erase the rest, backwards to keep iterators valid
-    for (int opD = static_cast<int>(block.idx.size()) - 2; opD >= 0; --opD) {
-      qc.erase(opData[static_cast<std::size_t>(
-                          block.idx[static_cast<std::size_t>(opD)])]
-                   .opIt);
-    }
+  for (auto& block : blocks) {
+    block.finalize();
   }
-
   removeIdentities(qc);
 }
 
