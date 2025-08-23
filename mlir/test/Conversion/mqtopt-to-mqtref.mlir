@@ -248,8 +248,8 @@ module {
         // CHECK: mqtref.ryy(%[[c_0]]) %[[q_0]], %[[q_1]]
         // CHECK: mqtref.rzz(%[[c_0]]) %[[q_0]], %[[q_1]]
         // CHECK: mqtref.rzx(%[[c_0]]) %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.xxminusyy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]]
-        // CHECK: mqtref.xxplusyy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.xx_minus_yy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]]
+        // CHECK: mqtref.xx_plus_yy(%[[c_0]], %[[c_0]]) %[[q_0]], %[[q_1]]
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -259,8 +259,8 @@ module {
         %q01_2:2 = mqtopt.ryy(%cst) %q01_1#0, %q01_1#1 : !mqtopt.Qubit, !mqtopt.Qubit
         %q01_3:2 = mqtopt.rzz(%cst) %q01_2#0, %q01_2#1 : !mqtopt.Qubit, !mqtopt.Qubit
         %q01_4:2 = mqtopt.rzx(%cst) %q01_3#0, %q01_3#1 : !mqtopt.Qubit, !mqtopt.Qubit
-        %q01_5:2 = mqtopt.xxminusyy(%cst, %cst) %q01_4#0, %q01_4#1 : !mqtopt.Qubit, !mqtopt.Qubit
-        %q01_6:2 = mqtopt.xxplusyy(%cst, %cst) %q01_5#0, %q01_5#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q01_5:2 = mqtopt.xx_minus_yy(%cst, %cst) %q01_4#0, %q01_4#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q01_6:2 = mqtopt.xx_plus_yy(%cst, %cst) %q01_5#0, %q01_5#1 : !mqtopt.Qubit, !mqtopt.Qubit
         %r3 = "mqtopt.insertQubit"(%r2, %q01_6#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         %r4 = "mqtopt.insertQubit"(%r3, %q01_6#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%r4) : (!mqtopt.QubitRegister) -> ()
@@ -468,6 +468,19 @@ module {
         %q0_3, %m0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         %q1_2, %m1 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
+        return
+    }
+}
+
+// -----
+// This test checks if single-qubit allocation and deallocation are converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertAllocDeallocQubit()
+    func.func @testConvertAllocDeallocQubit() {
+        // CHECK: %[[q_0:.*]] = mqtref.allocQubit
+        // CHECK: mqtref.deallocQubit %[[q_0]]
+        %q0 = mqtopt.allocQubit
+        mqtopt.deallocQubit %q0
         return
     }
 }

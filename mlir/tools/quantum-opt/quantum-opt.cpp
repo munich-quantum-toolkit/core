@@ -15,11 +15,21 @@
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"          // IWYU pragma: keep
 #include "mlir/Dialect/MQTRef/Transforms/Passes.h"         // IWYU pragma: keep
 
+// Suppress warnings about implicit captures of `this` in lambdas
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-this-capture"
+#endif
+
 #include <mlir/Dialect/Func/Extensions/AllExtensions.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/InitAllDialects.h>
 #include <mlir/InitAllPasses.h>
 #include <mlir/Tools/mlir-opt/MlirOptMain.h>
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 int main(const int argc, char** argv) {
   mlir::registerAllPasses();

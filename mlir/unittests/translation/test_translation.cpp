@@ -703,7 +703,7 @@ TEST_F(ImportTest, XXminusYY) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString =
-      "CHECK: mqtref.xxminusyy( static [1.000000e-01, 2.000000e-01])";
+      "CHECK: mqtref.xx_minus_yy( static [1.000000e-01, 2.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
@@ -716,7 +716,7 @@ TEST_F(ImportTest, XXplusYY) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString =
-      "CHECK: mqtref.xxplusyy( static [1.000000e-01, 2.000000e-01])";
+      "CHECK: mqtref.xx_plus_yy( static [1.000000e-01, 2.000000e-01])";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }

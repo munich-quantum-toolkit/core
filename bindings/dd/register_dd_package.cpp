@@ -15,8 +15,8 @@
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Permutation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/Control.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/Operation.hpp"
 
@@ -236,13 +236,11 @@ void registerDDPackage(const py::module& mod) {
       py::keep_alive<0, 1>());
 
   dd.def(
-      "apply_classic_controlled_operation",
-      [](dd::Package& p, const dd::vEdge& v,
-         const qc::ClassicControlledOperation& op,
+      "apply_if_else_operation",
+      [](dd::Package& p, const dd::vEdge& v, const qc::IfElseOperation& op,
          const std::vector<bool>& measurements,
          const qc::Permutation& perm = {}) {
-        return dd::applyClassicControlledOperation(op, v, p, measurements,
-                                                   perm);
+        return dd::applyIfElseOperation(op, v, p, measurements, perm);
       },
       "vec"_a, "operation"_a, "measurements"_a,
       "permutation"_a = qc::Permutation{},

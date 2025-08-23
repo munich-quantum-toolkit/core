@@ -27,7 +27,7 @@ void registerStandardOperation(const py::module& m);
 void registerCompoundOperation(const py::module& m);
 void registerNonUnitaryOperation(const py::module& m);
 void registerSymbolicOperation(const py::module& m);
-void registerClassicControlledOperation(const py::module& m);
+void registerIfElseOperation(const py::module& m);
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerOperations(py::module& m) {
@@ -38,6 +38,6 @@ void registerOperations(py::module& m) {
   registerCompoundOperation(m);
   registerNonUnitaryOperation(m);
   registerSymbolicOperation(m);
-  registerClassicControlledOperation(m);
+  registerIfElseOperation(m);
 }
 } // namespace mqt
