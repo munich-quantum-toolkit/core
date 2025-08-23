@@ -38,6 +38,13 @@ concept size_constructible_contiguous_range =
     requires { typename T::value_type; } && requires(T t) {
       { t.data() } -> std::same_as<typename T::value_type*>;
     };
+template <typename T>
+concept value_or_string =
+    std::integral<T> || std::floating_point<T> || std::is_same_v<T, bool> ||
+    std::is_same_v<T, std::string>;
+template <typename T>
+concept value_or_string_or_vector =
+    value_or_string<T> || size_constructible_contiguous_range<T>;
 
 auto checkError(int result, const std::string& msg) -> void;
 constexpr auto toString(QDMI_Site_Property prop) -> std::string {
@@ -147,7 +154,7 @@ class Site {
    */
   Site(QDMI_Device device, QDMI_Site site) : device_(device), site_(site) {}
 
-  template <typename T>
+  template <value_or_string T>
   [[nodiscard]] auto queryProperty(QDMI_Site_Property prop) const -> T {
     if constexpr (std::is_same_v<T, std::string>) {
       size_t size = 0;
@@ -214,7 +221,7 @@ class Operation {
   Operation(QDMI_Device device, QDMI_Operation operation)
       : device_(device), operation_(operation) {}
 
-  template <typename T>
+  template <value_or_string_or_vector T>
   [[nodiscard]] auto queryProperty(QDMI_Operation_Property prop,
                                    const std::vector<Site>& sites,
                                    const std::vector<double>& params) const
@@ -320,7 +327,7 @@ class Device {
    */
   explicit Device(QDMI_Device device) : device_(device) {}
 
-  template <typename T>
+  template <value_or_string_or_vector T>
   [[nodiscard]] auto queryProperty(QDMI_Device_Property prop) const -> T {
     if constexpr (std::is_same_v<T, std::string>) {
       size_t size = 0;
