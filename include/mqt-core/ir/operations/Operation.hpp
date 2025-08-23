@@ -138,7 +138,7 @@ public:
 
   [[nodiscard]] virtual bool isNonUnitaryOperation() const { return false; }
 
-  [[nodiscard]] virtual bool isClassicControlledOperation() const noexcept {
+  [[nodiscard]] virtual bool isIfElseOperation() const noexcept {
     return false;
   }
 

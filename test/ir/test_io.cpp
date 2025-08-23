@@ -10,8 +10,8 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
@@ -608,48 +608,163 @@ TEST_F(IO, fromCompoundOperation) {
   EXPECT_EQ(expected, actual);
 }
 
-TEST_F(IO, classicalControlledOperationToOpenQASM3) {
-  qc.addQubitRegister(2);
-  const auto& creg = qc.addClassicalRegister(2);
-  qc.classicControlled(qc::X, 0, 0);
-  qc.classicControlled(qc::X, 1, creg);
-  const std::string expected = "// i 0 1\n"
-                               "// o 0 1\n"
-                               "OPENQASM 3.0;\n"
-                               "include \"stdgates.inc\";\n"
-                               "qubit[2] q;\n"
-                               "bit[2] c;\n"
+TEST_F(IO, ifOperationRegisterToOpenQASM2) {
+  qc.addQubitRegister(1);
+  const auto& creg = qc.addClassicalRegister(1);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, creg,
+            1U);
+  const std::string expected = "// i 0\n"
+                               "// o 0\n"
+                               "OPENQASM 2.0;\n"
+                               "include \"qelib1.inc\";\n"
+                               "qreg q[1];\n"
+                               "creg c[1];\n"
+                               "if (c == 1) {\n"
+                               "  x q[0];\n"
+                               "}\n";
+  const auto actual = qc.toQASM(false);
+  EXPECT_EQ(expected, actual);
+}
+
+TEST_F(IO, ifOperationBitToOpenQASM2) {
+  qc.addQubitRegister(1);
+  qc.addClassicalRegister(1);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0);
+  const std::string expected = "// i 0\n"
+                               "// o 0\n"
+                               "OPENQASM 2.0;\n"
+                               "include \"qelib1.inc\";\n"
+                               "qreg q[1];\n"
+                               "creg c[1];\n"
+                               "if (c[0]) {\n"
+                               "  x q[0];\n"
+                               "}\n";
+  const auto actual = qc.toQASM(false);
+  EXPECT_EQ(expected, actual);
+}
+
+TEST_F(IO, ifElseOperationRegisterToOpenQASM2) {
+  qc.addQubitRegister(1);
+  const auto& creg = qc.addClassicalRegister(1);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
+            std::make_unique<qc::StandardOperation>(0, qc::Y), creg, 1U);
+  const std::string expected = "// i 0\n"
+                               "// o 0\n"
+                               "OPENQASM 2.0;\n"
+                               "include \"qelib1.inc\";\n"
+                               "qreg q[1];\n"
+                               "creg c[1];\n"
+                               "if (c == 1) {\n"
+                               "  x q[0];\n"
+                               "}\n"
+                               "if (c != 1) {\n"
+                               "  y q[0];\n"
+                               "}\n";
+  const auto actual = qc.toQASM(false);
+  EXPECT_EQ(expected, actual);
+}
+
+TEST_F(IO, ifElseOperationBitToOpenQASM2) {
+  qc.addQubitRegister(1);
+  qc.addClassicalRegister(1);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
+            std::make_unique<qc::StandardOperation>(0, qc::Y), 0);
+  const std::string expected = "// i 0\n"
+                               "// o 0\n"
+                               "OPENQASM 2.0;\n"
+                               "include \"qelib1.inc\";\n"
+                               "qreg q[1];\n"
+                               "creg c[1];\n"
                                "if (c[0]) {\n"
                                "  x q[0];\n"
                                "}\n"
-                               "if (c == 1) {\n"
-                               "  x q[1];\n"
+                               "if (!c[0]) {\n"
+                               "  y q[0];\n"
                                "}\n";
+  const auto actual = qc.toQASM(false);
+  EXPECT_EQ(expected, actual);
+}
 
+TEST_F(IO, ifOperationRegisterToOpenQASM3) {
+  qc.addQubitRegister(1);
+  const auto& creg = qc.addClassicalRegister(1);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, creg,
+            1U);
+  const std::string expected = "// i 0\n"
+                               "// o 0\n"
+                               "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[1] q;\n"
+                               "bit[1] c;\n"
+                               "if (c == 1) {\n"
+                               "  x q[0];\n"
+                               "}\n";
   const auto actual = qc.toQASM();
   EXPECT_EQ(expected, actual);
 }
 
-TEST_F(IO, classicalControlledOperationExpectedValueTooLarge) {
+TEST_F(IO, ifOperationBitToOpenQASM3) {
   qc.addQubitRegister(1);
   qc.addClassicalRegister(1);
-  try {
-    qc.classicControlled(qc::X, 0, 0, 2);
-    FAIL() << "Expected an exception for invalid expected value.";
-  } catch (const std::invalid_argument& e) {
-    EXPECT_STREQ(e.what(),
-                 "Expected value for single bit comparison must be 0 or 1.");
-    SUCCEED();
-  } catch (...) {
-    FAIL() << "Expected an invalid_argument exception.";
-  }
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0);
+  const std::string expected = "// i 0\n"
+                               "// o 0\n"
+                               "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[1] q;\n"
+                               "bit[1] c;\n"
+                               "if (c[0]) {\n"
+                               "  x q[0];\n"
+                               "}\n";
+  const auto actual = qc.toQASM();
+  EXPECT_EQ(expected, actual);
 }
 
-TEST_F(IO, classicalControlledOperationInvalidBitComparison) {
+TEST_F(IO, ifElseOperationRegisterToOpenQASM3) {
+  qc.addQubitRegister(1);
+  const auto& creg = qc.addClassicalRegister(1);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
+            std::make_unique<qc::StandardOperation>(0, qc::Y), creg, 1U);
+  const std::string expected = "// i 0\n"
+                               "// o 0\n"
+                               "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[1] q;\n"
+                               "bit[1] c;\n"
+                               "if (c == 1) {\n"
+                               "  x q[0];\n"
+                               "} else {\n"
+                               "  y q[0];\n"
+                               "}\n";
+  const auto actual = qc.toQASM();
+  EXPECT_EQ(expected, actual);
+}
+
+TEST_F(IO, ifElseOperationBitToOpenQASM3) {
+  qc.addQubitRegister(1);
+  qc.addClassicalRegister(1);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
+            std::make_unique<qc::StandardOperation>(0, qc::Y), 0);
+  const std::string expected = "// i 0\n"
+                               "// o 0\n"
+                               "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[1] q;\n"
+                               "bit[1] c;\n"
+                               "if (c[0]) {\n"
+                               "  x q[0];\n"
+                               "} else {\n"
+                               "  y q[0];\n"
+                               "}\n";
+  const auto actual = qc.toQASM();
+  EXPECT_EQ(expected, actual);
+}
+
+TEST_F(IO, ifElseOperationInvalidBitComparison) {
   qc.addQubitRegister(1);
   qc.addClassicalRegister(1);
   try {
-    qc.classicControlled(qc::X, 0, 0, 1, qc::Lt);
+    qc.if_(qc::X, 0, 0, true, qc::Lt);
     FAIL() << "Expected an exception for invalid expected value.";
   } catch (const std::invalid_argument& e) {
     EXPECT_STREQ(e.what(),

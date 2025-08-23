@@ -309,21 +309,21 @@ def RZXOp : UnitaryOp<"rzx", [TwoTarget, OneParameter]> {
     }];
 }
 
-def XXminusYYOp : UnitaryOp<"xxminusyy", [TwoTarget, TwoParameters]> {
-    let summary = "XXminusYY operation";
+def XXminusYYOp : UnitaryOp<"xx_minus_yy", [TwoTarget, TwoParameters]> {
+    let summary = "XX-YY operation";
 
     let description = [{
-        This class represents an XXminusYY gate. It takes two qubits and a
+        This class represents an XX-YY gate. It takes two qubits and a
         variadic list of positive/negative controls as input. Additionally, it
         accepts two parameters indicating the degree of the rotation angles.
     }];
 }
 
-def XXplusYYOp : UnitaryOp<"xxplusyy", [TwoTarget, TwoParameters]> {
-    let summary = "XXplusYY operation";
+def XXplusYYOp : UnitaryOp<"xx_plus_yy", [TwoTarget, TwoParameters]> {
+    let summary = "XX+YY operation";
 
     let description = [{
-        This class represents an XXplusYY gate. It takes two qubits and a
+        This class represents an XX+YY gate. It takes two qubits and a
         variadic list of positive/negative controls as input. Additionally, it
         accepts two parameters indicating the degree of the rotation angles.
     }];

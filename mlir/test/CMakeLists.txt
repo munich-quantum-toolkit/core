@@ -15,10 +15,11 @@ configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.cfg.py)
 
-set(QUANTUM_OPT_TEST_DEPENDS FileCheck count not quantum-opt)
+set(MQT_CORE_MLIR_TEST_DEPENDS FileCheck count not split-file quantum-opt)
 
-add_lit_testsuite(check-quantum-opt "Running the quantum-opt regression tests"
-                  ${CMAKE_CURRENT_BINARY_DIR} DEPENDS ${QUANTUM_OPT_TEST_DEPENDS})
-set_target_properties(check-quantum-opt PROPERTIES FOLDER "Tests" EXCLUDE_FROM_ALL ON)
+add_custom_target(mqt-core-mlir-lit-test-build-only DEPENDS ${MQT_CORE_MLIR_TEST_DEPENDS})
+set_target_properties(mqt-core-mlir-lit-test-build-only PROPERTIES FOLDER "Tests")
 
-add_lit_testsuites(QUANTUM_OPT ${CMAKE_CURRENT_SOURCE_DIR} DEPENDS ${QUANTUM_OPT_TEST_DEPENDS})
+add_lit_testsuite(mqt-core-mlir-lit-test "Running the MQT MLIR tests" ${CMAKE_CURRENT_BINARY_DIR}
+                  DEPENDS ${MQT_CORE_MLIR_TEST_DEPENDS})
+set_target_properties(mqt-core-mlir-lit-test PROPERTIES FOLDER "Tests")

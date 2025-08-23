@@ -13,6 +13,18 @@
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/OpDefinition.h>
+
+// Suppress warnings about ambiguous reversed operators in MLIR
+// (see https://github.com/llvm/llvm-project/issues/45853)
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
+#endif
+#include "mlir/Interfaces/InferTypeOpInterface.h"
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
 #define DIALECT_NAME_MQTREF "mqtref"
