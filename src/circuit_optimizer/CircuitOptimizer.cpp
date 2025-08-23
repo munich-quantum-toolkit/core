@@ -1585,7 +1585,8 @@ struct CliffordBlock {
     if (blockQubits.empty()) {
       return false;
     }
-    return std::ranges::all_of(blockQubits, [this](const Qubit q) { return blocked.contains(q); });
+    return std::ranges::all_of(
+        blockQubits, [this](const Qubit q) { return blocked.contains(q); });
   }
 
   // Check if adding qubits used by gate would exceed maxBlockSize
@@ -1606,7 +1607,8 @@ struct CliffordBlock {
 
   // Check if qubits used by gate are blocked in this block
   [[nodiscard]] bool checkBlocked(const std::set<Qubit>& used) const noexcept {
-    return std::ranges::all_of(used, [this](const Qubit q) { return !blocked.contains(q); });
+    return std::ranges::all_of(
+        used, [this](const Qubit q) { return !blocked.contains(q); });
   }
 
   // Checks if repostion is needed to keep block valids
