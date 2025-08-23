@@ -12,10 +12,12 @@ build:
   tools:
     python: "3.12"
   apt_packages:
+    - clang
     - cmake
     - graphviz
     - inkscape
-    - wget
+    - lld
+    - ninja-build
   jobs:
     post_checkout:
       # Skip docs build if the commit message contains "skip ci"
@@ -34,19 +36,31 @@ build:
       - asdf install uv latest
       - asdf global uv latest
       # Set up MLIR
-      - wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-      - apt-get install -y libmlir-20-dev \
-        mlir-20-tools \
-        clang-20 \
-        clang-tools-20
-      - export CC=clang-20
-      - export CPP=clang++-20
-      - export MLIR_DIR=/usr/lib/llvm-20/lib/cmake/mlir
-      - export LLVM_DIR=/usr/lib/llvm-20/lib/cmake/llvm
-      - uv tool install ninja
+      - git clone https://github.com/llvm/llvm-project.git
+      - mkdir llvm-project/build
+      - >
+        cmake -G Ninja -S llvm-project/llvm -B llvm-project/build
+        -DLLVM_ENABLE_PROJECTS=mlir
+        -DLLVM_BUILD_EXAMPLES=OFF
+        -DLLVM_BUILD_TESTS=OFF
+        -DCMAKE_BUILD_TYPE=Release
+        -DLLVM_ENABLE_ASSERTIONS=ON
+        -DCMAKE_C_COMPILER=clang
+        -DCMAKE_CXX_COMPILER=clang++
+        -DLLVM_ENABLE_LLD=ON
+      - cmake --build llvm-project/build --config Release
+      - export MLIR_DIR=$READTHEDOCS_OUTPUT/llvm-project/build/lib/cmake/mlir
+      - export LLVM_DIR=$READTHEDOCS_OUTPUT/llvm-project/build/lib/cmake/llvm
+      - cmake --install llvm-project/build --prefix $READTHEDOCS_OUTPUT/llvm-install
       # Build the MLIR documentation
-      - cmake -G Ninja -S . -B build \
-        -DCMAKE_BUILD_TYPE=Release \
+      - >
+        cmake -G Ninja -S . -B build
+        -DCMAKE_BUILD_TYPE=Release
+        -DBUILD_MQT_CORE_MLIR=ON
+        -DCMAKE_C_COMPILER=clang
+        -DCMAKE_CXX_COMPILER=clang++
+        -DLLVM_DIR=$LLVM_DIR
+        -DMLIR_DIR=$MLIR_DIR
         -DBUILD_MQT_CORE_MLIR=ON
       - cmake --build build --target mlir-doc
     build:
