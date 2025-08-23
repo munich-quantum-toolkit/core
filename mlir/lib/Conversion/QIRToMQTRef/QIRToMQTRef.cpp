@@ -440,9 +440,9 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
    * @return The main function.
    */
   static LLVM::LLVMFuncOp getMainFunction(Operation* op) {
-    auto module = dyn_cast<ModuleOp>(op);
+    auto moduleOp = dyn_cast<ModuleOp>(op);
     // find the main function
-    for (auto funcOp : module.getOps<LLVM::LLVMFuncOp>()) {
+    for (auto funcOp : moduleOp.getOps<LLVM::LLVMFuncOp>()) {
       auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
       if (!passthrough) {
         continue;
@@ -459,7 +459,7 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
 
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* module = getOperation();
+    auto* moduleOp = getOperation();
 
     LoweringState state;
 
@@ -482,7 +482,7 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
     patterns.add<ConvertQIRIntToPtr>(typeConverter, context, &state);
     patterns.add<ConvertQIRZero>(typeConverter, context, &state);
 
-    if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
+    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
       signalPassFailure();
     }
   };
