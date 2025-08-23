@@ -12,15 +12,131 @@
 
 #include "qdmi/client.h"
 
+#include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
+#include <ranges>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace fomac {
+/**
+ * @brief Concept for ranges that are contiguous in memory and can be
+ * constructed with a size.
+ * @details This concept is used to constrain the template parameter of the
+ * `queryProperty` method in the `Site` class.
+ * @see Site::queryProperty
+ * @tparam T The type to check.
+ */
+template <typename T>
+concept size_constructible_contiguous_range =
+    std::ranges::contiguous_range<T> &&
+    std::constructible_from<T, std::size_t> &&
+    requires { typename T::value_type; } && requires(T t) {
+      { t.data() } -> std::same_as<typename T::value_type*>;
+    };
+
+auto checkError(int result, const std::string& msg) -> void;
+constexpr auto toString(QDMI_Site_Property prop) -> std::string {
+  switch (prop) {
+  case QDMI_SITE_PROPERTY_INDEX:
+    return "QDMI_SITE_PROPERTY_INDEX";
+  case QDMI_SITE_PROPERTY_T1:
+    return "QDMI_SITE_PROPERTY_T1";
+  case QDMI_SITE_PROPERTY_T2:
+    return "QDMI_SITE_PROPERTY_T2";
+  case QDMI_SITE_PROPERTY_NAME:
+    return "QDMI_SITE_PROPERTY_NAME";
+  case QDMI_SITE_PROPERTY_XCOORDINATE:
+    return "QDMI_SITE_PROPERTY_XCOORDINATE";
+  case QDMI_SITE_PROPERTY_YCOORDINATE:
+    return "QDMI_SITE_PROPERTY_YCOORDINATE";
+  case QDMI_SITE_PROPERTY_ZCOORDINATE:
+    return "QDMI_SITE_PROPERTY_ZCOORDINATE";
+  case QDMI_SITE_PROPERTY_ISZONE:
+    return "QDMI_SITE_PROPERTY_ISZONE";
+  case QDMI_SITE_PROPERTY_XEXTENT:
+    return "QDMI_SITE_PROPERTY_XEXTENT";
+  case QDMI_SITE_PROPERTY_YEXTENT:
+    return "QDMI_SITE_PROPERTY_YEXTENT";
+  case QDMI_SITE_PROPERTY_ZEXTENT:
+    return "QDMI_SITE_PROPERTY_ZEXTENT";
+  case QDMI_SITE_PROPERTY_MODULEINDEX:
+    return "QDMI_SITE_PROPERTY_MODULEINDEX";
+  case QDMI_SITE_PROPERTY_SUBMODULEINDEX:
+    return "QDMI_SITE_PROPERTY_SUBMODULEINDEX";
+  default:
+    return "QDMI_SITE_PROPERTY_UNKNOWN";
+  }
+}
+constexpr auto toString(QDMI_Operation_Property prop) -> std::string {
+  switch (prop) {
+  case QDMI_OPERATION_PROPERTY_NAME:
+    return "QDMI_OPERATION_PROPERTY_NAME";
+  case QDMI_OPERATION_PROPERTY_QUBITSNUM:
+    return "QDMI_OPERATION_PROPERTY_QUBITSNUM";
+  case QDMI_OPERATION_PROPERTY_PARAMETERSNUM:
+    return "QDMI_OPERATION_PROPERTY_PARAMETERSNUM";
+  case QDMI_OPERATION_PROPERTY_DURATION:
+    return "QDMI_OPERATION_PROPERTY_DURATION";
+  case QDMI_OPERATION_PROPERTY_FIDELITY:
+    return "QDMI_OPERATION_PROPERTY_FIDELITY";
+  case QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS:
+    return "QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS";
+  case QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS:
+    return "QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS";
+  case QDMI_OPERATION_PROPERTY_IDLINGFIDELITY:
+    return "QDMI_OPERATION_PROPERTY_IDLINGFIDELITY";
+  case QDMI_OPERATION_PROPERTY_ISZONED:
+    return "QDMI_OPERATION_PROPERTY_ISZONED";
+  case QDMI_OPERATION_PROPERTY_SITES:
+    return "QDMI_OPERATION_PROPERTY_SITES";
+  case QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED:
+    return "QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED";
+  default:
+    return "QDMI_OPERATION_PROPERTY_UNKNOWN";
+  }
+}
+constexpr auto toString(QDMI_Device_Property prop) -> std::string {
+  switch (prop) {
+  case QDMI_DEVICE_PROPERTY_NAME:
+    return "QDMI_DEVICE_PROPERTY_NAME";
+  case QDMI_DEVICE_PROPERTY_VERSION:
+    return "QDMI_DEVICE_PROPERTY_VERSION";
+  case QDMI_DEVICE_PROPERTY_STATUS:
+    return "QDMI_DEVICE_PROPERTY_STATUS";
+  case QDMI_DEVICE_PROPERTY_LIBRARYVERSION:
+    return "QDMI_DEVICE_PROPERTY_LIBRARYVERSION";
+  case QDMI_DEVICE_PROPERTY_QUBITSNUM:
+    return "QDMI_DEVICE_PROPERTY_QUBITSNUM";
+  case QDMI_DEVICE_PROPERTY_SITES:
+    return "QDMI_DEVICE_PROPERTY_SITES";
+  case QDMI_DEVICE_PROPERTY_OPERATIONS:
+    return "QDMI_DEVICE_PROPERTY_OPERATIONS";
+  case QDMI_DEVICE_PROPERTY_COUPLINGMAP:
+    return "QDMI_DEVICE_PROPERTY_COUPLINGMAP";
+  case QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION:
+    return "QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION";
+  case QDMI_DEVICE_PROPERTY_LENGTHUNIT:
+    return "QDMI_DEVICE_PROPERTY_LENGTHUNIT";
+  case QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR:
+    return "QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR";
+  case QDMI_DEVICE_PROPERTY_DURATIONUNIT:
+    return "QDMI_DEVICE_PROPERTY_DURATIONUNIT";
+  case QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR:
+    return "QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR";
+  case QDMI_DEVICE_PROPERTY_MINATOMDISTANCE:
+    return "QDMI_DEVICE_PROPERTY_MINATOMDISTANCE";
+  default:
+    return "QDMI_DEVICE_PROPERTY_UNKNOWN";
+  }
+}
 class Site {
   friend class Device;
+  friend class Operation;
   /// @brief The associated QDMI_Device object.
   QDMI_Device device_;
   /// @brief The underlying QDMI_Site object.
@@ -29,14 +145,35 @@ class Site {
    * @brief Constructs a Site object from a QDMI_Site handle.
    * @param site The QDMI_Site handle to wrap.
    */
-  explicit Site(QDMI_Device device, QDMI_Site site)
-      : device_(device), site_(site) {}
+  Site(QDMI_Device device, QDMI_Site site) : device_(device), site_(site) {}
+
+  template <typename T>
+  [[nodiscard]] auto queryProperty(QDMI_Site_Property prop) const -> T {
+    if constexpr (std::is_same_v<T, std::string>) {
+      size_t size = 0;
+      checkError(QDMI_device_query_site_property(device_, site_, prop, 0,
+                                                 nullptr, &size),
+                 "Querying " + toString(prop));
+      std::string value(size - 1, '\0');
+      checkError(QDMI_device_query_site_property(device_, site_, prop, size,
+                                                 value.data(), nullptr),
+                 "Querying " + toString(prop));
+      return value;
+    } else {
+      T value{};
+      checkError(QDMI_device_query_site_property(device_, site_, prop,
+                                                 sizeof(T), &value, nullptr),
+                 "Querying " + toString(prop));
+      return value;
+    }
+  }
 
 public:
   /// @returns the underlying QDMI_Site object.
   [[nodiscard]] auto getQDMISite() const -> QDMI_Site { return site_; }
   // NOLINTNEXTLINE(google-explicit-constructor)
   operator QDMI_Site() const { return site_; }
+  auto operator<=>(const Site&) const = default;
   /// @see QDMI_SITE_PROPERTY_INDEX
   [[nodiscard]] auto getIndex() const -> size_t;
   /// @see QDMI_SITE_PROPERTY_T1
@@ -60,9 +197,9 @@ public:
   /// @see QDMI_SITE_PROPERTY_ZEXTENT
   [[nodiscard]] auto getZExtent() const -> uint64_t;
   /// @see QDMI_SITE_PROPERTY_MODULEINDEX
-  [[nodiscard]] auto getModuleIndex() const -> size_t;
+  [[nodiscard]] auto getModuleIndex() const -> uint64_t;
   /// @see QDMI_SITE_PROPERTY_SUBMODULEINDEX
-  [[nodiscard]] auto getSubmoduleIndex() const -> size_t;
+  [[nodiscard]] auto getSubmoduleIndex() const -> uint64_t;
 };
 class Operation {
   friend class Device;
@@ -74,7 +211,53 @@ class Operation {
    * @brief Constructs an Operation object from a QDMI_Operation handle.
    * @param operation The QDMI_Operation handle to wrap.
    */
-  explicit Operation(QDMI_Operation operation) : operation_(operation) {}
+  Operation(QDMI_Device device, QDMI_Operation operation)
+      : device_(device), operation_(operation) {}
+
+  template <typename T>
+  [[nodiscard]] auto queryProperty(QDMI_Operation_Property prop,
+                                   const std::vector<Site>& sites,
+                                   const std::vector<double>& params) const
+      -> T {
+    std::vector<QDMI_Site> qdmiSites;
+    qdmiSites.reserve(sites.size());
+    std::ranges::transform(sites, std::back_inserter(qdmiSites),
+                           [](const Site& site) -> QDMI_Site { return site; });
+    if constexpr (std::is_same_v<T, std::string>) {
+      size_t size = 0;
+      checkError(QDMI_device_query_operation_property(
+                     device_, operation_, sites.size(), qdmiSites.data(),
+                     params.size(), params.data(), prop, 0, nullptr, &size),
+                 "Querying " + toString(prop));
+      std::string value(size - 1, '\0');
+      checkError(QDMI_device_query_operation_property(
+                     device_, operation_, sites.size(), qdmiSites.data(),
+                     params.size(), params.data(), prop, 0, value.data(),
+                     nullptr),
+                 "Querying " + toString(prop));
+      return value;
+    } else if constexpr (size_constructible_contiguous_range<T>) {
+      size_t size = 0;
+      checkError(QDMI_device_query_operation_property(
+                     device_, operation_, sites.size(), qdmiSites.data(),
+                     params.size(), params.data(), prop, 0, nullptr, &size),
+                 "Querying " + toString(prop));
+      T value(size / sizeof(typename T::value_type));
+      checkError(QDMI_device_query_operation_property(
+                     device_, operation_, sites.size(), qdmiSites.data(),
+                     params.size(), params.data(), prop, 0, value.data(),
+                     nullptr),
+                 "Querying " + toString(prop));
+      return value;
+    } else {
+      T value{};
+      checkError(QDMI_device_query_operation_property(
+                     device_, operation_, sites.size(), qdmiSites.data(),
+                     params.size(), params.data(), prop, 0, &value, nullptr),
+                 "Querying " + toString(prop));
+      return value;
+    }
+  }
 
 public:
   /// @returns the underlying QDMI_Operation object.
@@ -83,28 +266,50 @@ public:
   }
   // NOLINTNEXTLINE(google-explicit-constructor)
   operator QDMI_Operation() const { return operation_; }
+  auto operator<=>(const Operation&) const = default;
   /// @see QDMI_OPERATION_PROPERTY_NAME
-  [[nodiscard]] auto getName() -> std::string;
+  [[nodiscard]] auto getName(const std::vector<Site>& sites = {},
+                             const std::vector<double>& params = {})
+      -> std::string;
   /// @see QDMI_OPERATION_PROPERTY_QUBITSNUM
-  [[nodiscard]] auto getQubitsNum() -> size_t;
+  [[nodiscard]] auto getQubitsNum(const std::vector<Site>& sites = {},
+                                  const std::vector<double>& params = {})
+      -> size_t;
   /// @see QDMI_OPERATION_PROPERTY_PARAMETERSNUM
-  [[nodiscard]] auto getParametersNum() -> size_t;
+  [[nodiscard]] auto getParametersNum(const std::vector<Site>& sites = {},
+                                      const std::vector<double>& params = {})
+      -> size_t;
   /// @see QDMI_OPERATION_PROPERTY_DURATION
-  [[nodiscard]] auto getDuration() -> uint64_t;
+  [[nodiscard]] auto getDuration(const std::vector<Site>& sites = {},
+                                 const std::vector<double>& params = {})
+      -> uint64_t;
   /// @see QDMI_OPERATION_PROPERTY_FIDELITY
-  [[nodiscard]] auto getFidelity() -> double;
+  [[nodiscard]] auto getFidelity(const std::vector<Site>& sites = {},
+                                 const std::vector<double>& params = {})
+      -> double;
   /// @see QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS
-  [[nodiscard]] auto getInteractionRadius() -> uint64_t;
+  [[nodiscard]] auto
+  getInteractionRadius(const std::vector<Site>& sites = {},
+                       const std::vector<double>& params = {}) -> uint64_t;
   /// @see QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS
-  [[nodiscard]] auto getBlockingRadius() -> uint64_t;
+  [[nodiscard]] auto getBlockingRadius(const std::vector<Site>& sites = {},
+                                       const std::vector<double>& params = {})
+      -> uint64_t;
   /// @see QDMI_OPERATION_PROPERTY_IDLINGFIDELITY
-  [[nodiscard]] auto getIdlingFidelity() -> double;
+  [[nodiscard]] auto getIdlingFidelity(const std::vector<Site>& sites = {},
+                                       const std::vector<double>& params = {})
+      -> double;
   /// @see QDMI_OPERATION_PROPERTY_ISZONED
-  [[nodiscard]] auto isZoned() -> bool;
+  [[nodiscard]] auto isZoned(const std::vector<Site>& sites = {},
+                             const std::vector<double>& params = {}) -> bool;
   /// @see QDMI_OPERATION_PROPERTY_SITES
-  [[nodiscard]] auto getSites() -> std::vector<Site>;
+  [[nodiscard]] auto getSites(const std::vector<Site>& sites = {},
+                              const std::vector<double>& params = {})
+      -> std::vector<Site>;
   /// @see QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED
-  [[nodiscard]] auto getMeanShuttlingSpeed() -> uint64_t;
+  [[nodiscard]] auto
+  getMeanShuttlingSpeed(const std::vector<Site>& sites = {},
+                        const std::vector<double>& params = {}) -> uint64_t;
 };
 class Device {
   /// @brief The underlying QDMI_Device object.
@@ -115,11 +320,43 @@ class Device {
    */
   explicit Device(QDMI_Device device) : device_(device) {}
 
+  template <typename T>
+  [[nodiscard]] auto queryProperty(QDMI_Device_Property prop) const -> T {
+    if constexpr (std::is_same_v<T, std::string>) {
+      size_t size = 0;
+      checkError(
+          QDMI_device_query_device_property(device_, prop, 0, nullptr, &size),
+          "Querying " + toString(prop));
+      std::string value(size - 1, '\0');
+      checkError(QDMI_device_query_device_property(device_, prop, size,
+                                                   value.data(), nullptr),
+                 "Querying " + toString(prop));
+      return value;
+    } else if constexpr (size_constructible_contiguous_range<T>) {
+      size_t size = 0;
+      checkError(
+          QDMI_device_query_device_property(device_, prop, 0, nullptr, &size),
+          "Querying " + toString(prop));
+      T value(size / sizeof(T::value_type));
+      checkError(QDMI_device_query_device_property(device_, prop, size,
+                                                   value.data(), nullptr),
+                 "Querying " + toString(prop));
+      return value;
+    } else {
+      T value{};
+      checkError(QDMI_device_query_device_property(device_, prop, sizeof(T),
+                                                   &value, nullptr),
+                 "Querying " + toString(prop));
+      return value;
+    }
+  }
+
 public:
   /// @returns the underlying QDMI_Device object.
   [[nodiscard]] auto getQDMIDevice() const -> QDMI_Device { return device_; }
   // NOLINTNEXTLINE(google-explicit-constructor)
   operator QDMI_Device() const { return device_; }
+  auto operator<=>(const Device&) const = default;
   /// @see QDMI_DEVICE_PROPERTY_NAME
   [[nodiscard]] auto getName() -> std::string;
   /// @see QDMI_DEVICE_PROPERTY_VERSION

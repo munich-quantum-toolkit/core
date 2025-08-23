@@ -10,139 +10,170 @@
 
 #include "qdmi/FoMaC.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
+#include <iterator>
 #include <qdmi/client.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace fomac {
-#define THROW_IF_ERROR(stmt, msg)                                              \
-  if (const auto result = stmt; result != QDMI_SUCCESS) {                      \
-    std::stringstream ss;                                                      \
-    ss << "[" __FILE__ ":" << __LINE__ << "] " << (msg) << ":";                \
-    switch (result) {                                                          \
-    case QDMI_WARN_GENERAL:                                                    \
-      SPDLOG_WARN("A general warning occurred.");                              \
-      break;                                                                   \
-    case QDMI_ERROR_OUTOFMEM:                                                  \
-      throw std::bad_alloc();                                                  \
-    case QDMI_ERROR_OUTOFRANGE:                                                \
-      ss << "Out of range.";                                                   \
-      throw std::out_of_range(ss.str());                                       \
-    case QDMI_ERROR_INVALIDARGUMENT:                                           \
-      ss << "Invalid argument.";                                               \
-      throw std::invalid_argument(ss.str());                                   \
-    default: { /* all errors that result in a runtime exception */             \
-      switch (result) {                                                        \
-      case QDMI_ERROR_FATAL:                                                   \
-        ss << "Fatal error.";                                                  \
-        break;                                                                 \
-      case QDMI_ERROR_NOTIMPLEMENTED:                                          \
-        ss << "Not implemented.";                                              \
-        break;                                                                 \
-      case QDMI_ERROR_LIBNOTFOUND:                                             \
-        ss << "Library not found.";                                            \
-        break;                                                                 \
-      case QDMI_ERROR_NOTFOUND:                                                \
-        ss << "Element not found.";                                            \
-        break;                                                                 \
-      case QDMI_ERROR_PERMISSIONDENIED:                                        \
-        ss << "Permission denied.";                                            \
-        break;                                                                 \
-      case QDMI_ERROR_NOTSUPPORTED:                                            \
-        ss << "Not supported.";                                                \
-        break;                                                                 \
-      case QDMI_ERROR_BADSTATE:                                                \
-        ss << "Bad state.";                                                    \
-        break;                                                                 \
-      case QDMI_ERROR_TIMEOUT:                                                 \
-        ss << "Timeout.";                                                      \
-        break;                                                                 \
-      default:                                                                 \
-        ss << "Unknown error (" << result << ").";                             \
-        break;                                                                 \
-      }                                                                        \
-      throw std::runtime_error(ss.str());                                      \
-      break;                                                                   \
-    }                                                                          \
-    }                                                                          \
+auto checkError(int result, const std::string& msg) -> void {
+  if (result != QDMI_SUCCESS) {
+    std::stringstream ss;
+    ss << msg << ": ";
+    switch (result) {
+    case QDMI_WARN_GENERAL:
+      ss << "A general warning occurred.";
+      spdlog::warn(ss.str());
+      break;
+    case QDMI_ERROR_OUTOFMEM:
+      throw std::bad_alloc();
+    case QDMI_ERROR_OUTOFRANGE:
+      ss << "Out of range.";
+      throw std::out_of_range(ss.str());
+    case QDMI_ERROR_INVALIDARGUMENT:
+      ss << "Invalid argument.";
+      throw std::invalid_argument(ss.str());
+    default: { /* all errors that result in a runtime exception */
+      switch (result) {
+      case QDMI_ERROR_FATAL:
+        ss << "Fatal error.";
+        break;
+      case QDMI_ERROR_NOTIMPLEMENTED:
+        ss << "Not implemented.";
+        break;
+      case QDMI_ERROR_LIBNOTFOUND:
+        ss << "Library not found.";
+        break;
+      case QDMI_ERROR_NOTFOUND:
+        ss << "Not found.";
+        break;
+      case QDMI_ERROR_PERMISSIONDENIED:
+        ss << "Permission denied.";
+        break;
+      case QDMI_ERROR_NOTSUPPORTED:
+        ss << "Not supported.";
+        break;
+      case QDMI_ERROR_BADSTATE:
+        ss << "Bad state.";
+        break;
+      case QDMI_ERROR_TIMEOUT:
+        ss << "Timeout.";
+        break;
+      default:
+        ss << "Unknown error.";
+        break;
+      }
+      throw std::runtime_error(ss.str());
+    }
+    }
   }
-
-#define QUERY_SINGLE_VALUE_PROPERTY(prop, type, value)                         \
-  type(value) = 0;                                                             \
-  THROW_IF_ERROR(QDMI_device_query_site_property(                              \
-                     device_, site_, (prop), sizeof(type), &(value), nullptr), \
-                 "Querying " #prop)
-
-#define QUERY_STRING_PROPERTY(prop, value)                                     \
-  size_t size = 0;                                                             \
-  THROW_IF_ERROR(QDMI_device_query_site_property(device_, site_, (prop), 0,    \
-                                                 nullptr, &size),              \
-                 "Querying " #prop);                                           \
-  std::string(value)(size - 1, '\0');                                          \
-  THROW_IF_ERROR(QDMI_device_query_site_property(device_, site_, (prop), size, \
-                                                 (value).data(), nullptr),     \
-                 "Querying " #prop);
-
+}
 auto Site::getIndex() const -> size_t {
-  QUERY_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, size_t, index);
-  return index;
+  return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
 auto Site::getT1() const -> uint64_t {
-  QUERY_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T1, uint64_t, t1);
-  return t1;
+  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_T1);
 }
 auto Site::getT2() const -> uint64_t {
-  QUERY_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T2, uint64_t, t2);
-  return t2;
+  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_T2);
 }
 auto Site::getName() const -> std::string {
-  QUERY_STRING_PROPERTY(QDMI_SITE_PROPERTY_NAME, name);
-  return name;
+  return queryProperty<std::string>(QDMI_SITE_PROPERTY_NAME);
 }
 auto Site::getXCoordinate() const -> int64_t {
-  QUERY_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_XCOORDINATE, int64_t,
-                              xCoordinate);
-  return xCoordinate;
+  return queryProperty<int64_t>(QDMI_SITE_PROPERTY_XCOORDINATE);
 }
 auto Site::getYCoordinate() const -> int64_t {
-  QUERY_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_YCOORDINATE, int64_t,
-                              yCoordinate);
-  return yCoordinate;
+  return queryProperty<int64_t>(QDMI_SITE_PROPERTY_YCOORDINATE);
 }
 auto Site::getZCoordinate() const -> int64_t {
-  QUERY_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_ZCOORDINATE, int64_t,
-                              zCoordinate);
-  return zCoordinate;
+  return queryProperty<int64_t>(QDMI_SITE_PROPERTY_ZCOORDINATE);
 }
 auto Site::isZone() const -> bool {
-  QUERY_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_ISZONE, bool, zone);
-  return zone;
+  return queryProperty<bool>(QDMI_SITE_PROPERTY_ISZONE);
 }
 auto Site::getXExtent() const -> uint64_t {
-  QUERY_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_XEXTENT, uint64_t, xExtent);
-  return xExtent;
+  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_XEXTENT);
 }
 auto Site::getYExtent() const -> uint64_t {
-  QUERY_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_YEXTENT, uint64_t, yExtent);
-  return yExtent;
+  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_YEXTENT);
 }
 auto Site::getZExtent() const -> uint64_t {
-  QUERY_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_ZEXTENT, uint64_t, zExtent);
-  return zExtent;
+  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_ZEXTENT);
 }
-auto Site::getModuleIndex() const -> size_t {
-  QUERY_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_MODULEINDEX, size_t,
-                              moduleIndex);
-  return moduleIndex;
+auto Site::getModuleIndex() const -> uint64_t {
+  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_MODULEINDEX);
 }
-auto Site::getSubmoduleIndex() const -> size_t {
-  QUERY_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_SUBMODULEINDEX, size_t,
-                              submoduleIndex);
-  return submoduleIndex;
+auto Site::getSubmoduleIndex() const -> uint64_t {
+  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_SUBMODULEINDEX);
+}
+auto Operation::getName(const std::vector<Site>& sites,
+                        const std::vector<double>& params) -> std::string {
+  return queryProperty<std::string>(QDMI_OPERATION_PROPERTY_NAME, sites,
+                                    params);
+}
+auto Operation::getQubitsNum(const std::vector<Site>& sites,
+                             const std::vector<double>& params) -> size_t {
+  return queryProperty<size_t>(QDMI_OPERATION_PROPERTY_QUBITSNUM, sites,
+                               params);
+}
+auto Operation::getParametersNum(const std::vector<Site>& sites,
+                                 const std::vector<double>& params) -> size_t {
+  return queryProperty<size_t>(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sites,
+                               params);
+}
+auto Operation::getDuration(const std::vector<Site>& sites,
+                            const std::vector<double>& params) -> uint64_t {
+  return queryProperty<uint64_t>(QDMI_OPERATION_PROPERTY_DURATION, sites,
+                                 params);
+}
+auto Operation::getFidelity(const std::vector<Site>& sites,
+                            const std::vector<double>& params) -> double {
+  return queryProperty<double>(QDMI_OPERATION_PROPERTY_FIDELITY, sites, params);
+}
+auto Operation::getInteractionRadius(const std::vector<Site>& sites,
+                                     const std::vector<double>& params)
+    -> uint64_t {
+  return queryProperty<uint64_t>(QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS,
+                                 sites, params);
+}
+auto Operation::getBlockingRadius(const std::vector<Site>& sites,
+                                  const std::vector<double>& params)
+    -> uint64_t {
+  return queryProperty<uint64_t>(QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, sites,
+                                 params);
+}
+auto Operation::getIdlingFidelity(const std::vector<Site>& sites,
+                                  const std::vector<double>& params) -> double {
+  return queryProperty<double>(QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, sites,
+                               params);
+}
+auto Operation::isZoned(const std::vector<Site>& sites,
+                        const std::vector<double>& params) -> bool {
+  return queryProperty<bool>(QDMI_OPERATION_PROPERTY_ISZONED, sites, params);
+}
+auto Operation::getSites(const std::vector<Site>& sites,
+                         const std::vector<double>& params)
+    -> std::vector<Site> {
+  const auto& qdmiSites = queryProperty<std::vector<QDMI_Site>>(
+      QDMI_OPERATION_PROPERTY_SITES, sites, params);
+  std::vector<Site> returnedSites;
+  returnedSites.reserve(qdmiSites.size());
+  std::ranges::transform(
+      qdmiSites, std::back_inserter(returnedSites),
+      [this](const QDMI_Site& site) -> Site { return {device_, site}; });
+  return returnedSites;
+}
+auto Operation::getMeanShuttlingSpeed(const std::vector<Site>& sites,
+                                      const std::vector<double>& params)
+    -> uint64_t {
+  return queryProperty<uint64_t>(QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED,
+                                 sites, params);
 }
 } // namespace fomac
