@@ -1622,7 +1622,7 @@ struct CliffordBlock {
     return required > logicalStep;
   }
 
-  // Append op into this block. If movePosition is true, re-anchor here; else erase the current slot.
+  // Append operation into block. If movePosition is true, re-position here otherwise we erase the current slot.
   void addOp(std::unique_ptr<Operation>& op,
              const std::set<Qubit>& used,
              QuantumComputation& qc,
@@ -1653,7 +1653,7 @@ struct CliffordBlock {
     }
   }
 
-  // Materialize the block at its position and reset state
+  // Collapse operation and reset block
   void finalize() {
     if (position == nullptr || empty()) {return;}
     if (operations->isConvertibleToSingleOperation()) {
