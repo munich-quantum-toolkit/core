@@ -1778,8 +1778,9 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
     }
 
     // Try to place into newest block
-    auto chosen = static_cast<std::size_t>(-1);
+    auto chosen = static_cast<std::size_t>(0);
     bool movePosition = false;
+    bool found = false;
     for (std::size_t i = blocks.size(); i-- > static_cast<std::size_t>(0);) {
       auto& block = blocks[i];
       if (block.position == nullptr) {
@@ -1794,10 +1795,11 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
 
       chosen = i;
       movePosition = block.checkRepositionNeeded(used, lastNonClifford);
+      found = true;
       break;
     }
 
-    if (chosen != static_cast<std::size_t>(-1)) {
+    if (found) {
       // Disable these qubits in all older blocks
       for (std::size_t t = 0; t < chosen; ++t) {
         auto& block = blocks[t];
