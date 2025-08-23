@@ -1780,7 +1780,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
     // Try to place into newest block
     auto chosen = static_cast<std::size_t>(-1);
     bool movePosition = false;
-    for (std::size_t i = blocks.size(); i-- > 0;) {
+    for (std::size_t i = blocks.size(); i-- > static_cast<std::size_t>(0);) {
       auto& block = blocks[i];
       if (block.position == nullptr) {
         continue;
