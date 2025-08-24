@@ -39,30 +39,48 @@ namespace mqt::ir::opt {
 namespace {
 using namespace mlir;
 
-namespace attribute_names {
-constexpr std::string TARGET = "mqtopt.target";
-} // namespace attribute_names
+constexpr std::string ATTRIBUTE_TARGET = "mqtopt.target";
 
-namespace initial_layout_funcs {
-/// @brief Return identity mapping for @p nqubits.
-llvm::SmallVector<std::size_t> identity(const std::size_t nqubits) {
-  llvm::SmallVector<std::size_t, 0> mapping(nqubits);
-  std::iota(mapping.begin(), mapping.end(), 0);
-  return mapping;
-}
+/// @brief A quantum accelerator's architecture.
+struct Architecture {
+  explicit Architecture(std::string name, uint64_t nqubits)
+      : name_(std::move(name)), nqubits_(nqubits) {}
+  /// @brief Return the architecture's name.
+  [[nodiscard]] constexpr std::string_view name() const { return name_; }
+  /// @brief Return the architecture's number of qubits.
+  [[nodiscard]] constexpr uint64_t nqubits() const { return nqubits_; }
 
-/// @brief Return identity mapping for @p nqubits.
-llvm::SmallVector<std::size_t> random(const std::size_t nqubits) {
-  std::random_device rd;
-  std::mt19937 g(rd());
+private:
+  std::string name_;
+  uint64_t nqubits_;
+};
 
-  llvm::SmallVector<std::size_t, 0> mapping(nqubits);
-  std::iota(mapping.begin(), mapping.end(), 0);
-  std::shuffle(mapping.begin(), mapping.end(), g);
+/// @brief Base class for all initial layout mapping functions.
+struct InitalLayout {
+  explicit InitalLayout(const std::size_t nqubits) : mapping(nqubits) {}
+  [[nodiscard]] std::size_t operator()(std::size_t i) const {
+    return mapping[i];
+  }
 
-  return mapping;
-}
-}; // namespace initial_layout_funcs
+protected:
+  llvm::SmallVector<std::size_t, 0> mapping;
+};
+
+/// @brief Identity mapping.
+struct Identity : InitalLayout {
+  explicit Identity(const std::size_t nqubits) : InitalLayout(nqubits) {
+    std::iota(mapping.begin(), mapping.end(), 0);
+  }
+};
+
+/// @brief Random mapping.
+struct Random : Identity {
+  explicit Random(const std::size_t nqubits) : Identity(nqubits) {
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(mapping.begin(), mapping.end(), g);
+  }
+};
 
 /// @brief A layer consists of a qubit mapping and a set of 2Q gates.
 struct Layer {
@@ -182,25 +200,11 @@ llvm::SmallVector<Layer> lookahead(const llvm::DenseMap<Value, std::size_t>& p0,
   return layers;
 }
 
-/// @brief A quantum accelerator's architecture.
-struct Architecture {
-  explicit Architecture(std::string name, uint64_t nqubits)
-      : name_(std::move(name)), nqubits_(nqubits) {}
-  /// @brief Return the architecture's name.
-  [[nodiscard]] constexpr std::string_view name() const { return name_; }
-  /// @brief Return the architecture's number of qubits.
-  [[nodiscard]] constexpr uint64_t nqubits() const { return nqubits_; }
-
-private:
-  std::string name_;
-  uint64_t nqubits_;
-};
-
 /// @brief Add attributes to module-like parent specifying the architecture.
 void setModuleTarget(Operation* moduleLike, PatternRewriter& rewriter,
                      const Architecture& target) {
   const auto nameAttr = rewriter.getStringAttr(target.name());
-  moduleLike->setAttr(attribute_names::TARGET, nameAttr);
+  moduleLike->setAttr(ATTRIBUTE_TARGET, nameAttr);
 }
 
 /// @brief Create @p nqubits static qubits in module-like parent.
@@ -215,8 +219,8 @@ void addModuleQubits(Operation* module, PatternRewriter& rewriter,
   }
 }
 
-LogicalResult spanAndFold(Operation* base,
-                          std::unique_ptr<Architecture> target) {
+LogicalResult spanAndFold(Operation* base, std::unique_ptr<Architecture> target,
+                          const InitalLayout& layout) {
   MLIRContext* ctx = base->getContext();
   PatternRewriter rewriter(ctx);
 
@@ -249,7 +253,7 @@ LogicalResult spanAndFold(Operation* base,
       dynQubits.clear();
     }
 
-    if (!module->hasAttr(attribute_names::TARGET)) {
+    if (!module->hasAttr(ATTRIBUTE_TARGET)) {
       setModuleTarget(module, rewriter, *target);
       addModuleQubits(module, rewriter, *target, statQubits);
     }
@@ -273,23 +277,21 @@ LogicalResult spanAndFold(Operation* base,
           << "requires more qubits than the architecture supports");
     }
 
-    llvm::DenseMap<Value, std::size_t> p0;
-    auto map = initial_layout_funcs::random(target->nqubits());
-
     // Setup initial layout.
+    llvm::DenseMap<Value, std::size_t> p0;
     for (std::size_t i = 0; i < statQubits.size(); ++i) {
-      p0[statQubits[i]] = map[i];
+      p0[statQubits[i]] = layout(i);
     }
 
     // TODO: Wrap in LLVM_DEBUG
     for (std::size_t i = 0; i < dynQubits.size(); ++i) {
       llvm::dbgs() << "\tassign: " << dynQubits[i] << " (dyn) to "
-                   << statQubits[map[i]] << " (stat)" << '\n';
+                   << statQubits[layout(i)] << " (stat)" << '\n';
     }
 
     // Replace dynamic qubits with permutated static qubits.
     for (std::size_t i = 0; i < dynQubits.size(); ++i) {
-      rewriter.replaceAllUsesWith(dynQubits[i], statQubits[map[i]]);
+      rewriter.replaceAllUsesWith(dynQubits[i], statQubits[layout(i)]);
       rewriter.eraseOp(dynQubits[i].getDefiningOp());
     }
 
@@ -329,7 +331,9 @@ LogicalResult spanAndFold(Operation* base,
 struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
     auto target = std::make_unique<Architecture>("iqm-spark+1", 6);
-    if (spanAndFold(getOperation(), std::move(target)).failed()) {
+
+    const Random layout(target->nqubits());
+    if (spanAndFold(getOperation(), std::move(target), layout).failed()) {
       signalPassFailure();
     }
   }
