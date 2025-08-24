@@ -1647,9 +1647,6 @@ struct CliffordBlock {
    *
    */
   [[nodiscard]] bool fullyDisabled() const noexcept {
-    if (blockQubits.empty()) {
-      return false;
-    }
     return std::ranges::all_of(
         blockQubits, [this](const Qubit q) { return blocked.contains(q); });
   }
@@ -1716,15 +1713,10 @@ struct CliffordBlock {
   void addOp(std::unique_ptr<Operation>& op, const std::set<Qubit>& used,
              QuantumComputation& qc, QuantumComputation::iterator& it,
              const bool movePosition, const std::size_t step) {
-    if (!operations) {
-      operations = std::make_unique<CompoundOperation>();
-    }
     operations->emplace_back(std::move(op));
 
-    if (position == nullptr) {
-      position = &(*it);
-      logicalStep = step;
-    } else if (movePosition) {
+
+    if (movePosition) {
       // we move block into the right position with idenites because they are
       // removed later
       *position = std::make_unique<StandardOperation>(0, I);
@@ -1786,9 +1778,6 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
         lastNonClifford[q] = step;
       }
       for (auto& block : blocks) {
-        if (block.position == nullptr) {
-          continue;
-        }
         bool touched = false;
         for (const auto q : used) {
           if (block.blockQubits.contains(q)) {
