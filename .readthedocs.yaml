@@ -36,15 +36,13 @@ build:
       - asdf install uv latest
       - asdf global uv latest
       - export PATH=$PATH:$HOME/.local/bin
-      - uv tool install cmake
-      - uv tool install ninja
       - export CC=clang-19
       - export CXX=clang++-19
       - export MLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir
       - export LLVM_DIR=/usr/lib/llvm-19/lib/cmake/llvm
       # Build the MLIR documentation
-      - cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_MLIR=ON
-      - cmake --build build --target mlir-doc
+      - uvx cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_MLIR=ON
+      - uvx cmake --build build --target mlir-doc
     build:
       html:
         - uv run --frozen --no-dev --group docs -m sphinx -T -b html -d docs/_build/doctrees -D language=en docs $READTHEDOCS_OUTPUT/html
