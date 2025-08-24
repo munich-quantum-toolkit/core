@@ -253,7 +253,6 @@ bool StandardOperation::isGlobal(const size_t nQubits) const {
 bool StandardOperation::isClifford() const {
   switch (type) {
   case I:
-  case Barrier:
     return true;
   case X:
   case Y:

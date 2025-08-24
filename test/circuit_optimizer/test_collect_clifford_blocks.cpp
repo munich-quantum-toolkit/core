@@ -169,7 +169,7 @@ TEST(CliffordBlocks, SingleNonClifford3Qubit) {
   qc.cx(0, 1);
   qc.cx(1, 2);
   qc.rx(0.1, 0);
-  qc.x(0);
+  qc.cx(0, 1);
 
   QuantumComputation qc2(3);
   QuantumComputation op(3);
@@ -179,7 +179,7 @@ TEST(CliffordBlocks, SingleNonClifford3Qubit) {
   op.cx(1, 2);
   qc2.emplace_back(op.asCompoundOperation());
   qc2.rx(0.1, 0);
-  qc2.x(0);
+  qc2.cx(0, 1);
 
   std::cout << qc << "\n";
   qc::CircuitOptimizer::collectCliffordBlocks(qc, 3);
@@ -224,9 +224,8 @@ TEST(CliffordBlocks, TwoCliffordBlocks3Qubit) {
   EXPECT_TRUE(qc == qc2);
 }
 
-TEST(CliffordBlocks, nonCliffordTwoQubit) {
+TEST(CliffordBlocks, shiftedNonClifford) {
   QuantumComputation qc(2);
-  qc.sx(0);
   qc.cx(0, 1);
   qc.sxdg(1);
   qc.t(0);
@@ -237,7 +236,6 @@ TEST(CliffordBlocks, nonCliffordTwoQubit) {
   QuantumComputation qc2(2);
   QuantumComputation op(2);
   QuantumComputation op2(2);
-  op.sx(0);
   op.cx(0, 1);
   op.sxdg(1);
   qc2.emplace_back(op.asCompoundOperation());
@@ -252,7 +250,7 @@ TEST(CliffordBlocks, nonCliffordTwoQubit) {
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 4);
   EXPECT_TRUE(qc.front()->isCompoundOperation());
-  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 3);
+  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 2);
   EXPECT_TRUE(qc.back()->isCompoundOperation());
   EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.back()).size(), 2);
   EXPECT_TRUE(qc == qc2);
@@ -315,15 +313,15 @@ TEST(CliffordBlocks, threeQubitnonClifford) {
   EXPECT_TRUE(qc == qc2);
 }
 
-TEST(CliffordBlocks, unprocessableAtBegin) {
+TEST(CliffordBlocks, barrierNotinBlock) {
   QuantumComputation qc(1);
-  qc.reset(0);
+  qc.h(0);
+  qc.barrier(0);
   qc.h(0);
   std::cout << qc << "\n";
   qc::CircuitOptimizer::collectCliffordBlocks(qc, 1);
   std::cout << qc << "\n";
-  EXPECT_EQ(qc.size(), 2);
-  EXPECT_TRUE(qc.front()->isNonUnitaryOperation());
+  EXPECT_EQ(qc.size(), 3);
   EXPECT_TRUE(qc.back()->isStandardOperation());
 }
 
