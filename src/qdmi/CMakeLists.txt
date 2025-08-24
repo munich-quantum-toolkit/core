@@ -10,7 +10,7 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-driver)
 
 if(NOT TARGET ${TARGET_NAME})
   # Add driver library
-  add_mqt_core_library(${TARGET_NAME})
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver)
 
   # Add sources to target
   target_sources(${TARGET_NAME} PRIVATE Driver.cpp)
@@ -36,9 +36,7 @@ if(NOT TARGET ${TARGET_NAME})
                EXPORT_NAME CoreQDMIDriver)
 
   # add to list of MQT core targets
-  set(MQT_CORE_TARGETS
-      ${MQT_CORE_TARGETS} ${TARGET_NAME}
-      PARENT_SCOPE)
+  set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${TARGET_NAME})
 endif()
 
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-fomac)
@@ -57,7 +55,7 @@ if(NOT TARGET ${TARGET_NAME})
   # Add link libraries
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC qdmi::qdmi
+    PUBLIC qdmi::qdmi MQT::CoreQDMIDriver
     PRIVATE MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
 
   # Set C++ standard
