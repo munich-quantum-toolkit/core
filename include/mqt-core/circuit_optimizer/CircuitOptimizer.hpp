@@ -97,8 +97,9 @@ public:
    * @brief Collects all Clifford blocks in the circuit.
    * @details The circuit is traversed and all operations that are part of a
    * Clifford block are collected into a compound operation with a certain
-   * maximum block size. All non-Clifford operations remain untouched. 
-   * Light optimizations are applied to the blocks, such as removing identity gates.
+   * maximum block size. All non-Clifford operations remain untouched.
+   * Light optimizations are applied to the blocks, such as removing identity
+   * gates.
    * @param qc the quantum circuit
    * @param maxBlockSize the maximum size of a block
    */
