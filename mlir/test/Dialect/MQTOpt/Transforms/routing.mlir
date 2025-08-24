@@ -1,18 +1,26 @@
+// Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+// Copyright (c) 2025 Munich Quantum Software Company GmbH
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+//
+// Licensed under the MIT License
+
 // Base Profile Programs.
 module {
     // The bell state.
     func.func @bell() {
         %q0_0 = mqtopt.allocQubit
         %q1_0 = mqtopt.allocQubit
-        
-        
+
+
         %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
         %q1_1, %q0_2 = mqtopt.x() %q1_0 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
-        
+
         %q0_3, %m0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         %q1_2, %m1_0 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-        
+
         mqtopt.deallocQubit %q0_3
         mqtopt.deallocQubit %q1_2
         return
@@ -27,13 +35,13 @@ module {
         scf.for %iv = %lb to %ub step %step {
             %q0_0 = mqtopt.allocQubit
             %q1_0 = mqtopt.allocQubit
-            
+
             %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
             %q1_1, %q0_2 = mqtopt.x() %q1_0 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
-            
+
             %q0_3, %m0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
             %q1_2, %m1_0 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-            
+
             mqtopt.deallocQubit %q0_3
             mqtopt.deallocQubit %q1_2
         }
@@ -48,7 +56,7 @@ module {
         %q3_0 = mqtopt.allocQubit
         %q4_0 = mqtopt.allocQubit
         %q5_0 = mqtopt.allocQubit
-        
+
 
         %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
         %q1_1 = mqtopt.h() %q1_0 : !mqtopt.Qubit
@@ -74,13 +82,13 @@ module {
         %q0_4, %q3_6 = mqtopt.x() %q0_3 ctrl %q3_5 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g8
 
 
-        mqtopt.deallocQubit %q0_4 
-        mqtopt.deallocQubit %q1_4 
-        mqtopt.deallocQubit %q2_4 
-        mqtopt.deallocQubit %q3_6 
-        mqtopt.deallocQubit %q4_3 
+        mqtopt.deallocQubit %q0_4
+        mqtopt.deallocQubit %q1_4
+        mqtopt.deallocQubit %q2_4
+        mqtopt.deallocQubit %q3_6
+        mqtopt.deallocQubit %q4_3
         mqtopt.deallocQubit %q5_2
-        
+
         return
     }
 }

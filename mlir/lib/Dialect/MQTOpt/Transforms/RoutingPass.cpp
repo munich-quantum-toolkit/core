@@ -56,8 +56,8 @@ private:
 };
 
 /// @brief Base class for all initial layout mapping functions.
-struct InitalLayout {
-  explicit InitalLayout(const std::size_t nqubits) : mapping(nqubits) {}
+struct InitialLayout {
+  explicit InitialLayout(const std::size_t nqubits) : mapping(nqubits) {}
   [[nodiscard]] std::size_t operator()(std::size_t i) const {
     return mapping[i];
   }
@@ -67,8 +67,8 @@ protected:
 };
 
 /// @brief Identity mapping.
-struct Identity : InitalLayout {
-  explicit Identity(const std::size_t nqubits) : InitalLayout(nqubits) {
+struct Identity : InitialLayout {
+  explicit Identity(const std::size_t nqubits) : InitialLayout(nqubits) {
     std::iota(mapping.begin(), mapping.end(), 0);
   }
 };
@@ -216,7 +216,7 @@ void addModuleQubits(Operation* module, PatternRewriter& rewriter,
 }
 
 LogicalResult spanAndFold(Operation* base, std::unique_ptr<Architecture> target,
-                          const InitalLayout& layout) {
+                          const InitialLayout& layout) {
   MLIRContext* ctx = base->getContext();
   PatternRewriter rewriter(ctx);
 
