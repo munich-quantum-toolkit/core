@@ -35,10 +35,11 @@ build:
       - asdf plugin add uv
       - asdf install uv latest
       - asdf global uv latest
-      - export PATH=$PATH:$HOME/.local/bin
+      # - export PATH=$PATH:$HOME/.local/bin
       - export CC=clang-19
       - export CXX=clang++-19
       - export MLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir
+      - ls $MLIR_DIR
       - export LLVM_DIR=/usr/lib/llvm-19/lib/cmake/llvm
       # Build the MLIR documentation
       - uvx cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_MLIR=ON -DMLIR_DIR=$MLIR_DIR -DLLVM_DIR=$LLVM_DIR
