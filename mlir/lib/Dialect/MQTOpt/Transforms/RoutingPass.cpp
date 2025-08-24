@@ -14,7 +14,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
@@ -25,7 +24,6 @@
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
 #include <numeric>
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -139,9 +137,7 @@ private:
   }
 
   /// @brief Absorb operations that take and return a single qubit.
-  static bool absorbWire(const Value oldQ, QubitPermutation& qubits) {
-    bool hasDeallocated = false;
-
+  static void absorbWire(const Value oldQ, QubitPermutation& qubits) {
     Value newQ = oldQ;
     while (!newQ.getUsers().empty()) {
       Operation* op = *newQ.getUsers().begin();
@@ -159,29 +155,19 @@ private:
         newQ = measure.getOutQubit();
       } else { // Insert.
         assert(dyn_cast<DeallocQubitOp>(op));
-        hasDeallocated = true;
         break;
       }
     }
 
-    if (!hasDeallocated && oldQ != newQ) {
+    if (oldQ != newQ) {
       Lookahead::updateMapping(oldQ, newQ, qubits);
     }
-
-    return hasDeallocated;
   }
 
   /// @brief Absorb 1Q operations. Remove any deallocated qubits.
   static void absorb(Layer& l) {
-    std::vector<std::pair<std::size_t, Value>> deallocated{};
     for (const auto& [i, q] : l.p.getForward()) {
-      if (absorbWire(q, l.p)) {
-        deallocated.emplace_back(i, q);
-      }
-    }
-
-    for (const auto& [i, q] : deallocated) {
-      l.p.erase(i, q);
+      absorbWire(q, l.p);
     }
   }
 
@@ -194,7 +180,10 @@ private:
 
       Operation* user = *(q.getUsers().begin());
       UnitaryInterface unitary = dyn_cast<UnitaryInterface>(user);
-      assert(unitary);
+
+      if (!unitary) {
+        continue;
+      }
 
       // All single qubit operations should have been absorbed. What's
       // left are one-control one-target gates.
@@ -346,7 +335,7 @@ LogicalResult spanAndFold(Operation* base,
           << "requires more qubits than the architecture supports");
     }
 
-    for(std::size_t i = 0; i < dynQubits.size(); ++i) {
+    for (std::size_t i = 0; i < dynQubits.size(); ++i) {
       rewriter.replaceAllUsesWith(dynQubits[i], statQubits[i]);
       rewriter.eraseOp(dynQubits[i].getDefiningOp());
     }
@@ -364,6 +353,15 @@ LogicalResult spanAndFold(Operation* base,
 
     // ----------- Dealloc Phase -----------
     // - Erase dealloc ops.
+
+    for (const auto& [_, q] : p.getForward()) {
+      assert(q.hasOneUse());
+
+      DeallocQubitOp dealloc = dyn_cast<DeallocQubitOp>(*q.getUsers().begin());
+      assert(dealloc);
+
+      rewriter.eraseOp(dealloc);
+    }
 
     return WalkResult::advance();
   });
