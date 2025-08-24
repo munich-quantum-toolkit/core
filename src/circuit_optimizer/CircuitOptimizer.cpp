@@ -1635,8 +1635,7 @@ struct CliffordBlock {
   std::unordered_set<Qubit> blockQubits;
   std::unordered_set<Qubit> blocked;
   std::unique_ptr<CompoundOperation> operations;
-  std::unique_ptr<Operation>* position =
-      nullptr;                
+  std::unique_ptr<Operation>* position = nullptr;
   std::size_t logicalStep = 0;
 
   [[nodiscard]] bool empty() const noexcept {
@@ -1677,7 +1676,7 @@ struct CliffordBlock {
 
   /**
    * @brief Check if qubits used by gate are blocked in this block
-    * @param used Qubits used by the gate
+   * @param used Qubits used by the gate
    */
   [[nodiscard]] bool checkBlocked(const std::set<Qubit>& used) const noexcept {
     return std::ranges::all_of(
@@ -1704,16 +1703,16 @@ struct CliffordBlock {
   }
 
   /**
-  * @brief Append operation into block
-  * @details Append operation into block. If movePosition is true, re-position here
-  * otherwise we erase the current slot.
-  * @param op Operation to add
-  * @param used Qubits used by the gate
-  * @param qc Quantum computation
-  * @param it Current iterator in quantum computation
-  * @param movePosition Whether to move the position of the block
-  * @param step Current logical step in the quantum computation
-  */
+   * @brief Append operation into block
+   * @details Append operation into block. If movePosition is true, re-position
+   * here otherwise we erase the current slot.
+   * @param op Operation to add
+   * @param used Qubits used by the gate
+   * @param qc Quantum computation
+   * @param it Current iterator in quantum computation
+   * @param movePosition Whether to move the position of the block
+   * @param step Current logical step in the quantum computation
+   */
   void addOp(std::unique_ptr<Operation>& op, const std::set<Qubit>& used,
              QuantumComputation& qc, QuantumComputation::iterator& it,
              const bool movePosition, const std::size_t step) {
@@ -1775,7 +1774,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
   std::vector<CliffordBlock> blocks;
   std::unordered_map<Qubit, std::size_t> lastNonClifford;
   std::size_t step = 0;
-  
+
   for (auto it = qc.begin(); it != qc.end(); ++it, ++step) {
     auto& op = *it;
     const bool isClif = op->isClifford();
