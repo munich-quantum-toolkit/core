@@ -1715,7 +1715,6 @@ struct CliffordBlock {
              const bool movePosition, const std::size_t step) {
     operations->emplace_back(std::move(op));
 
-
     if (movePosition) {
       // we move block into the right position with idenites because they are
       // removed later
