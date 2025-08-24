@@ -1,34 +1,31 @@
 // Base Profile Programs.
 module {
     // The bell state.
-    // func.func @bell() {
-    //     %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-    //     %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    //     %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    func.func @bell() {
+        %q0_0 = mqtopt.allocQubit
+        %q1_0 = mqtopt.allocQubit
         
         
-    //     %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
-    //     %q1_1, %q0_2 = mqtopt.x() %q1_0 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
+        %q1_1, %q0_2 = mqtopt.x() %q1_0 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
         
-    //     %q0_3, %m0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-    //     %q1_2, %m1_0 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %q0_3, %m0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %q1_2, %m1_0 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
         
-    //     %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_3) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    //     %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_2) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister     
-    //     "mqtopt.deallocQubitRegister"(%reg_0) : (!mqtopt.QubitRegister) -> ()
-    //     return
-    // }
+        mqtopt.deallocQubit %q0_3
+        mqtopt.deallocQubit %q1_2
+        return
+    }
 
     // Figure 4 in SABRE Paper "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices".
     func.func @sabre() {
-        %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 6 : i64}> : () -> !mqtopt.QubitRegister
-        %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-        %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-        %reg_3, %q2_0 = "mqtopt.extractQubit"(%reg_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-        %reg_4, %q3_0 = "mqtopt.extractQubit"(%reg_3) <{index_attr = 3 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-        %reg_5, %q4_0 = "mqtopt.extractQubit"(%reg_4) <{index_attr = 4 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-        %reg_6, %q5_0 = "mqtopt.extractQubit"(%reg_5) <{index_attr = 5 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+        %q0_0 = mqtopt.allocQubit
+        %q1_0 = mqtopt.allocQubit
+        %q2_0 = mqtopt.allocQubit
+        %q3_0 = mqtopt.allocQubit
+        %q4_0 = mqtopt.allocQubit
+        %q5_0 = mqtopt.allocQubit
         
 
         %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
@@ -55,13 +52,12 @@ module {
         %q0_4, %q3_6 = mqtopt.x() %q0_3 ctrl %q3_5 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g8
 
 
-        %reg_7 = "mqtopt.insertQubit"(%reg_6, %q0_4) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-        %reg_8 = "mqtopt.insertQubit"(%reg_7, %q1_4) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-        %reg_9 = "mqtopt.insertQubit"(%reg_8, %q2_4) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-        %reg_10 = "mqtopt.insertQubit"(%reg_9, %q3_6) <{index_attr = 3 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-        %reg_11 = "mqtopt.insertQubit"(%reg_10, %q4_3) <{index_attr = 4 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-        %reg_12 = "mqtopt.insertQubit"(%reg_11, %q5_2) <{index_attr = 5 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-        "mqtopt.deallocQubitRegister"(%reg_12) : (!mqtopt.QubitRegister) -> ()
+        mqtopt.deallocQubit %q0_4 
+        mqtopt.deallocQubit %q1_4 
+        mqtopt.deallocQubit %q2_4 
+        mqtopt.deallocQubit %q3_6 
+        mqtopt.deallocQubit %q4_3 
+        mqtopt.deallocQubit %q5_2
         
         return
     }
