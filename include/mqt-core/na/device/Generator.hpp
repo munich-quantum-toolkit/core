@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <istream>
 #include <ostream>
@@ -163,16 +165,7 @@ public:
   std::vector<GlobalMultiQubitOperation> globalMultiQubitOperations;
 
   /// @brief Represents a local single-qubit operation.
-  struct LocalSingleQubitOperation : Operation {
-    /// @brief The number of rows in the operation.
-    uint64_t numRows = 0;
-    /// @brief The number of columns in the operation.
-    uint64_t numColumns = 0;
-
-    // NOLINTNEXTLINE(misc-include-cleaner)
-    NLOHMANN_DEFINE_DERIVED_TYPE_INTRUSIVE_WITH_DEFAULT(
-        LocalSingleQubitOperation, Operation, numRows, numColumns)
-  };
+  struct LocalSingleQubitOperation : Operation {};
   /// @brief The list of local single-qubit operations supported by the device.
   std::vector<LocalSingleQubitOperation> localSingleQubitOperations;
 
@@ -188,31 +181,22 @@ public:
      * operation can be performed to avoid interference.
      */
     double blockingRadius = 0.0;
-    /// @brief The number of rows in the operation.
-    uint64_t numRows = 0;
-    /// @brief The number of columns in the operation.
-    uint64_t numColumns = 0;
     /// @brief The number of qubits involved in the operation.
     uint64_t numQubits = 0;
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_DERIVED_TYPE_INTRUSIVE_WITH_DEFAULT(
         LocalMultiQubitOperation, Operation, interactionRadius, blockingRadius,
-        numRows, numColumns, numQubits)
+        numQubits)
   };
   /// @brief The list of local multi-qubit operations supported by the device.
   std::vector<LocalMultiQubitOperation> localMultiQubitOperations;
 
   /// @brief Represents a shuttling unit in the device.
   struct ShuttlingUnit {
-    /// @brief The name of the shuttling unit.
-    std::string name;
+    size_t id = 0; ///< @brief Unique identifier for the shuttling unit.
     /// @brief The region in which the shuttling unit operates.
     Region region;
-    /// @brief The number of rows in the shuttling unit.
-    uint64_t numRows = 0;
-    /// @brief The number of columns in the shuttling unit.
-    uint64_t numColumns = 0;
     /// @brief The speed at which the shuttling unit moves.
     double movingSpeed = 0.0;
     /// @brief The duration of the load operation in the shuttling unit.
@@ -225,13 +209,18 @@ public:
     double storeFidelity = 0.0;
     /// @brief The number of parameters the shuttling unit takes.
     uint64_t numParameters = 0;
+    /**
+     * @brief The mean shuttling speed.
+     * @note Only for shuttling operations.
+     */
+    uint64_t meanShuttlingSpeed = 0;
 
     // NOLINTNEXTLINE(misc-include-cleaner)
-    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(ShuttlingUnit, name, region,
-                                                numRows, numColumns,
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(ShuttlingUnit, region,
                                                 movingSpeed, loadDuration,
                                                 storeDuration, loadFidelity,
-                                                storeFidelity, numParameters)
+                                                storeFidelity, numParameters,
+                                                meanShuttlingSpeed)
   };
   /// @brief The list of shuttling units supported by the device.
   std::vector<ShuttlingUnit> shuttlingUnits;
@@ -262,16 +251,83 @@ public:
   };
 
   /// @brief The unit of measurement for lengths in the device.
-  Unit lengthUnit;
+  Unit lengthUnit = {1.0, "um"}; ///< Default is micrometers (um).
   /// @brief The unit of measurement for time in the device.
-  Unit timeUnit;
+  Unit durationUnit = {1.0, "us"}; ///< Default is microseconds (us).
 
+  // Before we used the macro NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT here,
+  // too. Now, we added an id to shuttling units that must be initialized
+  // in a custom routine, so we can only use the serialize macro. Additionally,
+  // we check here whether the units are valid SI units.
   // NOLINTNEXTLINE(misc-include-cleaner)
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(
+  NLOHMANN_DEFINE_TYPE_INTRUSIVE_ONLY_SERIALIZE(
       Device, name, numQubits, traps, minAtomDistance,
       globalSingleQubitOperations, globalMultiQubitOperations,
       localSingleQubitOperations, localMultiQubitOperations, shuttlingUnits,
-      decoherenceTimes, lengthUnit, timeUnit)
+      decoherenceTimes, lengthUnit, durationUnit)
+
+  // the name of the following function is given by the nlohmann::json library
+  // and must not be changed
+  template <typename BasicJsonType>
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  friend auto from_json(const BasicJsonType& json, Device& device) -> void {
+    const Device defaultDevice{};
+    device.name = !json.is_null() ? json.value("name", defaultDevice.name)
+                                  : defaultDevice.name;
+    device.numQubits = !json.is_null()
+                           ? json.value("numQubits", defaultDevice.numQubits)
+                           : defaultDevice.numQubits;
+    device.traps = !json.is_null() ? json.value("traps", defaultDevice.traps)
+                                   : defaultDevice.traps;
+    device.minAtomDistance =
+        !json.is_null()
+            ? json.value("minAtomDistance", defaultDevice.minAtomDistance)
+            : defaultDevice.minAtomDistance;
+    device.globalSingleQubitOperations =
+        !json.is_null() ? json.value("globalSingleQubitOperations",
+                                     defaultDevice.globalSingleQubitOperations)
+                        : defaultDevice.globalSingleQubitOperations;
+    device.globalMultiQubitOperations =
+        !json.is_null() ? json.value("globalMultiQubitOperations",
+                                     defaultDevice.globalMultiQubitOperations)
+                        : defaultDevice.globalMultiQubitOperations;
+    device.localSingleQubitOperations =
+        !json.is_null() ? json.value("localSingleQubitOperations",
+                                     defaultDevice.localSingleQubitOperations)
+                        : defaultDevice.localSingleQubitOperations;
+    device.localMultiQubitOperations =
+        !json.is_null() ? json.value("localMultiQubitOperations",
+                                     defaultDevice.localMultiQubitOperations)
+                        : defaultDevice.localMultiQubitOperations;
+    device.shuttlingUnits =
+        !json.is_null()
+            ? json.value("shuttlingUnits", defaultDevice.shuttlingUnits)
+            : defaultDevice.shuttlingUnits;
+    std::ranges::for_each(device.shuttlingUnits,
+                          [i = 0UL](auto& unit) mutable { unit.id = i++; });
+    device.decoherenceTimes =
+        !json.is_null()
+            ? json.value("decoherenceTimes", defaultDevice.decoherenceTimes)
+            : defaultDevice.decoherenceTimes;
+    device.lengthUnit = !json.is_null()
+                            ? json.value("lengthUnit", defaultDevice.lengthUnit)
+                            : defaultDevice.lengthUnit;
+    if (device.lengthUnit.unit != "mm" && device.lengthUnit.unit != "um" &&
+        device.lengthUnit.unit != "nm") {
+      throw std::runtime_error(
+          "Invalid length unit: " + device.lengthUnit.unit +
+          ". Supported units are: mm, um, nm.");
+    }
+    device.durationUnit =
+        !json.is_null() ? json.value("durationUnit", defaultDevice.durationUnit)
+                        : defaultDevice.durationUnit;
+    if (device.durationUnit.unit != "ms" && device.durationUnit.unit != "us" &&
+        device.durationUnit.unit != "ns") {
+      throw std::runtime_error(
+          "Invalid duration unit: " + device.durationUnit.unit +
+          ". Supported units are: ms, us, ns.");
+    }
+  }
 };
 
 /**
