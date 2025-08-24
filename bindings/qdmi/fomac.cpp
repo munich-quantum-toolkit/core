@@ -11,10 +11,13 @@
 // These includes must be the first includes for any bindings code
 // clang-format off
 #include "qdmi/FoMaC.hpp"
+#include <pybind11/cast.h>
 #include <qdmi/client.h>
 #include <pybind11/native_enum.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+#include <string>
+#include <vector>
 // clang-format on
 
 namespace mqt {
@@ -48,7 +51,7 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   site.def("module_index", &fomac::Site::getModuleIndex);
   site.def("submodule_index", &fomac::Site::getSubmoduleIndex);
   site.def("__repr__", [](const fomac::Site& s) {
-    return "<Site index=" + std::to_string(s.getIndex()) + "\">";
+    return "<Site index=" + std::to_string(s.getIndex()) + ">";
   });
 
   auto operation = py::class_<fomac::Operation>(m, "Operation");
@@ -109,7 +112,7 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
 
-  m.def("devices", &fomac::FoMaC::queryDevices);
+  m.def("devices", &fomac::FoMaC::getDevices);
 }
 
 } // namespace mqt

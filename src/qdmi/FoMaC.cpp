@@ -254,7 +254,7 @@ FoMaC::FoMaC() {
   QDMI_session_init(session_);
 }
 FoMaC::~FoMaC() { QDMI_session_free(session_); }
-auto FoMaC::queryDevices() -> std::vector<Device> {
+auto FoMaC::getDevices() -> std::vector<Device> {
   const auto& qdmiDevices = get().queryProperty<std::vector<QDMI_Device>>(
       QDMI_SESSION_PROPERTY_DEVICES);
   std::vector<Device> devices;

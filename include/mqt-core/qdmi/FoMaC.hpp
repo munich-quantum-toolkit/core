@@ -435,6 +435,6 @@ public:
   FoMaC(FoMaC&&) = default;
   FoMaC& operator=(FoMaC&&) = default;
   /// @see QDMI_SESSION_PROPERTY_DEVICES
-  [[nodiscard]] static auto queryDevices() -> std::vector<Device>;
+  [[nodiscard]] static auto getDevices() -> std::vector<Device>;
 };
 } // namespace fomac

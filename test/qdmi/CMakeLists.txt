@@ -8,12 +8,19 @@
 
 set(TARGET_NAME mqt-core-qdmi-driver-test)
 
-if(TARGET MQT::CoreQdmiDriver)
-  package_add_test(${TARGET_NAME} MQT::CoreQdmiDriver test_driver.cpp)
+if(TARGET MQT::CoreQDMIDriver)
+  package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_driver.cpp)
   if(NOT WIN32)
     add_dependencies(${TARGET_NAME} MQT::CoreDynNaQDMI)
     target_compile_definitions(${TARGET_NAME}
                                PRIVATE DYN_DEV_LIB="$<TARGET_FILE:MQT::CoreDynNaQDMI>")
   endif()
+  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
+endif()
+
+set(TARGET_NAME mqt-core-fomac-test)
+
+if(TARGET MQT::CoreFoMaC)
+  package_add_test(${TARGET_NAME} MQT::CoreFoMaC test_fomac.cpp)
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 endif()
