@@ -231,8 +231,8 @@ auto Device::getCouplingMap() const -> std::vector<std::pair<Site, Site>> {
                          });
   return couplingMap;
 }
-auto Device::getNeedsCalibration() const -> bool {
-  return queryProperty<bool>(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
+auto Device::getNeedsCalibration() const -> size_t {
+  return queryProperty<size_t>(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
 }
 auto Device::getLengthUnit() const -> std::string {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_LENGTHUNIT);

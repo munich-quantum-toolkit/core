@@ -394,7 +394,7 @@ public:
   [[nodiscard]] auto getCouplingMap() const
       -> std::vector<std::pair<Site, Site>>;
   /// @see QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION
-  [[nodiscard]] auto getNeedsCalibration() const -> bool;
+  [[nodiscard]] auto getNeedsCalibration() const -> size_t;
   /// @see QDMI_DEVICE_PROPERTY_LENGTHUNIT
   [[nodiscard]] auto getLengthUnit() const -> std::string;
   /// @see QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR
