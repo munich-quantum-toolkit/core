@@ -18,6 +18,28 @@ module {
         return
     }
 
+    // Bell in a loop.
+    func.func @bellInALoop() {
+        %lb = index.constant 0
+        %ub = index.constant 1000
+        %step = index.constant 1
+
+        scf.for %iv = %lb to %ub step %step {
+            %q0_0 = mqtopt.allocQubit
+            %q1_0 = mqtopt.allocQubit
+            
+            %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
+            %q1_1, %q0_2 = mqtopt.x() %q1_0 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            
+            %q0_3, %m0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+            %q1_2, %m1_0 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+            
+            mqtopt.deallocQubit %q0_3
+            mqtopt.deallocQubit %q1_2
+        }
+        return
+    }
+
     // Figure 4 in SABRE Paper "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices".
     func.func @sabre() {
         %q0_0 = mqtopt.allocQubit
