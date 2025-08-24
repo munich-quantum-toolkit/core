@@ -12,6 +12,7 @@
 // clang-format off
 #include "qdmi/FoMaC.hpp"
 #include <pybind11/cast.h>
+#include <pybind11/operators.h>
 #include <qdmi/client.h>
 #include <pybind11/native_enum.h>
 #include <pybind11/pybind11.h>
@@ -53,6 +54,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   site.def("__repr__", [](const fomac::Site& s) {
     return "<Site index=" + std::to_string(s.getIndex()) + ">";
   });
+  site.def(py::self == py::self); // NOLINT(misc-redundant-expression)
+  site.def(py::self != py::self); // NOLINT(misc-redundant-expression)
 
   auto operation = py::class_<fomac::Operation>(m, "Operation");
   operation.def("name", &fomac::Operation::getName,
@@ -92,6 +95,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   operation.def("__repr__", [](const fomac::Operation& op) {
     return "<Operation name=\"" + op.getName() + "\">";
   });
+  operation.def(py::self == py::self); // NOLINT(misc-redundant-expression)
+  operation.def(py::self != py::self); // NOLINT(misc-redundant-expression)
 
   auto device = py::class_<fomac::Device>(m, "Device");
   device.def("name", &fomac::Device::getName);
@@ -111,6 +116,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   device.def("__repr__", [](const fomac::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
+  device.def(py::self == py::self); // NOLINT(misc-redundant-expression)
+  device.def(py::self != py::self); // NOLINT(misc-redundant-expression)
 
   m.def("devices", &fomac::FoMaC::getDevices);
 }
