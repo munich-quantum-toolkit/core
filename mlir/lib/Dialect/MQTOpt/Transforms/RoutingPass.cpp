@@ -166,19 +166,15 @@ Layer getLayer(const llvm::DenseMap<Value, std::size_t>& p) {
   return l;
 }
 
-llvm::SmallVector<Layer> lookahead(const llvm::DenseMap<Value, std::size_t>& p0,
-                                   const std::size_t depth = 0) {
-  llvm::SmallVector<Layer, 0> layers;
-  layers.reserve(1 + depth);
+template <std::size_t N = 0>
+std::pair<Layer, std::array<Layer, N>>
+lookahead(const llvm::DenseMap<Value, std::size_t>& p0) {
+  Layer head(getLayer(p0));
 
-  layers.emplace_back(getLayer(p0));
-  for (std::size_t i = 1; i < 1 + depth; ++i) {
-    const Layer& prev = layers.back();
+  std::array<Layer, N> beyond;
 
-    if (prev.gates.empty()) {
-      break;
-    }
-
+  Layer& prev = head;
+  for (std::size_t i = 0; i < N; ++i) {
     llvm::DenseMap<Value, std::size_t> p(prev.qubitMap); // Copy previous.
 
     // "Apply" two qubit gates.
@@ -194,10 +190,10 @@ llvm::SmallVector<Layer> lookahead(const llvm::DenseMap<Value, std::size_t>& p0,
       p.erase(controlIn);
     }
 
-    layers.emplace_back(getLayer(p));
+    beyond[i] = getLayer(p);
   }
 
-  return layers;
+  return {head, beyond};
 }
 
 /// @brief Add attributes to module-like parent specifying the architecture.
@@ -243,11 +239,12 @@ LogicalResult spanAndFold(Operation* base, std::unique_ptr<Architecture> target,
     // ----------- Alloc Phase -----------
     // - Create static qubits in module-like parent.
     // - Collect dynamic qubits for computation.
+
     if (module != alloc->getParentOp()) {
       module = alloc->getParentOp();
+      assert(module);
 
       llvm::dbgs() << "module found: " << module->getName() << '\n';
-      assert(module);
 
       statQubits.clear();
       dynQubits.clear();
@@ -295,27 +292,45 @@ LogicalResult spanAndFold(Operation* base, std::unique_ptr<Architecture> target,
       rewriter.eraseOp(dynQubits[i].getDefiningOp());
     }
 
-    llvm::SmallVector<Layer> layers = lookahead(p0, 1UL);
-    for (const Layer& l : layers) {
-      if (!l.gates.empty()) {
+    llvm::DenseMap<Value, std::size_t>& pIt = p0;
+    while (true) {
+      const auto& [head, beyond] = lookahead<1UL>(pIt);
+
+      if (head.gates.empty()) {
+        llvm::dbgs() << "\tno more two-qubit gates. stop.\n";
+        pIt = head.qubitMap;
+        break;
+      }
+
+      llvm::dbgs() << "\thead:\n";
+      for (const auto& g : head.gates) {
+        llvm::dbgs() << "\t\t" << g->getLoc() << '\n';
+      }
+      llvm::dbgs() << "\tlookahead:\n";
+      for (const auto& l : beyond) {
         for (const auto& g : l.gates) {
-          llvm::outs() << g->getLoc() << '\n';
+          llvm::dbgs() << "\t\t" << g->getLoc() << '\n';
         }
-        llvm::outs() << "-----\n";
+      }
+
+      if (!beyond.empty()) {
+        pIt = beyond.at(0).qubitMap;
       }
     }
 
-    // // ----------- Dealloc Phase -----------
-    // // - Erase dealloc ops.
+    for (const auto& [q, i] : pIt) {
+      llvm::dbgs() << "\treplace static[" << i << "] with " << q.getLoc()
+                   << '\n';
+      statQubits[i] = q;
 
-    // for (const auto& [q, _] : p) {
-    //   assert(q.hasOneUse());
-
-    //   DeallocQubitOp dealloc =
-    //   dyn_cast<DeallocQubitOp>(*q.getUsers().begin()); assert(dealloc);
-
-    //   rewriter.eraseOp(dealloc);
-    // }
+      if (q.hasOneUse()) { // There may be unused qubits.
+        DeallocQubitOp dealloc =
+            dyn_cast<DeallocQubitOp>(*q.getUsers().begin());
+        assert(dealloc);
+        llvm::dbgs() << "\tremove: " << dealloc << '\n';
+        rewriter.eraseOp(dealloc);
+      }
+    }
 
     return WalkResult::advance();
   });
@@ -332,7 +347,7 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
     auto target = std::make_unique<Architecture>("iqm-spark+1", 6);
 
-    const Random layout(target->nqubits());
+    const Identity layout(target->nqubits());
     if (spanAndFold(getOperation(), std::move(target), layout).failed()) {
       signalPassFailure();
     }
