@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <llvm/Support/Debug.h>
 #include <memory>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
@@ -24,10 +25,11 @@
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
 #include <numeric>
-#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+
+#define DEBUG_TYPE "routing"
 
 namespace mqt::ir::opt {
 
@@ -62,82 +64,22 @@ llvm::SmallVector<std::size_t> random(const std::size_t nqubits) {
 }
 }; // namespace initial_layout_funcs
 
-/// @brief Maps from T1 to T2 and from T2 to T1.
-template <class T1, class T2> struct BidirectionalMap {
-  using Map = llvm::DenseMap<T1, T2>;
-  using InvMap = llvm::DenseMap<T2, T1>;
-
-  // Set bidirectional (T1 <-> T2) mapping.
-  void set(const T1 t1, T2 t2) {
-    map_[t1] = t2;
-    invMap_[t2] = t1;
-  }
-
-  /// @brief Get T2 from T1.
-  [[nodiscard]] T2 get(const T1 key) { return getForward().at(key); }
-
-  /// @brief Get T1 from T2.
-  [[nodiscard]] T1 get(const T2 key) { return getBackward().at(key); }
-
-  /// @brief Return true if bi-map contains T1 @p key.
-  [[nodiscard]] bool contains(const T1 key) {
-    return getForward().contains(key);
-  }
-
-  /// @brief Return true if bi-map contains T2 @p key.
-  [[nodiscard]] bool contains(const T2 key) {
-    return getBackward().contains(key);
-  }
-
-  /// @brief Get reference of forward (T1 -> T2) map.
-  [[nodiscard]] Map& getForward() { return map_; }
-
-  /// @brief Get reference of backward (T1 <- T2) map.
-  [[nodiscard]] InvMap& getBackward() { return invMap_; }
-
-  /// @brief Erase from bi-map map.
-  void erase(const T1 t1, const T2 t2) {
-    map_.erase(t1);
-    invMap_.erase(t2);
-  }
-
-  /// @brief Return the size of the bi-map.
-  [[nodiscard]] std::size_t size() const { return map_.size(); }
-
-  /// @brief Return true if the bidirectional map has no entries.
-  [[nodiscard]] bool empty() const { return map_.empty() && invMap_.empty(); }
-
-  /// @brief Clear the bi-map.
-  void clear() {
-    map_.clear();
-    invMap_.clear();
-  }
-
-private:
-  Map map_;
-  InvMap invMap_;
+/// @brief A layer consists of a qubit mapping and a set of 2Q gates.
+struct Layer {
+  /// @brief The mapping from qubits to indices.
+  llvm::DenseMap<Value, std::size_t> qubitMap;
+  /// @brief The mapping from indices to qubits.
+  llvm::DenseMap<std::size_t, Value> indexMap;
+  /// @brief Set of two-qubit gates (e.g. CNOTs).
+  llvm::DenseSet<UnitaryInterface> gates;
 };
 
-/// @brief A QubitPermutation maps indices to qubits and qubits to indices.
-using QubitPermutation = BidirectionalMap<std::size_t, Value>;
+/// @brief Compute layer, i.e., retrieve permutation and set of two-qubit gates.
+Layer getLayer(const llvm::DenseMap<Value, std::size_t>& p) {
+  Layer l;
 
-template <std::size_t N = 0> class Lookahead {
-private:
-  /// @brief A layer consists of a qubit mapping and a set of 2Q gates.
-  struct Layer {
-    QubitPermutation p;
-    llvm::DenseSet<UnitaryInterface> gates;
-  };
-
-  /// @brief Replace @p oldQ with @p newQ but keep the same index.
-  static void updateMapping(const Value oldQ, const Value newQ,
-                            QubitPermutation& qubits) {
-    qubits.set(qubits.get(oldQ), newQ);
-    qubits.getBackward().erase(oldQ);
-  }
-
-  /// @brief Absorb operations that take and return a single qubit.
-  static void absorbWire(const Value oldQ, QubitPermutation& qubits) {
+  // Absorb operations that take and return a single qubit.
+  for (const auto& [oldQ, i] : p) {
     Value newQ = oldQ;
     while (!newQ.getUsers().empty()) {
       Operation* op = *newQ.getUsers().begin();
@@ -153,94 +95,92 @@ private:
         }
       } else if (auto measure = dyn_cast<MeasureOp>(op)) {
         newQ = measure.getOutQubit();
-      } else { // Insert.
+      } else { // DeallocQubitOp.
         assert(dyn_cast<DeallocQubitOp>(op));
         break;
       }
     }
 
-    if (oldQ != newQ) {
-      Lookahead::updateMapping(oldQ, newQ, qubits);
-    }
+    l.qubitMap[newQ] = i;
+    l.indexMap[i] = newQ;
   }
 
-  /// @brief Absorb 1Q operations. Remove any deallocated qubits.
-  static void absorb(Layer& l) {
-    for (const auto& [i, q] : l.p.getForward()) {
-      absorbWire(q, l.p);
+  // Collect two-qubit gates of the layer.
+  // Visit each qubit of a layer only once.
+
+  llvm::DenseSet<Value> visited;
+  for (const auto& [qubit, _] : l.qubitMap) {
+    if (visited.contains(qubit)) {
+      continue;
     }
+
+    if (qubit.getUsers().empty()) {
+      visited.insert(qubit);
+      continue;
+    }
+
+    Operation* user = *(qubit.getUsers().begin());
+
+    auto unitary = dyn_cast<UnitaryInterface>(user);
+    if (!unitary) {
+      visited.insert(qubit);
+      continue;
+    }
+
+    // All single qubit operations should have been absorbed. What's
+    // left are one-control one-target gates.
+
+    assert(!unitary.getInQubits().empty());
+    assert(!unitary.getAllCtrlInQubits().empty());
+    assert(unitary.getInQubits().size() == 1);
+    assert(unitary.getAllCtrlInQubits().size() == 1);
+
+    auto target = unitary.getInQubits().front();
+    auto control = unitary.getAllCtrlInQubits().front();
+    if (l.qubitMap.contains(target) && l.qubitMap.contains(control)) {
+      l.gates.insert(unitary);
+    }
+
+    visited.insert(target);
+    visited.insert(control);
   }
 
-  /// @brief Collect 2Q gates of the layer.
-  static void collectGates(Layer& l) {
-    for (auto [i, q] : l.p.getForward()) {
-      if (q.getUsers().empty()) {
-        continue;
-      }
+  return l;
+}
 
-      Operation* user = *(q.getUsers().begin());
-      UnitaryInterface unitary = dyn_cast<UnitaryInterface>(user);
+llvm::SmallVector<Layer> lookahead(const llvm::DenseMap<Value, std::size_t>& p0,
+                                   const std::size_t depth = 0) {
+  llvm::SmallVector<Layer, 0> layers;
+  layers.reserve(1 + depth);
 
-      if (!unitary) {
-        continue;
-      }
+  layers.emplace_back(getLayer(p0));
+  for (std::size_t i = 1; i < 1 + depth; ++i) {
+    const Layer& prev = layers.back();
 
-      // All single qubit operations should have been absorbed. What's
-      // left are one-control one-target gates.
-
-      assert(!unitary.getInQubits().empty());
-      assert(!unitary.getAllCtrlInQubits().empty());
-      assert(unitary.getInQubits().size() == 1);
-      assert(unitary.getAllCtrlInQubits().size() == 1);
-
-      auto target = unitary.getInQubits().front();
-      auto control = unitary.getAllCtrlInQubits().front();
-      if (l.p.contains(target) && l.p.contains(control)) {
-        l.gates.insert(unitary);
-      }
+    if (prev.gates.empty()) {
+      break;
     }
-  }
 
-  /// @brief Return the permutation of the layer after @p l.
-  static QubitPermutation nextPermutation(Layer& l) {
-    QubitPermutation pNext = l.p;
+    llvm::DenseMap<Value, std::size_t> p(prev.qubitMap); // Copy previous.
 
-    for (UnitaryInterface unitary : l.gates) {
+    // "Apply" two qubit gates.
+    for (auto unitary : prev.gates) {
       const auto targetIn = unitary.getInQubits().front();
       const auto targetOut = unitary.getOutQubits().front();
       const auto controlIn = unitary.getAllCtrlInQubits().front();
       const auto controlOut = unitary.getAllCtrlOutQubits().front();
 
-      Lookahead::updateMapping(targetIn, targetOut, pNext);
-      Lookahead::updateMapping(controlIn, controlOut, pNext);
+      p[targetOut] = p[targetIn];
+      p[controlOut] = p[controlIn];
+      p.erase(targetIn);
+      p.erase(controlIn);
     }
 
-    return pNext;
+    layers.emplace_back(getLayer(p));
   }
 
-public:
-  explicit Lookahead(const QubitPermutation& p0) {
-    layers_[0].p = p0;
-
-    for (std::size_t i = 0; i < layers_.size(); ++i) {
-      Lookahead::absorb(layers_[i]);
-      Lookahead::collectGates(layers_[i]);
-
-      if (i < layers_.size() - 1) {
-        layers_[i + 1].p = nextPermutation(layers_[i]);
-      }
-    }
-  }
-
-  /// @brief Return view of layers.
-  [[nodiscard]] std::span<const Layer> layers() const { return layers_; }
-
-  explicit operator bool() const { return !layers_[0].gates.empty(); }
-
-private:
-  /// @brief An array of maximally (1 + lookahead) layers.
-  std::array<Layer, 1 + N> layers_;
-};
+  return layers;
+}
 
 /// @brief A quantum accelerator's architecture.
 struct Architecture {
@@ -264,22 +204,14 @@ void setModuleTarget(Operation* moduleLike, PatternRewriter& rewriter,
 }
 
 /// @brief Create @p nqubits static qubits in module-like parent.
-void addModuleQubits(Operation* moduleLike, PatternRewriter& rewriter,
+void addModuleQubits(Operation* module, PatternRewriter& rewriter,
                      const Architecture& target,
                      llvm::SmallVectorImpl<Value>& qubits) {
-  const auto& qubit = QubitType::get(moduleLike->getContext());
+  const auto& qubit = QubitType::get(module->getContext());
   for (std::size_t i = 0; i < target.nqubits(); ++i) {
-    auto qubitOp = rewriter.create<QubitOp>(moduleLike->getLoc(), qubit, i);
-    qubits[i] = qubitOp.getQubit();
-  }
-}
-
-/// @brief Map static qubits to permutated indices of the initial layout.
-void applyInitialLayout(const llvm::SmallVectorImpl<Value>& qubits,
-                        const llvm::SmallVectorImpl<std::size_t>& mapping,
-                        QubitPermutation& p) {
-  for (std::size_t i = 0; i < qubits.size(); ++i) {
-    p.set(mapping[i], qubits[i]);
+    auto qubitOp = rewriter.create<QubitOp>(module->getLoc(), qubit, i);
+    qubits.push_back(qubitOp.getQubit());
+    llvm::dbgs() << "\tcreated static qubit: " << qubitOp.getQubit() << '\n';
   }
 }
 
@@ -290,13 +222,15 @@ LogicalResult spanAndFold(Operation* base,
 
   // CURRENT ASSUMPTIONS
   // -) A quantum computation has the following format:
-  //       alloc - compute - dealloc
-  // -) Initial layout will be applied, when creating the static qubits.
+  //       Q := (alloc -> compute -> dealloc)
+  // -) Initial layout will be applied when creating the static qubits.
 
-  QubitPermutation p{};
+  Operation* module = nullptr;
 
-  llvm::SmallVector<Value, 0> statQubits(target->nqubits());
+  llvm::SmallVector<Value, 0> statQubits;
   llvm::SmallVector<Value, 0> dynQubits;
+
+  statQubits.reserve(target->nqubits());
   dynQubits.reserve(target->nqubits());
 
   auto result = base->walk([&](AllocQubitOp alloc) {
@@ -305,20 +239,24 @@ LogicalResult spanAndFold(Operation* base,
     // ----------- Alloc Phase -----------
     // - Create static qubits in module-like parent.
     // - Collect dynamic qubits for computation.
+    if (module != alloc->getParentOp()) {
+      module = alloc->getParentOp();
 
-    // TODO: What trait to use here best?
-    Operation* moduleLike = alloc->getParentOp();
-    assert(moduleLike);
-    if (!moduleLike->hasAttr(attribute_names::TARGET)) {
-      llvm::SmallVector<std::size_t> mapping =
-          initial_layout_funcs::identity(target->nqubits());
+      llvm::dbgs() << "module found: " << module->getName() << '\n';
+      assert(module);
 
-      setModuleTarget(moduleLike, rewriter, *target);
-      addModuleQubits(moduleLike, rewriter, *target, statQubits);
-      applyInitialLayout(statQubits, mapping, p);
+      statQubits.clear();
+      dynQubits.clear();
+    }
+
+    if (!module->hasAttr(attribute_names::TARGET)) {
+      setModuleTarget(module, rewriter, *target);
+      addModuleQubits(module, rewriter, *target, statQubits);
     }
 
     dynQubits.emplace_back(alloc.getQubit());
+
+    llvm::dbgs() << "\tcollected dynamic qubit: " << alloc.getQubit() << '\n';
 
     const Operation* successor = alloc->getNextNode();
     if (successor && dyn_cast<AllocQubitOp>(successor)) {
@@ -335,33 +273,47 @@ LogicalResult spanAndFold(Operation* base,
           << "requires more qubits than the architecture supports");
     }
 
+    llvm::DenseMap<Value, std::size_t> p0;
+    auto map = initial_layout_funcs::random(target->nqubits());
+
+    // Setup initial layout.
+    for (std::size_t i = 0; i < statQubits.size(); ++i) {
+      p0[statQubits[i]] = map[i];
+    }
+
+    // TODO: Wrap in LLVM_DEBUG
     for (std::size_t i = 0; i < dynQubits.size(); ++i) {
-      rewriter.replaceAllUsesWith(dynQubits[i], statQubits[i]);
+      llvm::dbgs() << "\tassign: " << dynQubits[i] << " (dyn) to "
+                   << statQubits[map[i]] << " (stat)" << '\n';
+    }
+
+    // Replace dynamic qubits with permutated static qubits.
+    for (std::size_t i = 0; i < dynQubits.size(); ++i) {
+      rewriter.replaceAllUsesWith(dynQubits[i], statQubits[map[i]]);
       rewriter.eraseOp(dynQubits[i].getDefiningOp());
     }
 
-    while (const auto lookahead = Lookahead<1>(p)) {
-      for (const auto& l : lookahead.layers()) {
-        for (const auto& gate : l.gates) {
-          llvm::outs() << gate->getLoc() << '\n';
+    llvm::SmallVector<Layer> layers = lookahead(p0, 1UL);
+    for (const Layer& l : layers) {
+      if (!l.gates.empty()) {
+        for (const auto& g : l.gates) {
+          llvm::outs() << g->getLoc() << '\n';
         }
+        llvm::outs() << "-----\n";
       }
-      llvm::outs() << "\n";
-
-      p = lookahead.layers()[1].p;
     }
 
-    // ----------- Dealloc Phase -----------
-    // - Erase dealloc ops.
+    // // ----------- Dealloc Phase -----------
+    // // - Erase dealloc ops.
 
-    for (const auto& [_, q] : p.getForward()) {
-      assert(q.hasOneUse());
+    // for (const auto& [q, _] : p) {
+    //   assert(q.hasOneUse());
 
-      DeallocQubitOp dealloc = dyn_cast<DeallocQubitOp>(*q.getUsers().begin());
-      assert(dealloc);
+    //   DeallocQubitOp dealloc =
+    //   dyn_cast<DeallocQubitOp>(*q.getUsers().begin()); assert(dealloc);
 
-      rewriter.eraseOp(dealloc);
-    }
+    //   rewriter.eraseOp(dealloc);
+    // }
 
     return WalkResult::advance();
   });
