@@ -14,6 +14,7 @@ build:
   apt_packages:
     #    - clang
     #    - cmake
+    - llvm-toolchain-19
     - graphviz
     - inkscape
   #    - lld
@@ -37,23 +38,10 @@ build:
       - asdf global uv latest
       - uv tool install cmake
       - uv tool install ninja
-      - wget https://apt.llvm.org/llvm.sh -O llvm_install.sh
-      - chmod +x llvm_install.sh
-      - >
-        if llvm_install.sh 20; then
-          apt install libmlir-20-dev \
-          mlir-20-tools \
-          clang-20 \
-          clang-tools-20 \
-          || exit 1
-        else
-          echo "Installation from script failed."
-          exit 1
-        fi
-      - export CC=clang-20
-      - export CXX=clang++-20
-      - export MLIR_DIR=/usr/lib/llvm-20/lib/cmake/mlir
-      - export LLVM_DIR=/usr/lib/llvm-20/lib/cmake/llvm
+      - export CC=clang-19
+      - export CXX=clang++-19
+      - export MLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir
+      - export LLVM_DIR=/usr/lib/llvm-19/lib/cmake/llvm
       # Set up MLIR
       #      - git clone https://github.com/llvm/llvm-project.git
       #      - mkdir llvm-project/build
