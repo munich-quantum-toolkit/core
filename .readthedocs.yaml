@@ -41,7 +41,7 @@ build:
       - export MLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir
       - export LLVM_DIR=/usr/lib/llvm-19/lib/cmake/llvm
       # Build the MLIR documentation
-      - uvx cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_MLIR=ON
+      - uvx cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_MLIR=ON -DMLIR_DIR=$MLIR_DIR -DLLVM_DIR=$LLVM_DIR
       - uvx cmake --build build --target mlir-doc
     build:
       html:
