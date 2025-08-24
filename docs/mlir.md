@@ -22,15 +22,3 @@ The content is not yet complete and subject to change.
 Contributions are welcome.
 See the [contribution guidelines](contributing.md) for more information.
 :::
-
-## FAQ
-
-### How to print the textual representation of an operation?
-
-During debugging, it can be handy to dump the textual representation of an operation to stdout.
-This can be done using the `dump` method of the operation either in the evaluation field of the debugger or in the code.
-It prints the textual representation of the operation to the standard output.
-
-```c++
-op->dump();
-```
