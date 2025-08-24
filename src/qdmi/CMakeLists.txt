@@ -41,7 +41,7 @@ if(NOT TARGET ${TARGET_NAME})
       PARENT_SCOPE)
 endif()
 
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-FoMaC)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-fomac)
 
 if(NOT TARGET ${TARGET_NAME})
   # Add FoMaC library
