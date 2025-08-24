@@ -1775,7 +1775,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
   std::vector<CliffordBlock> blocks;
   std::unordered_map<Qubit, std::size_t> lastNonClifford;
   std::size_t step = 0;
-  
+
   for (auto it = qc.begin(); it != qc.end(); ++it, ++step) {
     auto& op = *it;
     const bool isClif = op->isClifford();
