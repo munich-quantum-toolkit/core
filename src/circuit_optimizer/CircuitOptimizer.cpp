@@ -1625,18 +1625,28 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
   removeIdentities(qc);
 }
 
+/**
+ * @brief Block of Clifford operations
+ * @details This structure is used to collect Clifford operations that can be
+ * grouped together. It maintains the qubits that are part of the block
+ * and the qubits that are blocked by non-Clifford operations.
+ */
 struct CliffordBlock {
-  std::unordered_set<Qubit> blockQubits; // qubits currently in this block
-  std::unordered_set<Qubit> blocked;     // qubits blocked by barriers
-  std::unique_ptr<CompoundOperation> operations; // collected Clifford ops
+  std::unordered_set<Qubit> blockQubits;
+  std::unordered_set<Qubit> blocked;
+  std::unique_ptr<CompoundOperation> operations;
   std::unique_ptr<Operation>* position =
-      nullptr;                 // where we will emit this block
-  std::size_t logicalStep = 0; // logical step when position is set
+      nullptr;                
+  std::size_t logicalStep = 0;
 
   [[nodiscard]] bool empty() const noexcept {
     return !operations || operations->empty();
   }
 
+  /**
+   * @brief Check if this block is fully disabled by non-Clifford operations
+   *
+   */
   [[nodiscard]] bool fullyDisabled() const noexcept {
     if (blockQubits.empty()) {
       return false;
@@ -1645,7 +1655,11 @@ struct CliffordBlock {
         blockQubits, [this](const Qubit q) { return blocked.contains(q); });
   }
 
-  // Check if adding qubits used by gate would exceed maxBlockSize
+  /**
+   * @brief Check if adding qubits used by gate would exceed maxBlockSize
+   * @param used Qubits used by the gate
+   * @param maxBlockSize Maximum allowed block size
+   */
   [[nodiscard]] bool
   checkMaxBlockSize(const std::set<Qubit>& used,
                     const std::size_t maxBlockSize) const noexcept {
@@ -1661,13 +1675,20 @@ struct CliffordBlock {
     return true;
   }
 
-  // Check if qubits used by gate are blocked in this block
+  /**
+   * @brief Check if qubits used by gate are blocked in this block
+    * @param used Qubits used by the gate
+   */
   [[nodiscard]] bool checkBlocked(const std::set<Qubit>& used) const noexcept {
     return std::ranges::all_of(
         used, [this](const Qubit q) { return !blocked.contains(q); });
   }
 
-  // Checks if repostion is needed to keep block valids
+  /**
+   * @brief Check if repostion is needed to keep block valid
+   * @param used Qubits used by the gate
+   * @param lastNonClifford Map of qubits to last non-Clifford operation
+   */
   [[nodiscard]] bool
   checkRepositionNeeded(const std::set<Qubit>& used,
                         const std::unordered_map<Qubit, std::size_t>&
@@ -1682,8 +1703,17 @@ struct CliffordBlock {
     return required > logicalStep;
   }
 
-  // Append operation into block. If movePosition is true, re-position here
-  // otherwise we erase the current slot.
+  /**
+  * @brief Append operation into block
+  * @details Append operation into block. If movePosition is true, re-position here
+  * otherwise we erase the current slot.
+  * @param op Operation to add
+  * @param used Qubits used by the gate
+  * @param qc Quantum computation
+  * @param it Current iterator in quantum computation
+  * @param movePosition Whether to move the position of the block
+  * @param step Current logical step in the quantum computation
+  */
   void addOp(std::unique_ptr<Operation>& op, const std::set<Qubit>& used,
              QuantumComputation& qc, QuantumComputation::iterator& it,
              const bool movePosition, const std::size_t step) {
@@ -1712,7 +1742,9 @@ struct CliffordBlock {
     }
   }
 
-  // Collapse operation and reset block
+  /**
+   * @brief Collapse operation and reset block
+   */
   void finalize() {
     if (position == nullptr || empty()) {
       return;
@@ -1742,8 +1774,8 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
 
   std::vector<CliffordBlock> blocks;
   std::unordered_map<Qubit, std::size_t> lastNonClifford;
-
   std::size_t step = 0;
+  
   for (auto it = qc.begin(); it != qc.end(); ++it, ++step) {
     auto& op = *it;
     const bool isClif = op->isClifford();

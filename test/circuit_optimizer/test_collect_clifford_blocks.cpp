@@ -31,6 +31,30 @@ TEST(CliffordBlocks, singleGate) {
   EXPECT_EQ(qc.size(), 1);
 }
 
+TEST(CliffordBlocks, largerGatethenBlock) {
+  QuantumComputation qc(2);
+  qc.sx(0);
+  qc.h(0);
+  qc.cx(0, 1);
+  qc.x(1);
+
+  QuantumComputation qc2(2);
+  QuantumComputation op(2);
+  op.sx(0);
+  op.h(0);
+  qc2.emplace_back(op.asCompoundOperation());
+  qc2.cx(0, 1);
+  qc2.x(1);
+
+  std::cout << qc << "\n";
+  qc::CircuitOptimizer::collectCliffordBlocks(qc, 1);
+  std::cout << qc << "\n";
+  EXPECT_EQ(qc.size(), 3);
+  EXPECT_TRUE(qc.front()->isCompoundOperation());
+  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 2);
+  EXPECT_TRUE(qc == qc2);
+}
+
 TEST(CliffordBlocks, onlyCliffords1Qubit) {
   QuantumComputation qc(1);
   qc.sx(0);
