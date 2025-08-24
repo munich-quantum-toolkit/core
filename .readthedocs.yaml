@@ -14,7 +14,10 @@ build:
   apt_packages:
     #    - clang
     #    - cmake
-    - llvm-toolchain-19
+    - libmlir-19-dev
+    - mlir-19-tools
+    - clang-19
+    - clang-tools-19
     - graphviz
     - inkscape
   #    - lld
