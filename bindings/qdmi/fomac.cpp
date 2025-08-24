@@ -11,7 +11,6 @@
 // These includes must be the first includes for any bindings code
 // clang-format off
 #include "qdmi/FoMaC.hpp"
-
 #include <qdmi/client.h>
 #include <pybind11/native_enum.h>
 #include <pybind11/pybind11.h>

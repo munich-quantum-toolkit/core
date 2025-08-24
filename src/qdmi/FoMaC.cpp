@@ -10,8 +10,6 @@
 
 #include "qdmi/FoMaC.hpp"
 
-#include "qdmi/Driver.hpp"
-
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -251,8 +249,11 @@ auto Device::getDurationScaleFactor() const -> double {
 auto Device::getMinAtomDistance() const -> uint64_t {
   return queryProperty<uint64_t>(QDMI_DEVICE_PROPERTY_MINATOMDISTANCE);
 }
-FoMaC::FoMaC() { qdmi::Driver::get().sessionAlloc(&session_); }
-FoMaC::~FoMaC() { qdmi::Driver::get().sessionFree(session_); }
+FoMaC::FoMaC() {
+  QDMI_session_alloc(&session_);
+  QDMI_session_init(session_);
+}
+FoMaC::~FoMaC() { QDMI_session_free(session_); }
 auto FoMaC::queryDevices() -> std::vector<Device> {
   const auto& qdmiDevices = get().queryProperty<std::vector<QDMI_Device>>(
       QDMI_SESSION_PROPERTY_DEVICES);
