@@ -162,7 +162,6 @@ TEST(CliffordBlocks, nonCliffordSingleQubit) {
   EXPECT_TRUE(qc == qc2);
 }
 
-
 TEST(CliffordBlocks, SingleNonClifford3Qubit) {
   QuantumComputation qc(3);
   qc.h(0);
@@ -315,7 +314,6 @@ TEST(CliffordBlocks, threeQubitnonClifford) {
   EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.back()).size(), 2);
   EXPECT_TRUE(qc == qc2);
 }
-
 
 TEST(CliffordBlocks, unprocessableAtBegin) {
   QuantumComputation qc(1);
