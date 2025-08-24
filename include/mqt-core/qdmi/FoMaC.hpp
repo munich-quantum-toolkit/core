@@ -246,7 +246,7 @@ class Operation {
       std::string value(size - 1, '\0');
       checkError(QDMI_device_query_operation_property(
                      device_, operation_, sites.size(), qdmiSites.data(),
-                     params.size(), params.data(), prop, 0, value.data(),
+                     params.size(), params.data(), prop, size, value.data(),
                      nullptr),
                  "Querying " + toString(prop));
       return value;
@@ -259,7 +259,7 @@ class Operation {
       T value(size / sizeof(typename T::value_type));
       checkError(QDMI_device_query_operation_property(
                      device_, operation_, sites.size(), qdmiSites.data(),
-                     params.size(), params.data(), prop, 0, value.data(),
+                     params.size(), params.data(), prop, size, value.data(),
                      nullptr),
                  "Querying " + toString(prop));
       return value;
@@ -267,7 +267,8 @@ class Operation {
       T value{};
       checkError(QDMI_device_query_operation_property(
                      device_, operation_, sites.size(), qdmiSites.data(),
-                     params.size(), params.data(), prop, 0, &value, nullptr),
+                     params.size(), params.data(), prop, sizeof(T), &value,
+                     nullptr),
                  "Querying " + toString(prop));
       return value;
     }
