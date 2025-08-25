@@ -6,7 +6,7 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file --cancel-consecutive-inverses | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --gate-cancellation | FileCheck %s
 
 // -----
 // This test checks if single-qubit consecutive self-inverses are canceled correctly.
@@ -208,6 +208,141 @@ module {
     %reg_5 = "mqtopt.insertQubit"(%reg_4, %q1_2) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
     %reg_6 = "mqtopt.insertQubit"(%reg_5, %q02_1#1) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
     "mqtopt.deallocQubitRegister"(%reg_6) : (!mqtopt.QubitRegister) -> ()
+    return
+  }
+}
+
+
+// -----
+// This test checks if a single identity operation is removed correctly.
+
+module {
+  // CHECK-LABEL: func @testRemoveSingleIdentity()
+  func.func @testRemoveSingleIdentity() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+
+    // ========================== Check for operations that should not be canceled ==========================
+    // CHECK: %[[Q0_1:.*]] = mqtopt.x() %[[Q0_0]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_3:.*]] = mqtopt.z() %[[Q0_1]] : !mqtopt.Qubit
+
+    // ========================== Check for operations that should be canceled ==============================
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.i() %[[ANY:.*]] : !mqtopt.Qubit
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_3]]
+
+    %q0_0 = mqtopt.allocQubit
+
+    %q0_1 = mqtopt.x() %q0_0 : !mqtopt.Qubit
+    %q0_2 = mqtopt.i() %q0_1 : !mqtopt.Qubit
+    %q0_3 = mqtopt.z() %q0_2 : !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_3
+    return
+  }
+}
+
+
+// -----
+// This test checks if consecutive identity operations are removed correctly.
+
+module {
+  // CHECK-LABEL: func @testRemoveConsecutiveIdentities()
+  func.func @testRemoveConsecutiveIdentities() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+
+    // ========================== Check for operations that should not be canceled ==========================
+    // CHECK: %[[Q0_1:.*]] = mqtopt.x() %[[Q0_0]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_7:.*]] = mqtopt.z() %[[Q0_1]] : !mqtopt.Qubit
+
+    // ========================== Check for operations that should be canceled ==============================
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.i() %[[ANY:.*]] : !mqtopt.Qubit
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_7]]
+
+    %q0_0 = mqtopt.allocQubit
+
+    %q0_1 = mqtopt.x() %q0_0 : !mqtopt.Qubit
+    %q0_2 = mqtopt.i() %q0_1 : !mqtopt.Qubit
+    %q0_3 = mqtopt.i() %q0_2 : !mqtopt.Qubit
+    %q0_4 = mqtopt.i() %q0_3 : !mqtopt.Qubit
+    %q0_5 = mqtopt.i() %q0_4 : !mqtopt.Qubit
+    %q0_6 = mqtopt.i() %q0_5 : !mqtopt.Qubit
+    %q0_7 = mqtopt.z() %q0_6 : !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_7
+    return
+  }
+}
+
+
+// -----
+// This test checks if controlled identity operations are removed correctly.
+
+module {
+  // CHECK-LABEL: func @testRemoveControlledIdentities()
+  func.func @testRemoveControlledIdentities() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
+
+    // ========================== Check for operations that should not be canceled ==========================
+    // CHECK: %[[Q0_1:.*]] = mqtopt.x() %[[Q0_0]] : !mqtopt.Qubit
+
+    // ========================== Check for operations that should be canceled ==============================
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.i() %[[ANY:.*]] ctrl %[[ANY:.*]] : !mqtopt.Qubit
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_1]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_0]]
+
+    %q0_0 = mqtopt.allocQubit
+    %q1_0 = mqtopt.allocQubit
+
+    %q0_1 = mqtopt.x() %q0_0 : !mqtopt.Qubit
+    %q1_1, %q0_2 = mqtopt.i() %q1_0 ctrl %q0_1: !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_2
+    mqtopt.deallocQubit %q1_1
+    return
+  }
+}
+
+
+// -----
+// This test checks if all identity operations are removed correctly.
+
+module {
+  // CHECK-LABEL: func @testRemoveAllIdentities()
+  func.func @testRemoveAllIdentities() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q2_0:.*]] = mqtopt.allocQubit
+
+    // ========================== Check for operations that should not be canceled ==========================
+    // CHECK: %[[Q0_1:.*]] = mqtopt.x() %[[Q0_0]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_4:.*]] = mqtopt.z() %[[Q1_0]] : !mqtopt.Qubit
+
+    // ========================== Check for operations that should be canceled ==============================
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.i() %[[ANY:.*]] : !mqtopt.Qubit
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_1]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_4]]
+    // CHECK: mqtopt.deallocQubit %[[Q2_0]]
+
+    %q0_0 = mqtopt.allocQubit
+    %q1_0 = mqtopt.allocQubit
+    %q2_0 = mqtopt.allocQubit
+
+    %q0_1 = mqtopt.x() %q0_0 : !mqtopt.Qubit
+    %q1_1, %q0_2 = mqtopt.i() %q1_0 ctrl %q0_1: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_3 = mqtopt.i() %q0_2 : !mqtopt.Qubit
+
+    %q1_2 = mqtopt.i() %q1_1 : !mqtopt.Qubit
+    %q1_3 = mqtopt.i() %q1_2 : !mqtopt.Qubit
+    %q1_4 = mqtopt.z() %q1_3 : !mqtopt.Qubit
+    %q2_1, %q1_5, %q0_4 = mqtopt.i() %q2_0 ctrl %q1_4, %q0_3: !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_4
+    mqtopt.deallocQubit %q1_5
+    mqtopt.deallocQubit %q2_1
     return
   }
 }
