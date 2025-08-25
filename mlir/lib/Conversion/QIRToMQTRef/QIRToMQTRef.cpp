@@ -165,16 +165,44 @@ struct ConvertQIRIntToPtr final
   matchAndRewrite(LLVM::IntToPtrOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
 
-    // get the int value of the operation
     auto constantOp = op->getOperand(0).getDefiningOp<LLVM::ConstantOp>();
-    const auto value = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
+    auto isQubitPtr = false;
+    // check if the ptr is used in any functions other than for result
+    // recording
+    for (auto* userOp : op->getResult(0).getUsers()) {
+      if (auto callOp = dyn_cast<LLVM::CallOp>(userOp)) {
+        const auto fnName = callOp.getCallee();
+        if (fnName != "__quantum__rt__result_record_output" &&
+            fnName != "__quantum__qis__mz__body") {
+          isQubitPtr = true;
+          break;
+        }
+      }
+    }
 
-    // replace the int to ptr operation with static qubit
-    const auto newOp = rewriter.replaceOpWithNewOp<ref::QubitOp>(
-        op, ref::QubitType::get(rewriter.getContext()), value);
+    // if yes the IntToPtr op should be converted to a static qubit
+    if (isQubitPtr) {
+      // get the int value of the operation
+      const auto value = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
 
-    // update the operand map
-    getState().operandMap.try_emplace(op->getResult(0), newOp->getOpResult(0));
+      // replace the int to ptr operation with static qubit
+      const auto newOp = rewriter.replaceOpWithNewOp<ref::QubitOp>(
+          op, ref::QubitType::get(rewriter.getContext()), value);
+
+      // update the operand map
+      getState().operandMap.try_emplace(op->getResult(0),
+                                        newOp->getOpResult(0));
+    }
+    // otherwise delete the operation
+    else {
+      rewriter.eraseOp(op);
+    }
+
+    // erase the constantOp for the operation if op was the only user
+    if (std::distance(constantOp->getUses().begin(),
+                      constantOp->getUses().end()) == 1) {
+      rewriter.eraseOp(constantOp);
+    }
 
     return success();
   }
