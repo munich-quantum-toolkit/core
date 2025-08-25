@@ -38,18 +38,18 @@ func.func @bar() {
   %3 = mqtopt.y() %2 : !mqtopt.Qubit
   %4 = mqtopt.z() %3 : !mqtopt.Qubit
 
-  // CHECK: %[[CNOT:.*]]:2 = quantum.custom "CNOT"() %[[Q1]], %[[Z]] : !quantum.bit, !quantum.bit
-  // CHECK: %[[CY:.*]]:2 = quantum.custom "CY"() %[[CNOT]]#0, %[[CNOT]]#1 : !quantum.bit, !quantum.bit
-  // CHECK: %[[CZ:.*]]:2 = quantum.custom "CZ"() %[[CY]]#0, %[[CY]]#1 : !quantum.bit, !quantum.bit
-  // CHECK: %[[SW0:.*]]:2 = quantum.custom "SWAP"() %[[CZ]]#0, %[[CZ]]#1 : !quantum.bit, !quantum.bit
-  // CHECK: %[[TOF:.*]]:3 = quantum.custom "Toffoli"() %[[Q2]], %[[SW0]]#1, %[[SW0]]#0 : !quantum.bit, !quantum.bit, !quantum.bit
+  // CHECK: %[[CNOT_T:.*]], %[[CNOT_C:.*]] = quantum.custom "CNOT"() %[[Z]] ctrls(%[[Q1]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+  // CHECK: %[[CY_T:.*]], %[[CY_C:.*]] = quantum.custom "CY"() %[[CNOT_T]] ctrls(%[[CNOT_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+  // CHECK: %[[CZ_T:.*]], %[[CZ_C:.*]] =  quantum.custom "CZ"() %[[CY_T]] ctrls(%[[CY_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+  // CHECK: %[[SW0:.*]]:2 = quantum.custom "SWAP"() %[[CZ_C]], %[[CZ_T]] : !quantum.bit, !quantum.bit
+  // CHECK: %[[TOF_T:.*]], %[[TOF_C:.*]]:2 = quantum.custom "Toffoli"() %[[SW0]]#0 ctrls(%[[Q2]], %[[SW0]]#1) ctrlvals(%true{{.*}}, %true{{.*}}) : !quantum.bit ctrls !quantum.bit, !quantum.bit
     %5, %6 = mqtopt.x() %4 ctrl %out_qubit_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
     %7, %8 = mqtopt.y() %5 ctrl %6 : !mqtopt.Qubit ctrl !mqtopt.Qubit
     %9, %10 = mqtopt.z() %7 ctrl %8 : !mqtopt.Qubit ctrl !mqtopt.Qubit
     %11, %12 = mqtopt.swap() %10, %9 : !mqtopt.Qubit, !mqtopt.Qubit
     %13, %14, %15 = mqtopt.x() %11 ctrl %out_qubit_3, %12 : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
 
-  // CHECK: %[[RX:.*]] = quantum.custom "RX"(%cst) %[[TOF]]#2 : !quantum.bit
+  // CHECK: %[[RX:.*]] = quantum.custom "RX"(%cst) %[[TOF_T]] : !quantum.bit
   // CHECK: %[[RY:.*]] = quantum.custom "RY"(%cst) %[[RX]] : !quantum.bit
   // CHECK: %[[RZ:.*]] = quantum.custom "RZ"(%cst) %[[RY]] : !quantum.bit
   // CHECK: %[[PS:.*]] = quantum.custom "PhaseShift"(%cst) %[[RZ]] : !quantum.bit
@@ -58,16 +58,16 @@ func.func @bar() {
   %18 = mqtopt.rz(%cst) %17 : !mqtopt.Qubit
   %19 = mqtopt.p(%cst) %18 : !mqtopt.Qubit
 
-  // CHECK: %[[CRX:.*]]:2 = quantum.custom "CRX"(%cst) %[[TOF]]#0, %[[PS]] : !quantum.bit, !quantum.bit
-  // CHECK: %[[CRY:.*]]:2 = quantum.custom "CRY"(%cst) %[[CRX]]#0, %[[CRX]]#1 : !quantum.bit, !quantum.bit
-  // CHECK: %[[CRZ:.*]]:2 = quantum.custom "CRZ"(%cst) %[[CRY]]#0, %[[CRY]]#1 : !quantum.bit, !quantum.bit
-  // CHECK: %[[CPS:.*]]:2 = quantum.custom "ControlledPhaseShift"(%cst) %[[CRZ]]#0, %[[CRZ]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[CRX_T:.*]], %[[CRX_C:.*]] = quantum.custom "CRX"(%cst) %[[PS]] ctrls(%[[TOF_C]]#0) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+  // CHECK: %[[CRY_T:.*]], %[[CRY_C:.*]] = quantum.custom "CRY"(%cst) %[[CRX_T]] ctrls(%[[CRX_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+  // CHECK: %[[CRZ_T:.*]], %[[CRZ_C:.*]] = quantum.custom "CRZ"(%cst) %[[CRY_T]] ctrls(%[[CRY_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+  // CHECK: %[[CPS_T:.*]], %[[CPS_C:.*]] = quantum.custom "ControlledPhaseShift"(%cst) %[[CRZ_T]] ctrls(%[[CRZ_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
   %200, %201 = mqtopt.rx(%cst) %19 ctrl %14 : !mqtopt.Qubit ctrl !mqtopt.Qubit
   %210, %211 = mqtopt.ry(%cst) %200 ctrl %201 : !mqtopt.Qubit ctrl !mqtopt.Qubit
   %220, %221 = mqtopt.rz(%cst) %210 ctrl %211 : !mqtopt.Qubit ctrl !mqtopt.Qubit
   %230, %231 = mqtopt.p(%cst) %220 ctrl %221 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-  // CHECK: %[[XY:.*]]:2 = quantum.custom "IsingXY"(%cst, %cst) %[[CPS]]#1, %[[CPS]]#0 : !quantum.bit, !quantum.bit
+  // CHECK: %[[XY:.*]]:2 = quantum.custom "IsingXY"(%cst, %cst) %[[CPS_T]], %[[CPS_C]] : !quantum.bit, !quantum.bit
   // CHECK: %[[H1:.*]] = quantum.custom "Hadamard"() %[[XY]]#1 : !quantum.bit
   // CHECK: %[[RZZ:.*]]:2 = quantum.custom "IsingZZ"(%cst) %[[XY]]#0, %[[H1]] : !quantum.bit, !quantum.bit
   // CHECK: %[[H2:.*]] = quantum.custom "Hadamard"() %[[RZZ]]#1 : !quantum.bit
@@ -80,9 +80,9 @@ func.func @bar() {
 
   // CHECK: %[[PI2:.*]] = arith.constant 1.5707963267948966 : f64
   // First, check the explicit Z–Y–Z sequence on some input qubit.
-  // CHECK: %[[RZ1_OUT:.*]] = quantum.custom "RZ"(%[[PI2]]) %[[C2]]#0 : !quantum.bit
-  // CHECK: %[[RY_OUT:.*]]  = quantum.custom "RY"(%[[PI2]]) %[[RZ1_OUT]] : !quantum.bit
-  // CHECK: %[[RZ2_OUT:.*]] = quantum.custom "RZ"(%[[PI2]]) %[[RY_OUT]] adj : !quantum.bit
+  // CHECK: %[[RZ1_OUT:.*]] = quantum.custom "RZ"() %[[C2]]#0 : !quantum.bit
+  // CHECK: %[[RY_OUT:.*]]  = quantum.custom "RY"() %[[RZ1_OUT]] : !quantum.bit
+  // CHECK: %[[RZ2_OUT:.*]] = quantum.custom "RZ"() %[[RY_OUT]] adj : !quantum.bit
   %v = mqtopt.v() %dcx0 : !mqtopt.Qubit
 
   // CHECK: %[[NPI2:.*]] = arith.constant -1.5707963267948966 : f64
