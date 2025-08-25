@@ -26,7 +26,7 @@ def MQTOptDialect : Dialect {
     // The dialect name used in the MLIR file to prefix operations.
     let name = "mqtopt";
 
-    let summary = "The MQT optimization (mqtopt) dialect.";
+    let summary = "The MQT optimization (`mqtopt`) dialect.";
 
     let description = [{
         This dialect is using value semantics for qubits. This means that
@@ -47,9 +47,8 @@ def MQTOptDialect : Dialect {
         optimizations. Hence, the existing classical compiler optimizations can
         easier be reused for quantum programs.
 
-        For more information, see the paper "QIRO:A Static Single Assignment
-        based Quantum Program Representation for Optimization"
-        (https://doi.org/10.1145/3491247)
+        For more information, see the paper ["QIRO: A Static Single Assignment
+        based Quantum Program Representation for Optimization"](https://doi.org/10.1145/3491247).
 
         The `mqtopt` dialect supports dynamic as well as static qubit
         addressing.
@@ -75,11 +74,21 @@ class MQTOptType<string name, string typeMnemonic, list<Trait> traits = []>
 }
 
 def QubitType : MQTOptType<"Qubit", "Qubit"> {
-    let summary = "A value-semantic (dynamic or static) qubit (state).";
+    let summary = "value-semantic qubit";
+
+    let description = [{
+        The value-semantic qubit corresponds to a state.
+        It can be static or dynamic.
+    }];
 }
 
 def QregType : MQTOptType<"QubitRegister", "QubitRegister"> {
-    let summary = "An array of value-semantic qubits (i.e. quantum register).";
+    let summary = "array of value-semantic qubits";
+
+    let description = [{
+        Each value-semantic qubit corresponds to a state.
+        The qubits can be static or dynamic.
+    }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -126,10 +135,10 @@ def MeasureOp : GateOp<"measure", []> {
     let summary = "A measure operation";
 
     let description = [{
-        This class represents a measure operation. It takes a single qubit as
-        input and returns a qubit and a bit. After the measurement, the returned
-        qubit is either in the state |0> or |1> and is indicated by the returned
-        bit.
+        This class represents a measure operation.
+        It takes a single qubit as input and returns a qubit and a bit.
+        After the measurement, the returned qubit is in state "0" or "1".
+        The value of the state is indicated by the returned bit.
 
         Example:
         ```mlir
@@ -151,8 +160,8 @@ def ResetOp : GateOp<"reset", []> {
     let summary = "A reset operation";
 
     let description = [{
-        This class represents a reset operation. It takes a single qubit as
-        input and returns the same qubit after it was reset to the value |0>.
+        This class represents a reset operation.
+        It takes a single qubit as input and returns the same qubit after its state was reset to "0".
 
         Example:
         ```mlir
@@ -175,16 +184,16 @@ def AllocQubitOp : ResourceOp<"allocQubit"> {
     let summary = "Allocates a single qubit";
 
     let description = [{
-        Allocates a single qubit in the |0> state.
+        Allocates a single qubit in the "0" state.
         The qubit can be used in operations after allocation.
         It must be deallocated with the `deallocQubit` operation.
 
-        ### Example (custom syntax)
+        Example (custom syntax):
         ```mlir
         %q = mqtopt.allocQubit
         ```
 
-        ### Example (generic syntax)
+        Example (generic syntax):
         ```mlir
         %q = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
         ```
@@ -205,14 +214,17 @@ def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
         size can either be specified during runtime as an operand or as an
         attribute when the size is known at compile time. Before the qubits in
         the register can be used, they need to be extracted from the register
-        with the extract operation.
+        using the `extractQubit` operation.
 
-        Example:
+        Example (size as argument):
+        ```mlir
+        %c0_i64 = arith.constant 2 : i64
+        %0 = "mqtopt.allocQubitRegister"(%c0_i64) : (i64) -> !mqtopt.QubitRegister
+        ```
+
+        Example (size as attribute):
         ```mlir
         %0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-
-        %c0_i64 = arith.constant 2 : i64
-        %1 = "mqtopt.allocQubitRegister"(%c0_i64) : (i64) -> !mqtopt.QubitRegister
         ```
     }];
 
@@ -234,14 +246,14 @@ def DeallocQubitOp : ResourceOp<"deallocQubit"> {
         `allocQubit` operation. After this operation, the qubit is no longer
         valid and cannot be used in further operations.
 
-        ### Example (custom syntax)
+        Example (custom syntax):
         ```mlir
         mqtopt.deallocQubit %q
         ```
 
-        ### Example (generic syntax)
+        Example (generic syntax):
         ```mlir
-        "mqtopt.deallocQubit"(%0) : (!mqtopt.Qubit) -> ()
+        "mqtopt.deallocQubit"(%q) : (!mqtopt.Qubit) -> ()
         ```
 
         Both are equivalent; the first form is enabled by this op's `assemblyFormat`.
@@ -262,7 +274,7 @@ def DeallocOp : ResourceOp<"deallocQubitRegister"> {
         this property is not enforced by the dialect.
 
         Example:
-        ```
+        ```mlir
         "mqtopt.deallocQubitRegister"(%0) : (!mqtopt.QubitRegister) -> ()
         ```
     }];
@@ -282,10 +294,10 @@ def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
         qubit is removed from the register and can be used in operations. A gap
         is left in the register that can be filled with the insert operation.
 
-        Extract:
-
+        Example:
+        ```mlir
         %out_qreg, %out_qubit = "mqtopt.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-
+        ```
     }];
 
     let arguments = (ins
@@ -330,13 +342,14 @@ def QubitOp : ResourceOp<"qubit"> {
         The `mqtopt.qubit` operation produces an SSA value from the given index
         to a static (hardware) qubit.
 
-        Example:
+        Example (custom syntax):
         ```mlir
-        // Static (hardware) qubit with address '0'.
-        %q = "mqtopt.qubit"() <{index = 0 : i64}> : () -> !mqtopt.Qubit
-
-        // Using custom assembly.
         %q = mqtopt.qubit 0
+        ```
+
+        Example (generic syntax):
+        ```mlir
+        %q = "mqtopt.qubit"() <{index = 0 : i64}> : () -> !mqtopt.Qubit
         ```
     }];
     let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);

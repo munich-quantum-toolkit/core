@@ -10,4 +10,4 @@ set(LLVM_TARGET_DEFINITIONS MQTOptToMQTRef.td)
 mlir_tablegen(MQTOptToMQTRef.h.inc -gen-pass-decls -name MQTOptToMQTRef)
 add_public_tablegen_target(MQTOptToMQTRefIncGen)
 
-add_mlir_doc(MQTOptToMQTRef MQTOptToMQTRef Conversions/ -gen-pass-doc)
+add_mlir_doc(MQTOptToMQTRef MLIRMQTOptToMQTRef Conversions/ -gen-pass-doc)

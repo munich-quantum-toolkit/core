@@ -26,14 +26,14 @@ def MQTRefDialect : Dialect {
     // The dialect name used in the MLIR file to prefix operations.
     let name = "mqtref";
 
-    let summary = "The MQT reference semantics (mqtref) dialect.";
+    let summary = "The MQT reference semantics (`mqtref`) dialect.";
 
     let description = [{
         This dialect uses memory semantics to represent and work with qubits.
         Similar to many existing quantum programming languages, operations can
         just be applied to qubits without needing to track state updates.
 
-        This dialect is designed as a 'compatibility' dialect that simplifies
+        This dialect is designed as a "compatibility" dialect that simplifies
         translations from and to existing languages such as QASM or QIR.
         Its optimization capabilities are more limited compared to the
         `mqtopt` dialect, which is designed for optimization.
@@ -62,11 +62,11 @@ class MQTRefType<string name, string typeMnemonic, list<Trait> traits = []>
 }
 
 def QubitType : MQTRefType<"Qubit", "Qubit"> {
-    let summary = "A (dynamic or static) qubit reference.";
+    let summary = "qubit reference";
 }
 
 def QregType : MQTRefType<"QubitRegister", "QubitRegister"> {
-    let summary = "An array of qubit references.";
+    let summary = "array of qubit references";
 }
 
 //===----------------------------------------------------------------------===//
@@ -107,9 +107,10 @@ def MeasureOp : GateOp<"measure", []> {
     let summary = "A measure operation";
 
     let description = [{
-        This class represents a measure operation. It takes a single qubit as
-        input and returns a bit. After the measurement, the referenced qubit
-        is either in the state |0> or |1> and is indicated by the returned bit.
+        This class represents a measure operation.
+        It takes a single qubit as input and returns a bit.
+        After the measurement, the referenced qubit is in state "0" or "1".
+        The value of the state is indicated by the returned bit.
 
         Example:
         ```mlir
@@ -134,8 +135,8 @@ def ResetOp : GateOp<"reset", []> {
     let summary = "A reset operation";
 
     let description = [{
-        This class represents a reset operation. It takes a single qubit as
-        input and and resets its value |0>.
+        This class represents a reset operation.
+        It takes a single qubit as input and and resets its state to "0".
 
         Example:
         ```mlir
@@ -156,16 +157,16 @@ def AllocQubitOp : ResourceOp<"allocQubit"> {
     let summary = "Allocates a single qubit";
 
     let description = [{
-        Allocates a single qubit in the |0> state.
+        Allocates a single qubit in the "0" state.
         The qubit can be used in operations after allocation.
         It must be deallocated with the `deallocQubit` operation.
 
-        ### Example (custom syntax)
+        Example (custom syntax):
         ```mlir
         %q = mqtref.allocQubit
         ```
 
-        ### Example (generic syntax)
+        Example (generic syntax):
         ```mlir
         %q = "mqtref.allocQubit"() : () -> !mqtref.Qubit
         ```
@@ -186,14 +187,17 @@ def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
         size can either be specified during runtime as an operand or as an
         attribute when the size is known at compile time. Before the qubits in
         the register can be used, they need to be extracted from the register
-        with the extract operation.
+        with the `extractQubit` operation.
 
-        Example:
+        Example (size as argument):
+        ```mlir
+        %c0_i64 = arith.constant 2 : i64
+        %0 = "mqtref.allocQubitRegister"(%c0_i64) : (i64) -> !mqtref.QubitRegister
+        ```
+
+        Example (size as attribute):
         ```mlir
         %0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-
-        %c0_i64 = arith.constant 2 : i64
-        %1 = "mqtref.allocQubitRegister"(%c0_i64) : (i64) -> !mqtref.QubitRegister
         ```
     }];
 
@@ -215,14 +219,14 @@ def DeallocQubitOp : ResourceOp<"deallocQubit"> {
         `allocQubit` operation. After this operation, the qubit is no longer
         valid and cannot be used in further operations.
 
-        ### Example (custom syntax)
+        Example (custom syntax):
         ```mlir
         mqtref.deallocQubit %q
         ```
 
-        ### Example (generic syntax)
+        Example (generic syntax):
         ```mlir
-        "mqtref.deallocQubit"(%0) : (!mqtref.Qubit) -> ()
+        "mqtref.deallocQubit"(%q) : (!mqtref.Qubit) -> ()
         ```
 
         Both are equivalent; the first form is enabled by this op's `assemblyFormat`.
@@ -284,13 +288,14 @@ def QubitOp : ResourceOp<"qubit"> {
         The `mqtref.qubit` operation produces an SSA value from the given index
         to a static (hardware) qubit.
 
-        Example:
+        Example (custom syntax):
         ```mlir
-        // Static (hardware) qubit with address '0'.
-        %q = "mqtref.qubit"() <{index = 0 : i64}> : () -> !mqtref.Qubit
-
-        // Using custom assembly.
         %q = mqtref.qubit 0
+        ```
+
+        Example (generic syntax):
+        ```mlir
+        %q = "mqtref.qubit"() <{index = 0 : i64}> : () -> !mqtref.Qubit
         ```
     }];
     let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);

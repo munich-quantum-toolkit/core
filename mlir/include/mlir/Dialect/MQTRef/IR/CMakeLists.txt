@@ -13,4 +13,4 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../../Common/IR/StdOps.td.inc
 add_mlir_dialect(MQTRefOps mqtref)
 add_mlir_interface(MQTRefInterfaces)
 add_mlir_doc(MQTRefOps MLIRMQTRefDialect Dialects/ -gen-dialect-doc)
-add_mlir_doc(MQTRefInterfaces MLIRMQTRefInterfaces Dialects/ -gen-op-interface-docs)
+add_mlir_doc(MQTRefInterfaces MLIRMQTRefInterfaces Dialects/ -gen-op-interface-docs -dialect=mqtref)
