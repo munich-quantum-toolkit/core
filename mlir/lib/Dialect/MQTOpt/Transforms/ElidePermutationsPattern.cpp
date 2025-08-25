@@ -27,15 +27,13 @@ namespace mqt::ir::opt {
 /**
  * @brief This pattern attempts to remove SWAP gates by re-ordering qubits.
  */
-struct ElidePermutationsPattern final
-    : mlir::OpRewritePattern<SWAPOp> {
+struct ElidePermutationsPattern final : mlir::OpRewritePattern<SWAPOp> {
 
   explicit ElidePermutationsPattern(mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
   mlir::LogicalResult
-  matchAndRewrite(SWAPOp op,
-                  mlir::PatternRewriter& rewriter) const override {
+  matchAndRewrite(SWAPOp op, mlir::PatternRewriter& rewriter) const override {
     bool isControlledSwap = !op.getAllCtrlInQubits().empty();
     if (isControlledSwap) {
       return mlir::failure();
