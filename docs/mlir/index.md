@@ -25,6 +25,7 @@ See the [contribution guidelines](contributing.md) for more information.
 
 ```{toctree}
 :maxdepth: 1
+:caption: Table of Contents
 
 Conversions/index
 Dialects/index

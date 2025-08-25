@@ -3,8 +3,8 @@
 ```{toctree}
 :maxdepth: 1
 
-MLIRMQTOptDialect
-MLIRMQTOptInterfaces
-MLIRMQTRefDialect
-MLIRMQTRefInterfaces
+MQTOpt Dialect <MLIRMQTOptDialect>
+MQTOpt Interfaces <MLIRMQTOptInterfaces>
+MQTRef Dialect <MLIRMQTRefDialect>
+MQTRef Interfaces <MLIRMQTRefInterfaces>
 ```

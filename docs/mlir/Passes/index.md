@@ -3,6 +3,6 @@
 ```{toctree}
 :maxdepth: 1
 
-MLIRMQTOptPasses
-MLIRMQTRefPasses
+MQTOpt Passes <MLIRMQTOptPasses>
+MQTRef Passes <MLIRMQTRefPasses>
 ```
