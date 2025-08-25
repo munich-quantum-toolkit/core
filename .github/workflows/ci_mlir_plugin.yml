@@ -118,7 +118,45 @@ jobs:
           cmake -S . \
             -B "$BUILD_DIR" \
             -DLLVM_EXTERNAL_LIT=$(which lit) \
-            -DPython3_EXECUTABLE=$(which python)
+            -DPython3_EXECUTABLE=$(which python) \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      # Run clang-tidy on plugin code
+      - name: Run clang-tidy on plugin
+        working-directory: plugins/catalyst
+        run: |
+          BUILD_DIR=$(find build -type d -name Release | head -n1)
+          
+          # Check if compilation database exists
+          if [ ! -f "$BUILD_DIR/compile_commands.json" ]; then
+            echo "No compilation database found, skipping clang-tidy"
+            exit 0
+          fi
+          
+          # Find all C++ source files in the plugin
+          FILES=$(find lib include -name "*.cpp" -o -name "*.h" 2>/dev/null || true)
+          if [ -z "$FILES" ]; then
+            echo "No C++ files found to analyze"
+            exit 0
+          fi
+          
+          # Find Catalyst include directory
+          CATALYST_INCLUDE=$(find .venv -path "*/catalyst/include" -type d | head -n1)
+          if [ -z "$CATALYST_INCLUDE" ]; then
+            echo "Catalyst include directory not found, running without extra includes"
+            EXTRA_ARGS=""
+          else
+            echo "Found Catalyst includes at: $CATALYST_INCLUDE"
+            EXTRA_ARGS="--extra-arg=-I$CATALYST_INCLUDE"
+          fi
+          
+          echo "Running clang-tidy on plugin files..."
+          echo "$FILES" | xargs clang-tidy \
+            -p="$BUILD_DIR" \
+            --config-file=.clang-tidy \
+            --format-style=file \
+            $EXTRA_ARGS \
+            || echo "clang-tidy completed with warnings"
 
       # Run the MLIR LIT tests
       - name: Run LIT tests
