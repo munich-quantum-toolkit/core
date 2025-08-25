@@ -6,7 +6,6 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(MQTOptToMQTRef)
-add_subdirectory(MQTRefToMQTOpt)
-add_subdirectory(MQTRefToQIR)
-add_subdirectory(QIRToMQTRef)
+file(GLOB CONVERSION_SOURCES *.cpp)
+
+add_mlir_library(MQTRefToQIR ${CONVERSION_SOURCES} DEPENDS MQTRefToQIRIncGen)
