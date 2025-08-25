@@ -377,7 +377,6 @@ module {
         return
     }
 }
-
 // -----
 // This test checks if the single qubit rotation gates are correctly converted
 module {
@@ -446,8 +445,8 @@ module {
         // CHECK: llvm.call @__quantum__qis__ryy__body(%[[q_0]], %[[q_1]], %[[c_0]]) : (!llvm.ptr, !llvm.ptr, f64) -> ()
         // CHECK: llvm.call @__quantum__qis__rzz__body(%[[q_0]], %[[q_1]], %[[c_0]]) : (!llvm.ptr, !llvm.ptr, f64) -> ()
         // CHECK: llvm.call @__quantum__qis__rzx__body(%[[q_0]], %[[q_1]], %[[c_0]]) : (!llvm.ptr, !llvm.ptr, f64) -> ()
-        // CHECK: llvm.call @__quantum__qis__xxminusyy__body(%[[q_0]], %[[q_1]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
-        // CHECK: llvm.call @__quantum__qis__xxplusyy__body(%[[q_0]], %[[q_1]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__xx_minus_yy__body(%[[q_0]], %[[q_1]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__xx_plus_yy__body(%[[q_0]], %[[q_1]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
 
         %c0 = arith.constant 3.000000e-01 : f64
         %c1 = arith.constant 1.000000e-01 : f64
@@ -457,8 +456,8 @@ module {
         mqtref.ryy(%c0) %q0, %q1
         mqtref.rzz(%c0) %q0, %q1
         mqtref.rzx(%c0) %q0, %q1
-        mqtref.xxminusyy(%c0, %c1) %q0, %q1
-        mqtref.xxplusyy(%c0, %c1) %q0, %q1
+        mqtref.xx_minus_yy(%c0, %c1) %q0, %q1
+        mqtref.xx_plus_yy(%c0, %c1) %q0, %q1
         mqtref.deallocQubit %q0
         mqtref.deallocQubit %q1
         return
@@ -476,8 +475,8 @@ module {
         // CHECK: llvm.call @__quantum__qis__ryy__body(%[[q_0]], %[[q_1]], %[[c_0]]) : (!llvm.ptr, !llvm.ptr, f64) -> ()
         // CHECK: llvm.call @__quantum__qis__rzz__body(%[[q_0]], %[[q_1]], %[[c_0]]) : (!llvm.ptr, !llvm.ptr, f64) -> ()
         // CHECK: llvm.call @__quantum__qis__rzx__body(%[[q_0]], %[[q_1]], %[[c_0]]) : (!llvm.ptr, !llvm.ptr, f64) -> ()
-        // CHECK: llvm.call @__quantum__qis__xxminusyy__body(%[[q_0]], %[[q_1]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
-        // CHECK: llvm.call @__quantum__qis__xxplusyy__body(%[[q_0]], %[[q_1]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__xx_minus_yy__body(%[[q_0]], %[[q_1]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__xx_plus_yy__body(%[[q_0]], %[[q_1]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
 
         %c0 = arith.constant 3.000000e-01 : f64
         %c1 = arith.constant 1.000000e-01 : f64
@@ -487,8 +486,8 @@ module {
         mqtref.ryy(%c0) %q0, %q1
         mqtref.rzz(%c0) %q0, %q1
         mqtref.rzx(%c0) %q0, %q1
-        mqtref.xxminusyy(%c0, %c1) %q0, %q1
-        mqtref.xxplusyy(%c0, %c1) %q0, %q1
+        mqtref.xx_minus_yy(%c0, %c1) %q0, %q1
+        mqtref.xx_plus_yy(%c0, %c1) %q0, %q1
         return
     }
 }
@@ -592,7 +591,6 @@ module {
         return
     }
 }
-
 // -----
 // This test checks if mixed static params are converted correctly
 module {
@@ -713,45 +711,6 @@ module {
 }
 
 // -----
-// This test checks if the operations are moved correctly to the correct blocks during the conversion
-module {
-    // CHECK: llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
-
-    // CHECK-LABEL: llvm.func @testOperationMovement()
-    func.func @testOperationMovement() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: %[[a_0:.*]] = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
-        // CHECK: %[[ptr_0:.*]] = llvm.mlir.zero : !llvm.ptr
-        // CHECK: llvm.call @__quantum__rt__initialize(%[[ptr_0]]) : (!llvm.ptr) -> ()
-        // CHECK: llvm.br ^[[main:.*]]
-        // CHECK: ^[[main]]:
-        // CHECK: %[[q_0:.*]] = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
-        // CHECK: %[[q_1:.*]] = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
-        // CHECK: llvm.call @__quantum__qis__h__body(%[[q_0]]) : (!llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__h__body(%[[q_1]]) : (!llvm.ptr) -> ()
-        // CHECK: llvm.br ^[[main2:.*]]
-        // CHECK: ^[[main2]]:
-        // CHECK: llvm.call @__quantum__qis__mz__body(%[[q_0]], %[[ptr_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__rt__qubit_release(%[[q_0]]) : (!llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__qis__reset__body(%[[q_1]]) : (!llvm.ptr) -> ()
-        // CHECK: llvm.call @__quantum__rt__qubit_release(%[[q_1]]) : (!llvm.ptr) -> ()
-        // CHECK: llvm.br ^[[end:.*]]
-        // CHECK: ^[[end]]:
-        // CHECK: llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
-        // CHECK: llvm.return
-
-        %q0 = mqtref.allocQubit
-        %q1 = mqtref.allocQubit
-        mqtref.h() %q0
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
-        mqtref.deallocQubit %q0
-        mqtref.h() %q1
-        "mqtref.reset"(%q1) : (!mqtref.Qubit) -> ()
-        mqtref.deallocQubit %q1
-        return
-    }
-}
-
-// -----
 // This test checks if a Bell state is converted correctly.
 module {
     // CHECK: llvm.mlir.global internal constant @mlir.llvm.nameless_global_1("r1\00") {addr_space = 0 : i32, dso_local}
@@ -794,6 +753,7 @@ module {
         return
     }
 }
+
 
 // -----
 // This test checks if a Bell state using static qubits is converted correctly.

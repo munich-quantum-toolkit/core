@@ -118,7 +118,9 @@ public:
       {"ecr", "ECROp"}};
 
   inline static const llvm::StringMap<StringRef> DOUBLE_ROTATION_GATES = {
-      {"u2", "U2Op"}, {"xxminusyy", "XXminusYYOp"}, {"xxplusyy", "XXplusYYOp"}};
+      {"u2", "U2Op"},
+      {"xx_minus_yy", "XXminusYYOp"},
+      {"xx_plus_yy", "XXplusYYOp"}};
 
 private:
   LoweringState* state_;
