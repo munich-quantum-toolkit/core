@@ -39,6 +39,68 @@ namespace mqt::ir::conversions {
 using namespace mlir;
 using namespace mlir::arith;
 
+// Helper functions to reduce code duplication
+namespace {
+
+/// Helper struct to hold control qubit information
+struct ControlInfo {
+  SmallVector<Value> ctrlQubits;
+  SmallVector<Value> ctrlValues;
+};
+
+/// Extract and concatenate control qubits and create corresponding control
+/// values
+ControlInfo extractControlInfo(ValueRange posCtrlQubits,
+                               ValueRange negCtrlQubits,
+                               ConversionPatternRewriter& rewriter,
+                               Location loc) {
+  ControlInfo info;
+
+  // Concatenate controls: [pos..., neg...]  (preserve this order consistently)
+  info.ctrlQubits.reserve(posCtrlQubits.size() + negCtrlQubits.size());
+  info.ctrlQubits.append(posCtrlQubits.begin(), posCtrlQubits.end());
+  info.ctrlQubits.append(negCtrlQubits.begin(), negCtrlQubits.end());
+
+  if (info.ctrlQubits.empty()) {
+    return info;
+  }
+
+  // Create control values: 1 for positive controls, 0 for negative controls
+  Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                          /*width=*/1);
+  Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                           /*width=*/1);
+
+  info.ctrlValues.reserve(info.ctrlQubits.size());
+  info.ctrlValues.append(posCtrlQubits.size(), one);  // +controls => 1
+  info.ctrlValues.append(negCtrlQubits.size(), zero); // -controls => 0
+
+  return info;
+}
+
+/// Helper function to extract operands and control info - for more complex
+/// cases
+template <typename OpAdaptor> struct ExtractedOperands {
+  ValueRange inQubits;
+  ControlInfo ctrlInfo;
+};
+
+template <typename OpAdaptor>
+ExtractedOperands<OpAdaptor>
+extractOperands(OpAdaptor adaptor, ConversionPatternRewriter& rewriter,
+                Location loc) {
+  ValueRange inQubits = adaptor.getInQubits();
+  ValueRange posCtrlQubits = adaptor.getPosCtrlInQubits();
+  ValueRange negCtrlQubits = adaptor.getNegCtrlInQubits();
+
+  ControlInfo ctrlInfo =
+      extractControlInfo(posCtrlQubits, negCtrlQubits, rewriter, loc);
+
+  return {inQubits, ctrlInfo};
+}
+
+} // anonymous namespace
+
 class MQTOptToCatalystQuantumTypeConverter final : public TypeConverter {
 public:
   explicit MQTOptToCatalystQuantumTypeConverter(MLIRContext* ctx) {
@@ -227,61 +289,34 @@ struct ConvertMQTOptSimpleGate final : OpConversionPattern<MQTGateOp> {
       return success();
     }
 
-    // ---- Extract operands from the adaptor (already type-converted) ----
-    ValueRange inQubitsTargets = adaptor.getInQubits(); // targets only
-    ValueRange posCtrlQubitsValues = adaptor.getPosCtrlInQubits(); // +controls
-    ValueRange negCtrlQubitsValues = adaptor.getNegCtrlInQubits(); // -controls
-
-    // Concatenate controls: [pos..., neg...]  (preserve this order
-    // consistently)
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
-                         negCtrlQubitsValues.size());
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
+    // Extract operands and control information using helper function
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
 
     // Gate name may depend on number of controls
-    const StringRef gateName = getGateName(inCtrlQubits.size());
+    const StringRef gateName =
+        getGateName(extracted.ctrlInfo.ctrlQubits.size());
     if (gateName.empty()) {
       op->emitError() << "Unsupported controlled gate for op: "
                       << op->getName();
       return failure();
     }
 
-    // ---- Build ctrl-values (i1) matching the exact control order ----
-    Location loc = op.getLoc();
-    Type i1Ty = rewriter.getI1Type();
-
-    // Reuse the same constants; it's fine for a variadic segment to reference
-    // the same Value multiple times.
-    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                            /*width=*/1);
-    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                             /*width=*/1);
-
-    SmallVector<Value> inCtrlValues;
-    inCtrlValues.reserve(inCtrlQubits.size());
-    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
-    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
-
     // Sanity: lengths must match, or the op verifier will complain.
-    if (inCtrlQubits.size() != inCtrlValues.size()) {
+    if (extracted.ctrlInfo.ctrlQubits.size() !=
+        extracted.ctrlInfo.ctrlValues.size()) {
       op->emitError() << "control qubits and control values size mismatch";
       return failure();
     }
 
-    // ---- Create CustomOp using the convenience builder ----
-    // Signature: (gate, in_qubits, in_ctrl_qubits, in_ctrl_values, params,
-    // adjoint)
+    // Create CustomOp
     auto custom = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/gateName,
-        /*in_qubits=*/inQubitsTargets,
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_qubits=*/extracted.inQubits,
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/adaptor.getParams(),
-        /*adjoint=*/false // propagate if your MQT op has an adjoint flag
-    );
+        /*adjoint=*/false);
 
     // ---- Replace: CustomOp results are (out_qubits, out_ctrl_qubits) ----
     SmallVector<Value> replacements;
@@ -306,41 +341,21 @@ struct ConvertMQTOptAdjointGate final : OpConversionPattern<MQTGateOp> {
   LogicalResult
   matchAndRewrite(MQTGateOp op, typename MQTGateOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Extract operand(s) and attribute(s)
-    auto inQubitsValues = adaptor.getInQubits(); // excl. controls
-    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
-
-    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
-                                    posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
     // Get the base gate name and whether it is an adjoint version
     const auto& [gateName, adjoint] = getGateInfo<MQTGateOp>();
 
-    // ---- Build ctrl-values (i1) matching the exact control order ----
-    Location loc = op.getLoc();
-    Type i1Ty = rewriter.getI1Type();
+    // Extract control information
+    ControlInfo ctrlInfo =
+        extractControlInfo(adaptor.getPosCtrlInQubits(),
+                           adaptor.getNegCtrlInQubits(), rewriter, op.getLoc());
 
-    // Reuse the same constants; it's fine for a variadic segment to reference
-    // the same Value multiple times.
-    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                            /*width=*/1);
-    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                             /*width=*/1);
-
-    SmallVector<Value> inCtrlValues;
-    inCtrlValues.reserve(inCtrlQubits.size());
-    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
-    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
-
-    // Create the gate
+    // Create CustomOp with adjoint flag
     auto catalystOp = rewriter.create<catalyst::quantum::CustomOp>(
         op.getLoc(),
-        /*gate_name=*/gateName,
-        /*in_qubits=*/inQubitsValues,
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*gate=*/gateName,
+        /*in_qubits=*/adaptor.getInQubits(),
+        /*in_ctrl_qubits=*/ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/ctrlInfo.ctrlValues,
         /*params=*/adaptor.getParams(),
         /*adjoint=*/adjoint);
 
@@ -372,30 +387,8 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
   LogicalResult
   matchAndRewrite(opt::VOp op, opt::VOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Extract operand(s) and attribute(s)
-    auto inQubitsValues = adaptor.getInQubits(); // excl. controls
-    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
-
-    SmallVector<Value> inCtrlQubits(posCtrlQubitsValues.begin(),
-                                    posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
-    // ---- Build ctrl-values (i1) matching the exact control order ----
-    Location loc = op.getLoc();
-    Type i1Ty = rewriter.getI1Type();
-
-    // Reuse the same constants; it's fine for a variadic segment to reference
-    // the same Value multiple times.
-    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                            /*width=*/1);
-    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                             /*width=*/1);
-
-    SmallVector<Value> inCtrlValues;
-    inCtrlValues.reserve(inCtrlQubits.size());
-    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
-    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
+    // Extract operands and control information using helper function
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
 
     // V = RZ(π/2) RY(π/2) RZ(-π/2)
     auto pi2 = rewriter.create<ConstantOp>(op.getLoc(),
@@ -405,9 +398,9 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
         op.getLoc(),
         /*gate_name=*/"RZ",
-        /*in_qubits=*/inQubitsValues,
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_qubits=*/extracted.inQubits,
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/adaptor.getParams(),
         /*adjoint=*/false);
 
@@ -415,8 +408,8 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
         op.getLoc(),
         /*gate_name=*/"RY",
         /*in_qubits=*/rz1.getResults(),
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/adaptor.getParams(),
         /*adjoint=*/false);
 
@@ -424,8 +417,8 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
         op.getLoc(),
         /*gate_name=*/"RZ",
         /*in_qubits=*/ry.getResults(),
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/adaptor.getParams(),
         /*adjoint=*/true);
 
@@ -443,34 +436,8 @@ struct ConvertMQTOptSimpleGate<opt::VdgOp> final
   LogicalResult
   matchAndRewrite(opt::VdgOp op, opt::VdgOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Extract operand(s) and attribute(s)
-    auto inQubitsValues = adaptor.getInQubits();
-    const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
-
-    // Concatenate controls: [pos..., neg...]  (preserve this order
-    // consistently)
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
-                         negCtrlQubitsValues.size());
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
-    // ---- Build ctrl-values (i1) matching the exact control order ----
-    Location loc = op.getLoc();
-    Type i1Ty = rewriter.getI1Type();
-
-    // Reuse the same constants; it's fine for a variadic segment to reference
-    // the same Value multiple times.
-    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                            /*width=*/1);
-    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                             /*width=*/1);
-
-    SmallVector<Value> inCtrlValues;
-    inCtrlValues.reserve(inCtrlQubits.size());
-    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
-    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
+    // Extract operands and control information using helper function
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
 
     // V† = RZ(π/2) RY(-π/2) RZ(-π/2)
     auto negPi2 = rewriter.create<ConstantOp>(
@@ -478,29 +445,29 @@ struct ConvertMQTOptSimpleGate<opt::VdgOp> final
 
     // Create the decomposed operations
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RZ",
-        /*in_qubits=*/inQubitsValues,
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_qubits=*/extracted.inQubits,
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{negPi2},
         /*adjoint=*/true);
 
     auto ry = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RY",
         /*in_qubits=*/rz1.getOutQubits(),
         /*in_ctrl_qubits=*/rz1.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{negPi2},
         /*adjoint=*/false);
 
     auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RZ",
         /*in_qubits=*/ry.getOutQubits(),
         /*in_ctrl_qubits=*/ry.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{negPi2},
         /*adjoint=*/false);
 
@@ -523,51 +490,26 @@ struct ConvertMQTOptSimpleGate<opt::DCXOp> final
   LogicalResult
   matchAndRewrite(opt::DCXOp op, opt::DCXOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto inQubitsValues = adaptor.getInQubits();
-    const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
-
-    // Concatenate controls: [pos..., neg...]  (preserve this order
-    // consistently)
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
-                         negCtrlQubitsValues.size());
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
-    // ---- Build ctrl-values (i1) matching the exact control order ----
-    Location loc = op.getLoc();
-    Type i1Ty = rewriter.getI1Type();
-
-    // Reuse the same constants; it's fine for a variadic segment to reference
-    // the same Value multiple times.
-    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                            /*width=*/1);
-    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                             /*width=*/1);
-
-    SmallVector<Value> inCtrlValues;
-    inCtrlValues.reserve(inCtrlQubits.size());
-    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
-    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
+    // Extract operands and control information using helper function
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
 
     // DCX = CNOT(q2,q1) CNOT(q1,q2)
     auto cnot1 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"CNOT",
-        /*in_qubits=*/inQubitsValues,
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_qubits=*/extracted.inQubits,
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
     auto cnot2 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"CNOT",
         /*in_qubits=*/
         ValueRange{cnot1.getOutQubits()[1], cnot1.getOutQubits()[0]},
         /*in_ctrl_qubits=*/cnot1.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
@@ -591,34 +533,8 @@ struct ConvertMQTOptSimpleGate<opt::RZXOp> final
   LogicalResult
   matchAndRewrite(opt::RZXOp op, opt::RZXOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Inputs and controls
-    auto inQubitsValues = adaptor.getInQubits(); // [q0, q1]
-    const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
-
-    // Concatenate controls: [pos..., neg...]  (preserve this order
-    // consistently)
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
-                         negCtrlQubitsValues.size());
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
-    // ---- Build ctrl-values (i1) matching the exact control order ----
-    Location loc = op.getLoc();
-    Type i1Ty = rewriter.getI1Type();
-
-    // Reuse the same constants; it's fine for a variadic segment to reference
-    // the same Value multiple times.
-    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                            /*width=*/1);
-    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                             /*width=*/1);
-
-    SmallVector<Value> inCtrlValues;
-    inCtrlValues.reserve(inCtrlQubits.size());
-    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
-    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
+    // Extract operands and control information using helper function
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
 
     const auto theta = adaptor.getParams()[0];
 
@@ -626,11 +542,11 @@ struct ConvertMQTOptSimpleGate<opt::RZXOp> final
 
     // H on q1
     auto h1 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"Hadamard",
-        /*in_qubits=*/ValueRange{inQubitsValues[1]},
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_qubits=*/ValueRange{extracted.inQubits[1]},
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
@@ -639,11 +555,11 @@ struct ConvertMQTOptSimpleGate<opt::RZXOp> final
 
     // RZZ on (q0, q1')
     auto rzz = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"IsingZZ",
-        /*in_qubits=*/ValueRange{inQubitsValues[0], h1_target},
+        /*in_qubits=*/ValueRange{extracted.inQubits[0], h1_target},
         /*in_ctrl_qubits=*/h1.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{theta},
         /*adjoint=*/false);
 
@@ -653,11 +569,11 @@ struct ConvertMQTOptSimpleGate<opt::RZXOp> final
 
     // H on q1''
     auto h2 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"Hadamard",
         /*in_qubits=*/ValueRange{rzz_target1},
         /*in_ctrl_qubits=*/rzz.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
@@ -683,35 +599,10 @@ struct ConvertMQTOptSimpleGate<opt::XXminusYYOp> final
   LogicalResult
   matchAndRewrite(opt::XXminusYYOp op, opt::XXminusYYOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto inQubitsValues = adaptor.getInQubits();
-    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+    // Extract operands and control information using helper function
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
     auto theta = adaptor.getParams()[0];
     auto beta = adaptor.getParams()[1];
-
-    // Concatenate controls: [pos..., neg...]  (preserve this order
-    // consistently)
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
-                         negCtrlQubitsValues.size());
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
-    // ---- Build ctrl-values (i1) matching the exact control order ----
-    Location loc = op.getLoc();
-    Type i1Ty = rewriter.getI1Type();
-
-    // Reuse the same constants; it's fine for a variadic segment to reference
-    // the same Value multiple times.
-    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                            /*width=*/1);
-    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                             /*width=*/1);
-
-    SmallVector<Value> inCtrlValues;
-    inCtrlValues.reserve(inCtrlQubits.size());
-    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
-    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
 
     // XXminusYY(θ,β) = RX(π/2)(q1) RY(π/2)(q2) CNOT(q1,q2) RZ(θ)(q2)
     // CNOT(q1,q2) RZ(β)(q1) RZ(β)(q2) RX(-π/2)(q1) RY(-π/2)(q2)
@@ -721,83 +612,83 @@ struct ConvertMQTOptSimpleGate<opt::XXminusYYOp> final
         op.getLoc(), rewriter.getF64FloatAttr(-M_PI_2));
 
     auto rx1 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RX",
-        /*in_qubits=*/inQubitsValues,
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_qubits=*/extracted.inQubits,
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{pi2},
         /*adjoint=*/false);
 
     auto ry1 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RY",
         /*in_qubits=*/rx1.getOutQubits(),
         /*in_ctrl_qubits=*/rx1.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{pi2},
         /*adjoint=*/false);
 
     auto cnot1 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"CNOT",
         /*in_qubits=*/ry1.getOutQubits(),
         /*in_ctrl_qubits=*/ry1.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RZ",
         /*in_qubits=*/cnot1.getOutQubits(),
         /*in_ctrl_qubits=*/cnot1.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{theta},
         /*adjoint=*/false);
 
     auto cnot2 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"CNOT",
         /*in_qubits=*/rz1.getOutQubits(),
         /*in_ctrl_qubits=*/rz1.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
     auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RZ",
         /*in_qubits=*/cnot2.getOutQubits(),
         /*in_ctrl_qubits=*/cnot2.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{beta},
         /*adjoint=*/false);
 
     auto rz3 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RZ",
         /*in_qubits=*/rz2.getOutQubits(),
         /*in_ctrl_qubits=*/rz2.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{beta},
         /*adjoint=*/false);
 
     auto rx2 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RX",
         /*in_qubits=*/rz3.getOutQubits(),
         /*in_ctrl_qubits=*/rz3.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{negPi2},
         /*adjoint=*/false);
 
     auto ry2 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RY",
         /*in_qubits=*/rx2.getOutQubits(),
         /*in_ctrl_qubits=*/rx2.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{negPi2},
         /*adjoint=*/false);
 
@@ -820,45 +711,21 @@ struct ConvertMQTOptSimpleGate<opt::GPhaseOp> final
   LogicalResult
   matchAndRewrite(opt::GPhaseOp op, opt::GPhaseOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Extract operand(s) and attribute(s)
-    auto inQubitsValues = adaptor.getInQubits();
-    const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
+    // Extract control information using helper function (no input qubits for
+    // GPhase)
+    auto ctrlInfo =
+        extractControlInfo(adaptor.getPosCtrlInQubits(),
+                           adaptor.getNegCtrlInQubits(), rewriter, op.getLoc());
     const auto params = adaptor.getParams();
-    const bool adjoint = false;
-
-    // Concatenate controls: [pos..., neg...]  (preserve this order
-    // consistently)
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
-                         negCtrlQubitsValues.size());
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
-    // ---- Build ctrl-values (i1) matching the exact control order ----
-    Location loc = op.getLoc();
-    Type i1Ty = rewriter.getI1Type();
-
-    // Reuse the same constants; it's fine for a variadic segment to reference
-    // the same Value multiple times.
-    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                            /*width=*/1);
-    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                             /*width=*/1);
-
-    SmallVector<Value> inCtrlValues;
-    inCtrlValues.reserve(inCtrlQubits.size());
-    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
-    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
 
     // Create output types for GlobalPhaseOp (control qubits only)
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    SmallVector<Type> outCtrlTypes(inCtrlQubits.size(), qubitType);
+    SmallVector<Type> outCtrlTypes(ctrlInfo.ctrlQubits.size(), qubitType);
 
     auto gphase = rewriter.create<catalyst::quantum::GlobalPhaseOp>(
-        loc, TypeRange(outCtrlTypes), params[0], false, inCtrlQubits,
-        inCtrlValues);
+        op.getLoc(), TypeRange(outCtrlTypes), params[0], false,
+        ctrlInfo.ctrlQubits, ctrlInfo.ctrlValues);
 
     // Replace the original operation with the decomposition
     rewriter.replaceOp(op, gphase.getResults());
@@ -873,34 +740,8 @@ struct ConvertMQTOptSimpleGate<opt::UOp> final : OpConversionPattern<opt::UOp> {
   LogicalResult
   matchAndRewrite(opt::UOp op, opt::UOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Extract operand(s) and attribute(s)
-    auto inQubitsValues = adaptor.getInQubits();
-    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
-
-    // Concatenate controls: [pos..., neg...]  (preserve this order
-    // consistently)
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
-                         negCtrlQubitsValues.size());
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
-    // ---- Build ctrl-values (i1) matching the exact control order ----
-    Location loc = op.getLoc();
-    Type i1Ty = rewriter.getI1Type();
-
-    // Reuse the same constants; it's fine for a variadic segment to reference
-    // the same Value multiple times.
-    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                            /*width=*/1);
-    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                             /*width=*/1);
-
-    SmallVector<Value> inCtrlValues;
-    inCtrlValues.reserve(inCtrlQubits.size());
-    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
-    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
+    // Extract operands and control information using helper function
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
 
     // Extract parameters
     SmallVector<Value> paramValues;
@@ -959,51 +800,51 @@ struct ConvertMQTOptSimpleGate<opt::UOp> final : OpConversionPattern<opt::UOp> {
 
     // RZ(λ − π/2)
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RZ",
-        /*in_qubits=*/inQubitsValues,
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_qubits=*/extracted.inQubits,
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{lambdaMinusPi2},
         /*adjoint=*/false);
 
     // RX(π/2)
     auto rx1 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RX",
         /*in_qubits=*/rz1.getOutQubits(),
         /*in_ctrl_qubits=*/rz1.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{pi2},
         /*adjoint=*/false);
 
     // RZ(π − θ)
     auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RZ",
         /*in_qubits=*/rx1.getOutQubits(),
         /*in_ctrl_qubits=*/rx1.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{piMinusTheta2},
         /*adjoint=*/false);
 
     // RX(π/2)
     auto rx2 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RX",
         /*in_qubits=*/rz2.getOutQubits(),
         /*in_ctrl_qubits=*/rz2.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{pi2},
         /*adjoint=*/false);
 
     // RZ(φ − π/2)
     auto rz3 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RZ",
         /*in_qubits=*/rx2.getOutQubits(),
         /*in_ctrl_qubits=*/rx2.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{phiMinusPi2},
         /*adjoint=*/false);
 
@@ -1027,34 +868,8 @@ struct ConvertMQTOptSimpleGate<opt::U2Op> final
   LogicalResult
   matchAndRewrite(opt::U2Op op, opt::U2Op::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Extract operand(s) and attribute(s)
-    auto inQubitsValues = adaptor.getInQubits();
-    auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
-
-    // Concatenate controls: [pos..., neg...]  (preserve this order
-    // consistently)
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
-                         negCtrlQubitsValues.size());
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
-    // ---- Build ctrl-values (i1) matching the exact control order ----
-    Location loc = op.getLoc();
-    Type i1Ty = rewriter.getI1Type();
-
-    // Reuse the same constants; it's fine for a variadic segment to reference
-    // the same Value multiple times.
-    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                            /*width=*/1);
-    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                             /*width=*/1);
-
-    SmallVector<Value> inCtrlValues;
-    inCtrlValues.reserve(inCtrlQubits.size());
-    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
-    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
+    // Extract operands and control information using helper function
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
 
     // Extract parameters
     SmallVector<Value> paramValues;
@@ -1108,51 +923,51 @@ struct ConvertMQTOptSimpleGate<opt::U2Op> final
 
     // RZ(λ − π/2)
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RZ",
-        /*in_qubits=*/inQubitsValues,
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_qubits=*/extracted.inQubits,
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{lambdaMinusPi2},
         /*adjoint=*/false);
 
     // RX(π/2)
     auto rx1 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RX",
         /*in_qubits=*/rz1.getOutQubits(),
         /*in_ctrl_qubits=*/rz1.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{pi2},
         /*adjoint=*/false);
 
     // RZ(3/4 π)
     auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RZ",
         /*in_qubits=*/rx1.getOutQubits(),
         /*in_ctrl_qubits=*/rx1.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{pi34},
         /*adjoint=*/false);
 
     // RX(π/2)
     auto rx2 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RX",
         /*in_qubits=*/rz2.getOutQubits(),
         /*in_ctrl_qubits=*/rz2.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{pi2},
         /*adjoint=*/false);
 
     // RZ(φ − π/2)
     auto rz3 = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"RZ",
         /*in_qubits=*/rx2.getOutQubits(),
         /*in_ctrl_qubits=*/rx2.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{phiMinusPi2},
         /*adjoint=*/false);
 
@@ -1176,44 +991,18 @@ struct ConvertMQTOptSimpleGate<opt::PeresOp> final
   LogicalResult
   matchAndRewrite(opt::PeresOp op, opt::PeresOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Inputs / controls
-    auto inQubitsValues = adaptor.getInQubits(); // [q0, q1]
-    const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
-
-    // Concatenate controls: [pos..., neg...]  (preserve this order
-    // consistently)
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
-                         negCtrlQubitsValues.size());
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
-    // ---- Build ctrl-values (i1) matching the exact control order ----
-    Location loc = op.getLoc();
-    Type i1Ty = rewriter.getI1Type();
-
-    // Reuse the same constants; it's fine for a variadic segment to reference
-    // the same Value multiple times.
-    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                            /*width=*/1);
-    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                             /*width=*/1);
-
-    SmallVector<Value> inCtrlValues;
-    inCtrlValues.reserve(inCtrlQubits.size());
-    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
-    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
+    // Extract operands and control information using helper function
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
 
     // Peres = CNOT(q0, q1) ; X(q0)
 
     // CNOT(q0, q1)
     auto cnot = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"CNOT",
-        /*in_qubits=*/ValueRange{inQubitsValues[0], inQubitsValues[1]},
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_qubits=*/ValueRange{extracted.inQubits[0], extracted.inQubits[1]},
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
@@ -1222,11 +1011,11 @@ struct ConvertMQTOptSimpleGate<opt::PeresOp> final
 
     // X(q0')
     auto x = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"PauliX",
         /*in_qubits=*/ValueRange{q0_after_cnot},
         /*in_ctrl_qubits=*/cnot.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
@@ -1253,44 +1042,18 @@ struct ConvertMQTOptSimpleGate<opt::PeresdgOp> final
   LogicalResult
   matchAndRewrite(opt::PeresdgOp op, opt::PeresdgOp::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Inputs / controls
-    auto inQubitsValues = adaptor.getInQubits(); // [q0, q1]
-    const auto posCtrlQubitsValues = adaptor.getPosCtrlInQubits();
-    const auto negCtrlQubitsValues = adaptor.getNegCtrlInQubits();
-
-    // Concatenate controls: [pos..., neg...]  (preserve this order
-    // consistently)
-    SmallVector<Value> inCtrlQubits;
-    inCtrlQubits.reserve(posCtrlQubitsValues.size() +
-                         negCtrlQubitsValues.size());
-    inCtrlQubits.append(posCtrlQubitsValues.begin(), posCtrlQubitsValues.end());
-    inCtrlQubits.append(negCtrlQubitsValues.begin(), negCtrlQubitsValues.end());
-
-    // ---- Build ctrl-values (i1) matching the exact control order ----
-    Location loc = op.getLoc();
-    Type i1Ty = rewriter.getI1Type();
-
-    // Reuse the same constants; it's fine for a variadic segment to reference
-    // the same Value multiple times.
-    Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                            /*width=*/1);
-    Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                             /*width=*/1);
-
-    SmallVector<Value> inCtrlValues;
-    inCtrlValues.reserve(inCtrlQubits.size());
-    inCtrlValues.append(posCtrlQubitsValues.size(), one);  // +controls => 1
-    inCtrlValues.append(negCtrlQubitsValues.size(), zero); // -controls => 0
+    // Extract operands and control information using helper function
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
 
     // Peres† = X(q0) ; CNOT(q0, q1)
 
     // X(q0)
     auto x = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"PauliX",
-        /*in_qubits=*/ValueRange{inQubitsValues[0]},
-        /*in_ctrl_qubits=*/inCtrlQubits,
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_qubits=*/ValueRange{extracted.inQubits[0]},
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
@@ -1298,11 +1061,11 @@ struct ConvertMQTOptSimpleGate<opt::PeresdgOp> final
 
     // CNOT(q0', q1)
     auto cnot = rewriter.create<catalyst::quantum::CustomOp>(
-        loc,
+        op.getLoc(),
         /*gate=*/"CNOT",
-        /*in_qubits=*/ValueRange{q0_after_x, inQubitsValues[1]},
+        /*in_qubits=*/ValueRange{q0_after_x, extracted.inQubits[1]},
         /*in_ctrl_qubits=*/x.getOutCtrlQubits(),
-        /*in_ctrl_values=*/inCtrlValues,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
