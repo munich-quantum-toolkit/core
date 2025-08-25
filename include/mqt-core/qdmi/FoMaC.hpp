@@ -141,10 +141,9 @@ constexpr auto toString(QDMI_Device_Property prop) -> std::string {
   }
 }
 constexpr auto toString(QDMI_Session_Property prop) -> std::string {
-  switch (prop) {
-  case QDMI_SESSION_PROPERTY_DEVICES:
+  if (prop == QDMI_SESSION_PROPERTY_DEVICES) {
     return "QDMI_SESSION_PROPERTY_DEVICES";
-  default:
+  } else {
     return "QDMI_SESSION_PROPERTY_UNKNOWN";
   }
 }
