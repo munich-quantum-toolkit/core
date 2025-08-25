@@ -75,7 +75,8 @@ instance/
 # Sphinx documentation
 docs/_build/
 docs/api/
-docs/mlir/
+docs/mlir/*
+!docs/mlir/index.md
 
 # PyBuilder
 .pybuilder/
