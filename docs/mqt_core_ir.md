@@ -37,6 +37,7 @@ mystnb:
   text_lexer: 'qasm3'
 ---
 from mqt.core.ir import QuantumComputation
+from mqt.core.ir.operations import OpType
 
 from math import pi
 
@@ -67,7 +68,7 @@ for i in range(precision):
 
   # Iterative inverse QFT
   for j in range(i):
-    qc.classic_controlled(op="p", target=q[0], cbit=c[j], params=[-pi / 2**(i - j)])
+    qc.if_(op_type=OpType.p, target=q[0], control_bit=c[j], params=[-pi / 2**(i - j)])
   qc.h(q[0])
 
   # Measure the result
@@ -280,20 +281,34 @@ qc.append(comp.to_operation())
 print(qc)
 ```
 
-### `ClassicControlledOperation`
+### `IfElseOperation`
 
-A {py:class}`~mqt.core.ir.operations.ClassicControlledOperation` is a controlled operation where the control is a classical bit or a classical register.
+A {py:class}`~mqt.core.ir.operations.IfElseOperation` is an operation controlled by a classical bit or a classical register.
+If a given condition is met, the {py:attr}`~mqt.core.ir.operations.IfElseOperation.then_operation` is applied.
+If the condition is not met, the {py:attr}`~mqt.core.ir.operations.IfElseOperation.else_operation` is applied.
 
 ```{code-cell} ipython3
-from mqt.core.ir.operations import ClassicControlledOperation
-
 qc = QuantumComputation(1, 1)
 
 qc.h(0)
 qc.measure(0, 0)
+qc.if_else(
+    then_operation=StandardOperation(target=0, op_type=OpType.x),
+    else_operation=StandardOperation(target=0, op_type=OpType.y),
+    control_bit=0,
+)
 
-classic_controlled = ClassicControlledOperation(operation=StandardOperation(target=0, op_type=OpType.x), control_bit=0)
-qc.append(classic_controlled)
+print(qc)
+```
+
+If you do not need an `else_operation`, the {py:class}`~mqt.core.ir.QuantumComputation` class provides a shortcut for creating an {py:meth}`~mqt.core.ir.QuantumComputation.if_` operation.
+
+```{code-cell} ipython3
+qc = QuantumComputation(1, 1)
+
+qc.h(0)
+qc.measure(0, 0)
+qc.if_(op_type=OpType.x, target=0, control_bit=0)
 
 print(qc)
 ```

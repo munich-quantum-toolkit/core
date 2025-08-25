@@ -15,7 +15,7 @@
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
@@ -58,7 +58,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
   // rudimentary check whether circuit is dynamic
   for (const auto& op : qc) {
     // if it contains any dynamic circuit primitives, it certainly is dynamic
-    if (op->isClassicControlledOperation() || op->getType() == qc::Reset) {
+    if (op->isIfElseOperation() || op->getType() == qc::Reset) {
       isDynamicCircuit = true;
       break;
     }
@@ -79,8 +79,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
 
     // if an operation happens after a measurement, the resulting circuit can
     // only be simulated in single shots
-    if (hasMeasurements &&
-        (op->isUnitary() || op->isClassicControlledOperation())) {
+    if (hasMeasurements && (op->isUnitary() || op->isIfElseOperation())) {
       measurementsLast = false;
     }
   }
@@ -182,11 +181,9 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
         continue;
       }
 
-      if (op->isClassicControlledOperation()) {
-        const auto& classic =
-            dynamic_cast<const qc::ClassicControlledOperation&>(*op);
-        e = applyClassicControlledOperation(classic, e, dd, measurements,
-                                            permutation);
+      if (op->isIfElseOperation()) {
+        const auto& ifElse = dynamic_cast<const qc::IfElseOperation&>(*op);
+        e = applyIfElseOperation(ifElse, e, dd, measurements, permutation);
         continue;
       }
 

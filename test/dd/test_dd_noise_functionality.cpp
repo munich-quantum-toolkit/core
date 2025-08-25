@@ -16,6 +16,7 @@
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 
 #include <algorithm>
@@ -303,7 +304,6 @@ TEST_F(DDNoiseFunctionalityTest, StochSimulateAdder4IdentityError) {
 }
 
 TEST_F(DDNoiseFunctionalityTest, testingUsedQubits) {
-  constexpr std::size_t nqubits = 1;
   auto standardOp = StandardOperation(1, qc::Z);
   EXPECT_EQ(standardOp.getUsedQubits().size(), 1);
   EXPECT_TRUE(standardOp.getUsedQubits().count(1));
@@ -320,10 +320,11 @@ TEST_F(DDNoiseFunctionalityTest, testingUsedQubits) {
   EXPECT_TRUE(compoundOp.getUsedQubits().count(0));
   EXPECT_TRUE(compoundOp.getUsedQubits().count(1));
 
-  auto classicalControlledOp = qc::ClassicControlledOperation(
-      std::make_unique<qc::StandardOperation>(0, qc::X), {0, nqubits}, 1U);
-  EXPECT_EQ(classicalControlledOp.getUsedQubits().size(), 1);
-  EXPECT_TRUE(classicalControlledOp.getUsedQubits().count(0) == 1U);
+  auto ifElseOp = qc::IfElseOperation(
+      std::make_unique<qc::StandardOperation>(0, qc::X), nullptr, 0);
+  auto* thenOp = ifElseOp.getThenOp();
+  EXPECT_EQ(thenOp->getUsedQubits().size(), 1);
+  EXPECT_TRUE(thenOp->getUsedQubits().count(0) == 1U);
 }
 
 TEST_F(DDNoiseFunctionalityTest, invalidNoiseEffect) {
