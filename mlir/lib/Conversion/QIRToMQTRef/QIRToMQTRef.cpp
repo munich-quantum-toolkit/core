@@ -205,6 +205,10 @@ struct ConvertQIRGlobal final : OpConversionPattern<LLVM::GlobalOp> {
 struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
   using StatefulOpConversionPattern<LLVM::CallOp>::StatefulOpConversionPattern;
 
+  // constants to trim the function name to get the name of the gate
+  constexpr static size_t QIS_OPERATION_PREFIX_LENGTH = 16;
+  constexpr static size_t QIS_OPERATION_SUFFIX_LENGTH = 6;
+
   /**
    * @brief Replaces the call operation with a matching simple gate operation
    * from the mqtref dialect
@@ -373,7 +377,8 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     }
 
     // remove the prefix and the suffix of the gate name
-    auto gateName(fnName->substr(16).drop_back(6));
+    auto gateName(fnName->substr(QIS_OPERATION_PREFIX_LENGTH)
+                      .drop_back(QIS_OPERATION_SUFFIX_LENGTH));
 
     // check how many control qubits are used by counting the number of
     // leading c's
@@ -468,7 +473,6 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
     QIRToMQTRefTypeConverter typeConverter(context);
     target.addLegalDialect<ref::MQTRefDialect>();
 
-    // only convert the call and load operations for now
     target.addIllegalOp<LLVM::CallOp>();
     target.addIllegalOp<LLVM::LoadOp>();
     target.addIllegalOp<LLVM::AddressOfOp>();

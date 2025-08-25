@@ -149,8 +149,7 @@ struct ConvertMQTRefAllocQIR final : StatefulOpConversionPattern<ref::AllocOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
 
-    // create name and signature of the new function
-
+    // create signature of the new function
     const auto qirSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMPointerType::get(ctx), IntegerType::get(ctx, 64));
 
@@ -211,20 +210,19 @@ struct ConvertMQTRefAllocQubitQIR final
     : StatefulOpConversionPattern<ref::AllocQubitOp> {
   using StatefulOpConversionPattern<
       ref::AllocQubitOp>::StatefulOpConversionPattern;
-
+  constexpr static StringLiteral FN_NAME = "__quantum__rt__qubit_allocate";
   LogicalResult
   matchAndRewrite(const ref::AllocQubitOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
 
-    // create name and signature of the new function
-    const StringRef fnName = "__quantum__rt__qubit_allocate";
+    // create signature of the new function
     const auto qirSignature =
         LLVM::LLVMFunctionType::get(LLVM::LLVMPointerType::get(ctx), {});
 
     // get the function declaration
     const auto fnDecl =
-        getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+        getFunctionDeclaration(rewriter, op, FN_NAME, qirSignature);
 
     // replace the old operation with new callOp
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, ValueRange{});
@@ -241,20 +239,20 @@ struct ConvertMQTRefAllocQubitQIR final
 struct ConvertMQTRefDeallocQubitQIR final
     : OpConversionPattern<ref::DeallocQubitOp> {
   using OpConversionPattern::OpConversionPattern;
+  constexpr static StringLiteral FN_NAME = "__quantum__rt__qubit_release";
 
   LogicalResult
   matchAndRewrite(const ref::DeallocQubitOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
 
-    // create name and signature of the new function
-    const StringRef fnName = "__quantum__rt__qubit_release";
+    // create signature of the new function
     const auto qirSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
 
     // get the function declaration
     const auto fnDecl =
-        getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+        getFunctionDeclaration(rewriter, op, FN_NAME, qirSignature);
 
     // replace the old operation with new callOp
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
@@ -265,20 +263,20 @@ struct ConvertMQTRefDeallocQubitQIR final
 
 struct ConvertMQTRefDeallocQIR final : OpConversionPattern<ref::DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
+  constexpr static StringLiteral FN_NAME = "__quantum__rt__qubit_release_array";
 
   LogicalResult
   matchAndRewrite(ref::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
 
-    // create name and signature of the new function
-    const StringRef fnName = "__quantum__rt__qubit_release_array";
+    // create signature of the new function
     const auto qirSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
 
     // get the function declaration
     const auto fnDecl =
-        getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+        getFunctionDeclaration(rewriter, op, FN_NAME, qirSignature);
 
     // replace the old operation with new callOp
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
@@ -289,20 +287,20 @@ struct ConvertMQTRefDeallocQIR final : OpConversionPattern<ref::DeallocOp> {
 
 struct ConvertMQTRefResetQIR final : OpConversionPattern<ref::ResetOp> {
   using OpConversionPattern::OpConversionPattern;
+  constexpr static StringLiteral FN_NAME = "__quantum__qis__reset__body";
 
   LogicalResult
   matchAndRewrite(ref::ResetOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
 
-    // create name and signature of the new function
-    const StringRef fnName = "__quantum__qis__reset__body";
+    // create signature of the new function
     const auto qirSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
 
     // get the function declaration
     const auto fnDecl =
-        getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+        getFunctionDeclaration(rewriter, op, FN_NAME, qirSignature);
 
     // replace the old operation with new callOp
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
@@ -312,21 +310,22 @@ struct ConvertMQTRefResetQIR final : OpConversionPattern<ref::ResetOp> {
 };
 struct ConvertMQTRefExtractQIR final : OpConversionPattern<ref::ExtractOp> {
   using OpConversionPattern::OpConversionPattern;
+  constexpr static StringLiteral FN_NAME =
+      "__quantum__rt__array_get_element_ptr_1d";
 
   LogicalResult
   matchAndRewrite(ref::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
 
-    // create name and signature of the new function
-    const StringRef fnName = "__quantum__rt__array_get_element_ptr_1d";
+    // create signature of the new function
     const auto qirSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMPointerType::get(ctx),
         {LLVM::LLVMPointerType::get(ctx), IntegerType::get(ctx, 64)});
 
     // get the function declaration
     const auto fnDecl =
-        getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+        getFunctionDeclaration(rewriter, op, FN_NAME, qirSignature);
 
     // create a constantOp if the index is an attribute
     auto index = adaptor.getIndex();
@@ -353,6 +352,8 @@ struct ConvertMQTRefExtractQIR final : OpConversionPattern<ref::ExtractOp> {
 template <typename MQTRefGateOp>
 struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
   using OpConversionPattern<MQTRefGateOp>::OpConversionPattern;
+
+  constexpr static StringLiteral FN_NAME_X_GATE = "__quantum__qis__x__body";
 
   LogicalResult
   matchAndRewrite(MQTRefGateOp op, typename MQTRefGateOp::Adaptor adaptor,
@@ -427,14 +428,13 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
     // for any negative controlled qubits place an X operation before and
     // after the matched gate operation
     if (negCtrlQubits.size() > 0) {
-      // create name and signature of the NOT operation
-      const StringRef notGate = "__quantum__qis__x__body";
+      // create signature of the X gate operation
       const auto notGateSignature = LLVM::LLVMFunctionType::get(
           LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
 
       // get the function declaration
-      const auto notGateDecl =
-          getFunctionDeclaration(rewriter, op, notGate, notGateSignature);
+      const auto notGateDecl = getFunctionDeclaration(
+          rewriter, op, FN_NAME_X_GATE, notGateSignature);
 
       // place a NOT operation before and after the operation for each negative
       // controlled qubit
@@ -485,6 +485,10 @@ struct ConvertMQTRefMeasureQIR final
     : StatefulOpConversionPattern<ref::MeasureOp> {
   using StatefulOpConversionPattern<
       ref::MeasureOp>::StatefulOpConversionPattern;
+
+  constexpr static StringLiteral FN_NAME_MEASURE = "__quantum__qis__mz__body";
+  constexpr static StringLiteral FN_NAME_RECORD_OUTPUT =
+      "__quantum__rt__result_record_output";
 
   /**
    * @brief returns the next addressOfOp for a global constant to store the
@@ -561,7 +565,6 @@ struct ConvertMQTRefMeasureQIR final
     //  call void @__quantum__qis__mz__body(ptr %qubit , ptr %result)
     //  call void @__quantum__rt__result_record_output(ptr %result , ptr
     //  @constant)
-    StringRef fnName;
     LLVM::LLVMFunctionType qirSignature;
     LLVM::LLVMFuncOp fnDecl;
     auto const ptrType = LLVM::LLVMPointerType::get(ctx);
@@ -586,18 +589,18 @@ struct ConvertMQTRefMeasureQIR final
       ptrMap.try_emplace(getState().numResults, resultValue);
     }
     // create the measure operation
-    fnName = "__quantum__qis__mz__body";
     qirSignature = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
                                                {ptrType, ptrType});
-    fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    fnDecl =
+        getFunctionDeclaration(rewriter, op, FN_NAME_MEASURE, qirSignature);
     rewriter.create<LLVM::CallOp>(
         op->getLoc(), fnDecl, ValueRange{adaptor.getInQubit(), resultValue});
 
     // create the record output operation
-    fnName = "__quantum__rt__result_record_output";
     qirSignature = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
                                                {ptrType, ptrType});
-    fnDecl = getFunctionDeclaration(rewriter, op, fnName, qirSignature);
+    fnDecl = getFunctionDeclaration(rewriter, op, FN_NAME_RECORD_OUTPUT,
+                                    qirSignature);
 
     // get the pointer to the internal constant
     auto* addressOfOp = getAddressOfOp(op, rewriter, getState());
