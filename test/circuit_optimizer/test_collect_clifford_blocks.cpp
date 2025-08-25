@@ -313,6 +313,55 @@ TEST(CliffordBlocks, threeQubitnonClifford) {
   EXPECT_TRUE(qc == qc2);
 }
 
+TEST(CliffordBlocks, handleCompoundOperation) {
+  QuantumComputation qc(1);
+  QuantumComputation op(1);
+  qc.h(0);
+  op.x(0);
+  op.z(0);
+  qc.emplace_back(op.asCompoundOperation());
+
+  QuantumComputation qc2(1);
+  QuantumComputation op2(1);
+  QuantumComputation op3(1);
+  op2.h(0);
+  op3.x(0);
+  op3.z(0);
+  op2.emplace_back(op3.asCompoundOperation());
+  qc2.emplace_back(op2.asCompoundOperation());
+
+  std::cout << qc << "\n";
+  qc::CircuitOptimizer::collectCliffordBlocks(qc, 1);
+  std::cout << qc << "\n";
+  EXPECT_EQ(qc.size(), 1);
+  EXPECT_TRUE(qc.front()->isCompoundOperation());
+  EXPECT_EQ(dynamic_cast<qc::CompoundOperation&>(*qc.front()).size(), 2);
+  EXPECT_TRUE(qc2 == qc);
+}
+
+TEST(CliffordBlocks, handleCompoundOperation2) {
+  QuantumComputation qc(1);
+  QuantumComputation op(1);
+  qc.h(0);
+  op.t(0);
+  op.z(0);
+  qc.emplace_back(op.asCompoundOperation());
+
+  QuantumComputation qc2(1);
+  QuantumComputation op2(1);
+  qc2.h(0);
+  op2.t(0);
+  op2.z(0);
+  qc2.emplace_back(op2.asCompoundOperation());
+
+  std::cout << qc << "\n";
+  qc::CircuitOptimizer::collectCliffordBlocks(qc, 1);
+  std::cout << qc << "\n";
+  EXPECT_EQ(qc.size(), 2);
+  EXPECT_TRUE(qc.front()->isSingleQubitGate());
+  EXPECT_TRUE(qc2 == qc);
+}
+
 TEST(CliffordBlocks, barrierNotinBlock) {
   QuantumComputation qc(1);
   qc.h(0);
