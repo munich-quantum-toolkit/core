@@ -197,71 +197,76 @@ lookahead(const llvm::DenseMap<Value, std::size_t>& p0) {
 }
 
 /// @brief Add attributes to module-like parent specifying the architecture.
-void setModuleTarget(Operation* moduleLike, PatternRewriter& rewriter,
+void setModuleTarget(Operation* module, PatternRewriter& rewriter,
                      const Architecture& target) {
   const auto nameAttr = rewriter.getStringAttr(target.name());
-  moduleLike->setAttr(ATTRIBUTE_TARGET, nameAttr);
+  module->setAttr(ATTRIBUTE_TARGET, nameAttr);
 }
 
-/// @brief Create @p nqubits static qubits in module-like parent.
-void addModuleQubits(Operation* module, PatternRewriter& rewriter,
-                     const Architecture& target,
-                     llvm::SmallVectorImpl<Value>& qubits) {
-  const auto& qubit = QubitType::get(module->getContext());
+/// @brief Add static qubits with indices [0, @p nqubits] to unit.
+void addUnitQubits(Operation* unit, PatternRewriter& rewriter,
+                   const Architecture& target,
+                   llvm::SmallVectorImpl<Value>& qubits) {
+  const auto& qubit = QubitType::get(unit->getContext());
   for (std::size_t i = 0; i < target.nqubits(); ++i) {
-    auto qubitOp = rewriter.create<QubitOp>(module->getLoc(), qubit, i);
+    auto qubitOp = rewriter.create<QubitOp>(unit->getLoc(), qubit, i);
     qubits.push_back(qubitOp.getQubit());
     llvm::dbgs() << "\tcreated static qubit: " << qubitOp.getQubit() << '\n';
   }
 }
 
-LogicalResult spanAndFold(Operation* base, std::unique_ptr<Architecture> target,
-                          const InitialLayout& layout) {
-  MLIRContext* ctx = base->getContext();
-  PatternRewriter rewriter(ctx);
+/// @brief Collect quantum translation units that we route separately.
+/// @details Such a translation unit has the format:
+//           [alloc -> compute -> dealloc].
+llvm::SmallVector<Operation*> collectUnits(ModuleOp module) {
+  llvm::SmallVector<Operation*, 8> units;
+  assert(units.size() == 0);
+  std::ignore = module->walk([&](AllocQubitOp allocOp) {
+    Operation* unit = allocOp->getParentWithTrait<OpTrait::OneRegion>();
+    if (units.empty()) {
+      units.push_back(unit);
+      return WalkResult::advance();
+    }
 
-  // CURRENT ASSUMPTIONS
-  // -) A quantum computation has the following format:
-  //       Q := (alloc -> compute -> dealloc)
-  // -) Initial layout will be applied when creating the static qubits.
+    if (unit != units.back()) {
+      units.push_back(unit);
+    }
 
-  Operation* module = nullptr;
+    return WalkResult::advance();
+  });
+
+  return units;
+}
+
+LogicalResult routeUnit(Operation* unit, const Architecture& target,
+                        const InitialLayout& layout,
+                        PatternRewriter& rewriter) {
+  llvm::dbgs() << "routing unit: " << unit->getName() << '\n';
 
   llvm::SmallVector<Value, 0> statQubits;
   llvm::SmallVector<Value, 0> dynQubits;
 
-  statQubits.reserve(target->nqubits());
-  dynQubits.reserve(target->nqubits());
+  statQubits.reserve(target.nqubits());
+  dynQubits.reserve(target.nqubits());
 
-  auto result = base->walk([&](AllocQubitOp alloc) {
+  Region& region = unit->getRegion(0);
+
+  rewriter.setInsertionPointToStart(&region.front());
+  addUnitQubits(unit, rewriter, target, statQubits);
+
+  for (AllocQubitOp alloc : region.getOps<AllocQubitOp>()) {
     rewriter.setInsertionPoint(alloc);
 
     // ----------- Alloc Phase -----------
     // - Create static qubits in module-like parent.
     // - Collect dynamic qubits for computation.
 
-    if (module != alloc->getParentOp()) {
-      module = alloc->getParentOp();
-      assert(module);
-
-      llvm::dbgs() << "module found: " << module->getName() << '\n';
-
-      statQubits.clear();
-      dynQubits.clear();
-    }
-
-    if (!module->hasAttr(ATTRIBUTE_TARGET)) {
-      setModuleTarget(module, rewriter, *target);
-      addModuleQubits(module, rewriter, *target, statQubits);
-    }
-
     dynQubits.emplace_back(alloc.getQubit());
-
     llvm::dbgs() << "\tcollected dynamic qubit: " << alloc.getQubit() << '\n';
 
     const Operation* successor = alloc->getNextNode();
-    if (successor && dyn_cast<AllocQubitOp>(successor)) {
-      return WalkResult::advance();
+    if ((successor != nullptr) && dyn_cast<AllocQubitOp>(successor)) {
+      continue;
     }
 
     // ----------- Compute Phase -----------
@@ -269,9 +274,8 @@ LogicalResult spanAndFold(Operation* base, std::unique_ptr<Architecture> target,
     // - Fit computation to the given topology.
 
     if (dynQubits.size() > statQubits.size()) {
-      return WalkResult(
-          alloc.emitOpError()
-          << "requires more qubits than the architecture supports");
+      return alloc.emitOpError()
+             << "requires more qubits than the architecture supports";
     }
 
     // Setup initial layout.
@@ -331,11 +335,9 @@ LogicalResult spanAndFold(Operation* base, std::unique_ptr<Architecture> target,
         rewriter.eraseOp(dealloc);
       }
     }
+  }
 
-    return WalkResult::advance();
-  });
-
-  return result.wasInterrupted() ? failure() : success();
+  return success();
 }
 } // namespace
 
@@ -345,11 +347,19 @@ LogicalResult spanAndFold(Operation* base, std::unique_ptr<Architecture> target,
  */
 struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
-    auto target = std::make_unique<Architecture>("iqm-spark+1", 6);
+    ModuleOp module = getOperation();
+    PatternRewriter rewriter(module->getContext());
 
+    const auto target = std::make_unique<Architecture>("iqm-spark+1", 6);
     const Identity layout(target->nqubits());
-    if (spanAndFold(getOperation(), std::move(target), layout).failed()) {
-      signalPassFailure();
+    const llvm::SmallVector<Operation*> units = collectUnits(getOperation());
+
+    setModuleTarget(module, rewriter, *target);
+
+    for (Operation* unit : units) {
+      if (routeUnit(unit, *target, layout, rewriter).failed()) {
+        signalPassFailure();
+      }
     }
   }
 };
