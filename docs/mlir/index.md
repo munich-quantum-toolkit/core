@@ -22,3 +22,11 @@ The content is not yet complete and subject to change.
 Contributions are welcome.
 See the [contribution guidelines](contributing.md) for more information.
 :::
+
+```{toctree}
+:maxdepth: 1
+
+Conversions/index
+Dialects/index
+Passes/index
+```
