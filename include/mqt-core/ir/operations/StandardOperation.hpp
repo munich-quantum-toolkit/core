@@ -82,6 +82,8 @@ public:
 
   [[nodiscard]] bool isGlobal(size_t nQubits) const override;
 
+  [[nodiscard]] bool isClifford() const override;
+
   void addControl(const Control c) override {
     if (actsOn(c.qubit)) {
       throw std::runtime_error("Cannot add control on qubit " +
