@@ -11,10 +11,8 @@
 #include "qdmi/FoMaC.hpp"
 
 #include <algorithm>
-#include <cstddef>
 #include <exception>
 #include <gtest/gtest.h>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <tuple>
