@@ -22,6 +22,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ✨ Extend MQT's implementation of a QDMI Device for neutral atom-based quantum computing with more properties ([#1100]) ([**@ystade**])
 - 🚚 Rename `xxminusyy` to `xx_minus_yy` and `xxplusyy` to `xx_plus_yy` in MLIR dialects ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 - 🚸 Add custom assembly format for operations in the MLIR dialects ([#1139]) ([**@burgholzer**])
 - 🚸 Enable `InferTypeOpInterface` in the MLIR dialects to reduce explicit type information ([#1139]) ([**@burgholzer**])
@@ -180,6 +181,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1117]: https://github.com/munich-quantum-toolkit/core/pull/1117
 [#1116]: https://github.com/munich-quantum-toolkit/core/pull/1116
 [#1106]: https://github.com/munich-quantum-toolkit/core/pull/1106
+[#1100]: https://github.com/munich-quantum-toolkit/core/pull/1100
 [#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099
 [#1098]: https://github.com/munich-quantum-toolkit/core/pull/1098
 [#1089]: https://github.com/munich-quantum-toolkit/core/pull/1089
