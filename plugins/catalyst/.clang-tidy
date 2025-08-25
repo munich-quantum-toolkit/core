@@ -1,2 +1,2 @@
 InheritParentConfig: true
-HeaderFilterRegex: '.*'
+HeaderFilterRegex: ".*"
