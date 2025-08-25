@@ -46,6 +46,14 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   }];
 }
 
+def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
+  let summary = "This pass searches for consecutive applications of rotation gates that can be merged.";
+  let description = [{
+    Remove SWAP gates and permutate order of Qubits instead.
+    This optimization does only work for unmapped circuits which do not have any connectivity restraints.
+  }];
+}
+
 def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   let summary = "This pass attempts to push down operations into branches for possible optimizations.";
   let description = [{
