@@ -315,14 +315,14 @@ private:
   std::optional<uint64_t> blockingRadius_ = std::nullopt;
   /// Mean shuttling speed
   std::optional<uint64_t> meanShuttlingSpeed_ = std::nullopt;
-  /// Mean shuttling speed
+  /// Idling fidelity
   std::optional<double> idlingFidelity_ = std::nullopt;
-  /// The operation's supported sites.
+  /// The operation's supported sites
   std::vector<MQT_NA_QDMI_Site> supportedSites_;
   /// Indicates if this operation is zoned (global)
   bool isZoned_ = false;
 
-  /// @brief Constructor for the global single-qubit
+  /// @brief Constructor for the global single-qubit.
   MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
                                size_t numQubits, uint64_t duration,
                                double fidelity, MQT_NA_QDMI_Site zone);
@@ -342,7 +342,7 @@ private:
                                double fidelity, uint64_t interactionRadius,
                                uint64_t blockingRadius,
                                const std::vector<MQT_NA_QDMI_Site>& sites);
-  /// @brief Constructor for load and store operations
+  /// @brief Constructor for load and store operations.
   MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
                                uint64_t duration, double fidelity,
                                MQT_NA_QDMI_Site zone);

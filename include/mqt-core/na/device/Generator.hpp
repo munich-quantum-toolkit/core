@@ -251,9 +251,11 @@ public:
   };
 
   /// @brief The unit of measurement for lengths in the device.
-  Unit lengthUnit = {1.0, "um"}; ///< Default is micrometers (um).
+  Unit lengthUnit = {.scaleFactor = 1.0,
+                     .unit = "um"}; ///< Default is micrometers (um).
   /// @brief The unit of measurement for time in the device.
-  Unit durationUnit = {1.0, "us"}; ///< Default is microseconds (us).
+  Unit durationUnit = {.scaleFactor = 1.0,
+                       .unit = "us"}; ///< Default is microseconds (us).
 
   // Before we used the macro NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT here,
   // too. Now, we added an id to shuttling units that must be initialized

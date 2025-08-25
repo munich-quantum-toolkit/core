@@ -475,8 +475,8 @@ auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingMove(
   return std::make_unique<MQT_NA_QDMI_Operation_impl_d>(std::move(op));
 }
 auto MQT_NA_QDMI_Operation_impl_d::makeUniqueShuttlingStore(
-    const std::string& name, const size_t numParameters, uint64_t duration,
-    double fidelity, MQT_NA_QDMI_Site zone)
+    const std::string& name, const size_t numParameters,
+    const uint64_t duration, const double fidelity, MQT_NA_QDMI_Site zone)
     -> std::unique_ptr<MQT_NA_QDMI_Operation_impl_d> {
   MQT_NA_QDMI_Operation_impl_d op(name, numParameters, duration, fidelity,
                                   zone);
