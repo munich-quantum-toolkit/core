@@ -59,27 +59,27 @@ class Site:
 
 class Operation:
     """An operation represents a quantum operation that can be performed on a quantum device."""
-    def name(self) -> str:
+    def name(self, sites: list[Site] = ..., params: list[float] = ...) -> str:
         """Returns the name of the operation."""
-    def qubits_num(self) -> int:
+    def qubits_num(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
         """Returns the number of qubits the operation acts on."""
-    def parameters_num(self) -> int:
+    def parameters_num(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
         """Returns the number of parameters the operation has."""
-    def duration(self) -> int:
+    def duration(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
         """Returns the duration of the operation."""
-    def fidelity(self) -> float:
+    def fidelity(self, sites: list[Site] = ..., params: list[float] = ...) -> float:
         """Returns the fidelity of the operation."""
-    def interaction_radius(self) -> int:
+    def interaction_radius(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
         """Returns the interaction radius of the operation."""
-    def blocking_radius(self) -> int:
+    def blocking_radius(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
         """Returns the blocking radius of the operation."""
-    def idling_fidelity(self) -> float:
+    def idling_fidelity(self, sites: list[Site] = ..., params: list[float] = ...) -> float:
         """Returns the idling fidelity of the operation."""
-    def is_zoned(self) -> bool:
+    def is_zoned(self, sites: list[Site] = ..., params: list[float] = ...) -> bool:
         """Returns whether the operation is zoned."""
-    def sites(self) -> list[Site]:
+    def sites(self, sites: list[Site] = ..., params: list[float] = ...) -> list[Site]:
         """Returns the list of sites the operation can be performed on."""
-    def mean_shuttling_speed(self) -> int:
+    def mean_shuttling_speed(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
         """Returns the mean shuttling speed of the operation."""
     def __eq__(self, other: object) -> bool:
         """Checks if two operations are equal."""
