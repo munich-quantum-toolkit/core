@@ -9,5 +9,5 @@
 ```
 
 ```{include} Dialects/MLIRMQTOptInterfaces.md
-
+:start-after: OpInterface definitions
 ```

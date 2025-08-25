@@ -179,12 +179,12 @@ def AllocQubitOp : ResourceOp<"allocQubit"> {
         The qubit can be used in operations after allocation.
         It must be deallocated with the `deallocQubit` operation.
 
-        ### Example (custom syntax)
+        #### Example (custom syntax)
         ```mlir
         %q = mqtopt.allocQubit
         ```
 
-        ### Example (generic syntax)
+        #### Example (generic syntax)
         ```mlir
         %q = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
         ```
@@ -234,12 +234,12 @@ def DeallocQubitOp : ResourceOp<"deallocQubit"> {
         `allocQubit` operation. After this operation, the qubit is no longer
         valid and cannot be used in further operations.
 
-        ### Example (custom syntax)
+        #### Example (custom syntax)
         ```mlir
         mqtopt.deallocQubit %q
         ```
 
-        ### Example (generic syntax)
+        #### Example (generic syntax)
         ```mlir
         "mqtopt.deallocQubit"(%0) : (!mqtopt.Qubit) -> ()
         ```
