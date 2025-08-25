@@ -468,30 +468,6 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
 struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
   using QIRToMQTRefBase::QIRToMQTRefBase;
 
-  /**
-   * @brief Finds the main function in the module
-   *
-   * @param op The module operation that holds all operations.
-   * @return The main function.
-   */
-  static LLVM::LLVMFuncOp getMainFunction(Operation* op) {
-    auto moduleOp = dyn_cast<ModuleOp>(op);
-    // find the main function
-    for (auto funcOp : moduleOp.getOps<LLVM::LLVMFuncOp>()) {
-      auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
-      if (!passthrough) {
-        continue;
-      }
-      if (llvm::any_of(passthrough, [](Attribute attr) {
-            auto strAttr = dyn_cast<StringAttr>(attr);
-            return strAttr && strAttr.getValue() == "entry_point";
-          })) {
-        return funcOp;
-      }
-    }
-    return nullptr;
-  }
-
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* moduleOp = getOperation();
