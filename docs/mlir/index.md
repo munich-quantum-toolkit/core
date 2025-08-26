@@ -24,7 +24,7 @@ See the [contribution guidelines](contributing.md) for more information.
 :maxdepth: 1
 :caption: Table of Contents
 
-MQTOpt Dialect <MQTOpt>
 MQTRef Dialect <MQTRef>
+MQTOpt Dialect <MQTOpt>
 Conversions
 ```
