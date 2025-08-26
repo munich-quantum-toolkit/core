@@ -273,7 +273,7 @@ TEST(CliffordBlocks, threeQubitnonClifford) {
 
   expectedQc.emplace_back(op1.asCompoundOperation());
   expectedQc.mcx({0, 1}, 2);
-  
+
   op2.dcx(0, 1);
   op2.dcx(1, 2);
   expectedQc.emplace_back(op2.asCompoundOperation());
@@ -289,7 +289,6 @@ TEST(CliffordBlocks, handleCompoundOperation) {
   QuantumComputation op1(1);
   op1.x(0);
   op1.z(0);
-
   qc.h(0);
   qc.emplace_back(op1.asCompoundOperation());
 
