@@ -1,5 +1,20 @@
-```{include} Dialects/MLIRMQTRefDialect.md
+---
+hide-toc: true
+---
 
+# MQTRef Dialect
+
+```{contents}
+:depth: 2
+:local:
+:backlinks:
+:class: this-will-duplicate-information-and-it-is-still-useful-here
+```
+
+## Summary
+
+```{include} Dialects/MLIRMQTRefDialect.md
+:start-line: 2
 ```
 
 ## Passes
@@ -8,6 +23,9 @@
 
 ```
 
+## Interfaces
+
 ```{include} Dialects/MLIRMQTRefInterfaces.md
-:start-after: OpInterface definitions
+:start-line: 2
+:heading-offset: 1
 ```
