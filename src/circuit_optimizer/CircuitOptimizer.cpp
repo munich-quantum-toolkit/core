@@ -1789,7 +1789,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
         }
       }
       // keep this non-Clifford gate in place
-      continue; 
+      continue;
     }
 
     // Gate itself is too big
