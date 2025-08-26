@@ -401,7 +401,7 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
         /*in_qubits=*/extracted.inQubits,
         /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
         /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
-        /*params=*/adaptor.getParams(),
+        /*params=*/ValueRange{pi2},
         /*adjoint=*/false);
 
     auto ry = rewriter.create<catalyst::quantum::CustomOp>(
@@ -410,7 +410,7 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
         /*in_qubits=*/rz1.getResults(),
         /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
         /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
-        /*params=*/adaptor.getParams(),
+        /*params=*/ValueRange{pi2},
         /*adjoint=*/false);
 
     auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
@@ -419,7 +419,7 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
         /*in_qubits=*/ry.getResults(),
         /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
         /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
-        /*params=*/adaptor.getParams(),
+        /*params=*/ValueRange{pi2},
         /*adjoint=*/true);
 
     // Replace the original operation with the decomposition
