@@ -447,9 +447,6 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
       // reset the insertionpoint
       rewriter.setInsertionPoint(op);
     }
-    // get the types of the values
-    const SmallVector<Type> types =
-        llvm::to_vector(ValueRange(operands).getTypes());
 
     // get the name of the gate
     const StringRef name = op.getIdentifier();
@@ -467,8 +464,9 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
     }
 
     // create the signature of the function
-    const auto qirSignature =
-        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), types);
+    const auto qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx),
+        llvm::to_vector(ValueRange(operands).getTypes()));
 
     // get the function declaration
     const auto fnDecl =
