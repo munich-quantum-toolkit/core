@@ -217,7 +217,7 @@ TEST(CliffordBlocks, shiftedNonClifford) {
   QuantumComputation op2(2);
   op1.cx(0, 1);
   op1.sxdg(1);
-  
+
   expectedQc.emplace_back(op1.asCompoundOperation());
   expectedQc.t(0);
   expectedQc.t(1);
@@ -243,7 +243,7 @@ TEST(CliffordBlocks, nonCliffordBeginning) {
   QuantumComputation op1(2);
   expectedQc.t(1);
   expectedQc.t(0);
-  
+
   op1.ecr(0, 1);
   op1.x(0);
 
