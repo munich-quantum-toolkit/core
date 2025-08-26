@@ -1657,7 +1657,7 @@ struct CliffordBlock {
    * @param maxBlockSize Maximum allowed block size
    */
   [[nodiscard]] bool
-  checkMaxBlockSize(const std::set<Qubit>& used,
+  checkExceedesMaxBlockSize(const std::set<Qubit>& used,
                     const std::size_t maxBlockSize) const noexcept {
     std::size_t extra = 0;
     for (const auto q : used) {
@@ -1716,7 +1716,7 @@ struct CliffordBlock {
     operations->emplace_back(std::move(op));
 
     if (movePosition) {
-      // we move block into the right position with idenites because they are
+      // we move block into the right position with identities because they are
       // removed later
       *position = std::make_unique<StandardOperation>(0, I);
       position = &(*it);
@@ -1809,7 +1809,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
       if (!block.checkBlocked(used)) {
         continue;
       }
-      if (!block.checkMaxBlockSize(used, maxBlockSize)) {
+      if (!block.checkExceedesMaxBlockSize(used, maxBlockSize)) {
         continue;
       }
 
