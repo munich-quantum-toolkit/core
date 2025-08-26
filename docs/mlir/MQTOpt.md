@@ -4,17 +4,22 @@ hide-toc: true
 
 # MQTOpt Dialect
 
+```{include} Dialects/MLIRMQTOptDialect.md
+:start-line: 2
+:end-before: "## Operations"
+```
+
 ```{contents}
-:depth: 2
+:depth: 1
 :local:
 :backlinks:
 :class: this-will-duplicate-information-and-it-is-still-useful-here
 ```
 
-## Summary
+## Operations
 
 ```{include} Dialects/MLIRMQTOptDialect.md
-:start-line: 2
+:start-after: "## Operations"
 ```
 
 ## Passes

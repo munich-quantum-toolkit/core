@@ -21,7 +21,7 @@ See the [contribution guidelines](contributing.md) for more information.
 :::
 
 ```{toctree}
-:maxdepth: 1
+:maxdepth: 2
 :caption: Table of Contents
 
 MQTRef
