@@ -140,8 +140,8 @@ jobs:
             exit 0
           fi
 
-          # Find Catalyst include directory (look in workspace root .venv)
-          CATALYST_INCLUDE=$(find ../../.venv -path "*/catalyst/include" -type d 2>/dev/null | head -n1)
+          # Find Catalyst include directory
+          CATALYST_INCLUDE=$(find .venv -path "*/catalyst/include" -type d | head -n1)
           if [ -z "$CATALYST_INCLUDE" ]; then
             echo "Catalyst include directory not found, running without extra includes"
             EXTRA_ARGS=""
