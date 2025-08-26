@@ -607,6 +607,9 @@ struct ConvertMQTRefMeasureQIR final
     auto* addressOfOp = getAddressOfOp(op, rewriter, getState());
 
     // create record result output in the last block of the main function
+    // the parent of the current operation is only guaranteed to be the main
+    // function in the base profile and this needs to be adapted for the
+    // adaptive profile of QIR
     auto func = op->getParentOfType<LLVM::LLVMFuncOp>();
     rewriter.setInsertionPointToStart(&func.back());
 
