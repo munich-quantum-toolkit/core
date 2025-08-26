@@ -138,7 +138,6 @@ struct RemoveIdentitiesPattern final : mlir::OpRewritePattern<IOp> {
   mlir::LogicalResult
   matchAndRewrite(IOp op, mlir::PatternRewriter& rewriter) const override {
     auto inQubits = op.getAllInQubits();
-    auto outQubits = op.getAllOutQubits();
 
     rewriter.replaceAllOpUsesWith(op, inQubits);
 
@@ -148,11 +147,11 @@ struct RemoveIdentitiesPattern final : mlir::OpRewritePattern<IOp> {
 };
 
 /**
- * @brief Populates the given pattern set with patterns for gate cancellation.
+ * @brief Populates the given pattern set with patterns for gate elimination.
  *
  * @param patterns The pattern set to populate.
  */
-void populateGateCancellationPatterns(mlir::RewritePatternSet& patterns) {
+void populateGateEliminationPatterns(mlir::RewritePatternSet& patterns) {
   patterns.add<CancelConsecutiveInversesPattern>(patterns.getContext());
   patterns.add<RemoveIdentitiesPattern>(patterns.getContext());
 }

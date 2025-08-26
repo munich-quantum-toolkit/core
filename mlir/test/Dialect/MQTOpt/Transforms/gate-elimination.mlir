@@ -6,7 +6,7 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file --gate-cancellation | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --gate-elimination | FileCheck %s
 
 // -----
 // This test checks if single-qubit consecutive self-inverses are canceled correctly.

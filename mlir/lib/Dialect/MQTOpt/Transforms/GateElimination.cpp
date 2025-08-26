@@ -17,13 +17,13 @@
 
 namespace mqt::ir::opt {
 
-#define GEN_PASS_DEF_GATECANCELLATION
+#define GEN_PASS_DEF_GATEELIMINATION
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 /**
  * @brief This pass attempts to cancel consecutive self-inverse operations.
  */
-struct GateCancellation final : impl::GateCancellationBase<GateCancellation> {
+struct GateElimination final : impl::GateEliminationBase<GateElimination> {
 
   void runOnOperation() override {
     // Get the current operation being operated on.
@@ -32,7 +32,7 @@ struct GateCancellation final : impl::GateCancellationBase<GateCancellation> {
 
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
-    populateGateCancellationPatterns(patterns);
+    populateGateEliminationPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
     if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {

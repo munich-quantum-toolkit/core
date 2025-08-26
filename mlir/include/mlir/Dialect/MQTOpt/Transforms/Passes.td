@@ -26,7 +26,7 @@ def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
   }];
 }
 
-def GateCancellation : Pass<"gate-cancellation", "mlir::ModuleOp"> {
+def GateElimination : Pass<"gate-elimination", "mlir::ModuleOp"> {
   let summary = "This pass searches for consecutive applications of gates and their inverses and cancels them.";
   let description = [{
     This pass searches for applications of gates that are their own inverses. Walking down their def-use chain,
