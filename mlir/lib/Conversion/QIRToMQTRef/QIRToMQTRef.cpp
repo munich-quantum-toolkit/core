@@ -88,11 +88,6 @@ public:
   /// @brief Return the state object as reference.
   [[nodiscard]] LoweringState& getState() const { return *state_; }
 
-  inline static const llvm::StringMap<StringRef> SINGLE_ROTATION_GATES = {
-      {"p", "POp"},     {"rx", "RXOp"},   {"ry", "RYOp"},
-      {"rz", "RZOp"},   {"rxx", "RXXOp"}, {"ryy", "RYYOp"},
-      {"rzz", "RZZOp"}, {"rzx", "RZXOp"}, {"u1", "POp"}};
-
   inline static const llvm::StringMap<StringRef> SIMPLE_GATES = {
       {"x", "XOp"},
       {"not", "XOp"},
@@ -115,6 +110,11 @@ public:
       {"peresdg", "PeresdgOp"},
       {"dcx", "DCXOp"},
       {"ecr", "ECROp"}};
+
+  inline static const llvm::StringMap<StringRef> SINGLE_ROTATION_GATES = {
+      {"p", "POp"},     {"rx", "RXOp"},   {"ry", "RYOp"},
+      {"rz", "RZOp"},   {"rxx", "RXXOp"}, {"ryy", "RYYOp"},
+      {"rzz", "RZZOp"}, {"rzx", "RZXOp"}, {"u1", "POp"}};
 
   inline static const llvm::StringMap<StringRef> DOUBLE_ROTATION_GATES = {
       {"u2", "U2Op"},
@@ -198,8 +198,7 @@ struct ConvertQIRIntToPtr final
     }
 
     // erase the constantOp for the operation if op was the only user
-    if (std::distance(constantOp->getUses().begin(),
-                      constantOp->getUses().end()) == 1) {
+    if (constantOp->getResult(0).hasOneUse()) {
       rewriter.eraseOp(constantOp);
     }
 
@@ -327,7 +326,9 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     const auto operands = adaptor.getOperands();
 
     // get the new operands from the operandMap
-    // workaround to avoid unrealized conversion
+    // workaround as we need to convert !llvm.ptr to either !mqtref.Qubit or
+    // !mqtref.QubitRegister type depending on the operation and this is not
+    // doable with the typeConverter
     SmallVector<Value> newOperands;
     newOperands.reserve(operands.size());
     for (auto const& val : operands) {

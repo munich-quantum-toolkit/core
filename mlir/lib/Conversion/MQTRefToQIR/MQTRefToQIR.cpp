@@ -452,7 +452,7 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
         llvm::to_vector(ValueRange(operands).getTypes());
 
     // get the name of the gate
-    const StringRef name = op->getName().getStringRef().split('.').second;
+    const StringRef name = op.getIdentifier();
 
     // add leading c's to the function name depending on the number of control
     // qubits
