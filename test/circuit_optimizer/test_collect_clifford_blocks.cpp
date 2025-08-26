@@ -163,6 +163,7 @@ TEST(CliffordBlocks, SingleNonClifford3Qubit) {
   op1.h(0);
   op1.cx(0, 1);
   op1.cx(1, 2);
+
   expectedQc.emplace_back(op1.asCompoundOperation());
   expectedQc.rx(0.1, 0);
   expectedQc.cx(0, 1);
@@ -246,7 +247,6 @@ TEST(CliffordBlocks, nonCliffordBeginning) {
   
   op1.ecr(0, 1);
   op1.x(0);
-
   expectedQc.emplace_back(op1.asCompoundOperation());
 
   std::cout << qc << "\n";
@@ -270,8 +270,10 @@ TEST(CliffordBlocks, threeQubitnonClifford) {
   op1.h(2);
   op1.h(1);
   op1.h(0);
+
   expectedQc.emplace_back(op1.asCompoundOperation());
   expectedQc.mcx({0, 1}, 2);
+  
   op2.dcx(0, 1);
   op2.dcx(1, 2);
   expectedQc.emplace_back(op2.asCompoundOperation());
