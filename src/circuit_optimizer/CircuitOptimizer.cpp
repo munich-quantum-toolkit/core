@@ -1658,7 +1658,7 @@ struct CliffordBlock {
    */
   [[nodiscard]] bool
   checkExceedsMaxBlockSize(const std::set<Qubit>& used,
-                            const std::size_t maxBlockSize) const noexcept {
+                           const std::size_t maxBlockSize) const noexcept {
     std::size_t extra = 0;
     for (const auto q : used) {
       if (!blockQubits.contains(q)) {
