@@ -115,6 +115,14 @@ option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OF
 if(BUILD_MQT_CORE_MLIR)
   include(SetupMLIR)
   add_subdirectory(mlir)
+
+  # copy generated MLIR documentation
+  add_custom_command(
+    TARGET mlir-doc
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
+            ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
+    COMMENT "Copying generated MLIR documentation")
 endif()
 
 if(MQT_CORE_MASTER_PROJECT)
