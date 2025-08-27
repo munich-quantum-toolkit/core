@@ -66,6 +66,9 @@ std::string shortName(OpType opType);
   }
 }
 
+/**
+ * @brief Checks if given OpType is a single qubit gate
+ */
 [[nodiscard]] constexpr bool isSingleQubitGate(const OpType type) {
   switch (type) {
   case I:

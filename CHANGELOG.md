@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add Clifford block collection pass to `CircuitOptimizer` module ([#885]) ([**jannikpflieger**], [**@burgholzer**])
 - ✨ Add `isControlled()` method to the `UnitaryInterface` MLIR class ([#1157]) ([**@taminob**], [**@burgholzer**])
 - 📝 Integrate generated MLIR documentation ([#1147]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add `IfElseOperation` to C++ library and Python package to support Qiskit's `IfElseOp` ([#1117]) ([**@denialhaag**], [**@burgholzer**], [**@lavanya-m-k**])
@@ -221,6 +222,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#893]: https://github.com/munich-quantum-toolkit/core/pull/893
 [#892]: https://github.com/munich-quantum-toolkit/core/pull/892
 [#886]: https://github.com/munich-quantum-toolkit/core/pull/886
+[#885]: https://github.com/munich-quantum-toolkit/core/pull/885
 [#883]: https://github.com/munich-quantum-toolkit/core/pull/883
 [#882]: https://github.com/munich-quantum-toolkit/core/pull/882
 [#879]: https://github.com/munich-quantum-toolkit/core/pull/879
@@ -270,6 +272,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@li-mingbao**]: https://github.com/li-mingbao
 [**@lavanya-m-k**]: https://github.com/lavanya-m-k
 [**@taminob**]: https://github.com/taminob
+[**@jannikpflieger**]: https://github.com/jannikpflieger
 
 <!-- General links -->
 

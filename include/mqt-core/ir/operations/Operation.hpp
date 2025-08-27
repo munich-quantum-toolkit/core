@@ -155,6 +155,8 @@ public:
 
   [[nodiscard]] virtual bool isControlled() const { return !controls.empty(); }
 
+  [[nodiscard]] virtual bool isClifford() const { return false; }
+
   /**
    * @brief Checks whether a gate is global.
    * @details A StandardOperation is global if it acts on all qubits.
