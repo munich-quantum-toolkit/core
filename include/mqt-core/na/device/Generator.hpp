@@ -14,13 +14,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <istream>
+// NOLINTNEXTLINE(misc-include-cleaner)
+#include <nlohmann/json.hpp>
 #include <ostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
-// NOLINTNEXTLINE(misc-include-cleaner)
-#include "spdlog/sinks/basic_file_sink-inl.h"
-
-#include <nlohmann/json.hpp>
 #include <utility>
 #include <vector>
 
