@@ -1,0 +1,211 @@
+name: 🐉 • Tests
+on:
+  workflow_call:
+
+jobs:
+  mlir:
+    name: >-
+      ${{ contains(matrix.os, 'ubuntu') && '🐧' || contains(matrix.os, 'windows') && '🏁' || '🍎' }}
+      MLIR${{ matrix.coverage && ' Coverage' || '' }} with LLVM@${{ matrix.llvm-version }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          [
+            ubuntu-24.04,
+            ubuntu-24.04-arm,
+            macos-13,
+            macos-14,
+            windows-2025,
+            windows-11-arm,
+          ]
+        llvm-version: [19, 20]
+        coverage: [false]
+        include:
+          - os: ubuntu-24.04
+            coverage: true
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      CTEST_PARALLEL_LEVEL: 4
+      FORCE_COLOR: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # OS-specific toolchain setup
+      - name: Install LLVM/MLIR (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          wget https://apt.llvm.org/llvm.sh -O ${{ runner.temp }}/llvm_install.sh
+          chmod +x ${{ runner.temp }}/llvm_install.sh
+          if sudo ${{ runner.temp }}/llvm_install.sh ${{ matrix.llvm-version }}; then
+            sudo apt-get install -y libmlir-${{ matrix.llvm-version }}-dev \
+                                    llvm-${{ matrix.llvm-version }}-tools \
+                                    mlir-${{ matrix.llvm-version }}-tools \
+                                    clang-${{ matrix.llvm-version}} \
+                                    clang-tools-${{ matrix.llvm-version }} \
+             || exit 1
+          else
+            echo "Installation from script failed."
+            exit 1
+          fi
+          echo "CC=clang-${{ matrix.llvm-version }}" >> $GITHUB_ENV
+          echo "CXX=clang++-${{ matrix.llvm-version }}" >> $GITHUB_ENV
+          echo "MLIR_DIR=/usr/lib/llvm-${{ matrix.llvm-version }}/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "LLVM_DIR=/usr/lib/llvm-${{ matrix.llvm-version }}/lib/cmake/llvm" >> $GITHUB_ENV
+
+      - name: Install LLVM/MLIR (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm@${{ matrix.llvm-version }}
+          LLVM_PREFIX="$(brew --prefix)/opt/llvm@${{ matrix.llvm-version }}"
+          echo "CC=$LLVM_PREFIX/bin/clang" >> $GITHUB_ENV
+          echo "CXX=$LLVM_PREFIX/bin/clang++" >> $GITHUB_ENV
+          echo "LLVM_DIR=$LLVM_PREFIX/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "MLIR_DIR=$LLVM_PREFIX/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "$LLVM_PREFIX/bin" >> $GITHUB_PATH
+
+      - name: Prepare LLVM/MLIR (Windows) - resolve latest tag
+        if: runner.os == 'Windows'
+        id: get-latest
+        shell: pwsh
+        run: |
+          $tag = git ls-remote --tags https://github.com/llvm/llvm-project.git "llvmorg-${{ matrix.llvm-version }}.*" |
+                  Where-Object { $_ -match "llvmorg-\d+\.\d+\.\d+" } |
+                  Sort-Object -Property {
+                    if ($_ -match "llvmorg-(\d+)\.(\d+)\.(\d+)") {
+                      [int]$Matches[1]*10000 + [int]$Matches[2]*100 + [int]$Matches[3]
+                    }
+                  } |
+                  Select-Object -Last 1
+          $latest = $tag | ForEach-Object {
+                  if ($_ -match "refs/tags/llvmorg-(\d+\.\d+\.\d+)") {
+                    $Matches[1]  # Extract just the version number (e.g., "20.1.0")
+                  }
+                } |
+                Where-Object { $_ -ne $null }
+          echo "Latest tag: $tag"
+          echo "latest=$latest" >> $env:GITHUB_OUTPUT
+
+      - name: Restore LLVM/MLIR cache (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        id: mlir-cache
+        with:
+          path: llvm-install
+          key: ${{ runner.os }}-llvm-${{ steps.get-latest.outputs.latest }}
+
+      - name: Build and install LLVM/MLIR (Windows)
+        if: runner.os == 'Windows' && steps.mlir-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/llvm/llvm-project.git --branch llvmorg-${{ steps.get-latest.outputs.latest }}
+          cd llvm-project
+          cmake -S llvm -B build_llvm `
+            -DLLVM_ENABLE_PROJECTS=mlir `
+            -DLLVM_BUILD_EXAMPLES=OFF `
+            -DLLVM_TARGETS_TO_BUILD="Native" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLLVM_BUILD_TESTS=OFF `
+            -DLLVM_INCLUDE_TESTS=OFF `
+            -DLLVM_INCLUDE_EXAMPLES=OFF `
+            -DLLVM_ENABLE_ASSERTIONS=ON `
+            -DLLVM_INSTALL_UTILS=ON `
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}\llvm-install
+          cmake --build build_llvm --target install --config Release
+          echo "LLVM_DIR=${{ github.workspace }}\llvm-install\lib\cmake\llvm" >> $env:GITHUB_ENV
+          echo "MLIR_DIR=${{ github.workspace }}\llvm-install\lib\cmake\mlir" >> $env:GITHUB_ENV
+
+      # Build acceleration and Python tooling
+      - name: Setup ccache (Linux and macOS)
+        if: runner.os == 'Linux' || runner.os == 'macOS'
+        uses: Chocobo1/setup-ccache-action@v1
+        with:
+          prepend_symlinks_to_path: false
+          override_cache_key: mlir-${{ matrix.coverage && 'coverage' || 'tests' }}-${{ runner.os }}-${{ matrix.llvm-version }}
+
+      - name: Set up mold as linker (Linux)
+        uses: rui314/setup-mold@v1
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      - name: Install Ninja
+        run: uv tool install ninja
+
+      - name: Install lit
+        run: uv pip install lit
+
+      # Configure
+      - name: Configure CMake
+        run: |
+          if command -v lit >/dev/null 2>&1; then
+            LIT_BIN="$(command -v lit)"
+          elif [[ "${RUNNER_OS:-}" == "Windows" ]]; then
+            LIT_BIN="${GITHUB_WORKSPACE}\\.venv\\Scripts\\lit.exe"
+          else
+            LIT_BIN="lit"
+          fi
+
+          if [[ "${RUNNER_OS:-}" == "Windows" ]]; then
+            CMAKE_GEN=""
+          else
+            CMAKE_GEN="-G Ninja"
+          fi
+
+          cmake $CMAKE_GEN -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.coverage && 'Debug' || 'Release' }} \
+            -DBUILD_MQT_CORE_MLIR=ON \
+            -DLLVM_DIR=$LLVM_DIR \
+            -DMLIR_DIR=$MLIR_DIR \
+            -DLLVM_EXTERNAL_LIT=$LIT_BIN \
+            ${{ matrix.coverage && '-DENABLE_COVERAGE=ON' || '' }}
+
+      # Build
+      - name: Build MLIR lit target
+        run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-lit-test-build-only
+
+      - name: Build MLIR unittests
+        run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-translation-test
+
+      # Test
+      - name: Run lit tests
+        run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-lit-test
+
+      - name: Run unit tests
+        run: ctest -C ${{ matrix.coverage && 'Debug' || 'Release' }} --output-on-failure --test-dir build/mlir --repeat until-pass:3 --timeout 600
+
+      # Coverage
+      - name: Generate coverage data as JSON (gcovr)
+        if: matrix.coverage
+        run: |
+          uvx gcovr \
+             --gcov-executable "/usr/lib/llvm-${{ matrix.llvm-version }}/bin/llvm-cov gcov" \
+             --exclude build \
+             --exclude-unreachable-branches \
+             --exclude-noncode-lines \
+             --exclude-throw-branches \
+             --print-summary \
+             --keep \
+             --json \
+             -o coverage-llvm-${{ matrix.llvm-version }}.json
+
+      - name: Upload coverage to Codecov
+        if: matrix.coverage
+        uses: codecov/codecov-action@v5
+        with:
+          flags: mlir
+          name: mlir-coverage-llvm-${{ matrix.llvm-version }}
+          fail_ci_if_error: true
+          use_oidc: true
+          files: coverage-llvm-${{ matrix.llvm-version }}.json
