@@ -18,7 +18,7 @@ namespace qc {
 
 TEST(CliffordBlocks, emptyCircuit) {
   QuantumComputation qc(1);
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 1);
+  CircuitOptimizer::collectCliffordBlocks(qc, 1);
   EXPECT_EQ(qc.getNindividualOps(), 0);
 }
 
@@ -26,7 +26,7 @@ TEST(CliffordBlocks, singleGate) {
   QuantumComputation qc(1);
   qc.sx(0);
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 1);
+  CircuitOptimizer::collectCliffordBlocks(qc, 1);
   std::cout << qc << "\n";
   EXPECT_EQ(qc.size(), 1);
   EXPECT_FALSE(qc.front()->isCompoundOperation());
@@ -44,9 +44,9 @@ TEST(CliffordBlocks, largerGatethenBlock) {
   expectedQc.x(1);
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 1);
+  CircuitOptimizer::collectCliffordBlocks(qc, 1);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 TEST(CliffordBlocks, CliffordBlockDepth) {
@@ -63,9 +63,9 @@ TEST(CliffordBlocks, CliffordBlockDepth) {
   expectedQc.emplace_back(op1.asCompoundOperation());
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 1);
+  CircuitOptimizer::collectCliffordBlocks(qc, 1);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 TEST(CliffordBlocks, CliffordBlockWidth) {
@@ -80,9 +80,9 @@ TEST(CliffordBlocks, CliffordBlockWidth) {
   expectedQc.emplace_back(op1.asCompoundOperation());
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 2);
+  CircuitOptimizer::collectCliffordBlocks(qc, 2);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 TEST(CliffordBlocks, keepOrder) {
@@ -103,9 +103,9 @@ TEST(CliffordBlocks, keepOrder) {
   expectedQc.emplace_back(op1.asCompoundOperation());
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 2);
+  CircuitOptimizer::collectCliffordBlocks(qc, 2);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 TEST(CliffordBlocks, twoCliffordBlocks) {
@@ -127,9 +127,9 @@ TEST(CliffordBlocks, twoCliffordBlocks) {
   expectedQc.emplace_back(op2.asCompoundOperation());
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 1);
+  CircuitOptimizer::collectCliffordBlocks(qc, 1);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 TEST(CliffordBlocks, nonCliffordSingleQubit) {
@@ -143,9 +143,9 @@ TEST(CliffordBlocks, nonCliffordSingleQubit) {
   expectedQc.x(0);
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 2);
+  CircuitOptimizer::collectCliffordBlocks(qc, 2);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 TEST(CliffordBlocks, SingleNonClifford3Qubit) {
@@ -169,9 +169,9 @@ TEST(CliffordBlocks, SingleNonClifford3Qubit) {
   expectedQc.cx(0, 1);
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 3);
+  CircuitOptimizer::collectCliffordBlocks(qc, 3);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 TEST(CliffordBlocks, TwoCliffordBlocks3Qubit) {
@@ -199,9 +199,9 @@ TEST(CliffordBlocks, TwoCliffordBlocks3Qubit) {
   expectedQc.x(0);
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 2);
+  CircuitOptimizer::collectCliffordBlocks(qc, 2);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 TEST(CliffordBlocks, shiftedNonClifford) {
@@ -228,9 +228,9 @@ TEST(CliffordBlocks, shiftedNonClifford) {
   expectedQc.emplace_back(op2.asCompoundOperation());
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 3);
+  CircuitOptimizer::collectCliffordBlocks(qc, 3);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 TEST(CliffordBlocks, nonCliffordBeginning) {
@@ -250,9 +250,9 @@ TEST(CliffordBlocks, nonCliffordBeginning) {
   expectedQc.emplace_back(op1.asCompoundOperation());
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 2);
+  CircuitOptimizer::collectCliffordBlocks(qc, 2);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 TEST(CliffordBlocks, threeQubitnonClifford) {
@@ -279,9 +279,9 @@ TEST(CliffordBlocks, threeQubitnonClifford) {
   expectedQc.emplace_back(op2.asCompoundOperation());
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 3);
+  CircuitOptimizer::collectCliffordBlocks(qc, 3);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 TEST(CliffordBlocks, handleCompoundOperation) {
@@ -303,7 +303,7 @@ TEST(CliffordBlocks, handleCompoundOperation) {
   expectedQc.emplace_back(op3.asCompoundOperation());
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 1);
+  CircuitOptimizer::collectCliffordBlocks(qc, 1);
   std::cout << qc << "\n";
   EXPECT_TRUE(expectedQc == qc);
 }
@@ -326,9 +326,9 @@ TEST(CliffordBlocks, handleCompoundOperation2) {
   expectedQc.emplace_back(op2.asCompoundOperation());
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 1);
+  CircuitOptimizer::collectCliffordBlocks(qc, 1);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 TEST(CliffordBlocks, barrierNotinBlock) {
@@ -343,9 +343,9 @@ TEST(CliffordBlocks, barrierNotinBlock) {
   expectedQc.h(0);
 
   std::cout << qc << "\n";
-  qc::CircuitOptimizer::collectCliffordBlocks(qc, 1);
+  CircuitOptimizer::collectCliffordBlocks(qc, 1);
   std::cout << qc << "\n";
-  EXPECT_TRUE(qc == expectedQc);
+  EXPECT_EQ(qc, expectedQc);
 }
 
 } // namespace qc
