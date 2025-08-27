@@ -29,10 +29,10 @@ if(NOT TARGET ${TARGET_NAME})
 
   # install the Python stub files in editable mode for better IDE support
   if(SKBUILD_STATE STREQUAL "editable")
-    file(GLOB_RECURSE FOMAC_PYI_FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/fomac/*.pyi)
+    file(GLOB_RECURSE FOMAC_PYI_FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/qdmi/fomac/*.pyi)
     install(
       FILES ${FOMAC_PYI_FILES}
-      DESTINATION ./fomac
+      DESTINATION ./qdmi
       COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
   endif()
 endif()

@@ -14,11 +14,11 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <iostream>
 #include <iterator>
 #include <optional>
 #include <qdmi/client.h>
 #include <ranges>
-#include <spdlog/spdlog.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -66,7 +66,7 @@ inline auto throwIfError(int result, const std::string& msg) -> void {
   case QDMI_SUCCESS:
     break;
   case QDMI_WARN_GENERAL:
-    SPDLOG_WARN("Warning: {}", msg);
+    std::cerr << "Warning: " << msg << "\n";
   default:
     throwError(result, msg);
   }

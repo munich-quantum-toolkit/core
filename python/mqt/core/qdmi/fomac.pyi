@@ -28,29 +28,29 @@ class Site:
     """A site represents a potential qubit location on a quantum device."""
     def index(self) -> int:
         """Returns the index of the site."""
-    def t1(self) -> int:
+    def t1(self) -> int | None:
         """Returns the T1 coherence time of the site."""
-    def t2(self) -> int:
+    def t2(self) -> int | None:
         """Returns the T2 coherence time of the site."""
-    def name(self) -> str:
+    def name(self) -> str | None:
         """Returns the name of the site."""
-    def x_coordinate(self) -> int:
+    def x_coordinate(self) -> int | None:
         """Returns the x coordinate of the site."""
-    def y_coordinate(self) -> int:
+    def y_coordinate(self) -> int | None:
         """Returns the y coordinate of the site."""
-    def z_coordinate(self) -> int:
+    def z_coordinate(self) -> int | None:
         """Returns the z coordinate of the site."""
-    def is_zone(self) -> bool:
+    def is_zone(self) -> bool | None:
         """Returns whether the site is a zone."""
-    def x_extent(self) -> int:
+    def x_extent(self) -> int | None:
         """Returns the x extent of the site."""
-    def y_extent(self) -> int:
+    def y_extent(self) -> int | None:
         """Returns the y extent of the site."""
-    def z_extent(self) -> int:
+    def z_extent(self) -> int | None:
         """Returns the z extent of the site."""
-    def module_index(self) -> int:
+    def module_index(self) -> int | None:
         """Returns the index of the module the site belongs to."""
-    def submodule_index(self) -> int:
+    def submodule_index(self) -> int | None:
         """Returns the index of the submodule the site belongs to."""
     def __eq__(self, other: object) -> bool:
         """Checks if two sites are equal."""
@@ -61,25 +61,25 @@ class Operation:
     """An operation represents a quantum operation that can be performed on a quantum device."""
     def name(self, sites: list[Site] = ..., params: list[float] = ...) -> str:
         """Returns the name of the operation."""
-    def qubits_num(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
+    def qubits_num(self, sites: list[Site] = ..., params: list[float] = ...) -> int | None:
         """Returns the number of qubits the operation acts on."""
     def parameters_num(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
         """Returns the number of parameters the operation has."""
-    def duration(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
+    def duration(self, sites: list[Site] = ..., params: list[float] = ...) -> int | None:
         """Returns the duration of the operation."""
-    def fidelity(self, sites: list[Site] = ..., params: list[float] = ...) -> float:
+    def fidelity(self, sites: list[Site] = ..., params: list[float] = ...) -> float | None:
         """Returns the fidelity of the operation."""
-    def interaction_radius(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
+    def interaction_radius(self, sites: list[Site] = ..., params: list[float] = ...) -> int | None:
         """Returns the interaction radius of the operation."""
-    def blocking_radius(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
+    def blocking_radius(self, sites: list[Site] = ..., params: list[float] = ...) -> int | None:
         """Returns the blocking radius of the operation."""
-    def idling_fidelity(self, sites: list[Site] = ..., params: list[float] = ...) -> float:
+    def idling_fidelity(self, sites: list[Site] = ..., params: list[float] = ...) -> float | None:
         """Returns the idling fidelity of the operation."""
-    def is_zoned(self, sites: list[Site] = ..., params: list[float] = ...) -> bool:
+    def is_zoned(self, sites: list[Site] = ..., params: list[float] = ...) -> bool | None:
         """Returns whether the operation is zoned."""
-    def sites(self, sites: list[Site] = ..., params: list[float] = ...) -> list[Site]:
+    def sites(self, sites: list[Site] = ..., params: list[float] = ...) -> list[Site] | None:
         """Returns the list of sites the operation can be performed on."""
-    def mean_shuttling_speed(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
+    def mean_shuttling_speed(self, sites: list[Site] = ..., params: list[float] = ...) -> int | None:
         """Returns the mean shuttling speed of the operation."""
     def __eq__(self, other: object) -> bool:
         """Checks if two operations are equal."""
@@ -102,19 +102,19 @@ class Device:
         """Returns the list of sites available on the device."""
     def operations(self) -> list[Operation]:
         """Returns the list of operations supported by the device."""
-    def coupling_map(self) -> list[tuple[Site, Site]]:
+    def coupling_map(self) -> list[tuple[Site, Site]] | None:
         """Returns the coupling map of the device as a list of site pairs."""
-    def needs_calibration(self) -> int:
+    def needs_calibration(self) -> int | None:
         """Returns whether the device needs calibration."""
-    def length_unit(self) -> str:
+    def length_unit(self) -> str | None:
         """Returns the unit of length used by the device."""
-    def length_scale_factor(self) -> float:
+    def length_scale_factor(self) -> float | None:
         """Returns the scale factor for length used by the device."""
-    def duration_unit(self) -> str:
+    def duration_unit(self) -> str | None:
         """Returns the unit of duration used by the device."""
-    def duration_scale_factor(self) -> float:
+    def duration_scale_factor(self) -> float | None:
         """Returns the scale factor for duration used by the device."""
-    def min_atom_distance(self) -> int:
+    def min_atom_distance(self) -> int | None:
         """Returns the minimum atom distance on the device."""
     def __eq__(self, other: object) -> bool:
         """Checks if two devices are equal."""
