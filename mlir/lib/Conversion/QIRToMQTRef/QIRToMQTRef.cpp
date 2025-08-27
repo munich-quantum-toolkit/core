@@ -81,9 +81,8 @@ class StatefulOpConversionPattern : public mlir::OpConversionPattern<OpType> {
 
 public:
   StatefulOpConversionPattern(mlir::TypeConverter& typeConverter,
-                              mlir::MLIRContext* context, LoweringState* state)
-      : mlir::OpConversionPattern<OpType>(typeConverter, context),
-        state_(state) {}
+                              mlir::MLIRContext* ctx, LoweringState* state)
+      : mlir::OpConversionPattern<OpType>(typeConverter, ctx), state_(state) {}
 
   /// @brief Return the state object as reference.
   [[nodiscard]] LoweringState& getState() const { return *state_; }
@@ -132,7 +131,6 @@ struct ConvertQIRLoad final : OpConversionPattern<LLVM::LoadOp> {
   LogicalResult
   matchAndRewrite(LLVM::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-
     // erase the operation and use the operands as results
     rewriter.replaceOp(op, adaptor.getOperands().front());
     return success();
@@ -144,7 +142,6 @@ struct ConvertQIRZero final : StatefulOpConversionPattern<LLVM::ZeroOp> {
   LogicalResult
   matchAndRewrite(LLVM::ZeroOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-
     // replace the zero operation with a static qubit with index 0
     const auto newOp = rewriter.replaceOpWithNewOp<ref::QubitOp>(
         op, ref::QubitType::get(rewriter.getContext()), 0);
@@ -163,9 +160,9 @@ struct ConvertQIRIntToPtr final
   LogicalResult
   matchAndRewrite(LLVM::IntToPtrOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-
     auto constantOp = op->getOperand(0).getDefiningOp<LLVM::ConstantOp>();
     auto isQubitPtr = false;
+
     // check if the ptr is used in any functions other than for result
     // recording
     for (auto* userOp : op->getResult(0).getUsers()) {
@@ -212,19 +209,19 @@ struct ConvertQIRAddressOf final : OpConversionPattern<LLVM::AddressOfOp> {
   LogicalResult
   matchAndRewrite(LLVM::AddressOfOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-
-    // erase the operation and use the operands as results
+    // erase the operation
     rewriter.eraseOp(op);
     return success();
   }
 };
+
 struct ConvertQIRGlobal final : OpConversionPattern<LLVM::GlobalOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(LLVM::GlobalOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-
+    // erase the operation
     rewriter.eraseOp(op);
     return success();
   }
@@ -251,7 +248,6 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
                                 const SmallVector<Value>& qubits,
                                 const SmallVector<Value>& ctrlQubits,
                                 ConversionPatternRewriter& rewriter) {
-
     // match and replace the fitting gate
     ADD_CONVERT_SIMPLE_GATE(XOp)
     ADD_CONVERT_SIMPLE_GATE(HOp)
@@ -318,11 +314,12 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
   LogicalResult
   matchAndRewrite(LLVM::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto* ctx = rewriter.getContext();
 
     // get the name of the operation and prepare the return types
     const auto fnName = op.getCallee();
-    const auto qubitType = ref::QubitType::get(rewriter.getContext());
-    const auto qregType = ref::QubitRegisterType::get(rewriter.getContext());
+    const auto qubitType = ref::QubitType::get(ctx);
+    const auto qregType = ref::QubitRegisterType::get(ctx);
     const auto operands = adaptor.getOperands();
 
     // get the new operands from the operandMap
@@ -338,6 +335,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
         newOperands.emplace_back(val);
       }
     }
+
     // match initialize operation
     if (fnName == "__quantum__rt__initialize") {
       rewriter.eraseOp(op);
@@ -352,7 +350,6 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
       getState().operandMap.try_emplace(op->getResult(0), newOp->getResult(0));
       return success();
     }
-
     // match alloc qubit
     if (fnName == "__quantum__rt__qubit_allocate") {
       const auto newOp =
@@ -362,25 +359,21 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
       getState().operandMap.try_emplace(op->getResult(0), newOp->getResult(0));
       return success();
     }
-
     // match qubit release operation
     if (fnName == "__quantum__rt__qubit_release") {
       rewriter.replaceOpWithNewOp<ref::DeallocQubitOp>(op, newOperands.front());
       return success();
     }
-
     // match dealloc register
     if (fnName == "__quantum__rt__qubit_release_array") {
       rewriter.replaceOpWithNewOp<ref::DeallocOp>(op, newOperands.front());
       return success();
     }
-
     // match reset operation
     if (fnName == "__quantum__qis__reset__body") {
       rewriter.replaceOpWithNewOp<ref::ResetOp>(op, newOperands.front());
       return success();
     }
-
     // match extract qubit from register
     if (fnName == "__quantum__rt__array_get_element_ptr_1d") {
       const auto newOp = rewriter.replaceOpWithNewOp<ref::ExtractOp>(
@@ -393,7 +386,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     }
     // match measure operation
     if (fnName == "__quantum__qis__mz__body") {
-      const auto bitType = IntegerType::get(rewriter.getContext(), 1);
+      const auto bitType = IntegerType::get(ctx, 1);
 
       rewriter.create<ref::MeasureOp>(op.getLoc(), bitType,
                                       newOperands.front());
@@ -469,14 +462,14 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
   using QIRToMQTRefBase::QIRToMQTRefBase;
 
   void runOnOperation() override {
-    MLIRContext* context = &getContext();
+    MLIRContext* ctx = &getContext();
     auto* moduleOp = getOperation();
 
     LoweringState state;
 
-    ConversionTarget target(*context);
-    RewritePatternSet patterns(context);
-    QIRToMQTRefTypeConverter typeConverter(context);
+    ConversionTarget target(*ctx);
+    RewritePatternSet patterns(ctx);
+    QIRToMQTRefTypeConverter typeConverter(ctx);
     target.addLegalDialect<ref::MQTRefDialect>();
 
     target.addIllegalOp<LLVM::CallOp>();
@@ -485,12 +478,12 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
     target.addIllegalOp<LLVM::GlobalOp>();
     target.addIllegalOp<LLVM::IntToPtrOp>();
     target.addIllegalOp<LLVM::ZeroOp>();
-    patterns.add<ConvertQIRCall>(typeConverter, context, &state);
-    patterns.add<ConvertQIRLoad>(typeConverter, context);
-    patterns.add<ConvertQIRAddressOf>(typeConverter, context);
-    patterns.add<ConvertQIRGlobal>(typeConverter, context);
-    patterns.add<ConvertQIRIntToPtr>(typeConverter, context, &state);
-    patterns.add<ConvertQIRZero>(typeConverter, context, &state);
+    patterns.add<ConvertQIRCall>(typeConverter, ctx, &state);
+    patterns.add<ConvertQIRLoad>(typeConverter, ctx);
+    patterns.add<ConvertQIRAddressOf>(typeConverter, ctx);
+    patterns.add<ConvertQIRGlobal>(typeConverter, ctx);
+    patterns.add<ConvertQIRIntToPtr>(typeConverter, ctx, &state);
+    patterns.add<ConvertQIRZero>(typeConverter, ctx, &state);
 
     if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
       signalPassFailure();
