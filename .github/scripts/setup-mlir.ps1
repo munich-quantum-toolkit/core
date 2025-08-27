@@ -70,17 +70,22 @@ function Ensure-LLVM {
   Push-Location $repoDir
   try {
     $buildDir = 'build_llvm'
-    cmake -S llvm -B $buildDir `
-      -DLLVM_ENABLE_PROJECTS=mlir `
-      -DLLVM_BUILD_EXAMPLES=OFF `
-      -DLLVM_TARGETS_TO_BUILD="Native" `
-      -DCMAKE_BUILD_TYPE=Release `
-      -DLLVM_BUILD_TESTS=OFF `
-      -DLLVM_INCLUDE_TESTS=OFF `
-      -DLLVM_INCLUDE_EXAMPLES=OFF `
-      -DLLVM_ENABLE_ASSERTIONS=ON `
-      -DLLVM_INSTALL_UTILS=ON `
-      -DCMAKE_INSTALL_PREFIX=$InstallPrefix
+    # Use argument array to avoid PowerShell line-continuation quirks on Windows
+    $cmakeArgs = @(
+      '-S','llvm',
+      '-B',$buildDir,
+      '-DLLVM_ENABLE_PROJECTS=mlir',
+      '-DLLVM_BUILD_EXAMPLES=OFF',
+      '-DLLVM_TARGETS_TO_BUILD=Native',
+      '-DCMAKE_BUILD_TYPE=Release',
+      '-DLLVM_BUILD_TESTS=OFF',
+      '-DLLVM_INCLUDE_TESTS=OFF',
+      '-DLLVM_INCLUDE_EXAMPLES=OFF',
+      '-DLLVM_ENABLE_ASSERTIONS=ON',
+      '-DLLVM_INSTALL_UTILS=ON',
+      "-DCMAKE_INSTALL_PREFIX=$Prefix"
+    )
+    cmake @cmakeArgs
 
     cmake --build $buildDir --target install --config Release
   }

@@ -58,7 +58,8 @@ jobs:
       - name: Setup LLVM/MLIR (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: .github/scripts/setup-mlir.ps1 -MajorVersion ${{ matrix.llvm-version }} -InstallPrefix "${{ github.workspace }}\llvm-install"
+        run: |
+          & "${{ github.workspace }}\.github\scripts\setup-mlir.ps1" -MajorVersion ${{ matrix.llvm-version }} -InstallPrefix "${{ github.workspace }}\llvm-install"
 
       # Build acceleration and Python tooling
       - name: Setup ccache (Linux and macOS)
