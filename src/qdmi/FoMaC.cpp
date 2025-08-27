@@ -16,37 +16,11 @@
 #include <iterator>
 #include <optional>
 #include <qdmi/client.h>
-#include <spdlog/spdlog.h>
-#include <sstream>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace fomac {
-auto throwError(QDMI_STATUS result, const std::string& msg) -> void {
-  std::stringstream ss;
-  ss << msg << ": " << toString(result);
-  switch (result) {
-  case QDMI_ERROR_OUTOFMEM:
-    throw std::bad_alloc();
-  case QDMI_ERROR_OUTOFRANGE:
-    throw std::out_of_range(ss.str());
-  case QDMI_ERROR_INVALIDARGUMENT:
-    throw std::invalid_argument(ss.str());
-  case QDMI_ERROR_FATAL:
-  case QDMI_ERROR_NOTIMPLEMENTED:
-  case QDMI_ERROR_LIBNOTFOUND:
-  case QDMI_ERROR_NOTFOUND:
-  case QDMI_ERROR_PERMISSIONDENIED:
-  case QDMI_ERROR_NOTSUPPORTED:
-  case QDMI_ERROR_BADSTATE:
-  case QDMI_ERROR_TIMEOUT:
-    throw std::runtime_error(ss.str());
-  default:
-    throw std::runtime_error(toString(result) + " not a known error code.");
-  }
-}
 auto Site::getIndex() const -> size_t {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }

@@ -19,6 +19,8 @@
 #include <optional>
 #include <qdmi/client.h>
 #include <ranges>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,8 +30,7 @@ namespace fomac {
  * @brief Concept for ranges that are contiguous in memory and can be
  * constructed with a size.
  * @details This concept is used to constrain the template parameter of the
- * `queryProperty` method in the `Site` class.
- * @see Site::queryProperty
+ * `queryProperty` method.
  * @tparam T The type to check.
  */
 template <typename T>
@@ -39,38 +40,66 @@ concept size_constructible_contiguous_range =
     requires { typename T::value_type; } && requires(T t) {
       { t.data() } -> std::same_as<typename T::value_type*>;
     };
+/**
+ * @brief Concept for types that are either integral, floating point, bool,
+ * std::string, or QDMI_Device_Status.
+ * @details This concept is used to constrain the template parameter of the
+ * `queryProperty` method.
+ * @tparam T The type to check.
+ */
 template <typename T>
 concept value_or_string =
     std::integral<T> || std::floating_point<T> || std::is_same_v<T, bool> ||
     std::is_same_v<T, std::string> || std::is_same_v<T, QDMI_Device_Status>;
+
+/**
+ * @brief Concept for types that are either value_or_string or
+ * size_constructible_contiguous_range.
+ * @details This concept is used to constrain the template parameter of the
+ * `queryProperty` method.
+ * @tparam T The type to check.
+ */
 template <typename T>
 concept value_or_string_or_vector =
     value_or_string<T> || size_constructible_contiguous_range<T>;
 
+/**
+ * @brief Concept for types that are std::optional of value_or_string.
+ * @details This concept is used to constrain the template parameter of the
+ * `queryProperty` method.
+ * @tparam T The type to check.
+ */
 template <typename T>
 concept is_optional = requires { typename T::value_type; } &&
                       std::is_same_v<T, std::optional<typename T::value_type>>;
 
+/**
+ * @brief Concept for types that are either value_or_string or std::optional of
+ * value_or_string.
+ * @details This concept is used to constrain the template parameter of the
+ * `queryProperty` method.
+ * @tparam T The type to check.
+ * @see Site::queryProperty
+ */
 template <typename T>
 concept maybe_optional_value_or_string =
     value_or_string<T> ||
     (is_optional<T> && value_or_string<typename T::value_type>);
+
+/**
+ * @brief Concept for types that are either value_or_string_or_vector or
+ * std::optional of value_or_string_or_vector.
+ * @details This concept is used to constrain the template parameter of the
+ * `queryProperty` method.
+ * @tparam T The type to check.
+ * @see Operation::queryProperty
+ */
 template <typename T>
 concept maybe_optional_value_or_string_or_vector =
     value_or_string_or_vector<T> ||
     (is_optional<T> && value_or_string_or_vector<typename T::value_type>);
 
-auto throwError(int result, const std::string& msg) -> void;
-inline auto throwIfError(int result, const std::string& msg) -> void {
-  switch (result) {
-  case QDMI_SUCCESS:
-    break;
-  case QDMI_WARN_GENERAL:
-    std::cerr << "Warning: " << msg << "\n";
-  default:
-    throwError(result, msg);
-  }
-}
+/// @returns the string representation of the given QDMI_STATUS.
 constexpr auto toString(QDMI_STATUS result) -> std::string {
   switch (result) {
   case QDMI_WARN_GENERAL:
@@ -103,6 +132,8 @@ constexpr auto toString(QDMI_STATUS result) -> std::string {
     return "Unknown status code.";
   }
 }
+
+/// @returns the string representation of the given QDMI_Site_Property.
 constexpr auto toString(QDMI_Site_Property prop) -> std::string {
   switch (prop) {
   case QDMI_SITE_PROPERTY_INDEX:
@@ -135,6 +166,8 @@ constexpr auto toString(QDMI_Site_Property prop) -> std::string {
     return "QDMI_SITE_PROPERTY_UNKNOWN";
   }
 }
+
+/// @returns the string representation of the given QDMI_Operation_Property.
 constexpr auto toString(QDMI_Operation_Property prop) -> std::string {
   switch (prop) {
   case QDMI_OPERATION_PROPERTY_NAME:
@@ -163,6 +196,8 @@ constexpr auto toString(QDMI_Operation_Property prop) -> std::string {
     return "QDMI_OPERATION_PROPERTY_UNKNOWN";
   }
 }
+
+/// @returns the string representation of the given QDMI_Device_Property.
 constexpr auto toString(QDMI_Device_Property prop) -> std::string {
   switch (prop) {
   case QDMI_DEVICE_PROPERTY_NAME:
@@ -197,12 +232,52 @@ constexpr auto toString(QDMI_Device_Property prop) -> std::string {
     return "QDMI_DEVICE_PROPERTY_UNKNOWN";
   }
 }
+
+/// @returns the string representation of the given QDMI_Session_Property.
 constexpr auto toString(QDMI_Session_Property prop) -> std::string {
   if (prop == QDMI_SESSION_PROPERTY_DEVICES) {
     return "QDMI_SESSION_PROPERTY_DEVICES";
   }
   return "QDMI_SESSION_PROPERTY_UNKNOWN";
 }
+
+/// Throws an exception corresponding to the given QDMI_STATUS code.
+auto throwError(QDMI_STATUS result, const std::string& msg) -> void {
+  std::ostringstream ss;
+  ss << msg << ": " << toString(result);
+  switch (result) {
+  case QDMI_ERROR_OUTOFMEM:
+    throw std::bad_alloc();
+  case QDMI_ERROR_OUTOFRANGE:
+    throw std::out_of_range(ss.str());
+  case QDMI_ERROR_INVALIDARGUMENT:
+    throw std::invalid_argument(ss.str());
+  case QDMI_ERROR_FATAL:
+  case QDMI_ERROR_NOTIMPLEMENTED:
+  case QDMI_ERROR_LIBNOTFOUND:
+  case QDMI_ERROR_NOTFOUND:
+  case QDMI_ERROR_PERMISSIONDENIED:
+  case QDMI_ERROR_NOTSUPPORTED:
+  case QDMI_ERROR_BADSTATE:
+  case QDMI_ERROR_TIMEOUT:
+    throw std::runtime_error(ss.str());
+  default:
+    throw std::runtime_error(toString(result) + " not a known error code.");
+  }
+}
+
+/// Throws an exception if the result indicates an error.
+inline auto throwIfError(int result, const std::string& msg) -> void {
+  switch (result) {
+  case QDMI_SUCCESS:
+    break;
+  case QDMI_WARN_GENERAL:
+    std::cerr << "Warning: " << msg << "\n";
+  default:
+    throwError(result, msg);
+  }
+}
+
 class Site {
   friend class Device;
   friend class Operation;
