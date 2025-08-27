@@ -19,8 +19,6 @@
 #include <optional>
 #include <qdmi/client.h>
 #include <ranges>
-#include <sstream>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -242,29 +240,7 @@ constexpr auto toString(QDMI_Session_Property prop) -> std::string {
 }
 
 /// Throws an exception corresponding to the given QDMI_STATUS code.
-auto throwError(QDMI_STATUS result, const std::string& msg) -> void {
-  std::ostringstream ss;
-  ss << msg << ": " << toString(result);
-  switch (result) {
-  case QDMI_ERROR_OUTOFMEM:
-    throw std::bad_alloc();
-  case QDMI_ERROR_OUTOFRANGE:
-    throw std::out_of_range(ss.str());
-  case QDMI_ERROR_INVALIDARGUMENT:
-    throw std::invalid_argument(ss.str());
-  case QDMI_ERROR_FATAL:
-  case QDMI_ERROR_NOTIMPLEMENTED:
-  case QDMI_ERROR_LIBNOTFOUND:
-  case QDMI_ERROR_NOTFOUND:
-  case QDMI_ERROR_PERMISSIONDENIED:
-  case QDMI_ERROR_NOTSUPPORTED:
-  case QDMI_ERROR_BADSTATE:
-  case QDMI_ERROR_TIMEOUT:
-    throw std::runtime_error(ss.str());
-  default:
-    throw std::runtime_error(toString(result) + " not a known error code.");
-  }
-}
+auto throwError(int result, const std::string& msg) -> void;
 
 /// Throws an exception if the result indicates an error.
 inline auto throwIfError(int result, const std::string& msg) -> void {
@@ -588,13 +564,13 @@ class FoMaC {
   template <size_constructible_contiguous_range T>
   [[nodiscard]] auto queryProperty(QDMI_Session_Property prop) const -> T {
     size_t size = 0;
-    throwError(
+    throwIfError(
         QDMI_session_query_session_property(session_, prop, 0, nullptr, &size),
         "Querying " + toString(prop));
     T value(size / sizeof(typename T::value_type));
-    throwError(QDMI_session_query_session_property(session_, prop, size,
-                                                   value.data(), nullptr),
-               "Querying " + toString(prop));
+    throwIfError(QDMI_session_query_session_property(session_, prop, size,
+                                                     value.data(), nullptr),
+                 "Querying " + toString(prop));
     return value;
   }
 

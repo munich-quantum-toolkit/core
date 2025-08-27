@@ -16,11 +16,37 @@
 #include <iterator>
 #include <optional>
 #include <qdmi/client.h>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace fomac {
+auto throwError(int result, const std::string& msg) -> void {
+  std::ostringstream ss;
+  ss << msg << ": " << toString(static_cast<QDMI_STATUS>(result));
+  switch (result) {
+  case QDMI_ERROR_OUTOFMEM:
+    throw std::bad_alloc();
+  case QDMI_ERROR_OUTOFRANGE:
+    throw std::out_of_range(ss.str());
+  case QDMI_ERROR_INVALIDARGUMENT:
+    throw std::invalid_argument(ss.str());
+  case QDMI_ERROR_FATAL:
+  case QDMI_ERROR_NOTIMPLEMENTED:
+  case QDMI_ERROR_LIBNOTFOUND:
+  case QDMI_ERROR_NOTFOUND:
+  case QDMI_ERROR_PERMISSIONDENIED:
+  case QDMI_ERROR_NOTSUPPORTED:
+  case QDMI_ERROR_BADSTATE:
+  case QDMI_ERROR_TIMEOUT:
+    throw std::runtime_error(ss.str());
+  default:
+    throw std::runtime_error("Unknown error code: " +
+                             toString(static_cast<QDMI_STATUS>(result)));
+  }
+}
 auto Site::getIndex() const -> size_t {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
