@@ -15,7 +15,7 @@ from typing import cast
 
 import pytest
 
-from mqt.core.fomac import Device, DeviceStatus, Operation, Site, devices
+from mqt.core.qdmi.fomac import Device, DeviceStatus, Operation, Site, devices
 
 
 @pytest.fixture(params=devices())
