@@ -53,7 +53,7 @@ function Ensure-LLVM {
   $llvmDir = Join-Path $Prefix 'lib/cmake/llvm'
   $mlirDir = Join-Path $Prefix 'lib/cmake/mlir'
 
-  if (Test-Path $llvmDir -and Test-Path $mlirDir) {
+  if ((Test-Path $llvmDir) -and (Test-Path $mlirDir)) {
     Write-Host "Found existing LLVM/MLIR install at $Prefix. Skipping build."
     Append-DirsToEnv -Prefix $Prefix
     return
