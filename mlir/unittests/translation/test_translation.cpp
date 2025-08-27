@@ -92,7 +92,7 @@ TEST_F(ImportTest, EntryPoint) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: func.func @main()
+    CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
     CHECK: return
   )";
 

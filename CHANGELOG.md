@@ -11,14 +11,15 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add `isControlled()` method to the `UnitaryInterface` MLIR class ([#1157]) ([**@taminob**], [**@burgholzer**])
+- 📝 Integrate generated MLIR documentation ([#1147]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add `IfElseOperation` to C++ library and Python package to support Qiskit's `IfElseOp` ([#1117]) ([**@denialhaag**], [**@burgholzer**], [**@lavanya-m-k**])
 - ✨ Add `allocQubit` and `deallocQubit` operations for dynamically working with single qubits to the MLIR dialects ([#1139]) ([**@DRovara**], [**@burgholzer**])
 - ✨ Add `qubit` operation for static qubit addressing to the MLIR dialects ([#1098], [#1116]) ([**@MatthiasReumann**])
 - ✨ Add MQT's implementation of a QDMI Driver ([#1010]) ([**@ystade**])
-- ✨ Add a copy of the NA QDMI Device that is always a shared library ([#1010]) ([**@ystade**])
+- ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996], [#1010], [#1100]) ([**@ystade**], [**@burgholzer**])
 - ✨ Add translation from `QuantumComputation` to the `MQTRef` MLIR dialect ([#1099]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add `reset` operations to the MLIR dialects ([#1106]) ([**@DRovara**])
-- ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996], [#1010]) ([**@ystade**])
 
 ### Changed
 
@@ -176,10 +177,13 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1157]: https://github.com/munich-quantum-toolkit/core/pull/1157
+[#1147]: https://github.com/munich-quantum-toolkit/core/pull/1147
 [#1139]: https://github.com/munich-quantum-toolkit/core/pull/1139
 [#1117]: https://github.com/munich-quantum-toolkit/core/pull/1117
 [#1116]: https://github.com/munich-quantum-toolkit/core/pull/1116
 [#1106]: https://github.com/munich-quantum-toolkit/core/pull/1106
+[#1100]: https://github.com/munich-quantum-toolkit/core/pull/1100
 [#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099
 [#1098]: https://github.com/munich-quantum-toolkit/core/pull/1098
 [#1089]: https://github.com/munich-quantum-toolkit/core/pull/1089
@@ -265,6 +269,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**q-inho**]: https://github.com/q-inho
 [**@li-mingbao**]: https://github.com/li-mingbao
 [**@lavanya-m-k**]: https://github.com/lavanya-m-k
+[**@taminob**]: https://github.com/taminob
 
 <!-- General links -->
 
