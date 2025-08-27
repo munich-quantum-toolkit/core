@@ -23,7 +23,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi
-    PRIVATE MQT::CoreNaQDMI qdmi::project_warnings MQT::ProjectOptions MQT::ProjectWarnings)
+    PRIVATE MQT::CoreQDMINaDevice qdmi::project_warnings MQT::ProjectOptions MQT::ProjectWarnings)
 
   # Set C++ standard
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
@@ -39,11 +39,11 @@ if(NOT TARGET ${TARGET_NAME})
   set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${TARGET_NAME})
 endif()
 
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-fomac)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-fomac)
 
 if(NOT TARGET ${TARGET_NAME})
   # Add FoMaC library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME FoMaC)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIFoMaC)
 
   # Add sources to target
   target_sources(${TARGET_NAME} PRIVATE FoMaC.cpp)
@@ -66,7 +66,7 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PROPERTIES VERSION ${PROJECT_VERSION}
                SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreFoMaC)
+               EXPORT_NAME CoreQDMIFoMaC)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS

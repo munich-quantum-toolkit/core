@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-fomac-bindings")
+set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-qdmi-fomac-bindings")
 
 if(NOT TARGET ${TARGET_NAME})
   # collect source files
@@ -22,7 +22,7 @@ if(NOT TARGET ${TARGET_NAME})
     INSTALL_DIR
     ./qdmi
     LINK_LIBS
-    MQT::CoreFoMaC)
+    MQT::CoreQDMIFoMaC)
 
   # Set C++ standard
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
