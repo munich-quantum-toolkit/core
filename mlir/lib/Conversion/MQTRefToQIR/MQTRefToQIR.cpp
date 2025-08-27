@@ -683,6 +683,7 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     if (main.getBlocks().size() > 1) {
       return;
     }
+
     // get the existing block
     auto* mainBlock = &main.front();
     OpBuilder builder(main.getBody());
@@ -702,12 +703,12 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     for (auto it = mainBlock->begin(); it != mainBlock->end();) {
       // make sure that the iterator is valid
       auto& op = *it++;
+
       if (dyn_cast<ref::DeallocOp>(op) || dyn_cast<ref::DeallocQubitOp>(op) ||
           dyn_cast<ref::ResetOp>(op) || dyn_cast<ref::MeasureOp>(op)) {
         // move irreversible quantum operations to the irreversible block
         irreversibleBlockOps.splice(irreversibleBlock->end(), mainBlockOps,
                                     Block::iterator(op));
-
       } else if (dyn_cast<LLVM::ReturnOp>(op)) {
         // move the return op to the endblock
         endBlockOps.splice(endBlock->end(), mainBlockOps, Block::iterator(op));
@@ -741,20 +742,11 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     auto& firstBlock = *(main.getBlocks().begin());
     OpBuilder builder(main.getBody());
 
-    // find the zeroOp or create one
-    Operation* zeroOperation = nullptr;
-    firstBlock.walk([&](Operation* op) {
-      if (auto zeroOp = dyn_cast<LLVM::ZeroOp>(op)) {
-        zeroOperation = zeroOp;
-        return WalkResult::interrupt();
-      }
-      return WalkResult::advance();
-    });
-    if (zeroOperation == nullptr) {
-      builder.setInsertionPointToStart(&firstBlock);
-      zeroOperation = builder.create<LLVM::ZeroOp>(
-          main->getLoc(), LLVM::LLVMPointerType::get(ctx));
-    }
+    // create the zero op
+    builder.setInsertionPointToStart(&firstBlock);
+    auto zeroOperation = builder.create<LLVM::ZeroOp>(
+        main->getLoc(), LLVM::LLVMPointerType::get(ctx));
+
     // add the zero operation to the pointerMap
     state->ptrMap.try_emplace(0, zeroOperation->getResult(0));
 
