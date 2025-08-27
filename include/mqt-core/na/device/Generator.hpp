@@ -18,6 +18,8 @@
 #include <stdexcept>
 #include <string>
 // NOLINTNEXTLINE(misc-include-cleaner)
+#include "spdlog/sinks/basic_file_sink-inl.h"
+
 #include <nlohmann/json.hpp>
 #include <utility>
 #include <vector>
@@ -314,20 +316,32 @@ public:
     device.lengthUnit = !json.is_null()
                             ? json.value("lengthUnit", defaultDevice.lengthUnit)
                             : defaultDevice.lengthUnit;
-    if (device.lengthUnit.unit != "mm" && device.lengthUnit.unit != "um" &&
-        device.lengthUnit.unit != "nm") {
-      throw std::runtime_error(
-          "Invalid length unit: " + device.lengthUnit.unit +
-          ". Supported units are: mm, um, nm.");
+    constexpr std::array allowedLengthUnits = {"mm", "um", "nm"};
+    if (std::ranges::find(allowedLengthUnits, device.lengthUnit.unit) ==
+        allowedLengthUnits.end()) {
+      std::ostringstream ss;
+      ss << "Invalid length unit: " << device.lengthUnit.unit
+         << ". Supported units are: ";
+      std::ranges::for_each(allowedLengthUnits,
+                            [&ss](const char* unit) { ss << unit << ", "; });
+      ss.seekp(-2, std::ostringstream::cur); // Remove the last comma and space
+      ss << ".";
+      throw std::runtime_error(ss.str());
     }
     device.durationUnit =
         !json.is_null() ? json.value("durationUnit", defaultDevice.durationUnit)
                         : defaultDevice.durationUnit;
-    if (device.durationUnit.unit != "ms" && device.durationUnit.unit != "us" &&
-        device.durationUnit.unit != "ns") {
-      throw std::runtime_error(
-          "Invalid duration unit: " + device.durationUnit.unit +
-          ". Supported units are: ms, us, ns.");
+    constexpr std::array allowedDurationUnits = {"ms", "us", "ns"};
+    if (std::ranges::find(allowedDurationUnits, device.durationUnit.unit) ==
+        allowedDurationUnits.end()) {
+      std::ostringstream ss;
+      ss << "Invalid duration unit: " << device.durationUnit.unit
+         << ". Supported units are: ";
+      std::ranges::for_each(allowedDurationUnits,
+                            [&ss](const char* unit) { ss << unit << ", "; });
+      ss.seekp(-2, std::ostringstream::cur); // Remove the last comma and space
+      ss << ".";
+      throw std::runtime_error(ss.str());
     }
   }
 };
