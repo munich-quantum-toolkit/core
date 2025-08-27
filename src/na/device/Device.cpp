@@ -521,9 +521,8 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
                       value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, size_t,
                             numParameters_, prop, size, value, sizeRet)
-  const std::vector sitesVec(supportedSites_.cbegin(), supportedSites_.cend());
-  ADD_LIST_PROPERTY(QDMI_OPERATION_PROPERTY_SITES, MQT_NA_QDMI_Site, sitesVec,
-                    prop, size, value, sizeRet)
+  ADD_LIST_PROPERTY(QDMI_OPERATION_PROPERTY_SITES, MQT_NA_QDMI_Site,
+                    supportedSites_, prop, size, value, sizeRet)
   if (interactionRadius_) {
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS,
                               uint64_t, *interactionRadius_, prop, size, value,

@@ -242,22 +242,23 @@ public:
 
   /// @brief Represents a unit of measurement for length and time.
   struct Unit {
-    /// @brief The factor of the unit.
-    double scaleFactor = 0;
     /// @brief The unit of measurement (e.g., "µm" for micrometers, "ns" for
     /// nanoseconds).
     std::string unit;
+    /// @brief The factor of the unit.
+    double scaleFactor = 0;
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Unit, scaleFactor, unit)
   };
 
   /// @brief The unit of measurement for lengths in the device.
-  Unit lengthUnit = {.scaleFactor = 1.0,
-                     .unit = "um"}; ///< Default is micrometers (um).
+  Unit lengthUnit = {.unit = "um", ///< Default is micrometers (um).
+                     .scaleFactor = 1.0};
+
   /// @brief The unit of measurement for time in the device.
-  Unit durationUnit = {.scaleFactor = 1.0,
-                       .unit = "us"}; ///< Default is microseconds (us).
+  Unit durationUnit = {.unit = "us", ///< Default is microseconds (us).
+                       .scaleFactor = 1.0};
 
   // Before we used the macro NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT here,
   // too. Now, we added an id to shuttling units that must be initialized
