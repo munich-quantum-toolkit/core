@@ -39,3 +39,39 @@ module {
     return
   }
 }
+
+
+// -----
+// This test checks that consecutive CNOT gates with more than one control qubit are not merged.
+
+module {
+  // CHECK-LABEL: func.func @testTooManyControlsNoSwapReconstruction
+  func.func @testTooManyControlsNoSwapReconstruction() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q2_0:.*]] = mqtopt.allocQubit
+
+    // ========================== Check for operations that should not be canceled ===========================
+    // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]]
+    // CHECK: %[[Q1_2:.*]], %[[Q02_2:.*]]:2 = mqtopt.x() %[[Q1_1]] ctrl %[[Q0_1]], %[[Q2_0]]
+    // CHECK: %[[Q0_3:.*]], %[[Q1_3:.*]] = mqtopt.x() %[[Q02_2]]#0 ctrl %[[Q1_2]]
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_3]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_3]]
+    // CHECK: mqtopt.deallocQubit %[[Q02_2]]#1
+
+    %q0_0 = mqtopt.allocQubit
+    %q1_0 = mqtopt.allocQubit
+    %q2_0 = mqtopt.allocQubit
+
+    %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q1_2, %q0_2, %q2_1 = mqtopt.x() %q1_1 ctrl %q0_1, %q2_0: !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
+    %q0_3, %q1_3 = mqtopt.x() %q0_2 ctrl %q1_2: !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_3
+    mqtopt.deallocQubit %q1_3
+    mqtopt.deallocQubit %q2_1
+
+    return
+  }
+}
