@@ -289,7 +289,9 @@ test-skip = [
 ]
 
 [tool.cibuildwheel.linux]
-environment = { DEPLOY = "ON" }
+before-all = "uv tool install sccache>=0.10.0"
+environment = { DEPLOY = "ON", PATH="$PATH:~/.local/bin" }
+before-test = "uvx sccache --show-stats"
 
 [tool.cibuildwheel.macos]
 environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }
