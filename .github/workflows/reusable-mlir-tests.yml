@@ -91,7 +91,7 @@ jobs:
           if command -v lit >/dev/null 2>&1; then
             LIT_BIN="$(command -v lit)"
           elif [[ "${RUNNER_OS:-}" == "Windows" ]]; then
-            LIT_BIN="${GITHUB_WORKSPACE}\\.venv\\Scripts\\lit.exe"
+            LIT_BIN="lit.exe"
           else
             LIT_BIN="lit"
           fi
