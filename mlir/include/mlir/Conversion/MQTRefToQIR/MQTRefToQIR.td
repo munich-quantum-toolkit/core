@@ -13,15 +13,15 @@ def MQTRefToQIR : Pass<"mqtref-to-qir"> {
 
    let description = [{
       This pass converts all operations to the llvm dialect. The quantum operations of the mqtref dialect are converted
-      to an equivalent operation in the QIR instruction set expressed with a function call in the llvm dialect. This requires a valid
+      to an equivalent function in the QIR instruction set with a function call to it in the llvm dialect. This requires a valid
       input in the mqtref dialect either using static or dynamically addressed qubits where the main function is marked with the
       entry_point attribute. At the moment the pass only supports simple quantum programs with a straight controlflow and converts
       them to the llvm dialect according the QIR base profile. The required module flags are added as additional attributes to the main function.
       The initial main function is divided into 4 blocks as required of the base profile. The first block only contains operations that
       are required to initialize the execution environment. The second and third block only contains calls to quantum operations that return void.
-      The difference between these two blocks is that the operations in the second block are reversible while the call operations
+      The difference between these two blocks is that operations in the second block are reversible while the call operations
       in the third block are to functions that are marked as irreversible. These are at the moment `__quantum__qis__mz__body`,
-      `__quantum__rt__qubit_release_array`, `__quantum__rt__qubit_release`, `__quantum__qis__reset__body`.
+      `__quantum__rt__qubit_release_array`, `__quantum__rt__qubit_release`, and `__quantum__qis__reset__body`.
       The last block only contains operations to record the output of the measurements and the return operation. The individual blocks
       are connected with unconditional jump operations to the next block.
       The `mqtref.measure` operation is converted into a `__quantum__qis__mz__body` operation that performs the measurement and a
