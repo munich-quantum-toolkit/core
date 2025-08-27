@@ -257,7 +257,7 @@ bool StandardOperation::isClifford() const {
   case X:
   case Y:
   case Z:
-    return (getControls().size() <= 1);
+    return (controls.size() <= 1);
   case H:
   case S:
   case Sdg:
