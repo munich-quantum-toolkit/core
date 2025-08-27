@@ -11,19 +11,17 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Extend MQT's implementation of a QDMI Device for neutral atom-based quantum computing with more properties ([#1100]) ([**@ystade**])
+- 📝 Integrate generated MLIR documentation ([#1147]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add `IfElseOperation` to C++ library and Python package to support Qiskit's `IfElseOp` ([#1117]) ([**@denialhaag**], [**@burgholzer**], [**@lavanya-m-k**])
 - ✨ Add `allocQubit` and `deallocQubit` operations for dynamically working with single qubits to the MLIR dialects ([#1139]) ([**@DRovara**], [**@burgholzer**])
 - ✨ Add `qubit` operation for static qubit addressing to the MLIR dialects ([#1098], [#1116]) ([**@MatthiasReumann**])
-- ✨ Add MQT's implementation of a QDMI Driver ([#1010]) ([**@ystade**])
-- ✨ Add a copy of the NA QDMI Device that is always a shared library ([#1010]) ([**@ystade**])
+- ✨ Add MQT's implementation of a QDMI Driver ([#1010], [#1150]) ([**@ystade**])
+- ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996], [#1010], [#1100]) ([**@ystade**], [**@burgholzer**])
 - ✨ Add translation from `QuantumComputation` to the `MQTRef` MLIR dialect ([#1099]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add `reset` operations to the MLIR dialects ([#1106]) ([**@DRovara**])
-- ✨ Add MQT's implementation of a QDMI Device for neutral atom-based quantum computing ([#996], [#1010]) ([**@ystade**])
 
 ### Changed
 
-- ✨ Extend MQT's implementation of a QDMI Device for neutral atom-based quantum computing with more properties ([#1100]) ([**@ystade**])
 - 🚚 Rename `xxminusyy` to `xx_minus_yy` and `xxplusyy` to `xx_plus_yy` in MLIR dialects ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 - 🚸 Add custom assembly format for operations in the MLIR dialects ([#1139]) ([**@burgholzer**])
 - 🚸 Enable `InferTypeOpInterface` in the MLIR dialects to reduce explicit type information ([#1139]) ([**@burgholzer**])
@@ -178,6 +176,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1147]: https://github.com/munich-quantum-toolkit/core/pull/1147
 [#1139]: https://github.com/munich-quantum-toolkit/core/pull/1139
 [#1117]: https://github.com/munich-quantum-toolkit/core/pull/1117
 [#1116]: https://github.com/munich-quantum-toolkit/core/pull/1116
