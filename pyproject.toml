@@ -92,8 +92,6 @@ build.targets = [
   "mqt-core-ir-bindings",
   "mqt-core-dd-bindings",
   "mqt-core-qdmi-na-device",
-  # todo: This can be omitted, right?
-  # "mqt-core-fomac",
   "mqt-core-fomac-bindings",
 ]
 
