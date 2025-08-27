@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <qdmi/client.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -23,96 +24,68 @@
 #include <vector>
 
 namespace fomac {
-auto checkError(int result, const std::string& msg) -> void {
-  if (result != QDMI_SUCCESS) {
-    std::stringstream ss;
-    ss << msg << ": ";
-    switch (result) {
-    case QDMI_WARN_GENERAL:
-      ss << "A general warning occurred.";
-      spdlog::warn(ss.str());
-      break;
-    case QDMI_ERROR_OUTOFMEM:
-      throw std::bad_alloc();
-    case QDMI_ERROR_OUTOFRANGE:
-      ss << "Out of range.";
-      throw std::out_of_range(ss.str());
-    case QDMI_ERROR_INVALIDARGUMENT:
-      ss << "Invalid argument.";
-      throw std::invalid_argument(ss.str());
-    default: { /* all errors that result in a runtime exception */
-      switch (result) {
-      case QDMI_ERROR_FATAL:
-        ss << "Fatal error.";
-        break;
-      case QDMI_ERROR_NOTIMPLEMENTED:
-        ss << "Not implemented.";
-        break;
-      case QDMI_ERROR_LIBNOTFOUND:
-        ss << "Library not found.";
-        break;
-      case QDMI_ERROR_NOTFOUND:
-        ss << "Not found.";
-        break;
-      case QDMI_ERROR_PERMISSIONDENIED:
-        ss << "Permission denied.";
-        break;
-      case QDMI_ERROR_NOTSUPPORTED:
-        ss << "Not supported.";
-        break;
-      case QDMI_ERROR_BADSTATE:
-        ss << "Bad state.";
-        break;
-      case QDMI_ERROR_TIMEOUT:
-        ss << "Timeout.";
-        break;
-      default:
-        ss << "Unknown error.";
-        break;
-      }
-      throw std::runtime_error(ss.str());
-    }
-    }
+auto throwError(QDMI_STATUS result, const std::string& msg) -> void {
+  std::stringstream ss;
+  ss << msg << ": " << toString(result);
+  switch (result) {
+  case QDMI_ERROR_OUTOFMEM:
+    throw std::bad_alloc();
+  case QDMI_ERROR_OUTOFRANGE:
+    throw std::out_of_range(ss.str());
+  case QDMI_ERROR_INVALIDARGUMENT:
+    throw std::invalid_argument(ss.str());
+  case QDMI_ERROR_FATAL:
+  case QDMI_ERROR_NOTIMPLEMENTED:
+  case QDMI_ERROR_LIBNOTFOUND:
+  case QDMI_ERROR_NOTFOUND:
+  case QDMI_ERROR_PERMISSIONDENIED:
+  case QDMI_ERROR_NOTSUPPORTED:
+  case QDMI_ERROR_BADSTATE:
+  case QDMI_ERROR_TIMEOUT:
+    throw std::runtime_error(ss.str());
+  default:
+    throw std::runtime_error(toString(result) + " not a known error code.");
   }
 }
 auto Site::getIndex() const -> size_t {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
-auto Site::getT1() const -> uint64_t {
-  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_T1);
+auto Site::getT1() const -> std::optional<uint64_t> {
+  return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_T1);
 }
-auto Site::getT2() const -> uint64_t {
-  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_T2);
+auto Site::getT2() const -> std::optional<uint64_t> {
+  return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_T2);
 }
-auto Site::getName() const -> std::string {
-  return queryProperty<std::string>(QDMI_SITE_PROPERTY_NAME);
+auto Site::getName() const -> std::optional<std::string> {
+  return queryProperty<std::optional<std::string>>(QDMI_SITE_PROPERTY_NAME);
 }
-auto Site::getXCoordinate() const -> int64_t {
-  return queryProperty<int64_t>(QDMI_SITE_PROPERTY_XCOORDINATE);
+auto Site::getXCoordinate() const -> std::optional<int64_t> {
+  return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_XCOORDINATE);
 }
-auto Site::getYCoordinate() const -> int64_t {
-  return queryProperty<int64_t>(QDMI_SITE_PROPERTY_YCOORDINATE);
+auto Site::getYCoordinate() const -> std::optional<int64_t> {
+  return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_YCOORDINATE);
 }
-auto Site::getZCoordinate() const -> int64_t {
-  return queryProperty<int64_t>(QDMI_SITE_PROPERTY_ZCOORDINATE);
+auto Site::getZCoordinate() const -> std::optional<int64_t> {
+  return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_ZCOORDINATE);
 }
-auto Site::isZone() const -> bool {
-  return queryProperty<bool>(QDMI_SITE_PROPERTY_ISZONE);
+auto Site::isZone() const -> std::optional<bool> {
+  return queryProperty<std::optional<bool>>(QDMI_SITE_PROPERTY_ISZONE);
 }
-auto Site::getXExtent() const -> uint64_t {
-  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_XEXTENT);
+auto Site::getXExtent() const -> std::optional<uint64_t> {
+  return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_XEXTENT);
 }
-auto Site::getYExtent() const -> uint64_t {
-  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_YEXTENT);
+auto Site::getYExtent() const -> std::optional<uint64_t> {
+  return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_YEXTENT);
 }
-auto Site::getZExtent() const -> uint64_t {
-  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_ZEXTENT);
+auto Site::getZExtent() const -> std::optional<uint64_t> {
+  return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_ZEXTENT);
 }
-auto Site::getModuleIndex() const -> uint64_t {
-  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_MODULEINDEX);
+auto Site::getModuleIndex() const -> std::optional<uint64_t> {
+  return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_MODULEINDEX);
 }
-auto Site::getSubmoduleIndex() const -> uint64_t {
-  return queryProperty<uint64_t>(QDMI_SITE_PROPERTY_SUBMODULEINDEX);
+auto Site::getSubmoduleIndex() const -> std::optional<uint64_t> {
+  return queryProperty<std::optional<uint64_t>>(
+      QDMI_SITE_PROPERTY_SUBMODULEINDEX);
 }
 auto Operation::getName(const std::vector<Site>& sites,
                         const std::vector<double>& params) const
@@ -122,9 +95,9 @@ auto Operation::getName(const std::vector<Site>& sites,
 }
 auto Operation::getQubitsNum(const std::vector<Site>& sites,
                              const std::vector<double>& params) const
-    -> size_t {
-  return queryProperty<size_t>(QDMI_OPERATION_PROPERTY_QUBITSNUM, sites,
-                               params);
+    -> std::optional<size_t> {
+  return queryProperty<std::optional<size_t>>(QDMI_OPERATION_PROPERTY_QUBITSNUM,
+                                              sites, params);
 }
 auto Operation::getParametersNum(const std::vector<Site>& sites,
                                  const std::vector<double>& params) const
@@ -134,53 +107,60 @@ auto Operation::getParametersNum(const std::vector<Site>& sites,
 }
 auto Operation::getDuration(const std::vector<Site>& sites,
                             const std::vector<double>& params) const
-    -> uint64_t {
-  return queryProperty<uint64_t>(QDMI_OPERATION_PROPERTY_DURATION, sites,
-                                 params);
+    -> std::optional<uint64_t> {
+  return queryProperty<std::optional<uint64_t>>(
+      QDMI_OPERATION_PROPERTY_DURATION, sites, params);
 }
 auto Operation::getFidelity(const std::vector<Site>& sites,
-                            const std::vector<double>& params) const -> double {
-  return queryProperty<double>(QDMI_OPERATION_PROPERTY_FIDELITY, sites, params);
+                            const std::vector<double>& params) const
+    -> std::optional<double> {
+  return queryProperty<std::optional<double>>(QDMI_OPERATION_PROPERTY_FIDELITY,
+                                              sites, params);
 }
 auto Operation::getInteractionRadius(const std::vector<Site>& sites,
                                      const std::vector<double>& params) const
-    -> uint64_t {
-  return queryProperty<uint64_t>(QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS,
-                                 sites, params);
+    -> std::optional<uint64_t> {
+  return queryProperty<std::optional<uint64_t>>(
+      QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS, sites, params);
 }
 auto Operation::getBlockingRadius(const std::vector<Site>& sites,
                                   const std::vector<double>& params) const
-    -> uint64_t {
-  return queryProperty<uint64_t>(QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, sites,
-                                 params);
+    -> std::optional<uint64_t> {
+  return queryProperty<std::optional<uint64_t>>(
+      QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, sites, params);
 }
 auto Operation::getIdlingFidelity(const std::vector<Site>& sites,
                                   const std::vector<double>& params) const
-    -> double {
-  return queryProperty<double>(QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, sites,
-                               params);
+    -> std::optional<double> {
+  return queryProperty<std::optional<double>>(
+      QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, sites, params);
 }
 auto Operation::isZoned(const std::vector<Site>& sites,
-                        const std::vector<double>& params) const -> bool {
-  return queryProperty<bool>(QDMI_OPERATION_PROPERTY_ISZONED, sites, params);
+                        const std::vector<double>& params) const
+    -> std::optional<bool> {
+  return queryProperty<std::optional<bool>>(QDMI_OPERATION_PROPERTY_ISZONED,
+                                            sites, params);
 }
 auto Operation::getSites(const std::vector<Site>& sites,
                          const std::vector<double>& params)
-    -> std::vector<Site> {
-  const auto& qdmiSites = queryProperty<std::vector<QDMI_Site>>(
+    -> std::optional<std::vector<Site>> {
+  const auto& qdmiSites = queryProperty<std::optional<std::vector<QDMI_Site>>>(
       QDMI_OPERATION_PROPERTY_SITES, sites, params);
+  if (!qdmiSites.has_value()) {
+    return std::nullopt;
+  }
   std::vector<Site> returnedSites;
-  returnedSites.reserve(qdmiSites.size());
+  returnedSites.reserve(qdmiSites->size());
   std::ranges::transform(
-      qdmiSites, std::back_inserter(returnedSites),
+      *qdmiSites, std::back_inserter(returnedSites),
       [this](const QDMI_Site& site) -> Site { return {device_, site}; });
   return returnedSites;
 }
 auto Operation::getMeanShuttlingSpeed(const std::vector<Site>& sites,
                                       const std::vector<double>& params) const
-    -> uint64_t {
-  return queryProperty<uint64_t>(QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED,
-                                 sites, params);
+    -> std::optional<uint64_t> {
+  return queryProperty<std::optional<uint64_t>>(
+      QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED, sites, params);
 }
 auto Device::getName() const -> std::string {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_NAME);
@@ -217,13 +197,17 @@ auto Device::getOperations() const -> std::vector<Operation> {
       [this](const QDMI_Operation& op) -> Operation { return {device_, op}; });
   return operations;
 }
-auto Device::getCouplingMap() const -> std::vector<std::pair<Site, Site>> {
-  const auto& qdmiCouplingMap =
-      queryProperty<std::vector<std::pair<QDMI_Site, QDMI_Site>>>(
-          QDMI_DEVICE_PROPERTY_COUPLINGMAP);
+auto Device::getCouplingMap() const
+    -> std::optional<std::vector<std::pair<Site, Site>>> {
+  const auto& qdmiCouplingMap = queryProperty<
+      std::optional<std::vector<std::pair<QDMI_Site, QDMI_Site>>>>(
+      QDMI_DEVICE_PROPERTY_COUPLINGMAP);
+  if (!qdmiCouplingMap.has_value()) {
+    return std::nullopt;
+  }
   std::vector<std::pair<Site, Site>> couplingMap;
-  couplingMap.reserve(qdmiCouplingMap.size());
-  std::ranges::transform(qdmiCouplingMap, std::back_inserter(couplingMap),
+  couplingMap.reserve(qdmiCouplingMap->size());
+  std::ranges::transform(*qdmiCouplingMap, std::back_inserter(couplingMap),
                          [this](const std::pair<QDMI_Site, QDMI_Site>& pair)
                              -> std::pair<Site, Site> {
                            return {Site{device_, pair.first},
@@ -231,23 +215,29 @@ auto Device::getCouplingMap() const -> std::vector<std::pair<Site, Site>> {
                          });
   return couplingMap;
 }
-auto Device::getNeedsCalibration() const -> size_t {
-  return queryProperty<size_t>(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
+auto Device::getNeedsCalibration() const -> std::optional<size_t> {
+  return queryProperty<std::optional<size_t>>(
+      QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
 }
-auto Device::getLengthUnit() const -> std::string {
-  return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_LENGTHUNIT);
+auto Device::getLengthUnit() const -> std::optional<std::string> {
+  return queryProperty<std::optional<std::string>>(
+      QDMI_DEVICE_PROPERTY_LENGTHUNIT);
 }
-auto Device::getLengthScaleFactor() const -> double {
-  return queryProperty<double>(QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR);
+auto Device::getLengthScaleFactor() const -> std::optional<double> {
+  return queryProperty<std::optional<double>>(
+      QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR);
 }
-auto Device::getDurationUnit() const -> std::string {
-  return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_DURATIONUNIT);
+auto Device::getDurationUnit() const -> std::optional<std::string> {
+  return queryProperty<std::optional<std::string>>(
+      QDMI_DEVICE_PROPERTY_DURATIONUNIT);
 }
-auto Device::getDurationScaleFactor() const -> double {
-  return queryProperty<double>(QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR);
+auto Device::getDurationScaleFactor() const -> std::optional<double> {
+  return queryProperty<std::optional<double>>(
+      QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR);
 }
-auto Device::getMinAtomDistance() const -> uint64_t {
-  return queryProperty<uint64_t>(QDMI_DEVICE_PROPERTY_MINATOMDISTANCE);
+auto Device::getMinAtomDistance() const -> std::optional<uint64_t> {
+  return queryProperty<std::optional<uint64_t>>(
+      QDMI_DEVICE_PROPERTY_MINATOMDISTANCE);
 }
 FoMaC::FoMaC() {
   QDMI_session_alloc(&session_);

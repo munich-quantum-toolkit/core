@@ -19,26 +19,6 @@
 #include <vector>
 
 namespace fomac {
-#define MAYBE_NOT_SUPPORTED(statement)                                         \
-  try {                                                                        \
-    statement;                                                                 \
-  } catch (const std::runtime_error& exception) {                              \
-    if (!std::string(exception.what()).ends_with("Not supported.")) {          \
-      FAIL()                                                                   \
-          << "Expected: " #statement                                           \
-             " throws an exception of type std::runtime_error that ends with " \
-             "\"Not supported.\"\n"                                            \
-             "Actual: it throws std::runtime_error with a different message: " \
-          << exception.what();                                                 \
-    }                                                                          \
-  } catch (const std::exception& exception) {                                  \
-    FAIL()                                                                     \
-        << "Expected: " #statement                                             \
-           " throws an exception of type std::runtime_error that ends with "   \
-           "\"Not supported.\"\n"                                              \
-           "Actual: it throws a different type: "                              \
-        << exception.what();                                                   \
-  }
 class DeviceTest : public testing::TestWithParam<Device> {
 protected:
   Device device;
@@ -89,11 +69,11 @@ TEST_P(DeviceTest, Operations) {
 }
 
 TEST_P(DeviceTest, CouplingMap) {
-  MAYBE_NOT_SUPPORTED(std::ignore = device.getCouplingMap());
+  EXPECT_NO_THROW(std::ignore = device.getCouplingMap());
 }
 
 TEST_P(DeviceTest, NeedsCalibration) {
-  MAYBE_NOT_SUPPORTED(std::ignore = device.getNeedsCalibration());
+  EXPECT_NO_THROW(std::ignore = device.getNeedsCalibration());
 }
 
 TEST_P(DeviceTest, LengthUnit) {
@@ -113,49 +93,43 @@ TEST_P(DeviceTest, DurationScaleFactor) {
 }
 
 TEST_P(DeviceTest, MinAtomDistance) {
-  MAYBE_NOT_SUPPORTED(std::ignore = device.getMinAtomDistance());
+  EXPECT_NO_THROW(std::ignore = device.getMinAtomDistance());
 }
 
 TEST_P(SiteTest, Index) { EXPECT_NO_THROW(std::ignore = site.getIndex()); }
 
-TEST_P(SiteTest, T1) { MAYBE_NOT_SUPPORTED(std::ignore = site.getT1()); }
+TEST_P(SiteTest, T1) { EXPECT_NO_THROW(std::ignore = site.getT1()); }
 
-TEST_P(SiteTest, T2) { MAYBE_NOT_SUPPORTED(std::ignore = site.getT2()); }
+TEST_P(SiteTest, T2) { EXPECT_NO_THROW(std::ignore = site.getT2()); }
 
-TEST_P(SiteTest, Name) { MAYBE_NOT_SUPPORTED(std::ignore = site.getName()); }
+TEST_P(SiteTest, Name) { EXPECT_NO_THROW(std::ignore = site.getName()); }
 
 TEST_P(SiteTest, XCoordinate) {
-  MAYBE_NOT_SUPPORTED(std::ignore = site.getXCoordinate());
+  EXPECT_NO_THROW(std::ignore = site.getXCoordinate());
 }
 
 TEST_P(SiteTest, YCoordinate) {
-  MAYBE_NOT_SUPPORTED(std::ignore = site.getYCoordinate());
+  EXPECT_NO_THROW(std::ignore = site.getYCoordinate());
 }
 
 TEST_P(SiteTest, ZCoordinate) {
-  MAYBE_NOT_SUPPORTED(std::ignore = site.getZCoordinate());
+  EXPECT_NO_THROW(std::ignore = site.getZCoordinate());
 }
 
-TEST_P(SiteTest, IsZone) { MAYBE_NOT_SUPPORTED(std::ignore = site.isZone()); }
+TEST_P(SiteTest, IsZone) { EXPECT_NO_THROW(std::ignore = site.isZone()); }
 
-TEST_P(SiteTest, XExtent) {
-  MAYBE_NOT_SUPPORTED(std::ignore = site.getXExtent());
-}
+TEST_P(SiteTest, XExtent) { EXPECT_NO_THROW(std::ignore = site.getXExtent()); }
 
-TEST_P(SiteTest, YExtent) {
-  MAYBE_NOT_SUPPORTED(std::ignore = site.getYExtent());
-}
+TEST_P(SiteTest, YExtent) { EXPECT_NO_THROW(std::ignore = site.getYExtent()); }
 
-TEST_P(SiteTest, ZExtent) {
-  MAYBE_NOT_SUPPORTED(std::ignore = site.getZExtent());
-}
+TEST_P(SiteTest, ZExtent) { EXPECT_NO_THROW(std::ignore = site.getZExtent()); }
 
 TEST_P(SiteTest, ModuleIndex) {
-  MAYBE_NOT_SUPPORTED(std::ignore = site.getModuleIndex());
+  EXPECT_NO_THROW(std::ignore = site.getModuleIndex());
 }
 
 TEST_P(SiteTest, SubmoduleIndex) {
-  MAYBE_NOT_SUPPORTED(std::ignore = site.getSubmoduleIndex());
+  EXPECT_NO_THROW(std::ignore = site.getSubmoduleIndex());
 }
 
 TEST_P(OperationTest, Name) {
@@ -163,43 +137,43 @@ TEST_P(OperationTest, Name) {
 }
 
 TEST_P(OperationTest, QubitsNum) {
-  MAYBE_NOT_SUPPORTED(std::ignore = operation.getQubitsNum());
+  EXPECT_NO_THROW(std::ignore = operation.getQubitsNum());
 }
 
 TEST_P(OperationTest, ParametersNum) {
-  MAYBE_NOT_SUPPORTED(std::ignore = operation.getParametersNum());
+  EXPECT_NO_THROW(std::ignore = operation.getParametersNum());
 }
 
 TEST_P(OperationTest, Duration) {
-  MAYBE_NOT_SUPPORTED(std::ignore = operation.getDuration());
+  EXPECT_NO_THROW(std::ignore = operation.getDuration());
 }
 
 TEST_P(OperationTest, Fidelity) {
-  MAYBE_NOT_SUPPORTED(std::ignore = operation.getFidelity());
+  EXPECT_NO_THROW(std::ignore = operation.getFidelity());
 }
 
 TEST_P(OperationTest, InteractionRadius) {
-  MAYBE_NOT_SUPPORTED(std::ignore = operation.getInteractionRadius());
+  EXPECT_NO_THROW(std::ignore = operation.getInteractionRadius());
 }
 
 TEST_P(OperationTest, BlockingRadius) {
-  MAYBE_NOT_SUPPORTED(std::ignore = operation.getBlockingRadius());
+  EXPECT_NO_THROW(std::ignore = operation.getBlockingRadius());
 }
 
 TEST_P(OperationTest, IdlingFidelity) {
-  MAYBE_NOT_SUPPORTED(std::ignore = operation.getIdlingFidelity());
+  EXPECT_NO_THROW(std::ignore = operation.getIdlingFidelity());
 }
 
 TEST_P(OperationTest, oned) {
-  MAYBE_NOT_SUPPORTED(std::ignore = operation.isZoned());
+  EXPECT_NO_THROW(std::ignore = operation.isZoned());
 }
 
 TEST_P(OperationTest, Sites) {
-  MAYBE_NOT_SUPPORTED(std::ignore = operation.getSites());
+  EXPECT_NO_THROW(std::ignore = operation.getSites());
 }
 
 TEST_P(OperationTest, MeanShuttlingSpeed) {
-  MAYBE_NOT_SUPPORTED(std::ignore = operation.getMeanShuttlingSpeed());
+  EXPECT_NO_THROW(std::ignore = operation.getMeanShuttlingSpeed());
 }
 
 INSTANTIATE_TEST_SUITE_P(
