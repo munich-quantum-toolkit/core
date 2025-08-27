@@ -85,29 +85,26 @@ jobs:
         run: uv pip install lit
 
       # Configure
-      - name: Configure CMake
-        shell: bash
+      - name: Configure CMake (Linux and macOS)
+        if: runner.os == 'Linux' || runner.os == 'macOS'
         run: |
-          if command -v lit >/dev/null 2>&1; then
-            LIT_BIN="$(command -v lit)"
-          elif [[ "${RUNNER_OS:-}" == "Windows" ]]; then
-            LIT_BIN="lit.exe"
-          else
-            LIT_BIN="lit"
-          fi
-
-          if [[ "${RUNNER_OS:-}" == "Windows" ]]; then
-            CMAKE_GEN=""
-          else
-            CMAKE_GEN="-G Ninja"
-          fi
-
-          cmake $CMAKE_GEN -S . -B build \
+          cmake -G Ninja -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ matrix.coverage && 'Debug' || 'Release' }} \
             -DBUILD_MQT_CORE_MLIR=ON \
             -DLLVM_DIR=$LLVM_DIR \
             -DMLIR_DIR=$MLIR_DIR \
-            -DLLVM_EXTERNAL_LIT=$LIT_BIN \
+            -DLLVM_EXTERNAL_LIT=$(which lit) \
+            ${{ matrix.coverage && '-DENABLE_COVERAGE=ON' || '' }}
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -S . -B build `
+            -DCMAKE_BUILD_TYPE=${{ matrix.coverage && 'Debug' || 'Release' }} `
+            -DBUILD_MQT_CORE_MLIR=ON `
+            -DLLVM_DIR="${{ github.workspace }}\llvm-install\lib\cmake\llvm" `
+            -DMLIR_DIR="${{ github.workspace }}\llvm-install\lib\cmake\mlir" `
+            -DLLVM_EXTERNAL_LIT=${{ github.workspace }}\.venv\Scripts\lit.exe `
             ${{ matrix.coverage && '-DENABLE_COVERAGE=ON' || '' }}
 
       # Build
