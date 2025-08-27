@@ -86,6 +86,7 @@ jobs:
 
       # Configure
       - name: Configure CMake
+        shell: bash
         run: |
           if command -v lit >/dev/null 2>&1; then
             LIT_BIN="$(command -v lit)"
