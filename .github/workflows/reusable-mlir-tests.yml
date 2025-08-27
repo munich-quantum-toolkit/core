@@ -27,6 +27,7 @@ jobs:
         coverage: [false]
         include:
           - os: ubuntu-24.04
+            llvm-version: [19, 20]
             coverage: true
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
