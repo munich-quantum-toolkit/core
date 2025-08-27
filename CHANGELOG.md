@@ -12,7 +12,6 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - ✨ Add new pattern to MLIR pass `GateElimination` for identity gate removal ([#1140]) ([**@taminob**])
-- ✨ Rename MLIR pass `CancelConsecutiveInverses` to `GateElimination`([#1140]) ([**@taminob**])
 - ✨ Add Clifford block collection pass to `CircuitOptimizer` module ([#885]) ([**jannikpflieger**], [**@burgholzer**])
 - ✨ Add `isControlled()` method to the `UnitaryInterface` MLIR class ([#1157]) ([**@taminob**], [**@burgholzer**])
 - 📝 Integrate generated MLIR documentation ([#1147]) ([**@denialhaag**], [**@burgholzer**])
@@ -26,6 +25,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 🚚 Rename MLIR pass `CancelConsecutiveInverses` to `GateElimination`([#1140]) ([**@taminob**])
 - 🚚 Rename `xxminusyy` to `xx_minus_yy` and `xxplusyy` to `xx_plus_yy` in MLIR dialects ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 - 🚸 Add custom assembly format for operations in the MLIR dialects ([#1139]) ([**@burgholzer**])
 - 🚸 Enable `InferTypeOpInterface` in the MLIR dialects to reduce explicit type information ([#1139]) ([**@burgholzer**])
