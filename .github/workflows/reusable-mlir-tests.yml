@@ -43,60 +43,9 @@ jobs:
           fetch-depth: 0
 
       # OS-specific toolchain setup
-      - name: Install LLVM/MLIR (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          wget https://apt.llvm.org/llvm.sh -O ${{ runner.temp }}/llvm_install.sh
-          chmod +x ${{ runner.temp }}/llvm_install.sh
-          if sudo ${{ runner.temp }}/llvm_install.sh ${{ matrix.llvm-version }}; then
-            sudo apt-get install -y libmlir-${{ matrix.llvm-version }}-dev \
-                                    llvm-${{ matrix.llvm-version }}-tools \
-                                    mlir-${{ matrix.llvm-version }}-tools \
-                                    clang-${{ matrix.llvm-version}} \
-                                    clang-tools-${{ matrix.llvm-version }} \
-             || exit 1
-          else
-            echo "Installation from script failed."
-            exit 1
-          fi
-          echo "CC=clang-${{ matrix.llvm-version }}" >> $GITHUB_ENV
-          echo "CXX=clang++-${{ matrix.llvm-version }}" >> $GITHUB_ENV
-          echo "MLIR_DIR=/usr/lib/llvm-${{ matrix.llvm-version }}/lib/cmake/mlir" >> $GITHUB_ENV
-          echo "LLVM_DIR=/usr/lib/llvm-${{ matrix.llvm-version }}/lib/cmake/llvm" >> $GITHUB_ENV
-
-      - name: Install LLVM/MLIR (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install llvm@${{ matrix.llvm-version }}
-          LLVM_PREFIX="$(brew --prefix)/opt/llvm@${{ matrix.llvm-version }}"
-          echo "CC=$LLVM_PREFIX/bin/clang" >> $GITHUB_ENV
-          echo "CXX=$LLVM_PREFIX/bin/clang++" >> $GITHUB_ENV
-          echo "LLVM_DIR=$LLVM_PREFIX/lib/cmake/llvm" >> $GITHUB_ENV
-          echo "MLIR_DIR=$LLVM_PREFIX/lib/cmake/mlir" >> $GITHUB_ENV
-          echo "$LLVM_PREFIX/bin" >> $GITHUB_PATH
-
-      - name: Prepare LLVM/MLIR (Windows) - resolve latest tag
-        if: runner.os == 'Windows'
-        id: get-latest
-        shell: pwsh
-        run: |
-          $tag = git ls-remote --tags https://github.com/llvm/llvm-project.git "llvmorg-${{ matrix.llvm-version }}.*" |
-                  Where-Object { $_ -match "llvmorg-\d+\.\d+\.\d+" } |
-                  Sort-Object -Property {
-                    if ($_ -match "llvmorg-(\d+)\.(\d+)\.(\d+)") {
-                      [int]$Matches[1]*10000 + [int]$Matches[2]*100 + [int]$Matches[3]
-                    }
-                  } |
-                  Select-Object -Last 1
-          $latest = $tag | ForEach-Object {
-                  if ($_ -match "refs/tags/llvmorg-(\d+\.\d+\.\d+)") {
-                    $Matches[1]  # Extract just the version number (e.g., "20.1.0")
-                  }
-                } |
-                Where-Object { $_ -ne $null }
-          echo "Latest tag: $tag"
-          echo "latest=$latest" >> $env:GITHUB_OUTPUT
+      - name: Setup LLVM/MLIR (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: bash .github/scripts/setup-mlir.sh ${{ matrix.llvm-version }}
 
       - name: Restore LLVM/MLIR cache (Windows)
         if: runner.os == 'Windows'
@@ -104,28 +53,12 @@ jobs:
         id: mlir-cache
         with:
           path: llvm-install
-          key: ${{ runner.os }}-llvm-${{ steps.get-latest.outputs.latest }}
+          key: ${{ runner.os }}-llvm-${{ matrix.llvm-version }}
 
-      - name: Build and install LLVM/MLIR (Windows)
-        if: runner.os == 'Windows' && steps.mlir-cache.outputs.cache-hit != 'true'
+      - name: Setup LLVM/MLIR (Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          git clone --depth 1 https://github.com/llvm/llvm-project.git --branch llvmorg-${{ steps.get-latest.outputs.latest }}
-          cd llvm-project
-          cmake -S llvm -B build_llvm `
-            -DLLVM_ENABLE_PROJECTS=mlir `
-            -DLLVM_BUILD_EXAMPLES=OFF `
-            -DLLVM_TARGETS_TO_BUILD="Native" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DLLVM_BUILD_TESTS=OFF `
-            -DLLVM_INCLUDE_TESTS=OFF `
-            -DLLVM_INCLUDE_EXAMPLES=OFF `
-            -DLLVM_ENABLE_ASSERTIONS=ON `
-            -DLLVM_INSTALL_UTILS=ON `
-            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}\llvm-install
-          cmake --build build_llvm --target install --config Release
-          echo "LLVM_DIR=${{ github.workspace }}\llvm-install\lib\cmake\llvm" >> $env:GITHUB_ENV
-          echo "MLIR_DIR=${{ github.workspace }}\llvm-install\lib\cmake\mlir" >> $env:GITHUB_ENV
+        run: .github/scripts/setup-mlir.ps1 -MajorVersion ${{ matrix.llvm-version }} -InstallPrefix "${{ github.workspace }}\llvm-install"
 
       # Build acceleration and Python tooling
       - name: Setup ccache (Linux and macOS)
