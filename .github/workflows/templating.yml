@@ -13,15 +13,18 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: read-release-drafter-categories
+        run: |
+          JSON_CONTENT=$(cat .github/workflow_inputs/release_drafter_categories.json | jq -c .)
+          echo "release_drafter_categories=$JSON_CONTENT" >> $GITHUB_OUTPUT
       - id: create-token
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      - id: read-release-drafter-categories
-        run: |
-          JSON_CONTENT=$(cat .github/workflow_inputs/release_drafter_categories.json | jq -c .)
-          echo "release_drafter_categories=$JSON_CONTENT" >> $GITHUB_OUTPUT
       - uses: munich-quantum-toolkit/templates@prepare-release-1-1-0 # v1.0.0
         with:
           name: Core
