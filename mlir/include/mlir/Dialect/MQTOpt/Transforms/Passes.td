@@ -45,6 +45,14 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   }];
 }
 
+def SwapReconstruction : Pass<"swap-reconstruction", "mlir::ModuleOp"> {
+  let summary = "This pass searches for CNOTs that are equivalent to a SWAP and converts them into a SWAP gate.";
+  let description = [{
+    Multiple CNOTs that are equivalent to a SWAP are merge and converted into a SWAP gate.
+    Additionally, it may insert two self-cancelling CNOTs to allow for the insertion of a SWAP.
+  }];
+}
+
 def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   let summary = "This pass attempts to push down operations into branches for possible optimizations.";
   let description = [{
