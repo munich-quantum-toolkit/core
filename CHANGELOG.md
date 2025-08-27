@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - ✨ Add MQT's implementation of a generic FoMaC with Python bindings ([#1150]) ([**@ystade**])
+- ✨ Add `isControlled()` method to the `UnitaryInterface` MLIR class ([#1157]) ([**@taminob**], [**@burgholzer**])
 - 📝 Integrate generated MLIR documentation ([#1147]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add `IfElseOperation` to C++ library and Python package to support Qiskit's `IfElseOp` ([#1117]) ([**@denialhaag**], [**@burgholzer**], [**@lavanya-m-k**])
 - ✨ Add `allocQubit` and `deallocQubit` operations for dynamically working with single qubits to the MLIR dialects ([#1139]) ([**@DRovara**], [**@burgholzer**])
@@ -177,6 +178,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1157]: https://github.com/munich-quantum-toolkit/core/pull/1157
 [#1147]: https://github.com/munich-quantum-toolkit/core/pull/1147
 [#1139]: https://github.com/munich-quantum-toolkit/core/pull/1139
 [#1117]: https://github.com/munich-quantum-toolkit/core/pull/1117
@@ -268,6 +270,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**q-inho**]: https://github.com/q-inho
 [**@li-mingbao**]: https://github.com/li-mingbao
 [**@lavanya-m-k**]: https://github.com/lavanya-m-k
+[**@taminob**]: https://github.com/taminob
 
 <!-- General links -->
 
