@@ -238,6 +238,12 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
 
+  mlir-tests:
+    name: 🐉 Test
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-mlir)
+    uses: ./.github/workflows/reusable-mlir-tests.yml
+
   # this job does nothing and is only used for branch protection
   required-checks-pass:
     name: 🚦 Check
@@ -258,6 +264,7 @@ jobs:
       - code-ql
       - build-sdist
       - build-wheel
+      - mlir-tests
     runs-on: ubuntu-latest
     steps:
       - name: Decide whether the needed jobs succeeded or failed
@@ -298,6 +305,10 @@ jobs:
             }}
             ${{
               fromJSON(needs.change-detection.outputs.run-cd)
-              && '' || 'build-sdist,build-wheel'
+              && '' || 'build-sdist,build-wheel,'
+            }}
+            ${{
+              fromJSON(needs.change-detection.outputs.run-mlir)
+              && '' || 'mlir-tests,'
             }}
           jobs: ${{ toJSON(needs) }}
