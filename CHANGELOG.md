@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add `isControlled()` method to MQTOpt's `UnitaryInterface` class ([#1157]) ([**@taminob**])
+- ✨ Add `isControlled()` method to the `UnitaryInterface` MLIR class ([#1157]) ([**@taminob**], [**@burgholzer**])
 - 📝 Integrate generated MLIR documentation ([#1147]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add `IfElseOperation` to C++ library and Python package to support Qiskit's `IfElseOp` ([#1117]) ([**@denialhaag**], [**@burgholzer**], [**@lavanya-m-k**])
 - ✨ Add `allocQubit` and `deallocQubit` operations for dynamically working with single qubits to the MLIR dialects ([#1139]) ([**@DRovara**], [**@burgholzer**])
