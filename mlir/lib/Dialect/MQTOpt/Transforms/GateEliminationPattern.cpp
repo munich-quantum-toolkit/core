@@ -128,13 +128,32 @@ struct CancelConsecutiveInversesPattern final
 };
 
 /**
- * @brief Populates the given pattern set with the
- * `CancelConsecutiveInversePattern`.
+ * @brief This pattern removes all identity (noop) operations.
+ */
+struct RemoveIdentitiesPattern final : mlir::OpRewritePattern<IOp> {
+
+  explicit RemoveIdentitiesPattern(mlir::MLIRContext* context)
+      : OpRewritePattern(context) {}
+
+  mlir::LogicalResult
+  matchAndRewrite(IOp op, mlir::PatternRewriter& rewriter) const override {
+    auto inQubits = op.getAllInQubits();
+
+    rewriter.replaceAllOpUsesWith(op, inQubits);
+
+    rewriter.eraseOp(op);
+    return mlir::success();
+  }
+};
+
+/**
+ * @brief Populates the given pattern set with patterns for gate elimination.
  *
  * @param patterns The pattern set to populate.
  */
-void populateCancelInversesPatterns(mlir::RewritePatternSet& patterns) {
+void populateGateEliminationPatterns(mlir::RewritePatternSet& patterns) {
   patterns.add<CancelConsecutiveInversesPattern>(patterns.getContext());
+  patterns.add<RemoveIdentitiesPattern>(patterns.getContext());
 }
 
 } // namespace mqt::ir::opt
