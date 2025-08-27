@@ -118,8 +118,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             /*args=*/        (ins),
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
-                const auto& ctrlQubits = $_op.getAllCtrlInQubits();
-                return !ctrlQubits.empty();
+                return !$_op.getPosCtrlInQubits().empty() || !$_op.getNegCtrlInQubits().empty();
             }]>,
         InterfaceMethod<
             /*desc=*/        "Returns all input qubits of the operation incl. all controlling qubits.",
