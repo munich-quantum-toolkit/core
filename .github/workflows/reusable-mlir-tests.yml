@@ -6,7 +6,7 @@ jobs:
   mlir:
     name: >-
       ${{ contains(matrix.os, 'ubuntu') && '🐧' || contains(matrix.os, 'windows') && '🏁' || '🍎' }}
-      MLIR${{ matrix.coverage && ' Coverage' || '' }} with LLVM@${{ matrix.llvm-version }}
+      ${{ matrix.coverage && 'Coverage' || matrix.os }} with LLVM@${{ matrix.llvm-version }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
