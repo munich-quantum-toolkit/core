@@ -11,7 +11,7 @@ module {
     func.func @main() attributes { entry_point } {
         //
         // Figure 4 in SABRE Paper "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices".
-        
+
         %q0_0 = mqtopt.allocQubit
         %q1_0 = mqtopt.allocQubit
         %q2_0 = mqtopt.allocQubit
@@ -56,7 +56,7 @@ module {
 
         %q0_0_bell = mqtopt.allocQubit
         %q0_1_bell = mqtopt.h() %q0_0_bell : !mqtopt.Qubit
-        
+
         %q1_0_bell = mqtopt.allocQubit
         %q1_1_bell, %q0_2_bell = mqtopt.x() %q1_0_bell ctrl %q0_1_bell : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
@@ -67,7 +67,7 @@ module {
         mqtopt.deallocQubit %q0_3_bell
         mqtopt.deallocQubit %q1_2_bell
 
-        // 
+        //
         // Bell in a loop.
 
         %lb = index.constant 0
