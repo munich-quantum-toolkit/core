@@ -2,6 +2,7 @@
 <!--- Changes should be contributed to https://github.com/munich-quantum-toolkit/templates. -->
 
 # Installation
+
 MQT Core is primarily developed as a C++20 library with Python bindings.
 The Python package is available on [PyPI](https://pypi.org/project/mqt.core/) and can be installed on all major operating systems with all supported Python versions.
 
