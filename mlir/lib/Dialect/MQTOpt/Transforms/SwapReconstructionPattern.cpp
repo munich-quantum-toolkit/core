@@ -70,9 +70,14 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
 
     auto& firstCNot = op;
     if (auto secondCNot = findCandidate(firstCNot)) {
-      if (auto thirdCNot = findCandidate(*secondCNot)) {
-        replaceWithSwap(rewriter, firstCNot, *secondCNot, *thirdCNot);
+      auto thirdCNot = findCandidate(*secondCNot);
+      if (!thirdCNot) {
+        // insert self-cancelling CNOT with same control/target as second CNOT
+        // before first CNOT
+        thirdCNot = insertSelfCancellingCNot(rewriter, *secondCNot);
       }
+      replaceWithSwap(rewriter, firstCNot, *secondCNot, *thirdCNot);
+      return mlir::success();
     }
 
     return mlir::failure();
@@ -91,6 +96,43 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
       }
     }
     return std::nullopt;
+  }
+
+  static XOp duplicateXOp(mlir::PatternRewriter& rewriter, XOp& previousOp,
+                          bool swapTargetControl) {
+    auto resultType = previousOp.getOutQubits().getType();
+    auto posCtrlResultType = previousOp.getPosCtrlOutQubits().getType();
+    auto negCtrlResultType = previousOp.getNegCtrlOutQubits().getType();
+    auto input = previousOp.getOutQubits();
+    auto posCtrlInput = previousOp.getPosCtrlInQubits();
+    auto negCtrlInput = previousOp.getNegCtrlInQubits();
+
+    rewriter.setInsertionPointAfter(previousOp);
+    if (swapTargetControl) {
+      return rewriter.create<XOp>(
+          previousOp->getLoc(), resultType, posCtrlResultType,
+          negCtrlResultType, mlir::DenseF64ArrayAttr{},
+          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{}, posCtrlInput, input,
+          negCtrlInput);
+    }
+    return rewriter.create<XOp>(
+        previousOp->getLoc(), resultType, posCtrlResultType, negCtrlResultType,
+        mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{},
+        mlir::ValueRange{}, input, posCtrlInput, negCtrlInput);
+  }
+
+  static XOp insertSelfCancellingCNot(mlir::PatternRewriter& rewriter,
+                                      XOp& previousOp) {
+    auto previousUsers = previousOp->getUsers();
+
+    auto firstOp = duplicateXOp(rewriter, previousOp, true);
+    auto secondOp = duplicateXOp(rewriter, firstOp, false);
+
+    rewriter.replaceAllOpUsesWith(previousOp, secondOp);
+
+    // return first inserted operation which will be used in the swap
+    // reconstruction
+    return firstOp;
   }
 
   /**
