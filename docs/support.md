@@ -1,3 +1,4 @@
-```{include} ../.github/support.md
+```{include} ../.github/SUPPORT.md
 
 ```
+
