@@ -15,6 +15,7 @@
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
+#include "ir/operations/StandardOperation.hpp"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
 #include <cstddef>
@@ -63,11 +64,11 @@ mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
  * @param numBits The number of bits to allocate in the register
  * @return mlir::Value The allocated classical register value
  */
-mlir::Value allocateBits(mlir::OpBuilder& builder, mlir::MLIRContext* context,
-                         int numBits) {
+mlir::Value allocateBits(mlir::OpBuilder& builder, int numBits) {
   auto memrefType = mlir::MemRefType::get({numBits}, builder.getI1Type());
-  return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
-                                                memrefType);
+  auto memref = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
+                                                       memrefType);
+  return memref.getResult();
 }
 
 /**
@@ -197,7 +198,7 @@ void addResetOp(mlir::OpBuilder& builder, const qc::Operation& operation,
 llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
                                  const qc::Operation& operation,
                                  const llvm::SmallVector<mlir::Value>& qubits,
-                                 const mlir::Value bits);
+                                 mlir::Value bits);
 
 /**
  * @brief Adds an if-else operation to the MLIR module.
@@ -209,18 +210,18 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
 void addIfElseOp(mlir::OpBuilder& builder, const qc::Operation& operation,
                  const llvm::SmallVector<mlir::Value>& qubits,
                  const mlir::Value bits) {
-  auto* ifElse = dynamic_cast<const qc::IfElseOperation*>(&operation);
+  const auto* ifElse = dynamic_cast<const qc::IfElseOperation*>(&operation);
   if (ifElse == nullptr) {
     return;
   }
 
-  auto thenOp = ifElse->getThenOp();
-  auto thenStdOp = dynamic_cast<qc::StandardOperation*>(thenOp);
+  auto* thenOp = ifElse->getThenOp();
+  auto* thenStdOp = dynamic_cast<qc::StandardOperation*>(thenOp);
   if (thenStdOp == nullptr) {
     return;
   }
 
-  auto elseOp = ifElse->getElseOp();
+  auto* elseOp = ifElse->getElseOp();
   if (elseOp != nullptr) {
     return;
   }
@@ -234,9 +235,10 @@ void addIfElseOp(mlir::OpBuilder& builder, const qc::Operation& operation,
   auto expectedValue = ifElse->getExpectedValueBit();
   auto expectedValueConstant = builder.create<mlir::arith::ConstantOp>(
       builder.getUnknownLoc(), builder.getI1Type(),
-      builder.getIntegerAttr(builder.getI1Type(), expectedValue));
+      builder.getIntegerAttr(builder.getI1Type(),
+                             static_cast<int64_t>(expectedValue)));
 
-  auto comparisonKind = ifElse->getComparisonKind();
+  const auto comparisonKind = ifElse->getComparisonKind();
   mlir::arith::CmpIPredicate predicate;
   if (comparisonKind == qc::ComparisonKind::Eq) {
     predicate = mlir::arith::CmpIPredicate::eq;
@@ -244,15 +246,15 @@ void addIfElseOp(mlir::OpBuilder& builder, const qc::Operation& operation,
     predicate = mlir::arith::CmpIPredicate::ne;
   }
 
-  mlir::Value condition = builder.create<mlir::arith::CmpIOp>(
+  auto condition = builder.create<mlir::arith::CmpIOp>(
       builder.getUnknownLoc(), predicate, controlBitValue,
       expectedValueConstant);
 
   auto ifOp = builder.create<mlir::scf::IfOp>(
-      builder.getUnknownLoc(), mlir::TypeRange{}, condition, false);
+      builder.getUnknownLoc(), mlir::TypeRange{}, condition.getResult(), false);
 
   {
-    mlir::OpBuilder::InsertionGuard thenGuard(builder);
+    const mlir::OpBuilder::InsertionGuard thenGuard(builder);
     builder.setInsertionPointToStart(ifOp.thenBlock());
 
     addOperation(builder, *thenOp, qubits, bits);
@@ -386,7 +388,7 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   const auto qubits = extractQubits(builder, context, qreg, numQubits);
 
   const auto numBits = quantumComputation.getNcbits();
-  const auto bits = allocateBits(builder, context, numBits);
+  const auto bits = allocateBits(builder, numBits);
 
   // Add operations and handle potential failures
   if (failed(addOperations(builder, quantumComputation, qubits, bits))) {

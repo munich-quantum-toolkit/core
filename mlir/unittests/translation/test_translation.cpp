@@ -10,6 +10,7 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
+#include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 #include "mlir/Dialect/MQTRef/Translation/ImportQuantumComputation.h"
 
