@@ -8,8 +8,15 @@
 
 add_compile_options(-fexceptions)
 
-add_mlir_library(MLIRMQTRefTranslation ImportQuantumComputation.cpp LINK_LIBS MLIRMQTRef
-                 MLIRFuncDialect MQT::CoreIR)
+add_mlir_library(
+  MLIRMQTRefTranslation
+  ImportQuantumComputation.cpp
+  LINK_LIBS
+  MLIRMQTRef
+  MLIRArithDialect
+  MLIRFuncDialect
+  MLIRSCFDialect
+  MQT::CoreIR)
 
 # collect header files
 file(GLOB_RECURSE TRANSLATION_HEADERS_SOURCE
