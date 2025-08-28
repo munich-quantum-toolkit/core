@@ -15,7 +15,6 @@
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
-#include "ir/operations/StandardOperation.hpp"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
 #include <cstddef>
@@ -226,6 +225,9 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   auto* elseOp = ifElse->getElseOp();
 
   auto controlBit = ifElse->getControlBit();
+  if (!controlBit.has_value()) {
+    return llvm::failure();
+  }
   auto indexValue = builder.create<mlir::arith::ConstantIndexOp>(
       builder.getUnknownLoc(), *controlBit);
   auto controlBitValue = builder.create<mlir::memref::LoadOp>(
@@ -238,11 +240,13 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
                              static_cast<int64_t>(expectedValue)));
 
   const auto comparisonKind = ifElse->getComparisonKind();
-  mlir::arith::CmpIPredicate predicate;
+  mlir::arith::CmpIPredicate predicate = mlir::arith::CmpIPredicate::eq;
   if (comparisonKind == qc::ComparisonKind::Eq) {
     predicate = mlir::arith::CmpIPredicate::eq;
-  } else {
+  } else if (comparisonKind == qc::ComparisonKind::Neq) {
     predicate = mlir::arith::CmpIPredicate::ne;
+  } else {
+    return llvm::failure();
   }
 
   auto condition = builder.create<mlir::arith::CmpIOp>(
@@ -261,15 +265,17 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   {
     const mlir::OpBuilder::InsertionGuard thenGuard(builder);
     builder.setInsertionPointToStart(ifOp.thenBlock());
-
-    addOperation(builder, *thenOp, qubits, bits);
+    if (failed(addOperation(builder, *thenOp, qubits, bits))) {
+      return llvm::failure();
+    }
   }
 
   if (populateElseBlock) {
     const mlir::OpBuilder::InsertionGuard elseGuard(builder);
     builder.setInsertionPointToStart(ifOp.elseBlock());
-
-    addOperation(builder, *elseOp, qubits, bits);
+    if (failed(addOperation(builder, *elseOp, qubits, bits))) {
+      return llvm::failure();
+    }
   }
 
   return llvm::success();
