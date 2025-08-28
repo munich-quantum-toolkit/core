@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "ir/operations/OpType.hpp"
-
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
@@ -22,6 +20,7 @@
 #include <qdmi/client.h>
 #include <ranges>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -74,6 +73,37 @@ concept is_optional = requires { typename T::value_type; } &&
                       std::is_same_v<T, std::optional<typename T::value_type>>;
 
 /**
+ * @brief Concept for types that are either std::string or std::optional of
+ * std::string.
+ * @details This concept is used to constrain the template parameter of the
+ * `queryProperty` method.
+ * @tparam T The type to check.
+ */
+template <typename T>
+concept string_or_optional_string =
+    std::is_same_v<T, std::string> ||
+    (is_optional<T> && std::is_same_v<typename T::value_type, std::string>);
+
+/// @see remove_optional_t
+template <typename T> struct remove_optional {
+  using type = T;
+};
+
+/// @see remove_optional_t
+template <typename U> struct remove_optional<std::optional<U>> {
+  using type = U;
+};
+
+/**
+ * @brief Helper type to strip std::optional from a type if it is present.
+ * @details This is useful for template metaprogramming when you want to work
+ * with the underlying type of an optional without caring about its optionality.
+ * @tparam T The type to strip optional from.
+ */
+template <typename T>
+using remove_optional_t = typename remove_optional<T>::type;
+
+/**
  * @brief Concept for types that are either size_constructible_contiguous_range
  * or std::optional of size_constructible_contiguous_range.
  * @details This concept is used to constrain the template parameter of the
@@ -83,9 +113,7 @@ concept is_optional = requires { typename T::value_type; } &&
  */
 template <typename T>
 concept maybe_optional_size_constructible_contiguous_range =
-    size_constructible_contiguous_range<T> ||
-    (is_optional<T> &&
-     size_constructible_contiguous_range<typename T::value_type>);
+    size_constructible_contiguous_range<remove_optional_t<T>>;
 
 /**
  * @brief Concept for types that are either value_or_string or std::optional of
@@ -96,9 +124,7 @@ concept maybe_optional_size_constructible_contiguous_range =
  * @see Site::queryProperty
  */
 template <typename T>
-concept maybe_optional_value_or_string =
-    value_or_string<T> ||
-    (is_optional<T> && value_or_string<typename T::value_type>);
+concept maybe_optional_value_or_string = value_or_string<remove_optional_t<T>>;
 
 /**
  * @brief Concept for types that are either value_or_string_or_vector or
@@ -110,20 +136,7 @@ concept maybe_optional_value_or_string =
  */
 template <typename T>
 concept maybe_optional_value_or_string_or_vector =
-    value_or_string_or_vector<T> ||
-    (is_optional<T> && value_or_string_or_vector<typename T::value_type>);
-
-/**
- * @brief Concept for types that are either std::string or std::optional of
- * std::string.
- * @details This concept is used to constrain the template parameter of the
- * `queryProperty` method.
- * @tparam T The type to check.
- */
-template <typename T>
-concept string_or_optional_string =
-    std::is_same_v<T, std::string> ||
-    (is_optional<T> && std::is_same_v<typename T::value_type, std::string>);
+    value_or_string_or_vector<remove_optional_t<T>>;
 
 /// @returns the string representation of the given QDMI_STATUS.
 constexpr auto toString(QDMI_STATUS result) -> std::string {
@@ -313,9 +326,9 @@ class Site {
                    "Querying " + toString(prop));
       return value;
     } else {
-      T value{};
+      remove_optional_t<T> value{};
       const auto result = QDMI_device_query_site_property(
-          device_, site_, prop, sizeof(T), &value, nullptr);
+          device_, site_, prop, sizeof(remove_optional_t<T>), &value, nullptr);
       if constexpr (is_optional<T>) {
         if (result == QDMI_ERROR_NOTSUPPORTED) {
           return std::nullopt;
@@ -411,7 +424,8 @@ class Operation {
         }
       }
       throwIfError(result, "Querying " + toString(prop));
-      T value(size / sizeof(typename T::value_type));
+      remove_optional_t<T> value(
+          size / sizeof(typename remove_optional_t<T>::value_type));
       throwIfError(QDMI_device_query_operation_property(
                        device_, operation_, sites.size(), qdmiSites.data(),
                        params.size(), params.data(), prop, size, value.data(),
@@ -419,10 +433,10 @@ class Operation {
                    "Querying " + toString(prop));
       return value;
     } else {
-      T value{};
+      remove_optional_t<T> value{};
       const auto result = QDMI_device_query_operation_property(
           device_, operation_, sites.size(), qdmiSites.data(), params.size(),
-          params.data(), prop, sizeof(T), &value, nullptr);
+          params.data(), prop, sizeof(remove_optional_t<T>), &value, nullptr);
       if constexpr (is_optional<T>) {
         if (result == QDMI_ERROR_NOTSUPPORTED) {
           return std::nullopt;
@@ -528,15 +542,16 @@ class Device {
         }
       }
       throwIfError(result, "Querying " + toString(prop));
-      T value(size / sizeof(typename T::value_type));
+      remove_optional_t<T> value(
+          size / sizeof(typename remove_optional_t<T>::value_type));
       throwIfError(QDMI_device_query_device_property(device_, prop, size,
                                                      value.data(), nullptr),
                    "Querying " + toString(prop));
       return value;
     } else {
-      T value{};
+      remove_optional_t<T> value{};
       const auto result = QDMI_device_query_device_property(
-          device_, prop, sizeof(T), &value, nullptr);
+          device_, prop, sizeof(remove_optional_t<T>), &value, nullptr);
       if constexpr (is_optional<T>) {
         if (result == QDMI_ERROR_NOTSUPPORTED) {
           return std::nullopt;
@@ -597,7 +612,8 @@ class FoMaC {
     throwIfError(
         QDMI_session_query_session_property(session_, prop, 0, nullptr, &size),
         "Querying " + toString(prop));
-    T value(size / sizeof(typename T::value_type));
+    remove_optional_t<T> value(
+        size / sizeof(typename remove_optional_t<T>::value_type));
     throwIfError(QDMI_session_query_session_property(session_, prop, size,
                                                      value.data(), nullptr),
                  "Querying " + toString(prop));
