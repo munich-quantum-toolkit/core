@@ -16,10 +16,12 @@
 #include <cstdint>
 #include <llvm/Support/Debug.h>
 #include <memory>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Rewrite/PatternApplicator.h>
@@ -197,106 +199,90 @@ lookahead(const llvm::DenseMap<Value, std::size_t>& p0) {
 }
 
 /// @brief Add attributes to module-like parent specifying the architecture.
-void setModuleTarget(Operation* module, PatternRewriter& rewriter,
-                     const Architecture& target) {
+void setModuleTarget(Operation* module, const Architecture& target,
+                     PatternRewriter& rewriter) {
   const auto nameAttr = rewriter.getStringAttr(target.name());
   module->setAttr(ATTRIBUTE_TARGET, nameAttr);
 }
 
-/// @brief Add static qubits with indices [0, @p nqubits] to unit.
-void addUnitQubits(Operation* unit, PatternRewriter& rewriter,
-                   const Architecture& target,
-                   llvm::SmallVectorImpl<Value>& qubits) {
-  const auto& qubit = QubitType::get(unit->getContext());
+/// @brief Initialize entry point, i.e., create and return static qubits.
+llvm::SmallVector<Value> initEntry(func::FuncOp entry,
+                                   PatternRewriter& rewriter,
+                                   const Architecture& target) {
+  llvm::SmallVector<Value, 0> statQubits(target.nqubits());
   for (std::size_t i = 0; i < target.nqubits(); ++i) {
-    auto qubitOp = rewriter.create<QubitOp>(unit->getLoc(), qubit, i);
-    qubits.push_back(qubitOp.getQubit());
-    llvm::dbgs() << "\tcreated static qubit: " << qubitOp.getQubit() << '\n';
+    auto qubitOp = rewriter.create<QubitOp>(entry->getLoc(), i);
+    statQubits[i] = qubitOp.getQubit();
   }
+  return statQubits;
 }
 
-/// @brief Collect quantum translation units that we route separately.
-/// @details Such a translation unit has the format:
-//           [alloc -> compute -> dealloc].
-llvm::SmallVector<Operation*> collectUnits(ModuleOp module) {
-  llvm::SmallVector<Operation*, 8> units;
-  assert(units.size() == 0);
-  std::ignore = module->walk([&](AllocQubitOp allocOp) {
-    Operation* unit = allocOp->getParentWithTrait<OpTrait::OneRegion>();
-    if (units.empty()) {
-      units.push_back(unit);
-      return WalkResult::advance();
-    }
+/**
+ * @brief Walk the IR and collect the dynamic qubits for each computation.
+ * @return Vector of vectors, where each inner vector contains the dynamic
+ * qubits allocated for a computation.
+ */
+llvm::SmallVector<llvm::SmallVector<Value>, 2>
+collectComputations(func::FuncOp f, const Architecture& target) {
+  llvm::SmallVector<llvm::SmallVector<Value>, 2> computations;
+  llvm::SmallVector<Value> dynQubits;
+  uint64_t allocated = 0;
 
-    if (unit != units.back()) {
-      units.push_back(unit);
-    }
-
-    return WalkResult::advance();
-  });
-
-  return units;
-}
-
-LogicalResult routeUnit(Operation* unit, const Architecture& target,
-                        const InitialLayout& layout,
-                        PatternRewriter& rewriter) {
-  llvm::dbgs() << "routing unit: " << unit->getName() << '\n';
-
-  llvm::SmallVector<Value, 0> statQubits;
-  llvm::SmallVector<Value, 0> dynQubits;
-
-  statQubits.reserve(target.nqubits());
+  // A valid program has at most target.nqubits qubits.
   dynQubits.reserve(target.nqubits());
 
-  Region& region = unit->getRegion(0);
-
-  rewriter.setInsertionPointToStart(&region.front());
-  addUnitQubits(unit, rewriter, target, statQubits);
-
-  for (AllocQubitOp alloc : region.getOps<AllocQubitOp>()) {
-    rewriter.setInsertionPoint(alloc);
-
-    // ----------- Alloc Phase -----------
-    // - Create static qubits in module-like parent.
-    // - Collect dynamic qubits for computation.
-
-    dynQubits.emplace_back(alloc.getQubit());
-    llvm::dbgs() << "\tcollected dynamic qubit: " << alloc.getQubit() << '\n';
-
-    const Operation* successor = alloc->getNextNode();
-    if ((successor != nullptr) && dyn_cast<AllocQubitOp>(successor)) {
-      continue;
+  f.walk([&](Operation* op) {
+    if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
+      ++allocated;
+      dynQubits.push_back(alloc.getQubit());
+      return;
     }
 
-    // ----------- Compute Phase -----------
-    // - Assign dynamic qubits to permutated static qubits.
-    // - Fit computation to the given topology.
+    if (auto dealloc = dyn_cast<DeallocQubitOp>(op)) {
+      if ((--allocated) == 0) {
+        computations.push_back(std::move(dynQubits));
+        dynQubits.clear();
+      }
+      return;
+    }
+  });
+
+  return computations;
+}
+
+/**
+ * @brief Apply topology constraints to @p f.
+ * @note Expects rewriter set to body of @p f.
+ * TODO / Remember: statQubits[i] is the static qubit i
+ */
+LogicalResult routeFunc(func::FuncOp f, const Architecture& target,
+                        const InitialLayout& layout,
+                        llvm::SmallVectorImpl<Value>& statQubits,
+                        PatternRewriter& rewriter) {
+  llvm::dbgs() << "routing func: " << f->getName() << '\n';
+
+  for (const auto& dynQubits : collectComputations(f, target)) {
+    OpBuilder::InsertionGuard guard(rewriter);
 
     if (dynQubits.size() > statQubits.size()) {
-      return alloc.emitOpError()
+      return f.emitOpError()
              << "requires more qubits than the architecture supports";
     }
 
-    // Setup initial layout.
-    llvm::DenseMap<Value, std::size_t> p0;
+    llvm::DenseMap<Value, std::size_t> qubitMap; // Qubit <-> Index
+    llvm::DenseMap<std::size_t, Value> indexMap; // Index <-> Qubit
     for (std::size_t i = 0; i < statQubits.size(); ++i) {
-      p0[statQubits[i]] = layout(i);
-    }
-
-    // TODO: Wrap in LLVM_DEBUG
-    for (std::size_t i = 0; i < dynQubits.size(); ++i) {
-      llvm::dbgs() << "\tassign: " << dynQubits[i] << " (dyn) to "
-                   << statQubits[layout(i)] << " (stat)" << '\n';
+      qubitMap.try_emplace(statQubits[i], i);
+      indexMap.try_emplace(i, statQubits[i]);
     }
 
     // Replace dynamic qubits with permutated static qubits.
     for (std::size_t i = 0; i < dynQubits.size(); ++i) {
-      rewriter.replaceAllUsesWith(dynQubits[i], statQubits[layout(i)]);
+      rewriter.replaceAllUsesWith(dynQubits[i], indexMap[layout(i)]);
       rewriter.eraseOp(dynQubits[i].getDefiningOp());
     }
 
-    llvm::DenseMap<Value, std::size_t>& pIt = p0;
+    llvm::DenseMap<Value, std::size_t>& pIt = qubitMap;
     while (true) {
       const auto& [head, beyond] = lookahead<1UL>(pIt);
 
@@ -322,16 +308,15 @@ LogicalResult routeUnit(Operation* unit, const Architecture& target,
       }
     }
 
+    // Update static qubits with their current SSA value.
     for (const auto& [q, i] : pIt) {
-      llvm::dbgs() << "\treplace static[" << i << "] with " << q.getLoc()
-                   << '\n';
       statQubits[i] = q;
 
       if (q.hasOneUse()) { // There may be unused qubits.
+        llvm::outs() << q.getUsers().begin()->getName() << '\n';
         DeallocQubitOp dealloc =
             dyn_cast<DeallocQubitOp>(*q.getUsers().begin());
         assert(dealloc);
-        llvm::dbgs() << "\tremove: " << dealloc << '\n';
         rewriter.eraseOp(dealloc);
       }
     }
@@ -339,6 +324,25 @@ LogicalResult routeUnit(Operation* unit, const Architecture& target,
 
   return success();
 }
+
+/// @brief Find the entry point of the module and route it.
+/// @details Assume that there are no nested functions.
+LogicalResult routeModule(ModuleOp module, const Architecture& target,
+                          const InitialLayout& layout,
+                          PatternRewriter& rewriter) {
+  for (func::FuncOp f : module.getOps<func::FuncOp>()) {
+    rewriter.setInsertionPointToStart(&f.getBody().front());
+
+    if (f->hasAttr("entry_point")) {
+      llvm::SmallVector<Value> statQubits = initEntry(f, rewriter, target);
+      return routeFunc(f, target, layout, statQubits, rewriter);
+    }
+  }
+
+  return module->emitOpError()
+         << "expects func.func with attribute `entry_point`";
+}
+
 } // namespace
 
 /**
@@ -352,14 +356,10 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
 
     const auto target = std::make_unique<Architecture>("iqm-spark+1", 6);
     const Identity layout(target->nqubits());
-    const llvm::SmallVector<Operation*> units = collectUnits(getOperation());
 
-    setModuleTarget(module, rewriter, *target);
-
-    for (Operation* unit : units) {
-      if (routeUnit(unit, *target, layout, rewriter).failed()) {
-        signalPassFailure();
-      }
+    setModuleTarget(module, *target, rewriter);
+    if (routeModule(module, *target, layout, rewriter).failed()) {
+      signalPassFailure();
     }
   }
 };
