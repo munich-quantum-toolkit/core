@@ -206,25 +206,24 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
  * @param builder The MLIR OpBuilder
  * @param operation The if-else operation to add
  * @param qubits The qubits of the quantum register
+ * @return mlir::LogicalResult Success if all operations were added, failure
+ * otherwise
  */
-void addIfElseOp(mlir::OpBuilder& builder, const qc::Operation& operation,
-                 const llvm::SmallVector<mlir::Value>& qubits,
-                 const mlir::Value bits) {
+llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
+                                const qc::Operation& operation,
+                                const llvm::SmallVector<mlir::Value>& qubits,
+                                const mlir::Value bits) {
   const auto* ifElse = dynamic_cast<const qc::IfElseOperation*>(&operation);
   if (ifElse == nullptr) {
-    return;
+    return llvm::failure();
   }
 
   auto* thenOp = ifElse->getThenOp();
-  auto* thenStdOp = dynamic_cast<qc::StandardOperation*>(thenOp);
-  if (thenStdOp == nullptr) {
-    return;
+  if (thenOp == nullptr) {
+    return llvm::failure();
   }
 
   auto* elseOp = ifElse->getElseOp();
-  if (elseOp != nullptr) {
-    return;
-  }
 
   auto controlBit = ifElse->getControlBit();
   auto indexValue = builder.create<mlir::arith::ConstantIndexOp>(
@@ -250,8 +249,14 @@ void addIfElseOp(mlir::OpBuilder& builder, const qc::Operation& operation,
       builder.getUnknownLoc(), predicate, controlBitValue,
       expectedValueConstant);
 
+  bool populateElseBlock = false;
+  if (elseOp != nullptr) {
+    populateElseBlock = true;
+  }
+
   auto ifOp = builder.create<mlir::scf::IfOp>(
-      builder.getUnknownLoc(), mlir::TypeRange{}, condition.getResult(), false);
+      builder.getUnknownLoc(), mlir::TypeRange{}, condition.getResult(),
+      populateElseBlock);
 
   {
     const mlir::OpBuilder::InsertionGuard thenGuard(builder);
@@ -259,6 +264,15 @@ void addIfElseOp(mlir::OpBuilder& builder, const qc::Operation& operation,
 
     addOperation(builder, *thenOp, qubits, bits);
   }
+
+  if (populateElseBlock) {
+    const mlir::OpBuilder::InsertionGuard elseGuard(builder);
+    builder.setInsertionPointToStart(ifOp.elseBlock());
+
+    addOperation(builder, *elseOp, qubits, bits);
+  }
+
+  return llvm::success();
 }
 
 #define ADD_OP_CASE(op)                                                        \
@@ -319,8 +333,7 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
     addResetOp(builder, operation, qubits);
     return llvm::success();
   case qc::OpType::IfElse:
-    addIfElseOp(builder, operation, qubits, bits);
-    return llvm::success();
+    return addIfElseOp(builder, operation, qubits, bits);
   default:
     return llvm::failure();
   }
