@@ -70,17 +70,22 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
 
     auto& firstCNot = op;
     if (auto secondCNot = findCandidate(firstCNot)) {
-      auto thirdCNot = findCandidate(*secondCNot);
-      if (!thirdCNot) {
-        // insert self-cancelling CNOT with same control/target as second CNOT
-        // before first CNOT
-        thirdCNot = insertSelfCancellingCNot(rewriter, *secondCNot);
+      if (auto thirdCNot = findCandidate(*secondCNot)) {
+        replaceWithSwap(rewriter, *thirdCNot);
+        eraseOperation(rewriter, *secondCNot);
+        eraseOperation(rewriter, firstCNot);
+      } else {
+        replaceWithSwap(rewriter, *secondCNot);
       }
-      replaceWithSwap(rewriter, firstCNot, *secondCNot, *thirdCNot);
       return mlir::success();
     }
 
     return mlir::failure();
+  }
+
+  static void eraseOperation(mlir::PatternRewriter& rewriter, XOp& op) {
+    rewriter.replaceAllOpUsesWith(op, op.getAllInQubits());
+    rewriter.eraseOp(op);
   }
 
   /**
@@ -98,54 +103,16 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     return std::nullopt;
   }
 
-  static XOp duplicateXOp(mlir::PatternRewriter& rewriter, XOp& previousOp,
-                          bool swapTargetControl) {
-    auto resultType = previousOp.getOutQubits().getType();
-    auto posCtrlResultType = previousOp.getPosCtrlOutQubits().getType();
-    auto negCtrlResultType = previousOp.getNegCtrlOutQubits().getType();
-    auto input = previousOp.getOutQubits();
-    auto posCtrlInput = previousOp.getPosCtrlInQubits();
-    auto negCtrlInput = previousOp.getNegCtrlInQubits();
-
-    rewriter.setInsertionPointAfter(previousOp);
-    if (swapTargetControl) {
-      return rewriter.create<XOp>(
-          previousOp->getLoc(), resultType, posCtrlResultType,
-          negCtrlResultType, mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{}, posCtrlInput, input,
-          negCtrlInput);
-    }
-    return rewriter.create<XOp>(
-        previousOp->getLoc(), resultType, posCtrlResultType, negCtrlResultType,
-        mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{},
-        mlir::ValueRange{}, input, posCtrlInput, negCtrlInput);
-  }
-
-  static XOp insertSelfCancellingCNot(mlir::PatternRewriter& rewriter,
-                                      XOp& previousOp) {
-    auto previousUsers = previousOp->getUsers();
-
-    auto firstOp = duplicateXOp(rewriter, previousOp, true);
-    auto secondOp = duplicateXOp(rewriter, firstOp, false);
-
-    rewriter.replaceAllOpUsesWith(previousOp, secondOp);
-
-    // return first inserted operation which will be used in the swap
-    // reconstruction
-    return firstOp;
-  }
-
   /**
    * @brief Replace the three given XOp by a single SWAPOp.
    */
-  static void replaceWithSwap(mlir::PatternRewriter& rewriter, XOp& a, XOp& b,
-                              XOp& c) {
-    auto inQubits = a.getInQubits();
+  static void replaceWithSwap(mlir::PatternRewriter& rewriter, XOp& op) {
+    auto inQubits = op.getInQubits();
     assert(!inQubits.empty());
     auto qubitType = inQubits.front().getType();
 
-    auto newSwapLocation = a->getLoc();
-    auto newSwapInQubits = a.getAllInQubits();
+    auto newSwapLocation = op->getLoc();
+    auto newSwapInQubits = op.getAllInQubits();
 
     auto newSwap = rewriter.create<SWAPOp>(
         newSwapLocation, mlir::TypeRange{qubitType, qubitType},
@@ -156,10 +123,8 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     auto newSwapOutQubits = newSwap.getOutQubits();
     assert(newSwapOutQubits.size() == 2);
 
-    // replace three operations by single swap; perform swap on output qubits
-    rewriter.replaceOp(c, {newSwapOutQubits[1], newSwapOutQubits[0]});
-    rewriter.eraseOp(b);
-    rewriter.eraseOp(a);
+    // replace operation by swap; perform swap on output qubits
+    rewriter.replaceOp(op, {newSwapOutQubits[1], newSwapOutQubits[0]});
   }
 };
 
