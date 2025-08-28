@@ -14,8 +14,6 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
       - id: read-release-drafter-categories
         run: |
           JSON_CONTENT=$(cat .github/workflow_inputs/release_drafter_categories.json | jq -c .)
