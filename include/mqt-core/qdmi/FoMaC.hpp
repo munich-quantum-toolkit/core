@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "ir/operations/OpType.hpp"
+
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
@@ -72,6 +74,20 @@ concept is_optional = requires { typename T::value_type; } &&
                       std::is_same_v<T, std::optional<typename T::value_type>>;
 
 /**
+ * @brief Concept for types that are either size_constructible_contiguous_range
+ * or std::optional of size_constructible_contiguous_range.
+ * @details This concept is used to constrain the template parameter of the
+ * `queryProperty` method.
+ * @tparam T The type to check.
+ * @see Operation::queryProperty
+ */
+template <typename T>
+concept maybe_optional_size_constructible_contiguous_range =
+    size_constructible_contiguous_range<T> ||
+    (is_optional<T> &&
+     size_constructible_contiguous_range<typename T::value_type>);
+
+/**
  * @brief Concept for types that are either value_or_string or std::optional of
  * value_or_string.
  * @details This concept is used to constrain the template parameter of the
@@ -96,6 +112,18 @@ template <typename T>
 concept maybe_optional_value_or_string_or_vector =
     value_or_string_or_vector<T> ||
     (is_optional<T> && value_or_string_or_vector<typename T::value_type>);
+
+/**
+ * @brief Concept for types that are either std::string or std::optional of
+ * std::string.
+ * @details This concept is used to constrain the template parameter of the
+ * `queryProperty` method.
+ * @tparam T The type to check.
+ */
+template <typename T>
+concept string_or_optional_string =
+    std::is_same_v<T, std::string> ||
+    (is_optional<T> && std::is_same_v<typename T::value_type, std::string>);
 
 /// @returns the string representation of the given QDMI_STATUS.
 constexpr auto toString(QDMI_STATUS result) -> std::string {
@@ -269,7 +297,7 @@ class Site {
 
   template <maybe_optional_value_or_string T>
   [[nodiscard]] auto queryProperty(QDMI_Site_Property prop) const -> T {
-    if constexpr (std::is_same_v<T, std::string>) {
+    if constexpr (string_or_optional_string<T>) {
       size_t size = 0;
       const auto result = QDMI_device_query_site_property(device_, site_, prop,
                                                           0, nullptr, &size);
@@ -353,7 +381,7 @@ class Operation {
     qdmiSites.reserve(sites.size());
     std::ranges::transform(sites, std::back_inserter(qdmiSites),
                            [](const Site& site) -> QDMI_Site { return site; });
-    if constexpr (std::is_same_v<T, std::string>) {
+    if constexpr (string_or_optional_string<T>) {
       size_t size = 0;
       const auto result = QDMI_device_query_operation_property(
           device_, operation_, sites.size(), qdmiSites.data(), params.size(),
@@ -371,7 +399,8 @@ class Operation {
                        nullptr),
                    "Querying " + toString(prop));
       return value;
-    } else if constexpr (size_constructible_contiguous_range<T>) {
+    } else if constexpr (maybe_optional_size_constructible_contiguous_range<
+                             T>) {
       size_t size = 0;
       const auto result = QDMI_device_query_operation_property(
           device_, operation_, sites.size(), qdmiSites.data(), params.size(),
@@ -473,7 +502,7 @@ class Device {
 
   template <maybe_optional_value_or_string_or_vector T>
   [[nodiscard]] auto queryProperty(QDMI_Device_Property prop) const -> T {
-    if constexpr (std::is_same_v<T, std::string>) {
+    if constexpr (string_or_optional_string<T>) {
       size_t size = 0;
       const auto result =
           QDMI_device_query_device_property(device_, prop, 0, nullptr, &size);
@@ -488,7 +517,8 @@ class Device {
                                                      value.data(), nullptr),
                    "Querying " + toString(prop));
       return value;
-    } else if constexpr (size_constructible_contiguous_range<T>) {
+    } else if constexpr (maybe_optional_size_constructible_contiguous_range<
+                             T>) {
       size_t size = 0;
       const auto result =
           QDMI_device_query_device_property(device_, prop, 0, nullptr, &size);
