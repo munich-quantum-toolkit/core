@@ -58,7 +58,7 @@ endif()
 if(DEPLOY)
   # set the macOS deployment target appropriately
   set(CMAKE_OSX_DEPLOYMENT_TARGET
-      "10.15"
+      "11.0"
       CACHE STRING "" FORCE)
 endif()
 
