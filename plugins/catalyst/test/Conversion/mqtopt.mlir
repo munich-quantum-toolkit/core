@@ -74,13 +74,17 @@ func.func @bar() {
   %xy:2 = mqtopt.xxplusyy(%cst, %cst) %230, %231 : !mqtopt.Qubit, !mqtopt.Qubit
   %rzx0, %rzx1 = mqtopt.rzx(%cst) %xy#0, %xy#1 : !mqtopt.Qubit, !mqtopt.Qubit
 
-  // CHECK: %[[C1:.*]]:2 = quantum.custom "CNOT"() {{%.*}}, {{%.*}} : !quantum.bit, !quantum.bit
-  // CHECK: %[[C2:.*]]:2 = quantum.custom "CNOT"() %[[C1]]#1, %[[C1]]#0 : !quantum.bit, !quantum.bit
-  %dcx0, %dcx1 = mqtopt.dcx() %rzx0, %rzx1 : !mqtopt.Qubit, !mqtopt.Qubit
+
+  // CHECK: %[[C1:.*]]:2, %[[CTRL1:.*]] = quantum.custom "CNOT"() %[[RZZ]]#0, %[[H2]] ctrls(%[[TOF_C]]#1) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+  // CHECK: %[[DCX_RZZ:.*]]:2, %[[DCX_CTRL:.*]] = quantum.custom "CNOT"() %[[C1]]#1, %[[C1]]#0 ctrls(%[[CTRL1]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+  // CHECK: %[[C2:.*]]:2 = quantum.custom "CNOT"() %[[DCX_RZZ]]#0, %[[DCX_RZZ]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[C3:.*]]:2 = quantum.custom "CNOT"() %[[C2]]#1, %[[C2]]#0 : !quantum.bit, !quantum.bit
+  %dcx0_t, %dcx1_t, %dcx2_c = mqtopt.dcx() %rzx0, %rzx1 ctrl %15 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+  %dcx0, %dcx1 = mqtopt.dcx() %dcx0_t, %dcx1_t : !mqtopt.Qubit, !mqtopt.Qubit
 
   // CHECK: %[[PI2:.*]] = arith.constant 1.5707963267948966 : f64
   // First, check the explicit Z–Y–Z sequence on some input qubit.
-  // CHECK: %[[RZ1_OUT:.*]] = quantum.custom "RZ"() %[[C2]]#0 : !quantum.bit
+  // CHECK: %[[RZ1_OUT:.*]] = quantum.custom "RZ"() %[[C3]]#0 : !quantum.bit
   // CHECK: %[[RY_OUT:.*]]  = quantum.custom "RY"() %[[RZ1_OUT]] : !quantum.bit
   // CHECK: %[[RZ2_OUT:.*]] = quantum.custom "RZ"() %[[RY_OUT]] adj : !quantum.bit
   %v = mqtopt.v() %dcx0 : !mqtopt.Qubit
@@ -103,7 +107,7 @@ func.func @bar() {
   // CHECK: %[[TDG_OUT:.*]] = quantum.custom "T"() %[[T_OUT]] adj : !quantum.bit
   %tdg = mqtopt.tdg() %t : !mqtopt.Qubit
 
-  // CHECK: %[[ISWAP_OUT:.*]]:2 = quantum.custom "ISWAP"() %[[TDG_OUT]], %[[C2]]#1 : !quantum.bit, !quantum.bit
+  // CHECK: %[[ISWAP_OUT:.*]]:2 = quantum.custom "ISWAP"() %[[TDG_OUT]], %[[C3]]#1 : !quantum.bit, !quantum.bit
   %iswap0, %iswap1 = mqtopt.iswap() %tdg, %dcx1 : !mqtopt.Qubit, !mqtopt.Qubit
 
   // CHECK: %[[ISWAPDAG_OUT:.*]]:2 = quantum.custom "ISWAP"() %[[ISWAP_OUT]]#0, %[[ISWAP_OUT]]#1 adj : !quantum.bit, !quantum.bit
