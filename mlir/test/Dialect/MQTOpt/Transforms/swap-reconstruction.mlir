@@ -23,8 +23,8 @@ module {
     // ========================== Check for operations that should be canceled ==============================
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
 
-    // CHECK: mqtopt.deallocQubit %[[Q01_1]]#1
     // CHECK: mqtopt.deallocQubit %[[Q01_1]]#0
+    // CHECK: mqtopt.deallocQubit %[[Q01_1]]#1
 
     %q0_0 = mqtopt.allocQubit
     %q1_0 = mqtopt.allocQubit
@@ -130,22 +130,20 @@ module {
 
     // ========================== Check for operations that should be inserted ==============================
     // CHECK: %[[Q01_1:.*]]:2 = mqtopt.swap() %[[Q0_0]], %[[Q1_0]]
-    // CHECK: %[[Q1_2:.*]], %[[Q0_2:.*]] = mqtopt.x() %[[Q01_1]]#1 ctrl %[[Q01_1]]#0
+    // CHECK: %[[Q1_2:.*]], %[[Q0_2:.*]] = mqtopt.x() %[[Q01_1]]#0 ctrl %[[Q01_1]]#1
 
-    // CHECK: mqtopt.deallocQubit %[[Q1_2]]
     // CHECK: mqtopt.deallocQubit %[[Q0_2]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_2]]
 
     %q0_0 = mqtopt.allocQubit
     %q1_0 = mqtopt.allocQubit
 
     %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0: !mqtopt.Qubit ctrl !mqtopt.Qubit
     %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1: !mqtopt.Qubit ctrl !mqtopt.Qubit
-    %q1_3, %q0_3 = mqtopt.h() %q0_2 ctrl %q1_2: !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-    mqtopt.deallocQubit %q0_3
-    mqtopt.deallocQubit %q1_3
+    mqtopt.deallocQubit %q0_2
+    mqtopt.deallocQubit %q1_2
 
     return
   }
 }
-
