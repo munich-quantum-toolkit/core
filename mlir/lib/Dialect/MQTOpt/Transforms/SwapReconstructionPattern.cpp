@@ -91,7 +91,7 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
         // b: ┤ X ├──■── b    b: ┤ X ├──■──┤ X ├┤ X ├ b    b: ──╳────■── a
         //    └───┘              └───┘     └───┘└───┘
         replaceWithSwap(rewriter, firstCNot);
-        // swapTargetControl(rewriter, *secondCNot);
+        swapTargetControl(rewriter, *secondCNot);
         return mlir::success();
       }
     }
@@ -141,8 +141,7 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     assert(newSwapOutQubits.size() == 2);
 
     // replace operation by swap; perform swap on output qubits
-    rewriter.replaceAllOpUsesWith(op, {newSwapOutQubits[1], newSwapOutQubits[0]});
-    rewriter.eraseOp(op);
+    rewriter.replaceOp(op, {newSwapOutQubits[1], newSwapOutQubits[0]});
     return newSwap;
   }
 
@@ -155,11 +154,10 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
         op.getOutQubits().getType(),
         op.getNegCtrlOutQubits().getType(), mlir::DenseF64ArrayAttr{},
         mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-        op.getPosCtrlInQubits(), op.getInQubits(), op.getNegCtrlInQubits());
+        op.getInQubits(), op.getPosCtrlInQubits(), op.getNegCtrlInQubits());
 
-    // rewriter.replaceOp(op, {newCNot.getPosCtrlOutQubits()[0], newCNot.getOutQubits()[0]});
-    rewriter.replaceAllOpUsesWith(op, newCNot);
-    rewriter.eraseOp(op);
+    rewriter.replaceOp(op, {newCNot.getPosCtrlOutQubits()[0], newCNot.getOutQubits()[0]});
+    // rewriter.replaceOp(op, newCNot);
     // assert(op.getInQubits().size() == 1);
     // assert(op.getPosCtrlInQubits().size() == 1);
     // assert(op.getNegCtrlInQubits().size() == 0);
