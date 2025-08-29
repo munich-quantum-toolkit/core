@@ -94,7 +94,6 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
         // b: ┤ X ├──■── b    b: ┤ X ├──■──┤ X ├┤ X ├ b    b: ──╳────■── a
         //    └───┘              └───┘     └───┘└───┘
         replaceWithSwap(rewriter, firstCNot);
-        // eraseOperation(rewriter, *secondCNot);
         swapTargetControl(rewriter, *secondCNot);
         return mlir::success();
       }
@@ -103,8 +102,13 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     return mlir::failure();
   }
 
+  /**
+   * @brief Remove given operation from circuit.
+   */
   static void eraseOperation(mlir::PatternRewriter& rewriter, XOp& op) {
+    // "skip" operation by using its input directly as output
     rewriter.replaceAllOpUsesWith(op, op.getAllInQubits());
+    // the operation has no more users now and can be deleted
     rewriter.eraseOp(op);
   }
 
@@ -124,7 +128,10 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
   }
 
   /**
-   * @brief Replace the three given XOp by a single SWAPOp.
+   * @brief Replace the given XOp by a single SWAPOp.
+   *
+   * @note The result qubits will NOT be swapped since that is already done
+   * implicitly by the CNOT pattern.
    */
   static SWAPOp replaceWithSwap(mlir::PatternRewriter& rewriter, XOp& op) {
     auto inQubits = op.getInQubits();
@@ -145,34 +152,17 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     auto newSwapOutQubits = newSwap.getOutQubits();
     assert(newSwapOutQubits.size() == 2);
 
-    // replace operation by swap; perform swap on output qubits
-    // rewriter.replaceOp(op, {newSwapOutQubits[1], newSwapOutQubits[0]});
     rewriter.replaceOp(op, newSwap);
     return newSwap;
   }
 
   static void swapTargetControl(mlir::PatternRewriter& rewriter, XOp& op) {
-    // auto location = op->getLoc();
-
-    // rewriter.setInsertionPointAfter(op);
-    // assert(op.getPosCtrlOutQubits().getType() ==
-    // op.getOutQubits().getType()); auto newCNot = rewriter.create<XOp>(
-    //     location, op.getPosCtrlOutQubits().getType(),
-    //     op.getOutQubits().getType(), op.getNegCtrlOutQubits().getType(),
-    //     mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{},
-    //     mlir::ValueRange{}, op.getPosCtrlInQubits(), op.getInQubits(),
-    //     op.getNegCtrlInQubits());
-
-    // assert(newCNot.getOutQubits().size() == 1);
-    // assert(newCNot.getPosCtrlOutQubits().size() == 1);
-    // assert(newCNot.getNegCtrlOutQubits().empty());
-    // rewriter.replaceOp(
-    //     op, newCNot);
     rewriter.modifyOpInPlace(op, [&]() {
       assert(op.getInQubits().size() == 1);
       assert(op.getPosCtrlInQubits().size() == 1);
       assert(op.getNegCtrlInQubits().empty());
-      op->setOperands({ op.getPosCtrlInQubits().front(), op.getInQubits().front() });
+      op->setOperands(
+          {op.getPosCtrlInQubits().front(), op.getInQubits().front()});
     });
   }
 
