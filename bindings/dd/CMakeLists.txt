@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-if(NOT TARGET dd)
+if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd-bindings)
   # collect source files
   file(GLOB_RECURSE DD_SOURCES **.cpp)
 

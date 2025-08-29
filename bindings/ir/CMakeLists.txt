@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-if(NOT TARGET ir)
+if(NOT TARGET ${MQT_CORE_TARGET_NAME}-ir-bindings)
   # collect source files
   file(GLOB_RECURSE IR_SOURCES **.cpp)
 
