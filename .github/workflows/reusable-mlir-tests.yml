@@ -53,7 +53,7 @@ jobs:
         id: mlir-cache
         with:
           path: llvm-install
-          key: ${{ runner.os }}-llvm-${{ matrix.llvm-version }}
+          key: ${{ matrix.os }}-llvm-${{ matrix.llvm-version }}
 
       - name: Setup LLVM/MLIR (Windows)
         if: runner.os == 'Windows'
