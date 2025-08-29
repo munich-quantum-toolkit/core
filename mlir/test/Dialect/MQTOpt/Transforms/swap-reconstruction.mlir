@@ -129,11 +129,11 @@ module {
     // CHECK: %[[Q0_2:.*]], %[[Q1_2:.*]] = mqtopt.x() %[[Q1_1]] ctrl %[[Q0_1]]
 
     // ========================== Check for operations that should be inserted ==============================
-    // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]]
-    // CHECK: %[[ANY:.*]] = mqtopt.swap()
+    // CHECK: %[[Q01_1:.*]]:2 = mqtopt.swap() %[[Q0_0]] %[Q1_0]
+    // CHECK: %[[Q0_2:.*]], %[[Q1_2:.*]] = mqtopt.x() %[[Q01_1]]#1 ctrl %[[Q01_1]]#0
 
-    // CHECK: mqtopt.deallocQubit %[[ANY:.*]]
-    // CHECK: mqtopt.deallocQubit %[[ANY:.*]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_2]]
+    // CHECK: mqtopt.deallocQubit %[[Q0_2]]
 
     %q0_0 = mqtopt.allocQubit
     %q1_0 = mqtopt.allocQubit
