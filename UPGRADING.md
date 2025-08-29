@@ -4,6 +4,25 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+This release introduces an `IfElseOperation` to the C++ library and the Python package to support Qiskit's `IfElseOp`.
+The new operation replaces the `ClassicControlledOperation`.
+
+An `IfElseOperation` can be added to a `QuantumComputation` using `if_else()`.
+
+```python
+qc.if_else(
+    then_operation=StandardOperation(target=0, op_type=OpType.x),
+    else_operation=StandardOperation(target=0, op_type=OpType.y),
+    control_bit=0,
+)
+```
+
+If no else-operation is needed, the `if_()` method can be used.
+
+```python
+qc.if_(op_type=OpType.x, target=0, control_bit=0)
+```
+
 ## [3.2.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.1` to `3.2`.

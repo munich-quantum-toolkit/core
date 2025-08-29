@@ -13,13 +13,21 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - uses: actions/checkout@v5
+      - id: read-release-drafter-categories
+        run: |
+          JSON_CONTENT=$(cat .github/workflow_inputs/release_drafter_categories.json | jq -c .)
+          echo "release_drafter_categories=$JSON_CONTENT" >> $GITHUB_OUTPUT
       - id: create-token
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      - uses: munich-quantum-toolkit/templates@a8866084f0336008b2d2727a34c9d27ec04694b6 # v1.0.0
+      - uses: munich-quantum-toolkit/templates@33abc1668f23e1697269a2345137a7391b9c5e51 # v1.1.0
         with:
           token: ${{ steps.create-token.outputs.token }}
+          name: Core
           organization: ${{ github.repository_owner }}
+          project-type: c++-python
           repository: ${{ github.event.repository.name }}
+          release-drafter-categories: ${{ steps.read-release-drafter-categories.outputs.release_drafter_categories }}

@@ -261,6 +261,11 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   auto funcType = builder.getFunctionType({}, {});
   auto mainFunc = builder.create<mlir::func::FuncOp>(loc, "main", funcType);
 
+  // Add entry_point attribute to identify the main function
+  const auto entryPointAttr = mlir::StringAttr::get(context, "entry_point");
+  mainFunc->setAttr("passthrough",
+                    mlir::ArrayAttr::get(context, {entryPointAttr}));
+
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   builder.setInsertionPointToStart(&entryBlock);
 
