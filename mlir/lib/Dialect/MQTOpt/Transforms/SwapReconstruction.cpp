@@ -39,6 +39,15 @@ struct SwapReconstruction final
     if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
       signalPassFailure();
     }
+
+    // Define the second set of patterns to be used.
+    patterns.clear();
+    populateAdvancedSwapReconstructionPatterns(patterns);
+
+    // Apply patterns in an iterative and greedy manner.
+    if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
+      signalPassFailure();
+    }
   }
 };
 
