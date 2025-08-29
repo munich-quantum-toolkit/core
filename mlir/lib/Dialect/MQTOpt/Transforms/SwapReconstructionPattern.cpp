@@ -12,8 +12,9 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
+#include <cassert>
 #include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -21,6 +22,7 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <optional>
 
 namespace mqt::ir::opt {
 /**
@@ -28,10 +30,11 @@ namespace mqt::ir::opt {
  * which are equivalent to a SWAP. These gates will be removed and replaced by a
  * SWAP operation.
  */
+template <bool advancedSwapReconstruction>
 struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
 
   explicit SwapReconstructionPattern(mlir::MLIRContext* context)
-      : OpRewritePattern(context) {}
+      : OpRewritePattern(context, calculateBenefit()) {}
 
   /**
    * @brief Checks if two consecutive gates have reversed control and target
@@ -71,13 +74,25 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     auto& firstCNot = op;
     if (auto secondCNot = findCandidate(firstCNot)) {
       if (auto thirdCNot = findCandidate(*secondCNot)) {
+        //         ┌───┐
+        // a: ──■──┤ X ├──■── a    a: ──╳── b
+        //    ┌─┴─┐└─┬─┘┌─┴─┐   =>      |
+        // b: ┤ X ├──■──┤ X ├ b    b: ──╳── a
+        //    └───┘     └───┘
         replaceWithSwap(rewriter, *thirdCNot);
         eraseOperation(rewriter, *secondCNot);
         eraseOperation(rewriter, firstCNot);
-      } else {
-        replaceWithSwap(rewriter, *secondCNot);
+        return mlir::success();
       }
-      return mlir::success();
+      if constexpr (advancedSwapReconstruction) {
+        //         ┌───┐              ┌───┐                        ┌───┐
+        // a: ──■──┤ X ├ a    a: ──■──┤ X ├──■────■── a    a: ──╳──┤ X ├ b
+        //    ┌─┴─┐└─┬─┘   =>    ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐   =>      |  └─┬─┘
+        // b: ┤ X ├──■── b    b: ┤ X ├──■──┤ X ├┤ X ├ b    b: ──╳────■── a
+        //    └───┘              └───┘     └───┘└───┘
+        replaceWithSwap(rewriter, firstCNot);
+        return mlir::success();
+      }
     }
 
     return mlir::failure();
@@ -92,7 +107,7 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
    * @brief Find a user of the given operation for which isReverseCNotPattern()
    * with the given operation is true.
    */
-  static std::optional<XOp> findCandidate(XOp& op) {
+  [[nodiscard]] static std::optional<XOp> findCandidate(XOp& op) {
     for (auto* user : op->getUsers()) {
       if (auto cnot = llvm::dyn_cast<XOp>(user)) {
         if (isReverseCNotPattern(op, cnot)) {
@@ -106,7 +121,7 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
   /**
    * @brief Replace the three given XOp by a single SWAPOp.
    */
-  static void replaceWithSwap(mlir::PatternRewriter& rewriter, XOp& op) {
+  static SWAPOp replaceWithSwap(mlir::PatternRewriter& rewriter, XOp& op) {
     auto inQubits = op.getInQubits();
     assert(!inQubits.empty());
     auto qubitType = inQubits.front().getType();
@@ -114,6 +129,7 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     auto newSwapLocation = op->getLoc();
     auto newSwapInQubits = op.getAllInQubits();
 
+    rewriter.setInsertionPointAfter(op);
     auto newSwap = rewriter.create<SWAPOp>(
         newSwapLocation, mlir::TypeRange{qubitType, qubitType},
         mlir::TypeRange{}, mlir::TypeRange{}, mlir::DenseF64ArrayAttr{},
@@ -125,6 +141,12 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
 
     // replace operation by swap; perform swap on output qubits
     rewriter.replaceOp(op, {newSwapOutQubits[1], newSwapOutQubits[0]});
+    return newSwap;
+  }
+
+  static int calculateBenefit() {
+      // prefer simple swap reconstruction
+      return advancedSwapReconstruction ? 1 : 10;
   }
 };
 
@@ -134,7 +156,13 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
  * @param patterns The pattern set to populate.
  */
 void populateSwapReconstructionPatterns(mlir::RewritePatternSet& patterns) {
-  patterns.add<SwapReconstructionPattern>(patterns.getContext());
+  // match two different patterns for simple (3 CNOT -> 1 SWAP) and advanced
+  // reconstruction (2 CNOT -> 1 SWAP + 1 CNOT) to avoid applying an advanced
+  // reconstruction where a simple one would have been possible; an alternative
+  // would be to not check both the users and the previous operations to see if
+  // it is three CNOTs in the correct configuration
+  patterns.add<SwapReconstructionPattern<true>>(patterns.getContext());
+  patterns.add<SwapReconstructionPattern<false>>(patterns.getContext());
 }
 
 } // namespace mqt::ir::opt
