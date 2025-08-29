@@ -293,8 +293,8 @@ module {
         // CHECK: %[[q01_2:.*]]:2 = mqtopt.ryy(%[[c_0]]) %[[q01_1]]#0, %[[q01_1]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
         // CHECK: %[[q01_3:.*]]:2 = mqtopt.rzz(%[[c_0]]) %[[q01_2]]#0, %[[q01_2]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
         // CHECK: %[[q01_4:.*]]:2 = mqtopt.rzx(%[[c_0]]) %[[q01_3]]#0, %[[q01_3]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
-        // CHECK: %[[q01_5:.*]]:2 = mqtopt.xxminusyy(%[[c_0]], %[[c_0]]) %[[q01_4]]#0, %[[q01_4]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
-        // CHECK: %[[q01_6:.*]]:2 = mqtopt.xxplusyy(%[[c_0]], %[[c_0]]) %[[q01_5]]#0, %[[q01_5]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[q01_5:.*]]:2 = mqtopt.xx_minus_yy(%[[c_0]], %[[c_0]]) %[[q01_4]]#0, %[[q01_4]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+        // CHECK: %[[q01_6:.*]]:2 = mqtopt.xx_plus_yy(%[[c_0]], %[[c_0]]) %[[q01_5]]#0, %[[q01_5]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
 
         %cst = arith.constant 3.000000e-01 : f64
         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
@@ -305,8 +305,8 @@ module {
         mqtref.ryy(%cst) %q0, %q1
         mqtref.rzz(%cst) %q0, %q1
         mqtref.rzx(%cst) %q0, %q1
-        mqtref.xxminusyy(%cst, %cst) %q0, %q1
-        mqtref.xxplusyy(%cst, %cst) %q0, %q1
+        mqtref.xx_minus_yy(%cst, %cst) %q0, %q1
+        mqtref.xx_plus_yy(%cst, %cst) %q0, %q1
 
         "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return

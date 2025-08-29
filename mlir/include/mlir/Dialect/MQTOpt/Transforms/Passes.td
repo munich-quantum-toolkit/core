@@ -14,35 +14,34 @@ include "mlir/Pass/PassBase.td"
 def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
   let summary = "This pass performs a round trip to MQT Core's QuantumComputation and back";
   let description = [{
-    This pass starts by extracting all quantum-computation-relevant operations and then
-    translates them into an MQT Core quantum computation, deleting all quantum operations
-    in the process. Then, the quantum computation is read in a second pattern and used
-    to generate new MLIR code from it.
+    This pass starts by extracting all quantum-computation-relevant operations and then translates them into an MQT Core `QuantumComputation`,
+    deleting all quantum operations in the process.
+    Then, the quantum computation is read in a second pattern and used to generate new MLIR code from it.
 
     This pass makes the following assumptions:
     - Each module consists of a single function that uses `mqtopt` operations with just a single qubit register.
     - All qubits are measured exactly once and the boolean measurement results are returned from the function in order.
     - The first returned value is the `AllocOp` that constructs a qubit register.
-    - Measurements/Operations may only target a single qubit. Unitary operations may also use any number of (positive) controls.
-    - Supported operations are `x`, `y`, `z`, `h`, and `measure`.
+    - Unitary operations may also use any number of (positive) controls.
   }];
 }
 
-def CancelConsecutiveInverses : Pass<"cancel-consecutive-inverses", "mlir::ModuleOp"> {
+def GateElimination : Pass<"gate-elimination", "mlir::ModuleOp"> {
   let summary = "This pass searches for consecutive applications of gates and their inverses and cancels them.";
   let description = [{
     This pass searches for applications of gates that are their own inverses. Walking down their def-use chain,
     it then checks if the same gate is applied once again. In that case, the two gates are cancelled.
+    Additionally, all occurrences of the identity gate are removed.
   }];
 }
 
 def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   let summary = "This pass searches for consecutive applications of rotation gates that can be merged.";
   let description = [{
-    Consecutive applications of gphase, p, rx, ry, rz, rxx, ryy, rzz, and rzx are merged into one by adding their angles.
+    Consecutive applications of gphase, `p`, `rx`, `ry`, `rz`, `rxx`, `ryy`, `rzz`, and `rzx` are merged into one by adding their angles.
     The merged gate is currently not removed if the angles add up to zero.
 
-    This pass currently does not affect xxminusyy, xxplusyy, u, and u2.
+    This pass currently does not affect `xx_minus_yy`, `xx_plus_yy`, `u`, and `u2`.
   }];
 }
 

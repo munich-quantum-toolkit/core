@@ -9,6 +9,7 @@
 @LIT_SITE_CFG_IN_HEADER@
 
 config.llvm_tools_dir = lit_config.substitute("@LLVM_TOOLS_DIR@")
+config.cmake_build_type = "@CMAKE_BUILD_TYPE@"
 config.mqt_core_mlir_tools_dir = "@PROJECT_BINARY_DIR@/mlir/tools/quantum-opt"
 config.mqt_core_mlir_test_dir = "@PROJECT_BINARY_DIR@/mlir/test"
 

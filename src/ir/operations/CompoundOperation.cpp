@@ -92,6 +92,11 @@ bool CompoundOperation::isGlobal(const size_t nQubits) const noexcept {
                              });
 }
 
+bool CompoundOperation::isClifford() const {
+  return std::ranges::all_of(ops,
+                             [](const auto& op) { return op->isClifford(); });
+}
+
 bool CompoundOperation::isSymbolicOperation() const {
   return std::ranges::any_of(
       ops, [](const auto& op) { return op->isSymbolicOperation(); });

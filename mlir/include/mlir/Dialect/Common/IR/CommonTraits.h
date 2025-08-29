@@ -84,9 +84,7 @@ class NoControlTrait
     : public mlir::OpTrait::TraitBase<ConcreteOp, NoControlTrait> {
 public:
   [[nodiscard]] static mlir::LogicalResult verifyTrait(mlir::Operation* op) {
-    auto unitaryOp = mlir::cast<ConcreteOp>(op);
-    if (!unitaryOp.getPosCtrlInQubits().empty() ||
-        !unitaryOp.getNegCtrlInQubits().empty()) {
+    if (auto unitaryOp = mlir::cast<ConcreteOp>(op); unitaryOp.isControlled()) {
       return op->emitOpError()
              << "Gate marked as NoControl should not have control qubits";
     }
