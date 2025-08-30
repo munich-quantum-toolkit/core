@@ -38,7 +38,7 @@ jobs:
       FORCE_COLOR: 3
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           fetch-depth: 0
 
@@ -49,7 +49,7 @@ jobs:
 
       - name: Restore LLVM/MLIR cache (Windows)
         if: runner.os == 'Windows'
-        uses: actions/cache@v4
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
         id: mlir-cache
         with:
           path: llvm-install
@@ -64,16 +64,16 @@ jobs:
       # Build acceleration and Python tooling
       - name: Setup ccache (Linux and macOS)
         if: runner.os == 'Linux' || runner.os == 'macOS'
-        uses: Chocobo1/setup-ccache-action@v1
+        uses: Chocobo1/setup-ccache-action@830b194e8e70c39cb5c4dbe3e937cf774e61e433 # v1
         with:
           prepend_symlinks_to_path: false
           override_cache_key: mlir-${{ matrix.coverage && 'coverage' || 'tests' }}-${{ runner.os }}-${{ matrix.llvm-version }}
 
       - name: Set up mold as linker (Linux)
-        uses: rui314/setup-mold@v1
+        uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
 
       - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6
         with:
           python-version: 3.13
           activate-environment: true
@@ -138,7 +138,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: matrix.coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@fdcc8476540edceab3de004e990f80d881c6cc00 # v5
         with:
           flags: mlir
           name: mlir-coverage-llvm-${{ matrix.llvm-version }}
