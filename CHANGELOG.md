@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add new MLIR pass `ElidePermutations` for SWAP gate elimination ([#1151]) ([**@taminob**])
 - ✨ Add new pattern to MLIR pass `GateElimination` for identity gate removal ([#1140]) ([**@taminob**])
 - ✨ Add Clifford block collection pass to `CircuitOptimizer` module ([#885]) ([**jannikpflieger**], [**@burgholzer**])
 - ✨ Add `isControlled()` method to the `UnitaryInterface` MLIR class ([#1157]) ([**@taminob**], [**@burgholzer**])
@@ -181,6 +182,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#1157]: https://github.com/munich-quantum-toolkit/core/pull/1157
+[#1151]: https://github.com/munich-quantum-toolkit/core/pull/1151
 [#1147]: https://github.com/munich-quantum-toolkit/core/pull/1147
 [#1140]: https://github.com/munich-quantum-toolkit/core/pull/1140
 [#1139]: https://github.com/munich-quantum-toolkit/core/pull/1139

@@ -45,6 +45,25 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   }];
 }
 
+def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
+  let summary = "This pass removes any permutation (i.e., SWAP gates) it encounters and modifies the order of the qubits instead.";
+  let description = [{
+    Elides permutations (i.e., SWAP gates) by removing them from the circuit and, instead, permuting the respective qubit values.
+
+    This optimization will not preserve the current qubit mapping and has no awareness of potential connectivity limitations.
+
+    Example:
+    ```
+    // before
+    %q0_1, %q1_1 = mqtopt.swap() %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+    %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+    // after
+    %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    ```
+  }];
+}
+
 def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   let summary = "This pass attempts to push down operations into branches for possible optimizations.";
   let description = [{
