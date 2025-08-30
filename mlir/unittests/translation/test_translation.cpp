@@ -10,6 +10,8 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
+#include "ir/operations/OpType.hpp"
+#include "ir/operations/StandardOperation.hpp"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 #include "mlir/Dialect/MQTRef/Translation/ImportQuantumComputation.h"
 
@@ -20,7 +22,10 @@
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -36,7 +41,10 @@ protected:
   void SetUp() override {
     mlir::DialectRegistry registry;
     registry.insert<mqt::ir::ref::MQTRefDialect>();
+    registry.insert<mlir::arith::ArithDialect>();
     registry.insert<mlir::func::FuncDialect>();
+    registry.insert<mlir::memref::MemRefDialect>();
+    registry.insert<mlir::scf::SCFDialect>();
 
     context = std::make_unique<mlir::MLIRContext>();
     context->appendDialectRegistry(registry);
@@ -717,6 +725,63 @@ TEST_F(ImportTest, XXplusYY) {
   const auto outputString = getOutputString(&module);
   const auto* checkString =
       "CHECK: mqtref.xx_plus_yy( static [1.000000e-01, 2.000000e-01])";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, If) {
+  qc::QuantumComputation qc(1, 1);
+  qc.measure(0, 0);
+  qc.if_(qc::X, 0, 0);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
+    CHECK: %[[I1:.*]] = arith.constant 0 : index
+    CHECK: %[[Cnt0:.*]] = memref.load %[[Mem]][%[[I1]]] : memref<1xi1>
+    CHECK: %[[Exp0:.*]] = arith.constant true
+    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[Cnt0]], %[[Exp0]] : i1
+    CHECK: scf.if %[[Cnd0]] {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfElse) {
+  qc::QuantumComputation qc(1, 1);
+  qc.measure(0, 0);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
+            std::make_unique<qc::StandardOperation>(0, qc::Y), 0, false);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
+    CHECK: %[[I1:.*]] = arith.constant 0 : index
+    CHECK: %[[Cnt0:.*]] = memref.load %[[Mem]][%[[I1]]] : memref<1xi1>
+    CHECK: %[[Exp0:.*]] = arith.constant false
+    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[Cnt0]], %[[Exp0]] : i1
+    CHECK: scf.if %[[Cnd0]] {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: } else {
+    CHECK: mqtref.y() %[[Q0]]
+    CHECK: }
+  )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }

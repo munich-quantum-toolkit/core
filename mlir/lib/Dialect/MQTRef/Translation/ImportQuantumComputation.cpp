@@ -12,6 +12,7 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
@@ -20,7 +21,10 @@
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/LogicalResult.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -49,6 +53,21 @@ mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
       builder.getUnknownLoc(), qregType, nullptr, sizeAttr);
 
   return allocOp.getResult();
+}
+
+/**
+ * @brief Allocates a classical register in the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param context The MLIR context in which types are created
+ * @param numBits The number of bits to allocate in the register
+ * @return mlir::Value The allocated classical register value
+ */
+mlir::Value allocateBits(mlir::OpBuilder& builder, int numBits) {
+  auto memrefType = mlir::MemRefType::get({numBits}, builder.getI1Type());
+  auto memref = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
+                                                       memrefType);
+  return memref.getResult();
 }
 
 /**
@@ -98,8 +117,8 @@ llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
  * @param qubits The qubits of the quantum register
  */
 template <typename OpType>
-void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
-                  const llvm::SmallVector<mlir::Value>& qubits) {
+void addStandardOp(mlir::OpBuilder& builder, const qc::Operation& operation,
+                   const llvm::SmallVector<mlir::Value>& qubits) {
   // Define operation parameters
   mlir::DenseF64ArrayAttr staticParamsAttr = nullptr;
   if (const auto& parameters = operation.getParameter(); !parameters.empty()) {
@@ -143,13 +162,18 @@ void addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
  * @param qubits The qubits of the quantum register
  */
 void addMeasureOp(mlir::OpBuilder& builder, const qc::Operation& operation,
-                  const llvm::SmallVector<mlir::Value>& qubits) {
+                  const llvm::SmallVector<mlir::Value>& qubits,
+                  const mlir::Value& bits) {
   const auto& bitType = mlir::IntegerType::get(builder.getContext(), 1);
   const auto& targets = operation.getTargets();
   for (const auto& target : targets) {
     const mlir::Value inQubit = qubits[target];
-    builder.create<mqt::ir::ref::MeasureOp>(builder.getUnknownLoc(), bitType,
-                                            inQubit);
+    auto bit = builder.create<mqt::ir::ref::MeasureOp>(builder.getUnknownLoc(),
+                                                       bitType, inQubit);
+    auto indexValue = builder.create<mlir::arith::ConstantIndexOp>(
+        builder.getUnknownLoc(), target);
+    builder.create<mlir::memref::StoreOp>(builder.getUnknownLoc(), bit, bits,
+                                          mlir::ValueRange{indexValue});
   }
 }
 
@@ -169,10 +193,157 @@ void addResetOp(mlir::OpBuilder& builder, const qc::Operation& operation,
   }
 }
 
+// Forward declaration
+llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
+                                 const qc::Operation& operation,
+                                 const llvm::SmallVector<mlir::Value>& qubits,
+                                 mlir::Value bits);
+
+/**
+ * @brief Adds an if-else operation to the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder
+ * @param operation The if-else operation to add
+ * @param qubits The qubits of the quantum register
+ * @return mlir::LogicalResult Success if all operations were added, failure
+ * otherwise
+ */
+llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
+                                const qc::Operation& operation,
+                                const llvm::SmallVector<mlir::Value>& qubits,
+                                const mlir::Value bits) {
+  const auto* ifElse = dynamic_cast<const qc::IfElseOperation*>(&operation);
+  if (ifElse == nullptr) {
+    return llvm::failure();
+  }
+
+  auto* thenOp = ifElse->getThenOp();
+  if (thenOp == nullptr) {
+    return llvm::failure();
+  }
+
+  auto* elseOp = ifElse->getElseOp();
+
+  auto controlBit = ifElse->getControlBit();
+  if (!controlBit.has_value()) {
+    return llvm::failure();
+  }
+  auto indexValue = builder.create<mlir::arith::ConstantIndexOp>(
+      builder.getUnknownLoc(), *controlBit);
+  auto controlBitValue = builder.create<mlir::memref::LoadOp>(
+      builder.getUnknownLoc(), bits, mlir::ValueRange{indexValue});
+
+  auto expectedValue = ifElse->getExpectedValueBit();
+  auto expectedValueConstant = builder.create<mlir::arith::ConstantOp>(
+      builder.getUnknownLoc(), builder.getI1Type(),
+      builder.getIntegerAttr(builder.getI1Type(),
+                             static_cast<int64_t>(expectedValue)));
+
+  const auto comparisonKind = ifElse->getComparisonKind();
+  mlir::arith::CmpIPredicate predicate = mlir::arith::CmpIPredicate::eq;
+  if (comparisonKind == qc::ComparisonKind::Eq) {
+    predicate = mlir::arith::CmpIPredicate::eq;
+  } else if (comparisonKind == qc::ComparisonKind::Neq) {
+    predicate = mlir::arith::CmpIPredicate::ne;
+  } else {
+    return llvm::failure();
+  }
+
+  auto condition = builder.create<mlir::arith::CmpIOp>(
+      builder.getUnknownLoc(), predicate, controlBitValue,
+      expectedValueConstant);
+
+  bool populateElseBlock = false;
+  if (elseOp != nullptr) {
+    populateElseBlock = true;
+  }
+
+  auto ifOp = builder.create<mlir::scf::IfOp>(
+      builder.getUnknownLoc(), mlir::TypeRange{}, condition.getResult(),
+      populateElseBlock);
+
+  {
+    const mlir::OpBuilder::InsertionGuard thenGuard(builder);
+    builder.setInsertionPointToStart(ifOp.thenBlock());
+    if (failed(addOperation(builder, *thenOp, qubits, bits))) {
+      return llvm::failure();
+    }
+  }
+
+  if (populateElseBlock) {
+    const mlir::OpBuilder::InsertionGuard elseGuard(builder);
+    builder.setInsertionPointToStart(ifOp.elseBlock());
+    if (failed(addOperation(builder, *elseOp, qubits, bits))) {
+      return llvm::failure();
+    }
+  }
+
+  return llvm::success();
+}
+
 #define ADD_OP_CASE(op)                                                        \
   case qc::OpType::op:                                                         \
-    addOperation<mqt::ir::ref::op##Op>(builder, *operation, qubits);           \
-    break;
+    addStandardOp<mqt::ir::ref::op##Op>(builder, operation, qubits);           \
+    return llvm::success();
+
+/**
+ * @brief Adds a single quantum operation to the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param operation The quantum operation to add
+ * @param qubits The qubits of the quantum register
+ * @return mlir::LogicalResult Success if all operations were added, failure
+ * otherwise
+ */
+llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
+                                 const qc::Operation& operation,
+                                 const llvm::SmallVector<mlir::Value>& qubits,
+                                 const mlir::Value bits) {
+  switch (operation.getType()) {
+    ADD_OP_CASE(I)
+    ADD_OP_CASE(H)
+    ADD_OP_CASE(X)
+    ADD_OP_CASE(Y)
+    ADD_OP_CASE(Z)
+    ADD_OP_CASE(S)
+    ADD_OP_CASE(Sdg)
+    ADD_OP_CASE(T)
+    ADD_OP_CASE(Tdg)
+    ADD_OP_CASE(V)
+    ADD_OP_CASE(Vdg)
+    ADD_OP_CASE(U)
+    ADD_OP_CASE(U2)
+    ADD_OP_CASE(P)
+    ADD_OP_CASE(SX)
+    ADD_OP_CASE(SXdg)
+    ADD_OP_CASE(RX)
+    ADD_OP_CASE(RY)
+    ADD_OP_CASE(RZ)
+    ADD_OP_CASE(SWAP)
+    ADD_OP_CASE(iSWAP)
+    ADD_OP_CASE(iSWAPdg)
+    ADD_OP_CASE(Peres)
+    ADD_OP_CASE(Peresdg)
+    ADD_OP_CASE(DCX)
+    ADD_OP_CASE(ECR)
+    ADD_OP_CASE(RXX)
+    ADD_OP_CASE(RYY)
+    ADD_OP_CASE(RZZ)
+    ADD_OP_CASE(RZX)
+    ADD_OP_CASE(XXminusYY)
+    ADD_OP_CASE(XXplusYY)
+  case qc::OpType::Measure:
+    addMeasureOp(builder, operation, qubits, bits);
+    return llvm::success();
+  case qc::OpType::Reset:
+    addResetOp(builder, operation, qubits);
+    return llvm::success();
+  case qc::OpType::IfElse:
+    return addIfElseOp(builder, operation, qubits, bits);
+  default:
+    return llvm::failure();
+  }
+}
 
 /**
  * @brief Adds quantum operations to the MLIR module.
@@ -183,52 +354,13 @@ void addResetOp(mlir::OpBuilder& builder, const qc::Operation& operation,
  * @return mlir::LogicalResult Success if all operations were added, failure
  * otherwise
  */
-llvm::LogicalResult
-addOperations(mlir::OpBuilder& builder,
-              const qc::QuantumComputation& quantumComputation,
-              const llvm::SmallVector<mlir::Value>& qubits) {
+llvm::LogicalResult addOperations(
+    mlir::OpBuilder& builder, const qc::QuantumComputation& quantumComputation,
+    const llvm::SmallVector<mlir::Value>& qubits, const mlir::Value& bits) {
   for (const auto& operation : quantumComputation) {
-    switch (operation->getType()) {
-      ADD_OP_CASE(I)
-      ADD_OP_CASE(H)
-      ADD_OP_CASE(X)
-      ADD_OP_CASE(Y)
-      ADD_OP_CASE(Z)
-      ADD_OP_CASE(S)
-      ADD_OP_CASE(Sdg)
-      ADD_OP_CASE(T)
-      ADD_OP_CASE(Tdg)
-      ADD_OP_CASE(V)
-      ADD_OP_CASE(Vdg)
-      ADD_OP_CASE(U)
-      ADD_OP_CASE(U2)
-      ADD_OP_CASE(P)
-      ADD_OP_CASE(SX)
-      ADD_OP_CASE(SXdg)
-      ADD_OP_CASE(RX)
-      ADD_OP_CASE(RY)
-      ADD_OP_CASE(RZ)
-      ADD_OP_CASE(SWAP)
-      ADD_OP_CASE(iSWAP)
-      ADD_OP_CASE(iSWAPdg)
-      ADD_OP_CASE(Peres)
-      ADD_OP_CASE(Peresdg)
-      ADD_OP_CASE(DCX)
-      ADD_OP_CASE(ECR)
-      ADD_OP_CASE(RXX)
-      ADD_OP_CASE(RYY)
-      ADD_OP_CASE(RZZ)
-      ADD_OP_CASE(RZX)
-      ADD_OP_CASE(XXminusYY)
-      ADD_OP_CASE(XXplusYY)
-    case qc::OpType::Measure:
-      addMeasureOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::Reset:
-      addResetOp(builder, *operation, qubits);
-      break;
-    default:
-      return llvm::failure();
+    auto result = addOperation(builder, *operation, qubits, bits);
+    if (failed(result)) {
+      return result;
     }
   }
   return llvm::success();
@@ -272,10 +404,13 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   // Parse quantum computation
   const auto numQubits = quantumComputation.getNqubits();
   const auto qreg = allocateQreg(builder, context, numQubits);
+  const auto qubits = extractQubits(builder, context, qreg, numQubits);
+
+  const auto numBits = quantumComputation.getNcbits();
+  const auto bits = allocateBits(builder, numBits);
 
   // Add operations and handle potential failures
-  if (const auto qubits = extractQubits(builder, context, qreg, numQubits);
-      failed(addOperations(builder, quantumComputation, qubits))) {
+  if (failed(addOperations(builder, quantumComputation, qubits, bits))) {
     // Even if operations fail, return the module with what we could translate
     emitError(loc) << "Failed to translate some quantum operations";
   }
