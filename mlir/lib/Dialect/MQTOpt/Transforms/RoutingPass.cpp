@@ -41,20 +41,88 @@ namespace mqt::ir::opt {
 namespace {
 using namespace mlir;
 
+/// @brief Maps qubits to indices.
+using QubitMap = llvm::DenseMap<Value, uint64_t>;
+/// @brief A qubit-qubit pair.
+using TwoQubitGate = std::pair<Value, Value>;
+
 constexpr std::string ATTRIBUTE_TARGET = "mqtopt.target";
+constexpr std::string ATTRIBUTE_ENTRY_POINT = "entry_point";
 
 /// @brief A quantum accelerator's architecture.
-struct Architecture {
-  explicit Architecture(std::string name, uint64_t nqubits)
-      : name_(std::move(name)), nqubits_(nqubits) {}
+class Architecture {
+public:
+  using Edge = std::pair<uint64_t, uint64_t>;
+  using CouplingMap = llvm::DenseSet<Edge>;
+  using Matrix = llvm::SmallVector<llvm::SmallVector<uint64_t>>;
+
+  explicit Architecture(std::string name, uint64_t nqubits,
+                        CouplingMap couplingMap)
+      : name_(std::move(name)), nqubits_(nqubits),
+        couplingMap_(std::move(couplingMap)),
+        dist(nqubits, llvm::SmallVector<uint64_t>(nqubits, UINT64_MAX)),
+        prev(nqubits, llvm::SmallVector<uint64_t>(nqubits, UINT64_MAX)) {
+    floydWarshallWithPathReconstruction();
+  }
+
   /// @brief Return the architecture's name.
   [[nodiscard]] constexpr std::string_view name() const { return name_; }
   /// @brief Return the architecture's number of qubits.
   [[nodiscard]] constexpr uint64_t nqubits() const { return nqubits_; }
+  /// @brief Return a const reference to the coupling map.
+  [[nodiscard]] const CouplingMap& couplingMap() const { return couplingMap_; }
+
+  [[nodiscard]] llvm::SmallVector<uint64_t> shortestPath(uint64_t u,
+                                                         uint64_t v) const {
+    llvm::SmallVector<uint64_t> path;
+
+    if (prev[u][v] == UINT64_MAX) {
+      return {};
+    }
+
+    path.push_back(v);
+    while (u != v) {
+      v = prev[u][v];
+      path.push_back(v);
+    }
+
+    return path;
+  }
 
 private:
+  /**
+   * @brief Find all shortest paths in the coupling map between two qubits.
+   * @details Vertices are the qubits. Edges connected two qubits.
+   * @link Adapted from https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm
+   */
+  void floydWarshallWithPathReconstruction() {
+    for (const auto& [u, v] : couplingMap()) {
+      dist[u][v] = 1;
+      prev[u][v] = u;
+    }
+    for (uint64_t v = 0; v < nqubits(); ++v) {
+      dist[v][v] = 0;
+      prev[v][v] = v;
+    }
+
+    for (uint64_t k = 0; k < nqubits(); ++k) {
+      for (uint64_t i = 0; i < nqubits(); ++i) {
+        for (uint64_t j = 0; j < nqubits(); ++j) {
+          const uint64_t sum = dist[i][k] + dist[k][j];
+          if (dist[i][j] > sum) {
+            dist[i][j] = sum;
+            prev[i][j] = prev[k][j];
+          }
+        }
+      }
+    }
+  }
+
   std::string name_;
   uint64_t nqubits_;
+  CouplingMap couplingMap_;
+  Matrix dist;
+  Matrix prev;
 };
 
 /// @brief Base class for all initial layout mapping functions.
@@ -87,7 +155,7 @@ struct Random : Identity {
 /// @brief A layer consists of a qubit mapping and a set of 2Q gates.
 struct Layer {
   /// @brief The mapping from qubits to indices.
-  llvm::DenseMap<Value, std::size_t> qubitMap;
+  QubitMap qubitMap;
   /// @brief The mapping from indices to qubits.
   llvm::DenseMap<std::size_t, Value> indexMap;
   /// @brief Set of two-qubit gates (e.g. CNOTs).
@@ -95,7 +163,7 @@ struct Layer {
 };
 
 /// @brief Compute layer, i.e., retrieve permutation and set of two-qubit gates.
-Layer getLayer(const llvm::DenseMap<Value, std::size_t>& p) {
+Layer getLayer(const QubitMap& p) {
   Layer l;
 
   // Absorb operations that take and return a single qubit.
@@ -168,19 +236,17 @@ Layer getLayer(const llvm::DenseMap<Value, std::size_t>& p) {
   return l;
 }
 
-template <std::size_t N = 0>
-std::pair<Layer, std::array<Layer, N>>
-lookahead(const llvm::DenseMap<Value, std::size_t>& p0) {
-  Layer head(getLayer(p0));
+llvm::SmallVector<Layer> lookahead(const QubitMap& front,
+                                   const std::size_t depth = 0) {
+  llvm::SmallVector<Layer> layers(1 + depth);
+  layers[0] = getLayer(front);
 
-  std::array<Layer, N> beyond;
-
-  Layer& prev = head;
-  for (std::size_t i = 0; i < N; ++i) {
-    llvm::DenseMap<Value, std::size_t> p(prev.qubitMap); // Copy previous.
+  Layer& prev = layers.front();
+  for (std::size_t i = 1; i < 1 + depth; ++i) {
+    QubitMap p(prev.qubitMap); // Copy previous.
 
     // "Apply" two qubit gates.
-    for (auto unitary : prev.gates) {
+    for (UnitaryInterface unitary : prev.gates) {
       const auto targetIn = unitary.getInQubits().front();
       const auto targetOut = unitary.getOutQubits().front();
       const auto controlIn = unitary.getAllCtrlInQubits().front();
@@ -192,38 +258,29 @@ lookahead(const llvm::DenseMap<Value, std::size_t>& p0) {
       p.erase(controlIn);
     }
 
-    beyond[i] = getLayer(p);
+    layers[i] = getLayer(p);
   }
 
-  return {head, beyond};
+  return layers;
 }
 
-/// @brief Add attributes to module-like parent specifying the architecture.
-void setModuleTarget(Operation* module, const Architecture& target,
+/**
+ * @brief Add attributes to module specifying the targeted architecture.
+ */
+void setModuleTarget(ModuleOp module, const Architecture& target,
                      PatternRewriter& rewriter) {
   const auto nameAttr = rewriter.getStringAttr(target.name());
   module->setAttr(ATTRIBUTE_TARGET, nameAttr);
 }
 
-/// @brief Initialize entry point, i.e., create and return static qubits.
-llvm::SmallVector<Value> initEntry(func::FuncOp entry,
-                                   PatternRewriter& rewriter,
-                                   const Architecture& target) {
-  llvm::SmallVector<Value, 0> statQubits(target.nqubits());
-  for (std::size_t i = 0; i < target.nqubits(); ++i) {
-    auto qubitOp = rewriter.create<QubitOp>(entry->getLoc(), i);
-    statQubits[i] = qubitOp.getQubit();
-  }
-  return statQubits;
-}
-
 /**
  * @brief Walk the IR and collect the dynamic qubits for each computation.
+ * @details Assumes that all allocs come before all deallocs.
  * @return Vector of vectors, where each inner vector contains the dynamic
  * qubits allocated for a computation.
  */
 llvm::SmallVector<llvm::SmallVector<Value>, 2>
-collectComputations(func::FuncOp f, const Architecture& target) {
+collectComputations(Region& body, const Architecture& target) {
   llvm::SmallVector<llvm::SmallVector<Value>, 2> computations;
   llvm::SmallVector<Value> dynQubits;
   uint64_t allocated = 0;
@@ -231,7 +288,7 @@ collectComputations(func::FuncOp f, const Architecture& target) {
   // A valid program has at most target.nqubits qubits.
   dynQubits.reserve(target.nqubits());
 
-  f.walk([&](Operation* op) {
+  body.walk([&](Operation* op) {
     if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
       ++allocated;
       dynQubits.push_back(alloc.getQubit());
@@ -251,69 +308,80 @@ collectComputations(func::FuncOp f, const Architecture& target) {
 }
 
 /**
- * @brief Apply topology constraints to @p f.
- * @note Expects rewriter set to body of @p f.
- * TODO / Remember: statQubits[i] is the static qubit i
+ * @brief Route @p func.
+ * @details If the function is marked as entry point, create static qubits that
+ * can later be passed to other quantum functions.
  */
-LogicalResult routeFunc(func::FuncOp f, const Architecture& target,
+LogicalResult routeFunc(func::FuncOp func, const Architecture& arch,
                         const InitialLayout& layout,
-                        llvm::SmallVectorImpl<Value>& statQubits,
                         PatternRewriter& rewriter) {
-  llvm::dbgs() << "routing func: " << f->getName() << '\n';
+  Region& body = func.getBody();
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPointToStart(&body.front());
 
-  for (const auto& dynQubits : collectComputations(f, target)) {
-    OpBuilder::InsertionGuard guard(rewriter);
+  llvm::SmallVector<Value> statQubits(arch.nqubits());
+
+  if (func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
+    for (std::size_t i = 0; i < arch.nqubits(); ++i) {
+      auto qubitOp = rewriter.create<QubitOp>(body.getLoc(), i);
+      statQubits[i] = qubitOp.getQubit();
+    }
+  }
+
+  for (const auto& dynQubits : collectComputations(body, arch)) {
 
     if (dynQubits.size() > statQubits.size()) {
-      return f.emitOpError()
+      return dynQubits.back().getDefiningOp()->emitOpError()
              << "requires more qubits than the architecture supports";
     }
 
-    llvm::DenseMap<Value, std::size_t> qubitMap; // Qubit <-> Index
-    llvm::DenseMap<std::size_t, Value> indexMap; // Index <-> Qubit
+    QubitMap front;
     for (std::size_t i = 0; i < statQubits.size(); ++i) {
-      qubitMap.try_emplace(statQubits[i], i);
-      indexMap.try_emplace(i, statQubits[i]);
+      front.try_emplace(statQubits[i], i);
+
+      // Replace dynamic qubits with permutated static qubits.
+      if (layout(i) == i) {
+        rewriter.replaceAllUsesWith(dynQubits[i], statQubits[i]);
+        rewriter.eraseOp(dynQubits[i].getDefiningOp());
+      }
     }
 
-    // Replace dynamic qubits with permutated static qubits.
-    for (std::size_t i = 0; i < dynQubits.size(); ++i) {
-      rewriter.replaceAllUsesWith(dynQubits[i], indexMap[layout(i)]);
-      rewriter.eraseOp(dynQubits[i].getDefiningOp());
-    }
-
-    llvm::DenseMap<Value, std::size_t>& pIt = qubitMap;
     while (true) {
-      const auto& [head, beyond] = lookahead<1UL>(pIt);
+      const llvm::SmallVector<Layer>& layers = lookahead(front);
 
+      const Layer& head = layers.front();
       if (head.gates.empty()) {
-        llvm::dbgs() << "\tno more two-qubit gates. stop.\n";
-        pIt = head.qubitMap;
         break;
       }
 
-      llvm::dbgs() << "\thead:\n";
-      for (const auto& g : head.gates) {
-        llvm::dbgs() << "\t\t" << g->getLoc() << '\n';
-      }
-      llvm::dbgs() << "\tlookahead:\n";
-      for (const auto& l : beyond) {
-        for (const auto& g : l.gates) {
-          llvm::dbgs() << "\t\t" << g->getLoc() << '\n';
+      for (UnitaryInterface unitary : head.gates) {
+        Value target = unitary.getInQubits().front();
+        Value control = unitary.getAllCtrlInQubits().front();
+
+        if (front.contains(target) && front.contains(control)) {
+          continue;
         }
+
+        uint64_t iA = head.qubitMap.at(target);
+        uint64_t iB = head.qubitMap.at(control);
+
+        llvm::outs() << "iA= " << iA << " ; iB= " << iB << '\n';
+        for (const uint64_t i : arch.shortestPath(iA, iB)) {
+          llvm::outs() << i << '\n';
+        }
+        llvm::outs() << "----\n";
       }
 
-      if (!beyond.empty()) {
-        pIt = beyond.at(0).qubitMap;
-      }
+      return success();
     }
 
-    // Update static qubits with their current SSA value.
-    for (const auto& [q, i] : pIt) {
+    // Update static qubits with their current SSA value for the next
+    // loop iteration.
+
+    for (const auto& [q, i] : front) {
       statQubits[i] = q;
 
       if (q.hasOneUse()) { // There may be unused qubits.
-        llvm::outs() << q.getUsers().begin()->getName() << '\n';
         DeallocQubitOp dealloc =
             dyn_cast<DeallocQubitOp>(*q.getUsers().begin());
         assert(dealloc);
@@ -325,22 +393,29 @@ LogicalResult routeFunc(func::FuncOp f, const Architecture& target,
   return success();
 }
 
-/// @brief Find the entry point of the module and route it.
-/// @details Assume that there are no nested functions.
-LogicalResult routeModule(ModuleOp module, const Architecture& target,
+/**
+ * @brief Collect functions of a module and route each.
+ * @details Assume that there are no nested functions.
+ */
+LogicalResult routeModule(ModuleOp module, const Architecture& arch,
                           const InitialLayout& layout,
                           PatternRewriter& rewriter) {
-  for (func::FuncOp f : module.getOps<func::FuncOp>()) {
-    rewriter.setInsertionPointToStart(&f.getBody().front());
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPoint(module);
 
-    if (f->hasAttr("entry_point")) {
-      llvm::SmallVector<Value> statQubits = initEntry(f, rewriter, target);
-      return routeFunc(f, target, layout, statQubits, rewriter);
+  setModuleTarget(module, arch, rewriter);
+
+  // Copying because replacing functions invalidates their pointers.
+  llvm::SmallVector<func::FuncOp> funcs(module.getOps<func::FuncOp>());
+
+  for (func::FuncOp func : funcs) {
+    LogicalResult res = routeFunc(func, arch, layout, rewriter);
+    if (res.failed()) {
+      return res;
     }
   }
 
-  return module->emitOpError()
-         << "expects func.func with attribute `entry_point`";
+  return success();
 }
 
 } // namespace
@@ -354,11 +429,18 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     ModuleOp module = getOperation();
     PatternRewriter rewriter(module->getContext());
 
-    const auto target = std::make_unique<Architecture>("iqm-spark+1", 6);
-    const Identity layout(target->nqubits());
+    // 0 -- 1
+    // |    |
+    // 2 -- 3
+    // |    |
+    // 4 -- 5
+    const Architecture::CouplingMap couplingMap{
+        {0, 1}, {1, 0}, {0, 2}, {2, 0}, {1, 3}, {3, 1}, {2, 3},
+        {3, 2}, {2, 4}, {4, 2}, {3, 5}, {5, 3}, {4, 5}, {5, 4}};
+    const auto arch = std::make_unique<Architecture>("MQT-6", 6, couplingMap);
+    const Identity layout(arch->nqubits());
 
-    setModuleTarget(module, *target, rewriter);
-    if (routeModule(module, *target, layout, rewriter).failed()) {
+    if (routeModule(module, *arch, layout, rewriter).failed()) {
       signalPassFailure();
     }
   }
