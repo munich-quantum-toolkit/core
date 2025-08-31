@@ -23,6 +23,14 @@ If no else-operation is needed, the `if_()` method can be used.
 qc.if_(op_type=OpType.x, target=0, control_bit=0)
 ```
 
+### End of support for x86 macOS systems
+
+Starting with this release, MQT Core no longer ships Python wheels for x86 macOS systems.
+This comes as a result of GitHub removing the respective (`macos-13`) runners from their infrastructure.
+Users still on these systems can still install MQT Core from source as we continue to ship a source distribution.
+However, we will no longer run CI tests on these systems.
+As a consequence, we also no longer guarantee that MQT Core builds and runs correctly on these systems.
+
 ## [3.2.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.1` to `3.2`.
