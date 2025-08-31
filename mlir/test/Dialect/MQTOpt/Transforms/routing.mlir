@@ -11,7 +11,7 @@ module {
     func.func @main() attributes { entry_point } {
         //
         // Figure 4 in SABRE Paper "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices".
-        
+
         %q0_0 = mqtopt.allocQubit
         %q1_0 = mqtopt.allocQubit
         %q2_0 = mqtopt.allocQubit
