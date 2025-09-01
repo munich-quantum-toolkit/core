@@ -15,14 +15,12 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <llvm/Support/Debug.h>
+#include <llvm/ADT/STLExtras.h>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Rewrite/PatternApplicator.h>
@@ -281,7 +279,7 @@ private:
     QubitIndexMap forwardedMap{};
 
     for (const auto& [q, i] : map) {
-      Value newQ = Layer::forward(q);
+      const Value newQ = Layer::forward(q);
       forwardedMap[newQ] = i;
       invMap[i] = newQ;
     }
@@ -293,7 +291,7 @@ private:
   void collectTwoQubitInteractions() {
     llvm::DenseSet<Value> visited;
     for (const auto& entry : map) {
-      Value qubit = entry.getFirst();
+      const Value qubit = entry.getFirst();
       if (visited.contains(qubit)) {
         continue;
       }
@@ -339,7 +337,7 @@ lookahead(const QubitIndexMap& front, const std::size_t depth = 0) {
   }
 
   for (std::size_t i = 0; i < depth; ++i) {
-    Layer& prev = layers.back();
+    const Layer& prev = layers.back();
     QubitIndexMap map(prev.map); // Copy previous.
 
     for (const QubitPair unitary : prev.unitaries()) {
@@ -364,9 +362,8 @@ protected:
   [[nodiscard]] static SWAPOp createSwap(Value qubitA, Value qubitB,
                                          Location location,
                                          PatternRewriter& rewriter) {
-    ArrayRef<Type> resultTypes{rewriter.getType<QubitType>(),
-                               rewriter.getType<QubitType>()};
-    ArrayRef<Value> inQubits{qubitA, qubitB};
+    const SmallVector<Type> resultTypes{qubitA.getType(), qubitB.getType()};
+    const SmallVector<Value> inQubits{qubitA, qubitB};
 
     return rewriter.create<SWAPOp>(
         /* location = */ location,
@@ -388,16 +385,16 @@ public:
   [[nodiscard]] QubitIndexMap route(const QubitIndexMap& map,
                                     const Architecture& arch,
                                     PatternRewriter& rewriter) const override {
-    OpBuilder::InsertionGuard guard(rewriter);
+    const OpBuilder::InsertionGuard guard(rewriter);
 
     Layer curr(map);
-    while (!curr.hasRoutableGates()) {
-
+    while (curr.hasRoutableGates()) {
       for (UnitaryInterface unitary : curr.unitaries()) {
         rewriter.setInsertionPoint(unitary);
 
-        std::size_t indexA = curr.map.at(unitary.getInQubits().front());
-        std::size_t indexB = curr.map.at(unitary.getAllCtrlInQubits().front());
+        const std::size_t indexA = curr.map.at(unitary.getInQubits().front());
+        const std::size_t indexB =
+            curr.map.at(unitary.getAllCtrlInQubits().front());
 
         // If the qubits are not adjacent swap along the shortest path:
         if (!arch.areAdjacent(indexA, indexB)) {
@@ -405,13 +402,13 @@ public:
               arch.shortestPathBetween(indexA, indexB);
 
           for (std::size_t i = 0; i < path.size() - 1; i += 2) {
-            Value qubitA = curr.invMap[path[i]];
-            Value qubitB = curr.invMap[path[i + 1]];
+            const Value qubitA = curr.invMap[path[i]];
+            const Value qubitB = curr.invMap[path[i + 1]];
 
             auto swap = createSwap(qubitA, qubitB, unitary->getLoc(), rewriter);
 
-            Value swappedA = swap.getOutQubits()[0];
-            Value swappedB = swap.getOutQubits()[1];
+            const Value swappedA = swap.getOutQubits()[0];
+            const Value swappedB = swap.getOutQubits()[1];
 
             rewriter.setInsertionPointAfter(swap);
             rewriter.replaceAllUsesExcept(qubitA, swappedA, swap);
@@ -430,10 +427,10 @@ public:
           }
         }
 
-        Value qubitInA = unitary.getInQubits().front();
-        Value qubitInB = unitary.getAllCtrlInQubits().front();
-        Value qubitOutA = unitary.getOutQubits().front();
-        Value qubitOutB = unitary.getAllCtrlOutQubits().front();
+        const Value qubitInA = unitary.getInQubits().front();
+        const Value qubitInB = unitary.getAllCtrlInQubits().front();
+        const Value qubitOutA = unitary.getOutQubits().front();
+        const Value qubitOutB = unitary.getAllCtrlOutQubits().front();
 
         curr.invMap[curr.map[qubitInA]] = qubitOutA;
         curr.invMap[curr.map[qubitInB]] = qubitOutB;
@@ -476,7 +473,7 @@ collectCircuits(Region& body, const Architecture& arch) {
 
     if (auto dealloc = dyn_cast<DeallocQubitOp>(op)) {
       if ((--allocated) == 0) {
-        circuits.push_back(std::move(dynamicQubits));
+        circuits.push_back(dynamicQubits);
         dynamicQubits.clear();
       }
       return;
@@ -486,11 +483,11 @@ collectCircuits(Region& body, const Architecture& arch) {
   return circuits;
 }
 
-[[nodiscard]] LogicalResult
-routeQuantumCircuit(llvm::ArrayRef<Value> staticQubits,
-                    llvm::ArrayRef<Value> dynamicQubits,
-                    const Architecture& arch, const InitialLayout& layout,
-                    const Router& router, PatternRewriter& rewriter) {
+[[nodiscard]] LogicalResult routeQuantumCircuit(
+    const llvm::SmallVectorImpl<Value>& dynamicQubits, const Architecture& arch,
+    const InitialLayout& layout, const Router& router,
+    llvm::SmallVectorImpl<Value>& staticQubits, PatternRewriter& rewriter) {
+
   if (dynamicQubits.size() > staticQubits.size()) {
     return dynamicQubits.back().getDefiningOp()->emitError()
            << "program requires " << dynamicQubits.size()
@@ -498,23 +495,26 @@ routeQuantumCircuit(llvm::ArrayRef<Value> staticQubits,
            << "' only supports " << arch.nqubits() << " qubits";
   }
 
+  for (auto& q : staticQubits) {
+    llvm::outs() << q.getLoc() << '\n';
+    auto reset = rewriter.create<ResetOp>(q.getLoc(), q);
+    llvm::outs() << q << '\n';
+    q = reset.getOutQubit();
+  }
+
   QubitIndexMap front;
   front = layout.apply(staticQubits, dynamicQubits, rewriter);
   front = router.route(front, arch, rewriter);
 
-  // Update static qubits with their current SSA value for the next
-  // loop iteration.
+  for (const auto& [q, i] : front) {
+    staticQubits[i] = q;
 
-  // for (auto& [q, i] : front) {
-  //   staticQubits[i] = q;
-
-  //   if (q.hasOneUse()) { // There may be unused qubits.
-  //     DeallocQubitOp dealloc =
-  //         dyn_cast<DeallocQubitOp>(*q.getUsers().begin());
-  //     assert(dealloc);
-  //     rewriter.eraseOp(dealloc);
-  //   }
-  // }
+    if (q.hasOneUse()) { // There may be unused qubits.
+      DeallocQubitOp dealloc = dyn_cast<DeallocQubitOp>(*q.getUsers().begin());
+      assert(dealloc);
+      rewriter.eraseOp(dealloc);
+    }
+  }
 
   return success();
 }
@@ -530,23 +530,23 @@ routeQuantumCircuit(llvm::ArrayRef<Value> staticQubits,
                                       const Router& router,
                                       PatternRewriter& rewriter) {
   Region& body = func.getBody();
-  OpBuilder::InsertionGuard guard(rewriter);
+  const OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPointToStart(&body.front());
-
-  llvm::SmallVector<Value> staticQubits(arch.nqubits());
 
   if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
     return success(); // For now, we don't route non-entry point functions.
   }
 
+  llvm::SmallVector<Value> staticQubits(arch.nqubits());
   for (std::size_t i = 0; i < arch.nqubits(); ++i) {
     auto qubit = rewriter.create<QubitOp>(body.getLoc(), i);
     staticQubits[i] = qubit.getQubit();
   }
 
-  for (const auto& dynamicQubits : collectCircuits(body, arch)) {
-    if (failed(routeQuantumCircuit(staticQubits, dynamicQubits, arch, layout,
-                                   router, rewriter))) {
+  const auto circuits = collectCircuits(body, arch);
+  for (const auto& dynamicQubits : circuits) {
+    if (failed(routeQuantumCircuit(dynamicQubits, arch, layout, router,
+                                   staticQubits, rewriter))) {
       return failure();
     }
   }
@@ -563,10 +563,10 @@ routeQuantumCircuit(llvm::ArrayRef<Value> staticQubits,
                                         const InitialLayout& layout,
                                         const Router& router,
                                         PatternRewriter& rewriter) {
-  OpBuilder::InsertionGuard guard(rewriter);
+  const OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPoint(module);
 
-  for (func::FuncOp func : module.getOps<func::FuncOp>()) {
+  for (const func::FuncOp func : module.getOps<func::FuncOp>()) {
     if (failed(routeFunc(func, arch, layout, router, rewriter))) {
       return failure();
     }
@@ -583,7 +583,7 @@ routeQuantumCircuit(llvm::ArrayRef<Value> staticQubits,
  */
 struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
-    ModuleOp module = getOperation();
+    const ModuleOp module = getOperation();
     PatternRewriter rewriter(module->getContext());
 
     // 0 -- 1
