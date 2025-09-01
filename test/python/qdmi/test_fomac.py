@@ -51,41 +51,41 @@ def device_and_operation(request: pytest.FixtureRequest) -> tuple[Device, Operat
     return device, operation
 
 
-def testdevice_name(device: Device) -> None:
+def test_device_name(device: Device) -> None:
     """Test that the device name is a non-empty string."""
     name = device.name()
     assert isinstance(name, str)
     assert len(name) > 0
 
 
-def testdevice_version(device: Device) -> None:
+def test_device_version(device: Device) -> None:
     """Test that the device version is a non-empty string."""
     version = device.version()
     assert isinstance(version, str)
     assert len(version) > 0
 
 
-def testdevice_status(device: Device) -> None:
+def test_device_status(device: Device) -> None:
     """Test that the device status is a valid DeviceStatus enum member."""
     status = device.status()
     assert isinstance(status, DeviceStatus)
 
 
-def testdevice_library_version(device: Device) -> None:
+def test_device_library_version(device: Device) -> None:
     """Test that the device library version is a non-empty string."""
     lib_version = device.library_version()
     assert isinstance(lib_version, str)
     assert len(lib_version) > 0
 
 
-def testdevice_qubits_num(device: Device) -> None:
+def test_device_qubits_num(device: Device) -> None:
     """Test that the device qubits number is a positive integer."""
     qubits_num = device.qubits_num()
     assert isinstance(qubits_num, int)
     assert qubits_num > 0
 
 
-def testdevice_sites(device: Device) -> None:
+def test_device_sites(device: Device) -> None:
     """Test that the device sites is a non-empty list of Site objects."""
     sites = device.sites()
     assert isinstance(sites, list)
@@ -93,7 +93,7 @@ def testdevice_sites(device: Device) -> None:
     assert all(isinstance(site, Site) for site in sites)
 
 
-def testdevice_operations(device: Device) -> None:
+def test_device_operations(device: Device) -> None:
     """Test that the device operations is a non-empty list of Operation objects."""
     operations = device.operations()
     assert isinstance(operations, list)
@@ -101,7 +101,7 @@ def testdevice_operations(device: Device) -> None:
     assert all(isinstance(op, Operation) for op in operations)
 
 
-def testdevice_coupling_map(device: Device) -> None:
+def test_device_coupling_map(device: Device) -> None:
     """Test that the device coupling map is a list of tuples of Site objects."""
     cm = device.coupling_map()
     if cm is not None:
@@ -110,14 +110,14 @@ def testdevice_coupling_map(device: Device) -> None:
         assert all(isinstance(site, Site) for pair in cm for site in pair)
 
 
-def testdevice_needs_calibration(device: Device) -> None:
+def test_device_needs_calibration(device: Device) -> None:
     """Test that the device needs calibration is an integer."""
     needs_cal = device.needs_calibration()
     if needs_cal is not None:
         assert isinstance(needs_cal, int)
 
 
-def testdevice_length_unit(device: Device) -> None:
+def test_device_length_unit(device: Device) -> None:
     """Test that the device length unit is a non-empty string."""
     lu = device.length_unit()
     if lu is not None:
@@ -125,7 +125,7 @@ def testdevice_length_unit(device: Device) -> None:
         assert len(lu) > 0
 
 
-def testdevice_length_scale_factor(device: Device) -> None:
+def test_device_length_scale_factor(device: Device) -> None:
     """Test that the device length scale factor is a positive float."""
     lsf = device.length_scale_factor()
     if lsf is not None:
@@ -133,7 +133,7 @@ def testdevice_length_scale_factor(device: Device) -> None:
         assert lsf > 0.0
 
 
-def testdevice_duration_unit(device: Device) -> None:
+def test_device_duration_unit(device: Device) -> None:
     """Test that the device duration unit is a non-empty string."""
     du = device.duration_unit()
     if du is not None:
@@ -141,7 +141,7 @@ def testdevice_duration_unit(device: Device) -> None:
         assert len(du) > 0
 
 
-def testdevice_duration_scale_factor(device: Device) -> None:
+def test_device_duration_scale_factor(device: Device) -> None:
     """Test that the device duration scale factor is a positive float."""
     dsf = device.duration_scale_factor()
     if dsf is not None:
@@ -149,7 +149,7 @@ def testdevice_duration_scale_factor(device: Device) -> None:
         assert dsf > 0.0
 
 
-def testdevice_min_atom_distance(device: Device) -> None:
+def test_device_min_atom_distance(device: Device) -> None:
     """Test that the device minimum atom distance is a positive float."""
     mad = device.min_atom_distance()
     if mad is not None:
