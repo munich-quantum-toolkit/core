@@ -97,7 +97,7 @@ template <typename U> struct remove_optional<std::optional<U>> {
 /**
  * @brief Helper type to strip std::optional from a type if it is present.
  * @details This is useful for template metaprogramming when you want to work
- * with the underlying type of an optional without caring about its optionality.
+ * with the underlying type of optional without caring about its optionality.
  * @tparam T The type to strip optional from.
  */
 template <typename T>
@@ -164,7 +164,7 @@ constexpr auto toString(QDMI_STATUS result) -> std::string {
   case QDMI_ERROR_NOTSUPPORTED:
     return "Not supported.";
   case QDMI_ERROR_BADSTATE:
-    return " Bad state.";
+    return "Bad state.";
   case QDMI_ERROR_TIMEOUT:
     return "Timeout.";
   default:
@@ -290,6 +290,7 @@ inline auto throwIfError(int result, const std::string& msg) -> void {
     break;
   case QDMI_WARN_GENERAL:
     std::cerr << "Warning: " << msg << "\n";
+    break;
   default:
     throwError(result, msg);
   }
@@ -607,7 +608,8 @@ class FoMaC {
     return instance;
   }
   template <size_constructible_contiguous_range T>
-  [[nodiscard]] auto queryProperty(QDMI_Session_Property prop) const -> T {
+  [[nodiscard]] auto queryProperty(const QDMI_Session_Property prop) const
+      -> T {
     size_t size = 0;
     throwIfError(
         QDMI_session_query_session_property(session_, prop, 0, nullptr, &size),
