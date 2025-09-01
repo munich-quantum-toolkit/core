@@ -11,7 +11,7 @@ mystnb:
 ## Objective
 
 Compilation passes throughout MQT need information about the target device.
-The Neutral Atom QDMI device provides a uniform way to provide the necessary information for neutral atom-based quantum devices.
+The Neutral Atom [QDMI](https://munich-quantum-software-stack.github.io/QDMI/) device provides a uniform way to provide the necessary information for neutral atom-based quantum devices.
 It defines a representation to easily provide static information in the form of a JSON file.
 
 ## Describing a Device
