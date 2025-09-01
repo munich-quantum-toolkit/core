@@ -55,7 +55,7 @@ TEST(FoMaCTest, StatusToString) {
   EXPECT_EQ(toString(QDMI_ERROR_NOTSUPPORTED), "Not supported.");
   EXPECT_EQ(toString(QDMI_ERROR_BADSTATE), "Bad state.");
   EXPECT_EQ(toString(QDMI_ERROR_TIMEOUT), "Timeout.");
-  // NOLINTNEXTLINE(clang-analyzer-option.core.EnumCastOutOfRange)
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   EXPECT_EQ(toString(static_cast<QDMI_STATUS>(-999)), "Unknown status code.");
 }
 
@@ -78,7 +78,7 @@ TEST(FoMaCTest, SitePropertyToString) {
             "QDMI_SITE_PROPERTY_MODULEINDEX");
   EXPECT_EQ(toString(QDMI_SITE_PROPERTY_SUBMODULEINDEX),
             "QDMI_SITE_PROPERTY_SUBMODULEINDEX");
-  // NOLINTNEXTLINE(clang-analyzer-option.core.EnumCastOutOfRange)
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   EXPECT_EQ(toString(static_cast<QDMI_Site_Property>(-999)),
             "QDMI_SITE_PROPERTY_UNKNOWN");
 }
@@ -98,7 +98,7 @@ TEST(FoMaCTest, OperationPropertyToString) {
             "QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS");
   EXPECT_EQ(toString(QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS),
             "QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS");
-  // NOLINTNEXTLINE(clang-analyzer-option.core.EnumCastOutOfRange)
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   EXPECT_EQ(toString(static_cast<QDMI_Operation_Property>(-999)),
             "QDMI_OPERATION_PROPERTY_UNKNOWN");
 }
@@ -130,7 +130,7 @@ TEST(FoMaCTest, DevicePropertyToString) {
             "QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR");
   EXPECT_EQ(toString(QDMI_DEVICE_PROPERTY_MINATOMDISTANCE),
             "QDMI_DEVICE_PROPERTY_MINATOMDISTANCE");
-  // NOLINTNEXTLINE(clang-analyzer-option.core.EnumCastOutOfRange)
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   EXPECT_EQ(toString(static_cast<QDMI_Device_Property>(-999)),
             "QDMI_DEVICE_PROPERTY_UNKNOWN");
 }
@@ -138,7 +138,7 @@ TEST(FoMaCTest, DevicePropertyToString) {
 TEST(FoMaCTest, SessionPropertyToString) {
   EXPECT_EQ(toString(QDMI_SESSION_PROPERTY_DEVICES),
             "QDMI_SESSION_PROPERTY_DEVICES");
-  // NOLINTNEXTLINE(clang-analyzer-option.core.EnumCastOutOfRange)
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   EXPECT_EQ(toString(static_cast<QDMI_Session_Property>(-999)),
             "QDMI_SESSION_PROPERTY_UNKNOWN");
 }
