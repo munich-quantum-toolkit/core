@@ -4,9 +4,9 @@ The [Quantum Device Management Interface (QDMI)](https://munich-quantum-software
 This part of MQT Core contains the implementation of QDMI's different components, such as a [QDMI driver](driver.md) and a [QDMI device](na_device.md).
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 1
 :caption: Table of Contents
 
-NA QDMI Device <na_qdmi_device>
-qdmi_driver
+NA QDMI Device <na_device>
+QDMI Driver <driver>
 ```

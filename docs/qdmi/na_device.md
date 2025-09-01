@@ -16,7 +16,7 @@ It defines a representation to easily provide static information in the form of 
 
 ## Describing a Device
 
-The basis of a such device implementation is a specification in a JSON file.
+The basis of a such device implementation in MQT is a specification in a JSON file.
 The structure of this JSON file is defined by the {cpp:class}`na::Device` struct.
 The struct defines functions to serialize and deserialize the data using the [nlohmann/json](https://json.nlohmann.me) library.
 During compilation, this JSON file is parsed and the corresponding C++ code is produced by an application (see `src/na/device/App.cpp`) for the actual QDMI device implementation.

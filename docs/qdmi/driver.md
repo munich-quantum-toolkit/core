@@ -12,15 +12,15 @@ mystnb:
 
 A QDMI Driver manages the communication between QDMI devices, such as [MQT Core's NA QDMI Device](na_device.md), and QDMI clients, see the [QDMI specification](https://munich-quantum-software-stack.github.io/QDMI/).
 It is responsible for loading the device, forwarding requests from the client to the device, and sending back the results.
-The MQT Core's QDMI Driver, {cpp:class}`qdmi::Driver` comes with the [MQT Core's NA QDMI Device](na_device.md) that is already statically linked into the driver and can directly be used.
-Other devices can be loaded dynamically at runtime via the corresponding functionality provided by the driver.
+The MQT Core's QDMI Driver, {cpp:class}`qdmi::Driver`, comes with the [MQT Core's NA QDMI Device](na_device.md) that is already statically linked into the driver and can directly be used.
+Other devices can be loaded dynamically at runtime via {cpp:func}`qdmi::Driver::addDynamicDeviceLibrary`.
 
 ## Python Bindings
 
 The QDMI Driver is implemented in C++ and exposed to Python via [pybind11](https://pybind11.readthedocs.io).
 Direct binding of QDMI driver functions is not feasible due to technical limitations.
 Instead, a FoMaC (Figure of Merits and Constraints) library defines wrapper classes ({cpp:class}`fomac::Device`, {cpp:class}`fomac::Site`, {cpp:class}`fomac::Operation`) for the QDMI entities.
-These class with their methods are then exposed to Python, see {py:class}`~mqt.core.qdmi.fomac.Device`, {py:class}`~mqt.core.qdmi.fomac.Site`, {py:class}`~mqt.core.qdmi.fomac.Operation`.
+These classes together with their methods are then exposed to Python, see {py:class}`~mqt.core.qdmi.fomac.Device`, {py:class}`~mqt.core.qdmi.fomac.Site`, {py:class}`~mqt.core.qdmi.fomac.Operation`.
 
 ## Usage
 
