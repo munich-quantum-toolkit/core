@@ -21,6 +21,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Iterators.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Rewrite/PatternApplicator.h>
@@ -49,6 +50,28 @@ using IndexQubitMap = llvm::DenseMap<std::size_t, Value>;
 
 /// @brief A function attribute that specifies an (QIR) entry point function.
 constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
+
+[[nodiscard]] bool isTwoQubitGate(UnitaryInterface unitary) {
+  return unitary.getAllInQubits().size() == 2;
+}
+
+void forwardMaps(QubitIndexMap& map, IndexQubitMap& invMap, const Value in,
+                 const Value out) {
+  map[out] = map[in];
+  invMap[map[in]] = out;
+  map.erase(in);
+}
+
+struct Permutation {
+  explicit Permutation(const std::size_t nqubits) : staticQubits(nqubits) {}
+
+  /// @brief A vector of static qubits
+  llvm::SmallVector<Value, 0> staticQubits;
+  /// @brief A mapping from dynamic numbers to their static index.
+  llvm::DenseMap<std::size_t, std::size_t> layout;
+  /// @brief A mapping from current SSA values to their assigned dynamic number.
+  llvm::DenseMap<Value, std::size_t> dynamic;
+};
 
 //===----------------------------------------------------------------------===//
 // Architecture
@@ -145,33 +168,19 @@ private:
 
 /// @brief Base class for all initial layout mapping functions.
 struct InitialLayout {
-  explicit InitialLayout(const std::size_t nqubits) : mapping(nqubits) {}
-
-  /// @brief Apply initial layout and replace dynamic qubits with permutated
-  /// static qubits.
-  [[nodiscard]] QubitIndexMap apply(const ArrayRef<Value> staticQubits,
-                                    const ArrayRef<Value>& dynamicQubits,
-                                    PatternRewriter& rewriter) const {
-    QubitIndexMap map;
-    for (std::size_t i = 0; i < staticQubits.size(); ++i) {
-      map.try_emplace(staticQubits[i], i);
-
-      if (mapping[i] == i) {
-        rewriter.replaceAllUsesWith(dynamicQubits[i], staticQubits[i]);
-        rewriter.eraseOp(dynamicQubits[i].getDefiningOp());
-      }
-    }
-    return map;
+  explicit InitialLayout(const std::size_t nqubits) : mapping_(nqubits) {}
+  [[nodiscard]] std::size_t operator()(std::size_t i) const {
+    return mapping_[i];
   }
 
 protected:
-  llvm::SmallVector<std::size_t, 0> mapping;
+  llvm::SmallVector<std::size_t, 0> mapping_;
 };
 
 /// @brief Identity mapping.
 struct Identity : InitialLayout {
   explicit Identity(const std::size_t nqubits) : InitialLayout(nqubits) {
-    std::iota(mapping.begin(), mapping.end(), 0);
+    std::iota(mapping_.begin(), mapping_.end(), 0);
   }
 };
 
@@ -180,187 +189,118 @@ struct Random : Identity {
   explicit Random(const std::size_t nqubits) : Identity(nqubits) {
     std::random_device rd;
     std::mt19937 g(rd());
-    std::shuffle(mapping.begin(), mapping.end(), g);
+    std::shuffle(mapping_.begin(), mapping_.end(), g);
   }
 };
 
-/// @brief A qubit-pair defines any two-qubit interaction.
-struct QubitPair {
-  explicit(false) QubitPair(UnitaryInterface unitary) {
-    if (unitary.getAllCtrlInQubits().empty()) {
-      assert(unitary.getAllInQubits().size() == 2);
-      in = std::make_pair(unitary.getAllInQubits().front(),
-                          unitary.getAllInQubits().back());
-      out = std::make_pair(unitary.getAllOutQubits().front(),
-                           unitary.getAllOutQubits().back());
-      return;
+/// @brief Custom mapping.
+struct Custom : InitialLayout {
+  Custom(const std::size_t nqubits,
+         const llvm::SmallVectorImpl<std::size_t>& mapping)
+      : InitialLayout(nqubits) {
+    std::ranges::copy(mapping, mapping_.begin());
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// Layering with (lookahead)
+//===----------------------------------------------------------------------===//
+
+struct Layer {
+  /// @brief Vector of two-qubit gates (e.g. CNOTs).
+  llvm::SmallVector<Operation*> gates;
+};
+
+/// @brief Absorb all one qubit gates on the def-use chain of @p q.
+Value absorbOneQubitGates(const Value q) {
+  Value newQ = q;
+  while (!newQ.getUsers().empty()) {
+    Operation* op = *newQ.getUsers().begin();
+    if (auto reset = dyn_cast<ResetOp>(op)) {
+      newQ = reset.getOutQubit();
+    } else if (auto u = dyn_cast<UnitaryInterface>(op)) {
+      if (isTwoQubitGate(u)) {
+        break;
+      }
+
+      if (!dyn_cast<GPhaseOp>(op)) {
+        newQ = u.getOutQubits().front();
+      }
+    } else if (auto measure = dyn_cast<MeasureOp>(op)) {
+      newQ = measure.getOutQubit();
+    } else { // DeallocQubitOp.
+      assert(dyn_cast<DeallocQubitOp>(op));
+      break;
+    }
+  }
+  return newQ;
+}
+
+/// @brief Collect all "ready" two-qubit gates from @p map.
+llvm::SmallVector<Operation*> collectTwoQubitGates(const QubitIndexMap& map) {
+  llvm::DenseSet<Value> visited;
+  llvm::SmallVector<Operation*> gates;
+
+  for (const auto& [q, _] : map) {
+    if (visited.contains(q)) {
+      continue;
     }
 
-    assert(unitary.getInQubits().size() == 1);
-    assert(unitary.getAllCtrlInQubits().size() == 1);
+    if (q.getUsers().empty()) {
+      visited.insert(q);
+      continue;
+    }
 
-    in = std::make_pair(unitary.getAllInQubits().front(),
-                        unitary.getAllCtrlInQubits().front());
-    out = std::make_pair(unitary.getAllOutQubits().front(),
-                         unitary.getAllCtrlOutQubits().front());
+    Operation* user = *(q.getUsers().begin());
+
+    auto u = dyn_cast<UnitaryInterface>(user);
+    if (!u) {
+      visited.insert(q);
+      continue;
+    }
+
+    // All single qubit operations should have been absorbed. What's
+    // left are two qubit interaction gates.
+
+    assert(isTwoQubitGate(u));
+
+    const Value first = u.getAllInQubits()[0];
+    const Value second = u.getAllInQubits()[1];
+
+    if (map.contains(first) && map.contains(second)) {
+      gates.push_back(u);
+    }
+
+    visited.insert(first);
+    visited.insert(second);
   }
 
-  /// @brief Apply unitary to @p map.
-  void forward(QubitIndexMap& map) const {
-    map[out.first] = map[in.first];
-    map[out.second] = map[in.second];
-    map.erase(in.first);
-    map.erase(in.second);
-  }
+  return gates;
+}
 
-  std::pair<Value, Value> in;
-  std::pair<Value, Value> out;
-};
+Layer findLayer(const QubitIndexMap& map) {
+  QubitIndexMap absorbedMap;
+  for (const auto& [q, i] : map) {
+    absorbedMap[absorbOneQubitGates(q)] = i;
+  }
+  return Layer{.gates = collectTwoQubitGates(absorbedMap)};
+}
 
 //===----------------------------------------------------------------------===//
 // Router
 //===----------------------------------------------------------------------===//
 
-/// @brief A layer consists of a qubit mapping and a set of 2Q gates.
-class Layer {
-public:
-  explicit Layer(QubitIndexMap map) : map(std::move(map)) {
-    absorbOneQubitInteractions();
-    collectTwoQubitInteractions();
-  }
-
-  /// @brief The mapping from qubits to indices.
-  QubitIndexMap map;
-
-  /// @brief The mapping from indices to qubits.
-  IndexQubitMap invMap;
-
-  /// @brief Vector of two-qubit gates (e.g. CNOTs).
-  llvm::SmallVector<Operation*> gates;
-
-  /// @brief Return iterator of UnitaryInterfaces.
-  [[nodiscard]] auto unitaries() const {
-    return llvm::map_range(
-        gates, [](Operation* op) { return dyn_cast<UnitaryInterface>(op); });
-  }
-
-  /// @brief Return true if the layer contains two-qubit gates.
-  [[nodiscard]] bool hasRoutableGates() const { return !gates.empty(); }
-
-private:
-  /// @brief Absorb single qubit interactions for @p q.
-  static Value forward(const Value q) {
-    Value newQ = q;
-    while (!newQ.getUsers().empty()) {
-      Operation* op = *newQ.getUsers().begin();
-      if (auto reset = dyn_cast<ResetOp>(op)) {
-        newQ = reset.getOutQubit();
-      } else if (auto unitary = dyn_cast<UnitaryInterface>(op)) {
-        if (!unitary.getAllCtrlInQubits().empty()) {
-          break;
-        }
-
-        if (!dyn_cast<GPhaseOp>(op)) {
-          newQ = unitary.getOutQubits().front();
-        }
-      } else if (auto measure = dyn_cast<MeasureOp>(op)) {
-        newQ = measure.getOutQubit();
-      } else { // DeallocQubitOp.
-        assert(dyn_cast<DeallocQubitOp>(op));
-        break;
-      }
-    }
-    return newQ;
-  }
-
-  /// @brief Absorb single qubit interactions for all qubits in map and
-  /// initialize invMap.
-  void absorbOneQubitInteractions() {
-    QubitIndexMap forwardedMap{};
-
-    for (const auto& [q, i] : map) {
-      const Value newQ = Layer::forward(q);
-      forwardedMap[newQ] = i;
-      invMap[i] = newQ;
-    }
-
-    map = std::move(forwardedMap);
-  }
-
-  /// @brief Collect two-qubit gates. Visits each qubit once.
-  void collectTwoQubitInteractions() {
-    llvm::DenseSet<Value> visited;
-    for (const auto& entry : map) {
-      const Value qubit = entry.getFirst();
-      if (visited.contains(qubit)) {
-        continue;
-      }
-
-      if (qubit.getUsers().empty()) {
-        visited.insert(qubit);
-        continue;
-      }
-
-      Operation* user = *(qubit.getUsers().begin());
-
-      auto unitary = dyn_cast<UnitaryInterface>(user);
-      if (!unitary) {
-        visited.insert(qubit);
-        continue;
-      }
-
-      // All single qubit operations should have been absorbed. What's
-      // left are two qubit interaction gates.
-
-      auto target = unitary.getInQubits().front();
-      auto control = unitary.getAllCtrlInQubits().front();
-      if (map.contains(target) && map.contains(control)) {
-        gates.push_back(unitary);
-      }
-
-      visited.insert(target);
-      visited.insert(control);
-    }
-  }
-};
-
-[[maybe_unused]] llvm::SmallVector<Layer>
-lookahead(const QubitIndexMap& front, const std::size_t depth = 0) {
-  const std::size_t nlayers = 1 + depth;
-
-  llvm::SmallVector<Layer> layers;
-  layers.reserve(nlayers);
-  layers.emplace_back(front);
-
-  if (depth == 0) {
-    return layers;
-  }
-
-  for (std::size_t i = 0; i < depth; ++i) {
-    const Layer& prev = layers.back();
-    QubitIndexMap map(prev.map); // Copy previous.
-
-    for (const QubitPair unitary : prev.unitaries()) {
-      unitary.forward(map);
-    }
-
-    layers.emplace_back(std::move(map));
-  }
-
-  return layers;
-}
-
 class Router {
 public:
   virtual ~Router() = default;
 
-  [[nodiscard]] virtual QubitIndexMap
-  route(const QubitIndexMap& front, const Architecture& arch,
-        PatternRewriter& rewriter) const = 0;
+  [[nodiscard]] virtual llvm::DenseSet<Operation*>
+  route(Location location, const Architecture& arch, QubitIndexMap& map,
+        IndexQubitMap& invMap, PatternRewriter& rewriter) const = 0;
 
 protected:
-  [[nodiscard]] static SWAPOp createSwap(Value qubitA, Value qubitB,
-                                         Location location,
+  [[nodiscard]] static SWAPOp createSwap(Location location, Value qubitA,
+                                         Value qubitB,
                                          PatternRewriter& rewriter) {
     const SmallVector<Type> resultTypes{qubitA.getType(), qubitB.getType()};
     const SmallVector<Value> inQubits{qubitA, qubitB};
@@ -382,142 +322,61 @@ protected:
 /// @brief Naively routes one two-qubit gate after the other.
 class NaiveRouter final : public Router {
 public:
-  [[nodiscard]] QubitIndexMap route(const QubitIndexMap& map,
-                                    const Architecture& arch,
-                                    PatternRewriter& rewriter) const override {
-    const OpBuilder::InsertionGuard guard(rewriter);
+  [[nodiscard]] llvm::DenseSet<Operation*>
+  route(Location location, const Architecture& arch, QubitIndexMap& map,
+        IndexQubitMap& invMap, PatternRewriter& rewriter) const override {
 
-    Layer curr(map);
-    while (curr.hasRoutableGates()) {
-      for (UnitaryInterface unitary : curr.unitaries()) {
-        rewriter.setInsertionPoint(unitary);
+    QubitIndexMap copyMap(map);
+    IndexQubitMap copyInvMap(invMap);
+    Layer layer = findLayer(copyMap);
 
-        const std::size_t indexA = curr.map.at(unitary.getInQubits().front());
-        const std::size_t indexB =
-            curr.map.at(unitary.getAllCtrlInQubits().front());
+    llvm::DenseSet<Operation*> routed;
+    for (Operation* op : layer.gates) {
+      UnitaryInterface u = dyn_cast<UnitaryInterface>(op);
 
-        // If the qubits are not adjacent swap along the shortest path:
-        if (!arch.areAdjacent(indexA, indexB)) {
-          llvm::SmallVector<std::size_t> path =
-              arch.shortestPathBetween(indexA, indexB);
+      const Value first = u.getAllInQubits()[0];
+      const Value second = u.getAllInQubits()[1];
+      const std::size_t idxFirst = copyMap.at(first);
+      const std::size_t idxSecond = copyMap.at(second);
 
-          for (std::size_t i = 0; i < path.size() - 1; i += 2) {
-            const Value qubitA = curr.invMap[path[i]];
-            const Value qubitB = curr.invMap[path[i + 1]];
+      // If the qubits are not adjacent swap along the shortest path.
 
-            auto swap = createSwap(qubitA, qubitB, unitary->getLoc(), rewriter);
+      if (!arch.areAdjacent(idxFirst, idxSecond)) {
+        const auto path = arch.shortestPathBetween(idxFirst, idxSecond);
 
-            const Value swappedA = swap.getOutQubits()[0];
-            const Value swappedB = swap.getOutQubits()[1];
+        for (std::size_t i = 0; i < path.size() - 1; i += 2) {
+          const Value inFirst = copyInvMap.at(path[i]);
+          const Value inSecond = copyInvMap.at(path[i + 1]);
 
-            rewriter.setInsertionPointAfter(swap);
-            rewriter.replaceAllUsesExcept(qubitA, swappedA, swap);
-            rewriter.replaceAllUsesExcept(qubitB, swappedB, swap);
+          auto swap = createSwap(location, inFirst, inSecond, rewriter);
 
-            // Update permutation maps.
+          const Value outFirst = swap.getOutQubits()[0];
+          const Value outSecond = swap.getOutQubits()[1];
 
-            curr.invMap[path[i]] = swappedA;
-            curr.invMap[path[i + 1]] = swappedB;
+          rewriter.setInsertionPointAfter(swap); // Move rewriter ahead.
+          rewriter.replaceAllUsesExcept(inFirst, outFirst, swap);
+          rewriter.replaceAllUsesExcept(inSecond, outSecond, swap);
 
-            curr.map[swappedA] = path[i];
-            curr.map[swappedB] = path[i + 1];
-
-            curr.map.erase(qubitA);
-            curr.map.erase(qubitB);
-          }
+          forwardMaps(copyMap, copyInvMap, inFirst, outFirst);
+          forwardMaps(copyMap, copyInvMap, inSecond, outSecond);
         }
-
-        const Value qubitInA = unitary.getInQubits().front();
-        const Value qubitInB = unitary.getAllCtrlInQubits().front();
-        const Value qubitOutA = unitary.getOutQubits().front();
-        const Value qubitOutB = unitary.getAllCtrlOutQubits().front();
-
-        curr.invMap[curr.map[qubitInA]] = qubitOutA;
-        curr.invMap[curr.map[qubitInB]] = qubitOutB;
-
-        curr.map[qubitOutA] = curr.map[qubitInA];
-        curr.map[qubitOutB] = curr.map[qubitInB];
-
-        curr.map.erase(qubitInA);
-        curr.map.erase(qubitInB);
       }
 
-      curr = Layer(curr.map);
+      forwardMaps(copyMap, copyInvMap, u.getAllInQubits()[0],
+                  u.getAllOutQubits()[0]);
+      forwardMaps(copyMap, copyInvMap, u.getAllInQubits()[1],
+                  u.getAllOutQubits()[1]);
+
+      routed.insert(u);
     }
 
-    return curr.map;
+    return routed;
   }
 };
 
-/**
- * @brief Walk the IR and collect the dynamic qubits for each circuit.
- * @details Assumes that there are no allocations after a deallocation.
- * @return Vector of vectors, where each inner vector contains the dynamic
- * qubits allocated for a circuit.
- */
-llvm::SmallVector<llvm::SmallVector<Value>, 2>
-collectCircuits(Region& body, const Architecture& arch) {
-  llvm::SmallVector<llvm::SmallVector<Value>, 2> circuits;
-  llvm::SmallVector<Value> dynamicQubits;
-  std::size_t allocated = 0;
-
-  // A valid program has at most arch.nqubits qubits.
-  dynamicQubits.reserve(arch.nqubits());
-
-  body.walk([&](Operation* op) {
-    if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
-      ++allocated;
-      dynamicQubits.push_back(alloc.getQubit());
-      return;
-    }
-
-    if (auto dealloc = dyn_cast<DeallocQubitOp>(op)) {
-      if ((--allocated) == 0) {
-        circuits.push_back(dynamicQubits);
-        dynamicQubits.clear();
-      }
-      return;
-    }
-  });
-
-  return circuits;
-}
-
-[[nodiscard]] LogicalResult routeQuantumCircuit(
-    const llvm::SmallVectorImpl<Value>& dynamicQubits, const Architecture& arch,
-    const InitialLayout& layout, const Router& router,
-    llvm::SmallVectorImpl<Value>& staticQubits, PatternRewriter& rewriter) {
-
-  if (dynamicQubits.size() > staticQubits.size()) {
-    return dynamicQubits.back().getDefiningOp()->emitError()
-           << "program requires " << dynamicQubits.size()
-           << " qubits but target architecture '" << arch.name()
-           << "' only supports " << arch.nqubits() << " qubits";
-  }
-
-  for (auto& q : staticQubits) {
-    llvm::outs() << q.getLoc() << '\n';
-    auto reset = rewriter.create<ResetOp>(q.getLoc(), q);
-    llvm::outs() << q << '\n';
-    q = reset.getOutQubit();
-  }
-
-  QubitIndexMap front;
-  front = layout.apply(staticQubits, dynamicQubits, rewriter);
-  front = router.route(front, arch, rewriter);
-
-  for (const auto& [q, i] : front) {
-    staticQubits[i] = q;
-
-    if (q.hasOneUse()) { // There may be unused qubits.
-      DeallocQubitOp dealloc = dyn_cast<DeallocQubitOp>(*q.getUsers().begin());
-      assert(dealloc);
-      rewriter.eraseOp(dealloc);
-    }
-  }
-
-  return success();
-}
+//===----------------------------------------------------------------------===//
+// Patterns
+//===----------------------------------------------------------------------===//
 
 /**
  * @brief Route entry point function @p func.
@@ -527,28 +386,118 @@ collectCircuits(Region& body, const Architecture& arch) {
 [[nodiscard]] LogicalResult routeFunc(func::FuncOp func,
                                       const Architecture& arch,
                                       const InitialLayout& layout,
-                                      const Router& router,
                                       PatternRewriter& rewriter) {
   Region& body = func.getBody();
-  const OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPointToStart(&body.front());
 
   if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
     return success(); // For now, we don't route non-entry point functions.
   }
 
+  Permutation p(arch.nqubits());
+
   llvm::SmallVector<Value> staticQubits(arch.nqubits());
   for (std::size_t i = 0; i < arch.nqubits(); ++i) {
     auto qubit = rewriter.create<QubitOp>(body.getLoc(), i);
     staticQubits[i] = qubit.getQubit();
+    p.staticQubits[i] = qubit.getQubit();
   }
 
-  const auto circuits = collectCircuits(body, arch);
-  for (const auto& dynamicQubits : circuits) {
-    if (failed(routeQuantumCircuit(dynamicQubits, arch, layout, router,
-                                   staticQubits, rewriter))) {
-      return failure();
+  QubitIndexMap map;
+  IndexQubitMap invMap;
+
+  for (std::size_t i = 0; i < staticQubits.size(); ++i) {
+    map.try_emplace(staticQubits[i], i);
+    invMap.try_emplace(i, staticQubits[i]);
+  }
+
+  std::size_t allocated = 0;
+  llvm::DenseSet<Operation*> routed;
+
+  auto result = body.walk([&](Operation* op) {
+    rewriter.setInsertionPoint(op);
+
+    if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
+
+      
+      // Replace dynamic with reseted static qubit.
+      
+      const Value dynamicQubit = alloc.getQubit();
+      const Value staticQubit = invMap[layout(allocated)];
+      
+      p.dynamic[dynamicQubit] = allocated;
+      p.layout[allocated] = layout(allocated);
+
+      auto reset = rewriter.create<ResetOp>(alloc->getLoc(), staticQubit);
+      rewriter.replaceAllUsesWith(dynamicQubit, reset.getOutQubit());
+
+      // Update front map.
+      forwardMaps(map, invMap, staticQubit, reset.getOutQubit());
+
+      // Increase allocated count and validate for architecture.
+
+      if ((++allocated) > arch.nqubits()) {
+        return WalkResult(func->emitOpError()
+                          << "requires " << allocated
+                          << " qubits but target architecture '" << arch.name()
+                          << "' only supports " << arch.nqubits() << " qubits");
+      }
+
+      // Finally, delete alloc operation.
+
+      rewriter.eraseOp(alloc);
+
+      return WalkResult::advance();
     }
+
+    if (auto reset = dyn_cast<ResetOp>(op)) {
+      forwardMaps(map, invMap, reset.getInQubit(), reset.getOutQubit());
+      return WalkResult::advance();
+    }
+
+    if (auto u = dyn_cast<UnitaryInterface>(op)) {
+      if (!isTwoQubitGate(u)) {
+        forwardMaps(map, invMap, u.getInQubits().front(),
+                    u.getOutQubits().front());
+
+        return WalkResult::advance();
+      }
+
+      // The first unrouted two-qubit gate we encounter is
+      // the first two-qubit gate of a new layer. Hence,
+      // compute the layer's gates using the def-use chain.
+      // To keep valid SSA value chains, the initial qubit
+      // map must be the one before the first two-qubit gate.
+
+      if (!routed.contains(u)) {
+      }
+
+      forwardMaps(map, invMap, u.getAllInQubits()[0], u.getAllOutQubits()[0]);
+      forwardMaps(map, invMap, u.getAllInQubits()[1], u.getAllOutQubits()[1]);
+
+      return WalkResult::advance();
+    }
+
+    if (auto measure = dyn_cast<MeasureOp>(op)) {
+      forwardMaps(map, invMap, measure.getInQubit(), measure.getOutQubit());
+      return WalkResult::advance();
+    }
+
+    if (auto dealloc = dyn_cast<DeallocQubitOp>(op)) {
+      // Decrease allocation count.
+      --allocated;
+
+      // Then, erase dealloc operation.
+      rewriter.eraseOp(op);
+
+      return WalkResult::advance();
+    }
+
+    return WalkResult::advance();
+  });
+
+  if (result.wasInterrupted()) {
+    return failure();
   }
 
   return success();
@@ -561,17 +510,13 @@ collectCircuits(Region& body, const Architecture& arch) {
 [[nodiscard]] LogicalResult routeModule(ModuleOp module,
                                         const Architecture& arch,
                                         const InitialLayout& layout,
-                                        const Router& router,
                                         PatternRewriter& rewriter) {
-  const OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPoint(module);
-
   for (const func::FuncOp func : module.getOps<func::FuncOp>()) {
-    if (failed(routeFunc(func, arch, layout, router, rewriter))) {
+    if (failed(routeFunc(func, arch, layout, rewriter))) {
       return failure();
     }
   }
-
   return success();
 }
 
@@ -597,10 +542,10 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     const auto arch =
         std::make_unique<Architecture>("MQT-Test", 6, couplingMap);
 
-    const Identity layout(arch->nqubits());
-    const NaiveRouter router{};
+    const llvm::SmallVector<std::size_t> mapping{4, 0, 2, 5, 3, 1};
+    const Custom layout(arch->nqubits(), mapping);
 
-    if (failed(routeModule(module, *arch, layout, router, rewriter))) {
+    if (failed(routeModule(module, *arch, layout, rewriter))) {
       signalPassFailure();
     }
   }
