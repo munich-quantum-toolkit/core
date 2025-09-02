@@ -63,7 +63,6 @@ dd_package_evaluation
 
 contributing
 support
-DevelopmentGuide
 ```
 ````
 

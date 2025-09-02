@@ -30,6 +30,7 @@ The underlying simulation approach supports mid-circuit measurements, reset oper
 ```{code-cell} ipython3
 from mqt.core.dd import sample
 from mqt.core.ir import QuantumComputation
+from mqt.core.ir.operations import OpType
 
 from math import pi
 
@@ -60,7 +61,7 @@ for i in range(precision):
 
   # Iterative inverse QFT
   for j in range(i):
-    qc.classic_controlled(op="p", target=q[0], cbit=c[j], params=[-pi / 2**(i - j)])
+    qc.if_(op_type=OpType.p, target=q[0], control_bit=c[j], params=[-pi / 2**(i - j)])
   qc.h(q[0])
 
   # Measure the result

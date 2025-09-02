@@ -18,7 +18,6 @@ jobs:
           [
             ubuntu-24.04,
             ubuntu-24.04-arm,
-            macos-13,
             macos-14,
             windows-2025,
             windows-11-arm,
@@ -53,7 +52,7 @@ jobs:
         id: mlir-cache
         with:
           path: llvm-install
-          key: ${{ runner.os }}-llvm-${{ matrix.llvm-version }}
+          key: ${{ matrix.os }}-llvm-${{ matrix.llvm-version }}
 
       - name: Setup LLVM/MLIR (Windows)
         if: runner.os == 'Windows'
@@ -62,13 +61,6 @@ jobs:
           & "${{ github.workspace }}\.github\scripts\setup-mlir.ps1" -MajorVersion ${{ matrix.llvm-version }} -InstallPrefix "${{ github.workspace }}\llvm-install"
 
       # Build acceleration and Python tooling
-      - name: Setup ccache (Linux and macOS)
-        if: runner.os == 'Linux' || runner.os == 'macOS'
-        uses: Chocobo1/setup-ccache-action@v1
-        with:
-          prepend_symlinks_to_path: false
-          override_cache_key: mlir-${{ matrix.coverage && 'coverage' || 'tests' }}-${{ runner.os }}-${{ matrix.llvm-version }}
-
       - name: Set up mold as linker (Linux)
         uses: rui314/setup-mold@v1
 
