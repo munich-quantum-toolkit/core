@@ -15,12 +15,12 @@
 
 
 // ============================================================================
-// IsingXY (XX+YY), IsingZZ (via RZX), DCX and controlled variants
+// Ising-type gates and controlled variants
 // Groups: Constants / Allocation & extraction / Uncontrolled chain / Controlled chain / Reinsertion
 // ============================================================================
 module {
-  // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumXY_RZX_DCX
-  func.func @testMQTOptToCatalystQuantumXY_RZX_DCX() {
+  // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumIsing
+  func.func @testMQTOptToCatalystQuantumIsing() {
     // --- Allocation & extraction ---------------------------------------------------------------
     // CHECK: %cst = arith.constant 3.000000e-01 : f64
     // CHECK: %[[QREG:.*]] = quantum.alloc( 3) : !quantum.reg

@@ -15,12 +15,12 @@
 
 
 // ============================================================================
-// I, H, V, V†, S, S†, T, T† and controlled variants
+// Clifford + T and controlled variants
 // Groups: Allocation & extraction / Uncontrolled sequence / Controlled sequence / Reinsertion
 // ============================================================================
 module {
-  // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumCliffordTFamily
-  func.func @testMQTOptToCatalystQuantumCliffordTFamily() {
+  // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumCliffordT
+  func.func @testMQTOptToCatalystQuantumCliffordT() {
     // --- Allocation & extraction ---------------------------------------------------------------
     // CHECK: %[[QREG:.*]] = quantum.alloc( 2) : !quantum.reg
     // CHECK: %[[Q0_0:.*]] = quantum.extract %[[QREG]][ 0] : !quantum.reg -> !quantum.bit

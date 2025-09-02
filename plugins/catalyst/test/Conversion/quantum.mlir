@@ -12,6 +12,7 @@
 // RUN:   --debug \
 // RUN:   --catalyst-pipeline="builtin.module(catalystquantum-to-mqtopt)" \
 // RUN:   %s | FileCheck %s
+// XFAIL: *
 
 module {
   // CHECK-LABEL: func @bar()

@@ -15,7 +15,7 @@
 
 
 // ============================================================================
-// SWAP / ISWAP / ISWAP† and controlled variants
+// Permutation gates and controlled variants
 // Groups: Allocation & extraction / Uncontrolled / Controlled / Reinsertion
 // ============================================================================
 module {
@@ -50,12 +50,13 @@ module {
     %r0_2, %q1_0 = "mqtopt.extractQubit"(%r0_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
     %r0_3, %q2_0 = "mqtopt.extractQubit"(%r0_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
-    // SWAP / ISWAP / ISWAPdg
+    // Uncontrolled
     %q0_1, %q1_1 = mqtopt.swap() %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
     %q0_2, %q1_2 = mqtopt.iswap() %q0_1, %q1_1 : !mqtopt.Qubit, !mqtopt.Qubit
     %q0_3, %q1_3 = mqtopt.iswapdg() %q0_2, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
+    // TODO: add mqtopt.ecr, mqtopt.dcx
 
-    // Controlled SWAP / ISWAP / ISWAPdg
+    // Controlled
     %q0_4, %q1_4, %q2_1 = mqtopt.swap() %q0_3, %q1_3 ctrl %q2_0 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
     %q0_5, %q1_5, %q2_2 = mqtopt.iswap() %q0_4, %q1_4 ctrl %q2_1 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
     %q0_6, %q1_6, %q2_3 = mqtopt.iswapdg() %q0_5, %q1_5 ctrl %q2_2 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
