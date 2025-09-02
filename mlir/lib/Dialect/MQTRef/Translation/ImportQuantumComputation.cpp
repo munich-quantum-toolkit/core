@@ -33,6 +33,8 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Pass/PassManager.h>
+#include <mlir/Transforms/Passes.h>
 
 namespace {
 
@@ -253,14 +255,8 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
       builder.getUnknownLoc(), predicate, controlBitValue,
       expectedValueConstant);
 
-  bool populateElseBlock = false;
-  if (elseOp != nullptr) {
-    populateElseBlock = true;
-  }
-
   auto ifOp = builder.create<mlir::scf::IfOp>(
-      builder.getUnknownLoc(), mlir::TypeRange{}, condition.getResult(),
-      populateElseBlock);
+      builder.getUnknownLoc(), mlir::TypeRange{}, condition.getResult(), true);
 
   {
     const mlir::OpBuilder::InsertionGuard thenGuard(builder);
@@ -270,7 +266,7 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
     }
   }
 
-  if (populateElseBlock) {
+  if (elseOp != nullptr) {
     const mlir::OpBuilder::InsertionGuard elseGuard(builder);
     builder.setInsertionPointToStart(ifOp.elseBlock());
     if (failed(addOperation(builder, *elseOp, qubits, bits))) {
@@ -419,6 +415,15 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
 
   // Create terminator
   builder.create<mlir::func::ReturnOp>(loc);
+
+  // Run passes
+  mlir::PassManager passManager(context);
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  if (failed(passManager.run(module))) {
+    emitError(loc) << "Failed to run passes";
+  }
 
   return module;
 }

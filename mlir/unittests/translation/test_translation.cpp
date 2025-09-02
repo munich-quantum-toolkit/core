@@ -740,15 +740,8 @@ TEST_F(ImportTest, If) {
   const auto* checkString = R"(
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[I1:.*]] = arith.constant 0 : index
-    CHECK: %[[Cnt0:.*]] = memref.load %[[Mem]][%[[I1]]] : memref<1xi1>
-    CHECK: %[[Exp0:.*]] = arith.constant true
-    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[Cnt0]], %[[Exp0]] : i1
-    CHECK: scf.if %[[Cnd0]] {
+    CHECK: scf.if %[[M0:.*]] {
     CHECK: mqtref.x() %[[Q0]]
     CHECK: }
   )";
@@ -766,16 +759,11 @@ TEST_F(ImportTest, IfElse) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
+    CHECK: %[[Exp0:.*]] = arith.constant false
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[I1:.*]] = arith.constant 0 : index
-    CHECK: %[[Cnt0:.*]] = memref.load %[[Mem]][%[[I1]]] : memref<1xi1>
-    CHECK: %[[Exp0:.*]] = arith.constant false
-    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[Cnt0]], %[[Exp0]] : i1
+    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[M0]], %[[Exp0]] : i1
     CHECK: scf.if %[[Cnd0]] {
     CHECK: mqtref.x() %[[Q0]]
     CHECK: } else {

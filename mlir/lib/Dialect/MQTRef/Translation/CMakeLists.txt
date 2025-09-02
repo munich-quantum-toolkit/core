@@ -12,10 +12,12 @@ add_mlir_library(
   MLIRMQTRefTranslation
   ImportQuantumComputation.cpp
   LINK_LIBS
-  MLIRMQTRef
   MLIRArithDialect
   MLIRFuncDialect
   MLIRSCFDialect
+  MLIRPass
+  MLIRTransforms
+  MLIRMQTRef
   MQT::CoreIR)
 
 # collect header files
