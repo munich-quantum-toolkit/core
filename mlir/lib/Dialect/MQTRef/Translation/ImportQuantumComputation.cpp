@@ -17,6 +17,7 @@
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
@@ -226,38 +227,71 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
 
   auto* elseOp = ifElse->getElseOp();
 
+  auto loc = builder.getUnknownLoc();
+
   auto controlBit = ifElse->getControlBit();
-  if (!controlBit.has_value()) {
+  auto controlRegister = ifElse->getControlRegister();
+  mlir::Value controlValue;
+  mlir::Value expectedValue;
+  if (controlRegister.has_value()) {
+    assert(!controlBit.has_value());
+
+    // Compute control value from control register
+    // Placeholder
+    auto indexValue = builder.create<mlir::arith::ConstantIndexOp>(loc, 0);
+    controlValue = builder.create<mlir::memref::LoadOp>(
+        loc, bits, mlir::ValueRange{indexValue});
+
+    // Set expected value
+    auto expectedValueRegister = ifElse->getExpectedValueRegister();
+    expectedValue = builder.create<mlir::arith::ConstantOp>(
+        loc, builder.getI64Type(),
+        builder.getIntegerAttr(builder.getI64Type(), expectedValueRegister));
+  } else if (controlBit.has_value()) {
+    // Get control value from control bit
+    auto indexValue =
+        builder.create<mlir::arith::ConstantIndexOp>(loc, *controlBit);
+    controlValue = builder.create<mlir::memref::LoadOp>(
+        loc, bits, mlir::ValueRange{indexValue});
+
+    // Set expected value
+    auto expectedValueBit = ifElse->getExpectedValueBit();
+    expectedValue = builder.create<mlir::arith::ConstantOp>(
+        loc, builder.getI1Type(),
+        builder.getIntegerAttr(builder.getI1Type(),
+                               static_cast<int64_t>(expectedValueBit)));
+  } else {
     return llvm::failure();
   }
-  auto indexValue = builder.create<mlir::arith::ConstantIndexOp>(
-      builder.getUnknownLoc(), *controlBit);
-  auto controlBitValue = builder.create<mlir::memref::LoadOp>(
-      builder.getUnknownLoc(), bits, mlir::ValueRange{indexValue});
 
-  auto expectedValue = ifElse->getExpectedValueBit();
-  auto expectedValueConstant = builder.create<mlir::arith::ConstantOp>(
-      builder.getUnknownLoc(), builder.getI1Type(),
-      builder.getIntegerAttr(builder.getI1Type(),
-                             static_cast<int64_t>(expectedValue)));
-
+  // Define comparison predicate
   const auto comparisonKind = ifElse->getComparisonKind();
   mlir::arith::CmpIPredicate predicate = mlir::arith::CmpIPredicate::eq;
   if (comparisonKind == qc::ComparisonKind::Eq) {
     predicate = mlir::arith::CmpIPredicate::eq;
   } else if (comparisonKind == qc::ComparisonKind::Neq) {
     predicate = mlir::arith::CmpIPredicate::ne;
+  } else if (comparisonKind == qc::ComparisonKind::Lt) {
+    predicate = mlir::arith::CmpIPredicate::ult;
+  } else if (comparisonKind == qc::ComparisonKind::Leq) {
+    predicate = mlir::arith::CmpIPredicate::ule;
+  } else if (comparisonKind == qc::ComparisonKind::Gt) {
+    predicate = mlir::arith::CmpIPredicate::ugt;
+  } else if (comparisonKind == qc::ComparisonKind::Geq) {
+    predicate = mlir::arith::CmpIPredicate::uge;
   } else {
     return llvm::failure();
   }
 
+  // Define condition
   auto condition = builder.create<mlir::arith::CmpIOp>(
-      builder.getUnknownLoc(), predicate, controlBitValue,
-      expectedValueConstant);
+      loc, predicate, controlValue, expectedValue);
 
-  auto ifOp = builder.create<mlir::scf::IfOp>(
-      builder.getUnknownLoc(), mlir::TypeRange{}, condition.getResult(), true);
+  // Define operation
+  auto ifOp = builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{},
+                                              condition.getResult(), true);
 
+  // Populate then block
   {
     const mlir::OpBuilder::InsertionGuard thenGuard(builder);
     builder.setInsertionPointToStart(ifOp.thenBlock());
@@ -266,6 +300,7 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
     }
   }
 
+  // Populate else block
   if (elseOp != nullptr) {
     const mlir::OpBuilder::InsertionGuard elseGuard(builder);
     builder.setInsertionPointToStart(ifOp.elseBlock());
