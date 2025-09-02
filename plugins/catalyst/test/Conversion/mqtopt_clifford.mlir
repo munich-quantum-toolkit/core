@@ -64,7 +64,7 @@ module {
     // CHECK: %[[CSD_T:.*]], %[[CSD_C:.*]] = quantum.custom "S"() %[[CS_T]] adj ctrls(%[[CS_C]])  ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
     // CHECK: %[[CT_T:.*]], %[[CT_C:.*]]   = quantum.custom "T"()   %[[CSD_T]]  ctrls(%[[CSD_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
     // CHECK: %[[CTD_T:.*]], %[[CTD_C:.*]] = quantum.custom "T"() %[[CT_T]]  adj ctrls(%[[CT_C]])  ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    
+
     // --- Reinsertion ---------------------------------------------------------------------------
     // CHECK: %[[R1:.*]] = quantum.insert %[[QREG]][ 0], %[[CTD_T]] : !quantum.reg, !quantum.bit
     // CHECK: %[[R2:.*]] = quantum.insert %[[R1]][ 1], %[[CTD_C]] : !quantum.reg, !quantum.bit
