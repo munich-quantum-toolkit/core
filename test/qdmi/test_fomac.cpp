@@ -42,21 +42,21 @@ protected:
 };
 
 TEST(FoMaCTest, StatusToString) {
-  EXPECT_EQ(toString(QDMI_WARN_GENERAL), "General warning.");
-  EXPECT_EQ(toString(QDMI_SUCCESS), "Success.");
-  EXPECT_EQ(toString(QDMI_ERROR_FATAL), "A fatal error.");
-  EXPECT_EQ(toString(QDMI_ERROR_OUTOFMEM), "Out of memory.");
-  EXPECT_EQ(toString(QDMI_ERROR_NOTIMPLEMENTED), "Not implemented.");
-  EXPECT_EQ(toString(QDMI_ERROR_LIBNOTFOUND), "Library not found.");
-  EXPECT_EQ(toString(QDMI_ERROR_NOTFOUND), "Element not found.");
-  EXPECT_EQ(toString(QDMI_ERROR_OUTOFRANGE), "Out of range.");
-  EXPECT_EQ(toString(QDMI_ERROR_INVALIDARGUMENT), "Invalid argument.");
-  EXPECT_EQ(toString(QDMI_ERROR_PERMISSIONDENIED), "Permission denied.");
-  EXPECT_EQ(toString(QDMI_ERROR_NOTSUPPORTED), "Not supported.");
-  EXPECT_EQ(toString(QDMI_ERROR_BADSTATE), "Bad state.");
-  EXPECT_EQ(toString(QDMI_ERROR_TIMEOUT), "Timeout.");
+  EXPECT_EQ(toString(QDMI_WARN_GENERAL), "General warning");
+  EXPECT_EQ(toString(QDMI_SUCCESS), "Success");
+  EXPECT_EQ(toString(QDMI_ERROR_FATAL), "A fatal error");
+  EXPECT_EQ(toString(QDMI_ERROR_OUTOFMEM), "Out of memory");
+  EXPECT_EQ(toString(QDMI_ERROR_NOTIMPLEMENTED), "Not implemented");
+  EXPECT_EQ(toString(QDMI_ERROR_LIBNOTFOUND), "Library not found");
+  EXPECT_EQ(toString(QDMI_ERROR_NOTFOUND), "Element not found");
+  EXPECT_EQ(toString(QDMI_ERROR_OUTOFRANGE), "Out of range");
+  EXPECT_EQ(toString(QDMI_ERROR_INVALIDARGUMENT), "Invalid argument");
+  EXPECT_EQ(toString(QDMI_ERROR_PERMISSIONDENIED), "Permission denied");
+  EXPECT_EQ(toString(QDMI_ERROR_NOTSUPPORTED), "Not supported");
+  EXPECT_EQ(toString(QDMI_ERROR_BADSTATE), "Bad state");
+  EXPECT_EQ(toString(QDMI_ERROR_TIMEOUT), "Timeout");
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
-  EXPECT_EQ(toString(static_cast<QDMI_STATUS>(-999)), "Unknown status code.");
+  EXPECT_EQ(toString(static_cast<QDMI_STATUS>(-999)), "Unknown status code");
 }
 
 TEST(FoMaCTest, SitePropertyToString) {

@@ -23,9 +23,73 @@
 #include <vector>
 
 namespace fomac {
+auto toString(QDMI_STATUS result) -> std::string {
+  switch (result) {
+  case QDMI_WARN_GENERAL:
+    return "General warning";
+  case QDMI_SUCCESS:
+    return "Success";
+  case QDMI_ERROR_FATAL:
+    return "A fatal error";
+  case QDMI_ERROR_OUTOFMEM:
+    return "Out of memory";
+  case QDMI_ERROR_NOTIMPLEMENTED:
+    return "Not implemented";
+  case QDMI_ERROR_LIBNOTFOUND:
+    return "Library not found";
+  case QDMI_ERROR_NOTFOUND:
+    return "Element not found";
+  case QDMI_ERROR_OUTOFRANGE:
+    return "Out of range";
+  case QDMI_ERROR_INVALIDARGUMENT:
+    return "Invalid argument";
+  case QDMI_ERROR_PERMISSIONDENIED:
+    return "Permission denied";
+  case QDMI_ERROR_NOTSUPPORTED:
+    return "Not supported";
+  case QDMI_ERROR_BADSTATE:
+    return "Bad state";
+  case QDMI_ERROR_TIMEOUT:
+    return "Timeout";
+  default:
+    return "Unknown status code";
+  }
+}
+auto toString(QDMI_Site_Property prop) -> std::string {
+  switch (prop) {
+  case QDMI_SITE_PROPERTY_INDEX:
+    return "QDMI_SITE_PROPERTY_INDEX";
+  case QDMI_SITE_PROPERTY_T1:
+    return "QDMI_SITE_PROPERTY_T1";
+  case QDMI_SITE_PROPERTY_T2:
+    return "QDMI_SITE_PROPERTY_T2";
+  case QDMI_SITE_PROPERTY_NAME:
+    return "QDMI_SITE_PROPERTY_NAME";
+  case QDMI_SITE_PROPERTY_XCOORDINATE:
+    return "QDMI_SITE_PROPERTY_XCOORDINATE";
+  case QDMI_SITE_PROPERTY_YCOORDINATE:
+    return "QDMI_SITE_PROPERTY_YCOORDINATE";
+  case QDMI_SITE_PROPERTY_ZCOORDINATE:
+    return "QDMI_SITE_PROPERTY_ZCOORDINATE";
+  case QDMI_SITE_PROPERTY_ISZONE:
+    return "QDMI_SITE_PROPERTY_ISZONE";
+  case QDMI_SITE_PROPERTY_XEXTENT:
+    return "QDMI_SITE_PROPERTY_XEXTENT";
+  case QDMI_SITE_PROPERTY_YEXTENT:
+    return "QDMI_SITE_PROPERTY_YEXTENT";
+  case QDMI_SITE_PROPERTY_ZEXTENT:
+    return "QDMI_SITE_PROPERTY_ZEXTENT";
+  case QDMI_SITE_PROPERTY_MODULEINDEX:
+    return "QDMI_SITE_PROPERTY_MODULEINDEX";
+  case QDMI_SITE_PROPERTY_SUBMODULEINDEX:
+    return "QDMI_SITE_PROPERTY_SUBMODULEINDEX";
+  default:
+    return "QDMI_SITE_PROPERTY_UNKNOWN";
+  }
+}
 auto throwError(int result, const std::string& msg) -> void {
   std::ostringstream ss;
-  ss << msg << ": " << toString(static_cast<QDMI_STATUS>(result));
+  ss << msg << ": " << toString(static_cast<QDMI_STATUS>(result)) << ".";
   switch (result) {
   case QDMI_ERROR_OUTOFMEM:
     throw std::bad_alloc();
@@ -44,7 +108,7 @@ auto throwError(int result, const std::string& msg) -> void {
     throw std::runtime_error(ss.str());
   default:
     throw std::runtime_error("Unknown error code: " +
-                             toString(static_cast<QDMI_STATUS>(result)));
+                             toString(static_cast<QDMI_STATUS>(result)) + ".");
   }
 }
 auto Site::getIndex() const -> size_t {

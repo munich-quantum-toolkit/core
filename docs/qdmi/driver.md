@@ -18,7 +18,7 @@ Other devices can be loaded dynamically at runtime via {cpp:func}`qdmi::Driver::
 ## Python Bindings
 
 The QDMI Driver is implemented in C++ and exposed to Python via [pybind11](https://pybind11.readthedocs.io).
-Direct binding of QDMI driver functions is not feasible due to technical limitations.
+Direct binding of the QDMI Clietn interface functions is not feasible due to technical limitations.
 Instead, a FoMaC (Figure of Merits and Constraints) library defines wrapper classes ({cpp:class}`fomac::Device`, {cpp:class}`fomac::Site`, {cpp:class}`fomac::Operation`) for the QDMI entities.
 These classes together with their methods are then exposed to Python, see {py:class}`~mqt.core.qdmi.fomac.Device`, {py:class}`~mqt.core.qdmi.fomac.Site`, {py:class}`~mqt.core.qdmi.fomac.Operation`.
 

@@ -6,6 +6,7 @@
 #
 # Licensed under the MIT License
 
+from collections.abc import Iterable
 from enum import Enum
 
 __all__ = [
@@ -59,27 +60,27 @@ class Site:
 
 class Operation:
     """An operation represents a quantum operation that can be performed on a quantum device."""
-    def name(self, sites: list[Site] = ..., params: list[float] = ...) -> str:
+    def name(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> str:
         """Returns the name of the operation."""
-    def qubits_num(self, sites: list[Site] = ..., params: list[float] = ...) -> int | None:
+    def qubits_num(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> int | None:
         """Returns the number of qubits the operation acts on."""
-    def parameters_num(self, sites: list[Site] = ..., params: list[float] = ...) -> int:
+    def parameters_num(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> int:
         """Returns the number of parameters the operation has."""
-    def duration(self, sites: list[Site] = ..., params: list[float] = ...) -> int | None:
+    def duration(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> int | None:
         """Returns the duration of the operation."""
-    def fidelity(self, sites: list[Site] = ..., params: list[float] = ...) -> float | None:
+    def fidelity(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> float | None:
         """Returns the fidelity of the operation."""
-    def interaction_radius(self, sites: list[Site] = ..., params: list[float] = ...) -> int | None:
+    def interaction_radius(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> int | None:
         """Returns the interaction radius of the operation."""
-    def blocking_radius(self, sites: list[Site] = ..., params: list[float] = ...) -> int | None:
+    def blocking_radius(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> int | None:
         """Returns the blocking radius of the operation."""
-    def idling_fidelity(self, sites: list[Site] = ..., params: list[float] = ...) -> float | None:
+    def idling_fidelity(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> float | None:
         """Returns the idling fidelity of the operation."""
-    def is_zoned(self, sites: list[Site] = ..., params: list[float] = ...) -> bool | None:
+    def is_zoned(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> bool | None:
         """Returns whether the operation is zoned."""
-    def sites(self, sites: list[Site] = ..., params: list[float] = ...) -> list[Site] | None:
+    def sites(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> Iterable[Site] | None:
         """Returns the list of sites the operation can be performed on."""
-    def mean_shuttling_speed(self, sites: list[Site] = ..., params: list[float] = ...) -> int | None:
+    def mean_shuttling_speed(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> int | None:
         """Returns the mean shuttling speed of the operation."""
     def __eq__(self, other: object) -> bool:
         """Checks if two operations are equal."""
@@ -98,11 +99,11 @@ class Device:
         """Returns the version of the library used to define the device."""
     def qubits_num(self) -> int:
         """Returns the number of qubits available on the device."""
-    def sites(self) -> list[Site]:
+    def sites(self) -> Iterable[Site]:
         """Returns the list of sites available on the device."""
-    def operations(self) -> list[Operation]:
+    def operations(self) -> Iterable[Operation]:
         """Returns the list of operations supported by the device."""
-    def coupling_map(self) -> list[tuple[Site, Site]] | None:
+    def coupling_map(self) -> Iterable[tuple[Site, Site]] | None:
         """Returns the coupling map of the device as a list of site pairs."""
     def needs_calibration(self) -> int | None:
         """Returns whether the device needs calibration."""
@@ -121,5 +122,5 @@ class Device:
     def __ne__(self, other: object) -> bool:
         """Checks if two devices are not equal."""
 
-def devices() -> list[Device]:
+def devices() -> Iterable[Device]:
     """Returns a list of available devices."""
