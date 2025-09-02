@@ -62,17 +62,6 @@ void forwardMaps(QubitIndexMap& map, IndexQubitMap& invMap, const Value in,
   map.erase(in);
 }
 
-struct Permutation {
-  explicit Permutation(const std::size_t nqubits) : staticQubits(nqubits) {}
-
-  /// @brief A vector of static qubits
-  llvm::SmallVector<Value, 0> staticQubits;
-  /// @brief A mapping from dynamic numbers to their static index.
-  llvm::DenseMap<std::size_t, std::size_t> layout;
-  /// @brief A mapping from current SSA values to their assigned dynamic number.
-  llvm::DenseMap<Value, std::size_t> dynamic;
-};
-
 //===----------------------------------------------------------------------===//
 // Architecture
 //===----------------------------------------------------------------------===//
@@ -200,6 +189,47 @@ struct Custom : InitialLayout {
       : InitialLayout(nqubits) {
     std::ranges::copy(mapping, mapping_.begin());
   }
+};
+
+//===----------------------------------------------------------------------===//
+// Permutation
+//===----------------------------------------------------------------------===//
+
+struct Permutation {
+  explicit Permutation(const std::size_t nqubits) : staticQubits(nqubits) {}
+
+  [[nodiscard]] Value getStatic(const std::size_t dynamicNumber) const {
+    return staticQubits[layout.at(dynamicNumber)];
+  }
+
+  /**
+   * @brief Assign dynamic qubit to a static qubit.
+   * @details Called on allocation.
+   */
+  [[nodiscard]] Value alloc(const std::size_t dynamicNumber,
+                            const InitialLayout& initialLayout) {
+    layout[dynamicNumber] = initialLayout(dynamicNumber);
+    const Value staticQubit = getStatic(dynamicNumber);
+    dynamic[staticQubit] = dynamicNumber;
+    return staticQubit;
+  }
+
+  void dealloc(const Value in) {
+    layout.erase(dynamic.at(in));
+    dynamic.erase(in);
+  }
+
+  void forward(const Value in, const Value out) {
+    dynamic[out] = dynamic[in];
+    dynamic.erase(in);
+  }
+
+  /// @brief A vector of static qubits
+  llvm::SmallVector<Value, 0> staticQubits;
+  /// @brief A mapping from dynamic numbers to their static index.
+  llvm::DenseMap<std::size_t, std::size_t> layout;
+  /// @brief A mapping from current SSA values to their assigned dynamic number.
+  llvm::DenseMap<Value, std::size_t> dynamic;
 };
 
 //===----------------------------------------------------------------------===//
@@ -396,19 +426,10 @@ public:
 
   Permutation p(arch.nqubits());
 
-  llvm::SmallVector<Value> staticQubits(arch.nqubits());
+  // A entry point creates static qubit variables.
   for (std::size_t i = 0; i < arch.nqubits(); ++i) {
     auto qubit = rewriter.create<QubitOp>(body.getLoc(), i);
-    staticQubits[i] = qubit.getQubit();
     p.staticQubits[i] = qubit.getQubit();
-  }
-
-  QubitIndexMap map;
-  IndexQubitMap invMap;
-
-  for (std::size_t i = 0; i < staticQubits.size(); ++i) {
-    map.try_emplace(staticQubits[i], i);
-    invMap.try_emplace(i, staticQubits[i]);
   }
 
   std::size_t allocated = 0;
@@ -419,23 +440,16 @@ public:
 
     if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
 
-      
       // Replace dynamic with reseted static qubit.
-      
       const Value dynamicQubit = alloc.getQubit();
-      const Value staticQubit = invMap[layout(allocated)];
-      
-      p.dynamic[dynamicQubit] = allocated;
-      p.layout[allocated] = layout(allocated);
+      const Value staticQubit = p.alloc(allocated, layout);
 
       auto reset = rewriter.create<ResetOp>(alloc->getLoc(), staticQubit);
       rewriter.replaceAllUsesWith(dynamicQubit, reset.getOutQubit());
 
-      // Update front map.
-      forwardMaps(map, invMap, staticQubit, reset.getOutQubit());
+      p.forward(reset.getInQubit(), reset.getOutQubit());
 
       // Increase allocated count and validate for architecture.
-
       if ((++allocated) > arch.nqubits()) {
         return WalkResult(func->emitOpError()
                           << "requires " << allocated
@@ -443,47 +457,39 @@ public:
                           << "' only supports " << arch.nqubits() << " qubits");
       }
 
-      // Finally, delete alloc operation.
-
-      rewriter.eraseOp(alloc);
+      rewriter.eraseOp(alloc); // Finally, delete alloc operation.
 
       return WalkResult::advance();
     }
 
     if (auto reset = dyn_cast<ResetOp>(op)) {
-      forwardMaps(map, invMap, reset.getInQubit(), reset.getOutQubit());
+      p.forward(reset.getInQubit(), reset.getOutQubit());
       return WalkResult::advance();
     }
 
     if (auto u = dyn_cast<UnitaryInterface>(op)) {
       if (!isTwoQubitGate(u)) {
-        forwardMaps(map, invMap, u.getInQubits().front(),
-                    u.getOutQubits().front());
-
+        p.forward(u.getInQubits().front(), u.getOutQubits().front());
         return WalkResult::advance();
       }
-
-      // The first unrouted two-qubit gate we encounter is
-      // the first two-qubit gate of a new layer. Hence,
-      // compute the layer's gates using the def-use chain.
-      // To keep valid SSA value chains, the initial qubit
-      // map must be the one before the first two-qubit gate.
 
       if (!routed.contains(u)) {
       }
 
-      forwardMaps(map, invMap, u.getAllInQubits()[0], u.getAllOutQubits()[0]);
-      forwardMaps(map, invMap, u.getAllInQubits()[1], u.getAllOutQubits()[1]);
+      p.forward(u.getAllInQubits()[0], u.getAllOutQubits()[0]);
+      p.forward(u.getAllInQubits()[1], u.getAllOutQubits()[1]);
 
       return WalkResult::advance();
     }
 
     if (auto measure = dyn_cast<MeasureOp>(op)) {
-      forwardMaps(map, invMap, measure.getInQubit(), measure.getOutQubit());
+      p.forward(measure.getInQubit(), measure.getOutQubit());
       return WalkResult::advance();
     }
 
     if (auto dealloc = dyn_cast<DeallocQubitOp>(op)) {
+      p.dealloc(dealloc.getQubit());
+
       // Decrease allocation count.
       --allocated;
 
@@ -495,6 +501,8 @@ public:
 
     return WalkResult::advance();
   });
+
+  assert(p.dynamic.empty());
 
   if (result.wasInterrupted()) {
     return failure();
