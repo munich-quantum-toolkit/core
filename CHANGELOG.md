@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - ✨ Add support for translating `IfElseOperation`s to the `MQTRef` MLIR dialect ([#1164]) ([**@denialhaag**])
+- ✨ Add MQT's implementation of a generic FoMaC with Python bindings ([#1150]) ([**@ystade**])
 - ✨ Add new MLIR pass `ElidePermutations` for SWAP gate elimination ([#1151]) ([**@taminob**])
 - ✨ Add new pattern to MLIR pass `GateElimination` for identity gate removal ([#1140]) ([**@taminob**])
 - ✨ Add Clifford block collection pass to `CircuitOptimizer` module ([#885]) ([**jannikpflieger**], [**@burgholzer**])

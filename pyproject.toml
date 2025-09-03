@@ -92,7 +92,7 @@ build.targets = [
   "mqt-core-ir-bindings",
   "mqt-core-dd-bindings",
   "mqt-core-qdmi-na-device",
-  "mqt-core-qdmi-driver",
+  "mqt-core-qdmi-fomac-bindings",
 ]
 
 # Only install the mqt-core library and Python package components
@@ -176,6 +176,9 @@ run.source = ["mqt.core"]
 run.omit = [
     '*/_compat/*',
 ]
+run.disable_warnings = [
+  "no-sysmon",
+]
 report.exclude_also = [
   '\.\.\.',
   'if TYPE_CHECKING:',
@@ -183,9 +186,6 @@ report.exclude_also = [
   'raise NotImplementedError',
   'def __dir__()',  # Ignore __dir__ method that exists mainly for better IDE support
   '@overload'  # Overloads are only for static typing
-]
-run.disable_warnings = [
-  "no-sysmon",
 ]
 
 [tool.mypy]
@@ -259,13 +259,15 @@ convention = "google"
 [tool.typos]
 default.extend-ignore-re = [
   "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",  # ignore line
-  "(?s)(#|//)\\s*spellchecker:off.*?\\n\\s*(#|//)\\s*spellchecker:on" # ignore block
+  "(?s)(#|//)\\s*spellchecker:off.*?\\n\\s*(#|//)\\s*spellchecker:on", # ignore block
+  "FoMaC"
 ]
 [tool.typos.default.extend-words]
 wille = "wille"
 anc = "anc"
 mch = "mch"
 ket = "ket"
+optin = "optin"
 
 
 [tool.repo-review]
