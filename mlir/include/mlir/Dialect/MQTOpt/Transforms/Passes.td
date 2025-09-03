@@ -54,9 +54,19 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
 }
 
 def RoutingPass : Pass<"routing", "mlir::ModuleOp"> {
-  let summary = "This pass ensures that the connectivity constraints of the target architecture are met.";
+  let summary = "This pass ensures that the connectivity constraints of a target architecture are met.";
   let description = [{
     This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.
+  }];
+}
+
+def TranspilationVerificationPass : Pass<"verify-transpilation", "mlir::ModuleOp"> {
+  let summary = "This pass verifies that the constraints of a target architecture are met.";
+  let description = [{
+    This pass ensures that:
+      - The program consists only of one and two-qubit gates.
+      - All two-qubit gates are executable on the target's architecture.
+      - All gates are decomposed into the target's native gate set (Not implemented)
   }];
 }
 

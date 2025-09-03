@@ -313,8 +313,8 @@ private:
       rewriter.replaceAllUsesExcept(in0, swapOut0, swap);
       rewriter.replaceAllUsesExcept(in1, swapOut1, swap);
 
-      state.forward(in0, swapOut0);
-      state.forward(in1, swapOut1);
+      state.forward(in0, swapOut1);
+      state.forward(in1, swapOut0);
     }
   }
 
