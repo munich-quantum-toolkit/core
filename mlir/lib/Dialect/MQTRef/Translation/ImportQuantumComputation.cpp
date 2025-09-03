@@ -224,18 +224,17 @@ mlir::Value getControlValueRegister(mlir::OpBuilder& builder,
 
   // Compute the sum
   auto initialSum = builder.create<mlir::arith::ConstantOp>(
-      loc, builder.getIntegerType(64),
-      builder.getIntegerAttr(builder.getIntegerType(64), 0));
-  mlir::ValueRange initialSumRange(initialSum);
+      loc, builder.getI64Type(),
+      builder.getIntegerAttr(builder.getI64Type(), 0));
 
   auto finalSum = builder.create<mlir::scf::ForOp>(
-      loc, lb, ub, step, initialSumRange,
+      loc, lb, ub, step, mlir::ValueRange{initialSum},
       [&](mlir::OpBuilder& forBuilder, mlir::Location forLoc, mlir::Value iv,
           mlir::ValueRange iterArgs) {
         auto loadedVal = forBuilder.create<mlir::memref::LoadOp>(
             forLoc, bits, mlir::ValueRange{iv});
         auto extendedVal = forBuilder.create<mlir::arith::ExtUIOp>(
-            forLoc, builder.getIntegerType(64), loadedVal);
+            forLoc, builder.getI64Type(), loadedVal);
         auto iterSum = forBuilder.create<mlir::arith::AddIOp>(
             forLoc, iterArgs[0], extendedVal);
         forBuilder.create<mlir::scf::YieldOp>(forLoc,
