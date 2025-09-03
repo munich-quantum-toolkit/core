@@ -35,7 +35,6 @@ module {
         %q4_1 = mqtopt.h() %q4_0 : !mqtopt.Qubit
 
         %q0_2 = mqtopt.z() %q0_1 : !mqtopt.Qubit
-        // ---savepoint (circuit_state, location, [two-qubit gates])---
         %q2_1, %q1_2 = mqtopt.x() %q2_0 ctrl %q1_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g1
         %q5_1, %q4_2 = mqtopt.x() %q5_0 ctrl %q4_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g2
         // --

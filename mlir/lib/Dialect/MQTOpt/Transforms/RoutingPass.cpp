@@ -47,8 +47,25 @@ using namespace mlir;
 /// @brief A function attribute that specifies an (QIR) entry point function.
 constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
 
-[[nodiscard]] bool isTwoQubitGate(UnitaryInterface unitary) {
-  return unitary.getAllInQubits().size() == 2;
+//===----------------------------------------------------------------------===//
+// Utilities
+//===----------------------------------------------------------------------===//
+
+/// @brief Return true iff the qubit gate acts on two qubits.
+[[nodiscard]] bool isTwoQubitGate(UnitaryInterface u) {
+  return u.getAllInQubits().size() == 2;
+}
+
+/// @brief Return input qubit pair for two-qubit unitary @p u.
+[[nodiscard]] std::pair<Value, Value> getIns(UnitaryInterface u) {
+  assert(isTwoQubitGate(u));
+  return {u.getAllInQubits()[0], u.getAllInQubits()[1]};
+}
+
+/// @brief Return output qubit pair for two-qubit unitary @p u.
+[[nodiscard]] std::pair<Value, Value> getOuts(UnitaryInterface u) {
+  assert(isTwoQubitGate(u));
+  return {u.getAllOutQubits()[0], u.getAllOutQubits()[1]};
 }
 
 //===----------------------------------------------------------------------===//
@@ -186,77 +203,86 @@ struct Custom : InitialLayout {
 
 struct CircuitState {
   explicit CircuitState(llvm::SmallVector<Value> staticQubits)
-      : staticQubits(std::move(staticQubits)) {};
+      : staticQubits_(std::move(staticQubits)) {};
 
-  /// @brief Maps a SSA value to its dynamic number.
-  llvm::DenseMap<Value, std::size_t> valueToDynamic;
-  /// @brief Maps a dynamic number to its SSA value.
-  llvm::DenseMap<std::size_t, Value> dynamicToValue;
+  /// @brief Return static index from SSA value @p in.
+  [[nodiscard]] std::size_t valueToStaticIndex(const Value in) const {
+    const std::size_t dynNum = valueToDynamic_.at(in);
+    return dynamicToStatic_.at(dynNum);
+  }
 
-  /// @brief Maps a static index to its dynamic number.
-  llvm::DenseMap<std::size_t, std::size_t> staticToDynamic;
-  /// @brief Maps a dynamic number to its static index.
-  llvm::DenseMap<std::size_t, std::size_t> dynamicToStatic;
-
-  /// @brief Vector of initialized static qubits.
-  llvm::SmallVector<Value> staticQubits;
-
-  /// @brief Currently free to allocate qubits.
-  std::queue<Value> free;
+  /// @brief Return SSA value from static index @p statIdx.
+  [[nodiscard]] Value staticIndexToValue(const std::size_t statIdx) const {
+    const std::size_t dynNum = staticToDynamic_.at(statIdx);
+    return dynamicToValue_.at(dynNum);
+  }
 
   /// @brief Expand circuit to have nqubits dynamic qubits.
   void expand(const InitialLayout& layout) {
-    const std::size_t nqubits = staticQubits.size();
+    const std::size_t nqubits = staticQubits_.size();
     for (std::size_t i = 0; i < nqubits; ++i) {
       assign(i, layout);
     }
   }
 
+  /// @brief Retrieve free static qubit.
   Value alloc() {
-    Value qubit = free.front();
-    free.pop();
+    Value qubit = free_.front();
+    free_.pop();
     return qubit;
   }
 
   void forward(const Value in, const Value out) {
-    const std::size_t dynamicNumber = valueToDynamic[in];
-    const std::size_t staticIndex = dynamicToStatic[dynamicNumber];
+    const std::size_t dynNum = valueToDynamic_[in];
+    const std::size_t statIdx = dynamicToStatic_[dynNum];
 
-    valueToDynamic[out] = dynamicNumber;
-    dynamicToValue[dynamicNumber] = out;
+    valueToDynamic_[out] = dynNum;
+    dynamicToValue_[dynNum] = out;
 
-    staticToDynamic[staticIndex] = dynamicNumber;
-    dynamicToStatic[dynamicNumber] = staticIndex;
+    staticToDynamic_[statIdx] = dynNum;
+    dynamicToStatic_[dynNum] = statIdx;
 
-    valueToDynamic.erase(in);
+    valueToDynamic_.erase(in);
   }
 
-  void dealloc(Value in) { free.emplace(in); }
+  /// @brief Release used qubit.
+  void dealloc(Value in) { free_.emplace(in); }
 
   /// @brief Return the number of allocated qubits.
   [[nodiscard]] std::size_t nallocated() const {
-    return staticQubits.size() - free.size();
-  }
-
-  [[nodiscard]] bool empty() const {
-    return valueToDynamic.empty() && dynamicToValue.empty() &&
-           staticToDynamic.empty() && dynamicToStatic.empty();
+    return staticQubits_.size() - free_.size();
   }
 
 private:
   /// @brief Assign a permutated static qubit (and index) to @p dynNum.
   void assign(const std::size_t dynNum, const InitialLayout& layout) {
     const std::size_t statIdx = layout(dynNum);
-    const Value staticQubit = staticQubits[statIdx];
+    const Value staticQubit = staticQubits_[statIdx];
 
-    valueToDynamic[staticQubit] = dynNum;
-    dynamicToValue[dynNum] = staticQubit;
+    valueToDynamic_[staticQubit] = dynNum;
+    dynamicToValue_[dynNum] = staticQubit;
 
-    staticToDynamic[statIdx] = dynNum;
-    dynamicToStatic[dynNum] = statIdx;
+    staticToDynamic_[statIdx] = dynNum;
+    dynamicToStatic_[dynNum] = statIdx;
 
-    free.emplace(staticQubit);
+    free_.emplace(staticQubit);
   }
+
+  /// @brief Maps a SSA value to its dynamic number.
+  llvm::DenseMap<Value, std::size_t> valueToDynamic_;
+  /// @brief Maps a dynamic number to its SSA value.
+  llvm::DenseMap<std::size_t, Value> dynamicToValue_;
+
+  /// @brief Maps a static index to its dynamic number.
+  llvm::DenseMap<std::size_t, std::size_t> staticToDynamic_;
+  /// @brief Maps a dynamic number to its static index.
+  llvm::DenseMap<std::size_t, std::size_t> dynamicToStatic_;
+
+  /// @brief Vector of initialized static qubits.
+  llvm::SmallVector<Value> staticQubits_;
+
+  /// @brief Currently free to allocate qubits.
+  std::queue<Value> free_;
 };
 
 class Router {
@@ -350,50 +376,35 @@ public:
 private:
   [[nodiscard]] bool isExecutable(UnitaryInterface u,
                                   const CircuitState& state) const {
-    const Value in0 = u.getAllInQubits()[0];
-    const Value in1 = u.getAllInQubits()[1];
+    const auto& [in0, in1] = getIns(u);
+    return arch().areAdjacent(state.valueToStaticIndex(in0),
+                              state.valueToStaticIndex(in1));
+  }
 
-    const std::size_t dynNum0 = state.valueToDynamic.at(in0);
-    const std::size_t dynNum1 = state.valueToDynamic.at(in1);
-    const std::size_t statIdx0 = state.dynamicToStatic.at(dynNum0);
-    const std::size_t statIdx1 = state.dynamicToStatic.at(dynNum1);
-
-    return arch().areAdjacent(statIdx0, statIdx1);
+  [[nodiscard]] llvm::SmallVector<std::size_t>
+  getPath(const Value in0, const Value in1, const CircuitState& state) const {
+    return arch().shortestPathBetween(state.valueToStaticIndex(in0),
+                                      state.valueToStaticIndex(in1));
   }
 
   void makeExecutable(UnitaryInterface u, CircuitState& state,
                       PatternRewriter& rewriter) const {
-    const Value in0 = u.getAllInQubits()[0];
-    const Value in1 = u.getAllInQubits()[1];
-
-    const std::size_t dynNum0 = state.valueToDynamic.at(in0);
-    const std::size_t dynNum1 = state.valueToDynamic.at(in1);
-    const std::size_t statIdx0 = state.dynamicToStatic.at(dynNum0);
-    const std::size_t statIdx1 = state.dynamicToStatic.at(dynNum1);
-
-    auto path = arch().shortestPathBetween(statIdx0, statIdx1);
+    const auto& [in0, in1] = getIns(u);
+    auto path = getPath(in0, in1, state);
     for (std::size_t i = 0; i < path.size() - 1; i += 2) {
-      const std::size_t pathStatIdx0 = path[i];
-      const std::size_t pathStatIdx1 = path[i + 1];
+      const Value in0 = state.staticIndexToValue(path[i]);
+      const Value in1 = state.staticIndexToValue(path[i + 1]);
 
-      const std::size_t pathDynNum0 = state.staticToDynamic.at(pathStatIdx0);
-      const std::size_t pathDynNum1 = state.staticToDynamic.at(pathStatIdx1);
+      auto swap = createSwap(u->getLoc(), in0, in1, rewriter);
 
-      const Value pathIn0 = state.dynamicToValue.at(pathDynNum0);
-      const Value pathIn1 = state.dynamicToValue.at(pathDynNum1);
-
-      auto swap = createSwap(u->getLoc(), pathIn0, pathIn1, rewriter);
-
-      const Value swapOut0 = swap.getOutQubits()[0];
-      const Value swapOut1 = swap.getOutQubits()[1];
+      const auto& [swapOut0, swapOut1] = getOuts(swap);
 
       rewriter.setInsertionPointAfter(swap);
-      rewriter.replaceAllUsesExcept(pathIn0, swapOut0, swap);
-      rewriter.replaceAllUsesExcept(pathIn1, swapOut1, swap);
+      rewriter.replaceAllUsesExcept(in0, swapOut0, swap);
+      rewriter.replaceAllUsesExcept(in1, swapOut1, swap);
 
-      // Update permutation maps.
-      state.forward(pathIn0, swapOut0);
-      state.forward(pathIn1, swapOut1);
+      state.forward(in0, swapOut0);
+      state.forward(in1, swapOut1);
     }
   }
 
@@ -444,11 +455,8 @@ private:
 
         // Gate is (now) executable on hardware:
 
-        const Value execIn0 = u.getAllInQubits()[0];
-        const Value execIn1 = u.getAllInQubits()[1];
-        const Value execOut0 = u.getAllOutQubits()[0];
-        const Value execOut1 = u.getAllOutQubits()[1];
-
+        const auto& [execIn0, execIn1] = getIns(u);
+        const auto& [execOut0, execOut1] = getOuts(u);
         state.forward(execIn0, execOut0);
         state.forward(execIn1, execOut1);
 
@@ -472,6 +480,8 @@ private:
     if (res.wasInterrupted()) {
       return failure();
     }
+
+    assert(state.nallocated() == 0);
 
     return success();
   }
