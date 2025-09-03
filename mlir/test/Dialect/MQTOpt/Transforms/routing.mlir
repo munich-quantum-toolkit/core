@@ -6,9 +6,10 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file --routing | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(routing,verify-transpilation)" | FileCheck %s
 
 module {
+    // CHECK-NOT: error: 'mqtopt.x' op is not executable on target architecture 'MQT-Test'
     func.func @main() attributes { entry_point } {
 
         //

@@ -67,12 +67,12 @@ struct TranspilationVerificationPass final
 
       if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
         return WalkResult(alloc->emitOpError()
-                          << " is not allowed for transpiled program");
+                          << "is not allowed for transpiled program");
       }
 
       if (auto dealloc = dyn_cast<DeallocQubitOp>(op)) {
         return WalkResult(dealloc->emitOpError()
-                          << " is not allowed for transpiled program");
+                          << "is not allowed for transpiled program");
       }
 
       if (auto reset = dyn_cast<ResetOp>(op)) {
@@ -84,7 +84,7 @@ struct TranspilationVerificationPass final
         const std::size_t nacts = u.getAllInQubits().size();
         if (nacts > 2) {
           return WalkResult(u->emitOpError()
-                            << " acts on more than two qubits");
+                            << "acts on more than two qubits");
         }
 
         const Value in0 = u.getAllInQubits()[0];
@@ -101,7 +101,7 @@ struct TranspilationVerificationPass final
 
           if (!arch->areAdjacent(qubitToIndex[in0], qubitToIndex[in1])) {
             return WalkResult(u->emitOpError()
-                              << " not executable on target architecture '"
+                              << "is not executable on target architecture '"
                               << arch->name() << "'");
           }
 
