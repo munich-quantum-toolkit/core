@@ -10,7 +10,7 @@
 
 module {
     func.func @main() attributes { entry_point } {
-        
+
         //
         // Figure 4 in SABRE Paper "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices".
 
