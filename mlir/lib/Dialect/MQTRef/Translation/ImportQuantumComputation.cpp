@@ -212,7 +212,7 @@ mlir::Value getControlValueRegister(mlir::OpBuilder& builder,
   auto loc = builder.getUnknownLoc();
 
   // Get size of control register
-  auto bitsType = bits.getType().cast<mlir::MemRefType>();
+  auto bitsType = mlir::cast<mlir::MemRefType>(bits.getType());
   auto bitsShape = bitsType.getShape();
   assert(bitsShape.size() == 1);
   auto size = bitsShape[0];

@@ -10,6 +10,7 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
@@ -745,7 +746,9 @@ TEST_F(ImportTest, IfRegisterEq1) {
   passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   passManager.addPass(mlir::createMem2Reg());
-  passManager.run(module.get());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -778,7 +781,9 @@ TEST_F(ImportTest, IfRegisterEq2) {
   passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   passManager.addPass(mlir::createMem2Reg());
-  passManager.run(module.get());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -824,7 +829,9 @@ TEST_F(ImportTest, IfRegisterNeq) {
   passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   passManager.addPass(mlir::createMem2Reg());
-  passManager.run(module.get());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -857,7 +864,9 @@ TEST_F(ImportTest, IfRegisterLt) {
   passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   passManager.addPass(mlir::createMem2Reg());
-  passManager.run(module.get());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -890,7 +899,9 @@ TEST_F(ImportTest, IfRegisterLeq) {
   passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   passManager.addPass(mlir::createMem2Reg());
-  passManager.run(module.get());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -923,7 +934,9 @@ TEST_F(ImportTest, IfRegisterGt) {
   passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   passManager.addPass(mlir::createMem2Reg());
-  passManager.run(module.get());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -956,7 +969,9 @@ TEST_F(ImportTest, IfRegisterGeq) {
   passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   passManager.addPass(mlir::createMem2Reg());
-  passManager.run(module.get());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -991,7 +1006,9 @@ TEST_F(ImportTest, IfElseRegister) {
   passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   passManager.addPass(mlir::createMem2Reg());
-  passManager.run(module.get());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -1037,7 +1054,9 @@ TEST_F(ImportTest, IfBitEqTrue) {
   passManager.addPass(mlir::createMem2Reg());
   passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.run(module.get());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -1064,7 +1083,9 @@ TEST_F(ImportTest, IfBitEqFalse) {
   passManager.addPass(mlir::createMem2Reg());
   passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.run(module.get());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -1093,7 +1114,9 @@ TEST_F(ImportTest, IfBitNeq) {
   passManager.addPass(mlir::createMem2Reg());
   passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.run(module.get());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -1123,7 +1146,9 @@ TEST_F(ImportTest, IfElseBit) {
   passManager.addPass(mlir::createMem2Reg());
   passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.run(module.get());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
