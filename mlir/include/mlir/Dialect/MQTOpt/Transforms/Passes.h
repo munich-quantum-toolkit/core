@@ -29,8 +29,6 @@ void populateGateEliminationPatterns(mlir::RewritePatternSet& patterns);
 void populateMergeRotationGatesPatterns(mlir::RewritePatternSet& patterns);
 void populateElidePermutationsPatterns(mlir::RewritePatternSet& patterns);
 void populateSwapReconstructionPatterns(mlir::RewritePatternSet& patterns);
-void populateAdvancedSwapReconstructionPatterns(
-    mlir::RewritePatternSet& patterns);
 void populateQuantumSinkShiftPatterns(mlir::RewritePatternSet& patterns);
 void populateQuantumSinkPushPatterns(mlir::RewritePatternSet& patterns);
 void populateToQuantumComputationPatterns(mlir::RewritePatternSet& patterns,

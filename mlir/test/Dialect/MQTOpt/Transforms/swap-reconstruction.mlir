@@ -147,3 +147,45 @@ module {
     return
   }
 }
+
+
+// -----
+// This test checks that controlled CNOT gates are merged into a controlled SWAP gate.
+
+module {
+  // CHECK-LABEL: func.func @testControlledSwapReconstruction
+  func.func @testControlledSwapReconstruction() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q2_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q3_0:.*]] = mqtopt.allocQubit
+
+    // ========================== Check for operations that should be canceled ==============================
+    // CHECK-NOT: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]]
+    // CHECK-NOT: %[[Q0_2:.*]], %[[Q1_2:.*]] = mqtopt.x() %[[Q1_1]] ctrl %[[Q0_1]]
+
+    // ========================== Check for operations that should be inserted ==============================
+    // CHECK: %[[Q01_1:.*]]:2 = mqtopt.swap() %[[Q0_0]], %[[Q1_0]]
+    // CHECK: %[[Q1_2:.*]], %[[Q0_2:.*]] = mqtopt.x() %[[Q01_1]]#0 ctrl %[[Q01_1]]#1
+
+    // CHECK: mqtopt.deallocQubit %[[ANY:.*]]
+    // CHECK: mqtopt.deallocQubit %[[ANY:.*]]
+    // CHECK: mqtopt.deallocQubit %[[ANY:.*]]
+    // CHECK: mqtopt.deallocQubit %[[ANY:.*]]
+
+    %q0_0 = mqtopt.allocQubit
+    %q1_0 = mqtopt.allocQubit
+    %q2_0 = mqtopt.allocQubit
+    %q3_0 = mqtopt.allocQubit
+
+    %q0_1, %q1_1, %q2_1, %q3_1 = mqtopt.x() %q0_0 ctrl %q1_0, %q2_0, %q3_0: !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
+    %q1_2, %q0_2, %q2_2, %q3_2 = mqtopt.x() %q1_1 ctrl %q0_1, %q2_1, %q3_1: !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_2
+    mqtopt.deallocQubit %q1_2
+    mqtopt.deallocQubit %q2_2
+    mqtopt.deallocQubit %q3_2
+
+    return
+  }
+}

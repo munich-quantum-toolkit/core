@@ -14,6 +14,7 @@
 
 #include <cassert>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SetOperations.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -30,73 +31,127 @@ namespace mqt::ir::opt {
  * which are equivalent to a SWAP. These gates will be removed and replaced by a
  * SWAP operation.
  *
- * If advancedSwapReconstruction is set to true, this pattern will also add a
- * SWAP gate for two CNOTs by inserting the third as two self-cancelling CNOTs.
+ * Examples:
+ *       ┌───┐         ┌───┐
+ *  ──■──┤ X ├    ──■──┤ X ├──■────■──    ──╳────■──
+ *  ┌─┴─┐└─┬─┘ => ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐ =>   |  ┌─┴─┐
+ *  ┤ X ├──■──    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├
+ *  └───┘         └───┘     └───┘└───┘         └───┘
+ *
+ *  ──■────■──    ──■────■────■────■──    ──■────■──
+ *    |  ┌─┴─┐      |  ┌─┴─┐  |    |        |    |
+ *  ──■──┤ X ├    ──■──┤ X ├──■────■──    ──╳────■──
+ *  ┌─┴─┐└─┬─┘ => ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐ =>   |  ┌─┴─┐
+ *  ┤ X ├──■──    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├
+ *  └───┘         └───┘     └───┘└───┘         └───┘
+ *
+ *  ──□────□──    ──□────□────□────□──    ──□────□──
+ *    |  ┌─┴─┐      |  ┌─┴─┐  |    |        |    |
+ *  ──■──┤ X ├    ──■──┤ X ├──■────■──    ──╳────■──
+ *  ┌─┴─┐└─┬─┘ => ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐ =>   |  ┌─┴─┐
+ *  ┤ X ├──■──    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├
+ *  └───┘         └───┘     └───┘└───┘         └───┘
  */
-template <bool advancedSwapReconstruction>
+template <bool onlyMatchFullSwapPattern, bool matchControlledSwap>
 struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
 
   explicit SwapReconstructionPattern(mlir::MLIRContext* context)
-      : OpRewritePattern(context, calculateBenefit()) {}
+      : OpRewritePattern(context) {}
 
   /**
-   * @brief Checks if two consecutive gates have reversed control and target
-   * qubits.
    *
-   *         ┌───┐
-   * a: ──■──┤ X ├
-   *    ┌─┴─┐└─┬─┘
-   * b: ┤ X ├──■──
-   *    └───┘
-   *
-   * @param a The first gate.
-   * @param b The second gate.
-   * @return True if the gates match the pattern described above, otherwise
-   * false.
    */
-  [[nodiscard]] static bool isReverseCNotPattern(XOp& a, XOp& b) {
-    // TODO: allow negative ctrl qubits (at least for first CNOT)?
-    auto ctrlQubitsA = a.getPosCtrlOutQubits();
-    auto ctrlQubitsB = b.getPosCtrlInQubits();
-    auto targetQubitsA = a.getOutQubits();
-    auto targetQubitsB = b.getInQubits();
-
-    return ctrlQubitsA.size() == 1 && ctrlQubitsB.size() == 1 &&
-           ctrlQubitsA == targetQubitsB && targetQubitsA == ctrlQubitsB;
+  [[nodiscard]] static mlir::Value getCNotOutTarget(XOp& op) {
+    auto&& outQubits = op.getOutQubits();
+    assert(outQubits.size() == 1);
+    return outQubits.front();
   }
 
+  [[nodiscard]] static mlir::Value getCNotInTarget(XOp& op) {
+    auto&& inQubits = op.getInQubits();
+    assert(inQubits.size() == 1);
+    return inQubits.front();
+  }
+
+  [[nodiscard]] static bool isCandidate(XOp& op, XOp& nextOp) {
+    auto&& opOutTarget = getCNotOutTarget(op);
+    auto&& nextInTarget = getCNotInTarget(nextOp);
+    auto&& opOutPosCtrlQubits = op.getPosCtrlOutQubits();
+    auto&& nextInPosCtrlQubits = nextOp.getPosCtrlInQubits();
+    auto&& opOutNegCtrlQubits = op.getNegCtrlOutQubits();
+    auto&& nextInNegCtrlQubits = nextOp.getNegCtrlInQubits();
+
+    auto isSubset = [](auto&& set, auto&& subsetCandidate,
+                       std::optional<mlir::Value> ignoredMismatch =
+                           std::nullopt) -> bool {
+      if (subsetCandidate.size() > set.size()) {
+        return false;
+      }
+
+      for (auto&& element : set) {
+        if (!llvm::is_contained(subsetCandidate, element) &&
+            (!ignoredMismatch || *ignoredMismatch == element)) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    // llvm::SmallSetVector<mlir::Value, 4> posCtrlDiff{
+    //     nextInPosCtrlQubits.begin(), nextInPosCtrlQubits.end()};
+    // posCtrlDiff.set_subtract(opOutPosCtrlQubits);
+    // bool posCtrlMatches = posCtrlDiff.size() == 1 && posCtrlDiff.front() ==
+    // opOutTarget;
+
+    // bool negCtrlMatches =
+    //     llvm::set_is_subset(opOutNegCtrlQubits, nextInNegCtrlQubits);
+
+    bool targetIsPosCtrl =
+        llvm::is_contained(nextInPosCtrlQubits, opOutTarget) &&
+        llvm::is_contained(opOutPosCtrlQubits, nextInTarget);
+
+    bool posCtrlMatches =
+        isSubset(opOutPosCtrlQubits, nextInPosCtrlQubits, opOutTarget);
+    bool negCtrlMatches = isSubset(opOutNegCtrlQubits, nextInNegCtrlQubits);
+
+    // TODO: early return possible for better performance?
+    if constexpr (matchControlledSwap) {
+      return targetIsPosCtrl && posCtrlMatches && negCtrlMatches;
+    } else {
+      return targetIsPosCtrl && opOutPosCtrlQubits.size() == 1 &&
+             nextInPosCtrlQubits.size() == 1 && opOutNegCtrlQubits.empty() &&
+             nextInNegCtrlQubits.empty();
+    }
+  }
+
+  /**
+   * @brief If pattern is applicable, perform MLIR rewrite.
+   *
+   * Steps:
+   *   - Find CNOT with at least one control qubit (1st CNOT)
+   *   - Check if it has adjacent CNOT with subset of control qubits (2nd CNOT)
+   *  (- Theoretically place two CNOTs identical to 2nd CNOT on other side of
+   *     1st CNOT)
+   *   - Replace 1st CNOT by SWAP with identical control qubits (also cancels
+   *     out 2nd CNOT and one inserted CNOT); use target of 2nd CNOT as second
+   *     target for the swap
+   *   - Move 2nd CNOT to other side of SWAP (takes the place of the left-over
+   *     inserted CNOT)
+   */
   mlir::LogicalResult
   matchAndRewrite(XOp op, mlir::PatternRewriter& rewriter) const override {
-    // operation can only be part of a series of CNOTs that are equivalent to a
-    // SWAP if it has exactly one control qubit
-    auto ctrlQubits = op.getPosCtrlInQubits();
-    if (ctrlQubits.size() != 1) {
+    // check if at least one positive control; rely on other pattern for
+    // negative control decomposition
+    if (op.getPosCtrlInQubits().empty()) {
       return mlir::failure();
     }
 
     auto& firstCNot = op;
     if (auto secondCNot = findCandidate(firstCNot)) {
-      if (auto thirdCNot = findCandidate(*secondCNot)) {
-        //         ┌───┐
-        // a: ──■──┤ X ├──■── a    a: ──╳── b
-        //    ┌─┴─┐└─┬─┘┌─┴─┐   =>      |
-        // b: ┤ X ├──■──┤ X ├ b    b: ──╳── a
-        //    └───┘     └───┘
-        replaceWithSwap(rewriter, *thirdCNot);
-        eraseOperation(rewriter, *secondCNot);
-        eraseOperation(rewriter, firstCNot);
-        return mlir::success();
-      }
-      if constexpr (advancedSwapReconstruction) {
-        //         ┌───┐              ┌───┐                        ┌───┐
-        // a: ──■──┤ X ├ a    a: ──■──┤ X ├──■────■── a    a: ──╳──┤ X ├ b
-        //    ┌─┴─┐└─┬─┘   =>    ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐   =>      |  └─┬─┘
-        // b: ┤ X ├──■── b    b: ┤ X ├──■──┤ X ├┤ X ├ b    b: ──╳────■── a
-        //    └───┘              └───┘     └───┘└───┘
-        replaceWithSwap(rewriter, firstCNot);
-        swapTargetControl(rewriter, *secondCNot);
-        return mlir::success();
-      }
+      auto secondSwapTargetOut = getCNotInTarget(*secondCNot);
+      auto newSwap = replaceWithSwap(rewriter, firstCNot, secondSwapTargetOut);
+      // rewriter.moveOpAfter(*secondCNot, newSwap);
+      return mlir::success();
     }
 
     return mlir::failure();
@@ -119,12 +174,22 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
   [[nodiscard]] static std::optional<XOp> findCandidate(XOp& op) {
     for (auto* user : op->getUsers()) {
       if (auto cnot = llvm::dyn_cast<XOp>(user)) {
-        if (isReverseCNotPattern(op, cnot)) {
+        if (isCandidate(op, cnot)) {
           return cnot;
         }
       }
     }
     return std::nullopt;
+  }
+
+  static mlir::Value getCorrespondingInput(mlir::Operation* op,
+                                           mlir::Value out) {
+    for (auto&& result : op->getResults()) {
+      if (result == out) {
+        auto resultIndex = result.getResultNumber();
+        return op->getOperand(resultIndex);
+      }
+    }
   }
 
   /**
@@ -133,69 +198,52 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
    * @note The result qubits will NOT be swapped since that is already done
    * implicitly by the CNOT pattern.
    */
-  static SWAPOp replaceWithSwap(mlir::PatternRewriter& rewriter, XOp& op) {
-    auto inQubits = op.getInQubits();
-    assert(!inQubits.empty());
-    auto qubitType = inQubits.front().getType();
+  static SWAPOp replaceWithSwap(mlir::PatternRewriter& rewriter, XOp& op,
+                                const mlir::Value& secondTargetOut) {
+    auto firstTarget = getCNotInTarget(op);
+    auto secondTargetIn = getCorrespondingInput(op, secondTargetOut);
+    auto qubitType = firstTarget.getType();
 
     auto newSwapLocation = op->getLoc();
-    auto newSwapInQubits = op.getAllInQubits();
-    assert(newSwapInQubits.size() == 2);
+    auto newSwapInQubits = {firstTarget,
+                            secondTargetIn};
+    llvm::SmallVector<mlir::Value> newSwapInPosCtrlQubits;
+    for (auto&& posCtrlInQubit : op.getPosCtrlInQubits()) {
+      if (posCtrlInQubit != secondTargetIn) {
+        newSwapInPosCtrlQubits.push_back(posCtrlInQubit);
+      }
+    }
+    auto newSwapInNegCtrlQubits = op.getNegCtrlInQubits();
+
+    auto newSwapOutType =
+        llvm::SmallVector<mlir::Type>{newSwapInQubits.size(), qubitType};
+    auto newSwapOutPosCtrlType =
+        llvm::SmallVector<mlir::Type>{newSwapInPosCtrlQubits.size(), qubitType};
+    auto newSwapOutNegCtrlType = op.getNegCtrlOutQubits().getType();
 
     rewriter.setInsertionPointAfter(op);
     auto newSwap = rewriter.create<SWAPOp>(
-        newSwapLocation, mlir::TypeRange{qubitType, qubitType},
-        mlir::TypeRange{}, mlir::TypeRange{}, mlir::DenseF64ArrayAttr{},
+        newSwapLocation, newSwapOutType, newSwapOutPosCtrlType,
+        newSwapOutNegCtrlType, mlir::DenseF64ArrayAttr{},
         mlir::DenseBoolArrayAttr{}, mlir::ValueRange{}, newSwapInQubits,
-        mlir::ValueRange{}, mlir::ValueRange{});
-
-    auto newSwapOutQubits = newSwap.getOutQubits();
-    assert(newSwapOutQubits.size() == 2);
+        newSwapInPosCtrlQubits, newSwapInNegCtrlQubits);
 
     rewriter.replaceOp(op, newSwap);
     return newSwap;
   }
-
-  static void swapTargetControl(mlir::PatternRewriter& rewriter, XOp& op) {
-    rewriter.modifyOpInPlace(op, [&]() {
-      assert(op.getInQubits().size() == 1);
-      assert(op.getPosCtrlInQubits().size() == 1);
-      assert(op.getNegCtrlInQubits().empty());
-      op->setOperands(
-          {op.getPosCtrlInQubits().front(), op.getInQubits().front()});
-    });
-  }
-
-  static mlir::PatternBenefit calculateBenefit() {
-    // prefer simple swap reconstruction
-    return advancedSwapReconstruction ? 10 : 100;
-  }
 };
 
 /**
- * @brief Populates the given pattern set with the simple
+ * @brief Populates the given pattern set with the
  * `SwapReconstructionPattern`.
  *
  * @param patterns The pattern set to populate.
  */
 void populateSwapReconstructionPatterns(mlir::RewritePatternSet& patterns) {
-  patterns.add<SwapReconstructionPattern<false>>(patterns.getContext());
-}
-
-/**
- * @brief Populates the given pattern set with the advanced
- * `SwapReconstructionPattern`.
- *
- * @param patterns The pattern set to populate.
- */
-void populateAdvancedSwapReconstructionPatterns(
-    mlir::RewritePatternSet& patterns) {
-  // match two different patterns for simple (3 CNOT -> 1 SWAP) and advanced
-  // reconstruction (2 CNOT -> 1 SWAP + 1 CNOT) to avoid applying an advanced
-  // reconstruction where a simple one would have been possible; an alternative
-  // would be to not check both the users and the previous operations to see if
-  // it is three CNOTs in the correct configuration
-  patterns.add<SwapReconstructionPattern<true>>(patterns.getContext());
+  patterns.add<SwapReconstructionPattern<false, false>>(patterns.getContext());
+  // only match controlled swap on full three CNOT pattern since this cannot be
+  // cancelled out by an elide permutations optimization
+  patterns.add<SwapReconstructionPattern<true, true>>(patterns.getContext());
 }
 
 } // namespace mqt::ir::opt

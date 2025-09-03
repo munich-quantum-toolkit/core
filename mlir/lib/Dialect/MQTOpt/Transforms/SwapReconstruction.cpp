@@ -21,7 +21,8 @@ namespace mqt::ir::opt {
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 /**
- * @brief This pattern attempts to merge consecutive rotation gates.
+ * @brief This pass uses the swap reconstruction patterns to replace according
+ * CNOT patterns with SWAP gates.
  */
 struct SwapReconstruction final
     : impl::SwapReconstructionBase<SwapReconstruction> {
@@ -34,15 +35,6 @@ struct SwapReconstruction final
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
     populateSwapReconstructionPatterns(patterns);
-
-    // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
-      signalPassFailure();
-    }
-
-    // Define the second set of patterns to be used.
-    patterns.clear();
-    populateAdvancedSwapReconstructionPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
     if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
