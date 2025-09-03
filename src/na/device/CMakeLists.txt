@@ -99,7 +99,7 @@ if(NOT TARGET ${TARGET_NAME})
   add_custom_target(generate_qdmi_na_device_header DEPENDS ${DEVICE_HDR})
 
   # Add library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME NaQDMI)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMINaDevice)
   add_dependencies(${TARGET_NAME} generate_qdmi_na_device_header)
 
   # Generate prefixed QDMI headers
@@ -140,7 +140,7 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PROPERTIES VERSION ${PROJECT_VERSION}
                SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreNaQDMIDevice)
+               EXPORT_NAME CoreQDMINaDevice)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
@@ -151,7 +151,8 @@ if(NOT TARGET ${TARGET_NAME})
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
                                                     MQT_CORE_VERSION="${MQT_CORE_VERSION}")
 
-  # Generate additional alias for the target
+  # Generate additional alias for the target required for generate_device_defs_executable function
+  # in the tests
   add_library(qdmi::mqt_na_device ALIAS ${TARGET_NAME})
 
   # Do not build dynamic NA device on Windows because it cannot be used anyways in the current setup
@@ -192,8 +193,8 @@ if(NOT TARGET ${TARGET_NAME})
         ${DYN_TARGET_NAME}
         PROPERTIES VERSION ${PROJECT_VERSION}
                    SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-                   EXPORT_NAME CoreDynNaQDMIDevice)
-      add_library(MQT::CoreDynNaQDMI ALIAS ${DYN_TARGET_NAME})
+                   EXPORT_NAME CoreQDMINaDeviceDyn)
+      add_library(MQT::CoreQDMINaDeviceDyn ALIAS ${DYN_TARGET_NAME})
     endif()
   endif()
 endif()

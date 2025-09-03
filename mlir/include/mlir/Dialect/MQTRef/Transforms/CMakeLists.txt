@@ -9,4 +9,4 @@
 set(LLVM_TARGET_DEFINITIONS Passes.td)
 mlir_tablegen(Passes.h.inc -gen-pass-decls -name MQTRef)
 add_public_tablegen_target(MLIRMQTRefTransformsIncGen)
-add_mlir_doc(MQTRefPasses MLIRMQTRefPasses Passes/ -gen-pass-doc)
+add_mlir_doc(Passes MLIRMQTRefPasses Passes/ -gen-pass-doc)

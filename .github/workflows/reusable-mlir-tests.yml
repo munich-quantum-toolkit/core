@@ -1,0 +1,139 @@
+name: 🐉 • Tests
+on:
+  workflow_call:
+
+jobs:
+  mlir:
+    name: >-
+      ${{ contains(matrix.os, 'ubuntu') && '🐧' || contains(matrix.os, 'windows') && '🏁' || '🍎' }}
+      ${{ matrix.coverage && 'Coverage' || matrix.os }} with LLVM@${{ matrix.llvm-version }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          [
+            ubuntu-24.04,
+            ubuntu-24.04-arm,
+            macos-14,
+            windows-2025,
+            windows-11-arm,
+          ]
+        llvm-version: [19, 20]
+        coverage: [false]
+        include:
+          - os: ubuntu-24.04
+            llvm-version: 19
+            coverage: true
+          - os: ubuntu-24.04
+            llvm-version: 20
+            coverage: true
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      CTEST_PARALLEL_LEVEL: 4
+      FORCE_COLOR: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        with:
+          fetch-depth: 0
+
+      # OS-specific toolchain setup
+      - name: Setup LLVM/MLIR (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: bash .github/scripts/setup-mlir.sh ${{ matrix.llvm-version }}
+
+      - name: Restore LLVM/MLIR cache (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+        id: mlir-cache
+        with:
+          path: llvm-install
+          key: ${{ matrix.os }}-llvm-${{ matrix.llvm-version }}
+
+      - name: Setup LLVM/MLIR (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "${{ github.workspace }}\.github\scripts\setup-mlir.ps1" -MajorVersion ${{ matrix.llvm-version }} -InstallPrefix "${{ github.workspace }}\llvm-install"
+
+      # Build acceleration and Python tooling
+      - name: Set up mold as linker (Linux)
+        uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@557e51de59eb14aaaba2ed9621916900a91d50c6 # v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      - name: Install Ninja
+        run: uv tool install ninja
+
+      - name: Install lit
+        run: uv pip install lit
+
+      # Configure
+      - name: Configure CMake (Linux and macOS)
+        if: runner.os == 'Linux' || runner.os == 'macOS'
+        run: |
+          cmake -G Ninja -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.coverage && 'Debug' || 'Release' }} \
+            -DBUILD_MQT_CORE_MLIR=ON \
+            -DLLVM_DIR=$LLVM_DIR \
+            -DMLIR_DIR=$MLIR_DIR \
+            -DLLVM_EXTERNAL_LIT=$(which lit) \
+            ${{ matrix.coverage && '-DENABLE_COVERAGE=ON' || '' }}
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -S . -B build `
+            -DCMAKE_BUILD_TYPE=${{ matrix.coverage && 'Debug' || 'Release' }} `
+            -DBUILD_MQT_CORE_MLIR=ON `
+            -DLLVM_DIR="${{ github.workspace }}\llvm-install\lib\cmake\llvm" `
+            -DMLIR_DIR="${{ github.workspace }}\llvm-install\lib\cmake\mlir" `
+            -DLLVM_EXTERNAL_LIT=${{ github.workspace }}\.venv\Scripts\lit.exe `
+            ${{ matrix.coverage && '-DENABLE_COVERAGE=ON' || '' }}
+
+      # Build
+      - name: Build MLIR lit target
+        run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-lit-test-build-only
+
+      - name: Build MLIR unittests
+        run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-translation-test
+
+      # Test
+      - name: Run lit tests
+        run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-lit-test
+
+      - name: Run unit tests
+        run: ctest -C ${{ matrix.coverage && 'Debug' || 'Release' }} --output-on-failure --test-dir build/mlir --repeat until-pass:3 --timeout 600
+
+      # Coverage
+      - name: Generate coverage data as JSON (gcovr)
+        if: matrix.coverage
+        run: |
+          uvx gcovr \
+             --gcov-executable "/usr/lib/llvm-${{ matrix.llvm-version }}/bin/llvm-cov gcov" \
+             --exclude build \
+             --exclude-unreachable-branches \
+             --exclude-noncode-lines \
+             --exclude-throw-branches \
+             --print-summary \
+             --keep \
+             --json \
+             -o coverage-llvm-${{ matrix.llvm-version }}.json
+
+      - name: Upload coverage to Codecov
+        if: matrix.coverage
+        uses: codecov/codecov-action@fdcc8476540edceab3de004e990f80d881c6cc00 # v5
+        with:
+          flags: mlir
+          name: mlir-coverage-llvm-${{ matrix.llvm-version }}
+          fail_ci_if_error: true
+          use_oidc: true
+          files: coverage-llvm-${{ matrix.llvm-version }}.json

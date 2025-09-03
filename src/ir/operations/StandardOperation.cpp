@@ -250,6 +250,29 @@ bool StandardOperation::isGlobal(const size_t nQubits) const {
 /***
  * Public Methods
  ***/
+bool StandardOperation::isClifford() const {
+  switch (type) {
+  case I:
+    return true;
+  case X:
+  case Y:
+  case Z:
+    return (controls.size() <= 1);
+  case H:
+  case S:
+  case Sdg:
+  case SX:
+  case SXdg:
+  case DCX:
+  case SWAP:
+  case iSWAP:
+  case ECR:
+    return !isControlled();
+  default:
+    return false;
+  }
+}
+
 void StandardOperation::dumpOpenQASM(
     std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
     [[maybe_unused]] const BitIndexToRegisterMap& bitMap, size_t indent,

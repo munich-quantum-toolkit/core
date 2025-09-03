@@ -1,0 +1,24 @@
+{
+  "⚛️ MQT Core IR": ["Core"],
+  "⚖️ MQT Core DD Package": ["DD"],
+  "🐉 MQT Core MLIR": ["MLIR"],
+  "🏼 MQT Core NA Package": ["NA"],
+  "🕸️ MQT Core ZX Package": ["ZX"],
+  "🚀 Features and Enhancements": [
+    "enhancement",
+    "feature",
+    "refactor",
+    "usability"
+  ],
+  "🐛 Bug Fixes": ["bug", "fix"],
+  "📄 Documentation": ["documentation"],
+  "🤖 CI": ["continuous integration"],
+  "📦 Packaging": ["packaging"],
+  "🧹 Code Quality": ["code quality"],
+  "⬆️ Dependencies": [
+    "dependencies",
+    "github-actions",
+    "pre-commit",
+    "submodules"
+  ]
+}
