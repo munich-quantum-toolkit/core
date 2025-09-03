@@ -53,8 +53,8 @@ HANDLE_OP_TYPE(29, Compound, OpTypeNone, "compound")
 HANDLE_OP_TYPE(30, Measure, OpTypeNone, "measure")
 HANDLE_OP_TYPE(31, Reset, OpTypeNone, "reset")
 
-// Classically-controlled Operation
-HANDLE_OP_TYPE(32, ClassicControlled, OpTypeNone, "classic_controlled")
+// Control flow operations
+HANDLE_OP_TYPE(32, IfElse, OpTypeNone, "if_else")
 
 // Noise operations
 HANDLE_OP_TYPE(33, ATrue, 0, "a_true")

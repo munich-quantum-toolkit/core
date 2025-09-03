@@ -11,10 +11,10 @@
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/Expression.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
@@ -339,7 +339,8 @@ TEST_F(QFRFunctionality, cloningDifferentOperations) {
   comp.barrier(0);
   comp.h(0);
   qc.emplace_back(comp.asOperation());
-  qc.classicControlled(X, 0, qc.getClassicalRegisters().at("c"), 1);
+  auto creg = qc.getClassicalRegisters().at("c");
+  qc.if_(X, 0, creg, 1U);
 
   const auto qcCloned = qc;
   ASSERT_EQ(qc.size(), qcCloned.size());
@@ -395,31 +396,30 @@ TEST_F(QFRFunctionality, OperationEquality) {
   EXPECT_TRUE(measure0.equals(measure2, perm0, {}));
   EXPECT_TRUE(measure0.equals(measure2, {}, perm0));
 
-  const auto expectedValue0 = 0U;
-  const auto expectedValue1 = 1U;
-
   std::unique_ptr<Operation> xp0 = std::make_unique<StandardOperation>(0, X);
   std::unique_ptr<Operation> xp1 = std::make_unique<StandardOperation>(0, X);
   std::unique_ptr<Operation> xp2 = std::make_unique<StandardOperation>(0, X);
-  const auto classic0 =
-      ClassicControlledOperation(std::move(xp0), 0, expectedValue0);
-  const auto classic1 =
-      ClassicControlledOperation(std::move(xp1), 0, expectedValue1);
-  const auto classic2 =
-      ClassicControlledOperation(std::move(xp2), 1, expectedValue0);
+  const auto expectedValue0 = false;
+  const auto expectedValue1 = true;
+  const auto ifElse0 =
+      IfElseOperation(std::move(xp0), nullptr, 0, expectedValue0);
+  const auto ifElse1 =
+      IfElseOperation(std::move(xp1), nullptr, 0, expectedValue1);
+  const auto ifElse2 =
+      IfElseOperation(std::move(xp2), nullptr, 1, expectedValue0);
   std::unique_ptr<Operation> zp = std::make_unique<StandardOperation>(0, Z);
-  const auto classic3 =
-      ClassicControlledOperation(std::move(zp), 0, expectedValue0);
-  EXPECT_FALSE(classic0.equals(x));
-  EXPECT_NE(classic0, x);
-  EXPECT_TRUE(classic0.equals(classic0));
-  EXPECT_EQ(classic0, classic0);
-  EXPECT_FALSE(classic0.equals(classic1));
-  EXPECT_NE(classic0, classic1);
-  EXPECT_FALSE(classic0.equals(classic2));
-  EXPECT_NE(classic0, classic2);
-  EXPECT_FALSE(classic0.equals(classic3));
-  EXPECT_NE(classic0, classic3);
+  const auto ifElse3 =
+      IfElseOperation(std::move(zp), nullptr, 0, expectedValue0);
+  EXPECT_FALSE(ifElse0.equals(x));
+  EXPECT_NE(ifElse0, x);
+  EXPECT_TRUE(ifElse0.equals(ifElse0));
+  EXPECT_EQ(ifElse0, ifElse0);
+  EXPECT_FALSE(ifElse0.equals(ifElse1));
+  EXPECT_NE(ifElse0, ifElse1);
+  EXPECT_FALSE(ifElse0.equals(ifElse2));
+  EXPECT_NE(ifElse0, ifElse2);
+  EXPECT_FALSE(ifElse0.equals(ifElse3));
+  EXPECT_NE(ifElse0, ifElse3);
 
   auto compound0 = CompoundOperation();
   compound0.emplace_back<StandardOperation>(0, X);
@@ -542,7 +542,7 @@ TEST_F(QFRFunctionality, CircuitToOperation) {
   EXPECT_TRUE(qc.empty());
   qc.x(0);
   qc.h(0);
-  qc.classicControlled(X, 0, 1, {0, 1U}, 1U);
+  qc.if_(X, 0, 1, {0U, 1U}, 1U);
   const auto& op2 = qc.asOperation();
   ASSERT_NE(op2, nullptr);
   EXPECT_EQ(op2->getType(), Compound);
@@ -731,27 +731,6 @@ TEST_F(QFRFunctionality, addControlSymbolicOperation) {
   EXPECT_EQ(op.removeControl(controls.begin()), controls.end());
 }
 
-TEST_F(QFRFunctionality, addControlClassicControlledOperation) {
-  std::unique_ptr<Operation> xp = std::make_unique<StandardOperation>(0, X);
-  const auto expectedValue = 0U;
-  auto op = ClassicControlledOperation(std::move(xp), 0, expectedValue);
-
-  op.addControl(1);
-  op.addControl(2);
-
-  ASSERT_EQ(op.getNcontrols(), 2);
-  auto expectedControls = Controls{1U, 2U};
-  EXPECT_EQ(op.getControls(), expectedControls);
-  op.removeControl(1);
-  auto expectedControlsAfterRemove = Controls{2U};
-  EXPECT_EQ(op.getControls(), expectedControlsAfterRemove);
-  op.clearControls();
-  EXPECT_EQ(op.getNcontrols(), 0);
-  op.addControl(1);
-  const auto& controls = op.getControls();
-  EXPECT_EQ(op.removeControl(controls.begin()), controls.end());
-}
-
 TEST_F(QFRFunctionality, addControlNonUnitaryOperation) {
   auto op = NonUnitaryOperation(0U, Measure);
 
@@ -798,9 +777,6 @@ TEST_F(QFRFunctionality, addControlTwice) {
   op->addControl(control);
   EXPECT_THROW(op->addControl(control), std::runtime_error);
 
-  auto classicControlledOp = ClassicControlledOperation(std::move(op), 0, 0U);
-  EXPECT_THROW(classicControlledOp.addControl(control), std::runtime_error);
-
   auto symbolicOp = SymbolicOperation(Targets{1}, OpType::X);
   symbolicOp.addControl(control);
   EXPECT_THROW(symbolicOp.addControl(control), std::runtime_error);
@@ -813,9 +789,6 @@ TEST_F(QFRFunctionality, addTargetAsControl) {
   std::unique_ptr<Operation> op =
       std::make_unique<StandardOperation>(Targets{1}, OpType::X);
   EXPECT_THROW(op->addControl(control), std::runtime_error);
-
-  auto classicControlledOp = ClassicControlledOperation(std::move(op), 0, 0U);
-  EXPECT_THROW(classicControlledOp.addControl(control), std::runtime_error);
 
   auto symbolicOp = SymbolicOperation(Targets{1}, OpType::X);
   EXPECT_THROW(symbolicOp.addControl(control), std::runtime_error);
@@ -988,7 +961,8 @@ TEST_F(QFRFunctionality, measureAllInsufficientRegisterSize) {
 
 TEST_F(QFRFunctionality, checkClassicalRegisters) {
   QuantumComputation qc(1U, 1U);
-  EXPECT_THROW(qc.classicControlled(X, 0U, {0U, 2U}), std::runtime_error);
+  const ClassicalRegister creg = {0U, 2U};
+  EXPECT_THROW(qc.if_(X, 0, creg, 1U), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, testSettingAncillariesProperlyCreatesRegisters) {
@@ -1300,7 +1274,8 @@ TEST_F(QFRFunctionality, CopyConstructor) {
   qc.swap(0, 1);
   qc.barrier();
   qc.measure(0, 0);
-  qc.classicControlled(X, 0, {0, 1});
+  const ClassicalRegister creg = {0U, 1U};
+  qc.if_(X, 0, creg, 1U);
   const sym::Variable theta{"theta"};
   qc.rx(Symbolic{theta}, 0);
 

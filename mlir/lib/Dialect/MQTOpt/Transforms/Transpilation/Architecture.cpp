@@ -11,8 +11,12 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <format>
+#include <llvm/ADT/SmallVector.h>
 #include <memory>
+#include <stdexcept>
+#include <string>
 
 namespace transpilation {
 [[nodiscard]] llvm::SmallVector<std::size_t>

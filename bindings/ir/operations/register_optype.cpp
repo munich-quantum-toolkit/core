@@ -65,7 +65,7 @@ void registerOptype(const py::module& m) {
       .value("measure", qc::OpType::Measure)
       .value("reset", qc::OpType::Reset)
       .value("barrier", qc::OpType::Barrier)
-      .value("classic_controlled", qc::OpType::ClassicControlled)
+      .value("if_else", qc::OpType::IfElse)
       .export_values()
       .finalize();
 }

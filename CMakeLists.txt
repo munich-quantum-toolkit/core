@@ -84,7 +84,8 @@ if(MQT_CORE_INSTALL)
   else()
     set(BASEPOINT $ORIGIN)
   endif()
-  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR})
+  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR}
+                          ${BASEPOINT}/../${CMAKE_INSTALL_LIBDIR})
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
@@ -115,6 +116,14 @@ option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OF
 if(BUILD_MQT_CORE_MLIR)
   include(SetupMLIR)
   add_subdirectory(mlir)
+
+  # copy generated MLIR documentation
+  add_custom_command(
+    TARGET mlir-doc
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
+            ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
+    COMMENT "Copying generated MLIR documentation")
 endif()
 
 if(MQT_CORE_MASTER_PROJECT)

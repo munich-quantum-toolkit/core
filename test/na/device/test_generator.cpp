@@ -11,12 +11,12 @@
 #include "na/device/Generator.hpp"
 
 #include <gtest/gtest.h>
-#include <iostream>
 #include <sstream>
 // clang-tidy wants to include the forward header, but we need the full
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <utility>
 
 namespace na {
 namespace {
@@ -53,29 +53,27 @@ TEST(GeneratorTest, WriteJSONSchema) {
   testPopulation(json);
 }
 
-TEST(GeneratorTest, TimeUnitNanosecond) {
+TEST(GeneratorTest, DurationUnitNanosecond) {
   std::istringstream is(R"({
-  "timeUnit": {
+  "durationUnit": {
     "scaleFactor": 5,
     "unit": "ns"
   }
 })");
   Device device;
   ASSERT_NO_THROW(device = readJSON(is));
-  EXPECT_EQ(device.timeUnit.scaleFactor, 5);
-  EXPECT_EQ(device.timeUnit.unit, "ns");
+  EXPECT_EQ(device.durationUnit.scaleFactor, 5);
+  EXPECT_EQ(device.durationUnit.unit, "ns");
 }
 
-TEST(GeneratorTest, TimeUnitInvalid) {
+TEST(GeneratorTest, DurationUnitInvalid) {
   std::istringstream is(R"({
-  "timeUnit": {
+  "durationUnit": {
     "scaleFactor": 1,
     "unit": "ts"
   }
 })");
-  Device device;
-  ASSERT_NO_THROW(device = readJSON(is));
-  EXPECT_THROW(writeHeader(device, std::cout), std::runtime_error);
+  EXPECT_THROW(std::ignore = readJSON(is), std::runtime_error);
 }
 
 TEST(GeneratorTest, LengthUnitNanometer) {
@@ -98,9 +96,7 @@ TEST(GeneratorTest, LengthUnitInvalid) {
     "unit": "tm"
   }
 })");
-  Device device;
-  ASSERT_NO_THROW(device = readJSON(is));
-  EXPECT_THROW(writeHeader(device, std::cout), std::runtime_error);
+  EXPECT_THROW(std::ignore = readJSON(is), std::runtime_error);
 }
 
 } // namespace na

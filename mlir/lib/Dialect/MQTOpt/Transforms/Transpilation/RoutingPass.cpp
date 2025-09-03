@@ -15,19 +15,17 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <llvm/ADT/STLExtras.h>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Iterators.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <numeric>
 #include <queue>
 #include <random>
@@ -340,7 +338,7 @@ private:
 
       // As of now, we don't support loops with qubit dependencies. Hence, skip.
       if (auto loop = dyn_cast<scf::ForOp>(op)) {
-        if (loop.getRegionIterArgs().size() == 0) {
+        if (loop.getRegionIterArgs().empty()) {
           return WalkResult::advance();
         }
         return WalkResult::skip();

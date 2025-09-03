@@ -8,14 +8,14 @@
 
 if(TARGET MQT::CoreQDMINaDeviceGen
    AND TARGET MQT::CoreQDMINaDeviceGenerator
-   AND TARGET qdmi::mqt_na_device)
+   AND TARGET MQT::CoreQDMINaDevice)
   # Set QDMI prefix again for the tests
   set(QDMI_PREFIX "MQT_NA")
   generate_device_defs_executable(${QDMI_PREFIX})
   # Set test target name
   set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-test)
   # Add the test executable
-  package_add_test(${TARGET_NAME} qdmi::mqt_na_device test_generator.cpp test_app.cpp
+  package_add_test(${TARGET_NAME} MQT::CoreQDMINaDevice test_generator.cpp test_app.cpp
                    test_device.cpp)
   # Add dependency to enforce implementation of all interface functions
   add_dependencies(${TARGET_NAME} qdmi_test_mqt_na_device_defs)

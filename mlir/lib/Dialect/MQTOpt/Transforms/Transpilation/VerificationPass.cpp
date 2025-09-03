@@ -44,7 +44,6 @@ struct TranspilationVerificationPass final
     auto arch = transpilation::getArchitecture("MQT-Test");
 
     auto res = getOperation()->walk([&](Operation* op) {
-      // Skip any initialized static qubits.
       if (auto qubit = dyn_cast<QubitOp>(op)) {
         if (nqubits == arch->nqubits()) {
           return WalkResult(qubit->emitOpError()
@@ -93,8 +92,7 @@ struct TranspilationVerificationPass final
       if (auto u = dyn_cast<UnitaryInterface>(op)) {
         const std::size_t nacts = u.getAllInQubits().size();
         if (nacts > 2) {
-          return WalkResult(u->emitOpError()
-                            << "acts on more than two qubits");
+          return WalkResult(u->emitOpError() << "acts on more than two qubits");
         }
 
         const Value in0 = u.getAllInQubits()[0];
