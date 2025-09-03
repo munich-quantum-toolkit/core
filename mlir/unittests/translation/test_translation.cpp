@@ -19,7 +19,9 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Config/llvm-config.h>
 #include <llvm/FileCheck/FileCheck.h>
+#include <llvm/Support/LogicalResult.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
