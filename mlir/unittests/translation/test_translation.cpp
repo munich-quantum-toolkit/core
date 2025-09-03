@@ -1134,6 +1134,10 @@ TEST_F(ImportTest, IfBitNeq) {
 }
 
 TEST_F(ImportTest, IfElseBit) {
+#if LLVM_VERSION_MAJOR < 20
+  GTEST_SKIP() << "Test skipped for LLVM 18+";
+#endif
+
   qc::QuantumComputation qc(1, 1);
   qc.measure(0, 0);
   qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
