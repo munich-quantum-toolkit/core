@@ -93,8 +93,7 @@ struct TranspilationVerificationPass final
       if (auto u = dyn_cast<UnitaryInterface>(op)) {
         const std::size_t nacts = u.getAllInQubits().size();
         if (nacts > 2) {
-          return WalkResult(u->emitOpError()
-                            << "acts on more than two qubits");
+          return WalkResult(u->emitOpError() << "acts on more than two qubits");
         }
 
         const Value in0 = u.getAllInQubits()[0];
