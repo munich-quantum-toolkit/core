@@ -731,10 +731,304 @@ TEST_F(ImportTest, XXplusYY) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, IfBit) {
+TEST_F(ImportTest, IfRegisterEq1) {
+  qc::QuantumComputation qc(1);
+  const auto& creg = qc.addClassicalRegister(1);
+  qc.measure(0, 0);
+  qc.if_(qc::X, 0, creg, 1U, qc::Eq);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.run(module.get());
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Exp:.*]] = arith.constant 1 : i64
+    CHECK: %[[ANY:.*]] = arith.constant 0 : index
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[C0:.*]] = arith.extui %[[M0:.*]] : i1 to i64
+    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[C0]], %[[Exp]] : i64
+    CHECK: scf.if %[[Cnd0:.*]] {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfRegisterEq2) {
+  qc::QuantumComputation qc(2);
+  const auto& creg = qc.addClassicalRegister(2);
+  qc.measure({0, 1}, {0, 1});
+  qc.if_(qc::X, 0, creg, 2U, qc::Eq);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.run(module.get());
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Exp:.*]] = arith.constant 2 : i64
+    CHECK: %[[Sum0:.*]] = arith.constant 0 : i64
+    CHECK: %[[I2:.*]] = arith.constant 2 : index
+    CHECK: %[[I1:.*]] = arith.constant 1 : index
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<2xi1>
+    CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
+    CHECK: memref.store %[[M1]], %[[Mem]][%[[I1]]] : memref<2xi1>
+    CHECK: %[[Sum1:.*]] = scf.for %[[Ii:.*]] = %[[I0]] to %[[I2]] step %[[I1]] iter_args(%[[Sumi:.*]] = %[[Sum0]]) -> (i64) {
+    CHECK: %[[Bi:.*]] = memref.load %[[Mem]][%[[Ii]]] : memref<2xi1>
+    CHECK: %[[Ci:.*]] = arith.extui %[[Bi:.*]] : i1 to i64
+    CHECK: %[[Sumj:.*]] = arith.addi %[[Sumi]], %[[Ci]] : i64
+    CHECK: scf.yield %[[Sumj]] : i64
+    CHECK: }
+    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[Sum1]], %[[Exp]] : i64
+    CHECK: scf.if %[[Cnd0:.*]] {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfRegisterNeq) {
+  qc::QuantumComputation qc(1);
+  const auto& creg = qc.addClassicalRegister(1);
+  qc.measure(0, 0);
+  qc.if_(qc::X, 0, creg, 1U, qc::Neq);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.run(module.get());
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Exp:.*]] = arith.constant 1 : i64
+    CHECK: %[[ANY:.*]] = arith.constant 0 : index
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[C0:.*]] = arith.extui %[[M0:.*]] : i1 to i64
+    CHECK: %[[Cnd0:.*]] = arith.cmpi ne, %[[C0]], %[[Exp]] : i64
+    CHECK: scf.if %[[Cnd0:.*]] {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfRegisterLt) {
+  qc::QuantumComputation qc(1);
+  const auto& creg = qc.addClassicalRegister(1);
+  qc.measure(0, 0);
+  qc.if_(qc::X, 0, creg, 1U, qc::Lt);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.run(module.get());
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Exp:.*]] = arith.constant 1 : i64
+    CHECK: %[[ANY:.*]] = arith.constant 0 : index
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[C0:.*]] = arith.extui %[[M0:.*]] : i1 to i64
+    CHECK: %[[Cnd0:.*]] = arith.cmpi ult, %[[C0]], %[[Exp]] : i64
+    CHECK: scf.if %[[Cnd0:.*]] {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfRegisterLeq) {
+  qc::QuantumComputation qc(1);
+  const auto& creg = qc.addClassicalRegister(1);
+  qc.measure(0, 0);
+  qc.if_(qc::X, 0, creg, 1U, qc::Leq);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.run(module.get());
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Exp:.*]] = arith.constant 1 : i64
+    CHECK: %[[ANY:.*]] = arith.constant 0 : index
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[C0:.*]] = arith.extui %[[M0:.*]] : i1 to i64
+    CHECK: %[[Cnd0:.*]] = arith.cmpi ule, %[[C0]], %[[Exp]] : i64
+    CHECK: scf.if %[[Cnd0:.*]] {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfRegisterGt) {
+  qc::QuantumComputation qc(1);
+  const auto& creg = qc.addClassicalRegister(1);
+  qc.measure(0, 0);
+  qc.if_(qc::X, 0, creg, 1U, qc::Gt);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.run(module.get());
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Exp:.*]] = arith.constant 1 : i64
+    CHECK: %[[ANY:.*]] = arith.constant 0 : index
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[C0:.*]] = arith.extui %[[M0:.*]] : i1 to i64
+    CHECK: %[[Cnd0:.*]] = arith.cmpi ugt, %[[C0]], %[[Exp]] : i64
+    CHECK: scf.if %[[Cnd0:.*]] {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfRegisterGeq) {
+  qc::QuantumComputation qc(1);
+  const auto& creg = qc.addClassicalRegister(1);
+  qc.measure(0, 0);
+  qc.if_(qc::X, 0, creg, 1U, qc::Geq);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.run(module.get());
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Exp:.*]] = arith.constant 1 : i64
+    CHECK: %[[ANY:.*]] = arith.constant 0 : index
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[C0:.*]] = arith.extui %[[M0:.*]] : i1 to i64
+    CHECK: %[[Cnd0:.*]] = arith.cmpi uge, %[[C0]], %[[Exp]] : i64
+    CHECK: scf.if %[[Cnd0:.*]] {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfElseRegister) {
+  qc::QuantumComputation qc(2);
+  const auto& creg = qc.addClassicalRegister(2);
+  qc.measure({0, 1}, {0, 1});
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
+            std::make_unique<qc::StandardOperation>(0, qc::Y), creg, 2U,
+            qc::Eq);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.run(module.get());
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Exp:.*]] = arith.constant 2 : i64
+    CHECK: %[[Sum0:.*]] = arith.constant 0 : i64
+    CHECK: %[[I2:.*]] = arith.constant 2 : index
+    CHECK: %[[I1:.*]] = arith.constant 1 : index
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<2xi1>
+    CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
+    CHECK: memref.store %[[M1]], %[[Mem]][%[[I1]]] : memref<2xi1>
+    CHECK: %[[Sum1:.*]] = scf.for %[[Ii:.*]] = %[[I0]] to %[[I2]] step %[[I1]] iter_args(%[[Sumi:.*]] = %[[Sum0]]) -> (i64) {
+    CHECK: %[[Bi:.*]] = memref.load %[[Mem]][%[[Ii]]] : memref<2xi1>
+    CHECK: %[[Ci:.*]] = arith.extui %[[Bi:.*]] : i1 to i64
+    CHECK: %[[Sumj:.*]] = arith.addi %[[Sumi]], %[[Ci]] : i64
+    CHECK: scf.yield %[[Sumj]] : i64
+    CHECK: }
+    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[Sum1]], %[[Exp]] : i64
+    CHECK: scf.if %[[Cnd0:.*]] {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: } else {
+    CHECK: mqtref.y() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfBitEqTrue) {
   qc::QuantumComputation qc(1, 1);
   qc.measure(0, 0);
-  qc.if_(qc::X, 0, 0);
+  qc.if_(qc::X, 0, 0, true, qc::Eq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -758,11 +1052,10 @@ TEST_F(ImportTest, IfBit) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, IfElseBit) {
+TEST_F(ImportTest, IfBitEqFalse) {
   qc::QuantumComputation qc(1, 1);
   qc.measure(0, 0);
-  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
-            std::make_unique<qc::StandardOperation>(0, qc::Y), 0, false);
+  qc.if_(qc::X, 0, 0, false, qc::Eq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -781,6 +1074,63 @@ TEST_F(ImportTest, IfElseBit) {
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
     CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[M0]], %[[Exp0]] : i1
     CHECK: scf.if %[[Cnd0]] {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfBitNeq) {
+  qc::QuantumComputation qc(1, 1);
+  qc.measure(0, 0);
+  qc.if_(qc::X, 0, 0, true, qc::Neq);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.run(module.get());
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Exp0:.*]] = arith.constant false
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[M0]], %[[Exp0]] : i1
+    CHECK: scf.if %[[Cnd0]] {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfElseBit) {
+  qc::QuantumComputation qc(1, 1);
+  qc.measure(0, 0);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
+            std::make_unique<qc::StandardOperation>(0, qc::Y), 0);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.run(module.get());
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: scf.if %[[M0]] {
     CHECK: mqtref.x() %[[Q0]]
     CHECK: } else {
     CHECK: mqtref.y() %[[Q0]]
