@@ -88,23 +88,14 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
         return false;
       }
 
-      for (auto&& element : set) {
-        if (!llvm::is_contained(subsetCandidate, element) &&
-            (!ignoredMismatch || *ignoredMismatch == element)) {
+      for (auto&& element : subsetCandidate) {
+        if (!llvm::is_contained(set, element) &&
+            (!ignoredMismatch || *ignoredMismatch != element)) {
           return false;
         }
       }
       return true;
     };
-
-    // llvm::SmallSetVector<mlir::Value, 4> posCtrlDiff{
-    //     nextInPosCtrlQubits.begin(), nextInPosCtrlQubits.end()};
-    // posCtrlDiff.set_subtract(opOutPosCtrlQubits);
-    // bool posCtrlMatches = posCtrlDiff.size() == 1 && posCtrlDiff.front() ==
-    // opOutTarget;
-
-    // bool negCtrlMatches =
-    //     llvm::set_is_subset(opOutNegCtrlQubits, nextInNegCtrlQubits);
 
     bool targetIsPosCtrl =
         llvm::is_contained(nextInPosCtrlQubits, opOutTarget) &&
@@ -114,7 +105,7 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
         isSubset(opOutPosCtrlQubits, nextInPosCtrlQubits, opOutTarget);
     bool negCtrlMatches = isSubset(opOutNegCtrlQubits, nextInNegCtrlQubits);
 
-    // TODO: early return possible for better performance?
+    // TODO: early return for slightly better performance?
     if constexpr (matchControlledSwap) {
       return targetIsPosCtrl && posCtrlMatches && negCtrlMatches;
     } else {
@@ -151,9 +142,21 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
       auto secondSwapTargetOut = getCNotInTarget(*secondCNot);
       if (auto secondSwapTarget =
               getCorrespondingInput(firstCNot, secondSwapTargetOut)) {
-        auto newSwap = replaceWithSwap(rewriter, firstCNot, *secondSwapTarget);
-        swapOperationOrder(rewriter, newSwap, *secondCNot);
-        return mlir::success();
+        if constexpr (onlyMatchFullSwapPattern) {
+          // if enabled, check if there is a third CNOT which must be equal
+          // to the first one
+          if (auto thirdCNot = checkThirdCNot(firstCNot, *secondCNot)) {
+            replaceWithSwap(rewriter, firstCNot, *secondSwapTarget);
+            eraseOperation(rewriter, *secondCNot);
+            eraseOperation(rewriter, *thirdCNot);
+            return mlir::success();
+          }
+        } else {
+          auto newSwap =
+              replaceWithSwap(rewriter, firstCNot, *secondSwapTarget);
+          swapOperationOrder(rewriter, newSwap, *secondCNot);
+          return mlir::success();
+        }
       }
     }
 
@@ -213,8 +216,11 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
           if (auto nextOpInput = getCorrespondingInput(nextOp, *nextOpIt)) {
             auto opIt = llvm::find(opResults, *nextOpInput);
             if (opIt != opResults.end()) {
-              // operand of user which matches a result of nextOp is also a result of op
-              rewriter.modifyOpInPlace(user, [&]() { user->setOperand(operand.getOperandNumber(), *opIt); }); // TODO: do this in out-most loop for performance
+              // operand of user which matches a result of nextOp is also a
+              // result of op
+              rewriter.modifyOpInPlace(user, [&]() {
+                user->setOperand(operand.getOperandNumber(), *opIt);
+              }); // TODO: do this in out-most loop for performance
             }
           }
         }
@@ -243,6 +249,39 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     for (auto* user : op->getUsers()) {
       if (auto cnot = llvm::dyn_cast<XOp>(user)) {
         if (isCandidate(op, cnot)) {
+          return cnot;
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
+  /**
+   * @brief Find a user of the given operation for which isReverseCNotPattern()
+   * with the given operation is true.
+   */
+  [[nodiscard]] static std::optional<XOp> checkThirdCNot(XOp& firstCNot,
+                                                         XOp& secondCNot) {
+    // check if gate is equal, ignoring another operation (secondCNot)
+    // in-between
+    auto equalsThrough = [&](XOp& a, XOp& b, XOp& inbetween) {
+      auto&& aOutput = a->getResults();
+      auto&& bInput = b->getOperands();
+
+      for (auto&& inbetweenOut : bInput) {
+        if (auto inbetweenIn = getCorrespondingInput(inbetween, inbetweenOut)) {
+          if (!llvm::is_contained(aOutput, inbetweenIn)) {
+            return false;
+          }
+        } else if (!llvm::is_contained(aOutput, inbetweenOut)) {
+          return false;
+        }
+      }
+      return true;
+    };
+    for (auto* user : secondCNot->getUsers()) {
+      if (auto cnot = llvm::dyn_cast<XOp>(user)) {
+        if (equalsThrough(firstCNot, cnot, secondCNot)) {
           return cnot;
         }
       }
