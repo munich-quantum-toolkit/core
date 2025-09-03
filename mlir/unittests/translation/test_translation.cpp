@@ -29,6 +29,8 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/Pass/PassManager.h>
+#include <mlir/Transforms/Passes.h>
 #include <string>
 #include <utility>
 
@@ -729,12 +731,19 @@ TEST_F(ImportTest, XXplusYY) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, If) {
+TEST_F(ImportTest, IfBit) {
   qc::QuantumComputation qc(1, 1);
   qc.measure(0, 0);
   qc.if_(qc::X, 0, 0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.run(module.get());
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -749,13 +758,20 @@ TEST_F(ImportTest, If) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, IfElse) {
+TEST_F(ImportTest, IfElseBit) {
   qc::QuantumComputation qc(1, 1);
   qc.measure(0, 0);
   qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
             std::make_unique<qc::StandardOperation>(0, qc::Y), 0, false);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.run(module.get());
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(

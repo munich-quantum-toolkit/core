@@ -15,8 +15,6 @@ add_mlir_library(
   MLIRArithDialect
   MLIRFuncDialect
   MLIRSCFDialect
-  MLIRPass
-  MLIRTransforms
   MLIRMQTRef
   MQT::CoreIR)
 
