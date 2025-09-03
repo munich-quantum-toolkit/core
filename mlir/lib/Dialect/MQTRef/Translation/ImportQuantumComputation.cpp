@@ -367,7 +367,7 @@ llvm::LogicalResult addIfElseOpBit(mlir::OpBuilder& builder,
 
   qc::Operation* thenBlockOp = nullptr;
   qc::Operation* elseBlockOp = nullptr;
-  if (expectedValueBit == false && elseOp != nullptr) {
+  if (!expectedValueBit && elseOp != nullptr) {
     expectedValueBit = !expectedValueBit;
     thenBlockOp = elseOp;
     elseBlockOp = thenOp;
@@ -380,7 +380,7 @@ llvm::LogicalResult addIfElseOpBit(mlir::OpBuilder& builder,
       loc, builder.getI1Type(),
       builder.getIntegerAttr(builder.getI1Type(),
                              static_cast<int64_t>(expectedValueBit)));
-  mlir::arith::CmpIPredicate predicate = mlir::arith::CmpIPredicate::eq;
+  const mlir::arith::CmpIPredicate predicate = mlir::arith::CmpIPredicate::eq;
 
   // Define condition
   auto condition = builder.create<mlir::arith::CmpIOp>(
@@ -435,11 +435,11 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   if (controlRegister.has_value()) {
     assert(!controlBit.has_value());
     return addIfElseOpRegister(builder, *ifElse, qubits, bits);
-  } else if (controlBit.has_value()) {
-    return addIfElseOpBit(builder, *ifElse, qubits, bits);
-  } else {
-    return llvm::failure();
   }
+  if (controlBit.has_value()) {
+    return addIfElseOpBit(builder, *ifElse, qubits, bits);
+  }
+  return llvm::failure();
 }
 
 #define ADD_OP_CASE(op)                                                        \
