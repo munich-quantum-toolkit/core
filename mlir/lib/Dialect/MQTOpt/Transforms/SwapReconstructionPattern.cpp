@@ -152,7 +152,7 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
       if (auto secondSwapTarget =
               getCorrespondingInput(firstCNot, secondSwapTargetOut)) {
         auto newSwap = replaceWithSwap(rewriter, firstCNot, *secondSwapTarget);
-        relocateOperationAfter(rewriter, newSwap, *secondCNot);
+        swapOperationOrder(rewriter, newSwap, *secondCNot);
         return mlir::success();
       }
     }
@@ -170,35 +170,68 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     rewriter.eraseOp(op);
   }
 
-  static void relocateOperationAfter(mlir::PatternRewriter& rewriter,
-                                     mlir::Operation* op,
-                                     mlir::Operation* nextOp) {
+  /**
+   * @brief Move any operation by one after another operation.
+   *
+   * Compared to mlir::PatternRewriter::moveOpAfter(), this function will handle
+   * qubits which are used by both operations. However, op must not create new
+   * values which are then used by nextOp.
+   *
+   * @param rewriter Pattern rewriter used to apply changes
+   * @param op Operation to be moved
+   * @param nextOp Operation after op past which the other operation should be
+   * moved; no third operation can be between these operation which uses any of
+   * the out qubits of the other operation
+   */
+  static void swapOperationOrder(mlir::PatternRewriter& rewriter,
+                                 mlir::Operation* op, mlir::Operation* nextOp) {
+    // collect inputs which must be updated between the two swapped
     llvm::SmallVector<mlir::Value> newOperandsOp(op->getNumOperands());
     llvm::SmallVector<std::pair<std::size_t, mlir::Value>>
         changedOperandsNextOp;
     for (std::size_t i = 0; i < newOperandsOp.size(); ++i) {
       auto&& currentOperand = op->getOperand(i);
-      ;
       auto&& currentResult = op->getResult(i);
       if (auto newOperandIndex =
               getCorrespondingOutputIndex(nextOp, currentResult)) {
         newOperandsOp[i] = nextOp->getResult(*newOperandIndex);
         changedOperandsNextOp.push_back({*newOperandIndex, currentOperand});
       } else {
+        // if operand is not used by nextOp, simply use the current one
         newOperandsOp[i] = currentOperand;
       }
     }
 
-    // if nextOp uses an operand, change the operand to be the corresponding
-    // output of op as new operand
-    rewriter.modifyOpInPlace(op, [&]() { op->setOperands(newOperandsOp); });
+    // update all users of nextOp to now use the result of op instead
+    auto&& opResults = op->getResults();
+    auto&& nextOpResults = nextOp->getResults();
+    llvm::SmallVector<mlir::Value> userUpdates;
+    for (auto* user : nextOp->getUsers()) {
+      for (auto&& operand : user->getOpOperands()) {
+        auto nextOpIt = llvm::find(nextOpResults, operand.get());
+        if (nextOpIt != nextOpResults.end()) {
+          if (auto nextOpInput = getCorrespondingInput(nextOp, *nextOpIt)) {
+            auto opIt = llvm::find(opResults, *nextOpInput);
+            if (opIt != opResults.end()) {
+              // operand of user which matches a result of nextOp is also a result of op
+              rewriter.modifyOpInPlace(user, [&]() { user->setOperand(operand.getOperandNumber(), *opIt); }); // TODO: do this in out-most loop for performance
+            }
+          }
+        }
+      }
+    }
+
     // update nextOp to use the previous operand of the operation (since it will
-    // be moved behind it)
+    // be moved behind it) as its new operand; only need to update these
+    // operands which were operands of the other operation
     rewriter.modifyOpInPlace(nextOp, [&]() {
       for (auto&& [changedIndex, newOperand] : changedOperandsNextOp) {
         nextOp->setOperand(changedIndex, newOperand);
       }
     });
+    // if nextOp uses an operand, change the operand to be the corresponding
+    // output of op as new operand
+    rewriter.modifyOpInPlace(op, [&]() { op->setOperands(newOperandsOp); });
     rewriter.moveOpAfter(op, nextOp);
   }
 
