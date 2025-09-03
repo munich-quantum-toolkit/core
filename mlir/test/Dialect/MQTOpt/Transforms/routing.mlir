@@ -6,9 +6,19 @@
 //
 // Licensed under the MIT License
 
+// RUN: quantum-opt %s -split-input-file --routing | FileCheck %s
+
 module {
     // CHECK-LABEL: func.func @main
     func.func @main() attributes { entry_point } {
+        // CHECK:  %[[Q0_0:.*]] = mqtopt.qubit 0
+        // CHECK:  %[[Q1_0:.*]] = mqtopt.qubit 1
+        // CHECK:  %[[Q2_0:.*]] = mqtopt.qubit 2
+        // CHECK:  %[[Q3_0:.*]] = mqtopt.qubit 3
+        // CHECK:  %[[Q4_0:.*]] = mqtopt.qubit 4
+        // CHECK:  %[[Q5_0:.*]] = mqtopt.qubit 5
+        // CHECK-NOT: %[[ANY:.*]] = mqtopt.allocQubit
+
         //
         // Figure 4 in SABRE Paper "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices".
 
@@ -25,8 +35,10 @@ module {
         %q4_1 = mqtopt.h() %q4_0 : !mqtopt.Qubit
 
         %q0_2 = mqtopt.z() %q0_1 : !mqtopt.Qubit
+        // ---savepoint (circuit_state, location, [two-qubit gates])---
         %q2_1, %q1_2 = mqtopt.x() %q2_0 ctrl %q1_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g1
         %q5_1, %q4_2 = mqtopt.x() %q5_0 ctrl %q4_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g2
+        // --
 
         %q1_3, %q0_3 = mqtopt.x() %q1_2 ctrl %q0_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g3
         %q3_1, %q2_2 = mqtopt.x() %q3_0 ctrl %q2_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g4
@@ -54,39 +66,39 @@ module {
         //
         // The bell state.
 
-        // %q0_0_bell = mqtopt.allocQubit
-        // %q0_1_bell = mqtopt.h() %q0_0_bell : !mqtopt.Qubit
+        %q0_0_bell = mqtopt.allocQubit
+        %q0_1_bell = mqtopt.h() %q0_0_bell : !mqtopt.Qubit
 
-        // %q1_0_bell = mqtopt.allocQubit
-        // %q1_1_bell, %q0_2_bell = mqtopt.x() %q1_0_bell ctrl %q0_1_bell : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q1_0_bell = mqtopt.allocQubit
+        %q1_1_bell, %q0_2_bell = mqtopt.x() %q1_0_bell ctrl %q0_1_bell : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-        // %q0_3_bell, %m0_0_bell = "mqtopt.measure"(%q0_2_bell) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-        // %q1_2_bell, %m1_0_bell = "mqtopt.measure"(%q1_1_bell) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %q0_3_bell, %m0_0_bell = "mqtopt.measure"(%q0_2_bell) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %q1_2_bell, %m1_0_bell = "mqtopt.measure"(%q1_1_bell) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
 
-        // mqtopt.deallocQubit %q0_3_bell
-        // mqtopt.deallocQubit %q1_2_bell
+        mqtopt.deallocQubit %q0_3_bell
+        mqtopt.deallocQubit %q1_2_bell
 
-        // //
-        // // Bell in a loop.
+        //
+        // Bell in a loop.
 
-        // %lb = index.constant 0
-        // %ub = index.constant 1000
-        // %step = index.constant 1
+        %lb = index.constant 0
+        %ub = index.constant 1000
+        %step = index.constant 1
 
-        // scf.for %iv = %lb to %ub step %step {
-        //     %q0_0_bell1000 = mqtopt.allocQubit
-        //     %q1_0_bell1000 = mqtopt.allocQubit
+        scf.for %iv = %lb to %ub step %step {
+            %q0_0_bell1000 = mqtopt.allocQubit
+            %q1_0_bell1000 = mqtopt.allocQubit
 
-        //     %q0_1_bell1000 = mqtopt.h() %q0_0_bell1000 : !mqtopt.Qubit
-        //     %q1_1_bell1000, %q0_2_bell1000 = mqtopt.x() %q1_0_bell1000 ctrl %q0_1_bell1000 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            %q0_1_bell1000 = mqtopt.h() %q0_0_bell1000 : !mqtopt.Qubit
+            %q1_1_bell1000, %q0_2_bell1000 = mqtopt.x() %q1_0_bell1000 ctrl %q0_1_bell1000 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-        //     %q0_3_bell1000, %m0_0_bell1000 = "mqtopt.measure"(%q0_2_bell1000) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-        //     %q1_2_bell1000, %m1_0_bell1000 = "mqtopt.measure"(%q1_1_bell1000) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+            %q0_3_bell1000, %m0_0_bell1000 = "mqtopt.measure"(%q0_2_bell1000) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+            %q1_2_bell1000, %m1_0_bell1000 = "mqtopt.measure"(%q1_1_bell1000) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-        //     mqtopt.deallocQubit %q0_3_bell1000
-        //     mqtopt.deallocQubit %q1_2_bell1000
-        // }
+            mqtopt.deallocQubit %q0_3_bell1000
+            mqtopt.deallocQubit %q1_2_bell1000
+        }
 
         return
     }

@@ -26,6 +26,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <numeric>
 #include <random>
 #include <string>
@@ -148,9 +149,11 @@ private:
 // Initial Layouts
 //===----------------------------------------------------------------------===//
 
+namespace layout {
+
 /// @brief Base class for all initial layout mapping functions.
-struct InitialLayout {
-  explicit InitialLayout(const std::size_t nqubits) : mapping_(nqubits) {}
+struct Base {
+  explicit Base(const std::size_t nqubits) : mapping_(nqubits) {}
   [[nodiscard]] std::size_t operator()(std::size_t i) const {
     return mapping_[i];
   }
@@ -160,8 +163,8 @@ protected:
 };
 
 /// @brief Identity mapping.
-struct Identity : InitialLayout {
-  explicit Identity(const std::size_t nqubits) : InitialLayout(nqubits) {
+struct Identity : Base {
+  explicit Identity(const std::size_t nqubits) : Base(nqubits) {
     std::iota(mapping_.begin(), mapping_.end(), 0);
   }
 };
@@ -176,229 +179,81 @@ struct Random : Identity {
 };
 
 /// @brief Custom mapping.
-struct Custom : InitialLayout {
+struct Custom : Base {
   Custom(const std::size_t nqubits,
          const llvm::SmallVectorImpl<std::size_t>& mapping)
-      : InitialLayout(nqubits) {
+      : Base(nqubits) {
     std::ranges::copy(mapping, mapping_.begin());
   }
 };
 
+}; // namespace layout
+
 //===----------------------------------------------------------------------===//
-// Permutation
+// Routing
 //===----------------------------------------------------------------------===//
 
-struct Permutation {
-  explicit Permutation(const std::size_t nqubits) : staticQubits(nqubits) {}
+struct CircuitState {
+  explicit CircuitState(llvm::SmallVector<Value> staticQubits)
+      : staticQubits(std::move(staticQubits)) {};
 
-  [[nodiscard]] Value getStatic(const std::size_t dynamicNumber) const {
-    return staticQubits[layout.at(dynamicNumber)];
+  /// @brief Maps a SSA value to its dynamic number.
+  llvm::DenseMap<Value, std::size_t> valueToDynamic;
+  /// @brief Maps a dynamic number to its SSA value.
+  llvm::DenseMap<std::size_t, Value> dynamicToValue;
+
+  /// @brief Maps a static index to its dynamic number.
+  llvm::DenseMap<std::size_t, std::size_t> staticToDynamic;
+  /// @brief Maps a dynamic number to its static index.
+  llvm::DenseMap<std::size_t, std::size_t> dynamicToStatic;
+
+  /// @brief Vector of initialized static qubits.
+  llvm::SmallVector<Value> staticQubits;
+
+  /// @brief Currently allocated number of qubits.
+  std::size_t allocated{};
+
+  Value alloc(const layout::Base& layout) {
+    const std::size_t staticIndex = layout(allocated);
+    const Value staticQubit = staticQubits[staticIndex];
+
+    valueToDynamic[staticQubit] = allocated;
+    dynamicToValue[allocated] = staticQubit;
+
+    staticToDynamic[staticIndex] = allocated;
+    dynamicToStatic[allocated] = staticIndex;
+
+    allocated++;
+
+    return staticQubit;
   }
-
-  /// @brief A vector of static qubits
-  llvm::SmallVector<Value, 0> staticQubits;
-  /// @brief A mapping from dynamic numbers to their static index.
-  llvm::DenseMap<std::size_t, std::size_t> layout;
-  /// @brief A mapping from current SSA values to their assigned dynamic number.
-  llvm::DenseMap<Value, std::size_t> dynamic;
 };
-
-/**
- * @brief Add dynamic qubit to permutation and assign a (permutated) static
- * qubit index.
- * @returns The assigned static qubit.
- */
-Value addDynamicQubit(Permutation& p, const std::size_t dynamicNumber,
-                      const InitialLayout& initialLayout) {
-  p.layout[dynamicNumber] = initialLayout(dynamicNumber);
-  const Value staticQubit = p.getStatic(dynamicNumber);
-  p.dynamic[staticQubit] = dynamicNumber;
-  return staticQubit;
-}
-
-/// @brief Remove dynamic qubit @p q from permutation.
-void removeDynamicQubit(Permutation& p, const Value q) {
-  p.layout.erase(p.dynamic.at(q));
-  p.dynamic.erase(q);
-}
-
-/// @brief Replace @p in with @p out.
-void forwardPermutation(Permutation& p, const Value in, const Value out) {
-  p.dynamic[out] = p.dynamic[in];
-  p.dynamic.erase(in);
-}
-
-//===----------------------------------------------------------------------===//
-// Analysis: Find all layers of a function using the def-use chain.
-//===----------------------------------------------------------------------===//
-
-namespace analysis {
-
-using Gate = std::pair<Operation*, std::pair<std::size_t, std::size_t>>;
-
-///@brief A vector of gates.
-using Layer = llvm::SmallVector<Gate>;
-
-/**
- * @brief Walk the IR and collect the dynamic qubits for each circuit.
- * @details Assumes that there are no allocations after a deallocation.
- * @return Vector of vectors, where each inner vector contains the dynamic
- * qubits allocated for a circuit.
- */
-llvm::SmallVector<llvm::DenseMap<Value, std::size_t>, 2>
-collectCircuits(func::FuncOp func) {
-  llvm::SmallVector<llvm::DenseMap<Value, std::size_t>, 2> circuits;
-  llvm::DenseMap<Value, std::size_t> dynamicQubits;
-  std::size_t allocated = 0;
-
-  func.walk([&](Operation* op) {
-    if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
-      dynamicQubits[alloc.getQubit()] = allocated;
-      ++allocated;
-      return;
-    }
-
-    if (auto dealloc = dyn_cast<DeallocQubitOp>(op)) {
-      if ((--allocated) == 0) {
-        circuits.push_back(dynamicQubits);
-        dynamicQubits.clear();
-      }
-      return;
-    }
-  });
-
-  return circuits;
-}
-
-/// @brief Absorb all one qubit gates on the def-use chain of @p q.
-Value absorbOneQubitGates(const Value q) {
-  Value newQ = q;
-  while (!newQ.getUsers().empty()) {
-    Operation* op = *newQ.getUsers().begin();
-    if (auto reset = dyn_cast<ResetOp>(op)) {
-      newQ = reset.getOutQubit();
-    } else if (auto u = dyn_cast<UnitaryInterface>(op)) {
-      if (isTwoQubitGate(u)) {
-        break;
-      }
-
-      if (!dyn_cast<GPhaseOp>(op)) {
-        newQ = u.getOutQubits().front();
-      }
-    } else if (auto measure = dyn_cast<MeasureOp>(op)) {
-      newQ = measure.getOutQubit();
-    } else { // DeallocQubitOp.
-      return nullptr;
-    }
-  }
-  return newQ;
-}
-
-/// @brief Collect all "ready" two-qubit gates.
-llvm::SmallVector<Gate>
-collectReadyGates(const llvm::DenseMap<Value, std::size_t>& map) {
-  llvm::DenseSet<Value> visited;
-  llvm::SmallVector<Gate> gates;
-
-  for (const auto& entry : map) {
-    const auto& dynamicQubit = entry.getFirst();
-
-    if (visited.contains(dynamicQubit)) {
-      continue;
-    }
-
-    if (dynamicQubit.getUsers().empty()) {
-      visited.insert(dynamicQubit);
-      continue;
-    }
-
-    Operation* user = *(dynamicQubit.getUsers().begin());
-
-    auto u = dyn_cast<UnitaryInterface>(user);
-    if (!u) {
-      visited.insert(dynamicQubit);
-      continue;
-    }
-
-    // All single qubit operations should have been absorbed. What's
-    // left are two qubit interaction gates.
-    assert(isTwoQubitGate(u));
-
-    const Value in0 = u.getAllInQubits()[0];
-    const Value in1 = u.getAllInQubits()[1];
-
-    if (map.contains(in0) && map.contains(in1)) {
-      const std::size_t i0 = map.at(in0);
-      const std::size_t i1 = map.at(in1);
-      gates.emplace_back(u, std::make_pair(i0, i1));
-    }
-
-    visited.insert(in0);
-    visited.insert(in1);
-  }
-
-  return gates;
-}
-
-llvm::SmallVector<Layer> findAllLayers(func::FuncOp func) {
-  llvm::SmallVector<Layer> layers;
-
-  for (auto& map : collectCircuits(func)) {
-
-    while (true) {
-      llvm::DenseMap<Value, std::size_t> forwardMap;
-
-      // Forward (Absorb) all one-qubit gates.
-      for (const auto& [dynamicQubit, i] : map) {
-        if (const auto& dynamicQubitUpd = absorbOneQubitGates(dynamicQubit)) {
-          forwardMap[dynamicQubitUpd] = i;
-        }
-      }
-
-      // If the map is empty, all dynamic qubits have been deallocated.
-      if (forwardMap.empty()) {
-        break;
-      }
-
-      // Collect all ready two-qubit gates of the current layer.
-      auto gates = collectReadyGates(forwardMap);
-      layers.push_back(gates);
-
-      // Forward the layer's two-qubit gate for the next iteration.
-      for (const auto& g : gates) {
-        auto u = dyn_cast<UnitaryInterface>(g.first);
-
-        const Value in0 = u.getAllInQubits()[0];
-        const Value in1 = u.getAllInQubits()[1];
-
-        forwardMap[u.getAllOutQubits()[0]] = forwardMap.at(in0);
-        forwardMap[u.getAllOutQubits()[1]] = forwardMap.at(in1);
-        forwardMap.erase(in0);
-        forwardMap.erase(in1);
-      }
-
-      map = std::move(forwardMap);
-    }
-  }
-
-  return layers;
-}
-
-}; // namespace analysis
-
-//===----------------------------------------------------------------------===//
-// Router
-//===----------------------------------------------------------------------===//
 
 class Router {
 public:
   virtual ~Router() = default;
 
-  virtual llvm::DenseSet<Operation*> route(UnitaryInterface, const Permutation&,
-                                           const Architecture&,
-                                           PatternRewriter&) const = 0;
+  virtual LogicalResult route(ModuleOp, const Architecture&,
+                              const layout::Base&, PatternRewriter&) const = 0;
 
 protected:
+  /**
+   * @brief Insert and return static qubits at current insertion point.
+   */
+  [[nodiscard]] static llvm::SmallVector<Value>
+  initStaticQubits(const Architecture& arch, PatternRewriter& rewriter) {
+    llvm::SmallVector<Value> staticQubits;
+    staticQubits.reserve(arch.nqubits());
+
+    for (std::size_t i = 0; i < arch.nqubits(); ++i) {
+      const auto location = rewriter.getInsertionPoint()->getLoc();
+      auto qubit = rewriter.create<QubitOp>(location, i);
+      staticQubits.push_back(qubit);
+    }
+
+    return staticQubits;
+  }
+
   [[nodiscard]] static SWAPOp createSwap(Location location, Value qubitA,
                                          Value qubitB,
                                          PatternRewriter& rewriter) {
@@ -419,140 +274,85 @@ protected:
   }
 };
 
-//===----------------------------------------------------------------------===//
-// Patterns
-//===----------------------------------------------------------------------===//
-
-/**
- * @brief Route entry point function @p func.
- * @details If the function is marked as entry point, create static qubits
- * that can later be passed to other quantum functions.
- */
-[[nodiscard]] LogicalResult routeFunc(func::FuncOp func,
-                                      const Architecture& arch,
-                                      const InitialLayout& layout,
-                                      PatternRewriter& rewriter) {
-  Region& body = func.getBody();
-  rewriter.setInsertionPointToStart(&body.front());
-
-  if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
-    return success(); // For now, we don't route non-entry point functions.
-  }
-
-  Permutation p(arch.nqubits());
-
-  // A entry point creates static qubit variables.
-  for (std::size_t i = 0; i < arch.nqubits(); ++i) {
-    auto qubit = rewriter.create<QubitOp>(body.getLoc(), i);
-    p.staticQubits[i] = qubit.getQubit();
-  }
-
-  std::size_t dynamicNumber = 0;
-
-  llvm::DenseSet<Operation*> routed;
-  auto result = body.walk([&](Operation* op) {
-    rewriter.setInsertionPoint(op);
-
-    if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
-
-      // Replace dynamic with reseted static qubit.
-      const Value dynamicQubit = alloc.getQubit();
-      const Value staticQubit = addDynamicQubit(p, dynamicNumber, layout);
-
-      auto reset = rewriter.create<ResetOp>(alloc->getLoc(), staticQubit);
-      rewriter.replaceAllUsesWith(dynamicQubit, reset.getOutQubit());
-
-      forwardPermutation(p, reset.getInQubit(), reset.getOutQubit());
-
-      // Increase allocated count and validate for architecture.
-      if ((++dynamicNumber) > arch.nqubits()) {
-        return WalkResult(func->emitOpError()
-                          << "requires " << dynamicNumber
-                          << " qubits but target architecture '" << arch.name()
-                          << "' only supports " << arch.nqubits() << " qubits");
+class NaiveRouter final : public Router {
+public:
+  [[nodiscard]] LogicalResult route(ModuleOp module, const Architecture& arch,
+                                    const layout::Base& layout,
+                                    PatternRewriter& rewriter) const override {
+    auto res = module->walk([&](func::FuncOp func) {
+      if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
+        return WalkResult::skip(); // For now we don't route non-entry point
+                                   // functions.
       }
 
-      rewriter.eraseOp(alloc); // Finally, delete alloc operation.
+      rewriter.setInsertionPointToStart(&func.getBody().front());
+      auto staticQubits = initStaticQubits(arch, rewriter);
+
+      if (failed(routeFunc(func, staticQubits, arch, layout, rewriter))) {
+        return WalkResult::interrupt();
+      }
 
       return WalkResult::advance();
-    }
+    });
 
-    if (auto reset = dyn_cast<ResetOp>(op)) {
-      forwardPermutation(p, reset.getInQubit(), reset.getOutQubit());
-      return WalkResult::advance();
-    }
+    return res.wasInterrupted() ? failure() : success();
+  }
 
-    if (auto u = dyn_cast<UnitaryInterface>(op)) {
-      if (!isTwoQubitGate(u)) {
-        forwardPermutation(p, u.getInQubits().front(),
-                           u.getOutQubits().front());
+private:
+  [[nodiscard]] static LogicalResult
+  routeFunc(func::FuncOp func, const llvm::SmallVector<Value>& staticQubits,
+            const Architecture& arch, const layout::Base& layout,
+            PatternRewriter& rewriter) {
+
+    CircuitState state(staticQubits);
+
+    auto res = func->walk([&](Operation* op) {
+      rewriter.setInsertionPoint(op);
+
+      if (auto qubit = dyn_cast<QubitOp>(op)) {
+        return WalkResult::skip(); // Skip any initialized static qubits.
+      }
+
+      if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
+        if (state.allocated == arch.nqubits()) {
+          return WalkResult(func->emitOpError()
+                            << "requires " << (state.allocated + 1)
+                            << " qubits but target architecture '"
+                            << arch.name() << "' only supports "
+                            << arch.nqubits() << " qubits");
+        }
+
+        auto staticQubit = state.alloc(layout);
+        rewriter.replaceAllUsesWith(alloc.getQubit(), staticQubit);
+        rewriter.eraseOp(alloc);
+
         return WalkResult::advance();
       }
 
-      if (!routed.contains(u)) {
-        const std::size_t numberFirst = p.dynamic.at(u.getAllInQubits()[0]);
-        const std::size_t numberSecond = p.dynamic.at(u.getAllInQubits()[1]);
-
-        llvm::outs() << "execute please on " << numberFirst << " : "
-                     << numberSecond << '\n';
+      if (auto reset = dyn_cast<ResetOp>(op)) {
+        return WalkResult::advance();
       }
 
-      forwardPermutation(p, u.getAllInQubits()[0], u.getAllOutQubits()[0]);
-      forwardPermutation(p, u.getAllInQubits()[1], u.getAllOutQubits()[1]);
-
-      return WalkResult::advance();
-    }
-
-    if (auto measure = dyn_cast<MeasureOp>(op)) {
-      forwardPermutation(p, measure.getInQubit(), measure.getOutQubit());
-      return WalkResult::advance();
-    }
-
-    if (auto dealloc = dyn_cast<DeallocQubitOp>(op)) {
-      removeDynamicQubit(p, dealloc.getQubit());
-
-      // Decrease allocation count.
-      --dynamicNumber;
-
-      // Then, erase dealloc operation.
-      rewriter.eraseOp(op);
-
-      return WalkResult::advance();
-    }
-
-    return WalkResult::advance();
-  });
-
-  assert(p.dynamic.empty());
-
-  if (result.wasInterrupted()) {
-    return failure();
-  }
-
-  return success();
-}
-
-/**
- * @brief Collect functions of a module and route each.
- * @details Assume that there are no nested functions.
- */
-[[nodiscard]] LogicalResult routeModule(ModuleOp module,
-                                        const Architecture& arch,
-                                        const InitialLayout& layout,
-                                        PatternRewriter& rewriter) {
-  rewriter.setInsertionPoint(module);
-  for (const func::FuncOp func : module.getOps<func::FuncOp>()) {
-    auto layers = analysis::findAllLayers(func);
-    for(const auto& layer : layers) {
-      for(const auto& gate : layer) {
-        const auto& u = dyn_cast<UnitaryInterface>(gate.first);
-        llvm::outs() << u->getLoc() << " wants to execute on: " << gate.second.first << " : " << gate.second.second << '\n';
+      if (auto u = dyn_cast<UnitaryInterface>(op)) {
+        if (!isTwoQubitGate(u)) {
+        }
+        return WalkResult::advance();
       }
-      llvm::outs() << "--end-of-layer--\n";
-    }
+
+      if (auto measure = dyn_cast<MeasureOp>(op)) {
+        return WalkResult::advance();
+      }
+
+      if (auto dealloc = dyn_cast<DeallocQubitOp>(op)) {
+        return WalkResult::advance();
+      }
+
+      return WalkResult::interrupt(); // Future proofing: fail on missing 'if'.
+    });
+
+    return res.wasInterrupted() ? failure() : success();
   }
-  return success();
-}
+};
 
 } // namespace
 
@@ -573,13 +373,15 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     const Architecture::CouplingMap couplingMap{
         {0, 1}, {1, 0}, {0, 2}, {2, 0}, {1, 3}, {3, 1}, {2, 3},
         {3, 2}, {2, 4}, {4, 2}, {3, 5}, {5, 3}, {4, 5}, {5, 4}};
-    const auto arch =
-        std::make_unique<Architecture>("MQT-Test", 6, couplingMap);
+
+    auto arch = std::make_unique<Architecture>("MQT-Test", 6, couplingMap);
 
     const llvm::SmallVector<std::size_t> mapping{4, 0, 2, 5, 3, 1};
-    const Custom layout(arch->nqubits(), mapping);
+    const NaiveRouter router;
+    const layout::Custom layout(arch->nqubits(), mapping);
 
-    if (failed(routeModule(module, *arch, layout, rewriter))) {
+    auto res = router.route(module, *arch, layout, rewriter);
+    if (res.failed()) {
       signalPassFailure();
     }
   }
