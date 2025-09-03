@@ -203,11 +203,57 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
                                  mlir::Value bits);
 
 /**
+ * @brief Sum-reduce the classical register.
+ *
+ * @param builder The MLIR OpBuilder
+ * @param bits The bits of the classical register
+ * @return mlir::Value The sum of the bits
+ */
+mlir::Value getControlValueRegister(mlir::OpBuilder& builder,
+                                    const mlir::Value bits) {
+  auto loc = builder.getUnknownLoc();
+
+  // Get size of control register
+  auto bitsType = bits.getType().cast<mlir::MemRefType>();
+  auto bitsShape = bitsType.getShape();
+  assert(bitsShape.size() == 1);
+  auto size = bitsShape[0];
+
+  // Define loop constants
+  auto lb = builder.create<mlir::arith::ConstantIndexOp>(loc, 0);
+  auto ub = builder.create<mlir::arith::ConstantIndexOp>(loc, size);
+  auto step = builder.create<mlir::arith::ConstantIndexOp>(loc, 1);
+
+  // Compute the sum
+  auto initialSum = builder.create<mlir::arith::ConstantOp>(
+      loc, builder.getIntegerType(64),
+      builder.getIntegerAttr(builder.getIntegerType(64), 0));
+  mlir::ValueRange initialSumRange(initialSum);
+
+  auto finalSum = builder.create<mlir::scf::ForOp>(
+      loc, lb, ub, step, initialSumRange,
+      [&](mlir::OpBuilder& forBuilder, mlir::Location forLoc, mlir::Value iv,
+          mlir::ValueRange iterArgs) {
+        auto loadedVal = forBuilder.create<mlir::memref::LoadOp>(
+            forLoc, bits, mlir::ValueRange{iv});
+        auto extendedVal = forBuilder.create<mlir::arith::ExtUIOp>(
+            forLoc, builder.getIntegerType(64), loadedVal);
+        auto iterSum = forBuilder.create<mlir::arith::AddIOp>(
+            forLoc, iterArgs[0], extendedVal);
+        forBuilder.create<mlir::scf::YieldOp>(forLoc,
+                                              mlir::ValueRange{iterSum});
+      });
+
+  return finalSum.getResult(0);
+}
+
+/**
  * @brief Adds an if-else operation to the MLIR module.
  *
  * @param builder The MLIR OpBuilder
  * @param operation The if-else operation to add
  * @param qubits The qubits of the quantum register
+ * @param bits The bits of the classical register
  * @return mlir::LogicalResult Success if all operations were added, failure
  * otherwise
  */
@@ -237,10 +283,7 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
     assert(!controlBit.has_value());
 
     // Compute control value from control register
-    // Placeholder
-    auto indexValue = builder.create<mlir::arith::ConstantIndexOp>(loc, 0);
-    controlValue = builder.create<mlir::memref::LoadOp>(
-        loc, bits, mlir::ValueRange{indexValue});
+    controlValue = getControlValueRegister(builder, bits);
 
     // Set expected value
     auto expectedValueRegister = ifElse->getExpectedValueRegister();
@@ -323,6 +366,7 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
  * @param builder The MLIR OpBuilder used to create operations
  * @param operation The quantum operation to add
  * @param qubits The qubits of the quantum register
+ * @param bits The bits of the classical register
  * @return mlir::LogicalResult Success if all operations were added, failure
  * otherwise
  */
@@ -382,6 +426,7 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
  * @param builder The MLIR OpBuilder used to create operations
  * @param quantumComputation The quantum computation to translate
  * @param qubits The qubits of the quantum register
+ * @param bits The bits of the classical register
  * @return mlir::LogicalResult Success if all operations were added, failure
  * otherwise
  */
