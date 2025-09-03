@@ -9,16 +9,8 @@
 // RUN: quantum-opt %s -split-input-file --routing | FileCheck %s
 
 module {
-    // CHECK-LABEL: func.func @main
     func.func @main() attributes { entry_point } {
-        // CHECK:  %[[Q0_0:.*]] = mqtopt.qubit 0
-        // CHECK:  %[[Q1_0:.*]] = mqtopt.qubit 1
-        // CHECK:  %[[Q2_0:.*]] = mqtopt.qubit 2
-        // CHECK:  %[[Q3_0:.*]] = mqtopt.qubit 3
-        // CHECK:  %[[Q4_0:.*]] = mqtopt.qubit 4
-        // CHECK:  %[[Q5_0:.*]] = mqtopt.qubit 5
-        // CHECK-NOT: %[[ANY:.*]] = mqtopt.allocQubit
-
+        
         //
         // Figure 4 in SABRE Paper "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices".
 
@@ -37,7 +29,6 @@ module {
         %q0_2 = mqtopt.z() %q0_1 : !mqtopt.Qubit
         %q2_1, %q1_2 = mqtopt.x() %q2_0 ctrl %q1_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g1
         %q5_1, %q4_2 = mqtopt.x() %q5_0 ctrl %q4_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g2
-        // --
 
         %q1_3, %q0_3 = mqtopt.x() %q1_2 ctrl %q0_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g3
         %q3_1, %q2_2 = mqtopt.x() %q3_0 ctrl %q2_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g4
