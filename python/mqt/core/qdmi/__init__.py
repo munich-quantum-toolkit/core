@@ -6,11 +6,4 @@
 #
 # Licensed under the MIT License
 
-# add the IR bindings package
-add_subdirectory(ir)
-
-# add the DD bindings package
-add_subdirectory(dd)
-
-# add the QDMI bindings package
-add_subdirectory(qdmi)
+"""Submodule for Quantum Device Management Interface (QDMI) functionality."""

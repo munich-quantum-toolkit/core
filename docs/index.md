@@ -39,7 +39,7 @@ mqt_core_ir
 dd_package
 zx_package
 mlir/index
-NA QDMI Device <na_qdmi_device>
+qdmi/index
 references
 CHANGELOG
 UPGRADING
