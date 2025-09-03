@@ -18,6 +18,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -293,14 +294,15 @@ public:
 
   virtual ~Router() = default;
 
+  /// @brief Use SWAP-based routing to fit to the target's coupling map.
   virtual LogicalResult route(ModuleOp) const = 0;
 
 protected:
-  [[nodiscard]] static SWAPOp createSwap(Location location, Value qubitA,
-                                         Value qubitB,
-                                         PatternRewriter& rewriter) {
-    const SmallVector<Type> resultTypes{qubitA.getType(), qubitB.getType()};
-    const SmallVector<Value> inQubits{qubitA, qubitB};
+  /// @brief Swap @p in0 and @p in1 at @p location.
+  [[nodiscard]] static SWAPOp createSwap(Location location, Value in0,
+                                         Value in1, PatternRewriter& rewriter) {
+    const SmallVector<Type> resultTypes{in0.getType(), in1.getType()};
+    const SmallVector<Value> inQubits{in0, in1};
 
     return rewriter.create<SWAPOp>(
         /* location = */ location,
@@ -315,9 +317,7 @@ protected:
         /* neg_ctrl_in_qubits = */ ValueRange{});
   }
 
-  /**
-   * @brief Insert and return static qubits at current insertion point.
-   */
+  /// @brief Insert and return static qubits at current insertion point.
   [[nodiscard]] llvm::SmallVector<Value>
   initStaticQubits(PatternRewriter& rewriter) const {
     llvm::SmallVector<Value> staticQubits;
@@ -332,14 +332,10 @@ protected:
     return staticQubits;
   }
 
-  /**
-   * @brief Return targeted architecture.
-   */
+  /// @brief Return targeted architecture.
   [[nodiscard]] const Architecture& arch() const { return *arch_; }
 
-  /**
-   * @brief Return initial layout mapping.
-   */
+  /// @brief Return initial layout mapping.
   [[nodiscard]] const InitialLayout& layout() const { return *layout_; }
 
 private:
@@ -374,6 +370,7 @@ public:
   }
 
 private:
+  /// @brief Returns true if @p u is executable on the targeted architecture.
   [[nodiscard]] bool isExecutable(UnitaryInterface u,
                                   const CircuitState& state) const {
     const auto& [in0, in1] = getIns(u);
@@ -381,12 +378,14 @@ private:
                               state.valueToStaticIndex(in1));
   }
 
+  /// @brief Get shortest path between @p in0 and @p in1.
   [[nodiscard]] llvm::SmallVector<std::size_t>
   getPath(const Value in0, const Value in1, const CircuitState& state) const {
     return arch().shortestPathBetween(state.valueToStaticIndex(in0),
                                       state.valueToStaticIndex(in1));
   }
 
+  /// @brief Insert SWAPs such that @p u is executable.
   void makeExecutable(UnitaryInterface u, CircuitState& state,
                       PatternRewriter& rewriter) const {
     const auto& [in0, in1] = getIns(u);
@@ -415,11 +414,25 @@ private:
     CircuitState state(staticQubits);
     state.expand(layout());
 
-    auto res = func->walk([&](Operation* op) {
+    auto res = func->walk<WalkOrder::PreOrder>([&](Operation* op) {
       rewriter.setInsertionPoint(op);
 
+      // Skip any initialized static qubits.
       if (auto qubit = dyn_cast<QubitOp>(op)) {
-        return WalkResult::skip(); // Skip any initialized static qubits.
+        return WalkResult::skip();
+      }
+
+      // As of now, we don't support conditionals. Hence, skip.
+      if (auto cond = dyn_cast<scf::IfOp>(op)) {
+        return WalkResult::skip();
+      }
+
+      // As of now, we don't support loops with qubit dependencies. Hence, skip.
+      if (auto loop = dyn_cast<scf::ForOp>(op)) {
+        if (loop.getRegionIterArgs().size() == 0) {
+          return WalkResult::advance();
+        }
+        return WalkResult::skip();
       }
 
       if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
@@ -434,7 +447,6 @@ private:
         auto staticQubit = state.alloc();
         rewriter.replaceAllUsesWith(alloc.getQubit(), staticQubit);
         rewriter.eraseOp(alloc);
-
         return WalkResult::advance();
       }
 
