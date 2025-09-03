@@ -128,7 +128,7 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
    * @brief If pattern is applicable, perform MLIR rewrite.
    *
    * Steps:
-   *   - Find CNOT with at least one control qubit (1st CNOT)
+   *   - Find CNOT with at least one positive control qubit (1st CNOT)
    *   - Check if it has adjacent CNOT with subset of control qubits (2nd CNOT)
    *  (- Theoretically place two CNOTs identical to 2nd CNOT on other side of
    *     1st CNOT)
@@ -149,9 +149,12 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     auto& firstCNot = op;
     if (auto secondCNot = findCandidate(firstCNot)) {
       auto secondSwapTargetOut = getCNotInTarget(*secondCNot);
-      auto newSwap = replaceWithSwap(rewriter, firstCNot, secondSwapTargetOut);
-      // rewriter.moveOpAfter(*secondCNot, newSwap);
-      return mlir::success();
+      if (auto secondSwapTarget =
+              getCorrespondingInput(firstCNot, secondSwapTargetOut)) {
+        auto newSwap = replaceWithSwap(rewriter, firstCNot, *secondSwapTarget);
+        relocateOperationAfter(rewriter, firstCNot, newSwap);
+        return mlir::success();
+      }
     }
 
     return mlir::failure();
@@ -165,6 +168,34 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     rewriter.replaceAllOpUsesWith(op, op.getAllInQubits());
     // the operation has no more users now and can be deleted
     rewriter.eraseOp(op);
+  }
+
+  static void relocateOperationAfter(mlir::PatternRewriter& rewriter, XOp& op,
+                                     mlir::Operation* nextOp) {
+    auto&& currentOperands = op->getOperands();
+    llvm::SmallVector<mlir::Value> newOperandsOp(currentOperands.size());
+    llvm::SmallVector<std::pair<std::size_t, mlir::Value>>
+        changedOperandsNextOp;
+    for (std::size_t i = 0; i < currentOperands.size(); ++i) {
+      auto&& currentOperand = currentOperands[i];
+      if (auto newOperandIndex =
+              getCorrespondingOutputIndex(nextOp, currentOperand)) {
+        newOperandsOp[i] = nextOp->getResult(*newOperandIndex);
+        changedOperandsNextOp.push_back({*newOperandIndex, currentOperand});
+      }
+    }
+
+    // update nextOp to use the previous operand of the operation (since it will
+    // be moved behind it)
+    rewriter.modifyOpInPlace(nextOp, [&]() {
+      for (auto&& [changedIndex, newOperand] : changedOperandsNextOp) {
+        nextOp->setOperand(changedIndex, newOperand);
+      }
+    });
+    // if nextOp uses an operand, use the corresponding output of nextOp as new
+    // operand
+    rewriter.modifyOpInPlace(op, [&]() { op->setOperands(newOperandsOp); });
+    rewriter.moveOpBefore(nextOp, op);
   }
 
   /**
@@ -182,14 +213,26 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     return std::nullopt;
   }
 
-  static mlir::Value getCorrespondingInput(mlir::Operation* op,
-                                           mlir::Value out) {
+  static std::optional<mlir::Value> getCorrespondingInput(mlir::Operation* op,
+                                                          mlir::Value out) {
     for (auto&& result : op->getResults()) {
       if (result == out) {
         auto resultIndex = result.getResultNumber();
         return op->getOperand(resultIndex);
       }
     }
+    return std::nullopt;
+  }
+
+  static std::optional<std::size_t>
+  getCorrespondingOutputIndex(mlir::Operation* op, mlir::Value in) {
+    for (auto&& opOperand : op->getOpOperands()) {
+      if (opOperand.get() == in) {
+        auto operandIndex = opOperand.getOperandNumber();
+        return operandIndex;
+      }
+    }
+    return std::nullopt;
   }
 
   /**
@@ -199,14 +242,11 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
    * implicitly by the CNOT pattern.
    */
   static SWAPOp replaceWithSwap(mlir::PatternRewriter& rewriter, XOp& op,
-                                const mlir::Value& secondTargetOut) {
+                                const mlir::Value& secondTargetIn) {
     auto firstTarget = getCNotInTarget(op);
-    auto secondTargetIn = getCorrespondingInput(op, secondTargetOut);
     auto qubitType = firstTarget.getType();
 
-    auto newSwapLocation = op->getLoc();
-    auto newSwapInQubits = {firstTarget,
-                            secondTargetIn};
+    auto newSwapInQubits = {firstTarget, secondTargetIn};
     llvm::SmallVector<mlir::Value> newSwapInPosCtrlQubits;
     for (auto&& posCtrlInQubit : op.getPosCtrlInQubits()) {
       if (posCtrlInQubit != secondTargetIn) {
@@ -222,14 +262,12 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     auto newSwapOutNegCtrlType = op.getNegCtrlOutQubits().getType();
 
     rewriter.setInsertionPointAfter(op);
-    auto newSwap = rewriter.create<SWAPOp>(
-        newSwapLocation, newSwapOutType, newSwapOutPosCtrlType,
-        newSwapOutNegCtrlType, mlir::DenseF64ArrayAttr{},
-        mlir::DenseBoolArrayAttr{}, mlir::ValueRange{}, newSwapInQubits,
-        newSwapInPosCtrlQubits, newSwapInNegCtrlQubits);
 
-    rewriter.replaceOp(op, newSwap);
-    return newSwap;
+    return rewriter.replaceOpWithNewOp<SWAPOp>(
+        op, newSwapOutType, newSwapOutPosCtrlType, newSwapOutNegCtrlType,
+        mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{},
+        mlir::ValueRange{}, newSwapInQubits, newSwapInPosCtrlQubits,
+        newSwapInNegCtrlQubits);
   }
 };
 
