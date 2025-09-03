@@ -1135,7 +1135,7 @@ TEST_F(ImportTest, IfBitNeq) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, IfElseBit) {
+TEST_F(ImportTest, IfElseBitEqTrue) {
 #if LLVM_VERSION_MAJOR < 20
   GTEST_SKIP() << "Test skipped for LLVM 18+";
 #endif
@@ -1143,7 +1143,7 @@ TEST_F(ImportTest, IfElseBit) {
   qc::QuantumComputation qc(1, 1);
   qc.measure(0, 0);
   qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
-            std::make_unique<qc::StandardOperation>(0, qc::Y), 0);
+            std::make_unique<qc::StandardOperation>(0, qc::Y), 0, true, qc::Eq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -1165,6 +1165,80 @@ TEST_F(ImportTest, IfElseBit) {
     CHECK: mqtref.x() %[[Q0]]
     CHECK: } else {
     CHECK: mqtref.y() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfElseBitEqFalse) {
+#if LLVM_VERSION_MAJOR < 20
+  GTEST_SKIP() << "Test skipped for LLVM 18+";
+#endif
+
+  qc::QuantumComputation qc(1, 1);
+  qc.measure(0, 0);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
+            std::make_unique<qc::StandardOperation>(0, qc::Y), 0, false,
+            qc::Eq);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: scf.if %[[M0]] {
+    CHECK: mqtref.y() %[[Q0]]
+    CHECK: } else {
+    CHECK: mqtref.x() %[[Q0]]
+    CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfElseBitNeq) {
+#if LLVM_VERSION_MAJOR < 20
+  GTEST_SKIP() << "Test skipped for LLVM 18+";
+#endif
+
+  qc::QuantumComputation qc(1, 1);
+  qc.measure(0, 0);
+  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
+            std::make_unique<qc::StandardOperation>(0, qc::Y), 0, true,
+            qc::Neq);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  // Run passes
+  mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
+  passManager.addPass(mlir::createCanonicalizerPass());
+  if (failed(passManager.run(module.get()))) {
+    FAIL() << "Failed to run passes";
+  }
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: scf.if %[[M0]] {
+    CHECK: mqtref.y() %[[Q0]]
+    CHECK: } else {
+    CHECK: mqtref.x() %[[Q0]]
     CHECK: }
   )";
 

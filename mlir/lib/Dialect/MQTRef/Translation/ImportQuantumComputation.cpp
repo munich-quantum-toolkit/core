@@ -246,67 +246,40 @@ mlir::Value getControlValueRegister(mlir::OpBuilder& builder,
 }
 
 /**
- * @brief Adds an if-else operation to the MLIR module.
+ * @brief Adds an if-else operation that is controlled by a register to the MLIR
+ * module.
  *
  * @param builder The MLIR OpBuilder
- * @param operation The if-else operation to add
+ * @param ifElse The if-else operation to add
  * @param qubits The qubits of the quantum register
  * @param bits The bits of the classical register
  * @return mlir::LogicalResult Success if all operations were added, failure
  * otherwise
  */
-llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
-                                const qc::Operation& operation,
-                                const llvm::SmallVector<mlir::Value>& qubits,
-                                const mlir::Value bits) {
-  const auto* ifElse = dynamic_cast<const qc::IfElseOperation*>(&operation);
-  if (ifElse == nullptr) {
-    return llvm::failure();
-  }
+llvm::LogicalResult
+addIfElseOpRegister(mlir::OpBuilder& builder, const qc::IfElseOperation& ifElse,
+                    const llvm::SmallVector<mlir::Value>& qubits,
+                    const mlir::Value bits) {
+  auto loc = builder.getUnknownLoc();
 
-  auto* thenOp = ifElse->getThenOp();
+  auto* thenOp = ifElse.getThenOp();
   if (thenOp == nullptr) {
     return llvm::failure();
   }
 
-  auto* elseOp = ifElse->getElseOp();
+  auto* elseOp = ifElse.getElseOp();
 
-  auto loc = builder.getUnknownLoc();
+  // Compute control value from control register
+  auto controlValue = getControlValueRegister(builder, bits);
 
-  auto controlBit = ifElse->getControlBit();
-  auto controlRegister = ifElse->getControlRegister();
-  mlir::Value controlValue;
-  mlir::Value expectedValue;
-  if (controlRegister.has_value()) {
-    assert(!controlBit.has_value());
-
-    // Compute control value from control register
-    controlValue = getControlValueRegister(builder, bits);
-
-    // Set expected value
-    auto expectedValueRegister = ifElse->getExpectedValueRegister();
-    expectedValue = builder.create<mlir::arith::ConstantOp>(
-        loc, builder.getI64Type(),
-        builder.getIntegerAttr(builder.getI64Type(), expectedValueRegister));
-  } else if (controlBit.has_value()) {
-    // Get control value from control bit
-    auto indexValue =
-        builder.create<mlir::arith::ConstantIndexOp>(loc, *controlBit);
-    controlValue = builder.create<mlir::memref::LoadOp>(
-        loc, bits, mlir::ValueRange{indexValue});
-
-    // Set expected value
-    auto expectedValueBit = ifElse->getExpectedValueBit();
-    expectedValue = builder.create<mlir::arith::ConstantOp>(
-        loc, builder.getI1Type(),
-        builder.getIntegerAttr(builder.getI1Type(),
-                               static_cast<int64_t>(expectedValueBit)));
-  } else {
-    return llvm::failure();
-  }
+  // Define expected value
+  auto expectedValueRegister = ifElse.getExpectedValueRegister();
+  auto expectedValue = builder.create<mlir::arith::ConstantOp>(
+      loc, builder.getI64Type(),
+      builder.getIntegerAttr(builder.getI64Type(), expectedValueRegister));
 
   // Define comparison predicate
-  const auto comparisonKind = ifElse->getComparisonKind();
+  const auto comparisonKind = ifElse.getComparisonKind();
   mlir::arith::CmpIPredicate predicate = mlir::arith::CmpIPredicate::eq;
   if (comparisonKind == qc::ComparisonKind::Eq) {
     predicate = mlir::arith::CmpIPredicate::eq;
@@ -351,6 +324,122 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   }
 
   return llvm::success();
+}
+
+/**
+ * @brief Adds an if-else operation that is controlled by a bit to the MLIR
+ * module.
+ *
+ * @param builder The MLIR OpBuilder
+ * @param ifElse The if-else operation to add
+ * @param qubits The qubits of the quantum register
+ * @param bits The bits of the classical register
+ * @return mlir::LogicalResult Success if all operations were added, failure
+ * otherwise
+ */
+llvm::LogicalResult addIfElseOpBit(mlir::OpBuilder& builder,
+                                   const qc::IfElseOperation& ifElse,
+                                   const llvm::SmallVector<mlir::Value>& qubits,
+                                   const mlir::Value bits) {
+  auto loc = builder.getUnknownLoc();
+
+  auto* thenOp = ifElse.getThenOp();
+  if (thenOp == nullptr) {
+    return llvm::failure();
+  }
+
+  auto* elseOp = ifElse.getElseOp();
+
+  // Define control value
+  auto controlBit = ifElse.getControlBit();
+  auto indexValue =
+      builder.create<mlir::arith::ConstantIndexOp>(loc, *controlBit);
+  auto controlValue = builder.create<mlir::memref::LoadOp>(
+      loc, bits, mlir::ValueRange{indexValue});
+
+  // Define expected value and comparison predicate
+  auto expectedValueBit = ifElse.getExpectedValueBit();
+
+  const auto comparisonKind = ifElse.getComparisonKind();
+  if (comparisonKind == qc::ComparisonKind::Neq) {
+    expectedValueBit = !expectedValueBit;
+  }
+
+  qc::Operation* thenBlockOp = nullptr;
+  qc::Operation* elseBlockOp = nullptr;
+  if (expectedValueBit == false && elseOp != nullptr) {
+    expectedValueBit = !expectedValueBit;
+    thenBlockOp = elseOp;
+    elseBlockOp = thenOp;
+  } else {
+    thenBlockOp = thenOp;
+    elseBlockOp = elseOp;
+  }
+
+  auto expectedValue = builder.create<mlir::arith::ConstantOp>(
+      loc, builder.getI1Type(),
+      builder.getIntegerAttr(builder.getI1Type(),
+                             static_cast<int64_t>(expectedValueBit)));
+  mlir::arith::CmpIPredicate predicate = mlir::arith::CmpIPredicate::eq;
+
+  // Define condition
+  auto condition = builder.create<mlir::arith::CmpIOp>(
+      loc, predicate, controlValue, expectedValue);
+
+  // Define operation
+  auto ifOp = builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{},
+                                              condition.getResult(), true);
+
+  // Populate then block
+  {
+    const mlir::OpBuilder::InsertionGuard thenGuard(builder);
+    builder.setInsertionPointToStart(ifOp.thenBlock());
+    if (failed(addOperation(builder, *thenBlockOp, qubits, bits))) {
+      return llvm::failure();
+    }
+  }
+
+  // Populate else block
+  if (elseBlockOp != nullptr) {
+    const mlir::OpBuilder::InsertionGuard elseGuard(builder);
+    builder.setInsertionPointToStart(ifOp.elseBlock());
+    if (failed(addOperation(builder, *elseBlockOp, qubits, bits))) {
+      return llvm::failure();
+    }
+  }
+
+  return llvm::success();
+}
+
+/**
+ * @brief Adds an if-else operation to the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder
+ * @param operation The if-else operation to add
+ * @param qubits The qubits of the quantum register
+ * @param bits The bits of the classical register
+ * @return mlir::LogicalResult Success if all operations were added, failure
+ * otherwise
+ */
+llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
+                                const qc::Operation& operation,
+                                const llvm::SmallVector<mlir::Value>& qubits,
+                                const mlir::Value bits) {
+  const auto* ifElse = dynamic_cast<const qc::IfElseOperation*>(&operation);
+  if (ifElse == nullptr) {
+    return llvm::failure();
+  }
+
+  auto controlBit = ifElse->getControlBit();
+  auto controlRegister = ifElse->getControlRegister();
+  if (controlRegister.has_value()) {
+    assert(!controlBit.has_value());
+    return addIfElseOpRegister(builder, *ifElse, qubits, bits);
+  } else if (controlBit.has_value()) {
+    return addIfElseOpBit(builder, *ifElse, qubits, bits);
+  } else {
+    return llvm::failure();
+  }
 }
 
 #define ADD_OP_CASE(op)                                                        \
