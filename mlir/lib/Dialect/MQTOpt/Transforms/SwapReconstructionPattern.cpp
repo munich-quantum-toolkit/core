@@ -152,7 +152,7 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
       if (auto secondSwapTarget =
               getCorrespondingInput(firstCNot, secondSwapTargetOut)) {
         auto newSwap = replaceWithSwap(rewriter, firstCNot, *secondSwapTarget);
-        relocateOperationAfter(rewriter, firstCNot, newSwap);
+        relocateOperationAfter(rewriter, newSwap, *secondCNot);
         return mlir::success();
       }
     }
@@ -170,21 +170,28 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     rewriter.eraseOp(op);
   }
 
-  static void relocateOperationAfter(mlir::PatternRewriter& rewriter, XOp& op,
+  static void relocateOperationAfter(mlir::PatternRewriter& rewriter,
+                                     mlir::Operation* op,
                                      mlir::Operation* nextOp) {
-    auto&& currentOperands = op->getOperands();
-    llvm::SmallVector<mlir::Value> newOperandsOp(currentOperands.size());
+    llvm::SmallVector<mlir::Value> newOperandsOp(op->getNumOperands());
     llvm::SmallVector<std::pair<std::size_t, mlir::Value>>
         changedOperandsNextOp;
-    for (std::size_t i = 0; i < currentOperands.size(); ++i) {
-      auto&& currentOperand = currentOperands[i];
+    for (std::size_t i = 0; i < newOperandsOp.size(); ++i) {
+      auto&& currentOperand = op->getOperand(i);
+      ;
+      auto&& currentResult = op->getResult(i);
       if (auto newOperandIndex =
-              getCorrespondingOutputIndex(nextOp, currentOperand)) {
+              getCorrespondingOutputIndex(nextOp, currentResult)) {
         newOperandsOp[i] = nextOp->getResult(*newOperandIndex);
         changedOperandsNextOp.push_back({*newOperandIndex, currentOperand});
+      } else {
+        newOperandsOp[i] = currentOperand;
       }
     }
 
+    // if nextOp uses an operand, change the operand to be the corresponding
+    // output of op as new operand
+    rewriter.modifyOpInPlace(op, [&]() { op->setOperands(newOperandsOp); });
     // update nextOp to use the previous operand of the operation (since it will
     // be moved behind it)
     rewriter.modifyOpInPlace(nextOp, [&]() {
@@ -192,10 +199,7 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
         nextOp->setOperand(changedIndex, newOperand);
       }
     });
-    // if nextOp uses an operand, use the corresponding output of nextOp as new
-    // operand
-    rewriter.modifyOpInPlace(op, [&]() { op->setOperands(newOperandsOp); });
-    rewriter.moveOpBefore(nextOp, op);
+    rewriter.moveOpAfter(op, nextOp);
   }
 
   /**

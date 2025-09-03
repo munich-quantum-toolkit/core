@@ -177,14 +177,14 @@ module {
     %q2_0 = mqtopt.allocQubit
     %q3_0 = mqtopt.allocQubit
 
-    %q0_1, %q1_1, %q2_0, %q3_0 = mqtopt.x() %q0_0 ctrl %q1_0, %q2_0 negctrl %q3_0: !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit negctrl !mqtopt.Qubit
-    %q1_2, %q0_2, %q2_1, %q3_1 = mqtopt.x() %q1_1 ctrl %q0_1, %q2_1 negctrl %q3_1: !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit negctrl !mqtopt.Qubit
-    %q0_3, %q1_3, %q2_2, %q3_2 = mqtopt.x() %q0_2 ctrl %q1_2, %q2_2 negctrl %q3_2: !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit negctrl !mqtopt.Qubit
+    %q0_1, %q1_1, %q2_1, %q3_1 = mqtopt.x() %q0_0 ctrl %q1_0, %q2_0 negctrl %q3_0: !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit negctrl !mqtopt.Qubit
+    %q1_2, %q0_2, %q2_2, %q3_2 = mqtopt.x() %q1_1 ctrl %q0_1, %q2_1 negctrl %q3_1: !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit negctrl !mqtopt.Qubit
+    %q0_3, %q1_3, %q2_3, %q3_3 = mqtopt.x() %q0_2 ctrl %q1_2, %q2_2 negctrl %q3_2: !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit negctrl !mqtopt.Qubit
 
-    mqtopt.deallocQubit %q0_2
-    mqtopt.deallocQubit %q1_2
-    mqtopt.deallocQubit %q2_2
-    mqtopt.deallocQubit %q3_2
+    mqtopt.deallocQubit %q0_3
+    mqtopt.deallocQubit %q1_3
+    mqtopt.deallocQubit %q2_3
+    mqtopt.deallocQubit %q3_3
 
     return
   }
@@ -218,14 +218,14 @@ module {
     %q2_0 = mqtopt.allocQubit
     %q3_0 = mqtopt.allocQubit
 
-    %q0_1, %q1_1, %q2_0, %q3_0 = mqtopt.x() %q0_0 ctrl %q1_0: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0: !mqtopt.Qubit ctrl !mqtopt.Qubit
     %q1_2, %q0_2, %q2_1, %q3_1 = mqtopt.x() %q1_1 ctrl %q0_1, %q2_1 negctrl %q3_1: !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit negctrl !mqtopt.Qubit
-    %q0_3, %q1_3, %q2_2, %q3_2 = mqtopt.x() %q0_2 ctrl %q1_2: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_3, %q1_3 = mqtopt.x() %q0_2 ctrl %q1_2: !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-    mqtopt.deallocQubit %q0_2
-    mqtopt.deallocQubit %q1_2
-    mqtopt.deallocQubit %q2_2
-    mqtopt.deallocQubit %q3_2
+    mqtopt.deallocQubit %q0_3
+    mqtopt.deallocQubit %q1_3
+    mqtopt.deallocQubit %q2_1
+    mqtopt.deallocQubit %q3_1
 
     return
   }
