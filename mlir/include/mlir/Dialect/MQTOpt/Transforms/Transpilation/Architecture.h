@@ -1,7 +1,17 @@
+/*
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include <cstddef>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <memory>
-#include <cstddef>
 #include <string>
 #include <string_view>
 
