@@ -28,6 +28,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <numeric>
+#include <queue>
 #include <random>
 #include <string>
 #include <string_view>
@@ -42,12 +43,6 @@ namespace mqt::ir::opt {
 
 namespace {
 using namespace mlir;
-
-/// @brief Maps qubits to indices.
-using QubitIndexMap = llvm::DenseMap<Value, std::size_t>;
-
-/// @brief Maps indices to qubits.
-using IndexQubitMap = llvm::DenseMap<std::size_t, Value>;
 
 /// @brief A function attribute that specifies an (QIR) entry point function.
 constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
@@ -149,11 +144,9 @@ private:
 // Initial Layouts
 //===----------------------------------------------------------------------===//
 
-namespace layout {
-
-/// @brief Base class for all initial layout mapping functions.
-struct Base {
-  explicit Base(const std::size_t nqubits) : mapping_(nqubits) {}
+/// @brief InitialLayout class for all initial layout mapping functions.
+struct InitialLayout {
+  explicit InitialLayout(const std::size_t nqubits) : mapping_(nqubits) {}
   [[nodiscard]] std::size_t operator()(std::size_t i) const {
     return mapping_[i];
   }
@@ -163,8 +156,8 @@ protected:
 };
 
 /// @brief Identity mapping.
-struct Identity : Base {
-  explicit Identity(const std::size_t nqubits) : Base(nqubits) {
+struct Identity : InitialLayout {
+  explicit Identity(const std::size_t nqubits) : InitialLayout(nqubits) {
     std::iota(mapping_.begin(), mapping_.end(), 0);
   }
 };
@@ -179,15 +172,13 @@ struct Random : Identity {
 };
 
 /// @brief Custom mapping.
-struct Custom : Base {
+struct Custom : InitialLayout {
   Custom(const std::size_t nqubits,
          const llvm::SmallVectorImpl<std::size_t>& mapping)
-      : Base(nqubits) {
+      : InitialLayout(nqubits) {
     std::ranges::copy(mapping, mapping_.begin());
   }
 };
-
-}; // namespace layout
 
 //===----------------------------------------------------------------------===//
 // Routing
@@ -210,50 +201,75 @@ struct CircuitState {
   /// @brief Vector of initialized static qubits.
   llvm::SmallVector<Value> staticQubits;
 
-  /// @brief Currently allocated number of qubits.
-  std::size_t allocated{};
+  /// @brief Currently free to allocate qubits.
+  std::queue<Value> free;
 
-  Value alloc(const layout::Base& layout) {
-    const std::size_t staticIndex = layout(allocated);
-    const Value staticQubit = staticQubits[staticIndex];
+  /// @brief Expand circuit to have nqubits dynamic qubits.
+  void expand(const InitialLayout& layout) {
+    const std::size_t nqubits = staticQubits.size();
+    for (std::size_t i = 0; i < nqubits; ++i) {
+      assign(i, layout);
+    }
+  }
 
-    valueToDynamic[staticQubit] = allocated;
-    dynamicToValue[allocated] = staticQubit;
+  Value alloc() {
+    Value qubit = free.front();
+    free.pop();
+    return qubit;
+  }
 
-    staticToDynamic[staticIndex] = allocated;
-    dynamicToStatic[allocated] = staticIndex;
+  void forward(const Value in, const Value out) {
+    const std::size_t dynamicNumber = valueToDynamic[in];
+    const std::size_t staticIndex = dynamicToStatic[dynamicNumber];
 
-    allocated++;
+    valueToDynamic[out] = dynamicNumber;
+    dynamicToValue[dynamicNumber] = out;
 
-    return staticQubit;
+    staticToDynamic[staticIndex] = dynamicNumber;
+    dynamicToStatic[dynamicNumber] = staticIndex;
+
+    valueToDynamic.erase(in);
+  }
+
+  void dealloc(Value in) { free.emplace(in); }
+
+  /// @brief Return the number of allocated qubits.
+  [[nodiscard]] std::size_t nallocated() const {
+    return staticQubits.size() - free.size();
+  }
+
+  [[nodiscard]] bool empty() const {
+    return valueToDynamic.empty() && dynamicToValue.empty() &&
+           staticToDynamic.empty() && dynamicToStatic.empty();
+  }
+
+private:
+  /// @brief Assign a permutated static qubit (and index) to @p dynNum.
+  void assign(const std::size_t dynNum, const InitialLayout& layout) {
+    const std::size_t statIdx = layout(dynNum);
+    const Value staticQubit = staticQubits[statIdx];
+
+    valueToDynamic[staticQubit] = dynNum;
+    dynamicToValue[dynNum] = staticQubit;
+
+    staticToDynamic[statIdx] = dynNum;
+    dynamicToStatic[dynNum] = statIdx;
+
+    free.emplace(staticQubit);
   }
 };
 
 class Router {
 public:
+  Router(std::unique_ptr<Architecture> arch,
+         std::unique_ptr<InitialLayout> layout)
+      : arch_(std::move(arch)), layout_(std::move(layout)) {}
+
   virtual ~Router() = default;
 
-  virtual LogicalResult route(ModuleOp, const Architecture&,
-                              const layout::Base&, PatternRewriter&) const = 0;
+  virtual LogicalResult route(ModuleOp) const = 0;
 
 protected:
-  /**
-   * @brief Insert and return static qubits at current insertion point.
-   */
-  [[nodiscard]] static llvm::SmallVector<Value>
-  initStaticQubits(const Architecture& arch, PatternRewriter& rewriter) {
-    llvm::SmallVector<Value> staticQubits;
-    staticQubits.reserve(arch.nqubits());
-
-    for (std::size_t i = 0; i < arch.nqubits(); ++i) {
-      const auto location = rewriter.getInsertionPoint()->getLoc();
-      auto qubit = rewriter.create<QubitOp>(location, i);
-      staticQubits.push_back(qubit);
-    }
-
-    return staticQubits;
-  }
-
   [[nodiscard]] static SWAPOp createSwap(Location location, Value qubitA,
                                          Value qubitB,
                                          PatternRewriter& rewriter) {
@@ -272,13 +288,46 @@ protected:
         /* pos_ctrl_in_qubits = */ ValueRange{},
         /* neg_ctrl_in_qubits = */ ValueRange{});
   }
+
+  /**
+   * @brief Insert and return static qubits at current insertion point.
+   */
+  [[nodiscard]] llvm::SmallVector<Value>
+  initStaticQubits(PatternRewriter& rewriter) const {
+    llvm::SmallVector<Value> staticQubits;
+    staticQubits.reserve(arch().nqubits());
+
+    for (std::size_t i = 0; i < arch().nqubits(); ++i) {
+      const auto location = rewriter.getInsertionPoint()->getLoc();
+      auto qubit = rewriter.create<QubitOp>(location, i);
+      staticQubits.push_back(qubit);
+    }
+
+    return staticQubits;
+  }
+
+  /**
+   * @brief Return targeted architecture.
+   */
+  [[nodiscard]] const Architecture& arch() const { return *arch_; }
+
+  /**
+   * @brief Return initial layout mapping.
+   */
+  [[nodiscard]] const InitialLayout& layout() const { return *layout_; }
+
+private:
+  std::unique_ptr<Architecture> arch_;
+  std::unique_ptr<InitialLayout> layout_;
 };
 
 class NaiveRouter final : public Router {
 public:
-  [[nodiscard]] LogicalResult route(ModuleOp module, const Architecture& arch,
-                                    const layout::Base& layout,
-                                    PatternRewriter& rewriter) const override {
+  using Router::Router;
+
+  [[nodiscard]] LogicalResult route(ModuleOp module) const override {
+    PatternRewriter rewriter(module->getContext());
+
     auto res = module->walk([&](func::FuncOp func) {
       if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
         return WalkResult::skip(); // For now we don't route non-entry point
@@ -286,9 +335,9 @@ public:
       }
 
       rewriter.setInsertionPointToStart(&func.getBody().front());
-      auto staticQubits = initStaticQubits(arch, rewriter);
+      auto staticQubits = initStaticQubits(rewriter);
 
-      if (failed(routeFunc(func, staticQubits, arch, layout, rewriter))) {
+      if (failed(routeFunc(func, staticQubits, rewriter))) {
         return WalkResult::interrupt();
       }
 
@@ -299,12 +348,61 @@ public:
   }
 
 private:
-  [[nodiscard]] static LogicalResult
+  [[nodiscard]] bool isExecutable(UnitaryInterface u,
+                                  const CircuitState& state) const {
+    const Value in0 = u.getAllInQubits()[0];
+    const Value in1 = u.getAllInQubits()[1];
+
+    const std::size_t dynNum0 = state.valueToDynamic.at(in0);
+    const std::size_t dynNum1 = state.valueToDynamic.at(in1);
+    const std::size_t statIdx0 = state.dynamicToStatic.at(dynNum0);
+    const std::size_t statIdx1 = state.dynamicToStatic.at(dynNum1);
+
+    return arch().areAdjacent(statIdx0, statIdx1);
+  }
+
+  void makeExecutable(UnitaryInterface u, CircuitState& state,
+                      PatternRewriter& rewriter) const {
+    const Value in0 = u.getAllInQubits()[0];
+    const Value in1 = u.getAllInQubits()[1];
+
+    const std::size_t dynNum0 = state.valueToDynamic.at(in0);
+    const std::size_t dynNum1 = state.valueToDynamic.at(in1);
+    const std::size_t statIdx0 = state.dynamicToStatic.at(dynNum0);
+    const std::size_t statIdx1 = state.dynamicToStatic.at(dynNum1);
+
+    auto path = arch().shortestPathBetween(statIdx0, statIdx1);
+    for (std::size_t i = 0; i < path.size() - 1; i += 2) {
+      const std::size_t pathStatIdx0 = path[i];
+      const std::size_t pathStatIdx1 = path[i + 1];
+
+      const std::size_t pathDynNum0 = state.staticToDynamic.at(pathStatIdx0);
+      const std::size_t pathDynNum1 = state.staticToDynamic.at(pathStatIdx1);
+
+      const Value pathIn0 = state.dynamicToValue.at(pathDynNum0);
+      const Value pathIn1 = state.dynamicToValue.at(pathDynNum1);
+
+      auto swap = createSwap(u->getLoc(), pathIn0, pathIn1, rewriter);
+
+      const Value swapOut0 = swap.getOutQubits()[0];
+      const Value swapOut1 = swap.getOutQubits()[1];
+
+      rewriter.setInsertionPointAfter(swap);
+      rewriter.replaceAllUsesExcept(pathIn0, swapOut0, swap);
+      rewriter.replaceAllUsesExcept(pathIn1, swapOut1, swap);
+
+      // Update permutation maps.
+      state.forward(pathIn0, swapOut0);
+      state.forward(pathIn1, swapOut1);
+    }
+  }
+
+  [[nodiscard]] LogicalResult
   routeFunc(func::FuncOp func, const llvm::SmallVector<Value>& staticQubits,
-            const Architecture& arch, const layout::Base& layout,
-            PatternRewriter& rewriter) {
+            PatternRewriter& rewriter) const {
 
     CircuitState state(staticQubits);
+    state.expand(layout());
 
     auto res = func->walk([&](Operation* op) {
       rewriter.setInsertionPoint(op);
@@ -314,15 +412,15 @@ private:
       }
 
       if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
-        if (state.allocated == arch.nqubits()) {
+        if (state.nallocated() == arch().nqubits()) {
           return WalkResult(func->emitOpError()
-                            << "requires " << (state.allocated + 1)
+                            << "requires " << (state.nallocated() + 1)
                             << " qubits but target architecture '"
-                            << arch.name() << "' only supports "
-                            << arch.nqubits() << " qubits");
+                            << arch().name() << "' only supports "
+                            << arch().nqubits() << " qubits");
         }
 
-        auto staticQubit = state.alloc(layout);
+        auto staticQubit = state.alloc();
         rewriter.replaceAllUsesWith(alloc.getQubit(), staticQubit);
         rewriter.eraseOp(alloc);
 
@@ -330,27 +428,52 @@ private:
       }
 
       if (auto reset = dyn_cast<ResetOp>(op)) {
+        state.forward(reset.getInQubit(), reset.getOutQubit());
         return WalkResult::advance();
       }
 
       if (auto u = dyn_cast<UnitaryInterface>(op)) {
         if (!isTwoQubitGate(u)) {
+          state.forward(u.getAllInQubits()[0], u.getAllOutQubits()[0]);
+          return WalkResult::advance();
         }
+
+        if (!isExecutable(u, state)) {
+          makeExecutable(u, state, rewriter);
+        }
+
+        // Gate is (now) executable on hardware:
+
+        const Value execIn0 = u.getAllInQubits()[0];
+        const Value execIn1 = u.getAllInQubits()[1];
+        const Value execOut0 = u.getAllOutQubits()[0];
+        const Value execOut1 = u.getAllOutQubits()[1];
+
+        state.forward(execIn0, execOut0);
+        state.forward(execIn1, execOut1);
+
         return WalkResult::advance();
       }
 
       if (auto measure = dyn_cast<MeasureOp>(op)) {
+        state.forward(measure.getInQubit(), measure.getOutQubit());
         return WalkResult::advance();
       }
 
       if (auto dealloc = dyn_cast<DeallocQubitOp>(op)) {
+        state.dealloc(dealloc.getQubit());
+        rewriter.eraseOp(dealloc);
         return WalkResult::advance();
       }
 
-      return WalkResult::interrupt(); // Future proofing: fail on missing 'if'.
+      return WalkResult::advance();
     });
 
-    return res.wasInterrupted() ? failure() : success();
+    if (res.wasInterrupted()) {
+      return failure();
+    }
+
+    return success();
   }
 };
 
@@ -362,26 +485,24 @@ private:
  */
 struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
-    const ModuleOp module = getOperation();
-    PatternRewriter rewriter(module->getContext());
 
     // 0 -- 1
     // |    |
     // 2 -- 3
     // |    |
     // 4 -- 5
+
     const Architecture::CouplingMap couplingMap{
         {0, 1}, {1, 0}, {0, 2}, {2, 0}, {1, 3}, {3, 1}, {2, 3},
         {3, 2}, {2, 4}, {4, 2}, {3, 5}, {5, 3}, {4, 5}, {5, 4}};
 
     auto arch = std::make_unique<Architecture>("MQT-Test", 6, couplingMap);
+    auto layout = std::make_unique<Custom>(
+        arch->nqubits(), llvm::SmallVector<std::size_t>{4, 0, 2, 5, 3, 1});
 
-    const llvm::SmallVector<std::size_t> mapping{4, 0, 2, 5, 3, 1};
-    const NaiveRouter router;
-    const layout::Custom layout(arch->nqubits(), mapping);
+    const NaiveRouter router(std::move(arch), std::move(layout));
 
-    auto res = router.route(module, *arch, layout, rewriter);
-    if (res.failed()) {
+    if (failed(router.route(getOperation()))) {
       signalPassFailure();
     }
   }
