@@ -29,30 +29,31 @@
 
 namespace mqt::ir::opt {
 /**
- * @brief This pattern attempts to find three CNOT gates next to each other
- * which are equivalent to a SWAP. These gates will be removed and replaced by a
- * SWAP operation.
+ * @brief This pattern attempts to find CNOT patterns which can be replaced by a
+ * SWAP gate.
  *
- * Examples:
+ * Example (onlyMatchFullSwapPattern=false):
  *       ┌───┐         ┌───┐
  *  ──■──┤ X ├    ──■──┤ X ├──■────■──    ──╳────■──
  *  ┌─┴─┐└─┬─┘ => ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐ =>   |  ┌─┴─┐
  *  ┤ X ├──■──    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├
  *  └───┘         └───┘     └───┘└───┘         └───┘
  *
- *  ──■────■──    ──■────■────■────■──    ──■────■──
- *    |  ┌─┴─┐      |  ┌─┴─┐  |    |        |    |
- *  ──■──┤ X ├ => ──■──┤ X ├──■────■── => ──╳────■──
- *  ┌─┴─┐└─┬─┘    ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐      |  ┌─┴─┐
- *  ┤ X ├──■──    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├
- *  └───┘         └───┘     └───┘└───┘         └───┘
- *
+ * Example (onlyMatchFullSwapPattern=false, matchControlledSwap=true):
  *  ──□────□──    ──□────□────□────□──    ──□────□──
  *    |  ┌─┴─┐      |  ┌─┴─┐  |    |        |    |
  *  ──■──┤ X ├ => ──■──┤ X ├──■────■── => ──╳────■──
  *  ┌─┴─┐└─┬─┘    ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐      |  ┌─┴─┐
  *  ┤ X ├──■──    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├
  *  └───┘         └───┘     └───┘└───┘         └───┘
+ *
+ * Example (onlyMatchFullSwapPattern=true, matchControlledSwap=true):
+ *  ──■────■────■──    ──■──
+ *    |  ┌─┴─┐  |        |
+ *  ──■──┤ X ├──■── => ──╳──
+ *  ┌─┴─┐└─┬─┘┌─┴─┐      |
+ *  ┤ X ├──■──┤ X ├    ──╳──
+ *  └───┘     └───┘
  */
 template <bool onlyMatchFullSwapPattern, bool matchControlledSwap>
 struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
