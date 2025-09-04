@@ -21,6 +21,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Iterators.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
@@ -112,6 +113,9 @@ struct Custom : InitialLayout {
 
 class CircuitState {
 public:
+  /// @brief Return empty circuit state.
+  static CircuitState empty() { return CircuitState(); }
+
   explicit CircuitState(llvm::SmallVector<Value> staticQubits)
       : staticQubits_(std::move(staticQubits)) {};
 
@@ -121,10 +125,15 @@ public:
     return dynamicToStatic_.at(dynNum);
   }
 
+  /// @brief Return dynamic number from static index @p statIdx.
+  [[nodiscard]] std::size_t
+  staticIndexToDynNum(const std::size_t statIdx) const {
+    return staticToDynamic_.at(statIdx);
+  }
+
   /// @brief Return SSA value from static index @p statIdx.
   [[nodiscard]] Value staticIndexToValue(const std::size_t statIdx) const {
-    const std::size_t dynNum = staticToDynamic_.at(statIdx);
-    return dynamicToValue_.at(dynNum);
+    return dynamicToValue_.at(staticIndexToDynNum(statIdx));
   }
 
   /// @brief Expand circuit to have nqubits dynamic qubits.
@@ -142,16 +151,20 @@ public:
     return qubit;
   }
 
-  void forward(const Value in, const Value out) {
-    const std::size_t dynNum = valueToDynamic_[in];
-    const std::size_t statIdx = dynamicToStatic_[dynNum];
+  void swap(const std::size_t dynNum0, const std::size_t dynNum1) {
+    const std::size_t statIdx0 = staticToDynamic_[dynNum0];
+    const std::size_t statIdx1 = staticToDynamic_[dynNum1];
 
+    dynamicToStatic_[dynNum0] = statIdx1;
+    dynamicToStatic_[dynNum1] = statIdx0;
+    staticToDynamic_[statIdx0] = dynNum1;
+    staticToDynamic_[statIdx1] = dynNum0;
+  }
+
+  void update(const Value in, const Value out) {
+    const std::size_t dynNum = valueToDynamic_[in];
     valueToDynamic_[out] = dynNum;
     dynamicToValue_[dynNum] = out;
-
-    staticToDynamic_[statIdx] = dynNum;
-    dynamicToStatic_[dynNum] = statIdx;
-
     valueToDynamic_.erase(in);
   }
 
@@ -163,7 +176,18 @@ public:
     return staticQubits_.size() - free_.size();
   }
 
+  /// @brief Return the current (ordered) permutation (stat -> dyn).
+  [[nodiscard]] llvm::SmallVector<std::size_t> permutation() const {
+    llvm::SmallVector<std::size_t> perm(staticQubits_.size());
+    for (std::size_t i = 0; i < staticQubits_.size(); ++i) {
+      perm[i] = staticToDynamic_.at(i);
+    }
+    return perm;
+  }
+
 private:
+  explicit CircuitState() = default;
+
   /// @brief Assign a permutated static qubit (and index) to @p dynNum.
   void assign(const std::size_t dynNum, const InitialLayout& layout) {
     const std::size_t statIdx = layout(dynNum);
@@ -268,8 +292,14 @@ public:
       rewriter.setInsertionPointToStart(&func.getBody().front());
       auto staticQubits = initStaticQubits(rewriter);
 
-      if (failed(routeFunc(func, staticQubits, rewriter))) {
+      const auto& [res, state] = forward(func, staticQubits, rewriter);
+      if (failed(res)) {
         return WalkResult::interrupt();
+      }
+
+      const auto& perm = state.permutation();
+      for (std::size_t i = 0; i < perm.size(); ++i) {
+        llvm::outs() << i << " <-> " << perm[i] << '\n';
       }
 
       return WalkResult::advance();
@@ -300,6 +330,8 @@ private:
     const auto& [in0, in1] = getIns(u);
     auto path = getPath(in0, in1, state);
     for (std::size_t i = 0; i < path.size() - 1; i += 2) {
+      const std::size_t dynNum0 = state.staticIndexToDynNum(path[i]);
+      const std::size_t dynNum1 = state.staticIndexToDynNum(path[i + 1]);
       const Value in0 = state.staticIndexToValue(path[i]);
       const Value in1 = state.staticIndexToValue(path[i + 1]);
 
@@ -311,14 +343,15 @@ private:
       rewriter.replaceAllUsesExcept(in0, swapOut0, swap);
       rewriter.replaceAllUsesExcept(in1, swapOut1, swap);
 
-      state.forward(in0, swapOut1);
-      state.forward(in1, swapOut0);
+      state.swap(dynNum0, dynNum1);
+      state.update(in0, swapOut0);
+      state.update(in1, swapOut1);
     }
   }
 
-  [[nodiscard]] LogicalResult
-  routeFunc(func::FuncOp func, const llvm::SmallVector<Value>& staticQubits,
-            PatternRewriter& rewriter) const {
+  [[nodiscard]] std::pair<LogicalResult, CircuitState>
+  forward(func::FuncOp func, const llvm::SmallVector<Value>& staticQubits,
+          PatternRewriter& rewriter) const {
 
     CircuitState state(staticQubits);
     state.expand(layout());
@@ -356,7 +389,7 @@ private:
         auto staticQubit = state.alloc();
         auto reset =
             rewriter.create<ResetOp>(staticQubit.getLoc(), staticQubit);
-        state.forward(reset.getInQubit(), reset.getOutQubit());
+        state.update(reset.getInQubit(), reset.getOutQubit());
 
         rewriter.replaceAllUsesWith(alloc.getQubit(), reset);
         rewriter.eraseOp(alloc);
@@ -365,13 +398,13 @@ private:
       }
 
       if (auto reset = dyn_cast<ResetOp>(op)) {
-        state.forward(reset.getInQubit(), reset.getOutQubit());
+        state.update(reset.getInQubit(), reset.getOutQubit());
         return WalkResult::advance();
       }
 
       if (auto u = dyn_cast<UnitaryInterface>(op)) {
         if (!isTwoQubitGate(u)) {
-          state.forward(u.getAllInQubits()[0], u.getAllOutQubits()[0]);
+          state.update(u.getAllInQubits()[0], u.getAllOutQubits()[0]);
           return WalkResult::advance();
         }
 
@@ -383,14 +416,14 @@ private:
 
         const auto& [execIn0, execIn1] = getIns(u);
         const auto& [execOut0, execOut1] = getOuts(u);
-        state.forward(execIn0, execOut0);
-        state.forward(execIn1, execOut1);
+        state.update(execIn0, execOut0);
+        state.update(execIn1, execOut1);
 
         return WalkResult::advance();
       }
 
       if (auto measure = dyn_cast<MeasureOp>(op)) {
-        state.forward(measure.getInQubit(), measure.getOutQubit());
+        state.update(measure.getInQubit(), measure.getOutQubit());
         return WalkResult::advance();
       }
 
@@ -404,12 +437,12 @@ private:
     });
 
     if (res.wasInterrupted()) {
-      return failure();
+      return {failure(), CircuitState::empty()};
     }
 
     assert(state.nallocated() == 0);
 
-    return success();
+    return {success(), state};
   }
 };
 
