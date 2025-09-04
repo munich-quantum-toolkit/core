@@ -354,8 +354,13 @@ private:
         }
 
         auto staticQubit = state.alloc();
-        rewriter.replaceAllUsesWith(alloc.getQubit(), staticQubit);
+        auto reset =
+            rewriter.create<ResetOp>(staticQubit.getLoc(), staticQubit);
+        state.forward(reset.getInQubit(), reset.getOutQubit());
+
+        rewriter.replaceAllUsesWith(alloc.getQubit(), reset);
         rewriter.eraseOp(alloc);
+
         return WalkResult::advance();
       }
 
