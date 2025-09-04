@@ -13,17 +13,19 @@
 #include "mlir/IR/BuiltinAttributes.h"
 
 #include <cassert>
+#include <cstddef>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SetOperations.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <optional>
+#include <utility>
 
 namespace mqt::ir::opt {
 /**
@@ -107,15 +109,15 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
       return true;
     };
 
-    bool targetIsPosCtrl =
+    const bool targetIsPosCtrl =
         llvm::is_contained(nextInPosCtrlQubits, opOutTarget) &&
         llvm::is_contained(opOutPosCtrlQubits, nextInTarget);
 
-    bool posCtrlMatches =
+    const bool posCtrlMatches =
         nextIsSubset
             ? isSubset(opOutPosCtrlQubits, nextInPosCtrlQubits, opOutTarget)
             : isSubset(nextInPosCtrlQubits, opOutPosCtrlQubits, nextInTarget);
-    bool negCtrlMatches =
+    const bool negCtrlMatches =
         nextIsSubset ? isSubset(opOutNegCtrlQubits, nextInNegCtrlQubits)
                      : isSubset(nextInNegCtrlQubits, opOutNegCtrlQubits);
 
@@ -228,7 +230,6 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     // update all users of nextOp to now use the result of op instead
     auto&& opResults = op->getResults();
     auto&& nextOpResults = nextOp->getResults();
-    llvm::SmallVector<mlir::Value> userUpdates;
     for (auto* user : nextOp->getUsers()) {
       rewriter.modifyOpInPlace(user, [&]() {
         for (auto&& operand : user->getOpOperands()) {
