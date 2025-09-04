@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Config/llvm-config.h>
 #include <llvm/FileCheck/FileCheck.h>
 #include <llvm/Support/LogicalResult.h>
 #include <llvm/Support/SourceMgr.h>
@@ -1066,6 +1067,10 @@ TEST_F(ImportTest, IfElseRegister) {
 }
 
 TEST_F(ImportTest, IfBitEqTrue) {
+#if LLVM_VERSION_MAJOR < 20
+  GTEST_SKIP() << "Test skipped for LLVM 19";
+#endif
+
   qc::QuantumComputation qc(1, 1);
   qc.measure(0, 0);
   qc.if_(qc::X, 0, 0, true, qc::Eq);
@@ -1169,6 +1174,10 @@ TEST_F(ImportTest, IfBitNeq) {
 }
 
 TEST_F(ImportTest, IfElseBitEqTrue) {
+#if LLVM_VERSION_MAJOR < 20
+  GTEST_SKIP() << "Test skipped for LLVM 19";
+#endif
+
   qc::QuantumComputation qc(1, 1);
   qc.measure(0, 0);
   qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
@@ -1205,6 +1214,10 @@ TEST_F(ImportTest, IfElseBitEqTrue) {
 }
 
 TEST_F(ImportTest, IfElseBitEqFalse) {
+#if LLVM_VERSION_MAJOR < 20
+  GTEST_SKIP() << "Test skipped for LLVM 19";
+#endif
+
   qc::QuantumComputation qc(1, 1);
   qc.measure(0, 0);
   qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
@@ -1242,6 +1255,10 @@ TEST_F(ImportTest, IfElseBitEqFalse) {
 }
 
 TEST_F(ImportTest, IfElseBitNeq) {
+#if LLVM_VERSION_MAJOR < 20
+  GTEST_SKIP() << "Test skipped for LLVM 19";
+#endif
+
   qc::QuantumComputation qc(1, 1);
   qc.measure(0, 0);
   qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
