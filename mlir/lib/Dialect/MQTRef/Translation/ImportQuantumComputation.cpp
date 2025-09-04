@@ -58,12 +58,22 @@ mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
 }
 
 /**
- * @brief Allocates a classical register in the MLIR module.
+ * @brief Deallocates the quantum register in the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param quantumRegister The quantum register to deallocate
+ */
+void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
+  builder.create<mqt::ir::ref::DeallocOp>(builder.getUnknownLoc(), qreg);
+}
+
+/**
+ * @brief Allocates a memref corresponding to a classical register.
  *
  * @param builder The MLIR OpBuilder used to create operations
  * @param context The MLIR context in which types are created
  * @param numBits The number of bits to allocate in the register
- * @return mlir::Value The allocated classical register value
+ * @return mlir::Value The allocated memred
  */
 mlir::Value allocateBits(mlir::OpBuilder& builder, int numBits) {
   auto memrefType = mlir::MemRefType::get({numBits}, builder.getI1Type());
@@ -73,13 +83,13 @@ mlir::Value allocateBits(mlir::OpBuilder& builder, int numBits) {
 }
 
 /**
- * @brief Deallocates a quantum register in the MLIR module.
+ * @brief Deallocates the memref corresponding to the classical register.
  *
  * @param builder The MLIR OpBuilder used to create operations
- * @param quantumRegister The quantum register to deallocate
+ * @param bits The memref to deallocate
  */
-void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
-  builder.create<mqt::ir::ref::DeallocOp>(builder.getUnknownLoc(), qreg);
+void deallocateBits(mlir::OpBuilder& builder, mlir::Value bits) {
+  builder.create<mlir::memref::DeallocOp>(builder.getUnknownLoc(), bits);
 }
 
 /**
@@ -579,6 +589,7 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   }
 
   deallocateQreg(builder, qreg);
+  deallocateBits(builder, bits);
 
   // Create terminator
   builder.create<mlir::func::ReturnOp>(loc);
