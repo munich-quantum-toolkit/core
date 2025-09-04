@@ -132,21 +132,31 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
   /**
    * @brief If pattern is applicable, perform MLIR rewrite.
    *
-   * Steps:
+   * Steps (onlyMatchFullSwapPattern == false):
    *   - Find CNOT with at least one positive control qubit (1st CNOT)
-   *   - Check if it has adjacent CNOT with subset of control qubits (2nd CNOT)
-   *  (- Theoretically place two CNOTs identical to 2nd CNOT on other side of
-   *     1st CNOT)
-   *   - Replace 1st CNOT by SWAP with identical control qubits (also cancels
-   *     out 2nd CNOT and one inserted CNOT); use target of 2nd CNOT as second
-   *     target for the swap
-   *   - Move 2nd CNOT to other side of SWAP (takes the place of the left-over
+   *   - Check if it has adjacent CNOT with superset of control qubits
+   *     (2nd CNOT)
+   *  (- Theoretically place two CNOTs identical to 1st CNOT on other side of
+   *     2nd CNOT)
+   *   - Replace 2nd CNOT by SWAP with identical control qubits (if controlled
+   *     swaps are enabled), this also cancels out 1st CNOT and one inserted
+   *     CNOT); use target of 1st CNOT as second target for the swap
+   *   - Move 1st CNOT to other side of SWAP (takes the place of the left-over
    *     inserted CNOT)
+   *
+   * Steps (onlyMatchFullSwapPattern == true):
+   *   - Find CNOT with at least one positive control qubit (1st CNOT)
+   *   - Check if it has adjacent CNOT with superset of control qubits
+   *     (2nd CNOT)
+   *   - Check if 2nd CNOT has adjacent CNOT identical to 1st CNOT (3rd CNOT)
+   *   - Replace 2nd CNOT by SWAP with identical control qubits (if controlled
+   *     swaps are enabled)
+   *   - Erase 1st and 3rd CNOTs
    */
   mlir::LogicalResult
   matchAndRewrite(XOp op, mlir::PatternRewriter& rewriter) const override {
     // check if at least one positive control; rely on other pattern for
-    // negative control decomposition
+    // negative control decomposition (TODO?)
     if (op.getPosCtrlInQubits().empty()) {
       return mlir::failure();
     }
@@ -253,11 +263,16 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
 
   /**
    * @brief Find a user of the given operation for which isCandidate() is true.
+   *
+   * @param op Operation for which the users should be scanned for a candidate
+   * @param isThirdCNot If true, the candidate should have a subset of controls
+   *                    of op (a surrounding CNOT, 1st/3rd); if false, it should
+   *                    have a superset of controls of op (middle CNOT, 2nd)
    */
-  [[nodiscard]] static std::optional<XOp> findCandidate(XOp& op, bool isThirdCNot) {
+  [[nodiscard]] static std::optional<XOp> findCandidate(XOp& op,
+                                                        bool isThirdCNot) {
     for (auto* user : op->getUsers()) {
       if (auto cnot = llvm::dyn_cast<XOp>(user)) {
-        // TODO: check both directions?
         if (isCandidate(op, cnot, isThirdCNot)) {
           return cnot;
         }
@@ -267,8 +282,8 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
   }
 
   /**
-   * @brief Find a user of the given operation for which isReverseCNotPattern()
-   * with the given operation is true.
+   * @brief Check if there is a user for a full CNOT pattern equivalent to a
+   * SWAP.
    */
   [[nodiscard]] static std::optional<XOp> checkThirdCNot(XOp& firstCNot,
                                                          XOp& secondCNot) {
@@ -299,6 +314,12 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     return std::nullopt;
   }
 
+  /**
+   * @brief Find input qubit for a result qubit value.
+   *
+   * @note This only works for operations where the indices of operands and
+   *       results line up.
+   */
   static std::optional<mlir::Value> getCorrespondingInput(mlir::Operation* op,
                                                           mlir::Value out) {
     for (auto&& result : op->getResults()) {
@@ -310,6 +331,12 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     return std::nullopt;
   }
 
+  /**
+   * @brief Find result index for an input qubit value.
+   *
+   * @note This only works for operations where the indices of operands and
+   *       results line up.
+   */
   static std::optional<std::size_t>
   getCorrespondingOutputIndex(mlir::Operation* op, mlir::Value in) {
     for (auto&& opOperand : op->getOpOperands()) {
@@ -322,10 +349,14 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
   }
 
   /**
-   * @brief Replace the given XOp by a single SWAPOp.
+   * @brief Replace the given XOp by a SWAPOp.
+   *
+   * @param rewriter Pattern rewriter used to apply modifications
+   * @param op Operation to be replaced
+   * @param secondTargetIn Second target input for new swap operation
    *
    * @note The result qubits will NOT be swapped since that is already done
-   * implicitly by the CNOT pattern.
+   *       implicitly by the CNOT pattern.
    */
   static SWAPOp replaceWithSwap(mlir::PatternRewriter& rewriter, XOp& op,
                                 const mlir::Value& secondTargetIn) {
