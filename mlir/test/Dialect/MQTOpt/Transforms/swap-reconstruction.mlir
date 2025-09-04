@@ -18,14 +18,14 @@ module {
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
     // ========================== Check for operations that should be inserted ==============================
-    // CHECK: %[[Q1_1:.*]], %[[Q0_1:.*]] = mqtopt.x() %[[Q1_0]] ctrl %[[Q0_0]]
-    // CHECK: %[[Q01_2:.*]]:2 = mqtopt.swap() %[[Q0_1]], %[[Q1_1]] : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[Q10_1:.*]]:2 = mqtopt.swap() %[[Q1_0]], %[[Q0_0]] : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[Q0_2:.*]], %[[Q1_2:.*]] = mqtopt.x() %[[Q10_1]]#1 ctrl %[[Q10_1]]#0
 
     // ========================== Check for operations that should be canceled ==============================
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
 
-    // CHECK: mqtopt.deallocQubit %[[Q01_2]]#0
-    // CHECK: mqtopt.deallocQubit %[[Q01_2]]#1
+    // CHECK: mqtopt.deallocQubit %[[Q0_2]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_2]]
 
     %q0_0 = mqtopt.allocQubit
     %q1_0 = mqtopt.allocQubit
@@ -129,10 +129,10 @@ module {
     // CHECK-NOT: %[[Q0_2:.*]], %[[Q1_2:.*]] = mqtopt.x() %[[Q1_1]] ctrl %[[Q0_1]]
 
     // ========================== Check for operations that should be inserted ==============================
-    // CHECK: %[[Q01_1:.*]]:2, %[[Q2_1:.*]], %[[Q3_1:.*]] = mqtopt.swap() %[[Q0_0]], %[[Q1_0]]
+    // CHECK: %[[Q10_1:.*]]:2, %[[Q2_1:.*]], %[[Q3_1:.*]] = mqtopt.swap() %[[Q1_0]], %[[Q0_0]] ctrl %[[Q2_0]] nctrl %[[Q3_0]]
 
-    // CHECK: mqtopt.deallocQubit %[[Q01_1]]#0
-    // CHECK: mqtopt.deallocQubit %[[Q01_1]]#1
+    // CHECK: mqtopt.deallocQubit %[[Q10_1]]#1
+    // CHECK: mqtopt.deallocQubit %[[Q10_1]]#0
     // CHECK: mqtopt.deallocQubit %[[Q2_1]]
     // CHECK: mqtopt.deallocQubit %[[Q3_1]]
 
@@ -170,12 +170,12 @@ module {
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
 
     // ========================== Check for operations that should be inserted ==============================
-    // CHECK: %[[Q0123_1:.*]]:4 = mqtopt.swap() %[[Q0_0]], %[[Q1_0]] ctrl %[[Q2_0]] nctrl %[[Q3_0]]
+    // CHECK: %[[Q10_1:.*]]:2, %[[Q2_1:.*]], %[[Q3_1:.*]] = mqtopt.swap() %[[Q1_0]], %[[Q0_0]] ctrl %[[Q2_0]] nctrl %[[Q3_0]]
 
-    // CHECK: mqtopt.deallocQubit %[[Q0123_1]]#0
-    // CHECK: mqtopt.deallocQubit %[[Q0123_1]]#1
-    // CHECK: mqtopt.deallocQubit %[[Q0123_1]]#2
-    // CHECK: mqtopt.deallocQubit %[[Q0123_1]]#3
+    // CHECK: mqtopt.deallocQubit %[[Q10_1]]#1
+    // CHECK: mqtopt.deallocQubit %[[Q10_1]]#0
+    // CHECK: mqtopt.deallocQubit %[[Q2_1]]
+    // CHECK: mqtopt.deallocQubit %[[Q3_1]]
 
     %q0_0 = mqtopt.allocQubit
     %q1_0 = mqtopt.allocQubit
@@ -208,16 +208,16 @@ module {
     // CHECK: %[[Q3_0:.*]] = mqtopt.allocQubit
 
     // ========================= Check for operations that should be kept as-is =============================
-    // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]], %[[Q2_1:.*]], %[[Q3_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]], %[[Q2_0]] nctrl %[[Q3_0]]
-    // CHECK: %[[Q0_2:.*]], %[[Q1_2:.*]], %[[Q3_2:.*]] = mqtopt.x() %[[Q1_1]] ctrl %[[Q0_1]] nctrl %[[Q3_1]]
-    // CHECK: %[[Q0_3:.*]], %[[Q1_3:.*]], %[[Q2_2:.*]], %[[Q3_3:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]], %[[Q2_0]] nctrl %[[Q3_0]]
+    // CHECK: %[[Q0_1:.*]], %[[Q12_1:.*]]:2, %[[Q3_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]], %[[Q2_0]] nctrl %[[Q3_0]]
+    // CHECK: %[[Q1_2:.*]], %[[Q0_2:.*]], %[[Q3_2:.*]] = mqtopt.x() %[[Q12_1]]#0 ctrl %[[Q0_1]] nctrl %[[Q3_1]]
+    // CHECK: %[[Q0_3:.*]], %[[Q12_3:.*]]:2, %[[Q3_3:.*]] = mqtopt.x() %[[Q0_2]] ctrl %[[Q1_2]], %[[Q12_1]]#1 nctrl %[[Q3_2]]
 
     // ======================== Check for operations that should not be inserted ============================
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.swap()
 
     // CHECK: mqtopt.deallocQubit %[[Q0_3]]
-    // CHECK: mqtopt.deallocQubit %[[Q1_3]]
-    // CHECK: mqtopt.deallocQubit %[[Q2_2]]
+    // CHECK: mqtopt.deallocQubit %[[Q12_3]]#0
+    // CHECK: mqtopt.deallocQubit %[[Q12_3]]#1
     // CHECK: mqtopt.deallocQubit %[[Q3_3]]
 
     %q0_0 = mqtopt.allocQubit

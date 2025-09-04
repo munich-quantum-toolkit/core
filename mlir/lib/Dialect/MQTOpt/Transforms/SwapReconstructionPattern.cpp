@@ -40,15 +40,15 @@ namespace mqt::ir::opt {
  *
  *  ──■────■──    ──■────■────■────■──    ──■────■──
  *    |  ┌─┴─┐      |  ┌─┴─┐  |    |        |    |
- *  ──■──┤ X ├    ──■──┤ X ├──■────■──    ──╳────■──
- *  ┌─┴─┐└─┬─┘ => ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐ =>   |  ┌─┴─┐
+ *  ──■──┤ X ├ => ──■──┤ X ├──■────■── => ──╳────■──
+ *  ┌─┴─┐└─┬─┘    ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐      |  ┌─┴─┐
  *  ┤ X ├──■──    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├
  *  └───┘         └───┘     └───┘└───┘         └───┘
  *
  *  ──□────□──    ──□────□────□────□──    ──□────□──
  *    |  ┌─┴─┐      |  ┌─┴─┐  |    |        |    |
- *  ──■──┤ X ├    ──■──┤ X ├──■────■──    ──╳────■──
- *  ┌─┴─┐└─┬─┘ => ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐ =>   |  ┌─┴─┐
+ *  ──■──┤ X ├ => ──■──┤ X ├──■────■── => ──╳────■──
+ *  ┌─┴─┐└─┬─┘    ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐      |  ┌─┴─┐
  *  ┤ X ├──■──    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├
  *  └───┘         └───┘     └───┘└───┘         └───┘
  */
@@ -73,7 +73,17 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     return inQubits.front();
   }
 
-  [[nodiscard]] static bool isCandidate(XOp& op, XOp& nextOp) {
+  /**
+   * @brief Check if operations are suitable for a two CNOT swap reconstruction.
+   *
+   * @param op One operation to be checked
+   * @param nextOp A user of op which should be checked
+   * @param nextIsSubset If true, it will be assumed that op is the "main"
+   *                     operation which has to have a superset of controls of
+   *                     nextOp; if false, the other way around
+   */
+  [[nodiscard]] static bool isCandidate(XOp& op, XOp& nextOp,
+                                        bool nextIsSubset) {
     auto&& opOutTarget = getCNotOutTarget(op);
     auto&& nextInTarget = getCNotInTarget(nextOp);
     auto&& opOutPosCtrlQubits = op.getPosCtrlOutQubits();
@@ -102,8 +112,12 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
         llvm::is_contained(opOutPosCtrlQubits, nextInTarget);
 
     bool posCtrlMatches =
-        isSubset(opOutPosCtrlQubits, nextInPosCtrlQubits, opOutTarget);
-    bool negCtrlMatches = isSubset(opOutNegCtrlQubits, nextInNegCtrlQubits);
+        nextIsSubset
+            ? isSubset(opOutPosCtrlQubits, nextInPosCtrlQubits, opOutTarget)
+            : isSubset(nextInPosCtrlQubits, opOutPosCtrlQubits, nextInTarget);
+    bool negCtrlMatches =
+        nextIsSubset ? isSubset(opOutNegCtrlQubits, nextInNegCtrlQubits)
+                     : isSubset(nextInNegCtrlQubits, opOutNegCtrlQubits);
 
     // TODO: early return for slightly better performance?
     if constexpr (matchControlledSwap) {
@@ -138,25 +152,21 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     }
 
     auto& firstCNot = op;
-    if (auto secondCNot = findCandidate(firstCNot)) {
-      auto secondSwapTargetOut = getCNotInTarget(*secondCNot);
-      if (auto secondSwapTarget =
-              getCorrespondingInput(firstCNot, secondSwapTargetOut)) {
-        if constexpr (onlyMatchFullSwapPattern) {
-          // if enabled, check if there is a third CNOT which must be equal
-          // to the first one
-          if (auto thirdCNot = checkThirdCNot(firstCNot, *secondCNot)) {
-            replaceWithSwap(rewriter, firstCNot, *secondSwapTarget);
-            eraseOperation(rewriter, *secondCNot);
-            eraseOperation(rewriter, *thirdCNot);
-            return mlir::success();
-          }
-        } else {
-          auto newSwap =
-              replaceWithSwap(rewriter, firstCNot, *secondSwapTarget);
-          swapOperationOrder(rewriter, newSwap, *secondCNot);
+    if (auto secondCNot = findCandidate(firstCNot, false)) {
+      auto secondSwapTarget = getCNotOutTarget(firstCNot);
+      if constexpr (onlyMatchFullSwapPattern) {
+        // if enabled, check if there is a third CNOT which must be equal
+        // to the first one
+        if (auto thirdCNot = checkThirdCNot(firstCNot, *secondCNot)) {
+          replaceWithSwap(rewriter, *secondCNot, secondSwapTarget);
+          eraseOperation(rewriter, firstCNot);
+          eraseOperation(rewriter, *thirdCNot);
           return mlir::success();
         }
+      } else {
+        auto newSwap = replaceWithSwap(rewriter, *secondCNot, secondSwapTarget);
+        swapOperationOrder(rewriter, firstCNot, newSwap);
+        return mlir::success();
       }
     }
 
@@ -210,21 +220,21 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
     auto&& nextOpResults = nextOp->getResults();
     llvm::SmallVector<mlir::Value> userUpdates;
     for (auto* user : nextOp->getUsers()) {
-      for (auto&& operand : user->getOpOperands()) {
-        auto nextOpIt = llvm::find(nextOpResults, operand.get());
-        if (nextOpIt != nextOpResults.end()) {
-          if (auto nextOpInput = getCorrespondingInput(nextOp, *nextOpIt)) {
-            auto opIt = llvm::find(opResults, *nextOpInput);
-            if (opIt != opResults.end()) {
-              // operand of user which matches a result of nextOp is also a
-              // result of op
-              rewriter.modifyOpInPlace(user, [&]() {
+      rewriter.modifyOpInPlace(user, [&]() {
+        for (auto&& operand : user->getOpOperands()) {
+          auto nextOpIt = llvm::find(nextOpResults, operand.get());
+          if (nextOpIt != nextOpResults.end()) {
+            if (auto nextOpInput = getCorrespondingInput(nextOp, *nextOpIt)) {
+              auto opIt = llvm::find(opResults, *nextOpInput);
+              if (opIt != opResults.end()) {
+                // operand of user which matches a result of nextOp is also a
+                // result of op
                 user->setOperand(operand.getOperandNumber(), *opIt);
-              }); // TODO: do this in out-most loop for performance
+              }
             }
           }
         }
-      }
+      });
     }
 
     // update nextOp to use the previous operand of the operation (since it will
@@ -242,13 +252,13 @@ struct SwapReconstructionPattern final : mlir::OpRewritePattern<XOp> {
   }
 
   /**
-   * @brief Find a user of the given operation for which isReverseCNotPattern()
-   * with the given operation is true.
+   * @brief Find a user of the given operation for which isCandidate() is true.
    */
-  [[nodiscard]] static std::optional<XOp> findCandidate(XOp& op) {
+  [[nodiscard]] static std::optional<XOp> findCandidate(XOp& op, bool isThirdCNot) {
     for (auto* user : op->getUsers()) {
       if (auto cnot = llvm::dyn_cast<XOp>(user)) {
-        if (isCandidate(op, cnot)) {
+        // TODO: check both directions?
+        if (isCandidate(op, cnot, isThirdCNot)) {
           return cnot;
         }
       }
