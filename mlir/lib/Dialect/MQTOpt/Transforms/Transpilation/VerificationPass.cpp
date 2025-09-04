@@ -13,9 +13,12 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 
 #include <cstddef>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
 
 #define DEBUG_TYPE "transpilation-verification"
@@ -66,7 +69,7 @@ struct TranspilationVerificationPass final
       // As of now, we don't support loops with qubit dependencies. Hence, emit
       // an error.
       if (auto loop = dyn_cast<scf::ForOp>(op)) {
-        if (loop.getRegionIterArgs().size() == 0) {
+        if (loop.getRegionIterArgs().empty()) {
           return WalkResult::advance();
         }
         return WalkResult(
