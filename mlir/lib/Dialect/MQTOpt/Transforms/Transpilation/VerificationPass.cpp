@@ -13,8 +13,10 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 
 #include <cstddef>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Visitors.h>
 
 #define DEBUG_TYPE "transpilation-verification"
 
@@ -24,6 +26,9 @@ namespace mqt::ir::opt {
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 using namespace mlir;
+
+/// @brief A function attribute that specifies an (QIR) entry point function.
+constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
 
 /**
  * @brief This pass verifies that the constraints of a target architecture are
@@ -43,17 +48,12 @@ struct TranspilationVerificationPass final
 
     auto arch = transpilation::getArchitecture("MQT-Test");
 
-    auto res = getOperation()->walk([&](Operation* op) {
-      if (auto qubit = dyn_cast<QubitOp>(op)) {
-        if (nqubits == arch->nqubits()) {
-          return WalkResult(qubit->emitOpError()
-                            << "requires " << (nqubits + 1)
-                            << " qubits but target architecture '"
-                            << arch->name() << "' only supports "
-                            << arch->nqubits() << " qubits");
+    auto res = getOperation()->walk<WalkOrder::PreOrder>([&](Operation* op) {
+      // As of now, we don't route non-entry functions. Hence, skip.
+      if (auto func = dyn_cast<func::FuncOp>(op)) {
+        if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
+          return WalkResult::skip();
         }
-
-        qubitToIndex[qubit.getQubit()] = qubit.getIndex();
 
         return WalkResult::advance();
       }
@@ -72,6 +72,20 @@ struct TranspilationVerificationPass final
         return WalkResult(
             loop.emitOpError()
             << "is currently not supported with qubit dependencies");
+      }
+
+      if (auto qubit = dyn_cast<QubitOp>(op)) {
+        if (nqubits == arch->nqubits()) {
+          return WalkResult(qubit->emitOpError()
+                            << "requires " << (nqubits + 1)
+                            << " qubits but target architecture '"
+                            << arch->name() << "' only supports "
+                            << arch->nqubits() << " qubits");
+        }
+
+        qubitToIndex[qubit.getQubit()] = qubit.getIndex();
+
+        return WalkResult::advance();
       }
 
       if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
