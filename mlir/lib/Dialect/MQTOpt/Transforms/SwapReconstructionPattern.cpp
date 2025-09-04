@@ -10,12 +10,12 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
-#include <mlir/IR/BuiltinAttributes.h>
 
 #include <cassert>
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
