@@ -10,7 +10,7 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
-#include "mlir/IR/BuiltinAttributes.h"
+#include <mlir/IR/BuiltinAttributes.h>
 
 #include <cassert>
 #include <cstddef>
