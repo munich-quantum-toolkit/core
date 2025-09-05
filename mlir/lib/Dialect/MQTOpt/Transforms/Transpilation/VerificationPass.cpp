@@ -44,8 +44,8 @@ struct TranspilationVerificationPass final
     std::size_t nqubits{};
     llvm::DenseMap<Value, std::size_t> qubitToIndex;
 
-    const auto forward = [&](const Value in, const Value out) {
-      qubitToIndex[out] = qubitToIndex[in];
+    const auto forward = [&](Value in, Value out) {
+      qubitToIndex[out] = qubitToIndex.at(in);
       qubitToIndex.erase(in);
     };
 
@@ -57,6 +57,9 @@ struct TranspilationVerificationPass final
         if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
           return WalkResult::skip();
         }
+
+        nqubits = 0;
+        qubitToIndex.clear();
 
         return WalkResult::advance();
       }
@@ -87,7 +90,7 @@ struct TranspilationVerificationPass final
         }
 
         qubitToIndex[qubit.getQubit()] = qubit.getIndex();
-
+        nqubits++;
         return WalkResult::advance();
       }
 
@@ -108,6 +111,10 @@ struct TranspilationVerificationPass final
 
       if (auto u = dyn_cast<UnitaryInterface>(op)) {
         const std::size_t nacts = u.getAllInQubits().size();
+        if (nacts == 0) {
+          return WalkResult::advance();
+        }
+
         if (nacts > 2) {
           return WalkResult(u->emitOpError() << "acts on more than two qubits");
         }
@@ -120,26 +127,19 @@ struct TranspilationVerificationPass final
           return WalkResult::advance();
         }
 
-        if (nacts == 2) {
-          const Value in1 = u.getAllInQubits()[1];
-          const Value out1 = u.getAllOutQubits()[1];
+        const Value in1 = u.getAllInQubits()[1];
+        const Value out1 = u.getAllOutQubits()[1];
 
-          if (!arch->areAdjacent(qubitToIndex[in0], qubitToIndex[in1])) {
-            return WalkResult(u->emitOpError()
-                              << "is not executable on target architecture '"
-                              << arch->name() << "'");
-          }
-
-          if (dyn_cast<SWAPOp>(op)) {
-            forward(in0, out1);
-            forward(in1, out0);
-            return WalkResult::advance();
-          }
-
-          forward(in0, out0);
-          forward(in1, out1);
-          return WalkResult::advance();
+        if (!arch->areAdjacent(qubitToIndex.at(in0), qubitToIndex.at(in1))) {
+          return WalkResult(u->emitOpError()
+                            << "(" << qubitToIndex[in0] << ","
+                            << qubitToIndex[in1] << ")"
+                            << " is not executable on target architecture '"
+                            << arch->name() << "'");
         }
+
+        forward(in0, out0);
+        forward(in1, out1);
 
         return WalkResult::advance();
       }

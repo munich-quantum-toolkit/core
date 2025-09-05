@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <string>
 
+namespace mqt::ir::opt {
 namespace transpilation {
 [[nodiscard]] llvm::SmallVector<std::size_t>
 Architecture::shortestPathBetween(std::size_t u, std::size_t v) const {
@@ -83,3 +84,4 @@ std::unique_ptr<Architecture> getArchitecture(const std::string& name) {
 }
 
 }; // namespace transpilation
+}; // namespace mqt::ir::opt

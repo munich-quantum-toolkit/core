@@ -15,6 +15,7 @@
 #include <string>
 #include <string_view>
 
+namespace mqt::ir::opt {
 namespace transpilation {
 /// @brief A quantum accelerator's architecture.
 class Architecture {
@@ -67,3 +68,4 @@ private:
 std::unique_ptr<Architecture> getArchitecture(const std::string& name);
 
 }; // namespace transpilation
+}; // namespace mqt::ir::opt
