@@ -38,6 +38,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Removed
 
+- 🔥 Drop support for Python 3.9 ([#1181]) ([**@denialhaag**])
 - 🔥 Stop testing on `x86` macOS and shipping wheels for Intel-based Macs ([#1165]) ([**@burgholzer**])
 - 🔥 Remove `ClassicControlledOperation` from C++ library and Python package ([#1117]) ([**@denialhaag**])
 
@@ -183,6 +184,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1181]: https://github.com/munich-quantum-toolkit/core/pull/1181
 [#1165]: https://github.com/munich-quantum-toolkit/core/pull/1165
 [#1157]: https://github.com/munich-quantum-toolkit/core/pull/1157
 [#1151]: https://github.com/munich-quantum-toolkit/core/pull/1151
