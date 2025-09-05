@@ -15,7 +15,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <functional>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -29,7 +28,6 @@
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
 #include <numeric>
-#include <queue>
 #include <random>
 #include <utility>
 
@@ -115,28 +113,16 @@ struct Custom : InitialLayout {
 
 class QubitStateManager {
 public:
-  /**
-   * @brief Return empty circuit state.
-   */
-  static QubitStateManager empty() { return QubitStateManager(); }
+  using QubitValue = std::pair<Value, std::size_t>;
 
-  /**
-   * @brief Initialize circuit state.
-   * @details TODO
-   * @param qubits A vector of static qubits.
-   * @param layout The mapping from dynamic numbers to static indices.
-   */
-  explicit QubitStateManager(const llvm::SmallVector<Value>& qubits,
-                             const InitialLayout& layout)
-      : staticReg_(qubits.size()), layout_(qubits.size()),
-        invLayout_(qubits.size()) {
-    for (std::size_t dn = 0; dn < qubits.size(); ++dn) {
-      const std::size_t i = layout(dn);
+  explicit QubitStateManager(const llvm::SmallVectorImpl<Value>& qubits,
+                             const InitialLayout& layout) {
+    for (std::size_t j = 0; j < qubits.size(); ++j) {
+      const std::size_t i = layout(j);
       const Value q = qubits[i];
-
-      layout_[dn] = i;
-      invLayout_[i] = dn;
-      staticReg_[dn] = q;
+      valueToIndex_[q] = i;
+      indexToValue_[i] = q;
+      free_.push_back(q);
     }
   }
 
@@ -160,27 +146,19 @@ public:
    * qubits.
    */
   Value retrieve() {
-    if (nalloc() == nqubits()) {
+    if (free_.empty()) {
       return nullptr;
     }
 
-    Value q;
-    for (std::size_t dn = 0; dn < nqubits(); ++dn) {
-      if (staticReg_[dn] != nullptr) {
-        const std::size_t i = layout_[dn];
-
-        q = staticReg_[dn];       // Retrieve free qubit.
-        staticReg_[dn] = nullptr; // Set as used.
-
-        valueToIndex_[q] = i;
-        indexToValue_[i] = q;
-
-        break;
-      }
-    }
-    nalloc_++;
+    Value q = free_.back();
+    free_.pop_back();
     return q;
   }
+
+  /**
+   * @brief Release static qubit.
+   */
+  void release(Value q) { free_.push_back(q); }
 
   /**
    * @brief Forward SSA values.
@@ -193,46 +171,21 @@ public:
     valueToIndex_.erase(in);
   }
 
-  /**
-   * @brief Release static qubit.
-   */
-  void release(Value q) {
-    const std::size_t i = get(q);
-    const std::size_t dn = invLayout_[i];
-    staticReg_[dn] = q;
-    nalloc_--;
+  [[nodiscard]] llvm::SmallVector<Value> qubits() const {
+    llvm::SmallVector<Value> qubits(valueToIndex_.size());
+    for (const auto& [q, i] : valueToIndex_) {
+      qubits[i] = q;
+    }
+    return qubits;
   }
 
-  /**
-   * @brief Return the number of static qubits.
-   */
-  [[nodiscard]] std::size_t nqubits() const { return staticReg_.size(); }
-
-  /**
-   * @brief Return the number of allocated qubits.
-   */
-  [[nodiscard]] std::size_t nalloc() const { return nalloc_; }
-
 private:
-  explicit QubitStateManager() = default;
-
   /// @brief Maps a SSA value to its static index.
   llvm::DenseMap<Value, std::size_t> valueToIndex_;
-
   /// @brief Maps a static index to its SSA value.
   llvm::DenseMap<std::size_t, Value> indexToValue_;
-
-  /// @brief Vector / Register of static qubits.
-  llvm::SmallVector<Value> staticReg_;
-
-  /// @brief The number of allocated qubits.
-  std::size_t nalloc_{};
-
-  /// @brief Maps from dynamic number to static index.
-  llvm::SmallVector<std::size_t, 0> layout_;
-
-  /// @brief Maps from static index to dynamic number.
-  llvm::SmallVector<std::size_t, 0> invLayout_;
+  /// @brief Queue of available qubits indices.
+  llvm::SmallVector<Value> free_;
 };
 
 class Router {
@@ -265,21 +218,6 @@ protected:
         /* neg_ctrl_in_qubits = */ ValueRange{});
   }
 
-  /// @brief Insert and return static qubits at current insertion point.
-  [[nodiscard]] llvm::SmallVector<Value>
-  initStaticQubits(PatternRewriter& rewriter) const {
-    llvm::SmallVector<Value> staticQubits;
-    staticQubits.reserve(arch().nqubits());
-
-    for (std::size_t i = 0; i < arch().nqubits(); ++i) {
-      const auto location = rewriter.getInsertionPoint()->getLoc();
-      auto qubit = rewriter.create<QubitOp>(location, i);
-      staticQubits.push_back(qubit);
-    }
-
-    return staticQubits;
-  }
-
   /// @brief Return targeted architecture.
   [[nodiscard]] const Architecture& arch() const { return *arch_; }
 
@@ -295,18 +233,26 @@ public:
     PatternRewriter rewriter(module->getContext());
 
     auto res = module->walk([&](func::FuncOp func) {
+      rewriter.setInsertionPointToStart(&func.getBody().front());
+
       if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
         return WalkResult::skip(); // For now we don't route non-entry point
                                    // functions.
       }
 
-      rewriter.setInsertionPointToStart(&func.getBody().front());
-      auto staticQubits = initStaticQubits(rewriter);
+      // An entry point creates the static qubits [0, 1, ..., nqubits]:
 
-      Custom layout(arch().nqubits(),
-                    llvm::SmallVector<std::size_t>{2, 0, 4, 1, 3, 5});
+      llvm::SmallVector<Value, 0> qubits(arch().nqubits());
+      const auto location = rewriter.getInsertionPoint()->getLoc();
+      for (std::size_t i = 0; i < arch().nqubits(); ++i) {
+        auto op = rewriter.create<QubitOp>(location, i);
+        qubits[i] = op.getQubit();
+      }
 
-      QubitStateManager state(staticQubits, layout);
+      // Setup state manager:
+
+      Identity layout(arch().nqubits());
+      QubitStateManager state(qubits, layout);
 
       if (failed(forward(func, state, rewriter))) {
         return WalkResult::interrupt();
@@ -392,7 +338,7 @@ private:
         }
 
         return WalkResult(func->emitOpError()
-                          << "requires " << (state.nalloc() + 1)
+                          << "requires " << (arch().nqubits() + 1)
                           << " qubits but target architecture '"
                           << arch().name() << "' only supports "
                           << arch().nqubits() << " qubits");
@@ -447,8 +393,6 @@ private:
     if (res.wasInterrupted()) {
       return failure();
     }
-
-    assert(state.nalloc() == 0);
 
     return success();
   }
