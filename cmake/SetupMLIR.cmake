@@ -9,7 +9,7 @@
 # set the include directory for the build tree
 set(MQT_MLIR_SOURCE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/mlir/include")
 set(MQT_MLIR_BUILD_INCLUDE_DIR "${PROJECT_BINARY_DIR}/mlir/include")
-set(MQT_MLIR_MIN_VERSION 19.0)
+set(MQT_MLIR_MIN_VERSION 21.0)
 
 # MLIR must be installed on the system
 find_package(MLIR REQUIRED CONFIG)
