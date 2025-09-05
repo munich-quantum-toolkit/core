@@ -10,7 +10,6 @@
 
 from collections.abc import Iterable
 from enum import Enum
-from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -289,7 +288,7 @@ class DDPackage:
             The resulting state is guaranteed to have its reference count increased.
         """
 
-    def from_vector(self, state: npt.NDArray[(Any,), np.cdouble]) -> VectorDD:
+    def from_vector(self, state: npt.NDArray[np.cdouble]) -> VectorDD:
         """Create a DD from a state vector.
 
         Args:
