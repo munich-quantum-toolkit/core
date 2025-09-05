@@ -74,7 +74,7 @@ To support this endeavor, please consider:
 
 ## Getting Started
 
-`mqt.core` is available via [PyPI](https://pypi.org/project/mqt.core/) for all major operating systems and supports Python 3.9 to 3.14.
+`mqt.core` is available via [PyPI](https://pypi.org/project/mqt.core/) for all major operating systems and supported Python versions.
 
 ```console
 (.venv) $ pip install mqt.core

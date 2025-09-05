@@ -229,7 +229,7 @@ def _add_non_unitary_operation(
         clbit_map: A mapping from classical bit indices to Qiskit :class:`~qiskit.circuit.Clbit`.
     """
     if op.type_ == OpType.measure:
-        for qubit, clbit in zip(op.targets, op.classics):
+        for qubit, clbit in zip(op.targets, op.classics, strict=False):
             circ.measure(qubit_map[qubit], clbit_map[clbit])
         return
 
