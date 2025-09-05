@@ -35,6 +35,12 @@ def GateElimination : Pass<"gate-elimination", "mlir::ModuleOp"> {
   }];
 }
 
+def GateDecomposition : Pass<"gate-decomposition", "mlir::ModuleOp"> {
+  let summary = "This pass will perform various gate decompositions to simplify the used gate set.";
+  let description = [{
+  }];
+}
+
 def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   let summary = "This pass searches for consecutive applications of rotation gates that can be merged.";
   let description = [{

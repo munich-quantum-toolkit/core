@@ -1,0 +1,249 @@
+/*
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
+
+#include <iterator>
+#include <llvm/ADT/STLExtras.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
+
+namespace mqt::ir::opt {
+
+/**
+ * @brief This pattern replaces all negative controls by negations combined with
+ *        positively controlled operations.
+ */
+struct NegCtrlDecompositionPattern final
+    : mlir::OpInterfaceRewritePattern<UnitaryInterface> {
+
+  explicit NegCtrlDecompositionPattern(mlir::MLIRContext* context)
+      : OpInterfaceRewritePattern(context) {}
+
+  mlir::LogicalResult
+  matchAndRewrite(UnitaryInterface op,
+                  mlir::PatternRewriter& rewriter) const override {
+    return mlir::failure();
+  }
+};
+
+/**
+ * @brief This pattern TODO.
+ */
+struct EulerDecompositionPattern final
+    : mlir::OpInterfaceRewritePattern<UnitaryInterface> {
+
+  explicit EulerDecompositionPattern(mlir::MLIRContext* context)
+      : OpInterfaceRewritePattern(context) {}
+
+  mlir::LogicalResult
+  matchAndRewrite(UnitaryInterface op,
+                  mlir::PatternRewriter& rewriter) const override {
+    if (!isSingleQubitOperation(op)) {
+      return mlir::failure();
+    }
+
+    auto series = getSingleQubitSeries(op);
+
+    return mlir::failure();
+  }
+
+  [[nodiscard]] static llvm::SmallVector<UnitaryInterface>
+  getSingleQubitSeries(UnitaryInterface op) {
+    llvm::SmallVector<UnitaryInterface> result = {op};
+    while (true) {
+      auto nextOp = getNextOperation(op);
+      if (isSingleQubitOperation(nextOp)) {
+        result.push_back(nextOp);
+      } else {
+        return result;
+      }
+    }
+  }
+
+  [[nodiscard]] static bool isSingleQubitOperation(UnitaryInterface op) {
+    auto&& inQubits = op.getInQubits();
+    auto&& outQubits = op.getOutQubits();
+    return inQubits.size() == 1 && outQubits.size() == 1 && !op.isControlled();
+  }
+
+  [[nodiscard]] static UnitaryInterface getNextOperation(UnitaryInterface op) {
+    // since there is only one output qubit, there should only be one user
+    auto&& users = op->getUsers();
+    assert(std::distance(users.begin(), users.end()) == 1);
+    return llvm::dyn_cast<UnitaryInterface>(*users.begin());
+  }
+
+  /**
+   * @brief Creates a new rotation gate with no controls.
+   *
+   * @tparam OpType The type of the operation to be created.
+   * @param op The first instance of the rotation gate.
+   * @param rewriter The pattern rewriter.
+   * @return A new rotation gate.
+   */
+  template <typename OpType>
+  static OpType createRotationGate(mlir::PatternRewriter& rewriter,
+                                   mlir::Value inQubit, qc::fp angle) {
+    auto location = inQubit.getLoc();
+    auto qubitType = inQubit.getType();
+
+    auto angleValue = rewriter.create<mlir::arith::ConstantOp>(
+        location, rewriter.getF64Type(), rewriter.getF64FloatAttr(angle));
+
+    return rewriter.create<OpType>(
+        location, mlir::TypeRange{qubitType}, mlir::TypeRange{},
+        mlir::TypeRange{}, mlir::DenseF64ArrayAttr{},
+        mlir::DenseBoolArrayAttr{}, mlir::ValueRange{angleValue},
+        mlir::ValueRange{inQubit}, mlir::ValueRange{}, mlir::ValueRange{});
+  }
+
+  [[nodiscard]] static llvm::SmallVector<UnitaryInterface, 3> createMlirGates(
+      mlir::PatternRewriter& rewriter,
+      const llvm::SmallVector<std::pair<qc::OpType, qc::fp>, 3>& schematic,
+      mlir::Value inQubit) {
+    llvm::SmallVector<UnitaryInterface, 3> result;
+    for (auto [type, angle] : schematic) {
+      if (type == qc::RZ) {
+        auto newRz = createRotationGate<RZOp>(rewriter, inQubit, angle);
+        result.push_back(newRz);
+      } else if (type == qc::RY) {
+        auto newRy = createRotationGate<RYOp>(rewriter, inQubit, angle);
+        result.push_back(newRy);
+      } else {
+        throw std::logic_error{"Unable to create MLIR gate in Euler "
+                               "Decomposition (unsupported gate)"};
+      }
+      inQubit = result.back().getOutQubits().front();
+    }
+    return result;
+  }
+
+  /**
+   * @note Adapted from circuit_kak() in the IBM Qiskit framework.
+   *       (C) Copyright IBM 2022
+   *
+   *       This code is licensed under the Apache License, Version 2.0. You may
+   *       obtain a copy of this license in the LICENSE.txt file in the root
+   *       directory of this source tree or at
+   *       http://www.apache.org/licenses/LICENSE-2.0.
+   *
+   *       Any modifications or derivative works of this code must retain this
+   *       copyright notice, and modified files need to carry a notice
+   *       indicating that they have been altered from the originals.
+   */
+  [[nodiscard]] static std::pair<
+      llvm::SmallVector<std::pair<qc::OpType, qc::fp>, 3>, qc::fp>
+  calculateRotationGates(std::array<qc::fp, 4> unitaryMatrix) {
+    auto [lambda, theta, phi, phase] = paramsZyzInner(unitaryMatrix);
+    qc::fp globalPhase = phase - ((phi + lambda) / 2.);
+    constexpr qc::fp angleZeroEpsilon = 1e-12;
+
+    auto remEuclid = [](qc::fp a, qc::fp b) {
+      auto r = std::fmod(a, b);
+      return (r < 0.0) ? r + std::abs(b) : r;
+    };
+    auto mod2pi = [&](qc::fp angle) -> qc::fp {
+      // remEuclid() isn't exactly the same as Python's % operator, but
+      // because the RHS here is a constant and positive it is effectively
+      // equivalent for this case
+      auto wrapped = remEuclid(angle + qc::PI, 2. * qc::PI) - qc::PI;
+      if (std::abs(wrapped - qc::PI) < angleZeroEpsilon) {
+        return -qc::PI;
+      }
+      return wrapped;
+    };
+
+    llvm::SmallVector<std::pair<qc::OpType, qc::fp>, 3> gates;
+    if (std::abs(theta) < angleZeroEpsilon) {
+      lambda += phi;
+      lambda = mod2pi(lambda);
+      if (std::abs(lambda) > angleZeroEpsilon) {
+        gates.push_back({qc::RZ, lambda});
+        globalPhase += lambda / 2.0;
+      }
+      return {gates, globalPhase};
+    }
+
+    if (std::abs(theta - qc::PI) < angleZeroEpsilon) {
+      globalPhase += phi;
+      lambda -= phi;
+      phi = 0.0;
+    }
+    if (std::abs(mod2pi(lambda + qc::PI)) < angleZeroEpsilon ||
+        std::abs(mod2pi(phi + qc::PI)) < angleZeroEpsilon) {
+      lambda += qc::PI;
+      theta = -theta;
+      phi += qc::PI;
+    }
+    lambda = mod2pi(lambda);
+    if (std::abs(lambda) > angleZeroEpsilon) {
+      globalPhase += lambda / 2.0;
+      gates.push_back({qc::RZ, lambda});
+    }
+    gates.push_back({qc::RY, theta});
+    phi = mod2pi(phi);
+    if (std::abs(phi) > angleZeroEpsilon) {
+      globalPhase += phi / 2.0;
+      gates.push_back({qc::RZ, phi});
+    }
+    return {gates, globalPhase};
+  }
+
+  /**
+   * @note Adapted from circuit_kak() in the IBM Qiskit framework.
+   *       (C) Copyright IBM 2022
+   *
+   *       This code is licensed under the Apache License, Version 2.0. You may
+   *       obtain a copy of this license in the LICENSE.txt file in the root
+   *       directory of this source tree or at
+   *       http://www.apache.org/licenses/LICENSE-2.0.
+   *
+   *       Any modifications or derivative works of this code must retain this
+   *       copyright notice, and modified files need to carry a notice
+   *       indicating that they have been altered from the originals.
+   */
+  [[nodiscard]] static std::array<qc::fp, 4>
+  paramsZyzInner(std::array<qc::fp, 4> unitaryMatrix) {
+    auto getIndex = [](auto x, auto y) { return (x * 2) + y; };
+    auto determinant = [getIndex](auto&& matrix) {
+      return (matrix.at(getIndex(0, 0)) * matrix.at(getIndex(1, 1))) -
+             (matrix.at(getIndex(1, 0)) * matrix.at(getIndex(0, 1)));
+    };
+
+    auto detArg = determinant(unitaryMatrix);
+    auto phase = 0.5 * detArg;
+    auto theta = 2. * std::atan2(std::abs(unitaryMatrix.at(getIndex(1, 0))),
+                                 std::abs(unitaryMatrix.at(getIndex(0, 0))));
+    auto ang1 = unitaryMatrix.at(getIndex(1, 1));
+    auto ang2 = unitaryMatrix.at(getIndex(1, 0));
+    auto phi = ang1 + ang2 - detArg;
+    auto lam = ang1 - ang2;
+    return {theta, phi, lam, phase};
+  }
+};
+
+/**
+ * @brief Populates the given pattern set with patterns for gate elimination.
+ *
+ * @param patterns The pattern set to populate.
+ */
+void populateGateDecompositionPatterns(mlir::RewritePatternSet& patterns) {
+  patterns.add<NegCtrlDecompositionPattern>(patterns.getContext());
+  patterns.add<EulerDecompositionPattern>(patterns.getContext());
+}
+
+} // namespace mqt::ir::opt
