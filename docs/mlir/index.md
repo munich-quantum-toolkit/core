@@ -15,7 +15,6 @@ So far, this comprises a conversion from MQTOpt to MQTRef and one from MQTRef to
 
 ```{toctree}
 :maxdepth: 2
-:caption: Table of Contents
 
 MQTRef
 MQTOpt
@@ -26,7 +25,7 @@ Conversions
 This page is a work in progress.
 The content is not yet complete and subject to change.
 Contributions are welcome.
-See the [contribution guidelines](contributing.md) for more information.
+See the {doc}`contribution guide <contributing>` for more information.
 :::
 
 ## Development
