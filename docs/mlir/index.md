@@ -30,6 +30,6 @@ See the {doc}`contribution guide <contributing>` for more information.
 
 ## Development
 
-Building the MLIR library requires the latest release version of LLVM.
-Our CI pipeline on GitHub continuously tests the MLIR library on the {code}`ubuntu-24.04`, {code}`ubuntu-24.04-arm`, {code}`macos-14`, {code}`windows-2022`, and {code}`windows-11-arm` runners.
+Building the MLIR library requires LLVM version 21.0 or later.
+Our CI pipeline on GitHub continuously builds and tests the MLIR library on Linux, macOS, and Windows.
 To access the latest build logs, visit the [GitHub Actions page](https://github.com/munich-quantum-toolkit/core/actions/workflows/ci.yml).
