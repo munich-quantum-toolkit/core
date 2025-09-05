@@ -196,7 +196,7 @@ explicit_package_bases = true
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = ["qiskit.*", "matplotlib.*", "pytest_console_scripts.*", "pandas.*"]
+module = ["qiskit.*", "matplotlib.*", "pytest_console_scripts.*"]
 ignore_missing_imports = true
 
 [tool.ruff]
