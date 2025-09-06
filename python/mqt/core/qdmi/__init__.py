@@ -6,4 +6,4 @@
 #
 # Licensed under the MIT License
 
-"""Package for Quantum Device Management Interface (QDMI) functionalities."""
+"""Submodule for Quantum Device Management Interface (QDMI) functionality."""
