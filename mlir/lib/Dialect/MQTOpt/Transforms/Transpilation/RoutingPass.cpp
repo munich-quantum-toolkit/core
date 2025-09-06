@@ -27,6 +27,7 @@
 #include <mlir/IR/Visitors.h>
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/WalkPatternRewriteDriver.h>
 #include <numeric>
 #include <random>
 #include <utility>
@@ -64,6 +65,25 @@ namespace {
 [[nodiscard]] std::pair<Value, Value> getOuts(UnitaryInterface u) {
   assert(isTwoQubitGate(u));
   return {u.getAllOutQubits()[0], u.getAllOutQubits()[1]};
+}
+
+/// @brief Swap @p in0 and @p in1 at @p location.
+[[nodiscard]] SWAPOp createSwap(Location location, Value in0, Value in1,
+                                PatternRewriter& rewriter) {
+  const SmallVector<Type> resultTypes{in0.getType(), in1.getType()};
+  const SmallVector<Value> inQubits{in0, in1};
+
+  return rewriter.create<SWAPOp>(
+      /* location = */ location,
+      /* out_qubits = */ resultTypes,
+      /* pos_ctrl_out_qubits = */ TypeRange{},
+      /* neg_ctrl_out_qubits = */ TypeRange{},
+      /* static_params = */ nullptr,
+      /* params_mask = */ nullptr,
+      /* params = */ ValueRange{},
+      /* in_qubits = */ inQubits,
+      /* pos_ctrl_in_qubits = */ ValueRange{},
+      /* neg_ctrl_in_qubits = */ ValueRange{});
 }
 } // namespace
 
@@ -108,13 +128,14 @@ struct Custom : InitialLayout {
 };
 
 //===----------------------------------------------------------------------===//
-// Routing
+// State (Permutation) Management
 //===----------------------------------------------------------------------===//
 
+/**
+ * @brief Keeps track of the current state of qubits.
+ */
 class QubitStateManager {
 public:
-  using QubitValue = std::pair<Value, std::size_t>;
-
   explicit QubitStateManager(const llvm::SmallVectorImpl<Value>& qubits,
                              const InitialLayout& layout) {
     for (std::size_t j = 0; j < qubits.size(); ++j) {
@@ -129,8 +150,8 @@ public:
   /**
    * @brief Return static index from SSA value @p v.
    */
-  [[nodiscard]] std::size_t get(const Value v) const {
-    return valueToIndex_.at(v);
+  [[nodiscard]] std::size_t get(const Value q) const {
+    return valueToIndex_.at(q);
   }
 
   /**
@@ -171,123 +192,139 @@ public:
     valueToIndex_.erase(in);
   }
 
-  [[nodiscard]] llvm::SmallVector<Value> qubits() const {
-    llvm::SmallVector<Value> qubits(valueToIndex_.size());
-    for (const auto& [q, i] : valueToIndex_) {
-      qubits[i] = q;
-    }
-    return qubits;
-  }
-
 private:
-  /// @brief Maps a SSA value to its static index.
+  /**
+   * @brief Maps SSA values to static indices.
+   */
   llvm::DenseMap<Value, std::size_t> valueToIndex_;
-  /// @brief Maps a static index to its SSA value.
+
+  /**
+   * @brief Maps static indices to SSA values.
+   */
   llvm::DenseMap<std::size_t, Value> indexToValue_;
-  /// @brief Queue of available qubits indices.
+
+  /**
+   * @brief Queue of available qubits indices.
+   */
   llvm::SmallVector<Value> free_;
 };
 
-class Router {
-public:
-  explicit Router(std::unique_ptr<Architecture> arch)
-      : arch_(std::move(arch)) {}
+//===----------------------------------------------------------------------===//
+// Patterns
+//===----------------------------------------------------------------------===//
 
-  virtual ~Router() = default;
+namespace {
 
-  /// @brief Use SWAP-based routing to fit to the target's coupling map.
-  virtual LogicalResult route(ModuleOp) const = 0;
-
-protected:
-  /// @brief Swap @p in0 and @p in1 at @p location.
-  [[nodiscard]] static SWAPOp createSwap(Location location, Value in0,
-                                         Value in1, PatternRewriter& rewriter) {
-    const SmallVector<Type> resultTypes{in0.getType(), in1.getType()};
-    const SmallVector<Value> inQubits{in0, in1};
-
-    return rewriter.create<SWAPOp>(
-        /* location = */ location,
-        /* out_qubits = */ resultTypes,
-        /* pos_ctrl_out_qubits = */ TypeRange{},
-        /* neg_ctrl_out_qubits = */ TypeRange{},
-        /* static_params = */ nullptr,
-        /* params_mask = */ nullptr,
-        /* params = */ ValueRange{},
-        /* in_qubits = */ inQubits,
-        /* pos_ctrl_in_qubits = */ ValueRange{},
-        /* neg_ctrl_in_qubits = */ ValueRange{});
-  }
-
-  /// @brief Return targeted architecture.
-  [[nodiscard]] const Architecture& arch() const { return *arch_; }
-
-private:
-  std::unique_ptr<Architecture> arch_;
+struct RoutingEnvironment {
+  RoutingEnvironment(const llvm::SmallVectorImpl<Value>& qubits,
+                     const InitialLayout& layout, const Architecture& arch)
+      : state(qubits, layout), arch(&arch) {}
+  QubitStateManager state;
+  const Architecture* arch;
 };
 
-class NaiveRouter final : public Router {
-public:
-  using Router::Router;
+template <class OpType> struct PatternWithEnv : OpRewritePattern<OpType> {
+  PatternWithEnv(MLIRContext* ctx, std::shared_ptr<RoutingEnvironment> env)
+      : OpRewritePattern<AllocQubitOp>(ctx), env_(std::move(env)) {}
 
-  [[nodiscard]] LogicalResult route(ModuleOp module) const override {
-    PatternRewriter rewriter(module->getContext());
+  [[nodiscard]] RoutingEnvironment& env() const { return *env_; }
 
-    auto res = module->walk([&](func::FuncOp func) {
-      rewriter.setInsertionPointToStart(&func.getBody().front());
+private:
+  std::shared_ptr<RoutingEnvironment> env_;
+};
 
-      if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
-        return WalkResult::skip(); // For now we don't route non-entry point
-                                   // functions.
-      }
+struct IfOpPattern final : OpRewritePattern<scf::IfOp> {
+  explicit IfOpPattern(MLIRContext* ctx) : OpRewritePattern<scf::IfOp>(ctx) {}
+  LogicalResult matchAndRewrite(scf::IfOp /*op*/,
+                                PatternRewriter& /*rewriter*/) const final {
+    return failure();
+  }
+};
 
-      // An entry point creates the static qubits [0, 1, ..., nqubits]:
+struct ForOpPattern final : OpRewritePattern<scf::ForOp> {
+  explicit ForOpPattern(MLIRContext* ctx) : OpRewritePattern<scf::ForOp>(ctx) {}
+  LogicalResult matchAndRewrite(scf::ForOp /*op*/,
+                                PatternRewriter& /*rewriter*/) const final {
+    return failure();
+  }
+};
 
-      llvm::SmallVector<Value, 0> qubits(arch().nqubits());
-      const auto location = rewriter.getInsertionPoint()->getLoc();
-      for (std::size_t i = 0; i < arch().nqubits(); ++i) {
-        auto op = rewriter.create<QubitOp>(location, i);
-        qubits[i] = op.getQubit();
-      }
+struct AllocQubitPattern final : PatternWithEnv<AllocQubitOp> {
+  LogicalResult matchAndRewrite(AllocQubitOp alloc,
+                                PatternRewriter& rewriter) const final {
+    if (Value q = env().state.retrieve()) {
+      auto reset = rewriter.create<ResetOp>(q.getLoc(), q);
+      rewriter.replaceOp(alloc, reset);
+      env().state.forward(reset.getInQubit(), reset.getOutQubit());
+      return success();
+    }
 
-      // Setup state manager:
+    return alloc.emitOpError()
+           << "requires " << (env().arch->nqubits() + 1)
+           << " qubits but target architecture '" << env().arch->name()
+           << "' only supports " << env().arch->nqubits() << " qubits";
+  }
+};
 
-      Identity layout(arch().nqubits());
-      QubitStateManager state(qubits, layout);
+struct ResetPattern final : PatternWithEnv<ResetOp> {
+  LogicalResult matchAndRewrite(ResetOp reset,
+                                PatternRewriter& /*rewriter*/) const final {
+    env().state.forward(reset.getInQubit(), reset.getOutQubit());
+    return failure();
+  }
+};
 
-      if (failed(forward(func, state, rewriter))) {
-        return WalkResult::interrupt();
-      }
+struct NaiveUnitaryPattern final : PatternWithEnv<UnitaryInterface> {
+  LogicalResult matchAndRewrite(UnitaryInterface u,
+                                PatternRewriter& rewriter) const final {
+    // Global-phase or zero-qubit unitary: Nothing to do.
+    if (u.getAllInQubits().empty()) {
+      return failure();
+    }
 
-      return WalkResult::advance();
-    });
+    // Single-qubit: Forward mapping
+    if (!isTwoQubitGate(u)) {
+      env().state.forward(u.getAllInQubits()[0], u.getAllOutQubits()[0]);
+      return failure();
+    }
 
-    return res.wasInterrupted() ? failure() : success();
+    // Two-qubit: Ensure executable on hardware.
+    if (!isExecutable(u)) {
+      makeExecutable(u, rewriter);
+    }
+
+    // After ensuring executability, forward outputs.
+    const auto& [execIn0, execIn1] = getIns(u);
+    const auto& [execOut0, execOut1] = getOuts(u);
+
+    env().state.forward(execIn0, execOut0);
+    env().state.forward(execIn1, execOut1);
+
+    return failure();
   }
 
 private:
   /// @brief Returns true if @p u is executable on the targeted architecture.
-  [[nodiscard]] bool isExecutable(UnitaryInterface u,
-                                  const QubitStateManager& state) const {
+  [[nodiscard]] bool isExecutable(UnitaryInterface u) const {
     const auto& [in0, in1] = getIns(u);
-    return arch().areAdjacent(state.get(in0), state.get(in1));
+    return env().arch->areAdjacent(env().state.get(in0), env().state.get(in1));
   }
 
   /// @brief Get shortest path between @p in0 and @p in1.
-  [[nodiscard]] llvm::SmallVector<std::size_t>
-  getPath(const Value in0, const Value in1,
-          const QubitStateManager& state) const {
-    return arch().shortestPathBetween(state.get(in0), state.get(in1));
+  [[nodiscard]] llvm::SmallVector<std::size_t> getPath(const Value in0,
+                                                       const Value in1) const {
+    return env().arch->shortestPathBetween(env().state.get(in0),
+                                           env().state.get(in1));
   }
 
   /// @brief Insert SWAPs such that @p u is executable.
-  void makeExecutable(UnitaryInterface u, QubitStateManager& state,
-                      PatternRewriter& rewriter) const {
+  void makeExecutable(UnitaryInterface u, PatternRewriter& rewriter) const {
     const auto& [q0, q1] = getIns(u);
-    auto path = getPath(q0, q1, state);
+    auto path = getPath(q0, q1);
 
     for (std::size_t i = 0; i < path.size() - 1; i += 2) {
-      const Value in0 = state.get(path[i]);
-      const Value in1 = state.get(path[i + 1]);
+      const Value in0 = env().state.get(path[i]);
+      const Value in1 = env().state.get(path[i + 1]);
 
       // Y(out), X(out) = SWAP X(in), Y(in)
       auto swap = createSwap(u->getLoc(), in0, in1, rewriter);
@@ -297,106 +334,80 @@ private:
       rewriter.replaceAllUsesExcept(in0, out0, swap);
       rewriter.replaceAllUsesExcept(in1, out1, swap);
 
-      state.forward(in0, out1);
-      state.forward(in1, out0);
+      env().state.forward(in0, out1);
+      env().state.forward(in1, out0);
     }
   }
+};
 
-  [[nodiscard]] LogicalResult forward(func::FuncOp func,
-                                      QubitStateManager& state,
-                                      PatternRewriter& rewriter) const {
+struct MeasurePattern final : public PatternWithEnv<MeasureOp> {
+  LogicalResult matchAndRewrite(MeasureOp m,
+                                PatternRewriter& /*rewriter*/) const final {
+    env().state.forward(m.getInQubit(), m.getOutQubit());
+    return failure();
+  }
+};
 
-    auto res = func->walk<WalkOrder::PreOrder>([&](Operation* op) {
-      rewriter.setInsertionPoint(op);
-
-      // Skip any initialized static qubits.
-      if (auto qubit = dyn_cast<QubitOp>(op)) {
-        return WalkResult::skip();
-      }
-
-      // As of now, we don't support conditionals. Hence, skip.
-      if (auto cond = dyn_cast<scf::IfOp>(op)) {
-        return WalkResult::skip();
-      }
-
-      // As of now, we don't support loops with qubit dependencies. Hence, skip.
-      if (auto loop = dyn_cast<scf::ForOp>(op)) {
-        if (loop.getRegionIterArgs().empty()) {
-          return WalkResult::advance();
-        }
-        return WalkResult::skip();
-      }
-
-      if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
-        if (auto q = state.retrieve()) {
-          auto reset = rewriter.create<ResetOp>(q.getLoc(), q);
-          state.forward(reset.getInQubit(), reset.getOutQubit());
-
-          rewriter.replaceAllUsesWith(alloc.getQubit(), reset);
-          rewriter.eraseOp(alloc);
-          return WalkResult::advance();
-        }
-
-        return WalkResult(func->emitOpError()
-                          << "requires " << (arch().nqubits() + 1)
-                          << " qubits but target architecture '"
-                          << arch().name() << "' only supports "
-                          << arch().nqubits() << " qubits");
-
-        return WalkResult::advance();
-      }
-
-      if (auto reset = dyn_cast<ResetOp>(op)) {
-        state.forward(reset.getInQubit(), reset.getOutQubit());
-        return WalkResult::advance();
-      }
-
-      if (auto u = dyn_cast<UnitaryInterface>(op)) {
-        if (u.getAllInQubits().empty()) { // Handle Global Phase Gates.
-          return WalkResult::advance();
-        }
-
-        if (!isTwoQubitGate(u)) {
-          state.forward(u.getAllInQubits()[0], u.getAllOutQubits()[0]);
-          return WalkResult::advance();
-        }
-
-        if (!isExecutable(u, state)) {
-          makeExecutable(u, state, rewriter);
-        }
-
-        // Gate is (now) executable on hardware:
-
-        const auto& [execIn0, execIn1] = getIns(u);
-        const auto& [execOut0, execOut1] = getOuts(u);
-
-        state.forward(execIn0, execOut0);
-        state.forward(execIn1, execOut1);
-
-        return WalkResult::advance();
-      }
-
-      if (auto measure = dyn_cast<MeasureOp>(op)) {
-        state.forward(measure.getInQubit(), measure.getOutQubit());
-        return WalkResult::advance();
-      }
-
-      if (auto dealloc = dyn_cast<DeallocQubitOp>(op)) {
-        state.release(dealloc.getQubit());
-        rewriter.eraseOp(dealloc);
-        return WalkResult::advance();
-      }
-
-      return WalkResult::advance();
-    });
-
-    if (res.wasInterrupted()) {
-      return failure();
-    }
-
+struct DeallocQubitPattern final : public PatternWithEnv<DeallocQubitOp> {
+  LogicalResult matchAndRewrite(DeallocQubitOp dealloc,
+                                PatternRewriter& rewriter) const final {
+    env().state.release(dealloc.getQubit());
+    rewriter.eraseOp(dealloc);
     return success();
   }
 };
+
+/**
+ * @brief Collect patterns for the naive routing algorithm.
+ */
+void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
+                                  RoutingEnvironment& env) {
+  patterns.add<IfOpPattern, ForOpPattern>(patterns.getContext());
+  patterns.add<AllocQubitPattern, ResetPattern, NaiveUnitaryPattern,
+               MeasurePattern, DeallocQubitPattern>(patterns.getContext(),
+                                                    &env);
+}
+
+void initEntryPoint(llvm::SmallVectorImpl<Value>& qubits,
+                    PatternRewriter& rewriter) {
+  const auto location = rewriter.getInsertionPoint()->getLoc();
+  for (std::size_t i = 0; i < qubits.size(); ++i) {
+    auto op = rewriter.create<QubitOp>(location, i);
+    qubits[i] = op.getQubit();
+  }
+}
+
+[[nodiscard]] LogicalResult route(ModuleOp module,
+                                  std::unique_ptr<InitialLayout> layout,
+                                  std::unique_ptr<Architecture> arch) {
+  auto res = module->walk([&](func::FuncOp func) {
+    PatternRewriter rewriter(func->getContext());
+    rewriter.setInsertionPointToStart(&func.getBody().front());
+
+    llvm::SmallVector<Value, 0> qubits(arch->nqubits());
+
+    if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
+      // For now we don't route non-entry point functions.
+      // This would be the point where we would collect the qubits from the
+      // argument-list.
+      return WalkResult::skip();
+    }
+
+    initEntryPoint(qubits, rewriter);
+
+    RoutingEnvironment env(qubits, *layout, *arch);
+    RewritePatternSet patterns(func.getContext());
+    populateNaiveRoutingPatterns(patterns, env);
+
+    walkAndApplyPatterns(func, std::move(patterns));
+
+    return WalkResult::advance();
+  });
+
+  return res.wasInterrupted() ? failure() : success();
+}
+
+}; // namespace
 
 } // namespace transpilation
 
@@ -409,10 +420,9 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     using namespace transpilation;
 
     auto arch = getArchitecture("MQT-Test");
+    auto layout = std::make_unique<Random>(arch->nqubits());
 
-    const NaiveRouter router(std::move(arch));
-
-    if (failed(router.route(getOperation()))) {
+    if (failed(route(getOperation(), std::move(layout), std::move(arch)))) {
       signalPassFailure();
     }
   }
