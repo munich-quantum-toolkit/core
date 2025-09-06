@@ -17,8 +17,41 @@ So far, this comprises a conversion from MQTOpt to MQTRef and one from MQTRef to
 This page is a work in progress.
 The content is not yet complete and subject to change.
 Contributions are welcome.
-See the [contribution guidelines](contributing.md) for more information.
+See the {doc}`contribution guide <contributing>` for more information.
 :::
+
+## Classical Result Semantics
+
+The `measure` operations of the MQTRef and MQTOpt dialects return classical results as `i1` values.
+If an input program defines a classical register, a `memref<?xi1>` operand of appropriate size is allocated and measurement results are stored into it.
+
+Consider the following `QuantumComputation`:
+
+```c++
+qc::QuantumComputation qc(1, 1);
+qc.x(0)
+qc.measure(0, 0);
+```
+
+In the MQTRef dialect, this program corresponds to:
+
+```mlir
+%qref = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+%q = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+%creg = memref.alloca() : memref<1xi1>
+mqtref.x() %q
+%c = mqtref.measure %q
+%i = arith.constant 0 : index
+memref.store %c, %creg[%i] : memref<3xi1>
+```
+
+If the input program contains a classically controlled operation, the necessary `i1` values are loaded from the `memref<?xi1>` operand.
+
+### Rationale
+
+The approach of using MLIR-native `memref<?xi1>` operands allows us to stay more flexible.
+An alternative definition of an MQT-specific `ClassicalRegister` would have restricted us without adding benefits.
+By using `memref<?xi1>` operands, the development of passes can be more agnostic to implementation specifics.
 
 ```{toctree}
 :maxdepth: 2
