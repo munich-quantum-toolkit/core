@@ -13,18 +13,23 @@ Both dialects define various transformation passes.
 For intercompatibility, we provide {doc}`conversions <Conversions>` between dialects.
 So far, this comprises a conversion from MQTOpt to MQTRef and one from MQTRef to MQTOpt.
 
-:::{note}
-This page is a work in progress.
-The content is not yet complete and subject to change.
-Contributions are welcome.
-See the [contribution guidelines](contributing.md) for more information.
-:::
-
 ```{toctree}
 :maxdepth: 2
-:caption: Table of Contents
 
 MQTRef
 MQTOpt
 Conversions
 ```
+
+:::{note}
+This page is a work in progress.
+The content is not yet complete and subject to change.
+Contributions are welcome.
+See the {doc}`contribution guide <contributing>` for more information.
+:::
+
+## Development
+
+Building the MLIR library requires LLVM version 21.0 or later.
+Our CI pipeline on GitHub continuously builds and tests the MLIR library on Linux, macOS, and Windows.
+To access the latest build logs, visit the [GitHub Actions page](https://github.com/munich-quantum-toolkit/core/actions/workflows/ci.yml).

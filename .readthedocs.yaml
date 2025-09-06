@@ -35,7 +35,7 @@ build:
       - asdf install uv latest
       - asdf global uv latest
       # Build the MLIR documentation
-      - uvx cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_MLIR=ON -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir -DLLVM_DIR=/usr/lib/llvm-19/lib/cmake/llvm
+      - uvx cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_MLIR=ON -DMQT_MLIR_MIN_VERSION=19.0 -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir -DLLVM_DIR=/usr/lib/llvm-19/lib/cmake/llvm
       - uvx cmake --build build --target mlir-doc
       # Remove unwanted artifacts from the MLIR documentation
       - 'find docs/mlir -name "*.md" -exec sed -i "s@\[TOC\]@@g" {} \;'
