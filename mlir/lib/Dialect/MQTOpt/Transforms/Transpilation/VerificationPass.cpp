@@ -1,0 +1,160 @@
+/*
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
+
+#include <cstddef>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Casting.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
+
+#define DEBUG_TYPE "transpilation-verification"
+
+namespace mqt::ir::opt {
+
+#define GEN_PASS_DEF_TRANSPILATIONVERIFICATIONPASS
+#include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
+
+using namespace mlir;
+
+/// @brief A function attribute that specifies an (QIR) entry point function.
+constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
+
+/**
+ * @brief This pass verifies that the constraints of a target architecture are
+ * met.
+ */
+struct TranspilationVerificationPass final
+    : impl::TranspilationVerificationPassBase<TranspilationVerificationPass> {
+  void runOnOperation() override {
+
+    std::size_t nqubits{};
+    llvm::DenseMap<Value, std::size_t> qubitToIndex;
+
+    const auto forward = [&](Value in, Value out) {
+      qubitToIndex[out] = qubitToIndex.at(in);
+      qubitToIndex.erase(in);
+    };
+
+    auto arch = getArchitecture("MQT-Test");
+
+    auto res = getOperation()->walk<WalkOrder::PreOrder>([&](Operation* op) {
+      // As of now, we don't route non-entry functions. Hence, skip.
+      if (auto func = dyn_cast<func::FuncOp>(op)) {
+        if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
+          return WalkResult::skip();
+        }
+
+        nqubits = 0;
+        qubitToIndex.clear();
+
+        return WalkResult::advance();
+      }
+
+      // As of now, we don't support conditionals. Hence, emit an error.
+      if (auto cond = dyn_cast<scf::IfOp>(op)) {
+        return WalkResult(cond.emitOpError() << "is currently not supported");
+      }
+
+      // As of now, we don't support loops with qubit dependencies. Hence, emit
+      // an error.
+      if (auto loop = dyn_cast<scf::ForOp>(op)) {
+        if (loop.getRegionIterArgs().empty()) {
+          return WalkResult::advance();
+        }
+        return WalkResult(
+            loop.emitOpError()
+            << "is currently not supported with qubit dependencies");
+      }
+
+      if (auto qubit = dyn_cast<QubitOp>(op)) {
+        if (nqubits == arch->nqubits()) {
+          return WalkResult(qubit->emitOpError()
+                            << "requires " << (nqubits + 1)
+                            << " qubits but target architecture '"
+                            << arch->name() << "' only supports "
+                            << arch->nqubits() << " qubits");
+        }
+
+        qubitToIndex[qubit.getQubit()] = qubit.getIndex();
+        nqubits++;
+        return WalkResult::advance();
+      }
+
+      if (auto alloc = dyn_cast<AllocQubitOp>(op)) {
+        return WalkResult(alloc->emitOpError()
+                          << "is not allowed for transpiled program");
+      }
+
+      if (auto dealloc = dyn_cast<DeallocQubitOp>(op)) {
+        return WalkResult(dealloc->emitOpError()
+                          << "is not allowed for transpiled program");
+      }
+
+      if (auto reset = dyn_cast<ResetOp>(op)) {
+        forward(reset.getInQubit(), reset.getOutQubit());
+        return WalkResult::advance();
+      }
+
+      if (auto u = dyn_cast<UnitaryInterface>(op)) {
+        const std::size_t nacts = u.getAllInQubits().size();
+        if (nacts == 0) {
+          return WalkResult::advance();
+        }
+
+        if (nacts > 2) {
+          return WalkResult(u->emitOpError() << "acts on more than two qubits");
+        }
+
+        const Value in0 = u.getAllInQubits()[0];
+        const Value out0 = u.getAllOutQubits()[0];
+
+        if (nacts == 1) {
+          forward(in0, out0);
+          return WalkResult::advance();
+        }
+
+        const Value in1 = u.getAllInQubits()[1];
+        const Value out1 = u.getAllOutQubits()[1];
+
+        if (!arch->areAdjacent(qubitToIndex.at(in0), qubitToIndex.at(in1))) {
+          return WalkResult(u->emitOpError()
+                            << "(" << qubitToIndex[in0] << ","
+                            << qubitToIndex[in1] << ")"
+                            << " is not executable on target architecture '"
+                            << arch->name() << "'");
+        }
+
+        forward(in0, out0);
+        forward(in1, out1);
+
+        return WalkResult::advance();
+      }
+
+      if (auto measure = dyn_cast<MeasureOp>(op)) {
+        forward(measure.getInQubit(), measure.getOutQubit());
+        return WalkResult::advance();
+      }
+
+      return WalkResult::advance();
+    });
+
+    if (res.wasInterrupted()) {
+      signalPassFailure();
+    }
+  }
+};
+} // namespace mqt::ir::opt

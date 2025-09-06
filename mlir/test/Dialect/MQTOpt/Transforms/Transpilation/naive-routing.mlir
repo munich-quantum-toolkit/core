@@ -1,0 +1,143 @@
+// Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+// Copyright (c) 2025 Munich Quantum Software Company GmbH
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+//
+// Licensed under the MIT License
+
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(routing,verify-transpilation)" | FileCheck %s
+
+module {
+    module {
+        func.func @main() attributes { entry_point } {
+
+            //
+            // Figure 4 in SABRE Paper "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices".
+
+            %q0_0 = mqtopt.allocQubit
+            %q1_0 = mqtopt.allocQubit
+            %q2_0 = mqtopt.allocQubit
+            %q3_0 = mqtopt.allocQubit
+            %q4_0 = mqtopt.allocQubit
+            %q5_0 = mqtopt.allocQubit
+
+
+            %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
+            %q1_1 = mqtopt.h() %q1_0 : !mqtopt.Qubit
+            %q4_1 = mqtopt.h() %q4_0 : !mqtopt.Qubit
+
+            %q0_2 = mqtopt.z() %q0_1 : !mqtopt.Qubit
+            %q2_1, %q1_2 = mqtopt.x() %q2_0 ctrl %q1_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g1
+            %q5_1, %q4_2 = mqtopt.x() %q5_0 ctrl %q4_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g2
+
+            %q1_3, %q0_3 = mqtopt.x() %q1_2 ctrl %q0_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g3
+            %q3_1, %q2_2 = mqtopt.x() %q3_0 ctrl %q2_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g4
+
+            %q2_3 = mqtopt.h() %q2_2 : !mqtopt.Qubit
+            %q3_2 = mqtopt.h() %q3_1 : !mqtopt.Qubit
+
+            %q2_4, %q1_4 = mqtopt.x() %q2_3 ctrl %q1_3 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g5
+            %q5_2, %q3_3 = mqtopt.x() %q5_1 ctrl %q3_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g6
+
+            %q3_4 = mqtopt.z() %q3_3 : !mqtopt.Qubit
+
+            %q3_5, %q4_3 = mqtopt.x() %q3_4 ctrl %q4_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g7
+
+            %q0_4, %q3_6 = mqtopt.x() %q0_3 ctrl %q3_5 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g8
+
+
+            mqtopt.deallocQubit %q0_4
+            mqtopt.deallocQubit %q1_4
+            mqtopt.deallocQubit %q2_4
+            mqtopt.deallocQubit %q3_6
+            mqtopt.deallocQubit %q4_3
+            mqtopt.deallocQubit %q5_2
+
+            //
+            // The bell state.
+
+            %q0_0_bell = mqtopt.allocQubit
+            %q0_1_bell = mqtopt.h() %q0_0_bell : !mqtopt.Qubit
+
+            %q1_0_bell = mqtopt.allocQubit
+            %q1_1_bell, %q0_2_bell = mqtopt.x() %q1_0_bell ctrl %q0_1_bell : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+            %q0_3_bell, %m0_0_bell = "mqtopt.measure"(%q0_2_bell) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+            %q1_2_bell, %m1_0_bell = "mqtopt.measure"(%q1_1_bell) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+
+            mqtopt.deallocQubit %q0_3_bell
+            mqtopt.deallocQubit %q1_2_bell
+
+            //
+            // Bell in a loop.
+
+            %lb = index.constant 0
+            %ub = index.constant 1000
+            %step = index.constant 1
+
+            scf.for %iv = %lb to %ub step %step {
+                %q0_0_bell1000 = mqtopt.allocQubit
+                %q1_0_bell1000 = mqtopt.allocQubit
+
+                %q0_1_bell1000 = mqtopt.h() %q0_0_bell1000 : !mqtopt.Qubit
+                %q1_1_bell1000, %q0_2_bell1000 = mqtopt.x() %q1_0_bell1000 ctrl %q0_1_bell1000 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+                %q0_3_bell1000, %m0_0_bell1000 = "mqtopt.measure"(%q0_2_bell1000) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+                %q1_2_bell1000, %m1_0_bell1000 = "mqtopt.measure"(%q1_1_bell1000) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+                mqtopt.deallocQubit %q0_3_bell1000
+                mqtopt.deallocQubit %q1_2_bell1000
+            }
+
+            return
+        }
+    }
+
+    module {
+        func.func @ghz() {
+            //
+            // Functions should stay the same since we don't route non-entry points.
+
+            // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+            // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
+            // CHECK: %[[Q2_0:.*]] = mqtopt.allocQubit
+
+            // CHECK: %[[Q0_1:.*]] = "mqtopt.reset"(%[[Q0_0]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
+            // CHECK: %[[Q1_1:.*]] = "mqtopt.reset"(%[[Q1_0]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
+            // CHECK: %[[Q2_1:.*]] = "mqtopt.reset"(%[[Q2_0]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
+
+            // CHECK: %[[Q0_2:.*]] = mqtopt.h() %[[Q0_1]] : !mqtopt.Qubit
+            // CHECK: %[[Q1_2:.*]], %[[Q0_3:.*]] = mqtopt.x() %[[Q1_1]] ctrl %[[Q0_2]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            // CHECK: %[[Q2_2:.*]], %[[Q1_3:.*]] = mqtopt.x() %[[Q2_1]] ctrl %[[Q1_2]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+            // CHECK: mqtopt.deallocQubit %[[Q0_3]]
+            // CHECK: mqtopt.deallocQubit %[[Q1_3]]
+            // CHECK: mqtopt.deallocQubit %[[Q2_2]]
+
+            %q0_0 = mqtopt.allocQubit
+            %q1_0 = mqtopt.allocQubit
+            %q2_0 = mqtopt.allocQubit
+
+            %q0_1 = "mqtopt.reset"(%q0_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit)
+            %q1_1 = "mqtopt.reset"(%q1_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit)
+            %q2_1 = "mqtopt.reset"(%q2_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit)
+
+            %q0_2 = mqtopt.h() %q0_1 : !mqtopt.Qubit
+            %q1_2, %q0_3 = mqtopt.x() %q1_1 ctrl %q0_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            %q2_2, %q1_3 = mqtopt.x() %q2_1 ctrl %q1_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+            mqtopt.deallocQubit %q0_3
+            mqtopt.deallocQubit %q1_3
+            mqtopt.deallocQubit %q2_2
+
+            return
+        }
+
+        func.func @main() attributes { entry_point } {
+            func.call @ghz() : () -> ()
+            return
+        }
+    }
+}
