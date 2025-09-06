@@ -216,8 +216,8 @@ auto FoMaC::Device::Operation::getSites(const std::vector<Site>& sites,
   std::vector<Site> returnedSites;
   returnedSites.reserve(qdmiSites->size());
   std::ranges::transform(*qdmiSites, std::back_inserter(returnedSites),
-                         [this](const QDMI_Site& site) -> Site {
-                           return {Token{}, device_, site};
+                         [device = device_](const QDMI_Site& site) -> Site {
+                           return {Token{}, device, site};
                          });
   return returnedSites;
 }
@@ -248,8 +248,8 @@ auto FoMaC::Device::getSites() const -> std::vector<Site> {
   std::vector<Site> sites;
   sites.reserve(qdmiSites.size());
   std::ranges::transform(qdmiSites, std::back_inserter(sites),
-                         [this](const QDMI_Site& site) -> Site {
-                           return {Token{}, device_, site};
+                         [device = device_](const QDMI_Site& site) -> Site {
+                           return {Token{}, device, site};
                          });
   return sites;
 }
@@ -258,10 +258,11 @@ auto FoMaC::Device::getOperations() const -> std::vector<Operation> {
       QDMI_DEVICE_PROPERTY_OPERATIONS);
   std::vector<Operation> operations;
   operations.reserve(qdmiOperations.size());
-  std::ranges::transform(qdmiOperations, std::back_inserter(operations),
-                         [this](const QDMI_Operation& op) -> Operation {
-                           return {Token{}, device_, op};
-                         });
+  std::ranges::transform(
+      qdmiOperations, std::back_inserter(operations),
+      [device = device_](const QDMI_Operation& op) -> Operation {
+        return {Token{}, device, op};
+      });
   return operations;
 }
 auto FoMaC::Device::getCouplingMap() const
