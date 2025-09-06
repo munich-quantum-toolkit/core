@@ -249,7 +249,7 @@ auto FoMaC::Device::getSites() const -> std::vector<Site> {
   sites.reserve(qdmiSites.size());
   std::ranges::transform(qdmiSites, std::back_inserter(sites),
                          [this](const QDMI_Site& site) -> Site {
-                           return Site(Token{}, device_, site);
+                           return {Token{}, device_, site};
                          });
   return sites;
 }
@@ -318,7 +318,7 @@ auto FoMaC::getDevices() -> std::vector<Device> {
   devices.reserve(qdmiDevices.size());
   std::ranges::transform(
       qdmiDevices, std::back_inserter(devices),
-      [](const QDMI_Device& dev) -> Device { return Device(Token{}, dev); });
+      [](const QDMI_Device& dev) -> Device { return {Token{}, dev}; });
   return devices;
 }
 } // namespace qdmi
