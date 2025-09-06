@@ -19,24 +19,24 @@
 #include <tuple>
 #include <vector>
 
-namespace fomac {
-class DeviceTest : public testing::TestWithParam<Device> {
+namespace qdmi {
+class DeviceTest : public testing::TestWithParam<FoMaC::Device> {
 protected:
-  Device device;
+  FoMaC::Device device;
 
   DeviceTest() : device(GetParam()) {}
 };
 
 class SiteTest : public DeviceTest {
 protected:
-  Site site;
+  FoMaC::Device::Site site;
 
   SiteTest() : site(device.getSites().front()) {}
 };
 
 class OperationTest : public DeviceTest {
 protected:
-  Operation operation;
+  FoMaC::Device::Operation operation;
 
   OperationTest() : operation(device.getOperations().front()) {}
 };
@@ -308,7 +308,7 @@ INSTANTIATE_TEST_SUITE_P(
     DeviceTest,
     // Parameters to test with
     testing::ValuesIn(FoMaC::getDevices()),
-    [](const testing::TestParamInfo<Device>& paramInfo) {
+    [](const testing::TestParamInfo<FoMaC::Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
@@ -322,7 +322,7 @@ INSTANTIATE_TEST_SUITE_P(
     SiteTest,
     // Parameters to test with
     testing::ValuesIn(FoMaC::getDevices()),
-    [](const testing::TestParamInfo<Device>& paramInfo) {
+    [](const testing::TestParamInfo<FoMaC::Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
@@ -336,10 +336,10 @@ INSTANTIATE_TEST_SUITE_P(
     OperationTest,
     // Parameters to test with
     testing::ValuesIn(FoMaC::getDevices()),
-    [](const testing::TestParamInfo<Device>& paramInfo) {
+    [](const testing::TestParamInfo<FoMaC::Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
       return name;
     });
-} // namespace fomac
+} // namespace qdmi
