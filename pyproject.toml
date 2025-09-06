@@ -39,11 +39,8 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
   "Typing :: Typed",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dynamic = ["version"]
-dependencies = [
-    "deepdiff>=8.6.0",
-]
 
 [project.optional-dependencies]
 evaluation = [
@@ -343,6 +340,7 @@ test = [
   "pandas[output-formatting]>=2.2.3; python_version >= '3.13'",
   "qiskit[qasm3-import]>=1.0.0",
   "numpy>=2.1; python_version >= '3.13'",
+  "deepdiff>=8.6.0",
 ]
 dev = [
   {include-group = "build"},
