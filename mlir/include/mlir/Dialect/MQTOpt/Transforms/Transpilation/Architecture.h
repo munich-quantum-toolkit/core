@@ -16,8 +16,10 @@
 #include <string_view>
 
 namespace mqt::ir::opt {
-namespace transpilation {
-/// @brief A quantum accelerator's architecture.
+/**
+ * @brief A quantum accelerator's architecture.
+ * @details Computes all-shortest paths at construction in O[nqubits^3].
+ */
 class Architecture {
 public:
   using CouplingMap = llvm::DenseSet<std::pair<std::size_t, std::size_t>>;
@@ -31,18 +33,26 @@ public:
     floydWarshallWithPathReconstruction();
   }
 
-  /// @brief Return the architecture's name.
+  /**
+   * @brief Return the architecture's name.
+   */
   [[nodiscard]] constexpr std::string_view name() const { return name_; }
 
-  /// @brief Return the architecture's number of qubits.
+  /**
+   * @brief Return the architecture's number of qubits.
+   */
   [[nodiscard]] constexpr std::size_t nqubits() const { return nqubits_; }
 
-  /// @brief Return true if @p u and @p v are adjacent.
+  /**
+   * @brief Return true if @p u and @p v are adjacent.
+   */
   [[nodiscard]] bool areAdjacent(std::size_t u, std::size_t v) const {
     return couplingMap_.contains({u, v});
   }
 
-  /// @brief Collect the shortest path between @p u and @p v.
+  /**
+   * @brief Collect the shortest path between @p u and @p v.
+   */
   [[nodiscard]] llvm::SmallVector<std::size_t>
   shortestPathBetween(std::size_t u, std::size_t v) const;
 
@@ -64,8 +74,9 @@ private:
   Matrix prev_;
 };
 
-/// @brief Get architecture by its name.
+/**
+ * @brief Get architecture by its name.
+ */
 std::unique_ptr<Architecture> getArchitecture(const std::string& name);
 
-}; // namespace transpilation
 }; // namespace mqt::ir::opt

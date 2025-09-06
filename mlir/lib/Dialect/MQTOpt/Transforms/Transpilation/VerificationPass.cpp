@@ -49,7 +49,7 @@ struct TranspilationVerificationPass final
       qubitToIndex.erase(in);
     };
 
-    auto arch = transpilation::getArchitecture("MQT-Test");
+    auto arch = getArchitecture("MQT-Test");
 
     auto res = getOperation()->walk<WalkOrder::PreOrder>([&](Operation* op) {
       // As of now, we don't route non-entry functions. Hence, skip.
