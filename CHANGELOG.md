@@ -28,6 +28,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Changed
 
 - ⬆️ Require LLVM 21 for building the MLIR library ([#1180]) ([**@denialhaag**])
+- ⬆️ Update to version 21 of `clang-tidy` ([#1180]) ([**@denialhaag**])
 - 🚚 Rename MLIR pass `CancelConsecutiveInverses` to `GateElimination` ([#1140]) ([**@taminob**])
 - 🚚 Rename `xxminusyy` to `xx_minus_yy` and `xxplusyy` to `xx_plus_yy` in MLIR dialects ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 - 🚸 Add custom assembly format for operations in the MLIR dialects ([#1139]) ([**@burgholzer**])
