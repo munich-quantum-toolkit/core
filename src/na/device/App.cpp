@@ -400,7 +400,10 @@ int main(int argc, char* argv[]) {
   // `main` functions should not throw exceptions. Apparently, the
   // initialization of a vector can throw exceptions, so we catch them here.
   try {
-    argVec = std::vector<std::string>(argv, argv + argc);
+    argVec.reserve(argc);
+    for (int i = 0; i < argc; ++i) {
+      argVec.emplace_back(argv[i]);
+    }
   } catch (std::exception& e) {
     SPDLOG_ERROR("Error parsing arguments into vector: {}", e.what());
     return 1;

@@ -83,7 +83,7 @@ struct QuantumSinkPushPattern final
   [[nodiscard]] mlir::Operation*
   getNext(const mlir::ResultRange::user_range& users,
           const UnitaryInterface& op) const {
-    mlir::Operation* next = nullptr;
+    const mlir::Operation* next = nullptr;
     int minDepth = 0;
     for (auto* user : users) {
       const auto depth = getDepth(*user->getBlock(), op);

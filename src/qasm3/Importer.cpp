@@ -702,7 +702,7 @@ Importer::getMcGateDefinition(const std::string& identifier, size_t operandSize,
   std::vector<std::shared_ptr<GateOperand>> operands;
   size_t nTargets = operandSize;
   if (identifier == "mcx_vchain") {
-    nTargets -= (nTargets + 1) / 2 - 2;
+    nTargets -= ((nTargets + 1) / 2) - 2;
   } else if (identifier == "mcx_recursive" && nTargets > 5) {
     nTargets -= 1;
   }
