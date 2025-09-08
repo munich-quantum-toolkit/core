@@ -36,10 +36,13 @@ Similarly, if the input program contains a classically controlled operation, the
 
 As an example, consider the following `QuantumComputation`:
 
-```c++
-qc::QuantumComputation qc(1, 1);
-qc.x(0)
-qc.measure(0, 0);
+```qasm
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[1] q;
+bit[1] c;
+x q[0];
+c[0] = measure q[0];
 ```
 
 In the MQTRef dialect, this program corresponds to:
