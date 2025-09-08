@@ -19,7 +19,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -327,7 +326,8 @@ private:
   /**
    * @brief Maps SSA values to static indices.
    *
-   * Using MapVector enables insertion-order iteration.
+   * Using MapVector enables insertion-order iteration which is useful
+   * for determining the current permutation.
    */
   llvm::MapVector<Value, std::size_t> valueToIndex_;
 
@@ -344,7 +344,7 @@ private:
   std::queue<std::size_t> free_;
 
   /**
-   * @brief The initial layout method.
+   * @brief The initial layout generator.
    */
   Layout* layout_;
 };
@@ -362,7 +362,7 @@ namespace {
  * The routing context consists of
  *  - A qubit state manager
  *  - The targeted architecture
- *  - An initial layout method
+ *  - An initial layout generator
  */
 template <class OpType>
 struct ContextualRewritePattern : OpRewritePattern<OpType> {
@@ -594,20 +594,24 @@ void walkPreOrderAndApplyPatterns(Operation* op,
       {op});
 }
 
-[[nodiscard]] LogicalResult route(ModuleOp module,
-                                  const ArchitectureName& archName,
-                                  const LayoutMethod& layoutMethod) {
-  Architecture arch = getArchitecture(archName);
-  RandomLayout layout(arch.nqubits());
-
+/**
+ * @brief Route the given module.
+ *
+ * For now we any non-entry point function is ignored and not routed.
+ *
+ * @param module The module to route.
+ * @param arch The targeted architecture.
+ * @param layout The initial layout generator.
+ */
+[[nodiscard]] LogicalResult route(ModuleOp module, Architecture& arch,
+                                  Layout& layout) {
   auto res = module->walk([&](func::FuncOp func) {
     PatternRewriter rewriter(func->getContext());
     rewriter.setInsertionPointToStart(&func.getBody().front());
 
-    llvm::SmallVector<Value, 0> qubits(arch.nqubits());
+    llvm::SmallVector<Value> qubits(arch.nqubits());
 
     if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
-      // For now we don't route non-entry point functions.
       // This would be the point where we would collect the qubits from the
       // argument-list.
       return WalkResult::skip();
@@ -635,8 +639,10 @@ void walkPreOrderAndApplyPatterns(Operation* op,
  */
 struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
-    if (failed(route(getOperation(), ArchitectureName::MQTTest,
-                     LayoutMethod::Random))) {
+    Architecture arch = getArchitecture(ArchitectureName::MQTTest);
+    IdentityLayout layout(arch.nqubits());
+
+    if (failed(route(getOperation(), arch, layout))) {
       signalPassFailure();
     }
   }
