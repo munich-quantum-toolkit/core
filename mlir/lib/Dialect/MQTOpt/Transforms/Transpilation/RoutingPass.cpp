@@ -12,9 +12,13 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 
+#include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SmallVector.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <llvm/ADT/MapVector.h>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -29,6 +33,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/WalkPatternRewriteDriver.h>
 #include <numeric>
+#include <queue>
 #include <random>
 #include <utility>
 
@@ -176,13 +181,14 @@ struct Custom : InitialLayout {
 class QubitStateManager {
 public:
   explicit QubitStateManager(const llvm::SmallVectorImpl<Value>& qubits,
-                             const InitialLayout& layout) {
+                             const InitialLayout& layout)
+      : indexToValue_(qubits.size()) {
     for (std::size_t j = 0; j < qubits.size(); ++j) {
       const std::size_t i = layout(j);
       const Value q = qubits[i];
       valueToIndex_[q] = i;
       indexToValue_[i] = q;
-      free_.push_back(q);
+      free_.push(q);
     }
   }
 
@@ -190,14 +196,14 @@ public:
    * @brief Return static index from SSA value @p v.
    */
   [[nodiscard]] std::size_t get(const Value q) const {
-    return valueToIndex_.at(q);
+    return valueToIndex_.lookup(q);
   }
 
   /**
    * @brief Return SSA Value from static index @p i.
    */
   [[nodiscard]] Value get(const std::size_t i) const {
-    return indexToValue_.at(i);
+    return indexToValue_[i];
   }
 
   /**
@@ -210,15 +216,15 @@ public:
       return nullptr;
     }
 
-    Value q = free_.back();
-    free_.pop_back();
+    Value q = free_.front();
+    free_.pop();
     return q;
   }
 
   /**
    * @brief Release static qubit.
    */
-  void release(Value q) { free_.push_back(q); }
+  void release(Value q) { free_.push(q); }
 
   /**
    * @brief Forward SSA values.
@@ -231,21 +237,30 @@ public:
     valueToIndex_.erase(in);
   }
 
+  /**
+   * @brief Return the number of static qubits.
+   */
+  [[nodiscard]] std::size_t nqubits() const { return indexToValue_.size(); }
+
 private:
   /**
    * @brief Maps SSA values to static indices.
+   *
+   * Using MapVector enables insertion-order iteration.
    */
-  llvm::DenseMap<Value, std::size_t> valueToIndex_;
+  llvm::MapVector<Value, std::size_t> valueToIndex_;
 
   /**
    * @brief Maps static indices to SSA values.
+   *
+   * The size of this vector is the number of static qubits.
    */
-  llvm::DenseMap<std::size_t, Value> indexToValue_;
+  llvm::SmallVector<Value, 0> indexToValue_;
 
   /**
-   * @brief Queue of available qubits indices.
+   * @brief Queue of available qubits.
    */
-  llvm::SmallVector<Value> free_;
+  std::queue<Value> free_;
 };
 
 //===----------------------------------------------------------------------===//
@@ -449,6 +464,7 @@ void initEntryPoint(llvm::SmallVectorImpl<Value>& qubits,
     }
 
     initEntryPoint(qubits, rewriter);
+
     RewritePatternSet patterns(func.getContext());
     populateNaiveRoutingPatterns(
         patterns, std::make_shared<RoutingEnvironment>(qubits, *layout, *arch));
@@ -470,7 +486,7 @@ void initEntryPoint(llvm::SmallVectorImpl<Value>& qubits,
 struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
     auto arch = getArchitecture("MQT-Test");
-    auto layout = std::make_unique<Random>(arch->nqubits());
+    auto layout = std::make_unique<Identity>(arch->nqubits());
 
     if (failed(route(getOperation(), std::move(layout), std::move(arch)))) {
       signalPassFailure();
