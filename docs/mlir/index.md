@@ -50,7 +50,7 @@ In the MQTRef dialect, this program corresponds to:
 mqtref.x() %q
 %c = mqtref.measure %q
 %i = arith.constant 0 : index
-memref.store %c, %creg[%i] : memref<3xi1>
+memref.store %c, %creg[%i] : memref<1xi1>
 ```
 
 If the input program contains a classically controlled operation, the necessary `i1` values are loaded from the `memref<?xi1>` operand.
