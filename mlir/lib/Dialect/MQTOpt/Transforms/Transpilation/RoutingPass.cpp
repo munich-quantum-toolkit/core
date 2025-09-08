@@ -11,9 +11,13 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
+#include "mlir/Support/WalkResult.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <cassert>
@@ -35,6 +39,7 @@
 #include <numeric>
 #include <queue>
 #include <random>
+#include <tuple>
 #include <utility>
 
 #define DEBUG_TYPE "routing"
@@ -93,7 +98,7 @@ constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
  * @param location The Location to attach to the created op.
  * @param in0 First input qubit SSA value.
  * @param in1 Second input qubit SSA value.
- * @param rewriter PatternRewriter used to create the op.
+ * @param rewriter A PatternRewriter.
  * @return The created SWAPOp.
  */
 [[nodiscard]] SWAPOp createSwap(Location location, Value in0, Value in1,
@@ -438,13 +443,61 @@ void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
                MeasurePattern, DeallocQubitPattern>(patterns.getContext(), env);
 }
 
+/**
+ * @brief Initialize entry point function.
+ *
+ * Inserts static qubits (via the `mqtopt.qubit` op) at the current insertion
+ * point of the rewriter. Stores the SSA values in the provided qubit vector.
+ *
+ * @param qubits The reference to the vector of qubits. The function creates
+ * `qubits.size()` many static qubits.
+ * @param rewriter A PatternRewriter.
+ */
 void initEntryPoint(llvm::SmallVectorImpl<Value>& qubits,
                     PatternRewriter& rewriter) {
-  const auto location = rewriter.getInsertionPoint()->getLoc();
   for (std::size_t i = 0; i < qubits.size(); ++i) {
-    auto op = rewriter.create<QubitOp>(location, i);
+    auto op =
+        rewriter.create<QubitOp>(rewriter.getInsertionPoint()->getLoc(), i);
+    rewriter.setInsertionPointAfter(op);
+
     qubits[i] = op.getQubit();
   }
+}
+
+struct PreOrderWalkDriverAction final
+    : tracing::ActionImpl<PreOrderWalkDriverAction> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PreOrderWalkDriverAction)
+  using ActionImpl::ActionImpl;
+  static constexpr StringLiteral tag = "walk-and-apply-patterns-pre-order";
+  void print(raw_ostream& os) const override { os << tag; }
+};
+
+/**
+ * @brief A pre-order version of the walkAndApplyPatterns driver.
+ *
+ * Instead of a post-order worklist this driver simply walks the IR in pre-order
+ * (parents first).
+ *
+ * @param op The operation to walk. Does not visit the op itself.
+ * @param patterns A set of patterns to apply.
+ * @link Adapted from
+ * https://mlir.llvm.org/doxygen/WalkPatternRewriteDriver_8cpp_source.html
+ */
+void walkPreOrderAndApplyPatterns(Operation* op,
+                                  const FrozenRewritePatternSet& patterns) {
+  MLIRContext* ctx = op->getContext();
+  PatternRewriter rewriter(ctx);
+
+  PatternApplicator applicator(patterns);
+  applicator.applyDefaultCostModel();
+
+  ctx->executeAction<PreOrderWalkDriverAction>(
+      [&] {
+        op->walk<WalkOrder::PreOrder>([&](Operation* x) {
+          std::ignore = applicator.matchAndRewrite(x, rewriter);
+        });
+      },
+      {op});
 }
 
 [[nodiscard]] LogicalResult route(ModuleOp module,
@@ -469,7 +522,7 @@ void initEntryPoint(llvm::SmallVectorImpl<Value>& qubits,
     populateNaiveRoutingPatterns(
         patterns, std::make_shared<RoutingEnvironment>(qubits, *layout, *arch));
 
-    walkAndApplyPatterns(func, std::move(patterns));
+    walkPreOrderAndApplyPatterns(func, std::move(patterns));
 
     return WalkResult::advance();
   });
@@ -486,7 +539,7 @@ void initEntryPoint(llvm::SmallVectorImpl<Value>& qubits,
 struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
     auto arch = getArchitecture("MQT-Test");
-    auto layout = std::make_unique<Identity>(arch->nqubits());
+    auto layout = std::make_unique<Random>(arch->nqubits());
 
     if (failed(route(getOperation(), std::move(layout), std::move(arch)))) {
       signalPassFailure();
