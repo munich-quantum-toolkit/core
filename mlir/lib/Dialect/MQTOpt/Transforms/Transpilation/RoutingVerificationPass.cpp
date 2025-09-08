@@ -21,24 +21,47 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
 
-#define DEBUG_TYPE "transpilation-verification"
+#define DEBUG_TYPE "routing-verification"
 
 namespace mqt::ir::opt {
 
-#define GEN_PASS_DEF_TRANSPILATIONVERIFICATIONPASS
+#define GEN_PASS_DEF_ROUTINGVERIFICATIONPASS
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 using namespace mlir;
 
-/// @brief A function attribute that specifies an (QIR) entry point function.
+/**
+ * @brief Maps SSA values to static qubit indices.
+ */
+using QubitIndexMap = llvm::DenseMap<Value, std::size_t>;
+
+/**
+ * @brief A function attribute that specifies an (QIR) entry point function.
+ */
 constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
 
 namespace {
-void forward(llvm::DenseMap<Value, std::size_t>& map, const Value in,
-             const Value out) {
+
+bool forwardOne(llvm::DenseMap<Value, std::size_t>& map, const Value in,
+                const Value out) {
   assert(in != out);
-  map[out] = map.at(in);
+  if (!map.contains(in)) {
+    return false;
+  }
+  map[out] = map[in];
   map.erase(in);
+  return true;
+}
+
+bool forwardRange(llvm::DenseMap<Value, std::size_t>& map,
+                  const ArrayRef<Value>& in, const ArrayRef<Value>& out) {
+  assert(in.size() == out.size());
+  for (std::size_t i = 0; i < in.size(); ++i) {
+    if (!forwardOne(map, in[i], out[i])) {
+      return false;
+    }
+  }
+  return true;
 }
 } // namespace
 
@@ -46,17 +69,17 @@ void forward(llvm::DenseMap<Value, std::size_t>& map, const Value in,
  * @brief This pass verifies that the constraints of a target architecture are
  * met.
  */
-struct TranspilationVerificationPass final
-    : impl::TranspilationVerificationPassBase<TranspilationVerificationPass> {
+struct RoutingVerificationPass final
+    : impl::RoutingVerificationPassBase<RoutingVerificationPass> {
   void runOnOperation() override {
 
-    llvm::DenseMap<Value, std::size_t> map;
+    QubitIndexMap map;
 
     auto arch = getArchitecture(ArchitectureName::MQTTest);
 
     auto res = getOperation()->walk<WalkOrder::PreOrder>([&](Operation* op) {
-      // As of now, we don't route non-entry functions. Hence, skip.
       if (auto func = dyn_cast<func::FuncOp>(op)) {
+        // As of now, we don't route non-entry functions. Hence, skip.
         if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
           return WalkResult::skip();
         }
@@ -64,22 +87,6 @@ struct TranspilationVerificationPass final
         map.clear();
 
         return WalkResult::advance();
-      }
-
-      // As of now, we don't support conditionals. Hence, emit an error.
-      if (auto cond = dyn_cast<scf::IfOp>(op)) {
-        return WalkResult(cond.emitOpError() << "is currently not supported");
-      }
-
-      // As of now, we don't support loops with qubit dependencies. Hence, emit
-      // an error.
-      if (auto loop = dyn_cast<scf::ForOp>(op)) {
-        if (loop.getRegionIterArgs().empty()) {
-          return WalkResult::advance();
-        }
-        return WalkResult(
-            loop.emitOpError()
-            << "is currently not supported with qubit dependencies");
       }
 
       if (auto qubit = dyn_cast<QubitOp>(op)) {
@@ -92,6 +99,7 @@ struct TranspilationVerificationPass final
         }
 
         map[qubit.getQubit()] = qubit.getIndex();
+
         return WalkResult::advance();
       }
 
@@ -106,7 +114,10 @@ struct TranspilationVerificationPass final
       }
 
       if (auto reset = dyn_cast<ResetOp>(op)) {
-        forward(map, reset.getInQubit(), reset.getOutQubit());
+        if (!forwardOne(map, reset.getInQubit(), reset.getOutQubit())) {
+          return WalkResult(reset->emitOpError()
+                            << "accesses invalid qubit-index map.");
+        }
         return WalkResult::advance();
       }
 
@@ -124,12 +135,14 @@ struct TranspilationVerificationPass final
         const Value out0 = u.getAllOutQubits()[0];
 
         if (nacts == 1) {
-          forward(map, in0, out0);
+          if (!forwardOne(map, in0, out0)) {
+            return WalkResult(u->emitOpError()
+                              << "accesses invalid qubit-index map.");
+          }
           return WalkResult::advance();
         }
 
         const Value in1 = u.getAllInQubits()[1];
-        const Value out1 = u.getAllOutQubits()[1];
 
         if (!arch.areAdjacent(map.at(in0), map.at(in1))) {
           return WalkResult(u->emitOpError()
@@ -138,14 +151,19 @@ struct TranspilationVerificationPass final
                             << arch.name() << "'");
         }
 
-        forward(map, in0, out0);
-        forward(map, in1, out1);
+        if (!forwardRange(map, u.getAllInQubits(), u.getAllOutQubits())) {
+          return WalkResult(u->emitOpError()
+                            << "accesses invalid qubit-index map.");
+        }
 
         return WalkResult::advance();
       }
 
       if (auto measure = dyn_cast<MeasureOp>(op)) {
-        forward(map, measure.getInQubit(), measure.getOutQubit());
+        if (!forwardOne(map, measure.getInQubit(), measure.getOutQubit())) {
+          return WalkResult(measure->emitOpError()
+                            << "accesses invalid qubit-index map.");
+        }
         return WalkResult::advance();
       }
 

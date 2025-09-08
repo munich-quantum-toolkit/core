@@ -6,7 +6,7 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(routing,verify-transpilation)" | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(routing,verify-routing)" | FileCheck %s
 
 module {
     module {
