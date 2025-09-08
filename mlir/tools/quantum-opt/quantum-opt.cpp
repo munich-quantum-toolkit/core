@@ -16,7 +16,6 @@
 #include "mlir/Dialect/MQTRef/Transforms/Passes.h"         // IWYU pragma: keep
 
 // Suppress warnings about implicit captures of `this` in lambdas
-// Suppress warnings about implicit captures of `this` in lambdas
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-this-capture"
