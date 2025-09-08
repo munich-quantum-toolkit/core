@@ -31,8 +31,8 @@ See the {doc}`contribution guide <contributing>` for more information.
 ## Classical Result Semantics
 
 The `measure` operations of the MQTRef and MQTOpt dialects return classical results as `i1` values.
-If an input program defines a classical register, a `memref<?xi1>` operand of appropriate size is allocated and measurement results are stored into it.
-Similarly, if the input program contains a classically controlled operation, the necessary `i1` values are loaded from the `memref<?xi1>` operand.
+If an input program defines a classical register, a `memref<?xi1>` operation of appropriate size is allocated and measurement results are stored into it.
+Similarly, if the input program contains a classically controlled operation, the necessary `i1` values are loaded from the `memref<?xi1>` operation.
 
 As an example, consider the following `QuantumComputation`:
 
@@ -66,9 +66,9 @@ module {
 
 ### Rationale
 
-The approach of using MLIR-native `memref<?xi1>` operands allows us to stay more flexible.
+The approach of using MLIR-native `memref<?xi1>` operations allows us to stay more flexible.
 An alternative definition of an MQT-specific `ClassicalRegister` would have restricted us without adding benefits.
-By using `memref<?xi1>` operands, the development of passes can be more agnostic to implementation specifics.
+By using `memref<?xi1>` operations, the development of passes can be more agnostic to implementation specifics.
 
 ## Development
 
