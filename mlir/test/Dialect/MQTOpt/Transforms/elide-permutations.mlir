@@ -6,7 +6,7 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file --elide-permutations | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --swap-reconstruction-and-elision | FileCheck %s
 
 // -----
 // This test checks that a single SWAP gate is removed correctly.

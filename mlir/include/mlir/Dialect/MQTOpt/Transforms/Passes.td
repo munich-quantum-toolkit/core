@@ -45,7 +45,7 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   }];
 }
 
-def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
+def SwapReconstructionAndElision : Pass<"swap-reconstruction-and-elision", "mlir::ModuleOp"> {
   let summary = "This pass removes any permutation (i.e., SWAP gates) it encounters and modifies the order of the qubits instead.";
   let description = [{
     Elides permutations (i.e., SWAP gates) by removing them from the circuit and, instead, permuting the respective qubit values.
