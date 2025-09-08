@@ -11,11 +11,18 @@
 #include <cstddef>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
-#include <memory>
 #include <string>
 #include <string_view>
 
 namespace mqt::ir::opt {
+
+/**
+ * @brief Enumerates the available target architectures.
+ */
+enum class ArchitectureName : std::uint8_t {
+  MQTTest,
+};
+
 /**
  * @brief A quantum accelerator's architecture.
  * @details Computes all-shortest paths at construction in O[nqubits^3].
@@ -77,6 +84,6 @@ private:
 /**
  * @brief Get architecture by its name.
  */
-std::unique_ptr<Architecture> getArchitecture(const std::string& name);
+Architecture getArchitecture(const ArchitectureName& name);
 
 }; // namespace mqt::ir::opt

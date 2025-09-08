@@ -33,6 +33,15 @@ using namespace mlir;
 /// @brief A function attribute that specifies an (QIR) entry point function.
 constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
 
+namespace {
+void forward(llvm::DenseMap<Value, std::size_t>& map, const Value in,
+             const Value out) {
+  assert(in != out);
+  map[out] = map.at(in);
+  map.erase(in);
+}
+} // namespace
+
 /**
  * @brief This pass verifies that the constraints of a target architecture are
  * met.
@@ -41,15 +50,9 @@ struct TranspilationVerificationPass final
     : impl::TranspilationVerificationPassBase<TranspilationVerificationPass> {
   void runOnOperation() override {
 
-    std::size_t nqubits{};
-    llvm::DenseMap<Value, std::size_t> qubitToIndex;
+    llvm::DenseMap<Value, std::size_t> map;
 
-    const auto forward = [&](Value in, Value out) {
-      qubitToIndex[out] = qubitToIndex.at(in);
-      qubitToIndex.erase(in);
-    };
-
-    auto arch = getArchitecture("MQT-Test");
+    auto arch = getArchitecture(ArchitectureName::MQTTest);
 
     auto res = getOperation()->walk<WalkOrder::PreOrder>([&](Operation* op) {
       // As of now, we don't route non-entry functions. Hence, skip.
@@ -58,8 +61,7 @@ struct TranspilationVerificationPass final
           return WalkResult::skip();
         }
 
-        nqubits = 0;
-        qubitToIndex.clear();
+        map.clear();
 
         return WalkResult::advance();
       }
@@ -81,16 +83,15 @@ struct TranspilationVerificationPass final
       }
 
       if (auto qubit = dyn_cast<QubitOp>(op)) {
-        if (nqubits == arch->nqubits()) {
+        if (map.size() == arch.nqubits()) {
           return WalkResult(qubit->emitOpError()
-                            << "requires " << (nqubits + 1)
+                            << "requires " << (map.size() + 1)
                             << " qubits but target architecture '"
-                            << arch->name() << "' only supports "
-                            << arch->nqubits() << " qubits");
+                            << arch.name() << "' only supports "
+                            << arch.nqubits() << " qubits");
         }
 
-        qubitToIndex[qubit.getQubit()] = qubit.getIndex();
-        nqubits++;
+        map[qubit.getQubit()] = qubit.getIndex();
         return WalkResult::advance();
       }
 
@@ -105,7 +106,7 @@ struct TranspilationVerificationPass final
       }
 
       if (auto reset = dyn_cast<ResetOp>(op)) {
-        forward(reset.getInQubit(), reset.getOutQubit());
+        forward(map, reset.getInQubit(), reset.getOutQubit());
         return WalkResult::advance();
       }
 
@@ -123,29 +124,28 @@ struct TranspilationVerificationPass final
         const Value out0 = u.getAllOutQubits()[0];
 
         if (nacts == 1) {
-          forward(in0, out0);
+          forward(map, in0, out0);
           return WalkResult::advance();
         }
 
         const Value in1 = u.getAllInQubits()[1];
         const Value out1 = u.getAllOutQubits()[1];
 
-        if (!arch->areAdjacent(qubitToIndex.at(in0), qubitToIndex.at(in1))) {
+        if (!arch.areAdjacent(map.at(in0), map.at(in1))) {
           return WalkResult(u->emitOpError()
-                            << "(" << qubitToIndex[in0] << ","
-                            << qubitToIndex[in1] << ")"
+                            << "(" << map[in0] << "," << map[in1] << ")"
                             << " is not executable on target architecture '"
-                            << arch->name() << "'");
+                            << arch.name() << "'");
         }
 
-        forward(in0, out0);
-        forward(in1, out1);
+        forward(map, in0, out0);
+        forward(map, in1, out1);
 
         return WalkResult::advance();
       }
 
       if (auto measure = dyn_cast<MeasureOp>(op)) {
-        forward(measure.getInQubit(), measure.getOutQubit());
+        forward(map, measure.getInQubit(), measure.getOutQubit());
         return WalkResult::advance();
       }
 

@@ -11,7 +11,6 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
-#include "mlir/Support/WalkResult.h"
 
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallVector.h"
@@ -19,6 +18,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -31,6 +31,7 @@
 #include <mlir/IR/Visitors.h>
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/WalkPatternRewriteDriver.h>
 #include <numeric>
 #include <queue>
@@ -120,47 +121,82 @@ constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
 //===----------------------------------------------------------------------===//
 
 /**
- * @brief InitialLayout class for all initial layout mapping functions.
+ * @brief Enumerates the initial layout methods.
  */
-struct InitialLayout {
-  explicit InitialLayout(const std::size_t nqubits) : mapping_(nqubits) {}
-  [[nodiscard]] std::size_t operator()(std::size_t i) const {
-    return mapping_[i];
-  }
+enum class LayoutMethod : std::uint8_t {
+  /// @brief Map virtual qubit 0 to physical qubit 0, 1 to 1, etc.
+  Identity,
+  /// @brief Create random bijective mapping from virtual to physical qubits.
+  Random,
+  /// @brief Use hard-coded bijective mapping from virtual to physical qubits.
+  Constant
+};
+
+/**
+ * @brief Base class for all initial layout mapping functions.
+ */
+class Layout {
+public:
+  [[nodiscard]] virtual llvm::SmallVector<std::size_t> generate() const = 0;
+  explicit Layout(const std::size_t nqubits) : nqubits_(nqubits) {}
+  virtual ~Layout() = default;
 
 protected:
-  llvm::SmallVector<std::size_t, 0> mapping_;
+  [[nodiscard]] std::size_t nqubits() const { return nqubits_; }
+
+private:
+  std::size_t nqubits_;
 };
 
 /**
  * @brief Identity mapping.
  */
-struct Identity : InitialLayout {
-  explicit Identity(const std::size_t nqubits) : InitialLayout(nqubits) {
-    std::iota(mapping_.begin(), mapping_.end(), 0);
+class IdentityLayout final : public Layout {
+public:
+  using Layout::Layout;
+
+  [[nodiscard]] llvm::SmallVector<std::size_t> generate() const final {
+    llvm::SmallVector<std::size_t, 0> mapping(nqubits());
+    std::iota(mapping.begin(), mapping.end(), 0);
+    return mapping;
   }
 };
 
 /**
  * @brief Random mapping.
  */
-struct Random : Identity {
-  explicit Random(const std::size_t nqubits) : Identity(nqubits) {
-    std::random_device rd;
-    std::mt19937 g(rd());
-    std::shuffle(mapping_.begin(), mapping_.end(), g);
+class RandomLayout final : public Layout {
+public:
+  explicit RandomLayout(const std::size_t nqubits, const std::size_t seed = 42U)
+      : Layout(nqubits), seed_(seed) {}
+  [[nodiscard]] llvm::SmallVector<std::size_t> generate() const final {
+    std::mt19937 g(seed_);
+
+    llvm::SmallVector<std::size_t, 0> mapping(nqubits());
+    std::iota(mapping.begin(), mapping.end(), 0);
+    std::shuffle(mapping.begin(), mapping.end(), g);
+    return mapping;
   }
+
+private:
+  std::size_t seed_;
 };
 
 /**
- * @brief Custom mapping.
+ * @brief Hard-coded mapping.
  */
-struct Custom : InitialLayout {
-  Custom(const std::size_t nqubits,
-         const llvm::SmallVectorImpl<std::size_t>& mapping)
-      : InitialLayout(nqubits) {
+class ConstantLayout final : public Layout {
+  explicit ConstantLayout(const llvm::SmallVectorImpl<std::size_t>& mapping)
+      : Layout(mapping.size()), mapping_(nqubits()) {
     std::ranges::copy(mapping, mapping_.begin());
   }
+
+  [[nodiscard]] llvm::SmallVector<std::size_t> generate() const final {
+    return mapping_;
+  }
+
+private:
+  llvm::SmallVector<std::size_t> mapping_;
 };
 
 //===----------------------------------------------------------------------===//
@@ -182,14 +218,15 @@ struct Custom : InitialLayout {
 class QubitStateManager {
 public:
   explicit QubitStateManager(const llvm::SmallVectorImpl<Value>& qubits,
-                             const InitialLayout& layout)
-      : indexToValue_(qubits.size()) {
+                             const std::shared_ptr<Layout>& layout)
+      : indexToValue_(qubits.size()), layout_(layout) {
+    const auto mapping = layout_->generate();
     for (std::size_t j = 0; j < qubits.size(); ++j) {
-      const std::size_t i = layout(j);
+      const std::size_t i = mapping[j];
       const Value q = qubits[i];
       valueToIndex_[q] = i;
       indexToValue_[i] = q;
-      free_.push(q);
+      free_.push(i);
     }
   }
 
@@ -217,7 +254,8 @@ public:
       return nullptr;
     }
 
-    Value q = free_.front();
+    const std::size_t i = free_.front();
+    const Value q = get(i);
     free_.pop();
     return q;
   }
@@ -225,7 +263,7 @@ public:
   /**
    * @brief Release static qubit.
    */
-  void release(Value q) { free_.push(q); }
+  void release(Value q) { free_.push(get(q)); }
 
   /**
    * @brief Forward SSA values.
@@ -259,9 +297,14 @@ private:
   llvm::SmallVector<Value, 0> indexToValue_;
 
   /**
-   * @brief Queue of available qubits.
+   * @brief Queue of available static qubit indices.
    */
-  std::queue<Value> free_;
+  std::queue<std::size_t> free_;
+
+  /**
+   * @brief The initial layout method.
+   */
+  std::shared_ptr<Layout> layout_;
 };
 
 //===----------------------------------------------------------------------===//
@@ -270,22 +313,35 @@ private:
 
 namespace {
 
-struct RoutingEnvironment {
-  RoutingEnvironment(const llvm::SmallVectorImpl<Value>& qubits,
-                     const InitialLayout& layout, const Architecture& arch)
-      : state(qubits, layout), arch(&arch) {}
-  QubitStateManager state;
-  const Architecture* arch;
-};
+/**
+ * @brief Base class for rewrite patterns that require the current routing
+ * context.
+ *
+ * The routing context consists of
+ *  - A qubit state manager
+ *  - The targeted architecture
+ *  - An initial layout method
+ *
+ * @details The use of shared pointers indicates clearly that this
+ * is a non-owning class.
+ */
+template <class OpType>
+struct ContextualRewritePattern : OpRewritePattern<OpType> {
+  ContextualRewritePattern(MLIRContext* ctx,
+                           const std::shared_ptr<QubitStateManager>& state,
+                           const std::shared_ptr<Architecture>& arch,
+                           const std::shared_ptr<Layout>& layout)
+      : OpRewritePattern<OpType>(ctx), state_(state), arch_(arch),
+        layout_(layout) {}
 
-template <class OpType> struct PatternWithEnv : OpRewritePattern<OpType> {
-  PatternWithEnv(MLIRContext* ctx, std::shared_ptr<RoutingEnvironment> env)
-      : OpRewritePattern<OpType>(ctx), env_(std::move(env)) {}
-
-  [[nodiscard]] RoutingEnvironment& env() const { return *env_; }
+  [[nodiscard]] QubitStateManager& state() const { return *state_; }
+  [[nodiscard]] Architecture& arch() const { return *arch_; }
+  [[nodiscard]] Layout& layout() const { return *layout_; }
 
 private:
-  std::shared_ptr<RoutingEnvironment> env_;
+  std::shared_ptr<QubitStateManager> state_;
+  std::shared_ptr<Architecture> arch_;
+  std::shared_ptr<Layout> layout_;
 };
 
 struct IfOpPattern final : OpRewritePattern<scf::IfOp> {
@@ -304,37 +360,40 @@ struct ForOpPattern final : OpRewritePattern<scf::ForOp> {
   }
 };
 
-struct AllocQubitPattern final : PatternWithEnv<AllocQubitOp> {
-  using PatternWithEnv<AllocQubitOp>::PatternWithEnv;
+struct AllocQubitPattern final : ContextualRewritePattern<AllocQubitOp> {
+  using ContextualRewritePattern<AllocQubitOp>::ContextualRewritePattern;
   LogicalResult matchAndRewrite(AllocQubitOp alloc,
                                 PatternRewriter& rewriter) const final {
-    if (const Value q = env().state.retrieve()) {
+    if (const Value q = state().retrieve()) {
       auto reset = rewriter.create<ResetOp>(q.getLoc(), q);
       rewriter.replaceOp(alloc, reset);
-      env().state.forward(reset.getInQubit(), reset.getOutQubit());
+      state().forward(reset.getInQubit(), reset.getOutQubit());
       return success();
     }
 
     return alloc.emitOpError()
-           << "requires " << (env().arch->nqubits() + 1)
-           << " qubits but target architecture '" << env().arch->name()
-           << "' only supports " << env().arch->nqubits() << " qubits";
+           << "requires " << (arch().nqubits() + 1)
+           << " qubits but target architecture '" << arch().name()
+           << "' only supports " << arch().nqubits() << " qubits";
   }
 };
 
-struct ResetPattern final : PatternWithEnv<ResetOp> {
-  using PatternWithEnv<ResetOp>::PatternWithEnv;
+struct ResetPattern final : ContextualRewritePattern<ResetOp> {
+  using ContextualRewritePattern<ResetOp>::ContextualRewritePattern;
   LogicalResult matchAndRewrite(ResetOp reset,
                                 PatternRewriter& /*rewriter*/) const final {
-    env().state.forward(reset.getInQubit(), reset.getOutQubit());
+    state().forward(reset.getInQubit(), reset.getOutQubit());
     return failure();
   }
 };
 
 struct NaiveUnitaryPattern final : OpInterfaceRewritePattern<UnitaryInterface> {
-  NaiveUnitaryPattern(MLIRContext* ctx, std::shared_ptr<RoutingEnvironment> env)
-      : OpInterfaceRewritePattern<UnitaryInterface>(ctx), env_(std::move(env)) {
-  }
+  NaiveUnitaryPattern(MLIRContext* ctx,
+                      const std::shared_ptr<QubitStateManager>& state,
+                      const std::shared_ptr<Architecture>& arch,
+                      const std::shared_ptr<Layout>& layout)
+      : OpInterfaceRewritePattern<UnitaryInterface>(ctx), state_(state),
+        arch_(arch), layout_(layout) {}
   LogicalResult matchAndRewrite(UnitaryInterface u,
                                 PatternRewriter& rewriter) const final {
     // Global-phase or zero-qubit unitary: Nothing to do.
@@ -344,7 +403,7 @@ struct NaiveUnitaryPattern final : OpInterfaceRewritePattern<UnitaryInterface> {
 
     // Single-qubit: Forward mapping
     if (!isTwoQubitGate(u)) {
-      env().state.forward(u.getAllInQubits()[0], u.getAllOutQubits()[0]);
+      state().forward(u.getAllInQubits()[0], u.getAllOutQubits()[0]);
       return failure();
     }
 
@@ -357,8 +416,8 @@ struct NaiveUnitaryPattern final : OpInterfaceRewritePattern<UnitaryInterface> {
     const auto& [execIn0, execIn1] = getIns(u);
     const auto& [execOut0, execOut1] = getOuts(u);
 
-    env().state.forward(execIn0, execOut0);
-    env().state.forward(execIn1, execOut1);
+    state().forward(execIn0, execOut0);
+    state().forward(execIn1, execOut1);
 
     return failure();
   }
@@ -369,7 +428,7 @@ private:
    */
   [[nodiscard]] bool isExecutable(UnitaryInterface u) const {
     const auto& [in0, in1] = getIns(u);
-    return env().arch->areAdjacent(env().state.get(in0), env().state.get(in1));
+    return arch().areAdjacent(state().get(in0), state().get(in1));
   }
 
   /**
@@ -377,8 +436,7 @@ private:
    */
   [[nodiscard]] llvm::SmallVector<std::size_t> getPath(const Value in0,
                                                        const Value in1) const {
-    return env().arch->shortestPathBetween(env().state.get(in0),
-                                           env().state.get(in1));
+    return arch().shortestPathBetween(state().get(in0), state().get(in1));
   }
 
   /**
@@ -389,8 +447,8 @@ private:
     auto path = getPath(q0, q1);
 
     for (std::size_t i = 0; i < path.size() - 1; i += 2) {
-      const Value in0 = env().state.get(path[i]);
-      const Value in1 = env().state.get(path[i + 1]);
+      const Value in0 = state().get(path[i]);
+      const Value in1 = state().get(path[i + 1]);
 
       // Y(out), X(out) = SWAP X(in), Y(in)
       auto swap = createSwap(u->getLoc(), in0, in1, rewriter);
@@ -400,30 +458,34 @@ private:
       rewriter.replaceAllUsesExcept(in0, out0, swap);
       rewriter.replaceAllUsesExcept(in1, out1, swap);
 
-      env().state.forward(in0, out1);
-      env().state.forward(in1, out0);
+      state().forward(in0, out1);
+      state().forward(in1, out0);
     }
   }
 
-  [[nodiscard]] RoutingEnvironment& env() const { return *env_; }
+  [[nodiscard]] QubitStateManager& state() const { return *state_; }
+  [[nodiscard]] Architecture& arch() const { return *arch_; }
+  [[nodiscard]] Layout& layout() const { return *layout_; }
 
-  std::shared_ptr<RoutingEnvironment> env_;
+  std::shared_ptr<QubitStateManager> state_;
+  std::shared_ptr<Architecture> arch_;
+  std::shared_ptr<Layout> layout_;
 };
 
-struct MeasurePattern final : PatternWithEnv<MeasureOp> {
-  using PatternWithEnv<MeasureOp>::PatternWithEnv;
+struct MeasurePattern final : ContextualRewritePattern<MeasureOp> {
+  using ContextualRewritePattern<MeasureOp>::ContextualRewritePattern;
   LogicalResult matchAndRewrite(MeasureOp m,
                                 PatternRewriter& /*rewriter*/) const final {
-    env().state.forward(m.getInQubit(), m.getOutQubit());
+    state().forward(m.getInQubit(), m.getOutQubit());
     return failure();
   }
 };
 
-struct DeallocQubitPattern final : PatternWithEnv<DeallocQubitOp> {
-  using PatternWithEnv<DeallocQubitOp>::PatternWithEnv;
+struct DeallocQubitPattern final : ContextualRewritePattern<DeallocQubitOp> {
+  using ContextualRewritePattern<DeallocQubitOp>::ContextualRewritePattern;
   LogicalResult matchAndRewrite(DeallocQubitOp dealloc,
                                 PatternRewriter& rewriter) const final {
-    env().state.release(dealloc.getQubit());
+    state().release(dealloc.getQubit());
     rewriter.eraseOp(dealloc);
     return success();
   }
@@ -434,10 +496,13 @@ struct DeallocQubitPattern final : PatternWithEnv<DeallocQubitOp> {
  */
 void populateNaiveRoutingPatterns(
     RewritePatternSet& patterns,
-    const std::shared_ptr<RoutingEnvironment>& env) {
+    const std::shared_ptr<QubitStateManager>& state,
+    const std::shared_ptr<Architecture>& arch,
+    const std::shared_ptr<Layout>& layout) {
   patterns.add<IfOpPattern, ForOpPattern>(patterns.getContext());
   patterns.add<AllocQubitPattern, ResetPattern, NaiveUnitaryPattern,
-               MeasurePattern, DeallocQubitPattern>(patterns.getContext(), env);
+               MeasurePattern, DeallocQubitPattern>(patterns.getContext(),
+                                                    state, arch, layout);
 }
 
 /**
@@ -456,7 +521,6 @@ void initEntryPoint(llvm::SmallVectorImpl<Value>& qubits,
     auto op =
         rewriter.create<QubitOp>(rewriter.getInsertionPoint()->getLoc(), i);
     rewriter.setInsertionPointAfter(op);
-
     qubits[i] = op.getQubit();
   }
 }
@@ -498,8 +562,12 @@ void walkPreOrderAndApplyPatterns(Operation* op,
 }
 
 [[nodiscard]] LogicalResult route(ModuleOp module,
-                                  std::unique_ptr<InitialLayout> layout,
-                                  std::unique_ptr<Architecture> arch) {
+                                  const ArchitectureName& archName,
+                                  const LayoutMethod& layoutMethod) {
+  std::random_device rd;
+  const auto arch = std::make_shared<Architecture>(getArchitecture(archName));
+  const auto layout = std::make_shared<RandomLayout>(arch->nqubits(), rd());
+
   auto res = module->walk([&](func::FuncOp func) {
     PatternRewriter rewriter(func->getContext());
     rewriter.setInsertionPointToStart(&func.getBody().front());
@@ -515,9 +583,10 @@ void walkPreOrderAndApplyPatterns(Operation* op,
 
     initEntryPoint(qubits, rewriter);
 
+    const auto state = std::make_shared<QubitStateManager>(qubits, layout);
+
     RewritePatternSet patterns(func.getContext());
-    populateNaiveRoutingPatterns(
-        patterns, std::make_shared<RoutingEnvironment>(qubits, *layout, *arch));
+    populateNaiveRoutingPatterns(patterns, state, arch, layout);
 
     walkPreOrderAndApplyPatterns(func, std::move(patterns));
 
@@ -535,10 +604,8 @@ void walkPreOrderAndApplyPatterns(Operation* op,
  */
 struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
-    auto arch = getArchitecture("MQT-Test");
-    auto layout = std::make_unique<Random>(arch->nqubits());
-
-    if (failed(route(getOperation(), std::move(layout), std::move(arch)))) {
+    if (failed(route(getOperation(), ArchitectureName::MQTTest,
+                     LayoutMethod::Random))) {
       signalPassFailure();
     }
   }
