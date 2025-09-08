@@ -32,8 +32,9 @@ See the {doc}`contribution guide <contributing>` for more information.
 
 The `measure` operations of the MQTRef and MQTOpt dialects return classical results as `i1` values.
 If an input program defines a classical register, a `memref<?xi1>` operand of appropriate size is allocated and measurement results are stored into it.
+Similarly, if the input program contains a classically controlled operation, the necessary `i1` values are loaded from the `memref<?xi1>` operand.
 
-Consider the following `QuantumComputation`:
+As an example, consider the following `QuantumComputation`:
 
 ```c++
 qc::QuantumComputation qc(1, 1);
@@ -44,16 +45,21 @@ qc.measure(0, 0);
 In the MQTRef dialect, this program corresponds to:
 
 ```mlir
-%qref = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-%q = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-%creg = memref.alloca() : memref<1xi1>
-mqtref.x() %q
-%c = mqtref.measure %q
-%i = arith.constant 0 : index
-memref.store %c, %creg[%i] : memref<1xi1>
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %qreg = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+    %q = "mqtref.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    %creg = memref.alloca() : memref<1xi1>
+    mqtref.x() %q
+    %c = mqtref.measure %q
+    %i = arith.constant 0 : index
+    memref.store %c, %creg[%i] : memref<1xi1>
+    "mqtref.deallocQubitRegister"(%0) : (!mqtref.QubitRegister) -> ()
+    memref.dealloc %alloca : memref<3xi1>
+    return
+  }
+}
 ```
-
-If the input program contains a classically controlled operation, the necessary `i1` values are loaded from the `memref<?xi1>` operand.
 
 ### Rationale
 
