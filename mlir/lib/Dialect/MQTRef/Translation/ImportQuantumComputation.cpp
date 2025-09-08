@@ -375,8 +375,8 @@ llvm::LogicalResult addIfElseOpBit(mlir::OpBuilder& builder,
     expectedValueBit = !expectedValueBit;
   }
 
-  qc::Operation* thenBlockOp = nullptr;
-  qc::Operation* elseBlockOp = nullptr;
+  const qc::Operation* thenBlockOp = nullptr;
+  const qc::Operation* elseBlockOp = nullptr;
   if (!expectedValueBit && elseOp != nullptr) {
     expectedValueBit = !expectedValueBit;
     thenBlockOp = elseOp;
