@@ -15,6 +15,7 @@
 #include <exception>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
@@ -400,7 +401,10 @@ int main(int argc, char* argv[]) {
   // `main` functions should not throw exceptions. Apparently, the
   // initialization of a vector can throw exceptions, so we catch them here.
   try {
-    argVec = std::vector<std::string>(argv, argv + argc);
+    argVec.reserve(argc);
+    for (const auto& arg : std::span(argv, argc)) {
+      argVec.emplace_back(arg);
+    }
   } catch (std::exception& e) {
     SPDLOG_ERROR("Error parsing arguments into vector: {}", e.what());
     return 1;

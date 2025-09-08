@@ -4,7 +4,7 @@
 # Installation
 
 MQT Core is primarily developed as a C++20 library with Python bindings.
-The Python package is available on [PyPI](https://pypi.org/project/mqt.core/) and can be installed on all major operating systems with all supported Python versions.
+The Python package is available on [PyPI](https://pypi.org/project/mqt.core/) and can be installed on all major operating systems with all [officially supported Python versions](https://devguide.python.org/versions/).
 
 :::::{tip}
 :name: uv-recommendation

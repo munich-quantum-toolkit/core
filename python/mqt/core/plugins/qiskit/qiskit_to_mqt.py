@@ -533,8 +533,8 @@ def _import_definition(
     clbit_map: Mapping[Clbit, int],
     cregs: Mapping[str, ClassicalRegister],
 ) -> list[float | ParameterExpression]:
-    qarg_map = dict(zip(circ.qubits, qargs))
-    carg_map = dict(zip(circ.clbits, cargs))
+    qarg_map = dict(zip(circ.qubits, qargs, strict=False))
+    carg_map = dict(zip(circ.clbits, cargs, strict=False))
 
     qc.append(CompoundOperation())
     comp_op = cast("CompoundOperation", qc[-1])
