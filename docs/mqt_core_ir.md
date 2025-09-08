@@ -77,8 +77,6 @@ for i in range(precision):
   # Reset the qubit if not finished
   if i < precision - 1:
     qc.reset(q[0])
-
-raise Exception("This should make the docs build fail.")
 ```
 
 The circuit class provides lots of flexibility when it comes to the kind of gates that can be applied.
