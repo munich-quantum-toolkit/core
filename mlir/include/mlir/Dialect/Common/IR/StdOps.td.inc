@@ -6,8 +6,10 @@
 //
 // Licensed under the MIT License
 
-#ifndef @DIALECT_NAME@_STD_OPS
-#define @DIALECT_NAME@_STD_OPS
+#ifndef @DIALECT_NAME_UPPER@_STD_OPS
+#define @DIALECT_NAME_UPPER@_STD_OPS
+
+include "mlir/Dialect/@DIALECT_NAME@/IR/@DIALECT_NAME@Ops.td"
 
 def GPhaseOp : UnitaryOp<"gphase", [NoTarget, OneParameter]> {
     let summary = "GPhase operation";
@@ -329,4 +331,4 @@ def XXplusYYOp : UnitaryOp<"xx_plus_yy", [TwoTarget, TwoParameters]> {
     }];
 }
 
-#endif // @DIALECT_NAME@_STD_OPS
+#endif // @DIALECT_NAME_UPPER@_STD_OPS
