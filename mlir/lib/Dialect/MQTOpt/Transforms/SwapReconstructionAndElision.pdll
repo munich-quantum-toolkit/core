@@ -8,7 +8,34 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptStdOps.td"
 
-Pattern ElideSwap with recursion {
+Constraint ExtractCNotResults(op: Op<mqtopt.x>) -> (target: Value, control: Value) {
+  return (op.0, op.1);
+}
+
+Rewrite BuildXOp(op: Op, target: Value, posControls: ValueRange, negControls: ValueRange) -> Op<mqtopt.x> [{
+  auto qubitType = target.getType();
+  auto outType = llvm::SmallVector<mlir::Type>{1, qubitType};
+  auto outPosCtrlType = llvm::SmallVector<mlir::Type>{posControls.size(), qubitType};
+  auto outNegCtrlType = llvm::SmallVector<mlir::Type>{negControls.size(), qubitType};
+
+  return rewriter.create<mqt::ir::opt::XOp>(op->getLoc(), outType, outPosCtrlType, outNegCtrlType, mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{},
+        mlir::ValueRange{}, mlir::ValueRange{target}, posControls, mlir::ValueRange{});
+}];
+
+Pattern SwapReconstructionAndElisionPattern {
+  // match
+  let root = op<mqtopt.x>(target: Value, control: Value);
+  let rootOut = ExtractCNotResults(root);
+  let secondCNot = op<mqtopt.x>(rootOut.control, rootOut.target);
+
+  // rewrite
+  rewrite root with {
+    replace secondCNot with BuildXOp(secondCNot, control, (target), ());
+    erase root;
+  };
+}
+
+Pattern ElidePermutationsPattern with recursion {
   let root = op<mqtopt.swap>(params: ValueRange, in_qubits: ValueRange, pos_ctrl_in_qubits: ValueRange, neg_ctrl_in_qubits: ValueRange);
   // The next line obviously doesn't work. As it does not switch the qubits.
   // This is mainly because I cannot find a way to index into the qubit list.
