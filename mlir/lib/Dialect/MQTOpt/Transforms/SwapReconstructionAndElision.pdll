@@ -6,10 +6,12 @@
 //
 // Licensed under the MIT License
 
-Pattern {
-  // match
-  let root = op<mqtopt.swap>(arg1: Value, arg2: Value);
+#include "mlir/Dialect/MQTOpt/IR/MQTOptStdOps.td"
 
-  // rewrite
-  replace root with (arg2, arg1);
+Pattern ElideSwap with recursion {
+  let root = op<mqtopt.swap>(params: ValueRange, in_qubits: ValueRange, pos_ctrl_in_qubits: ValueRange, neg_ctrl_in_qubits: ValueRange);
+  // The next line obviously doesn't work. As it does not switch the qubits.
+  // This is mainly because I cannot find a way to index into the qubit list.
+  // I also have no idea how we would constrain the control qubits to be empty.
+  replace root with (params, in_qubits, pos_ctrl_in_qubits, neg_ctrl_in_qubits);
 }
