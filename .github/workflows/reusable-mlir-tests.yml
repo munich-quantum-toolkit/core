@@ -48,7 +48,7 @@ jobs:
 
       - name: Restore LLVM/MLIR cache (Windows)
         if: runner.os == 'Windows'
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         id: mlir-cache
         with:
           path: llvm-install
