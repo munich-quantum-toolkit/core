@@ -58,7 +58,7 @@ module {
     %i = arith.constant 0 : index
     memref.store %c, %creg[%i] : memref<1xi1>
     "mqtref.deallocQubitRegister"(%0) : (!mqtref.QubitRegister) -> ()
-    memref.dealloc %alloca : memref<3xi1>
+    memref.dealloc %alloca : memref<1xi1>
     return
   }
 }
