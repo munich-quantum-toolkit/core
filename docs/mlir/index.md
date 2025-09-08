@@ -13,6 +13,14 @@ Both dialects define various transformation passes.
 For intercompatibility, we provide {doc}`conversions <Conversions>` between dialects.
 So far, this comprises a conversion from MQTOpt to MQTRef and one from MQTRef to MQTOpt.
 
+```{toctree}
+:maxdepth: 2
+
+MQTRef
+MQTOpt
+Conversions
+```
+
 :::{note}
 This page is a work in progress.
 The content is not yet complete and subject to change.
@@ -53,11 +61,8 @@ The approach of using MLIR-native `memref<?xi1>` operands allows us to stay more
 An alternative definition of an MQT-specific `ClassicalRegister` would have restricted us without adding benefits.
 By using `memref<?xi1>` operands, the development of passes can be more agnostic to implementation specifics.
 
-```{toctree}
-:maxdepth: 2
-:caption: Table of Contents
+## Development
 
-MQTRef
-MQTOpt
-Conversions
-```
+Building the MLIR library requires LLVM version 21.0 or later.
+Our CI pipeline on GitHub continuously builds and tests the MLIR library on Linux, macOS, and Windows.
+To access the latest build logs, visit the [GitHub Actions page](https://github.com/munich-quantum-toolkit/core/actions/workflows/ci.yml).

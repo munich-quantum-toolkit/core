@@ -55,9 +55,9 @@ def test_single_qubit_gate(gate_matrices: dict[str, npt.NDArray[np.complex128]])
                 assert arr.shape == (2**i, 2**i)
                 target = gate_mat
                 if j > 0:
-                    target = np.kron(target, np.eye(2**j))
+                    target = np.kron(target, np.eye(2**j)).astype(np.complex128)
                 if j < i - 1:
-                    target = np.kron(np.eye(2 ** (i - j - 1)), target)
+                    target = np.kron(np.eye(2 ** (i - j - 1)), target).astype(np.complex128)
                 assert np.allclose(arr, target)
 
 
@@ -75,13 +75,13 @@ def test_controlled_single_qubit_gate(gate_matrices: dict[str, npt.NDArray[np.co
                     assert arr.shape == (2**i, 2**i)
                     target = gate_mat
                     if t > 0:
-                        target = np.kron(target, np.eye(2**t))
+                        target = np.kron(target, np.eye(2**t)).astype(np.complex128)
                     if c - t > 1:
-                        target = np.kron(np.eye(2 ** (c - t - 1)), target)
+                        target = np.kron(np.eye(2 ** (c - t - 1)), target).astype(np.complex128)
                     target = np.kron(np.array([[0, 0], [0, 1]]), target)
                     target += np.kron(np.array([[1, 0], [0, 0]]), np.eye(2**c))
                     if c < i - 1:
-                        target = np.kron(np.eye(2 ** (i - c - 1)), target)
+                        target = np.kron(np.eye(2 ** (i - c - 1)), target).astype(np.complex128)
                     assert np.allclose(arr, target)
 
 
