@@ -12,7 +12,7 @@ Constraint ExtractCNotResults(op: Op<mqtopt.x>) -> (target: Value, control: Valu
   return (op.0, op.1);
 }
 
-Rewrite BuildXOp(op: Op, target: Value, posControls: ValueRange, negControls: ValueRange) -> Op<mqtopt.x> [{
+Rewrite BuildXOp(op: Op, target: Value, posControls: ValueRange, negControls: ValueRange) -> Op [{
   auto qubitType = target.getType();
   auto outType = llvm::SmallVector<mlir::Type>{1, qubitType};
   auto outPosCtrlType = llvm::SmallVector<mlir::Type>{posControls.size(), qubitType};
@@ -22,11 +22,11 @@ Rewrite BuildXOp(op: Op, target: Value, posControls: ValueRange, negControls: Va
         mlir::ValueRange{}, mlir::ValueRange{target}, posControls, mlir::ValueRange{});
 }];
 
-Pattern SwapReconstructionAndElisionPattern {
+Pattern SwapReconstructionAndElisionPattern with recursion {
   // match
-  let root = op<mqtopt.x>(target: Value, control: Value);
+  let root = op<mqtopt.x>(_: ValueRange, target: Value, control: Value, _: ValueRange);
   let rootOut = ExtractCNotResults(root);
-  let secondCNot = op<mqtopt.x>(rootOut.control, rootOut.target);
+  let secondCNot = op<mqtopt.x>(_: ValueRange, rootOut.control, rootOut.target, _: ValueRange);
 
   // rewrite
   rewrite root with {
