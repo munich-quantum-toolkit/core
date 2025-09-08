@@ -167,19 +167,17 @@ public:
  */
 class RandomLayout final : public Layout {
 public:
-  explicit RandomLayout(const std::size_t nqubits, const std::size_t seed = 42U)
-      : Layout(nqubits), seed_(seed) {}
+  using Layout::Layout;
+
   [[nodiscard]] llvm::SmallVector<std::size_t> generate() const final {
-    std::mt19937 g(seed_);
+    std::random_device rd;
+    std::mt19937 g(rd());
 
     llvm::SmallVector<std::size_t, 0> mapping(nqubits());
     std::iota(mapping.begin(), mapping.end(), 0);
     std::shuffle(mapping.begin(), mapping.end(), g);
     return mapping;
-  }
-
-private:
-  std::size_t seed_;
+  };
 };
 
 /**
@@ -211,23 +209,18 @@ private:
  * to manage free / unused static qubit SSA values. Using a queue ensures
  * that alloc's and dealloc's can be in any arbitrary order.
  *
- * The initial layout is applied once at construction when initializing the
- * queue. Consequently, `nqubits` back-to-back retrievals will receive
- * the static qubits defined by the initial layout.
+ * This class generates and applies the initial layout at construction.
+ * Consequently, `nqubits` back-to-back retrievals will receive the static
+ * qubits defined by the initial layout.
+ * If all allocated qubits are deallocated again, e.g. we reach the end of a
+ * "circuit", the initial layout will be re-generated and re-applied.
  */
 class QubitStateManager {
 public:
   explicit QubitStateManager(const llvm::SmallVectorImpl<Value>& qubits,
-                             const std::shared_ptr<Layout>& layout)
-      : indexToValue_(qubits.size()), layout_(layout) {
-    const auto mapping = layout_->generate();
-    for (std::size_t j = 0; j < qubits.size(); ++j) {
-      const std::size_t i = mapping[j];
-      const Value q = qubits[i];
-      valueToIndex_[q] = i;
-      indexToValue_[i] = q;
-      free_.push(i);
-    }
+                             Layout& layout)
+      : indexToValue_(qubits.size()), layout_(&layout) {
+    reset(qubits);
   }
 
   /**
@@ -263,7 +256,12 @@ public:
   /**
    * @brief Release static qubit.
    */
-  void release(Value q) { free_.push(get(q)); }
+  void release(Value q) {
+    free_.push(get(q));
+    if (nfree() == nqubits()) {
+      reset(indexToValue_);
+    }
+  }
 
   /**
    * @brief Forward SSA values.
@@ -277,11 +275,55 @@ public:
   }
 
   /**
-   * @brief Return the number of static qubits.
+   * @brief Return the current permutation, i.e., the current mapping from
+   * virtual to physical qubits.
+   */
+  llvm::SmallVector<std::size_t> permutation() {
+    llvm::SmallVector<std::size_t> perm(nqubits());
+    for (const auto entry : valueToIndex_) {
+      perm.push_back(entry.second);
+    }
+    return perm;
+  }
+
+  /**
+   * @brief Return the number of physical qubits.
    */
   [[nodiscard]] std::size_t nqubits() const { return indexToValue_.size(); }
 
+  /**
+   * @brief Return the number of free qubits.
+   */
+  [[nodiscard]] std::size_t nfree() const { return free_.size(); }
+
 private:
+  /**
+   * @brief Reset the state.
+   *
+   * Clears the queue and generates the initial layout. Then fills the queue
+   * with static qubit SSA values, permutated by the initial layout.
+   *
+   * @param qubits A vector of SSA values where [0] = 0th static qubits, [1] =
+   * 1st static qubits, etc.
+   */
+  void reset(const llvm::SmallVectorImpl<Value>& qubits) {
+    const auto mapping = layout().generate();
+
+    free_ = std::queue<std::size_t>(); // Clear queue.
+    for (std::size_t j = 0; j < qubits.size(); ++j) {
+      const std::size_t i = mapping[j];
+      const Value q = qubits[i];
+      valueToIndex_[q] = i;
+      indexToValue_[i] = q;
+      free_.push(i);
+    }
+  }
+
+  /**
+   * @brief Return a reference to the initial layout.
+   */
+  [[nodiscard]] Layout& layout() const { return *layout_; }
+
   /**
    * @brief Maps SSA values to static indices.
    *
@@ -304,7 +346,7 @@ private:
   /**
    * @brief The initial layout method.
    */
-  std::shared_ptr<Layout> layout_;
+  Layout* layout_;
 };
 
 //===----------------------------------------------------------------------===//
@@ -321,27 +363,22 @@ namespace {
  *  - A qubit state manager
  *  - The targeted architecture
  *  - An initial layout method
- *
- * @details The use of shared pointers indicates clearly that this
- * is a non-owning class.
  */
 template <class OpType>
 struct ContextualRewritePattern : OpRewritePattern<OpType> {
-  ContextualRewritePattern(MLIRContext* ctx,
-                           const std::shared_ptr<QubitStateManager>& state,
-                           const std::shared_ptr<Architecture>& arch,
-                           const std::shared_ptr<Layout>& layout)
-      : OpRewritePattern<OpType>(ctx), state_(state), arch_(arch),
-        layout_(layout) {}
+  ContextualRewritePattern(MLIRContext* ctx, QubitStateManager& state,
+                           Architecture& arch, Layout& layout)
+      : OpRewritePattern<OpType>(ctx), state_(&state), arch_(&arch),
+        layout_(&layout) {}
 
   [[nodiscard]] QubitStateManager& state() const { return *state_; }
   [[nodiscard]] Architecture& arch() const { return *arch_; }
   [[nodiscard]] Layout& layout() const { return *layout_; }
 
 private:
-  std::shared_ptr<QubitStateManager> state_;
-  std::shared_ptr<Architecture> arch_;
-  std::shared_ptr<Layout> layout_;
+  QubitStateManager* state_;
+  Architecture* arch_;
+  Layout* layout_;
 };
 
 struct IfOpPattern final : OpRewritePattern<scf::IfOp> {
@@ -388,12 +425,10 @@ struct ResetPattern final : ContextualRewritePattern<ResetOp> {
 };
 
 struct NaiveUnitaryPattern final : OpInterfaceRewritePattern<UnitaryInterface> {
-  NaiveUnitaryPattern(MLIRContext* ctx,
-                      const std::shared_ptr<QubitStateManager>& state,
-                      const std::shared_ptr<Architecture>& arch,
-                      const std::shared_ptr<Layout>& layout)
-      : OpInterfaceRewritePattern<UnitaryInterface>(ctx), state_(state),
-        arch_(arch), layout_(layout) {}
+  NaiveUnitaryPattern(MLIRContext* ctx, QubitStateManager& state,
+                      Architecture& arch, Layout& layout)
+      : OpInterfaceRewritePattern<UnitaryInterface>(ctx), state_(&state),
+        arch_(&arch), layout_(&layout) {}
   LogicalResult matchAndRewrite(UnitaryInterface u,
                                 PatternRewriter& rewriter) const final {
     // Global-phase or zero-qubit unitary: Nothing to do.
@@ -467,9 +502,9 @@ private:
   [[nodiscard]] Architecture& arch() const { return *arch_; }
   [[nodiscard]] Layout& layout() const { return *layout_; }
 
-  std::shared_ptr<QubitStateManager> state_;
-  std::shared_ptr<Architecture> arch_;
-  std::shared_ptr<Layout> layout_;
+  QubitStateManager* state_;
+  Architecture* arch_;
+  Layout* layout_;
 };
 
 struct MeasurePattern final : ContextualRewritePattern<MeasureOp> {
@@ -494,11 +529,9 @@ struct DeallocQubitPattern final : ContextualRewritePattern<DeallocQubitOp> {
 /**
  * @brief Collect patterns for the naive routing algorithm.
  */
-void populateNaiveRoutingPatterns(
-    RewritePatternSet& patterns,
-    const std::shared_ptr<QubitStateManager>& state,
-    const std::shared_ptr<Architecture>& arch,
-    const std::shared_ptr<Layout>& layout) {
+void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
+                                  QubitStateManager& state, Architecture& arch,
+                                  Layout& layout) {
   patterns.add<IfOpPattern, ForOpPattern>(patterns.getContext());
   patterns.add<AllocQubitPattern, ResetPattern, NaiveUnitaryPattern,
                MeasurePattern, DeallocQubitPattern>(patterns.getContext(),
@@ -564,15 +597,14 @@ void walkPreOrderAndApplyPatterns(Operation* op,
 [[nodiscard]] LogicalResult route(ModuleOp module,
                                   const ArchitectureName& archName,
                                   const LayoutMethod& layoutMethod) {
-  std::random_device rd;
-  const auto arch = std::make_shared<Architecture>(getArchitecture(archName));
-  const auto layout = std::make_shared<RandomLayout>(arch->nqubits(), rd());
+  Architecture arch = getArchitecture(archName);
+  RandomLayout layout(arch.nqubits());
 
   auto res = module->walk([&](func::FuncOp func) {
     PatternRewriter rewriter(func->getContext());
     rewriter.setInsertionPointToStart(&func.getBody().front());
 
-    llvm::SmallVector<Value, 0> qubits(arch->nqubits());
+    llvm::SmallVector<Value, 0> qubits(arch.nqubits());
 
     if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
       // For now we don't route non-entry point functions.
@@ -583,8 +615,7 @@ void walkPreOrderAndApplyPatterns(Operation* op,
 
     initEntryPoint(qubits, rewriter);
 
-    const auto state = std::make_shared<QubitStateManager>(qubits, layout);
-
+    QubitStateManager state(qubits, layout);
     RewritePatternSet patterns(func.getContext());
     populateNaiveRoutingPatterns(patterns, state, arch, layout);
 
