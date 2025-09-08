@@ -80,10 +80,10 @@ struct QuantumSinkPushPattern final
    * @param op The operation to find the closest user for.
    * @return The closest user operation.
    */
-  [[nodiscard]] const mlir::Operation*
+  [[nodiscard]] mlir::Operation*
   getNext(const mlir::ResultRange::user_range& users,
           const UnitaryInterface& op) const {
-    const mlir::Operation* next = nullptr;
+    mlir::Operation* next = nullptr; // NOLINT(misc-const-correctness)
     int minDepth = 0;
     for (auto* user : users) {
       const auto depth = getDepth(*user->getBlock(), op);
@@ -107,7 +107,7 @@ struct QuantumSinkPushPattern final
    * @param op The operation to find the next branch operation for.
    * @return The next branch operation that uses the given operation.
    */
-  [[nodiscard]] const mlir::Operation*
+  [[nodiscard]] mlir::Operation*
   getNextBranchOpUser(const UnitaryInterface& op) const {
     auto allUsers = op->getUsers();
     std::vector<mlir::Operation*> output;
@@ -115,7 +115,7 @@ struct QuantumSinkPushPattern final
       return mlir::isa<mlir::cf::BranchOp>(user) ||
              mlir::isa<mlir::cf::CondBranchOp>(user);
     });
-    const auto* nextBranch = getNext(allUsers, op);
+    auto* nextBranch = getNext(allUsers, op);
     return nextBranch;
   }
 
@@ -301,13 +301,12 @@ struct QuantumSinkPushPattern final
       return mlir::failure();
     }
 
-    const auto* nextBranch = getNextBranchOpUser(op);
+    auto* nextBranch = getNextBranchOpUser(op);
     if (nextBranch == nullptr) {
       return mlir::failure();
     }
 
-    if (const_cast<mlir::Operation*>(nextBranch)->getBlock() !=
-        op->getBlock()) {
+    if (nextBranch->getBlock() != op->getBlock()) {
       return mlir::failure();
     }
 
