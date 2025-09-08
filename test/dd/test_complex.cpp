@@ -92,7 +92,7 @@ TEST_F(CNTest, SortedBuckets) {
     ASSERT_NE(entry, nullptr);
   }
 
-  RealNumber* p = ut.getTable().at(theBucket);
+  const RealNumber* p = ut.getTable().at(theBucket);
   ASSERT_NE(p, nullptr);
 
   constexpr fp last = std::numeric_limits<fp>::min();

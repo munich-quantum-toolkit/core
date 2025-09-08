@@ -27,7 +27,9 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- 🚚 Rename MLIR pass `CancelConsecutiveInverses` to `GateElimination`([#1140]) ([**@taminob**])
+- ⬆️ Require LLVM 21 for building the MLIR library ([#1180]) ([**@denialhaag**])
+- ⬆️ Update to version 21 of `clang-tidy` ([#1180]) ([**@denialhaag**])
+- 🚚 Rename MLIR pass `CancelConsecutiveInverses` to `GateElimination` ([#1140]) ([**@taminob**])
 - 🚚 Rename `xxminusyy` to `xx_minus_yy` and `xxplusyy` to `xx_plus_yy` in MLIR dialects ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 - 🚸 Add custom assembly format for operations in the MLIR dialects ([#1139]) ([**@burgholzer**])
 - 🚸 Enable `InferTypeOpInterface` in the MLIR dialects to reduce explicit type information ([#1139]) ([**@burgholzer**])
@@ -185,6 +187,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#1181]: https://github.com/munich-quantum-toolkit/core/pull/1181
+[#1180]: https://github.com/munich-quantum-toolkit/core/pull/1180
 [#1165]: https://github.com/munich-quantum-toolkit/core/pull/1165
 [#1157]: https://github.com/munich-quantum-toolkit/core/pull/1157
 [#1151]: https://github.com/munich-quantum-toolkit/core/pull/1151

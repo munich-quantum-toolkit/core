@@ -22,14 +22,11 @@ jobs:
             windows-2025,
             windows-11-arm,
           ]
-        llvm-version: [19, 20]
+        llvm-version: [21]
         coverage: [false]
         include:
           - os: ubuntu-24.04
-            llvm-version: 19
-            coverage: true
-          - os: ubuntu-24.04
-            llvm-version: 20
+            llvm-version: 21
             coverage: true
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
