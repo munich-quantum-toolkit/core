@@ -8,12 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
+#include "mlir/Dialect/MQTOpt/Transforms/SwapReconstructionAndElision.h"
 
-#include <mlir/Dialect/PDL/IR/PDL.h>
 #include <mlir/Dialect/PDLInterp/IR/PDLInterp.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <utility>
@@ -22,8 +20,6 @@ namespace mqt::ir::opt {
 
 #define GEN_PASS_DEF_SWAPRECONSTRUCTIONANDELISION
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
-#undef GEN_PASS_DEF_SWAPRECONSTRUCTIONANDELISION
-#include "SwapReconstructionAndElision.h.inc"
 
 /**
  * @brief This pattern attempts to remove SWAP gates by re-ordering qubits.

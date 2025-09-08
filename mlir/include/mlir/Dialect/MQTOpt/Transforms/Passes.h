@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "SwapReconstructionAndElision.h"
 #include "ir/QuantumComputation.hpp"
 
 #include <mlir/Pass/Pass.h>
