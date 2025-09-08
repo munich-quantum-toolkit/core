@@ -15,6 +15,7 @@
 #include <exception>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
@@ -401,8 +402,8 @@ int main(int argc, char* argv[]) {
   // initialization of a vector can throw exceptions, so we catch them here.
   try {
     argVec.reserve(argc);
-    for (int i = 0; i < argc; ++i) {
-      argVec.emplace_back(argv[i]);
+    for (const auto& arg : std::span(argv, argc)) {
+      argVec.emplace_back(arg);
     }
   } catch (std::exception& e) {
     SPDLOG_ERROR("Error parsing arguments into vector: {}", e.what());
