@@ -154,7 +154,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@d42342e610318ddf1fcd2371be987faa47caedf0 # v1.16
     with:
       cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_MLIR=ON -DBUILD_MQT_CORE_BINDINGS=ON
-      clang-version: 20
+      clang-version: 21
       build-project: true
       files-changed-only: true
       setup-python: true

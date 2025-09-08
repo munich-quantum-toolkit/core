@@ -71,6 +71,7 @@ case "$OS_NAME" in
     LLVM_PREFIX="$(brew --prefix)/opt/llvm@${LLVM_MAJOR}"
     append_env "CC=${LLVM_PREFIX}/bin/clang"
     append_env "CXX=${LLVM_PREFIX}/bin/clang++"
+    append_env "LDFLAGS=-L${LLVM_PREFIX}/lib/c++ -L${LLVM_PREFIX}/lib/unwind -lunwind"
     append_env "LLVM_DIR=${LLVM_PREFIX}/lib/cmake/llvm"
     append_env "MLIR_DIR=${LLVM_PREFIX}/lib/cmake/mlir"
     append_path "${LLVM_PREFIX}/bin"

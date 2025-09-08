@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
 #include <mlir/Dialect/PDL/IR/PDL.h>
@@ -16,6 +15,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <utility>
 
 namespace mqt::ir::opt {
@@ -41,7 +41,7 @@ struct SwapReconstructionAndElision final
     populateGeneratedPDLLPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
+    if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }
