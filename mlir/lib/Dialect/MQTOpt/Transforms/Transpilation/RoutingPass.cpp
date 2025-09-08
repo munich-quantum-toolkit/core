@@ -12,24 +12,20 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Support/WalkResult.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <llvm/ADT/MapVector.h>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Iterators.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
@@ -312,7 +308,7 @@ struct AllocQubitPattern final : PatternWithEnv<AllocQubitOp> {
   using PatternWithEnv<AllocQubitOp>::PatternWithEnv;
   LogicalResult matchAndRewrite(AllocQubitOp alloc,
                                 PatternRewriter& rewriter) const final {
-    if (Value q = env().state.retrieve()) {
+    if (const Value q = env().state.retrieve()) {
       auto reset = rewriter.create<ResetOp>(q.getLoc(), q);
       rewriter.replaceOp(alloc, reset);
       env().state.forward(reset.getInQubit(), reset.getOutQubit());
@@ -436,8 +432,9 @@ struct DeallocQubitPattern final : PatternWithEnv<DeallocQubitOp> {
 /**
  * @brief Collect patterns for the naive routing algorithm.
  */
-void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
-                                  std::shared_ptr<RoutingEnvironment> env) {
+void populateNaiveRoutingPatterns(
+    RewritePatternSet& patterns,
+    const std::shared_ptr<RoutingEnvironment>& env) {
   patterns.add<IfOpPattern, ForOpPattern>(patterns.getContext());
   patterns.add<AllocQubitPattern, ResetPattern, NaiveUnitaryPattern,
                MeasurePattern, DeallocQubitPattern>(patterns.getContext(), env);
