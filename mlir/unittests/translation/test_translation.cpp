@@ -755,8 +755,6 @@ TEST_F(ImportTest, IfRegisterEq1) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -792,8 +790,6 @@ TEST_F(ImportTest, IfRegisterEq2) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -841,8 +837,6 @@ TEST_F(ImportTest, IfRegisterNeq) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -878,8 +872,6 @@ TEST_F(ImportTest, IfRegisterLt) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -915,8 +907,6 @@ TEST_F(ImportTest, IfRegisterLeq) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -952,8 +942,6 @@ TEST_F(ImportTest, IfRegisterGt) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -989,8 +977,6 @@ TEST_F(ImportTest, IfRegisterGeq) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1027,8 +1013,6 @@ TEST_F(ImportTest, IfElseRegister) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1077,8 +1061,6 @@ TEST_F(ImportTest, IfBitEqTrue) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1110,8 +1092,6 @@ TEST_F(ImportTest, IfBitEqFalse) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1145,8 +1125,6 @@ TEST_F(ImportTest, IfBitNeq) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1181,8 +1159,6 @@ TEST_F(ImportTest, IfElseBitEqTrue) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1217,8 +1193,6 @@ TEST_F(ImportTest, IfElseBitEqFalse) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1253,8 +1227,6 @@ TEST_F(ImportTest, IfElseBitNeq) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
