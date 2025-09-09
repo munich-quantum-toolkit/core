@@ -20,6 +20,6 @@
 namespace mqt::ir::opt {
 
 #define GEN_PASS_DECL_SWAPRECONSTRUCTIONANDELISION
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 #include "SwapReconstructionAndElision.h.inc"
+#include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 } // namespace mqt::ir::opt
