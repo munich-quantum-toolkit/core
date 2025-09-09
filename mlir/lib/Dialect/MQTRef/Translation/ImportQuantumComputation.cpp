@@ -201,8 +201,7 @@ void addMeasureOp(mlir::OpBuilder& builder, const qc::Operation& operation,
  */
 void addResetOp(mlir::OpBuilder& builder, const qc::Operation& operation,
                 const llvm::SmallVector<mlir::Value>& qubits) {
-  const auto& targets = operation.getTargets();
-  for (const auto& target : targets) {
+  for (const auto& target : operation.getTargets()) {
     const mlir::Value inQubit = qubits[target];
     builder.create<mqt::ir::ref::ResetOp>(builder.getUnknownLoc(), inQubit);
   }
