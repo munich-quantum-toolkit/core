@@ -82,6 +82,7 @@ IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
       comparisonKind(kind) {
   name = "if_else";
   type = IfElse;
+  canonicalize();
 }
 
 IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
@@ -91,17 +92,9 @@ IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
     : thenOp(std::move(thenOp)), elseOp(std::move(elseOp)),
       controlBit(controlBit), expectedValueBit(expectedValue),
       comparisonKind(kind) {
-  // Canonicalize comparisons on a single bit
-  if (comparisonKind == Neq) {
-    comparisonKind = Eq;
-    expectedValueBit = !expectedValueBit;
-  }
-  if (comparisonKind != Eq) {
-    throw std::invalid_argument(
-        "Inequality comparisons on a single bit are not supported.");
-  }
   name = "if_else";
   type = IfElse;
+  canonicalize();
 }
 
 IfElseOperation::IfElseOperation(const IfElseOperation& op)
@@ -255,6 +248,27 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
     elseOp->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
   }
   of << "}\n";
+}
+
+void IfElseOperation::canonicalize() {
+  if (thenOp == nullptr) {
+    std::swap(thenOp, elseOp);
+    comparisonKind = getInvertedComparisonKind(comparisonKind);
+  }
+  if (controlBit.has_value()) {
+    if (comparisonKind == Neq) {
+      comparisonKind = Eq;
+      expectedValueBit = !expectedValueBit;
+    }
+    if (comparisonKind != Eq) {
+      throw std::invalid_argument(
+          "Inequality comparisons on a single bit are not supported.");
+    }
+    if (!expectedValueBit && elseOp != nullptr) {
+      std::swap(thenOp, elseOp);
+      expectedValueBit = true;
+    }
+  }
 }
 
 } // namespace qc
