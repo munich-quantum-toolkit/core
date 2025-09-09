@@ -16,6 +16,10 @@ Constraint IsEmpty(valueRange: ValueRange) [{
   return mlir::success(valueRange.empty());
 }];
 
+Constraint HasTwoElements(valueRange: ValueRange) [{
+  return mlir::success(valueRange.size() == 2);
+}];
+
 Rewrite BuildXOp(op: Op, target: Value, posControls: ValueRange, negControls: ValueRange) -> Op [{
   auto qubitType = target.getType();
   auto outType = llvm::SmallVector<mlir::Type>{1, qubitType};
@@ -26,42 +30,35 @@ Rewrite BuildXOp(op: Op, target: Value, posControls: ValueRange, negControls: Va
         mlir::ValueRange{}, mlir::ValueRange{target}, posControls, mlir::ValueRange{});
 }];
 
-//Constraint twoValues(valueRange: ValueRange) -> (first: Value, second: Value) [{
-Rewrite swapValues(valueRange: ValueRange) -> ValueRange [{
-  if (valueRange.size() == 2) {
-      //llvm::OwningArrayRef<mlir::Value> storage(valueRange.size());
-      //llvm::copy(valueRange, storage.begin());
-      //return storage;
-    return llvm::OwningArrayRef<mlir::Value>{ valueRange[1], valueRange[0] };
-  }
-  return valueRange;
-  //auto reversed = llvm::reverse(valueRange);
-  //llvm::SmallVector<mlir::Value> result;
-  //for (auto&& element : reversed) {
-  //  result.push_back(element);
-  //}
-  //return result;
+Rewrite Self(op: Op) => op;
+
+Rewrite First(valueRange: ValueRange) -> Value [{
+  return valueRange[0];
 }];
 
-//Pattern SwapReconstructionAndElisionPattern with recursion {
-//  // match
-//  let root = op<mqtopt.x>(_: [ValueRange, IsEmpty], target: Value, control: Value, _: [ValueRange, IsEmpty]);
-//  let rootOut = ExtractCNotResults(root);
-//  let secondCNot = op<mqtopt.x>(_: [ValueRange, IsEmpty], rootOut.control, rootOut.target, _: [ValueRange, IsEmpty]);
-//
-//  // rewrite
-//  rewrite root with {
-//    replace secondCNot with BuildXOp(secondCNot, control, (target), ());
-//    //erase root;
-//  };
-//}
+Rewrite Second(valueRange: ValueRange) -> Value [{
+  return valueRange[1];
+}];
+
+Pattern SwapReconstructionAndElisionPattern with recursion {
+  // match
+  let root = op<mqtopt.x>(_: [ValueRange, IsEmpty], target: Value, control: Value, _: [ValueRange, IsEmpty]);
+  let rootOut = ExtractCNotResults(root);
+  let secondCNot = op<mqtopt.x>(_: [ValueRange, IsEmpty], rootOut.control, rootOut.target, _: [ValueRange, IsEmpty]);
+
+  // rewrite
+  rewrite root with {
+    replace secondCNot with (rootOut.control, rootOut.target);
+    replace root with BuildXOp(secondCNot, control, (target), ());
+  };
+}
 
 Pattern ElidePermutationsPattern with recursion {
-  //let root = op<mqtopt.swap>(_: [ValueRange, IsEmpty], targets: ValueRange, _: [ValueRange, IsEmpty], _: [ValueRange, IsEmpty]);
   let root = op<mqtopt.swap>(params: ValueRange, targets: ValueRange, posCtrls: ValueRange, negCtrls: ValueRange);
   IsEmpty(params);
+  HasTwoElements(targets);
   IsEmpty(posCtrls);
   IsEmpty(negCtrls);
 
-  replace root with swapValues(targets);
+  replace root with (Second(targets), First(targets));
 }

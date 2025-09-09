@@ -120,7 +120,7 @@ module {
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
     // ========================== Check for operations that should be inserted ==============================
-    // CHECK: %[[Q1_1:.*]], %[[Q0_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]]
+    // CHECK: %[[Q1_1:.*]], %[[Q0_1:.*]] = mqtopt.x() %[[Q1_0]] ctrl %[[Q0_0]]
 
     // ========================== Check for operations that should be canceled ==============================
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
