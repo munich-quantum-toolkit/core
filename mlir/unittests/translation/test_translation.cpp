@@ -98,7 +98,7 @@ bool checkOutput(const std::string& checkString,
 using namespace qc;
 
 TEST_F(ImportTest, EntryPoint) {
-  const qc::QuantumComputation qc{};
+  const QuantumComputation qc{};
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -112,7 +112,7 @@ TEST_F(ImportTest, EntryPoint) {
 }
 
 TEST_F(ImportTest, AllocationAndDeallocation) {
-  const qc::QuantumComputation qc(3, 2);
+  const QuantumComputation qc(3, 2);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -131,7 +131,7 @@ TEST_F(ImportTest, AllocationAndDeallocation) {
 }
 
 TEST_F(ImportTest, Measure01) {
-  qc::QuantumComputation qc(2, 2);
+  QuantumComputation qc(2, 2);
   qc.measure({0, 1}, {0, 1});
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -154,7 +154,7 @@ TEST_F(ImportTest, Measure01) {
 }
 
 TEST_F(ImportTest, Measure0) {
-  qc::QuantumComputation qc(2, 2);
+  QuantumComputation qc(2, 2);
   qc.measure(0, 0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -177,7 +177,7 @@ TEST_F(ImportTest, Measure0) {
 }
 
 TEST_F(ImportTest, Reset01) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.reset({0, 1});
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -195,7 +195,7 @@ TEST_F(ImportTest, Reset01) {
 }
 
 TEST_F(ImportTest, Reset0) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.reset(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -213,7 +213,7 @@ TEST_F(ImportTest, Reset0) {
 }
 
 TEST_F(ImportTest, I) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.i(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -225,7 +225,7 @@ TEST_F(ImportTest, I) {
 }
 
 TEST_F(ImportTest, H) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.h(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -237,7 +237,7 @@ TEST_F(ImportTest, H) {
 }
 
 TEST_F(ImportTest, X) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.x(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -249,7 +249,7 @@ TEST_F(ImportTest, X) {
 }
 
 TEST_F(ImportTest, CX01) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.cx(0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -266,7 +266,7 @@ TEST_F(ImportTest, CX01) {
 }
 
 TEST_F(ImportTest, CX10) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.cx(1, 0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -283,7 +283,7 @@ TEST_F(ImportTest, CX10) {
 }
 
 TEST_F(ImportTest, CX0N1) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.cx(0_nc, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -300,7 +300,7 @@ TEST_F(ImportTest, CX0N1) {
 }
 
 TEST_F(ImportTest, MCX012) {
-  qc::QuantumComputation qc(3);
+  QuantumComputation qc(3);
   qc.mcx({0, 1}, 2);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -318,7 +318,7 @@ TEST_F(ImportTest, MCX012) {
 }
 
 TEST_F(ImportTest, MCX0N2P1) {
-  qc::QuantumComputation qc(3);
+  QuantumComputation qc(3);
   qc.mcx({0_nc, 2}, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -336,7 +336,7 @@ TEST_F(ImportTest, MCX0N2P1) {
 }
 
 TEST_F(ImportTest, MCX2N1N0) {
-  qc::QuantumComputation qc(3);
+  QuantumComputation qc(3);
   qc.mcx({2_nc, 1_nc}, 0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -354,7 +354,7 @@ TEST_F(ImportTest, MCX2N1N0) {
 }
 
 TEST_F(ImportTest, Y) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.y(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -366,7 +366,7 @@ TEST_F(ImportTest, Y) {
 }
 
 TEST_F(ImportTest, Z) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.z(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -378,7 +378,7 @@ TEST_F(ImportTest, Z) {
 }
 
 TEST_F(ImportTest, S) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.s(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -390,7 +390,7 @@ TEST_F(ImportTest, S) {
 }
 
 TEST_F(ImportTest, Sdg) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.sdg(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -402,7 +402,7 @@ TEST_F(ImportTest, Sdg) {
 }
 
 TEST_F(ImportTest, T) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.t(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -414,7 +414,7 @@ TEST_F(ImportTest, T) {
 }
 
 TEST_F(ImportTest, Tdg) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.tdg(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -426,7 +426,7 @@ TEST_F(ImportTest, Tdg) {
 }
 
 TEST_F(ImportTest, V) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.v(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -438,7 +438,7 @@ TEST_F(ImportTest, V) {
 }
 
 TEST_F(ImportTest, Vdg) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.vdg(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -450,7 +450,7 @@ TEST_F(ImportTest, Vdg) {
 }
 
 TEST_F(ImportTest, U) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.u(0.1, 0.2, 0.3, 0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -463,7 +463,7 @@ TEST_F(ImportTest, U) {
 }
 
 TEST_F(ImportTest, U2) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.u2(0.1, 0.2, 0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -476,7 +476,7 @@ TEST_F(ImportTest, U2) {
 }
 
 TEST_F(ImportTest, P) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.p(0.1, 0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -488,7 +488,7 @@ TEST_F(ImportTest, P) {
 }
 
 TEST_F(ImportTest, SX) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.sx(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -500,7 +500,7 @@ TEST_F(ImportTest, SX) {
 }
 
 TEST_F(ImportTest, SXdg) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.sxdg(0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -512,7 +512,7 @@ TEST_F(ImportTest, SXdg) {
 }
 
 TEST_F(ImportTest, Rx) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.rx(0.1, 0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -524,7 +524,7 @@ TEST_F(ImportTest, Rx) {
 }
 
 TEST_F(ImportTest, Ry) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.ry(0.1, 0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -536,7 +536,7 @@ TEST_F(ImportTest, Ry) {
 }
 
 TEST_F(ImportTest, Rz) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   qc.rz(0.1, 0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -548,7 +548,7 @@ TEST_F(ImportTest, Rz) {
 }
 
 TEST_F(ImportTest, SWAP01) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.swap(0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -565,7 +565,7 @@ TEST_F(ImportTest, SWAP01) {
 }
 
 TEST_F(ImportTest, SWAP10) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.swap(1, 0);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -582,7 +582,7 @@ TEST_F(ImportTest, SWAP10) {
 }
 
 TEST_F(ImportTest, iSWAP) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.iswap(0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -594,7 +594,7 @@ TEST_F(ImportTest, iSWAP) {
 }
 
 TEST_F(ImportTest, iSWAPdg) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.iswapdg(0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -606,7 +606,7 @@ TEST_F(ImportTest, iSWAPdg) {
 }
 
 TEST_F(ImportTest, Peres) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.peres(0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -618,7 +618,7 @@ TEST_F(ImportTest, Peres) {
 }
 
 TEST_F(ImportTest, Peresdg) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.peresdg(0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -630,7 +630,7 @@ TEST_F(ImportTest, Peresdg) {
 }
 
 TEST_F(ImportTest, DCX) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.dcx(0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -642,7 +642,7 @@ TEST_F(ImportTest, DCX) {
 }
 
 TEST_F(ImportTest, ECR) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.ecr(0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -654,7 +654,7 @@ TEST_F(ImportTest, ECR) {
 }
 
 TEST_F(ImportTest, RXX) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.rxx(0.1, 0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -666,7 +666,7 @@ TEST_F(ImportTest, RXX) {
 }
 
 TEST_F(ImportTest, CRXX) {
-  qc::QuantumComputation qc(3);
+  QuantumComputation qc(3);
   qc.crxx(0.1, 0, 1, 2);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -684,7 +684,7 @@ TEST_F(ImportTest, CRXX) {
 }
 
 TEST_F(ImportTest, RYY) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.ryy(0.1, 0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -696,7 +696,7 @@ TEST_F(ImportTest, RYY) {
 }
 
 TEST_F(ImportTest, RZZ) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.rzz(0.1, 0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -708,7 +708,7 @@ TEST_F(ImportTest, RZZ) {
 }
 
 TEST_F(ImportTest, RZX) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.rzx(0.1, 0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -720,7 +720,7 @@ TEST_F(ImportTest, RZX) {
 }
 
 TEST_F(ImportTest, XXminusYY) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.xx_minus_yy(0.1, 0.2, 0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -733,7 +733,7 @@ TEST_F(ImportTest, XXminusYY) {
 }
 
 TEST_F(ImportTest, XXplusYY) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   qc.xx_plus_yy(0.1, 0.2, 0, 1);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
@@ -746,10 +746,10 @@ TEST_F(ImportTest, XXplusYY) {
 }
 
 TEST_F(ImportTest, IfRegisterEq1) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   const auto& creg = qc.addClassicalRegister(1);
   qc.measure(0, 0);
-  qc.if_(qc::X, 0, creg, 1U, qc::Eq);
+  qc.if_(X, 0, creg, 1U, Eq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -783,10 +783,10 @@ TEST_F(ImportTest, IfRegisterEq1) {
 }
 
 TEST_F(ImportTest, IfRegisterEq2) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   const auto& creg = qc.addClassicalRegister(2);
   qc.measure({0, 1}, {0, 1});
-  qc.if_(qc::X, 0, creg, 2U, qc::Eq);
+  qc.if_(X, 0, creg, 2U, Eq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -832,10 +832,10 @@ TEST_F(ImportTest, IfRegisterEq2) {
 }
 
 TEST_F(ImportTest, IfRegisterNeq) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   const auto& creg = qc.addClassicalRegister(1);
   qc.measure(0, 0);
-  qc.if_(qc::X, 0, creg, 1U, qc::Neq);
+  qc.if_(X, 0, creg, 1U, Neq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -869,10 +869,10 @@ TEST_F(ImportTest, IfRegisterNeq) {
 }
 
 TEST_F(ImportTest, IfRegisterLt) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   const auto& creg = qc.addClassicalRegister(1);
   qc.measure(0, 0);
-  qc.if_(qc::X, 0, creg, 1U, qc::Lt);
+  qc.if_(X, 0, creg, 1U, Lt);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -906,10 +906,10 @@ TEST_F(ImportTest, IfRegisterLt) {
 }
 
 TEST_F(ImportTest, IfRegisterLeq) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   const auto& creg = qc.addClassicalRegister(1);
   qc.measure(0, 0);
-  qc.if_(qc::X, 0, creg, 1U, qc::Leq);
+  qc.if_(X, 0, creg, 1U, Leq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -943,10 +943,10 @@ TEST_F(ImportTest, IfRegisterLeq) {
 }
 
 TEST_F(ImportTest, IfRegisterGt) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   const auto& creg = qc.addClassicalRegister(1);
   qc.measure(0, 0);
-  qc.if_(qc::X, 0, creg, 1U, qc::Gt);
+  qc.if_(X, 0, creg, 1U, Gt);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -980,10 +980,10 @@ TEST_F(ImportTest, IfRegisterGt) {
 }
 
 TEST_F(ImportTest, IfRegisterGeq) {
-  qc::QuantumComputation qc(1);
+  QuantumComputation qc(1);
   const auto& creg = qc.addClassicalRegister(1);
   qc.measure(0, 0);
-  qc.if_(qc::X, 0, creg, 1U, qc::Geq);
+  qc.if_(X, 0, creg, 1U, Geq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -1017,12 +1017,11 @@ TEST_F(ImportTest, IfRegisterGeq) {
 }
 
 TEST_F(ImportTest, IfElseRegister) {
-  qc::QuantumComputation qc(2);
+  QuantumComputation qc(2);
   const auto& creg = qc.addClassicalRegister(2);
   qc.measure({0, 1}, {0, 1});
-  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
-            std::make_unique<qc::StandardOperation>(0, qc::Y), creg, 2U,
-            qc::Eq);
+  qc.ifElse(std::make_unique<StandardOperation>(0, X),
+            std::make_unique<StandardOperation>(0, Y), creg, 2U, Eq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -1070,9 +1069,9 @@ TEST_F(ImportTest, IfElseRegister) {
 }
 
 TEST_F(ImportTest, IfBitEqTrue) {
-  qc::QuantumComputation qc(1, 1);
+  QuantumComputation qc(1, 1);
   qc.measure(0, 0);
-  qc.if_(qc::X, 0, 0, true, qc::Eq);
+  qc.if_(X, 0, 0, true, Eq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -1103,9 +1102,9 @@ TEST_F(ImportTest, IfBitEqTrue) {
 }
 
 TEST_F(ImportTest, IfBitEqFalse) {
-  qc::QuantumComputation qc(1, 1);
+  QuantumComputation qc(1, 1);
   qc.measure(0, 0);
-  qc.if_(qc::X, 0, 0, false, qc::Eq);
+  qc.if_(X, 0, 0, false, Eq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -1138,9 +1137,9 @@ TEST_F(ImportTest, IfBitEqFalse) {
 }
 
 TEST_F(ImportTest, IfBitNeq) {
-  qc::QuantumComputation qc(1, 1);
+  QuantumComputation qc(1, 1);
   qc.measure(0, 0);
-  qc.if_(qc::X, 0, 0, true, qc::Neq);
+  qc.if_(X, 0, 0, true, Neq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -1173,10 +1172,10 @@ TEST_F(ImportTest, IfBitNeq) {
 }
 
 TEST_F(ImportTest, IfElseBitEqTrue) {
-  qc::QuantumComputation qc(1, 1);
+  QuantumComputation qc(1, 1);
   qc.measure(0, 0);
-  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
-            std::make_unique<qc::StandardOperation>(0, qc::Y), 0, true, qc::Eq);
+  qc.ifElse(std::make_unique<StandardOperation>(0, X),
+            std::make_unique<StandardOperation>(0, Y), 0, true, Eq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -1209,11 +1208,10 @@ TEST_F(ImportTest, IfElseBitEqTrue) {
 }
 
 TEST_F(ImportTest, IfElseBitEqFalse) {
-  qc::QuantumComputation qc(1, 1);
+  QuantumComputation qc(1, 1);
   qc.measure(0, 0);
-  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
-            std::make_unique<qc::StandardOperation>(0, qc::Y), 0, false,
-            qc::Eq);
+  qc.ifElse(std::make_unique<StandardOperation>(0, X),
+            std::make_unique<StandardOperation>(0, Y), 0, false, Eq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -1246,11 +1244,10 @@ TEST_F(ImportTest, IfElseBitEqFalse) {
 }
 
 TEST_F(ImportTest, IfElseBitNeq) {
-  qc::QuantumComputation qc(1, 1);
+  QuantumComputation qc(1, 1);
   qc.measure(0, 0);
-  qc.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
-            std::make_unique<qc::StandardOperation>(0, qc::Y), 0, true,
-            qc::Neq);
+  qc.ifElse(std::make_unique<StandardOperation>(0, X),
+            std::make_unique<StandardOperation>(0, Y), 0, true, Neq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
@@ -1283,7 +1280,7 @@ TEST_F(ImportTest, IfElseBitNeq) {
 }
 
 TEST_F(ImportTest, GHZ) {
-  qc::QuantumComputation qc(3, 3);
+  QuantumComputation qc(3, 3);
   qc.h(0);
   qc.cx(0, 1);
   qc.cx(0, 2);
