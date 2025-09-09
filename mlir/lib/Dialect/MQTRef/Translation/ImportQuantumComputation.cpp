@@ -13,6 +13,7 @@
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
+#include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
@@ -171,20 +172,23 @@ void addUnitaryOp(mlir::OpBuilder& builder, const qc::Operation& operation,
  * @param builder The MLIR OpBuilder
  * @param operation The measure operation to add
  * @param qubits The qubits of the quantum register
+ * @param bits The classical register to store measurement results
  */
 void addMeasureOp(mlir::OpBuilder& builder, const qc::Operation& operation,
                   const llvm::SmallVector<mlir::Value>& qubits,
                   const mlir::Value& bits) {
-  const auto& bitType = mlir::IntegerType::get(builder.getContext(), 1);
-  const auto& targets = operation.getTargets();
-  for (const auto& target : targets) {
-    const mlir::Value inQubit = qubits[target];
-    auto bit = builder.create<mqt::ir::ref::MeasureOp>(builder.getUnknownLoc(),
-                                                       bitType, inQubit);
-    auto indexValue = builder.create<mlir::arith::ConstantIndexOp>(
-        builder.getUnknownLoc(), target);
-    builder.create<mlir::memref::StoreOp>(builder.getUnknownLoc(), bit, bits,
-                                          mlir::ValueRange{indexValue});
+  const auto& measureOp =
+      dynamic_cast<const qc::NonUnitaryOperation&>(operation);
+  const auto& targets = measureOp.getTargets();
+  const auto& classics = measureOp.getClassics();
+  for (std::size_t i = 0; i < targets.size(); ++i) {
+    const auto& qubit = qubits[targets[i]];
+    auto result =
+        builder.create<mqt::ir::ref::MeasureOp>(builder.getUnknownLoc(), qubit);
+    auto bit = builder.create<mlir::arith::ConstantIndexOp>(
+        builder.getUnknownLoc(), classics[i]);
+    builder.create<mlir::memref::StoreOp>(builder.getUnknownLoc(), result, bits,
+                                          mlir::ValueRange{bit});
   }
 }
 
