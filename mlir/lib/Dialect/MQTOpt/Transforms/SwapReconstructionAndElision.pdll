@@ -27,7 +27,7 @@ Rewrite BuildXOp(op: Op, target: Value, posControls: ValueRange, negControls: Va
   auto outNegCtrlType = llvm::SmallVector<mlir::Type>{negControls.size(), qubitType};
 
   return rewriter.create<mqt::ir::opt::XOp>(op->getLoc(), outType, outPosCtrlType, outNegCtrlType, mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{},
-        mlir::ValueRange{}, mlir::ValueRange{target}, posControls, mlir::ValueRange{});
+        mlir::ValueRange{}, llvm::SmallVector<mlir::Value>{target}, posControls, mlir::ValueRange{});
 }];
 
 Rewrite Self(op: Op) => op;
