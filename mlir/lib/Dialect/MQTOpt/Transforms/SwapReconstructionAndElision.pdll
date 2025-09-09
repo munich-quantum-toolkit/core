@@ -42,14 +42,14 @@ Rewrite Second(valueRange: ValueRange) -> Value [{
 
 Pattern SwapReconstructionAndElisionPattern with recursion {
   // match
-  let root = op<mqtopt.x>(_: [ValueRange, IsEmpty], target: Value, control: Value, _: [ValueRange, IsEmpty]) { operandSegmentSizes = inSegmentSizes: Attr, resultSegmentSizes = outSegmentSizes: Attr };
+  let root = op<mqtopt.x>(_: [ValueRange, IsEmpty], target: Value, control: Value, _: [ValueRange, IsEmpty]);
   let rootOut = ExtractCNotResults(root);
   let secondCNot = op<mqtopt.x>(_: [ValueRange, IsEmpty], rootOut.control, rootOut.target, _: [ValueRange, IsEmpty]);
 
   // rewrite
   rewrite root with {
     replace secondCNot with (rootOut.control, rootOut.target);
-    replace root with op<mqtopt.x>((), control, (target), ()) {operandSegmentSizes = inSegmentSizes, resultSegmentSizes = outSegmentSizes};
+    replace root with op<mqtopt.x>((), (control), (target), ()) {operandSegmentSizes = attr<"array<i32: 0, 1, 1, 0>">, resultSegmentSizes = attr<"array<i32: 1, 1, 0>">};
   };
 }
 
