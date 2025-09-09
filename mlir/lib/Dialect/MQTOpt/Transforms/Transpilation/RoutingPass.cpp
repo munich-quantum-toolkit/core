@@ -14,6 +14,7 @@
 
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <cassert>
@@ -118,18 +119,6 @@ constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
 //===----------------------------------------------------------------------===//
 // Initial Layouts
 //===----------------------------------------------------------------------===//
-
-/**
- * @brief Enumerates the initial layout methods.
- */
-enum class LayoutMethod : std::uint8_t {
-  /// @brief Map virtual qubit 0 to physical qubit 0, 1 to 1, etc.
-  Identity,
-  /// @brief Create random bijective mapping from virtual to physical qubits.
-  Random,
-  /// @brief Use hard-coded bijective mapping from virtual to physical qubits.
-  Constant
-};
 
 /**
  * @brief Base class for all initial layout mapping functions.
@@ -278,7 +267,8 @@ public:
    * virtual to physical qubits.
    */
   llvm::SmallVector<std::size_t> permutation() {
-    llvm::SmallVector<std::size_t> perm(nqubits());
+    llvm::SmallVector<std::size_t> perm;
+    perm.reserve(nqubits());
     for (const auto entry : valueToIndex_) {
       perm.push_back(entry.second);
     }
@@ -297,6 +287,14 @@ public:
 
 private:
   /**
+   * @brief Clear the state.
+   */
+  void clear() {
+    free_ = std::queue<std::size_t>(); // Clear queue.
+    valueToIndex_.clear();
+  }
+
+  /**
    * @brief Reset the state.
    *
    * Clears the queue and generates the initial layout. Then fills the queue
@@ -308,7 +306,7 @@ private:
   void reset(const llvm::SmallVectorImpl<Value>& qubits) {
     const auto mapping = layout().generate();
 
-    free_ = std::queue<std::size_t>(); // Clear queue.
+    clear();
     for (std::size_t j = 0; j < qubits.size(); ++j) {
       const std::size_t i = mapping[j];
       const Value q = qubits[i];
@@ -402,7 +400,7 @@ struct AllocQubitPattern final : ContextualRewritePattern<AllocQubitOp> {
   LogicalResult matchAndRewrite(AllocQubitOp alloc,
                                 PatternRewriter& rewriter) const final {
     if (const Value q = state().retrieve()) {
-      auto reset = rewriter.create<ResetOp>(q.getLoc(), q);
+      auto reset = rewriter.create<ResetOp>(alloc.getLoc(), q);
       rewriter.replaceOp(alloc, reset);
       state().forward(reset.getInQubit(), reset.getOutQubit());
       return success();
@@ -481,7 +479,10 @@ private:
     const auto& [q0, q1] = getIns(u);
     auto path = getPath(q0, q1);
 
-    for (std::size_t i = 0; i < path.size() - 1; i += 2) {
+    for (std::size_t i = 0; i < path.size() - 2; ++i) {
+      if (i >= path.size() - 1) {
+        break;
+      }
       const Value in0 = state().get(path[i]);
       const Value in1 = state().get(path[i + 1]);
 
