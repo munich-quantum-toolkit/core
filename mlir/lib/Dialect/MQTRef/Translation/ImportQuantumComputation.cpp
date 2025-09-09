@@ -128,8 +128,8 @@ llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
  * @param qubits The qubits of the quantum register
  */
 template <typename OpType>
-void addStandardOp(mlir::OpBuilder& builder, const qc::Operation& operation,
-                   const llvm::SmallVector<mlir::Value>& qubits) {
+void addUnitaryOp(mlir::OpBuilder& builder, const qc::Operation& operation,
+                  const llvm::SmallVector<mlir::Value>& qubits) {
   // Define operation parameters
   mlir::DenseF64ArrayAttr staticParamsAttr = nullptr;
   if (const auto& parameters = operation.getParameter(); !parameters.empty()) {
@@ -453,7 +453,7 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
 
 #define ADD_OP_CASE(op)                                                        \
   case qc::OpType::op:                                                         \
-    addStandardOp<mqt::ir::ref::op##Op>(builder, operation, qubits);           \
+    addUnitaryOp<mqt::ir::ref::op##Op>(builder, operation, qubits);            \
     return llvm::success();
 
 /**
