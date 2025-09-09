@@ -74,7 +74,7 @@ void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
  * @param numBits The number of bits to allocate in the register
  * @return mlir::Value The allocated classical register value
  */
-mlir::Value allocateBits(mlir::OpBuilder& builder, int numBits) {
+mlir::Value allocateBits(mlir::OpBuilder& builder, int64_t numBits) {
   auto memrefType = mlir::MemRefType::get({numBits}, builder.getI1Type());
   auto memref = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
                                                        memrefType);
@@ -578,7 +578,7 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   const auto qreg = allocateQreg(builder, context, numQubits);
   const auto qubits = extractQubits(builder, context, qreg, numQubits);
 
-  const auto numBits = quantumComputation.getNcbits();
+  const auto numBits = static_cast<int64_t>(quantumComputation.getNcbits());
   const auto bits = allocateBits(builder, numBits);
 
   // Add operations and handle potential failures
