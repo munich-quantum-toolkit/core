@@ -98,7 +98,7 @@ module {
     module {
         func.func @ghz() {
             //
-            // Functions should stay the same since we don't route non-entry points.
+            // Functions should stay the same since we don't route non-entry points (yet).
 
             // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
             // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit

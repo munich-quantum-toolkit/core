@@ -12,14 +12,16 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 
+#include <cassert>
 #include <cstddef>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 
 #define DEBUG_TYPE "routing-verification"
 

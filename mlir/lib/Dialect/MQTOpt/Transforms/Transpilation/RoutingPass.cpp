@@ -12,16 +12,14 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 
-#include "llvm/ADT/MapVector.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/raw_ostream.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <cstdint>
+#include <llvm/ADT/MapVector.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Action.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -29,10 +27,11 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
+#include <mlir/Rewrite/FrozenRewritePatternSet.h>
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/TypeID.h>
 #include <mlir/Support/WalkResult.h>
-#include <mlir/Transforms/WalkPatternRewriteDriver.h>
 #include <numeric>
 #include <queue>
 #include <random>
@@ -172,6 +171,7 @@ public:
  * @brief Hard-coded mapping.
  */
 class ConstantLayout final : public Layout {
+public:
   explicit ConstantLayout(const llvm::SmallVectorImpl<std::size_t>& mapping)
       : Layout(mapping.size()), mapping_(nqubits()) {
     std::ranges::copy(mapping, mapping_.begin());
@@ -395,6 +395,15 @@ struct ForOpPattern final : OpRewritePattern<scf::ForOp> {
   }
 };
 
+struct YieldOpPattern final : OpRewritePattern<scf::YieldOp> {
+  explicit YieldOpPattern(MLIRContext* ctx)
+      : OpRewritePattern<scf::YieldOp>(ctx) {}
+  LogicalResult matchAndRewrite(scf::YieldOp /*op*/,
+                                PatternRewriter& /*rewriter*/) const final {
+    return failure();
+  }
+};
+
 struct AllocQubitPattern final : ContextualRewritePattern<AllocQubitOp> {
   using ContextualRewritePattern<AllocQubitOp>::ContextualRewritePattern;
   LogicalResult matchAndRewrite(AllocQubitOp alloc,
@@ -480,9 +489,6 @@ private:
     auto path = getPath(q0, q1);
 
     for (std::size_t i = 0; i < path.size() - 2; ++i) {
-      if (i >= path.size() - 1) {
-        break;
-      }
       const Value in0 = state().get(path[i]);
       const Value in1 = state().get(path[i + 1]);
 
@@ -563,8 +569,8 @@ struct PreOrderWalkDriverAction final
     : tracing::ActionImpl<PreOrderWalkDriverAction> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PreOrderWalkDriverAction)
   using ActionImpl::ActionImpl;
-  static constexpr StringLiteral tag = "walk-and-apply-patterns-pre-order";
-  void print(raw_ostream& os) const override { os << tag; }
+  static constexpr StringLiteral TAG = "walk-and-apply-patterns-pre-order";
+  void print(raw_ostream& os) const override { os << TAG; }
 };
 
 /**
@@ -598,7 +604,7 @@ void walkPreOrderAndApplyPatterns(Operation* op,
 /**
  * @brief Route the given module.
  *
- * For now we any non-entry point function is ignored and not routed.
+ * For now any non entry-point function is ignored and not routed.
  *
  * @param module The module to route.
  * @param arch The targeted architecture.
