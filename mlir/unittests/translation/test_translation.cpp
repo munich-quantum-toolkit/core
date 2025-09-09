@@ -754,7 +754,10 @@ TEST_F(ImportTest, IfRegisterEq1) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
   }
@@ -762,14 +765,11 @@ TEST_F(ImportTest, IfRegisterEq1) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[ANY:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[B0:.*]] = memref.load %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[C0:.*]] = arith.extui %[[B0]] : i1 to i64
+    CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
     CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[C0]], %[[Exp]] : i64
     CHECK: scf.if %[[Cnd0]] {
     CHECK: mqtref.x() %[[Q0]]
@@ -836,7 +836,10 @@ TEST_F(ImportTest, IfRegisterNeq) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
   }
@@ -844,14 +847,11 @@ TEST_F(ImportTest, IfRegisterNeq) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[ANY:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[B0:.*]] = memref.load %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[C0:.*]] = arith.extui %[[B0]] : i1 to i64
+    CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
     CHECK: %[[Cnd0:.*]] = arith.cmpi ne, %[[C0]], %[[Exp]] : i64
     CHECK: scf.if %[[Cnd0]] {
     CHECK: mqtref.x() %[[Q0]]
@@ -871,7 +871,10 @@ TEST_F(ImportTest, IfRegisterLt) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
   }
@@ -879,14 +882,11 @@ TEST_F(ImportTest, IfRegisterLt) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[ANY:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[B0:.*]] = memref.load %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[C0:.*]] = arith.extui %[[B0]] : i1 to i64
+    CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
     CHECK: %[[Cnd0:.*]] = arith.cmpi ult, %[[C0]], %[[Exp]] : i64
     CHECK: scf.if %[[Cnd0]] {
     CHECK: mqtref.x() %[[Q0]]
@@ -906,7 +906,10 @@ TEST_F(ImportTest, IfRegisterLeq) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
   }
@@ -914,14 +917,11 @@ TEST_F(ImportTest, IfRegisterLeq) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[ANY:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[B0:.*]] = memref.load %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[C0:.*]] = arith.extui %[[B0]] : i1 to i64
+    CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
     CHECK: %[[Cnd0:.*]] = arith.cmpi ule, %[[C0]], %[[Exp]] : i64
     CHECK: scf.if %[[Cnd0]] {
     CHECK: mqtref.x() %[[Q0]]
@@ -941,7 +941,10 @@ TEST_F(ImportTest, IfRegisterGt) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
   }
@@ -949,14 +952,11 @@ TEST_F(ImportTest, IfRegisterGt) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[ANY:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[B0:.*]] = memref.load %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[C0:.*]] = arith.extui %[[B0]] : i1 to i64
+    CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
     CHECK: %[[Cnd0:.*]] = arith.cmpi ugt, %[[C0]], %[[Exp]] : i64
     CHECK: scf.if %[[Cnd0]] {
     CHECK: mqtref.x() %[[Q0]]
@@ -976,7 +976,10 @@ TEST_F(ImportTest, IfRegisterGeq) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
+  passManager.addPass(mlir::createMem2Reg());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
   }
@@ -984,14 +987,11 @@ TEST_F(ImportTest, IfRegisterGeq) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[ANY:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[B0:.*]] = memref.load %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[C0:.*]] = arith.extui %[[B0]] : i1 to i64
+    CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
     CHECK: %[[Cnd0:.*]] = arith.cmpi uge, %[[C0]], %[[Exp]] : i64
     CHECK: scf.if %[[Cnd0]] {
     CHECK: mqtref.x() %[[Q0]]
@@ -1060,6 +1060,8 @@ TEST_F(ImportTest, IfBitEqTrue) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1067,14 +1069,10 @@ TEST_F(ImportTest, IfBitEqTrue) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[B0:.*]] = memref.load %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: scf.if %[[B0]] {
+    CHECK: scf.if %[[M0]] {
     CHECK: mqtref.x() %[[Q0]]
     CHECK: }
   )";
@@ -1091,6 +1089,8 @@ TEST_F(ImportTest, IfBitEqFalse) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1099,14 +1099,10 @@ TEST_F(ImportTest, IfBitEqFalse) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Exp0:.*]] = arith.constant false
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[B0:.*]] = memref.load %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[B0]], %[[Exp0]] : i1
+    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[M0]], %[[Exp0]] : i1
     CHECK: scf.if %[[Cnd0]] {
     CHECK: mqtref.x() %[[Q0]]
     CHECK: }
@@ -1124,6 +1120,8 @@ TEST_F(ImportTest, IfBitNeq) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1132,14 +1130,10 @@ TEST_F(ImportTest, IfBitNeq) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: %[[Exp0:.*]] = arith.constant false
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[B0:.*]] = memref.load %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[B0]], %[[Exp0]] : i1
+    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[M0]], %[[Exp0]] : i1
     CHECK: scf.if %[[Cnd0]] {
     CHECK: mqtref.x() %[[Q0]]
     CHECK: }
@@ -1158,6 +1152,8 @@ TEST_F(ImportTest, IfElseBitEqTrue) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1165,14 +1161,10 @@ TEST_F(ImportTest, IfElseBitEqTrue) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[B0:.*]] = memref.load %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: scf.if %[[B0]] {
+    CHECK: scf.if %[[M0]] {
     CHECK: mqtref.x() %[[Q0]]
     CHECK: } else {
     CHECK: mqtref.y() %[[Q0]]
@@ -1192,6 +1184,8 @@ TEST_F(ImportTest, IfElseBitEqFalse) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1199,14 +1193,10 @@ TEST_F(ImportTest, IfElseBitEqFalse) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[B0:.*]] = memref.load %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: scf.if %[[B0]] {
+    CHECK: scf.if %[[M0]] {
     CHECK: mqtref.y() %[[Q0]]
     CHECK: } else {
     CHECK: mqtref.x() %[[Q0]]
@@ -1226,6 +1216,8 @@ TEST_F(ImportTest, IfElseBitNeq) {
 
   // Run passes
   mlir::PassManager passManager(context.get());
+  passManager.addPass(mlir::createMem2Reg());
+  passManager.addPass(mlir::createRemoveDeadValuesPass());
   passManager.addPass(mlir::createCanonicalizerPass());
   if (failed(passManager.run(module.get()))) {
     FAIL() << "Failed to run passes";
@@ -1233,14 +1225,10 @@ TEST_F(ImportTest, IfElseBitNeq) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: %[[B0:.*]] = memref.load %[[Mem]][%[[I0]]] : memref<1xi1>
-    CHECK: scf.if %[[B0]] {
+    CHECK: scf.if %[[M0]] {
     CHECK: mqtref.y() %[[Q0]]
     CHECK: } else {
     CHECK: mqtref.x() %[[Q0]]
