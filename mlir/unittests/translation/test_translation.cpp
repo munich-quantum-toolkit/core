@@ -817,7 +817,9 @@ TEST_F(ImportTest, IfRegisterEq2) {
     CHECK: %[[Sum1:.*]] = scf.for %[[Ii:.*]] = %[[I0]] to %[[I2]] step %[[I1]] iter_args(%[[Sumi:.*]] = %[[Sum0]]) -> (i64) {
     CHECK: %[[Bi:.*]] = memref.load %[[Mem]][%[[Ii]]] : memref<2xi1>
     CHECK: %[[Ci:.*]] = arith.extui %[[Bi:.*]] : i1 to i64
-    CHECK: %[[Sumj:.*]] = arith.addi %[[Sumi]], %[[Ci]] : i64
+    CHECK: %[[Ind:.*]] = arith.index_cast %[[Ii]] : index to i64
+    CHECK: %[[Sh:.*]] = arith.shli %[[Ci]], %[[Ind]] : i64
+    CHECK: %[[Sumj:.*]] = arith.addi %[[Sumi]], %[[Sh]] : i64
     CHECK: scf.yield %[[Sumj]] : i64
     CHECK: }
     CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[Sum1]], %[[Exp]] : i64
@@ -1051,7 +1053,9 @@ TEST_F(ImportTest, IfElseRegister) {
     CHECK: %[[Sum1:.*]] = scf.for %[[Ii:.*]] = %[[I0]] to %[[I2]] step %[[I1]] iter_args(%[[Sumi:.*]] = %[[Sum0]]) -> (i64) {
     CHECK: %[[Bi:.*]] = memref.load %[[Mem]][%[[Ii]]] : memref<2xi1>
     CHECK: %[[Ci:.*]] = arith.extui %[[Bi:.*]] : i1 to i64
-    CHECK: %[[Sumj:.*]] = arith.addi %[[Sumi]], %[[Ci]] : i64
+    CHECK: %[[Ind:.*]] = arith.index_cast %[[Ii]] : index to i64
+    CHECK: %[[Sh:.*]] = arith.shli %[[Ci]], %[[Ind]] : i64
+    CHECK: %[[Sumj:.*]] = arith.addi %[[Sumi]], %[[Sh]] : i64
     CHECK: scf.yield %[[Sumj]] : i64
     CHECK: }
     CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[Sum1]], %[[Exp]] : i64

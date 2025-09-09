@@ -214,47 +214,52 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
                                  mlir::Value bits);
 
 /**
- * @brief Sum-reduce the classical register.
+ * @brief Compute integer value from a classical register (memref<Nxi1>).
  *
  * @param builder The MLIR OpBuilder
  * @param bits The bits of the classical register
- * @return mlir::Value The sum of the bits
+ * @return mlir::Value The integer value of the register
  */
-mlir::Value getControlValueRegister(mlir::OpBuilder& builder,
-                                    const mlir::Value bits) {
-  auto loc = builder.getUnknownLoc();
+mlir::Value getIntegerValueFromRegister(mlir::OpBuilder& builder,
+                                        const mlir::Value bits) {
+  const auto loc = builder.getUnknownLoc();
 
-  // Get size of control register
-  auto bitsType = mlir::cast<mlir::MemRefType>(bits.getType());
-  auto bitsShape = bitsType.getShape();
-  assert(bitsShape.size() == 1);
-  auto size = bitsShape[0];
+  // Extract length (assumed 1-D static memref<Nxi1>)
+  const auto bitsType = mlir::cast<mlir::MemRefType>(bits.getType());
+  const auto shape = bitsType.getShape();
+  assert(shape.size() == 1);
+  const auto size = shape[0];
 
-  // Define loop constants
+  // Loop constants
   auto lb = builder.create<mlir::arith::ConstantIndexOp>(loc, 0);
   auto ub = builder.create<mlir::arith::ConstantIndexOp>(loc, size);
   auto step = builder.create<mlir::arith::ConstantIndexOp>(loc, 1);
 
-  // Compute the sum
-  auto initialSum = builder.create<mlir::arith::ConstantOp>(
-      loc, builder.getI64Type(),
-      builder.getIntegerAttr(builder.getI64Type(), 0));
+  // Initial accumulator (i64 0)
+  auto initial = builder.create<mlir::arith::ConstantOp>(
+      loc, builder.getI64IntegerAttr(0));
 
-  auto finalSum = builder.create<mlir::scf::ForOp>(
-      loc, lb, ub, step, mlir::ValueRange{initialSum},
-      [&](mlir::OpBuilder& forBuilder, mlir::Location forLoc, mlir::Value iv,
-          mlir::ValueRange iterArgs) {
-        auto loadedVal = forBuilder.create<mlir::memref::LoadOp>(
-            forLoc, bits, mlir::ValueRange{iv});
-        auto extendedVal = forBuilder.create<mlir::arith::ExtUIOp>(
-            forLoc, builder.getI64Type(), loadedVal);
-        auto iterSum = forBuilder.create<mlir::arith::AddIOp>(
-            forLoc, iterArgs[0], extendedVal);
-        forBuilder.create<mlir::scf::YieldOp>(forLoc,
-                                              mlir::ValueRange{iterSum});
+  // for (i = 0; i < size; ++i) acc += (bit_i << i)
+  auto loop = builder.create<mlir::scf::ForOp>(
+      loc, lb, ub, step, mlir::ValueRange{initial},
+      [&](mlir::OpBuilder& b, const mlir::Location forLoc, mlir::Value iv,
+          const mlir::ValueRange iterArgs) {
+        auto bit =
+            b.create<mlir::memref::LoadOp>(forLoc, bits, mlir::ValueRange{iv});
+        auto bitExt =
+            b.create<mlir::arith::ExtUIOp>(forLoc, builder.getI64Type(), bit);
+
+        // Cast loop index to i64 for shift amount
+        auto shiftAmt = b.create<mlir::arith::IndexCastOp>(
+            forLoc, builder.getI64Type(), iv);
+        // shifted = bitExt << shiftAmt
+        auto shifted = b.create<mlir::arith::ShLIOp>(forLoc, bitExt, shiftAmt);
+
+        auto acc = b.create<mlir::arith::AddIOp>(forLoc, iterArgs[0], shifted);
+        b.create<mlir::scf::YieldOp>(forLoc, acc.getResult());
       });
 
-  return finalSum.getResult(0);
+  return loop.getResult(0);
 }
 
 /**
@@ -281,8 +286,8 @@ addIfElseOpRegister(mlir::OpBuilder& builder, const qc::IfElseOperation& ifElse,
 
   auto* elseOp = ifElse.getElseOp();
 
-  // Compute control value from control register
-  auto controlValue = getControlValueRegister(builder, bits);
+  // Compute control value from classical register
+  auto controlValue = getIntegerValueFromRegister(builder, bits);
 
   // Define expected value
   auto expectedValueRegister = ifElse.getExpectedValueRegister();
