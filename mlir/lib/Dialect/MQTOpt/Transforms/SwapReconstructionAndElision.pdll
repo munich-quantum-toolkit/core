@@ -42,23 +42,25 @@ Rewrite Second(valueRange: ValueRange) -> Value [{
 
 Pattern SwapReconstructionAndElisionPattern with recursion {
   // match
-  let root = op<mqtopt.x>(_: [ValueRange, IsEmpty], target: Value, control: Value, _: [ValueRange, IsEmpty]);
+  let root = op<mqtopt.x>(_: [ValueRange, IsEmpty], target: Value, control: Value, _: [ValueRange, IsEmpty]) { operandSegmentSizes = inSegmentSizes: Attr, resultSegmentSizes = outSegmentSizes: Attr };
   let rootOut = ExtractCNotResults(root);
   let secondCNot = op<mqtopt.x>(_: [ValueRange, IsEmpty], rootOut.control, rootOut.target, _: [ValueRange, IsEmpty]);
 
   // rewrite
   rewrite root with {
     replace secondCNot with (rootOut.control, rootOut.target);
-    replace root with BuildXOp(secondCNot, control, (target), ());
+    replace root with op<mqtopt.x>((), control, (target), ()) {operandSegmentSizes = inSegmentSizes, resultSegmentSizes = outSegmentSizes};
   };
 }
 
 Pattern ElidePermutationsPattern with recursion {
+  // match
   let root = op<mqtopt.swap>(params: ValueRange, targets: ValueRange, posCtrls: ValueRange, negCtrls: ValueRange);
   IsEmpty(params);
   HasTwoElements(targets);
   IsEmpty(posCtrls);
   IsEmpty(negCtrls);
 
+  // rewrite
   replace root with (Second(targets), First(targets));
 }
