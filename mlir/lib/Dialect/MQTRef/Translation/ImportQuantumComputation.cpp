@@ -298,13 +298,14 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
     controlValue = builder.create<mlir::memref::LoadOp>(
         loc, bits, mlir::ValueRange{indexValue});
     expectedValue = builder.create<mlir::arith::ConstantOp>(
-        loc, builder.getIntegerAttr(builder.getI1Type(),
-                                    ifElse.getExpectedValueBit()));
+        loc, builder.getIntegerAttr(
+                 builder.getI1Type(),
+                 static_cast<int64_t>(ifElse.getExpectedValueBit())));
   }
 
   // Define comparison predicate
   const auto comparisonKind = ifElse.getComparisonKind();
-  mlir::arith::CmpIPredicate predicate;
+  mlir::arith::CmpIPredicate predicate = mlir::arith::CmpIPredicate::eq;
   switch (comparisonKind) {
   case qc::ComparisonKind::Eq:
     predicate = mlir::arith::CmpIPredicate::eq;
