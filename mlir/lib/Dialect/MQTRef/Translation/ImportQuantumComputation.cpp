@@ -83,16 +83,6 @@ mlir::Value allocateBits(mlir::OpBuilder& builder, int64_t numBits) {
 }
 
 /**
- * @brief Deallocates the classical register in the MLIR module.
- *
- * @param builder The MLIR OpBuilder used to create operations
- * @param bits The classical register to deallocate
- */
-void deallocateBits(mlir::OpBuilder& builder, mlir::Value bits) {
-  builder.create<mlir::memref::DeallocOp>(builder.getUnknownLoc(), bits);
-}
-
-/**
  * @brief Extracts individual qubits from a quantum register.
  *
  * @param builder The MLIR OpBuilder used to create operations
@@ -493,7 +483,6 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   }
 
   deallocateQreg(builder, qreg);
-  deallocateBits(builder, bits);
 
   // Create terminator
   builder.create<mlir::func::ReturnOp>(loc);

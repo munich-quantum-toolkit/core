@@ -124,7 +124,6 @@ TEST_F(ImportTest, AllocationAndDeallocation) {
     CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
     CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
     CHECK: "mqtref.deallocQubitRegister"(%[[Reg]]) : (!mqtref.QubitRegister) -> ()
-    CHECK: memref.dealloc %[[Mem]] : memref<2xi1>
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -1280,7 +1279,6 @@ TEST_F(ImportTest, GHZ) {
     CHECK: %[[I2:.*]] = arith.constant 2 : index
     CHECK: memref.store %[[M2]], %[[Mem]][%[[I2]]] : memref<3xi1>
     CHECK: "mqtref.deallocQubitRegister"(%[[Reg]]) : (!mqtref.QubitRegister) -> ()
-    CHECK: dealloc %[[Mem]] : memref<3xi1>
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
