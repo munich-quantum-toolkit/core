@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add MQT's implementation of a generic FoMaC with Python bindings ([#1150]) ([**@ystade**])
+- ✨ Add MQT's implementation of a generic FoMaC with Python bindings ([#1150], [#1186]) ([**@ystade**])
 - ✨ Add new MLIR pass `ElidePermutations` for SWAP gate elimination ([#1151]) ([**@taminob**])
 - ✨ Add new pattern to MLIR pass `GateElimination` for identity gate removal ([#1140]) ([**@taminob**])
 - ✨ Add Clifford block collection pass to `CircuitOptimizer` module ([#885]) ([**jannikpflieger**], [**@burgholzer**])
@@ -27,7 +27,9 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- 🚚 Rename MLIR pass `CancelConsecutiveInverses` to `GateElimination`([#1140]) ([**@taminob**])
+- ⬆️ Require LLVM 21 for building the MLIR library ([#1180]) ([**@denialhaag**])
+- ⬆️ Update to version 21 of `clang-tidy` ([#1180]) ([**@denialhaag**])
+- 🚚 Rename MLIR pass `CancelConsecutiveInverses` to `GateElimination` ([#1140]) ([**@taminob**])
 - 🚚 Rename `xxminusyy` to `xx_minus_yy` and `xxplusyy` to `xx_plus_yy` in MLIR dialects ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 - 🚸 Add custom assembly format for operations in the MLIR dialects ([#1139]) ([**@burgholzer**])
 - 🚸 Enable `InferTypeOpInterface` in the MLIR dialects to reduce explicit type information ([#1139]) ([**@burgholzer**])
@@ -38,6 +40,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Removed
 
+- 🔥 Drop support for Python 3.9 ([#1181]) ([**@denialhaag**])
 - 🔥 Stop testing on `x86` macOS and shipping wheels for Intel-based Macs ([#1165]) ([**@burgholzer**])
 - 🔥 Remove `ClassicControlledOperation` from C++ library and Python package ([#1117]) ([**@denialhaag**])
 
@@ -183,6 +186,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1186]: https://github.com/munich-quantum-toolkit/core/pull/1186
+[#1181]: https://github.com/munich-quantum-toolkit/core/pull/1181
+[#1180]: https://github.com/munich-quantum-toolkit/core/pull/1180
 [#1165]: https://github.com/munich-quantum-toolkit/core/pull/1165
 [#1157]: https://github.com/munich-quantum-toolkit/core/pull/1157
 [#1151]: https://github.com/munich-quantum-toolkit/core/pull/1151

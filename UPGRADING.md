@@ -31,6 +31,12 @@ Users still on these systems can still install MQT Core from source as we contin
 However, we will no longer run CI tests on these systems.
 As a consequence, we also no longer guarantee that MQT Core builds and runs correctly on these systems.
 
+### End of support for Python 3.9
+
+Starting with this release, MQT Core no longer supports Python 3.9.
+This is in line with the scheduled end of life of the version.
+As a result, MQT Core is no longer tested under Python 3.9 and no longer ships Python 3.9 wheels.
+
 ## [3.2.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.1` to `3.2`.
