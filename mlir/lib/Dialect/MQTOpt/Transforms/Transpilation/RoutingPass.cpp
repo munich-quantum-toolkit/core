@@ -353,6 +353,28 @@ private:
 
 namespace {
 
+using QubitStateStack = llvm::SmallVector<QubitStateManager, 2>;
+
+/**
+ * @brief Initialize entry point function.
+ *
+ * Inserts static qubits (via the `mqtopt.qubit` op) at the current insertion
+ * point of the rewriter. Stores the SSA values in the provided qubit vector.
+ *
+ * @param qubits The reference to the vector of qubits. The function creates
+ * `qubits.size()` many static qubits.
+ * @param rewriter A PatternRewriter.
+ */
+void initEntryPoint(llvm::SmallVectorImpl<Value>& qubits,
+                    PatternRewriter& rewriter) {
+  for (std::size_t i = 0; i < qubits.size(); ++i) {
+    auto op =
+        rewriter.create<QubitOp>(rewriter.getInsertionPoint()->getLoc(), i);
+    rewriter.setInsertionPointAfter(op);
+    qubits[i] = op.getQubit();
+  }
+}
+
 /**
  * @brief Base class for rewrite patterns that require the current routing
  * context.
@@ -362,28 +384,70 @@ namespace {
  *  - The targeted architecture
  *  - An initial layout generator
  */
-template <class OpType>
-struct ContextualRewritePattern : OpRewritePattern<OpType> {
-  ContextualRewritePattern(MLIRContext* ctx, QubitStateManager& state,
-                           Architecture& arch, Layout& layout)
-      : OpRewritePattern<OpType>(ctx), state_(&state), arch_(&arch),
-        layout_(&layout) {}
+template <class BasePattern> struct ContextualPattern : BasePattern {
+public:
+  ContextualPattern(MLIRContext* ctx, QubitStateStack& stack,
+                    Architecture& arch, Layout& layout)
+      : BasePattern(ctx), stack_(&stack), arch_(&arch), layout_(&layout) {}
 
-  [[nodiscard]] QubitStateManager& state() const { return *state_; }
+protected:
+  [[nodiscard]] QubitStateManager& state() const { return stack().back(); }
+  [[nodiscard]] QubitStateStack& stack() const { return *stack_; }
   [[nodiscard]] Architecture& arch() const { return *arch_; }
   [[nodiscard]] Layout& layout() const { return *layout_; }
 
 private:
-  QubitStateManager* state_;
+  QubitStateStack* stack_;
   Architecture* arch_;
   Layout* layout_;
+};
+
+/**
+ * @brief Contextual rewrite pattern for ops.
+ */
+template <class OpType>
+struct ContextualOpPattern : ContextualPattern<OpRewritePattern<OpType>> {
+  using ContextualPattern<OpRewritePattern<OpType>>::ContextualPattern;
+};
+
+/**
+ * @brief Contextual rewrite pattern for interfaces.
+ */
+template <class SourceOp>
+struct ContextualInterfacePattern
+    : ContextualPattern<OpInterfaceRewritePattern<SourceOp>> {
+  using ContextualPattern<
+      OpInterfaceRewritePattern<SourceOp>>::ContextualPattern;
+};
+
+struct FuncOpPattern final : ContextualOpPattern<func::FuncOp> {
+  using ContextualOpPattern<func::FuncOp>::ContextualOpPattern;
+
+  LogicalResult matchAndRewrite(func::FuncOp func,
+                                PatternRewriter& rewriter) const final {
+
+    llvm::SmallVector<Value> qubits(arch().nqubits());
+
+    if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
+      // This would be the point where we would collect the qubits from the
+      // argument-list.
+      return failure();
+    }
+
+    rewriter.setInsertionPointToStart(&func.getBody().front());
+    initEntryPoint(qubits, rewriter);
+
+    stack().emplace_back(qubits, layout());
+
+    return success();
+  }
 };
 
 struct IfOpPattern final : OpRewritePattern<scf::IfOp> {
   explicit IfOpPattern(MLIRContext* ctx) : OpRewritePattern<scf::IfOp>(ctx) {}
   LogicalResult matchAndRewrite(scf::IfOp /*op*/,
                                 PatternRewriter& /*rewriter*/) const final {
-    return failure();
+    return success();
   }
 };
 
@@ -391,7 +455,7 @@ struct ForOpPattern final : OpRewritePattern<scf::ForOp> {
   explicit ForOpPattern(MLIRContext* ctx) : OpRewritePattern<scf::ForOp>(ctx) {}
   LogicalResult matchAndRewrite(scf::ForOp /*op*/,
                                 PatternRewriter& /*rewriter*/) const final {
-    return failure();
+    return success();
   }
 };
 
@@ -400,12 +464,12 @@ struct YieldOpPattern final : OpRewritePattern<scf::YieldOp> {
       : OpRewritePattern<scf::YieldOp>(ctx) {}
   LogicalResult matchAndRewrite(scf::YieldOp /*op*/,
                                 PatternRewriter& /*rewriter*/) const final {
-    return failure();
+    return success();
   }
 };
 
-struct AllocQubitPattern final : ContextualRewritePattern<AllocQubitOp> {
-  using ContextualRewritePattern<AllocQubitOp>::ContextualRewritePattern;
+struct AllocQubitPattern final : ContextualOpPattern<AllocQubitOp> {
+  using ContextualOpPattern<AllocQubitOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(AllocQubitOp alloc,
                                 PatternRewriter& rewriter) const final {
     if (const Value q = state().retrieve()) {
@@ -422,8 +486,8 @@ struct AllocQubitPattern final : ContextualRewritePattern<AllocQubitOp> {
   }
 };
 
-struct ResetPattern final : ContextualRewritePattern<ResetOp> {
-  using ContextualRewritePattern<ResetOp>::ContextualRewritePattern;
+struct ResetPattern final : ContextualOpPattern<ResetOp> {
+  using ContextualOpPattern<ResetOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(ResetOp reset,
                                 PatternRewriter& /*rewriter*/) const final {
     state().forward(reset.getInQubit(), reset.getOutQubit());
@@ -431,11 +495,11 @@ struct ResetPattern final : ContextualRewritePattern<ResetOp> {
   }
 };
 
-struct NaiveUnitaryPattern final : OpInterfaceRewritePattern<UnitaryInterface> {
-  NaiveUnitaryPattern(MLIRContext* ctx, QubitStateManager& state,
-                      Architecture& arch, Layout& layout)
-      : OpInterfaceRewritePattern<UnitaryInterface>(ctx), state_(&state),
-        arch_(&arch), layout_(&layout) {}
+struct NaiveUnitaryPattern final
+    : ContextualInterfacePattern<UnitaryInterface> {
+  using ContextualInterfacePattern<
+      UnitaryInterface>::ContextualInterfacePattern;
+
   LogicalResult matchAndRewrite(UnitaryInterface u,
                                 PatternRewriter& rewriter) const final {
     // Global-phase or zero-qubit unitary: Nothing to do.
@@ -504,18 +568,10 @@ private:
       state().forward(in1, out0);
     }
   }
-
-  [[nodiscard]] QubitStateManager& state() const { return *state_; }
-  [[nodiscard]] Architecture& arch() const { return *arch_; }
-  [[nodiscard]] Layout& layout() const { return *layout_; }
-
-  QubitStateManager* state_;
-  Architecture* arch_;
-  Layout* layout_;
 };
 
-struct MeasurePattern final : ContextualRewritePattern<MeasureOp> {
-  using ContextualRewritePattern<MeasureOp>::ContextualRewritePattern;
+struct MeasurePattern final : ContextualOpPattern<MeasureOp> {
+  using ContextualOpPattern<MeasureOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(MeasureOp m,
                                 PatternRewriter& /*rewriter*/) const final {
     state().forward(m.getInQubit(), m.getOutQubit());
@@ -523,8 +579,8 @@ struct MeasurePattern final : ContextualRewritePattern<MeasureOp> {
   }
 };
 
-struct DeallocQubitPattern final : ContextualRewritePattern<DeallocQubitOp> {
-  using ContextualRewritePattern<DeallocQubitOp>::ContextualRewritePattern;
+struct DeallocQubitPattern final : ContextualOpPattern<DeallocQubitOp> {
+  using ContextualOpPattern<DeallocQubitOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(DeallocQubitOp dealloc,
                                 PatternRewriter& rewriter) const final {
     state().release(dealloc.getQubit());
@@ -537,40 +593,21 @@ struct DeallocQubitPattern final : ContextualRewritePattern<DeallocQubitOp> {
  * @brief Collect patterns for the naive routing algorithm.
  */
 void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
-                                  QubitStateManager& state, Architecture& arch,
+                                  QubitStateStack& stack, Architecture& arch,
                                   Layout& layout) {
   patterns.add<IfOpPattern, ForOpPattern>(patterns.getContext());
-  patterns.add<AllocQubitPattern, ResetPattern, NaiveUnitaryPattern,
-               MeasurePattern, DeallocQubitPattern>(patterns.getContext(),
-                                                    state, arch, layout);
-}
-
-/**
- * @brief Initialize entry point function.
- *
- * Inserts static qubits (via the `mqtopt.qubit` op) at the current insertion
- * point of the rewriter. Stores the SSA values in the provided qubit vector.
- *
- * @param qubits The reference to the vector of qubits. The function creates
- * `qubits.size()` many static qubits.
- * @param rewriter A PatternRewriter.
- */
-void initEntryPoint(llvm::SmallVectorImpl<Value>& qubits,
-                    PatternRewriter& rewriter) {
-  for (std::size_t i = 0; i < qubits.size(); ++i) {
-    auto op =
-        rewriter.create<QubitOp>(rewriter.getInsertionPoint()->getLoc(), i);
-    rewriter.setInsertionPointAfter(op);
-    qubits[i] = op.getQubit();
-  }
+  patterns.add<FuncOpPattern, AllocQubitPattern, ResetPattern,
+               NaiveUnitaryPattern, MeasurePattern, DeallocQubitPattern>(
+      patterns.getContext(), stack, arch, layout);
 }
 
 struct PreOrderWalkDriverAction final
     : tracing::ActionImpl<PreOrderWalkDriverAction> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PreOrderWalkDriverAction)
   using ActionImpl::ActionImpl;
-  static constexpr StringLiteral TAG = "walk-and-apply-patterns-pre-order";
-  void print(raw_ostream& os) const override { os << TAG; }
+  // NOLINTNEXTLINE(readability-identifier-naming) // MLIR requires lowercase.
+  static constexpr StringLiteral tag = "walk-and-apply-patterns-pre-order";
+  void print(raw_ostream& os) const override { os << tag; }
 };
 
 /**
@@ -601,43 +638,6 @@ void walkPreOrderAndApplyPatterns(Operation* op,
       {op});
 }
 
-/**
- * @brief Route the given module.
- *
- * For now any non entry-point function is ignored and not routed.
- *
- * @param module The module to route.
- * @param arch The targeted architecture.
- * @param layout The initial layout generator.
- */
-[[nodiscard]] LogicalResult route(ModuleOp module, Architecture& arch,
-                                  Layout& layout) {
-  auto res = module->walk([&](func::FuncOp func) {
-    PatternRewriter rewriter(func->getContext());
-    rewriter.setInsertionPointToStart(&func.getBody().front());
-
-    llvm::SmallVector<Value> qubits(arch.nqubits());
-
-    if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
-      // This would be the point where we would collect the qubits from the
-      // argument-list.
-      return WalkResult::skip();
-    }
-
-    initEntryPoint(qubits, rewriter);
-
-    QubitStateManager state(qubits, layout);
-    RewritePatternSet patterns(func.getContext());
-    populateNaiveRoutingPatterns(patterns, state, arch, layout);
-
-    walkPreOrderAndApplyPatterns(func, std::move(patterns));
-
-    return WalkResult::advance();
-  });
-
-  return res.wasInterrupted() ? failure() : success();
-}
-
 }; // namespace
 
 /**
@@ -646,12 +646,16 @@ void walkPreOrderAndApplyPatterns(Operation* op,
  */
 struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
-    Architecture arch = getArchitecture(ArchitectureName::MQTTest);
-    IdentityLayout layout(arch.nqubits());
+    ModuleOp module = getOperation();
 
-    if (failed(route(getOperation(), arch, layout))) {
-      signalPassFailure();
-    }
+    QubitStateStack stack{};
+    Architecture arch = getArchitecture(ArchitectureName::MQTTest);
+    RandomLayout layout(arch.nqubits());
+
+    RewritePatternSet patterns(module.getContext());
+    populateNaiveRoutingPatterns(patterns, stack, arch, layout);
+
+    walkPreOrderAndApplyPatterns(module, std::move(patterns));
   }
 };
 
