@@ -89,9 +89,9 @@ struct EulerDecompositionPattern final
   getSingleQubitSeries(UnitaryInterface op) {
     llvm::SmallVector<UnitaryInterface> result = {op};
     while (true) {
-      auto nextOp = getNextOperation(op);
-      if (nextOp && helpers::isSingleQubitOperation(nextOp)) {
-        result.push_back(nextOp);
+      op = getNextOperation(op);
+      if (op && helpers::isSingleQubitOperation(op)) {
+        result.push_back(op);
       } else {
         break;
       }
