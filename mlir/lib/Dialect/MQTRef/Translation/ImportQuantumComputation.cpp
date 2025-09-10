@@ -280,7 +280,8 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
     controlValue = getIntegerValueFromRegister(builder, bits);
 
     expectedValue = builder.create<mlir::arith::ConstantOp>(
-        loc, builder.getI64IntegerAttr(ifElse.getExpectedValueRegister()));
+        loc, builder.getI64IntegerAttr(
+                 static_cast<int64_t>(ifElse.getExpectedValueRegister())));
   } else {
     auto controlBit = ifElse.getControlBit();
     auto indexValue =
@@ -295,7 +296,7 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
 
   // Define comparison predicate
   const auto comparisonKind = ifElse.getComparisonKind();
-  mlir::arith::CmpIPredicate predicate = mlir::arith::CmpIPredicate::eq;
+  auto predicate = mlir::arith::CmpIPredicate::eq;
   switch (comparisonKind) {
   case qc::ComparisonKind::Eq:
     predicate = mlir::arith::CmpIPredicate::eq;
