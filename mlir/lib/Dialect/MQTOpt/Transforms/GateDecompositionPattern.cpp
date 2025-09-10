@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "Helpers.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
@@ -52,11 +53,34 @@ struct EulerDecompositionPattern final
   mlir::LogicalResult
   matchAndRewrite(UnitaryInterface op,
                   mlir::PatternRewriter& rewriter) const override {
-    if (!isSingleQubitOperation(op)) {
+    if (!helpers::isSingleQubitOperation(op)) {
       return mlir::failure();
     }
 
     auto series = getSingleQubitSeries(op);
+    // TODO: find better stop condition?
+    if (series.size() < 4) {
+      // decomposing this series of single qubit gates would not reduce the
+      // number of gates
+      return mlir::failure();
+    }
+
+    dd::GateMatrix unitaryMatrix = dd::opToSingleQubitGateMatrix(qc::I);
+    for (auto&& gate : series) {
+      if (auto gateMatrix = helpers::getUnitaryMatrix(gate)) {
+        unitaryMatrix = helpers::ddMultiply(unitaryMatrix, *gateMatrix);
+      }
+    }
+
+    auto decomposedGateSchematic = calculateRotationGates(unitaryMatrix);
+    auto newGates = createMlirGates(rewriter, decomposedGateSchematic.first,
+                                    op.getInQubits().front());
+    if (newGates.empty()) {
+      return mlir::failure();
+    }
+
+    // vector cannot be empty since there is at least the current gate
+    rewriter.replaceAllOpUsesWith(series.back(), newGates.back());
 
     return mlir::failure();
   }
@@ -66,18 +90,12 @@ struct EulerDecompositionPattern final
     llvm::SmallVector<UnitaryInterface> result = {op};
     while (true) {
       auto nextOp = getNextOperation(op);
-      if (isSingleQubitOperation(nextOp)) {
+      if (helpers::isSingleQubitOperation(nextOp)) {
         result.push_back(nextOp);
       } else {
         return result;
       }
     }
-  }
-
-  [[nodiscard]] static bool isSingleQubitOperation(UnitaryInterface op) {
-    auto&& inQubits = op.getInQubits();
-    auto&& outQubits = op.getOutQubits();
-    return inQubits.size() == 1 && outQubits.size() == 1 && !op.isControlled();
   }
 
   [[nodiscard]] static UnitaryInterface getNextOperation(UnitaryInterface op) {
@@ -147,7 +165,7 @@ struct EulerDecompositionPattern final
    */
   [[nodiscard]] static std::pair<
       llvm::SmallVector<std::pair<qc::OpType, qc::fp>, 3>, qc::fp>
-  calculateRotationGates(std::array<qc::fp, 4> unitaryMatrix) {
+  calculateRotationGates(dd::GateMatrix unitaryMatrix) {
     auto [lambda, theta, phi, phase] = paramsZyzInner(unitaryMatrix);
     qc::fp globalPhase = phase - ((phi + lambda) / 2.);
     constexpr qc::fp angleZeroEpsilon = 1e-12;
@@ -217,19 +235,19 @@ struct EulerDecompositionPattern final
    *       indicating that they have been altered from the originals.
    */
   [[nodiscard]] static std::array<qc::fp, 4>
-  paramsZyzInner(std::array<qc::fp, 4> unitaryMatrix) {
+  paramsZyzInner(dd::GateMatrix unitaryMatrix) {
     auto getIndex = [](auto x, auto y) { return (x * 2) + y; };
     auto determinant = [getIndex](auto&& matrix) {
       return (matrix.at(getIndex(0, 0)) * matrix.at(getIndex(1, 1))) -
              (matrix.at(getIndex(1, 0)) * matrix.at(getIndex(0, 1)));
     };
 
-    auto detArg = determinant(unitaryMatrix);
+    auto detArg = std::arg(determinant(unitaryMatrix));
     auto phase = 0.5 * detArg;
     auto theta = 2. * std::atan2(std::abs(unitaryMatrix.at(getIndex(1, 0))),
                                  std::abs(unitaryMatrix.at(getIndex(0, 0))));
-    auto ang1 = unitaryMatrix.at(getIndex(1, 1));
-    auto ang2 = unitaryMatrix.at(getIndex(1, 0));
+    auto ang1 = std::arg(unitaryMatrix.at(getIndex(1, 1)));
+    auto ang2 = std::arg(unitaryMatrix.at(getIndex(1, 0)));
     auto phi = ang1 + ang2 - detArg;
     auto lam = ang1 - ang2;
     return {theta, phi, lam, phase};
