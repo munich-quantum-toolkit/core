@@ -68,7 +68,7 @@ struct EulerDecompositionPattern final
     dd::GateMatrix unitaryMatrix = dd::opToSingleQubitGateMatrix(qc::I);
     for (auto&& gate : series) {
       if (auto gateMatrix = helpers::getUnitaryMatrix(gate)) {
-        unitaryMatrix = helpers::ddMultiply(unitaryMatrix, *gateMatrix);
+        unitaryMatrix = helpers::multiply(unitaryMatrix, *gateMatrix);
       }
     }
 
@@ -82,7 +82,7 @@ struct EulerDecompositionPattern final
     // vector cannot be empty since there is at least the current gate
     rewriter.replaceAllOpUsesWith(series.back(), newGates.back());
 
-    return mlir::failure();
+    return mlir::success();
   }
 
   [[nodiscard]] static llvm::SmallVector<UnitaryInterface>
@@ -90,18 +90,21 @@ struct EulerDecompositionPattern final
     llvm::SmallVector<UnitaryInterface> result = {op};
     while (true) {
       auto nextOp = getNextOperation(op);
-      if (helpers::isSingleQubitOperation(nextOp)) {
+      if (nextOp && helpers::isSingleQubitOperation(nextOp)) {
         result.push_back(nextOp);
       } else {
-        return result;
+        break;
       }
     }
+    return result;
   }
 
   [[nodiscard]] static UnitaryInterface getNextOperation(UnitaryInterface op) {
-    // since there is only one output qubit, there should only be one user
+    // since there is only one output qubit in single qubit gates, there should
+    // only be one user
+    assert(op->hasOneUse());
+    llvm::errs() << &op << '\n';
     auto&& users = op->getUsers();
-    assert(std::distance(users.begin(), users.end()) == 1);
     return llvm::dyn_cast<UnitaryInterface>(*users.begin());
   }
 

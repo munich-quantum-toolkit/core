@@ -142,26 +142,13 @@ getUnitaryMatrix(UnitaryInterface op) {
   return std::nullopt;
 }
 
-template<typename TargetType>
-[[nodiscard]] inline TargetType into(const dd::CMat& inMatrix) {
-  TargetType result;
-  std::size_t startIndex{0};
-  for (auto&& matrixRow : inMatrix) {
-    assert(startIndex + matrixRow.size() <= result.size());
-    std::ranges::copy(matrixRow, result.begin() + startIndex);
-    startIndex += matrixRow.size();
-  }
-  return result;
-}
-
-[[nodiscard]] inline dd::GateMatrix ddMultiply(dd::GateMatrix lhs,
+[[nodiscard]] inline dd::GateMatrix multiply(dd::GateMatrix lhs,
                                              dd::GateMatrix rhs) {
-  dd::Package p;
-  auto&& lhsDD = p.makeGateDD(lhs, 0);
-  auto&& rhsDD = p.makeGateDD(rhs, 0);
-  auto&& product = p.multiply(lhsDD, rhsDD);
-  auto&& productMatrix = product.getMatrix(1);
-
-  return into<dd::GateMatrix>(productMatrix);
+  return {
+    lhs.at(0) * rhs.at(0) + lhs.at(1) * rhs.at(2),
+    lhs.at(0) * rhs.at(1) + lhs.at(1) * rhs.at(3),
+    lhs.at(2) * rhs.at(0) + lhs.at(3) * rhs.at(2),
+    lhs.at(2) * rhs.at(1) + lhs.at(3) * rhs.at(3),
+  };
 }
 } // namespace mqt::ir::opt::helpers
