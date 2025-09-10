@@ -911,4 +911,57 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.name;
     });
 
+TEST_F(ImportTest, MultipleClassicalRegisters_MeasureStores) {
+  QuantumComputation qc(2, 0);
+  qc.addClassicalRegister(1, "c0");
+  qc.addClassicalRegister(1, "c1");
+  qc.measure({0, 1}, {0, 1});
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+  // We do not run passes here; pattern should match raw allocation and stores
+  const auto output = getOutputString(&module);
+
+  // Expect two classical memrefs of size 1 and stores to each with index 0
+  const std::string check = R"(
+CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
+CHECK: %[[QReg0:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
+CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[QReg0]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[QReg0]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+CHECK: %[[MemA:.*]] = memref.alloca() : memref<1xi1>
+CHECK: %[[MemB:.*]] = memref.alloca() : memref<1xi1>
+CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+CHECK: %[[I0a:.*]] = arith.constant 0 : index
+CHECK: memref.store %[[M0]], %[[MemA]][%[[I0a]]] : memref<1xi1>
+CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
+CHECK: %[[I0b:.*]] = arith.constant 0 : index
+CHECK: memref.store %[[M1]], %[[MemB]][%[[I0b]]] : memref<1xi1>
+CHECK: "mqtref.deallocQubitRegister"(%[[QReg0]]) : (!mqtref.QubitRegister) -> ()
+CHECK: return
+)";
+  ASSERT_TRUE(checkOutput(check, output));
+}
+
+TEST_F(ImportTest, MultipleQuantumRegisters_ControlledX) {
+  QuantumComputation qc(0, 0);
+  qc.addQubitRegister(1, "q0");
+  qc.addQubitRegister(1, "q1");
+  qc.cx(0, 1);
+
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+  const auto output = getOutputString(&module);
+
+  const std::string check = R"(
+CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
+CHECK: %[[QReg0:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[QReg0]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+CHECK: %[[QReg1:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
+CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[QReg1]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+CHECK: mqtref.x() %[[Q1]] ctrl %[[Q0]]
+CHECK: "mqtref.deallocQubitRegister"(%[[QReg0]]) : (!mqtref.QubitRegister) -> ()
+CHECK: "mqtref.deallocQubitRegister"(%[[QReg1]]) : (!mqtref.QubitRegister) -> ()
+CHECK: return
+)";
+  ASSERT_TRUE(checkOutput(check, output));
+}
+
 } // namespace

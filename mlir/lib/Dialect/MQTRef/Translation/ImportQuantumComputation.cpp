@@ -18,6 +18,7 @@
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -36,8 +37,13 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
+#include <ranges>
+#include <utility>
 
 namespace {
+
+using BitMemInfo = std::pair<mlir::Value, std::size_t>; // (memref, localIdx)
+using BitIndexVec = llvm::SmallVector<BitMemInfo>;
 
 /**
  * @brief Allocates a quantum register in the MLIR module.
@@ -162,11 +168,12 @@ void addUnitaryOp(mlir::OpBuilder& builder, const qc::Operation& operation,
  * @param builder The MLIR OpBuilder
  * @param operation The measure operation to add
  * @param qubits The qubits of the quantum register
- * @param bits The classical register to store measurement results
+ * @param bitMap The mapping from classical bit indices to their corresponding
+ * memory references and local indices
  */
 void addMeasureOp(mlir::OpBuilder& builder, const qc::Operation& operation,
                   const llvm::SmallVector<mlir::Value>& qubits,
-                  const mlir::Value& bits) {
+                  const BitIndexVec& bitMap) {
   const auto& measureOp =
       dynamic_cast<const qc::NonUnitaryOperation&>(operation);
   const auto& targets = measureOp.getTargets();
@@ -175,10 +182,13 @@ void addMeasureOp(mlir::OpBuilder& builder, const qc::Operation& operation,
     const auto& qubit = qubits[targets[i]];
     auto result =
         builder.create<mqt::ir::ref::MeasureOp>(builder.getUnknownLoc(), qubit);
-    auto bit = builder.create<mlir::arith::ConstantIndexOp>(
-        builder.getUnknownLoc(), classics[i]);
-    builder.create<mlir::memref::StoreOp>(builder.getUnknownLoc(), result, bits,
-                                          mlir::ValueRange{bit});
+    const auto bitIdx = static_cast<std::size_t>(classics[i]);
+    assert(bitIdx < bitMap.size() && "Classical bit index out of range");
+    const auto& [mem, localIdx] = bitMap[bitIdx];
+    auto idxVal = builder.create<mlir::arith::ConstantIndexOp>(
+        builder.getUnknownLoc(), static_cast<int64_t>(localIdx));
+    builder.create<mlir::memref::StoreOp>(builder.getUnknownLoc(), result, mem,
+                                          mlir::ValueRange{idxVal});
   }
 }
 
@@ -201,7 +211,7 @@ void addResetOp(mlir::OpBuilder& builder, const qc::Operation& operation,
 llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
                                  const qc::Operation& operation,
                                  const llvm::SmallVector<mlir::Value>& qubits,
-                                 mlir::Value bits);
+                                 const BitIndexVec& bitMap);
 
 /**
  * @brief Compute integer value from a classical register (memref<Nxi1>).
@@ -258,14 +268,15 @@ mlir::Value getIntegerValueFromRegister(mlir::OpBuilder& builder,
  * @param builder The MLIR OpBuilder
  * @param op The if-else operation to add
  * @param qubits The qubits of the quantum register
- * @param bits The bits of the classical register
+ * @param bitMap The mapping from global classical bit index to (memref,
+ * localIdx)
  * @return mlir::LogicalResult Success if all operations were added, failure
  * otherwise
  */
 llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
                                 const qc::Operation& op,
                                 const llvm::SmallVector<mlir::Value>& qubits,
-                                const mlir::Value bits) {
+                                const BitIndexVec& bitMap) {
   const auto loc = builder.getUnknownLoc();
   const auto& ifElse = dynamic_cast<const qc::IfElseOperation&>(op);
 
@@ -277,17 +288,25 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   mlir::Value controlValue;
   mlir::Value expectedValue;
   if (ifElse.getControlRegister().has_value()) {
-    controlValue = getIntegerValueFromRegister(builder, bits);
+    const auto& ctrlReg = ifElse.getControlRegister().value();
+    const auto startIdx = static_cast<std::size_t>(ctrlReg.getStartIndex());
+    assert(startIdx < bitMap.size() &&
+           "Control register start index out of range");
+    const auto mem = bitMap[startIdx].first;
+    controlValue = getIntegerValueFromRegister(builder, mem);
 
     expectedValue = builder.create<mlir::arith::ConstantOp>(
         loc, builder.getI64IntegerAttr(
                  static_cast<int64_t>(ifElse.getExpectedValueRegister())));
   } else {
-    auto controlBit = ifElse.getControlBit();
-    auto indexValue =
-        builder.create<mlir::arith::ConstantIndexOp>(loc, *controlBit);
+    const auto controlBit = ifElse.getControlBit();
+    const auto bitIdx = static_cast<std::size_t>(*controlBit);
+    assert(bitIdx < bitMap.size() && "Control bit index out of range");
+    const auto& [mem, localIdx] = bitMap[bitIdx];
+    auto indexValue = builder.create<mlir::arith::ConstantIndexOp>(
+        loc, static_cast<int64_t>(localIdx));
     controlValue = builder.create<mlir::memref::LoadOp>(
-        loc, bits, mlir::ValueRange{indexValue});
+        loc, mem, mlir::ValueRange{indexValue});
     expectedValue = builder.create<mlir::arith::ConstantOp>(
         loc, builder.getIntegerAttr(
                  builder.getI1Type(),
@@ -330,7 +349,7 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   {
     const mlir::OpBuilder::InsertionGuard thenGuard(builder);
     builder.setInsertionPointToStart(ifOp.thenBlock());
-    if (failed(addOperation(builder, *thenOp, qubits, bits))) {
+    if (addOperation(builder, *thenOp, qubits, bitMap).failed()) {
       return llvm::failure();
     }
   }
@@ -339,7 +358,7 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   if (elseOp != nullptr) {
     const mlir::OpBuilder::InsertionGuard elseGuard(builder);
     builder.setInsertionPointToStart(ifOp.elseBlock());
-    if (failed(addOperation(builder, *elseOp, qubits, bits))) {
+    if (addOperation(builder, *elseOp, qubits, bitMap).failed()) {
       return llvm::failure();
     }
   }
@@ -358,14 +377,15 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
  * @param builder The MLIR OpBuilder used to create operations
  * @param operation The quantum operation to add
  * @param qubits The qubits of the quantum register
- * @param bits The bits of the classical register
+ * @param bitMap The mapping from global classical bit index to (memref,
+ * localIdx)
  * @return mlir::LogicalResult Success if all operations were added, failure
  * otherwise
  */
 llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
                                  const qc::Operation& operation,
                                  const llvm::SmallVector<mlir::Value>& qubits,
-                                 const mlir::Value bits) {
+                                 const BitIndexVec& bitMap) {
   switch (operation.getType()) {
     ADD_OP_CASE(I)
     ADD_OP_CASE(H)
@@ -400,13 +420,13 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
     ADD_OP_CASE(XXminusYY)
     ADD_OP_CASE(XXplusYY)
   case qc::OpType::Measure:
-    addMeasureOp(builder, operation, qubits, bits);
+    addMeasureOp(builder, operation, qubits, bitMap);
     return llvm::success();
   case qc::OpType::Reset:
     addResetOp(builder, operation, qubits);
     return llvm::success();
   case qc::OpType::IfElse:
-    return addIfElseOp(builder, operation, qubits, bits);
+    return addIfElseOp(builder, operation, qubits, bitMap);
   default:
     return llvm::failure();
   }
@@ -418,16 +438,17 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
  * @param builder The MLIR OpBuilder used to create operations
  * @param quantumComputation The quantum computation to translate
  * @param qubits The qubits of the quantum register
- * @param bits The bits of the classical register
+ * @param bitMap The mapping from global classical bit index to (memref,
+ * localIdx)
  * @return mlir::LogicalResult Success if all operations were added, failure
  * otherwise
  */
 llvm::LogicalResult addOperations(
     mlir::OpBuilder& builder, const qc::QuantumComputation& quantumComputation,
-    const llvm::SmallVector<mlir::Value>& qubits, const mlir::Value& bits) {
+    const llvm::SmallVector<mlir::Value>& qubits, const BitIndexVec& bitMap) {
   for (const auto& operation : quantumComputation) {
-    if (const auto result = addOperation(builder, *operation, qubits, bits);
-        failed(result)) {
+    if (const auto result = addOperation(builder, *operation, qubits, bitMap);
+        mlir::failed(result)) {
       return result;
     }
   }
@@ -469,21 +490,83 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   builder.setInsertionPointToStart(&entryBlock);
 
-  // Parse quantum computation
-  const auto numQubits = quantumComputation.getNqubits();
-  const auto qreg = allocateQreg(builder, context, numQubits);
-  const auto qubits = extractQubits(builder, context, qreg, numQubits);
+  // Parse quantum computation: allocate per quantum/classical register
+  // Collect and sort quantum registers (including ancilla) by start index for
+  // deterministic emission
+  struct QRegInfo {
+    const qc::QuantumRegister* reg;
+    mlir::Value qreg;
+    llvm::SmallVector<mlir::Value> qubits;
+  };
+  llvm::SmallVector<QRegInfo> qregs;
+  // Build list of pointers for sorting
+  llvm::SmallVector<const qc::QuantumRegister*> qregPtrs;
+  qregPtrs.reserve(quantumComputation.getQuantumRegisters().size() +
+                   quantumComputation.getAncillaRegisters().size());
+  for (const auto& reg :
+       quantumComputation.getQuantumRegisters() | std::views::values) {
+    qregPtrs.emplace_back(&reg);
+  }
+  for (const auto& reg :
+       quantumComputation.getAncillaRegisters() | std::views::values) {
+    qregPtrs.emplace_back(&reg);
+  }
+  std::ranges::sort(
+      qregPtrs, [](const qc::QuantumRegister* a, const qc::QuantumRegister* b) {
+        return a->getStartIndex() < b->getStartIndex();
+      });
 
-  const auto numBits = static_cast<int64_t>(quantumComputation.getNcbits());
-  const auto bits = allocateBits(builder, numBits);
+  // Allocate and extract per quantum register
+  for (const auto* reg : qregPtrs) {
+    const auto qv = allocateQreg(builder, context, reg->getSize());
+    auto qbits = extractQubits(builder, context, qv, reg->getSize());
+    qregs.emplace_back(reg, qv, std::move(qbits));
+  }
+
+  // Build a flat vector mapping global physical qubit index to extracted qubit
+  // value
+  llvm::SmallVector<mlir::Value> flatQubits;
+  // Determine highest physical qubit index to size the vector
+  const auto maxPhys = quantumComputation.getHighestPhysicalQubitIndex();
+  flatQubits.resize(static_cast<size_t>(maxPhys) + 1);
+  for (const auto& qi : qregs) {
+    for (std::size_t i = 0; i < qi.reg->getSize(); ++i) {
+      const auto globalIdx = static_cast<size_t>(qi.reg->getStartIndex() + i);
+      flatQubits[globalIdx] = qi.qubits[i];
+    }
+  }
+
+  // Classical registers: collect, sort by start index, and allocate each
+  BitIndexVec bitMap;
+  bitMap.resize(quantumComputation.getNcbits());
+  llvm::SmallVector<const qc::ClassicalRegister*> cregPtrs;
+  cregPtrs.reserve(quantumComputation.getClassicalRegisters().size());
+  for (const auto& [_, reg] : quantumComputation.getClassicalRegisters()) {
+    cregPtrs.emplace_back(&reg);
+  }
+  std::ranges::sort(cregPtrs, [](const qc::ClassicalRegister* a,
+                                 const qc::ClassicalRegister* b) {
+    return a->getStartIndex() < b->getStartIndex();
+  });
+  for (const auto* reg : cregPtrs) {
+    auto mem = allocateBits(builder, static_cast<int64_t>(reg->getSize()));
+    for (std::size_t i = 0; i < reg->getSize(); ++i) {
+      const auto globalIdx = static_cast<std::size_t>(reg->getStartIndex() + i);
+      bitMap[globalIdx] = {mem, i};
+    }
+  }
 
   // Add operations and handle potential failures
-  if (failed(addOperations(builder, quantumComputation, qubits, bits))) {
+  if (mlir::failed(
+          addOperations(builder, quantumComputation, flatQubits, bitMap))) {
     // Even if operations fail, return the module with what we could translate
     emitError(loc) << "Failed to translate some quantum operations";
   }
 
-  deallocateQreg(builder, qreg);
+  // Deallocate all quantum registers
+  for (const auto& qi : qregs) {
+    deallocateQreg(builder, qi.qreg);
+  }
 
   // Create terminator
   builder.create<mlir::func::ReturnOp>(loc);
