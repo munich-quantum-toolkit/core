@@ -16,7 +16,9 @@
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 #include "mlir/Dialect/MQTRef/Translation/ImportQuantumComputation.h"
 
+#include <functional>
 #include <gtest/gtest.h>
+#include <iomanip>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/FileCheck/FileCheck.h>
@@ -33,10 +35,58 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/Passes.h>
+#include <sstream>
 #include <string>
 #include <utility>
 
 namespace {
+using namespace qc;
+
+// Small helpers to reduce FileCheck string duplication
+static std::string formatTargets(std::initializer_list<size_t> targets) {
+  std::string s;
+  bool first = true;
+  for (auto t : targets) {
+    if (!first) {
+      s += ", ";
+    }
+    first = false;
+    s += "%[[Q" + std::to_string(t) + "]]";
+  }
+  return s;
+}
+
+static std::string formatParams(std::initializer_list<double> params) {
+  if (params.size() == 0) {
+    return "";
+  }
+  std::ostringstream os;
+  os.setf(std::ios::scientific);
+  os << std::setprecision(6);
+  bool first = true;
+  os << " static [";
+  for (double p : params) {
+    if (!first) {
+      os << ", ";
+    }
+    first = false;
+    os << p;
+  }
+  os << "]";
+  return os.str();
+}
+
+static std::string unitaryCheck(const char* op,
+                                std::initializer_list<size_t> targets) {
+  return std::string("CHECK: mqtref.") + op + "() " + formatTargets(targets);
+}
+
+static std::string unitaryParamCheck(const char* op,
+                                     std::initializer_list<double> params,
+                                     std::initializer_list<size_t> targets) {
+  return std::string("CHECK: mqtref.") + op + "(" + formatParams(params) +
+         ") " + formatTargets(targets);
+}
 
 class ImportTest : public ::testing::Test {
 protected:
@@ -56,6 +106,17 @@ protected:
   }
 
   void TearDown() override {}
+
+  void runPassPipeline(const mlir::ModuleOp module) const {
+    // Run passes
+    mlir::PassManager passManager(context.get());
+    passManager.addPass(mlir::createCanonicalizerPass());
+    passManager.addPass(mlir::createMem2Reg());
+    passManager.addPass(mlir::createRemoveDeadValuesPass());
+    if (failed(passManager.run(module))) {
+      FAIL() << "Failed to run passes";
+    }
+  }
 };
 
 std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>* module) {
@@ -93,1181 +154,757 @@ bool checkOutput(const std::string& checkString,
   return fc.checkInput(sm, outputBufferBuffer);
 }
 
-} // namespace
+// Test case structure for all operations
+struct TestCase {
+  // Test case name for better identification
+  std::string name;
+  // Basic circuit configuration
+  size_t numQubits;
+  size_t numClbits;
+  // Circuit construction function
+  std::function<void(QuantumComputation&)> build;
+  // Operation-specific FileCheck string (used for non-if/else tests)
+  std::string operationCheck;
 
-using namespace qc;
+  // If/IfElse-specific configuration (optional)
+  bool isIfElse = false;
+  // Register-based condition configuration
+  size_t cregSize = 0; // classical register size used in condition (0 means not
+                       // using register)
+  size_t expected = 0; // expected value for comparison (for register-based)
+  // Bit-based condition configuration
+  bool useBit = false;     // whether to use a single classical bit as condition
+  size_t controlBit = 0;   // index of the classical bit used as condition
+  bool expectedBit = true; // expected boolean value for comparison
 
-TEST_F(ImportTest, EntryPoint) {
-  const QuantumComputation qc{};
+  std::string cmpMnemonic = ""; // e.g., eq, ne, ult, ule, ugt, uge
+  bool withElse = false;        // whether an else branch exists
+  std::string thenOp = "";      // mnemonic for then operation, e.g., "x"
+  std::string elseOp = "";      // mnemonic for else operation
+
+  // Whether to run the canonicalization pipeline (needed for if/else)
+  bool runPasses = false;
+};
+
+// Output operator for googletest parameter printing
+std::ostream& operator<<(std::ostream& os, const TestCase& tc) {
+  return os << tc.name;
+}
+
+// Creates a FileCheck string with qubit allocation and checks
+std::string createFileCheckString(const TestCase& testCase) {
+  // Always start by checking the entry function and attribute
+  std::string prologue =
+      "CHECK: func.func @main() attributes {passthrough = [\"entry_point\"]}\n";
+
+  // If this is an If/IfElse test, generate the specialized checks
+  if (testCase.isIfElse) {
+    std::string s = prologue;
+
+    // Register-based If/Else
+    if (testCase.cregSize > 0) {
+      // Expected value constant (i64)
+      s += "CHECK: %[[Exp:.*]] = arith.constant " +
+           std::to_string(testCase.expected) + " : i64\n";
+
+      if (testCase.cregSize == 1) {
+        // One-bit classical register case
+        s += "CHECK: %[[Reg:.*]] = \"mqtref.allocQubitRegister\"() <{size_attr "
+             "= " +
+             std::to_string(testCase.numQubits) +
+             " : i64}> : () -> !mqtref.QubitRegister\n";
+        s += "CHECK: %[[Q0:.*]] = \"mqtref.extractQubit\"(%[[Reg]]) "
+             "<{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> "
+             "!mqtref.Qubit\n";
+        // For creg-based condition with size 1 we allow a simplified path that
+        // directly extends the measurement to i64 and compares against i64.
+        s += "CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]\n";
+        s += "CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64\n";
+        s += "CHECK: %[[Cnd0:.*]] = arith.cmpi " + testCase.cmpMnemonic +
+             ", %[[C0]], %[[Exp]] : i64\n";
+        if (testCase.withElse) {
+          s += "CHECK: scf.if %[[Cnd0:.*]] {\n";
+          s += "CHECK: mqtref." + testCase.thenOp + "() %[[Q0]]\n";
+          s += "CHECK: } else {\n";
+          s += "CHECK: mqtref." + testCase.elseOp + "() %[[Q0]]\n";
+          s += "CHECK: }\n";
+        } else {
+          s += "CHECK: scf.if %[[Cnd0]] {\n";
+          s += "CHECK: mqtref." + testCase.thenOp + "() %[[Q0]]\n";
+          s += "CHECK: }\n";
+        }
+      } else {
+        // Multi-bit classical register case (matching existing tests for size
+        // 2)
+        const auto N = testCase.cregSize;
+        s += "CHECK: %[[Sum0:.*]] = arith.constant 0 : i64\n";
+        s += "CHECK: %[[I" + std::to_string(N) + ":.*]] = arith.constant " +
+             std::to_string(N) + " : index\n";
+        s += "CHECK: %[[I1:.*]] = arith.constant 1 : index\n";
+        s += "CHECK: %[[I0:.*]] = arith.constant 0 : index\n";
+        s += "CHECK: %[[Reg:.*]] = \"mqtref.allocQubitRegister\"() <{size_attr "
+             "= " +
+             std::to_string(testCase.numQubits) +
+             " : i64}> : () -> !mqtref.QubitRegister\n";
+        // Extract first two qubits (tests only use 2 qubits)
+        s += "CHECK: %[[Q0:.*]] = \"mqtref.extractQubit\"(%[[Reg]]) "
+             "<{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> "
+             "!mqtref.Qubit\n";
+        s += "CHECK: %[[Q1:.*]] = \"mqtref.extractQubit\"(%[[Reg]]) "
+             "<{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> "
+             "!mqtref.Qubit\n";
+        s += "CHECK: %[[Mem:.*]] = memref.alloca() : memref<" +
+             std::to_string(N) + "xi1>\n";
+        s += "CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]\n";
+        s += "CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<" +
+             std::to_string(N) + "xi1>\n";
+        s += "CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]\n";
+        s += "CHECK: memref.store %[[M1]], %[[Mem]][%[[I1]]] : memref<" +
+             std::to_string(N) + "xi1>\n";
+        s += "CHECK: %[[Sum1:.*]] = scf.for %[[Ii:.*]] = %[[I0]] to %[[I" +
+             std::to_string(N) +
+             "]] step %[[I1]] iter_args(%[[Sumi:.*]] = %[[Sum0]]) -> (i64) {\n";
+        s += "CHECK: %[[Bi:.*]] = memref.load %[[Mem]][%[[Ii]]] : memref<" +
+             std::to_string(N) + "xi1>\n";
+        s += "CHECK: %[[Ci:.*]] = arith.extui %[[Bi:.*]] : i1 to i64\n";
+        s += "CHECK: %[[Indi:.*]] = arith.index_cast %[[Ii]] : index to i64\n";
+        s += "CHECK: %[[Shli:.*]] = arith.shli %[[Ci]], %[[Indi]] : i64\n";
+        s += "CHECK: %[[Sumj:.*]] = arith.addi %[[Sumi]], %[[Shli]] : i64\n";
+        s += "CHECK: scf.yield %[[Sumj]] : i64\n";
+        s += "CHECK: }\n";
+        s += "CHECK: %[[Cnd0:.*]] = arith.cmpi " + testCase.cmpMnemonic +
+             ", %[[Sum1]], %[[Exp]] : i64\n";
+        if (testCase.withElse) {
+          s += "CHECK: scf.if %[[Cnd0:.*]] {\n";
+          s += "CHECK: mqtref." + testCase.thenOp + "() %[[Q0]]\n";
+          s += "CHECK: } else {\n";
+          s += "CHECK: mqtref." + testCase.elseOp + "() %[[Q0]]\n";
+          s += "CHECK: }\n";
+        } else {
+          s += "CHECK: scf.if %[[Cnd0]] {\n";
+          s += "CHECK: mqtref." + testCase.thenOp + "() %[[Q0]]\n";
+          s += "CHECK: }\n";
+        }
+      }
+    } else if (testCase.useBit) {
+      // Bit-based If/Else (i1 compare)
+      s += "CHECK: %[[Reg:.*]] = \"mqtref.allocQubitRegister\"() <{size_attr "
+           "= " +
+           std::to_string(testCase.numQubits) +
+           " : i64}> : () -> !mqtref.QubitRegister\n";
+      s += "CHECK: %[[Q0:.*]] = \"mqtref.extractQubit\"(%[[Reg]]) <{index_attr "
+           "= 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit\n";
+
+      // After canonicalization/mem2reg, the bit memory may be promoted away.
+      // We only require the measurement and the boolean comparison.
+      s += "CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]\n";
+      // Condition may be directly the measurement or a comparison; just check
+      // for the if.
+
+      if (testCase.withElse) {
+        s += "CHECK: scf.if %\n";
+        s += "CHECK: mqtref." + testCase.thenOp + "() %[[Q0]]\n";
+        s += "CHECK: } else {\n";
+        s += "CHECK: mqtref." + testCase.elseOp + "() %[[Q0]]\n";
+        s += "CHECK: }\n";
+      } else {
+        s += "CHECK: scf.if %\n";
+        s += "CHECK: mqtref." + testCase.thenOp + "() %[[Q0]]\n";
+        s += "CHECK: }\n";
+      }
+    }
+
+    // Common epilogue for If/Else tests: dealloc and return
+    s += "CHECK: \"mqtref.deallocQubitRegister\"(%[[Reg]]) : "
+         "(!mqtref.QubitRegister) -> ()\n";
+    s += "CHECK: return\n";
+    return s;
+  }
+
+  // Default: non-if/else operation tests
+  std::string result = prologue;
+
+  result +=
+      "CHECK: %[[Reg:.*]] = \"mqtref.allocQubitRegister\"() <{size_attr = " +
+      std::to_string(testCase.numQubits) +
+      " : i64}> : () -> !mqtref.QubitRegister\n";
+
+  // Generate qubit extraction checks
+  for (size_t i = 0; i < testCase.numQubits; ++i) {
+    result += "CHECK: %[[Q" + std::to_string(i) +
+              ":.*]] = \"mqtref.extractQubit\"(%[[Reg]]) "
+              "<{index_attr = " +
+              std::to_string(i) +
+              " : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit\n";
+  }
+
+  if (testCase.numClbits > 0) {
+    result += "CHECK: %[[Mem:.*]] = memref.alloca() : memref<" +
+              std::to_string(testCase.numClbits) + "xi1>\n";
+  }
+
+  // Add the operation-specific check
+  result += testCase.operationCheck;
+
+  // Common epilogue: dealloc and return
+  result += "\nCHECK: \"mqtref.deallocQubitRegister\"(%[[Reg]]) : "
+            "(!mqtref.QubitRegister) -> ()\n";
+  result += "CHECK: return\n";
+
+  return result;
+}
+
+// Param fixture that reuses ImportTest's context/setup.
+class OperationTest : public ImportTest,
+                      public ::testing::WithParamInterface<TestCase> {};
+
+TEST_P(OperationTest, EmitsExpectedOperation) {
+  const auto& param = GetParam();
+  QuantumComputation qc(param.numQubits, param.numClbits);
+  param.build(qc);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
+  if (param.runPasses) {
+    runPassPipeline(module.get());
+  }
   const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
-    CHECK: return
-  )";
 
+  // Create the FileCheck string with appropriate checks
+  const std::string checkString = createFileCheckString(param);
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
-TEST_F(ImportTest, AllocationAndDeallocation) {
-  const QuantumComputation qc(3, 2);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
-    CHECK: "mqtref.deallocQubitRegister"(%[[Reg]]) : (!mqtref.QubitRegister) -> ()
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Measure01) {
-  QuantumComputation qc(2, 2);
-  qc.measure({0, 1}, {0, 1});
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
+// Test cases for various quantum operations
+INSTANTIATE_TEST_SUITE_P(
+    Operations, OperationTest,
+    ::testing::Values(
+        // 1-qubit, no-parameter gates.
+        TestCase{.name = "Identity",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.i(0); },
+                 .operationCheck = unitaryCheck("i", {0})},
+        TestCase{.name = "Hadamard",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.h(0); },
+                 .operationCheck = unitaryCheck("h", {0})},
+        TestCase{.name = "PauliX",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.x(0); },
+                 .operationCheck = unitaryCheck("x", {0})},
+        TestCase{.name = "PauliY",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.y(0); },
+                 .operationCheck = unitaryCheck("y", {0})},
+        TestCase{.name = "PauliZ",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.z(0); },
+                 .operationCheck = unitaryCheck("z", {0})},
+        TestCase{.name = "S",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.s(0); },
+                 .operationCheck = unitaryCheck("s", {0})},
+        TestCase{.name = "Sdg",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.sdg(0); },
+                 .operationCheck = unitaryCheck("sdg", {0})},
+        TestCase{.name = "T",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.t(0); },
+                 .operationCheck = unitaryCheck("t", {0})},
+        TestCase{.name = "Tdg",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.tdg(0); },
+                 .operationCheck = unitaryCheck("tdg", {0})},
+        TestCase{.name = "V",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.v(0); },
+                 .operationCheck = unitaryCheck("v", {0})},
+        TestCase{.name = "Vdg",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.vdg(0); },
+                 .operationCheck = unitaryCheck("vdg", {0})},
+        TestCase{.name = "SX",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.sx(0); },
+                 .operationCheck = unitaryCheck("sx", {0})},
+        TestCase{.name = "SXdg",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.sxdg(0); },
+                 .operationCheck = unitaryCheck("sxdg", {0})},
+        // 1-qubit, parameterized gates.
+        TestCase{
+            .name = "U3",
+            .numQubits = 1,
+            .numClbits = 0,
+            .build = [](QuantumComputation& qc) { qc.u(0.1, 0.2, 0.3, 0); },
+            .operationCheck = unitaryParamCheck("u", {0.1, 0.2, 0.3}, {0})},
+        TestCase{.name = "U2",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.u2(0.1, 0.2, 0); },
+                 .operationCheck = unitaryParamCheck("u2", {0.1, 0.2}, {0})},
+        TestCase{.name = "Phase",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.p(0.1, 0); },
+                 .operationCheck = unitaryParamCheck("p", {0.1}, {0})},
+        TestCase{.name = "RX",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.rx(0.1, 0); },
+                 .operationCheck = unitaryParamCheck("rx", {0.1}, {0})},
+        TestCase{.name = "RY",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.ry(0.1, 0); },
+                 .operationCheck = unitaryParamCheck("ry", {0.1}, {0})},
+        TestCase{.name = "RZ",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.rz(0.1, 0); },
+                 .operationCheck = unitaryParamCheck("rz", {0.1}, {0})},
+        // 2-qubit, no-parameter gates.
+        TestCase{.name = "iSWAP",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.iswap(0, 1); },
+                 .operationCheck = unitaryCheck("iswap", {0, 1})},
+        TestCase{.name = "iSWAPdg",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.iswapdg(0, 1); },
+                 .operationCheck = unitaryCheck("iswapdg", {0, 1})},
+        TestCase{.name = "Peres",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.peres(0, 1); },
+                 .operationCheck = unitaryCheck("peres", {0, 1})},
+        TestCase{.name = "Peresdg",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.peresdg(0, 1); },
+                 .operationCheck = unitaryCheck("peresdg", {0, 1})},
+        TestCase{.name = "DCX",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.dcx(0, 1); },
+                 .operationCheck = unitaryCheck("dcx", {0, 1})},
+        TestCase{.name = "ECR",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.ecr(0, 1); },
+                 .operationCheck = unitaryCheck("ecr", {0, 1})},
+        // 2-qubit, parameterized gates.
+        TestCase{.name = "RXX",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.rxx(0.1, 0, 1); },
+                 .operationCheck = unitaryParamCheck("rxx", {0.1}, {0, 1})},
+        TestCase{.name = "RYY",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.ryy(0.1, 0, 1); },
+                 .operationCheck = unitaryParamCheck("ryy", {0.1}, {0, 1})},
+        TestCase{.name = "RZZ",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.rzz(0.1, 0, 1); },
+                 .operationCheck = unitaryParamCheck("rzz", {0.1}, {0, 1})},
+        TestCase{.name = "RZX",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.rzx(0.1, 0, 1); },
+                 .operationCheck = unitaryParamCheck("rzx", {0.1}, {0, 1})},
+        TestCase{
+            .name = "XX_MINUS_YY",
+            .numQubits = 2,
+            .numClbits = 0,
+            .build =
+                [](QuantumComputation& qc) { qc.xx_minus_yy(0.1, 0.2, 0, 1); },
+            .operationCheck = unitaryParamCheck("xx_minus_yy", {0.1, 0.2},
+                                                {0, 1})},
+        TestCase{
+            .name = "XX_PLUS_YY",
+            .numQubits = 2,
+            .numClbits = 0,
+            .build =
+                [](QuantumComputation& qc) { qc.xx_plus_yy(0.1, 0.2, 0, 1); },
+            .operationCheck = unitaryParamCheck("xx_plus_yy", {0.1, 0.2},
+                                                {0, 1})},
+        // Controlled gates
+        TestCase{.name = "CX_0_1",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.cx(0, 1); },
+                 .operationCheck = "CHECK: mqtref.x() %[[Q1]] ctrl %[[Q0]]"},
+        TestCase{.name = "CX_1_0",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.cx(1, 0); },
+                 .operationCheck = "CHECK: mqtref.x() %[[Q0]] ctrl %[[Q1]]"},
+        TestCase{.name = "CX_0N_1",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.cx(0_nc, 1); },
+                 .operationCheck = "CHECK: mqtref.x() %[[Q1]] nctrl %[[Q0]]"},
+        // Multi-controlled tests
+        TestCase{.name = "MCX_01_2",
+                 .numQubits = 3,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.mcx({0, 1}, 2); },
+                 .operationCheck =
+                     "CHECK: mqtref.x() %[[Q2]] ctrl %[[Q0]], %[[Q1]]"},
+        TestCase{.name = "MCX_0N2_1",
+                 .numQubits = 3,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.mcx({0_nc, 2}, 1); },
+                 .operationCheck =
+                     "CHECK: mqtref.x() %[[Q1]] ctrl %[[Q2]] nctrl %[[Q0]]"},
+        TestCase{
+            .name = "MCX_2N1N_0",
+            .numQubits = 3,
+            .numClbits = 0,
+            .build = [](QuantumComputation& qc) { qc.mcx({2_nc, 1_nc}, 0); },
+            .operationCheck =
+                "CHECK: mqtref.x() %[[Q0]] nctrl %[[Q1]], %[[Q2]]"},
+        // Measurements
+        TestCase{
+            .name = "Measure_Multiple",
+            .numQubits = 2,
+            .numClbits = 2,
+            .build = [](QuantumComputation& qc) { qc.measure({0, 1}, {1, 0}); },
+            .operationCheck = R"(
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<2xi1>
-    CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
     CHECK: %[[I1:.*]] = arith.constant 1 : index
-    CHECK: memref.store %[[M1]], %[[Mem]][%[[I1]]] : memref<2xi1>
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Measure0) {
-  QuantumComputation qc(2, 2);
-  qc.measure(0, 0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
+    CHECK: memref.store %[[M0]], %[[Mem]][%[[I1]]] : memref<2xi1>
+    CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: memref.store %[[M1]], %[[Mem]][%[[I0]]] : memref<2xi1>
+  )"},
+        TestCase{.name = "Measure_Single",
+                 .numQubits = 2,
+                 .numClbits = 2,
+                 .build = [](QuantumComputation& qc) { qc.measure(0, 0); },
+                 .operationCheck = R"(
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
     CHECK: %[[I0:.*]] = arith.constant 0 : index
     CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<2xi1>
     CHECK-NOT: mqtref.measure %[[Q1]]
     CHECK-NOT: arith.constant 1 : index
     CHECK-NOT: memref.store  %[[ANY:.*]], %[[Mem]][%[[ANY:.*]]] : memref<2xi1>
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Reset01) {
-  QuantumComputation qc(2);
-  qc.reset({0, 1});
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+  )"},
+        // Reset
+        TestCase{.name = "Reset_Multiple",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.reset({0, 1}); },
+                 .operationCheck = R"(
     CHECK: "mqtref.reset"(%[[Q0]]) : (!mqtref.Qubit) -> ()
     CHECK: "mqtref.reset"(%[[Q1]]) : (!mqtref.Qubit) -> ()
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Reset0) {
-  QuantumComputation qc(2);
-  qc.reset(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+  )"},
+        TestCase{.name = "Reset_Single",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build = [](QuantumComputation& qc) { qc.reset(0); },
+                 .operationCheck = R"(
     CHECK: "mqtref.reset"(%[[Q0]]) : (!mqtref.Qubit) -> ()
     CHECK-NOT: "mqtref.reset"(%[[Q1]]) : (!mqtref.Qubit) -> ()
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, I) {
-  QuantumComputation qc(1);
-  qc.i(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.i()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, H) {
-  QuantumComputation qc(1);
-  qc.h(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.h()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, X) {
-  QuantumComputation qc(1);
-  qc.x(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.x()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, CX01) {
-  QuantumComputation qc(2);
-  qc.cx(0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q1]] ctrl %[[Q0]]
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, CX10) {
-  QuantumComputation qc(2);
-  qc.cx(1, 0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q0]] ctrl %[[Q1]]
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, CX0N1) {
-  QuantumComputation qc(2);
-  qc.cx(0_nc, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q1]] nctrl %[[Q0]]
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, MCX012) {
-  QuantumComputation qc(3);
-  qc.mcx({0, 1}, 2);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q2]] ctrl %[[Q0]], %[[Q1]]
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, MCX0N2P1) {
-  QuantumComputation qc(3);
-  qc.mcx({0_nc, 2}, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q1]] ctrl %[[Q2]] nctrl %[[Q0]]
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, MCX2N1N0) {
-  QuantumComputation qc(3);
-  qc.mcx({2_nc, 1_nc}, 0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q0]] nctrl %[[Q1]], %[[Q2]]
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Y) {
-  QuantumComputation qc(1);
-  qc.y(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.y()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Z) {
-  QuantumComputation qc(1);
-  qc.z(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.z()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, S) {
-  QuantumComputation qc(1);
-  qc.s(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.s()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Sdg) {
-  QuantumComputation qc(1);
-  qc.sdg(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.sdg()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, T) {
-  QuantumComputation qc(1);
-  qc.t(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.t()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Tdg) {
-  QuantumComputation qc(1);
-  qc.tdg(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.tdg()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, V) {
-  QuantumComputation qc(1);
-  qc.v(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.v()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Vdg) {
-  QuantumComputation qc(1);
-  qc.vdg(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.vdg()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, U) {
-  QuantumComputation qc(1);
-  qc.u(0.1, 0.2, 0.3, 0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString =
-      "CHECK: mqtref.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01])";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, U2) {
-  QuantumComputation qc(1);
-  qc.u2(0.1, 0.2, 0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString =
-      "CHECK: mqtref.u2( static [1.000000e-01, 2.000000e-01])";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, P) {
-  QuantumComputation qc(1);
-  qc.p(0.1, 0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.p( static [1.000000e-01])";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, SX) {
-  QuantumComputation qc(1);
-  qc.sx(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.sx()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, SXdg) {
-  QuantumComputation qc(1);
-  qc.sxdg(0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.sxdg()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Rx) {
-  QuantumComputation qc(1);
-  qc.rx(0.1, 0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.rx( static [1.000000e-01])";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Ry) {
-  QuantumComputation qc(1);
-  qc.ry(0.1, 0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.ry( static [1.000000e-01])";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Rz) {
-  QuantumComputation qc(1);
-  qc.rz(0.1, 0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.rz( static [1.000000e-01])";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, SWAP01) {
-  QuantumComputation qc(2);
-  qc.swap(0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.swap() %[[Q0]], %[[Q1]]
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, SWAP10) {
-  QuantumComputation qc(2);
-  qc.swap(1, 0);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.swap() %[[Q1]], %[[Q0]]
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, iSWAP) {
-  QuantumComputation qc(2);
-  qc.iswap(0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.iswap()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, iSWAPdg) {
-  QuantumComputation qc(2);
-  qc.iswapdg(0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.iswapdg()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Peres) {
-  QuantumComputation qc(2);
-  qc.peres(0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.peres()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, Peresdg) {
-  QuantumComputation qc(2);
-  qc.peresdg(0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.peresdg()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, DCX) {
-  QuantumComputation qc(2);
-  qc.dcx(0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.dcx()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, ECR) {
-  QuantumComputation qc(2);
-  qc.ecr(0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.ecr()";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, RXX) {
-  QuantumComputation qc(2);
-  qc.rxx(0.1, 0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.rxx( static [1.000000e-01])";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, CRXX) {
-  QuantumComputation qc(3);
-  qc.crxx(0.1, 0, 1, 2);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.rxx( static [1.000000e-01]) %[[Q1]], %[[Q2]] ctrl %[[Q0]]
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, RYY) {
-  QuantumComputation qc(2);
-  qc.ryy(0.1, 0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.ryy( static [1.000000e-01])";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, RZZ) {
-  QuantumComputation qc(2);
-  qc.rzz(0.1, 0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.rzz( static [1.000000e-01])";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, RZX) {
-  QuantumComputation qc(2);
-  qc.rzx(0.1, 0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = "CHECK: mqtref.rzx( static [1.000000e-01])";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, XXminusYY) {
-  QuantumComputation qc(2);
-  qc.xx_minus_yy(0.1, 0.2, 0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString =
-      "CHECK: mqtref.xx_minus_yy( static [1.000000e-01, 2.000000e-01])";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, XXplusYY) {
-  QuantumComputation qc(2);
-  qc.xx_plus_yy(0.1, 0.2, 0, 1);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString =
-      "CHECK: mqtref.xx_plus_yy( static [1.000000e-01, 2.000000e-01])";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfRegisterEq1) {
-  QuantumComputation qc(1);
-  const auto& creg = qc.addClassicalRegister(1);
-  qc.measure(0, 0);
-  qc.if_(X, 0, creg, 1U, Eq);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.addPass(mlir::createMem2Reg());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[ANY:.*]] = arith.constant 0 : index
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
-    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[C0]], %[[Exp]] : i64
-    CHECK: scf.if %[[Cnd0]] {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfRegisterEq2) {
-  QuantumComputation qc(2);
-  const auto& creg = qc.addClassicalRegister(2);
-  qc.measure({0, 1}, {0, 1});
-  qc.if_(X, 0, creg, 2U, Eq);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Exp:.*]] = arith.constant 2 : i64
-    CHECK: %[[Sum0:.*]] = arith.constant 0 : i64
-    CHECK: %[[I2:.*]] = arith.constant 2 : index
-    CHECK: %[[I1:.*]] = arith.constant 1 : index
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<2xi1>
-    CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
-    CHECK: memref.store %[[M1]], %[[Mem]][%[[I1]]] : memref<2xi1>
-    CHECK: %[[Sum1:.*]] = scf.for %[[Ii:.*]] = %[[I0]] to %[[I2]] step %[[I1]] iter_args(%[[Sumi:.*]] = %[[Sum0]]) -> (i64) {
-    CHECK: %[[Bi:.*]] = memref.load %[[Mem]][%[[Ii]]] : memref<2xi1>
-    CHECK: %[[Ci:.*]] = arith.extui %[[Bi:.*]] : i1 to i64
-    CHECK: %[[Indi:.*]] = arith.index_cast %[[Ii]] : index to i64
-    CHECK: %[[Shli:.*]] = arith.shli %[[Ci]], %[[Indi]] : i64
-    CHECK: %[[Sumj:.*]] = arith.addi %[[Sumi]], %[[Shli]] : i64
-    CHECK: scf.yield %[[Sumj]] : i64
-    CHECK: }
-    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[Sum1]], %[[Exp]] : i64
-    CHECK: scf.if %[[Cnd0]] {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfRegisterNeq) {
-  QuantumComputation qc(1);
-  const auto& creg = qc.addClassicalRegister(1);
-  qc.measure(0, 0);
-  qc.if_(X, 0, creg, 1U, Neq);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.addPass(mlir::createMem2Reg());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[ANY:.*]] = arith.constant 0 : index
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
-    CHECK: %[[Cnd0:.*]] = arith.cmpi ne, %[[C0]], %[[Exp]] : i64
-    CHECK: scf.if %[[Cnd0]] {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfRegisterLt) {
-  QuantumComputation qc(1);
-  const auto& creg = qc.addClassicalRegister(1);
-  qc.measure(0, 0);
-  qc.if_(X, 0, creg, 1U, Lt);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.addPass(mlir::createMem2Reg());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[ANY:.*]] = arith.constant 0 : index
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
-    CHECK: %[[Cnd0:.*]] = arith.cmpi ult, %[[C0]], %[[Exp]] : i64
-    CHECK: scf.if %[[Cnd0]] {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfRegisterLeq) {
-  QuantumComputation qc(1);
-  const auto& creg = qc.addClassicalRegister(1);
-  qc.measure(0, 0);
-  qc.if_(X, 0, creg, 1U, Leq);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.addPass(mlir::createMem2Reg());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[ANY:.*]] = arith.constant 0 : index
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
-    CHECK: %[[Cnd0:.*]] = arith.cmpi ule, %[[C0]], %[[Exp]] : i64
-    CHECK: scf.if %[[Cnd0]] {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfRegisterGt) {
-  QuantumComputation qc(1);
-  const auto& creg = qc.addClassicalRegister(1);
-  qc.measure(0, 0);
-  qc.if_(X, 0, creg, 1U, Gt);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.addPass(mlir::createMem2Reg());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[ANY:.*]] = arith.constant 0 : index
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
-    CHECK: %[[Cnd0:.*]] = arith.cmpi ugt, %[[C0]], %[[Exp]] : i64
-    CHECK: scf.if %[[Cnd0]] {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfRegisterGeq) {
-  QuantumComputation qc(1);
-  const auto& creg = qc.addClassicalRegister(1);
-  qc.measure(0, 0);
-  qc.if_(X, 0, creg, 1U, Geq);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.addPass(mlir::createMem2Reg());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[ANY:.*]] = arith.constant 0 : index
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
-    CHECK: %[[Cnd0:.*]] = arith.cmpi uge, %[[C0]], %[[Exp]] : i64
-    CHECK: scf.if %[[Cnd0]] {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfElseRegister) {
-  QuantumComputation qc(2);
-  const auto& creg = qc.addClassicalRegister(2);
-  qc.measure({0, 1}, {0, 1});
-  qc.ifElse(std::make_unique<StandardOperation>(0, X),
-            std::make_unique<StandardOperation>(0, Y), creg, 2U, Eq);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Exp:.*]] = arith.constant 2 : i64
-    CHECK: %[[Sum0:.*]] = arith.constant 0 : i64
-    CHECK: %[[I2:.*]] = arith.constant 2 : index
-    CHECK: %[[I1:.*]] = arith.constant 1 : index
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<2xi1>
-    CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
-    CHECK: memref.store %[[M1]], %[[Mem]][%[[I1]]] : memref<2xi1>
-    CHECK: %[[Sum1:.*]] = scf.for %[[Ii:.*]] = %[[I0]] to %[[I2]] step %[[I1]] iter_args(%[[Sumi:.*]] = %[[Sum0]]) -> (i64) {
-    CHECK: %[[Bi:.*]] = memref.load %[[Mem]][%[[Ii]]] : memref<2xi1>
-    CHECK: %[[Ci:.*]] = arith.extui %[[Bi:.*]] : i1 to i64
-    CHECK: %[[Indi:.*]] = arith.index_cast %[[Ii]] : index to i64
-    CHECK: %[[Shli:.*]] = arith.shli %[[Ci]], %[[Indi]] : i64
-    CHECK: %[[Sumj:.*]] = arith.addi %[[Sumi]], %[[Shli]] : i64
-    CHECK: scf.yield %[[Sumj]] : i64
-    CHECK: }
-    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[Sum1]], %[[Exp]] : i64
-    CHECK: scf.if %[[Cnd0:.*]] {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: } else {
-    CHECK: mqtref.y() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfBitEqTrue) {
-  QuantumComputation qc(1, 1);
-  qc.measure(0, 0);
-  qc.if_(X, 0, 0, true, Eq);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: scf.if %[[M0]] {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfBitEqFalse) {
-  QuantumComputation qc(1, 1);
-  qc.measure(0, 0);
-  qc.if_(X, 0, 0, false, Eq);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Exp0:.*]] = arith.constant false
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[M0]], %[[Exp0]] : i1
-    CHECK: scf.if %[[Cnd0]] {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfBitNeq) {
-  QuantumComputation qc(1, 1);
-  qc.measure(0, 0);
-  qc.if_(X, 0, 0, true, Neq);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Exp0:.*]] = arith.constant false
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: %[[Cnd0:.*]] = arith.cmpi eq, %[[M0]], %[[Exp0]] : i1
-    CHECK: scf.if %[[Cnd0]] {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfElseBitEqTrue) {
-  QuantumComputation qc(1, 1);
-  qc.measure(0, 0);
-  qc.ifElse(std::make_unique<StandardOperation>(0, X),
-            std::make_unique<StandardOperation>(0, Y), 0, true, Eq);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: scf.if %[[M0]] {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: } else {
-    CHECK: mqtref.y() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfElseBitEqFalse) {
-  QuantumComputation qc(1, 1);
-  qc.measure(0, 0);
-  qc.ifElse(std::make_unique<StandardOperation>(0, X),
-            std::make_unique<StandardOperation>(0, Y), 0, false, Eq);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: scf.if %[[M0]] {
-    CHECK: mqtref.y() %[[Q0]]
-    CHECK: } else {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, IfElseBitNeq) {
-  QuantumComputation qc(1, 1);
-  qc.measure(0, 0);
-  qc.ifElse(std::make_unique<StandardOperation>(0, X),
-            std::make_unique<StandardOperation>(0, Y), 0, true, Neq);
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  if (failed(passManager.run(module.get()))) {
-    FAIL() << "Failed to run passes";
-  }
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: scf.if %[[M0]] {
-    CHECK: mqtref.y() %[[Q0]]
-    CHECK: } else {
-    CHECK: mqtref.x() %[[Q0]]
-    CHECK: }
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
-
-TEST_F(ImportTest, GHZ) {
-  QuantumComputation qc(3, 3);
-  qc.h(0);
-  qc.cx(0, 1);
-  qc.cx(0, 2);
-  qc.measure({0, 1, 2}, {0, 1, 2});
-
-  auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  const auto outputString = getOutputString(&module);
-  const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<3xi1>
-    CHECK: mqtref.h() %[[Q0]]
-    CHECK: mqtref.x() %[[Q1]] ctrl %[[Q0]]
-    CHECK: mqtref.x() %[[Q2]] ctrl %[[Q0]]
-    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: %[[I0:.*]] = arith.constant 0 : index
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<3xi1>
-    CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
-    CHECK: %[[I1:.*]] = arith.constant 1 : index
-    CHECK: memref.store %[[M1]], %[[Mem]][%[[I1]]] : memref<3xi1>
-    CHECK: %[[M2:.*]] = mqtref.measure %[[Q2]]
-    CHECK: %[[I2:.*]] = arith.constant 2 : index
-    CHECK: memref.store %[[M2]], %[[Mem]][%[[I2]]] : memref<3xi1>
-    CHECK: "mqtref.deallocQubitRegister"(%[[Reg]]) : (!mqtref.QubitRegister) -> ()
-  )";
-
-  ASSERT_TRUE(checkOutput(checkString, outputString));
-}
+  )"}));
+
+INSTANTIATE_TEST_SUITE_P(
+    IfElse, OperationTest,
+    ::testing::Values(
+        // Register-based If/Else tests
+        TestCase{.name = "IfRegisterEq1",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       const auto& creg = qc.addClassicalRegister(1);
+                       qc.measure(0, 0);
+                       qc.if_(X, 0, creg, 1U, Eq);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 1,
+                 .expected = 1,
+                 .useBit = false,
+                 .controlBit = 0,
+                 .expectedBit = true,
+                 .cmpMnemonic = "eq",
+                 .withElse = false,
+                 .thenOp = "x",
+                 .elseOp = "",
+                 .runPasses = true},
+        TestCase{.name = "IfRegisterEq2",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       const auto& creg = qc.addClassicalRegister(2);
+                       qc.measure({0, 1}, {0, 1});
+                       qc.if_(X, 0, creg, 2U, Eq);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 2,
+                 .expected = 2,
+                 .useBit = false,
+                 .controlBit = 0,
+                 .expectedBit = true,
+                 .cmpMnemonic = "eq",
+                 .withElse = false,
+                 .thenOp = "x",
+                 .elseOp = "",
+                 .runPasses = true},
+        TestCase{.name = "IfRegisterNeq",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       const auto& creg = qc.addClassicalRegister(1);
+                       qc.measure(0, 0);
+                       qc.if_(X, 0, creg, 1U, Neq);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 1,
+                 .expected = 1,
+                 .useBit = false,
+                 .controlBit = 0,
+                 .expectedBit = true,
+                 .cmpMnemonic = "ne",
+                 .withElse = false,
+                 .thenOp = "x",
+                 .elseOp = "",
+                 .runPasses = true},
+        TestCase{.name = "IfRegisterLt",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       const auto& creg = qc.addClassicalRegister(1);
+                       qc.measure(0, 0);
+                       qc.if_(X, 0, creg, 1U, Lt);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 1,
+                 .expected = 1,
+                 .useBit = false,
+                 .controlBit = 0,
+                 .expectedBit = true,
+                 .cmpMnemonic = "ult",
+                 .withElse = false,
+                 .thenOp = "x",
+                 .elseOp = "",
+                 .runPasses = true},
+        TestCase{.name = "IfRegisterLeq",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       const auto& creg = qc.addClassicalRegister(1);
+                       qc.measure(0, 0);
+                       qc.if_(X, 0, creg, 1U, Leq);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 1,
+                 .expected = 1,
+                 .useBit = false,
+                 .controlBit = 0,
+                 .expectedBit = true,
+                 .cmpMnemonic = "ule",
+                 .withElse = false,
+                 .thenOp = "x",
+                 .elseOp = "",
+                 .runPasses = true},
+        TestCase{.name = "IfRegisterGt",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       const auto& creg = qc.addClassicalRegister(1);
+                       qc.measure(0, 0);
+                       qc.if_(X, 0, creg, 1U, Gt);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 1,
+                 .expected = 1,
+                 .useBit = false,
+                 .controlBit = 0,
+                 .expectedBit = true,
+                 .cmpMnemonic = "ugt",
+                 .withElse = false,
+                 .thenOp = "x",
+                 .elseOp = "",
+                 .runPasses = true},
+        TestCase{.name = "IfRegisterGeq",
+                 .numQubits = 1,
+                 .numClbits = 0,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       const auto& creg = qc.addClassicalRegister(1);
+                       qc.measure(0, 0);
+                       qc.if_(X, 0, creg, 1U, Geq);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 1,
+                 .expected = 1,
+                 .useBit = false,
+                 .controlBit = 0,
+                 .expectedBit = true,
+                 .cmpMnemonic = "uge",
+                 .withElse = false,
+                 .thenOp = "x",
+                 .elseOp = "",
+                 .runPasses = true},
+        TestCase{.name = "IfElseRegister",
+                 .numQubits = 2,
+                 .numClbits = 0,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       const auto& creg = qc.addClassicalRegister(2);
+                       qc.measure({0, 1}, {0, 1});
+                       qc.ifElse(std::make_unique<StandardOperation>(0, X),
+                                 std::make_unique<StandardOperation>(0, Y),
+                                 creg, 2U, Eq);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 2,
+                 .expected = 2,
+                 .useBit = false,
+                 .controlBit = 0,
+                 .expectedBit = true,
+                 .cmpMnemonic = "eq",
+                 .withElse = true,
+                 .thenOp = "x",
+                 .elseOp = "y",
+                 .runPasses = true},
+        // Bit-based If/Else tests (single bit, eq/ne with true/false)
+        TestCase{.name = "IfBitEqTrue",
+                 .numQubits = 1,
+                 .numClbits = 1,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       qc.measure(0, 0);
+                       qc.if_(X, 0, 0, true, Eq);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 0,
+                 .expected = 0,
+                 .useBit = true,
+                 .controlBit = 0,
+                 .expectedBit = true,
+                 .cmpMnemonic = "eq",
+                 .withElse = false,
+                 .thenOp = "x",
+                 .elseOp = "",
+                 .runPasses = true},
+        TestCase{.name = "IfBitEqFalse",
+                 .numQubits = 1,
+                 .numClbits = 1,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       qc.measure(0, 0);
+                       qc.if_(X, 0, 0, false, Eq);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 0,
+                 .expected = 0,
+                 .useBit = true,
+                 .controlBit = 0,
+                 .expectedBit = false,
+                 .cmpMnemonic = "eq",
+                 .withElse = false,
+                 .thenOp = "x",
+                 .elseOp = "",
+                 .runPasses = true},
+        TestCase{.name = "IfBitNeqTrue",
+                 .numQubits = 1,
+                 .numClbits = 1,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       qc.measure(0, 0);
+                       qc.if_(X, 0, 0, true, Neq);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 0,
+                 .expected = 0,
+                 .useBit = true,
+                 .controlBit = 0,
+                 .expectedBit = false,
+                 .cmpMnemonic = "eq",
+                 .withElse = false,
+                 .thenOp = "x",
+                 .elseOp = "",
+                 .runPasses = true},
+        TestCase{.name = "IfElseBitEqTrue",
+                 .numQubits = 1,
+                 .numClbits = 1,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       qc.measure(0, 0);
+                       qc.ifElse(std::make_unique<StandardOperation>(0, X),
+                                 std::make_unique<StandardOperation>(0, Y), 0,
+                                 true, Eq);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 0,
+                 .expected = 0,
+                 .useBit = true,
+                 .controlBit = 0,
+                 .expectedBit = true,
+                 .cmpMnemonic = "eq",
+                 .withElse = true,
+                 .thenOp = "x",
+                 .elseOp = "y",
+                 .runPasses = true},
+        TestCase{.name = "IfElseBitNeqFalse",
+                 .numQubits = 1,
+                 .numClbits = 1,
+                 .build =
+                     [](QuantumComputation& qc) {
+                       qc.measure(0, 0);
+                       qc.ifElse(std::make_unique<StandardOperation>(0, X),
+                                 std::make_unique<StandardOperation>(0, Y), 0,
+                                 false, Neq);
+                     },
+                 .operationCheck = "",
+                 .isIfElse = true,
+                 .cregSize = 0,
+                 .expected = 0,
+                 .useBit = true,
+                 .controlBit = 0,
+                 .expectedBit = false,
+                 .cmpMnemonic = "ne",
+                 .withElse = true,
+                 .thenOp = "x",
+                 .elseOp = "y",
+                 .runPasses = true}),
+    [](const ::testing::TestParamInfo<TestCase>& info) {
+      return info.param.name;
+    });
+
+} // namespace
