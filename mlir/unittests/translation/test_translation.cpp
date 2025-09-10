@@ -181,10 +181,10 @@ struct TestCase {
   size_t controlBit = 0;   // index of the classical bit used as condition
   bool expectedBit = true; // expected boolean value for comparison
 
-  std::string cmpMnemonic; // e.g., eq, ne, ult, ule, ugt, uge
-  bool withElse = false;   // whether an else branch exists
-  std::string thenOp;      // mnemonic for then operation, e.g., "x"
-  std::string elseOp;      // mnemonic for else operation
+  std::string cmpMnemonic = ""; // e.g., eq, ne, ult, ule, ugt, uge
+  bool withElse = false;        // whether an else branch exists
+  std::string thenOp = "";      // mnemonic for then operation, e.g., "x"
+  std::string elseOp = "";      // mnemonic for else operation
 
   // Whether to run the canonicalization pipeline (needed for if/else)
   bool runPasses = false;
