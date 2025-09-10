@@ -16,9 +16,12 @@
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 #include "mlir/Dialect/MQTRef/Translation/ImportQuantumComputation.h"
 
+#include <cstddef>
 #include <functional>
 #include <gtest/gtest.h>
+#include <initializer_list>
 #include <iomanip>
+#include <ios>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/FileCheck/FileCheck.h>
@@ -35,6 +38,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/Passes.h>
+#include <ostream>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -43,7 +47,7 @@ namespace {
 using namespace qc;
 
 // Small helpers to reduce FileCheck string duplication
-static std::string formatTargets(std::initializer_list<size_t> targets) {
+std::string formatTargets(std::initializer_list<size_t> targets) {
   std::string s;
   bool first = true;
   for (auto t : targets) {
@@ -56,7 +60,7 @@ static std::string formatTargets(std::initializer_list<size_t> targets) {
   return s;
 }
 
-static std::string formatParams(std::initializer_list<double> params) {
+std::string formatParams(std::initializer_list<double> params) {
   if (params.size() == 0) {
     return "";
   }
@@ -65,7 +69,7 @@ static std::string formatParams(std::initializer_list<double> params) {
   os << std::setprecision(6);
   bool first = true;
   os << " static [";
-  for (double p : params) {
+  for (const double p : params) {
     if (!first) {
       os << ", ";
     }
@@ -76,14 +80,14 @@ static std::string formatParams(std::initializer_list<double> params) {
   return os.str();
 }
 
-static std::string unitaryCheck(const char* op,
-                                std::initializer_list<size_t> targets) {
+std::string unitaryCheck(const char* op,
+                         std::initializer_list<size_t> targets) {
   return std::string("CHECK: mqtref.") + op + "() " + formatTargets(targets);
 }
 
-static std::string unitaryParamCheck(const char* op,
-                                     std::initializer_list<double> params,
-                                     std::initializer_list<size_t> targets) {
+std::string unitaryParamCheck(const char* op,
+                              std::initializer_list<double> params,
+                              std::initializer_list<size_t> targets) {
   return std::string("CHECK: mqtref.") + op + "(" + formatParams(params) +
          ") " + formatTargets(targets);
 }
@@ -177,10 +181,10 @@ struct TestCase {
   size_t controlBit = 0;   // index of the classical bit used as condition
   bool expectedBit = true; // expected boolean value for comparison
 
-  std::string cmpMnemonic = ""; // e.g., eq, ne, ult, ule, ugt, uge
-  bool withElse = false;        // whether an else branch exists
-  std::string thenOp = "";      // mnemonic for then operation, e.g., "x"
-  std::string elseOp = "";      // mnemonic for else operation
+  std::string cmpMnemonic; // e.g., eq, ne, ult, ule, ugt, uge
+  bool withElse = false;   // whether an else branch exists
+  std::string thenOp;      // mnemonic for then operation, e.g., "x"
+  std::string elseOp;      // mnemonic for else operation
 
   // Whether to run the canonicalization pipeline (needed for if/else)
   bool runPasses = false;
@@ -194,7 +198,7 @@ std::ostream& operator<<(std::ostream& os, const TestCase& tc) {
 // Creates a FileCheck string with qubit allocation and checks
 std::string createFileCheckString(const TestCase& testCase) {
   // Always start by checking the entry function and attribute
-  std::string prologue =
+  const std::string prologue =
       "CHECK: func.func @main() attributes {passthrough = [\"entry_point\"]}\n";
 
   // If this is an If/IfElse test, generate the specialized checks
@@ -236,10 +240,10 @@ std::string createFileCheckString(const TestCase& testCase) {
       } else {
         // Multi-bit classical register case (matching existing tests for size
         // 2)
-        const auto N = testCase.cregSize;
+        const auto n = testCase.cregSize;
         s += "CHECK: %[[Sum0:.*]] = arith.constant 0 : i64\n";
-        s += "CHECK: %[[I" + std::to_string(N) + ":.*]] = arith.constant " +
-             std::to_string(N) + " : index\n";
+        s += "CHECK: %[[I" + std::to_string(n) + ":.*]] = arith.constant " +
+             std::to_string(n) + " : index\n";
         s += "CHECK: %[[I1:.*]] = arith.constant 1 : index\n";
         s += "CHECK: %[[I0:.*]] = arith.constant 0 : index\n";
         s += "CHECK: %[[Reg:.*]] = \"mqtref.allocQubitRegister\"() <{size_attr "
@@ -254,18 +258,18 @@ std::string createFileCheckString(const TestCase& testCase) {
              "<{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> "
              "!mqtref.Qubit\n";
         s += "CHECK: %[[Mem:.*]] = memref.alloca() : memref<" +
-             std::to_string(N) + "xi1>\n";
+             std::to_string(n) + "xi1>\n";
         s += "CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]\n";
         s += "CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<" +
-             std::to_string(N) + "xi1>\n";
+             std::to_string(n) + "xi1>\n";
         s += "CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]\n";
         s += "CHECK: memref.store %[[M1]], %[[Mem]][%[[I1]]] : memref<" +
-             std::to_string(N) + "xi1>\n";
+             std::to_string(n) + "xi1>\n";
         s += "CHECK: %[[Sum1:.*]] = scf.for %[[Ii:.*]] = %[[I0]] to %[[I" +
-             std::to_string(N) +
+             std::to_string(n) +
              "]] step %[[I1]] iter_args(%[[Sumi:.*]] = %[[Sum0]]) -> (i64) {\n";
         s += "CHECK: %[[Bi:.*]] = memref.load %[[Mem]][%[[Ii]]] : memref<" +
-             std::to_string(N) + "xi1>\n";
+             std::to_string(n) + "xi1>\n";
         s += "CHECK: %[[Ci:.*]] = arith.extui %[[Bi:.*]] : i1 to i64\n";
         s += "CHECK: %[[Indi:.*]] = arith.index_cast %[[Ii]] : index to i64\n";
         s += "CHECK: %[[Shli:.*]] = arith.shli %[[Ci]], %[[Indi]] : i64\n";
