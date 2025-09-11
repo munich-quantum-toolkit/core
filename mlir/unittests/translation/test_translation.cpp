@@ -25,7 +25,6 @@
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/FileCheck/FileCheck.h>
-#include <llvm/Support/LogicalResult.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
@@ -286,7 +285,7 @@ std::ostream& operator<<(std::ostream& os, const TestCaseUnitary& testCase) {
 }
 
 std::string getCheckStringTestCaseUnitary(const TestCaseUnitary& testCase) {
-  std::string result = "";
+  std::string result;
 
   // Add entry point
   result +=
@@ -554,7 +553,7 @@ std::ostream& operator<<(std::ostream& os, const TestCaseIfRegister& testCase) {
 
 std::string
 getCheckStringTestCaseIfRegister(const TestCaseIfRegister& testCase) {
-  std::string result = "";
+  std::string result;
 
   result += R"(
     CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
@@ -740,7 +739,7 @@ std::ostream& operator<<(std::ostream& os, const TestCaseIfBit& testCase) {
 }
 
 std::string getCheckStringTestCaseIfBit(const TestCaseIfBit& testCase) {
-  std::string result = "";
+  std::string result;
 
   result += R"(
     CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
@@ -835,7 +834,7 @@ std::ostream& operator<<(std::ostream& os, const TestCaseIfElseBit& testCase) {
 }
 
 std::string getCheckStringTestCaseIfElseBit(const TestCaseIfElseBit& testCase) {
-  std::string result = "";
+  std::string result;
 
   result += R"(
     CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
