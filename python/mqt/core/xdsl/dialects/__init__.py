@@ -6,11 +6,12 @@
 #
 # Licensed under the MIT License
 
-"""MQTOpt xDSL dialects module."""
+"""MQTOpt and MQTRef xDSL dialects module."""
 
 from __future__ import annotations
 
 from .MQTOpt.MQTOptOps import MQTOpt
+from .MQTRef.MQTRefOps import MQTRef
 
 
 def get_all_dialects():
@@ -19,6 +20,10 @@ def get_all_dialects():
     def get_mqtopt():
         return MQTOpt
 
+    def get_mqtref():
+        return MQTRef
+
     return {
         "mqtopt": get_mqtopt,
+        "mqtref": get_mqtref,
     }

@@ -6,8 +6,8 @@
 //
 // Licensed under the MIT License
 
-// RUN: MQTOPT_ROUNDTRIP
-// RUN: MQTOPT_GENERIC_ROUNDTRIP
+// RUN: MQT_ROUNDTRIP
+// RUN: MQT_GENERIC_ROUNDTRIP
 
 // Test simple qubit allocation and deallocation
 // Allocate a single qubit register with size 1
