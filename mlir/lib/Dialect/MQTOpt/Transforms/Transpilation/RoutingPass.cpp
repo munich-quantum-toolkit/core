@@ -544,93 +544,108 @@ struct IfOpPattern final : OpRewritePattern<scf::IfOp> {
 
 struct ForOpPattern final : ContextualOpPattern<scf::ForOp> {
   using ContextualOpPattern<scf::ForOp>::ContextualOpPattern;
-  LogicalResult matchAndRewrite(scf::ForOp loop,
+
+  LogicalResult matchAndRewrite(scf::ForOp forOp,
                                 PatternRewriter& rewriter) const final {
-    if (!containsUnitary(loop)) {
+    if (!containsUnitary(forOp)) {
       return failure();
     }
 
-    SmallVector<Value> physical = state().getHardwareQubits();
+    auto newFor = extendForArgs(forOp, rewriter);
+    cloneBody(forOp, newFor, rewriter);
+    extendYield(newFor, rewriter);
 
-    // SetVector of already included static qubits.
-    llvm::SetVector<Value> included;
-    // Vector of classical arguments such as integers, floats, etc.
-    SmallVector<Value, 4> classicalArgs;
-    // Vector of missing (ALL \ INCLUDED) static qubits.
-    SmallVector<Value> extra;
-
-    for (const auto& arg : loop.getInitArgs()) {
-      if (arg.getType() != rewriter.getType<QubitType>()) {
-        classicalArgs.push_back(arg);
-        continue;
-      }
-      included.insert(arg);
-    }
-
-    for (const auto& q : physical) {
-      if (!included.contains(q)) {
-        extra.push_back(q);
-      }
-    }
-    // TODO: Just add extra to existing once.
-    SmallVector<Value> newInitArgs;
-    newInitArgs.reserve(classicalArgs.size() + physical.size());
-    newInitArgs.append(classicalArgs.begin(), classicalArgs.end());
-    newInitArgs.append(included.begin(), included.end());
-    newInitArgs.append(extra.begin(), extra.end());
-
-    auto newLoop = rewriter.create<scf::ForOp>(
-        loop.getLoc(), loop.getLowerBound(), loop.getUpperBound(),
-        loop.getStep(), newInitArgs);
-
-    {
-      // Map new arguments to old in the same order (which we haven't changed.)
-      SmallVector<Value> mapping;
-      for (const auto& arg : newLoop.getBody()->getArguments()) {
-        mapping.push_back(arg);
-      }
-      rewriter.mergeBlocks(loop.getBody(), newLoop.getBody(), mapping);
-    }
-
-    {
-      scf::YieldOp yield =
-          dyn_cast<scf::YieldOp>(newLoop.getBody()->getTerminator());
-      assert(yield);
-      const std::size_t nresults = yield.getResults().size();
-
-      SmallVector<Value> newYieldOperands;
-      newYieldOperands.reserve(newLoop.getNumRegionIterArgs());
-
-      for (const auto& operand : yield.getResults()) {
-        newYieldOperands.push_back(operand);
-      }
-
-      for (const auto& arg :
-           newLoop.getRegionIterArgs() | std::views::drop(nresults)) {
-        newYieldOperands.push_back(arg);
-      }
-
-      rewriter.setInsertionPoint(yield);
-      rewriter.create<scf::YieldOp>(yield->getLoc(), newYieldOperands);
-    }
-
-    if (loop.getNumResults() > 0) {
-      // Replace old results with new.
-      auto newResults = newLoop.getResults().take_front(loop.getNumResults());
-      rewriter.replaceOp(loop, newResults);
+    // Replace old results with new ones or remove if none.
+    if (forOp.getNumResults() > 0) {
+      const auto res = newFor.getResults().take_front(forOp.getNumResults());
+      rewriter.replaceOp(forOp, res);
+    } else {
+      rewriter.eraseOp(forOp);
     }
 
     stack().push_back(state()); // Add copy to stack.
 
     // Forward out-of-loop and in-loop state.
     std::size_t i = 0;
-    for (const auto& arg : newLoop.getInitArgs()) {
-      parentState().forward(arg, newLoop->getResult(i));
-      state().forward(arg, newLoop.getRegionIterArg(i));
+    for (const auto& arg : newFor.getInitArgs()) {
+      parentState().forward(arg, newFor->getResult(i));
+      state().forward(arg, newFor.getRegionIterArg(i));
       i++;
     }
 
     return success();
+  }
+
+private:
+  /**
+   * @brief Clone body from one for op to the other and map
+   * block arguments.
+   */
+  static void cloneBody(scf::ForOp forOp, scf::ForOp newForOp,
+                        PatternRewriter& rewriter) {
+    SmallVector<Value> mapping(newForOp.getBody()->getArguments());
+    rewriter.mergeBlocks(forOp.getBody(), newForOp.getBody(), mapping);
+  }
+
+  /**
+   * @brief Extend the results of the existing yield operation with the
+   * missing qubits from the init args.
+   *
+   * Instead of replacing the op, we (temporarily) create an invalid IR
+   * with two yield operations and remove the second yield in the respective
+   * YieldOpPattern. This allows us to restore the permutation without
+   * having to manage a worklist and listen to replacement events.
+   */
+  static void extendYield(scf::ForOp newFor, PatternRewriter& rewriter) {
+    const Operation* term = newFor.getBody()->getTerminator();
+    scf::YieldOp yield = dyn_cast<scf::YieldOp>(term);
+
+    const BlockArgument* begin = newFor.getRegionIterArgs().begin();
+    const BlockArgument* end = newFor.getRegionIterArgs().end();
+
+    SmallVector<Value> results;
+    results.reserve(newFor.getNumRegionIterArgs());
+    results.append(yield->getResults().begin(), yield->getResults().end());
+    results.append(std::next(begin, yield->getNumResults()), end);
+
+    rewriter.setInsertionPointAfter(yield);
+    rewriter.create<scf::YieldOp>(yield->getLoc(), results);
+  }
+
+  /**
+   * @brief Create new for op with all static qubits as init args.
+   *
+   * Returns the old loop if the init args already contain all qubits.
+   *
+   * Keeps the order of the existing init args the same. Simply adds
+   * the missing qubits.
+   */
+  scf::ForOp extendForArgs(scf::ForOp forOp, PatternRewriter& rewriter) const {
+    DenseSet<Value> included;
+    for (const auto& arg : forOp.getInitArgs()) {
+      if (arg.getType() == rewriter.getType<QubitType>()) {
+        included.insert(arg);
+      }
+    }
+
+    if (included.size() == state().getNumQubits()) {
+      return forOp;
+    }
+
+    SmallVector<Value> missing;
+    missing.reserve(state().getNumQubits() - included.size());
+    for (const auto& q : state().getHardwareQubits()) {
+      if (!included.contains(q)) {
+        missing.push_back(q);
+      }
+    }
+
+    SmallVector<Value> newInitArgs(forOp.getInitArgs());
+    newInitArgs.append(missing.begin(), missing.end());
+
+    return rewriter.create<scf::ForOp>(forOp.getLoc(), forOp.getLowerBound(),
+                                       forOp.getUpperBound(), forOp.getStep(),
+                                       newInitArgs);
   }
 };
 
@@ -638,19 +653,85 @@ struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
   using ContextualOpPattern<scf::YieldOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(scf::YieldOp yield,
                                 PatternRewriter& rewriter) const final {
-    llvm::outs() << "restore permutation.\n";
-    for (const auto& pI : parentState().getPermutation()) {
-      llvm::outs() << pI << " ";
-    }
-    llvm::outs() << "\n";
-    for (const auto& i : state().getPermutation()) {
-      llvm::outs() << i << " ";
-    }
-    llvm::outs() << "\n";
-
+    assert(stack().size() >= 2);
+    const auto from = state().getPermutation();
+    const auto to = parentState().getPermutation();
+    restorePermutation(from, to, yield->getLoc(), rewriter);
     stack().pop_back();
     rewriter.eraseOp(yield);
     return success();
+  }
+
+private:
+  /**
+   * @brief Restore permutation by adding SWAPs in linear runtime.
+   *
+   * Finds all cycles of a permutation and swaps along those cycles.
+   *
+   * @example The permutation (1, 2, 3, 4) -> (1, 3, 2, 4) has the
+   * cycles (1)(2, 3)(4). Single element cycles are already at their
+   * desired position. Consequently, we swap 2 and 3.
+   *
+   * @param from The current permutation
+   * @param to   The desired permutation
+   * @param location The location of the SWAPs.
+   * @param rewriter The PatternRewriter.
+   */
+  void restorePermutation(const SmallVectorImpl<std::size_t>& from,
+                          const SmallVectorImpl<std::size_t>& to,
+                          Location location, PatternRewriter& rewriter) const {
+    assert(from.size() == to.size());
+
+    const std::size_t n = from.size();
+
+    DenseMap<std::size_t, std::size_t> pos(n);
+    for (std::size_t i = 0; i < n; ++i) {
+      pos[to[i]] = i;
+    }
+
+    SmallVector<std::size_t> f(n);
+    for (std::size_t i = 0; i < n; ++i) {
+      f[i] = pos[from[i]];
+    }
+
+    llvm::BitVector visited(n);
+    for (std::size_t i = 0; i < n; ++i) {
+      if (visited[i] || f[i] == i) {
+        visited[i] = true;
+        continue;
+      }
+
+      SmallVector<std::size_t, 8> cycle;
+      std::size_t j = i;
+      while (!visited[j]) {
+        visited[j] = true;
+        cycle.push_back(j);
+        j = f[j];
+      }
+
+      if (cycle.size() == 1) {
+        continue;
+      }
+
+      std::size_t a = cycle[0];
+      for (std::size_t k = 1; k < cycle.size(); ++k) {
+        std::size_t b = cycle[k];
+
+        const Value in0 = state().getHardwareValue(a);
+        const Value in1 = state().getHardwareValue(b);
+
+        auto swap = createSwap(location, in0, in1, rewriter);
+        const auto& [out0, out1] = getOuts(swap);
+
+        rewriter.setInsertionPointAfter(swap);
+        rewriter.replaceAllUsesExcept(in0, out1, swap);
+        rewriter.replaceAllUsesExcept(in1, out0, swap);
+
+        state().swapSoftwareIndices(in0, in1);
+        state().forward(in0, out0);
+        state().forward(in1, out1);
+      }
+    }
   }
 };
 
@@ -740,14 +821,6 @@ private:
       const Value in0 = state().getHardwareValue(path[i]);
       const Value in1 = state().getHardwareValue(path[i + 1]);
 
-      // ○: in0   ■: in1
-      //
-      // ■, ○ = SWAP(○, ■)
-      //
-      //  ○──%q0_0──X──%q0_1──■
-      //            │
-      //  ■──%q1_0──X──%q1_1──○
-
       auto swap = createSwap(u->getLoc(), in0, in1, rewriter);
       const auto& [out0, out1] = getOuts(swap);
 
@@ -802,7 +875,7 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
 
     QubitStateStack stack{};
     Architecture arch = getArchitecture(ArchitectureName::MQTTest);
-    IdentityLayout layout(arch.nqubits());
+    RandomLayout layout(arch.nqubits());
 
     RewritePatternSet patterns(module.getContext());
     populateNaiveRoutingPatterns(patterns, stack, arch, layout);

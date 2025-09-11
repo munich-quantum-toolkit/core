@@ -115,13 +115,13 @@ module {
 
             %q0_i_2 = mqtopt.h() %q0_i_1 : !mqtopt.Qubit
             %q1_i_2, %q0_i_3 = mqtopt.x() %q1_i_1 ctrl %q0_i_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit
-            %q2_i_2, %q0_i_4 = mqtopt.x() %q2_i_1 ctrl %q0_i_3 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            %q2_i_2, %q1_i_3 = mqtopt.x() %q2_i_1 ctrl %q1_i_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-            %q0_i_5, %m0 = "mqtopt.measure"(%q0_i_4) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-            %q1_i_3, %m1 = "mqtopt.measure"(%q1_i_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+            %q0_i_4, %m0 = "mqtopt.measure"(%q0_i_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+            %q1_i_4, %m1 = "mqtopt.measure"(%q1_i_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
             %q2_i_3, %m2 = "mqtopt.measure"(%q2_i_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-            scf.yield %q0_i_5, %q1_i_3, %q2_i_3 : !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
+            scf.yield %q0_i_4, %q1_i_4, %q2_i_3 : !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
         }
 
         mqtopt.deallocQubit %q0_1_ghz1000
