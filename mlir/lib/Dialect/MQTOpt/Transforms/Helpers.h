@@ -145,10 +145,10 @@ getUnitaryMatrix(UnitaryInterface op) {
 [[nodiscard]] inline dd::GateMatrix multiply(dd::GateMatrix lhs,
                                              dd::GateMatrix rhs) {
   return {
-    lhs.at(0) * rhs.at(0) + lhs.at(1) * rhs.at(2),
-    lhs.at(0) * rhs.at(1) + lhs.at(1) * rhs.at(3),
-    lhs.at(2) * rhs.at(0) + lhs.at(3) * rhs.at(2),
-    lhs.at(2) * rhs.at(1) + lhs.at(3) * rhs.at(3),
+      lhs.at(0) * rhs.at(0) + lhs.at(1) * rhs.at(2),
+      lhs.at(0) * rhs.at(1) + lhs.at(1) * rhs.at(3),
+      lhs.at(2) * rhs.at(0) + lhs.at(3) * rhs.at(2),
+      lhs.at(2) * rhs.at(1) + lhs.at(3) * rhs.at(3),
   };
 }
 } // namespace mqt::ir::opt::helpers

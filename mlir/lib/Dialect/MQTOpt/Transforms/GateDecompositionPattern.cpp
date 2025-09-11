@@ -185,7 +185,8 @@ struct EulerDecompositionPattern final
       auto r = std::fmod(a, b);
       return (r < 0.0) ? r + std::abs(b) : r;
     };
-    // Wrap angle into interval [-π,π). If within atol of the endpoint, clamp to -π
+    // Wrap angle into interval [-π,π). If within atol of the endpoint, clamp to
+    // -π
     auto mod2pi = [&](qc::fp angle) -> qc::fp {
       // remEuclid() isn't exactly the same as Python's % operator, but
       // because the RHS here is a constant and positive it is effectively
