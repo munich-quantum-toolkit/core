@@ -14,7 +14,6 @@
 #include <cstdint>
 #include <format>
 #include <llvm/ADT/SmallVector.h>
-#include <memory>
 #include <stdexcept>
 #include <string>
 

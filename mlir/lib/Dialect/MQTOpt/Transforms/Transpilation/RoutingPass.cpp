@@ -11,6 +11,11 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
+#include "mlir/IR/BuiltinTypes.h"
+
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SetVector.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <cassert>
@@ -35,6 +40,7 @@
 #include <numeric>
 #include <queue>
 #include <random>
+#include <ranges>
 #include <tuple>
 #include <utility>
 
@@ -124,7 +130,7 @@ constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
  */
 class Layout {
 public:
-  [[nodiscard]] virtual llvm::SmallVector<std::size_t> generate() const = 0;
+  [[nodiscard]] virtual SmallVector<std::size_t> generate() const = 0;
   explicit Layout(const std::size_t nqubits) : nqubits_(nqubits) {}
   virtual ~Layout() = default;
 
@@ -142,8 +148,8 @@ class IdentityLayout final : public Layout {
 public:
   using Layout::Layout;
 
-  [[nodiscard]] llvm::SmallVector<std::size_t> generate() const final {
-    llvm::SmallVector<std::size_t, 0> mapping(nqubits());
+  [[nodiscard]] SmallVector<std::size_t> generate() const final {
+    SmallVector<std::size_t, 0> mapping(nqubits());
     std::iota(mapping.begin(), mapping.end(), 0);
     return mapping;
   }
@@ -156,11 +162,11 @@ class RandomLayout final : public Layout {
 public:
   using Layout::Layout;
 
-  [[nodiscard]] llvm::SmallVector<std::size_t> generate() const final {
+  [[nodiscard]] SmallVector<std::size_t> generate() const final {
     std::random_device rd;
     std::mt19937 g(rd());
 
-    llvm::SmallVector<std::size_t, 0> mapping(nqubits());
+    SmallVector<std::size_t, 0> mapping(nqubits());
     std::iota(mapping.begin(), mapping.end(), 0);
     std::shuffle(mapping.begin(), mapping.end(), g);
     return mapping;
@@ -172,17 +178,17 @@ public:
  */
 class ConstantLayout final : public Layout {
 public:
-  explicit ConstantLayout(const llvm::SmallVectorImpl<std::size_t>& mapping)
+  explicit ConstantLayout(const SmallVectorImpl<std::size_t>& mapping)
       : Layout(mapping.size()), mapping_(nqubits()) {
     std::ranges::copy(mapping, mapping_.begin());
   }
 
-  [[nodiscard]] llvm::SmallVector<std::size_t> generate() const final {
+  [[nodiscard]] SmallVector<std::size_t> generate() const final {
     return mapping_;
   }
 
 private:
-  llvm::SmallVector<std::size_t> mapping_;
+  SmallVector<std::size_t> mapping_;
 };
 
 //===----------------------------------------------------------------------===//
@@ -190,43 +196,81 @@ private:
 //===----------------------------------------------------------------------===//
 
 /**
- * @brief Manage mapping between SSA values and static hardware indices.
+ * @brief Manage mapping between SSA values and physical hardware indices.
  *
  * Provides retrieve(..) and release(...) methods that are to be called when
  * replacing alloc's and dealloc's. Internally, these methods use a queue
- * to manage free / unused static qubit SSA values. Using a queue ensures
+ * to manage free / unused hardware qubit SSA values. Using a queue ensures
  * that alloc's and dealloc's can be in any arbitrary order.
  *
  * This class generates and applies the initial layout at construction.
- * Consequently, `nqubits` back-to-back retrievals will receive the static
+ * Consequently, `nqubits` back-to-back retrievals will receive the hardware
  * qubits defined by the initial layout.
  * If all allocated qubits are deallocated again, e.g. we reach the end of a
  * "circuit", the initial layout will be re-generated and re-applied.
+ *
+ * Note that we use the terminology "hardware" and "software" qubits here,
+ * because "virtual" (opposed to physical) and "static" (opposed to dynamic)
+ * are C++ keywords.
  */
 class QubitStateManager {
 public:
-  explicit QubitStateManager(const llvm::SmallVectorImpl<Value>& qubits,
+  explicit QubitStateManager(const SmallVectorImpl<Value>& hardwareQubits,
                              Layout& layout)
-      : indexToValue_(qubits.size()), layout_(&layout) {
-    reset(qubits);
+      : hardwareQubits_(hardwareQubits.size()), layout_(&layout) {
+    reset(hardwareQubits);
   }
 
   /**
-   * @brief Return static index from SSA value @p v.
+   * @brief Return hardware index from SSA value.
    */
-  [[nodiscard]] std::size_t get(const Value q) const {
-    return valueToIndex_.lookup(q);
+  [[nodiscard]] std::size_t getHardwareIndex(const Value q) const {
+    return mapping_.at(q).first;
   }
 
   /**
-   * @brief Return SSA Value from static index @p i.
+   * @brief Return hardware index from SSA value.
+   * @param q The SSA value.
    */
-  [[nodiscard]] Value get(const std::size_t i) const {
-    return indexToValue_[i];
+  [[nodiscard]] std::size_t getSoftwareIndex(const Value q) const {
+    return mapping_.at(q).second;
   }
 
   /**
-   * @brief Retrieve free, unused, static qubit.
+   * @brief Return SSA Value from hardware index.
+   * @param hardwareIndex The hardware index.
+   */
+  [[nodiscard]] Value getHardwareValue(const std::size_t hardwareIndex) const {
+    return hardwareQubits_[hardwareIndex];
+  }
+
+  /**
+   * @brief Return the SSA values for hardware indices from 0...nqubits.
+   */
+  [[nodiscard]] SmallVector<Value> getHardwareQubits() const {
+    return hardwareQubits_;
+  }
+
+  /**
+   * @brief Return the number of hardware qubits.
+   */
+  [[nodiscard]] std::size_t getNumQubits() const {
+    return hardwareQubits_.size();
+  }
+
+  /**
+   * @brief Return the current software to hardware qubit mapping.
+   */
+  SmallVector<std::size_t> getPermutation() {
+    llvm::SmallVector<std::size_t> perm(getNumQubits());
+    for (const auto& [q, map] : mapping_) {
+      perm[map.second] = map.first;
+    }
+    return perm;
+  }
+
+  /**
+   * @brief Retrieve free, unused, hardware qubit.
    * @return SSA value of static qubit or `nullptr` if there are no more free
    * qubits.
    */
@@ -236,18 +280,18 @@ public:
     }
 
     const std::size_t i = free_.front();
-    const Value q = get(i);
+    const Value q = getHardwareValue(i);
     free_.pop();
     return q;
   }
 
   /**
-   * @brief Release static qubit.
+   * @brief Release hardware qubit.
    */
   void release(Value q) {
-    free_.push(get(q));
-    if (nfree() == nqubits()) {
-      reset(indexToValue_);
+    free_.push(getHardwareIndex(q));
+    if (free_.size() == getNumQubits()) {
+      reset(hardwareQubits_);
     }
   }
 
@@ -256,42 +300,32 @@ public:
    * @details Replace @p in with @p out in maps.
    */
   void forward(const Value in, const Value out) {
-    const std::size_t i = get(in);
-    valueToIndex_[out] = i;
-    indexToValue_[i] = out;
-    valueToIndex_.erase(in);
+    const std::size_t h = getHardwareIndex(in);
+    mapping_[out] = mapping_.at(in);
+    hardwareQubits_[h] = out;
+    mapping_.erase(in);
   }
 
   /**
-   * @brief Return the current permutation, i.e., the current mapping from
-   * virtual to physical qubits.
+   * @brief Swap software indices.
    */
-  llvm::SmallVector<std::size_t> permutation() {
-    llvm::SmallVector<std::size_t> perm;
-    perm.reserve(nqubits());
-    for (const auto entry : valueToIndex_) {
-      perm.push_back(entry.second);
-    }
-    return perm;
+  void swapSoftwareIndices(const Value a, const Value b) {
+    std::swap(mapping_[a].second, mapping_[b].second);
   }
-
-  /**
-   * @brief Return the number of physical qubits.
-   */
-  [[nodiscard]] std::size_t nqubits() const { return indexToValue_.size(); }
-
-  /**
-   * @brief Return the number of free qubits.
-   */
-  [[nodiscard]] std::size_t nfree() const { return free_.size(); }
 
 private:
+  /**
+   * @brief A pair of indices, where first is the hardware index
+   * and second is the software index.
+   */
+  using QubitMapping = std::pair<std::size_t, std::size_t>;
+
   /**
    * @brief Clear the state.
    */
   void clear() {
     free_ = std::queue<std::size_t>(); // Clear queue.
-    valueToIndex_.clear();
+    mapping_.clear();
   }
 
   /**
@@ -300,19 +334,18 @@ private:
    * Clears the queue and generates the initial layout. Then fills the queue
    * with static qubit SSA values, permutated by the initial layout.
    *
-   * @param qubits A vector of SSA values where [0] = 0th static qubits, [1] =
-   * 1st static qubits, etc.
+   * @param qubits A vector of SSA values.
    */
-  void reset(const llvm::SmallVectorImpl<Value>& qubits) {
+  void reset(const SmallVectorImpl<Value>& hardwareQubits) {
     const auto mapping = layout().generate();
 
     clear();
-    for (std::size_t j = 0; j < qubits.size(); ++j) {
-      const std::size_t i = mapping[j];
-      const Value q = qubits[i];
-      valueToIndex_[q] = i;
-      indexToValue_[i] = q;
-      free_.push(i);
+    for (std::size_t s = 0; s < getNumQubits(); ++s) {
+      const std::size_t h = mapping[s];
+      const Value q = hardwareQubits[h];
+      hardwareQubits_[h] = q;
+      mapping_.try_emplace(q, std::make_pair(h, s));
+      free_.push(h);
     }
   }
 
@@ -322,22 +355,19 @@ private:
   [[nodiscard]] Layout& layout() const { return *layout_; }
 
   /**
-   * @brief Maps SSA values to static indices.
-   *
-   * Using MapVector enables insertion-order iteration which is useful
-   * for determining the current permutation.
+   * @brief Maps SSA values to hardware and software indices.
    */
-  llvm::MapVector<Value, std::size_t> valueToIndex_;
+  DenseMap<Value, QubitMapping> mapping_;
 
   /**
-   * @brief Maps static indices to SSA values.
+   * @brief Maps hardware indices to SSA values.
    *
-   * The size of this vector is the number of static qubits.
+   * The size of this vector is the number of hardware qubits.
    */
-  llvm::SmallVector<Value, 0> indexToValue_;
+  SmallVector<Value> hardwareQubits_;
 
   /**
-   * @brief Queue of available static qubit indices.
+   * @brief Queue of available hardware indices.
    */
   std::queue<std::size_t> free_;
 
@@ -347,13 +377,69 @@ private:
   Layout* layout_;
 };
 
+using QubitStateStack = SmallVector<QubitStateManager, 2>;
+
+//===----------------------------------------------------------------------===//
+// Pre-Order Walk Pattern Rewrite Driver
+//===----------------------------------------------------------------------===//
+
+struct PreOrderWalkDriverAction final
+    : tracing::ActionImpl<PreOrderWalkDriverAction> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PreOrderWalkDriverAction)
+  using ActionImpl::ActionImpl;
+  // NOLINTNEXTLINE(readability-identifier-naming) // MLIR requires lowercase.
+  static constexpr StringLiteral tag = "walk-and-apply-patterns-pre-order";
+  void print(raw_ostream& os) const override { os << tag; }
+};
+
+/**
+ * @brief A pre-order version of the walkAndApplyPatterns driver.
+ *
+ * Walks the IR pre-order and fills the worklist to ensure that each
+ * operation is visited exactly once (even if we change parent ops).
+ *
+ * @param op The operation to walk. Does not visit the op itself.
+ * @param patterns A set of patterns to apply.
+ * @link Adapted from
+ * https://mlir.llvm.org/doxygen/WalkPatternRewriteDriver_8cpp_source.html
+ */
+void walkPreOrderAndApplyPatterns(Operation* op,
+                                  const FrozenRewritePatternSet& patterns) {
+  MLIRContext* ctx = op->getContext();
+  PatternRewriter rewriter(ctx);
+
+  PatternApplicator applicator(patterns);
+  applicator.applyDefaultCostModel();
+
+  SmallVector<Operation*> worklist;
+  ctx->executeAction<PreOrderWalkDriverAction>(
+      [&] {
+        op->walk<WalkOrder::PreOrder>(
+            [&](Operation* current) { worklist.push_back(current); });
+
+        for (const auto& curr : worklist) {
+          std::ignore = applicator.matchAndRewrite(curr, rewriter);
+        }
+      },
+      {op});
+}
+
 //===----------------------------------------------------------------------===//
 // Patterns
 //===----------------------------------------------------------------------===//
 
-namespace {
-
-using QubitStateStack = llvm::SmallVector<QubitStateManager, 2>;
+/**
+ * @brief Verify if a operation requires routing.
+ *
+ * Walk the IR and interrupt the traversal if any unitary is found.
+ *
+ * @param op The operation to walk.
+ * @return True iff the walk finds a unitary.
+ */
+bool containsUnitary(Operation* op) {
+  return op->walk([&](UnitaryInterface) { return WalkResult::interrupt(); })
+      .wasInterrupted();
+}
 
 /**
  * @brief Initialize entry point function.
@@ -365,8 +451,7 @@ using QubitStateStack = llvm::SmallVector<QubitStateManager, 2>;
  * `qubits.size()` many static qubits.
  * @param rewriter A PatternRewriter.
  */
-void initEntryPoint(llvm::SmallVectorImpl<Value>& qubits,
-                    PatternRewriter& rewriter) {
+void initEntryPoint(SmallVectorImpl<Value>& qubits, PatternRewriter& rewriter) {
   for (std::size_t i = 0; i < qubits.size(); ++i) {
     auto op =
         rewriter.create<QubitOp>(rewriter.getInsertionPoint()->getLoc(), i);
@@ -391,6 +476,9 @@ public:
       : BasePattern(ctx), stack_(&stack), arch_(&arch), layout_(&layout) {}
 
 protected:
+  [[nodiscard]] QubitStateManager& parentState() const {
+    return *std::next(stack().end(), -2);
+  }
   [[nodiscard]] QubitStateManager& state() const { return stack().back(); }
   [[nodiscard]] QubitStateStack& stack() const { return *stack_; }
   [[nodiscard]] Architecture& arch() const { return *arch_; }
@@ -425,12 +513,15 @@ struct FuncOpPattern final : ContextualOpPattern<func::FuncOp> {
 
   LogicalResult matchAndRewrite(func::FuncOp func,
                                 PatternRewriter& rewriter) const final {
+    if (!containsUnitary(func)) {
+      return failure();
+    }
 
     llvm::SmallVector<Value> qubits(arch().nqubits());
 
+    // In this if-branch we would collect (or add) the qubits
+    // from (to) the argument-list.
     if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
-      // This would be the point where we would collect the qubits from the
-      // argument-list.
       return failure();
     }
 
@@ -451,19 +542,114 @@ struct IfOpPattern final : OpRewritePattern<scf::IfOp> {
   }
 };
 
-struct ForOpPattern final : OpRewritePattern<scf::ForOp> {
-  explicit ForOpPattern(MLIRContext* ctx) : OpRewritePattern<scf::ForOp>(ctx) {}
-  LogicalResult matchAndRewrite(scf::ForOp /*op*/,
-                                PatternRewriter& /*rewriter*/) const final {
+struct ForOpPattern final : ContextualOpPattern<scf::ForOp> {
+  using ContextualOpPattern<scf::ForOp>::ContextualOpPattern;
+  LogicalResult matchAndRewrite(scf::ForOp loop,
+                                PatternRewriter& rewriter) const final {
+    if (!containsUnitary(loop)) {
+      return failure();
+    }
+
+    SmallVector<Value> physical = state().getHardwareQubits();
+
+    // SetVector of already included static qubits.
+    llvm::SetVector<Value> included;
+    // Vector of classical arguments such as integers, floats, etc.
+    SmallVector<Value, 4> classicalArgs;
+    // Vector of missing (ALL \ INCLUDED) static qubits.
+    SmallVector<Value> extra;
+
+    for (const auto& arg : loop.getInitArgs()) {
+      if (arg.getType() != rewriter.getType<QubitType>()) {
+        classicalArgs.push_back(arg);
+        continue;
+      }
+      included.insert(arg);
+    }
+
+    for (const auto& q : physical) {
+      if (!included.contains(q)) {
+        extra.push_back(q);
+      }
+    }
+    // TODO: Just add extra to existing once.
+    SmallVector<Value> newInitArgs;
+    newInitArgs.reserve(classicalArgs.size() + physical.size());
+    newInitArgs.append(classicalArgs.begin(), classicalArgs.end());
+    newInitArgs.append(included.begin(), included.end());
+    newInitArgs.append(extra.begin(), extra.end());
+
+    auto newLoop = rewriter.create<scf::ForOp>(
+        loop.getLoc(), loop.getLowerBound(), loop.getUpperBound(),
+        loop.getStep(), newInitArgs);
+
+    {
+      // Map new arguments to old in the same order (which we haven't changed.)
+      SmallVector<Value> mapping;
+      for (const auto& arg : newLoop.getBody()->getArguments()) {
+        mapping.push_back(arg);
+      }
+      rewriter.mergeBlocks(loop.getBody(), newLoop.getBody(), mapping);
+    }
+
+    {
+      scf::YieldOp yield =
+          dyn_cast<scf::YieldOp>(newLoop.getBody()->getTerminator());
+      assert(yield);
+      const std::size_t nresults = yield.getResults().size();
+
+      SmallVector<Value> newYieldOperands;
+      newYieldOperands.reserve(newLoop.getNumRegionIterArgs());
+
+      for (const auto& operand : yield.getResults()) {
+        newYieldOperands.push_back(operand);
+      }
+
+      for (const auto& arg :
+           newLoop.getRegionIterArgs() | std::views::drop(nresults)) {
+        newYieldOperands.push_back(arg);
+      }
+
+      rewriter.setInsertionPoint(yield);
+      rewriter.create<scf::YieldOp>(yield->getLoc(), newYieldOperands);
+    }
+
+    if (loop.getNumResults() > 0) {
+      // Replace old results with new.
+      auto newResults = newLoop.getResults().take_front(loop.getNumResults());
+      rewriter.replaceOp(loop, newResults);
+    }
+
+    stack().push_back(state()); // Add copy to stack.
+
+    // Forward out-of-loop and in-loop state.
+    std::size_t i = 0;
+    for (const auto& arg : newLoop.getInitArgs()) {
+      parentState().forward(arg, newLoop->getResult(i));
+      state().forward(arg, newLoop.getRegionIterArg(i));
+      i++;
+    }
+
     return success();
   }
 };
 
-struct YieldOpPattern final : OpRewritePattern<scf::YieldOp> {
-  explicit YieldOpPattern(MLIRContext* ctx)
-      : OpRewritePattern<scf::YieldOp>(ctx) {}
-  LogicalResult matchAndRewrite(scf::YieldOp /*op*/,
-                                PatternRewriter& /*rewriter*/) const final {
+struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
+  using ContextualOpPattern<scf::YieldOp>::ContextualOpPattern;
+  LogicalResult matchAndRewrite(scf::YieldOp yield,
+                                PatternRewriter& rewriter) const final {
+    llvm::outs() << "restore permutation.\n";
+    for (const auto& pI : parentState().getPermutation()) {
+      llvm::outs() << pI << " ";
+    }
+    llvm::outs() << "\n";
+    for (const auto& i : state().getPermutation()) {
+      llvm::outs() << i << " ";
+    }
+    llvm::outs() << "\n";
+
+    stack().pop_back();
+    rewriter.eraseOp(yield);
     return success();
   }
 };
@@ -491,7 +677,7 @@ struct ResetPattern final : ContextualOpPattern<ResetOp> {
   LogicalResult matchAndRewrite(ResetOp reset,
                                 PatternRewriter& /*rewriter*/) const final {
     state().forward(reset.getInQubit(), reset.getOutQubit());
-    return failure();
+    return success();
   }
 };
 
@@ -504,28 +690,24 @@ struct NaiveUnitaryPattern final
                                 PatternRewriter& rewriter) const final {
     // Global-phase or zero-qubit unitary: Nothing to do.
     if (u.getAllInQubits().empty()) {
-      return failure();
+      return success();
     }
 
-    // Single-qubit: Forward mapping
+    // Single-qubit: Forward mapping.
     if (!isTwoQubitGate(u)) {
       state().forward(u.getAllInQubits()[0], u.getAllOutQubits()[0]);
-      return failure();
+      return success();
     }
 
-    // Two-qubit: Ensure executable on hardware.
     if (!isExecutable(u)) {
-      makeExecutable(u, rewriter);
+      makeExecutable(u, rewriter); // Ensure executability on hardware.
     }
 
-    // After ensuring executability, forward outputs.
     const auto& [execIn0, execIn1] = getIns(u);
     const auto& [execOut0, execOut1] = getOuts(u);
-
     state().forward(execIn0, execOut0);
     state().forward(execIn1, execOut1);
-
-    return failure();
+    return success(); // Gate is now executable: Don't revisit.
   }
 
 private:
@@ -534,7 +716,8 @@ private:
    */
   [[nodiscard]] bool isExecutable(UnitaryInterface u) const {
     const auto& [in0, in1] = getIns(u);
-    return arch().areAdjacent(state().get(in0), state().get(in1));
+    return arch().areAdjacent(state().getHardwareIndex(in0),
+                              state().getHardwareIndex(in1));
   }
 
   /**
@@ -542,7 +725,8 @@ private:
    */
   [[nodiscard]] llvm::SmallVector<std::size_t> getPath(const Value in0,
                                                        const Value in1) const {
-    return arch().shortestPathBetween(state().get(in0), state().get(in1));
+    return arch().shortestPathBetween(state().getHardwareIndex(in0),
+                                      state().getHardwareIndex(in1));
   }
 
   /**
@@ -553,19 +737,27 @@ private:
     auto path = getPath(q0, q1);
 
     for (std::size_t i = 0; i < path.size() - 2; ++i) {
-      const Value in0 = state().get(path[i]);
-      const Value in1 = state().get(path[i + 1]);
+      const Value in0 = state().getHardwareValue(path[i]);
+      const Value in1 = state().getHardwareValue(path[i + 1]);
 
-      // Y(out), X(out) = SWAP X(in), Y(in)
+      // ○: in0   ■: in1
+      //
+      // ■, ○ = SWAP(○, ■)
+      //
+      //  ○──%q0_0──X──%q0_1──■
+      //            │
+      //  ■──%q1_0──X──%q1_1──○
+
       auto swap = createSwap(u->getLoc(), in0, in1, rewriter);
-      const auto& [out1, out0] = getOuts(swap);
+      const auto& [out0, out1] = getOuts(swap);
 
       rewriter.setInsertionPointAfter(swap);
-      rewriter.replaceAllUsesExcept(in0, out0, swap);
-      rewriter.replaceAllUsesExcept(in1, out1, swap);
+      rewriter.replaceAllUsesExcept(in0, out1, swap);
+      rewriter.replaceAllUsesExcept(in1, out0, swap);
 
-      state().forward(in0, out1);
-      state().forward(in1, out0);
+      state().swapSoftwareIndices(in0, in1);
+      state().forward(in0, out0);
+      state().forward(in1, out1);
     }
   }
 };
@@ -575,7 +767,7 @@ struct MeasurePattern final : ContextualOpPattern<MeasureOp> {
   LogicalResult matchAndRewrite(MeasureOp m,
                                 PatternRewriter& /*rewriter*/) const final {
     state().forward(m.getInQubit(), m.getOutQubit());
-    return failure();
+    return success();
   }
 };
 
@@ -595,51 +787,11 @@ struct DeallocQubitPattern final : ContextualOpPattern<DeallocQubitOp> {
 void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
                                   QubitStateStack& stack, Architecture& arch,
                                   Layout& layout) {
-  patterns.add<IfOpPattern, ForOpPattern>(patterns.getContext());
-  patterns.add<FuncOpPattern, AllocQubitPattern, ResetPattern,
-               NaiveUnitaryPattern, MeasurePattern, DeallocQubitPattern>(
-      patterns.getContext(), stack, arch, layout);
+  patterns.add<IfOpPattern>(patterns.getContext());
+  patterns.add<FuncOpPattern, ForOpPattern, YieldOpPattern, AllocQubitPattern,
+               ResetPattern, NaiveUnitaryPattern, MeasurePattern,
+               DeallocQubitPattern>(patterns.getContext(), stack, arch, layout);
 }
-
-struct PreOrderWalkDriverAction final
-    : tracing::ActionImpl<PreOrderWalkDriverAction> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PreOrderWalkDriverAction)
-  using ActionImpl::ActionImpl;
-  // NOLINTNEXTLINE(readability-identifier-naming) // MLIR requires lowercase.
-  static constexpr StringLiteral tag = "walk-and-apply-patterns-pre-order";
-  void print(raw_ostream& os) const override { os << tag; }
-};
-
-/**
- * @brief A pre-order version of the walkAndApplyPatterns driver.
- *
- * Instead of a post-order worklist this driver simply walks the IR in pre-order
- * (parents first).
- *
- * @param op The operation to walk. Does not visit the op itself.
- * @param patterns A set of patterns to apply.
- * @link Adapted from
- * https://mlir.llvm.org/doxygen/WalkPatternRewriteDriver_8cpp_source.html
- */
-void walkPreOrderAndApplyPatterns(Operation* op,
-                                  const FrozenRewritePatternSet& patterns) {
-  MLIRContext* ctx = op->getContext();
-  PatternRewriter rewriter(ctx);
-
-  PatternApplicator applicator(patterns);
-  applicator.applyDefaultCostModel();
-
-  ctx->executeAction<PreOrderWalkDriverAction>(
-      [&] {
-        op->walk<WalkOrder::PreOrder>([&](Operation* x) {
-          std::ignore = applicator.matchAndRewrite(x, rewriter);
-        });
-      },
-      {op});
-}
-
-}; // namespace
-
 /**
  * @brief This pass ensures that the connectivity constraints of the target
  * architecture are met.
@@ -650,11 +802,10 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
 
     QubitStateStack stack{};
     Architecture arch = getArchitecture(ArchitectureName::MQTTest);
-    RandomLayout layout(arch.nqubits());
+    IdentityLayout layout(arch.nqubits());
 
     RewritePatternSet patterns(module.getContext());
     populateNaiveRoutingPatterns(patterns, stack, arch, layout);
-
     walkPreOrderAndApplyPatterns(module, std::move(patterns));
   }
 };

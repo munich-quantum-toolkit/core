@@ -9,89 +9,125 @@
 // RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(routing,verify-routing)" | FileCheck %s
 
 module {
-    module {
-        func.func @main() attributes { entry_point } {
+    func.func @main() attributes { entry_point } {
 
-            //
-            // Figure 4 in SABRE Paper "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices".
+        //
+        // Figure 4 in SABRE Paper "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices".
+        //                        ┌───┐
+        // 0: ───────■────────────┤ 8 ├
+        //         ┌─┴─┐          └─┬─┘
+        // 1: ──■──┤ 3 ├──■─────────┼──
+        //    ┌─┴─┐└───┘┌─┴─┐       │
+        // 2: ┤ 1 ├──■──┤ 5 ├───────┼──
+        //    └───┘┌─┴─┐└───┘       │
+        // 3: ─────┤ 4 ├──■────■────■──
+        //         └───┘  │  ┌─┴─┐
+        // 4: ──■─────────┼──┤ 7 ├─────
+        //    ┌─┴─┐     ┌─┴─┐└───┘
+        // 5: ┤ 2 ├─────┤ 6 ├──────────
+        //    └───┘     └───┘
 
-            %q0_0 = mqtopt.allocQubit
-            %q1_0 = mqtopt.allocQubit
-            %q2_0 = mqtopt.allocQubit
-            %q3_0 = mqtopt.allocQubit
-            %q4_0 = mqtopt.allocQubit
-            %q5_0 = mqtopt.allocQubit
+        %q0_0 = mqtopt.allocQubit
+        %q1_0 = mqtopt.allocQubit
+        %q2_0 = mqtopt.allocQubit
+        %q3_0 = mqtopt.allocQubit
+        %q4_0 = mqtopt.allocQubit
+        %q5_0 = mqtopt.allocQubit
 
+        %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
+        %q1_1 = mqtopt.h() %q1_0 : !mqtopt.Qubit
+        %q4_1 = mqtopt.h() %q4_0 : !mqtopt.Qubit
 
-            %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
-            %q1_1 = mqtopt.h() %q1_0 : !mqtopt.Qubit
-            %q4_1 = mqtopt.h() %q4_0 : !mqtopt.Qubit
+        %q0_2 = mqtopt.z() %q0_1 : !mqtopt.Qubit
+        %q2_1, %q1_2 = mqtopt.x() %q2_0 ctrl %q1_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g1
+        %q5_1, %q4_2 = mqtopt.x() %q5_0 ctrl %q4_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g2
 
-            %q0_2 = mqtopt.z() %q0_1 : !mqtopt.Qubit
-            %q2_1, %q1_2 = mqtopt.x() %q2_0 ctrl %q1_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g1
-            %q5_1, %q4_2 = mqtopt.x() %q5_0 ctrl %q4_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g2
+        %q1_3, %q0_3 = mqtopt.x() %q1_2 ctrl %q0_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g3
+        %q3_1, %q2_2 = mqtopt.x() %q3_0 ctrl %q2_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g4
 
-            %q1_3, %q0_3 = mqtopt.x() %q1_2 ctrl %q0_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g3
-            %q3_1, %q2_2 = mqtopt.x() %q3_0 ctrl %q2_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g4
+        %q2_3 = mqtopt.h() %q2_2 : !mqtopt.Qubit
+        %q3_2 = mqtopt.h() %q3_1 : !mqtopt.Qubit
 
-            %q2_3 = mqtopt.h() %q2_2 : !mqtopt.Qubit
-            %q3_2 = mqtopt.h() %q3_1 : !mqtopt.Qubit
+        %q2_4, %q1_4 = mqtopt.x() %q2_3 ctrl %q1_3 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g5
+        %q5_2, %q3_3 = mqtopt.x() %q5_1 ctrl %q3_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g6
 
-            %q2_4, %q1_4 = mqtopt.x() %q2_3 ctrl %q1_3 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g5
-            %q5_2, %q3_3 = mqtopt.x() %q5_1 ctrl %q3_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g6
+        %q3_4 = mqtopt.z() %q3_3 : !mqtopt.Qubit
 
-            %q3_4 = mqtopt.z() %q3_3 : !mqtopt.Qubit
+        %q3_5, %q4_3 = mqtopt.x() %q3_4 ctrl %q4_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g7
 
-            %q3_5, %q4_3 = mqtopt.x() %q3_4 ctrl %q4_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g7
+        %q0_4, %q3_6 = mqtopt.x() %q0_3 ctrl %q3_5 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g8
 
-            %q0_4, %q3_6 = mqtopt.x() %q0_3 ctrl %q3_5 : !mqtopt.Qubit ctrl !mqtopt.Qubit // g8
+        mqtopt.deallocQubit %q0_4
+        mqtopt.deallocQubit %q1_4
+        mqtopt.deallocQubit %q2_4
+        mqtopt.deallocQubit %q3_6
+        mqtopt.deallocQubit %q4_3
+        mqtopt.deallocQubit %q5_2
 
+        //
+        // The bell state.
 
-            mqtopt.deallocQubit %q0_4
-            mqtopt.deallocQubit %q1_4
-            mqtopt.deallocQubit %q2_4
-            mqtopt.deallocQubit %q3_6
-            mqtopt.deallocQubit %q4_3
-            mqtopt.deallocQubit %q5_2
+        %q0_0_bell = mqtopt.allocQubit
+        %q0_1_bell = mqtopt.h() %q0_0_bell : !mqtopt.Qubit
 
-            //
-            // The bell state.
+        %q1_0_bell = mqtopt.allocQubit
+        %q1_1_bell, %q0_2_bell = mqtopt.x() %q1_0_bell ctrl %q0_1_bell : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-            %q0_0_bell = mqtopt.allocQubit
-            %q0_1_bell = mqtopt.h() %q0_0_bell : !mqtopt.Qubit
+        %q0_3_bell, %m0_0_bell = "mqtopt.measure"(%q0_2_bell) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %q1_2_bell, %m1_0_bell = "mqtopt.measure"(%q1_1_bell) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-            %q1_0_bell = mqtopt.allocQubit
-            %q1_1_bell, %q0_2_bell = mqtopt.x() %q1_0_bell ctrl %q0_1_bell : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        mqtopt.deallocQubit %q0_3_bell
+        mqtopt.deallocQubit %q1_2_bell
 
-            %q0_3_bell, %m0_0_bell = "mqtopt.measure"(%q0_2_bell) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-            %q1_2_bell, %m1_0_bell = "mqtopt.measure"(%q1_1_bell) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        //
+        // Bell in a loop.
 
+        %lb = index.constant 0
+        %ub = index.constant 1000
+        %step = index.constant 1
 
-            mqtopt.deallocQubit %q0_3_bell
-            mqtopt.deallocQubit %q1_2_bell
+        scf.for %iv = %lb to %ub step %step {
+            %q0_0_bell1000 = mqtopt.allocQubit
+            %q1_0_bell1000 = mqtopt.allocQubit
 
-            //
-            // Bell in a loop.
+            %q0_1_bell1000 = mqtopt.h() %q0_0_bell1000 : !mqtopt.Qubit
+            %q1_1_bell1000, %q0_2_bell1000 = mqtopt.x() %q1_0_bell1000 ctrl %q0_1_bell1000 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-            %lb = index.constant 0
-            %ub = index.constant 1000
-            %step = index.constant 1
+            %q0_3_bell1000, %m0_0_bell1000 = "mqtopt.measure"(%q0_2_bell1000) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+            %q1_2_bell1000, %m1_0_bell1000 = "mqtopt.measure"(%q1_1_bell1000) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-            scf.for %iv = %lb to %ub step %step {
-                %q0_0_bell1000 = mqtopt.allocQubit
-                %q1_0_bell1000 = mqtopt.allocQubit
-
-                %q0_1_bell1000 = mqtopt.h() %q0_0_bell1000 : !mqtopt.Qubit
-                %q1_1_bell1000, %q0_2_bell1000 = mqtopt.x() %q1_0_bell1000 ctrl %q0_1_bell1000 : !mqtopt.Qubit ctrl !mqtopt.Qubit
-
-                %q0_3_bell1000, %m0_0_bell1000 = "mqtopt.measure"(%q0_2_bell1000) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-                %q1_2_bell1000, %m1_0_bell1000 = "mqtopt.measure"(%q1_1_bell1000) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-
-                mqtopt.deallocQubit %q0_3_bell1000
-                mqtopt.deallocQubit %q1_2_bell1000
-            }
-
-            return
+            mqtopt.deallocQubit %q0_3_bell1000
+            mqtopt.deallocQubit %q1_2_bell1000
         }
+
+        //
+        // GHZ in a loop.
+
+        %q0_0_ghz1000 = mqtopt.allocQubit
+        %q1_0_ghz1000 = mqtopt.allocQubit
+        %q2_0_ghz1000 = mqtopt.allocQubit
+
+        %q0_1_ghz1000, %q1_1_ghz1000, %q2_1_ghz1000 = scf.for %iv = %lb to %ub step %step
+            iter_args(%q0_i_0 = %q0_0_ghz1000, %q1_i_0 = %q1_0_ghz1000, %q2_i_0 = %q2_0_ghz1000) -> (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit) {
+            %q0_i_1 = "mqtopt.reset"(%q0_i_0) : (!mqtopt.Qubit) -> !mqtopt.Qubit
+            %q1_i_1 = "mqtopt.reset"(%q1_i_0) : (!mqtopt.Qubit) -> !mqtopt.Qubit
+            %q2_i_1 = "mqtopt.reset"(%q2_i_0) : (!mqtopt.Qubit) -> !mqtopt.Qubit
+
+            %q0_i_2 = mqtopt.h() %q0_i_1 : !mqtopt.Qubit
+            %q1_i_2, %q0_i_3 = mqtopt.x() %q1_i_1 ctrl %q0_i_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            %q2_i_2, %q0_i_4 = mqtopt.x() %q2_i_1 ctrl %q0_i_3 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+            %q0_i_5, %m0 = "mqtopt.measure"(%q0_i_4) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+            %q1_i_3, %m1 = "mqtopt.measure"(%q1_i_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+            %q2_i_3, %m2 = "mqtopt.measure"(%q2_i_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+            scf.yield %q0_i_5, %q1_i_3, %q2_i_3 : !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
+        }
+
+        mqtopt.deallocQubit %q0_1_ghz1000
+        mqtopt.deallocQubit %q1_1_ghz1000
+        mqtopt.deallocQubit %q2_1_ghz1000
+
+        return
     }
 }
