@@ -70,12 +70,19 @@ struct EulerDecompositionPattern final
       }
     }
 
-    auto decomposedGateSchematic = calculateRotationGates(unitaryMatrix);
-    auto newGates = createMlirGates(rewriter, decomposedGateSchematic.first,
+    auto [decomposedGateSchematic, globalPhase] =
+        calculateRotationGates(unitaryMatrix);
+
+    // apply global phase
+    createOneParameterGate<GPhaseOp>(rewriter, op->getLoc(), globalPhase, {});
+
+    auto newGates = createMlirGates(rewriter, decomposedGateSchematic,
                                     op.getInQubits().front());
     if (!newGates.empty()) {
+      // attach new gates by replacing the uses of the last gate of the series
       rewriter.replaceAllOpUsesWith(series.back(), newGates.back());
     } else {
+      // gate series is equal to identity; remove it entirely
       rewriter.replaceAllOpUsesWith(series.back(), op->getOperands());
     }
 
@@ -119,19 +126,18 @@ struct EulerDecompositionPattern final
    * @return A new rotation gate.
    */
   template <typename OpType>
-  static OpType createRotationGate(mlir::PatternRewriter& rewriter,
-                                   mlir::Value inQubit, qc::fp angle) {
-    auto location = inQubit.getLoc();
-    auto qubitType = inQubit.getType();
-
-    auto angleValue = rewriter.create<mlir::arith::ConstantOp>(
-        location, rewriter.getF64Type(), rewriter.getF64FloatAttr(angle));
+  static OpType createOneParameterGate(mlir::PatternRewriter& rewriter,
+                                       mlir::Location location,
+                                       qc::fp parameter,
+                                       mlir::ValueRange inQubits) {
+    auto parameterValue = rewriter.create<mlir::arith::ConstantOp>(
+        location, rewriter.getF64Type(), rewriter.getF64FloatAttr(parameter));
 
     return rewriter.create<OpType>(
-        location, mlir::TypeRange{qubitType}, mlir::TypeRange{},
-        mlir::TypeRange{}, mlir::DenseF64ArrayAttr{},
-        mlir::DenseBoolArrayAttr{}, mlir::ValueRange{angleValue},
-        mlir::ValueRange{inQubit}, mlir::ValueRange{}, mlir::ValueRange{});
+        location, inQubits.getType(), mlir::TypeRange{}, mlir::TypeRange{},
+        mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{},
+        mlir::ValueRange{parameterValue}, inQubits, mlir::ValueRange{},
+        mlir::ValueRange{});
   }
 
   [[nodiscard]] static llvm::SmallVector<UnitaryInterface, 3> createMlirGates(
@@ -141,10 +147,12 @@ struct EulerDecompositionPattern final
     llvm::SmallVector<UnitaryInterface, 3> result;
     for (auto [type, angle] : schematic) {
       if (type == qc::RZ) {
-        auto newRz = createRotationGate<RZOp>(rewriter, inQubit, angle);
+        auto newRz = createOneParameterGate<RZOp>(rewriter, inQubit.getLoc(),
+                                                  angle, {inQubit});
         result.push_back(newRz);
       } else if (type == qc::RY) {
-        auto newRy = createRotationGate<RYOp>(rewriter, inQubit, angle);
+        auto newRy = createOneParameterGate<RYOp>(rewriter, inQubit.getLoc(),
+                                                  angle, {inQubit});
         result.push_back(newRy);
       } else {
         throw std::logic_error{"Unable to create MLIR gate in Euler "
@@ -171,14 +179,13 @@ struct EulerDecompositionPattern final
   [[nodiscard]] static std::pair<
       llvm::SmallVector<std::pair<qc::OpType, qc::fp>, 3>, qc::fp>
   calculateRotationGates(dd::GateMatrix unitaryMatrix) {
-    auto [lambda, theta, phi, phase] = paramsZyzInner(unitaryMatrix);
-    qc::fp globalPhase = phase - ((phi + lambda) / 2.);
     constexpr qc::fp angleZeroEpsilon = 1e-12;
 
     auto remEuclid = [](qc::fp a, qc::fp b) {
       auto r = std::fmod(a, b);
       return (r < 0.0) ? r + std::abs(b) : r;
     };
+    // Wrap angle into interval [-π,π). If within atol of the endpoint, clamp to -π
     auto mod2pi = [&](qc::fp angle) -> qc::fp {
       // remEuclid() isn't exactly the same as Python's % operator, but
       // because the RHS here is a constant and positive it is effectively
@@ -189,6 +196,9 @@ struct EulerDecompositionPattern final
       }
       return wrapped;
     };
+
+    auto [theta, phi, lambda, phase] = paramsZyzInner(unitaryMatrix);
+    qc::fp globalPhase = phase - ((phi + lambda) / 2.);
 
     llvm::SmallVector<std::pair<qc::OpType, qc::fp>, 3> gates;
     if (std::abs(theta) < angleZeroEpsilon) {
@@ -241,7 +251,7 @@ struct EulerDecompositionPattern final
    */
   [[nodiscard]] static std::array<qc::fp, 4>
   paramsZyzInner(dd::GateMatrix unitaryMatrix) {
-    auto getIndex = [](auto x, auto y) { return (x * 2) + y; };
+    auto getIndex = [](auto x, auto y) { return (y * 2) + x; };
     auto determinant = [getIndex](auto&& matrix) {
       return (matrix.at(getIndex(0, 0)) * matrix.at(getIndex(1, 1))) -
              (matrix.at(getIndex(1, 0)) * matrix.at(getIndex(0, 1)));
