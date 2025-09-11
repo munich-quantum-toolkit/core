@@ -124,7 +124,7 @@ getQregs(mlir::OpBuilder& builder, mlir::MLIRContext* context,
     qregPtrs.emplace_back(&qreg);
   }
 
-  // Sort by index
+  // Sort by start index
   std::ranges::sort(
       qregPtrs, [](const qc::QuantumRegister* a, const qc::QuantumRegister* b) {
         return a->getStartIndex() < b->getStartIndex();
@@ -142,7 +142,7 @@ getQregs(mlir::OpBuilder& builder, mlir::MLIRContext* context,
 }
 
 /**
- * @brief Builds a vector mapping global qubit indices to extracted qubit values
+ * @brief Builds a mapping from global qubit index to extracted qubit value.
  *
  * @param builder The MLIR OpBuilder used to create operations
  * @param context The MLIR context in which types are created
@@ -189,6 +189,42 @@ mlir::Value allocateBits(mlir::OpBuilder& builder, int64_t numBits) {
   auto memref = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
                                                        memrefType);
   return memref.getResult();
+}
+
+/**
+ * @brief Builds a mapping from global bit index to (memref, localIdx).
+ *
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param numBits The number of bits to allocate in the register
+ * @return mlir::Value The allocated classical register value
+ */
+BitIndexVec getBitMap(mlir::OpBuilder& builder,
+                      const qc::QuantumComputation& quantumComputation) {
+  // Build list of pointers for sorting
+  llvm::SmallVector<const qc::ClassicalRegister*> cregPtrs;
+  cregPtrs.reserve(quantumComputation.getClassicalRegisters().size());
+  for (const auto& [_, reg] : quantumComputation.getClassicalRegisters()) {
+    cregPtrs.emplace_back(&reg);
+  }
+
+  // Sort by start index
+  std::ranges::sort(cregPtrs, [](const qc::ClassicalRegister* a,
+                                 const qc::ClassicalRegister* b) {
+    return a->getStartIndex() < b->getStartIndex();
+  });
+
+  // Build mapping
+  BitIndexVec bitMap;
+  bitMap.resize(quantumComputation.getNcbits());
+  for (const auto* reg : cregPtrs) {
+    auto mem = allocateBits(builder, static_cast<int64_t>(reg->getSize()));
+    for (std::size_t i = 0; i < reg->getSize(); ++i) {
+      const auto globalIdx = static_cast<std::size_t>(reg->getStartIndex() + i);
+      bitMap[globalIdx] = {mem, i};
+    }
+  }
+
+  return bitMap;
 }
 
 /**
@@ -569,25 +605,8 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   auto qregs = getQregs(builder, context, quantumComputation);
   auto qubits = getQubits(builder, quantumComputation, qregs);
 
-  // Classical registers: collect, sort by start index, and allocate each
-  BitIndexVec bitMap;
-  bitMap.resize(quantumComputation.getNcbits());
-  llvm::SmallVector<const qc::ClassicalRegister*> cregPtrs;
-  cregPtrs.reserve(quantumComputation.getClassicalRegisters().size());
-  for (const auto& [_, reg] : quantumComputation.getClassicalRegisters()) {
-    cregPtrs.emplace_back(&reg);
-  }
-  std::ranges::sort(cregPtrs, [](const qc::ClassicalRegister* a,
-                                 const qc::ClassicalRegister* b) {
-    return a->getStartIndex() < b->getStartIndex();
-  });
-  for (const auto* reg : cregPtrs) {
-    auto mem = allocateBits(builder, static_cast<int64_t>(reg->getSize()));
-    for (std::size_t i = 0; i < reg->getSize(); ++i) {
-      const auto globalIdx = static_cast<std::size_t>(reg->getStartIndex() + i);
-      bitMap[globalIdx] = {mem, i};
-    }
-  }
+  // Allocate classical registers
+  auto bitMap = getBitMap(builder, quantumComputation);
 
   // Add operations and handle potential failures
   if (addOperations(builder, quantumComputation, qubits, bitMap).failed()) {
