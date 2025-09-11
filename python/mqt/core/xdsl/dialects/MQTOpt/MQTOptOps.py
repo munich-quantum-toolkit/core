@@ -121,6 +121,32 @@ class AllocOp(ResourceOp):
     qreg = result_def(QregType)
 
 
+# ExtractOp implementation as a ResourceOp (extractQubit)
+@irdl_op_definition
+class ExtractOp(ResourceOp):
+    name = "mqtopt.extractQubit"
+    traits = traits_def()  # UniqueIndexDefinition trait would be here
+
+    in_qreg = operand_def(QregType)
+    index = opt_operand_def(i64)
+    index_attr = prop_def(Attribute)
+    out_qreg = result_def(QregType)
+    out_qubit = result_def(QubitType)
+
+
+# InsertOp implementation as a ResourceOp (insertQubit)
+@irdl_op_definition
+class InsertOp(ResourceOp):
+    name = "mqtopt.insertQubit"
+    traits = traits_def()  # UniqueIndexDefinition trait would be here
+
+    in_qreg = operand_def(QregType)
+    in_qubit = operand_def(QubitType)
+    index = opt_operand_def(i64)
+    index_attr = prop_def(Attribute)
+    out_qreg = result_def(QregType)
+
+
 # DeallocOp implementation as a ResourceOp (deallocQubitRegister)
 @irdl_op_definition
 class DeallocOp(ResourceOp):
@@ -137,6 +163,8 @@ MQTOpt = Dialect(
         MeasureOp,
         XOp,
         AllocOp,
+        ExtractOp,
+        InsertOp,
         DeallocOp,
     ],
     [
