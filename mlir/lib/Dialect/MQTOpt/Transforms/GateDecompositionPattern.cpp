@@ -23,24 +23,6 @@
 #include <mlir/Support/LogicalResult.h>
 
 namespace mqt::ir::opt {
-
-/**
- * @brief This pattern replaces all negative controls by negations combined with
- *        positively controlled operations.
- */
-struct NegCtrlDecompositionPattern final
-    : mlir::OpInterfaceRewritePattern<UnitaryInterface> {
-
-  explicit NegCtrlDecompositionPattern(mlir::MLIRContext* context)
-      : OpInterfaceRewritePattern(context) {}
-
-  mlir::LogicalResult
-  matchAndRewrite(UnitaryInterface op,
-                  mlir::PatternRewriter& rewriter) const override {
-    return mlir::failure();
-  }
-};
-
 /**
  * @brief This pattern TODO.
  */
