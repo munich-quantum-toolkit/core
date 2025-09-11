@@ -449,7 +449,7 @@ llvm::LogicalResult addOperations(
     const llvm::SmallVector<mlir::Value>& qubits, const BitIndexVec& bitMap) {
   for (const auto& operation : quantumComputation) {
     if (const auto result = addOperation(builder, *operation, qubits, bitMap);
-        mlir::failed(result)) {
+        result.failed()) {
       return result;
     }
   }
@@ -558,15 +558,14 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   }
 
   // Add operations and handle potential failures
-  if (mlir::failed(
-          addOperations(builder, quantumComputation, flatQubits, bitMap))) {
+  if (addOperations(builder, quantumComputation, flatQubits, bitMap).failed()) {
     // Even if operations fail, return the module with what we could translate
     emitError(loc) << "Failed to translate some quantum operations";
   }
 
   // Deallocate all quantum registers
-  for (const auto& qi : qregs) {
-    deallocateQreg(builder, qi.qreg);
+  for (const auto& qreg : qregs) {
+    deallocateQreg(builder, qreg.qreg);
   }
 
   // Create terminator
