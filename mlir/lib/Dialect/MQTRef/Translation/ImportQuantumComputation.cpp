@@ -168,8 +168,8 @@ void addUnitaryOp(mlir::OpBuilder& builder, const qc::Operation& operation,
  * @param builder The MLIR OpBuilder
  * @param operation The measure operation to add
  * @param qubits The qubits of the quantum register
- * @param bitMap The mapping from classical bit indices to their corresponding
- * memory references and local indices
+ * @param bitMap The mapping from global classical bit index to (memref,
+ * localIdx)
  */
 void addMeasureOp(mlir::OpBuilder& builder, const qc::Operation& operation,
                   const llvm::SmallVector<mlir::Value>& qubits,
