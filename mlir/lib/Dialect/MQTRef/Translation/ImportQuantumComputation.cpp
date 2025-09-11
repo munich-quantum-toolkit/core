@@ -150,9 +150,8 @@ getQregs(mlir::OpBuilder& builder, mlir::MLIRContext* context,
  * @return llvm::SmallVector<mlir::Value> Sorted vector of qubit values
  */
 llvm::SmallVector<mlir::Value>
-getQubits(mlir::OpBuilder& builder,
-          const qc::QuantumComputation& quantumComputation,
-          llvm::SmallVector<QregInfo> qregs) {
+getQubits(const qc::QuantumComputation& quantumComputation,
+          llvm::SmallVector<QregInfo>& qregs) {
   llvm::SmallVector<mlir::Value> flatQubits;
   const auto maxPhys = quantumComputation.getHighestPhysicalQubitIndex();
   flatQubits.resize(static_cast<size_t>(maxPhys) + 1);
@@ -603,7 +602,7 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
 
   // Allocate quantum registers and extract qubits
   auto qregs = getQregs(builder, context, quantumComputation);
-  auto qubits = getQubits(builder, quantumComputation, qregs);
+  auto qubits = getQubits(quantumComputation, qregs);
 
   // Allocate classical registers
   auto bitMap = getBitMap(builder, quantumComputation);
