@@ -58,10 +58,8 @@ struct EulerDecompositionPattern final
     }
 
     auto series = getSingleQubitSeries(op);
-    // TODO: find better stop condition?
-    if (series.size() < 4) {
-      // decomposing this series of single qubit gates would not reduce the
-      // number of gates
+    if (series.size() <= 3) {
+      // TODO: find better way to prevent endless optimization loop
       return mlir::failure();
     }
 
@@ -75,12 +73,17 @@ struct EulerDecompositionPattern final
     auto decomposedGateSchematic = calculateRotationGates(unitaryMatrix);
     auto newGates = createMlirGates(rewriter, decomposedGateSchematic.first,
                                     op.getInQubits().front());
-    if (newGates.empty()) {
-      return mlir::failure();
+    if (!newGates.empty()) {
+      rewriter.replaceAllOpUsesWith(series.back(), newGates.back());
+    } else {
+      rewriter.replaceAllOpUsesWith(series.back(), op->getOperands());
     }
 
-    // vector cannot be empty since there is at least the current gate
-    rewriter.replaceAllOpUsesWith(series.back(), newGates.back());
+    // delete in reverse order since last use has been replaced and for the
+    // others the only use will be deleted before the operation
+    for (auto&& gate : llvm::reverse(series)) {
+      rewriter.eraseOp(gate);
+    }
 
     return mlir::success();
   }

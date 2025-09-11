@@ -40,6 +40,36 @@ module {
 
 
 module {
+  // CHECK-LABEL: func.func @testMergeRotationSeries
+  func.func @testMergeRotationSeries() {
+    // CHECK: %[[Q0_0]] = mqtopt.allocQubit
+
+    // CHECK: %[[C_0:.*]] = arith.constant 3.000000e+00 : f64
+    // CHECK: %[[Q0_1:.*]] = mqtopt.rx(%[[C_0]]) %[[ANY:.*]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_2:.*]] = mqtopt.rx(%[[C_0]]) %[[ANY:.*]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_3:.*]] = mqtopt.rx(%[[C_0]]) %[[ANY:.*]] : !mqtopt.Qubit
+
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.rz
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.ry
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_3]]
+
+    %q0_0 = mqtopt.allocQubit
+
+    %c_0 = arith.constant 1.000000e+00 : f64
+    %q0_1 = mqtopt.rx(%c_0) %q0_0 : !mqtopt.Qubit
+    %q0_2 = mqtopt.rz(%c_0) %q0_1 : !mqtopt.Qubit
+    %q0_3 = mqtopt.ry(%c_0) %q0_2 : !mqtopt.Qubit
+    %q0_4 = mqtopt.ry(%c_0) %q0_3 : !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_4
+
+    return
+  }
+}
+
+
+module {
   // CHECK-LABEL: func.func @testNoMergeSmallSeries
   func.func @testNoMergeSmallSeries() {
     // CHECK: %[[Q0_0]] = mqtopt.allocQubit
