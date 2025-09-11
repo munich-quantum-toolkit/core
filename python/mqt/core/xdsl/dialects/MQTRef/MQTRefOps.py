@@ -24,7 +24,7 @@ from xdsl.irdl import (
 )
 
 
-# Custom Qubit type for MQTRef dialect (reference semantics)
+# Custom Qubit type for MQTRef dialect
 @irdl_attr_definition
 class QubitType(Data[None], TypeAttribute):
     name = "mqtref.Qubit"
@@ -37,7 +37,7 @@ class QubitType(Data[None], TypeAttribute):
         pass
 
 
-# Custom QubitRegister type for MQTRef dialect (reference semantics)
+# Custom QubitRegister type for MQTRef dialect
 @irdl_attr_definition
 class QregType(Data[None], TypeAttribute):
     name = "mqtref.QubitRegister"
@@ -55,12 +55,12 @@ class MQTRefOp(IRDLOperation):
     """Base class for all operations in the MQTRef dialect."""
 
 
-# Base class for gate operations (equivalent to GateOp in TableGen)
+# Base class for gate operations
 class GateOp(MQTRefOp):
     """Base class for gate operations in reference semantics."""
 
 
-# Base class for unitary operations (equivalent to UnitaryOp in TableGen)
+# Base class for unitary operations
 class UnitaryOp(GateOp):
     """Base class for unitary operations with reference semantics."""
 
@@ -74,15 +74,13 @@ class UnitaryOp(GateOp):
     pos_ctrl_in_qubits = var_operand_def(QubitType)
     neg_ctrl_in_qubits = var_operand_def(QubitType)
 
-    # No output qubits in reference semantics - operations modify qubits in place
-
 
 # Base class for resource operations
 class ResourceOp(MQTRefOp):
     """Base class for resource operations."""
 
 
-# MeasureOp implementation as a GateOp (reference semantics)
+# MeasureOp implementation as a GateOp
 @irdl_op_definition
 class MeasureOp(GateOp):
     name = "mqtref.measure"
@@ -92,11 +90,11 @@ class MeasureOp(GateOp):
     out_bit = result_def(i1)
 
 
-# XOp implementation as a simple GateOp (reference semantics - minimum working example)
+# XOp implementation as a simple GateOp
 @irdl_op_definition
 class XOp(GateOp):
     name = "mqtref.x"
-    traits = traits_def()  # OneTarget, NoParameter traits would be here
+    traits = traits_def()  # OneTarget, NoParameter traits should be here
 
     # Reference semantics: operates on qubit in place, no output qubit
     qubit = operand_def(QubitType)

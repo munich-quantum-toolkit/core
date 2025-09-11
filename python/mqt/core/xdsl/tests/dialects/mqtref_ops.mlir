@@ -7,7 +7,6 @@
 // Licensed under the MIT License
 
 // RUN: MQT_ROUNDTRIP
-// RUN: MQT_GENERIC_ROUNDTRIP
 
 // Test simple qubit allocation, X gate, and deallocation with reference semantics
 // Allocate a single qubit

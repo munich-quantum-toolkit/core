@@ -16,5 +16,5 @@ from mqt.core.xdsl.transforms.convert_mqtopt_to_qssa import ConvertMQTOptToQssa
 def get_all_passes():
     """Return a dictionary of all available passes."""
     return {
-        "convert-mqtopt-to-qssa": lambda: ConvertMQTOptToQssa(),
+        "convert-mqtopt-to-qssa": ConvertMQTOptToQssa,
     }
