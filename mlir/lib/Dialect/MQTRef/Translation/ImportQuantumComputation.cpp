@@ -43,6 +43,12 @@
 
 namespace {
 
+struct QregInfo {
+  const qc::QuantumRegister* qregPtr;
+  mlir::Value qreg;
+  llvm::SmallVector<mlir::Value> qubits;
+};
+
 using BitMemInfo = std::pair<mlir::Value, std::size_t>; // (memref, localIdx)
 using BitIndexVec = llvm::SmallVector<BitMemInfo>;
 
@@ -66,31 +72,7 @@ mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
 }
 
 /**
- * @brief Deallocates the quantum register in the MLIR module.
- *
- * @param builder The MLIR OpBuilder used to create operations
- * @param qreg The quantum register to deallocate
- */
-void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
-  builder.create<mqt::ir::ref::DeallocOp>(builder.getUnknownLoc(), qreg);
-}
-
-/**
- * @brief Allocates a classical register in the MLIR module.
- *
- * @param builder The MLIR OpBuilder used to create operations
- * @param numBits The number of bits to allocate in the register
- * @return mlir::Value The allocated classical register value
- */
-mlir::Value allocateBits(mlir::OpBuilder& builder, int64_t numBits) {
-  auto memrefType = mlir::MemRefType::get({numBits}, builder.getI1Type());
-  auto memref = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
-                                                       memrefType);
-  return memref.getResult();
-}
-
-/**
- * @brief Extracts individual qubits from a quantum register.
+ * @brief Extracts all qubits from a quantum register.
  *
  * @param builder The MLIR OpBuilder used to create operations
  * @param context The MLIR context in which types are created
@@ -115,6 +97,98 @@ llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
   }
 
   return qubits;
+}
+
+/**
+ * @brief Allocates quantum registers and extracts qubits.
+ *
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param context The MLIR context in which types are created
+ * @param quantumComputation The quantum computation to translate
+ * @return llvm::SmallVector<QregInfo> Vector containing information about all
+ * quantum registers
+ */
+llvm::SmallVector<QregInfo>
+getQregs(mlir::OpBuilder& builder, mlir::MLIRContext* context,
+         const qc::QuantumComputation& quantumComputation) {
+  // Build list of pointers for sorting
+  llvm::SmallVector<const qc::QuantumRegister*> qregPtrs;
+  qregPtrs.reserve(quantumComputation.getQuantumRegisters().size() +
+                   quantumComputation.getAncillaRegisters().size());
+  for (const auto& qreg :
+       quantumComputation.getQuantumRegisters() | std::views::values) {
+    qregPtrs.emplace_back(&qreg);
+  }
+  for (const auto& qreg :
+       quantumComputation.getAncillaRegisters() | std::views::values) {
+    qregPtrs.emplace_back(&qreg);
+  }
+
+  // Sort by index
+  std::ranges::sort(
+      qregPtrs, [](const qc::QuantumRegister* a, const qc::QuantumRegister* b) {
+        return a->getStartIndex() < b->getStartIndex();
+      });
+
+  // Allocate quantum registers and extract qubits
+  llvm::SmallVector<QregInfo> qregs;
+  for (const auto* qregPtr : qregPtrs) {
+    const auto qreg = allocateQreg(builder, context, qregPtr->getSize());
+    auto qubits = extractQubits(builder, context, qreg, qregPtr->getSize());
+    qregs.emplace_back(qregPtr, qreg, std::move(qubits));
+  }
+
+  return qregs;
+}
+
+/**
+ * @brief Builds a vector mapping global qubit indices to extracted qubit values
+ *
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param context The MLIR context in which types are created
+ * @param qregs Vector containing information about all quantum registers
+ * @return llvm::SmallVector<mlir::Value> Sorted vector of qubit values
+ */
+llvm::SmallVector<mlir::Value>
+getQubits(mlir::OpBuilder& builder,
+          const qc::QuantumComputation& quantumComputation,
+          llvm::SmallVector<QregInfo> qregs) {
+  llvm::SmallVector<mlir::Value> flatQubits;
+  const auto maxPhys = quantumComputation.getHighestPhysicalQubitIndex();
+  flatQubits.resize(static_cast<size_t>(maxPhys) + 1);
+  for (const auto& qreg : qregs) {
+    for (std::size_t i = 0; i < qreg.qregPtr->getSize(); ++i) {
+      const auto globalIdx =
+          static_cast<size_t>(qreg.qregPtr->getStartIndex() + i);
+      flatQubits[globalIdx] = qreg.qubits[i];
+    }
+  }
+
+  return flatQubits;
+}
+
+/**
+ * @brief Deallocates the quantum register in the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param qreg The quantum register to deallocate
+ */
+void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
+  builder.create<mqt::ir::ref::DeallocOp>(builder.getUnknownLoc(), qreg);
+}
+
+/**
+ * @brief Allocates a classical register in the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param numBits The number of bits to allocate in the register
+ * @return mlir::Value The allocated classical register value
+ */
+mlir::Value allocateBits(mlir::OpBuilder& builder, int64_t numBits) {
+  auto memrefType = mlir::MemRefType::get({numBits}, builder.getI1Type());
+  auto memref = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
+                                                       memrefType);
+  return memref.getResult();
 }
 
 /**
@@ -491,51 +565,9 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   builder.setInsertionPointToStart(&entryBlock);
 
-  // Parse quantum computation: allocate per quantum/classical register
-  // Collect and sort quantum registers (including ancilla) by start index for
-  // deterministic emission
-  struct QRegInfo {
-    const qc::QuantumRegister* reg;
-    mlir::Value qreg;
-    llvm::SmallVector<mlir::Value> qubits;
-  };
-  llvm::SmallVector<QRegInfo> qregs;
-  // Build list of pointers for sorting
-  llvm::SmallVector<const qc::QuantumRegister*> qregPtrs;
-  qregPtrs.reserve(quantumComputation.getQuantumRegisters().size() +
-                   quantumComputation.getAncillaRegisters().size());
-  for (const auto& reg :
-       quantumComputation.getQuantumRegisters() | std::views::values) {
-    qregPtrs.emplace_back(&reg);
-  }
-  for (const auto& reg :
-       quantumComputation.getAncillaRegisters() | std::views::values) {
-    qregPtrs.emplace_back(&reg);
-  }
-  std::ranges::sort(
-      qregPtrs, [](const qc::QuantumRegister* a, const qc::QuantumRegister* b) {
-        return a->getStartIndex() < b->getStartIndex();
-      });
-
-  // Allocate and extract per quantum register
-  for (const auto* reg : qregPtrs) {
-    const auto qv = allocateQreg(builder, context, reg->getSize());
-    auto qbits = extractQubits(builder, context, qv, reg->getSize());
-    qregs.emplace_back(reg, qv, std::move(qbits));
-  }
-
-  // Build a flat vector mapping global physical qubit index to extracted qubit
-  // value
-  llvm::SmallVector<mlir::Value> flatQubits;
-  // Determine highest physical qubit index to size the vector
-  const auto maxPhys = quantumComputation.getHighestPhysicalQubitIndex();
-  flatQubits.resize(static_cast<size_t>(maxPhys) + 1);
-  for (const auto& qi : qregs) {
-    for (std::size_t i = 0; i < qi.reg->getSize(); ++i) {
-      const auto globalIdx = static_cast<size_t>(qi.reg->getStartIndex() + i);
-      flatQubits[globalIdx] = qi.qubits[i];
-    }
-  }
+  // Allocate quantum registers and extract qubits
+  auto qregs = getQregs(builder, context, quantumComputation);
+  auto qubits = getQubits(builder, quantumComputation, qregs);
 
   // Classical registers: collect, sort by start index, and allocate each
   BitIndexVec bitMap;
@@ -558,12 +590,12 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
   }
 
   // Add operations and handle potential failures
-  if (addOperations(builder, quantumComputation, flatQubits, bitMap).failed()) {
+  if (addOperations(builder, quantumComputation, qubits, bitMap).failed()) {
     // Even if operations fail, return the module with what we could translate
     emitError(loc) << "Failed to translate some quantum operations";
   }
 
-  // Deallocate all quantum registers
+  // Deallocate quantum registers
   for (const auto& qreg : qregs) {
     deallocateQreg(builder, qreg.qreg);
   }
