@@ -10,10 +10,11 @@
 
 from __future__ import annotations
 
+from mqt.core.xdsl.transforms.convert_mqtopt_to_qssa import ConvertMQTOptToQssa
+
 
 def get_all_passes():
     """Return a dictionary of all available passes."""
     return {
-        # Add your custom passes here when you have them
-        # "pass_name": pass_function,
+        "convert-mqtopt-to-qssa": lambda: ConvertMQTOptToQssa(),
     }
