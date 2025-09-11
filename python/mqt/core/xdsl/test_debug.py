@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -10,31 +20,21 @@ from xdsl.xdsl_opt_main import xDSLOptMain
 
 
 class QuoptMain(xDSLOptMain):
-    def register_all_dialects(self):
+    def register_all_dialects(self) -> None:
         dialects = get_all_dialects()
-        print(f"Registering {len(dialects)} dialects:")
         for name, dialect_func in dialects.items():
-            dialect = dialect_func()
-            print(f"  {name}: {dialect}")
-            print(f"    Operations: {[op.name for op in dialect.operations]}")
-            print(f"    Types: {[t.name for t in dialect.attributes]}")
+            dialect_func()
             self.ctx.register_dialect(name, dialect_func)
-            print(f"    Registered successfully!")
 
 
-def main():
-    print("Testing dialect registration...")
+def main() -> None:
     quopt_main = QuoptMain()
     quopt_main.register_all_dialects()
-    
-    print(f"\nContext dialects: {list(quopt_main.ctx.dialects.keys())}")
-    
+
     # Test loading the mqtopt dialect
     mqtopt_dialect = quopt_main.ctx.get_dialect("mqtopt")
-    print(f"MQTOpt dialect: {mqtopt_dialect}")
     if mqtopt_dialect:
-        print(f"  Operations: {[op.name for op in mqtopt_dialect.operations]}")
-        print(f"  Types: {[t.name for t in mqtopt_dialect.attributes]}")
+        pass
 
 
 if __name__ == "__main__":
