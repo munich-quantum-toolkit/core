@@ -88,7 +88,7 @@ struct EulerDecompositionPattern final
   [[nodiscard]] static llvm::SmallVector<UnitaryInterface>
   getSingleQubitSeries(UnitaryInterface op) {
     llvm::SmallVector<UnitaryInterface> result = {op};
-    while (true) {
+    while (op->hasOneUse()) {
       op = getNextOperation(op);
       if (op && helpers::isSingleQubitOperation(op)) {
         result.push_back(op);
@@ -103,7 +103,6 @@ struct EulerDecompositionPattern final
     // since there is only one output qubit in single qubit gates, there should
     // only be one user
     assert(op->hasOneUse());
-    llvm::errs() << &op << '\n';
     auto&& users = op->getUsers();
     return llvm::dyn_cast<UnitaryInterface>(*users.begin());
   }
