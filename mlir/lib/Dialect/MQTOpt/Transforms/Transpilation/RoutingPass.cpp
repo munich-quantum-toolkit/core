@@ -14,8 +14,6 @@
 #include "mlir/IR/BuiltinTypes.h"
 
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/SetVector.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <cassert>
@@ -40,7 +38,6 @@
 #include <numeric>
 #include <queue>
 #include <random>
-#include <ranges>
 #include <tuple>
 #include <utility>
 
@@ -58,6 +55,12 @@ using namespace mlir;
  * @brief A function attribute that specifies an (QIR) entry point function.
  */
 constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
+
+/**
+ * @brief The expected number of qubits a architecture supports for optimizing
+ * inline capacities of SmallVectors.
+ */
+constexpr std::size_t AVG_NQUBITS_ARCH = 32;
 
 //===----------------------------------------------------------------------===//
 // Utilities
@@ -149,7 +152,7 @@ public:
   using Layout::Layout;
 
   [[nodiscard]] SmallVector<std::size_t> generate() const final {
-    SmallVector<std::size_t, 0> mapping(nqubits());
+    SmallVector<std::size_t, AVG_NQUBITS_ARCH> mapping(nqubits());
     std::iota(mapping.begin(), mapping.end(), 0);
     return mapping;
   }
@@ -164,11 +167,11 @@ public:
 
   [[nodiscard]] SmallVector<std::size_t> generate() const final {
     std::random_device rd;
-    std::mt19937 g(rd());
+    std::mt19937_64 rng(rd());
 
-    SmallVector<std::size_t, 0> mapping(nqubits());
+    SmallVector<std::size_t, AVG_NQUBITS_ARCH> mapping(nqubits());
     std::iota(mapping.begin(), mapping.end(), 0);
-    std::shuffle(mapping.begin(), mapping.end(), g);
+    std::shuffle(mapping.begin(), mapping.end(), rng);
     return mapping;
   };
 };
@@ -178,7 +181,7 @@ public:
  */
 class ConstantLayout final : public Layout {
 public:
-  explicit ConstantLayout(const SmallVectorImpl<std::size_t>& mapping)
+  explicit ConstantLayout(ArrayRef<std::size_t> mapping)
       : Layout(mapping.size()), mapping_(nqubits()) {
     std::ranges::copy(mapping, mapping_.begin());
   }
@@ -206,19 +209,18 @@ private:
  * This class generates and applies the initial layout at construction.
  * Consequently, `nqubits` back-to-back retrievals will receive the hardware
  * qubits defined by the initial layout.
- * If all allocated qubits are deallocated again, e.g. we reach the end of a
- * "circuit", the initial layout will be re-generated and re-applied.
  *
  * Note that we use the terminology "hardware" and "software" qubits here,
  * because "virtual" (opposed to physical) and "static" (opposed to dynamic)
  * are C++ keywords.
  */
-class QubitStateManager {
+class QubitState {
 public:
-  explicit QubitStateManager(const SmallVectorImpl<Value>& hardwareQubits,
-                             Layout& layout)
-      : hardwareQubits_(hardwareQubits.size()), layout_(&layout) {
-    reset(hardwareQubits);
+  QubitState(const SmallVectorImpl<Value>& hwQubits,
+             ArrayRef<std::size_t> layout)
+      : hardwareQubits_(hwQubits.size()) {
+    mapping_.reserve(hwQubits.size());
+    reset(hwQubits, layout);
   }
 
   /**
@@ -240,8 +242,10 @@ public:
    * @brief Return SSA Value from hardware index.
    * @param hardwareIndex The hardware index.
    */
-  [[nodiscard]] Value getHardwareValue(const std::size_t hardwareIndex) const {
-    return hardwareQubits_[hardwareIndex];
+  [[nodiscard]] Value getHardwareValue(const std::size_t index) const {
+    assert(index < hardwareQubits_.size() &&
+           "getHardwareValue: index out of bounds");
+    return hardwareQubits_[index];
   }
 
   /**
@@ -288,22 +292,25 @@ public:
   /**
    * @brief Release hardware qubit.
    */
-  void release(Value q) {
-    free_.push(getHardwareIndex(q));
-    if (free_.size() == getNumQubits()) {
-      reset(hardwareQubits_);
-    }
-  }
+  void release(Value q) { free_.push(getHardwareIndex(q)); }
 
   /**
    * @brief Forward SSA values.
    * @details Replace @p in with @p out in maps.
    */
   void forward(const Value in, const Value out) {
-    const std::size_t h = getHardwareIndex(in);
-    mapping_[out] = mapping_.at(in);
+    const auto it = mapping_.find(in);
+    assert(it != mapping_.end() && "forward: unknown input value");
+
+    const QubitMapping map = it->second;
+    const std::size_t h = map.first;
+
     hardwareQubits_[h] = out;
-    mapping_.erase(in);
+
+    assert(!mapping_.contains(out) && "forward: output value already mapped");
+
+    mapping_.try_emplace(out, map);
+    mapping_.erase(it);
   }
 
   /**
@@ -312,6 +319,31 @@ public:
   void swapSoftwareIndices(const Value a, const Value b) {
     std::swap(mapping_[a].second, mapping_[b].second);
   }
+
+  /**
+   * @brief Reset the state.
+   *
+   * Fills the queue with static qubit SSA values, permutated by the layout.
+   *
+   * @param qubits A vector of SSA values.
+   * @param layout A layout to apply.
+   */
+  void reset(const SmallVectorImpl<Value>& hwQubits,
+             ArrayRef<std::size_t> layout) {
+    clear();
+    for (std::size_t s = 0; s < getNumQubits(); ++s) {
+      const std::size_t h = layout[s];
+      const Value q = hwQubits[h];
+      hardwareQubits_[h] = q;
+      mapping_.try_emplace(q, std::make_pair(h, s));
+      free_.push(h);
+    }
+  }
+
+  /**
+   * @brief Return the number of free qubits.
+   */
+  [[nodiscard]] std::size_t getNumFree() const { return free_.size(); }
 
 private:
   /**
@@ -329,33 +361,7 @@ private:
   }
 
   /**
-   * @brief Reset the state.
-   *
-   * Clears the queue and generates the initial layout. Then fills the queue
-   * with static qubit SSA values, permutated by the initial layout.
-   *
-   * @param qubits A vector of SSA values.
-   */
-  void reset(const SmallVectorImpl<Value>& hardwareQubits) {
-    const auto mapping = layout().generate();
-
-    clear();
-    for (std::size_t s = 0; s < getNumQubits(); ++s) {
-      const std::size_t h = mapping[s];
-      const Value q = hardwareQubits[h];
-      hardwareQubits_[h] = q;
-      mapping_.try_emplace(q, std::make_pair(h, s));
-      free_.push(h);
-    }
-  }
-
-  /**
-   * @brief Return a reference to the initial layout.
-   */
-  [[nodiscard]] Layout& layout() const { return *layout_; }
-
-  /**
-   * @brief Maps SSA values to hardware and software indices.
+   * @brief Maps SSA values to hardware indices;
    */
   DenseMap<Value, QubitMapping> mapping_;
 
@@ -368,16 +374,13 @@ private:
 
   /**
    * @brief Queue of available hardware indices.
+   * TODO: Change to smallvector because max-size of queue will always be
+   * nqubits.
    */
   std::queue<std::size_t> free_;
-
-  /**
-   * @brief The initial layout generator.
-   */
-  Layout* layout_;
 };
 
-using QubitStateStack = SmallVector<QubitStateManager, 2>;
+using QubitStateStack = SmallVector<QubitState, 2>;
 
 //===----------------------------------------------------------------------===//
 // Pre-Order Walk Pattern Rewrite Driver
@@ -476,10 +479,10 @@ public:
       : BasePattern(ctx), stack_(&stack), arch_(&arch), layout_(&layout) {}
 
 protected:
-  [[nodiscard]] QubitStateManager& parentState() const {
+  [[nodiscard]] QubitState& parentState() const {
     return *std::next(stack().end(), -2);
   }
-  [[nodiscard]] QubitStateManager& state() const { return stack().back(); }
+  [[nodiscard]] QubitState& state() const { return stack().back(); }
   [[nodiscard]] QubitStateStack& stack() const { return *stack_; }
   [[nodiscard]] Architecture& arch() const { return *arch_; }
   [[nodiscard]] Layout& layout() const { return *layout_; }
@@ -528,7 +531,9 @@ struct FuncOpPattern final : ContextualOpPattern<func::FuncOp> {
     rewriter.setInsertionPointToStart(&func.getBody().front());
     initEntryPoint(qubits, rewriter);
 
-    stack().emplace_back(qubits, layout());
+    auto mapping = layout().generate();
+    stack().emplace_back(qubits,
+                         mapping); // TODO: Naming 'mapping' vs 'layout'.
 
     return success();
   }
@@ -701,21 +706,21 @@ private:
         continue;
       }
 
-      SmallVector<std::size_t, 8> cycle;
+      SmallVector<std::size_t, 8> cycles;
       std::size_t j = i;
       while (!visited[j]) {
         visited[j] = true;
-        cycle.push_back(j);
+        cycles.push_back(j);
         j = f[j];
       }
 
-      if (cycle.size() == 1) {
+      if (cycles.size() == 1) {
         continue;
       }
 
-      std::size_t a = cycle[0];
-      for (std::size_t k = 1; k < cycle.size(); ++k) {
-        std::size_t b = cycle[k];
+      std::size_t a = cycles[0];
+      for (std::size_t k = 1; k < cycles.size(); ++k) {
+        std::size_t b = cycles[k];
 
         const Value in0 = state().getHardwareValue(a);
         const Value in1 = state().getHardwareValue(b);
@@ -844,11 +849,21 @@ struct MeasurePattern final : ContextualOpPattern<MeasureOp> {
   }
 };
 
+/**
+ * @brief Apply pattern for mqtopt.deallocQubit.
+ *
+ * If all allocated qubits are deallocated again, e.g. we reach the end of a
+ * "circuit", the initial layout will be re-generated and re-applied.
+ */
 struct DeallocQubitPattern final : ContextualOpPattern<DeallocQubitOp> {
   using ContextualOpPattern<DeallocQubitOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(DeallocQubitOp dealloc,
                                 PatternRewriter& rewriter) const final {
     state().release(dealloc.getQubit());
+    if (state().getNumFree() == arch().nqubits()) {
+      const auto mapping = layout().generate();
+      state().reset(state().getHardwareQubits(), mapping);
+    }
     rewriter.eraseOp(dealloc);
     return success();
   }
@@ -865,6 +880,7 @@ void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
                ResetPattern, NaiveUnitaryPattern, MeasurePattern,
                DeallocQubitPattern>(patterns.getContext(), stack, arch, layout);
 }
+
 /**
  * @brief This pass ensures that the connectivity constraints of the target
  * architecture are met.
