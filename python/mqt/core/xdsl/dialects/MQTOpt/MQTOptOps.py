@@ -1,5 +1,5 @@
 from xdsl.dialects.builtin import i1, f64, i64
-from xdsl.ir import Dialect
+from xdsl.ir import Dialect, TypeAttribute
 from xdsl.irdl import (
     IRDLOperation,
     irdl_op_definition,
@@ -9,6 +9,7 @@ from xdsl.irdl import (
     var_operand_def,
     var_result_def,
     attr_def,
+    prop_def,
     irdl_attr_definition,
     Data,
     Attribute,
@@ -19,14 +20,28 @@ from xdsl.traits import NoMemoryEffect
 
 # Custom Qubit type for MQTOpt dialect
 @irdl_attr_definition
-class QubitType(Data):
+class QubitType(Data[None], TypeAttribute):
     name = "mqtopt.Qubit"
+    
+    @classmethod
+    def parse_parameter(cls, parser) -> None:
+        return None
+    
+    def print_parameter(self, printer) -> None:
+        pass
 
 
 # Custom QubitRegister type for MQTOpt dialect
 @irdl_attr_definition
-class QregType(Data):
+class QregType(Data[None], TypeAttribute):
     name = "mqtopt.QubitRegister"
+    
+    @classmethod
+    def parse_parameter(cls, parser) -> None:
+        return None
+    
+    def print_parameter(self, printer) -> None:
+        pass
 
 
 # Base class for all MQTOpt operations
@@ -92,7 +107,7 @@ class AllocOp(ResourceOp):
     traits = traits_def()  # UniqueSizeDefinition trait would be here
     
     size = opt_operand_def(i64)
-    size_attr = attr_def(Attribute, attr_name="size_attr")
+    size_attr = prop_def(Attribute)
     qreg = result_def(QregType)
 
 

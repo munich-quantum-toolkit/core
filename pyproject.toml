@@ -53,6 +53,7 @@ qiskit = [
 [project.scripts]
 mqt-core-dd-compare = "mqt.core.dd_evaluation:main"
 mqt-core-cli = "mqt.core.__main__:main"
+mqtcore-opt = "mqt.core.xdsl.tools.mqtcore_opt:main"
 
 [project.urls]
 Homepage = "https://github.com/munich-quantum-toolkit/core"
