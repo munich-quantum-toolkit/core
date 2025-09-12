@@ -14,6 +14,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
 
 #include <algorithm>
 #include <cassert>
@@ -36,7 +37,7 @@
 #include <mlir/Support/TypeID.h>
 #include <mlir/Support/WalkResult.h>
 #include <numeric>
-#include <queue>
+#include <optional>
 #include <random>
 #include <tuple>
 #include <utility>
@@ -201,26 +202,41 @@ private:
 /**
  * @brief Manage mapping between SSA values and physical hardware indices.
  *
- * Provides retrieve(..) and release(...) methods that are to be called when
- * replacing alloc's and dealloc's. Internally, these methods use a queue
- * to manage free / unused hardware qubit SSA values. Using a queue ensures
- * that alloc's and dealloc's can be in any arbitrary order.
- *
- * This class generates and applies the initial layout at construction.
- * Consequently, `nqubits` back-to-back retrievals will receive the hardware
- * qubits defined by the initial layout.
- *
  * Note that we use the terminology "hardware" and "software" qubits here,
  * because "virtual" (opposed to physical) and "static" (opposed to dynamic)
  * are C++ keywords.
  */
 class QubitState {
 public:
-  QubitState(const SmallVectorImpl<Value>& hwQubits,
-             ArrayRef<std::size_t> layout)
-      : hardwareQubits_(hwQubits.size()) {
-    mapping_.reserve(hwQubits.size());
-    reset(hwQubits, layout);
+  explicit QubitState(const std::size_t nqubits) : hardwareQubits_(nqubits) {
+    mapping_.reserve(nqubits);
+  }
+
+  /**
+   * @brief Initialize the state.
+   *
+   * Applies initial layout to the given array-ref of hardware qubits. That is,
+   * it sets the permutation.
+   *
+   * @param hwQubits An array-ref of SSA values.
+   * @param layout A layout to apply.
+   */
+  void initialize(ArrayRef<Value> hwQubits, ArrayRef<std::size_t> layout) {
+    mapping_.clear();
+    for (std::size_t s = 0; s < getNumQubits(); ++s) {
+      const std::size_t h = layout[s];
+      const Value q = hwQubits[h];
+      hardwareQubits_[h] = q;
+      mapping_.try_emplace(q, std::make_pair(h, s));
+    }
+  }
+
+  /**
+   * @brief Reset the state.
+   * @param layout A layout to apply.
+   */
+  void reset(ArrayRef<std::size_t> layout) {
+    initialize(hardwareQubits_, layout);
   }
 
   /**
@@ -240,7 +256,7 @@ public:
 
   /**
    * @brief Return SSA Value from hardware index.
-   * @param hardwareIndex The hardware index.
+   * @param index The hardware index.
    */
   [[nodiscard]] Value getHardwareValue(const std::size_t index) const {
     assert(index < hardwareQubits_.size() &&
@@ -274,27 +290,6 @@ public:
   }
 
   /**
-   * @brief Retrieve free, unused, hardware qubit.
-   * @return SSA value of static qubit or `nullptr` if there are no more free
-   * qubits.
-   */
-  Value retrieve() {
-    if (free_.empty()) {
-      return nullptr;
-    }
-
-    const std::size_t i = free_.front();
-    const Value q = getHardwareValue(i);
-    free_.pop();
-    return q;
-  }
-
-  /**
-   * @brief Release hardware qubit.
-   */
-  void release(Value q) { free_.push(getHardwareIndex(q)); }
-
-  /**
    * @brief Forward SSA values.
    * @details Replace @p in with @p out in maps.
    */
@@ -320,45 +315,12 @@ public:
     std::swap(mapping_[a].second, mapping_[b].second);
   }
 
-  /**
-   * @brief Reset the state.
-   *
-   * Fills the queue with static qubit SSA values, permutated by the layout.
-   *
-   * @param qubits A vector of SSA values.
-   * @param layout A layout to apply.
-   */
-  void reset(const SmallVectorImpl<Value>& hwQubits,
-             ArrayRef<std::size_t> layout) {
-    clear();
-    for (std::size_t s = 0; s < getNumQubits(); ++s) {
-      const std::size_t h = layout[s];
-      const Value q = hwQubits[h];
-      hardwareQubits_[h] = q;
-      mapping_.try_emplace(q, std::make_pair(h, s));
-      free_.push(h);
-    }
-  }
-
-  /**
-   * @brief Return the number of free qubits.
-   */
-  [[nodiscard]] std::size_t getNumFree() const { return free_.size(); }
-
 private:
   /**
    * @brief A pair of indices, where first is the hardware index
    * and second is the software index.
    */
   using QubitMapping = std::pair<std::size_t, std::size_t>;
-
-  /**
-   * @brief Clear the state.
-   */
-  void clear() {
-    free_ = std::queue<std::size_t>(); // Clear queue.
-    mapping_.clear();
-  }
 
   /**
    * @brief Maps SSA values to hardware indices;
@@ -371,16 +333,87 @@ private:
    * The size of this vector is the number of hardware qubits.
    */
   SmallVector<Value> hardwareQubits_;
-
-  /**
-   * @brief Queue of available hardware indices.
-   * TODO: Change to smallvector because max-size of queue will always be
-   * nqubits.
-   */
-  std::queue<std::size_t> free_;
 };
 
 using QubitStateStack = SmallVector<QubitState, 2>;
+
+/**
+ * @brief Manages qubit allocations.
+ *
+ * Provides get(..) and free(...) methods that are to be called when
+ * replacing alloc's and dealloc's. Internally, these methods use a vector
+ * to manage free / unused hardware qubit SSA values. This ensures that
+ * alloc's and dealloc's can be in any arbitrary order.
+ */
+class QubitAllocator {
+public:
+  explicit QubitAllocator(const std::size_t nqubits) : indices_(nqubits) {}
+
+  /**
+   * @brief Initialize the allocator.
+   *
+   * Adds the indices of the given layout to the vector of free indices.
+   * Note that we reverse the layout here s.t. nqubit consecutive allocations
+   * are exactly the initial layout indices.
+   *
+   * @param layout A layout to apply.
+   */
+  void initialize(ArrayRef<std::size_t> layout) {
+    llvm::copy(llvm::reverse(layout), indices_.begin());
+  }
+
+  /**
+   * @brief Get unused, free, hardware index.
+   * @return Hardware index or std::nullopt if no more free are left.
+   */
+  [[nodiscard]] std::optional<std::size_t> get() {
+    if (indices_.empty()) {
+      return std::nullopt;
+    }
+
+    const std::size_t i = indices_.back();
+    indices_.pop_back();
+    return i;
+  }
+
+  /**
+   * @brief Release hardware index.
+   */
+  void free(const std::size_t i) { indices_.push_back(i); }
+
+  /**
+   * @brief Return the number of free indices.
+   */
+  [[nodiscard]] std::size_t getNumFree() const { return indices_.size(); }
+
+private:
+  /**
+   * @brief LIFO of available hardware indices.
+   */
+  SmallVector<std::size_t, 0> indices_;
+};
+
+/**
+ * @brief Retrieve free, unused, hardware qubit.
+ *
+ * @return Hardware qubit SSA value OR `nullptr` if there are no more free
+ * qubits left.
+ */
+Value retrieveFreeQubit(QubitAllocator& allocator, QubitState& state) {
+  const std::optional<std::size_t> index = allocator.get();
+  if (!index.has_value()) {
+    return nullptr;
+  }
+
+  return state.getHardwareValue(index.value());
+}
+
+/**
+ * @brief Release used hardware qubit.
+ */
+void releaseUsedQubit(Value q, QubitAllocator& allocator, QubitState& state) {
+  allocator.free(state.getHardwareIndex(q));
+}
 
 //===----------------------------------------------------------------------===//
 // Pre-Order Walk Pattern Rewrite Driver
@@ -468,29 +501,35 @@ void initEntryPoint(SmallVectorImpl<Value>& qubits, PatternRewriter& rewriter) {
  * context.
  *
  * The routing context consists of
- *  - A qubit state manager
  *  - The targeted architecture
  *  - An initial layout generator
+ *  - A qubit state stack
+ *  - A qubit allocator
  */
 template <class BasePattern> struct ContextualPattern : BasePattern {
 public:
-  ContextualPattern(MLIRContext* ctx, QubitStateStack& stack,
-                    Architecture& arch, Layout& layout)
-      : BasePattern(ctx), stack_(&stack), arch_(&arch), layout_(&layout) {}
+  ContextualPattern(MLIRContext* ctx, Architecture& arch, Layout& layout,
+                    QubitStateStack& stack, QubitAllocator& allocator)
+      : BasePattern(ctx), arch_(&arch), layout_(&layout), stack_(&stack),
+        allocator_(&allocator) {}
 
 protected:
   [[nodiscard]] QubitState& parentState() const {
+    assert(stack().size() >= 2 &&
+           "parentState: expected at least two stack items");
     return *std::next(stack().end(), -2);
   }
-  [[nodiscard]] QubitState& state() const { return stack().back(); }
-  [[nodiscard]] QubitStateStack& stack() const { return *stack_; }
   [[nodiscard]] Architecture& arch() const { return *arch_; }
   [[nodiscard]] Layout& layout() const { return *layout_; }
+  [[nodiscard]] QubitStateStack& stack() const { return *stack_; }
+  [[nodiscard]] QubitState& state() const { return stack().back(); }
+  [[nodiscard]] QubitAllocator& allocator() const { return *allocator_; }
 
 private:
-  QubitStateStack* stack_;
   Architecture* arch_;
   Layout* layout_;
+  QubitStateStack* stack_;
+  QubitAllocator* allocator_;
 };
 
 /**
@@ -531,9 +570,10 @@ struct FuncOpPattern final : ContextualOpPattern<func::FuncOp> {
     rewriter.setInsertionPointToStart(&func.getBody().front());
     initEntryPoint(qubits, rewriter);
 
-    auto mapping = layout().generate();
-    stack().emplace_back(qubits,
-                         mapping); // TODO: Naming 'mapping' vs 'layout'.
+    const auto initialLayout = layout().generate();
+    stack().emplace_back(arch().nqubits());
+    state().initialize(qubits, initialLayout);
+    allocator().initialize(initialLayout);
 
     return success();
   }
@@ -557,15 +597,18 @@ struct ForOpPattern final : ContextualOpPattern<scf::ForOp> {
     }
 
     auto newFor = extendForArgs(forOp, rewriter);
-    cloneBody(forOp, newFor, rewriter);
-    extendYield(newFor, rewriter);
+    if (newFor != forOp) {
+      cloneBody(forOp, newFor, rewriter);
+      extendYield(newFor, rewriter);
 
-    // Replace old results with new ones or remove if none.
-    if (forOp.getNumResults() > 0) {
-      const auto res = newFor.getResults().take_front(forOp.getNumResults());
-      rewriter.replaceOp(forOp, res);
-    } else {
-      rewriter.eraseOp(forOp);
+      // Replace old results with new ones or remove if none.
+      const std::size_t nresults = forOp->getNumResults();
+      if (nresults > 0) {
+        const auto res = newFor.getResults().take_front(nresults);
+        rewriter.replaceOp(forOp, res);
+      } else {
+        rewriter.eraseOp(forOp);
+      }
     }
 
     stack().push_back(state()); // Add copy to stack.
@@ -583,7 +626,7 @@ struct ForOpPattern final : ContextualOpPattern<scf::ForOp> {
 
 private:
   /**
-   * @brief Clone body from one for op to the other and map
+   * @brief Clone body from one 'for' op to the other and map
    * block arguments.
    */
   static void cloneBody(scf::ForOp forOp, scf::ForOp newForOp,
@@ -593,7 +636,7 @@ private:
   }
 
   /**
-   * @brief Extend the results of the existing yield operation with the
+   * @brief Extend the results of the existing 'yield' operation with the
    * missing qubits from the init args.
    *
    * Instead of replacing the op, we (temporarily) create an invalid IR
@@ -658,12 +701,13 @@ struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
   using ContextualOpPattern<scf::YieldOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(scf::YieldOp yield,
                                 PatternRewriter& rewriter) const final {
-    assert(stack().size() >= 2);
     const auto from = state().getPermutation();
     const auto to = parentState().getPermutation();
     restorePermutation(from, to, yield->getLoc(), rewriter);
+
     stack().pop_back();
     rewriter.eraseOp(yield);
+
     return success();
   }
 
@@ -744,7 +788,7 @@ struct AllocQubitPattern final : ContextualOpPattern<AllocQubitOp> {
   using ContextualOpPattern<AllocQubitOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(AllocQubitOp alloc,
                                 PatternRewriter& rewriter) const final {
-    if (const Value q = state().retrieve()) {
+    if (const Value q = retrieveFreeQubit(allocator(), state())) {
       auto reset = rewriter.create<ResetOp>(alloc.getLoc(), q);
       rewriter.replaceOp(alloc, reset);
       state().forward(reset.getInQubit(), reset.getOutQubit());
@@ -859,10 +903,11 @@ struct DeallocQubitPattern final : ContextualOpPattern<DeallocQubitOp> {
   using ContextualOpPattern<DeallocQubitOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(DeallocQubitOp dealloc,
                                 PatternRewriter& rewriter) const final {
-    state().release(dealloc.getQubit());
-    if (state().getNumFree() == arch().nqubits()) {
-      const auto mapping = layout().generate();
-      state().reset(state().getHardwareQubits(), mapping);
+    releaseUsedQubit(dealloc.getQubit(), allocator(), state());
+    if (allocator().getNumFree() == arch().nqubits()) {
+      const auto newLayout = layout().generate();
+      allocator().initialize(newLayout);
+      state().reset(newLayout);
     }
     rewriter.eraseOp(dealloc);
     return success();
@@ -873,12 +918,14 @@ struct DeallocQubitPattern final : ContextualOpPattern<DeallocQubitOp> {
  * @brief Collect patterns for the naive routing algorithm.
  */
 void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
-                                  QubitStateStack& stack, Architecture& arch,
-                                  Layout& layout) {
+                                  Architecture& arch, Layout& layout,
+                                  QubitStateStack& stack,
+                                  QubitAllocator& allocator) {
   patterns.add<IfOpPattern>(patterns.getContext());
   patterns.add<FuncOpPattern, ForOpPattern, YieldOpPattern, AllocQubitPattern,
                ResetPattern, NaiveUnitaryPattern, MeasurePattern,
-               DeallocQubitPattern>(patterns.getContext(), stack, arch, layout);
+               DeallocQubitPattern>(patterns.getContext(), arch, layout, stack,
+                                    allocator);
 }
 
 /**
@@ -889,12 +936,14 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
     ModuleOp module = getOperation();
 
-    QubitStateStack stack{};
     Architecture arch = getArchitecture(ArchitectureName::MQTTest);
-    RandomLayout layout(arch.nqubits());
+
+    QubitStateStack stack{};
+    IdentityLayout layout(arch.nqubits());
+    QubitAllocator allocator(arch.nqubits());
 
     RewritePatternSet patterns(module.getContext());
-    populateNaiveRoutingPatterns(patterns, stack, arch, layout);
+    populateNaiveRoutingPatterns(patterns, arch, layout, stack, allocator);
     walkPreOrderAndApplyPatterns(module, std::move(patterns));
   }
 };
