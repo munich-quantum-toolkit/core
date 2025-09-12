@@ -26,6 +26,7 @@ namespace mqt::ir::opt {
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc" // IWYU pragma: export
 
 void populateGateEliminationPatterns(mlir::RewritePatternSet& patterns);
+void populateGateDecompositionPatterns(mlir::RewritePatternSet& patterns);
 void populateMergeRotationGatesPatterns(mlir::RewritePatternSet& patterns);
 void populateElidePermutationsPatterns(mlir::RewritePatternSet& patterns);
 void populateQuantumSinkShiftPatterns(mlir::RewritePatternSet& patterns);
