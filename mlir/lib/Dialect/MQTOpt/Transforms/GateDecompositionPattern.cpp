@@ -258,7 +258,6 @@ struct EulerDecompositionPattern final
  * @param patterns The pattern set to populate.
  */
 void populateGateDecompositionPatterns(mlir::RewritePatternSet& patterns) {
-  patterns.add<NegCtrlDecompositionPattern>(patterns.getContext());
   patterns.add<EulerDecompositionPattern>(patterns.getContext());
 }
 
