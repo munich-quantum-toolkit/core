@@ -12,8 +12,19 @@ add_compile_options(-fexceptions)
 
 file(GLOB TRANSFORMS_SOURCES *.cpp)
 
-add_mlir_library(MLIRMQTOptTransforms ${TRANSFORMS_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
-                 MLIRMQTOptTransformsIncGen)
+add_mlir_pdll_library(SwapReconstructionAndElisionIncGen SwapReconstructionAndElision.pdll
+                      SwapReconstructionAndElision.h.inc)
+
+add_mlir_library(
+  MLIRMQTOptTransforms
+  ${TRANSFORMS_SOURCES}
+  LINK_LIBS
+  ${LIBRARIES}
+  DEPENDS
+  MLIRMQTOptTransformsIncGen
+  SwapReconstructionAndElisionIncGen)
+
+target_include_directories(MLIRMQTOptTransforms PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 
 # collect header files
 file(GLOB_RECURSE TRANSFORMS_HEADERS_SOURCE

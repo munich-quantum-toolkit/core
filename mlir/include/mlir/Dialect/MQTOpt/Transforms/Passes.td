@@ -9,6 +9,8 @@
 #ifndef MQTO_PASSES
 #define MQTO_PASSES
 
+include "mlir/Dialect/PDL/IR/PDLDialect.td"
+include "mlir/Dialect/PDLInterp/IR/PDLInterpOps.td"
 include "mlir/Pass/PassBase.td"
 
 def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
@@ -45,7 +47,7 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   }];
 }
 
-def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
+def SwapReconstructionAndElision : Pass<"swap-reconstruction-and-elision", "mlir::ModuleOp"> {
   let summary = "This pass removes any permutation (i.e., SWAP gates) it encounters and modifies the order of the qubits instead.";
   let description = [{
     Elides permutations (i.e., SWAP gates) by removing them from the circuit and, instead, permuting the respective qubit values.
@@ -62,6 +64,10 @@ def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
     %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
     ```
   }];
+  let dependentDialects = [
+    "mlir::pdl::PDLDialect",
+    "mlir::pdl_interp::PDLInterpDialect",
+  ];
 }
 
 def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {

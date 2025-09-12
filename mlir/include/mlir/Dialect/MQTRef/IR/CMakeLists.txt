@@ -6,7 +6,8 @@
 #
 # Licensed under the MIT License
 
-set(DIALECT_NAME "MQTREF")
+set(DIALECT_NAME "MQTRef")
+set(DIALECT_NAME_UPPER "MQTREF")
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../../Common/IR/StdOps.td.inc
                ${CMAKE_CURRENT_BINARY_DIR}/MQTRefStdOps.td @ONLY)
 

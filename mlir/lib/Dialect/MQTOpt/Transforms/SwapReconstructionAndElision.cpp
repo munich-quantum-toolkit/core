@@ -8,8 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
+#include "mlir/Dialect/MQTOpt/Transforms/SwapReconstructionAndElision.h"
 
+#include <mlir/Dialect/PDLInterp/IR/PDLInterp.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
@@ -17,14 +18,14 @@
 
 namespace mqt::ir::opt {
 
-#define GEN_PASS_DEF_ELIDEPERMUTATIONS
+#define GEN_PASS_DEF_SWAPRECONSTRUCTIONANDELISION
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 /**
  * @brief This pattern attempts to remove SWAP gates by re-ordering qubits.
  */
-struct ElidePermutations final
-    : impl::ElidePermutationsBase<ElidePermutations> {
+struct SwapReconstructionAndElision final
+    : impl::SwapReconstructionAndElisionBase<SwapReconstructionAndElision> {
 
   void runOnOperation() override {
     // Get the current operation being operated on.
@@ -33,12 +34,17 @@ struct ElidePermutations final
 
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
-    populateElidePermutationsPatterns(patterns);
+    populateGeneratedPDLLPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
     if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
+  }
+
+  void getDependentDialects(::mlir::DialectRegistry& registry) const override {
+    registry
+        .insert<mlir::pdl::PDLDialect, mlir::pdl_interp::PDLInterpDialect>();
   }
 };
 
