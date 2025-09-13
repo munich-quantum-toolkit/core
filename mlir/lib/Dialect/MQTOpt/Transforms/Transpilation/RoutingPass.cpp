@@ -123,70 +123,33 @@ constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
 //===----------------------------------------------------------------------===//
 
 /**
- * @brief Base class for all initial layout mapping functions.
+ * @brief A mapping from software to hardware qubits.
  */
-class Layout {
-public:
-  [[nodiscard]] virtual SmallVector<std::size_t> generate() const = 0;
-  explicit Layout(const std::size_t nqubits) : nqubits_(nqubits) {}
-  virtual ~Layout() = default;
-
-protected:
-  [[nodiscard]] std::size_t nqubits() const { return nqubits_; }
-
-private:
-  std::size_t nqubits_;
-};
+using Layout = ArrayRef<std::size_t>;
 
 /**
- * @brief Identity mapping.
+ * @brief Return identity layout.
+ * @param nqubits The number of qubits.
  */
-class IdentityLayout final : public Layout {
-public:
-  using Layout::Layout;
-
-  [[nodiscard]] SmallVector<std::size_t> generate() const final {
-    SmallVector<std::size_t> mapping(nqubits());
-    std::iota(mapping.begin(), mapping.end(), 0);
-    return mapping;
-  }
-};
+[[nodiscard, maybe_unused]] SmallVector<std::size_t>
+getIdentityLayout(const std::size_t nqubits) {
+  SmallVector<std::size_t> layout(nqubits);
+  std::iota(layout.begin(), layout.end(), 0);
+  return layout;
+}
 
 /**
- * @brief Random mapping.
+ * @brief Generate random layout.
+ * @param nqubits The number of qubits.
+ * @param seed The seed used for randomization.
  */
-class RandomLayout final : public Layout {
-public:
-  using Layout::Layout;
-
-  [[nodiscard]] SmallVector<std::size_t> generate() const final {
-    std::random_device rd;
-    std::mt19937_64 rng(rd());
-
-    SmallVector<std::size_t> mapping(nqubits());
-    std::iota(mapping.begin(), mapping.end(), 0);
-    std::shuffle(mapping.begin(), mapping.end(), rng);
-    return mapping;
-  };
-};
-
-/**
- * @brief Hard-coded mapping.
- */
-class ConstantLayout final : public Layout {
-public:
-  explicit ConstantLayout(ArrayRef<std::size_t> mapping)
-      : Layout(mapping.size()), mapping_(nqubits()) {
-    std::ranges::copy(mapping, mapping_.begin());
-  }
-
-  [[nodiscard]] SmallVector<std::size_t> generate() const final {
-    return mapping_;
-  }
-
-private:
-  SmallVector<std::size_t> mapping_;
-};
+[[nodiscard, maybe_unused]] SmallVector<std::size_t>
+getRandomLayout(const std::size_t nqubits, const std::size_t seed) {
+  std::mt19937_64 rng(seed);
+  auto layout = getIdentityLayout(nqubits);
+  std::shuffle(layout.begin(), layout.end(), rng);
+  return layout;
+}
 
 //===----------------------------------------------------------------------===//
 // State (Permutation) Management
@@ -219,7 +182,7 @@ public:
    * @param hwQubits An array-ref of SSA values.
    * @param layout A layout to apply.
    */
-  void initialize(ArrayRef<Value> hwQubits, ArrayRef<std::size_t> layout) {
+  void initialize(ArrayRef<Value> hwQubits, Layout layout) {
     mapping_.clear();
     for (std::size_t s = 0; s < getNumQubits(); ++s) {
       const std::size_t h = layout[s];
@@ -233,9 +196,7 @@ public:
    * @brief Reset the state.
    * @param layout A layout to apply.
    */
-  void reset(ArrayRef<std::size_t> layout) {
-    initialize(hardwareQubits_, layout);
-  }
+  void reset(Layout layout) { initialize(hardwareQubits_, layout); }
 
   /**
    * @brief Return hardware index from SSA value.
@@ -265,7 +226,7 @@ public:
   /**
    * @brief Return the SSA values for hardware indices from 0...nqubits.
    */
-  [[nodiscard]] SmallVector<Value> getHardwareQubits() const {
+  [[nodiscard]] ArrayRef<Value> getHardwareQubits() const {
     return hardwareQubits_;
   }
 
@@ -290,16 +251,7 @@ public:
     swapHistory_.emplace_back(idx1, idx2);
   }
 
-  /**
-   * @brief Return the current software to hardware qubit mapping.
-   */
-  SmallVector<std::size_t> getPermutation() {
-    llvm::SmallVector<std::size_t> perm(getNumQubits());
-    for (const auto& [q, map] : mapping_) {
-      perm[map.second] = map.first;
-    }
-    return perm;
-  }
+  void clearHistory() { swapHistory_.clear(); }
 
   /**
    * @brief Forward SSA values.
@@ -334,7 +286,11 @@ public:
    * @brief Swap software indices.
    */
   void swapSoftwareIndices(const Value a, const Value b) {
-    std::swap(mapping_[a].second, mapping_[b].second);
+    auto ita = mapping_.find(a);
+    auto itb = mapping_.find(b);
+    assert(ita != mapping_.end() && itb != mapping_.end() &&
+           "swapSoftwareIndices: unknown values");
+    std::swap(ita->second.second, itb->second.second);
   }
 
 private:
@@ -379,7 +335,7 @@ public:
    *
    * @param layout A layout to apply.
    */
-  void initialize(ArrayRef<std::size_t> layout) {
+  void initialize(Layout layout) {
     llvm::copy(llvm::reverse(layout), indices_.begin());
   }
 
@@ -423,7 +379,7 @@ private:
 Value retrieveFreeQubit(QubitAllocator& allocator, QubitState& state) {
   const std::optional<std::size_t> index = allocator.get();
   if (!index.has_value()) {
-    return nullptr;
+    return {};
   }
 
   return state.getHardwareValue(index.value());
@@ -475,6 +431,9 @@ void walkPreOrderAndApplyPatterns(Operation* op,
             [&](Operation* current) { worklist.push_back(current); });
 
         for (const auto& curr : worklist) {
+          if (!curr) {
+            continue; // Skip erased ops.
+          }
           std::ignore = applicator.matchAndRewrite(curr, rewriter);
         }
       },
@@ -530,9 +489,9 @@ void initEntryPoint(SmallVectorImpl<Value>& qubits, PatternRewriter& rewriter) {
  */
 template <class BasePattern> struct ContextualPattern : BasePattern {
 public:
-  ContextualPattern(MLIRContext* ctx, Architecture& arch, Layout& layout,
+  ContextualPattern(MLIRContext* ctx, Architecture& arch, Layout layout,
                     QubitStateStack& stack, QubitAllocator& allocator)
-      : BasePattern(ctx), arch_(&arch), layout_(&layout), stack_(&stack),
+      : BasePattern(ctx), arch_(&arch), layout_(layout), stack_(&stack),
         allocator_(&allocator) {}
 
 protected:
@@ -542,7 +501,7 @@ protected:
     return *std::next(stack().end(), -2);
   }
   [[nodiscard]] Architecture& arch() const { return *arch_; }
-  [[nodiscard]] Layout& layout() const { return *layout_; }
+  [[nodiscard]] Layout layout() const { return layout_; }
   [[nodiscard]] QubitStateStack& stack() const { return *stack_; }
   [[nodiscard]] QubitState& state() const {
     assert(!stack().empty() && "state: expected at least one stack item");
@@ -552,7 +511,7 @@ protected:
 
 private:
   Architecture* arch_;
-  Layout* layout_;
+  Layout layout_;
   QubitStateStack* stack_;
   QubitAllocator* allocator_;
 };
@@ -595,10 +554,9 @@ struct FuncOpPattern final : ContextualOpPattern<func::FuncOp> {
     rewriter.setInsertionPointToStart(&func.getBody().front());
     initEntryPoint(qubits, rewriter);
 
-    const auto initialLayout = layout().generate();
     stack().emplace_back(arch().nqubits());
-    state().initialize(qubits, initialLayout);
-    allocator().initialize(initialLayout);
+    state().initialize(qubits, layout());
+    allocator().initialize(layout());
 
     return success();
   }
@@ -637,6 +595,7 @@ struct ForOpPattern final : ContextualOpPattern<scf::ForOp> {
     }
 
     stack().push_back(state()); // Add copy to stack.
+    state().clearHistory();     // The for-loop region gets its own history.
 
     // Forward out-of-loop and in-loop state.
     parentState().forwardRange(newFor.getInitArgs(), newFor->getResults());
@@ -722,13 +681,9 @@ struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
   using ContextualOpPattern<scf::YieldOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(scf::YieldOp yield,
                                 PatternRewriter& rewriter) const final {
-    const auto from = state().getPermutation();
-    const auto to = parentState().getPermutation();
     restorePermutation(yield, rewriter);
-
     stack().pop_back();
     rewriter.eraseOp(yield);
-
     return success();
   }
 
@@ -747,6 +702,7 @@ private:
   void restorePermutation(scf::YieldOp yield, PatternRewriter& rewriter) const {
     const auto swaps = llvm::reverse(state().getSwapHistory());
     for (const auto& [idx0, idx1] : swaps) {
+      llvm::outs() << idx0 << " " << idx1 << '\n';
       const Value in0 = state().getHardwareValue(idx0);
       const Value in1 = state().getHardwareValue(idx1);
 
@@ -754,9 +710,9 @@ private:
       const auto [out0, out1] = getOuts(swap);
 
       rewriter.setInsertionPointAfter(swap);
+      state().swapSoftwareIndices(in0, in1);
       state().forward(in0, out0);
       state().forward(in1, out1);
-      state().swapSoftwareIndices(in0, in1);
     }
   }
 };
@@ -871,21 +827,14 @@ struct MeasurePattern final : ContextualOpPattern<MeasureOp> {
   }
 };
 
-/**
- * @brief Apply pattern for mqtopt.deallocQubit.
- *
- * If all allocated qubits are deallocated again, e.g. we reach the end of a
- * "circuit", the initial layout will be re-generated and re-applied.
- */
 struct DeallocQubitPattern final : ContextualOpPattern<DeallocQubitOp> {
   using ContextualOpPattern<DeallocQubitOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(DeallocQubitOp dealloc,
                                 PatternRewriter& rewriter) const final {
     releaseUsedQubit(dealloc.getQubit(), allocator(), state());
     if (allocator().getNumFree() == arch().nqubits()) {
-      const auto newLayout = layout().generate();
-      allocator().initialize(newLayout);
-      state().reset(newLayout);
+      allocator().initialize(layout());
+      state().reset(layout());
     }
     rewriter.eraseOp(dealloc);
     return success();
@@ -896,7 +845,7 @@ struct DeallocQubitPattern final : ContextualOpPattern<DeallocQubitOp> {
  * @brief Collect patterns for the naive routing algorithm.
  */
 void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
-                                  Architecture& arch, Layout& layout,
+                                  Architecture& arch, Layout layout,
                                   QubitStateStack& stack,
                                   QubitAllocator& allocator) {
   patterns.add<IfOpPattern>(patterns.getContext());
@@ -917,11 +866,13 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     Architecture arch = getArchitecture(ArchitectureName::MQTTest);
 
     QubitStateStack stack{};
-    RandomLayout layout(arch.nqubits());
     QubitAllocator allocator(arch.nqubits());
 
+    const auto initialLayout = getRandomLayout(arch.nqubits(), 42U);
+
     RewritePatternSet patterns(module.getContext());
-    populateNaiveRoutingPatterns(patterns, arch, layout, stack, allocator);
+    populateNaiveRoutingPatterns(patterns, arch, initialLayout, stack,
+                                 allocator);
     walkPreOrderAndApplyPatterns(module, std::move(patterns));
   }
 };
