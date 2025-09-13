@@ -64,6 +64,34 @@ def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
   }];
 }
 
+def SwapReconstruction : Pass<"swap-reconstruction", "mlir::ModuleOp"> {
+  let summary = "This pass searches for CNOTs that can be merged into a SWAP.";
+  let description = [{
+    Three CNOTs that are equivalent to a SWAP are directly replaced with a (potentially controlled) SWAP gate.
+
+    For swap reconstructions with just two CNOTs (utilizing an insertion of two self-cancelling CNOTs), only non-controlled SWAP gates are inserted.
+
+    Examples of swap reconstructions:
+
+    ```
+         ┌───┐         ┌───┐
+    ──■──┤ X ├    ──■──┤ X ├──■────■──    ──╳────■──
+    ┌─┴─┐└─┬─┘ => ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐ =>   |  ┌─┴─┐
+    ┤ X ├──■──    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├
+    └───┘         └───┘     └───┘└───┘         └───┘
+    ```
+
+    ```
+    ──■────■────■──    ──■──
+      |  ┌─┴─┐  |        |
+    ──■──┤ X ├──■── => ──╳──
+    ┌─┴─┐└─┬─┘┌─┴─┐      |
+    ┤ X ├──■──┤ X ├    ──╳──
+    └───┘     └───┘
+    ```
+  }];
+}
+
 def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   let summary = "This pass attempts to push down operations into branches for possible optimizations.";
   let description = [{
