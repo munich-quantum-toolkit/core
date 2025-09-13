@@ -63,6 +63,16 @@ protected:
     context->loadAllAvailableDialects();
   }
 
+  void runPasses(const mlir::ModuleOp module) const {
+    mlir::PassManager passManager(context.get());
+    passManager.addPass(mlir::createCanonicalizerPass());
+    passManager.addPass(mlir::createMem2Reg());
+    passManager.addPass(mlir::createRemoveDeadValuesPass());
+    if (passManager.run(module).failed()) {
+      FAIL() << "Failed to run passes";
+    }
+  }
+
   void TearDown() override {}
 };
 
@@ -558,7 +568,6 @@ getCheckStringTestCaseIfRegister(const TestCaseIfRegister& testCase) {
   result += R"(
     CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
     CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[ANY:.*]] = arith.constant 0 : index
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
@@ -593,16 +602,7 @@ TEST_P(OperationTestIfRegister, EmitsExpectedOperation) {
   qc.if_(X, 0, creg, 1U, param.comparisonKind);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.addPass(mlir::createMem2Reg());
-  if (passManager.run(module.get()).failed()) {
-    FAIL() << "Failed to run passes";
-  }
+  runPasses(module.get());
 
   const auto outputString = getOutputString(&module);
   const auto checkString = getCheckStringTestCaseIfRegister(param);
@@ -633,13 +633,7 @@ TEST_F(ImportTest, IfRegisterEq2) {
   qc.if_(X, 0, creg, 2U, Eq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  if (passManager.run(module.get()).failed()) {
-    FAIL() << "Failed to run passes";
-  }
+  runPasses(module.get());
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -681,13 +675,7 @@ TEST_F(ImportTest, IfElseRegister) {
             std::make_unique<StandardOperation>(0, Y), creg, 2U, Eq);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  if (passManager.run(module.get()).failed()) {
-    FAIL() << "Failed to run passes";
-  }
+  runPasses(module.get());
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
@@ -785,16 +773,7 @@ TEST_P(OperationTestIfBit, EmitsExpectedOperation) {
   qc.if_(X, 0, 0, param.expectedValueInput, param.comparisonKind);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.addPass(mlir::createMem2Reg());
-  if (passManager.run(module.get()).failed()) {
-    FAIL() << "Failed to run passes";
-  }
+  runPasses(module.get());
 
   const auto outputString = getOutputString(&module);
   const auto checkString = getCheckStringTestCaseIfBit(param);
@@ -870,16 +849,7 @@ TEST_P(OperationTestIfElseBit, EmitsExpectedOperation) {
             param.expectedValueInput, param.comparisonKind);
 
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
-
-  // Run passes
-  mlir::PassManager passManager(context.get());
-  passManager.addPass(mlir::createMem2Reg());
-  passManager.addPass(mlir::createRemoveDeadValuesPass());
-  passManager.addPass(mlir::createCanonicalizerPass());
-  passManager.addPass(mlir::createMem2Reg());
-  if (passManager.run(module.get()).failed()) {
-    FAIL() << "Failed to run passes";
-  }
+  runPasses(module.get());
 
   const auto outputString = getOutputString(&module);
   const auto checkString = getCheckStringTestCaseIfElseBit(param);
