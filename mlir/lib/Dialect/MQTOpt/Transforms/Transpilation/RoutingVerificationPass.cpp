@@ -11,13 +11,14 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
+#include "mlir/IR/ValueRange.h"
 
 #include <cassert>
 #include <cstddef>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/BuiltinOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
@@ -44,26 +45,20 @@ constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
 
 namespace {
 
-bool forwardOne(llvm::DenseMap<Value, std::size_t>& map, const Value in,
+void forwardOne(llvm::DenseMap<Value, std::size_t>& map, const Value in,
                 const Value out) {
-  assert(in != out);
-  if (!map.contains(in)) {
-    return false;
-  }
+  assert(in != out && "'in' must not equal 'out'");
+  assert(map.contains(in) && "map must contain 'in'");
   map[out] = map[in];
   map.erase(in);
-  return true;
 }
 
-bool forwardRange(llvm::DenseMap<Value, std::size_t>& map,
-                  const ArrayRef<Value>& in, const ArrayRef<Value>& out) {
+void forwardRange(llvm::DenseMap<Value, std::size_t>& map, ValueRange in,
+                  ValueRange out) {
   assert(in.size() == out.size());
   for (std::size_t i = 0; i < in.size(); ++i) {
-    if (!forwardOne(map, in[i], out[i])) {
-      return false;
-    }
+    forwardOne(map, in[i], out[i]);
   }
-  return true;
 }
 } // namespace
 
@@ -75,33 +70,45 @@ struct RoutingVerificationPass final
     : impl::RoutingVerificationPassBase<RoutingVerificationPass> {
   void runOnOperation() override {
 
-    QubitIndexMap map;
+    llvm::SmallVector<QubitIndexMap> stack;
+    stack.emplace_back();
 
     auto arch = getArchitecture(ArchitectureName::MQTTest);
 
     auto res = getOperation()->walk<WalkOrder::PreOrder>([&](Operation* op) {
+      if (auto forOp = dyn_cast<scf::ForOp>(op)) {
+        QubitIndexMap& beforeLoop = stack.back();
+        stack.emplace_back(stack.back());
+        forwardRange(beforeLoop, forOp.getInitArgs(), forOp.getResults());
+        forwardRange(stack.back(), forOp.getInitArgs(),
+                     forOp.getRegionIterArgs());
+        return WalkResult::advance();
+      }
+
+      if (auto yield = dyn_cast<scf::YieldOp>(op)) {
+        stack.pop_back();
+      }
+
       if (auto func = dyn_cast<func::FuncOp>(op)) {
-        // As of now, we don't route non-entry functions. Hence, skip.
         if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
+          // As of now, we don't route non-entry functions. Hence, skip.
           return WalkResult::skip();
         }
 
-        map.clear();
-
+        stack.back().clear();
         return WalkResult::advance();
       }
 
       if (auto qubit = dyn_cast<QubitOp>(op)) {
-        if (map.size() == arch.nqubits()) {
+        if (stack.back().size() == arch.nqubits()) {
           return WalkResult(qubit->emitOpError()
-                            << "requires " << (map.size() + 1)
+                            << "requires " << (stack.back().size() + 1)
                             << " qubits but target architecture '"
                             << arch.name() << "' only supports "
                             << arch.nqubits() << " qubits");
         }
 
-        map[qubit.getQubit()] = qubit.getIndex();
-
+        stack.back()[qubit.getQubit()] = qubit.getIndex();
         return WalkResult::advance();
       }
 
@@ -116,10 +123,7 @@ struct RoutingVerificationPass final
       }
 
       if (auto reset = dyn_cast<ResetOp>(op)) {
-        if (!forwardOne(map, reset.getInQubit(), reset.getOutQubit())) {
-          return WalkResult(reset->emitOpError()
-                            << "accesses invalid qubit-index map.");
-        }
+        forwardOne(stack.back(), reset.getInQubit(), reset.getOutQubit());
         return WalkResult::advance();
       }
 
@@ -137,35 +141,26 @@ struct RoutingVerificationPass final
         const Value out0 = u.getAllOutQubits()[0];
 
         if (nacts == 1) {
-          if (!forwardOne(map, in0, out0)) {
-            return WalkResult(u->emitOpError()
-                              << "accesses invalid qubit-index map.");
-          }
+          forwardOne(stack.back(), in0, out0);
           return WalkResult::advance();
         }
 
         const Value in1 = u.getAllInQubits()[1];
 
-        if (!arch.areAdjacent(map.at(in0), map.at(in1))) {
+        if (!arch.areAdjacent(stack.back().at(in0), stack.back().at(in1))) {
           return WalkResult(u->emitOpError()
-                            << "(" << map[in0] << "," << map[in1] << ")"
+                            << "(" << stack.back()[in0] << ","
+                            << stack.back()[in1] << ")"
                             << " is not executable on target architecture '"
                             << arch.name() << "'");
         }
 
-        if (!forwardRange(map, u.getAllInQubits(), u.getAllOutQubits())) {
-          return WalkResult(u->emitOpError()
-                            << "accesses invalid qubit-index map.");
-        }
-
+        forwardRange(stack.back(), u.getAllInQubits(), u.getAllOutQubits());
         return WalkResult::advance();
       }
 
       if (auto measure = dyn_cast<MeasureOp>(op)) {
-        if (!forwardOne(map, measure.getInQubit(), measure.getOutQubit())) {
-          return WalkResult(measure->emitOpError()
-                            << "accesses invalid qubit-index map.");
-        }
+        forwardOne(stack.back(), measure.getInQubit(), measure.getOutQubit());
         return WalkResult::advance();
       }
 

@@ -15,18 +15,17 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Action.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -56,12 +55,6 @@ using namespace mlir;
  * @brief A function attribute that specifies an (QIR) entry point function.
  */
 constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
-
-/**
- * @brief The expected number of qubits a architecture supports for optimizing
- * inline capacities of SmallVectors.
- */
-constexpr std::size_t AVG_NQUBITS_ARCH = 32;
 
 //===----------------------------------------------------------------------===//
 // Utilities
@@ -153,7 +146,7 @@ public:
   using Layout::Layout;
 
   [[nodiscard]] SmallVector<std::size_t> generate() const final {
-    SmallVector<std::size_t, AVG_NQUBITS_ARCH> mapping(nqubits());
+    SmallVector<std::size_t> mapping(nqubits());
     std::iota(mapping.begin(), mapping.end(), 0);
     return mapping;
   }
@@ -170,7 +163,7 @@ public:
     std::random_device rd;
     std::mt19937_64 rng(rd());
 
-    SmallVector<std::size_t, AVG_NQUBITS_ARCH> mapping(nqubits());
+    SmallVector<std::size_t> mapping(nqubits());
     std::iota(mapping.begin(), mapping.end(), 0);
     std::shuffle(mapping.begin(), mapping.end(), rng);
     return mapping;
@@ -208,6 +201,11 @@ private:
  */
 class QubitState {
 public:
+  /**
+   * @brief A pair of indices.
+   */
+  using QubitIndexPair = std::pair<std::size_t, std::size_t>;
+
   explicit QubitState(const std::size_t nqubits) : hardwareQubits_(nqubits) {
     mapping_.reserve(nqubits);
   }
@@ -279,6 +277,20 @@ public:
   }
 
   /**
+   * @brief Return the swap history.
+   */
+  [[nodiscard]] SmallVector<QubitIndexPair, 32> getSwapHistory() const {
+    return swapHistory_;
+  }
+
+  /**
+   * @brief Record a swap.
+   */
+  void recordSwap(std::size_t idx1, std::size_t idx2) {
+    swapHistory_.emplace_back(idx1, idx2);
+  }
+
+  /**
    * @brief Return the current software to hardware qubit mapping.
    */
   SmallVector<std::size_t> getPermutation() {
@@ -297,7 +309,7 @@ public:
     const auto it = mapping_.find(in);
     assert(it != mapping_.end() && "forward: unknown input value");
 
-    const QubitMapping map = it->second;
+    const QubitIndexPair map = it->second;
     const std::size_t h = map.first;
 
     hardwareQubits_[h] = out;
@@ -309,6 +321,16 @@ public:
   }
 
   /**
+   * @brief Forward range of SSA values.
+   */
+  void forwardRange(ValueRange in, ValueRange out) {
+    assert(in.size() == out.size() && "'in' must have same size as 'out'");
+    for (std::size_t i = 0; i < in.size(); ++i) {
+      forward(in[i], out[i]);
+    }
+  }
+
+  /**
    * @brief Swap software indices.
    */
   void swapSoftwareIndices(const Value a, const Value b) {
@@ -317,15 +339,9 @@ public:
 
 private:
   /**
-   * @brief A pair of indices, where first is the hardware index
-   * and second is the software index.
+   * @brief Maps SSA values to (hardware, software) index pair.
    */
-  using QubitMapping = std::pair<std::size_t, std::size_t>;
-
-  /**
-   * @brief Maps SSA values to hardware indices;
-   */
-  DenseMap<Value, QubitMapping> mapping_;
+  DenseMap<Value, QubitIndexPair> mapping_;
 
   /**
    * @brief Maps hardware indices to SSA values.
@@ -333,6 +349,11 @@ private:
    * The size of this vector is the number of hardware qubits.
    */
   SmallVector<Value> hardwareQubits_;
+
+  /**
+   * @brief A history of SWAPs inserted.
+   */
+  SmallVector<QubitIndexPair, 32> swapHistory_;
 };
 
 using QubitStateStack = SmallVector<QubitState, 2>;
@@ -505,6 +526,7 @@ void initEntryPoint(SmallVectorImpl<Value>& qubits, PatternRewriter& rewriter) {
  *  - An initial layout generator
  *  - A qubit state stack
  *  - A qubit allocator
+ *  - A SWAP history
  */
 template <class BasePattern> struct ContextualPattern : BasePattern {
 public:
@@ -522,7 +544,10 @@ protected:
   [[nodiscard]] Architecture& arch() const { return *arch_; }
   [[nodiscard]] Layout& layout() const { return *layout_; }
   [[nodiscard]] QubitStateStack& stack() const { return *stack_; }
-  [[nodiscard]] QubitState& state() const { return stack().back(); }
+  [[nodiscard]] QubitState& state() const {
+    assert(!stack().empty() && "state: expected at least one stack item");
+    return stack().back();
+  }
   [[nodiscard]] QubitAllocator& allocator() const { return *allocator_; }
 
 private:
@@ -614,12 +639,8 @@ struct ForOpPattern final : ContextualOpPattern<scf::ForOp> {
     stack().push_back(state()); // Add copy to stack.
 
     // Forward out-of-loop and in-loop state.
-    std::size_t i = 0;
-    for (const auto& arg : newFor.getInitArgs()) {
-      parentState().forward(arg, newFor->getResult(i));
-      state().forward(arg, newFor.getRegionIterArg(i));
-      i++;
-    }
+    parentState().forwardRange(newFor.getInitArgs(), newFor->getResults());
+    state().forwardRange(newFor.getInitArgs(), newFor.getRegionIterArgs());
 
     return success();
   }
@@ -703,7 +724,7 @@ struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
                                 PatternRewriter& rewriter) const final {
     const auto from = state().getPermutation();
     const auto to = parentState().getPermutation();
-    restorePermutation(from, to, yield->getLoc(), rewriter);
+    restorePermutation(yield, rewriter);
 
     stack().pop_back();
     rewriter.eraseOp(yield);
@@ -713,73 +734,29 @@ struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
 
 private:
   /**
-   * @brief Restore permutation by adding SWAPs in linear runtime.
+   * @brief Restore permutation by uncompute.
    *
-   * Finds all cycles of a permutation and swaps along those cycles.
+   * Using uncompute has the advantages of (1) being intuitive and
+   * (2) preserving the optimally of the original SWAP sequence.
+   * Essentially the better the routing algorithm the better the
+   * uncompute.
    *
-   * @example The permutation (1, 2, 3, 4) -> (1, 3, 2, 4) has the
-   * cycles (1)(2, 3)(4). Single element cycles are already at their
-   * desired position. Consequently, we swap 2 and 3.
-   *
-   * @param from The current permutation
-   * @param to   The desired permutation
-   * @param location The location of the SWAPs.
+   * @param yield The yield operation.
    * @param rewriter The PatternRewriter.
    */
-  void restorePermutation(const SmallVectorImpl<std::size_t>& from,
-                          const SmallVectorImpl<std::size_t>& to,
-                          Location location, PatternRewriter& rewriter) const {
-    assert(from.size() == to.size());
+  void restorePermutation(scf::YieldOp yield, PatternRewriter& rewriter) const {
+    const auto swaps = llvm::reverse(state().getSwapHistory());
+    for (const auto& [idx0, idx1] : swaps) {
+      const Value in0 = state().getHardwareValue(idx0);
+      const Value in1 = state().getHardwareValue(idx1);
 
-    const std::size_t n = from.size();
+      auto swap = createSwap(yield->getLoc(), in0, in1, rewriter);
+      const auto [out0, out1] = getOuts(swap);
 
-    DenseMap<std::size_t, std::size_t> pos(n);
-    for (std::size_t i = 0; i < n; ++i) {
-      pos[to[i]] = i;
-    }
-
-    SmallVector<std::size_t> f(n);
-    for (std::size_t i = 0; i < n; ++i) {
-      f[i] = pos[from[i]];
-    }
-
-    llvm::BitVector visited(n);
-    for (std::size_t i = 0; i < n; ++i) {
-      if (visited[i] || f[i] == i) {
-        visited[i] = true;
-        continue;
-      }
-
-      SmallVector<std::size_t, 8> cycles;
-      std::size_t j = i;
-      while (!visited[j]) {
-        visited[j] = true;
-        cycles.push_back(j);
-        j = f[j];
-      }
-
-      if (cycles.size() == 1) {
-        continue;
-      }
-
-      std::size_t a = cycles[0];
-      for (std::size_t k = 1; k < cycles.size(); ++k) {
-        std::size_t b = cycles[k];
-
-        const Value in0 = state().getHardwareValue(a);
-        const Value in1 = state().getHardwareValue(b);
-
-        auto swap = createSwap(location, in0, in1, rewriter);
-        const auto& [out0, out1] = getOuts(swap);
-
-        rewriter.setInsertionPointAfter(swap);
-        rewriter.replaceAllUsesExcept(in0, out1, swap);
-        rewriter.replaceAllUsesExcept(in1, out0, swap);
-
-        state().swapSoftwareIndices(in0, in1);
-        state().forward(in0, out0);
-        state().forward(in1, out1);
-      }
+      rewriter.setInsertionPointAfter(swap);
+      state().forward(in0, out0);
+      state().forward(in1, out1);
+      state().swapSoftwareIndices(in0, in1);
     }
   }
 };
@@ -864,9 +841,10 @@ private:
    */
   void makeExecutable(UnitaryInterface u, PatternRewriter& rewriter) const {
     const auto& [q0, q1] = getIns(u);
-    auto path = getPath(q0, q1);
-
+    const auto path = getPath(q0, q1);
     for (std::size_t i = 0; i < path.size() - 2; ++i) {
+      state().recordSwap(path[i], path[i + 1]);
+
       const Value in0 = state().getHardwareValue(path[i]);
       const Value in1 = state().getHardwareValue(path[i + 1]);
 
@@ -939,7 +917,7 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     Architecture arch = getArchitecture(ArchitectureName::MQTTest);
 
     QubitStateStack stack{};
-    IdentityLayout layout(arch.nqubits());
+    RandomLayout layout(arch.nqubits());
     QubitAllocator allocator(arch.nqubits());
 
     RewritePatternSet patterns(module.getContext());
