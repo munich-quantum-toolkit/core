@@ -40,13 +40,11 @@ public:
   IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                   std::unique_ptr<Operation>&& elseOp,
                   const ClassicalRegister& controlRegister,
-                  const std::uint64_t expectedValue = 1U,
-                  const ComparisonKind kind = Eq);
+                  std::uint64_t expectedValue = 1U, ComparisonKind kind = Eq);
 
   IfElseOperation(std::unique_ptr<Operation>&& thenOp,
-                  std::unique_ptr<Operation>&& elseOp, const Bit controlBit,
-                  const bool expectedValue = true,
-                  const ComparisonKind kind = Eq);
+                  std::unique_ptr<Operation>&& elseOp, Bit controlBit,
+                  bool expectedValue = true, ComparisonKind kind = Eq);
 
   IfElseOperation(const IfElseOperation& op);
 
@@ -148,6 +146,19 @@ private:
   std::uint64_t expectedValueRegister = 1U;
   bool expectedValueBit = true;
   ComparisonKind comparisonKind = Eq;
+
+  /**
+   * @brief Canonicalizes the IfElseOperation
+   * @details Ensures if an else block is present, the then block is also
+   * present. If only the else block is present, it is moved to the then block
+   * and the else block is set to null with the condition inverted.
+   * Furthermore, non-equality constraints on single bits are converted to
+   * equality constraints with inverted expected value.
+   * Finally, if both then and else blocks are present, any equality constraint
+   * on a single bit with expected value false is converted to an equality
+   * constraint with expected value true with then and else blocks swapped.
+   */
+  void canonicalize();
 };
 } // namespace qc
 
