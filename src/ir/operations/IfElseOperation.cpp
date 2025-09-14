@@ -250,20 +250,42 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
   of << "}\n";
 }
 
+/**
+ * @brief Canonicalizes the IfElseOperation by normalizing its internal
+ * representation.
+ *
+ * This method ensures that the then/else branches and comparison kinds are in a
+ * standard form.
+ * - If the thenOp is null, swap thenOp and elseOp, and invert the comparison
+ * kind.
+ * - For single-bit control, only equality comparisons are supported; Neq is
+ * converted to Eq with inverted expectedValueBit.
+ * - If expectedValueBit is false and elseOp exists, swap thenOp and elseOp, and
+ * set expectedValueBit to true.
+ *
+ * This normalization simplifies further processing and ensures consistent
+ * behavior.
+ */
 void IfElseOperation::canonicalize() {
+  // If thenOp is null, swap thenOp and elseOp, and invert the comparison kind.
   if (thenOp == nullptr) {
     std::swap(thenOp, elseOp);
     comparisonKind = getInvertedComparisonKind(comparisonKind);
   }
+  // If control is a single bit, only equality comparisons are supported.
   if (controlBit.has_value()) {
+    // Convert Neq to Eq by inverting expectedValueBit.
     if (comparisonKind == Neq) {
       comparisonKind = Eq;
       expectedValueBit = !expectedValueBit;
     }
+    // Throw if comparison is not Eq (after possible conversion above).
     if (comparisonKind != Eq) {
       throw std::invalid_argument(
           "Inequality comparisons on a single bit are not supported.");
     }
+    // If expectedValueBit is false and elseOp exists, swap thenOp and elseOp,
+    // and set expectedValueBit to true.
     if (!expectedValueBit && elseOp != nullptr) {
       std::swap(thenOp, elseOp);
       expectedValueBit = true;

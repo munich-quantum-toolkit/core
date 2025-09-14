@@ -337,7 +337,8 @@ mlir::Value getIntegerValueFromRegister(mlir::OpBuilder& builder,
   // Extract length (assumed 1-D static memref<Nxi1>)
   const auto bitsType = mlir::cast<mlir::MemRefType>(bits.getType());
   const auto shape = bitsType.getShape();
-  assert(shape.size() == 1);
+  assert(shape.size() == 1 &&
+         "Expected 1-D memref type in getIntegerValueFromRegister");
   const auto size = shape[0];
 
   // Loop constants
@@ -352,8 +353,8 @@ mlir::Value getIntegerValueFromRegister(mlir::OpBuilder& builder,
   // for (i = 0; i < size; ++i) acc += (bit_i << i)
   auto loop = builder.create<mlir::scf::ForOp>(
       loc, lb, ub, step, mlir::ValueRange{initial},
-      [&](mlir::OpBuilder& b, const mlir::Location forLoc, mlir::Value iv,
-          const mlir::ValueRange iterArgs) {
+      [&builder, &bits](mlir::OpBuilder& b, const mlir::Location forLoc,
+                        mlir::Value iv, const mlir::ValueRange iterArgs) {
         auto bit =
             b.create<mlir::memref::LoadOp>(forLoc, bits, mlir::ValueRange{iv});
         auto bitExt =
