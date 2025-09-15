@@ -41,11 +41,6 @@ struct SwapReconstructionAndElision final
       signalPassFailure();
     }
   }
-
-  void getDependentDialects(::mlir::DialectRegistry& registry) const override {
-    registry
-        .insert<mlir::pdl::PDLDialect, mlir::pdl_interp::PDLInterpDialect>();
-  }
 };
 
 } // namespace mqt::ir::opt

@@ -14,9 +14,6 @@
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/Pass.h>
 
-// TODO: fix in SwapReconstructionAndElision
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h" // NOLINT(unused-includes)
-
 namespace mqt::ir::opt {
 
 #define GEN_PASS_DECL_SWAPRECONSTRUCTIONANDELISION
