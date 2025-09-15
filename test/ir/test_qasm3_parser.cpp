@@ -607,8 +607,7 @@ TEST_F(Qasm3ParserTest, ImportQasm3IfElseNoBlock) {
                                "bit[1] c;\n"
                                "h q[0];\n"
                                "c[0] = measure q[0];\n"
-                               "if (c[0]) {\n"
-                               "} else {\n"
+                               "if (!c[0]) {\n"
                                "  x q[1];\n"
                                "}\n"
                                "x q[0];\n";
