@@ -1625,6 +1625,241 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
   removeIdentities(qc);
 }
 
+/**
+ * @brief Block of Clifford operations
+ * @details This structure is used to collect Clifford operations that can be
+ * grouped together. It maintains the qubits that are part of the block
+ * and the qubits that are blocked by non-Clifford operations.
+ */
+struct CliffordBlock {
+  std::unordered_set<Qubit> blockQubits;
+  std::unordered_set<Qubit> blocked;
+  std::unique_ptr<CompoundOperation> operations;
+  std::unique_ptr<Operation>* position = nullptr;
+  std::size_t logicalStep = 0;
+
+  [[nodiscard]] bool empty() const noexcept {
+    return !operations || operations->empty();
+  }
+
+  /**
+   * @brief Check if this block is fully disabled by non-Clifford operations
+   *
+   */
+  [[nodiscard]] bool fullyDisabled() const noexcept {
+    return std::ranges::all_of(
+        blockQubits, [this](const Qubit q) { return blocked.contains(q); });
+  }
+
+  /**
+   * @brief Check if adding qubits used by gate would exceed maxBlockSize
+   * @param used Qubits used by the gate
+   * @param maxBlockSize Maximum allowed block size
+   */
+  [[nodiscard]] bool
+  checkExceedsMaxBlockSize(const std::set<Qubit>& used,
+                           const std::size_t maxBlockSize) const noexcept {
+    std::size_t extra = 0;
+    for (const auto q : used) {
+      if (!blockQubits.contains(q)) {
+        ++extra;
+        if (blockQubits.size() + extra > maxBlockSize) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /**
+   * @brief Check if qubits used by gate are blocked in this block
+   * @param used Qubits used by the gate
+   */
+  [[nodiscard]] bool checkBlocked(const std::set<Qubit>& used) const noexcept {
+    return std::ranges::all_of(
+        used, [this](const Qubit q) { return !blocked.contains(q); });
+  }
+
+  /**
+   * @brief Check if repostion is needed to keep block valid
+   * @param used Qubits used by the gate
+   * @param lastNonClifford Map of qubits to last non-Clifford operation
+   */
+  [[nodiscard]] bool
+  checkRepositionNeeded(const std::set<Qubit>& used,
+                        const std::unordered_map<Qubit, std::size_t>&
+                            lastNonClifford) const noexcept {
+    std::size_t required = 0;
+    for (const auto q : used) {
+      if (const auto it = lastNonClifford.find(q);
+          it != lastNonClifford.end()) {
+        required = std::max(required, it->second);
+      }
+    }
+    return required > logicalStep;
+  }
+
+  /**
+   * @brief Append operation into block
+   * @details Append operation into block. If movePosition is true, re-position
+   * here otherwise we erase the current slot.
+   * @param op Operation to add
+   * @param used Qubits used by the gate
+   * @param qc Quantum computation
+   * @param it Current iterator in quantum computation
+   * @param movePosition Whether to move the position of the block
+   * @param step Current logical step in the quantum computation
+   */
+  void addOp(std::unique_ptr<Operation>& op, const std::set<Qubit>& used,
+             QuantumComputation& qc, QuantumComputation::iterator& it,
+             const bool movePosition, const std::size_t step) {
+    operations->emplace_back(std::move(op));
+
+    if (movePosition) {
+      // we move block into the right position with identities because they are
+      // removed later
+      *position = std::make_unique<StandardOperation>(0, I);
+      position = &(*it);
+      logicalStep = step;
+    } else {
+      // operations is moved into compound operation so we can delete it
+      it = qc.erase(it);
+      --it;
+    }
+
+    for (const auto q : used) {
+      blockQubits.insert(q);
+    }
+  }
+
+  /**
+   * @brief Collapse operation and reset block
+   */
+  void finalize() {
+    if (position == nullptr || empty()) {
+      return;
+    }
+    if (operations->isConvertibleToSingleOperation()) {
+      *position = operations->collapseToSingleOperation();
+    } else {
+      *position = std::move(operations);
+    }
+    // reset
+    operations = std::make_unique<CompoundOperation>();
+    blockQubits.clear();
+    blocked.clear();
+    position = nullptr;
+    logicalStep = 0;
+  }
+};
+
+void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
+                                             const std::size_t maxBlockSize) {
+  if (qc.size() <= 1) {
+    return;
+  }
+
+  qc.reorderOperations();
+  deferMeasurements(qc);
+
+  std::vector<CliffordBlock> blocks;
+  std::unordered_map<Qubit, std::size_t> lastNonClifford;
+  std::size_t step = 0;
+
+  for (auto it = qc.begin(); it != qc.end(); ++it, ++step) {
+    auto& op = *it;
+    const bool isClif = op->isClifford();
+    const std::set<Qubit> used = op->getUsedQubits();
+
+    if (!isClif) {
+      // track nonClifford and block qubits for any block
+      for (const auto q : used) {
+        lastNonClifford[q] = step;
+      }
+      for (auto& block : blocks) {
+        bool touched = false;
+        for (const auto q : used) {
+          if (block.blockQubits.contains(q)) {
+            block.blocked.insert(q);
+            touched = true;
+          }
+        }
+        if (touched && block.fullyDisabled()) {
+          block.finalize();
+        }
+      }
+      // keep this non-Clifford gate in place
+      continue;
+    }
+
+    // Gate itself is too big
+    if (used.size() > maxBlockSize) {
+      continue;
+    }
+
+    // Try to place into newest block
+    auto chosen = static_cast<std::size_t>(0);
+    bool movePosition = false;
+    bool found = false;
+    for (std::size_t i = blocks.size(); i-- > static_cast<std::size_t>(0);) {
+      auto& block = blocks[i];
+      if (block.position == nullptr) {
+        continue;
+      }
+      if (!block.checkBlocked(used)) {
+        continue;
+      }
+      if (!block.checkExceedsMaxBlockSize(used, maxBlockSize)) {
+        continue;
+      }
+
+      chosen = i;
+      movePosition = block.checkRepositionNeeded(used, lastNonClifford);
+      found = true;
+      break;
+    }
+
+    if (found) {
+      // Disable these qubits in all older blocks
+      for (std::size_t t = 0; t < chosen; ++t) {
+        auto& block = blocks[t];
+        if (block.position == nullptr) {
+          continue;
+        }
+        bool touches = false;
+        for (const auto q : used) {
+          if (block.blockQubits.contains(q)) {
+            block.blocked.insert(q);
+            touches = true;
+          }
+        }
+        if (touches && block.fullyDisabled()) {
+          block.finalize();
+        }
+      }
+
+      blocks[chosen].addOp(op, used, qc, it, movePosition, step);
+      continue;
+    }
+
+    // Otherwise open a new block at this slot
+    CliffordBlock block{};
+    block.operations = std::make_unique<CompoundOperation>();
+    block.position = &(*it);
+    block.logicalStep = step;
+    block.operations->emplace_back(std::move(op));
+    for (const auto q : used) {
+      block.blockQubits.insert(q);
+    }
+    blocks.emplace_back(std::move(block));
+  }
+
+  for (auto& block : blocks) {
+    block.finalize();
+  }
+  removeIdentities(qc);
+}
+
 namespace {
 void elidePermutations(Iterator begin, const std::function<Iterator()>& end,
                        const std::function<Iterator(Iterator)>& erase,

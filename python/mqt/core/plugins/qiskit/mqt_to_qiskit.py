@@ -15,11 +15,9 @@ from typing import TYPE_CHECKING
 from qiskit.circuit import (
     AncillaRegister,
     ClassicalRegister,
-    Clbit,
     IfElseOp,
     QuantumCircuit,
     QuantumRegister,
-    Qubit,
 )
 from qiskit.circuit.classical import expr
 from qiskit.circuit.library import (
@@ -60,7 +58,6 @@ from ...ir.operations import (
     Control,
     IfElseOperation,
     NonUnitaryOperation,
-    Operation,
     OpType,
     StandardOperation,
 )
@@ -68,9 +65,11 @@ from ...ir.operations import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from qiskit.circuit import Clbit, Qubit
     from qiskit.circuit.singleton import SingletonGate
 
     from ...ir import QuantumComputation
+    from ...ir.operations import Operation
 
 __all__ = ["mqt_to_qiskit"]
 
@@ -229,7 +228,7 @@ def _add_non_unitary_operation(
         clbit_map: A mapping from classical bit indices to Qiskit :class:`~qiskit.circuit.Clbit`.
     """
     if op.type_ == OpType.measure:
-        for qubit, clbit in zip(op.targets, op.classics):
+        for qubit, clbit in zip(op.targets, op.classics, strict=False):
             circ.measure(qubit_map[qubit], clbit_map[clbit])
         return
 

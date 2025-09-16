@@ -8,23 +8,22 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <utility>
 
 namespace mqt::ir::opt {
 
-#define GEN_PASS_DEF_CANCELCONSECUTIVEINVERSES
+#define GEN_PASS_DEF_GATEELIMINATION
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 /**
  * @brief This pass attempts to cancel consecutive self-inverse operations.
  */
-struct CancelConsecutiveInverses final
-    : impl::CancelConsecutiveInversesBase<CancelConsecutiveInverses> {
+struct GateElimination final : impl::GateEliminationBase<GateElimination> {
 
   void runOnOperation() override {
     // Get the current operation being operated on.
@@ -33,10 +32,10 @@ struct CancelConsecutiveInverses final
 
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
-    populateCancelInversesPatterns(patterns);
+    populateGateEliminationPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
+    if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }

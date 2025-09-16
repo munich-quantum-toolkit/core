@@ -26,11 +26,12 @@ def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
   }];
 }
 
-def CancelConsecutiveInverses : Pass<"cancel-consecutive-inverses", "mlir::ModuleOp"> {
+def GateElimination : Pass<"gate-elimination", "mlir::ModuleOp"> {
   let summary = "This pass searches for consecutive applications of gates and their inverses and cancels them.";
   let description = [{
     This pass searches for applications of gates that are their own inverses. Walking down their def-use chain,
     it then checks if the same gate is applied once again. In that case, the two gates are cancelled.
+    Additionally, all occurrences of the identity gate are removed.
   }];
 }
 
@@ -41,6 +42,25 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
     The merged gate is currently not removed if the angles add up to zero.
 
     This pass currently does not affect `xx_minus_yy`, `xx_plus_yy`, `u`, and `u2`.
+  }];
+}
+
+def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
+  let summary = "This pass removes any permutation (i.e., SWAP gates) it encounters and modifies the order of the qubits instead.";
+  let description = [{
+    Elides permutations (i.e., SWAP gates) by removing them from the circuit and, instead, permuting the respective qubit values.
+
+    This optimization will not preserve the current qubit mapping and has no awareness of potential connectivity limitations.
+
+    Example:
+    ```
+    // before
+    %q0_1, %q1_1 = mqtopt.swap() %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+    %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+    // after
+    %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    ```
   }];
 }
 
