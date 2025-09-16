@@ -213,9 +213,13 @@ module {
 
         %q0 = mqtref.allocQubit
         %q1 = mqtref.allocQubit
+        %mem = memref.alloca() : memref<2xi1>
         %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> (i1)
+        %c0 = arith.constant 0 : index
+        memref.store %m0, %mem[%c0] : memref<2xi1>
         %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> (i1)
-
+        %c1 = arith.constant 1 : index
+        memref.store %m1, %mem[%c1] : memref<2xi1>
         mqtref.deallocQubit %q0
         mqtref.deallocQubit %q1
         return
@@ -244,11 +248,79 @@ module {
 
         %q0 = mqtref.qubit 0
         %q1 = mqtref.qubit 1
+        %mem = memref.alloca() : memref<2xi1>
         %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> (i1)
+        %c0 = arith.constant 0 : index
+        memref.store %m0, %mem[%c0] : memref<2xi1>
         %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> (i1)
+        %c1 = arith.constant 1 : index
+        memref.store %m1, %mem[%c1] : memref<2xi1>
         return
     }
 }
+
+// -----
+// This test checks if measure operations are converted correctly that store the classical result on the same index
+module {
+    // CHECK: llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
+
+    // CHECK-LABEL: llvm.func @testMeasureOpOnSameIndex()
+    func.func @testMeasureOpOnSameIndex() attributes {passthrough = ["entry_point"]}  {
+        // CHECK-DAG: %[[a_0:.*]] = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
+        // CHECK-DAG: %[[ptr_0:.*]] = llvm.mlir.zero : !llvm.ptr
+        // CHECK: %[[q_0:.*]] = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
+        // CHECK: %[[q_1:.*]] = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
+        // CHECK: llvm.call @__quantum__qis__mz__body(%[[q_0]], %[[ptr_0]]) : (!llvm.ptr, !llvm.ptr)
+        // CHECK-DAG: %[[c_1:.*]] = llvm.mlir.constant(1 : i64) : i64
+        // CHECK-DAG: %[[ptr_1:.*]] = llvm.inttoptr %[[c_1]] : i64 to !llvm.ptr
+        // CHECK: llvm.call @__quantum__qis__mz__body(%[[q_1]], %[[ptr_1]]) : (!llvm.ptr, !llvm.ptr)
+        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+
+        %q0 = mqtref.allocQubit
+        %q1 = mqtref.allocQubit
+        %mem = memref.alloca() : memref<2xi1>
+        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> (i1)
+        %c0 = arith.constant 0 : index
+        memref.store %m0, %mem[%c0] : memref<2xi1>
+        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> (i1)
+        memref.store %m1, %mem[%c0] : memref<2xi1>
+        mqtref.deallocQubit %q0
+        mqtref.deallocQubit %q1
+        return
+    }
+}
+
+// -----
+// This test checks if measure operations using static qubits are converted correctly that store the classical result on the same index
+module {
+    // CHECK: llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
+
+    // CHECK-LABEL: llvm.func @testMeasureOpOnSameIndexStatic()
+    func.func @testMeasureOpOnSameIndexStatic() attributes {passthrough = ["entry_point"]}  {
+        // CHECK-DAG: %[[a_0:.*]] = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
+        // CHECK: %[[ptr_0:.*]] = llvm.mlir.zero : !llvm.ptr
+        // CHECK: %[[c_1:.*]] = llvm.mlir.constant(1 : i64) : i64
+        // CHECK: %[[ptr_1:.*]] = llvm.inttoptr %[[c_1]] : i64 to !llvm.ptr
+        // CHECK: llvm.call @__quantum__qis__mz__body(%[[ptr_0]], %[[ptr_0]]) : (!llvm.ptr, !llvm.ptr)
+        // CHECK: llvm.call @__quantum__qis__mz__body(%[[ptr_1]], %[[ptr_1]]) : (!llvm.ptr, !llvm.ptr)
+        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+
+
+
+        %q0 = mqtref.qubit 0
+        %q1 = mqtref.qubit 1
+        %mem = memref.alloca() : memref<2xi1>
+        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> (i1)
+        %c0 = arith.constant 0 : index
+        memref.store %m0, %mem[%c0] : memref<2xi1>
+        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> (i1)
+        memref.store %m1, %mem[%c0] : memref<2xi1>
+        return
+    }
+}
+
 // -----
 // This test checks if the single qubit gates are correctly converted
 module {
@@ -740,8 +812,11 @@ module {
 
         %q0 = mqtref.allocQubit
         %q1 = mqtref.allocQubit
+        %mem = memref.alloca() : memref<1xi1>
         mqtref.h() %q0
         %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+        %c0 = arith.constant 0 : index
+        memref.store %m0, %mem[%c0] : memref<1xi1>
         mqtref.deallocQubit %q0
         mqtref.h() %q1
         "mqtref.reset"(%q1) : (!mqtref.Qubit) -> ()
@@ -784,10 +859,15 @@ module {
 
         %q0 = mqtref.allocQubit
         %q1 = mqtref.allocQubit
+        %mem = memref.alloca() : memref<2xi1>
         mqtref.h() %q0
         mqtref.x() %q1 ctrl %q0
         %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+        %c0 = arith.constant 0 : index
+        memref.store %m0, %mem[%c0] : memref<2xi1>
         %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> i1
+        %c1 = arith.constant 1 : index
+        memref.store %m1, %mem[%c1] : memref<2xi1>
         mqtref.deallocQubit %q0
         mqtref.deallocQubit %q1
         return
@@ -824,10 +904,15 @@ module {
 
         %q0 = mqtref.qubit 0
         %q1 = mqtref.qubit 1
+        %mem = memref.alloca() : memref<2xi1>
         mqtref.h() %q0
         mqtref.x() %q1 ctrl %q0
         %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+        %c0 = arith.constant 0 : index
+        memref.store %m0, %mem[%c0] : memref<2xi1>
         %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> i1
+        %c1 = arith.constant 1 : index
+        memref.store %m1, %mem[%c1] : memref<2xi1>
         return
     }
 }

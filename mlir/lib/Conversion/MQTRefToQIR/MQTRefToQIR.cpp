@@ -10,11 +10,12 @@
 
 // macro to add the conversion pattern from any ref gate operation to a llvm
 // call operation that adheres to the QIR specification
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #define ADD_CONVERT_PATTERN(gate)                                              \
   mqtPatterns.add<ConvertMQTRefGateOpQIR<ref::gate>>(typeConverter, ctx);
 
 #include "mlir/Conversion/MQTRefToQIR/MQTRefToQIR.h"
+
+#include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -25,7 +26,6 @@
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
-#include <mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -34,8 +34,9 @@
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
-#include <mlir/Dialect/MQTRef/IR/MQTRefDialect.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -98,6 +99,8 @@ struct LoweringState {
   // map a given index to a pointer value, to reuse the value instead of
   // creating a new one every time
   DenseMap<size_t, Value> ptrMap;
+  // map a given index to an address to record the classical output
+  DenseMap<size_t, Operation*> outputMap;
   // Index for the next measure operation
   size_t index{};
   // number of stored results in the module
@@ -578,7 +581,7 @@ struct ConvertMQTRefMeasureQIR final
     LLVM::LLVMFuncOp fnDecl;
     auto const ptrType = LLVM::LLVMPointerType::get(ctx);
     auto& ptrMap = getState().ptrMap;
-
+    auto& outputMap = getState().outputMap;
     Value resultValue = nullptr;
     // get a pointer to result
     if (ptrMap.contains(getState().numResults)) {
@@ -611,8 +614,54 @@ struct ConvertMQTRefMeasureQIR final
     fnDecl = getFunctionDeclaration(rewriter, op, FN_NAME_RECORD_OUTPUT,
                                     qirSignature);
 
+    size_t index = 0;
+
+    // get the index of the register where the result is stored
+    for (const auto* users : op->getResult(0).getUsers()) {
+      if (auto storeOp = dyn_cast<memref::StoreOp>(users)) {
+        // the conversion of the arith dialect to the llvm dialect before this
+        // conversion pass causes an unrealized conversion cast on the index
+        // type as the llvm dialect does not have a index type
+        if (const auto unrealizedConvOp =
+                storeOp.getIndices()[0]
+                    .getDefiningOp<UnrealizedConversionCastOp>()) {
+          if (auto constantOp = unrealizedConvOp->getOperand(0)
+                                    .getDefiningOp<LLVM::ConstantOp>()) {
+            index = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
+            // erase the storeOp immediately instead of erasing it after the
+            // pass with rewriter.erase() to update the number of users
+            // immediately
+            storeOp->erase();
+
+            // erase the alloca op if all store operations are removed
+            const auto allocaOp = storeOp.getMemRef();
+            if (allocaOp.use_empty()) {
+              rewriter.eraseOp(allocaOp.getDefiningOp<memref::AllocaOp>());
+            }
+            // delete the unrealized conversion and the constant operation when
+            // there are no users left
+            if (unrealizedConvOp->getResult(0).use_empty()) {
+              rewriter.eraseOp(unrealizedConvOp);
+              rewriter.eraseOp(constantOp);
+            }
+            break;
+          }
+        }
+      }
+    }
+    Operation* addressOfOp = nullptr;
     // get the pointer to the internal constant
-    auto* addressOfOp = getAddressOfOp(op, rewriter, getState());
+    if (outputMap.contains(index)) {
+      // reuse the address if the index was already used
+      addressOfOp = outputMap.at(index);
+    } else {
+      // otherwise create a new addressofOp
+      addressOfOp = getAddressOfOp(op, rewriter, getState());
+      // store them in the map to reuse them later
+      outputMap.try_emplace(index, addressOfOp);
+      // increase the number of required results
+      getState().numResults++;
+    }
 
     // create record result output in the last block of the main function
     // the parent of the current operation is only guaranteed to be the main
@@ -627,9 +676,6 @@ struct ConvertMQTRefMeasureQIR final
 
     // erase the old operation
     rewriter.eraseOp(op);
-
-    // increase the number of required results
-    getState().numResults++;
 
     return success();
   }
@@ -705,7 +751,8 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
       auto& op = *it++;
 
       if (dyn_cast<ref::DeallocOp>(op) || dyn_cast<ref::DeallocQubitOp>(op) ||
-          dyn_cast<ref::ResetOp>(op) || dyn_cast<ref::MeasureOp>(op)) {
+          dyn_cast<ref::ResetOp>(op) || dyn_cast<ref::MeasureOp>(op) ||
+          op.getDialect()->getNamespace() == "memref") {
         // move irreversible quantum operations to the irreversible block
         irreversibleBlockOps.splice(irreversibleBlock->end(), mainBlockOps,
                                     Block::iterator(op));
@@ -817,11 +864,11 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     cf::populateControlFlowToLLVMConversionPatterns(typeConverter, stdPatterns);
     populateFuncToLLVMConversionPatterns(typeConverter, stdPatterns);
     arith::populateArithToLLVMConversionPatterns(typeConverter, stdPatterns);
-    populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, stdPatterns);
+
     target.addIllegalDialect<arith::ArithDialect>();
     target.addIllegalDialect<func::FuncDialect>();
     target.addIllegalDialect<cf::ControlFlowDialect>();
-    target.addIllegalDialect<memref::MemRefDialect>();
+
     if (failed(
             applyPartialConversion(moduleOp, target, std::move(stdPatterns)))) {
       signalPassFailure();
