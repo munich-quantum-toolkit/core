@@ -45,34 +45,14 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   }];
 }
 
-def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
-  let summary = "This pass removes any permutation (i.e., SWAP gates) it encounters and modifies the order of the qubits instead.";
+def SwapReconstructionAndElision : Pass<"swap-reconstruction-and-elision", "mlir::ModuleOp"> {
+  let summary = "This pass tries to replace consecutive reversed CNOT gates with SWAP gates and removes then any permutation (i.e., SWAP gates) it encounters by modifying the order of the qubits instead.";
   let description = [{
-    Elides permutations (i.e., SWAP gates) by removing them from the circuit and, instead, permuting the respective qubit values.
+    Reconstruct SWAP gates from two consecutive reversed CNOTs where possible and elides permutations (i.e., SWAP gates) by removing them from the circuit and, instead, permuting the respective qubit values.
 
     This optimization will not preserve the current qubit mapping and has no awareness of potential connectivity limitations.
 
-    Example:
-    ```
-    // before
-    %q0_1, %q1_1 = mqtopt.swap() %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
-    %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
-
-    // after
-    %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
-    ```
-  }];
-}
-
-def SwapReconstruction : Pass<"swap-reconstruction", "mlir::ModuleOp"> {
-  let summary = "This pass searches for CNOTs that can be merged into a SWAP.";
-  let description = [{
-    Three CNOTs that are equivalent to a SWAP are directly replaced with a (potentially controlled) SWAP gate.
-
-    For swap reconstructions with just two CNOTs (utilizing an insertion of two self-cancelling CNOTs), only non-controlled SWAP gates are inserted.
-
-    Examples of swap reconstructions:
-
+    Example of swap reconstructions:
     ```
          ┌───┐         ┌───┐
     ──■──┤ X ├    ──■──┤ X ├──■────■──    ──╳────■──
@@ -81,13 +61,14 @@ def SwapReconstruction : Pass<"swap-reconstruction", "mlir::ModuleOp"> {
     └───┘         └───┘     └───┘└───┘         └───┘
     ```
 
+    Example of swap elision:
     ```
-    ──■────■────■──    ──■──
-      |  ┌─┴─┐  |        |
-    ──■──┤ X ├──■── => ──╳──
-    ┌─┴─┐└─┬─┘┌─┴─┐      |
-    ┤ X ├──■──┤ X ├    ──╳──
-    └───┘     └───┘
+    // before
+    %q0_1, %q1_1 = mqtopt.swap() %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
+    %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+    // after
+    %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
     ```
   }];
 }
