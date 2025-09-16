@@ -10,12 +10,11 @@
 
 // macro to add the conversion pattern from any ref gate operation to a llvm
 // call operation that adheres to the QIR specification
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #define ADD_CONVERT_PATTERN(gate)                                              \
   mqtPatterns.add<ConvertMQTRefGateOpQIR<ref::gate>>(typeConverter, ctx);
 
 #include "mlir/Conversion/MQTRefToQIR/MQTRefToQIR.h"
-
-#include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +25,7 @@
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -34,6 +34,7 @@
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/Dialect/MQTRef/IR/MQTRefDialect.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -56,15 +57,15 @@ using namespace mlir;
 
 namespace {
 /**
-   * @brief Look up the function declaration with a given name. If it does not
-   exist create one and return it.
-   *
-   * @param rewriter The PatternRewriter to use.
-   * @param op The operation that is matched.
-   * @param fnName The name of the function.
-   * @param fnType The type signature of the function.
-   * @return The LLVM funcOp declaration with the requested name and signature.
-   */
+ * @brief Look up the function declaration with a given name. If it does not
+ exist create one and return it.
+ *
+ * @param rewriter The PatternRewriter to use.
+ * @param op The operation that is matched.
+ * @param fnName The name of the function.
+ * @param fnType The type signature of the function.
+ * @return The LLVM funcOp declaration with the requested name and signature.
+ */
 LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
                                         Operation* op, StringRef fnName,
                                         Type fnType) {
@@ -511,7 +512,6 @@ struct ConvertMQTRefMeasureQIR final
   static Operation* getAddressOfOp(Operation* op,
                                    ConversionPatternRewriter& rewriter,
                                    LoweringState& state) {
-    Operation* addressOfOp = nullptr;
 
     // create a new globalOp and an addressOfOp
     // set the insertionpoint to the beginning of the module
@@ -552,7 +552,7 @@ struct ConvertMQTRefMeasureQIR final
     // insert the addressOfOp of the newly created global op at the beginning
     // of the block
     rewriter.setInsertionPointToStart(&firstBlock);
-    addressOfOp = rewriter.create<LLVM::AddressOfOp>(
+    const auto addressOfOp = rewriter.create<LLVM::AddressOfOp>(
         op->getLoc(), LLVM::LLVMPointerType::get(rewriter.getContext()),
         symbolName);
 
@@ -817,9 +817,11 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     cf::populateControlFlowToLLVMConversionPatterns(typeConverter, stdPatterns);
     populateFuncToLLVMConversionPatterns(typeConverter, stdPatterns);
     arith::populateArithToLLVMConversionPatterns(typeConverter, stdPatterns);
+    populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, stdPatterns);
     target.addIllegalDialect<arith::ArithDialect>();
     target.addIllegalDialect<func::FuncDialect>();
     target.addIllegalDialect<cf::ControlFlowDialect>();
+    target.addIllegalDialect<memref::MemRefDialect>();
     if (failed(
             applyPartialConversion(moduleOp, target, std::move(stdPatterns)))) {
       signalPassFailure();

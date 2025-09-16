@@ -292,7 +292,8 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     rotationDegrees.reserve(rotationCount);
     rotationDegrees.insert(
         rotationDegrees.end(),
-        std::make_move_iterator(operands.end() - rotationCount),
+        std::make_move_iterator(std::prev(
+            operands.end(), static_cast<std::ptrdiff_t>(rotationCount))),
         std::make_move_iterator(operands.end()));
     operands.resize(operands.size() - rotationCount);
 
@@ -414,12 +415,13 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
 
     // extract the controlqubits from the operand list
     SmallVector<Value> ctrlQubits;
+    auto* const firstCtrl = newOperands.begin();
+    auto* const lastCtrl =
+        std::next(firstCtrl, static_cast<std::ptrdiff_t>(ctrlQubitCount));
     ctrlQubits.reserve(ctrlQubitCount);
-    ctrlQubits.insert(
-        ctrlQubits.end(), std::make_move_iterator(newOperands.begin()),
-        std::make_move_iterator(newOperands.begin() + ctrlQubitCount));
-    newOperands.erase(newOperands.begin(),
-                      newOperands.begin() + ctrlQubitCount);
+    ctrlQubits.insert(ctrlQubits.end(), std::make_move_iterator(firstCtrl),
+                      std::make_move_iterator(lastCtrl));
+    newOperands.erase(firstCtrl, lastCtrl);
 
     // try to match and replace gate operations
     if (gateName == "gphase") {
