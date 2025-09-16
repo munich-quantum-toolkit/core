@@ -23,7 +23,8 @@ namespace mqt::ir::opt {
 /**
  * @brief This pass attempts to cancel consecutive self-inverse operations.
  */
-struct GateDecomposition final : impl::GateDecompositionBase<GateDecomposition> {
+struct GateDecomposition final
+    : impl::GateDecompositionBase<GateDecomposition> {
 
   void runOnOperation() override {
     // Get the current operation being operated on.
