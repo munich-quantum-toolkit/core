@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -52,6 +53,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <string>
 #include <utility>
 
 namespace mqt::ir {
@@ -573,7 +575,7 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
       if (const auto key = dyn_cast<StringAttr>(innerArray[0])) {
         if (key.getValue() == "required_num_results") {
           if (const auto value = dyn_cast<StringAttr>(innerArray[1])) {
-            return std::stoi(value.str());
+            return stoi(value.str());
           }
         }
       }
