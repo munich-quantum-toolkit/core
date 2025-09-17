@@ -11,7 +11,7 @@
 // This test checks if the alloc register call is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertAllocRegister()
-    llvm.func @testConvertAllocRegister() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertAllocRegister() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
         // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
 
@@ -36,7 +36,7 @@ module {
 // This test checks if the dealloc register call is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertDeallocRegister()
-    llvm.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
         // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
         // CHECK: "mqtref.deallocQubitRegister"(%[[r_0]])
@@ -63,7 +63,7 @@ module {
 // This test checks if the extract from register call is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertExtractFromRegister()
-    llvm.func @testConvertExtractFromRegister() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertExtractFromRegister() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(1 : i64) : i64
         // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
         // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
@@ -93,7 +93,7 @@ module {
 // This test checks if the alloc qubit call is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertAllocateQubit()
-    llvm.func @testConvertAllocateQubit() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertAllocateQubit() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
       // CHECK: %[[q_0:.*]] = mqtref.allocQubit
       // CHECK: %[[q_1:.*]] = mqtref.allocQubit
 
@@ -117,7 +117,7 @@ module {
 // This test checks if the dealloc qubit call is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertDeallocateQubit()
-    llvm.func @testConvertDeallocateQubit() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertDeallocateQubit() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
       // CHECK: %[[q_0:.*]] = mqtref.allocQubit
       // CHECK: %[[q_1:.*]] = mqtref.allocQubit
       // CHECK: mqtref.deallocQubit %[[q_0]]
@@ -146,7 +146,7 @@ module {
 // This test checks if the reset operation is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertResetOp()
-    llvm.func @testConvertResetOp() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertResetOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.allocQubit
         // CHECK: "mqtref.reset"(%[[q_0]])
 
@@ -173,7 +173,7 @@ module {
 // This test checks if the reset operation using static qubits is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertResetOpStatic()
-    llvm.func @testConvertResetOpStatic() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertResetOpStatic() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.qubit 0
         // CHECK: "mqtref.reset"(%[[q_0]])
 
@@ -197,9 +197,12 @@ module {
 module {
     llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
     // CHECK-LABEL: llvm.func @testConvertMeasure()
-    llvm.func @testConvertMeasure() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertMeasure() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "1"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
+        // CHECK: %[[mem:.*]] = memref.alloca() : memref<1xi1>
         // CHECK: %[[q_0:.*]] = mqtref.allocQubit
-        // CHECK:  [[m_0:.*]] = mqtref.measure %[[q_0]]
+        // CHECK: %[[m_0:.*]] = mqtref.measure %[[q_0]]
+        // CHECK: %[[c_0:.*]] = arith.constant 0 : index
+        // CHECK: memref.store %[[m_0]], %[[mem]][%[[c_0]]] : memref<1xi1>
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %a0 = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
@@ -228,9 +231,12 @@ module {
 module {
     llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
     // CHECK-LABEL: llvm.func @testConvertMeasureStatic()
-    llvm.func @testConvertMeasureStatic() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertMeasureStatic() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "1"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
+        // CHECK: %[[mem:.*]] = memref.alloca() : memref<1xi1>
         // CHECK: %[[q_0:.*]] = mqtref.qubit 0
-        // CHECK:  [[m_0:.*]] = mqtref.measure %[[q_0]]
+        // CHECK: %[[m_0:.*]] = mqtref.measure %[[q_0]]
+        // CHECK: %[[c_0:.*]] = arith.constant 0 : index
+        // CHECK: memref.store %[[m_0]], %[[mem]][%[[c_0]]] : memref<1xi1>
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %a0 = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
@@ -251,10 +257,92 @@ module {
 }
 
 // -----
+// This test checks if the measure operation is correctly converted that store the classical result on the same index
+module {
+    llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
+    // CHECK-LABEL: llvm.func @testConvertMeasureOnSameIndex()
+    llvm.func @testConvertMeasureOnSameIndex() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "1"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
+        // CHECK: %[[mem:.*]] = memref.alloca() : memref<1xi1>
+        // CHECK: %[[q_0:.*]] = mqtref.allocQubit
+        // CHECK: %[[q_1:.*]] = mqtref.allocQubit
+        // CHECK: %[[m_0:.*]] = mqtref.measure %[[q_0]]
+        // CHECK: %[[m_1:.*]] = mqtref.measure %[[q_1]]
+        // CHECK: %[[c_0:.*]] = arith.constant 0 : index
+        // CHECK: memref.store %[[m_0]], %[[mem]][%[[c_0]]] : memref<1xi1>
+        // CHECK: %[[c_1:.*]] = arith.constant 0 : index
+        // CHECK: memref.store %[[m_1]], %[[mem]][%[[c_1]]] : memref<1xi1>
+
+        %ptr0 = llvm.mlir.zero : !llvm.ptr
+        %c0 = llvm.mlir.constant(1 : i64) : i64
+        %ptr1 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+        %a0 = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
+        llvm.call @__quantum__rt__initialize(%ptr0) : (!llvm.ptr) -> ()
+        llvm.br ^bb1
+      ^bb1:
+        %q0 = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
+        %q1 = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
+        llvm.br ^bb2
+      ^bb2:
+        llvm.call @__quantum__qis__mz__body(%q0, %ptr0) : (!llvm.ptr, !llvm.ptr)  -> ()
+        llvm.call @__quantum__qis__mz__body(%q1, %ptr1) : (!llvm.ptr, !llvm.ptr)  -> ()
+        llvm.call @__quantum__rt__qubit_release(%q0) : (!llvm.ptr) -> ()
+        llvm.call @__quantum__rt__qubit_release(%q1) : (!llvm.ptr) -> ()
+        llvm.br ^bb3
+      ^bb3:
+        llvm.call @__quantum__rt__result_record_output(%ptr0, %a0) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__rt__result_record_output(%ptr1, %a0) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.return
+    }
+    llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__rt__initialize(!llvm.ptr)
+    llvm.func @__quantum__rt__qubit_release(!llvm.ptr)
+    llvm.func @__quantum__rt__qubit_allocate() -> !llvm.ptr
+}
+
+// -----
+// This test checks if the measure operation using static qubits is correctly converted that store the classical result on the same index
+module {
+    llvm.mlir.global internal constant @mlir.llvm.nameless_global_0("r0\00") {addr_space = 0 : i32, dso_local}
+    // CHECK-LABEL: llvm.func @testConvertMeasureOnSameIndexStatic()
+    llvm.func @testConvertMeasureOnSameIndexStatic() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "1"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
+        // CHECK: %[[mem:.*]] = memref.alloca() : memref<1xi1>
+        // CHECK: %[[q_0:.*]] = mqtref.qubit 0
+        // CHECK: %[[q_1:.*]] = mqtref.qubit 1
+        // CHECK: %[[m_0:.*]] = mqtref.measure %[[q_0]]
+        // CHECK: %[[m_1:.*]] = mqtref.measure %[[q_1]]
+        // CHECK: %[[c_0:.*]] = arith.constant 0 : index
+        // CHECK: memref.store %[[m_0]], %[[mem]][%[[c_0]]] : memref<1xi1>
+        // CHECK: %[[c_1:.*]] = arith.constant 0 : index
+        // CHECK: memref.store %[[m_1]], %[[mem]][%[[c_1]]] : memref<1xi1>
+
+        %ptr0 = llvm.mlir.zero : !llvm.ptr
+        %c0 = llvm.mlir.constant(1 : i64) : i64
+        %ptr1 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+        %a0 = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
+        llvm.call @__quantum__rt__initialize(%ptr0) : (!llvm.ptr) -> ()
+        llvm.br ^bb1
+      ^bb1:
+        llvm.br ^bb2
+      ^bb2:
+        llvm.call @__quantum__qis__mz__body(%ptr0, %ptr0) : (!llvm.ptr, !llvm.ptr)  -> ()
+        llvm.call @__quantum__qis__mz__body(%ptr1, %ptr1) : (!llvm.ptr, !llvm.ptr)  -> ()
+        llvm.br ^bb3
+      ^bb3:
+        llvm.call @__quantum__rt__result_record_output(%ptr0, %a0) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.call @__quantum__rt__result_record_output(%ptr1, %a0) : (!llvm.ptr, !llvm.ptr) -> ()
+        llvm.return
+    }
+    llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__rt__initialize(!llvm.ptr)
+}
+
+// -----
 // This test checks if the single qubit gates are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertSingleQubitOp()
-    llvm.func @testConvertSingleQubitOp() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertSingleQubitOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.allocQubit
         // CHECK: mqtref.h() %[[q_0]]
         // CHECK: mqtref.i() %[[q_0]]
@@ -317,7 +405,7 @@ module {
 // This test checks if the single qubit gates using static qubits are correctly
 module {
     // CHECK-LABEL: llvm.func @testConvertSingleQubitOpStatic()
-    llvm.func @testConvertSingleQubitOpStatic() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertSingleQubitOpStatic() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.qubit 0
         // CHECK: mqtref.h() %[[q_0]]
         // CHECK: mqtref.i() %[[q_0]]
@@ -376,7 +464,7 @@ module {
 // This test checks if the two target gates are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertTwoTargetOp()
-    llvm.func @testConvertTwoTargetOp() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertTwoTargetOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.allocQubit
         // CHECK: %[[q_1:.*]] = mqtref.allocQubit
         // CHECK: mqtref.swap() %[[q_0]], %[[q_1]]
@@ -424,7 +512,7 @@ module {
 // This test checks if the two target gates using static qubits are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertTwoTargetOpStatic()
-    llvm.func @testConvertTwoTargetOpStatic() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertTwoTargetOpStatic() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.qubit 0
         // CHECK: %[[q_1:.*]] = mqtref.qubit 1
         // CHECK: mqtref.swap() %[[q_0]], %[[q_1]]
@@ -468,7 +556,7 @@ module {
 // This test checks if the single qubit rotation gates are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testSingleQubitRotationOp()
-    llvm.func @testSingleQubitRotationOp() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testSingleQubitRotationOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(1.000000e-01 : f64) : f64
         // CHECK: %[[c_1:.*]] = llvm.mlir.constant(2.000000e-01 : f64) : f64
         // CHECK: %[[c_2:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
@@ -519,7 +607,7 @@ module {
 // This test checks if the single qubit rotation gates using static qubitss are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testSingleQubitRotationOpStatic()
-    llvm.func @testSingleQubitRotationOpStatic() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testSingleQubitRotationOpStatic() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.qubit 0
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(1.000000e-01 : f64) : f64
         // CHECK: %[[c_1:.*]] = llvm.mlir.constant(2.000000e-01 : f64) : f64
@@ -567,7 +655,7 @@ module {
 // This test checks if the multiple qubit rotation gates are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testMultipleQubitRotationOp()
-    llvm.func @testMultipleQubitRotationOp() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testMultipleQubitRotationOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(2.000000e-01 : f64) : f64
         // CHECK: %[[c_1:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: %[[q_0:.*]] = mqtref.allocQubit
@@ -615,7 +703,7 @@ module {
 // This test checks if the multiple qubit rotation gates using static qubits are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testMultipleQubitRotationOpStatic()
-    llvm.func @testMultipleQubitRotationOpStatic() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testMultipleQubitRotationOpStatic() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.qubit 0
         // CHECK: %[[q_1:.*]] = mqtref.qubit 1
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(2.000000e-01 : f64) : f64
@@ -660,7 +748,7 @@ module {
 // This test checks if controlled gates are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertControlledOp()
-    llvm.func @testConvertControlledOp() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertControlledOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: %[[q_0:.*]] = mqtref.allocQubit
         // CHECK: %[[q_1:.*]] = mqtref.allocQubit
@@ -704,7 +792,7 @@ module {
 // This test checks if controlled gates using static qubits are correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertControlledOpStatic()
-    llvm.func @testConvertControlledOpStatic() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertControlledOpStatic() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.qubit 0
         // CHECK: %[[q_1:.*]] = mqtref.qubit 1
         // CHECK: %[[q_2:.*]] = mqtref.qubit 2
@@ -743,7 +831,7 @@ module {
 // This test checks if the gphase operation is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertGPhaseOp()
-    llvm.func @testConvertGPhaseOp() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertGPhaseOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: mqtref.gphase(%[[c_0]])
 
@@ -767,7 +855,7 @@ module {
 // This test checks if the controlled gphase operation is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertGPhaseOpControlled()
-    llvm.func @testConvertGPhaseOpControlled() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertGPhaseOpControlled() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: %[[q_0:.*]] = mqtref.allocQubit
         // CHECK: mqtref.gphase(%[[c_0]]) ctrl %[[q_0]]
@@ -796,7 +884,7 @@ module {
 // This test checks if the controlled gphase operation using static qubits is correctly converted
 module {
     // CHECK-LABEL: llvm.func @testConvertGPhaseOpControlledStatic()
-    llvm.func @testConvertGPhaseOpControlledStatic() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertGPhaseOpControlledStatic() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.qubit 0
         // CHECK: %[[c_0:.*]] = llvm.mlir.constant(3.000000e-01 : f64) : f64
         // CHECK: mqtref.gphase(%[[c_0]]) ctrl %[[q_0]]
@@ -821,7 +909,7 @@ module {
 // This test checks if the barrierOp is converted correctly
 module {
     // CHECK-LABEL: llvm.func @testConvertBarrierOp()
-    llvm.func @testConvertBarrierOp() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertBarrierOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.allocQubit
         // CHECK: mqtref.barrier() %[[q_0]]
 
@@ -848,7 +936,7 @@ module {
 // This test checks if the barrierOp using static qubits is converted correctly
 module {
     // CHECK-LABEL: llvm.func @testConvertBarrierOpStatic()
-    llvm.func @testConvertBarrierOpStatic() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @testConvertBarrierOpStatic() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.qubit 0
         // CHECK: mqtref.barrier() %[[q_0]]
 
@@ -874,7 +962,8 @@ module {
     llvm.mlir.global internal constant @mlir.llvm.nameless_global_1("r1\00") {addr_space = 0 : i32, dso_local}
 
     // CHECK-LABEL: llvm.func @bellState()
-    llvm.func @bellState() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @bellState() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "2"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
+        // CHECK: %[[mem]] = memref.alloca() : memref<2xi1>
         // CHECK: %[[q_0:.*]] = mqtref.allocQubit
         // CHECK: %[[q_1:.*]] = mqtref.allocQubit
         // CHECK: mqtref.h() %[[q_0]]
@@ -883,6 +972,11 @@ module {
         // CHECK: %[[m_1:.*]] = mqtref.measure %[[q_1]]
         // CHECK: mqtref.deallocQubit %[[q_0]]
         // CHECK: mqtref.deallocQubit %[[q_1]]
+        // CHECK: %[[c_0:.*]] = arith.constant 0 : index
+        // CHECK: memref.store %[[m_0]], %[[mem]][%[[c_0]]] : memref<2xi1>
+        // CHECK: %[[c_1:.*]] = arith.constant 1 : index
+        // CHECK: memref.store %[[m_1]], %[[mem]][%[[c_1]]] : memref<2xi1>
+
 
         %ptr0 = llvm.mlir.zero : !llvm.ptr
         %a0 = llvm.mlir.addressof @mlir.llvm.nameless_global_0 : !llvm.ptr
@@ -925,13 +1019,18 @@ module {
     llvm.mlir.global internal constant @mlir.llvm.nameless_global_1("r1\00") {addr_space = 0 : i32, dso_local}
 
     // CHECK-LABEL: llvm.func @bellStateStaticAddressing()
-    llvm.func @bellStateStaticAddressing() attributes {passthrough = ["entry_point"]}  {
+    llvm.func @bellStateStaticAddressing() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "2"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
+        // CHECK: %[[mem]] = memref.alloca() : memref<2xi1>
         // CHECK: %[[q_0:.*]] = mqtref.qubit 0
         // CHECK: %[[q_1:.*]] = mqtref.qubit 1
         // CHECK: mqtref.h() %[[q_0]]
         // CHECK: mqtref.x() %[[q_1]] ctrl %[[q_0]]
         // CHECK: %[[m_0:.*]] = mqtref.measure %[[q_0]]
         // CHECK: %[[m_1:.*]] = mqtref.measure %[[q_1]]
+        // CHECK: %[[c_0:.*]] = arith.constant 0 : index
+        // CHECK: memref.store %[[m_0]], %[[mem]][%[[c_0]]] : memref<2xi1>
+        // CHECK: %[[c_1:.*]] = arith.constant 1 : index
+        // CHECK: memref.store %[[m_1]], %[[mem]][%[[c_1]]] : memref<2xi1>
 
         %ptr0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(1 : i64) : i64

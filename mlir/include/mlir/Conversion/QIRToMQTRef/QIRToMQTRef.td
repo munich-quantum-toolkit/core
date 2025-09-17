@@ -30,6 +30,8 @@ def QIRToMQTRef : Pass<"qir-to-mqtref"> {
   // Define dependent dialects
   let dependentDialects = [
     "::mqt::ir::ref::MQTRefDialect",
-    "mlir::LLVM::LLVMDialect"
+    "mlir::LLVM::LLVMDialect",
+    "mlir::memref::MemRefDialect",
+    "mlir::arith::ArithDialect"
   ];
 }

@@ -36,10 +36,13 @@
 #include <iterator>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/FunctionCallUtils.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -71,6 +74,10 @@ namespace {
 struct LoweringState {
   // map each llvm QIR result to the new mqtref result
   DenseMap<Value, Value> operandMap;
+  // memref operation to store the classical results
+  Operation* allocaOp{};
+  // map a llvm result ptr to a classical result bit
+  DenseMap<Value, Value> resultMap;
   // next free allocate index
   int64_t index{};
 };
@@ -136,18 +143,49 @@ struct ConvertQIRLoad final : OpConversionPattern<LLVM::LoadOp> {
     return success();
   }
 };
+
 struct ConvertQIRZero final : StatefulOpConversionPattern<LLVM::ZeroOp> {
   using StatefulOpConversionPattern<LLVM::ZeroOp>::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(LLVM::ZeroOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    // replace the zero operation with a static qubit with index 0
-    const auto newOp = rewriter.replaceOpWithNewOp<ref::QubitOp>(
-        op, ref::QubitType::get(rewriter.getContext()), 0);
+    auto isQubitPtr = false;
 
-    // update the operand map
-    getState().operandMap.try_emplace(op->getResult(0), newOp->getOpResult(0));
+    // check if the zero op is used in any functions other than for result
+    // recording and the initialize operation
+    for (auto* userOp : op->getResult(0).getUsers()) {
+      if (auto callOp = dyn_cast<LLVM::CallOp>(userOp)) {
+        const auto fnName = callOp.getCallee();
+        if (fnName != "__quantum__rt__result_record_output" &&
+            fnName != "__quantum__qis__mz__body" &&
+            fnName != "__quantum__rt__initialize") {
+          isQubitPtr = true;
+          break;
+        }
+        if (fnName == "__quantum__qis__mz__body" &&
+            op->getResult(0) == callOp->getOperand(0)) {
+          isQubitPtr = true;
+          break;
+        }
+      }
+    }
+
+    // if yes the IntToPtr op should be converted to a static qubit
+    if (isQubitPtr) {
+      // replace the zero operation with a static qubit with index 0
+      const auto newOp = rewriter.replaceOpWithNewOp<ref::QubitOp>(
+          op, ref::QubitType::get(rewriter.getContext()), 0);
+
+      // update the operand map
+      getState().operandMap.try_emplace(op->getResult(0),
+                                        newOp->getOpResult(0));
+    }
+    // otherwise delete the operation
+    else {
+      rewriter.eraseOp(op);
+    }
+
     return success();
   }
 };
@@ -170,6 +208,11 @@ struct ConvertQIRIntToPtr final
         const auto fnName = callOp.getCallee();
         if (fnName != "__quantum__rt__result_record_output" &&
             fnName != "__quantum__qis__mz__body") {
+          isQubitPtr = true;
+          break;
+        }
+        if (fnName == "__quantum__qis__mz__body" &&
+            op->getResult(0) == callOp->getOperand(0)) {
           isQubitPtr = true;
           break;
         }
@@ -233,6 +276,9 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
   // constants to trim the function name to get the name of the gate
   constexpr static size_t QIS_OPERATION_PREFIX_LENGTH = 16;
   constexpr static size_t QIS_OPERATION_SUFFIX_LENGTH = 6;
+  // constant to trim the global constant name to get the index of the global
+  // constant
+  constexpr static size_t GLOBAL_CONSTANT_PREFIX_LENGTH = 26;
 
   /**
    * @brief Replaces the call operation with a matching simple gate operation
@@ -339,7 +385,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
 
     // match initialize operation
     if (fnName == "__quantum__rt__initialize") {
-      rewriter.eraseOp(op);
+      op.erase();
       return success();
     }
     // match alloc register
@@ -389,13 +435,38 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     if (fnName == "__quantum__qis__mz__body") {
       const auto bitType = IntegerType::get(ctx, 1);
 
-      rewriter.create<ref::MeasureOp>(op.getLoc(), bitType,
-                                      newOperands.front());
+      // create the measure operation
+      auto measureOp = rewriter.create<ref::MeasureOp>(op.getLoc(), bitType,
+                                                       newOperands.front());
+
+      // store the result pointer and the measurement result in the map
+      getState().resultMap.try_emplace(newOperands[1], measureOp->getResult(0));
+
       rewriter.eraseOp(op);
       return success();
     }
     // match record result output operation
     if (fnName == "__quantum__rt__result_record_output") {
+
+      if (getState().resultMap.contains(newOperands[0])) {
+        // get the matching measurement result
+        auto measureResult = getState().resultMap.at(newOperands[0]);
+        // get the index where the measurement is stored from the name of the
+        // global op
+        auto addressOfOp = op->getOperand(1).getDefiningOp<LLVM::AddressOfOp>();
+        if (op->getOperand(1).getDefiningOp<LLVM::AddressOfOp>()) {
+          auto const index = stoi(addressOfOp.getGlobalName()
+                                      .substr(GLOBAL_CONSTANT_PREFIX_LENGTH)
+                                      .str());
+          auto constantIndexOp =
+              rewriter.create<arith::ConstantIndexOp>(op.getLoc(), index);
+
+          // create the store operation for the classical result
+          rewriter.create<memref::StoreOp>(
+              op.getLoc(), measureResult, getState().allocaOp->getResult(0),
+              ValueRange{constantIndexOp->getResult(0)});
+        }
+      }
       rewriter.eraseOp(op);
       return success();
     }
@@ -463,17 +534,100 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
 struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
   using QIRToMQTRefBase::QIRToMQTRefBase;
 
+  /**
+   * @brief Finds the main function in the module
+   *
+   * @param op The module operation that holds all operations.
+   * @return The main function.
+   */
+  static LLVM::LLVMFuncOp getMainFunction(ModuleOp op) {
+
+    // find the main function
+    for (auto funcOp : op.getOps<LLVM::LLVMFuncOp>()) {
+      auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
+      if (!passthrough) {
+        continue;
+      }
+      if (llvm::any_of(passthrough, [](Attribute attr) {
+            auto strAttr = dyn_cast<StringAttr>(attr);
+            return strAttr && strAttr.getValue() == "entry_point";
+          })) {
+        return funcOp;
+      }
+    }
+    return nullptr;
+  }
+  /**
+   * @brief Finds the number of required results from an array of attributes.
+   *
+   * @param passthrough The ArrayAttr that holds all attributes
+   * @return The number of result bits.
+   */
+  static int64_t getRequiredNumResults(ArrayAttr passthrough) {
+    for (const auto attr : passthrough) {
+      const auto innerArray = dyn_cast<ArrayAttr>(attr);
+      if (!innerArray || innerArray.size() < 2) {
+        continue;
+      }
+
+      if (const auto key = dyn_cast<StringAttr>(innerArray[0])) {
+        if (key.getValue() == "required_num_results") {
+          if (const auto value = dyn_cast<StringAttr>(innerArray[1])) {
+            return std::stoi(value.str());
+          }
+        }
+      }
+    }
+    return 0;
+  }
+
+  /**
+   * @brief create the allocaOp to store classical results
+   *
+   * @param op The module operation that holds all operations.
+   * @param state The lowering state of the conversion pass.
+   */
+  static void createAllocaOp(Operation* op, LoweringState* state) {
+    auto mod = dyn_cast<ModuleOp>(op);
+
+    // get the main function
+    LLVM::LLVMFuncOp main = getMainFunction(mod);
+    if (!main) {
+      return;
+    }
+
+    auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
+
+    // get the number of results
+    auto numResults = getRequiredNumResults(passthrough);
+    // return if no results are needed
+    if (numResults == 0) {
+      return;
+    }
+
+    // create the allocaOp at the beginning of the first block
+    auto& entryBlock = main.getBody().front();
+    OpBuilder builder(&main.getBody());
+    builder.setInsertionPointToStart(&entryBlock);
+
+    const auto memrefType = MemRefType::get({numResults}, builder.getI1Type());
+    // set the allocaOp in the loweringState
+    state->allocaOp =
+        builder.create<memref::AllocaOp>(op->getLoc(), memrefType);
+  }
+
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto* moduleOp = getOperation();
-
     LoweringState state;
 
     ConversionTarget target(*ctx);
     RewritePatternSet patterns(ctx);
     QIRToMQTRefTypeConverter typeConverter(ctx);
     target.addLegalDialect<ref::MQTRefDialect>();
-
+    target.addLegalDialect<arith::ArithDialect>();
+    target.addLegalDialect<memref::MemRefDialect>();
+    createAllocaOp(moduleOp, &state);
     target.addIllegalOp<LLVM::CallOp>();
     target.addIllegalOp<LLVM::LoadOp>();
     target.addIllegalOp<LLVM::AddressOfOp>();
