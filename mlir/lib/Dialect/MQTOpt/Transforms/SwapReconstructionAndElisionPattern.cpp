@@ -13,11 +13,13 @@
 
 #include <cassert>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <optional>
 
 namespace mqt::ir::opt {
 
@@ -51,11 +53,11 @@ struct ElidePermutationsPattern final : mlir::OpRewritePattern<SWAPOp> {
  * @brief This pattern attempts to find CNOT patterns which can be replaced by a
  * SWAP gate and directly elides the new permutation.
  *
- *       ┌───┐         ┌───┐                            ┌───┐
- *  ──■──┤ X ├    ──■──┤ X ├──■────■──    ──╳────■──    ┤ X ├
- *  ┌─┴─┐└─┬─┘ => ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐ =>   |  ┌─┴─┐ => └─┬─┘
- *  ┤ X ├──■──    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├    ──■──
- *  └───┘         └───┘     └───┘└───┘         └───┘
+ *          ┌───┐            ┌───┐                                   ┌───┐
+ *  q1 ──■──┤ X ├ q1    ──■──┤ X ├──■────■──    ──╳────■──    q1 ─q0─┤ X ├ q0
+ *     ┌─┴─┐└─┬─┘    => ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐ =>   |  ┌─┴─┐ =>        └─┬─┘
+ *  q0 ┤ X ├──■── q0    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├    q0 ─q1───■── q1
+ *     └───┘            └───┘     └───┘└───┘         └───┘
  */
 struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
 
@@ -66,20 +68,27 @@ struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
    * @brief If pattern is applicable, perform MLIR rewrite.
    *
    * Steps:
-   *   - Find CNOT with exactly one positive control qubit (1st CNOT)
-   *   - Check if it has adjacent CNOT with reversed control/target (2nd CNOT)
-   *  (- Theoretically place two CNOTs identical to 1st CNOT on other side of
-   *     2nd CNOT)
-   *   - Remove 1st CNOT and swap output
+   *   1. Find CNOT with exactly one positive control qubit (1st CNOT)
+   *   2. Check if it has adjacent CNOT with reversed control/target (2nd CNOT)
+   *  (3. Theoretically place two CNOTs identical to 1st CNOT on other side of
+   *      2nd CNOT; not actually done because they would be immediately replaced
+   *      by SWAP anyway)
+   *   4. Replace 1st CNOT with swapped target and control; this swap makes it
+   *      equivalent to 2nd CNOT and directly permutates the order of the qubits
+   *      to elide the theoretically inserted SWAP
+   *   5. Erase 2nd CNOT
    */
   mlir::LogicalResult
   matchAndRewrite(XOp op, mlir::PatternRewriter& rewriter) const override {
+    // steps 1 + 2
     if (auto secondCNot = findReverseCNotPattern(op)) {
+      // step 3 + 4
       rewriter.replaceOpWithNewOp<XOp>(
           op, op.getPosCtrlOutQubits().getType(), op.getOutQubits().getType(),
-          mlir::TypeRange{}, mlir::DenseF64ArrayAttr{},
-          mlir::DenseBoolArrayAttr{}, mlir::ValueRange{},
-          op.getPosCtrlInQubits(), op.getInQubits(), mlir::ValueRange{});
+          op.getNegCtrlOutQubits().getType(), op.getStaticParamsAttr(),
+          op.getParamsMaskAttr(), op.getParams(), op.getPosCtrlInQubits(),
+          op.getInQubits(), op.getNegCtrlInQubits());
+      // step 5
       rewriter.replaceOp(*secondCNot, secondCNot->getOperands());
       return mlir::success();
     }
@@ -91,11 +100,11 @@ struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
    * @brief Checks if two consecutive gates have reversed control and target
    * qubits.
    *
-   *         ┌───┐
-   * a: ──■──┤ X ├
-   *    ┌─┴─┐└─┬─┘
-   * b: ┤ X ├──■──
-   *    └───┘
+   *          ┌───┐
+   * q0: ──■──┤ X ├
+   *     ┌─┴─┐└─┬─┘
+   * q1: ┤ X ├──■──
+   *     └───┘
    *
    * @param a The first gate.
    * @param b The second gate which must be one of the users of a.
@@ -116,22 +125,16 @@ struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
   }
 
   /**
-   * @brief Find a user of the given operation for which isCandidate() is
-   * true.
+   * @brief Find a user of the given operation for which isReverseCNotPattern()
+   * is true.
    *
-   * @param op Operation for which the users should be scanned for a candidate
-   * @param isThirdCNot If true, the candidate should have a subset of
-   * controls of op (a surrounding CNOT, 1st/3rd); if false, it should have a
-   * superset of controls of op (middle CNOT, 2nd)
+   * @param op Operation for which the users should be scanned for the pattern
    */
   [[nodiscard]] static std::optional<XOp> findReverseCNotPattern(XOp& op) {
     for (auto* user : op->getUsers()) {
       if (auto cnot = llvm::dyn_cast<XOp>(user)) {
         if (isReverseCNotPattern(op, cnot)) {
-          llvm::errs() << "YES\n";
           return cnot;
-        } else {
-          llvm::errs() << "NOPE\n";
         }
       }
     }
