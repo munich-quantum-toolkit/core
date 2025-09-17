@@ -151,7 +151,7 @@ def MeasureOp : GateOp<"measure", []> {
         QubitType:$out_qubit,
         I1:$out_bit
     );
-    let assemblyFormat = "$in_qubit attr-dict";
+    let assemblyFormat = "attr-dict $in_qubit";
 }
 
 def ResetOp : GateOp<"reset", []> {
@@ -169,7 +169,7 @@ def ResetOp : GateOp<"reset", []> {
 
     let arguments = (ins QubitType:$in_qubit);
     let results = (outs QubitType:$out_qubit);
-    let assemblyFormat = "$in_qubit attr-dict";
+    let assemblyFormat = "attr-dict $in_qubit";
 }
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTOptOp<mnemonic, traits>;
@@ -209,7 +209,7 @@ def DeallocQubitOp : ResourceOp<"deallocQubit"> {
 
     let arguments = (ins QubitType:$qubit);
     let results = (outs);
-    let assemblyFormat = "$qubit attr-dict";
+    let assemblyFormat = "attr-dict $qubit";
 }
 
 // Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1125
