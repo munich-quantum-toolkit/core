@@ -109,7 +109,7 @@ std::string formatParams(std::initializer_list<double> params) {
   os.setf(std::ios::scientific);
   os << std::setprecision(6);
   bool first = true;
-  os << " static [";
+  os << "static [";
   for (const double p : params) {
     if (!first) {
       os << ", ";

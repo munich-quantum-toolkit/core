@@ -97,7 +97,9 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
     let results = (outs);
 
     let assemblyFormat = [{
-        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
+        `(` custom<RefParams>($params, $static_params, $params_mask) `)`
+        attr-dict
+        $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
     }];
 }
 

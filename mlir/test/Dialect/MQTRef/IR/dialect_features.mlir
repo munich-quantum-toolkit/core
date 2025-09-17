@@ -1113,8 +1113,8 @@ module {
 module {
     // CHECK-LABEL: func.func @testStaticParameters
     func.func @testStaticParameters() {
-        // CHECK: mqtref.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01]) %[[ANY:.*]]
-        // CHECK: mqtref.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01] mask [true, true, true]) %[[ANY:.*]]
+        // CHECK: mqtref.u(static [1.000000e-01, 2.000000e-01, 3.000000e-01]) %[[ANY:.*]]
+        // CHECK: mqtref.u(static [1.000000e-01, 2.000000e-01, 3.000000e-01] mask [true, true, true]) %[[ANY:.*]]
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %q_0 = "mqtref.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> (!mqtref.Qubit)

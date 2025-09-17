@@ -1274,8 +1274,8 @@ module {
 module {
     // CHECK-LABEL: func.func @testStaticParameters
     func.func @testStaticParameters() {
-        // CHECK: %[[ANY:.*]] = mqtopt.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01]) %[[ANY:.*]] : !mqtopt.Qubit
-        // CHECK: %[[ANY:.*]] = mqtopt.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01] mask [true, true, true]) %[[ANY:.*]] : !mqtopt.Qubit
+        // CHECK: %[[ANY:.*]] = mqtopt.u(static [1.000000e-01, 2.000000e-01, 3.000000e-01]) %[[ANY:.*]] : !mqtopt.Qubit
+        // CHECK: %[[ANY:.*]] = mqtopt.u(static [1.000000e-01, 2.000000e-01, 3.000000e-01] mask [true, true, true]) %[[ANY:.*]] : !mqtopt.Qubit
 
         %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
         %reg_1, %q_0 = "mqtopt.extractQubit"(%reg_0)  <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
