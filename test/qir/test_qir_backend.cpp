@@ -11,7 +11,9 @@
 #include "qir/QIR.h"
 
 #include <algorithm>
+#ifndef _WIN32
 #include <cstdlib>
+#endif // _WIN32
 #include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -239,6 +241,7 @@ TEST_F(QIRBackendTest, GHZ4DynamicReverse) {
   __quantum__rt__result_update_reference_count(r3, -1);
 }
 
+#ifndef _WIN32
 class QIRFilesTest : public ::testing::TestWithParam<std::filesystem::path> {};
 
 // Instantiate the test suite with different parameters
@@ -251,7 +254,7 @@ INSTANTIATE_TEST_SUITE_P(
       // Extract the last part of the file path
       auto filename = info.param.filename().string();
       // replace all '-' with '_'
-      std::replace(filename.begin(), filename.end(), '-', '_');
+      std::ranges::replace(filename, '-', '_');
       return filename;
     });
 
@@ -260,5 +263,5 @@ TEST_P(QIRFilesTest, Executables) {
   const auto result = std::system(path.c_str());
   EXPECT_EQ(result, 0);
 }
-
+#endif // _WIN32
 } // namespace mqt

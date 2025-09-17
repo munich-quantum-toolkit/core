@@ -37,22 +37,24 @@ if(TARGET MQT::CoreQIRBackend)
   # add test executable
   package_add_test(${TARGET_NAME} MQT::CoreQIRBackend test_qir_backend.cpp)
 
-  # add tests for QIR files
-  set(QIR_EXECUTABLES "")
-  set(QIR_FILES_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+  if(NOT WIN32)
+    # add tests for QIR files
+    set(QIR_EXECUTABLES "")
+    set(QIR_FILES_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
-  file(GLOB QIR_FILES "${QIR_FILES_DIR}/*.ll")
-  foreach(QIR_EXAMPLE ${QIR_FILES})
-    get_filename_component(QIR_EXAMPLE_NAME ${QIR_EXAMPLE} NAME_WE)
-    camel_to_dash_lowercase(${QIR_EXAMPLE_NAME} QIR_EXAMPLE_NAME)
-    add_qir_circuit(mqt-core-qir-${QIR_EXAMPLE_NAME}-ll ${QIR_EXAMPLE})
-    list(APPEND QIR_EXECUTABLES "$<TARGET_FILE:mqt-core-qir-${QIR_EXAMPLE_NAME}-ll>")
-    add_dependencies(${TARGET_NAME} mqt-core-qir-${QIR_EXAMPLE_NAME}-ll)
-  endforeach()
+    file(GLOB QIR_FILES "${QIR_FILES_DIR}/*.ll")
+    foreach(QIR_EXAMPLE ${QIR_FILES})
+      get_filename_component(QIR_EXAMPLE_NAME ${QIR_EXAMPLE} NAME_WE)
+      camel_to_dash_lowercase(${QIR_EXAMPLE_NAME} QIR_EXAMPLE_NAME)
+      add_qir_circuit(mqt-core-qir-${QIR_EXAMPLE_NAME}-ll ${QIR_EXAMPLE})
+      list(APPEND QIR_EXECUTABLES "$<TARGET_FILE:mqt-core-qir-${QIR_EXAMPLE_NAME}-ll>")
+      add_dependencies(${TARGET_NAME} mqt-core-qir-${QIR_EXAMPLE_NAME}-ll)
+    endforeach()
 
-  # transform QIR_EXECUTABLES to comma separated list of string ("...")
-  string(REPLACE ";" "\",\"" QIR_EXECUTABLES "\"${QIR_EXECUTABLES}\"")
+    # transform QIR_EXECUTABLES to comma separated list of string ("...")
+    string(REPLACE ";" "\",\"" QIR_EXECUTABLES "\"${QIR_EXECUTABLES}\"")
 
-  # add all executables as initializer list of std::filesystem::path's
-  target_compile_definitions(${TARGET_NAME} PRIVATE TEST_EXECUTABLES=${QIR_EXECUTABLES})
+    # add all executables as initializer list of std::filesystem::path's
+    target_compile_definitions(${TARGET_NAME} PRIVATE TEST_EXECUTABLES=${QIR_EXECUTABLES})
+  endif()
 endif()
