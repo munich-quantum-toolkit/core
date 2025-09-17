@@ -142,18 +142,16 @@ def MeasureOp : GateOp<"measure", []> {
 
         Example:
         ```mlir
-        %0_1, %1 = "mqtopt.measure"(%0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %q_1, %0 = mqtopt.measure q_0
         ```
     }];
 
-    let arguments = (ins
-        QubitType:$in_qubit
-    );
-
+    let arguments = (ins QubitType:$in_qubit);
     let results = (outs
         QubitType:$out_qubit,
         I1:$out_bit
     );
+    let assemblyFormat = "$in_qubit attr-dict";
 }
 
 def ResetOp : GateOp<"reset", []> {
@@ -165,17 +163,13 @@ def ResetOp : GateOp<"reset", []> {
 
         Example:
         ```mlir
-        %0_1 = "mqtopt.reset"(%0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit)
+        %q_1 = mqtopt.reset %q_0
         ```
     }];
 
-    let arguments = (ins
-        QubitType:$in_qubit
-    );
-
-    let results = (outs
-        QubitType:$out_qubit
-    );
+    let arguments = (ins QubitType:$in_qubit);
+    let results = (outs QubitType:$out_qubit);
+    let assemblyFormat = "$in_qubit attr-dict";
 }
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTOptOp<mnemonic, traits>;
@@ -188,17 +182,10 @@ def AllocQubitOp : ResourceOp<"allocQubit"> {
         The qubit can be used in operations after allocation.
         It must be deallocated with the `deallocQubit` operation.
 
-        Example (custom syntax):
+        Example:
         ```mlir
         %q = mqtopt.allocQubit
         ```
-
-        Example (generic syntax):
-        ```mlir
-        %q = "mqtopt.allocQubit"() : () -> !mqtopt.Qubit
-        ```
-
-        Both are equivalent; the first form is enabled by this op's `assemblyFormat`.
     }];
 
     let arguments = (ins);
@@ -206,6 +193,26 @@ def AllocQubitOp : ResourceOp<"allocQubit"> {
     let assemblyFormat = "attr-dict";
 }
 
+def DeallocQubitOp : ResourceOp<"deallocQubit"> {
+    let summary = "Deallocates a single qubit";
+
+    let description = [{
+        Deallocates a single qubit that was previously allocated with the
+        `allocQubit` operation. After this operation, the qubit is no longer
+        valid and cannot be used in further operations.
+
+        Example:
+        ```mlir
+        mqtopt.deallocQubit %q
+        ```
+    }];
+
+    let arguments = (ins QubitType:$qubit);
+    let results = (outs);
+    let assemblyFormat = "$qubit attr-dict";
+}
+
+// Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1125
 def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
     let summary = "Allocates a qubit register";
 
@@ -238,32 +245,7 @@ def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
     );
 }
 
-def DeallocQubitOp : ResourceOp<"deallocQubit"> {
-    let summary = "Deallocates a single qubit";
-
-    let description = [{
-        Deallocates a single qubit that was previously allocated with the
-        `allocQubit` operation. After this operation, the qubit is no longer
-        valid and cannot be used in further operations.
-
-        Example (custom syntax):
-        ```mlir
-        mqtopt.deallocQubit %q
-        ```
-
-        Example (generic syntax):
-        ```mlir
-        "mqtopt.deallocQubit"(%q) : (!mqtopt.Qubit) -> ()
-        ```
-
-        Both are equivalent; the first form is enabled by this op's `assemblyFormat`.
-    }];
-
-    let arguments = (ins QubitType:$qubit);
-    let results = (outs);
-    let assemblyFormat = "$qubit attr-dict";
-}
-
+// Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1125
 def DeallocOp : ResourceOp<"deallocQubitRegister"> {
     let summary = "Deallocates a qubit register";
 
@@ -284,6 +266,7 @@ def DeallocOp : ResourceOp<"deallocQubitRegister"> {
     );
 }
 
+// Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1125
 def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
     let summary = "Extract a specific qubit from a given register";
 
@@ -312,7 +295,9 @@ def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
     );
 }
 
+// Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1125
 def InsertOp : ResourceOp<"insertQubit", [UniqueIndexDefinition]> {
+    let summary = "Insert a specific qubit into a given register";
 
     let description = [{
         This class represents an operation that inserts a qubit back into a qubit
@@ -342,19 +327,15 @@ def QubitOp : ResourceOp<"qubit"> {
         The `mqtopt.qubit` operation produces an SSA value from the given index
         to a static (hardware) qubit.
 
-        Example (custom syntax):
+        Example:
         ```mlir
         %q = mqtopt.qubit 0
         ```
-
-        Example (generic syntax):
-        ```mlir
-        %q = "mqtopt.qubit"() <{index = 0 : i64}> : () -> !mqtopt.Qubit
-        ```
     }];
+
     let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
     let results = (outs QubitType:$qubit);
-    let assemblyFormat = " attr-dict $index ";
+    let assemblyFormat = "attr-dict $index";
 }
 
 #endif // MQTOPT_OPS

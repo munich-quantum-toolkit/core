@@ -254,8 +254,8 @@ TEST_F(ImportTest, Reset01) {
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
     CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: "mqtref.reset"(%[[Q0]]) : (!mqtref.Qubit) -> ()
-    CHECK: "mqtref.reset"(%[[Q1]]) : (!mqtref.Qubit) -> ()
+    CHECK: mqtref.reset %[[Q0]]
+    CHECK: mqtref.reset %[[Q1]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -272,8 +272,8 @@ TEST_F(ImportTest, Reset0) {
     CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
     CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
     CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: "mqtref.reset"(%[[Q0]]) : (!mqtref.Qubit) -> ()
-    CHECK-NOT: "mqtref.reset"(%[[Q1]]) : (!mqtref.Qubit) -> ()
+    CHECK: mqtref.reset %[[Q0]]
+    CHECK-NOT: mqtref.reset %[[Q1]]
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
