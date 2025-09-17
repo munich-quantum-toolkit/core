@@ -114,13 +114,13 @@ struct LoweringState {
 };
 
 template <typename OpType>
-class StatefulOpConversionPattern : public mlir::OpConversionPattern<OpType> {
-  using mlir::OpConversionPattern<OpType>::OpConversionPattern;
+class StatefulOpConversionPattern : public OpConversionPattern<OpType> {
+  using OpConversionPattern<OpType>::OpConversionPattern;
 
 public:
-  StatefulOpConversionPattern(mlir::TypeConverter& typeConverter,
-                              mlir::MLIRContext* ctx, LoweringState* state)
-      : mlir::OpConversionPattern<OpType>(typeConverter, ctx), state_(state) {}
+  StatefulOpConversionPattern(TypeConverter& typeConverter, MLIRContext* ctx,
+                              LoweringState* state)
+      : OpConversionPattern<OpType>(typeConverter, ctx), state_(state) {}
 
   /// @brief Return the state object as reference.
   [[nodiscard]] LoweringState& getState() const { return *state_; }
