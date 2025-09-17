@@ -130,7 +130,7 @@ private:
 };
 } // namespace
 
-struct MQTRefToQIRTypeConverter final : public LLVMTypeConverter {
+struct MQTRefToQIRTypeConverter final : LLVMTypeConverter {
   explicit MQTRefToQIRTypeConverter(MLIRContext* ctx) : LLVMTypeConverter(ctx) {
     // QubitType conversion
     addConversion([ctx](ref::QubitType /*type*/) {
@@ -144,7 +144,7 @@ struct MQTRefToQIRTypeConverter final : public LLVMTypeConverter {
 };
 
 struct ConvertMQTRefAllocQIR final : StatefulOpConversionPattern<ref::AllocOp> {
-  using StatefulOpConversionPattern<ref::AllocOp>::StatefulOpConversionPattern;
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   static constexpr StringLiteral FN_NAME_ALLOCATE_ARRAY =
       "__quantum__rt__qubit_allocate_array";
@@ -183,7 +183,7 @@ struct ConvertMQTRefAllocQIR final : StatefulOpConversionPattern<ref::AllocOp> {
 };
 
 struct ConvertMQTRefQubitQIR final : StatefulOpConversionPattern<ref::QubitOp> {
-  using StatefulOpConversionPattern<ref::QubitOp>::StatefulOpConversionPattern;
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(ref::QubitOp op, OpAdaptor adaptor,
@@ -197,9 +197,9 @@ struct ConvertMQTRefQubitQIR final : StatefulOpConversionPattern<ref::QubitOp> {
       rewriter.replaceOp(op, getState().ptrMap.at(index));
     } else {
       // otherwise create a constant operation and a intToPtr operation
-      auto constantOp = rewriter.create<LLVM::ConstantOp>(
+      const auto constantOp = rewriter.create<LLVM::ConstantOp>(
           op.getLoc(), rewriter.getI64IntegerAttr(static_cast<int64_t>(index)));
-      auto intToPtrOp = rewriter.replaceOpWithNewOp<LLVM::IntToPtrOp>(
+      const auto intToPtrOp = rewriter.replaceOpWithNewOp<LLVM::IntToPtrOp>(
           op, LLVM::LLVMPointerType::get(ctx), constantOp->getResult(0));
 
       // store them in the map to reuse them later
@@ -214,8 +214,7 @@ struct ConvertMQTRefQubitQIR final : StatefulOpConversionPattern<ref::QubitOp> {
 
 struct ConvertMQTRefAllocQubitQIR final
     : StatefulOpConversionPattern<ref::AllocQubitOp> {
-  using StatefulOpConversionPattern<
-      ref::AllocQubitOp>::StatefulOpConversionPattern;
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   static constexpr StringLiteral FN_NAME_ALLOCATE =
       "__quantum__rt__qubit_allocate";
@@ -496,8 +495,7 @@ struct ConvertMQTRefGateOpQIR final : OpConversionPattern<MQTRefGateOp> {
 
 struct ConvertMQTRefMeasureQIR final
     : StatefulOpConversionPattern<ref::MeasureOp> {
-  using StatefulOpConversionPattern<
-      ref::MeasureOp>::StatefulOpConversionPattern;
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   static constexpr StringLiteral FN_NAME_MEASURE = "__quantum__qis__mz__body";
   static constexpr StringLiteral FN_NAME_RECORD_OUTPUT =

@@ -147,10 +147,10 @@ struct ConvertQIRLoad final : OpConversionPattern<LLVM::LoadOp> {
 };
 
 struct ConvertQIRZero final : StatefulOpConversionPattern<LLVM::ZeroOp> {
-  using StatefulOpConversionPattern<LLVM::ZeroOp>::StatefulOpConversionPattern;
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(LLVM::ZeroOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(const LLVM::ZeroOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto isQubitPtr = false;
 
@@ -194,8 +194,7 @@ struct ConvertQIRZero final : StatefulOpConversionPattern<LLVM::ZeroOp> {
 
 struct ConvertQIRIntToPtr final
     : StatefulOpConversionPattern<LLVM::IntToPtrOp> {
-  using StatefulOpConversionPattern<
-      LLVM::IntToPtrOp>::StatefulOpConversionPattern;
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(LLVM::IntToPtrOp op, OpAdaptor /*adaptor*/,
@@ -273,7 +272,7 @@ struct ConvertQIRGlobal final : OpConversionPattern<LLVM::GlobalOp> {
 };
 
 struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
-  using StatefulOpConversionPattern<LLVM::CallOp>::StatefulOpConversionPattern;
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   // constants to trim the function name to get the name of the gate
   constexpr static size_t QIS_OPERATION_PREFIX_LENGTH = 16;
@@ -438,8 +437,8 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
       const auto bitType = IntegerType::get(ctx, 1);
 
       // create the measure operation
-      auto measureOp = rewriter.create<ref::MeasureOp>(op.getLoc(), bitType,
-                                                       newOperands.front());
+      const auto measureOp = rewriter.create<ref::MeasureOp>(
+          op.getLoc(), bitType, newOperands.front());
 
       // store the result pointer and the measurement result in the map
       getState().resultMap.try_emplace(newOperands[1], measureOp->getResult(0));
@@ -590,7 +589,7 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
    * @param state The lowering state of the conversion pass.
    */
   static void createAllocaOp(Operation* op, LoweringState* state) {
-    auto mod = dyn_cast<ModuleOp>(op);
+    const auto mod = dyn_cast<ModuleOp>(op);
 
     // get the main function
     LLVM::LLVMFuncOp main = getMainFunction(mod);
@@ -598,7 +597,7 @@ struct QIRToMQTRef final : impl::QIRToMQTRefBase<QIRToMQTRef> {
       return;
     }
 
-    auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
+    const auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
 
     // get the number of results
     auto numResults = getRequiredNumResults(passthrough);
