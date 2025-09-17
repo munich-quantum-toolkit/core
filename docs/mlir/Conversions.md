@@ -10,6 +10,8 @@
 
 ```
 
+## QIR Conversions
+
 ```{include} Conversions/MLIRMQTRefToQIR.md
 
 ```
