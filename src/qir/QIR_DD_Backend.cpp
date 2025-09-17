@@ -12,6 +12,7 @@
 
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "qir/QIR.h"
 
@@ -100,7 +101,7 @@ auto QIR_DD_Backend::enlargeState(const std::uint64_t maxQubit) -> void {
     // if the state is terminal, we need to create a new node
     if (qState.isTerminal()) {
       dd->decRef(qState);
-      qState = dd->makeDDNode(1U, std::array{qState, dd::vEdge::zero()});
+      qState = dd::makeZeroState(d, *dd);
       dd->incRef(qState);
       return;
     }
