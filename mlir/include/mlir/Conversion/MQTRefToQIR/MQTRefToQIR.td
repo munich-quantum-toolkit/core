@@ -29,7 +29,7 @@ def MQTRefToQIR : Pass<"mqtref-to-qir"> {
       The remaining operations from the standard dialects are lowered to the llvm dialect via built-in conversion passes from MLIR.
       This includes the following dialects at the moment: func, arith, cf
 
-      Once the module is converted fully in the llvm dialect, one can convert the resulting file into LLVM-IR with the following command:
+      Once the module is fully converted to the llvm dialect, one can convert the resulting file into LLVM-IR with the following command:
       mlir-translate --mlir-to-llvmir input.mlir > output.ll
    }];
 

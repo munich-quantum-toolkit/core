@@ -12,9 +12,9 @@ def QIRToMQTRef : Pass<"qir-to-mqtref"> {
     let summary = "Convert llvm dialect that adheres to the QIR specification to MQT's `Ref` dialect";
 
     let description = [{
-      This pass converts all llvm.mlir.call operation to QIR instruction set functions into quantum operations in the mqtref dialect.
+      This pass converts all llvm.mlir.call operations calling functions of QIR instruction set into quantum operations in the mqtref dialect.
       The pass expects a valid mlir module in the llvm dialect that uses either statically or dynamically addressed qubits. At the moment
-      the pass only supports simple quantum programs with a straight controlflow that follows the QIR base profile. The conversion of the quantum
+      the pass only supports simple quantum programs with a straight control flow that follows the QIR base profile. The conversion of the quantum
       operation is done by checking the function name of the call operation and replacing it with an equivalent operation
       from the mqtref dialect. The `__quantum__qis__mz__body` operation is converted to a `mqtref.measure` operation that returns the
       result of the measurement as i1 value. The accompanying `__quantum__rt__result_record_output` operation of the measurement is erased
