@@ -9,28 +9,53 @@
 include "mlir/Pass/PassBase.td"
 
 def MQTRefToQIR : Pass<"mqtref-to-qir"> {
-   let summary = "Convert MQT's `Ref` dialect into the llvm dialect that adheres to the QIR specification";
+   let summary = "Lower the `MQTRef` dialect to the LLVM dialect compliant with QIR 2.0 (Base Profile)";
 
    let description = [{
-      This pass converts all operations to the llvm dialect. The quantum operations of the mqtref dialect are converted
-      to an equivalent function in the QIR instruction set with a function call to it in the llvm dialect. This requires a valid
-      input in the mqtref dialect either using static or dynamically addressed qubits where the main function is marked with the
-      entry_point attribute. At the moment the pass only supports simple quantum programs with a straight controlflow and converts
-      them to the llvm dialect according the QIR base profile. The required module flags are added as additional attributes to the main function.
-      The initial main function is divided into 4 blocks as required of the base profile. The first block only contains operations that
-      are required to initialize the execution environment. The second and third block only contains calls to quantum operations that return void.
-      The difference between these two blocks is that operations in the second block are reversible while the call operations
-      in the third block are to functions that are marked as irreversible. These are at the moment `__quantum__qis__mz__body`,
-      `__quantum__rt__qubit_release_array`, `__quantum__rt__qubit_release`, and `__quantum__qis__reset__body`.
-      The last block only contains operations to record the output of the measurements and the return operation. The individual blocks
-      are connected with unconditional jump operations to the next block.
-      The `mqtref.measure` operation is converted into a `__quantum__qis__mz__body` operation that performs the measurement and a
-      `__quantum__rt__result_record_output` operation that records the measurement outputs.
-      The remaining operations from the standard dialects are lowered to the llvm dialect via built-in conversion passes from MLIR.
-      This includes the following dialects at the moment: func, arith, cf
+      Overview
+      Converts the MQTRef dialect to the LLVM dialect following the QIR 2.0 Base Profile. Quantum operations are mapped to calls
+      into the QIR instruction set, while non-quantum operations are lowered using MLIR's standard LLVM conversions.
 
-      Once the module is fully converted to the llvm dialect, one can convert the resulting file into LLVM-IR with the following command:
-      mlir-translate --mlir-to-llvmir input.mlir > output.ll
+      Requirements
+      - Input is a valid module in the MQTRef dialect.
+      - Static or dynamic qubit addressing is supported.
+      - The entry function must be marked with the `entry_point` attribute.
+      - The program must have straight-line control flow (no complex branching).
+
+      Behavior
+      - Each MQTRef quantum operation is replaced by a call to the corresponding QIR function in the LLVM dialect.
+      - Required QIR module flags are attached as attributes to the entry function.
+      - The entry function is split into four blocks to satisfy QIR Base Profile constraints.
+      - Non-quantum dialects are lowered via MLIR's built-in conversions.
+
+      Block structure (Base Profile)
+      0. Initialization block
+         - Sets up the execution environment and performs required runtime initialization.
+      1. Reversible operations block
+         - Contains only void-returning calls to reversible quantum operations.
+      2. Irreversible operations block
+         - Contains only void-returning calls to operations marked irreversible, e.g.:
+           `__quantum__qis__mz__body`, `__quantum__rt__qubit_release_array`,
+           `__quantum__rt__qubit_release`, `__quantum__qis__reset__body`.
+      3. Epilogue block
+         - Records measurement results and returns from the entry function.
+      - Blocks are connected via unconditional branches in the order listed above.
+
+      Operation mapping
+      - `mqtref.measure` → call to `__quantum__qis__mz__body` followed by
+        `__quantum__rt__result_record_output` to record the measurement result.
+
+      Lowering of non-quantum operations
+      - Dialects lowered via MLIR conversions: `func`, `arith`, `cf` → LLVM dialect.
+
+      Limitations
+      - Only straight-line control flow is supported.
+      - Adheres to QIR Base Profile requirements.
+      - Unsupported operations or control flow patterns may cause the conversion to fail.
+
+      Producing LLVM IR
+      - After conversion to the LLVM dialect, produce LLVM IR with:
+        mlir-translate --mlir-to-llvmir input.mlir > output.ll
    }];
 
   // Define dependent dialects

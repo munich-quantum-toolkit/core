@@ -9,22 +9,36 @@
 include "mlir/Pass/PassBase.td"
 
 def QIRToMQTRef : Pass<"qir-to-mqtref"> {
-    let summary = "Convert llvm dialect that adheres to the QIR specification to MQT's `Ref` dialect";
+    let summary = "Raise LLVM/QIR (Base Profile) to the `MQTRef` dialect by converting QIR calls into `mqtref` ops";
 
     let description = [{
-      This pass converts all llvm.mlir.call operations calling functions of QIR instruction set into quantum operations in the mqtref dialect.
-      The pass expects a valid mlir module in the llvm dialect that uses either statically or dynamically addressed qubits. At the moment
-      the pass only supports simple quantum programs with a straight control flow that follows the QIR base profile. The conversion of the quantum
-      operation is done by checking the function name of the call operation and replacing it with an equivalent operation
-      from the mqtref dialect. The `__quantum__qis__mz__body` operation is converted to a `mqtref.measure` operation that returns the
-      result of the measurement as i1 value. The accompanying `__quantum__rt__result_record_output` operation of the measurement is erased
-      during the conversion.
-      At the moment llvm.mlir.constants and function declarations are currently not converted and persist after the conversion.
-      Quantum operations that do not have an equivalent operation in the mqtref dialect or are not supported yet
-      cause the conversion to fail.
+      Overview
+      Converts LLVM dialect modules that use QIR into MQTRef IR by pattern-matching and replacing calls to QIR functions with
+      equivalent operations from the MQTRef dialect.
 
-      The initial .mlir module with the llvm dialect can be obtained by converting a .ll file with the following command:
-      mlir-translate --import-llvm input.ll -o output.mlir
+      Requirements
+      - Input is a valid MLIR module in the LLVM dialect that follows QIR Base Profile conventions.
+      - Static or dynamic qubit addressing is supported.
+      - The program is expected to have straight-line control flow.
+
+      Behavior
+      - Replaces `llvm.call` operations targeting QIR functions with corresponding `mqtref` operations.
+      - The conversion is driven by the QIR function name used by the call.
+
+      Operation mapping
+      - `__quantum__qis__mz__body` → `mqtref.measure` returning an `i1` measurement result.
+      - The paired `__quantum__rt__result_record_output` for measurements is removed.
+
+      Non-converted constructs
+      - `llvm.mlir.constant` and function declarations are currently not converted and remain in the module.
+
+      Limitations
+      - Only simple, straight-line programs that follow the QIR Base Profile are supported.
+      - QIR calls without a known mapping in `mqtref` cause the conversion to fail.
+
+      Obtaining the input module
+      - Import an LLVM IR file as MLIR with:
+        mlir-translate --import-llvm input.ll -o output.mlir
    }];
 
   // Define dependent dialects
