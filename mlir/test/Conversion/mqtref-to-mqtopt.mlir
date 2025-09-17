@@ -508,8 +508,8 @@ module {
 
         mqtref.h() %q0
         mqtref.x() %q1 ctrl %q0
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
-        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> i1
+        %m0 = mqtref.measure %q0
+        %m1 = mqtref.measure %q1
 
         return
     }
