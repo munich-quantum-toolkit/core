@@ -10,6 +10,15 @@
 
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/raw_ostream.h>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/OpImplementation.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LogicalResult.h>
+#include <string>
+
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
 #include <algorithm>
@@ -85,7 +94,7 @@ mlir::ParseResult parseRefParams(
   return mlir::success();
 }
 
-void printRefParams(mlir::OpAsmPrinter& printer, mlir::Operation* op,
+void printRefParams(mlir::OpAsmPrinter& printer, mlir::Operation* /*op*/,
                     mlir::ValueRange params,
                     mlir::DenseF64ArrayAttr staticParams,
                     mlir::DenseBoolArrayAttr paramsMask) {
