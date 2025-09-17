@@ -628,13 +628,15 @@ struct ConvertMQTRefMeasureQIR final
           if (auto constantOp = unrealizedConvOp->getOperand(0)
                                     .getDefiningOp<LLVM::ConstantOp>()) {
             index = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
+
+            const auto allocaOp = storeOp.getMemRef();
+
             // erase the storeOp immediately instead of erasing it after the
             // pass with rewriter.erase() to update the number of users
             // immediately
             storeOp->erase();
 
             // erase the alloca op if all store operations are removed
-            const auto allocaOp = storeOp.getMemRef();
             if (allocaOp.use_empty()) {
               rewriter.eraseOp(allocaOp.getDefiningOp<memref::AllocaOp>());
             }
