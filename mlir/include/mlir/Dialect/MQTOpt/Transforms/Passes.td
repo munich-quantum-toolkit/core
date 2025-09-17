@@ -46,10 +46,9 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
 }
 
 def SwapReconstructionAndElision : Pass<"swap-reconstruction-and-elision", "mlir::ModuleOp"> {
-  let summary = "This pass tries to replace consecutive reversed CNOT gates with SWAP gates and removes then any permutation (i.e., SWAP gates) it encounters by modifying the order of the qubits instead.";
+  let summary = "Reconstruct SWAP gates from two consecutive CNOTs with alternating controls and targets where possible and elide SWAP gates (i.e., permutations) by removing them from the circuit and, instead, permuting the respective qubit values.";
   let description = [{
-    Reconstruct SWAP gates from two consecutive reversed CNOTs where possible and elides permutations (i.e., SWAP gates) by removing them from the circuit and, instead, permuting the respective qubit values.
-
+    After application, there will remain no uncontrolled SWAP gates in the circuit.
     This optimization will not preserve the current qubit mapping and has no awareness of potential connectivity limitations.
 
     Example of swap reconstructions:
