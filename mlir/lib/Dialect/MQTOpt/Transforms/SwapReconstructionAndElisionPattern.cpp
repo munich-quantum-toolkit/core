@@ -53,23 +53,38 @@ struct ElidePermutationsPattern final : mlir::OpRewritePattern<SWAPOp> {
  * @brief This pattern attempts to find CNOT patterns which can be replaced by a
  * SWAP gate and directly elides the new permutation.
  *
+ * Example (matchTwoCNOTPattern == true):
  *          ┌───┐            ┌───┐                                   ┌───┐
  *  q1 ──■──┤ X ├ q1    ──■──┤ X ├──■────■──    ──╳────■──    q1 ─q0─┤ X ├ q0
  *     ┌─┴─┐└─┬─┘    => ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐ =>   |  ┌─┴─┐ =>        └─┬─┘
  *  q0 ┤ X ├──■── q0    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├    q0 ─q1───■── q1
  *     └───┘            └───┘     └───┘└───┘         └───┘
+ *
+ * Example (matchTwoCNOTPattern == false)
+ *          ┌───┐
+ * q1: ──■──┤ X ├──■── q1    q1: ──╳── q1    q1 ─ q0
+ *     ┌─┴─┐└─┬─┘┌─┴─┐    =>       |      =>
+ * q0: ┤ X ├──■──┤ X ├ q0    q0: ──╳── q0    q0 ─ q1
+ *     └───┘     └───┘
  */
+template <bool matchTwoCNOTPattern>
 struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
 
   explicit SwapReconstructionAndElisionPattern(mlir::MLIRContext* context)
-      : OpRewritePattern(context) {}
+      : OpRewritePattern(context, benefit()) {
+    setHasBoundedRewriteRecursion(true);
+  }
+
+  [[nodiscard]] constexpr static mlir::PatternBenefit benefit() {
+    return matchTwoCNOTPattern ? 10 : 100;
+  }
 
   /**
    * @brief If pattern is applicable, perform MLIR rewrite.
    *
-   * Steps:
+   * Steps(matchTwoCNOTPattern == true):
    *   1. Find CNOT with exactly one positive control qubit (1st CNOT)
-   *   2. Check if it has adjacent CNOT with reversed control/target (2nd CNOT)
+   *   2. Check if it has adjacent CNOT with swapped control/target (2nd CNOT)
    *  (3. Theoretically place two CNOTs identical to 1st CNOT on other side of
    *      2nd CNOT; not actually done because they would be immediately replaced
    *      by SWAP anyway)
@@ -77,23 +92,92 @@ struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
    *      equivalent to 2nd CNOT and directly permutates the order of the qubits
    *      to elide the theoretically inserted SWAP
    *   5. Erase 2nd CNOT
+   *
+   * Steps(matchTwoCNOTPattern == false):
+   *   1. Find CNOT with exactly one positive control qubit (1st CNOT)
+   *   2. Check if it has adjacent CNOT with swapped control/target (2nd CNOT)
+   *   3. Check if 2nd CNOT has another adjacent CNOT with swapped
+   *      control/target (3rd CNOT)
+   *   4. Erase 1st CNOT and swap output qubits for swap elision
+   *   5. Erase 2nd CNOT and 3rd CNOT
    */
   mlir::LogicalResult
   matchAndRewrite(XOp op, mlir::PatternRewriter& rewriter) const override {
-    // steps 1 + 2
+    // step 1
+    if (op.getPosCtrlInQubits().size() != 1 &&
+        op.getNegCtrlInQubits().size() != 0) {
+      return mlir::failure();
+    }
+
+    // steps 2
     if (auto secondCNot = findReverseCNotPattern(op)) {
-      // step 3 + 4
-      rewriter.replaceOpWithNewOp<XOp>(
-          op, op.getPosCtrlOutQubits().getType(), op.getOutQubits().getType(),
-          op.getNegCtrlOutQubits().getType(), op.getStaticParamsAttr(),
-          op.getParamsMaskAttr(), op.getParams(), op.getPosCtrlInQubits(),
-          op.getInQubits(), op.getNegCtrlInQubits());
-      // step 5
-      rewriter.replaceOp(*secondCNot, secondCNot->getOperands());
-      return mlir::success();
+      if constexpr (matchTwoCNOTPattern) {
+        performTwoCNotSwapReconstructionAndElision(rewriter, op, *secondCNot);
+        return mlir::success();
+      }
+
+      if (auto thirdCNot = findReverseCNotPattern(*secondCNot)) {
+        performThreeCNotSwapReconstructionAndElision(rewriter, op, *secondCNot,
+                                                     *thirdCNot);
+        return mlir::success();
+      }
     }
 
     return mlir::failure();
+  }
+
+  /**
+   * @brief Perform two-CNOT-swap-reconstruction and elision on two CNOTs for
+   * which isReverseCNotPattern() must return true.
+   *
+   * @note This is used when matchTwoCNOTPattern is true.
+   *
+   *          ┌───┐              ┌───┐
+   *  q1 ──■──┤ X ├ q1    q1 ─q0─┤ X ├ q0
+   *     ┌─┴─┐└─┬─┘    =>        └─┬─┘
+   *  q0 ┤ X ├──■── q0    q0 ─q1───■── q1
+   *     └───┘
+   */
+  static void
+  performTwoCNotSwapReconstructionAndElision(mlir::PatternRewriter& rewriter,
+                                             XOp& firstCNot, XOp& secondCNot) {
+    // step 3 + 4
+    rewriter.replaceOpWithNewOp<XOp>(
+        firstCNot, firstCNot.getPosCtrlOutQubits().getType(),
+        firstCNot.getOutQubits().getType(),
+        firstCNot.getNegCtrlOutQubits().getType(),
+        firstCNot.getStaticParamsAttr(), firstCNot.getParamsMaskAttr(),
+        firstCNot.getParams(), firstCNot.getPosCtrlInQubits(),
+        firstCNot.getInQubits(), firstCNot.getNegCtrlInQubits());
+    // step 5
+    rewriter.replaceOp(secondCNot, secondCNot->getOperands());
+  }
+
+  /**
+   * @brief Perform swap reconstruction and elision on given CNOT operations
+   * which must be equivalent to a swap.
+   *
+   * This is done by swapping the output of one of the CNOTs and removing all
+   * others.
+   *
+   * @note This is used when matchTwoCNOTPattern is false.
+   *
+   *          ┌───┐
+   * q1: ──■──┤ X ├──■── q1    q1 ─ q0
+   *     ┌─┴─┐└─┬─┘┌─┴─┐    =>
+   * q0: ┤ X ├──■──┤ X ├ q0    q0 ─ q1
+   *     └───┘     └───┘
+   */
+  static void
+  performThreeCNotSwapReconstructionAndElision(mlir::PatternRewriter& rewriter,
+                                               XOp& firstCNot, XOp& secondCNot,
+                                               XOp& thirdCNot) {
+    // step 4
+    rewriter.replaceOp(firstCNot,
+                       {firstCNot->getOperand(1), firstCNot->getOperand(0)});
+    // step 5
+    rewriter.replaceOp(secondCNot, secondCNot->getOperands());
+    rewriter.replaceOp(thirdCNot, thirdCNot->getOperands());
   }
 
   /**
@@ -150,7 +234,10 @@ struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
 void populateSwapReconstructionAndElisionPatterns(
     mlir::RewritePatternSet& patterns) {
   patterns.add<ElidePermutationsPattern>(patterns.getContext());
-  patterns.add<SwapReconstructionAndElisionPattern>(patterns.getContext());
+  patterns.add<SwapReconstructionAndElisionPattern<true>>(
+      patterns.getContext());
+  patterns.add<SwapReconstructionAndElisionPattern<false>>(
+      patterns.getContext());
 }
 
 } // namespace mqt::ir::opt
