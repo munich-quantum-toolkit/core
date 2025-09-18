@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - ✨ Add MQTRef-QIR conversions ([#1091]) ([**@li-mingbao**])
+- 🚸 Define custom assembly formats for MLIR operations ([#1209]) ([**@denialhaag**])
 - ✨ Add support for translating `IfElseOperation`s to the `MQTRef` MLIR dialect ([#1164]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add MQT's implementation of a generic FoMaC with Python bindings ([#1150], [#1186]) ([**@ystade**])
 - ✨ Add new MLIR pass `ElidePermutations` for SWAP gate elimination ([#1151]) ([**@taminob**])
@@ -188,6 +189,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1209]: https://github.com/munich-quantum-toolkit/core/pull/1209
 [#1186]: https://github.com/munich-quantum-toolkit/core/pull/1186
 [#1181]: https://github.com/munich-quantum-toolkit/core/pull/1181
 [#1180]: https://github.com/munich-quantum-toolkit/core/pull/1180
