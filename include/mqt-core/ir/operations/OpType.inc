@@ -64,7 +64,7 @@ HANDLE_OP_TYPE(36, MultiAFalse, 0, "multi_a_false")
 
 // Neutral atom shuttling operations
 HANDLE_OP_TYPE(37, Move, 0, "move")
-HANDLE_OP_TYPE(87, Bridge, 0, "bridge")
+HANDLE_OP_TYPE(38, Bridge, 0, "bridge")
 HANDLE_OP_TYPE(39, AodActivate, 0, "aod_activate")
 HANDLE_OP_TYPE(40, AodDeactivate, 0, "aod_deactivate")
 HANDLE_OP_TYPE(41, AodMove, 0, "aod_move")
