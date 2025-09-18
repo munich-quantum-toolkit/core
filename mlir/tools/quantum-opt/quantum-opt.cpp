@@ -47,7 +47,6 @@ int main(const int argc, char** argv) {
   mlir::func::registerAllExtensions(registry);
   registry.insert<mqt::ir::opt::MQTOptDialect>();
   registry.insert<mqt::ir::ref::MQTRefDialect>();
-  registry.insert<mlir::memref::MemRefDialect>();
 
   return mlir::asMainReturnCode(
       MlirOptMain(argc, argv, "Quantum optimizer driver\n", registry));
