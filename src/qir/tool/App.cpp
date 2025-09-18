@@ -44,6 +44,8 @@
 #include <string>
 #include <utility>
 
+static llvm::codegen::RegisterCodeGenFlags CGF;
+
 #define DEBUG_TYPE "mqt-core-qir-runner"
 
 namespace {
