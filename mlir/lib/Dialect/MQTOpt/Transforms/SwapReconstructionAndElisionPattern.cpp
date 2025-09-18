@@ -110,15 +110,15 @@ struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
     }
 
     // steps 2
-    if (auto secondCNot = findReverseCNotPattern(op)) {
+    if (auto secondCNOT = findReverseCNOTPattern(op)) {
       if constexpr (matchTwoCNOTPattern) {
-        performTwoCNotSwapReconstructionAndElision(rewriter, op, *secondCNot);
+        performTwoCNOTSwapReconstructionAndElision(rewriter, op, *secondCNOT);
         return mlir::success();
       }
 
-      if (auto thirdCNot = findReverseCNotPattern(*secondCNot)) {
-        performThreeCNotSwapReconstructionAndElision(rewriter, op, *secondCNot,
-                                                     *thirdCNot);
+      if (auto thirdCNOT = findReverseCNOTPattern(*secondCNOT)) {
+        performThreeCNOTSwapReconstructionAndElision(rewriter, op, *secondCNOT,
+                                                     *thirdCNOT);
         return mlir::success();
       }
     }
@@ -128,7 +128,7 @@ struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
 
   /**
    * @brief Perform two-CNOT-swap-reconstruction and elision on two CNOTs for
-   * which isReverseCNotPattern() must return true.
+   * which isReverseCNOTPattern() must return true.
    *
    * @note This is used when matchTwoCNOTPattern is true.
    *
@@ -138,19 +138,20 @@ struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
    *  q0 ┤ X ├──■── q0    q0 ─q1───■── q1
    *     └───┘
    */
-  static void
-  performTwoCNotSwapReconstructionAndElision(mlir::PatternRewriter& rewriter,
-                                             XOp& firstCNot, XOp& secondCNot) {
+  static void performTwoCNOTSwapReconstructionAndElision(
+      mlir::PatternRewriter& rewriter, XOp& firstCNOT, const XOp& secondCNOT) {
+    const auto qubitType = QubitType::get(rewriter.getContext());
+
     // step 3 + 4
     rewriter.replaceOpWithNewOp<XOp>(
-        firstCNot, firstCNot.getPosCtrlOutQubits().getType(),
-        firstCNot.getOutQubits().getType(),
-        firstCNot.getNegCtrlOutQubits().getType(),
-        firstCNot.getStaticParamsAttr(), firstCNot.getParamsMaskAttr(),
-        firstCNot.getParams(), firstCNot.getPosCtrlInQubits(),
-        firstCNot.getInQubits(), firstCNot.getNegCtrlInQubits());
+        firstCNOT, qubitType, qubitType, mlir::TypeRange{},
+        mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{},
+        mlir::ValueRange{},
+        // swap control and target
+        firstCNOT.getPosCtrlInQubits(), firstCNOT.getInQubits(),
+        mlir::ValueRange{});
     // step 5
-    rewriter.replaceOp(secondCNot, secondCNot->getOperands());
+    rewriter.replaceOp(secondCNOT, secondCNOT->getOperands());
   }
 
   /**
@@ -168,16 +169,15 @@ struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
    * q0: ┤ X ├──■──┤ X ├ q0    q0 ─ q1
    *     └───┘     └───┘
    */
-  static void
-  performThreeCNotSwapReconstructionAndElision(mlir::PatternRewriter& rewriter,
-                                               XOp& firstCNot, XOp& secondCNot,
-                                               XOp& thirdCNot) {
+  static void performThreeCNOTSwapReconstructionAndElision(
+      mlir::PatternRewriter& rewriter, const XOp& firstCNOT,
+      const XOp& secondCNOT, const XOp& thirdCNOT) {
     // step 4
-    rewriter.replaceOp(firstCNot,
-                       {firstCNot->getOperand(1), firstCNot->getOperand(0)});
+    rewriter.replaceOp(firstCNOT,
+                       {firstCNOT->getOperand(1), firstCNOT->getOperand(0)});
     // step 5
-    rewriter.replaceOp(secondCNot, secondCNot->getOperands());
-    rewriter.replaceOp(thirdCNot, thirdCNot->getOperands());
+    rewriter.replaceOp(secondCNOT, secondCNOT->getOperands());
+    rewriter.replaceOp(thirdCNOT, thirdCNOT->getOperands());
   }
 
   /**
@@ -195,30 +195,23 @@ struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
    * @return True if the gates match the pattern described above, otherwise
    * false.
    */
-  [[nodiscard]] static bool isReverseCNotPattern(XOp& a, XOp& b) {
-    auto posCtrlQubitsA = a.getPosCtrlOutQubits();
-    auto posCtrlQubitsB = b.getPosCtrlInQubits();
-    auto negCtrlQubitsA = a.getNegCtrlOutQubits();
-    auto negCtrlQubitsB = b.getNegCtrlInQubits();
-    auto targetQubitsA = a.getOutQubits();
-    auto targetQubitsB = b.getInQubits();
-
-    return negCtrlQubitsA.empty() && negCtrlQubitsB.empty() &&
-           posCtrlQubitsA.size() == 1 && posCtrlQubitsB.size() == 1 &&
-           targetQubitsA == posCtrlQubitsB && targetQubitsB == posCtrlQubitsA;
+  [[nodiscard]] static bool isReverseCNOTPattern(XOp& a, XOp& b) {
+    return a.getNegCtrlOutQubits().empty() && b.getNegCtrlInQubits().empty() &&
+           llvm::equal(a.getOutQubits(), b.getPosCtrlInQubits()) &&
+           llvm::equal(b.getInQubits(), a.getPosCtrlOutQubits());
   }
 
   /**
-   * @brief Find a user of the given operation for which isReverseCNotPattern()
+   * @brief Find a user of the given operation for which isReverseCNOTPattern()
    * is true.
    *
    * @param op Operation for which the users should be scanned for the pattern
    */
-  [[nodiscard]] static std::optional<XOp> findReverseCNotPattern(XOp& op) {
+  [[nodiscard]] static std::optional<XOp> findReverseCNOTPattern(XOp& op) {
     for (auto* user : op->getUsers()) {
-      if (auto cnot = llvm::dyn_cast<XOp>(user)) {
-        if (isReverseCNotPattern(op, cnot)) {
-          return cnot;
+      if (auto cx = llvm::dyn_cast<XOp>(user)) {
+        if (isReverseCNOTPattern(op, cx)) {
+          return cx;
         }
       }
     }
