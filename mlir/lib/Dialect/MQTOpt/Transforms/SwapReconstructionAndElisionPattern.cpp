@@ -30,7 +30,9 @@ namespace mqt::ir::opt {
 struct ElidePermutationsPattern final : mlir::OpRewritePattern<SWAPOp> {
 
   explicit ElidePermutationsPattern(mlir::MLIRContext* context)
-      : OpRewritePattern(context) {}
+      : OpRewritePattern(context) {
+    setHasBoundedRewriteRecursion(true);
+  }
 
   mlir::LogicalResult
   matchAndRewrite(SWAPOp op, mlir::PatternRewriter& rewriter) const override {
