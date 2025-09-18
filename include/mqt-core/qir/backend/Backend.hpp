@@ -209,7 +209,7 @@ public:
  * order to access an instance of this class from the C function without having
  * a handle to it.
  */
-class QIR_DD_Backend {
+class Backend {
 public:
   static constexpr auto RESULT_ZERO_ADDRESS = 0x10000;
   static constexpr auto RESULT_ONE_ADDRESS = 0x10001;
@@ -232,8 +232,8 @@ private:
   dd::vEdge qState;
   std::mt19937_64 mt;
 
-  QIR_DD_Backend();
-  explicit QIR_DD_Backend(uint64_t randomSeed);
+  Backend();
+  explicit Backend(uint64_t randomSeed);
 
   auto enlargeState(std::uint64_t maxQubit) -> void;
 
@@ -287,12 +287,12 @@ private:
 
 public:
   [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
-  static QIR_DD_Backend& getInstance();
+  static Backend& getInstance();
 
-  QIR_DD_Backend(const QIR_DD_Backend&) = delete;
-  QIR_DD_Backend& operator=(const QIR_DD_Backend&) = delete;
-  QIR_DD_Backend(QIR_DD_Backend&&) = delete;
-  QIR_DD_Backend& operator=(QIR_DD_Backend&&) = delete;
+  Backend(const Backend&) = delete;
+  Backend& operator=(const Backend&) = delete;
+  Backend(Backend&&) = delete;
+  Backend& operator=(Backend&&) = delete;
 
   auto resetBackend() -> void;
   template <typename... Args>

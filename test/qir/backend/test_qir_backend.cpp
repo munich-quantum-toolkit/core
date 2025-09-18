@@ -11,9 +11,8 @@
 #include "qir/backend/QIR.h"
 
 #include <algorithm>
-#ifndef _WIN32
+#include <array>
 #include <cstdlib>
-#endif // _WIN32
 #include <filesystem>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -21,7 +20,7 @@
 #include <sstream>
 #include <streambuf>
 
-namespace mqt {
+namespace qir {
 
 class QIRBackendTest : public ::testing::Test {
 protected:
@@ -108,10 +107,10 @@ TEST_F(QIRBackendTest, BellPairDynamicReverse) {
 }
 
 TEST_F(QIRBackendTest, GHZ4Static) {
-  const std::array<Qubit*, 4> q = {
+  const std::array q = {
       reinterpret_cast<Qubit*>(0UL), reinterpret_cast<Qubit*>(1UL),
       reinterpret_cast<Qubit*>(2UL), reinterpret_cast<Qubit*>(3UL)};
-  const std::array<Result*, 4> r = {
+  const std::array r = {
       reinterpret_cast<Result*>(0UL), reinterpret_cast<Result*>(1UL),
       reinterpret_cast<Result*>(2UL), reinterpret_cast<Result*>(3UL)};
   __quantum__rt__initialize(nullptr);
@@ -241,7 +240,6 @@ TEST_F(QIRBackendTest, GHZ4DynamicReverse) {
   __quantum__rt__result_update_reference_count(r3, -1);
 }
 
-#ifndef _WIN32
 class QIRFilesTest : public ::testing::TestWithParam<std::filesystem::path> {};
 
 // Instantiate the test suite with different parameters
@@ -263,5 +261,4 @@ TEST_P(QIRFilesTest, Executables) {
   const auto result = std::system(path.c_str());
   EXPECT_EQ(result, 0);
 }
-#endif // _WIN32
-} // namespace mqt
+} // namespace qir

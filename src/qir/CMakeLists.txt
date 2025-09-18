@@ -8,6 +8,6 @@
 
 add_subdirectory(backend)
 
-if(BUILD_MQT_QIR_TOOL)
-  add_subdirectory(tool)
+if(BUILD_MQT_QIR_RUNNER)
+  add_subdirectory(runner)
 endif()

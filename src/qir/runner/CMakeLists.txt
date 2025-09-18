@@ -9,7 +9,7 @@
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runner)
 
 if(NOT TARGET ${TARGET_NAME})
-  add_llvm_tool(${TARGET_NAME} App.cpp DEPENDS intrinsics_gen EXPORT_SYMBOLS)
+  add_llvm_tool(${TARGET_NAME} Runner.cpp DEPENDS intrinsics_gen EXPORT_SYMBOLS)
 
   # Add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRBackend ${llvm_libs})
@@ -26,4 +26,7 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Make version available
   target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+
+  # Create an alias for the target
+  add_executable(MQT::CoreQIRRunner ALIAS ${TARGET_NAME})
 endif()
