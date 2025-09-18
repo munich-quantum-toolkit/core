@@ -179,8 +179,8 @@ mlir::ParseResult parseOptParams(
     mlir::OpAsmParser& parser,
     llvm::SmallVectorImpl<mlir::OpAsmParser::UnresolvedOperand>& params,
     mlir::Attribute& staticParams, mlir::Attribute& paramsMask) {
-  mlir::OpAsmParser::UnresolvedOperand operand;
-  if (parser.parseOptionalOperand(operand).has_value()) {
+  if (mlir::OpAsmParser::UnresolvedOperand operand;
+      parser.parseOptionalOperand(operand).has_value()) {
     params.push_back(operand);
     while (parser.parseOptionalComma().succeeded()) {
       if (parser.parseOperand(operand).failed()) {
@@ -205,7 +205,7 @@ void printOptParams(mlir::OpAsmPrinter& printer, mlir::Operation* /*op*/,
                     mlir::ValueRange params,
                     mlir::DenseF64ArrayAttr staticParams,
                     mlir::DenseBoolArrayAttr paramsMask) {
-  bool needSpace = false;
+  auto needSpace = false;
   if (!params.empty()) {
     printer << params;
     needSpace = true;
