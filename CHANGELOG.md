@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Replace MLIR pass `ElidePermutations` by `SwapReconstructionAndElision` for SWAP gate reconstruction and elision ([#1207]) ([**@taminob**])
+- ✨ Add SWAP reconstruction patterns to the newly-named `SwapReconstructionAndElision` MLIR pass ([#1207]) ([**@taminob**], [**@burgholzer**])
 - ✨ Add MQTRef-QIR conversions ([#1091]) ([**@li-mingbao**])
 - 🚸 Define custom assembly formats for MLIR operations ([#1209]) ([**@denialhaag**])
 - ✨ Add support for translating `IfElseOperation`s to the `MQTRef` MLIR dialect ([#1164]) ([**@denialhaag**], [**@burgholzer**])
@@ -31,6 +31,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 🚚 Rename MLIR pass `ElidePermutations` to `SwapReconstructionAndElision` ([#1207]) ([**@taminob**])
 - ⬆️ Require LLVM 21 for building the MLIR library ([#1180]) ([**@denialhaag**])
 - ⬆️ Update to version 21 of `clang-tidy` ([#1180]) ([**@denialhaag**])
 - 🚚 Rename MLIR pass `CancelConsecutiveInverses` to `GateElimination` ([#1140]) ([**@taminob**])
