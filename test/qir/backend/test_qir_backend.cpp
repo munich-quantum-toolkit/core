@@ -20,6 +20,12 @@
 #include <sstream>
 #include <streambuf>
 
+#ifdef _WIN32
+#define SYSTEM _wsystem
+#else
+#define SYSTEM std::system
+#endif
+
 namespace qir {
 
 class QIRBackendTest : public ::testing::Test {
@@ -258,7 +264,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_P(QIRFilesTest, Executables) {
   const auto& path = GetParam();
-  const auto result = std::system(path.c_str());
+  const auto result = SYSTEM(path.c_str());
   EXPECT_EQ(result, 0);
 }
 } // namespace qir
