@@ -21,8 +21,10 @@
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
 #include <cstdint>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -54,7 +56,8 @@ public:
 
     // QregType conversion
     addConversion([ctx](opt::QubitRegisterType /*type*/) -> Type {
-      return ref::QubitRegisterType::get(ctx);
+      auto qubitType = ref::QubitType::get(ctx);
+      return MemRefType::get({ShapedType::kDynamic}, qubitType);
     });
   }
 };
@@ -65,19 +68,20 @@ struct ConvertMQTOptAlloc final : OpConversionPattern<opt::AllocOp> {
   LogicalResult
   matchAndRewrite(opt::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    // prepare return type
-    const auto& qregType = ref::QubitRegisterType::get(rewriter.getContext());
+    const auto& qubitType = ref::QubitType::get(rewriter.getContext());
+    auto memRefType = MemRefType::get({ShapedType::kDynamic}, qubitType);
 
-    // prepare size attribute
-    auto sizeAttr = op.getSizeAttr()
-                        ? rewriter.getI64IntegerAttr(
-                              static_cast<int64_t>(*op.getSizeAttr()))
-                        : IntegerAttr{};
+    Value numQubits;
+    if (op.getSizeAttr()) {
+      numQubits = rewriter.create<mlir::arith::ConstantIndexOp>(
+          op.getLoc(), static_cast<int64_t>(*op.getSizeAttr()));
+    } else {
+      numQubits = rewriter.create<mlir::arith::IndexCastOp>(
+          op.getLoc(), rewriter.getIndexType(), op.getSize());
+    }
 
-    // replace the opt alloc operation with a ref alloc operation
-    rewriter.replaceOpWithNewOp<ref::AllocOp>(op, qregType, op.getSize(),
-                                              sizeAttr);
-
+    rewriter.replaceOpWithNewOp<memref::AllocaOp>(op, memRefType,
+                                                  ValueRange{numQubits});
     return success();
   }
 };
@@ -88,7 +92,7 @@ struct ConvertMQTOptDealloc final : OpConversionPattern<opt::DeallocOp> {
   LogicalResult
   matchAndRewrite(const opt::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<ref::DeallocOp>(op, adaptor.getQreg());
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -122,19 +126,20 @@ struct ConvertMQTOptExtract final : OpConversionPattern<opt::ExtractOp> {
   LogicalResult
   matchAndRewrite(opt::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // create result type
-    const auto& qubitType = ref::QubitType::get(rewriter.getContext());
+    auto qreg = adaptor.getInQreg();
 
-    const auto& refQreg = adaptor.getInQreg();
+    Value indexValue;
+    if (auto indexAttr = op.getIndexAttrAttr()) {
+      indexValue = rewriter.create<mlir::arith::ConstantIndexOp>(
+          op.getLoc(), indexAttr.getInt());
+    } else {
+      indexValue = rewriter.create<mlir::arith::IndexCastOp>(
+          op.getLoc(), rewriter.getIndexType(), op.getIndex());
+    }
 
-    // create new operation
-    auto mqtrefOp = rewriter.create<ref::ExtractOp>(op.getLoc(), qubitType,
-                                                    refQreg, adaptor.getIndex(),
-                                                    adaptor.getIndexAttrAttr());
-
-    // replace the results of the old operation with the new results and delete
-    // old operation
-    rewriter.replaceOp(op, ValueRange({refQreg, mqtrefOp.getOutQubit()}));
+    auto loadOp = rewriter.create<memref::LoadOp>(op.getLoc(), qreg,
+                                                  ValueRange{indexValue});
+    rewriter.replaceOp(op, {qreg, loadOp.getResult()});
     return success();
   }
 };
@@ -158,22 +163,15 @@ struct ConvertMQTOptMeasure final : OpConversionPattern<opt::MeasureOp> {
   LogicalResult
   matchAndRewrite(opt::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-
-    const auto& oldBit = op.getOutBit();
     const auto& refQubit = adaptor.getInQubit();
 
     // create new operation
-    auto mqtrefOp = rewriter.create<ref::MeasureOp>(op.getLoc(),
-                                                    oldBit.getType(), refQubit);
+    auto measure = rewriter.create<ref::MeasureOp>(
+        op.getLoc(), op.getOutBit().getType(), refQubit);
 
-    const auto& newBit = mqtrefOp.getOutBit();
-
-    // concatenate the ref qubit and the bit
-    const SmallVector<Value> newValues{refQubit, newBit};
-
-    // replace the results of the old operation with the new results and delete
-    // old operation
-    rewriter.replaceOp(op, newValues);
+    // replace the results of the old operation with the new results and
+    // delete old operation
+    rewriter.replaceOp(op, {refQubit, measure.getOutBit()});
     return success();
   }
 };
@@ -189,8 +187,8 @@ struct ConvertMQTOptReset final : OpConversionPattern<opt::ResetOp> {
     // create new operation
     rewriter.create<ref::ResetOp>(op.getLoc(), refQubit);
 
-    // replace the results of the old operation with the new results and delete
-    // old operation
+    // replace the results of the old operation with the new results and
+    // delete old operation
     rewriter.replaceOp(op, refQubit);
     return success();
   }
@@ -246,8 +244,8 @@ struct ConvertMQTOptGateOp final : OpConversionPattern<MQTGateOptOp> {
         op.getLoc(), staticParams, paramMask, op.getParams(), refInQubitsValues,
         refPosCtrlQubitsValues, refNegCtrlQubitsValues);
 
-    // replace the results of the old operation with the new results and delete
-    // old operation
+    // replace the results of the old operation with the new results and
+    // delete old operation
     rewriter.replaceOp(op, refQubitsValues);
 
     return success();
@@ -266,6 +264,8 @@ struct MQTOptToMQTRef final : impl::MQTOptToMQTRefBase<MQTOptToMQTRef> {
 
     target.addIllegalDialect<opt::MQTOptDialect>();
     target.addLegalDialect<ref::MQTRefDialect>();
+    target.addLegalDialect<arith::ArithDialect>();
+    target.addLegalDialect<memref::MemRefDialect>();
 
     patterns.add<ConvertMQTOptAlloc, ConvertMQTOptDealloc,
                  ConvertMQTOptAllocQubit, ConvertMQTOptDeallocQubit,

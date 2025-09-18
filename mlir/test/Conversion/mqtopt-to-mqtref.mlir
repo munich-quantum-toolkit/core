@@ -13,7 +13,8 @@
 module {
     // CHECK-LABEL: func.func @testConvertAllocOpAttribute()
     func.func @testConvertAllocOpAttribute() {
-        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}>
+        // CHECK: %[[I2:.*]] = arith.constant 2 : index
+        // CHECK: %[[Qreg:.*]] = memref.alloca(%[[I2]]) : memref<?x!mqtref.Qubit>
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%r0) : (!mqtopt.QubitRegister) -> ()
@@ -26,8 +27,9 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertAllocOpOperand()
     func.func @testConvertAllocOpOperand() {
-        // CHECK: %[[size:.*]] = arith.constant 2
-        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
+        // CHECK: %[[Const:.*]] = arith.constant 2 : i64
+        // CHECK: %[[I2:.*]] = arith.index_cast %[[Const]] : i64 to index
+        // CHECK: %[[Qreg:.*]] = memref.alloca(%[[I2]]) : memref<?x!mqtref.Qubit>
 
         %size = arith.constant 2 : i64
         %r0 = "mqtopt.allocQubitRegister" (%size) : (i64) -> !mqtopt.QubitRegister
@@ -37,25 +39,13 @@ module {
 }
 
 // -----
-// This test checks if the DeallocOp is converted correctly
-module {
-    // CHECK-LABEL: func.func @testConvertDeallocOp
-    func.func @testConvertDeallocOp() {
-        // CHECK: "mqtref.deallocQubitRegister"(%[[ANY:.*]])
-
-        %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-        "mqtopt.deallocQubitRegister"(%r0) : (!mqtopt.QubitRegister) -> ()
-        return
-    }
-}
-
-// -----
-// This test checks if the ExtractOp is converted correctly and the insertOP is removed using a static attribute.
+// This test checks if the ExtractOp is converted correctly and the InsertOp is removed using a static attribute.
 module {
     // CHECK-LABEL: func.func @testConvertExtractOpAttribute
     func.func @testConvertExtractOpAttribute() {
-        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[ANY:.*]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-        //CHECK-NOT: %[[ANY:.*]] = mqtopt.insertQubit (%[[ANY:.*]], %[[ANY:.*]]) <{index_attr = 0 : i64}>
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
+        // CHECK: %[[Q0:.*]] = memref.load [[ANY:.*]][%[[I0]]] : memref<?x!mqtref.Qubit>
+        // CHECK-NOT: %[[ANY:.*]] = mqtopt.insertQubit (%[[ANY:.*]], %[[ANY:.*]]) <{index_attr = 0 : i64}>
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -70,9 +60,10 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertExtractOpOperand
     func.func @testConvertExtractOpOperand() {
-        // CHECK: %[[index:.*]] = arith.constant 0
-        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[ANY:.*]], %[[index]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
-        //CHECK-NOT: %[[ANY:.*]] = mqtopt.insertQubit (%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]])
+        // CHECK: %[[Const:.*]] = arith.constant 0 : i64
+        // CHECK: %[[I0:.*]] = arith.index_cast %[[Const]] : i64 to index
+        // CHECK: %[[Q0:.*]] = memref.load [[ANY:.*]][%[[I0]]] : memref<?x!mqtref.Qubit>
+        // CHECK-NOT: %[[ANY:.*]] = mqtopt.insertQubit (%[[ANY:.*]], %[[ANY:.*]], %[[ANY:.*]])
 
         %index = arith.constant 0 : i64
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
@@ -88,11 +79,14 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertOperandChain
     func.func @testConvertOperandChain() {
-        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}>
-        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 0 : i64}>
-        // CHECK: %[[q_1:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 1 : i64}>
-        // CHECK: %[[q_2:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 2 : i64}>
-        // CHECK: "mqtref.deallocQubitRegister"(%[[r_0:.*]])
+        // CHECK: %[[I3:.*]] = arith.constant 3 : index
+        // CHECK: %[[Qreg:.*]] = memref.alloca(%[[I3]]) : memref<?x!mqtref.Qubit>
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
+        // CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<?x!mqtref.Qubit>
+        // CHECK: %[[I1:.*]] = arith.constant 1 : index
+        // CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<?x!mqtref.Qubit>
+        // CHECK: %[[I2:.*]] = arith.constant 2 : index
+        // CHECK: %[[Q2:.*]] = memref.load %[[Qreg]][%[[I2]]] : memref<?x!mqtref.Qubit>
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -178,7 +172,6 @@ module {
         return
     }
 }
-
 
 // -----
 // This test checks if two target gates are converted correctly
@@ -326,14 +319,16 @@ module {
 module {
     // CHECK-LABEL: func.func @bellState()
     func.func @bellState() {
-        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}>
-        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 0 : i64}>
-        // CHECK: %[[q_1:.*]] = "mqtref.extractQubit"(%[[r_0]]) <{index_attr = 1 : i64}>
-        // CHECK: mqtref.h() %[[q_0]]
-        // CHECK: mqtref.x() %[[q_1]] ctrl %[[q_0]]
-        // CHECK: %[[m_0:.*]] = mqtref.measure %[[q_0]]
-        // CHECK: %[[m_1:.*]] = mqtref.measure %[[q_1]]
-        // CHECK: "mqtref.deallocQubitRegister"(%[[r_0]]) : (!mqtref.QubitRegister) -> ()
+        // CHECK: %[[I2:.*]] = arith.constant 2 : index
+        // CHECK: %[[Qreg:.*]] = memref.alloca(%[[I2]]) : memref<?x!mqtref.Qubit>
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
+        // CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<?x!mqtref.Qubit>
+        // CHECK: %[[I1:.*]] = arith.constant 1 : index
+        // CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<?x!mqtref.Qubit>
+        // CHECK: mqtref.h() %[[Q0]]
+        // CHECK: mqtref.x() %[[Q1]] ctrl %[[Q0]]
+        // CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+        // CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)

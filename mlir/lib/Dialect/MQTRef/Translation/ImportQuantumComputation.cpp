@@ -63,10 +63,10 @@ using BitIndexVec = llvm::SmallVector<BitMemInfo>;
 mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
                          const std::size_t numQubits) {
   const auto& qubitType = mqt::ir::ref::QubitType::get(context);
-  auto memrefType =
+  auto memRefType =
       mlir::MemRefType::get({static_cast<int64_t>(numQubits)}, qubitType);
   auto memref = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
-                                                       memrefType);
+                                                       memRefType);
   return memref.getResult();
 }
 
@@ -172,9 +172,9 @@ getQubits(const qc::QuantumComputation& quantumComputation,
  * @return mlir::Value The allocated classical register value
  */
 mlir::Value allocateBits(mlir::OpBuilder& builder, int64_t numBits) {
-  auto memrefType = mlir::MemRefType::get({numBits}, builder.getI1Type());
+  auto memRefType = mlir::MemRefType::get({numBits}, builder.getI1Type());
   auto memref = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
-                                                       memrefType);
+                                                       memRefType);
   return memref.getResult();
 }
 
