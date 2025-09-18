@@ -17,9 +17,6 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 class TargetArity<int N>
     : ParamNativeOpTrait<"TargetArityTrait", !cast<string>(N)> {
     let cppNamespace = "::mqt::ir::common";
-
-    let extraConcreteClassDeclaration = "int a();";
-    let extraConcreteClassDefinition = "int $cppClass::a() {  }";
 }
 
 def NoTarget : TargetArity<0>;
