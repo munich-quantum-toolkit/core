@@ -92,6 +92,11 @@ endif()
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
+option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
+if(BUILD_MQT_CORE_MLIR)
+  include(SetupMLIR)
+endif()
+
 # add main library code
 add_subdirectory(src)
 
@@ -112,9 +117,7 @@ if(BUILD_MQT_CORE_BENCHMARKS)
   add_subdirectory(eval)
 endif()
 
-option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
 if(BUILD_MQT_CORE_MLIR)
-  include(SetupMLIR)
   add_subdirectory(mlir)
 
   # copy generated MLIR documentation

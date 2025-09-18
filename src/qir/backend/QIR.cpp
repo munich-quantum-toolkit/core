@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "qir/QIR.h"
+#include "qir/backend/QIR.h"
 
-#include "qir/QIR_DD_Backend.hpp"
+#include "qir/backend/QIR_DD_Backend.hpp"
 
 #include <algorithm>
 #include <array>
@@ -156,12 +156,16 @@ String* __quantum__rt__pauli_to_string(const Pauli p) {
   switch (p) {
   case PauliI:
     string->content = "PauliI";
+    break;
   case PauliX:
     string->content = "PauliX";
+    break;
   case PauliZ:
     string->content = "PauliZ";
+    break;
   case PauliY:
     string->content = "PauliY";
+    break;
   }
   return string;
 }

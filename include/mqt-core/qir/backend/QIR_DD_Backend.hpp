@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "QIR.h"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
@@ -19,6 +18,7 @@
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
+#include "qir/backend/QIR.h"
 
 #include <array>
 #include <cstddef>

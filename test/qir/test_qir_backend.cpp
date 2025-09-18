@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qir/QIR.h"
+#include "qir/backend/QIR.h"
 
 #include <algorithm>
 #ifndef _WIN32
