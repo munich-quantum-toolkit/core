@@ -168,7 +168,7 @@ module {
         // CHECK: llvm.call @__quantum__qis__reset__body(%[[q_0]]) : (!llvm.ptr) -> ()
 
         %q0 = mqtref.allocQubit
-        "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
+        mqtref.reset %q0
         mqtref.deallocQubit %q0
         return
     }
@@ -183,7 +183,7 @@ module {
         // CHECK: llvm.call @__quantum__qis__reset__body(%[[q_0]]) : (!llvm.ptr) -> ()
 
         %q0 = mqtref.qubit 0
-        "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
+        mqtref.reset %q0
         mqtref.deallocQubit %q0
         return
     }
@@ -214,10 +214,10 @@ module {
         %q0 = mqtref.allocQubit
         %q1 = mqtref.allocQubit
         %mem = memref.alloca() : memref<2xi1>
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> (i1)
+        %m0 = mqtref.measure %q0
         %c0 = arith.constant 0 : index
         memref.store %m0, %mem[%c0] : memref<2xi1>
-        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> (i1)
+        %m1 = mqtref.measure %q1
         %c1 = arith.constant 1 : index
         memref.store %m1, %mem[%c1] : memref<2xi1>
         mqtref.deallocQubit %q0
@@ -249,10 +249,10 @@ module {
         %q0 = mqtref.qubit 0
         %q1 = mqtref.qubit 1
         %mem = memref.alloca() : memref<2xi1>
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> (i1)
+        %m0 = mqtref.measure %q0
         %c0 = arith.constant 0 : index
         memref.store %m0, %mem[%c0] : memref<2xi1>
-        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> (i1)
+        %m1 = mqtref.measure %q1
         %c1 = arith.constant 1 : index
         memref.store %m1, %mem[%c1] : memref<2xi1>
         return
@@ -280,10 +280,10 @@ module {
         %q0 = mqtref.allocQubit
         %q1 = mqtref.allocQubit
         %mem = memref.alloca() : memref<2xi1>
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> (i1)
+        %m0 = mqtref.measure %q0
         %c0 = arith.constant 0 : index
         memref.store %m0, %mem[%c0] : memref<2xi1>
-        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> (i1)
+        %m1 = mqtref.measure %q1
         memref.store %m1, %mem[%c0] : memref<2xi1>
         mqtref.deallocQubit %q0
         mqtref.deallocQubit %q1
@@ -312,10 +312,10 @@ module {
         %q0 = mqtref.qubit 0
         %q1 = mqtref.qubit 1
         %mem = memref.alloca() : memref<2xi1>
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> (i1)
+        %m0 = mqtref.measure %q0
         %c0 = arith.constant 0 : index
         memref.store %m0, %mem[%c0] : memref<2xi1>
-        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> (i1)
+        %m1 = mqtref.measure %q1
         memref.store %m1, %mem[%c0] : memref<2xi1>
         return
     }
@@ -814,12 +814,12 @@ module {
         %q1 = mqtref.allocQubit
         %mem = memref.alloca() : memref<1xi1>
         mqtref.h() %q0
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+        %m0 = mqtref.measure %q0
         %c0 = arith.constant 0 : index
         memref.store %m0, %mem[%c0] : memref<1xi1>
         mqtref.deallocQubit %q0
         mqtref.h() %q1
-        "mqtref.reset"(%q1) : (!mqtref.Qubit) -> ()
+        mqtref.reset %q1
         mqtref.deallocQubit %q1
         return
     }
@@ -862,10 +862,10 @@ module {
         %mem = memref.alloca() : memref<2xi1>
         mqtref.h() %q0
         mqtref.x() %q1 ctrl %q0
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+        %m0 = mqtref.measure %q0
         %c0 = arith.constant 0 : index
         memref.store %m0, %mem[%c0] : memref<2xi1>
-        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> i1
+        %m1 = mqtref.measure %q1
         %c1 = arith.constant 1 : index
         memref.store %m1, %mem[%c1] : memref<2xi1>
         mqtref.deallocQubit %q0
@@ -907,10 +907,10 @@ module {
         %mem = memref.alloca() : memref<2xi1>
         mqtref.h() %q0
         mqtref.x() %q1 ctrl %q0
-        %m0 = "mqtref.measure"(%q0) : (!mqtref.Qubit) -> i1
+        %m0 = mqtref.measure %q0
         %c0 = arith.constant 0 : index
         memref.store %m0, %mem[%c0] : memref<2xi1>
-        %m1 = "mqtref.measure"(%q1) : (!mqtref.Qubit) -> i1
+        %m1 = mqtref.measure %q1
         %c1 = arith.constant 1 : index
         memref.store %m1, %mem[%c1] : memref<2xi1>
         return
