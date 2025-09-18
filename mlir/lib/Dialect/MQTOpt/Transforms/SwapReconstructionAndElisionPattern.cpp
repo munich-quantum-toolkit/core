@@ -76,7 +76,7 @@ struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
   }
 
   [[nodiscard]] constexpr static mlir::PatternBenefit benefit() {
-    return matchTwoCNOTPattern ? 10 : 100;
+    return matchTwoCNOTPattern ? 2 : 3;
   }
 
   /**
