@@ -120,9 +120,6 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
         ( $in_qubits^ )? ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
         custom<OptOutputTypes>(type($out_qubits), type($pos_ctrl_out_qubits), type($neg_ctrl_out_qubits))
     }];
-
-    int qcType;
-    int isInverted;
 }
 
 include "mlir/Dialect/MQTOpt/IR/MQTOptStdOps.td"

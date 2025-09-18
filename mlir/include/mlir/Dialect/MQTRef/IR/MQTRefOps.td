@@ -98,9 +98,6 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
         attr-dict
         $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
     }];
-
-    int qcType;
-    int isInverted;
 }
 
 include "mlir/Dialect/MQTRef/IR/MQTRefStdOps.td"

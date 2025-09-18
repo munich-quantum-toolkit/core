@@ -37,9 +37,6 @@ def NoControl : NativeOpTrait<"NoControlTrait"> {
     let cppNamespace = "::mqt::ir::common";
 }
 
-def QcTypeId : NativeOpTrait<"QcTypeIdTrait"> {
-}
-
 def UniqueSizeDefinition : NativeOpTrait<"UniqueSizeDefinitionTrait"> {
     let cppNamespace = "::mqt::ir::common";
 }
