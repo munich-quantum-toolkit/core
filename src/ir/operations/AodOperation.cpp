@@ -133,14 +133,14 @@ std::vector<qc::fp> AodOperation::getDistances(const Dimension dir) const {
 }
 
 void AodOperation::dumpOpenQASM(
-    std::ostream& of, const qc : qc::QubitIndexToRegisterMap& qubitMap,
-    [[maybe_unused]] constqc::BitIndexToRegisterMap& bitMap,
+    std::ostream& of, const qc::QubitIndexToRegisterMap& qubitMap,
+    [[maybe_unused]] const qc::BitIndexToRegisterMap& bitMap,
     const size_t indent, bool /*openQASM3*/) const {
   std::ostringstream oss;
   oss << std::setprecision(std::numeric_limits<qc::fp>::digits10);
 
   // Add indentation and operation name
-  oss << std::string(indent * qc::OUTPUT_INDENT_SIZE, ' ') << name;
+  oss << std::string(indent * OUTPUT_INDENT_SIZE, ' ') << name;
 
   // Write AOD operations
   oss << " (";
