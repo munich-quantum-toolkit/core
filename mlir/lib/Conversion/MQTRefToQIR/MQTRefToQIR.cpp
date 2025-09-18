@@ -629,19 +629,23 @@ struct ConvertMQTRefMeasureQIR final
 
             const auto allocaOp = storeOp.getMemRef();
 
-            // erase the storeOp immediately instead of erasing it after the
-            // pass with rewriter.erase() to update the number of users
-            // immediately
-            storeOp->erase();
+            // drop the references to update the number of uses immediately
+            // as eraseOp only updates them after the patterns
+            storeOp->dropAllReferences();
+            rewriter.eraseOp(storeOp);
 
             // erase the alloca op if all store operations are removed
             if (allocaOp.use_empty()) {
+
               rewriter.eraseOp(allocaOp.getDefiningOp<memref::AllocaOp>());
             }
             // delete the unrealized conversion and the constant operation when
             // there are no users left
-            if (unrealizedConvOp->getResult(0).use_empty()) {
+            if (unrealizedConvOp->use_empty()) {
+              unrealizedConvOp->dropAllReferences();
               rewriter.eraseOp(unrealizedConvOp);
+            }
+            if (constantOp->use_empty()) {
               rewriter.eraseOp(constantOp);
             }
             break;
