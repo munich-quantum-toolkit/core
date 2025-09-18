@@ -148,7 +148,7 @@ module {
     // CHECK-LABEL: llvm.func @testConvertResetOp()
     llvm.func @testConvertResetOp() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.allocQubit
-        // CHECK: "mqtref.reset"(%[[q_0]])
+        // CHECK: mqtref.reset %[[q_0]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         llvm.call @__quantum__rt__initialize(%0) : (!llvm.ptr) -> ()
@@ -175,7 +175,7 @@ module {
     // CHECK-LABEL: llvm.func @testConvertResetOpStatic()
     llvm.func @testConvertResetOpStatic() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
         // CHECK: %[[q_0:.*]] = mqtref.qubit 0
-        // CHECK: "mqtref.reset"(%[[q_0]])
+        // CHECK: mqtref.reset %[[q_0]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         llvm.call @__quantum__rt__initialize(%0) : (!llvm.ptr) -> ()
