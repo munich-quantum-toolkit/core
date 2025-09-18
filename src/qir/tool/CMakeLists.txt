@@ -9,34 +9,10 @@
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runner)
 
 if(NOT TARGET ${TARGET_NAME})
-  message(STATUS "Adding executable target ${TARGET_NAME}")
-  set(LLVM_LINK_COMPONENTS
-      CodeGen
-      Core
-      ExecutionEngine
-      IRReader
-      Interpreter
-      JITLink
-      MC
-      MCJIT
-      Object
-      OrcJIT
-      OrcDebugging
-      OrcShared
-      OrcTargetProcess
-      Passes
-      RuntimeDyld
-      SelectionDAG
-      Support
-      Target
-      TargetParser
-      TransformUtils
-      native)
-
   add_llvm_tool(${TARGET_NAME} App.cpp DEPENDS intrinsics_gen EXPORT_SYMBOLS)
 
   # Add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRBackend spdlog::spdlog ${llvm_libs})
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRBackend ${llvm_libs})
 
   # Set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME

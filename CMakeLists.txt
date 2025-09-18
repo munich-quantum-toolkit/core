@@ -96,6 +96,8 @@ option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OF
 if(BUILD_MQT_CORE_MLIR)
   include(SetupMLIR)
 endif()
+cmake_dependent_option(BUILD_MQT_QIR_TOOL "Build the QIR runner of the MQT Core project" ON
+                       "BUILD_MQT_CORE_MLIR" OFF)
 
 # add main library code
 add_subdirectory(src)

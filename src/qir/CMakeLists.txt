@@ -7,4 +7,7 @@
 # Licensed under the MIT License
 
 add_subdirectory(backend)
-add_subdirectory(tool)
+
+if(BUILD_MQT_QIR_TOOL)
+  add_subdirectory(tool)
+endif()
