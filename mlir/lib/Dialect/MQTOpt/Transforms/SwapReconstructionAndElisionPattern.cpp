@@ -38,12 +38,10 @@ struct ElidePermutationsPattern final : mlir::OpRewritePattern<SWAPOp> {
       return mlir::failure();
     }
 
-    auto inQubits = op.getInQubits();
+    const auto inQubits = op.getInQubits();
     assert(inQubits.size() == 2);
 
-    rewriter.replaceAllOpUsesWith(op, {inQubits[1], inQubits[0]});
-
-    rewriter.eraseOp(op);
+    rewriter.replaceOp(op, {inQubits[1], inQubits[0]});
 
     return mlir::success();
   }
