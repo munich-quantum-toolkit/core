@@ -238,16 +238,19 @@ private:
                                        params.data() + params.size());
     // split addresses into control and target; also see static_assert above
     constexpr uint8_t t = isSingleQubitGate(Op) ? 1 : 2;
-    static_assert(qubits.size() >= t,
-                  "Not enough qubits provided for the operation.");
-    if constexpr (qubits.size() > t) { // create controlled operation
+    static_assert(
+        std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> >= t,
+        "Not enough qubits provided for the operation.");
+    if constexpr (std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> >
+                  t) { // create controlled operation
       const auto& controls =
           qc::Controls(addresses.cbegin(), addresses.cend() - t);
       const auto& targets = qc::Targets(addresses.data() + (qubits.size() - t),
                                         addresses.data() + qubits.size());
       return {controls, targets, Op, paramVec};
     }
-    // qubits.size() == t // create uncontrolled operation
+    // std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> == t //
+    // create uncontrolled operation
     const auto targets = qc::Targets(addresses.data(), addresses.data() + t);
     return {targets, Op, paramVec};
   }
@@ -262,10 +265,10 @@ public:
   Backend& operator=(Backend&&) = delete;
 
   auto resetBackend() -> void;
-  template <typename... Args>
-  auto apply(qc::OpType op, Args&&... args) -> void {
+  template <qc::OpType Op, typename... Args>
+  auto apply(Args&&... args) -> void {
     const qc::StandardOperation& operation =
-        createOperation(op, std::forward<Args>(args)...);
+        createOperation<Op>(std::forward<Args>(args)...);
     qState = applyUnitaryOperation(operation, qState, *dd);
   }
   template <typename... Args> auto measure(Args... args) -> void {

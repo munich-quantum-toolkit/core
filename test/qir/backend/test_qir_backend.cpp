@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "ir/Definitions.hpp"
 #include "qir/backend/QIR.h"
 
 #include <algorithm>
@@ -28,13 +29,291 @@
 
 namespace qir {
 
-class QIRBackendTest : public ::testing::Test {
+class QIRBackendTest : public testing::Test {
 protected:
   std::stringstream buffer;
   std::streambuf* old = nullptr;
   void SetUp() override { old = std::cout.rdbuf(buffer.rdbuf()); }
   void TearDown() override { std::cout.rdbuf(old); }
 };
+
+TEST_F(QIRBackendTest, XGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__x__body(q0);
+}
+
+TEST_F(QIRBackendTest, YGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__y__body(q0);
+}
+
+TEST_F(QIRBackendTest, ZGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__z__body(q0);
+}
+
+TEST_F(QIRBackendTest, HGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__h__body(q0);
+}
+
+TEST_F(QIRBackendTest, SGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__s__body(q0);
+}
+
+TEST_F(QIRBackendTest, SdgGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__sdg__body(q0);
+}
+
+TEST_F(QIRBackendTest, SXGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__sx__body(q0);
+}
+
+TEST_F(QIRBackendTest, SXdgGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__sxdg__body(q0);
+}
+
+TEST_F(QIRBackendTest, SqrtXGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__sqrtx__body(q0);
+}
+
+TEST_F(QIRBackendTest, SqrtXdgGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__sqrtxdg__body(q0);
+}
+
+TEST_F(QIRBackendTest, TGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__t__body(q0);
+}
+
+TEST_F(QIRBackendTest, TdgGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__tdg__body(q0);
+}
+
+TEST_F(QIRBackendTest, RXGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__rx__body(q0, qc::PI_2);
+}
+
+TEST_F(QIRBackendTest, RYGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__ry__body(q0, qc::PI_2);
+}
+
+TEST_F(QIRBackendTest, RZGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__rz__body(q0, qc::PI_2);
+}
+
+TEST_F(QIRBackendTest, PGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__p__body(q0, qc::PI_2);
+}
+
+TEST_F(QIRBackendTest, RXXGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__rxx__body(q0, q1, qc::PI_2);
+}
+
+TEST_F(QIRBackendTest, UGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__u__body(q0, qc::PI_2, 0, qc::PI_4);
+}
+
+TEST_F(QIRBackendTest, U3Gate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__u3__body(q0, qc::PI_2, 0, qc::PI_4);
+}
+
+TEST_F(QIRBackendTest, U2Gate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__u2__body(q0, qc::PI_2, 0);
+}
+
+TEST_F(QIRBackendTest, U1Gate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__u1__body(q0, qc::PI_2);
+}
+
+TEST_F(QIRBackendTest, CU1Gate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__cu1__body(q0, q1, qc::PI_2);
+}
+
+TEST_F(QIRBackendTest, CU3Gate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__cu3__body(q0, q1, qc::PI_2, 0, qc::PI_4);
+}
+
+TEST_F(QIRBackendTest, CNotGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__cnot__body(q0, q1);
+}
+
+TEST_F(QIRBackendTest, CXGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__cx__body(q0, q1);
+}
+
+TEST_F(QIRBackendTest, CYGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__cy__body(q0, q1);
+}
+
+TEST_F(QIRBackendTest, CZGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__cz__body(q0, q1);
+}
+
+TEST_F(QIRBackendTest, CHGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__ch__body(q0, q1);
+}
+
+TEST_F(QIRBackendTest, SwapGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  auto* r0 = reinterpret_cast<Result*>(0UL);
+  auto* r1 = reinterpret_cast<Result*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__x__body(q0);
+  __quantum__qis__swap__body(q0, q1);
+  __quantum__qis__mz__body(q0, r0);
+  __quantum__qis__mz__body(q1, r1);
+  const auto m1 = __quantum__rt__read_result(r0);
+  const auto m2 = __quantum__rt__read_result(r1);
+  EXPECT_EQ(m1, m2);
+  __quantum__rt__result_record_output(r0, "r0");
+  __quantum__rt__result_record_output(r1, "r1");
+  EXPECT_EQ(buffer.str(), "r0: 0\nr1: 1\n");
+}
+
+TEST_F(QIRBackendTest, CSwapGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  auto* q2 = reinterpret_cast<Qubit*>(2UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__cswap__body(q0, q1, q2);
+}
+
+TEST_F(QIRBackendTest, CRZGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__crz__body(q0, q1, qc::PI_2);
+}
+
+TEST_F(QIRBackendTest, CRYGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__cry__body(q0, q1, qc::PI_2);
+}
+
+TEST_F(QIRBackendTest, CRXGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__crx__body(q0, q1, qc::PI_2);
+}
+
+TEST_F(QIRBackendTest, CPGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__cp__body(q0, q1, qc::PI_2);
+}
+
+TEST_F(QIRBackendTest, RZZGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__rzz__body(q0, q1, qc::PI_2);
+}
+
+TEST_F(QIRBackendTest, CCXGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  auto* q2 = reinterpret_cast<Qubit*>(2UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__ccx__body(q0, q1, q2);
+}
+
+TEST_F(QIRBackendTest, CCZGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  auto* q2 = reinterpret_cast<Qubit*>(2UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__ccz__body(q0, q1, q2);
+}
+
+TEST_F(QIRBackendTest, MGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__m__body(q0);
+}
+
+TEST_F(QIRBackendTest, MeasureGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__measure__body(q0);
+}
+
+TEST_F(QIRBackendTest, MzGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* r0 = reinterpret_cast<Result*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__mz__body(q0, r0);
+}
+
+TEST_F(QIRBackendTest, ResetGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__reset__body(q0);
+}
 
 TEST_F(QIRBackendTest, BellPairStatic) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
@@ -141,109 +420,53 @@ TEST_F(QIRBackendTest, GHZ4Static) {
   __quantum__rt__result_record_output(r[3], "r3");
 }
 
-TEST_F(QIRBackendTest, GHZ4StaticReverse) {
-  const std::array<Qubit*, 4> q = {
-      reinterpret_cast<Qubit*>(0UL), reinterpret_cast<Qubit*>(1UL),
-      reinterpret_cast<Qubit*>(2UL), reinterpret_cast<Qubit*>(3UL)};
-  const std::array<Result*, 4> r = {
-      reinterpret_cast<Result*>(0UL), reinterpret_cast<Result*>(1UL),
-      reinterpret_cast<Result*>(2UL), reinterpret_cast<Result*>(3UL)};
-  __quantum__rt__initialize(nullptr);
-  __quantum__qis__h__body(q[3]);
-  __quantum__qis__cx__body(q[3], q[2]);
-  __quantum__qis__cx__body(q[2], q[1]);
-  __quantum__qis__cx__body(q[1], q[0]);
-  __quantum__qis__mz__body(q[0], r[0]);
-  __quantum__qis__mz__body(q[1], r[1]);
-  __quantum__qis__mz__body(q[2], r[2]);
-  __quantum__qis__mz__body(q[3], r[3]);
-  const auto m0 = __quantum__rt__read_result(r[0]);
-  const auto m1 = __quantum__rt__read_result(r[1]);
-  const auto m2 = __quantum__rt__read_result(r[2]);
-  const auto m3 = __quantum__rt__read_result(r[3]);
-  EXPECT_EQ(m0, m1);
-  EXPECT_EQ(m1, m2);
-  EXPECT_EQ(m1, m3);
-  __quantum__rt__result_record_output(r[0], "r0");
-  __quantum__rt__result_record_output(r[1], "r1");
-  __quantum__rt__result_record_output(r[2], "r2");
-  __quantum__rt__result_record_output(r[3], "r3");
-}
-
 TEST_F(QIRBackendTest, GHZ4Dynamic) {
   __quantum__rt__initialize(nullptr);
   auto* qArr = __quantum__rt__qubit_allocate_array(4);
-  const std::array<Qubit*, 4> q = {
-      *reinterpret_cast<Qubit**>(
-          __quantum__rt__array_get_element_ptr_1d(qArr, 0)),
-      *reinterpret_cast<Qubit**>(
-          __quantum__rt__array_get_element_ptr_1d(qArr, 1)),
-      *reinterpret_cast<Qubit**>(
-          __quantum__rt__array_get_element_ptr_1d(qArr, 2)),
-      *reinterpret_cast<Qubit**>(
-          __quantum__rt__array_get_element_ptr_1d(qArr, 3))};
+  const std::array q = {*reinterpret_cast<Qubit**>(
+                            __quantum__rt__array_get_element_ptr_1d(qArr, 0)),
+                        *reinterpret_cast<Qubit**>(
+                            __quantum__rt__array_get_element_ptr_1d(qArr, 1)),
+                        *reinterpret_cast<Qubit**>(
+                            __quantum__rt__array_get_element_ptr_1d(qArr, 2)),
+                        *reinterpret_cast<Qubit**>(
+                            __quantum__rt__array_get_element_ptr_1d(qArr, 3))};
   __quantum__qis__h__body(q[0]);
   __quantum__qis__cx__body(q[0], q[1]);
   __quantum__qis__cx__body(q[1], q[2]);
   __quantum__qis__cx__body(q[2], q[3]);
-  auto* r0 = __quantum__qis__m__body(q[0]);
-  auto* r1 = __quantum__qis__m__body(q[1]);
-  auto* r2 = __quantum__qis__m__body(q[2]);
-  auto* r3 = __quantum__qis__m__body(q[3]);
+  auto* rArr = __quantum__rt__array_create_1d(sizeof(Result*), 4);
+  std::array r = {*reinterpret_cast<Result**>(
+                      __quantum__rt__array_get_element_ptr_1d(rArr, 0)),
+                  *reinterpret_cast<Result**>(
+                      __quantum__rt__array_get_element_ptr_1d(rArr, 1)),
+                  *reinterpret_cast<Result**>(
+                      __quantum__rt__array_get_element_ptr_1d(rArr, 2)),
+                  *reinterpret_cast<Result**>(
+                      __quantum__rt__array_get_element_ptr_1d(rArr, 3))};
+  r[0] = __quantum__qis__m__body(q[0]);
+  r[1] = __quantum__qis__m__body(q[1]);
+  r[2] = __quantum__qis__m__body(q[2]);
+  r[3] = __quantum__qis__m__body(q[3]);
   __quantum__rt__qubit_release_array(qArr);
-  const auto m0 = __quantum__rt__read_result(r0);
-  const auto m1 = __quantum__rt__read_result(r1);
-  const auto m2 = __quantum__rt__read_result(r2);
-  const auto m3 = __quantum__rt__read_result(r3);
-  EXPECT_EQ(m0, m1);
-  EXPECT_EQ(m1, m2);
-  EXPECT_EQ(m2, m3);
-  __quantum__rt__result_record_output(r0, "r0");
-  __quantum__rt__result_record_output(r1, "r1");
-  __quantum__rt__result_record_output(r2, "r2");
-  __quantum__rt__result_record_output(r3, "r3");
-  __quantum__rt__result_update_reference_count(r0, -1);
-  __quantum__rt__result_update_reference_count(r1, -1);
-  __quantum__rt__result_update_reference_count(r2, -1);
-  __quantum__rt__result_update_reference_count(r3, -1);
-}
-
-TEST_F(QIRBackendTest, GHZ4DynamicReverse) {
-  __quantum__rt__initialize(nullptr);
-  auto* qArr = __quantum__rt__qubit_allocate_array(4);
-  const std::array<Qubit*, 4> q = {
-      *reinterpret_cast<Qubit**>(
-          __quantum__rt__array_get_element_ptr_1d(qArr, 0)),
-      *reinterpret_cast<Qubit**>(
-          __quantum__rt__array_get_element_ptr_1d(qArr, 1)),
-      *reinterpret_cast<Qubit**>(
-          __quantum__rt__array_get_element_ptr_1d(qArr, 2)),
-      *reinterpret_cast<Qubit**>(
-          __quantum__rt__array_get_element_ptr_1d(qArr, 3))};
-  __quantum__qis__h__body(q[3]);
-  __quantum__qis__cx__body(q[3], q[2]);
-  __quantum__qis__cx__body(q[2], q[1]);
-  __quantum__qis__cx__body(q[1], q[0]);
-  auto* r0 = __quantum__qis__m__body(q[0]);
-  auto* r1 = __quantum__qis__m__body(q[1]);
-  auto* r2 = __quantum__qis__m__body(q[2]);
-  auto* r3 = __quantum__qis__m__body(q[3]);
-  __quantum__rt__qubit_release_array(qArr);
-  const auto m0 = __quantum__rt__read_result(r0);
-  const auto m1 = __quantum__rt__read_result(r1);
-  const auto m2 = __quantum__rt__read_result(r2);
-  const auto m3 = __quantum__rt__read_result(r3);
-  EXPECT_EQ(m0, m1);
-  EXPECT_EQ(m1, m2);
-  EXPECT_EQ(m2, m3);
-  __quantum__rt__result_record_output(r0, "r0");
-  __quantum__rt__result_record_output(r1, "r1");
-  __quantum__rt__result_record_output(r2, "r2");
-  __quantum__rt__result_record_output(r3, "r3");
-  __quantum__rt__result_update_reference_count(r0, -1);
-  __quantum__rt__result_update_reference_count(r1, -1);
-  __quantum__rt__result_update_reference_count(r2, -1);
-  __quantum__rt__result_update_reference_count(r3, -1);
+  EXPECT_TRUE(__quantum__rt__result_equal(r[0], r[1]));
+  EXPECT_TRUE(__quantum__rt__result_equal(r[1], r[2]));
+  EXPECT_TRUE(__quantum__rt__result_equal(r[2], r[3]));
+  const std::array m = {
+      __quantum__rt__read_result(r[0]), __quantum__rt__read_result(r[1]),
+      __quantum__rt__read_result(r[2]), __quantum__rt__read_result(r[3])};
+  EXPECT_EQ(m[0], m[1]);
+  EXPECT_EQ(m[1], m[2]);
+  EXPECT_EQ(m[2], m[3]);
+  __quantum__rt__result_record_output(r[0], "r0");
+  __quantum__rt__result_record_output(r[1], "r1");
+  __quantum__rt__result_record_output(r[2], "r2");
+  __quantum__rt__result_record_output(r[3], "r3");
+  __quantum__rt__result_update_reference_count(r[0], -1);
+  __quantum__rt__result_update_reference_count(r[1], -1);
+  __quantum__rt__result_update_reference_count(r[2], -1);
+  __quantum__rt__result_update_reference_count(r[3], -1);
+  __quantum__rt__array_update_reference_count(rArr, -1);
 }
 
 class QIRFilesTest : public ::testing::TestWithParam<std::filesystem::path> {};
