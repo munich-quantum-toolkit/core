@@ -177,10 +177,10 @@ int runOrcJIT() {
   // If this is a Mingw or Cygwin executor then we need to alias __main to
   // orc_rt_int_void_return_0.
   if (jit->getTargetTriple().isOSCygMing()) {
-    auto& WorkaroundJD = jit->getProcessSymbolsJITDylib()
+    auto& workaroundJD = jit->getProcessSymbolsJITDylib()
                              ? *jit->getProcessSymbolsJITDylib()
                              : jit->getMainJITDylib();
-    exitOnErr(WorkaroundJD.define(llvm::orc::absoluteSymbols(
+    exitOnErr(workaroundJD.define(llvm::orc::absoluteSymbols(
         {{jit->mangleAndIntern("__main"),
           {llvm::orc::ExecutorAddr::fromPtr(mingwNoopMain),
            llvm::JITSymbolFlags::Exported}}})));

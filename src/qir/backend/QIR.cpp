@@ -10,6 +10,7 @@
 
 #include "qir/backend/QIR.h"
 
+#include "ir/operations/OpType.hpp"
 #include "qir/backend/Backend.hpp"
 
 #include <algorithm>
