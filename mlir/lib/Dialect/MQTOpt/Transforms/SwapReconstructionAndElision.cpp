@@ -35,8 +35,12 @@ struct SwapReconstructionAndElision final
     mlir::RewritePatternSet patterns(ctx);
     populateSwapReconstructionAndElisionPatterns(patterns);
 
+    // Configure greedy driver
+    mlir::GreedyRewriteConfig config;
+    config.setUseTopDownTraversal(true);
+
     // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
+    if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns), config))) {
       signalPassFailure();
     }
   }
