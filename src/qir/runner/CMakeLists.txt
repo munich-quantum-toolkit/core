@@ -9,7 +9,7 @@
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runner)
 
 if(NOT TARGET ${TARGET_NAME})
-  add_llvm_tool(${TARGET_NAME} Runner.cpp DEPENDS intrinsics_gen EXPORT_SYMBOLS)
+  add_llvm_tool(${TARGET_NAME} Runner.cpp DEPENDS intrinsics_gen)
 
   # Add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRBackend ${llvm_libs})
