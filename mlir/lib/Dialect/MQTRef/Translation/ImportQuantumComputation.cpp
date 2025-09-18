@@ -74,13 +74,11 @@ mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
  * @brief Extracts all qubits from a quantum register.
  *
  * @param builder The MLIR OpBuilder used to create operations
- * @param context The MLIR context in which types are created
  * @param qreg The quantum register from which to extract qubits
  * @param numQubits The number of qubits to extract
  * @return llvm::SmallVector<mlir::Value> Vector of extracted qubit values
  */
 llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
-                                             mlir::MLIRContext* context,
                                              mlir::Value qreg,
                                              const std::size_t numQubits) {
   llvm::SmallVector<mlir::Value> qubits;
@@ -134,7 +132,7 @@ getQregs(mlir::OpBuilder& builder, mlir::MLIRContext* context,
   llvm::SmallVector<QregInfo> qregs;
   for (const auto* qregPtr : qregPtrs) {
     const auto qreg = allocateQreg(builder, context, qregPtr->getSize());
-    auto qubits = extractQubits(builder, context, qreg, qregPtr->getSize());
+    auto qubits = extractQubits(builder, qreg, qregPtr->getSize());
     qregs.emplace_back(qregPtr, qreg, std::move(qubits));
   }
 
