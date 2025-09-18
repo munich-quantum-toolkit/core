@@ -62,13 +62,12 @@ using BitIndexVec = llvm::SmallVector<BitMemInfo>;
  */
 mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
                          const std::size_t numQubits) {
-  const auto& qregType = mqt::ir::ref::QubitRegisterType::get(context);
-  auto sizeAttr = builder.getI64IntegerAttr(static_cast<int64_t>(numQubits));
-
-  auto allocOp = builder.create<mqt::ir::ref::AllocOp>(
-      builder.getUnknownLoc(), qregType, nullptr, sizeAttr);
-
-  return allocOp.getResult();
+  const auto& qubitType = mqt::ir::ref::QubitType::get(context);
+  auto memrefType =
+      mlir::MemRefType::get({static_cast<int64_t>(numQubits)}, qubitType);
+  auto memref = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
+                                                       memrefType);
+  return memref.getResult();
 }
 
 /**
@@ -84,16 +83,17 @@ llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
                                              mlir::MLIRContext* context,
                                              mlir::Value qreg,
                                              const std::size_t numQubits) {
-  const auto& qubitType = mqt::ir::ref::QubitType::get(context);
   llvm::SmallVector<mlir::Value> qubits;
   qubits.reserve(numQubits);
 
-  const auto loc = builder.getUnknownLoc();
   for (std::size_t qubit = 0; qubit < numQubits; ++qubit) {
-    auto indexAttr = builder.getI64IntegerAttr(static_cast<int64_t>(qubit));
-    auto extractOp = builder.create<mqt::ir::ref::ExtractOp>(
-        loc, qubitType, qreg, nullptr, indexAttr);
-    qubits.emplace_back(extractOp.getResult());
+    auto index = builder.create<mlir::arith::ConstantIndexOp>(
+        builder.getUnknownLoc(), qubit);
+    qubits.emplace_back(
+        builder
+            .create<mlir::memref::LoadOp>(builder.getUnknownLoc(), qreg,
+                                          mlir::ValueRange{index})
+            .getResult());
   }
 
   return qubits;
@@ -164,16 +164,6 @@ getQubits(const qc::QuantumComputation& quantumComputation,
   }
 
   return flatQubits;
-}
-
-/**
- * @brief Deallocates the quantum register in the MLIR module.
- *
- * @param builder The MLIR OpBuilder used to create operations
- * @param qreg The quantum register to deallocate
- */
-void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
-  builder.create<mqt::ir::ref::DeallocOp>(builder.getUnknownLoc(), qreg);
 }
 
 /**
@@ -613,12 +603,6 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
     // Even if operations fail, return the module with what we could translate
     emitError(loc) << "Failed to translate some quantum operations";
   }
-
-  // Deallocate quantum registers
-  for (const auto& qreg : qregs) {
-    deallocateQreg(builder, qreg.qreg);
-  }
-
   // Create terminator
   builder.create<mlir::func::ReturnOp>(loc);
 
