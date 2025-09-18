@@ -216,8 +216,10 @@ private:
 
   auto enlargeState(std::uint64_t maxQubit) -> void;
 
-  template <typename... Args>
-  auto createOperation(qc::OpType op, Args&... args) -> qc::StandardOperation {
+  template <qc::OpType Op, typename... Args>
+  auto createOperation(Args&... args) -> qc::StandardOperation {
+    static_assert(qc::isSingleQubitGate(Op) || qc::isTwoQubitGate(Op),
+                  "Op must be a single or two qubit gate.");
     const auto& params = Utils::packOfType<qc::fp>(args...);
     const auto& qubits = Utils::packOfType<Qubit*>(args...);
     static_assert(
@@ -234,34 +236,20 @@ private:
     // store parameters into vector (without copying)
     const std::vector<qc::fp> paramVec(params.data(),
                                        params.data() + params.size());
-    // split addresses into control and target
-    uint8_t t = 0;
-    if (isSingleQubitGate(op)) {
-      t = 1;
-    } else if (isTwoQubitGate(op)) {
-      t = 2;
-    } else {
-      std::ostringstream ss;
-      ss << __FILE__ << ":" << __LINE__
-         << ": Operation type is not known: " << toString(op);
-      throw std::invalid_argument(ss.str());
-    }
-    if (qubits.size() > t) { // create controlled operation
+    // split addresses into control and target; also see static_assert above
+    constexpr uint8_t t = isSingleQubitGate(Op) ? 1 : 2;
+    static_assert(qubits.size() >= t,
+                  "Not enough qubits provided for the operation.");
+    if constexpr (qubits.size() > t) { // create controlled operation
       const auto& controls =
           qc::Controls(addresses.cbegin(), addresses.cend() - t);
       const auto& targets = qc::Targets(addresses.data() + (qubits.size() - t),
                                         addresses.data() + qubits.size());
-      return {controls, targets, op, paramVec};
+      return {controls, targets, Op, paramVec};
     }
-    if (qubits.size() == t) { // create uncontrolled operation
-      const auto targets = qc::Targets(addresses.data(), addresses.data() + t);
-      return {targets, op, paramVec};
-    }
-    std::ostringstream ss;
-    ss << __FILE__ << ":" << __LINE__
-       << ": Operation requires more qubits than given (" << toString(op)
-       << "): " << qubits.size();
-    throw std::invalid_argument(ss.str());
+    // qubits.size() == t // create uncontrolled operation
+    const auto targets = qc::Targets(addresses.data(), addresses.data() + t);
+    return {targets, Op, paramVec};
   }
 
 public:
