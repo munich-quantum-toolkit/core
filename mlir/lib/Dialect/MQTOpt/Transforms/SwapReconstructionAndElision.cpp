@@ -40,7 +40,8 @@ struct SwapReconstructionAndElision final
     config.setUseTopDownTraversal(true);
 
     // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns), config))) {
+    if (mlir::failed(
+            mlir::applyPatternsGreedily(op, std::move(patterns), config))) {
       signalPassFailure();
     }
   }
