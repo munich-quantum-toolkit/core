@@ -173,6 +173,73 @@ module {
 
 
 // -----
+// This test checks that recursive application is possible for performing a combination of two and three
+// CNOT swap reconstructions and elisions.
+
+module {
+  // CHECK-LABEL: func.func @testFirstTwoThenThreeCNotSwapReconstructionAndElision
+  func.func @testFirstTwoThenThreeCNotSwapReconstructionAndElision() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
+
+    // ========================== Check for operations that should be canceled ==============================
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_0]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_0]]
+
+    %q0_0 = mqtopt.allocQubit
+    %q1_0 = mqtopt.allocQubit
+
+    %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1: !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+    %q1_3, %q0_3 = mqtopt.x() %q1_2 ctrl %q0_2: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_4, %q1_4 = mqtopt.x() %q0_3 ctrl %q1_3: !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_4
+    mqtopt.deallocQubit %q1_4
+
+    return
+  }
+}
+
+
+// -----
+// This test checks that recursive application is possible for performing CNOT swap reconstruction and
+// elision twice.
+
+module {
+  // CHECK-LABEL: func.func @testFirstTwoThenTwoAgainSwapReconstructionAndElision
+  func.func @testFirstTwoThenTwoAgainSwapReconstructionAndElision() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
+
+    // ========================== Check for operations that should be inserted ==============================
+    // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]]
+
+    // ========================== Check for operations that should be canceled ==============================
+    // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_1]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_1]]
+
+    %q0_0 = mqtopt.allocQubit
+    %q1_0 = mqtopt.allocQubit
+
+    %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q1_3, %q0_3 = mqtopt.x() %q1_2 ctrl %q0_2: !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_3
+    mqtopt.deallocQubit %q1_3
+
+    return
+  }
+}
+
+
+// -----
 // This test checks that consecutive CNOT gates with more than one control qubit are not merged.
 
 module {
