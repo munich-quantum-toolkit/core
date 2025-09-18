@@ -167,6 +167,35 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
                return  $_op->getName().getStringRef().split('.').second;
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Check if operation operates on a single qubit.",
+            /*returnType=*/  "bool",
+            /*methodName=*/  "isSingleQubitOperation",
+            /*args=*/        (ins),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                auto&& inQubits = $_op.getInQubits();
+                auto&& outQubits = $_op.getOutQubits();
+                return inQubits.size() == 1 && outQubits.size() == 1 && !$_op.isControlled();
+            }]>,
+            InterfaceMethod<
+            /*desc=*/        "Check if operation operates on exactly two qubits.",
+            /*returnType=*/  "bool",
+            /*methodName=*/  "isTwoQubitOperation",
+            /*args=*/        (ins),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                auto&& inQubits = $_op.getInQubits();
+                auto&& inPosCtrlQubits = $_op.getPosCtrlInQubits();
+                auto&& inNegCtrlQubits = $_op.getNegCtrlInQubits();
+                auto&& outQubits = $_op.getOutQubits();
+                auto&& outPosCtrlQubits = $_op.getPosCtrlInQubits();
+                auto&& outNegCtrlQubits = $_op.getNegCtrlInQubits();
+
+                auto inQubitSize = inQubits.size() + inPosCtrlQubits.size() + inNegCtrlQubits.size();
+                auto outQubitSize = outQubits.size() + outPosCtrlQubits.size() + outNegCtrlQubits.size();
+                return inQubitSize == 2 && outQubitSize == 2;
             }]>
     ];
 
