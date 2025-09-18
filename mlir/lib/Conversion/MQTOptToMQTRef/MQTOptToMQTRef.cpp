@@ -26,6 +26,7 @@
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
