@@ -122,7 +122,7 @@ def MeasureOp : GateOp<"measure", []> {
 
     let arguments = (ins QubitType:$in_qubit);
     let results = (outs I1:$out_bit);
-    let assemblyFormat = "attr-dict $in_qubit";
+    let assemblyFormat = "$in_qubit attr-dict";
 }
 
 def ResetOp : GateOp<"reset", []> {
@@ -140,7 +140,7 @@ def ResetOp : GateOp<"reset", []> {
 
     let arguments = (ins QubitType:$in_qubit);
     let results = (outs);
-    let assemblyFormat = "attr-dict $in_qubit";
+    let assemblyFormat = "$in_qubit attr-dict";
 }
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTRefOp<mnemonic, traits>;
@@ -180,7 +180,7 @@ def DeallocQubitOp : ResourceOp<"deallocQubit"> {
 
     let arguments = (ins QubitType:$qubit);
     let results = (outs);
-    let assemblyFormat = "attr-dict $qubit";
+    let assemblyFormat = "$qubit attr-dict";
 }
 
 // Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1126
@@ -277,7 +277,7 @@ def QubitOp : ResourceOp<"qubit"> {
 
     let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
     let results = (outs QubitType:$qubit);
-    let assemblyFormat = "attr-dict $index";
+    let assemblyFormat = "$index attr-dict";
 }
 
 #endif // MQTREF_OPS
