@@ -176,12 +176,12 @@ module {
 module {
     // CHECK-LABEL: func.func @testResetOp
     func.func @testResetOp() {
-        // CHECK: "mqtref.reset"(%[[ANY:.*]])
+        // CHECK: mqtref.reset %[[ANY:.*]]
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %q0 = "mqtref.extractQubit"(%qreg) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
 
-        "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
+        mqtref.reset %q0
 
         "mqtref.deallocQubitRegister"(%qreg) : (!mqtref.QubitRegister) -> ()
         return
@@ -193,10 +193,10 @@ module {
 module {
     // CHECK-LABEL: func.func @testResetOpOnStaticInput
     func.func @testResetOpOnStaticInput() {
-        // CHECK: "mqtref.reset"(%[[ANY:.*]]) : (!mqtref.Qubit) -> ()
+        // CHECK: mqtref.reset %[[ANY:.*]]
 
         %q0 = mqtref.qubit 0
-        "mqtref.reset"(%q0) : (!mqtref.Qubit) -> ()
+        mqtref.reset %q0
         return
     }
 }
@@ -1113,8 +1113,8 @@ module {
 module {
     // CHECK-LABEL: func.func @testStaticParameters
     func.func @testStaticParameters() {
-        // CHECK: mqtref.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01]) %[[ANY:.*]]
-        // CHECK: mqtref.u( static [1.000000e-01, 2.000000e-01, 3.000000e-01] mask [true, true, true]) %[[ANY:.*]]
+        // CHECK: mqtref.u(static [1.000000e-01, 2.000000e-01, 3.000000e-01]) %[[ANY:.*]]
+        // CHECK: mqtref.u(static [1.000000e-01, 2.000000e-01, 3.000000e-01] mask [true, true, true]) %[[ANY:.*]]
 
         %qreg = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
         %q_0 = "mqtref.extractQubit"(%qreg)  <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> (!mqtref.Qubit)
