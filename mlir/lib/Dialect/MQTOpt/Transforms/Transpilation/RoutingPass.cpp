@@ -14,11 +14,14 @@
 #include "mlir/IR/BuiltinTypes.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <deque>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -329,9 +332,9 @@ using QubitStateStack = SmallVector<QubitState, 2>;
  * @brief Manages qubit allocations.
  *
  * Provides get(..) and free(...) methods that are to be called when
- * replacing alloc's and dealloc's. Internally, these methods use a vector
- * to manage free / unused hardware qubit SSA values. This ensures that
- * alloc's and dealloc's can be in any arbitrary order.
+ * replacing alloc's and dealloc's. Internally, these methods use a queue
+ * to manage free / unused hardware indices. This ensures that alloc's and
+ * dealloc's can be in any arbitrary order.
  */
 class QubitAllocator {
 public:
@@ -340,14 +343,13 @@ public:
   /**
    * @brief Initialize the allocator.
    *
-   * Adds the indices of the given layout to the vector of free indices.
-   * Note that we reverse the layout here s.t. nqubit consecutive allocations
-   * are exactly the initial layout indices.
+   * Adds the indices of the given layout to the vector of free indices, s.t.
+   * nqubit consecutive allocations are exactly the initial layout indices.
    *
    * @param layout A layout to apply.
    */
   void initialize(Layout layout) {
-    llvm::copy(llvm::reverse(layout), indices_.begin());
+    std::ranges::copy(layout, indices_.begin());
   }
 
   /**
@@ -359,8 +361,8 @@ public:
       return std::nullopt;
     }
 
-    const std::size_t i = indices_.back();
-    indices_.pop_back();
+    const std::size_t i = indices_.front();
+    indices_.pop_front();
     return i;
   }
 
@@ -376,9 +378,9 @@ public:
 
 private:
   /**
-   * @brief LIFO of available hardware indices.
+   * @brief Queue available hardware indices.
    */
-  SmallVector<std::size_t, 0> indices_;
+  std::deque<std::size_t> indices_;
 };
 
 /**
@@ -506,14 +508,14 @@ protected:
   [[nodiscard]] QubitState& parentState() const {
     assert(stack().size() >= 2 &&
            "parentState: expected at least two stack items");
-    return *std::next(stack().end(), -2);
+    return (*stack_)[stack_->size() - 2];
   }
   [[nodiscard]] Architecture& arch() const { return *arch_; }
   [[nodiscard]] Layout layout() const { return layout_; }
   [[nodiscard]] QubitStateStack& stack() const { return *stack_; }
   [[nodiscard]] QubitState& state() const {
-    assert(!stack().empty() && "state: expected at least one stack item");
-    return stack().back();
+    assert(!stack_->empty() && "state: expected at least one stack item");
+    return stack_->back();
   }
   [[nodiscard]] QubitAllocator& allocator() const { return *allocator_; }
 
@@ -570,150 +572,163 @@ struct FuncOpPattern final : ContextualOpPattern<func::FuncOp> {
   }
 };
 
-struct IfOpPattern final : OpRewritePattern<scf::IfOp> {
-  explicit IfOpPattern(MLIRContext* ctx) : OpRewritePattern<scf::IfOp>(ctx) {}
-  LogicalResult matchAndRewrite(scf::IfOp /*op*/,
-                                PatternRewriter& /*rewriter*/) const final {
+/**
+ * @brief Collect all missing hardware qubits from the results.
+ *
+ * @param old A range of values to check for included qubits.
+ * @param hardwareQubits The hardware qubits.
+ * @return Vector of missing hardware qubits with increasing index.
+ */
+[[nodiscard]] SmallVector<Value, 0>
+getMissingQubits(ValueRange old, ArrayRef<Value> hardwareQubits) {
+  const SmallVector<Value, 0> oldResults(old.begin(), old.end());
+  llvm::DenseSet<Value> included;
+  included.insert(oldResults.begin(), oldResults.end());
+
+  SmallVector<Value, 0> missing;
+  missing.reserve(hardwareQubits.size());
+  for (const Value q : hardwareQubits) {
+    if (!included.contains(q)) {
+      missing.push_back(q);
+    }
+  }
+
+  return missing;
+}
+
+struct IfOpPattern final : ContextualOpPattern<scf::IfOp> {
+  using ContextualOpPattern<scf::IfOp>::ContextualOpPattern;
+
+  LogicalResult matchAndRewrite(scf::IfOp op,
+                                PatternRewriter& rewriter) const final {
+    assert(!op.getElseRegion().empty() && "expected else branch");
+
+    [[maybe_unused]] auto ifOp = rewriter.create<scf::IfOp>(
+        op.getLoc(), getNewResultTypes(op, rewriter), op.getCondition(),
+        /*withElseRegion=*/true);
+
+    Block* newThenBlock = &ifOp.getThenRegion().front();
+    Block* oldThenBlock = &op.getThenRegion().front();
+    rewriter.mergeBlocks(oldThenBlock, newThenBlock);
+
+    Block* newElseBlock = &ifOp.getElseRegion().front();
+    Block* oldElseBlock = &op.getElseRegion().front();
+    rewriter.mergeBlocks(oldElseBlock, newElseBlock);
+
+    rewriter.replaceOp(op, ifOp.getResults().take_front(op.getNumResults()));
+
+    // Setup stack for each branch.
+    stack().push_back(state()); // else-block
+    state().clearHistory();
+    stack().push_back(state()); // if-block
+    state().clearHistory();
+
     return success();
   }
-};
 
-struct ForOpPattern final : ContextualOpPattern<scf::ForOp> {
-  using ContextualOpPattern<scf::ForOp>::ContextualOpPattern;
+private:
+  /**
+   * @brief Extend the existing result types with the missing qubit types.
+   *
+   * @param op The 'if' op.
+   * @return Vector of result types, extended by #missing-qubits qubit types.
+   */
+  SmallVector<Type> getNewResultTypes(scf::IfOp op,
+                                      PatternRewriter& rewriter) const {
+    SmallVector<Type, 0> types(op.getResultTypes());
 
-  LogicalResult matchAndRewrite(scf::ForOp forOp,
-                                PatternRewriter& rewriter) const final {
-    if (!containsUnitary(forOp)) {
-      return failure();
-    }
-
-    auto newFor = extendForArgs(forOp, rewriter);
-    if (newFor != forOp) {
-      cloneBody(forOp, newFor, rewriter);
-      extendYield(newFor, rewriter);
-
-      // Replace old results with new ones or remove if none.
-      const std::size_t nresults = forOp->getNumResults();
-      if (nresults > 0) {
-        const auto res = newFor.getResults().take_front(nresults);
-        rewriter.replaceOp(forOp, res);
-      } else {
-        rewriter.eraseOp(forOp);
+    std::size_t nmissing = state().getNumQubits();
+    for (const auto& t : types) {
+      if (isa<QubitType>(t)) {
+        nmissing--;
       }
     }
 
+    for (std::size_t i = 0; i < nmissing; ++i) {
+      types.push_back(rewriter.getType<QubitType>());
+    }
+
+    return types;
+  }
+};
+
+/**
+ * @brief Replaces the 'for' loop with one that includes all hardware qubits in
+ * the init arguments. The missing hardware qubits are added to the end of the
+ * arguments.
+ *
+ * Prepares the stack for the routing of the loop body by adding a copy of the
+ * current state to the stack, resetting its SWAP history, and forwarding the
+ * respective SSA values.
+ */
+struct ForOpPattern final : ContextualOpPattern<scf::ForOp> {
+  using ContextualOpPattern<scf::ForOp>::ContextualOpPattern;
+
+  LogicalResult matchAndRewrite(scf::ForOp op,
+                                PatternRewriter& rewriter) const final {
+    const auto missingQubits =
+        getMissingQubits(op.getInitArgs(), state().getHardwareQubits());
+
+    SmallVector<Value, 0> newInitArgs;
+    newInitArgs.reserve(op.getInitArgs().size() + missingQubits.size());
+    newInitArgs.append(op.getInitArgs().begin(), op.getInitArgs().end());
+    newInitArgs.append(missingQubits.begin(), missingQubits.end());
+
+    auto forOp = rewriter.create<scf::ForOp>(op.getLoc(), op.getLowerBound(),
+                                             op.getUpperBound(), op.getStep(),
+                                             newInitArgs);
+
+    // Clone body from the old 'for' to the new one and map block arguments.
+    const SmallVector<Value, 0> mapping(forOp.getBody()->getArguments());
+    rewriter.mergeBlocks(op.getBody(), forOp.getBody(), mapping);
+
+    // Replace or erase old 'for' op.
+    const std::size_t nresults = op->getNumResults();
+    if (nresults > 0) {
+      rewriter.replaceOp(op, forOp.getResults().take_front(nresults));
+    } else {
+      rewriter.eraseOp(op);
+    }
+
+    // Prepare stack.
     stack().push_back(state()); // Add copy to stack.
     state().clearHistory();     // The for-loop region gets its own history.
 
     // Forward out-of-loop and in-loop state.
-    parentState().forwardRange(newFor.getInitArgs(), newFor->getResults());
-    state().forwardRange(newFor.getInitArgs(), newFor.getRegionIterArgs());
+    for (const auto [arg, res, iter] :
+         llvm::zip(forOp.getInitArgs(), forOp.getResults(),
+                   forOp.getRegionIterArgs())) {
+      if (isa<QubitType>(arg.getType())) {
+        parentState().forward(arg, res);
+        state().forward(arg, iter);
+      }
+    }
 
     return success();
-  }
-
-private:
-  /**
-   * @brief Clone body from one 'for' op to the other and map
-   * block arguments.
-   */
-  static void cloneBody(scf::ForOp forOp, scf::ForOp newForOp,
-                        PatternRewriter& rewriter) {
-    SmallVector<Value> mapping(newForOp.getBody()->getArguments());
-    rewriter.mergeBlocks(forOp.getBody(), newForOp.getBody(), mapping);
-  }
-
-  /**
-   * @brief Extend the results of the existing 'yield' operation with the
-   * missing qubits from the init args.
-   *
-   * Instead of replacing the op, we (temporarily) create an invalid IR
-   * with two yield operations and remove the second yield in the respective
-   * YieldOpPattern. This allows us to restore the permutation without
-   * having to manage a worklist and listen to replacement events.
-   */
-  static void extendYield(scf::ForOp newFor, PatternRewriter& rewriter) {
-    const Operation* term = newFor.getBody()->getTerminator();
-    scf::YieldOp yield = dyn_cast<scf::YieldOp>(term);
-
-    const BlockArgument* begin = newFor.getRegionIterArgs().begin();
-    const BlockArgument* end = newFor.getRegionIterArgs().end();
-
-    SmallVector<Value> results;
-    results.reserve(newFor.getNumRegionIterArgs());
-
-    const auto existing = llvm::to_vector(yield.getResults());
-    results.append(existing.begin(), existing.end());
-    std::advance(begin, static_cast<std::ptrdiff_t>(existing.size()));
-    results.append(begin, end);
-
-    rewriter.setInsertionPointAfter(yield);
-    rewriter.create<scf::YieldOp>(yield->getLoc(), results);
-  }
-
-  /**
-   * @brief Create new for op with all static qubits as init args.
-   *
-   * Returns the old loop if the init args already contain all qubits.
-   *
-   * Keeps the order of the existing init args the same. Simply adds
-   * the missing qubits.
-   */
-  scf::ForOp extendForArgs(scf::ForOp forOp, PatternRewriter& rewriter) const {
-    DenseSet<Value> included;
-    for (const auto& arg : forOp.getInitArgs()) {
-      if (arg.getType() == rewriter.getType<QubitType>()) {
-        included.insert(arg);
-      }
-    }
-
-    if (included.size() == state().getNumQubits()) {
-      return forOp;
-    }
-
-    SmallVector<Value> missing;
-    missing.reserve(state().getNumQubits() - included.size());
-    for (const auto& q : state().getHardwareQubits()) {
-      if (!included.contains(q)) {
-        missing.push_back(q);
-      }
-    }
-
-    SmallVector<Value> newInitArgs(forOp.getInitArgs());
-    newInitArgs.append(missing.begin(), missing.end());
-
-    return rewriter.create<scf::ForOp>(forOp.getLoc(), forOp.getLowerBound(),
-                                       forOp.getUpperBound(), forOp.getStep(),
-                                       newInitArgs);
   }
 };
 
+/**
+ * @brief Restores layout by uncomputation and replaces (invalid) yield.
+ *
+ * The results of the yield op are extended by the missing hardware
+ * qubits, similarly to the 'for' and 'if' op. This is only possible
+ * since we restore the layout - the mapping from hardware to software
+ * qubits (and vice versa).
+ *
+ * Using uncompute has the advantages of (1) being intuitive and
+ * (2) preserving the optimally of the original SWAP sequence.
+ * Essentially the better the routing algorithm the better the
+ * uncompute. Moreover, this has the nice property that routing
+ * a for-loop always requires 2 * #(SWAPs required for loop-body)
+ * additional SWAPS.
+ */
 struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
   using ContextualOpPattern<scf::YieldOp>::ContextualOpPattern;
-  LogicalResult matchAndRewrite(scf::YieldOp yield,
+  LogicalResult matchAndRewrite(scf::YieldOp op,
                                 PatternRewriter& rewriter) const final {
-    restoreLayout(yield, rewriter);
-    stack().pop_back();
-    rewriter.eraseOp(yield);
-    return success();
-  }
-
-private:
-  /**
-   * @brief Restore layout by uncompute.
-   *
-   * Using uncompute has the advantages of (1) being intuitive and
-   * (2) preserving the optimally of the original SWAP sequence.
-   * Essentially the better the routing algorithm the better the
-   * uncompute. Moreover, this has the nice property that routing
-   * a for-loop always requires 2 * #(SWAPs required for loop-body)
-   * additional SWAPS.
-   *
-   * @param yield The yield operation.
-   * @param rewriter The PatternRewriter.
-   */
-  void restoreLayout(scf::YieldOp yield, PatternRewriter& rewriter) const {
     const auto swaps = llvm::reverse(state().getSwapHistory());
+
     for (const auto& [s0, s1] : swaps) {
       const auto layout = state().getLayout();
       const std::size_t h0 = layout[s0];
@@ -721,7 +736,7 @@ private:
       const Value in0 = state().getHardwareValue(h0);
       const Value in1 = state().getHardwareValue(h1);
 
-      auto swap = createSwap(yield->getLoc(), in0, in1, rewriter);
+      auto swap = createSwap(op->getLoc(), in0, in1, rewriter);
       const auto [out0, out1] = getOuts(swap);
 
       rewriter.setInsertionPointAfter(swap);
@@ -735,6 +750,19 @@ private:
 
     assert(llvm::equal(state().getLayout(), parentState().getLayout()) &&
            "layouts must match after restoration");
+
+    const auto missingQubits =
+        getMissingQubits(op.getResults(), state().getHardwareQubits());
+
+    SmallVector<Value, 0> newResults;
+    newResults.reserve(op.getResults().size() + missingQubits.size());
+    newResults.append(op.getResults().begin(), op.getResults().end());
+    newResults.append(missingQubits.begin(), missingQubits.end());
+
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(op, newResults);
+
+    stack().pop_back();
+    return success();
   }
 };
 
@@ -745,6 +773,8 @@ struct AllocQubitPattern final : ContextualOpPattern<AllocQubitOp> {
     if (const Value q = retrieveFreeQubit(allocator(), state())) {
       auto reset = rewriter.create<ResetOp>(alloc.getLoc(), q);
       rewriter.replaceOp(alloc, reset);
+      rewriter.replaceAllUsesExcept(reset.getInQubit(), reset.getOutQubit(),
+                                    reset);
       state().forward(reset.getInQubit(), reset.getOutQubit());
       return success();
     }
@@ -791,6 +821,7 @@ struct NaiveUnitaryPattern final
     const auto& [execOut0, execOut1] = getOuts(u);
     state().forward(execIn0, execOut0);
     state().forward(execIn1, execOut1);
+
     return success();
   }
 
@@ -855,10 +886,6 @@ struct DeallocQubitPattern final : ContextualOpPattern<DeallocQubitOp> {
   LogicalResult matchAndRewrite(DeallocQubitOp dealloc,
                                 PatternRewriter& rewriter) const final {
     releaseUsedQubit(dealloc.getQubit(), allocator(), state());
-    if (allocator().getNumFree() == arch().nqubits()) {
-      allocator().initialize(layout());
-      state().reset(layout());
-    }
     rewriter.eraseOp(dealloc);
     return success();
   }
@@ -871,11 +898,10 @@ void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
                                   Architecture& arch, Layout layout,
                                   QubitStateStack& stack,
                                   QubitAllocator& allocator) {
-  patterns.add<IfOpPattern>(patterns.getContext());
-  patterns.add<FuncOpPattern, ForOpPattern, YieldOpPattern, AllocQubitPattern,
-               ResetPattern, NaiveUnitaryPattern, MeasurePattern,
-               DeallocQubitPattern>(patterns.getContext(), arch, layout, stack,
-                                    allocator);
+  patterns.add<FuncOpPattern, ForOpPattern, IfOpPattern, YieldOpPattern,
+               AllocQubitPattern, ResetPattern, NaiveUnitaryPattern,
+               MeasurePattern, DeallocQubitPattern>(patterns.getContext(), arch,
+                                                    layout, stack, allocator);
 }
 
 /**
@@ -891,8 +917,7 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     QubitStateStack stack{};
     QubitAllocator allocator(arch.nqubits());
 
-    std::random_device rd;
-    const auto initialLayout = getRandomLayout(arch.nqubits(), rd());
+    const auto initialLayout = getIdentityLayout(arch.nqubits());
 
     RewritePatternSet patterns(module.getContext());
     populateNaiveRoutingPatterns(patterns, arch, initialLayout, stack,
