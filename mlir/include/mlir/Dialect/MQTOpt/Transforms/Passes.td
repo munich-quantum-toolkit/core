@@ -46,12 +46,17 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
 }
 
 def SwapReconstructionAndElision : Pass<"swap-reconstruction-and-elision", "mlir::ModuleOp"> {
-  let summary = "Reconstruct SWAP gates from two consecutive CNOTs with alternating controls and targets where possible and elide SWAP gates (i.e., permutations) by removing them from the circuit and, instead, permuting the respective qubit values.";
+  let summary = "Reconstruct SWAPs from eligible CNOT pairs and eliminate SWAPs by applying the implied qubit permutation.";
   let description = [{
-    After application, there will remain no uncontrolled SWAP gates in the circuit.
-    This optimization will not preserve the current qubit mapping and has no awareness of potential connectivity limitations.
+    Eliminates all uncontrolled `swap` operations by:
+    1. Reconstructing explicit `swap` ops from eligible CNOT patterns (canonical 3–CNOT form or two alternating CNOT pairs).
+    2. Replacing remaining `swap` ops by applying the induced qubit permutation to subsequent uses.
 
-    Example of swap reconstructions:
+    Notes:
+    - No connectivity or coupling constraints are preserved.
+    - Controlled `swap` operations (if ever introduced) are not touched.
+
+    Example (reconstruction):
     ```
          ┌───┐         ┌───┐
     ──■──┤ X ├    ──■──┤ X ├──■────■──    ──╳────■──
@@ -60,14 +65,13 @@ def SwapReconstructionAndElision : Pass<"swap-reconstruction-and-elision", "mlir
     └───┘         └───┘     └───┘└───┘         └───┘
     ```
 
-    Example of swap elision:
+    Example (elision):
     ```
-    // before
-    %q0_1, %q1_1 = mqtopt.swap() %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
-    %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
-
-    // after
-    %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+                             ┌───┐                 ┌───┐
+    q0 ──╳────■── q0    q0 ──┤ X ├──╳── q0    q0 ──┤ X ├─ q1
+         |  ┌─┴─┐    =>      └─┬─┘  |      =>      └─┬─┘
+    q1 ──╳──┤ X ├ q1    q1 ────■────╳── q1    q1 ────■─── q0
+            └───┘
     ```
   }];
 }
