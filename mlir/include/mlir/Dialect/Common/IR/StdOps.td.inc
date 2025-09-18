@@ -18,8 +18,6 @@ def GPhaseOp : UnitaryOp<"gphase", [NoTarget, OneParameter]> {
         any input and output qubits. It might still be controlled by arbitrarily
         many qubits.
     }];
-
-    let qcType = 1;
 }
 
 def IOp : UnitaryOp<"i", [OneTarget, NoParameter]> {
@@ -29,8 +27,6 @@ def IOp : UnitaryOp<"i", [OneTarget, NoParameter]> {
         This class represents an identity gate. It takes a qubit and a variadic
         list of positive/negative controls as an input.
     }];
-
-    let qcType = 2;
 }
 
 def BarrierOp : UnitaryOp<"barrier", [NoParameter, NoControl]> {
@@ -40,8 +36,6 @@ def BarrierOp : UnitaryOp<"barrier", [NoParameter, NoControl]> {
         This class represents the barrier operation. It has a variadic number
         of input qubits and no control qubits.
     }];
-
-    let qcType = 3;
 }
 
 def HOp : UnitaryOp<"h", [OneTarget, NoParameter]> {
@@ -51,8 +45,6 @@ def HOp : UnitaryOp<"h", [OneTarget, NoParameter]> {
         This class represents a Hadamard gate. It takes a qubit and a variadic
         list of positive/negative controls as an input.
     }];
-
-    let qcType = 4;
 }
 
 def XOp : UnitaryOp<"x", [OneTarget, NoParameter]> {
@@ -62,8 +54,6 @@ def XOp : UnitaryOp<"x", [OneTarget, NoParameter]> {
         This class represents a Pauli-X gate. It takes a qubit and a variadic
         list of positive/negative controls as an input.
     }];
-
-    let qcType = 5;
 }
 
 def YOp : UnitaryOp<"y", [OneTarget, NoParameter]> {
@@ -73,8 +63,6 @@ def YOp : UnitaryOp<"y", [OneTarget, NoParameter]> {
         This class represents a Pauli-Y gate. It takes a qubit and a variadic
         list of positive/negative controls as an input.
     }];
-
-    let qcType = 6;
 }
 
 def ZOp : UnitaryOp<"z", [OneTarget, NoParameter]> {
@@ -84,8 +72,6 @@ def ZOp : UnitaryOp<"z", [OneTarget, NoParameter]> {
         This class represents a Pauli-Z gate. It takes a qubit and a variadic
         list of positive/negative controls as an input.
     }];
-
-    let qcType = 7;
 }
 
 def SOp : UnitaryOp<"s", [OneTarget, NoParameter]> {
@@ -95,8 +81,6 @@ def SOp : UnitaryOp<"s", [OneTarget, NoParameter]> {
         This class represents an S gate. It takes a qubit as an input and a
         variadic list of positive/negative controls.
     }];
-
-    let qcType = 8;
 }
 
 def SdgOp : UnitaryOp<"sdg", [OneTarget, NoParameter]> {
@@ -106,9 +90,6 @@ def SdgOp : UnitaryOp<"sdg", [OneTarget, NoParameter]> {
         This class represents an inverse S gate. It takes a qubit and a variadic
         list of positive/negative controls as an input.
     }];
-
-    let qcType = 8;
-    let isInverted = true;
 }
 
 def TOp : UnitaryOp<"t", [OneTarget, NoParameter]> {
@@ -118,8 +99,6 @@ def TOp : UnitaryOp<"t", [OneTarget, NoParameter]> {
         This class represents a T gate. It takes a qubit and a variadic list of
         positive/negative controls as an input.
     }];
-
-    let qcType = 9;
 }
 
 def TdgOp : UnitaryOp<"tdg", [OneTarget, NoParameter]> {
@@ -129,9 +108,6 @@ def TdgOp : UnitaryOp<"tdg", [OneTarget, NoParameter]> {
         This class represents an inverse T gate. It takes a qubit and a variadic
         list of positive/negative controls as an input.
     }];
-
-    let qcType = 9;
-    let isInverted = true;
 }
 
 def VOp : UnitaryOp<"v", [OneTarget, NoParameter]> {
