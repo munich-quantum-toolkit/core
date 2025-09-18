@@ -223,9 +223,6 @@ TEST_F(QIRBackendTest, SwapGate) {
   __quantum__qis__swap__body(q0, q1);
   __quantum__qis__mz__body(q0, r0);
   __quantum__qis__mz__body(q1, r1);
-  const auto m1 = __quantum__rt__read_result(r0);
-  const auto m2 = __quantum__rt__read_result(r1);
-  EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
   EXPECT_EQ(buffer.str(), "r0: 0\nr1: 1\n");
