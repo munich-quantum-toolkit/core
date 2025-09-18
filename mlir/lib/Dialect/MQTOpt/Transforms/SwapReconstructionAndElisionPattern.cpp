@@ -105,7 +105,7 @@ struct SwapReconstructionAndElisionPattern final : mlir::OpRewritePattern<XOp> {
   matchAndRewrite(XOp op, mlir::PatternRewriter& rewriter) const override {
     // step 1
     if (op.getPosCtrlInQubits().size() != 1 &&
-        op.getNegCtrlInQubits().size() != 0) {
+        op.getNegCtrlInQubits().empty()) {
       return mlir::failure();
     }
 

@@ -210,8 +210,8 @@ module {
 // elision twice.
 
 module {
-  // CHECK-LABEL: func.func @testFirstTwoThenTwoAgainSwapReconstructionAndElision
-  func.func @testFirstTwoThenTwoAgainSwapReconstructionAndElision() {
+  // CHECK-LABEL: func.func @testFirstTwoThenTwoCNotAgainSwapReconstructionAndElision
+  func.func @testFirstTwoThenTwoCNotAgainSwapReconstructionAndElision() {
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
