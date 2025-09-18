@@ -50,15 +50,13 @@ In the MQTRef dialect, this program corresponds to:
 ```mlir
 module {
   func.func @main() attributes {passthrough = ["entry_point"]} {
-    %qreg = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    %q = "mqtref.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    %i = arith.constant 0 : index
+    %qreg = memref.alloca() : memref<1x!mqtref.Qubit>
+    %q = memref.load %qreg[%i] : memref<1x!mqtref.Qubit>
     %creg = memref.alloca() : memref<1xi1>
     mqtref.x() %q
     %c = mqtref.measure %q
-    %i = arith.constant 0 : index
     memref.store %c, %creg[%i] : memref<1xi1>
-    "mqtref.deallocQubitRegister"(%0) : (!mqtref.QubitRegister) -> ()
-    memref.dealloc %alloca : memref<1xi1>
     return
   }
 }
