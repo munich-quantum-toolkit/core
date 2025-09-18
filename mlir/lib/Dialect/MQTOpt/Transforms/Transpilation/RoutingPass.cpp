@@ -15,7 +15,6 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <cassert>
@@ -169,7 +168,8 @@ public:
    */
   using QubitIndexPair = std::pair<std::size_t, std::size_t>;
 
-  explicit QubitState(const std::size_t nqubits) : hardwareQubits_(nqubits) {
+  explicit QubitState(const std::size_t nqubits)
+      : hardwareQubits_(nqubits), layout_(nqubits) {
     mapping_.reserve(nqubits);
   }
 
@@ -180,23 +180,24 @@ public:
    * it sets the permutation.
    *
    * @param hwQubits An array-ref of SSA values.
-   * @param layout A layout to apply.
+   * @param l0 The initial layout to apply.
    */
-  void initialize(ArrayRef<Value> hwQubits, Layout layout) {
+  void initialize(ArrayRef<Value> hwQubits, Layout l0) {
     mapping_.clear();
     for (std::size_t s = 0; s < getNumQubits(); ++s) {
-      const std::size_t h = layout[s];
+      const std::size_t h = l0[s];
       const Value q = hwQubits[h];
       hardwareQubits_[h] = q;
+      layout_[s] = h;
       mapping_.try_emplace(q, std::make_pair(h, s));
     }
   }
 
   /**
    * @brief Reset the state.
-   * @param layout A layout to apply.
+   * @param l0 The initial layout to apply.
    */
-  void reset(Layout layout) { initialize(hardwareQubits_, layout); }
+  void reset(Layout l0) { initialize(hardwareQubits_, l0); }
 
   /**
    * @brief Return hardware index from SSA value.
@@ -206,8 +207,7 @@ public:
   }
 
   /**
-   * @brief Return hardware index from SSA value.
-   * @param q The SSA value.
+   * @brief Return software index from SSA value.
    */
   [[nodiscard]] std::size_t getSoftwareIndex(const Value q) const {
     return mapping_.at(q).second;
@@ -273,6 +273,11 @@ public:
   }
 
   /**
+   * @brief Return the current layout.
+   */
+  Layout getLayout() { return layout_; }
+
+  /**
    * @brief Forward range of SSA values.
    */
   void forwardRange(ValueRange in, ValueRange out) {
@@ -291,6 +296,7 @@ public:
     assert(ita != mapping_.end() && itb != mapping_.end() &&
            "swapSoftwareIndices: unknown values");
     std::swap(ita->second.second, itb->second.second);
+    std::swap(layout_[ita->second.second], layout_[itb->second.second]);
   }
 
 private:
@@ -305,6 +311,11 @@ private:
    * The size of this vector is the number of hardware qubits.
    */
   SmallVector<Value> hardwareQubits_;
+
+  /**
+   * @brief The current layout.
+   */
+  SmallVector<std::size_t> layout_;
 
   /**
    * @brief A history of SWAPs inserted.
@@ -445,9 +456,7 @@ void walkPreOrderAndApplyPatterns(Operation* op,
 //===----------------------------------------------------------------------===//
 
 /**
- * @brief Verify if a operation requires routing.
- *
- * Walk the IR and interrupt the traversal if any unitary is found.
+ * @brief Check if an operation contains a unitary.
  *
  * @param op The operation to walk.
  * @return True iff the walk finds a unitary.
@@ -485,7 +494,6 @@ void initEntryPoint(SmallVectorImpl<Value>& qubits, PatternRewriter& rewriter) {
  *  - An initial layout generator
  *  - A qubit state stack
  *  - A qubit allocator
- *  - A SWAP history
  */
 template <class BasePattern> struct ContextualPattern : BasePattern {
 public:
@@ -633,8 +641,11 @@ private:
 
     SmallVector<Value> results;
     results.reserve(newFor.getNumRegionIterArgs());
-    results.append(yield->getResults().begin(), yield->getResults().end());
-    results.append(std::next(begin, yield->getNumResults()), end);
+
+    const auto existing = llvm::to_vector(yield.getResults());
+    results.append(existing.begin(), existing.end());
+    std::advance(begin, static_cast<std::ptrdiff_t>(existing.size()));
+    results.append(begin, end);
 
     rewriter.setInsertionPointAfter(yield);
     rewriter.create<scf::YieldOp>(yield->getLoc(), results);
@@ -681,7 +692,7 @@ struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
   using ContextualOpPattern<scf::YieldOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(scf::YieldOp yield,
                                 PatternRewriter& rewriter) const final {
-    restorePermutation(yield, rewriter);
+    restoreLayout(yield, rewriter);
     stack().pop_back();
     rewriter.eraseOp(yield);
     return success();
@@ -689,31 +700,41 @@ struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
 
 private:
   /**
-   * @brief Restore permutation by uncompute.
+   * @brief Restore layout by uncompute.
    *
    * Using uncompute has the advantages of (1) being intuitive and
    * (2) preserving the optimally of the original SWAP sequence.
    * Essentially the better the routing algorithm the better the
-   * uncompute.
+   * uncompute. Moreover, this has the nice property that routing
+   * a for-loop always requires 2 * #(SWAPs required for loop-body)
+   * additional SWAPS.
    *
    * @param yield The yield operation.
    * @param rewriter The PatternRewriter.
    */
-  void restorePermutation(scf::YieldOp yield, PatternRewriter& rewriter) const {
+  void restoreLayout(scf::YieldOp yield, PatternRewriter& rewriter) const {
     const auto swaps = llvm::reverse(state().getSwapHistory());
-    for (const auto& [idx0, idx1] : swaps) {
-      llvm::outs() << idx0 << " " << idx1 << '\n';
-      const Value in0 = state().getHardwareValue(idx0);
-      const Value in1 = state().getHardwareValue(idx1);
+    for (const auto& [s0, s1] : swaps) {
+      const auto layout = state().getLayout();
+      const std::size_t h0 = layout[s0];
+      const std::size_t h1 = layout[s1];
+      const Value in0 = state().getHardwareValue(h0);
+      const Value in1 = state().getHardwareValue(h1);
 
       auto swap = createSwap(yield->getLoc(), in0, in1, rewriter);
       const auto [out0, out1] = getOuts(swap);
 
       rewriter.setInsertionPointAfter(swap);
+      rewriter.replaceAllUsesExcept(in0, out1, swap);
+      rewriter.replaceAllUsesExcept(in1, out0, swap);
+
       state().swapSoftwareIndices(in0, in1);
       state().forward(in0, out0);
       state().forward(in1, out1);
     }
+
+    assert(llvm::equal(state().getLayout(), parentState().getLayout()) &&
+           "layouts must match after restoration");
   }
 };
 
@@ -770,7 +791,7 @@ struct NaiveUnitaryPattern final
     const auto& [execOut0, execOut1] = getOuts(u);
     state().forward(execIn0, execOut0);
     state().forward(execIn1, execOut1);
-    return success(); // Gate is now executable: Don't revisit.
+    return success();
   }
 
 private:
@@ -799,10 +820,12 @@ private:
     const auto& [q0, q1] = getIns(u);
     const auto path = getPath(q0, q1);
     for (std::size_t i = 0; i < path.size() - 2; ++i) {
-      state().recordSwap(path[i], path[i + 1]);
-
       const Value in0 = state().getHardwareValue(path[i]);
       const Value in1 = state().getHardwareValue(path[i + 1]);
+
+      const std::size_t s0 = state().getSoftwareIndex(in0);
+      const std::size_t s1 = state().getSoftwareIndex(in1);
+      state().recordSwap(s0, s1);
 
       auto swap = createSwap(u->getLoc(), in0, in1, rewriter);
       const auto& [out0, out1] = getOuts(swap);
@@ -868,7 +891,8 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     QubitStateStack stack{};
     QubitAllocator allocator(arch.nqubits());
 
-    const auto initialLayout = getRandomLayout(arch.nqubits(), 42U);
+    std::random_device rd;
+    const auto initialLayout = getRandomLayout(arch.nqubits(), rd());
 
     RewritePatternSet patterns(module.getContext());
     populateNaiveRoutingPatterns(patterns, arch, initialLayout, stack,
