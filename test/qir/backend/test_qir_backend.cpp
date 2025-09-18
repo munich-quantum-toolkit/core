@@ -256,7 +256,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(TEST_EXECUTABLES),
     [](const testing::TestParamInfo<std::filesystem::path>& info) {
       // Extract the last part of the file path
-      auto filename = info.param.filename().string();
+      auto filename = info.param.stem().string();
       // replace all '-' with '_'
       std::ranges::replace(filename, '-', '_');
       return filename;
