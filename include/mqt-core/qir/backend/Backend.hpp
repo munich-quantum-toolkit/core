@@ -16,6 +16,7 @@
 #include "dd/Package.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/operations/Control.hpp"
+#include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
 #include "qir/backend/QIR.h"
@@ -28,45 +29,23 @@
 #include <random>
 #include <sstream>
 #include <stdexcept>
-#include <string>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-struct BigIntImpl {
-  int32_t refcount;
-  // todo
-};
 /// @note this struct is purposefully not called ResultImpl to leave the Result
 /// pointer opaque such that it cannot be dereferenced
 struct ResultStruct {
   int32_t refcount;
   bool r;
 };
-struct StringImpl {
-  int32_t refcount;
-  std::string content;
-  friend auto operator<<(std::ostream& os, const StringImpl& s)
-      -> std::ostream& {
-    return os << s.content;
-  }
-};
-struct TupleImpl {
-  int32_t refcount;
-  int32_t aliasCount;
-  std::vector<int8_t> data;
-};
 struct ArrayImpl {
   int32_t refcount;
   int32_t aliasCount;
   std::vector<int8_t> data;
   int64_t elementSize;
-};
-struct CallablImpl {
-  int32_t refcount;
-  // todo
 };
 
 namespace qir {
@@ -262,7 +241,7 @@ private:
     } else if (isTwoQubitGate(op)) {
       t = 2;
     } else {
-      std::stringstream ss;
+      std::ostringstream ss;
       ss << __FILE__ << ":" << __LINE__
          << ": Operation type is not known: " << toString(op);
       throw std::invalid_argument(ss.str());
@@ -278,7 +257,7 @@ private:
       const auto targets = qc::Targets(addresses.data(), addresses.data() + t);
       return {targets, op, paramVec};
     }
-    std::stringstream ss;
+    std::ostringstream ss;
     ss << __FILE__ << ":" << __LINE__
        << ": Operation requires more qubits than given (" << toString(op)
        << "): " << qubits.size();
@@ -354,7 +333,7 @@ public:
               try {
                 return qRegister.at(q);
               } catch (const std::out_of_range&) {
-                std::stringstream ss;
+                std::ostringstream ss;
                 ss << __FILE__ << ":" << __LINE__
                    << ": Qubit not allocated (not found): " << q;
                 throw std::out_of_range(ss.str());

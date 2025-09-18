@@ -246,134 +246,8 @@ auto main(int argc, char* argv[]) -> int {
       "__quantum__rt__result_update_reference_count",
       reinterpret_cast<void*>(&__quantum__rt__result_update_reference_count));
   llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__string_create",
-      reinterpret_cast<void*>(&__quantum__rt__string_create));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__string_get_data",
-      reinterpret_cast<void*>(&__quantum__rt__string_get_data));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__string_get_length",
-      reinterpret_cast<void*>(&__quantum__rt__string_get_length));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__string_update_reference_count",
-      reinterpret_cast<void*>(&__quantum__rt__string_update_reference_count));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__string_concatenate",
-      reinterpret_cast<void*>(&__quantum__rt__string_concatenate));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__string_equal",
-      reinterpret_cast<void*>(&__quantum__rt__string_equal));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__int_to_string",
-      reinterpret_cast<void*>(&__quantum__rt__int_to_string));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__double_to_string",
-      reinterpret_cast<void*>(&__quantum__rt__double_to_string));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bool_to_string",
-      reinterpret_cast<void*>(&__quantum__rt__bool_to_string));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__result_to_string",
-      reinterpret_cast<void*>(&__quantum__rt__result_to_string));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__pauli_to_string",
-      reinterpret_cast<void*>(&__quantum__rt__pauli_to_string));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__qubit_to_string",
-      reinterpret_cast<void*>(&__quantum__rt__qubit_to_string));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__range_to_string",
-      reinterpret_cast<void*>(&__quantum__rt__range_to_string));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_to_string",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_to_string));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_create_i64",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_create_i64));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_create_array",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_create_array));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_get_data",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_get_data));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_get_length",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_get_length));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_update_reference_count",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_update_reference_count));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_negate",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_negate));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_add",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_add));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_subtract",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_subtract));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_multiply",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_multiply));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_divide",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_divide));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_modulus",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_modulus));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_power",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_power));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_bitand",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_bitand));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_bitor",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_bitor));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_bitxor",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_bitxor));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_bitnot",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_bitnot));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_shiftleft",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_shiftleft));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_shiftright",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_shiftright));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_equal",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_equal));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_greater",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_greater));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bigint_greater_eq",
-      reinterpret_cast<void*>(&__quantum__rt__bigint_greater_eq));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__tuple_create",
-      reinterpret_cast<void*>(&__quantum__rt__tuple_create));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__tuple_copy",
-      reinterpret_cast<void*>(&__quantum__rt__tuple_copy));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__tuple_update_reference_count",
-      reinterpret_cast<void*>(&__quantum__rt__tuple_update_reference_count));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__tuple_update_alias_count",
-      reinterpret_cast<void*>(&__quantum__rt__tuple_update_alias_count));
-  llvm::sys::DynamicLibrary::AddSymbol(
       "__quantum__rt__array_create_1d",
       reinterpret_cast<void*>(&__quantum__rt__array_create_1d));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_copy",
-      reinterpret_cast<void*>(&__quantum__rt__array_copy));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_concatenate",
-      reinterpret_cast<void*>(&__quantum__rt__array_concatenate));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_slice_1d",
-      reinterpret_cast<void*>(&__quantum__rt__array_slice_1d));
   llvm::sys::DynamicLibrary::AddSymbol(
       "__quantum__rt__array_get_size_1d",
       reinterpret_cast<void*>(&__quantum__rt__array_get_size_1d));
@@ -383,59 +257,6 @@ auto main(int argc, char* argv[]) -> int {
   llvm::sys::DynamicLibrary::AddSymbol(
       "__quantum__rt__array_update_reference_count",
       reinterpret_cast<void*>(&__quantum__rt__array_update_reference_count));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_update_alias_count",
-      reinterpret_cast<void*>(&__quantum__rt__array_update_alias_count));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_create",
-      reinterpret_cast<void*>(&__quantum__rt__array_create));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_get_dim",
-      reinterpret_cast<void*>(&__quantum__rt__array_get_dim));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_get_size",
-      reinterpret_cast<void*>(&__quantum__rt__array_get_size));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_get_element_ptr",
-      reinterpret_cast<void*>(&__quantum__rt__array_get_element_ptr));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_slice",
-      reinterpret_cast<void*>(&__quantum__rt__array_slice));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_project",
-      reinterpret_cast<void*>(&__quantum__rt__array_project));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__callable_create",
-      reinterpret_cast<void*>(&__quantum__rt__callable_create));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__callable_copy",
-      reinterpret_cast<void*>(&__quantum__rt__callable_copy));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__callable_invoke",
-      reinterpret_cast<void*>(&__quantum__rt__callable_invoke));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__callable_make_adjoint",
-      reinterpret_cast<void*>(&__quantum__rt__callable_make_adjoint));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__callable_make_controlled",
-      reinterpret_cast<void*>(&__quantum__rt__callable_make_controlled));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__callable_update_reference_count",
-      reinterpret_cast<void*>(&__quantum__rt__callable_update_reference_count));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__callable_update_alias_count",
-      reinterpret_cast<void*>(&__quantum__rt__callable_update_alias_count));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__capture_update_reference_count",
-      reinterpret_cast<void*>(&__quantum__rt__capture_update_reference_count));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__capture_update_alias_count",
-      reinterpret_cast<void*>(&__quantum__rt__capture_update_alias_count));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__message",
-      reinterpret_cast<void*>(&__quantum__rt__message));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__fail", reinterpret_cast<void*>(&__quantum__rt__fail));
   llvm::sys::DynamicLibrary::AddSymbol(
       "__quantum__rt__qubit_allocate",
       reinterpret_cast<void*>(&__quantum__rt__qubit_allocate));
@@ -578,17 +399,8 @@ auto main(int argc, char* argv[]) -> int {
       "__quantum__rt__read_result",
       reinterpret_cast<void*>(&__quantum__rt__read_result));
   llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__tuple_record_output",
-      reinterpret_cast<void*>(&__quantum__rt__tuple_record_output));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_record_output",
-      reinterpret_cast<void*>(&__quantum__rt__array_record_output));
-  llvm::sys::DynamicLibrary::AddSymbol(
       "__quantum__rt__result_record_output",
       reinterpret_cast<void*>(&__quantum__rt__result_record_output));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__bool_record_output",
-      reinterpret_cast<void*>(&__quantum__rt__bool_record_output));
 
   return runOrcJIT();
 }
