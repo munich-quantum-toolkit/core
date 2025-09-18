@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -77,13 +78,8 @@ function(set_project_warnings target_name)
       -Wduplicated-branches # warn if if / else branches have duplicated code
       -Wlogical-op # warn about logical operations being used where bitwise were probably wanted
       -Wuseless-cast # warn if you perform a cast to the same type
-      # -Wsuggest-attribute=pure # suggest attribute pure for functions with no effects except the
-      # return value -Wsuggest-attribute=const # suggest attribute const for functions with no
-      # effects except the return value and their arguments are not modified
-      -Wsuggest-attribute=noreturn # suggest attribute noreturn for functions that do not return
       -Wmissing-noreturn # warn if a function that is declared with attribute noreturn does in fact
-      # return -Wsuggest-attribute=malloc # suggest attribute malloc for functions that return a
-      # pointer to newly allocated memory
+                         # return
   )
 
   if(MSVC)

@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -13,6 +14,7 @@ add_subdirectory(dd)
 add_subdirectory(ir)
 add_subdirectory(na)
 add_subdirectory(zx)
+add_subdirectory(qdmi)
 
 # copy test circuits to build directory
 file(COPY ${PROJECT_SOURCE_DIR}/test/circuits DESTINATION ${CMAKE_CURRENT_BINARY_DIR})

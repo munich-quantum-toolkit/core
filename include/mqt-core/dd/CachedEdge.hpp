@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -21,18 +22,12 @@
 
 namespace dd {
 
-///-----------------------------------------------------------------------------
-///                        \n Forward declarations \n
-///-----------------------------------------------------------------------------
 struct vNode; // NOLINT(readability-identifier-naming)
 struct mNode; // NOLINT(readability-identifier-naming)
 struct dNode; // NOLINT(readability-identifier-naming)
 class ComplexNumbers;
-template <typename T> class MemoryManager;
+class MemoryManager;
 
-///-----------------------------------------------------------------------------
-///                        \n Type traits and typedefs \n
-///-----------------------------------------------------------------------------
 template <typename T>
 using isVector = std::enable_if_t<std::is_same_v<T, vNode>, bool>;
 template <typename T>
@@ -119,10 +114,6 @@ template <typename Node> struct CachedEdge {
     return Node::isTerminal(p);
   }
 
-  ///---------------------------------------------------------------------------
-  ///                     \n Methods for vector DDs \n
-  ///---------------------------------------------------------------------------
-
   /**
    * @brief Get a normalized vector DD from a fresh node and a list of edges.
    * @tparam T template parameter to enable this method only for vNode
@@ -134,12 +125,8 @@ template <typename Node> struct CachedEdge {
    * @return the normalized vector DD
    */
   template <typename T = Node, isVector<T> = true>
-  static CachedEdge normalize(Node* p, const std::array<CachedEdge, RADIX>& e,
-                              MemoryManager<Node>& mm, ComplexNumbers& cn);
-
-  ///---------------------------------------------------------------------------
-  ///                     \n Methods for matrix DDs \n
-  ///---------------------------------------------------------------------------
+  static auto normalize(Node* p, const std::array<CachedEdge, RADIX>& e,
+                        MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge;
 
   /**
    * @brief Get a normalized (density) matrix) DD from a fresh node and a list
@@ -153,8 +140,8 @@ template <typename Node> struct CachedEdge {
    * @return the normalized (density) matrix DD
    */
   template <typename T = Node, isMatrixVariant<T> = true>
-  static CachedEdge normalize(Node* p, const std::array<CachedEdge, NEDGE>& e,
-                              MemoryManager<Node>& mm, ComplexNumbers& cn);
+  static auto normalize(Node* p, const std::array<CachedEdge, NEDGE>& e,
+                        MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge;
 
   /**
    * @brief Check whether the matrix represented by the DD is the identity.
@@ -175,8 +162,6 @@ template <typename Node> struct CachedEdge {
 
 } // namespace dd
 
-namespace std {
-template <class Node> struct hash<dd::CachedEdge<Node>> {
-  std::size_t operator()(dd::CachedEdge<Node> const& e) const noexcept;
+template <class Node> struct std::hash<dd::CachedEdge<Node>> {
+  auto operator()(dd::CachedEdge<Node> const& e) const noexcept -> std::size_t;
 };
-} // namespace std

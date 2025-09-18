@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,9 +10,9 @@
 
 #include "algorithms/QFT.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 
 #include <cmath>
@@ -78,13 +79,13 @@ auto createIterativeQFT(const Qubit nq) -> QuantumComputation {
     for (Qubit j = 1; j <= i; ++j) {
       const auto d = nq - j;
       if (j == i) {
-        qc.classicControlled(S, 0, {d, 1U}, 1U);
+        qc.if_(S, 0, d);
       } else if (j == i - 1) {
-        qc.classicControlled(T, 0, {d, 1U}, 1U);
+        qc.if_(T, 0, d);
       } else {
         const auto powerOfTwo = std::pow(2., i - j + 1);
         const auto lambda = PI / powerOfTwo;
-        qc.classicControlled(P, 0, {d, 1U}, 1U, Eq, {lambda});
+        qc.if_(P, 0, d, true, Eq, {lambda});
       }
     }
 

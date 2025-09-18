@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -8,9 +9,6 @@
 # set common compiler options for projects
 function(enable_project_options target_name)
   include(CheckCXXCompilerFlag)
-
-  # set required C++ standard and disable compiler specific extensions
-  target_compile_features(${target_name} INTERFACE cxx_std_17)
 
   # Option to enable time tracing with clang
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
@@ -31,7 +29,7 @@ function(enable_project_options target_name)
     option(ENABLE_COVERAGE "Enable coverage reporting for gcc/clang" FALSE)
     if(ENABLE_COVERAGE)
       target_compile_options(${target_name} INTERFACE --coverage -fprofile-arcs -ftest-coverage -O0)
-      target_link_libraries(${target_name} INTERFACE gcov --coverage)
+      target_link_libraries(${target_name} INTERFACE --coverage)
     endif()
 
     if(NOT DEPLOY)
@@ -43,7 +41,12 @@ function(enable_project_options target_name)
 
       check_cxx_compiler_flag(-march=native HAS_MARCH_NATIVE)
       if(HAS_MARCH_NATIVE)
-        target_compile_options(${target_name} INTERFACE -march=native)
+        if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang" OR CMAKE_SYSTEM_PROCESSOR MATCHES
+                                                      "(x86)|(x86_64)|(AMD64)|(amd64)")
+          target_compile_options(${target_name} INTERFACE -march=native)
+        else()
+          target_compile_options(${target_name} INTERFACE -mcpu=native)
+        endif()
       endif()
     endif()
 

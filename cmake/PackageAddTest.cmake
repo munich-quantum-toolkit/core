@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -11,8 +12,8 @@ macro(PACKAGE_ADD_TEST testname linklibs)
     # create an executable in which the tests will be stored
     add_executable(${testname} ${ARGN})
     # link the Google test infrastructure and a default main function to the test executable.
-    target_link_libraries(${testname} PRIVATE ${linklibs} gmock gtest_main MQT::ProjectOptions
-                                              MQT::ProjectWarnings)
+    target_link_libraries(${testname} PRIVATE ${linklibs} GTest::gmock GTest::gtest_main
+                                              MQT::ProjectOptions MQT::ProjectWarnings)
     # discover tests
     gtest_discover_tests(
       ${testname}
@@ -27,8 +28,8 @@ macro(PACKAGE_ADD_TEST_WITH_WORKING_DIR testname linklibs test_working_directory
     # create an executable in which the tests will be stored
     add_executable(${testname} ${ARGN})
     # link the Google test infrastructure and a default main function to the test executable.
-    target_link_libraries(${testname} PRIVATE ${linklibs} gmock gtest_main MQT::ProjectOptions
-                                              MQT::ProjectWarnings)
+    target_link_libraries(${testname} PRIVATE ${linklibs} GTest::gmock GTest::gtest_main
+                                              MQT::ProjectOptions MQT::ProjectWarnings)
     # discover tests
     gtest_discover_tests(
       ${testname}

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,23 +10,27 @@
 
 #pragma once
 
-#include "Control.hpp"
-#include "Definitions.hpp"
-#include "OpType.hpp"
-#include "Operation.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
+#include "ir/Register.hpp"
+#include "ir/operations/Control.hpp"
+#include "ir/operations/OpType.hpp"
+#include "ir/operations/Operation.hpp"
 
 #include <cmath>
 #include <cstddef>
 #include <memory>
 #include <ostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace qc {
 class StandardOperation : public Operation {
 protected:
+  constexpr static fp PARAMETER_TOLERANCE = 1e-13;
+
   static void checkInteger(fp& ld) {
     const fp nearest = std::nearbyint(ld);
     if (std::abs(ld - nearest) < PARAMETER_TOLERANCE) {
@@ -47,9 +52,6 @@ protected:
 
   void checkUgate();
   void setup();
-
-  void dumpOpenQASMTeleportation(std::ostream& of,
-                                 const RegisterNames& qreg) const;
 
 public:
   StandardOperation() = default;
@@ -78,11 +80,15 @@ public:
 
   [[nodiscard]] bool isStandardOperation() const override { return true; }
 
+  [[nodiscard]] bool isGlobal(size_t nQubits) const override;
+
+  [[nodiscard]] bool isClifford() const override;
+
   void addControl(const Control c) override {
     if (actsOn(c.qubit)) {
-      throw QFRException("Cannot add control on qubit " +
-                         std::to_string(c.qubit) +
-                         " to operation it already acts on the qubit.");
+      throw std::runtime_error("Cannot add control on qubit " +
+                               std::to_string(c.qubit) +
+                               " to operation it already acts on the qubit.");
     }
 
     controls.emplace(c);
@@ -92,9 +98,9 @@ public:
 
   void removeControl(const Control c) override {
     if (controls.erase(c) == 0) {
-      throw QFRException("Cannot remove control on qubit " +
-                         std::to_string(c.qubit) +
-                         " from operation as it is not a control.");
+      throw std::runtime_error("Cannot remove control on qubit " +
+                               std::to_string(c.qubit) +
+                               " from operation as it is not a control.");
     }
   }
 
@@ -110,8 +116,8 @@ public:
     return equals(operation, {}, {});
   }
 
-  void dumpOpenQASM(std::ostream& of, const RegisterNames& qreg,
-                    const RegisterNames& creg, std::size_t indent,
+  void dumpOpenQASM(std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
+                    const BitIndexToRegisterMap& bitMap, size_t indent,
                     bool openQASM3) const override;
 
   [[nodiscard]] auto commutesAtQubit(const Operation& other,
@@ -121,12 +127,12 @@ public:
 
 protected:
   void dumpOpenQASM2(std::ostream& of, std::ostringstream& op,
-                     const RegisterNames& qreg) const;
+                     const QubitIndexToRegisterMap& qubitMap) const;
   void dumpOpenQASM3(std::ostream& of, std::ostringstream& op,
-                     const RegisterNames& qreg) const;
+                     const QubitIndexToRegisterMap& qubitMap) const;
 
   void dumpGateType(std::ostream& of, std::ostringstream& op,
-                    const RegisterNames& qreg) const;
+                    const QubitIndexToRegisterMap& qubitMap) const;
 
   void dumpControls(std::ostringstream& op) const;
 };

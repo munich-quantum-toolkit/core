@@ -1,6 +1,7 @@
 {
   "author": {
-    "name": "Chair for Design Automation, TUM"
+    "name": "Chair for Design Automation, TUM\nCopyright (c) 2025 Munich Quantum Software Company GmbH",
+    "years": [2023, 2025]
   },
   "force_author": true,
   "license": "MIT",
@@ -8,7 +9,12 @@
   "include": ["**/*"],
   "style_override_for_suffix": {
     ".pyi": "DOCSTRING_STYLE",
-    ".in": "POUND_STYLE"
+    ".in": "POUND_STYLE",
+    ".mlir": "SLASH_STYLE",
+    ".td": "SLASH_STYLE",
+    ".yaml": "POUND_STYLE",
+    ".toml": "POUND_STYLE",
+    ".proto": "SLASH_STYLE"
   },
   "exclude": [
     "^\\.[^/]+",
@@ -16,14 +22,14 @@
     ".*\\.qasm",
     ".*\\.md",
     ".*\\.bib",
+    ".*\\.cff",
     ".*\\.css",
     ".*\\.json",
     ".*\\.html",
     ".*\\.tfc",
     ".*\\.qc",
     ".*\\.real",
-    ".*\\.toml",
-    ".*\\.yaml",
+    ".*\\.tex",
     "uv\\.lock",
     "py\\.typed",
     ".*build.*"

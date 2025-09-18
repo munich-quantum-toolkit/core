@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,19 +8,26 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
+#include "ir/QuantumComputation.hpp"
+#include "ir/Register.hpp"
 #include "ir/operations/AodOperation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
+#include "ir/operations/Control.hpp"
 #include "ir/operations/Expression.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/Operation.hpp"
 #include "ir/operations/StandardOperation.hpp"
 #include "ir/operations/SymbolicOperation.hpp"
+#include "qasm3/Importer.hpp"
 
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <sstream>
+#include <stdexcept>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -107,6 +115,22 @@ TEST(CompoundOperation, IsInverseOf) {
   EXPECT_TRUE(op1.isInverseOf(op2));
 }
 
+TEST(CompoundOperation, GetNqubits) {
+  qc::CompoundOperation op;
+  op.emplace_back<qc::StandardOperation>(0, qc::OpType::X);
+  op.emplace_back<qc::StandardOperation>(1, qc::OpType::X);
+  op.emplace_back<qc::StandardOperation>(3, qc::OpType::X);
+  EXPECT_EQ(op.getNqubits(), 3);
+}
+
+TEST(CompoundOperation, IsClifford) {
+  qc::CompoundOperation op1;
+  op1.emplace_back<qc::StandardOperation>(0, qc::OpType::H);
+  op1.emplace_back<qc::StandardOperation>(1, qc::OpType::RX,
+                                          std::vector{qc::PI_2});
+  EXPECT_FALSE(op1.isClifford());
+}
+
 TEST(OpType, General) {
   EXPECT_EQ(qc::toString(qc::RZ), "rz");
   std::stringstream ss;
@@ -142,11 +166,73 @@ TEST(Operation, IsIndividualGate) {
   EXPECT_FALSE(op3.isSingleQubitGate());
 }
 
+TEST(Operation, IsClifford) {
+  const qc::StandardOperation x(0, qc::X);
+  EXPECT_TRUE(x.isClifford());
+  const qc::StandardOperation cx(0, 1, qc::X);
+  EXPECT_TRUE(cx.isClifford());
+  const qc::StandardOperation ccx({0, 1}, 2, qc::X);
+  EXPECT_FALSE(ccx.isClifford());
+
+  const qc::StandardOperation y(0, qc::Y);
+  EXPECT_TRUE(y.isClifford());
+  const qc::StandardOperation cy(0, 1, qc::Y);
+  EXPECT_TRUE(cy.isClifford());
+  const qc::StandardOperation ccy({0, 1}, 2, qc::Y);
+  EXPECT_FALSE(ccy.isClifford());
+
+  const qc::StandardOperation z(0, qc::Z);
+  EXPECT_TRUE(z.isClifford());
+  const qc::StandardOperation cz(0, 1, qc::Z);
+  EXPECT_TRUE(cz.isClifford());
+  const qc::StandardOperation ccz({0, 1}, 2, qc::Z);
+  EXPECT_FALSE(ccz.isClifford());
+
+  const qc::StandardOperation t(0, qc::T);
+  EXPECT_FALSE(t.isClifford());
+  const qc::StandardOperation tdg(0, qc::Tdg);
+  EXPECT_FALSE(tdg.isClifford());
+
+  const qc::StandardOperation h(0, qc::H);
+  EXPECT_TRUE(h.isClifford());
+
+  const qc::StandardOperation s(0, qc::S);
+  EXPECT_TRUE(s.isClifford());
+  const qc::StandardOperation sdg(0, qc::Sdg);
+  EXPECT_TRUE(sdg.isClifford());
+
+  const qc::StandardOperation sx(0, qc::SX);
+  EXPECT_TRUE(sx.isClifford());
+  const qc::StandardOperation sxdg(0, qc::SXdg);
+  EXPECT_TRUE(sxdg.isClifford());
+
+  const qc::StandardOperation dcx({0, 1}, qc::DCX);
+  EXPECT_TRUE(dcx.isClifford());
+  const qc::StandardOperation swap({0, 1}, qc::SWAP);
+  EXPECT_TRUE(swap.isClifford());
+  const qc::StandardOperation iswap({0, 1}, qc::iSWAP);
+  EXPECT_TRUE(iswap.isClifford());
+  const qc::StandardOperation ecr({0, 1}, qc::ECR);
+  EXPECT_TRUE(ecr.isClifford());
+}
+
 TEST(Operation, IsDiagonalGate) {
   const qc::StandardOperation op1(0, qc::X);
   EXPECT_FALSE(op1.isDiagonalGate());
   const qc::StandardOperation op2(0, qc::Z);
   EXPECT_TRUE(op2.isDiagonalGate());
+}
+
+TEST(Operation, IsGlobalGate) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[3] q;\n"
+                               "rz(pi/4) q[0];\n"
+                               "ry(pi/2) q;\n";
+  const auto qc = qasm3::Importer::imports(testfile);
+  EXPECT_EQ(qc.getHighestLogicalQubitIndex(), 2);
+  EXPECT_FALSE(qc.at(0)->isGlobal(3));
+  EXPECT_TRUE(qc.at(1)->isGlobal(3));
 }
 
 TEST(Operation, Equality) {
@@ -217,11 +303,11 @@ TEST(AodOperation, Qasm) {
                               {na::Dimension::X, na::Dimension::Y}, {0.0, 1.0},
                               {1.0, 3.0});
   std::stringstream ss;
-  qc::RegisterNames qreg;
-  qreg.emplace_back("q", "q[0]");
-  qreg.emplace_back("q", "q[1]");
-  qc::RegisterNames const creg{{"c", "c"}};
-  move.dumpOpenQASM(ss, qreg, creg, 0, false);
+  qc::QuantumRegister qreg(0, 2, "q");
+  qc::QubitIndexToRegisterMap qubitToReg{};
+  qubitToReg.try_emplace(0, qreg, qreg.toString(0));
+  qubitToReg.try_emplace(1, qreg, qreg.toString(1));
+  move.dumpOpenQASM(ss, qubitToReg, {}, 0, false);
 
   EXPECT_EQ(ss.str(), "aod_move (0, 0, 1; 1, 1, 3;) q[0], q[1];\n");
 }
@@ -266,4 +352,24 @@ TEST(AodOperation, Invert) {
                               {na::Dimension::X}, {0.0}, {1.0});
   deactivate.invert();
   EXPECT_EQ(deactivate.getType(), qc::OpType::AodActivate);
+}
+
+TEST(StandardOperation, Constructor) {
+  EXPECT_NO_THROW(std::ignore =
+                      qc::StandardOperation(0, 1, qc::OpType::P, {qc::PI}));
+  EXPECT_NO_THROW(
+      std::ignore = qc::StandardOperation(0, {1, 2}, qc::OpType::P, {qc::PI}));
+}
+
+TEST(StandardOperation, DuplicateQubitThrowsError) {
+  EXPECT_THROW(std::ignore =
+                   qc::StandardOperation(0, {0, 1}, qc::OpType::P, {qc::PI}),
+               std::runtime_error);
+  EXPECT_THROW(std::ignore =
+                   qc::StandardOperation(0, 0, qc::OpType::P, {qc::PI}),
+               std::runtime_error);
+
+  qc::QuantumComputation qc(2);
+  EXPECT_THROW(qc.cx(0, 0), std::runtime_error);
+  EXPECT_THROW(qc.mcx({0, 1}, 0), std::runtime_error);
 }

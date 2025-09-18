@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -37,7 +38,7 @@ void ZXDiagram::addEdge(const Vertex from, const Vertex to,
 }
 
 void ZXDiagram::addEdgeParallelAware(const Vertex from, const Vertex to,
-                                     const EdgeType eType) { // TODO: Scalars
+                                     const EdgeType eType) {
   if (from == to) {
     if (type(from) != VertexType::Boundary && eType == EdgeType::Hadamard) {
       addPhase(from, PiExpression(PiRational(1, 1)));
@@ -95,9 +96,7 @@ void ZXDiagram::removeEdge(const Vertex from, const Vertex to) {
 
 void ZXDiagram::removeHalfEdge(const Vertex from, const Vertex to) {
   auto& incident = edges[from];
-  incident.erase(std::remove_if(incident.begin(), incident.end(),
-                                [&](auto& edge) { return edge.to == to; }),
-                 incident.end());
+  std::erase_if(incident, [&](const auto& edge) { return edge.to == to; });
 }
 
 Vertex ZXDiagram::addVertex(const VertexData& data) {
@@ -117,7 +116,7 @@ Vertex ZXDiagram::addVertex(const VertexData& data) {
 
 Vertex ZXDiagram::addVertex(const Qubit qubit, const Col col,
                             const PiExpression& phase, const VertexType type) {
-  return addVertex({col, qubit, phase, type});
+  return addVertex({.col = col, .qubit = qubit, .phase = phase, .type = type});
 }
 
 void ZXDiagram::addQubit() {
@@ -152,8 +151,8 @@ void ZXDiagram::removeVertex(const Vertex toRemove) {
   }
 
   const auto& incident = edges[from];
-  const auto edge = std::find_if(incident.begin(), incident.end(),
-                                 [&](const auto& e) { return e.to == to; });
+  const auto edge =
+      std::ranges::find_if(incident, [&](const auto& e) { return e.to == to; });
   return edge != incident.end();
 }
 
@@ -161,8 +160,8 @@ void ZXDiagram::removeVertex(const Vertex toRemove) {
                                                      const Vertex to) const {
   std::optional<Edge> ret;
   const auto& incident = edges[from];
-  const auto edge = std::find_if(incident.begin(), incident.end(),
-                                 [&](const auto& e) { return e.to == to; });
+  const auto edge =
+      std::ranges::find_if(incident, [&](const auto& e) { return e.to == to; });
   if (edge != incident.end()) {
     ret = *edge;
   }
@@ -172,8 +171,8 @@ void ZXDiagram::removeVertex(const Vertex toRemove) {
 std::vector<Edge>::iterator ZXDiagram::getEdgePtr(const Vertex from,
                                                   const Vertex to) {
   auto& incident = edges[from];
-  return std::find_if(incident.begin(), incident.end(),
-                      [&](const auto& e) { return e.to == to; });
+  return std::ranges::find_if(incident,
+                              [&](const auto& e) { return e.to == to; });
 }
 
 [[nodiscard]] std::vector<std::pair<Vertex, const VertexData&>>
@@ -190,10 +189,10 @@ ZXDiagram::getEdges() const {
 }
 
 bool ZXDiagram::isInput(const Vertex v) const {
-  return std::find(inputs.begin(), inputs.end(), v) != inputs.end();
+  return std::ranges::find(inputs, v) != inputs.end();
 }
 bool ZXDiagram::isOutput(const Vertex v) const {
-  return std::find(outputs.begin(), outputs.end(), v) != outputs.end();
+  return std::ranges::find(outputs, v) != outputs.end();
 }
 
 void ZXDiagram::toGraphlike() {
@@ -305,8 +304,10 @@ std::vector<Vertex> ZXDiagram::initGraph(const std::size_t nqubits) {
 
   const auto nVerts = qubitVertices.size();
   for (size_t i = 0; i < nVerts; ++i) {
-    const auto v = addVertex(
-        {1, static_cast<Qubit>(i), PiExpression(), VertexType::Boundary});
+    const auto v = addVertex({.col = 1,
+                              .qubit = static_cast<Qubit>(i),
+                              .phase = PiExpression(),
+                              .type = VertexType::Boundary});
     qubitVertices[i] = v;
     inputs.push_back(v);
   }
@@ -321,8 +322,10 @@ void ZXDiagram::closeGraph(const std::vector<Vertex>& qubitVertices) {
       continue;
     }
 
-    const Vertex newV = addVertex(
-        {vData->col + 1, vData->qubit, PiExpression(), VertexType::Boundary});
+    const Vertex newV = addVertex({.col = vData->col + 1,
+                                   .qubit = vData->qubit,
+                                   .phase = PiExpression(),
+                                   .type = VertexType::Boundary});
     addEdge(v, newV);
     outputs.push_back(newV);
   }
@@ -358,7 +361,7 @@ void ZXDiagram::removeDisconnectedSpiders() {
       auto w = stack.back();
       stack.pop_back();
 
-      if (visited.find(w) != visited.end()) {
+      if (visited.contains(w)) {
         continue;
       }
 
@@ -409,7 +412,7 @@ ZXDiagram::getConnectedSet(const std::vector<Vertex>& s,
         continue;
       }
 
-      const auto& p = std::lower_bound(connected.begin(), connected.end(), to);
+      const auto& p = std::ranges::lower_bound(connected, to);
       if (p == connected.end()) {
         connected.emplace_back(to);
         continue;
@@ -423,6 +426,6 @@ ZXDiagram::getConnectedSet(const std::vector<Vertex>& s,
 }
 
 bool ZXDiagram::isIn(const Vertex& v, const std::vector<Vertex>& vertices) {
-  return std::find(vertices.begin(), vertices.end(), v) != vertices.end();
+  return std::ranges::find(vertices, v) != vertices.end();
 }
 } // namespace zx

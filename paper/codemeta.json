@@ -1,0 +1,51 @@
+{
+  "@context": "https://raw.githubusercontent.com/codemeta/codemeta/master/codemeta.jsonld",
+  "@type": "Code",
+  "author": [
+    {
+      "@id": "https://orcid.org/0000-0003-4699-1316",
+      "@type": "Person",
+      "email": "lukas.burgholzer@tum.de",
+      "name": "Lukas Burgholzer",
+      "affiliation": [
+        "Chair for Design Automation, Technical University of Munich, Germany",
+        "Munich Quantum Software Company GmbH, Garching near Munich, Germany"
+      ]
+    },
+    {
+      "@id": "https://orcid.org/0000-0001-5785-2528",
+      "@type": "Person",
+      "email": "yannick.stade@tum.de",
+      "name": "Yannick Stade",
+      "affiliation": "Chair for Design Automation, Technical University of Munich, Germany"
+    },
+    {
+      "@id": "https://orcid.org/0000-0003-3434-7881",
+      "@type": "Person",
+      "email": "tom.peham@tum.de",
+      "name": "Tom Peham",
+      "affiliation": "Chair for Design Automation, Technical University of Munich, Germany"
+    },
+    {
+      "@id": "https://orcid.org/0000-0002-4993-7860",
+      "@type": "Person",
+      "email": "robert.wille@tum.de",
+      "name": "Robert Wille",
+      "affiliation": [
+        "Chair for Design Automation, Technical University of Munich, Germany",
+        "Munich Quantum Software Company GmbH, Garching near Munich, Germany",
+        "Software Competence Center Hagenberg GmbH, Hagenberg, Austria"
+      ]
+    }
+  ],
+  "identifier": "",
+  "codeRepository": "https://github.com/munich-quantum-toolkit/core",
+  "datePublished": "2024-11-07",
+  "dateModified": "2024-11-07",
+  "dateCreated": "2024-11-07",
+  "description": "MQT Core forms the backbone of the software tools developed as part of the Munich Quantum Toolkit (MQT).",
+  "keywords": "Python, C++, MQT, Quantum Computing, Design Automation, Intermediate Representation, Data Structures, Decision Diagrams, ZX-Calculus",
+  "license": "MIT",
+  "title": "MQT Core",
+  "version": "v3.0.0"
+}

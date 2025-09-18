@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,7 +10,8 @@
 
 #include "ir/operations/AodOperation.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
+#include "ir/Register.hpp"
 #include "ir/operations/OpType.hpp"
 
 #include <algorithm>
@@ -69,7 +71,7 @@ AodOperation::AodOperation(const std::string& typeName,
                            const std::vector<uint32_t>& dirs,
                            const std::vector<qc::fp>& start,
                            const std::vector<qc::fp>& end)
-    : AodOperation(qc::OP_NAME_TO_TYPE.at(typeName), std::move(qubits),
+    : AodOperation(qc::opTypeFromString(typeName), std::move(qubits),
                    convertToDimension(dirs), start, end) {}
 
 AodOperation::AodOperation(
@@ -117,7 +119,7 @@ qc::fp AodOperation::getMaxDistance(const Dimension dir) const {
   if (distances.empty()) {
     return 0;
   }
-  return *std::max_element(distances.begin(), distances.end());
+  return *std::ranges::max_element(distances);
 }
 
 std::vector<qc::fp> AodOperation::getDistances(const Dimension dir) const {
@@ -130,9 +132,10 @@ std::vector<qc::fp> AodOperation::getDistances(const Dimension dir) const {
   return params;
 }
 
-void AodOperation::dumpOpenQASM(std::ostream& of, const qc::RegisterNames& qreg,
-                                [[maybe_unused]] const qc::RegisterNames& creg,
-                                const size_t indent, bool /*openQASM3*/) const {
+void AodOperation::dumpOpenQASM(
+    std::ostream& of, const qc : qc::QubitIndexToRegisterMap& qubitMap,
+    [[maybe_unused]] constqc::BitIndexToRegisterMap& bitMap,
+    const size_t indent, bool /*openQASM3*/) const {
   std::ostringstream oss;
   oss << std::setprecision(std::numeric_limits<qc::fp>::digits10);
 
@@ -158,7 +161,7 @@ void AodOperation::dumpOpenQASM(std::ostream& of, const qc::RegisterNames& qreg,
 
   // Write qubit start
   for (const auto& qubit : targets) {
-    content += " " + qreg[qubit].second + ",";
+    content += " " + qubitMap.at(qubit).second + ",";
   }
 
   // Remove the last comma if present

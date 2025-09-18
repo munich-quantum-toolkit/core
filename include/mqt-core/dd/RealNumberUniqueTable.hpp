@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -21,6 +22,14 @@
 namespace dd {
 
 struct RealNumber;
+
+/**
+ * @brief Immortal numbers that will never be garbage collected.
+ */
+namespace immortals {
+constexpr std::array<fp, 1> get() { return {.5}; }
+constexpr std::size_t size() { return get().size(); }
+} // namespace immortals
 
 /**
  * @brief A unique table for real numbers.
@@ -57,7 +66,7 @@ public:
    * @param manager The memory manager to use for allocating new numbers.
    * @param initialGCLim The initial garbage collection limit.
    */
-  explicit RealNumberUniqueTable(MemoryManager<RealNumber>& manager,
+  explicit RealNumberUniqueTable(MemoryManager& manager,
                                  std::size_t initialGCLim = INITIAL_GC_LIMIT);
 
   /**
@@ -93,28 +102,6 @@ public:
   [[nodiscard]] RealNumber* lookup(fp val);
 
   /**
-   * @brief Increment the reference count of a number.
-   * @details This is a pass-through function that calls the increment function
-   * of the number. It additionally keeps track of the number of active entries
-   * in the table (entries with a reference count greater than zero). Reference
-   * counts saturate at the maximum value of RefCount.
-   * @param num A pointer to the number to increase the reference count of.
-   * @see RealNumber::incRef(RealNumber*)
-   */
-  void incRef(RealNumber* num) noexcept;
-
-  /**
-   * @brief Decrement the reference count of a number.
-   * @details This is a pass-through function that calls the decrement function
-   * of the number. It additionally keeps track of the number of active entries
-   * in the table (entries with a reference count greater than zero). Reference
-   * counts saturate at the maximum value of RefCount.
-   * @param num A pointer to the number to decrease the reference count of.
-   * @see RealNumber::decRef(RealNumber*)
-   */
-  void decRef(RealNumber* num) noexcept;
-
-  /**
    * @brief Check whether the table possibly needs garbage collection.
    * @returns Whether the number of entries in the table has reached the garbage
    * collection limit.
@@ -125,9 +112,9 @@ public:
    * @brief Perform garbage collection.
    * @details This function performs garbage collection. It first checks whether
    * garbage collection is necessary. If not, it does nothing. Otherwise, it
-   * iterates over all entries in the table and returns all entries with a
-   * reference count of zero to the available list. If the force flag is set,
-   * garbage collection is performed even if it is not necessary.
+   * iterates over all entries in the table and removes all numbers whose
+   * pointers are unmarked. If the force flag is set, garbage collection is
+   * performed even if it is not strictly necessary.
    * Based on how many entries are returned to the available list, the garbage
    * collection limit is dynamically adjusted.
    * @param force Whether to force garbage collection.
@@ -155,6 +142,9 @@ public:
    */
   std::ostream& printBucketDistribution(std::ostream& os = std::cout);
 
+  /// Count the marked entries in the table
+  [[nodiscard]] std::size_t countMarkedEntries() const noexcept;
+
 private:
   /// Typedef for a bucket in the table.
   using Bucket = RealNumber*;
@@ -176,7 +166,7 @@ private:
   std::array<RealNumber*, NBUCKET> tailTable{};
 
   /// A pointer to the memory manager for the numbers stored in the table.
-  MemoryManager<RealNumber>* memoryManager{};
+  MemoryManager* memoryManager{};
 
   /// A collection of statistics
   UniqueTableStatistics stats{};

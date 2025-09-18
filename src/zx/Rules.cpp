@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -27,7 +28,7 @@ bool isPauli(const ZXDiagram& diag, const Vertex v) {
 
 bool isInterior(const ZXDiagram& diag, const Vertex v) {
   const auto& edges = diag.incidentEdges(v);
-  return std::all_of(edges.begin(), edges.end(), [&](auto& edge) {
+  return std::ranges::all_of(edges, [&](auto& edge) {
     return diag.degree(edge.to) > 1 && diag.type(edge.to) == VertexType::Z;
   });
 }
@@ -120,14 +121,14 @@ void fuseSpiders(ZXDiagram& diag, const Vertex v0, const Vertex v1) {
 }
 
 bool checkLocalComp(const ZXDiagram& diag, const Vertex v) {
-  const auto vData = diag.getVData(v).value_or(
-      VertexData{0, 0, PiExpression(), VertexType::X});
+  const auto vData = diag.getVData(v).value_or(VertexData{
+      .col = 0, .qubit = 0, .phase = PiExpression(), .type = VertexType::X});
   if (vData.type != VertexType::Z || !isProperClifford(vData.phase)) {
     return false;
   }
 
   const auto& edges = diag.incidentEdges(v);
-  return std::all_of(edges.begin(), edges.end(), [&](auto& edge) {
+  return std::ranges::all_of(edges, [&](auto& edge) {
     return edge.type == EdgeType::Hadamard &&
            diag.type(edge.to) == VertexType::Z;
   });
@@ -152,10 +153,10 @@ void localComp(ZXDiagram& diag, const Vertex v) { // TODO:scalars
 }
 
 bool checkPivotPauli(const ZXDiagram& diag, const Vertex v0, const Vertex v1) {
-  const auto v0Data = diag.getVData(v0).value_or(
-      VertexData{0, 0, PiExpression(), VertexType::X});
-  const auto v1Data = diag.getVData(v0).value_or(
-      VertexData{0, 0, PiExpression(), VertexType::X});
+  const auto v0Data = diag.getVData(v0).value_or(VertexData{
+      .col = 0, .qubit = 0, .phase = PiExpression(), .type = VertexType::X});
+  const auto v1Data = diag.getVData(v1).value_or(VertexData{
+      .col = 0, .qubit = 0, .phase = PiExpression(), .type = VertexType::X});
 
   if (v0Data.type != VertexType::Z || // maybe problem if there is a self-loop?
       v1Data.type != VertexType::Z || !isPauli(diag, v0) ||
@@ -173,13 +174,13 @@ bool checkPivotPauli(const ZXDiagram& diag, const Vertex v0, const Vertex v1) {
     return diag.type(e.to) == VertexType::Z && e.type == EdgeType::Hadamard;
   };
 
-  if (!std::all_of(v0Edges.begin(), v0Edges.end(), isValidEdge)) {
+  if (!std::ranges::all_of(v0Edges, isValidEdge)) {
     return false;
   }
 
   const auto& v1Edges = diag.incidentEdges(v1);
 
-  return std::all_of(v1Edges.begin(), v1Edges.end(), isValidEdge);
+  return std::ranges::all_of(v1Edges, isValidEdge);
 }
 
 void pivotPauli(ZXDiagram& diag, const Vertex v0,
@@ -236,12 +237,12 @@ bool checkPivot(const ZXDiagram& diag, const Vertex v0, const Vertex v1) {
            toType != VertexType::Boundary;
   };
 
-  if (std::any_of(v0Edges.begin(), v0Edges.end(), isInvalidEdge)) {
+  if (std::ranges::any_of(v0Edges, isInvalidEdge)) {
     return false;
   }
 
   const auto& v1Edges = diag.incidentEdges(v1);
-  if (std::any_of(v1Edges.begin(), v1Edges.end(), isInvalidEdge)) {
+  if (std::ranges::any_of(v1Edges, isInvalidEdge)) {
     return false;
   }
 

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -26,6 +27,16 @@ bool Complex::approximatelyEquals(const Complex& c) const noexcept {
 
 bool Complex::approximatelyZero() const noexcept {
   return RealNumber::approximatelyZero(r) && RealNumber::approximatelyZero(i);
+}
+
+void Complex::mark() const noexcept {
+  RealNumber::mark(r);
+  RealNumber::mark(i);
+}
+
+void Complex::unmark() const noexcept {
+  RealNumber::unmark(r);
+  RealNumber::unmark(i);
 }
 
 std::string Complex::toString(bool formatted, int precision) const {

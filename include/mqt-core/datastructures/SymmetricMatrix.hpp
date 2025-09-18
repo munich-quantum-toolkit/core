@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -11,12 +12,13 @@
 
 #include <cstddef>
 #include <vector>
+
+namespace qc {
 /**
  * @brief Symmetric matrix class with same number of rows and columns that
  * allows access by row and column but uses less memory than a full matrix
  */
 template <typename T> class SymmetricMatrix {
-private:
   std::vector<std::vector<T>> data;
 
 public:
@@ -52,3 +54,4 @@ public:
 
   [[nodiscard]] size_t size() const { return data.size(); }
 };
+} // namespace qc

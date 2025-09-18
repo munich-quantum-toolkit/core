@@ -1,0 +1,495 @@
+% Copyright (c) 2025 Chair for Design Automation, TUM
+% All rights reserved.
+%
+% SPDX-License-Identifier: MIT
+%
+% Licensed under the MIT License
+
+\PassOptionsToPackage{x11names,svgnames,dvipsnames,table,rgb}{xcolor}
+\documentclass[crop,tikz,convert={outext=.svg,command=\unexpanded{pdf2svg \infile\space\outfile\space"all"}},multi=true]{standalone}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsthm,amsmath}
+\usepackage{mathtools}
+\usepackage{csquotes}
+
+\DeclarePairedDelimiter\abs{\lvert}{\rvert}
+\DeclarePairedDelimiter\mket{\lvert}{\rangle}
+\DeclarePairedDelimiter\mbra{\langle}{\rvert}
+
+\newcommand*{\ket}[1]{\ensuremath{\mket{\mkern1mu#1}}}
+\newcommand*{\bra}[1]{\ensuremath{\mbra{\mkern1mu#1}}}
+
+\usetikzlibrary{positioning,calc,fit,backgrounds,matrix,shapes,arrows.meta,graphs,quotes,automata,shapes.geometric,chains}
+
+\definecolor{RedEdge}{RGB}{191,40,40}
+\definecolor{BlueEdge}{RGB}{40,191,191}
+\definecolor{Blue01}{rgb}{0.26,0.39,0.85}
+\definecolor{Yellow12}{rgb}{1.0,0.88,0.1}
+\definecolor{Gray23}{rgb}{0.66,0.66,0.66}
+\definecolor{myyellow}{RGB}{255, 253, 0}
+\definecolor{myorange}{RGB}{238, 135, 51}
+\definecolor{myblue}{RGB}{47, 112, 137}
+
+\definecolorset{RGB}{TUM}{}{%
+    Black,   0,   0,   0;%
+    Gray,   51,  51,  51;%
+    White, 255, 255, 255;%
+    Blue, 0, 101, 189;%
+    Ivory,  218, 215, 203;%
+    Orange, 227, 114,  34;%
+    Green,  162, 173,   0%
+}%
+\definecolorset{RGB}{TUMGray}{}{%
+    Lighter,  128, 128, 128;%
+    Lightest, 204, 204, 204%
+}%
+\definecolorset{RGB}{TUMBlue}{}{%
+    Darkest,    0,  51,  89;%
+    Darker,     0,  82, 147;%
+    Lighter,  100, 160, 200;%
+    Lightest, 152, 198, 234%
+}%
+\colorlet{TUMBlueDarkest80}{TUMBlueDarkest!80}%
+\colorlet{TUMBlueDarkest50}{TUMBlueDarkest!50}%
+\colorlet{TUMBlueDarkest20}{TUMBlueDarkest!20}%
+\colorlet{TUMBlueDarker80}{TUMBlueDarker!80}%
+\colorlet{TUMBlueDarker50}{TUMBlueDarker!50}%
+\colorlet{TUMBlueDarker20}{TUMBlueDarker!20}%
+\colorlet{TUMBlueLighter80}{TUMBlueLighter!80}%
+\colorlet{TUMBlueLighter50}{TUMBlueLighter!50}%
+\colorlet{TUMBlueLighter20}{TUMBlueLighter!20}%
+\colorlet{TUMBlueLightest80}{TUMBlueLightest!80}%
+\colorlet{TUMBlueLightest50}{TUMBlueLightest!50}%
+\colorlet{TUMBlueLightest20}{TUMBlueLightest!20}%
+
+\tikzset{%
+    font={\footnotesize},
+    edgeweight/.style={text=TUMBlue},
+    vertex/.style={draw=TUMBlue,text=TUMBlue,circle,inner sep=0pt,minimum width=0.5cm,minimum height=0.5cm,font=\small, scale=0.9},
+    terminal/.style={draw=TUMBlue,rectangle,inner sep=2pt,font=\footnotesize,very thick},
+    define color/.code={\definecolor{hsb#1}{Hsb}{#1, 1, 0.75}},
+    medge/.style n args={3}{
+        line width={#1pt},
+        define color={#2},
+        draw=hsb#2,
+        out=#3,
+        in=90
+    },
+    edge/.style 2 args={
+        line width={#1pt},
+        define color={#2},
+        draw=hsb#2
+    },
+    edge0/.style 2 args={
+        line width={#1pt},
+        define color={#2},
+        draw=hsb#2,
+        out=-130,
+        in=90
+    },
+    edge1/.style 2 args={
+        line width={#1pt},
+        define color={#2},
+        draw=hsb#2,
+        out=-50,
+        in=90
+    },
+    zerostub/.style={
+        inner sep=0,
+        minimum size=3pt,
+        circle,
+        fill=black
+    },
+    cross/.style={cross out, draw=black,
+    minimum size=2*(#1-\pgflinewidth),
+    inner sep=0pt, outer sep=0pt,rotate=45},
+    cross/.default={3pt},
+    edgeOne/.style={color=RedEdge,ultra thick},
+    edgeOneState/.style={color=RedEdge, thick},
+    edgeMOne/.style={color=BlueEdge,ultra thick},
+    edgeSqrt/.style={color=RedEdge, thick},
+    edgeMSqrt/.style={color=BlueEdge, thick},
+    edgeFrac/.style={color=RedEdge, thin},
+    edgeOver/.style={dotted, color=blue, ultra thick},
+    qubit/.style={draw,circle,inner sep=0pt,minimum width=0.35cm,minimum height=0.35cm,font=\footnotesize, thin}
+}
+
+\begin{document}
+\begin{tikzpicture}[node distance=0.5 and 0.5]
+    \node[vertex]  (dd0) {};
+    \node[terminal, below=of dd0] (t0) {};
+    \draw[edge={1}{0}] ($(dd0)+(0,0.5cm)$) -- (dd0);
+    \draw[edge0={0.707}{0}] (dd0) to node[midway, left, edgeweight] {$\alpha_0$} (t0);
+    \draw[edge1={0.707}{0}] (dd0) to node[midway, right, edgeweight] {$\alpha_1$} (t0);
+\end{tikzpicture}
+
+\begin{tikzpicture}[node distance=0.5 and 0.5]
+    \node[vertex] (dd0) {};
+    \node[terminal, below=of dd0] (t0) {};
+    \draw[edge={1}{0}] ($(dd0)+(0,0.5cm)$) -- (dd0);
+    \draw[edge0={1}{0}] (dd0) to node[midway,left, edgeweight] {$1$} (t0);
+    \draw[edge1={1}{0}] (dd0) to ++(-50:0.35) node[zerostub] {};
+\end{tikzpicture}
+
+\begin{tikzpicture}[node distance=0.5 and 0.5]
+    \node[vertex] (dd1) {};
+    \node[terminal, below=of dd1] (t1) {};
+    \draw[edge={1}{0}] ($(dd1)+(0,0.5cm)$) -- (dd1);
+    \draw[edge1={1}{0}] (dd1) to node[midway,right, edgeweight] {$1$} (t1);
+    \draw[edge0={1}{0}] (dd1) to ++(-130:0.35) node[zerostub] {};
+\end{tikzpicture}
+
+\begin{tikzpicture}[node distance=0.5 and 1.0]
+    \node[vertex] (q2) {$q_2$};
+    \node[vertex,below left=0.5 and 1.75 of q2] (q1a) {$q_1$};
+    \node[vertex,below right=0.5 and 1.75 of q2] (q1b) {$q_1$};
+    \node[vertex,below left= of q1a] (q0a) {$q_0$};
+    \node[vertex,below right= of q1a] (q0b) {$q_0$};
+    \node[vertex,below left= of q1b] (q0c) {$q_0$};
+    \node[vertex,below right= of q1b] (q0d) {$q_0$};
+    \node[terminal, below= of q0a] (ta) {};
+    \node[terminal, below= of q0b] (tb) {};
+    \node[terminal, below= of q0c] (tc) {};
+    \node[terminal, below= of q0d] (td) {};
+
+    \draw[edge={1}{0}] ($(q2)+(0,0.5cm)$) -- (q2);
+
+    \draw[edge0={1}{0}] (q2) to (q1a);
+    \draw[edge1={1}{0}] (q2) to (q1b);
+
+    \draw[edge0={1}{0}] (q1a) to (q0a);
+    \draw[edge1={1}{0}] (q1a) to (q0b);
+
+    \draw[edge0={1}{0}] (q1b) to (q0c);
+    \draw[edge1={1}{0}] (q1b) to (q0d);
+
+    \draw[edge0={1}{0}] (q0a) to node[midway, left, edgeweight] (w1) {$\frac{1}{2\sqrt{2}}$} (ta);
+    \draw[edge1={1}{0}] (q0a) to node[midway, right, edgeweight] {$\frac{1}{2\sqrt{2}}$} (ta);
+
+    \draw[edge0={1}{0}] (q0b) to node[midway,left, edgeweight] {$\frac{1}{2}$} (tb);
+    \draw[edge1={1}{0}] (q0b) to ++(-50:0.35)  node[zerostub] {};
+
+    \draw[edge0={1}{0}] (q0c) to node[midway, left, edgeweight] (w2) {$\frac{1}{2\sqrt{2}}$} (tc);
+    \draw[edge1={1}{0}] (q0c) to node[midway, right, edgeweight] {$\frac{1}{2\sqrt{2}}$} (tc);
+
+    \draw[edge0={1}{0}] (q0d) to node[midway,left, edgeweight] {$\frac{1}{2}$} (td);
+    \draw[edge1={1}{0}] (q0d) to ++(-50:0.35) node[zerostub] {};
+
+    \node[draw=TUMBlue,dotted,fit=(q1a) (q0a) (q0b) (ta) (tb) (w1)] {};
+    \node[draw=TUMBlue,dotted,fit=(q1b) (q0c) (q0d) (tc) (td) (w2)] {};
+\end{tikzpicture}
+
+\begin{tikzpicture}[node distance=0.5 and 0.75]
+    \node[vertex] (q2) {$q_2$};
+    \node[vertex,below= of q2] (q1) {$q_1$};
+    \node[vertex,below left= of q1] (q0a) {$q_0$};
+    \node[vertex,below right= of q1] (q0b) {$q_0$};
+    \node[terminal, below= of q0a] (ta) {};
+    \node[terminal, below= of q0b] (tb) {};
+
+    \draw[edge={1}{0}] ($(q2)+(0,0.5cm)$) -- (q2);
+
+    \draw[edge0={1}{0}] (q2) to (q1);
+    \draw[edge1={1}{0}] (q2) to (q1);
+
+    \draw[edge0={1}{0}] (q1) to (q0a);
+    \draw[edge1={1}{0}] (q1) to (q0b);
+
+    \draw[edge0={1}{0}] (q0a) to node[midway, left, edgeweight] {$\frac{1}{2\sqrt{2}}$} (ta);
+    \draw[edge1={1}{0}] (q0a) to node[midway, right, edgeweight] {$\frac{1}{2\sqrt{2}}$} (ta);
+
+    \draw[edge0={1}{0}] (q0b) to node[midway,left, edgeweight] {$\frac{1}{2}$} (tb);
+    \draw[edge1={1}{0}] (q0b) to ++(-50:0.35)  node[zerostub] {};
+\end{tikzpicture}
+
+\begin{tikzpicture}[node distance=0.55 and 0.55]
+    \node[vertex] (q2) {$q_2$};
+    \node[vertex,below= of q2] (q1) {$q_1$};
+    \node[vertex,below left= of q1] (q0a) {$q_0$};
+    \node[vertex,below right= of q1] (q0b) {$q_0$};
+    \node[terminal, below= of q0a] (ta) {};
+    \node[terminal, below= of q0b] (tb) {};
+
+    \draw[edge={1}{0}] ($(q2)+(0,0.5cm)$) -- (q2);
+
+    \draw[edge0={1}{0}] (q2) to node[midway, left, edgeweight] {$\frac{1}{\sqrt{2}}$} (q1);
+    \draw[edge1={1}{0}] (q2) to node[midway, right, edgeweight] {$\frac{1}{\sqrt{2}}$} (q1);
+
+    \draw[edge0={1}{0}] (q1) to node[midway, above left, edgeweight] {$\frac{1}{\sqrt{2}}$} (q0a);
+    \draw[edge1={1}{0}] (q1) to node[midway, above right, edgeweight] {$\frac{1}{\sqrt{2}}$} (q0b);
+
+    \draw[edge0={1}{0}] (q0a) to node[midway, left, edgeweight] {$\frac{1}{\sqrt{2}}$} (ta);
+    \draw[edge1={1}{0}] (q0a) to node[midway, right, edgeweight] {$\frac{1}{\sqrt{2}}$} (ta);
+
+    \draw[edge0={1}{0}] (q0b) to node[midway,left, edgeweight] {$1$} (tb);
+    \draw[edge1={1}{0}] (q0b) to ++(-50:0.35)  node[zerostub] {};
+\end{tikzpicture}
+
+\begin{tikzpicture}[node distance=0.5 and 0.5]
+    \node (s0) {$U\equiv$};
+    \node[vertex,right=of s0] (n1) {};
+    \node[terminal, below left= 0.75 and 2.1 of n1] (t0) {};
+    \node[terminal, below left= 0.75 and 0.7 of n1] (t1) {};
+    \node[terminal, below right= 0.75 and 0.7 of n1] (t2) {};
+    \node[terminal, below right= 0.75 and 2.1 of n1] (t3) {};
+    \draw[edge={1}{0}] ($(n1)+(0,0.5cm)$) -- (n1);
+
+    \draw[medge={1}{0}{-130}] (n1) to node[below left, edgeweight] {$U_{00}$} (t0);
+    \draw[medge={1}{0}{-100}] (n1) to node[below, edgeweight] {$U_{01}$} (t1);
+    \draw[medge={1}{0}{-80}] (n1) to node[below, edgeweight] {$U_{10}$} (t2);
+    \draw[medge={1}{0}{-50}] (n1) to node[below right, edgeweight] {$U_{11}$} (t3);
+\end{tikzpicture}
+
+\begin{tikzpicture}[node distance=0.5 and 0.125,text=TUMBlue]
+    \node (id) {$
+    I = \begin{bmatrix}
+            1 & 0 \\
+            0 & 1
+    \end{bmatrix} \equiv$};
+    \node[vertex,right=of id] (n1) {};
+    \node[terminal, below left=of n1] (t0) {};
+    \node[terminal, below right=of n1] (t1) {};
+    \draw[edge={1}{0}] ($(n1)+(0,0.5cm)$) -- (n1);
+    \draw[medge={1}{0}{-130}] (n1) to node[left] {$1$} (t0);
+    \draw[medge={1}{0}{-100}] (n1) to ++(-100:0.35)  node[zerostub] {};
+    \draw[medge={1}{0}{-80}] (n1) to ++(-80:0.35)  node[zerostub] {};
+    \draw[medge={1}{0}{-50}] (n1) to node[right] {$1$} (t1);
+
+    \node[right=1 of n1] (x) {$
+    X = \begin{bmatrix}
+            0 & 1 \\
+            1 & 0
+    \end{bmatrix} \equiv$};
+    \node[vertex,right=of x] (x1) {};
+    \node[terminal, below left=of x1] (tx0) {};
+    \node[terminal, below right=of x1] (tx1) {};
+    \draw[edge={1}{0}] ($(x1)+(0,0.5cm)$) -- (x1);
+    \draw[medge={1}{0}{-130}] (x1) to ++(-130:0.35)  node[zerostub] {};
+    \draw[medge={1}{0}{-100}] (x1) to node[left] {$1$} (tx0);
+    \draw[medge={1}{0}{-80}] (x1) to node[right] {$1$} (tx1);
+    \draw[medge={1}{0}{-50}] (x1) to ++(-50:0.35)  node[zerostub] {};
+
+    \node[below=0.8 of id] (rz) {$R_{z}(\theta) = \begin{bmatrix}
+                                                      e^{-i\frac{\theta}{2}} & 0 \\
+                                                      0 & e^{i\frac{\theta}{2}}
+    \end{bmatrix}\equiv$};
+    \node[vertex,right=0.5 of rz] (rz1) {};
+    \node[terminal, below left=of rz1] (tz0) {};
+    \node[terminal, below right=of rz1] (tz1) {};
+    \draw[edge={1}{0}] ($(rz1)+(0,0.5cm)$) -- (rz1);
+    \draw[medge={1}{0}{-130}] (rz1) to node[left] {$e^{-i\frac{\theta}{2}}$} (tz0);
+    \draw[medge={1}{0}{-100}] (rz1) to ++(-100:0.35)  node[zerostub] {};
+    \draw[medge={1}{0}{-80}] (rz1) to ++(-80:0.35)  node[zerostub] {};
+    \draw[medge={1}{0}{-50}] (rz1) to node[right] {$e^{i\frac{\theta}{2}}$} (tz1);
+
+    \node[right= 0.5 of rz1] (eq) {$\equiv$};
+    \node[vertex,right=0.5 of eq] (rz2) {};
+    \node[terminal, below left=of rz2] (tz2) {};
+    \node[terminal, below right=of rz2] (tz3) {};
+    \draw[edge={1}{0}] ($(rz2)+(0,0.5cm)$) node[right] {$e^{-i\frac{\theta}{2}}$} -- (rz2);
+    \draw[medge={1}{0}{-130}] (rz2) to node[left] {$1$} (tz2);
+    \draw[medge={1}{0}{-100}] (rz2) to ++(-100:0.35)  node[zerostub] {};
+    \draw[medge={1}{0}{-80}] (rz2) to ++(-80:0.35)  node[zerostub] {};
+    \draw[medge={1}{0}{-50}] (rz2) to node[right] {$e^{i\theta}$} (tz3);
+\end{tikzpicture}
+
+\begin{tikzpicture}[node distance=0.5 and 0.125,text=TUMBlue]
+    \node[vertex] (top) {};
+    \draw[edge={1}{0}] ($(top)+(0,0.5cm)$) node[right] {$\frac{1}{\sqrt{2}}$} -- (top);
+    \node[below left=0.75 and 0.75 of top, vertex] (id) {};
+    \node[below right=0.75 and 0.75 of top, vertex] (x) {};
+    \node[terminal,below left=of id] (t0) {};
+    \node[terminal,below right=of id] (t1) {};
+    \node[terminal,below left=of x] (tx0) {};
+    \node[terminal,below right=of x] (tx1) {};
+
+    \draw[medge={1}{0}{-130}] (top) to node[above left] {$1$} (id);
+    \draw[medge={1}{0}{-100}] (top) to node[below] {$-i$} (x);
+    \draw[medge={1}{0}{-80}] (top) to node[above right] {$-i$} (x);
+    \draw[medge={1}{0}{-50}] (top) to node[below left] {$1$} (id);
+
+    \draw[medge={1}{0}{-130}] (id) to node[left] {$1$} (t0);
+    \draw[medge={1}{0}{-100}] (id) to ++(-100:0.35)  node[zerostub] {};
+    \draw[medge={1}{0}{-80}] (id) to ++(-80:0.35)  node[zerostub] {};
+    \draw[medge={1}{0}{-50}] (id) to node[right] {$1$} (t1);
+
+    \draw[medge={1}{0}{-130}] (x) to ++(-130:0.35)  node[zerostub] {};
+    \draw[medge={1}{0}{-100}] (x) to node[left] {$1$} (tx0);
+    \draw[medge={1}{0}{-80}] (x) to node[right] {$1$} (tx1);
+    \draw[medge={1}{0}{-50}] (x) to ++(-50:0.35)  node[zerostub] {};
+
+\end{tikzpicture}
+
+\begin{tikzpicture}[node distance=0.5 and 0.125,text=TUMBlue]
+    \node[vertex] (top0) {$\Psi$};
+    \node[terminal, below=of top0] (t0) {};
+    \draw[edge={1}{0}] ($(top0)+(0,0.5cm)$) to (top0);
+    \draw[edge0={1}{0}] (top0) to node[midway, left] {$\Psi_0$} (t0);
+    \draw[edge1={1}{0}] (top0) to node[midway, right] (psi1) {$\Psi_1$} (t0);
+
+    \node[vertex,right=1.5 of top0] (top1) {$\Phi$};
+    \node[terminal, below=of top1] (t1) {};
+    \draw[edge={1}{0}] ($(top1)+(0,0.5cm)$) -- (top1);
+    \draw[edge0={1}{0}] (top1) to node[midway, left] (phi0) {$\Phi_0$} (t1);
+    \draw[edge1={1}{0}] (top1) to node[midway, right] {$\Phi_1$} (t1);
+
+    \node[] at ($(top0)!0.5!(top1)$) {$\otimes$};
+
+    \node[vertex,right=1.5 of top1] (top2) {$\Psi$};
+    \node[vertex,below=of top2] (middle) {$\Phi$};
+    \node[terminal, below=of middle] (t2) {};
+    \draw[edge={1}{0}] ($(top2)+(0,0.5cm)$) -- (top2);
+    \draw[edge0={1}{0}] (top2) to node[midway, left] {$\Psi_0$} (middle);
+    \draw[edge1={1}{0}] (top2) to node[midway, right] {$\Psi_1$} (middle);
+    \draw[edge0={1}{0}] (middle) to node[midway, left] {$\Phi_0$} (t2);
+    \draw[edge1={1}{0}] (middle) to node[midway, right] {$\Phi_1$} (t2);
+
+    \node[] at ($(top1)!0.5!(top2)$) {$=$};
+\end{tikzpicture}
+
+\begin{tikzpicture}[node distance=0.5 and 0.25,text=TUMBlue]
+    \node[vertex] (top0) {};
+    \node[vertex, dashed, below left=of top0] (t0) {$\Psi_0$};
+    \node[vertex, dashed, below right=of top0] (t1) {$\Psi_1$};
+    \draw[edge={1}{0}] ($(top0)+(0,0.5cm)$) to node[midway,right] {$w$} (top0);
+    \draw[edge0={1}{0}] (top0) to node[midway,left] {$\alpha_0$} (t0);
+    \draw[edge1={1}{0}] (top0) to node[midway,right] {$\alpha_1$} (t1);
+
+    \node[vertex,right=2 of top0] (top1) {};
+    \node[vertex, dashed, below left=of top1] (t2) {$\Phi_0$};
+    \node[vertex, dashed, below right=of top1] (t3) {$\Phi_1$};
+    \draw[edge={1}{0}] ($(top1)+(0,0.5cm)$) to node[midway,right] {$w'$} (top1);
+    \draw[edge0={1}{0}] (top1) to node[midway,left] {$\alpha'_0$} (t2);
+    \draw[edge1={1}{0}] (top1) to node[midway,right] {$\alpha'_1$} (t3);
+
+    \node[] at ($(top0)!0.5!(top1)$) (plus) {$+$};
+
+    \node[vertex,below=1.5 of plus] (top2) {};
+    \node[rectangle, draw=TUMBlue, dashed, below left=of top2] (t4) {
+        \begin{tikzpicture}
+            \node[vertex, dashed] (a) {$\Psi_0$};
+            \draw[edge={1}{0},solid] ($(a)+(0,0.5cm)$) to node[midway,right] {$w\alpha_0$} (a);
+            \node[vertex, dashed,right=1.0 of a] (b) {$\Phi_0$};
+            \draw[edge={1}{0},solid] ($(b)+(0,0.5cm)$) to node[midway,right] {$w'\alpha'_0$} (b);
+            \node[right=0.5 of a] {$+$};
+        \end{tikzpicture}};
+    \node[rectangle, draw=TUMBlue, dashed, below right=of top2] (t5) {
+        \begin{tikzpicture}
+            \node[vertex, dashed] (a) {$\Psi_1$};
+            \draw[edge={1}{0},solid] ($(a)+(0,0.5cm)$) to node[midway,right] {$w\alpha_1$} (a);
+            \node[vertex, dashed,right=1.0 of a] (b) {$\Phi_1$};
+            \draw[edge={1}{0},solid] ($(b)+(0,0.5cm)$) to node[midway,right] {$w'\alpha'_1$} (b);
+            \node[right=0.5 of a] {$+$};
+        \end{tikzpicture}};
+    \draw[edge={1}{0}] ($(top2)+(0,0.5cm)$) -- (top2);
+    \draw[edge0={1}{0}] (top2) to (t4);
+    \draw[edge1={1}{0}] (top2) to (t5);
+
+    \node[] at ($(plus)!0.6!(top2)$) {$=$};
+\end{tikzpicture}
+
+\begin{tikzpicture}[node distance=0.5 and 0.25,text=TUMBlue]
+    \node[vertex] (top0) {};
+    \node[vertex, dashed, below left=0.5 and 1.5 of top0] (t0) {$U_{00}$};
+    \node[vertex, dashed, below left=0.5 and 0.75 of top0] (t1) {$U_{01}$};
+    \node[vertex, dashed, below right=0.5 and 0.75 of top0] (t2) {$U_{10}$};
+    \node[vertex, dashed, below right=0.5 and 1.5 of top0] (t3) {$U_{11}$};
+
+    \draw[edge={1}{0}] ($(top0)+(0,0.5cm)$) to node[midway,right] {$w$} (top0);
+    \draw[medge={1}{0}{-130}] (top0) to node[midway,above left] {$u_{00}$} (t0);
+    \draw[medge={1}{0}{-100}] (top0) to node[midway,below] {$u_{01}$} (t1);
+    \draw[medge={1}{0}{-80}] (top0) to node[midway,below] {$u_{10}$} (t2);
+    \draw[medge={1}{0}{-50}] (top0) to node[midway,above right] {$u_{11}$} (t3);
+
+    \node[vertex,right=3 of top0] (top1) {};
+    \node[vertex, dashed, below left=of top1] (t4) {$\Psi_0$};
+    \node[vertex, dashed, below right=of top1] (t5) {$\Psi_1$};
+    \draw[edge={1}{0}] ($(top1)+(0,0.5cm)$) to node[midway,right] {$w'$} (top1);
+    \draw[edge0={1}{0}] (top1) to node[midway,left] {$\alpha_0$} (t4);
+    \draw[edge1={1}{0}] (top1) to node[midway,right] {$\alpha_1$} (t5);
+
+    \node[] at ($(top0)!0.65!(top1)$) (times) {$\bullet$};
+
+    \node[vertex,below=1 of t2] (top2) {};
+    \node[rectangle, draw=TUMBlue, dashed, below left=of top2] (t6) {
+        \begin{tikzpicture}
+            \node[vertex, dashed] (a) {$U_{00}$};
+            \draw[edge={1}{0},solid] ($(a)+(0,0.5cm)$) to node[midway,right] {$u_{00}$} (a);
+            \node[vertex, dashed,right=0.5 of a] (av) {$\Psi_0$};
+            \draw[edge={1}{0},solid] ($(av)+(0,0.5cm)$) to node[midway,right] {$\alpha_{0}$} (av);
+            \node[vertex, dashed,right=0.5 of av] (b) {$U_{10}$};
+            \draw[edge={1}{0},solid] ($(b)+(0,0.5cm)$) to node[midway,right] {$u_{10}$} (b);
+            \node[vertex, dashed,right=0.5 of b] (bv) {$\Psi_1$};
+            \draw[edge={1}{0},solid] ($(bv)+(0,0.5cm)$) to node[midway,right] {$\alpha_{1}$} (bv);
+            \node[right=0.05 of av] {$+$};
+            \node[right=0.125 of a] {$\bullet$};
+            \node[right=0.125 of b] {$\bullet$};
+        \end{tikzpicture}};
+    \node[rectangle, draw=TUMBlue, dashed, below right=of top2] (t7) {
+        \begin{tikzpicture}
+            \node[vertex, dashed] (a) {$U_{01}$};
+            \draw[edge={1}{0},solid] ($(a)+(0,0.5cm)$) to node[midway,right] {$u_{01}$} (a);
+            \node[vertex, dashed,right=0.5 of a] (av) {$\Psi_0$};
+            \draw[edge={1}{0},solid] ($(av)+(0,0.5cm)$) to node[midway,right] {$\alpha_{0}$} (av);
+            \node[vertex, dashed,right=0.5 of av] (b) {$U_{11}$};
+            \draw[edge={1}{0},solid] ($(b)+(0,0.5cm)$) to node[midway,right] {$u_{11}$} (b);
+            \node[vertex, dashed,right=0.5 of b] (bv) {$\Psi_1$};
+            \draw[edge={1}{0},solid] ($(bv)+(0,0.5cm)$) to node[midway,right] {$\alpha_{1}$} (bv);
+            \node[right=0.05 of av] {$+$};
+            \node[right=0.125 of a] {$\bullet$};
+            \node[right=0.125 of b] {$\bullet$};
+        \end{tikzpicture}};
+    \draw[edge={1}{0}] ($(top2)+(0,0.5cm)$) to node[midway, right] {$ww'$} (top2);
+    \draw[edge0={1}{0}] (top2) to (t6);
+    \draw[edge1={1}{0}] (top2) to (t7);
+
+    \node[] at ($(t2)!0.5!(top2)$) {$=$};
+\end{tikzpicture}
+
+\begin{tikzpicture}[node distance=0.5 and 0.25,text=TUMBlue]
+    \node[vertex] (top0) {};
+    \node[vertex, dashed, below left=of top0] (t0) {$\Psi_0$};
+    \node[vertex, dashed, below right=of top0] (t1) {$\Psi_1$};
+    \draw[edge={1}{0}] ($(top0)+(0,0.5cm)$) to node[midway,right] {$w$} (top0);
+    \draw[edge0={1}{0}] (top0) to node[midway,left] {$\alpha_0$} (t0);
+    \draw[edge1={1}{0}] (top0) to node[midway,right] {$\alpha_1$} (t1);
+
+    \node[vertex,right=2 of top0] (top1) {};
+    \node[vertex, dashed, below left=of top1] (t2) {$\Phi_0$};
+    \node[vertex, dashed, below right=of top1] (t3) {$\Phi_1$};
+    \draw[edge={1}{0}] ($(top1)+(0,0.5cm)$) to node[midway,right] {$w'$} (top1);
+    \draw[edge0={1}{0}] (top1) to node[midway,left] {$\alpha'_0$} (t2);
+    \draw[edge1={1}{0}] (top1) to node[midway,right] {$\alpha'_1$} (t3);
+
+    \node[scale=3] at ($(top0)!0.5!(top1)$) (plus) {$\vert$};
+    \node[left=of top0,scale=3] (langle) {$\langle$};
+    \node[right=of top1,scale=3] (rangle) {$\rangle$};
+
+    \node[rectangle, below left=1 and -2.5 of langle,left delimiter={(}, inner sep=0pt] (t4) {
+        \begin{tikzpicture}
+            \node[vertex, dashed] (a) {$\Psi_0$};
+            \draw[edge={1}{0},solid] ($(a)+(0,0.5cm)$) to node[midway,right] {$\alpha_0$} (a);
+            \node[vertex, dashed,right=0.5 of a] (b) {$\Phi_0$};
+            \draw[edge={1}{0},solid] ($(b)+(0,0.5cm)$) to node[midway,right] {$\alpha'_0$} (b);
+            \node[right=0.2 of a,scale=2] {$\vert$};
+            \node[left=0.1 of a,scale=2] {$\langle$};
+            \node[right=0.1 of b,scale=2] {$\rangle$};
+        \end{tikzpicture}};
+    \node[rectangle,below right=1 and -2.5 of rangle,right delimiter={)}, inner sep=0pt] (t5) {
+        \begin{tikzpicture}
+            \node[vertex, dashed] (a) {$\Psi_1$};
+            \draw[edge={1}{0},solid] ($(a)+(0,0.5cm)$) to node[midway,right] {$\alpha_1$} (a);
+            \node[vertex, dashed,right=0.5 of a] (b) {$\Phi_1$};
+            \draw[edge={1}{0},solid] ($(b)+(0,0.5cm)$) to node[midway,right] {$\alpha'_1$} (b);
+            \node[right=0.2 of a,scale=2] {$\vert$};
+            \node[left=0.1 of a,scale=2] {$\langle$};
+            \node[right=0.1 of b,scale=2] {$\rangle$};
+        \end{tikzpicture}};
+
+    \node[] at ($(plus)!0.6!(top2)$) {$=$};
+    \node[] at ($(t4)!0.5!(t5)$) {$+$};
+    \node[left=of t4] {$w^*w'$};
+\end{tikzpicture}
+\end{document}

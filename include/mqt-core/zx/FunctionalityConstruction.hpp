@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -21,14 +22,41 @@
 #include <vector>
 
 namespace zx {
+
+/**
+ * @brief Static class to construct ZX-diagrams from a Quantumcomputation
+ */
 class FunctionalityConstruction {
   using op_it = qc::QuantumComputation::const_iterator;
 
 public:
+  /**
+   * @brief Builds a ZX-diagram from a QuantumComputation
+   *
+   * @param qc Pointer to QuantumComputation to build the ZX-diagram from
+   * @return ZXDiagram
+   */
   static ZXDiagram buildFunctionality(const qc::QuantumComputation* qc);
 
+  /**
+   * @brief Check whether a given QuantumComputation can be transformed to a
+   * ZXDiagram.
+   * @details Not all instructions supported by the QuantumComputation are
+   * supported by the ZXDiagram (e.g. arbitrarily-controlled multi-qubit gates).
+   * @param qc Pointer to QuantumComputation to check
+   * @return true if the QuantumComputation can be transformed to a ZXDiagram,
+   * false otherwise
+   */
   static bool transformableToZX(const qc::QuantumComputation* qc);
 
+  /**
+   * @brief Check whether a given Operation can be transformed to a ZXDiagram.
+   * @details Not all Operations have a corresponding representation in the
+   * ZX-calculus.
+   * @param op Pointer to Operation to check
+   * @return true if the Operation can be transformed to a ZXDiagram, false
+   * otherwise
+   */
   static bool transformableToZX(const qc::Operation* op);
 
 protected:

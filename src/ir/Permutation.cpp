@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,7 +10,7 @@
 
 #include "ir/Permutation.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/operations/Control.hpp"
 
 #include <algorithm>
@@ -55,8 +56,8 @@ namespace qc {
   if (empty()) {
     return 0;
   }
-  return std::max_element(
-             cbegin(), cend(),
+  return std::ranges::max_element(
+             permutation,
              [](const auto& a, const auto& b) { return a.second < b.second; })
       ->second;
 }

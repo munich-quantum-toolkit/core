@@ -3,6 +3,7 @@ FormatStyle: file
 Checks: |
   bugprone-*,
   -bugprone-easily-swappable-parameters,
+  -bugprone-unchecked-optional-access,
   clang-analyzer-*,
   -clang-analyzer-core.NullDereference,
   clang-diagnostic-*,
@@ -55,7 +56,7 @@ CheckOptions:
   - key: readability-identifier-naming.MemberCase
     value: camelBack
   - key: readability-identifier-naming.MemberIgnoredRegexp
-    value: ".*ZX.*|.*SWAP.*|.*CEX.*|.*DD.*|.*EQ.*"
+    value: ".*ZX.*|.*SWAP.*|.*CEX.*|.*DD.*|.*EQ.*|.*_"
   - key: readability-identifier-naming.MethodCase
     value: camelBack
   - key: readability-identifier-naming.ParameterCase
@@ -70,3 +71,5 @@ CheckOptions:
     value: CamelCase
   - key: readability-identifier-naming.VariableCase
     value: camelBack
+  - key: misc-include-cleaner.IgnoreHeaders
+    value: pybind11/detail/.*

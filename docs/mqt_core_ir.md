@@ -37,6 +37,7 @@ mystnb:
   text_lexer: 'qasm3'
 ---
 from mqt.core.ir import QuantumComputation
+from mqt.core.ir.operations import OpType
 
 from math import pi
 
@@ -47,35 +48,35 @@ precision = 3
 qc = QuantumComputation()
 
 # Counting register
-qc.add_qubit_register(1, "q")
+q = qc.add_qubit_register(1, "q")
 
 # Eigenstate register
-qc.add_qubit_register(1, "psi")
+psi = qc.add_qubit_register(1, "psi")
 
 # Classical register for the result, the estimated phase is `0.c_2 c_1 c_0 * pi`
-qc.add_classical_register(precision, "c")
+c = qc.add_classical_register(precision, "c")
 
 # Prepare psi in the eigenstate |1>
-qc.x(1)
+qc.x(psi[0])
 
 for i in range(precision):
   # Hadamard on the working qubit
-  qc.h(0)
+  qc.h(q[0])
 
   # Controlled phase gate
-  qc.cp(2**(precision - i - 1) * theta, 0, 1)
+  qc.cp(2**(precision - i - 1) * theta, q[0], psi[0])
 
   # Iterative inverse QFT
   for j in range(i):
-    qc.classic_controlled(op="p", target=0, creg=(j, 1), params=[-pi / 2**(i - j)])
-  qc.h(0)
+    qc.if_(op_type=OpType.p, target=q[0], control_bit=c[j], params=[-pi / 2**(i - j)])
+  qc.h(q[0])
 
   # Measure the result
-  qc.measure(0, i)
+  qc.measure(q[0], c[i])
 
   # Reset the qubit if not finished
   if i < precision - 1:
-    qc.reset(0)
+    qc.reset(q[0])
 ```
 
 The circuit class provides lots of flexibility when it comes to the kind of gates that can be applied.
@@ -280,34 +281,69 @@ qc.append(comp.to_operation())
 print(qc)
 ```
 
-### `ClassicControlledOperation`
+### `IfElseOperation`
 
-A {py:class}`~mqt.core.ir.operations.ClassicControlledOperation` is a controlled operation where the control is a classical bit or a classical register.
+A {py:class}`~mqt.core.ir.operations.IfElseOperation` is an operation controlled by a classical bit or a classical register.
+If a given condition is met, the {py:attr}`~mqt.core.ir.operations.IfElseOperation.then_operation` is applied.
+If the condition is not met, the {py:attr}`~mqt.core.ir.operations.IfElseOperation.else_operation` is applied.
 
 ```{code-cell} ipython3
-from mqt.core.ir.operations import ClassicControlledOperation
-
 qc = QuantumComputation(1, 1)
 
 qc.h(0)
 qc.measure(0, 0)
-
-classic_controlled = ClassicControlledOperation(operation=StandardOperation(target=0, op_type=OpType.x), control_register=(0, 1))
-qc.append(classic_controlled)
+qc.if_else(
+    then_operation=StandardOperation(target=0, op_type=OpType.x),
+    else_operation=StandardOperation(target=0, op_type=OpType.y),
+    control_bit=0,
+)
 
 print(qc)
 ```
 
-## Interfacing with other SDKs
+If you do not need an `else_operation`, the {py:class}`~mqt.core.ir.QuantumComputation` class provides a shortcut for creating an {py:meth}`~mqt.core.ir.QuantumComputation.if_` operation.
 
-Since a {py:class}`~mqt.core.ir.QuantumComputation` can be imported from and exported to an OpenQASM 3.0 (or OpenQASM 2.0) string, any library that can work with OpenQASM is easy to use in conjunction with the {py:class}`~mqt.core.ir.QuantumComputation` class.
+```{code-cell} ipython3
+qc = QuantumComputation(1, 1)
 
-In addition, `mqt-core` can import [Qiskit](https://qiskit.org/) {py:class}`~qiskit.circuit.QuantumCircuit` objects directly.
+qc.h(0)
+qc.measure(0, 0)
+qc.if_(op_type=OpType.x, target=0, control_bit=0)
+
+print(qc)
+```
+
+## Interfacing with other SDKs and Formats
+
+### OpenQASM
+
+OpenQASM is a widely used format for representing quantum circuits.
+Its latest version, [OpenQASM 3](https://openqasm.com/index.html), is a powerful language that can express a wide range of quantum circuits.
+MQT Core supports the full functionality of OpenQASM 2.0 (including classically controlled operations) and a growing subset of OpenQASM 3.
+
+```{code-cell} ipython3
+from mqt.core.ir import QuantumComputation
+
+qasm_str = """
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0];
+cx q[0], q[1];
+cx q[0], q[2];
+"""
+
+qc = QuantumComputation.from_qasm_str(qasm_str)
+
+print(qc)
+```
+
+### Qiskit
+
+In addition to OpenQASM, `mqt-core` can natively import [Qiskit](https://qiskit.org/) {py:class}`~qiskit.circuit.QuantumCircuit` objects.
 
 ```{code-cell} ipython3
 from qiskit import QuantumCircuit
-
-from mqt.core.plugins.qiskit import qiskit_to_mqt
 
 # GHZ circuit in qiskit
 qiskit_qc = QuantumCircuit(3)
@@ -319,6 +355,8 @@ qiskit_qc.draw(output="mpl", style="iqp")
 ```
 
 ```{code-cell} ipython3
+from mqt.core.plugins.qiskit import qiskit_to_mqt
+
 mqt_qc = qiskit_to_mqt(qiskit_qc)
 print(mqt_qc)
 ```

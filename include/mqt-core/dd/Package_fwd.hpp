@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -8,15 +9,14 @@
  */
 
 #pragma once
-#include "dd/DDpackageConfig.hpp"
+
+#include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 
-namespace qc {
-using VectorDD = dd::vEdge;
-using MatrixDD = dd::mEdge;
-using DensityMatrixDD = dd::dEdge;
-} // namespace qc
-
 namespace dd {
-template <class Config = DDPackageConfig> class Package;
+class Package;
+
+using VectorDD = Edge<vNode>;
+using MatrixDD = Edge<mNode>;
+using DensityMatrixDD = Edge<dNode>;
 } // namespace dd

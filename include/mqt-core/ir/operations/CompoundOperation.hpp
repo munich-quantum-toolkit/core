@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -10,9 +11,10 @@
 #pragma once
 
 #include "Control.hpp"
-#include "Definitions.hpp"
 #include "Operation.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
+#include "ir/Register.hpp"
 
 #include <cstddef>
 #include <functional>
@@ -46,6 +48,8 @@ public:
 
   [[nodiscard]] std::unique_ptr<Operation> clone() const override;
 
+  [[nodiscard]] size_t getNqubits() const override;
+
   [[nodiscard]] bool isCompoundOperation() const noexcept override;
 
   [[nodiscard]] bool isNonUnitaryOperation() const override;
@@ -53,6 +57,10 @@ public:
   [[nodiscard]] bool isSymbolicOperation() const override;
 
   [[nodiscard]] bool isCustomGate() const noexcept;
+
+  [[nodiscard]] bool isGlobal(size_t nQubits) const noexcept override;
+
+  [[nodiscard]] bool isClifford() const override;
 
   void addControl(Control c) override;
 
@@ -74,8 +82,8 @@ public:
 
   void addDepthContribution(std::vector<std::size_t>& depths) const override;
 
-  void dumpOpenQASM(std::ostream& of, const RegisterNames& qreg,
-                    const RegisterNames& creg, size_t indent,
+  void dumpOpenQASM(std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
+                    const BitIndexToRegisterMap& bitMap, std::size_t indent,
                     bool openQASM3) const override;
 
   std::vector<std::unique_ptr<Operation>>& getOps() noexcept { return ops; }
@@ -186,7 +194,16 @@ public:
     return ops.insert(iter, std::forward<decltype(op)>(op));
   }
 
+  // Element access (pass-through)
   [[nodiscard]] const auto& at(const std::size_t i) const { return ops.at(i); }
+  [[nodiscard]] auto& operator[](const std::size_t i) { return ops[i]; }
+  [[nodiscard]] const auto& operator[](const std::size_t i) const {
+    return ops[i];
+  }
+  [[nodiscard]] auto& front() { return ops.front(); }
+  [[nodiscard]] const auto& front() const { return ops.front(); }
+  [[nodiscard]] auto& back() { return ops.back(); }
+  [[nodiscard]] const auto& back() const { return ops.back(); }
 };
 } // namespace qc
 

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,12 +10,14 @@
 
 #pragma once
 
-#include "Control.hpp"
-#include "Definitions.hpp"
-#include "Expression.hpp"
-#include "OpType.hpp"
-#include "StandardOperation.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
+#include "ir/Register.hpp"
+#include "ir/operations/Control.hpp"
+#include "ir/operations/Expression.hpp"
+#include "ir/operations/OpType.hpp"
+#include "ir/operations/Operation.hpp"
+#include "ir/operations/StandardOperation.hpp"
 
 #include <cstddef>
 #include <functional>
@@ -70,8 +73,10 @@ public:
     return equals(op, {}, {});
   }
 
-  [[noreturn]] void dumpOpenQASM(std::ostream& of, const RegisterNames& qreg,
-                                 const RegisterNames& creg, size_t indent,
+  [[noreturn]] void dumpOpenQASM(std::ostream& of,
+                                 const QubitIndexToRegisterMap& qubitMap,
+                                 const BitIndexToRegisterMap& bitMap,
+                                 std::size_t indent,
                                  bool openQASM3) const override;
 
   [[nodiscard]] StandardOperation

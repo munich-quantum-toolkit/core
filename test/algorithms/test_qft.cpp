@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,13 +8,16 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
 #include "algorithms/QFT.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
+#include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
+#include "dd/RealNumberUniqueTable.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
 #include <algorithm>
@@ -32,14 +36,14 @@ protected:
 
   void SetUp() override {
     nqubits = GetParam();
-    dd = std::make_unique<dd::Package<>>(nqubits);
+    dd = std::make_unique<dd::Package>(nqubits);
   }
 
   qc::Qubit nqubits = 0;
-  std::unique_ptr<dd::Package<>> dd;
+  std::unique_ptr<dd::Package> dd;
   qc::QuantumComputation qc;
-  qc::VectorDD sim{};
-  qc::MatrixDD func{};
+  dd::VectorDD sim{};
+  dd::MatrixDD func{};
 };
 
 /// Findings from the QFT Benchmarks:
@@ -55,7 +59,7 @@ protected:
 ///	Utilizing more qubits requires the use of fp=long double
 constexpr qc::Qubit QFT_MAX_QUBITS = 17U;
 
-constexpr size_t INITIAL_COMPLEX_COUNT = 1;
+constexpr size_t INITIAL_COMPLEX_COUNT = dd::immortals::size();
 
 INSTANTIATE_TEST_SUITE_P(QFT, QFT,
                          testing::Range<qc::Qubit>(0U, QFT_MAX_QUBITS + 1U, 3U),
@@ -74,7 +78,6 @@ INSTANTIATE_TEST_SUITE_P(QFT, QFT,
 TEST_P(QFT, Functionality) {
   // there should be no error constructing the circuit
   ASSERT_NO_THROW({ qc = qc::createQFT(nqubits, false); });
-  // there should be no error building the functionality
 
   // there should be no error building the functionality
   ASSERT_NO_THROW({ func = buildFunctionality(qc, *dd); });
@@ -169,7 +172,7 @@ TEST_P(QFT, Simulation) {
 
   // there should be no error simulating the circuit
   ASSERT_NO_THROW({
-    auto in = dd->makeZeroState(nqubits);
+    auto in = makeZeroState(nqubits, *dd);
     sim = simulate(qc, in, *dd);
   });
   qc.printStatistics(std::cout);
@@ -207,7 +210,7 @@ TEST_P(QFT, FunctionalityRecursiveEquality) {
   ASSERT_NO_THROW({ func = buildFunctionalityRecursive(qc, *dd); });
 
   // there should be no error building the functionality regularly
-  qc::MatrixDD funcRec{};
+  dd::MatrixDD funcRec{};
   ASSERT_NO_THROW({ funcRec = buildFunctionality(qc, *dd); });
 
   ASSERT_EQ(func, funcRec);

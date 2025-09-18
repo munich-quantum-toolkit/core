@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -11,25 +12,31 @@
 
 #include "Definitions.hpp"
 #include "Permutation.hpp"
-#include "operations/ClassicControlledOperation.hpp"
+#include "Register.hpp"
 #include "operations/CompoundOperation.hpp"
 #include "operations/Control.hpp"
 #include "operations/Expression.hpp"
+#include "operations/IfElseOperation.hpp"
 #include "operations/OpType.hpp"
+#include "operations/Operation.hpp"
+#include "operations/StandardOperation.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
-#include <map>
 #include <memory>
 #include <optional>
 #include <random>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace qc {
+using QuantumRegisterMap = std::unordered_map<std::string, QuantumRegister>;
+using ClassicalRegisterMap = std::unordered_map<std::string, ClassicalRegister>;
+
 class QuantumComputation {
 public:
   using iterator = std::vector<std::unique_ptr<Operation>>::iterator;
@@ -47,11 +54,9 @@ protected:
   std::size_t nancillae = 0;
   std::string name;
 
-  // register names are used as keys, while the values are `{startIndex,
-  // length}` pairs
-  QuantumRegisterMap qregs;
-  ClassicalRegisterMap cregs;
-  QuantumRegisterMap ancregs;
+  QuantumRegisterMap quantumRegisters;
+  ClassicalRegisterMap classicalRegisters;
+  QuantumRegisterMap ancillaRegisters;
 
   std::vector<bool> ancillary;
   std::vector<bool> garbage;
@@ -64,10 +69,8 @@ protected:
   std::unordered_set<sym::Variable> occurringVariables;
 
 public:
-  QuantumComputation() = default;
-  explicit QuantumComputation(std::size_t nq, std::size_t nc = 0U,
+  explicit QuantumComputation(std::size_t nq = 0, std::size_t nc = 0U,
                               std::size_t s = 0);
-  explicit QuantumComputation(const std::string& filename, std::size_t s = 0U);
   QuantumComputation(QuantumComputation&& qc) noexcept = default;
   QuantumComputation& operator=(QuantumComputation&& qc) noexcept = default;
   QuantumComputation(const QuantumComputation& qc);
@@ -75,15 +78,8 @@ public:
   ~QuantumComputation() = default;
 
   // physical qubits are used as keys, logical qubits as values
-  Permutation initialLayout{};
-  Permutation outputPermutation{};
-
-  /**
-   * @brief Construct a QuantumComputation from an OpenQASM string
-   * @param qasm The OpenQASM 2.0 or 3.0 string
-   * @return The constructed QuantumComputation
-   */
-  [[nodiscard]] static QuantumComputation fromQASM(const std::string& qasm);
+  Permutation initialLayout;
+  Permutation outputPermutation;
 
   /**
    * @brief Construct a QuantumComputation from CompoundOperation object
@@ -110,23 +106,28 @@ public:
   [[nodiscard]] const std::vector<bool>& getAncillary() const noexcept {
     return ancillary;
   }
+  [[nodiscard]] std::vector<bool>& getAncillary() noexcept { return ancillary; }
   [[nodiscard]] const std::vector<bool>& getGarbage() const noexcept {
     return garbage;
   }
+  [[nodiscard]] std::vector<bool>& getGarbage() noexcept { return garbage; }
   [[nodiscard]] std::size_t getNcbits() const noexcept { return nclassics; }
   [[nodiscard]] std::string getName() const noexcept { return name; }
-  [[nodiscard]] const QuantumRegisterMap& getQregs() const noexcept {
-    return qregs;
+  [[nodiscard]] const auto& getQuantumRegisters() const noexcept {
+    return quantumRegisters;
   }
-  [[nodiscard]] const ClassicalRegisterMap& getCregs() const noexcept {
-    return cregs;
+  [[nodiscard]] const auto& getClassicalRegisters() const noexcept {
+    return classicalRegisters;
   }
-  [[nodiscard]] const QuantumRegisterMap& getANCregs() const noexcept {
-    return ancregs;
+  [[nodiscard]] const auto& getAncillaRegisters() const noexcept {
+    return ancillaRegisters;
   }
   [[nodiscard]] decltype(mt)& getGenerator() noexcept { return mt; }
 
   [[nodiscard]] fp getGlobalPhase() const noexcept { return globalPhase; }
+  [[nodiscard]] bool hasGlobalPhase() const noexcept {
+    return std::abs(getGlobalPhase()) > 0;
+  }
 
   [[nodiscard]] const std::unordered_set<sym::Variable>&
   getVariables() const noexcept {
@@ -142,16 +143,11 @@ public:
   [[nodiscard]] std::size_t getNsingleQubitOps() const;
   [[nodiscard]] std::size_t getDepth() const;
 
-  [[nodiscard]] std::string getQubitRegister(Qubit physicalQubitIndex) const;
-  [[nodiscard]] std::string getClassicalRegister(Bit classicalIndex) const;
+  [[nodiscard]] QuantumRegister& getQubitRegister(Qubit physicalQubitIndex);
   /// Returns the highest qubit index used as a value in the initial layout
   [[nodiscard]] Qubit getHighestLogicalQubitIndex() const;
   /// Returns the highest qubit index used as a key in the initial layout
   [[nodiscard]] Qubit getHighestPhysicalQubitIndex() const;
-  [[nodiscard]] std::pair<std::string, Qubit>
-  getQubitRegisterAndIndex(Qubit physicalQubitIndex) const;
-  [[nodiscard]] std::pair<std::string, Bit>
-  getClassicalRegisterAndIndex(Bit classicalIndex) const;
   /**
    * @brief Returns the physical qubit index of the given logical qubit index
    * @details Iterates over the initial layout dictionary and returns the key
@@ -159,12 +155,7 @@ public:
    * @param logicalQubitIndex The logical qubit index to look for
    * @return The physical qubit index of the given logical qubit index
    */
-  [[nodiscard]] Qubit getPhysicalQubitIndex(Qubit logicalQubitIndex);
-
-  [[nodiscard]] Qubit
-  getIndexFromQubitRegister(const std::pair<std::string, Qubit>& qubit) const;
-  [[nodiscard]] Bit getIndexFromClassicalRegister(
-      const std::pair<std::string, std::size_t>& clbit) const;
+  [[nodiscard]] Qubit getPhysicalQubitIndex(Qubit logicalQubitIndex) const;
   [[nodiscard]] bool isIdleQubit(Qubit physicalQubit) const;
   [[nodiscard]] bool isLastOperationOnQubit(const const_iterator& opIt,
                                             const const_iterator& end) const;
@@ -212,10 +203,6 @@ public:
   /// to which physical qubit it is mapped
   [[nodiscard]] std::pair<bool, std::optional<Qubit>>
   containsLogicalQubit(Qubit logicalQubitIndex) const;
-
-  ///---------------------------------------------------------------------------
-  ///                            \n Operations \n
-  ///---------------------------------------------------------------------------
 
   /// Adds a global phase to the quantum circuit.
   /// \param angle the angle to add
@@ -321,13 +308,14 @@ public:
   void mc##op(const SymbolOrNumber&(param0), const SymbolOrNumber&(param1),    \
               const Controls& controls, Qubit target0, Qubit target1);
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   DECLARE_TWO_TARGET_TWO_PARAMETER_OPERATION(xx_minus_yy, theta, beta)
+  // NOLINTNEXTLINE(readability-identifier-naming)
   DECLARE_TWO_TARGET_TWO_PARAMETER_OPERATION(xx_plus_yy, theta, beta)
 
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER_OPERATION
 
   void measure(Qubit qubit, std::size_t bit);
-  void measure(Qubit qubit, const std::pair<std::string, Bit>& registerBit);
   void measure(const Targets& qubits, const std::vector<Bit>& bits);
 
   /**
@@ -348,30 +336,39 @@ public:
   void barrier(Qubit target);
   void barrier(const Targets& targets);
 
-  void classicControlled(OpType op, Qubit target,
-                         const ClassicalRegister& controlRegister,
-                         std::uint64_t expectedValue = 1U,
-                         ComparisonKind cmp = Eq,
-                         const std::vector<fp>& params = {});
-  void classicControlled(OpType op, Qubit target, Control control,
-                         const ClassicalRegister& controlRegister,
-                         std::uint64_t expectedValue = 1U,
-                         ComparisonKind cmp = Eq,
-                         const std::vector<fp>& params = {});
-  void classicControlled(OpType op, Qubit target, const Controls& controls,
-                         const ClassicalRegister& controlRegister,
-                         std::uint64_t expectedValue = 1U,
-                         ComparisonKind cmp = Eq,
-                         const std::vector<fp>& params = {});
+  void ifElse(std::unique_ptr<Operation>&& thenOp,
+              std::unique_ptr<Operation>&& elseOp,
+              const ClassicalRegister& controlRegister,
+              std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq);
+  void ifElse(std::unique_ptr<Operation>&& thenOp,
+              std::unique_ptr<Operation>&& elseOp, Bit controlBit,
+              bool expectedValue = true, ComparisonKind cmp = Eq);
+
+  void if_(OpType op, Qubit target, const ClassicalRegister& controlRegister,
+           std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq,
+           const std::vector<fp>& params = {});
+  void if_(OpType op, Qubit target, Control control,
+           const ClassicalRegister& controlRegister,
+           std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq,
+           const std::vector<fp>& params = {});
+  void if_(OpType op, Qubit target, const Controls& controls,
+           const ClassicalRegister& controlRegister,
+           std::uint64_t expectedValue = 1U, ComparisonKind cmp = Eq,
+           const std::vector<fp>& params = {});
+  void if_(OpType op, Qubit target, Bit controlBit, bool expectedValue = true,
+           ComparisonKind cmp = Eq, const std::vector<fp>& params = {});
+  void if_(OpType op, Qubit target, Control control, Bit controlBit,
+           bool expectedValue = true, ComparisonKind cmp = Eq,
+           const std::vector<fp>& params = {});
+  void if_(OpType op, Qubit target, const Controls& controls, Bit controlBit,
+           bool expectedValue = true, ComparisonKind cmp = Eq,
+           const std::vector<fp>& params = {});
 
   /// strip away qubits with no operations applied to them and which do not pop
   /// up in the output permutation \param force if true, also strip away idle
   /// qubits occurring in the output permutation
-  void stripIdleQubits(bool force = false, bool reduceIOpermutations = true);
+  void stripIdleQubits(bool force = false);
 
-  void import(const std::string& filename);
-  void import(const std::string& filename, Format format);
-  void import(std::istream& is, Format format);
   void initializeIOMapping();
   // append measurements to the end of the circuit according to the tracked
   // output permutation
@@ -379,17 +376,24 @@ public:
       const std::string& registerName = "c");
 
   // this function augments a given circuit by additional registers
-  void addQubitRegister(std::size_t nq, const std::string& regName = "q");
-  void addClassicalRegister(std::size_t nc, const std::string& regName = "c");
-  void addAncillaryRegister(std::size_t nq, const std::string& regName = "anc");
+  const QuantumRegister& addQubitRegister(std::size_t nq,
+                                          const std::string& regName = "q");
+  const ClassicalRegister&
+  addClassicalRegister(std::size_t nc, const std::string& regName = "c");
+  const QuantumRegister&
+  addAncillaryRegister(std::size_t nq, const std::string& regName = "anc");
   // a function to combine all quantum registers (qregs and ancregs) into a
   // single register (useful for circuits mapped to a device)
-  void unifyQuantumRegisters(const std::string& regName = "q");
+  const QuantumRegister&
+  unifyQuantumRegisters(const std::string& regName = "q");
 
-  // removes a specific logical qubit and returns the index of the physical
-  // qubit in the initial layout as well as the index of the removed physical
-  // qubit's output permutation i.e., initialLayout[physical_qubit] =
-  // logical_qubit and outputPermutation[physicalQubit] = output_qubit
+  /**
+   * @brief Removes a logical qubit
+   * @param logicalQubitIndex The qubit to remove
+   * @return The physical qubit index that the logical qubit was mapped to in
+   * the initial layout and the output qubit index that the logical qubit was
+   * mapped to in the output permutation.
+   */
   std::pair<Qubit, std::optional<Qubit>> removeQubit(Qubit logicalQubitIndex);
 
   // adds physical qubit as ancillary qubit and gives it the appropriate output
@@ -401,7 +405,8 @@ public:
   void addQubit(Qubit logicalQubitIndex, Qubit physicalQubitIndex,
                 std::optional<Qubit> outputQubitIndex);
 
-  QuantumComputation instantiate(const VariableAssignment& assignment) const;
+  [[nodiscard]] QuantumComputation
+  instantiate(const VariableAssignment& assignment) const;
   void instantiateInplace(const VariableAssignment& assignment);
 
   void addVariable(const SymbolOrNumber& expr);
@@ -439,25 +444,18 @@ public:
 
   std::ostream& printStatistics(std::ostream& os) const;
 
-  std::ostream& printRegisters(std::ostream& os = std::cout) const;
-
   static std::ostream& printPermutation(const Permutation& permutation,
                                         std::ostream& os = std::cout);
 
-  void dump(const std::string& filename, Format format) const;
-  void dump(const std::string& filename) const;
-  void dump(std::ostream& of, Format format) const;
-  void dumpOpenQASM2(std::ostream& of) const { dumpOpenQASM(of, false); }
-  void dumpOpenQASM3(std::ostream& of) const { dumpOpenQASM(of, true); }
+  void dump(const std::string& filename,
+            Format format = Format::OpenQASM3) const;
 
   /**
    * @brief Dumps the circuit in OpenQASM format to the given output stream
-   * @details One might want to call `ensureContiguousInitialLayout` before
-   * calling this function to ensure full layout information is available.
    * @param of The output stream to write the OpenQASM representation to
    * @param openQasm3 Whether to use OpenQASM 3.0 or 2.0
    */
-  void dumpOpenQASM(std::ostream& of, bool openQasm3) const;
+  void dumpOpenQASM(std::ostream& of, bool openQasm3 = true) const;
 
   /**
    * @brief Returns the OpenQASM representation of the circuit
@@ -495,19 +493,6 @@ public:
   [[nodiscard]] bool isDynamic() const;
 
 protected:
-  void importOpenQASM3(std::istream& is);
-  void importReal(std::istream& is);
-  int readRealHeader(std::istream& is);
-  void readRealGateDescriptions(std::istream& is, int line);
-  void importTFC(std::istream& is);
-  int readTFCHeader(std::istream& is, std::map<std::string, Qubit>& varMap);
-  void readTFCGateDescriptions(std::istream& is, int line,
-                               std::map<std::string, Qubit>& varMap);
-  void importQC(std::istream& is);
-  int readQCHeader(std::istream& is, std::map<std::string, Qubit>& varMap);
-  void readQCGateDescriptions(std::istream& is, int line,
-                              std::map<std::string, Qubit>& varMap);
-
   [[nodiscard]] std::size_t getSmallestAncillary() const {
     for (std::size_t i = 0; i < ancillary.size(); ++i) {
       if (ancillary[i]) {

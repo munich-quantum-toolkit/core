@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -53,7 +54,8 @@ TEST(RemoveOperation, removeMultiQubitGates) {
   QuantumComputation qc(nqubits);
   qc.x(0);
   qc.cx(0, 1);
-  qc.cy(1, 1);
+  qc.cy(0, 1);
+  qc.cz(0, 1);
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
   CircuitOptimizer::removeOperation(qc, {X, Y}, 2);
@@ -67,7 +69,7 @@ TEST(RemoveOperation, removeMoves) {
   QuantumComputation qc(nqubits);
   qc.x(0);
   qc.move(0, 1);
-  qc.cy(1, 1);
+  qc.cy(0, 1);
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
   CircuitOptimizer::removeOperation(qc, {Move}, 0);

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -15,8 +16,9 @@
 
 #include "ir/operations/NonUnitaryOperation.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
+#include "ir/Register.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 
@@ -54,7 +56,7 @@ NonUnitaryOperation::NonUnitaryOperation(const Qubit qubit, const Bit cbit)
 NonUnitaryOperation::NonUnitaryOperation(Targets qubits, OpType op) {
   type = op;
   targets = std::move(qubits);
-  std::sort(targets.begin(), targets.end());
+  std::ranges::sort(targets);
   name = toString(type);
 }
 
@@ -75,34 +77,48 @@ NonUnitaryOperation::print(std::ostream& os, const Permutation& permutation,
   return os;
 }
 
+namespace {
+bool isWholeClassicalRegister(const BitIndexToRegisterMap& reg, const Bit start,
+                              const Bit end) {
+  const auto& startReg = reg.at(start).first;
+  const auto& endReg = reg.at(end).first;
+  return startReg == endReg && startReg.getStartIndex() == start &&
+         endReg.getEndIndex() == end;
+}
+} // namespace
+
 void NonUnitaryOperation::dumpOpenQASM(std::ostream& of,
-                                       const RegisterNames& qreg,
-                                       const RegisterNames& creg, size_t indent,
+                                       const QubitIndexToRegisterMap& qubitMap,
+                                       const BitIndexToRegisterMap& bitMap,
+                                       std::size_t indent,
                                        bool openQASM3) const {
   of << std::string(indent * OUTPUT_INDENT_SIZE, ' ');
 
-  if (isWholeQubitRegister(qreg, targets.front(), targets.back()) &&
+  if (isWholeQubitRegister(qubitMap, targets.front(), targets.back()) &&
       (type != Measure ||
-       isWholeQubitRegister(creg, classics.front(), classics.back()))) {
+       isWholeClassicalRegister(bitMap, classics.front(), classics.back()))) {
     if (type == Measure && openQASM3) {
-      of << creg[classics.front()].first << " = ";
+      of << bitMap.at(classics.front()).first.getName() << " = ";
     }
-    of << toString(type) << " " << qreg[targets.front()].first;
+    of << toString(type) << " " << qubitMap.at(targets.front()).first.getName();
     if (type == Measure && !openQASM3) {
       of << " -> ";
-      of << creg[classics.front()].first;
+      of << bitMap.at(classics.front()).first.getName();
     }
     of << ";\n";
     return;
   }
   auto classicsIt = classics.cbegin();
   for (const auto& q : targets) {
+    const auto& qreg = qubitMap.at(q);
     if (type == Measure && openQASM3) {
-      of << creg[*classicsIt].second << " = ";
+      const auto& creg = bitMap.at(*classicsIt);
+      of << creg.second << " = ";
     }
-    of << toString(type) << " " << qreg[q].second;
+    of << toString(type) << " " << qreg.second;
     if (type == Measure && !openQASM3) {
-      of << " -> " << creg[*classicsIt].second;
+      const auto& creg = bitMap.at(*classicsIt);
+      of << " -> " << creg.second;
       ++classicsIt;
     }
     of << ";\n";
@@ -197,8 +213,7 @@ void NonUnitaryOperation::printReset(std::ostream& os,
                                      const std::size_t nqubits) const {
   const auto actualTargets = permutation.apply(q);
   for (std::size_t i = 0; i < nqubits; ++i) {
-    if (std::find(actualTargets.cbegin(), actualTargets.cend(), i) !=
-        actualTargets.cend()) {
+    if (std::ranges::find(actualTargets, i) != actualTargets.cend()) {
       os << "\033[31m" << std::setw(4) << shortName(type) << "\033[0m";
       continue;
     }

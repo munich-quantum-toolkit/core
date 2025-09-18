@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,9 +10,9 @@
 
 #include "algorithms/QPE.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 
 #include <cmath>
@@ -24,6 +25,7 @@
 
 namespace qc {
 
+namespace {
 // generate a random n-bit number and convert it to an appropriate phase
 [[nodiscard]] auto createExactPhase(const Qubit nq, std::mt19937_64& mt) -> fp {
   const std::uint64_t max = 1ULL << nq;
@@ -48,7 +50,7 @@ namespace qc {
   const std::uint64_t max = 1ULL << (nq + 1);
   auto distribution = std::uniform_int_distribution<std::uint64_t>(0, max - 1);
   std::uint64_t theta = 0;
-  while ((theta & 1) == 0) {
+  while ((theta & 1U) == 0) {
     theta = distribution(mt);
   }
   fp lambda = 0.;
@@ -123,6 +125,7 @@ auto constructQPECircuit(QuantumComputation& qc, const fp lambda,
     qc.outputPermutation[i + 1] = i;
   }
 }
+} // namespace
 
 auto createQPE(const Qubit nq, const bool exact, const std::size_t seed)
     -> QuantumComputation {
@@ -140,6 +143,7 @@ auto createQPE(const fp lambda, const Qubit precision) -> QuantumComputation {
   return qc;
 }
 
+namespace {
 auto constructIterativeQPECircuit(QuantumComputation& qc, const fp lambda,
                                   const Qubit nq) -> void {
   qc.setName(getName(true, nq, lambda));
@@ -173,7 +177,7 @@ auto constructIterativeQPECircuit(QuantumComputation& qc, const fp lambda,
     // hybrid quantum-classical inverse QFT
     for (std::size_t j = 0; j < i; j++) {
       auto iQFTLambda = -PI / static_cast<double>(1ULL << (i - j));
-      qc.classicControlled(P, 1, {j, 1U}, 1U, Eq, {iQFTLambda});
+      qc.if_(P, 1, j, true, Eq, {iQFTLambda});
     }
     qc.h(1);
 
@@ -186,6 +190,7 @@ auto constructIterativeQPECircuit(QuantumComputation& qc, const fp lambda,
     }
   }
 }
+} // namespace
 
 auto createIterativeQPE(const Qubit nq, const bool exact,
                         const std::size_t seed) -> QuantumComputation {

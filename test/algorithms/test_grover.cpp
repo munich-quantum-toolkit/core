@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,12 +8,13 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
 #include "algorithms/Grover.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Package.hpp"
+#include "dd/RealNumberUniqueTable.hpp"
 #include "dd/Simulation.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
 #include <algorithm>
@@ -30,33 +32,29 @@ class Grover
     : public testing::TestWithParam<std::tuple<qc::Qubit, std::size_t>> {
 protected:
   void TearDown() override {
-    dd->decRef(sim);
-    dd->decRef(func);
     dd->garbageCollect(true);
-    // number of complex table entries after clean-up should equal 1
-    EXPECT_EQ(dd->cn.realCount(), 1);
+    EXPECT_EQ(dd->cn.realCount(), dd::immortals::size());
   }
 
   void SetUp() override {
     std::tie(nqubits, seed) = GetParam();
-    dd = std::make_unique<dd::Package<>>(nqubits + 1);
+    dd = std::make_unique<dd::Package>(nqubits + 1);
     qc = qc::createGrover(nqubits, seed);
     qc.printStatistics(std::cout);
 
     // parse expected result from circuit name
     const auto& name = qc.getName();
     expected = name.substr(name.find_last_of('_') + 1);
-    targetValue = qc::BitString(expected);
+    targetValue = qc::GroverBitString(expected);
   }
 
   qc::Qubit nqubits = 0;
   std::size_t seed = 0;
-  std::unique_ptr<dd::Package<>> dd;
+  std::unique_ptr<dd::Package> dd;
   qc::QuantumComputation qc;
-  qc::VectorDD sim{};
-  qc::MatrixDD func{};
+  dd::MatrixDD func{};
   std::string expected;
-  qc::BitString targetValue;
+  qc::GroverBitString targetValue;
 };
 
 constexpr qc::Qubit GROVER_MAX_QUBITS = 15;
@@ -85,8 +83,8 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_P(Grover, Functionality) {
   auto x = '1' + expected;
-  std::reverse(x.begin(), x.end());
-  std::replace(x.begin(), x.end(), '1', '2');
+  std::ranges::reverse(x);
+  std::ranges::replace(x, '1', '2');
 
   qc::QuantumComputation groverIteration(qc.getNqubits());
   qc::appendGroverOracle(groverIteration, targetValue);
@@ -98,11 +96,7 @@ TEST_P(Grover, Functionality) {
   dd->incRef(e);
   const auto iterations = qc::computeNumberOfIterations(nqubits);
   for (std::size_t i = 0U; i < iterations - 1U; ++i) {
-    auto f = dd->multiply(iteration, e);
-    dd->incRef(f);
-    dd->decRef(e);
-    e = f;
-    dd->garbageCollect();
+    e = dd->applyOperation(iteration, e);
   }
 
   qc::QuantumComputation setup(qc.getNqubits());
@@ -122,12 +116,14 @@ TEST_P(Grover, Functionality) {
   EXPECT_NEAR(std::abs(c.imag()), 0, GROVER_ACCURACY);
   const auto prob = std::norm(c);
   EXPECT_GE(prob, GROVER_GOAL_PROBABILITY);
+
+  dd->decRef(func);
 }
 
 TEST_P(Grover, FunctionalityRecursive) {
   auto x = '1' + expected;
-  std::reverse(x.begin(), x.end());
-  std::replace(x.begin(), x.end(), '1', '2');
+  std::ranges::reverse(x);
+  std::ranges::replace(x, '1', '2');
 
   qc::QuantumComputation groverIteration(qc.getNqubits());
   qc::appendGroverOracle(groverIteration, targetValue);
@@ -153,11 +149,7 @@ TEST_P(Grover, FunctionalityRecursive) {
         e = f;
         zero = false;
       } else {
-        auto g = dd->multiply(e, f);
-        dd->incRef(g);
-        dd->decRef(e);
-        e = g;
-        dd->garbageCollect();
+        e = dd->applyOperation(f, e);
       }
     }
   }
@@ -178,12 +170,14 @@ TEST_P(Grover, FunctionalityRecursive) {
   EXPECT_NEAR(std::abs(c.imag()), 0, GROVER_ACCURACY);
   const auto prob = std::norm(c);
   EXPECT_GE(prob, GROVER_GOAL_PROBABILITY);
+
+  dd->decRef(func);
 }
 
 TEST_P(Grover, Simulation) {
   constexpr std::size_t shots = 1024;
   const auto measurements = dd::sample(qc, shots);
-  ASSERT_TRUE(measurements.find(expected) != measurements.end());
+  ASSERT_TRUE(measurements.contains(expected));
   const auto correctShots = measurements.at(expected);
   const auto probability =
       static_cast<double>(correctShots) / static_cast<double>(shots);

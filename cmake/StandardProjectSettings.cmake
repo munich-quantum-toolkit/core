@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Chair for Design Automation, TUM
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -28,6 +29,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS
     ON
     CACHE BOOL "Export compile commands" FORCE)
 
+set(CMAKE_VERIFY_INTERFACE_HEADER_SETS
+    ON
+    CACHE BOOL "Verify interface header sets" FORCE)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
   add_compile_options(-fcolor-diagnostics)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -53,11 +58,12 @@ endif()
 if(DEPLOY)
   # set the macOS deployment target appropriately
   set(CMAKE_OSX_DEPLOYMENT_TARGET
-      "10.15"
+      "11.0"
       CACHE STRING "" FORCE)
 endif()
 
-if(NOT DEPLOY)
+# try to enable inter-procedural optimization per default for Release builds outside of deployment
+if(NOT DEPLOY AND CMAKE_BUILD_TYPE STREQUAL "Release")
   option(ENABLE_IPO "Enable Interprocedural Optimization, aka Link Time Optimization (LTO)" ON)
 else()
   option(ENABLE_IPO "Enable Interprocedural Optimization, aka Link Time Optimization (LTO)" OFF)

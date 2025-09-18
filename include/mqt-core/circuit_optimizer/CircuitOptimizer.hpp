@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,12 +10,15 @@
 
 #pragma once
 
-#include "Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/Operation.hpp"
 
 #include <cstddef>
+#include <deque>
+#include <memory>
 #include <unordered_set>
+#include <vector>
 
 namespace qc {
 
@@ -22,9 +26,14 @@ class CircuitOptimizer {
 public:
   CircuitOptimizer() = default;
 
+  using DAG = std::vector<std::deque<std::unique_ptr<Operation>*>>;
+  using DAGIterator = std::deque<std::unique_ptr<Operation>*>::iterator;
+  using DAGReverseIterator =
+      std::deque<std::unique_ptr<Operation>*>::reverse_iterator;
+  using DAGIterators = std::vector<DAGIterator>;
+  using DAGReverseIterators = std::vector<DAGReverseIterator>;
+
   static DAG constructDAG(QuantumComputation& qc);
-  static void printDAG(const DAG& dag);
-  static void printDAG(const DAG& dag, const DAGIterators& iterators);
 
   static void swapReconstruction(QuantumComputation& qc);
 
@@ -42,8 +51,6 @@ public:
 
   static void decomposeSWAP(QuantumComputation& qc,
                             bool isDirectedArchitecture);
-
-  static void decomposeTeleport(QuantumComputation& qc);
 
   static void eliminateResets(QuantumComputation& qc);
 
@@ -85,6 +92,19 @@ public:
    * @param maxBlockSize the maximum size of a block
    */
   static void collectBlocks(QuantumComputation& qc, std::size_t maxBlockSize);
+
+  /**
+   * @brief Collects all Clifford blocks in the circuit.
+   * @details The circuit is traversed and all operations that are part of a
+   * Clifford block are collected into a compound operation with a certain
+   * maximum block size. All non-Clifford operations remain untouched.
+   * Light optimizations are applied to the blocks, such as removing identity
+   * gates.
+   * @param qc the quantum circuit
+   * @param maxBlockSize the maximum size of a block
+   */
+  static void collectCliffordBlocks(QuantumComputation& qc,
+                                    std::size_t maxBlockSize);
 
   /**
    * @brief Elide permutations by propagating them through the circuit.

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ Copyright (c) 2025 Munich Quantum Software Company GmbH
+ All rights reserved.
+
+ SPDX-License-Identifier: MIT
+
+ Licensed under the MIT License
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="22.881" height="40.582" viewBox="0 0 22.881 40.582">
+<defs>
+<g>
+<g id="glyph-0-0">
+<path d="M 2.5 -5.078125 C 2.5 -5.296875 2.484375 -5.296875 2.265625 -5.296875 C 1.9375 -4.984375 1.515625 -4.796875 0.765625 -4.796875 L 0.765625 -4.53125 C 0.984375 -4.53125 1.40625 -4.53125 1.875 -4.734375 L 1.875 -0.65625 C 1.875 -0.359375 1.84375 -0.265625 1.09375 -0.265625 L 0.8125 -0.265625 L 0.8125 0 C 1.140625 -0.03125 1.828125 -0.03125 2.1875 -0.03125 C 2.546875 -0.03125 3.234375 -0.03125 3.5625 0 L 3.5625 -0.265625 L 3.28125 -0.265625 C 2.53125 -0.265625 2.5 -0.359375 2.5 -0.65625 Z M 2.5 -5.078125 "/>
+</g>
+</g>
+<clipPath id="clip-0">
+<path clip-rule="nonzero" d="M 2 2 L 22.882812 2 L 22.882812 27 L 2 27 Z M 2 2 "/>
+</clipPath>
+<clipPath id="clip-1">
+<path clip-rule="nonzero" d="M 12 35 L 18 35 L 18 40.582031 L 12 40.582031 Z M 12 35 "/>
+</clipPath>
+<clipPath id="clip-2">
+<path clip-rule="nonzero" d="M 0 5 L 22.882812 5 L 22.882812 40.582031 L 0 40.582031 Z M 0 5 "/>
+</clipPath>
+<clipPath id="clip-3">
+<path clip-rule="nonzero" d="M 5 5 L 22.882812 5 L 22.882812 37 L 5 37 Z M 5 5 "/>
+</clipPath>
+<clipPath id="clip-4">
+<path clip-rule="nonzero" d="M 19 20 L 22.882812 20 L 22.882812 24 L 19 24 Z M 19 20 "/>
+</clipPath>
+</defs>
+<g clip-path="url(#clip-0)">
+<path fill="none" stroke-width="0.3985" stroke-linecap="butt" stroke-linejoin="miter" stroke="rgb(0%, 39.608765%, 74.116516%)" stroke-opacity="1" stroke-miterlimit="10" d="M 6.377719 -0.000875 C 6.377719 3.522562 3.52225 6.378031 -0.0011875 6.378031 C -3.520719 6.378031 -6.376188 3.522562 -6.376188 -0.000875 C -6.376188 -3.524313 -3.520719 -6.379781 -0.0011875 -6.379781 C 3.52225 -6.379781 6.377719 -3.524313 6.377719 -0.000875 Z M 6.377719 -0.000875 " transform="matrix(1, 0, 0, -1, 15.009, 14.671)"/>
+</g>
+<g clip-path="url(#clip-1)">
+<path fill="none" stroke-width="1.19553" stroke-linecap="butt" stroke-linejoin="miter" stroke="rgb(0%, 39.608765%, 74.116516%)" stroke-opacity="1" stroke-miterlimit="10" d="M -1.993375 -25.313375 L 1.991 -25.313375 L 1.991 -21.329 L -1.993375 -21.329 Z M -1.993375 -25.313375 " transform="matrix(1, 0, 0, -1, 15.009, 14.671)"/>
+</g>
+<path fill="none" stroke-width="0.99628" stroke-linecap="butt" stroke-linejoin="miter" stroke="rgb(75%, 0%, 0%)" stroke-opacity="1" stroke-miterlimit="10" d="M -0.0011875 14.174906 L -0.0011875 6.557719 " transform="matrix(1, 0, 0, -1, 15.009, 14.671)"/>
+<g clip-path="url(#clip-2)">
+<path fill="none" stroke-width="0.99628" stroke-linecap="butt" stroke-linejoin="miter" stroke="rgb(75%, 0%, 0%)" stroke-opacity="1" stroke-miterlimit="10" d="M -4.216031 -5.024313 C -8.294156 -9.883688 -0.0011875 -14.383688 -0.0011875 -20.731344 " transform="matrix(1, 0, 0, -1, 15.009, 14.671)"/>
+</g>
+<g fill="rgb(0%, 39.608765%, 74.116516%)" fill-opacity="1">
+<use xlink:href="#glyph-0-0" x="3.32" y="29.559"/>
+</g>
+<g clip-path="url(#clip-3)">
+<path fill="none" stroke-width="0.99628" stroke-linecap="butt" stroke-linejoin="miter" stroke="rgb(75%, 0%, 0%)" stroke-opacity="1" stroke-miterlimit="10" d="M 4.213656 -5.024313 C 5.061312 -6.032125 6.377719 -6.282125 6.377719 -7.598531 " transform="matrix(1, 0, 0, -1, 15.009, 14.671)"/>
+</g>
+<g clip-path="url(#clip-4)">
+<path fill-rule="nonzero" fill="rgb(0%, 0%, 0%)" fill-opacity="1" d="M 22.878906 22.269531 C 22.878906 21.445312 22.210938 20.777344 21.386719 20.777344 C 20.5625 20.777344 19.890625 21.445312 19.890625 22.269531 C 19.890625 23.097656 20.5625 23.765625 21.386719 23.765625 C 22.210938 23.765625 22.878906 23.097656 22.878906 22.269531 Z M 22.878906 22.269531 "/>
+</g>
+</svg>

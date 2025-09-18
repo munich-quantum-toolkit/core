@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,342 +10,243 @@
 
 #pragma once
 
-#include "Definitions.hpp"
 #include "dd/DDDefinitions.hpp"
-#include "dd/Edge.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Package.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
-#include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 #include "ir/operations/StandardOperation.hpp"
 
 #include <cassert>
-#include <cmath>
-#include <cstddef>
-#include <ostream>
 #include <random>
-#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace dd {
-// single-target Operations
-template <class Config>
-qc::MatrixDD
-getStandardOperationDD(const qc::StandardOperation& op, Package<Config>& dd,
-                       const qc::Controls& controls, const qc::Qubit target,
-                       const bool inverse) {
-  GateMatrix gm;
 
-  const auto type = op.getType();
-  const auto& parameter = op.getParameter();
+/**
+ * @brief Get the decision diagram representation of an operation based on its
+ * constituent parts.
+ *
+ * @note This function is only intended for internal use and should not be
+ * called directly.
+ *
+ * @param dd The DD package to use
+ * @param type The operation type
+ * @param params The operation parameters
+ * @param controls The operation controls
+ * @param targets The operation targets
+ * @return The decision diagram representation of the operation
+ */
+MatrixDD getStandardOperationDD(Package& dd, qc::OpType type,
+                                const std::vector<fp>& params,
+                                const qc::Controls& controls,
+                                const std::vector<qc::Qubit>& targets);
 
-  switch (type) {
-  case qc::I:
-    gm = I_MAT;
-    break;
-  case qc::H:
-    gm = H_MAT;
-    break;
-  case qc::X:
-    gm = X_MAT;
-    break;
-  case qc::Y:
-    gm = Y_MAT;
-    break;
-  case qc::Z:
-    gm = Z_MAT;
-    break;
-  case qc::S:
-    gm = inverse ? SDG_MAT : S_MAT;
-    break;
-  case qc::Sdg:
-    gm = inverse ? S_MAT : SDG_MAT;
-    break;
-  case qc::T:
-    gm = inverse ? TDG_MAT : T_MAT;
-    break;
-  case qc::Tdg:
-    gm = inverse ? T_MAT : TDG_MAT;
-    break;
-  case qc::V:
-    gm = inverse ? VDG_MAT : V_MAT;
-    break;
-  case qc::Vdg:
-    gm = inverse ? V_MAT : VDG_MAT;
-    break;
-  case qc::U:
-    gm = inverse ? uMat(-parameter[1U], -parameter[2U], -parameter[0U])
-                 : uMat(parameter[2U], parameter[1U], parameter[0U]);
-    break;
-  case qc::U2:
-    gm = inverse ? u2Mat(-parameter[0U] + PI, -parameter[1U] - PI)
-                 : u2Mat(parameter[1U], parameter[0U]);
-    break;
-  case qc::P:
-    gm = inverse ? pMat(-parameter[0U]) : pMat(parameter[0U]);
-    break;
-  case qc::SX:
-    gm = inverse ? SXDG_MAT : SX_MAT;
-    break;
-  case qc::SXdg:
-    gm = inverse ? SX_MAT : SXDG_MAT;
-    break;
-  case qc::RX:
-    gm = inverse ? rxMat(-parameter[0U]) : rxMat(parameter[0U]);
-    break;
-  case qc::RY:
-    gm = inverse ? ryMat(-parameter[0U]) : ryMat(parameter[0U]);
-    break;
-  case qc::RZ:
-    gm = inverse ? rzMat(-parameter[0U]) : rzMat(parameter[0U]);
-    break;
-  default:
-    std::ostringstream oss{};
-    oss << "DD for gate" << op.getName() << " not available!";
-    throw qc::QFRException(oss.str());
-  }
-  return dd.makeGateDD(gm, controls, target);
-}
+/**
+ * @brief Get the decision diagram representation of a @ref
+ * qc::StandardOperation.
+ *
+ * @note This function is only intended for internal use and should not be
+ * called directly.
+ *
+ * @param op The operation to get the DD for
+ * @param dd The DD package to use
+ * @param controls The operation controls
+ * @param targets The operation targets
+ * @param inverse Whether to get the inverse of the operation
+ * @return The decision diagram representation of the operation
+ */
+MatrixDD getStandardOperationDD(const qc::StandardOperation& op, Package& dd,
+                                const qc::Controls& controls,
+                                const std::vector<qc::Qubit>& targets,
+                                bool inverse);
 
-// two-target Operations
-template <class Config>
-qc::MatrixDD
-getStandardOperationDD(const qc::StandardOperation& op, Package<Config>& dd,
-                       const qc::Controls& controls, qc::Qubit target0,
-                       qc::Qubit target1, const bool inverse) {
-  const auto type = op.getType();
-  const auto& parameter = op.getParameter();
+/**
+ * @brief Get the decision diagram representation of an operation.
+ *
+ * @param op The operation to get the DD for
+ * @param dd The DD package to use
+ * @param permutation The permutation to apply to the operation's qubits. An
+ * empty permutation marks the identity permutation.
+ * @param inverse Whether to get the inverse of the operation
+ * @return The decision diagram representation of the operation
+ */
+MatrixDD getDD(const qc::Operation& op, Package& dd,
+               const qc::Permutation& permutation = {}, bool inverse = false);
 
-  if (type == qc::DCX && inverse) {
-    // DCX is not self-inverse, but the inverse is just swapping the targets
-    std::swap(target0, target1);
-  }
+/**
+ * @brief Get the decision diagram representation of the inverse of an
+ * operation.
+ *
+ * @see getDD
+ *
+ * @param op The operation to get the inverse DD for
+ * @param dd The DD package to use
+ * @param permutation The permutation to apply to the operation's qubits. An
+ * empty permutation marks the identity permutation.
+ * @return The decision diagram representation of the inverse of the operation
+ */
+MatrixDD getInverseDD(const qc::Operation& op, Package& dd,
+                      const qc::Permutation& permutation = {});
 
-  TwoQubitGateMatrix gm;
-  switch (type) {
-  case qc::SWAP:
-    gm = SWAP_MAT;
-    break;
-  case qc::iSWAP:
-    gm = inverse ? ISWAPDG_MAT : ISWAP_MAT;
-    break;
-  case qc::iSWAPdg:
-    gm = inverse ? ISWAP_MAT : ISWAPDG_MAT;
-    break;
-  case qc::Peres:
-    gm = inverse ? PERESDG_MAT : PERES_MAT;
-    break;
-  case qc::Peresdg:
-    gm = inverse ? PERES_MAT : PERESDG_MAT;
-    break;
-  case qc::DCX:
-    gm = DCX_MAT;
-    break;
-  case qc::ECR:
-    gm = ECR_MAT;
-    break;
-  case qc::RXX:
-    gm = inverse ? rxxMat(-parameter[0U]) : rxxMat(parameter[0U]);
-    break;
-  case qc::RYY:
-    gm = inverse ? ryyMat(-parameter[0U]) : ryyMat(parameter[0U]);
-    break;
-  case qc::RZZ:
-    gm = inverse ? rzzMat(-parameter[0U]) : rzzMat(parameter[0U]);
-    break;
-  case qc::RZX:
-    gm = inverse ? rzxMat(-parameter[0U]) : rzxMat(parameter[0U]);
-    break;
-  case qc::XXminusYY:
-    gm = inverse ? xxMinusYYMat(-parameter[0U], parameter[1U])
-                 : xxMinusYYMat(parameter[0U], parameter[1U]);
-    break;
-  case qc::XXplusYY:
-    gm = inverse ? xxPlusYYMat(-parameter[0U], parameter[1U])
-                 : xxPlusYYMat(parameter[0U], parameter[1U]);
-    break;
-  default:
-    std::ostringstream oss{};
-    oss << "DD for gate " << op.getName() << " not available!";
-    throw qc::QFRException(oss.str());
-  }
+/**
+ * @brief Apply a unitary operation to a given vector DD.
+ *
+ * @details This is a convenience function that realizes @p op times @p in and
+ * correctly accounts for the permutation of the operation's qubits as well as
+ * automatically handles reference counting.
+ *
+ * @param op The operation to apply
+ * @param in The input DD
+ * @param dd The DD package to use
+ * @param permutation The permutation to apply to the operation's qubits. An
+ * empty permutation marks the identity permutation.
+ * @return The output DD
+ */
+VectorDD applyUnitaryOperation(const qc::Operation& op, const VectorDD& in,
+                               Package& dd,
+                               const qc::Permutation& permutation = {});
 
-  return dd.makeTwoQubitGateDD(gm, controls, target0, target1);
-}
+/**
+ * @brief Apply a unitary operation to a given matrix DD.
+ *
+ * @details This is a convenience function that realizes @p op times @p in and
+ * correctly accounts for the permutation of the operation's qubits as well as
+ * automatically handles reference counting.
+ *
+ * @param op The operation to apply
+ * @param in The input DD
+ * @param dd The DD package to use
+ * @param permutation The permutation to apply to the operation's qubits. An
+ * empty permutation marks the identity permutation.
+ * @param applyFromLeft Whether to apply the operation from the left (true)
+ * or from the right (false).
+ * @return The output DD
+ */
+MatrixDD applyUnitaryOperation(const qc::Operation& op, const MatrixDD& in,
+                               Package& dd,
+                               const qc::Permutation& permutation = {},
+                               bool applyFromLeft = true);
 
-// The methods with a permutation parameter apply these Operations according to
-// the mapping specified by the permutation, e.g.
-//      if perm[0] = 1 and perm[1] = 0
-//      then cx 0 1 will be translated to cx perm[0] perm[1] == cx 1 0
-// An empty permutation marks the identity permutation.
+/**
+ * @brief Apply a measurement operation to a given DD.
+ *
+ * @details This is a convenience function that realizes the measurement @p op
+ * on @p in and stores the measurement results in @p measurements. The result is
+ * determined based on the RNG @p rng. The function correctly accounts for the
+ * permutation of the operation's qubits as well as automatically handles
+ * reference counting.
+ *
+ * @param op The measurement operation to apply
+ * @param in The input DD
+ * @param dd The DD package to use
+ * @param rng The random number generator to use
+ * @param measurements The vector to store the measurement results in
+ * @param permutation The permutation to apply to the operation's qubits. An
+ * empty permutation marks the identity permutation.
+ * @return The output DD
+ */
+VectorDD applyMeasurement(const qc::NonUnitaryOperation& op, VectorDD in,
+                          Package& dd, std::mt19937_64& rng,
+                          std::vector<bool>& measurements,
+                          const qc::Permutation& permutation = {});
 
-template <class Config>
-qc::MatrixDD getDD(const qc::Operation& op, Package<Config>& dd,
-                   const qc::Permutation& permutation = {},
-                   const bool inverse = false) {
-  const auto type = op.getType();
+/**
+ * @brief Apply a reset operation to a given DD.
+ *
+ * @details This is a convenience function that realizes the reset @p op on @p
+ * in. To this end, it measures the qubit and applies an X operation if the
+ * measurement result is one. The result is determined based on the RNG @p rng.
+ * The function correctly accounts for the permutation of the operation's
+ * qubits as well as automatically handles reference counting.
+ *
+ * @param op The reset operation to apply
+ * @param in The input DD
+ * @param dd The DD package to use
+ * @param rng The random number generator to use
+ * @param permutation The permutation to apply to the operation's qubits. An
+ * empty permutation marks the identity permutation.
+ * @return The output DD
+ */
+VectorDD applyReset(const qc::NonUnitaryOperation& op, VectorDD in, Package& dd,
+                    std::mt19937_64& rng,
+                    const qc::Permutation& permutation = {});
 
-  if (type == qc::Barrier) {
-    return dd.makeIdent();
-  }
+/**
+ * @brief Apply an if-else operation to a given DD.
+ *
+ * @details This is a convenience function that realizes the if-else operation
+ * @p op on @p in. It applies the underlying operation if the actual value
+ * stored in the measurement results matches the expected value according to the
+ * comparison kind. The function correctly accounts for the permutation of the
+ * operation's qubits as well as automatically handles reference counting.
+ *
+ * @param op The if-else operation to apply
+ * @param in The input DD
+ * @param dd The DD package to use
+ * @param measurements The vector of measurement results
+ * @param permutation The permutation to apply to the operation's qubits. An
+ * empty permutation marks the identity permutation.
+ * @return The output DD
+ */
+VectorDD applyIfElseOperation(const qc::IfElseOperation& op, const VectorDD& in,
+                              Package& dd,
+                              const std::vector<bool>& measurements,
+                              const qc::Permutation& permutation = {});
 
-  if (type == qc::GPhase) {
-    auto phase = op.getParameter()[0U];
-    if (inverse) {
-      phase = -phase;
-    }
-    auto id = dd.makeIdent();
-    id.w = dd.cn.lookup(std::cos(phase), std::sin(phase));
-    return id;
-  }
+/**
+ * @brief Check whether @p op is virtually executable.
+ *
+ * @param op The operation in question.
+ * @return Whether @p op is virtually executable.
+ */
+bool isExecutableVirtually(const qc::Operation& op) noexcept;
 
-  if (op.isStandardOperation()) {
-    const auto& standardOp = dynamic_cast<const qc::StandardOperation&>(op);
-    const auto& targets = permutation.apply(standardOp.getTargets());
-    const auto& controls = permutation.apply(standardOp.getControls());
+/**
+ * @brief Apply virtual operation @p op.
+ *
+ * @param op The virtual operation to apply.
+ * @param permutation If suitable, the to be updated permutation.
+ */
+void applyVirtualOperation(const qc::Operation& op,
+                           qc::Permutation& permutation) noexcept;
 
-    if (qc::isTwoQubitGate(type)) {
-      assert(targets.size() == 2);
-      return getStandardOperationDD(standardOp, dd, controls, targets[0U],
-                                    targets[1U], inverse);
-    }
-    assert(targets.size() == 1);
-    return getStandardOperationDD(standardOp, dd, controls, targets[0U],
-                                  inverse);
-  }
+/**
+ * @brief Apply global phase to a given DD.
+ *
+ * @param in The input DD
+ * @param phase The phase to apply
+ * @param dd The DD package to use
+ * @return The output DD
+ */
+VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd);
 
-  if (op.isCompoundOperation()) {
-    const auto& compoundOp = dynamic_cast<const qc::CompoundOperation&>(op);
-    auto e = dd.makeIdent();
-    if (inverse) {
-      for (const auto& operation : compoundOp) {
-        e = dd.multiply(e, getInverseDD(*operation, dd, permutation));
-      }
-    } else {
-      for (const auto& operation : compoundOp) {
-        e = dd.multiply(getDD(*operation, dd, permutation), e);
-      }
-    }
-    return e;
-  }
-
-  if (op.isClassicControlledOperation()) {
-    const auto& classicOp =
-        dynamic_cast<const qc::ClassicControlledOperation&>(op);
-    return getDD(*classicOp.getOperation(), dd, permutation, inverse);
-  }
-
-  assert(op.isNonUnitaryOperation());
-  throw qc::QFRException("DD for non-unitary operation not available!");
-}
-
-template <class Config>
-qc::MatrixDD getInverseDD(const qc::Operation& op, Package<Config>& dd,
-                          const qc::Permutation& permutation = {}) {
-  return getDD(op, dd, permutation, true);
-}
-
-template <class Config, class Node>
-Edge<Node> applyUnitaryOperation(const qc::Operation& op, const Edge<Node>& in,
-                                 Package<Config>& dd,
-                                 const qc::Permutation& permutation = {}) {
-  static_assert(std::is_same_v<Node, dd::vNode> ||
-                std::is_same_v<Node, dd::mNode>);
-  return dd.applyOperation(getDD(op, dd, permutation), in);
-}
-
-template <class Config>
-qc::VectorDD applyMeasurement(const qc::NonUnitaryOperation& op,
-                              qc::VectorDD in, Package<Config>& dd,
-                              std::mt19937_64& rng,
-                              std::vector<bool>& measurements,
-                              const qc::Permutation& permutation = {}) {
-  assert(op.getType() == qc::Measure);
-  const auto& qubits = permutation.apply(op.getTargets());
-  const auto& bits = op.getClassics();
-  for (size_t j = 0U; j < qubits.size(); ++j) {
-    measurements.at(bits.at(j)) =
-        dd.measureOneCollapsing(in, static_cast<dd::Qubit>(qubits.at(j)),
-                                rng) == '1';
-  }
-  return in;
-}
-
-template <class Config>
-qc::VectorDD applyReset(const qc::NonUnitaryOperation& op, qc::VectorDD in,
-                        Package<Config>& dd, std::mt19937_64& rng,
-                        const qc::Permutation& permutation = {}) {
-  assert(op.getType() == qc::Reset);
-  const auto& qubits = permutation.apply(op.getTargets());
-  for (const auto& qubit : qubits) {
-    const auto bit =
-        dd.measureOneCollapsing(in, static_cast<dd::Qubit>(qubit), rng);
-    // apply an X operation whenever the measured result is one
-    if (bit == '1') {
-      const auto x = qc::StandardOperation(qubit, qc::X);
-      in = applyUnitaryOperation(x, in, dd);
-    }
-  }
-  return in;
-}
-
-template <class Config>
-qc::VectorDD
-applyClassicControlledOperation(const qc::ClassicControlledOperation& op,
-                                const qc::VectorDD& in, Package<Config>& dd,
-                                std::vector<bool>& measurements,
-                                const qc::Permutation& permutation = {}) {
-  const auto& [regStart, regSize] = op.getControlRegister();
-  const auto& expectedValue = op.getExpectedValue();
-  const auto& comparisonKind = op.getComparisonKind();
-
-  auto actualValue = 0ULL;
-  // determine the actual value from measurements
-  for (std::size_t j = 0; j < regSize; ++j) {
-    if (measurements[regStart + j]) {
-      actualValue |= 1ULL << j;
-    }
-  }
-
-  // check if the actual value matches the expected value according to the
-  // comparison kind
-  const auto control = [&]() -> bool {
-    switch (comparisonKind) {
-    case qc::ComparisonKind::Eq:
-      return actualValue == expectedValue;
-    case qc::ComparisonKind::Neq:
-      return actualValue != expectedValue;
-    case qc::ComparisonKind::Lt:
-      return actualValue < expectedValue;
-    case qc::ComparisonKind::Leq:
-      return actualValue <= expectedValue;
-    case qc::ComparisonKind::Gt:
-      return actualValue > expectedValue;
-    case qc::ComparisonKind::Geq:
-      return actualValue >= expectedValue;
-    }
-    qc::unreachable();
-  }();
-
-  if (!control) {
-    return in;
-  }
-
-  return applyUnitaryOperation(op, in, dd, permutation);
-}
-
-// apply swaps 'on' DD in order to change 'from' to 'to'
-// where |from| >= |to|
-template <class DDType, class Config>
+/**
+ * @brief Change the permutation of a given DD.
+ *
+ * @details This function changes the permutation of the given DD @p on from
+ * @p from to @p to by applying SWAP gates. The @p from permutation must be at
+ * least as large as the @p to permutation.
+ *
+ * @tparam DDType The type of the DD
+ * @param on The DD to change the permutation of
+ * @param from The current permutation
+ * @param to The target permutation
+ * @param dd The DD package to use
+ * @param regular Whether to apply the permutation from the left (true) or from
+ * the right (false)
+ */
+template <class DDType>
 void changePermutation(DDType& on, qc::Permutation& from,
-                       const qc::Permutation& to, Package<Config>& dd,
+                       const qc::Permutation& to, Package& dd,
                        const bool regular = true) {
   assert(from.size() >= to.size());
   if (on.isZeroTerminal()) {
@@ -356,7 +258,7 @@ void changePermutation(DDType& on, qc::Permutation& from,
     // search for key in the first map
     auto it = from.find(i);
     if (it == from.end()) {
-      throw qc::QFRException(
+      throw std::runtime_error(
           "[changePermutation] Key " + std::to_string(it->first) +
           " was not found in first permutation. This should never happen.");
     }
@@ -378,8 +280,9 @@ void changePermutation(DDType& on, qc::Permutation& from,
 
     // swap i and j
     auto saved = on;
-    const auto swapDD = dd.makeTwoQubitGateDD(SWAP_MAT, from.at(i), from.at(j));
-    if constexpr (std::is_same_v<DDType, qc::VectorDD>) {
+    const auto swapDD = dd.makeTwoQubitGateDD(opToTwoQubitGateMatrix(qc::SWAP),
+                                              from.at(i), from.at(j));
+    if constexpr (std::is_same_v<DDType, VectorDD>) {
       on = dd.multiply(swapDD, on);
     } else {
       // the regular flag only has an effect on matrix DDs

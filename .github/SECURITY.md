@@ -1,3 +1,6 @@
+<!--- This file has been generated from an external template. Please do not modify it directly. -->
+<!--- Changes should be contributed to https://github.com/munich-quantum-toolkit/templates. -->
+
 # Security Policy
 
 ## Supported Versions
@@ -9,7 +12,7 @@ Security updates are applied only to the most recent releases.
 To report vulnerabilities, you can privately report a potential security issue
 via the GitHub security vulnerabilities feature. This can be done here:
 
-https://github.com/cda-tum/mqt-core/security/advisories
+https://github.com/munich-quantum-toolkit/core/security/advisories
 
 Please do **not** open a public issue about a potential security vulnerability.
 

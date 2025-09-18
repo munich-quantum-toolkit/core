@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,13 +10,12 @@
 
 #pragma once
 
-#include "Control.hpp"
-#include "Definitions.hpp"
-#include "OpType.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
+#include "ir/Register.hpp"
+#include "ir/operations/Control.hpp"
+#include "ir/operations/OpType.hpp"
 
-#include <algorithm>
-#include <array>
 #include <cstring>
 #include <functional>
 #include <iostream>
@@ -34,11 +34,14 @@ protected:
   OpType type = None;
   std::string name;
 
-  static bool isWholeQubitRegister(const RegisterNames& reg, std::size_t start,
-                                   std::size_t end) {
-    return !reg.empty() && reg[start].first == reg[end].first &&
-           (start == 0 || reg[start].first != reg[start - 1].first) &&
-           (end == reg.size() - 1 || reg[end].first != reg[end + 1].first);
+  static constexpr size_t OUTPUT_INDENT_SIZE = 2;
+
+  static bool isWholeQubitRegister(const QubitIndexToRegisterMap& regMap,
+                                   const Qubit start, const Qubit end) {
+    const auto& startReg = regMap.at(start).first;
+    const auto& endReg = regMap.at(end).first;
+    return startReg == endReg && startReg.getStartIndex() == start &&
+           endReg.getEndIndex() == end;
   }
 
 public:
@@ -65,8 +68,8 @@ public:
   [[nodiscard]] virtual std::size_t getNcontrols() const {
     return controls.size();
   }
-  [[nodiscard]] std::size_t getNqubits() const {
-    return getUsedQubits().size();
+  [[nodiscard]] virtual std::size_t getNqubits() const {
+    return getNcontrols() + getNtargets();
   }
 
   [[nodiscard]] const std::vector<fp>& getParameter() const {
@@ -135,15 +138,15 @@ public:
 
   [[nodiscard]] virtual bool isNonUnitaryOperation() const { return false; }
 
-  [[nodiscard]] virtual bool isClassicControlledOperation() const noexcept {
+  [[nodiscard]] virtual bool isIfElseOperation() const noexcept {
     return false;
   }
 
   [[nodiscard]] virtual bool isSymbolicOperation() const { return false; }
 
   [[nodiscard]] virtual auto isDiagonalGate() const -> bool {
-    return std::find(DIAGONAL_GATES.begin(), DIAGONAL_GATES.end(), type) !=
-           DIAGONAL_GATES.end();
+    // the second bit in the type is a flag that is set for diagonal gates
+    return (+type & OpTypeDiag) != 0;
   }
 
   [[nodiscard]] virtual auto isSingleQubitGate() const -> bool {
@@ -151,6 +154,21 @@ public:
   }
 
   [[nodiscard]] virtual bool isControlled() const { return !controls.empty(); }
+
+  [[nodiscard]] virtual bool isClifford() const { return false; }
+
+  /**
+   * @brief Checks whether a gate is global.
+   * @details A StandardOperation is global if it acts on all qubits.
+   * A CompoundOperation is global if all its sub-operations are
+   * StandardOperations of the same type with the same parameters acting on all
+   * qubits. The latter is what a QASM line like `ry(π) q;` is translated to in
+   * MQT Core. All other operations are not global.
+   * @return True if the operation is global, false otherwise.
+   */
+  [[nodiscard]] virtual bool isGlobal(size_t /* unused */) const {
+    return false;
+  }
 
   [[nodiscard]] virtual bool actsOn(const Qubit i) const {
     for (const auto& t : targets) {
@@ -178,16 +196,17 @@ public:
                               std::size_t prefixWidth,
                               std::size_t nqubits) const;
 
-  void dumpOpenQASM2(std::ostream& of, const RegisterNames& qreg,
-                     const RegisterNames& creg) const {
-    dumpOpenQASM(of, qreg, creg, 0, false);
+  void dumpOpenQASM2(std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
+                     const BitIndexToRegisterMap& bitMap) const {
+    dumpOpenQASM(of, qubitMap, bitMap, 0, false);
   }
-  void dumpOpenQASM3(std::ostream& of, const RegisterNames& qreg,
-                     const RegisterNames& creg) const {
-    dumpOpenQASM(of, qreg, creg, 0, true);
+  void dumpOpenQASM3(std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
+                     const BitIndexToRegisterMap& bitMap) const {
+    dumpOpenQASM(of, qubitMap, bitMap, 0, true);
   }
-  virtual void dumpOpenQASM(std::ostream& of, const RegisterNames& qreg,
-                            const RegisterNames& creg, size_t indent,
+  virtual void dumpOpenQASM(std::ostream& of,
+                            const QubitIndexToRegisterMap& qubitMap,
+                            const BitIndexToRegisterMap& bitMap, size_t indent,
                             bool openQASM3) const = 0;
 
   /// Checks whether operation commutes with other operation on a given qubit.

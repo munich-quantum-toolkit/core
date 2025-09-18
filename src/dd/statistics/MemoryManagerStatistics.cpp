@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,8 +10,6 @@
 
 #include "dd/statistics/MemoryManagerStatistics.hpp"
 
-#include "dd/Node.hpp"
-#include "dd/RealNumber.hpp"
 #include "dd/statistics/Statistics.hpp"
 
 #include <algorithm>
@@ -19,69 +18,62 @@
 
 namespace dd {
 
-template <typename T>
+double MemoryManagerStatistics::entryMemoryMIB() const {
+  return static_cast<double>(entrySize_) / (1ULL << 20U);
+}
+
 std::size_t
-MemoryManagerStatistics<T>::getNumAvailableFromChunks() const noexcept {
+MemoryManagerStatistics::getNumAvailableFromChunks() const noexcept {
   return getTotalNumAvailable() - numAvailableForReuse;
 }
 
-template <typename T>
-std::size_t MemoryManagerStatistics<T>::getTotalNumAvailable() const noexcept {
+std::size_t MemoryManagerStatistics::getTotalNumAvailable() const noexcept {
   return numAllocated - numUsed;
 }
 
-template <typename T>
-double MemoryManagerStatistics<T>::getUsageRatio() const noexcept {
+double MemoryManagerStatistics::getUsageRatio() const noexcept {
   return static_cast<double>(numUsed) / static_cast<double>(numAllocated);
 }
 
-template <typename T>
-double MemoryManagerStatistics<T>::getAllocatedMemoryMiB() const noexcept {
-  return static_cast<double>(numAllocated) * ENTRY_MEMORY_MIB;
+double MemoryManagerStatistics::getAllocatedMemoryMiB() const noexcept {
+  return static_cast<double>(numAllocated) * entryMemoryMIB();
 }
 
-template <typename T>
-double MemoryManagerStatistics<T>::getUsedMemoryMiB() const noexcept {
-  return static_cast<double>(numUsed) * ENTRY_MEMORY_MIB;
+double MemoryManagerStatistics::getUsedMemoryMiB() const noexcept {
+  return static_cast<double>(numUsed) * entryMemoryMIB();
 }
 
-template <typename T>
-double MemoryManagerStatistics<T>::getPeakUsedMemoryMiB() const noexcept {
-  return static_cast<double>(peakNumUsed) * ENTRY_MEMORY_MIB;
+double MemoryManagerStatistics::getPeakUsedMemoryMiB() const noexcept {
+  return static_cast<double>(peakNumUsed) * entryMemoryMIB();
 }
 
-template <typename T>
-void MemoryManagerStatistics<T>::trackUsedEntries(
+void MemoryManagerStatistics::trackUsedEntries(
     const std::size_t numEntries) noexcept {
   numUsed += numEntries;
   peakNumUsed = std::max(peakNumUsed, numUsed);
 }
 
-template <typename T>
-void MemoryManagerStatistics<T>::trackReusedEntries(
+void MemoryManagerStatistics::trackReusedEntries(
     const std::size_t numEntries) noexcept {
   numUsed += numEntries;
   peakNumUsed = std::max(peakNumUsed, numUsed);
   numAvailableForReuse -= numEntries;
 }
 
-template <typename T>
-void MemoryManagerStatistics<T>::trackReturnedEntry() noexcept {
+void MemoryManagerStatistics::trackReturnedEntry() noexcept {
   ++numAvailableForReuse;
   peakNumAvailableForReuse =
       std::max(peakNumAvailableForReuse, numAvailableForReuse);
   --numUsed;
 }
-
-template <typename T> void MemoryManagerStatistics<T>::reset() noexcept {
+void MemoryManagerStatistics::reset() noexcept {
   numAllocations = 0U;
   numAllocated = 0U;
   numUsed = 0U;
   numAvailableForReuse = 0U;
 }
 
-template <typename T>
-nlohmann::basic_json<> MemoryManagerStatistics<T>::json() const {
+nlohmann::basic_json<> MemoryManagerStatistics::json() const {
   if (peakNumUsed == 0) {
     return "unused";
   }
@@ -102,8 +94,4 @@ nlohmann::basic_json<> MemoryManagerStatistics<T>::json() const {
   return j;
 }
 
-template struct MemoryManagerStatistics<RealNumber>;
-template struct MemoryManagerStatistics<vNode>;
-template struct MemoryManagerStatistics<mNode>;
-template struct MemoryManagerStatistics<dNode>;
 } // namespace dd

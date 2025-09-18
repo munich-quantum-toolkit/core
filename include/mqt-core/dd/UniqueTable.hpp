@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,23 +8,24 @@
  * Licensed under the MIT License
  */
 
+/**
+ * @file UniqueTable.hpp
+ * @brief Data structure for uniquely storing DD nodes
+ */
+
 #pragma once
 
-#include "Definitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
+#include "ir/Definitions.hpp"
 
-#include <algorithm>
-#include <array>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iostream>
 #include <nlohmann/json.hpp>
-#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -31,16 +33,8 @@ namespace dd {
 
 /**
  * @brief Data structure for uniquely storing DD nodes
- * @tparam Node class of nodes to provide/store
- * @tparam NBUCKET number of hash buckets to use (has to be a power of two)
  */
-template <class Node, std::size_t NBUCKET = 32768> class UniqueTable {
-
-  static_assert(
-      std::disjunction_v<std::is_same<Node, vNode>, std::is_same<Node, mNode>,
-                         std::is_same<Node, dNode>>,
-      "Node type must be one of vNode, mNode, dNode");
-
+class UniqueTable {
 public:
   /**
    * @brief The initial garbage collection limit.
@@ -51,49 +45,84 @@ public:
    */
   static constexpr std::size_t INITIAL_GC_LIMIT = 131072U;
 
+  struct UniqueTableConfig {
+    /// The number of variables
+    std::size_t nVars = 0U;
+
+    /// The number of hash buckets to use (has to be a power of two)
+    std::size_t nBuckets = 32768;
+
+    /// The initial garbage collection limit
+    std::size_t initialGCLimit = INITIAL_GC_LIMIT;
+  };
+
   /**
    * @brief The default constructor
-   * @param nv The number of variables
-   * @param manager The memory manager to use for allocating new nodes.
-   * @param initialGCLim The initial garbage collection limit.
+   * @param manager The memory manager to use
+   * @param config The configuration for the unique table
+   * @details The MemoryManager shall be constructed from the same type that the
+   * unique table is then used for in the lookup method.
    */
-  explicit UniqueTable(const std::size_t nv, MemoryManager<Node>& manager,
-                       std::size_t initialGCLim = INITIAL_GC_LIMIT)
-      : nvars(nv), memoryManager(&manager), initialGCLimit(initialGCLim) {
-    for (auto& stat : stats) {
-      stat.entrySize = sizeof(Bucket);
-      stat.numBuckets = NBUCKET;
-    }
-  }
+  UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
 
-  void resize(std::size_t nq) {
-    nvars = nq;
-    tables.resize(nq);
-    // TODO: if the new size is smaller than the old one we might have to
-    // release the unique table entries for the superfluous variables
-    stats.resize(nq);
-    for (auto& stat : stats) {
-      stat.entrySize = sizeof(Bucket);
-      stat.numBuckets = NBUCKET;
-    }
-  }
+  void resize(std::size_t nVars);
 
   /**
    * @brief The hash function for the hash table.
    * @details The hash function just combines the hashes of the edges of the
    * node. The hash value is masked to ensure that it is in the range
-   * [0, NBUCKET - 1].
+   * [0, nBuckets - 1].
    * @param p The node to hash.
    * @returns The hash value of the node.
    */
-  static std::size_t hash(const Node* p) {
-    static constexpr std::size_t MASK = NBUCKET - 1;
+  template <class Node> [[nodiscard]] std::size_t hash(const Node& p) const {
+    static_assert(std::is_base_of_v<NodeBase, Node>,
+                  "Node must be derived from NodeBase");
+    const std::size_t mask = cfg.nBuckets - 1;
     std::size_t key = 0U;
-    for (std::size_t i = 0U; i < p->e.size(); ++i) {
-      qc::hashCombine(key, std::hash<Edge<Node>>{}(p->e[i]));
+    for (const auto& succ : p.e) {
+      qc::hashCombine(key, std::hash<Edge<Node>>{}(succ));
     }
-    key &= MASK;
+    key &= mask;
     return key;
+  }
+
+  template <class Node>
+  [[nodiscard]] static bool nodesAreEqual(const Node& p, const Node& q) {
+    if constexpr (std::is_same_v<Node, dNode>) {
+      return (p.e == q.e && (p.flags == q.flags));
+    } else {
+      return p.e == q.e;
+    }
+  }
+
+  // Lookup a node in the unique table for the appropriate variable and insert
+  // it if it has not been found. Only normalized nodes shall be stored.
+  template <class Node> [[nodiscard]] Node* lookup(Node* p) {
+    static_assert(std::is_base_of_v<NodeBase, Node>,
+                  "Node must be derived from NodeBase");
+    // there are unique terminal nodes
+    if (NodeBase::isTerminal(p)) {
+      return p;
+    }
+
+    const auto key = hash(*p);
+    const auto v = p->v;
+    ++stats[v].lookups;
+
+    // search bucket in table corresponding to hashed value for the given node
+    // and return it if found.
+    if (auto* hashedNode = searchTable(*p, key);
+        !Node::isTerminal(hashedNode)) {
+      return hashedNode;
+    }
+
+    // if node not found -> add it to front of unique table bucket
+    p->setNext(tables[v][key]);
+    tables[v][key] = p;
+    stats[v].trackInsert();
+
+    return p;
   }
 
   /// Get a reference to the table
@@ -103,233 +132,52 @@ public:
   [[nodiscard]] const auto& getStats() const noexcept { return stats; }
 
   /// Get a reference to individual statistics
-  [[nodiscard]] const auto& getStats(const std::size_t idx) const noexcept {
-    return stats.at(idx);
-  }
+  [[nodiscard]] const UniqueTableStatistics&
+  getStats(std::size_t idx) const noexcept;
 
   /// Get a JSON object with the statistics
   [[nodiscard]] nlohmann::basic_json<>
-  getStatsJson(const bool includeIndividualTables = false) const {
-    if (std::all_of(stats.begin(), stats.end(),
-                    [](const UniqueTableStatistics& stat) {
-                      return stat.peakNumEntries == 0U;
-                    })) {
-      return "unused";
-    }
-
-    UniqueTableStatistics totalStats;
-    for (const auto& stat : stats) {
-      totalStats.entrySize = std::max(totalStats.entrySize, stat.entrySize);
-      totalStats.numBuckets += stat.numBuckets;
-      totalStats.numEntries += stat.numEntries;
-      totalStats.peakNumEntries += stat.peakNumEntries;
-      totalStats.collisions += stat.collisions;
-      totalStats.hits += stat.hits;
-      totalStats.lookups += stat.lookups;
-      totalStats.inserts += stat.inserts;
-      totalStats.numActiveEntries += stat.numActiveEntries;
-      totalStats.peakNumActiveEntries += stat.peakNumActiveEntries;
-      totalStats.gcRuns = std::max(totalStats.gcRuns, stat.gcRuns);
-    }
-
-    nlohmann::basic_json<> j;
-    j["total"] = totalStats.json();
-    if (includeIndividualTables) {
-      std::size_t v = 0U;
-      for (const auto& stat : stats) {
-        j[std::to_string(v)] = stat.json();
-        ++v;
-      }
-    }
-    return j;
-  }
+  getStatsJson(bool includeIndividualTables = false) const;
 
   /// Get the total number of entries
-  [[nodiscard]] std::size_t getNumEntries() const noexcept {
-    return std::accumulate(
-        stats.begin(), stats.end(), std::size_t{0},
-        [](const std::size_t& sum, const UniqueTableStatistics& stat) {
-          return sum + stat.numEntries;
-        });
-  }
+  [[nodiscard]] std::size_t getNumEntries() const noexcept;
 
-  /// Get the total number of active entries
-  [[nodiscard]] std::size_t getNumActiveEntries() const noexcept {
-    return std::accumulate(
-        stats.begin(), stats.end(), std::size_t{0},
-        [](const std::size_t& sum, const UniqueTableStatistics& stat) {
-          return sum + stat.numActiveEntries;
-        });
-  }
-
-  /// Get the peak total number of active entries
-  [[nodiscard]] std::size_t getPeakNumActiveEntries() const noexcept {
-    return std::accumulate(
-        stats.begin(), stats.end(), std::size_t{0},
-        [](const std::size_t& sum, const UniqueTableStatistics& stat) {
-          return sum + stat.peakNumActiveEntries;
-        });
-  }
-
-  static bool nodesAreEqual(const Node* p, const Node* q) {
-    if constexpr (std::is_same_v<Node, dNode>) {
-      return (p->e == q->e && (p->flags == q->flags));
-    } else {
-      return p->e == q->e;
-    }
-  }
-
-  // lookup a node in the unique table for the appropriate variable; insert it,
-  // if it has not been found NOTE: reference counting is to be adjusted by
-  // function invoking the table lookup and only normalized nodes shall be
-  // stored.
-  Node* lookup(Node* p) {
-    // there are unique terminal nodes
-    if (Node::isTerminal(p)) {
-      return p;
-    }
-
-    const auto key = hash(p);
-    const auto v = p->v;
-    ++stats[v].lookups;
-
-    // search bucket in table corresponding to hashed value for the given node
-    // and return it if found.
-    if (auto* hashedNode = searchTable(p, key); !Node::isTerminal(hashedNode)) {
-      return hashedNode;
-    }
-
-    // if node not found -> add it to front of unique table bucket
-    p->next = tables[v][key];
-    tables[v][key] = p;
-    stats[v].trackInsert();
-
-    return p;
-  }
+  /// Count the number of marked entries
+  [[nodiscard]] std::size_t countMarkedEntries() const noexcept;
 
   /**
-   * @brief Increment the reference count of a node.
-   * @details This is a pass-through function that calls the increment function
-   * of the node. It additionally keeps track of the number of active entries
-   * in the table (entries with a reference count greater than zero). Reference
-   * counts saturate at the maximum value of RefCount.
-   * @param p A pointer to the node to increase the reference count of.
-   * @returns Whether the reference count was increased.
-   * @see Node::incRef(Node*)
+   * @brief Determine whether the table possibly requires garbage collection.
    */
-  [[nodiscard]] bool incRef(Node* p) noexcept {
-    const auto inc = ::dd::incRef(p);
-    if (inc && p->ref == 1U) {
-      stats[p->v].trackActiveEntry();
-    }
-    return inc;
-  }
+  [[nodiscard]] bool possiblyNeedsCollection() const;
 
-  /**
-   * @brief Decrement the reference count of a node.
-   * @details This is a pass-through function that calls the decrement function
-   * of the node. It additionally keeps track of the number of active entries
-   * in the table (entries with a reference count greater than zero). Reference
-   * counts saturate at the maximum value of RefCount.
-   * @param p A pointer to the node to decrease the reference count of.
-   * @returns Whether the reference count was decreased.
-   * @see Node::decRef(Node*)
-   */
-  [[nodiscard]] bool decRef(Node* p) noexcept {
-    const auto dec = ::dd::decRef(p);
-    if (dec && p->ref == 0U) {
-      --stats[p->v].numActiveEntries;
-    }
-    return dec;
-  }
+  std::size_t garbageCollect(bool force = false);
 
-  [[nodiscard]] bool possiblyNeedsCollection() const {
-    return getNumEntries() >= gcLimit;
-  }
+  void clear();
 
-  std::size_t garbageCollect(bool force = false) {
-    const std::size_t numEntriesBefore = getNumEntries();
-    if ((!force && numEntriesBefore < gcLimit) || numEntriesBefore == 0U) {
-      return 0U;
-    }
-
-    std::size_t v = 0U;
-    for (auto& table : tables) {
-      auto& stat = stats[v];
-      ++stat.gcRuns;
-      for (auto& bucket : table) {
-        Node* p = bucket;
-        Node* lastp = nullptr;
-        while (p != nullptr) {
-          if (p->ref == 0) {
-            Node* next = p->next;
-            if (lastp == nullptr) {
-              bucket = next;
-            } else {
-              lastp->next = next;
-            }
-            memoryManager->returnEntry(p);
-            p = next;
-            --stat.numEntries;
-          } else {
-            lastp = p;
-            p = p->next;
-          }
-        }
-      }
-      stat.numActiveEntries = stat.numEntries;
-      ++v;
-    }
-
-    // The garbage collection limit changes dynamically depending on the number
-    // of remaining (active) nodes. If it were not changed, garbage collection
-    // would run through the complete table on each successive call once the
-    // number of remaining entries reaches the garbage collection limit. It is
-    // increased whenever the number of remaining entries is rather close to the
-    // garbage collection threshold and decreased if the number of remaining
-    // entries is much lower than the current limit.
-    const auto numEntries = getNumEntries();
-    if (numEntries > gcLimit / 10 * 9) {
-      gcLimit = numEntries + initialGCLimit;
-    }
-    return numEntriesBefore - numEntries;
-  }
-
-  void clear() {
-    // clear unique table buckets
-    for (auto& table : tables) {
-      for (auto& bucket : table) {
-        bucket = nullptr;
-      }
-    }
-    gcLimit = initialGCLimit;
-    for (auto& stat : stats) {
-      stat.reset();
-    }
-  };
-
-  void print() {
-    auto q = nvars - 1U;
+  template <class Node> void print() const {
+    static_assert(std::is_base_of_v<NodeBase, Node>,
+                  "Node must be derived from NodeBase");
+    auto q = cfg.nVars - 1U;
     for (auto it = tables.rbegin(); it != tables.rend(); ++it) {
       auto& table = *it;
       std::cout << "\tq" << q << ":"
                 << "\n";
       for (std::size_t key = 0; key < table.size(); ++key) {
-        auto* p = table[key];
+        auto* p = static_cast<Node*>(table[key]);
         if (p != nullptr) {
           std::cout << "\tkey=" << key << ": ";
         }
 
         while (p != nullptr) {
-          std::cout << "\t\t" << std::hex << reinterpret_cast<std::uintptr_t>(p)
-                    << std::dec << " " << p->ref << std::hex;
+          std::cout << "\t\t" << std::hex
+                    << reinterpret_cast<std::uintptr_t>(p);
           for (const auto& e : p->e) {
             std::cout << " p" << reinterpret_cast<std::uintptr_t>(e.p) << "(r"
                       << reinterpret_cast<std::uintptr_t>(e.w.r) << " i"
                       << reinterpret_cast<std::uintptr_t>(e.w.i) << ")";
           }
           std::cout << std::dec << "\n";
-          p = p->next;
+          p = p->next();
         }
       }
       --q;
@@ -338,45 +186,45 @@ public:
 
 private:
   /// Typedef for a bucket in the table
-  using Bucket = Node*;
+  using Bucket = NodeBase*;
   /// Typedef for the table
-  using Table = std::array<Bucket, NBUCKET>;
+  using Table = std::vector<Bucket>;
 
-  /// The number of variables
-  std::size_t nvars = 0U;
+  UniqueTableConfig cfg;
+
+  /// The current garbage collection limit
+  std::size_t gcLimit;
+
+  /// A pointer to the memory manager for the nodes stored in the table.
+  MemoryManager* memoryManager;
+
   /**
    * @brief The actual tables (one for each variable)
    * @details Each hash table is an array of buckets. Each bucket is a linked
    * list of entries. The linked list is implemented by using the next pointer
    * of the entries.
    */
-  std::vector<Table> tables{nvars};
-
-  /// A pointer to the memory manager for the nodes stored in the table.
-  MemoryManager<Node>* memoryManager;
+  std::vector<Table> tables;
 
   /// A collection of statistics
-  std::vector<UniqueTableStatistics> stats{nvars};
-
-  /// The initial garbage collection limit
-  std::size_t initialGCLimit;
-  /// The current garbage collection limit
-  std::size_t gcLimit = initialGCLimit;
+  std::vector<UniqueTableStatistics> stats;
 
   /**
-  Searches for a node in the hash table with the given key.
-  @param e The node to search for.
-  @param key The hashed value used to search the table.
-  @return The Edge<Node> found in the hash table or Edge<Node>::zero if not
-  found.
-  **/
-  Node* searchTable(Node* p, const std::size_t& key) {
-    const auto v = p->v;
-    Node* bucket = tables[v][key];
+   * @brief Search for a node in the hash table with the given key.
+   * @param p The node to search for.
+   * @param key The hashed value used to search the table.
+   * @returns A pointer to the node if found or Node::getTerminal() otherwise.
+   */
+  template <class Node>
+  [[nodiscard]] Node* searchTable(Node& p, const std::size_t& key) {
+    static_assert(std::is_base_of_v<NodeBase, Node>,
+                  "Node must be derived from NodeBase");
+    const auto v = p.v;
+    Node* bucket = static_cast<Node*>(tables[v][key]);
     while (bucket != nullptr) {
-      if (nodesAreEqual(p, bucket)) {
+      if (nodesAreEqual(p, *bucket)) {
         // Match found
-        if (p != bucket) {
+        if (&p != bucket) {
           // put node pointed to by p on available chain
           memoryManager->returnEntry(p);
         }
@@ -384,7 +232,7 @@ private:
         return bucket;
       }
       ++stats[v].collisions;
-      bucket = bucket->next;
+      bucket = bucket->next();
     }
 
     // Node not found in bucket

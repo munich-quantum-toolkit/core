@@ -1,6 +1,7 @@
 ignore:
   - "**/python"
   - "test/**/*"
+  - "mlir/unittests/**/*"
 
 coverage:
   range: 60..90
@@ -27,7 +28,17 @@ flag_management:
         - "src"
     - name: python
       paths:
-        - "src/mqt/**/*.py"
+        - "python/mqt/**/*.py"
+      statuses:
+        - type: project
+          threshold: 0.5%
+          removed_code_behavior: adjust_base
+        - type: patch
+          target: 95%
+          threshold: 1%
+    - name: mlir
+      paths:
+        - "mlir"
       statuses:
         - type: project
           threshold: 0.5%

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -22,18 +23,12 @@
 
 namespace dd {
 
-///-----------------------------------------------------------------------------
-///                          \n Forward declarations \n
-///-----------------------------------------------------------------------------
 struct vNode;
 struct mNode;
 struct dNode;
 class ComplexNumbers;
-template <typename T> class MemoryManager;
+class MemoryManager;
 
-///-----------------------------------------------------------------------------
-///                        \n Type traits and typedefs \n
-///-----------------------------------------------------------------------------
 template <typename T>
 using isVector = std::enable_if_t<std::is_same_v<T, vNode>, bool>;
 template <typename T>
@@ -45,11 +40,10 @@ using isMatrixVariant =
     std::enable_if_t<std::is_same_v<T, mNode> || std::is_same_v<T, dNode>,
                      bool>;
 
-using AmplitudeFunc =
-    std::function<void(const std::size_t, const std::complex<fp>&)>;
-using ProbabilityFunc = std::function<void(const std::size_t, const fp&)>;
-using MatrixEntryFunc = std::function<void(const std::size_t, const std::size_t,
-                                           const std::complex<fp>&)>;
+using AmplitudeFunc = std::function<void(std::size_t, const std::complex<fp>&)>;
+using ProbabilityFunc = std::function<void(std::size_t, const fp&)>;
+using MatrixEntryFunc =
+    std::function<void(std::size_t, std::size_t, const std::complex<fp>&)>;
 
 /**
  * @brief A weighted edge pointing to a DD node
@@ -85,10 +79,6 @@ template <class Node> struct Edge {
    */
   static constexpr Edge one() { return terminal(Complex::one()); }
 
-  ///---------------------------------------------------------------------------
-  ///                     \n General purpose methods \n
-  ///---------------------------------------------------------------------------
-
   /**
    * @brief Get a terminal DD with a given edge weight
    * @param w the edge weight
@@ -96,6 +86,16 @@ template <class Node> struct Edge {
    */
   [[nodiscard]] static constexpr Edge terminal(const Complex& w) {
     return Edge{Node::getTerminal(), w};
+  }
+
+  /**
+   * @brief Check whether an edge requires tracking.
+   * @param e The edge to check.
+   * @return Whether the edge requires tracking.
+   */
+  [[nodiscard]] static constexpr bool trackingRequired(const Edge& e) {
+    return !e.isTerminal() || !constants::isStaticNumber(e.w.r) ||
+           !constants::isStaticNumber(e.w.i);
   }
 
   /**
@@ -141,6 +141,12 @@ template <class Node> struct Edge {
    */
   [[nodiscard]] std::size_t size() const;
 
+  /// @brief Mark the edge as used.
+  void mark() const noexcept;
+
+  /// @brief Unmark the edge.
+  void unmark() const noexcept;
+
 private:
   /**
    * @brief Recursively traverse the DD and count the number of nodes
@@ -150,9 +156,6 @@ private:
   [[nodiscard]] std::size_t
   size(std::unordered_set<const Node*>& visited) const;
 
-  ///---------------------------------------------------------------------------
-  ///                     \n Methods for vector DDs \n
-  ///---------------------------------------------------------------------------
 public:
   /**
    * @brief Get a normalized vector DD from a fresh node and a list of edges
@@ -165,8 +168,8 @@ public:
    * @return the normalized vector DD
    */
   template <typename T = Node, isVector<T> = true>
-  static Edge<Node> normalize(Node* p, const std::array<Edge<Node>, RADIX>& e,
-                              MemoryManager<Node>& mm, ComplexNumbers& cn);
+  static auto normalize(Node* p, const std::array<Edge, RADIX>& e,
+                        MemoryManager& mm, ComplexNumbers& cn) -> Edge;
 
   /**
    * @brief Get a single element of the vector represented by the DD
@@ -229,9 +232,6 @@ private:
   void traverseVector(const std::complex<fp>& amp, std::size_t i,
                       AmplitudeFunc f, fp threshold = 0.) const;
 
-  ///---------------------------------------------------------------------------
-  ///                     \n Methods for matrix DDs \n
-  ///---------------------------------------------------------------------------
 public:
   /**
    * @brief Get a normalized (density) matrix DD from a fresh node and a list
@@ -245,8 +245,8 @@ public:
    * @return the normalized (density) matrix DD
    */
   template <typename T = Node, isMatrixVariant<T> = true>
-  static Edge<Node> normalize(Node* p, const std::array<Edge<Node>, NEDGE>& e,
-                              MemoryManager<Node>& mm, ComplexNumbers& cn);
+  static auto normalize(Node* p, const std::array<Edge, NEDGE>& e,
+                        MemoryManager& mm, ComplexNumbers& cn) -> Edge;
 
   /**
    * @brief Check whether the matrix represented by the DD is the identity
@@ -308,7 +308,6 @@ public:
   template <typename T = Node, isMatrixVariant<T> = true>
   void printMatrix(std::size_t numQubits) const;
 
-private:
   /**
    * @brief Recursively traverse the DD and call a function for each non-zero
    * matrix entry.
@@ -328,10 +327,6 @@ private:
                       MatrixEntryFunc f, std::size_t level,
                       fp threshold = 0.) const;
 
-  ///---------------------------------------------------------------------------
-  ///                  \n Methods for density matrix DDs \n
-  ///---------------------------------------------------------------------------
-public:
   template <typename T = Node, isDensityMatrix<T> = true>
   [[maybe_unused]] static void setDensityConjugateTrue(Edge& e) {
     Node::setConjugateTempFlagTrue(e.p);
@@ -416,12 +411,6 @@ private:
 };
 } // namespace dd
 
-///-----------------------------------------------------------------------------
-///                         \n Hash related code \n
-///-----------------------------------------------------------------------------
-
-namespace std {
-template <class Node> struct hash<dd::Edge<Node>> {
+template <class Node> struct std::hash<dd::Edge<Node>> {
   std::size_t operator()(dd::Edge<Node> const& e) const noexcept;
 };
-} // namespace std

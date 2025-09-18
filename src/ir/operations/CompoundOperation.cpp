@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,11 +10,13 @@
 
 #include "ir/operations/CompoundOperation.hpp"
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
+#include "ir/Register.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/Operation.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -23,6 +26,7 @@
 #include <memory>
 #include <ostream>
 #include <set>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -62,19 +66,40 @@ std::unique_ptr<Operation> CompoundOperation::clone() const {
   return std::make_unique<CompoundOperation>(*this);
 }
 
+std::size_t CompoundOperation::getNqubits() const {
+  return getUsedQubits().size();
+}
+
 bool CompoundOperation::isNonUnitaryOperation() const {
-  return std::any_of(ops.cbegin(), ops.cend(), [](const auto& op) {
-    return op->isNonUnitaryOperation();
-  });
+  return std::ranges::any_of(
+      ops, [](const auto& op) { return op->isNonUnitaryOperation(); });
 }
 
 bool CompoundOperation::isCompoundOperation() const noexcept { return true; }
 
 bool CompoundOperation::isCustomGate() const noexcept { return customGate; }
 
+bool CompoundOperation::isGlobal(const size_t nQubits) const noexcept {
+  const auto& params = ops.front()->getParameter();
+  const auto& t = ops.front()->getType();
+  return getUsedQubits().size() == nQubits &&
+         std::ranges::all_of(ops.cbegin() + 1, ops.cend(),
+                             [&](const auto& operation) {
+                               return operation->isStandardOperation() &&
+                                      operation->getNcontrols() == 0 &&
+                                      operation->getType() == t &&
+                                      operation->getParameter() == params;
+                             });
+}
+
+bool CompoundOperation::isClifford() const {
+  return std::ranges::all_of(ops,
+                             [](const auto& op) { return op->isClifford(); });
+}
+
 bool CompoundOperation::isSymbolicOperation() const {
-  return std::any_of(ops.begin(), ops.end(),
-                     [](const auto& op) { return op->isSymbolicOperation(); });
+  return std::ranges::any_of(
+      ops, [](const auto& op) { return op->isSymbolicOperation(); });
 }
 
 void CompoundOperation::addControl(const Control c) {
@@ -95,8 +120,9 @@ void CompoundOperation::removeControl(const Control c) {
   // first we iterate over our controls and check if we are actually allowed
   // to remove them
   if (controls.erase(c) == 0) {
-    throw QFRException("Cannot remove control from compound operation as it "
-                       "is not a control.");
+    throw std::runtime_error(
+        "Cannot remove control from compound operation as it "
+        "is not a control.");
   }
 
   for (const auto& op : ops) {
@@ -146,13 +172,13 @@ std::ostream& CompoundOperation::print(std::ostream& os,
     op->print(os, permutation, prefixWidth, nqubits);
     os << "\n";
   }
-  os << prefix << std::string(4 * nqubits + 1, '-');
+  os << prefix << std::string((4 * nqubits) + 1, '-');
   return os;
 }
 
 bool CompoundOperation::actsOn(const Qubit i) const {
-  return std::any_of(ops.cbegin(), ops.cend(),
-                     [&i](const auto& op) { return op->actsOn(i); });
+  return std::ranges::any_of(ops,
+                             [&i](const auto& op) { return op->actsOn(i); });
 }
 
 void CompoundOperation::addDepthContribution(
@@ -163,11 +189,12 @@ void CompoundOperation::addDepthContribution(
 }
 
 void CompoundOperation::dumpOpenQASM(std::ostream& of,
-                                     const RegisterNames& qreg,
-                                     const RegisterNames& creg, size_t indent,
+                                     const QubitIndexToRegisterMap& qubitMap,
+                                     const BitIndexToRegisterMap& bitMap,
+                                     const std::size_t indent,
                                      bool openQASM3) const {
   for (const auto& op : ops) {
-    op->dumpOpenQASM(of, qreg, creg, indent, openQASM3);
+    op->dumpOpenQASM(of, qubitMap, bitMap, indent, openQASM3);
   }
 }
 
@@ -182,10 +209,9 @@ auto CompoundOperation::getUsedQubitsPermuted(const Permutation& perm) const
 
 auto CompoundOperation::commutesAtQubit(const Operation& other,
                                         const Qubit& qubit) const -> bool {
-  return std::all_of(ops.cbegin(), ops.cend(),
-                     [&other, &qubit](const auto& op) {
-                       return op->commutesAtQubit(other, qubit);
-                     });
+  return std::ranges::all_of(ops, [&other, &qubit](const auto& op) {
+    return op->commutesAtQubit(other, qubit);
+  });
 }
 
 auto CompoundOperation::isInverseOf(const Operation& other) const -> bool {
@@ -204,18 +230,16 @@ auto CompoundOperation::isInverseOf(const Operation& other) const -> bool {
     // the compound operations
     const auto& thisUsedQubits = getUsedQubits();
     assert(!thisUsedQubits.empty());
-    const auto thisMaxQubit =
-        *std::max_element(thisUsedQubits.cbegin(), thisUsedQubits.cend());
+    const auto thisMaxQubit = *std::ranges::max_element(thisUsedQubits);
     QuantumComputation thisQc(thisMaxQubit + 1);
-    std::for_each(cbegin(), cend(),
-                  [&](const auto& op) { thisQc.emplace_back(op->clone()); });
+    std::ranges::for_each(
+        ops, [&](const auto& op) { thisQc.emplace_back(op->clone()); });
     const auto& otherUsedQubits = co.getUsedQubits();
     assert(!otherUsedQubits.empty());
-    const auto otherMaxQubit =
-        *std::max_element(otherUsedQubits.cbegin(), otherUsedQubits.cend());
+    const auto otherMaxQubit = *std::ranges::max_element(otherUsedQubits);
     QuantumComputation otherQc(otherMaxQubit + 1);
-    std::for_each(co.cbegin(), co.cend(),
-                  [&](const auto& op) { otherQc.emplace_back(op->clone()); });
+    std::ranges::for_each(
+        co, [&](const auto& op) { otherQc.emplace_back(op->clone()); });
     thisQc.reorderOperations();
     otherQc.invert();
     otherQc.reorderOperations();
@@ -230,7 +254,7 @@ void CompoundOperation::invert() {
   for (const auto& op : ops) {
     op->invert();
   }
-  std::reverse(ops.begin(), ops.end());
+  std::ranges::reverse(ops);
 }
 
 void CompoundOperation::apply(const Permutation& permutation) {

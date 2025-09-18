@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -37,10 +38,10 @@ public:
     closureMatrix[i][i] = true;
   }
   auto addEdge(const V& u, const V& v) -> void override {
-    if (this->mapping.find(u) == this->mapping.end()) {
+    if (!this->mapping.contains(u)) {
       addVertex(u);
     }
-    if (this->mapping.find(v) == this->mapping.end()) {
+    if (!this->mapping.contains(v)) {
       addVertex(v);
     }
     std::size_t const i = this->mapping.at(u);
@@ -61,10 +62,10 @@ public:
     }
   }
   [[nodiscard]] auto isReachable(const V& u, const V& v) const -> bool {
-    if (this->mapping.find(u) == this->mapping.end()) {
+    if (!this->mapping.contains(u)) {
       throw std::invalid_argument("Vertex u not in graph.");
     }
-    if (this->mapping.find(v) == this->mapping.end()) {
+    if (!this->mapping.contains(v)) {
       throw std::invalid_argument("Vertex v not in graph.");
     }
     return closureMatrix[this->mapping.at(u)][this->mapping.at(v)];

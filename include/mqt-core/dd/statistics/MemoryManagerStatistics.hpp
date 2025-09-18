@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -18,11 +19,21 @@ namespace dd {
 
 /**
  * @brief A utility class for storing statistics of a memory manager
- * @tparam T the type of entries managed by the memory manager
  */
-template <typename T> struct MemoryManagerStatistics : public Statistics {
+struct MemoryManagerStatistics final : Statistics {
+
+  /**
+   * @brief Construct a new Memory Manager Statistics object
+   * @param entrySize The size of a single entry
+   */
+  explicit MemoryManagerStatistics(const std::size_t entrySize)
+      : entrySize_(entrySize) {}
+
   /// The size of a single entry
-  std::size_t entrySize = sizeof(T);
+  std::size_t entrySize_;
+
+  [[nodiscard]] double entryMemoryMIB() const;
+
   /// The number of allocations performed
   std::size_t numAllocations = 0U;
   /// The number of allocated entries
@@ -35,9 +46,6 @@ template <typename T> struct MemoryManagerStatistics : public Statistics {
   std::size_t peakNumUsed = 0U;
   /// The peak number of entries available for reuse
   std::size_t peakNumAvailableForReuse = 0U;
-
-  static constexpr auto ENTRY_MEMORY_MIB =
-      static_cast<double>(sizeof(T)) / static_cast<double>(1ULL << 20U);
 
   /// Get the number of available entries from memory chunks
   [[nodiscard]] std::size_t getNumAvailableFromChunks() const noexcept;

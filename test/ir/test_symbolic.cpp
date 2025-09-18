@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,14 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/Expression.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/SymbolicOperation.hpp"
 
 #include <gtest/gtest.h>
 #include <memory>
+#include <stdexcept>
+#include <tuple>
 
 using namespace qc;
 using namespace sym;
@@ -244,4 +248,21 @@ TEST_F(SymbolicTest, TestU2SymLambda) {
 TEST_F(SymbolicTest, TestU2SymPhi) {
   symQc.u2(xMonom, 1.2345, 0);
   EXPECT_EQ((*symQc.begin())->getType(), OpType::U2);
+}
+
+TEST_F(SymbolicTest, failPrintingQASM2) {
+  symQc.u(xMonom, yMonom, zMonom, 0);
+  EXPECT_THROW(std::ignore = symQc.toQASM(false), std::runtime_error);
+}
+
+TEST_F(SymbolicTest, failPrintingQASM3) {
+  symQc.u(xMonom, yMonom, zMonom, 0);
+  EXPECT_THROW(std::ignore = symQc.toQASM(true), std::runtime_error);
+}
+
+TEST_F(SymbolicTest, Constructor) {
+  EXPECT_NO_THROW(std::ignore =
+                      qc::SymbolicOperation(0, 1, qc::OpType::P, {xMonom}));
+  EXPECT_NO_THROW(
+      std::ignore = qc::SymbolicOperation(0, {1, 2}, qc::OpType::P, {xMonom}));
 }

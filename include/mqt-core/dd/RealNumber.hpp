@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -10,7 +11,8 @@
 #pragma once
 
 #include "dd/DDDefinitions.hpp"
-#include "mqt_core_dd_export.h"
+#include "dd/LinkedListBase.hpp"
+#include "dd/mqt_core_dd_export.h"
 
 #include <istream>
 #include <limits>
@@ -19,13 +21,16 @@
 namespace dd {
 /**
  * @brief A struct for representing real numbers as part of the DD package.
- * @details Consists of a floating point number (the value), a next pointer
- * (used for chaining entries), and a reference count.
+ * @details Consists of a floating point number (the value) and a next pointer
+ * (used for chaining entries). Numbers are marked for garbage collection via
+ * the second least significant bit of pointers referencing them.
  * @note Due to the way the sign of the value is encoded, special care has to
  * be taken when accessing the value. The static functions in this struct
  * provide safe access to the value of a RealNumber* pointer.
  */
-struct RealNumber {
+struct RealNumber final : LLBase {
+  /// Getter for the next object.
+  [[nodiscard]] RealNumber* next() const noexcept;
 
   /**
    * @brief Check whether the number points to the zero number.
@@ -57,15 +62,6 @@ struct RealNumber {
    * memory address of the number.
    */
   [[nodiscard]] static fp val(const RealNumber* e) noexcept;
-
-  /**
-   * @brief Get the reference count of the number.
-   * @param num A pointer to the number to get the reference count for.
-   * @returns The reference count of the number.
-   * @note This function accounts for the sign of the number embedded in the
-   * memory address of the number.
-   */
-  [[nodiscard]] static RefCount refCount(const RealNumber* num) noexcept;
 
   /**
    * @brief Check whether two floating point numbers are approximately equal.
@@ -107,42 +103,6 @@ struct RealNumber {
    * @see approximatelyZero(fp)
    */
   [[nodiscard]] static bool approximatelyZero(const RealNumber* e) noexcept;
-
-  /**
-   * @brief Indicates whether a given number needs reference count updates.
-   * @details This function checks whether a given number needs reference count
-   * updates. A number needs reference count updates if the pointer to it is
-   * not the null pointer, if it is not one of the special numbers (zero,
-   * one, 1/sqrt(2)), and if the reference count has saturated.
-   * @param num Pointer to the number to check.
-   * @returns Whether the number needs reference count updates.
-   * @note This function assumes that the pointer to the number is aligned.
-   */
-  [[nodiscard]] static bool noRefCountingNeeded(const RealNumber* num) noexcept;
-
-  /**
-   * @brief Increment the reference count of a number.
-   * @details This function increments the reference count of a number. If the
-   * reference count has saturated (i.e. reached the maximum value of RefCount)
-   * the reference count is not incremented.
-   * @param num A pointer to the number to increment the reference count of.
-   * @returns Whether the reference count was incremented.
-   * @note Typically, you do not want to call this function directly. Instead,
-   * use the RealNumberUniqueTable::incRef(RelNumber*) function.
-   */
-  [[nodiscard]] static bool incRef(const RealNumber* num) noexcept;
-
-  /**
-   * @brief Decrement the reference count of a number.
-   * @details This function decrements the reference count of a number. If the
-   * reference count has saturated (i.e. reached the maximum value of RefCount)
-   * the reference count is not decremented.
-   * @param num A pointer to the number to decrement the reference count of.
-   * @returns Whether the reference count was decremented.
-   * @note Typically, you do not want to call this function directly. Instead,
-   * use the RealNumberUniqueTable::decRef(RelNumber*) function.
-   */
-  [[nodiscard]] static bool decRef(const RealNumber* num) noexcept;
 
   /**
    * @brief Write a binary representation of the number to a stream.
@@ -189,13 +149,6 @@ struct RealNumber {
   getNegativePointer(const RealNumber* e) noexcept;
 
   /**
-   * @brief Check whether the number is a negative pointer.
-   * @param e The number to check.
-   * @returns Whether the number is a negative pointer.
-   */
-  [[nodiscard]] static bool isNegativePointer(const RealNumber* e) noexcept;
-
-  /**
    * @brief Flip the sign of the number pointer.
    * @param e The number to flip the sign of.
    * @returns The number with the sign flipped.
@@ -208,6 +161,48 @@ struct RealNumber {
   flipPointerSign(const RealNumber* e) noexcept;
 
   /**
+   * @brief Mark @p e for garbage collection.
+   * @details Sets the 2nd least significant bit of the next_ pointer.
+   * @param e The number to mark.
+   */
+  static void mark(RealNumber* e) noexcept;
+
+  /**
+   * @brief Unmark @p e after garbage collection.
+   * @details Unsets the 2nd least significant bit of the next_ pointer.
+   * @param e The number to unmark.
+   */
+  static void unmark(RealNumber* e) noexcept;
+
+  /**
+   * @brief Immortalize @p e.
+   * @details Sets the 3rd least significant bit of the next_ pointer.
+   * @param e The number to immortalize.
+   */
+  static void immortalize(RealNumber* e) noexcept;
+
+  /**
+   * @brief Check whether the number is flagged as negative.
+   * @param e The number to check.
+   * @returns Whether the number is negative.
+   */
+  [[nodiscard]] static bool isNegativePointer(const RealNumber* e) noexcept;
+
+  /**
+   * @brief Check whether the number is flagged as marked.
+   * @param e The number to check.
+   * @returns Whether the number is marked.
+   */
+  [[nodiscard]] static bool isMarked(const RealNumber* e) noexcept;
+
+  /**
+   * @brief Check whether the number is flagged as immortal.
+   * @param e The number to check.
+   * @returns Whether the number is immortal.
+   */
+  [[nodiscard]] static bool isImmortal(const RealNumber* e) noexcept;
+
+  /**
    * @brief The value of the number.
    * @details The value of the number is a floating point number. The sign of
    * the value is encoded in the least significant bit of the memory address
@@ -216,26 +211,14 @@ struct RealNumber {
    * accessed using the static functions of this struct.
    */
   fp value{};
-  /**
-   * @brief The next pointer of the number.
-   * @details The next pointer is used to from linked lists.The next pointer
-   * is part of this class for efficiency reasons. It could be stored
-   * separately, but that would require many small allocations. This way, the
-   * entries can be allocated in chunks, which is much more efficient.
-   */
-  RealNumber* next{};
-  /**
-   * @brief The reference count of the number.
-   * @details The reference count is used to determine whether a number is
-   * still in use. If the reference count is zero, the number is not in use
-   * and can be garbage collected.
-   */
-  RefCount ref{};
 
   /// numerical tolerance to be used for floating point values
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
   static inline fp eps = std::numeric_limits<dd::fp>::epsilon() * 1024;
 };
+
+static_assert(sizeof(RealNumber) == 16);
+static_assert(alignof(RealNumber) == 8);
 
 namespace constants {
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)

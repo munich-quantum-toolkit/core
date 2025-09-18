@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,18 +10,22 @@
 
 #pragma once
 
-#include "dd/DDDefinitions.hpp"
 #include "dd/statistics/MemoryManagerStatistics.hpp"
 
+#include <cassert>
 #include <cstddef>
 #include <type_traits>
 #include <vector>
 
 namespace dd {
 
+// forward declarations
+struct LLBase;
+
 /**
- * @brief A memory manager for objects of type T.
- * @details The class manages a collection of objects of type T. The objects are
+ * @brief A memory manager for objects of the same type that inherit from
+ * `LLBase`.
+ * @details The class manages a collection of objects. The objects are
  * stored in contiguous chunks of memory. The manager supports reclaiming
  * objects that are no longer in use. This is done by maintaining a linked list
  * of available objects. When an object is no longer in use, it is added to the
@@ -33,15 +38,15 @@ namespace dd {
  * of objects at once and reusing them. This is especially useful for objects
  * that are frequently created and destroyed, such as decision diagram nodes,
  * edge weights, etc.
- * @tparam T The type of objects to manage.
  */
-template <typename T> class MemoryManager {
-  static_assert(std::is_same_v<decltype(T::next), T*>,
-                "T must have a `next` member of type T*");
-  static_assert(std::is_same_v<decltype(T::ref), RefCount>,
-                "T must have a `ref` member of type RefCount");
+class MemoryManager {
+  MemoryManager(size_t entrySize, std::size_t initialAllocationSize);
 
 public:
+  // delete copy construction and assignment
+  MemoryManager(const MemoryManager&) = delete;
+  MemoryManager& operator=(const MemoryManager&) = delete;
+
   /**
    * @brief The number of initially allocated entries.
    * @details The number of initially allocated entries is the number of entries
@@ -60,15 +65,14 @@ public:
   static constexpr double GROWTH_FACTOR = 2U;
 
   /**
-   * @brief Construct a new MemoryManager object
+   * @brief Construct a new MemoryManager object for objects of type T.
    * @param initialAllocationSize The initial number of entries to allocate
+   * @tparam T The type of the entries
    */
-  explicit MemoryManager(
-      const std::size_t initialAllocationSize = INITIAL_ALLOCATION_SIZE)
-      : chunks(1, std::vector<T>(initialAllocationSize)),
-        chunkIt(chunks[0].begin()), chunkEndIt(chunks[0].end()) {
-    stats.numAllocations = 1U;
-    stats.numAllocated = initialAllocationSize;
+  template <class T>
+  static MemoryManager
+  create(const std::size_t initialAllocationSize = INITIAL_ALLOCATION_SIZE) {
+    return {sizeof(T), initialAllocationSize};
   }
 
   /// default destructor
@@ -79,28 +83,32 @@ public:
    * @details If an entry is available for reuse, it is returned. Otherwise, an
    * entry from the pre-allocated chunks is returned. If no entry is available,
    * a new chunk is allocated.
+   * @tparam T The type of the entry.
    * @return A pointer to an entry.
    */
-  [[nodiscard]] T* get();
+  template <class T> [[nodiscard]] T* get() {
+    static_assert(std::is_base_of_v<LLBase, T>,
+                  "T must be derived from LLBase");
+    assert(sizeof(T) == entrySize_ && "Cannot get entry of different size");
+
+    return static_cast<T*>(get());
+  }
 
   /**
    * @brief Return an entry to the manager.
    * @details The entry is added to the list of available entries. The entry
-   * must not be used after it has been returned to the manager. Entries should
-   * have a reference count of 0 when they are returned to the manager. If not,
-   * this indicates a reference counting error.
-   * @param entry A pointer to an entry that is no longer in use.
+   * must not be used after it has been returned to the manager.
+   * @param entry A reference to an entry that is no longer in use.
    */
-  void returnEntry(T* entry) noexcept;
+  void returnEntry(LLBase& entry) noexcept;
 
   /**
    * @brief Reset the manager.
-   * @details Drops all but the first chunk and resets the reference counts of
-   * all entries to 0. If `resizeToTotal` is set to true, the first chunk is
-   * resized to the total number of entries. This increases memory locality
-   * and reduces the number of allocations when the manager is used again.
-   * However, it might also require a huge contiguous block of memory to be
-   * allocated.
+   * @details Drops all but the first chunk. If `resizeToTotal` is set to true,
+   * the first chunk is resized to the total number of entries. This increases
+   * memory locality and reduces the number of allocations when the manager is
+   * used again. However, it might also require a huge contiguous block of
+   * memory to be allocated.
    * @param resizeToTotal If set to true, the first chunk is resized to the
    * total number of entries.
    */
@@ -110,28 +118,27 @@ public:
   [[nodiscard]] const auto& getStats() const noexcept { return stats; }
 
 private:
+  /// Get an entry from the manager
+  [[nodiscard]] LLBase* get();
+
   /**
    * @brief Check whether an entry is available for reuse
    * @return true if an entry is available for reuse, false otherwise
    */
-  [[nodiscard]] bool entryAvailableForReuse() const noexcept {
-    return available != nullptr;
-  }
+  [[nodiscard]] bool entryAvailableForReuse() const noexcept;
 
   /**
    * @brief Get an entry from the list of available entries
    * @return A pointer to an entry ready for reuse
    */
-  [[nodiscard]] T* getEntryFromAvailableList() noexcept;
+  [[nodiscard]] LLBase* getEntryFromAvailableList() noexcept;
 
   /**
    * @brief Check whether an entry is available in the current chunk
    * @return true if an entry is available in the current chunk, false
    * otherwise
    */
-  [[nodiscard]] bool entryAvailableInChunk() const noexcept {
-    return chunkIt != chunkEndIt;
-  }
+  [[nodiscard]] bool entryAvailableInChunk() const noexcept;
 
   /// Allocate a new chunk of memory
   void allocateNewChunk();
@@ -140,41 +147,47 @@ private:
    * @brief Get an entry from the current chunk
    * @return A pointer to an entry from the current chunk
    */
-  [[nodiscard]] T* getEntryFromChunk() noexcept;
+  [[nodiscard]] LLBase* getEntryFromChunk() noexcept;
+
+  /// The size of an entry in bytes (as reported by `sizeof`)
+  size_t entrySize_;
+
+  /// A chunk of memory as a vector of bytes
+  using Chunk = std::vector<std::byte>;
 
   /**
    * @brief A linked list of entries that are available for (re-)use
    * @details The MemoryManager maintains a linked list of entries that are
    * available for (re-)use. This list is implemented as a singly linked list
-   * using the `next` member of the entries. The `available` member points to
+   * using the `next()` method of the entries. The `available` member points to
    * the first entry in the list. If the list is empty, `available` is
    * `nullptr`.
    */
-  T* available{};
+  LLBase* available;
 
   /**
    * @brief The storage for the entries
    * @details The MemoryManager maintains a vector of chunks. Each chunk is a
    * vector of entries. Entries in a chunk are allocated contiguously.
    */
-  std::vector<std::vector<T>> chunks;
+  std::vector<Chunk> chunks;
 
   /**
    * @brief Iterator to the next available entry in the current chunk
    * @details This iterator points to the next available entry in the current
    * chunk. If the current chunk is full, it points to the end of the chunk.
    */
-  typename std::vector<T>::iterator chunkIt;
+  Chunk::iterator chunkIt;
 
   /**
    * @brief Iterator to the end of the current chunk
    * @details This iterator points to the end of the current chunk. It is used
    * to determine whether the current chunk is full.
    */
-  typename std::vector<T>::iterator chunkEndIt;
+  Chunk::iterator chunkEndIt;
 
   /// Memory manager statistics
-  MemoryManagerStatistics<T> stats{};
+  MemoryManagerStatistics stats;
 };
 
 } // namespace dd

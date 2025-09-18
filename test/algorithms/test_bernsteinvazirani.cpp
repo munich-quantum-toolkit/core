@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -7,11 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "Definitions.hpp"
 #include "algorithms/BernsteinVazirani.hpp"
 #include "circuit_optimizer/CircuitOptimizer.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -44,7 +45,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_P(BernsteinVazirani, FunctionTest) {
   // get hidden bitstring
-  auto s = qc::BitString(GetParam());
+  auto s = qc::BVBitString(GetParam());
 
   // construct Bernstein Vazirani circuit
   const auto qc = qc::createBernsteinVazirani(s);
@@ -63,7 +64,7 @@ TEST_P(BernsteinVazirani, FunctionTest) {
 
 TEST_P(BernsteinVazirani, FunctionTestDynamic) {
   // get hidden bitstring
-  const auto s = qc::BitString(GetParam());
+  const auto s = qc::BVBitString(GetParam());
 
   // construct Bernstein Vazirani circuit
   const auto qc = qc::createIterativeBernsteinVazirani(s);
@@ -112,18 +113,18 @@ TEST_F(BernsteinVazirani, DynamicCircuit) {
 
 TEST_P(BernsteinVazirani, DynamicEquivalenceSimulation) {
   // get hidden bitstring
-  const auto s = qc::BitString(GetParam());
+  const auto s = qc::BVBitString(GetParam());
 
   // create standard BV circuit
   auto bv = qc::createBernsteinVazirani(s);
 
-  auto dd = std::make_unique<dd::Package<>>(bv.getNqubits());
+  auto dd = std::make_unique<dd::Package>(bv.getNqubits());
 
   // remove final measurements to obtain statevector
   qc::CircuitOptimizer::removeFinalMeasurements(bv);
 
   // simulate circuit
-  auto e = dd::simulate(bv, dd->makeZeroState(bv.getNqubits()), *dd);
+  auto e = dd::simulate(bv, makeZeroState(bv.getNqubits(), *dd), *dd);
 
   // create dynamic BV circuit
   auto dbv = qc::createIterativeBernsteinVazirani(s);
@@ -138,7 +139,7 @@ TEST_P(BernsteinVazirani, DynamicEquivalenceSimulation) {
   qc::CircuitOptimizer::removeFinalMeasurements(dbv);
 
   // simulate circuit
-  auto f = dd::simulate(dbv, dd->makeZeroState(dbv.getNqubits()), *dd);
+  auto f = dd::simulate(dbv, makeZeroState(dbv.getNqubits(), *dd), *dd);
 
   // calculate fidelity between both results
   auto fidelity = dd->fidelity(e, f);

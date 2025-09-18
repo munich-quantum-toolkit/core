@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -20,18 +21,18 @@
 #include <cstdint>
 #include <iostream>
 #include <limits>
+#include <ostream>
 
 namespace dd {
 
-RealNumberUniqueTable::RealNumberUniqueTable(MemoryManager<RealNumber>& manager,
+RealNumberUniqueTable::RealNumberUniqueTable(MemoryManager& manager,
                                              const std::size_t initialGCLim)
     : memoryManager(&manager), initialGCLimit(initialGCLim) {
   stats.entrySize = sizeof(Bucket);
   stats.numBuckets = NBUCKET;
-
-  // add 1/2 to the complex table and increase its ref count (so that it is
-  // not collected)
-  lookupNonNegative(0.5L)->ref++;
+  for (const auto& ival : immortals::get()) {
+    RealNumber::immortalize(lookupNonNegative(ival));
+  }
 }
 
 std::int64_t RealNumberUniqueTable::hash(const fp val) noexcept {
@@ -50,20 +51,6 @@ RealNumber* RealNumberUniqueTable::lookup(const fp val) {
     return RealNumber::getNegativePointer(lookupNonNegative(std::abs(val)));
   }
   return lookupNonNegative(val);
-}
-
-void RealNumberUniqueTable::incRef(RealNumber* num) noexcept {
-  const auto inc = RealNumber::incRef(num);
-  if (inc && RealNumber::refCount(num) == 1U) {
-    stats.trackActiveEntry();
-  }
-}
-
-void RealNumberUniqueTable::decRef(RealNumber* num) noexcept {
-  const auto dec = RealNumber::decRef(num);
-  if (dec && RealNumber::refCount(num) == 0U) {
-    --stats.numActiveEntries;
-  }
 }
 
 RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {
@@ -146,35 +133,36 @@ bool RealNumberUniqueTable::possiblyNeedsCollection() const noexcept {
 
 std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
   // nothing to be done if garbage collection is not forced, and the limit has
-  // not been reached, or the current count is minimal (the complex table
-  // always contains at least 0.5)
-  if ((!force && !possiblyNeedsCollection()) || stats.numEntries <= 1) {
+  // not been reached, or the current count is minimal.
+  if ((!force && !possiblyNeedsCollection()) ||
+      stats.numEntries <= immortals::size()) {
     return 0;
   }
 
   ++stats.gcRuns;
-  const auto entryCountBefore = stats.numEntries;
+  const auto before = stats.numEntries;
   for (std::size_t key = 0; key < table.size(); ++key) {
-    auto* p = table[key];
-    RealNumber* lastp = nullptr;
-    while (p != nullptr) {
-      if (p->ref == 0) {
-        auto* next = p->next;
-        if (lastp == nullptr) {
+    RealNumber* curr = table[key];
+    RealNumber* prev = nullptr;
+    while (curr != nullptr) {
+      if (!RealNumber::isImmortal(curr) && !RealNumber::isMarked(curr)) {
+        RealNumber* next = curr->next();
+        if (prev == nullptr) {
           table[key] = next;
         } else {
-          lastp->next = next;
+          prev->setNext(next);
         }
-        memoryManager->returnEntry(p);
-        p = next;
+        memoryManager->returnEntry(*curr);
+        curr = next;
         --stats.numEntries;
       } else {
-        lastp = p;
-        p = p->next;
+        prev = curr;
+        curr = curr->next();
       }
-      tailTable[key] = lastp;
+      tailTable[key] = prev;
     }
   }
+
   // The garbage collection limit changes dynamically depending on the number
   // of remaining (active) nodes. If it were not changed, garbage collection
   // would run through the complete table on each successive call once the
@@ -187,8 +175,7 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
   } else if (stats.numEntries < gcLimit / 128) {
     gcLimit /= 2;
   }
-  stats.numActiveEntries = stats.numEntries;
-  return entryCountBefore - stats.numEntries;
+  return before - stats.numEntries;
 }
 
 void RealNumberUniqueTable::clear() noexcept {
@@ -214,8 +201,8 @@ void RealNumberUniqueTable::print() const {
 
     while (p != nullptr) {
       std::cout << "\t\t" << p->value << " "
-                << reinterpret_cast<std::uintptr_t>(p) << " " << p->ref << "\n";
-      p = p->next;
+                << reinterpret_cast<std::uintptr_t>(p) << "\n";
+      p = p->next();
     }
 
     if (table[key] != nullptr) {
@@ -234,7 +221,7 @@ std::ostream& RealNumberUniqueTable::printBucketDistribution(std::ostream& os) {
     std::size_t bucketCount = 0;
     while (bucket != nullptr) {
       ++bucketCount;
-      bucket = bucket->next;
+      bucket = bucket->next();
     }
     os << bucketCount << "\n";
   }
@@ -242,14 +229,28 @@ std::ostream& RealNumberUniqueTable::printBucketDistribution(std::ostream& os) {
   return os;
 }
 
+std::size_t RealNumberUniqueTable::countMarkedEntries() const noexcept {
+  std::size_t count = 0U;
+  for (const auto* bucket : table) {
+    const auto* curr = bucket;
+    while (curr != nullptr) {
+      if (RealNumber::isMarked(curr)) {
+        ++count;
+      }
+      curr = curr->next();
+    }
+  }
+  return count;
+}
+
 RealNumber* RealNumberUniqueTable::findOrInsert(const std::int64_t key,
                                                 const fp val) {
   const auto k = static_cast<std::size_t>(key);
   auto* curr = table[k];
   if (curr == nullptr) {
-    auto* entry = memoryManager->get();
+    auto* entry = memoryManager->get<RealNumber>();
     entry->value = val;
-    entry->next = curr;
+    entry->setNext(curr);
     table[k] = entry;
     tailTable[k] = entry;
     stats.trackInsert();
@@ -263,10 +264,10 @@ RealNumber* RealNumberUniqueTable::findOrInsert(const std::int64_t key,
       return back;
     }
     ++stats.collisions;
-    auto* entry = memoryManager->get();
+    auto* entry = memoryManager->get<RealNumber>();
     entry->value = val;
-    entry->next = nullptr;
-    back->next = entry;
+    entry->setNext(nullptr);
+    back->setNext(entry);
     tailTable[k] = entry;
     stats.trackInsert();
     return entry;
@@ -278,8 +279,8 @@ RealNumber* RealNumberUniqueTable::findOrInsert(const std::int64_t key,
     if (RealNumber::approximatelyEquals(curr->value, val)) {
       // check if val is actually closer to the next element in the list (if
       // there is one)
-      if (curr->next != nullptr) {
-        const auto& next = curr->next;
+      if (curr->next() != nullptr) {
+        const auto& next = curr->next();
         // potential candidate in range
         if (valTol >= next->value) {
           const auto diffToCurr = std::abs(curr->value - val);
@@ -296,19 +297,19 @@ RealNumber* RealNumberUniqueTable::findOrInsert(const std::int64_t key,
     }
     ++stats.collisions;
     prev = curr;
-    curr = curr->next;
+    curr = curr->next();
   }
 
-  auto* entry = memoryManager->get();
+  auto* entry = memoryManager->get<RealNumber>();
   entry->value = val;
 
   if (prev == nullptr) {
     // add to front of bucket
     table[k] = entry;
   } else {
-    prev->next = entry;
+    prev->setNext(entry);
   }
-  entry->next = curr;
+  entry->setNext(curr);
   if (curr == nullptr) {
     tailTable[k] = entry;
   }
@@ -318,12 +319,12 @@ RealNumber* RealNumberUniqueTable::findOrInsert(const std::int64_t key,
 
 RealNumber* RealNumberUniqueTable::insertFront(const std::int64_t key,
                                                const fp val) {
-  auto* entry = memoryManager->get();
+  auto* entry = memoryManager->get<RealNumber>();
   entry->value = val;
 
   auto* curr = table[static_cast<std::size_t>(key)];
   table[static_cast<std::size_t>(key)] = entry;
-  entry->next = curr;
+  entry->setNext(curr);
   if (curr == nullptr) {
     tailTable[static_cast<std::size_t>(key)] = entry;
   }
@@ -333,16 +334,16 @@ RealNumber* RealNumberUniqueTable::insertFront(const std::int64_t key,
 
 RealNumber* RealNumberUniqueTable::insertBack(const std::int64_t key,
                                               const fp val) {
-  auto* entry = memoryManager->get();
+  auto* entry = memoryManager->get<RealNumber>();
   entry->value = val;
-  entry->next = nullptr;
+  entry->setNext(nullptr);
 
   auto* back = tailTable[static_cast<std::size_t>(key)];
   tailTable[static_cast<std::size_t>(key)] = entry;
   if (back == nullptr) {
     table[static_cast<std::size_t>(key)] = entry;
   } else {
-    back->next = entry;
+    back->setNext(entry);
   }
   stats.trackInsert();
   return entry;
