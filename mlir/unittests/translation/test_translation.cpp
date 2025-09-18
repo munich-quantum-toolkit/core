@@ -17,7 +17,6 @@
 #include "mlir/Dialect/MQTRef/Translation/ImportQuantumComputation.h"
 
 #include <cstddef>
-#include <format>
 #include <functional>
 #include <gtest/gtest.h>
 #include <initializer_list>
@@ -313,17 +312,17 @@ std::string getCheckStringTestCaseUnitary(const TestCaseUnitary& testCase) {
       "CHECK: func.func @main() attributes {passthrough = [\"entry_point\"]}\n";
 
   // Add register allocation
-  result += std::format(
-      "CHECK: %[[Qreg:.*]] = memref.alloca() : memref<{}x!mqtref.Qubit>\n",
-      testCase.numQubits);
+  result += "CHECK: %[[Qreg:.*]] = memref.alloca() : memref<" +
+            std::to_string(testCase.numQubits) + "x!mqtref.Qubit>\n";
 
   // Add qubit extraction
   for (size_t i = 0; i < testCase.numQubits; ++i) {
-    result += std::format(R"(
-      CHECK: %[[I{}:.*]] = arith.constant {} : index
-      CHECK: %[[Q{}:.*]] = memref.load %[[Qreg]][%[[I{}:.*]]] : memref<{}x!mqtref.Qubit>
-    )",
-                          i, i, i, i, testCase.numQubits);
+    result += "CHECK: %[[I" + std::to_string(i) + ":.*]] = arith.constant " +
+              std::to_string(i) + " : index\n";
+    result += "CHECK: %[[Q" + std::to_string(i) +
+              ":.*]] = memref.load %[[Qreg]][%[[I" + std::to_string(i) +
+              ":.*]]] : memref<" + std::to_string(testCase.numQubits) +
+              "x!mqtref.Qubit>\n";
   }
 
   // Add operation-specific check
@@ -582,9 +581,8 @@ getCheckStringTestCaseIfRegister(const TestCaseIfRegister& testCase) {
   )";
 
   // Add comparison
-  result += std::format(
-      "CHECK: %[[Cnd0:.*]] = arith.cmpi {}, %[[C0]], %[[Exp]] : i64\n",
-      testCase.predicate);
+  result += "CHECK: %[[Cnd0:.*]] = arith.cmpi " + testCase.predicate +
+            ", %[[C0]], %[[Exp]] : i64\n";
 
   result += R"(
     CHECK: scf.if %[[Cnd0]] {
@@ -832,12 +830,9 @@ std::string getCheckStringTestCaseIfElseBit(const TestCaseIfElseBit& testCase) {
     CHECK: scf.if %[[M0]] {
   )";
 
-  result += std::format(R"(
-    CHECK: mqtref.{}() %[[Q0]]
-    CHECK: }} else {{
-    CHECK: mqtref.{}() %[[Q0]]
-  )",
-                        testCase.thenOperation, testCase.elseOperation);
+  result += "CHECK: mqtref." + testCase.thenOperation + "() %[[Q0]]\n";
+  result += "} else {\n";
+  result += "CHECK: mqtref." + testCase.elseOperation + "() %[[Q0]]\n";
 
   result += R"(
     CHECK: }
