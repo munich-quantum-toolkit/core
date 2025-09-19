@@ -21,6 +21,4 @@ if(TARGET MQT::CoreQIRRunner)
   target_compile_definitions(
     ${TARGET_NAME} PRIVATE EXECUTABLE_PATH="$<TARGET_FILE:MQT::CoreQIRRunner>"
                            QIR_FILES=${QIR_FILES})
-  # Set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 endif()

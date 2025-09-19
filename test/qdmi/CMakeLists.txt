@@ -15,12 +15,10 @@ if(TARGET MQT::CoreQDMIDriver)
     target_compile_definitions(${TARGET_NAME}
                                PRIVATE DYN_DEV_LIB="$<TARGET_FILE:MQT::CoreQDMINaDeviceDyn>")
   endif()
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 endif()
 
 set(TARGET_NAME mqt-core-qdmi-fomac-test)
 
 if(TARGET MQT::CoreQDMIFoMaC)
   package_add_test(${TARGET_NAME} MQT::CoreQDMIFoMaC test_fomac.cpp)
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 endif()
