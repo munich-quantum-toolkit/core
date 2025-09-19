@@ -12,6 +12,8 @@ The runtime can be utilized in two ways:
 1.  As a standalone library that can be linked to any QIR program, resulting in a binary executable.
 2.  By using the `mqt-core-qir-runner` command-line tool, which interprets QIR programs directly.
 
+See {cite:p}`stadeTowardsSupportingQIR2025` for more details.
+
 ### Building the Runner
 
 To build this tool, the CMake option `BUILD_MQT_CORE_QIR_RUNNER` has to be enabled (which depends on `BUILD_MQT_CORE_MLIR` being set).
