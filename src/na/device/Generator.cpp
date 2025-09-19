@@ -244,9 +244,11 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
              << x << ", " << y << "))";
           for (const auto& operation : device.localSingleQubitOperations) {
             if (x >= operation.region.origin.x &&
-                x <= operation.region.origin.x + operation.region.size.width &&
+                x <= operation.region.origin.x +
+                         static_cast<int64_t>(operation.region.size.width) &&
                 y >= operation.region.origin.y &&
-                y <= operation.region.origin.y + operation.region.size.height) {
+                y <= operation.region.origin.y +
+                         static_cast<int64_t>(operation.region.size.height)) {
               os << ";\\\n  localOp" << operation.name
                  << "Sites.emplace_back(var.back().get())";
             }
