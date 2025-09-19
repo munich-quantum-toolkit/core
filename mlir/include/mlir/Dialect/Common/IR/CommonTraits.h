@@ -11,14 +11,45 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
+#include <stdexcept>
 
 namespace mqt::ir::common {
-// TODO: via helper class (no default ctor) ensure that array is fully explicitly initialized
-template <size_t N, std::array<size_t, (1 << N) * (1 << N)> DefinitionMatrix> class TargetArityTrait {
+struct DefinitionMatrixElement {
+  enum class Type {
+    Value,
+    ParameterIndex,
+  };
+  enum class Transformation {
+    Identity,
+    Sin,
+    Cos,
+  };
+
+  double value;
+  Type type;
+  Transformation transformation = Transformation::Identity;
+
+  double operator()() {
+    switch (transformation) {
+    case Transformation::Identity:
+      return value;
+    case Transformation::Sin:
+      return std::sin(value);
+    case Transformation::Cos:
+      return std::cos(value);
+    }
+    return value;
+  }
+};
+
+template <size_t N, std::array<DefinitionMatrixElement, (1 << N) * (1 << N)>
+                        DefinitionMatrix>
+class TargetArityTrait {
 public:
   template <typename ConcreteOp>
   class Impl : public mlir::OpTrait::TraitBase<ConcreteOp, Impl> {
@@ -33,7 +64,9 @@ public:
     }
 
     [[nodiscard]] static auto getDefinitionMatrix() { return DefinitionMatrix; }
-    [[nodiscard]] static auto getDefinitionMatrix(int x, int y) { return DefinitionMatrix[y * (1 << N) + x]; }
+    [[nodiscard]] static double getDefinitionMatrix(int x, int y) {
+      return DefinitionMatrix[y * (1 << N) + x]();
+    }
   };
 };
 

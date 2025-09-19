@@ -22,7 +22,7 @@ def GPhaseOp : UnitaryOp<"gphase", [NoTarget, OneParameter]> {
     }];
 }
 
-def IOp : UnitaryOp<"i", [TargetArity<1, [1, 0, 0, 1]>, NoParameter]> {
+def IOp : UnitaryOp<"i", [TargetArity<1, [Value<Int<1>>, Value<Int<0>>, Value<Int<0>>, Value<Int<1>>]>, NoParameter]> {
     let summary = "I operation";
 
     let description = [{
