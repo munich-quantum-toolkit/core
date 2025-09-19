@@ -264,7 +264,7 @@ public:
   Runtime(Runtime&&) = delete;
   Runtime& operator=(Runtime&&) = delete;
 
-  auto resetBackend() -> void;
+  auto reset() -> void;
   template <qc::OpType Op, typename... Args>
   auto apply(Args&&... args) -> void {
     const qc::StandardOperation& operation =

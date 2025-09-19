@@ -44,16 +44,15 @@ Runtime& Runtime::getInstance() {
   static Runtime instance;
   return instance;
 }
-auto Runtime::resetBackend() -> void {
+auto Runtime::reset() -> void {
   addressMode = AddressMode::UNKNOWN;
   currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
   currentMaxQubitId = 0;
   currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
   numQubitsInQState = 0;
   dd->decRef(qState);
-  qState = dd::vEdge::one();
-  dd->incRef(qState);
   dd->garbageCollect();
+  qState = dd::vEdge::one();
   mt.seed(generateRandomSeed());
   qRegister.clear();
   rRegister.clear();
@@ -100,17 +99,16 @@ auto Runtime::enlargeState(const std::uint64_t maxQubit) -> void {
 
     // if the state is terminal, we need to create a new node
     if (qState.isTerminal()) {
-      dd->decRef(qState);
       qState = dd::makeZeroState(d, *dd);
-      dd->incRef(qState);
       return;
     }
 
     // enlarge state
     for (auto q = qState.p->v; q < numQubitsInQState; ++q) {
-      dd->decRef(qState);
+      auto old = qState;
       qState = dd->makeDDNode(q + 1U, std::array{qState, dd::vEdge::zero()});
       dd->incRef(qState);
+      dd->decRef(old);
     }
   }
 }
@@ -118,9 +116,7 @@ auto Runtime::enlargeState(const std::uint64_t maxQubit) -> void {
 auto Runtime::swap(Qubit* qubit1, Qubit* qubit2) -> void {
   const auto target1 = translateAddresses(std::array{qubit1})[0];
   const auto target2 = translateAddresses(std::array{qubit2})[0];
-  const auto tmp = qubitPermutation[target1];
-  qubitPermutation[target1] = qubitPermutation[target2];
-  qubitPermutation[target2] = tmp;
+  std::swap(qubitPermutation[target1], qubitPermutation[target2]);
 }
 
 auto Runtime::qAlloc() -> Qubit* {
