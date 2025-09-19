@@ -21,52 +21,37 @@ module {
 }
 
 // -----
-// This test checks if the AllocOp is converted correctly using a static attribute
+// This test checks if the AllocaOp is converted correctly using a static attribute
 module {
-    // CHECK-LABEL: llvm.func @testConvertAllocRegisterAttribute()
-    func.func @testConvertAllocRegisterAttribute() attributes {passthrough = ["entry_point"]}  {
+    // CHECK-LABEL: llvm.func @testConvertAllocaStatic()
+    func.func @testConvertAllocaStatic() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
 
-        %r0 = "mqtref.allocQubitRegister" () {"size_attr" = 2 : i64} : () -> !mqtref.QubitRegister
+        %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
 
         return
     }
 }
 
+
 // -----
-// This test checks if the AllocOp is converted correctly using a dynamic operand
+// This test checks if the AllocaOp is converted correctly using a dynamic operand
 module {
-    // CHECK-LABEL: llvm.func @testConvertAllocRegisterOperand()
-    func.func @testConvertAllocRegisterOperand() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
+    // CHECK-LABEL: llvm.func @testConvertAllocaDynamic()
+    func.func @testConvertAllocaDynamic() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : index) : i64
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
 
-        %c0 = arith.constant 2 : i64
-        %r0 = "mqtref.allocQubitRegister" (%c0) : (i64) -> !mqtref.QubitRegister
+        %i2 = arith.constant 2 : index
+        %qreg = memref.alloca(%i2) : memref<?x!mqtref.Qubit>
 
-        return
-    }
-
-}
-
-// -----
-// This test checks if the dealloc register call is correctly converted
-module {
-    // CHECK-LABEL: llvm.func @testConvertDeallocRegister()
-    func.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[ANY:.*]]) : (i64) -> !llvm.ptr
-        // CHECK: llvm.call @__quantum__rt__qubit_release_array(%[[r_0]]) : (!llvm.ptr) -> ()
-
-         %r0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-
-        "mqtref.deallocQubitRegister"(%r0) : (!mqtref.QubitRegister) -> ()
         return
     }
 }
 
 // -----
-// This test checks if the AllocOp is converted correctly using a static attribute
+// This test checks if the allocQubit is converted correctly
 module {
     // CHECK-LABEL: llvm.func @testConvertAllocQubit()
     func.func @testConvertAllocQubit() attributes {passthrough = ["entry_point"]}  {
@@ -81,7 +66,7 @@ module {
 }
 
 // -----
-// This test checks if the dealloc register call is correctly converted
+// This test checks if the deallocQubit call is converted correctly
 module {
     // CHECK-LABEL: llvm.func @testConvertDeAllocQubit()
     func.func @testConvertDeAllocQubit() attributes {passthrough = ["entry_point"]}  {
@@ -98,6 +83,7 @@ module {
         return
     }
 }
+
 // -----
 // This test checks if the blocks for the base profile of QIR are correctly created
 module {
@@ -107,57 +93,36 @@ module {
       // CHECK: ^[[main]]:
       // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
       // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
-      // CHECK: llvm.br ^[[main2:.*]]
-      // CHECK: ^[[main2]]:
       // CHECK: llvm.br ^[[end:.*]]
       // CHECK: ^[[end]]:
       // CHECK: llvm.return
 
-      %r0 = "mqtref.allocQubitRegister" () {"size_attr" = 2 : i64} : () -> !mqtref.QubitRegister
+      %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
 
       return
     }
-
 }
 
-
 // -----
-// This test checks if the ExtractOp is converted correctly using a static attribute
+// This test checks if the LoadOp is converted correctly
 module {
-    // CHECK-LABEL: llvm.func @testConvertExtractOpAttribute()
-    func.func @testConvertExtractOpAttribute() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: %[[size:.*]] = llvm.mlir.constant(1 : i64) : i64
+    // CHECK-LABEL: llvm.func @testConvertLoadOp()
+    func.func @testConvertLoadOp() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[size:.*]] = llvm.mlir.constant(1 : index) : i64
+        // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : index) : i64
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
-        // CHECK-DAG: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
         // CHECK: %[[ptr_0:.*]] = llvm.call @__quantum__rt__array_get_element_ptr_1d(%[[r_0]], %[[index]]) : (!llvm.ptr, i64) -> !llvm.ptr
         // CHECK: %[[q_0:.*]] = llvm.load %[[ptr_0]] : !llvm.ptr -> !llvm.ptr
 
-        %c0 = arith.constant 1 : i64
-        %r0 = "mqtref.allocQubitRegister" (%c0) : (i64) -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+        %i1 = arith.constant 1 : index
+        %i0 = arith.constant 0 : index
+        %qreg = memref.alloca(%i1) : memref<?x!mqtref.Qubit>
+        %q0 = memref.load %qreg[%i0] : memref<?x!mqtref.Qubit>
 
         return
     }
 }
 
-// -----
-// This test checks if the ExtractOp is converted correctly using a dynamic operand
-module {
-    // CHECK-LABEL: llvm.func @testConvertExtractOp()
-    func.func @testConvertExtractOp() attributes {passthrough = ["entry_point"]}  {
-        // CHECK: %[[size:.*]] = llvm.mlir.constant(1 : i64) : i64
-        // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
-        // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
-        // CHECK: %[[ptr_0:.*]] = llvm.call @__quantum__rt__array_get_element_ptr_1d(%[[r_0]], %[[index]]) : (!llvm.ptr, i64) -> !llvm.ptr
-        // CHECK: %[[q_0:.*]] = llvm.load %[[ptr_0]] : !llvm.ptr -> !llvm.ptr
-
-        %c0 = arith.constant 1 : i64
-        %c1 = arith.constant 0 : i64
-        %r0 = "mqtref.allocQubitRegister" (%c0) : (i64) -> !mqtref.QubitRegister
-        %q0 = "mqtref.extractQubit"(%r0, %c1) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
-        return
-    }
-}
 
 // -----
 // This test checks if the reset operation is correctly converted
@@ -209,8 +174,6 @@ module {
         // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
         // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
 
-
-
         %q0 = mqtref.allocQubit
         %q1 = mqtref.allocQubit
         %mem = memref.alloca() : memref<2xi1>
@@ -243,8 +206,6 @@ module {
         // CHECK: llvm.call @__quantum__qis__mz__body(%[[ptr_1]], %[[ptr_1]]) : (!llvm.ptr, !llvm.ptr)
         // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
         // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
-
-
 
         %q0 = mqtref.qubit 0
         %q1 = mqtref.qubit 1
@@ -306,8 +267,6 @@ module {
         // CHECK: llvm.call @__quantum__qis__mz__body(%[[ptr_1]], %[[ptr_1]]) : (!llvm.ptr, !llvm.ptr)
         // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
         // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
-
-
 
         %q0 = mqtref.qubit 0
         %q1 = mqtref.qubit 1
