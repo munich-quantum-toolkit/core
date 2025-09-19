@@ -28,17 +28,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-na)
                                       FILES ${NA_HEADERS})
 
   # add link libraries
-  target_link_libraries(
-    ${MQT_CORE_TARGET_NAME}-na
-    PUBLIC MQT::CoreIR
-    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
-
-  # set versioning information
-  set_target_properties(
-    ${MQT_CORE_TARGET_NAME}-na
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreNA)
+  target_link_libraries(${MQT_CORE_TARGET_NAME}-na PUBLIC MQT::CoreIR)
 
   # generate export header
   include(GenerateExportHeader)

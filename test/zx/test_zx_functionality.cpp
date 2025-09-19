@@ -271,7 +271,7 @@ TEST_F(ZXFunctionalityTest, InitialLayout) {
 
 TEST_F(ZXFunctionalityTest, FromSymbolic) {
   const sym::Variable x{"x"};
-  const sym::Term xTerm{x, 1.0};
+  const sym::Term<double> xTerm{x, 1.0};
   qc = qc::QuantumComputation{1};
   qc.rz(qc::Symbolic(xTerm), 0);
   qc.rz(-qc::Symbolic(xTerm), 0);
