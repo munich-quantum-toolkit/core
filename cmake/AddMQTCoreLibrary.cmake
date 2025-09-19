@@ -36,7 +36,7 @@ function(add_mqt_core_library name)
   add_library(MQT::Core${ARG_ALIAS_NAME} ALIAS ${name})
 
   # Set c++ standard
-  target_compile_features(${name} PRIVATE cxx_std_20)
+  target_compile_features(${name} PUBLIC cxx_std_20)
 
   # Add link libraries for warnings and options
   target_link_libraries(${name} PRIVATE MQT::ProjectWarnings MQT::ProjectOptions)
