@@ -13,7 +13,6 @@
 #include <ir/Definitions.hpp>
 #include <ostream>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 
 namespace qasm3 {
