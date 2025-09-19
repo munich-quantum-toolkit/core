@@ -36,7 +36,7 @@ Similarly, if the input program contains a classically controlled operation, the
 
 As an example, consider the following `QuantumComputation`:
 
-```qasm
+```qasm3
 OPENQASM 3.0;
 include "stdgates.inc";
 qubit[1] q;
