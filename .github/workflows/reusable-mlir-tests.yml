@@ -18,19 +18,15 @@ jobs:
           [
             ubuntu-24.04,
             ubuntu-24.04-arm,
-            macos-13,
-            macos-14,
+            macos-15,
             windows-2025,
             windows-11-arm,
           ]
-        llvm-version: [19, 20]
+        llvm-version: [21]
         coverage: [false]
         include:
           - os: ubuntu-24.04
-            llvm-version: 19
-            coverage: true
-          - os: ubuntu-24.04
-            llvm-version: 20
+            llvm-version: 21
             coverage: true
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
@@ -38,7 +34,7 @@ jobs:
       FORCE_COLOR: 3
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           fetch-depth: 0
 
@@ -49,11 +45,11 @@ jobs:
 
       - name: Restore LLVM/MLIR cache (Windows)
         if: runner.os == 'Windows'
-        uses: actions/cache@v4
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         id: mlir-cache
         with:
           path: llvm-install
-          key: ${{ runner.os }}-llvm-${{ matrix.llvm-version }}
+          key: ${{ matrix.os }}-llvm-${{ matrix.llvm-version }}
 
       - name: Setup LLVM/MLIR (Windows)
         if: runner.os == 'Windows'
@@ -62,21 +58,16 @@ jobs:
           & "${{ github.workspace }}\.github\scripts\setup-mlir.ps1" -MajorVersion ${{ matrix.llvm-version }} -InstallPrefix "${{ github.workspace }}\llvm-install"
 
       # Build acceleration and Python tooling
-      - name: Setup ccache (Linux and macOS)
-        if: runner.os == 'Linux' || runner.os == 'macOS'
-        uses: Chocobo1/setup-ccache-action@v1
-        with:
-          prepend_symlinks_to_path: false
-          override_cache_key: mlir-${{ matrix.coverage && 'coverage' || 'tests' }}-${{ runner.os }}-${{ matrix.llvm-version }}
-
       - name: Set up mold as linker (Linux)
-        uses: rui314/setup-mold@v1
+        uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
 
       - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@b75a909f75acd358c2196fb9a5f1299a9a8868a4 # v6.7.0
         with:
           python-version: 3.13
           activate-environment: true
+          enable-cache: true
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Ninja
         run: uv tool install ninja
@@ -138,7 +129,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: matrix.coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
         with:
           flags: mlir
           name: mlir-coverage-llvm-${{ matrix.llvm-version }}

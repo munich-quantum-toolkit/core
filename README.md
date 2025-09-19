@@ -74,7 +74,7 @@ To support this endeavor, please consider:
 
 ## Getting Started
 
-`mqt.core` is available via [PyPI](https://pypi.org/project/mqt.core/) for all major operating systems and supports Python 3.9 to 3.14.
+`mqt.core` is available via [PyPI](https://pypi.org/project/mqt.core/).
 
 ```console
 (.venv) $ pip install mqt.core
@@ -97,15 +97,17 @@ print(qc)
 
 ## System Requirements
 
-Building (and running) is continuously tested under Linux, MacOS, and Windows using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
-However, the implementation should be compatible with any current C++ compiler supporting C++20 and a minimum CMake version of 3.24.
+Building the project requires a C++ compiler with support for C++20 and CMake 3.24 or newer.
+For details on how to build the project, please refer to the [documentation](https://mqt.readthedocs.io/projects/core).
+Building (and running) is continuously tested under Linux, macOS, and Windows using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
+MQT Core is compatible with all [officially supported Python versions](https://devguide.python.org/versions/).
 
-MQT Core relies on some external dependencies:
+The project relies on some external dependencies:
 
-- [nlohmann/json](https://github.com/nlohmann/json): A JSON library for modern C++.
 - [boost/multiprecision](https://github.com/boostorg/multiprecision): A library for multiprecision arithmetic (used in the ZX package).
+- [nlohmann/json](https://github.com/nlohmann/json): A JSON library for modern C++.
+- [pybind/pybind11_json](https://github.com/pybind/pybind11_json): A library for using `nlohmann::json` with `pybind11` (only used for creating the Python bindings).
 - [google/googletest](https://github.com/google/googletest): A testing framework for C++ (only used in tests).
-- [pybind/pybind11_json](https://github.com/pybind/pybind11_json): Using nlohmann::json with pybind11 (only used for creating the Python bindings).
 
 CMake will automatically look for installed versions of these libraries. If it does not find them, they will be fetched automatically at configure time via the [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html) module (check out the documentation for more information on how to customize this behavior).
 

@@ -25,8 +25,8 @@ module {
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
     %q1_1 = mqtopt.x() %q1_0 : !mqtopt.Qubit
 
-    // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_0]])
-    %q0_1, %c0_0 = "mqtopt.measure"(%q0_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = mqtopt.measure %[[Q0_0]]
+    %q0_1, %c0_0 = mqtopt.measure %q0_0
     // CHECK: cf.cond_br %[[C0_0]], ^[[THEN:.*]], ^[[ELSE:.*]]
     cf.cond_br %c0_0, ^then(%q1_1 : !mqtopt.Qubit), ^else(%q1_1 : !mqtopt.Qubit)
 
@@ -71,8 +71,8 @@ module {
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
     %q1_1 = mqtopt.x() %q1_0 : !mqtopt.Qubit
 
-    // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_0]])
-    %q0_1, %c0_0 = "mqtopt.measure"(%q0_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = mqtopt.measure %[[Q0_0]]
+    %q0_1, %c0_0 = mqtopt.measure %q0_0
     // CHECK: cf.cond_br %[[C0_0]], ^[[THEN:.*]], ^[[ELSE:.*]]
     cf.cond_br %c0_0, ^then, ^else
 
@@ -116,8 +116,8 @@ module {
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
     %q1_1 = mqtopt.x() %q1_0 : !mqtopt.Qubit
 
-    // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_0]])
-    %q0_1, %c0_0 = "mqtopt.measure"(%q0_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = mqtopt.measure %[[Q0_0]]
+    %q0_1, %c0_0 = mqtopt.measure %q0_0
     cf.cond_br %c0_0, ^then(%q0_1 : !mqtopt.Qubit), ^else(%q0_1 : !mqtopt.Qubit)
 
   ^then(%q0_1then : !mqtopt.Qubit):
@@ -158,8 +158,8 @@ module {
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
     %q1_1 = mqtopt.x() %q1_0 : !mqtopt.Qubit
 
-    // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = "mqtopt.measure"(%[[Q0_0]])
-    %q0_1, %c0_0 = "mqtopt.measure"(%q0_0) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[Q0_1:.*]], %[[C0_0:.*]] = mqtopt.measure %[[Q0_0]]
+    %q0_1, %c0_0 = mqtopt.measure %q0_0
     // CHECK: cf.cond_br %[[C0_0]], ^[[THEN:.*]], ^[[ELSE:.*]]
     cf.cond_br %c0_0, ^then(%q1_1 : !mqtopt.Qubit), ^continue(%q1_1 : !mqtopt.Qubit)
 

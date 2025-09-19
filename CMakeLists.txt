@@ -47,7 +47,7 @@ if(BUILD_MQT_CORE_BINDINGS)
   endif()
 
   # top-level call to find Python
-  find_package(Python 3.9 REQUIRED COMPONENTS Interpreter Development.Module)
+  find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module)
 endif()
 
 # check if this is the master project or used via add_subdirectory
@@ -84,7 +84,8 @@ if(MQT_CORE_INSTALL)
   else()
     set(BASEPOINT $ORIGIN)
   endif()
-  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR})
+  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR}
+                          ${BASEPOINT}/../${CMAKE_INSTALL_LIBDIR})
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()

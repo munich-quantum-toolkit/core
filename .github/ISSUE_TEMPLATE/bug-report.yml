@@ -1,10 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
-# All rights reserved.
-#
-# SPDX-License-Identifier: MIT
-#
-# Licensed under the MIT License
+# This file has been generated from an external template. Please do not modify it directly.
+# Changes should be contributed to https://github.com/munich-quantum-toolkit/templates.
 
 name: 🐛 Bug Report
 description: Report a problem or unexpected behavior
@@ -18,31 +13,35 @@ body:
         ⚠ Before submitting:
         1. Search [existing issues](https://github.com/munich-quantum-toolkit/core/search?q=is%3Aissue&type=issues) to avoid duplicates
         2. For questions or discussions, please use our [discussions forum](https://github.com/munich-quantum-toolkit/core/discussions)
+
   - type: textarea
     attributes:
-      label: System Information
-      description: Please provide details about your environment
+      label: System and Environment Information
+      description: Provide details about your environment.
       placeholder: |
-        - Operating System (including version):
+        - Operating system and version:
         - MQT Core version:
-        - Python/C++ compiler version (if applicable):
+        - Language versions (e.g., C++, Python, Rust, ...):
+        - Compiler or build tool versions (e.g., Clang, GCC, rustc, ...):
         - Any relevant dependencies and their versions:
     validations:
       required: true
+
   - type: textarea
     attributes:
       label: Bug Description
-      description: Provide a clear and detailed explanation of the issue you're experiencing.
+      description: Provide a clear and detailed explanation of the issue you are experiencing.
       placeholder: |
         What happened?
         What did you expect to happen instead?
         Include any error messages or unexpected behavior you observed.
     validations:
       required: true
+
   - type: textarea
     attributes:
       label: Steps to Reproduce
-      description: Provide specific steps to reproduce this issue
+      description: Provide specific steps to reproduce this issue.
       placeholder: |
         1. Set up environment with '...'
         2. Configure workflow using '...'

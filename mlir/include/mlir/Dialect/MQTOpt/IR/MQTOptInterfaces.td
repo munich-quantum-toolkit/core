@@ -158,6 +158,15 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
             /*methodBody=*/  [{}],
             /*defaultImpl=*/ [{
                 return $_op.getParams();
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Returns the name of the gate.",
+            /*returnType=*/  "llvm::StringRef",
+            /*methodName=*/  "getIdentifier",
+            /*args=*/        (ins),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+               return  $_op->getName().getStringRef().split('.').second;
             }]>
     ];
 

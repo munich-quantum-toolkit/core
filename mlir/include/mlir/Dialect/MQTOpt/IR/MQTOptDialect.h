@@ -63,4 +63,14 @@ void printOptOutputTypes(mlir::OpAsmPrinter& printer, mlir::Operation* op,
                          mlir::TypeRange out_qubits,
                          mlir::TypeRange pos_ctrl_out_qubits,
                          mlir::TypeRange neg_ctrl_out_qubits);
+
+mlir::ParseResult parseOptParams(
+    mlir::OpAsmParser& parser,
+    llvm::SmallVectorImpl<mlir::OpAsmParser::UnresolvedOperand>& params,
+    mlir::Attribute& staticParams, mlir::Attribute& paramsMask);
+
+void printOptParams(mlir::OpAsmPrinter& printer, mlir::Operation* op,
+                    mlir::ValueRange params,
+                    mlir::DenseF64ArrayAttr staticParams,
+                    mlir::DenseBoolArrayAttr paramsMask);
 } // namespace mqt::ir::opt

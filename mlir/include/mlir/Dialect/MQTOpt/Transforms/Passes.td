@@ -45,6 +45,37 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   }];
 }
 
+def SwapReconstructionAndElision : Pass<"swap-reconstruction-and-elision", "mlir::ModuleOp"> {
+  let summary = "Reconstruct SWAPs from eligible CNOT pairs and eliminate SWAPs by applying the implied qubit permutation.";
+  let description = [{
+    Eliminates all uncontrolled `swap` operations by:
+    1. Reconstructing explicit `swap` ops from eligible CNOT patterns (canonical 3–CNOT form or two alternating CNOT pairs).
+    2. Replacing remaining `swap` ops by applying the induced qubit permutation to subsequent uses.
+
+    Notes:
+    - No connectivity or coupling constraints are preserved.
+    - Controlled `swap` operations (if ever introduced) are not touched.
+
+    Example (reconstruction):
+    ```
+         ┌───┐         ┌───┐
+    ──■──┤ X ├    ──■──┤ X ├──■────■──    ──╳────■──
+    ┌─┴─┐└─┬─┘ => ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐ =>   |  ┌─┴─┐
+    ┤ X ├──■──    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├
+    └───┘         └───┘     └───┘└───┘         └───┘
+    ```
+
+    Example (elision):
+    ```
+                             ┌───┐                 ┌───┐
+    q0 ──╳────■── q0    q0 ──┤ X ├──╳── q0    q0 ──┤ X ├─ q1
+         |  ┌─┴─┐    =>      └─┬─┘  |      =>      └─┬─┘
+    q1 ──╳──┤ X ├ q1    q1 ────■────╳── q1    q1 ────■─── q0
+            └───┘
+    ```
+  }];
+}
+
 def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   let summary = "This pass attempts to push down operations into branches for possible optimizations.";
   let description = [{
