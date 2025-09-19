@@ -218,9 +218,8 @@ int runOrcJIT() {
 
 auto main(int argc, char* argv[]) -> int {
   const llvm::InitLLVM session(argc, argv);
-  const std::span args(argv, argc);
 
-  if (args.size() > 1) {
+  if (const std::span args(argv, argc); args.size() > 1) {
     exitOnErr.setBanner(std::string(args[0]) + ": ");
   }
 
@@ -321,6 +320,15 @@ auto main(int argc, char* argv[]) -> int {
       "__quantum__qis__rxx__body",
       reinterpret_cast<void*>(&__quantum__qis__rxx__body));
   llvm::sys::DynamicLibrary::AddSymbol(
+      "__quantum__qis__ryy__body",
+      reinterpret_cast<void*>(&__quantum__qis__ryy__body));
+  llvm::sys::DynamicLibrary::AddSymbol(
+      "__quantum__qis__rzz__body",
+      reinterpret_cast<void*>(&__quantum__qis__rzz__body));
+  llvm::sys::DynamicLibrary::AddSymbol(
+      "__quantum__qis__rzx__body",
+      reinterpret_cast<void*>(&__quantum__qis__rzx__body));
+  llvm::sys::DynamicLibrary::AddSymbol(
       "__quantum__qis__u__body",
       reinterpret_cast<void*>(&__quantum__qis__u__body));
   llvm::sys::DynamicLibrary::AddSymbol(
@@ -372,11 +380,11 @@ auto main(int argc, char* argv[]) -> int {
       "__quantum__qis__cp__body",
       reinterpret_cast<void*>(&__quantum__qis__cp__body));
   llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__rzz__body",
-      reinterpret_cast<void*>(&__quantum__qis__rzz__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
       "__quantum__qis__ccx__body",
       reinterpret_cast<void*>(&__quantum__qis__ccx__body));
+  llvm::sys::DynamicLibrary::AddSymbol(
+      "__quantum__qis__ccy__body",
+      reinterpret_cast<void*>(&__quantum__qis__ccy__body));
   llvm::sys::DynamicLibrary::AddSymbol(
       "__quantum__qis__ccz__body",
       reinterpret_cast<void*>(&__quantum__qis__ccz__body));
