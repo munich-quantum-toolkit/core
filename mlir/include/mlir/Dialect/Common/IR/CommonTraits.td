@@ -45,7 +45,7 @@ class Value<DecimalFraction V> : DefinitionElement<V, Value, Identity>;
 class TargetArity<int N, list<DefinitionElement> MatrixDefinition = []>
     : ParamNativeOpTrait<
         "TargetArityTrait",
-        !cast<string>(N) # ", {" # !foldl("", MatrixDefinition, acc, var, "{ " # var.v.Before # "." # var.v.After # ", " # !cond(!eq(var.t, Value) : "mqt::ir::common::DefinitionMatrixElement::Type::Value") # ", " # !cond(!eq(var.f, Identity) : "mqt::ir::common::DefinitionMatrixElement::Transformation::Identity") # " }") # "}"
+        !cast<string>(N) # ", {{" # !foldl("", MatrixDefinition, acc, var, "[]([[maybe_unused]] mlir::ValueRange params) { return " # !cond(!eq(var.f, Identity) : "std::identity{}(") # !cond(!eq(var.t, Value) : var.v.Before # "." # var.v.After) # "); }") # "}}"
     > {
     let cppNamespace = "::mqt::ir::common";
 }
