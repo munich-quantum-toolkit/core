@@ -14,8 +14,11 @@ include "mlir/IR/EnumAttr.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
-class TargetArity<int N>
-    : ParamNativeOpTrait<"TargetArityTrait", !cast<string>(N)> {
+class TargetArity<int N, list<int> MatrixDefinition = []>
+    : ParamNativeOpTrait<
+        "TargetArityTrait",
+        !cast<string>(N) # ", {" # !if(!empty(MatrixDefinition), "", !foldl(!cast<string>(!head(MatrixDefinition)), !tail(MatrixDefinition), result, element, result # ", " # element)) # "}"
+    > {
     let cppNamespace = "::mqt::ir::common";
 }
 
