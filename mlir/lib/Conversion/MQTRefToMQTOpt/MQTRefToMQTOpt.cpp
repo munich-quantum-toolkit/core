@@ -101,8 +101,7 @@ public:
   }
 };
 
-struct ConvertMemRefAlloca final
-    : StatefulOpConversionPattern<memref::AllocOp> {
+struct ConvertMemRefAlloc final : StatefulOpConversionPattern<memref::AllocOp> {
   using StatefulOpConversionPattern<
       memref::AllocOp>::StatefulOpConversionPattern;
 
@@ -130,6 +129,56 @@ struct ConvertMemRefAlloca final
 
     // put the pair of the ref register and the latest opt register in the map
     getState().qregMap.try_emplace(op.getResult(), alloc.getQreg());
+
+    return success();
+  }
+};
+
+struct ConvertMemRefDealloc final
+    : StatefulOpConversionPattern<memref::DeallocOp> {
+  using StatefulOpConversionPattern<
+      memref::DeallocOp>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::DeallocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto& memRef = op->getOperands().front();
+    if (!llvm::isa<ref::QubitType>(
+            llvm::cast<MemRefType>(memRef.getType()).getElementType())) {
+      return success();
+    }
+
+    // prepare return type
+    const auto& qregType = opt::QubitRegisterType::get(rewriter.getContext());
+
+    auto& optQreg = getState().qregMap[memRef];
+
+    // iterate over all the qubits that were extracted from the register
+    for (const auto& refQubit : getState().qregQubitsMap[memRef]) {
+      const auto& qubitData = getState().qubitDataMap[refQubit];
+      const auto& optQubit = getState().qubitMap[refQubit];
+
+      auto optInsertOp = rewriter.create<opt::InsertOp>(
+          op.getLoc(), qregType, optQreg, optQubit, qubitData.index,
+          qubitData.indexAttr);
+
+      // move it before the current dealloc operation
+      optInsertOp->moveBefore(op);
+
+      // update the optQreg
+      optQreg = optInsertOp.getOutQreg();
+
+      // erase the refQubit entry from the maps
+      getState().qubitMap.erase(refQubit);
+      getState().qubitDataMap.erase(refQubit);
+    }
+
+    // erase the register from the maps
+    getState().qregMap.erase(memRef);
+    getState().qregQubitsMap.erase(memRef);
+
+    // replace the ref dealloc operation with an opt dealloc operation
+    rewriter.replaceOpWithNewOp<opt::DeallocOp>(op, optQreg);
 
     return success();
   }
@@ -383,7 +432,8 @@ struct MQTRefToMQTOpt final : impl::MQTRefToMQTOptBase<MQTRefToMQTOpt> {
     target.addLegalDialect<opt::MQTOptDialect>();
     target.addLegalDialect<arith::ArithDialect>();
 
-    patterns.add<ConvertMemRefAlloca>(typeConverter, context, &state);
+    patterns.add<ConvertMemRefAlloc>(typeConverter, context, &state);
+    patterns.add<ConvertMemRefDealloc>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefAllocQubit>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefDeallocQubit>(typeConverter, context, &state);
     patterns.add<ConvertMemRefLoad>(typeConverter, context, &state);
