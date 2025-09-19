@@ -104,8 +104,6 @@ struct LoweringState {
   DenseMap<size_t, Value> ptrMap;
   // map a given index to an address to record the classical output
   DenseMap<size_t, Operation*> outputMap;
-  // map a given ? to a pointer value
-  DenseMap<size_t, Value> qregMap;
   // Index for the next measure operation
   size_t index{};
   // number of stored results in the module
@@ -141,6 +139,8 @@ struct MQTRefToQIRTypeConverter final : LLVMTypeConverter {
     addConversion([ctx](ref::QubitType /*type*/) {
       return LLVM::LLVMPointerType::get(ctx);
     });
+    addConversion(
+        [ctx](MemRefType /*type*/) { return LLVM::LLVMPointerType::get(ctx); });
   }
 };
 
@@ -182,7 +182,6 @@ struct ConvertMemRefAllocaQIR final
     // replace the old operation with new callOp
     auto callOp = rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, size);
 
-    getState().qregMap.insert({0, callOp.getResult()});
     getState().useDynamicQubit = true;
 
     return success();
@@ -329,9 +328,8 @@ struct ConvertMQTRefResetQIR final : OpConversionPattern<ref::ResetOp> {
   }
 };
 
-struct ConvertMemRefLoadQIR final
-    : StatefulOpConversionPattern<memref::LoadOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+struct ConvertMemRefLoadQIR final : OpConversionPattern<memref::LoadOp> {
+  using OpConversionPattern::OpConversionPattern;
 
   static constexpr StringLiteral FN_NAME_ARRAY_GET_ELEMENT_PTR =
       "__quantum__rt__array_get_element_ptr_1d";
@@ -356,9 +354,8 @@ struct ConvertMemRefLoadQIR final
     const auto fnDecl = getFunctionDeclaration(
         rewriter, op, FN_NAME_ARRAY_GET_ELEMENT_PTR, qirSignature);
 
-    // get qreg from map
-    // const auto memRef = adaptor.getOperands().front();
-    const auto qreg = getState().qregMap.lookup(0);
+    // get qreg from adaptor
+    const auto qreg = adaptor.getOperands().front();
 
     // get index from adaptor
     const auto index = adaptor.getIndices().front();
@@ -901,7 +898,7 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
 
     target.addIllegalDialect<memref::MemRefDialect>();
     mqtPatterns.add<ConvertMemRefAllocaQIR>(typeConverter, ctx, &state);
-    mqtPatterns.add<ConvertMemRefLoadQIR>(typeConverter, ctx, &state);
+    mqtPatterns.add<ConvertMemRefLoadQIR>(typeConverter, ctx);
 
     target.addIllegalDialect<ref::MQTRefDialect>();
     target.addLegalDialect<arith::ArithDialect>();
