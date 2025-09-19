@@ -12,7 +12,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <format>
 #include <llvm/ADT/SmallVector.h>
 #include <stdexcept>
 #include <string>
@@ -78,6 +77,6 @@ Architecture getArchitecture(const ArchitectureName& name) {
   }
   }
 
-  throw std::invalid_argument(std::format("Unsupported architecture."));
+  throw std::invalid_argument("Unsupported architecture.");
 }
 }; // namespace mqt::ir::opt
