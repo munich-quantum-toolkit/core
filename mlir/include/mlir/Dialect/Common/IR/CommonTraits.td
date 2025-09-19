@@ -17,7 +17,7 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 class TargetArity<int N, list<int> MatrixDefinition = []>
     : ParamNativeOpTrait<
         "TargetArityTrait",
-        !cast<string>(N) # ", {" # !if(!empty(MatrixDefinition), "", !foldl(!cast<string>(!head(MatrixDefinition)), !tail(MatrixDefinition), result, element, result # ", " # element)) # "}"
+        !cast<string>(N) # ", {" # !interleave(MatrixDefinition, ", ") # "}"
     > {
     let cppNamespace = "::mqt::ir::common";
 }
