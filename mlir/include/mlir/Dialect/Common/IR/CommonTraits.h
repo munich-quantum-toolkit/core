@@ -18,7 +18,7 @@
 
 namespace mqt::ir::common {
 // TODO: via helper class (no default ctor) ensure that array is fully explicitly initialized
-template <size_t N, std::array<size_t, (2 << N) * (2 << N)> X> class TargetArityTrait {
+template <size_t N, std::array<size_t, (1 << N) * (1 << N)> DefinitionMatrix> class TargetArityTrait {
 public:
   template <typename ConcreteOp>
   class Impl : public mlir::OpTrait::TraitBase<ConcreteOp, Impl> {
@@ -31,6 +31,9 @@ public:
       }
       return mlir::success();
     }
+
+    [[nodiscard]] static auto getDefinitionMatrix() { return DefinitionMatrix; }
+    [[nodiscard]] static auto getDefinitionMatrix(int x, int y) { return DefinitionMatrix[y * (1 << N) + x]; }
   };
 };
 
