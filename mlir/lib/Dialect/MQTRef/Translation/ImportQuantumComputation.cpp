@@ -165,6 +165,16 @@ getQubits(const qc::QuantumComputation& quantumComputation,
 }
 
 /**
+ * @brief Deallocates the quantum register in the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder used to create operations
+ * @param qreg The quantum register to deallocate
+ */
+void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
+  builder.create<mlir::memref::DeallocOp>(builder.getUnknownLoc(), qreg);
+}
+
+/**
  * @brief Allocates a classical register in the MLIR module.
  *
  * @param builder The MLIR OpBuilder used to create operations
@@ -601,6 +611,12 @@ mlir::OwningOpRef<mlir::ModuleOp> translateQuantumComputationToMLIR(
     // Even if operations fail, return the module with what we could translate
     emitError(loc) << "Failed to translate some quantum operations";
   }
+
+  // Deallocate quantum registers
+  for (const auto& qreg : qregs) {
+    deallocateQreg(builder, qreg.qreg);
+  }
+
   // Create terminator
   builder.create<mlir::func::ReturnOp>(loc);
 

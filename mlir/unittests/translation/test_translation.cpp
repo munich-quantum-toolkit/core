@@ -194,6 +194,7 @@ TEST_F(ImportTest, AllocationAndDeallocation) {
     CHECK: %[[I2:.*]] = arith.constant 2 : index
     CHECK: %[[Q2:.*]] = memref.load %[[Qreg]][%[[I2]]] : memref<3x!mqtref.Qubit>
     CHECK: %[[Creg:.*]] = memref.alloca() : memref<2xi1>
+    CHECK: memref.dealloc %[[Qreg]] : memref<3x!mqtref.Qubit>
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -328,6 +329,11 @@ std::string getCheckStringTestCaseUnitary(const TestCaseUnitary& testCase) {
   // Add operation-specific check
   result += testCase.checkStringOperation;
   result += "\n";
+
+  // Add dealocation
+  // Add register allocation
+  result += "CHECK: memref.dealloc %[[Qreg]] : memref<" +
+            std::to_string(testCase.numQubits) + "x!mqtref.Qubit>\n";
 
   // Add return
   result += "CHECK: return\n";
@@ -588,6 +594,7 @@ getCheckStringTestCaseIfRegister(const TestCaseIfRegister& testCase) {
     CHECK: scf.if %[[Cnd0]] {
     CHECK: mqtref.x() %[[Q0]]
     CHECK: }
+    CHECK: memref.dealloc %[[Qreg]] : memref<1x!mqtref.Qubit>
     CHECK: return
   )";
 
@@ -761,6 +768,7 @@ std::string getCheckStringTestCaseIfBit(const TestCaseIfBit& testCase) {
   result += R"(
     CHECK: mqtref.x() %[[Q0]]
     CHECK: }
+    CHECK: memref.dealloc %[[Qreg]] : memref<1x!mqtref.Qubit>
     CHECK: return
   )";
 
@@ -836,6 +844,7 @@ std::string getCheckStringTestCaseIfElseBit(const TestCaseIfElseBit& testCase) {
 
   result += R"(
     CHECK: }
+    CHECK: memref.dealloc %[[Qreg]] : memref<1x!mqtref.Qubit>
     CHECK: return
   )";
 
@@ -923,6 +932,7 @@ TEST_F(ImportTest, GHZ) {
     CHECK: %[[M2:.*]] = mqtref.measure %[[Q2]]
     CHECK: %[[I2:.*]] = arith.constant 2 : index
     CHECK: memref.store %[[M2]], %[[Creg]][%[[I2]]] : memref<3xi1>
+    CHECK: memref.dealloc %[[Qreg]] : memref<3x!mqtref.Qubit>
     CHECK: return
   )";
 
@@ -954,6 +964,7 @@ TEST_F(ImportTest, MultipleClassicalRegistersMeasureStores) {
     CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
     CHECK: %[[I0B:.*]] = arith.constant 0 : index
     CHECK: memref.store %[[M1]], %[[CregB]][%[[I0B]]] : memref<1xi1>
+    CHECK: memref.dealloc %[[Qreg]] : memref<2x!mqtref.Qubit>
     CHECK: return
   )";
 
@@ -978,6 +989,8 @@ TEST_F(ImportTest, MultipleQuantumRegistersCX) {
     CHECK: %[[I0B:.*]] = arith.constant 0 : index
     CHECK: %[[Q0B:.*]] = memref.load %[[QregB]][%[[I0B]]] : memref<1x!mqtref.Qubit>
     CHECK: mqtref.x() %[[Q0B]] ctrl %[[Q0A]]
+    CHECK: memref.dealloc %[[QregA]] : memref<1x!mqtref.Qubit>
+    CHECK: memref.dealloc %[[QregB]] : memref<1x!mqtref.Qubit>
     CHECK: return
   )";
 
