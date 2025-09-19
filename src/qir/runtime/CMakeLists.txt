@@ -6,19 +6,19 @@
 #
 # Licensed under the MIT License
 
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-backend)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runtime)
 
 if(NOT TARGET ${TARGET_NAME})
   # Add QIRBackend library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QIRBackend)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QIRRuntime)
 
   # Add sources to target
-  target_sources(${TARGET_NAME} PRIVATE QIR.cpp Backend.cpp
-                                        ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/backend/Backend.hpp)
+  target_sources(${TARGET_NAME} PRIVATE QIR.cpp Runtime.cpp
+                                        ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/runtime/Runtime.hpp)
 
   # Add headers using file sets
   target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/backend/QIR.h)
+                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/runtime/QIR.h)
 
   # Add link libraries
   target_link_libraries(
@@ -31,7 +31,7 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PROPERTIES VERSION ${PROJECT_VERSION}
                SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreQIRBackend)
+               EXPORT_NAME CoreQIRRuntime)
 
   # Set c++ standard
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)

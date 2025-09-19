@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qir/backend/QIR.h"
+#include "qir/runtime/QIR.h"
 
 #include <cstdlib>
 #include <llvm/ADT/StringExtras.h>

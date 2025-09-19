@@ -8,10 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "qir/backend/QIR.h"
+#include "qir/runtime/QIR.h"
 
 #include "ir/operations/OpType.hpp"
-#include "qir/backend/Backend.hpp"
+#include "qir/runtime/Runtime.hpp"
 
 #include <cstddef>
 #include <cstdint>

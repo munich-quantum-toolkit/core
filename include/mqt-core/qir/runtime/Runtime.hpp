@@ -19,7 +19,7 @@
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
-#include "qir/backend/QIR.h"
+#include "qir/runtime/QIR.h"
 
 #include <array>
 #include <cstddef>

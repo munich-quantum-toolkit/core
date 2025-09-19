@@ -6,8 +6,8 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(backend)
+add_subdirectory(runtime)
 
-if(BUILD_MQT_QIR_RUNNER)
+if(BUILD_MQT_CORE_QIR_RUNNER)
   add_subdirectory(runner)
 endif()

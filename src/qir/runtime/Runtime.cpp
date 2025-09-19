@@ -8,13 +8,13 @@
  * Licensed under the MIT License
  */
 
-#include "qir/backend/Backend.hpp"
+#include "qir/runtime/Runtime.hpp"
 
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
-#include "qir/backend/QIR.h"
+#include "qir/runtime/QIR.h"
 
 #include <algorithm>
 #include <array>

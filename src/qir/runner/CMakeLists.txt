@@ -16,7 +16,7 @@ if(NOT TARGET ${TARGET_NAME})
     export_executable_symbols(${TARGET_NAME})
   endif()
   # Add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRBackend ${llvm_libs})
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime ${llvm_libs})
 
   # Set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME

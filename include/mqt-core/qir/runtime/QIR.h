@@ -26,11 +26,7 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
-#define NORETURN [[noreturn]]
 extern "C" {
-#else
-#include <stdnoreturn.h>
-#define NORETURN noreturn
 #endif
 
 // *** MEASUREMENT RESULTS ***
