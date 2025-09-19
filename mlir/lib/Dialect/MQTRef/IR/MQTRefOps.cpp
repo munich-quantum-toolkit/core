@@ -10,6 +10,15 @@
 
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/raw_ostream.h>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/OpImplementation.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LogicalResult.h>
+#include <string>
+
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
 #include <algorithm>
@@ -57,3 +66,63 @@ void mqt::ir::ref::MQTRefDialect::initialize() {
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/MQTRef/IR/MQTRefOps.cpp.inc"
+
+namespace mqt::ir::ref {
+mlir::ParseResult parseRefParams(
+    mlir::OpAsmParser& parser,
+    llvm::SmallVectorImpl<mlir::OpAsmParser::UnresolvedOperand>& params,
+    mlir::Attribute& staticParams, mlir::Attribute& paramsMask) {
+  if (mlir::OpAsmParser::UnresolvedOperand operand;
+      parser.parseOptionalOperand(operand).has_value()) {
+    params.push_back(operand);
+    while (parser.parseOptionalComma().succeeded()) {
+      if (parser.parseOperand(operand).failed()) {
+        return mlir::failure();
+      }
+      params.push_back(operand);
+    }
+  }
+
+  if (parser.parseOptionalKeyword("static").succeeded()) {
+    staticParams = mlir::DenseF64ArrayAttr::parse(parser, mlir::Type{});
+  }
+
+  if (parser.parseOptionalKeyword("mask").succeeded()) {
+    paramsMask = mlir::DenseBoolArrayAttr::parse(parser, mlir::Type{});
+  }
+
+  return mlir::success();
+}
+
+void printRefParams(mlir::OpAsmPrinter& printer, mlir::Operation* /*op*/,
+                    mlir::ValueRange params,
+                    mlir::DenseF64ArrayAttr staticParams,
+                    mlir::DenseBoolArrayAttr paramsMask) {
+  auto needSpace = false;
+  if (!params.empty()) {
+    printer << params;
+    needSpace = true;
+  }
+
+  if (staticParams) {
+    if (needSpace) {
+      printer << " ";
+    }
+    std::string staticStr;
+    llvm::raw_string_ostream ostream(staticStr);
+    staticParams.print(ostream);
+    printer << "static " << ostream.str();
+    needSpace = true;
+  }
+
+  if (paramsMask) {
+    if (needSpace) {
+      printer << " ";
+    }
+    std::string maskStr;
+    llvm::raw_string_ostream ostream(maskStr);
+    paramsMask.print(ostream);
+    printer << "mask " << ostream.str();
+  }
+}
+} // namespace mqt::ir::ref

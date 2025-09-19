@@ -14,7 +14,7 @@ import re
 import warnings
 from typing import TYPE_CHECKING, cast
 
-from qiskit.circuit import AncillaRegister, Clbit, IfElseOp, Qubit
+from qiskit.circuit import AncillaRegister, Clbit
 from qiskit.circuit import ClassicalRegister as QiskitClassicalRegister
 from qiskit.circuit.classical import expr
 
@@ -25,7 +25,6 @@ from ...ir.operations import (
     Control,
     IfElseOperation,
     NonUnitaryOperation,
-    Operation,
     OpType,
     StandardOperation,
     SymbolicOperation,
@@ -35,8 +34,9 @@ from ...ir.symbolic import Expression, Term, Variable
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from qiskit.circuit import Instruction, ParameterExpression, QuantumCircuit
+    from qiskit.circuit import IfElseOp, Instruction, ParameterExpression, QuantumCircuit, Qubit
 
+    from ...ir.operations import Operation
     from ...ir.registers import ClassicalRegister
 
 
