@@ -114,9 +114,9 @@ struct ConvertMemRefAlloca final
   LogicalResult
   matchAndRewrite(memref::AllocaOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    // if (!llvm::isa<ref::QubitType>(op.getType().getElementType())) {
-    //   return success();
-    // }
+    if (!llvm::isa<ref::QubitType>(op.getType().getElementType())) {
+      return success();
+    }
 
     const auto& qregType = opt::QubitRegisterType::get(rewriter.getContext());
 
@@ -179,11 +179,10 @@ struct ConvertMemRefLoad final : StatefulOpConversionPattern<memref::LoadOp> {
   matchAndRewrite(memref::LoadOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     const auto& memRef = op.getMemRef();
-
-    // auto memRefType = llvm::cast<mlir::MemRefType>(memRef.getType());
-    // if (!llvm::isa<ref::QubitType>(memRefType.getElementType())) {
-    //   return success();
-    // }
+    if (!llvm::isa<ref::QubitType>(
+            llvm::cast<mlir::MemRefType>(memRef.getType()).getElementType())) {
+      return success();
+    }
 
     const auto& qregType = opt::QubitRegisterType::get(rewriter.getContext());
     const auto& qubitType = opt::QubitType::get(rewriter.getContext());
@@ -390,6 +389,7 @@ struct MQTRefToMQTOpt final : impl::MQTRefToMQTOptBase<MQTRefToMQTOpt> {
     target.addIllegalDialect<memref::MemRefDialect>();
     target.addLegalDialect<opt::MQTOptDialect>();
     target.addLegalDialect<arith::ArithDialect>();
+
     patterns.add<ConvertMemRefAlloca>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefAllocQubit>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefDeallocQubit>(typeConverter, context, &state);
