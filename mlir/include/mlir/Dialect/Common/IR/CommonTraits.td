@@ -14,10 +14,38 @@ include "mlir/IR/EnumAttr.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
-class TargetArity<int N, list<int> MatrixDefinition = []>
+class DecimalFraction<int BeforeSeparator, int AfterSeparator> {
+  int Before = BeforeSeparator;
+  int After = AfterSeparator;
+}
+class Int<int I> : DecimalFraction<I, 0>;
+
+class DefinitionElementType<int Id> {
+  int id = Id;
+}
+def Value : DefinitionElementType<0>;
+def ParameterIndex : DefinitionElementType<1>;
+
+class FunctionType<int Id> {
+  int id = Id;
+}
+
+def Identity : FunctionType<0>;
+def Sin : FunctionType<1>;
+def Cos : FunctionType<2>;
+
+class DefinitionElement<DecimalFraction V, DefinitionElementType T, FunctionType F = Identity> {
+  DecimalFraction v = V;
+  DefinitionElementType t = T;
+  FunctionType f = F;
+}
+
+class Value<DecimalFraction V> : DefinitionElement<V, Value, Identity>;
+
+class TargetArity<int N, list<DefinitionElement> MatrixDefinition = []>
     : ParamNativeOpTrait<
         "TargetArityTrait",
-        !cast<string>(N) # ", {" # !interleave(MatrixDefinition, ", ") # "}"
+        !cast<string>(N) # ", {" # !foldl("", MatrixDefinition, acc, var, "{ " # var.v.Before # "." # var.v.After # ", " # !cond(!eq(var.t, Value) : "mqt::ir::common::DefinitionMatrixElement::Type::Value") # ", " # !cond(!eq(var.f, Identity) : "mqt::ir::common::DefinitionMatrixElement::Transformation::Identity") # " }") # "}"
     > {
     let cppNamespace = "::mqt::ir::common";
 }
