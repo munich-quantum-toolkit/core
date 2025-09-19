@@ -14,7 +14,7 @@ module {
     // CHECK-LABEL: func.func @testConvertAllocOpAttribute()
     func.func @testConvertAllocOpAttribute() {
         // CHECK: %[[I2:.*]] = arith.constant 2 : index
-        // CHECK: %[[Qreg:.*]] = memref.alloca(%[[I2]]) : memref<?x!mqtref.Qubit>
+        // CHECK: %[[Qreg:.*]] = memref.alloc(%[[I2]]) : memref<?x!mqtref.Qubit>
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         "mqtopt.deallocQubitRegister"(%r0) : (!mqtopt.QubitRegister) -> ()
@@ -29,7 +29,7 @@ module {
     func.func @testConvertAllocOpOperand() {
         // CHECK: %[[Const:.*]] = arith.constant 2 : i64
         // CHECK: %[[I2:.*]] = arith.index_cast %[[Const]] : i64 to index
-        // CHECK: %[[Qreg:.*]] = memref.alloca(%[[I2]]) : memref<?x!mqtref.Qubit>
+        // CHECK: %[[Qreg:.*]] = memref.alloc(%[[I2]]) : memref<?x!mqtref.Qubit>
 
         %size = arith.constant 2 : i64
         %r0 = "mqtopt.allocQubitRegister" (%size) : (i64) -> !mqtopt.QubitRegister
@@ -80,7 +80,7 @@ module {
     // CHECK-LABEL: func.func @testConvertOperandChain
     func.func @testConvertOperandChain() {
         // CHECK: %[[I3:.*]] = arith.constant 3 : index
-        // CHECK: %[[Qreg:.*]] = memref.alloca(%[[I3]]) : memref<?x!mqtref.Qubit>
+        // CHECK: %[[Qreg:.*]] = memref.alloc(%[[I3]]) : memref<?x!mqtref.Qubit>
         // CHECK: %[[I0:.*]] = arith.constant 0 : index
         // CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<?x!mqtref.Qubit>
         // CHECK: %[[I1:.*]] = arith.constant 1 : index
@@ -320,7 +320,7 @@ module {
     // CHECK-LABEL: func.func @bellState()
     func.func @bellState() {
         // CHECK: %[[I2:.*]] = arith.constant 2 : index
-        // CHECK: %[[Qreg:.*]] = memref.alloca(%[[I2]]) : memref<?x!mqtref.Qubit>
+        // CHECK: %[[Qreg:.*]] = memref.alloc(%[[I2]]) : memref<?x!mqtref.Qubit>
         // CHECK: %[[I0:.*]] = arith.constant 0 : index
         // CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<?x!mqtref.Qubit>
         // CHECK: %[[I1:.*]] = arith.constant 1 : index

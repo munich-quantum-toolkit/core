@@ -144,15 +144,15 @@ struct MQTRefToQIRTypeConverter final : LLVMTypeConverter {
   }
 };
 
-struct ConvertMemRefAllocaQIR final
-    : StatefulOpConversionPattern<memref::AllocaOp> {
+struct ConvertMemRefAllocQIR final
+    : StatefulOpConversionPattern<memref::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   static constexpr StringLiteral FN_NAME_ALLOCATE_ARRAY =
       "__quantum__rt__qubit_allocate_array";
 
   LogicalResult
-  matchAndRewrite(memref::AllocaOp op, OpAdaptor adaptor,
+  matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     if (!llvm::isa<ref::QubitType>(op.getType().getElementType())) {
       return success();
@@ -896,12 +896,10 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     // add the initialize operation
     addInitialize(main, ctx, &state);
 
-    target.addIllegalDialect<memref::MemRefDialect>();
-    mqtPatterns.add<ConvertMemRefAllocaQIR>(typeConverter, ctx, &state);
-    mqtPatterns.add<ConvertMemRefLoadQIR>(typeConverter, ctx);
-
     target.addIllegalDialect<ref::MQTRefDialect>();
     target.addLegalDialect<arith::ArithDialect>();
+    mqtPatterns.add<ConvertMemRefAllocQIR>(typeConverter, ctx, &state);
+    mqtPatterns.add<ConvertMemRefLoadQIR>(typeConverter, ctx);
     mqtPatterns.add<ConvertMQTRefAllocQubitQIR>(typeConverter, ctx, &state);
     mqtPatterns.add<ConvertMQTRefDeallocQubitQIR>(typeConverter, ctx);
     mqtPatterns.add<ConvertMQTRefResetQIR>(typeConverter, ctx);

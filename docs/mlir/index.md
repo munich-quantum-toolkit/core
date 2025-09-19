@@ -50,9 +50,9 @@ In the MQTRef dialect, this program corresponds to:
 ```mlir
 module {
   func.func @main() attributes {passthrough = ["entry_point"]} {
-    %i = arith.constant 0 : index
-    %qreg = memref.alloca() : memref<1x!mqtref.Qubit>
-    %q = memref.load %qreg[%i] : memref<1x!mqtref.Qubit>
+    %i0 = arith.constant 0 : index
+    %qreg = memref.alloc() : memref<1x!mqtref.Qubit>
+    %q = memref.load %qreg[%i0] : memref<1x!mqtref.Qubit>
     %creg = memref.alloca() : memref<1xi1>
     mqtref.x() %q
     %c = mqtref.measure %q

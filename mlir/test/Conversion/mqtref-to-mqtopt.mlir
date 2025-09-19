@@ -14,11 +14,11 @@ module {
     // CHECK-LABEL: func.func @testDoNotConvertMemRef()
     func.func @testDoNotConvertMemRef() {
         // CHECK: %[[I0:.*]] = arith.constant 0 : index
-        // CHECK: %[[Memref:.*]] = memref.alloca() : memref<1xi1>
+        // CHECK: %[[Memref:.*]] = memref.alloc() : memref<1xi1>
         // CHECK: %[[ANY:.*]] = memref.load %[[Memref]][%[[I0]]] : memref<1xi1>
 
         %i0 = arith.constant 0 : index
-        %memref = memref.alloca() : memref<1xi1>
+        %memref = memref.alloc() : memref<1xi1>
         %0 = memref.load %memref[%i0] : memref<1xi1>
         return
     }
@@ -31,7 +31,7 @@ module {
     func.func @testConvertAllocOpAttribute() {
         // CHECK: %[[Qreg:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}>
 
-        %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
 
         return
     }
@@ -47,7 +47,7 @@ module {
         // CHECK: %[[Qreg:.*]] = "mqtopt.allocQubitRegister"(%[[Const]]) : (i64) -> !mqtopt.QubitRegister
 
         %i2 = arith.constant 2 : index
-        %qreg = memref.alloca(%i2) : memref<?x!mqtref.Qubit>
+        %qreg = memref.alloc(%i2) : memref<?x!mqtref.Qubit>
         return
     }
 }
@@ -60,7 +60,7 @@ module {
         // CHECK: %[[r_0:.*]], %[[q_0:.*]] = "mqtopt.extractQubit"(%[[ANY:.*]]) <{index_attr = 0 : i64}>
 
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<1x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<1x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<1x!mqtref.Qubit>
         return
     }
@@ -79,7 +79,7 @@ module {
         %i2 = arith.constant 2 : index
         %i1 = arith.constant 1 : index
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<3x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<3x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<3x!mqtref.Qubit>
         %q1 = memref.load %qreg[%i1] : memref<3x!mqtref.Qubit>
         %q2 = memref.load %qreg[%i2] : memref<3x!mqtref.Qubit>
@@ -95,7 +95,7 @@ module {
         // CHECK: %[[q_0:.*]], [[m_0:.*]] = mqtopt.measure %[[ANY:.*]]
 
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<1x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<1x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<1x!mqtref.Qubit>
 
         %m0 = mqtref.measure %q0
@@ -112,7 +112,7 @@ module {
         // CHECK: %[[q_0:.*]] = mqtopt.reset %[[ANY:.*]]
 
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<1x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<1x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<1x!mqtref.Qubit>
 
         mqtref.reset %q0
@@ -141,7 +141,7 @@ module {
         // CHECK: %[[q_12:.*]] = mqtopt.sxdg() %[[q_11]] : !mqtopt.Qubit
 
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<1x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<1x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<1x!mqtref.Qubit>
 
         mqtref.i() %q0
@@ -177,7 +177,7 @@ module {
 
         %i1 = arith.constant 1 : index
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<2x!mqtref.Qubit>
         %q1 = memref.load %qreg[%i1] : memref<2x!mqtref.Qubit>
 
@@ -209,7 +209,7 @@ module {
         %cst = arith.constant 3.000000e-01 : f64
 
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<2x!mqtref.Qubit>
 
         mqtref.u(%cst, %cst, %cst) %q0
@@ -240,7 +240,7 @@ module {
 
         %i1 = arith.constant 1 : index
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<2x!mqtref.Qubit>
         %q1 = memref.load %qreg[%i1] : memref<2x!mqtref.Qubit>
 
@@ -265,7 +265,7 @@ module {
         %cst = arith.constant 3.000000e-01 : f64
 
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<2x!mqtref.Qubit>
 
         mqtref.u(%cst, %cst static [3.000000e-01] mask [false, true, false]) %q0
@@ -283,7 +283,7 @@ module {
 
         %i1 = arith.constant 1 : index
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<2x!mqtref.Qubit>
         %q1 = memref.load %qreg[%i1] : memref<2x!mqtref.Qubit>
 
@@ -302,7 +302,7 @@ module {
 
         %i1 = arith.constant 1 : index
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<2x!mqtref.Qubit>
         %q1 = memref.load %qreg[%i1] : memref<2x!mqtref.Qubit>
 
@@ -327,7 +327,7 @@ module {
 
         %i1 = arith.constant 1 : index
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<2x!mqtref.Qubit>
         %q1 = memref.load %qreg[%i1] : memref<2x!mqtref.Qubit>
 
@@ -365,7 +365,7 @@ module {
         %cst = arith.constant 3.000000e-01 : f64
 
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<1x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<1x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<1x!mqtref.Qubit>
 
         mqtref.gphase(%cst) ctrl %q0
@@ -386,7 +386,7 @@ module {
 
         %i1 = arith.constant 1 : index
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<2x!mqtref.Qubit>
         %q1 = memref.load %qreg[%i1] : memref<2x!mqtref.Qubit>
 
@@ -405,7 +405,7 @@ module {
         // CHECK: %[[q_0:.*]] = mqtopt.barrier() %[[ANY:.*]] : !mqtopt.Qubit
 
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<1x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<1x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<1x!mqtref.Qubit>
 
         mqtref.barrier() %q0
@@ -423,7 +423,7 @@ module {
 
         %i1 = arith.constant 1 : index
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<2x!mqtref.Qubit>
         %q1 = memref.load %qreg[%i1] : memref<2x!mqtref.Qubit>
 

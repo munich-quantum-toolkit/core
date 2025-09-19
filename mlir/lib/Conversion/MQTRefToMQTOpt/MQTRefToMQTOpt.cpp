@@ -102,12 +102,12 @@ public:
 };
 
 struct ConvertMemRefAlloca final
-    : StatefulOpConversionPattern<memref::AllocaOp> {
+    : StatefulOpConversionPattern<memref::AllocOp> {
   using StatefulOpConversionPattern<
-      memref::AllocaOp>::StatefulOpConversionPattern;
+      memref::AllocOp>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(memref::AllocaOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     if (!llvm::isa<ref::QubitType>(op.getType().getElementType())) {
       return success();

@@ -28,7 +28,7 @@ module {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
 
-        %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+        %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
 
         return
     }
@@ -44,7 +44,7 @@ module {
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
 
         %i2 = arith.constant 2 : index
-        %qreg = memref.alloca(%i2) : memref<?x!mqtref.Qubit>
+        %qreg = memref.alloc(%i2) : memref<?x!mqtref.Qubit>
 
         return
     }
@@ -97,7 +97,7 @@ module {
       // CHECK: ^[[end]]:
       // CHECK: llvm.return
 
-      %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+      %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
 
       return
     }
@@ -116,7 +116,7 @@ module {
 
         %i1 = arith.constant 1 : index
         %i0 = arith.constant 0 : index
-        %qreg = memref.alloca(%i1) : memref<?x!mqtref.Qubit>
+        %qreg = memref.alloc(%i1) : memref<?x!mqtref.Qubit>
         %q0 = memref.load %qreg[%i0] : memref<?x!mqtref.Qubit>
 
         return

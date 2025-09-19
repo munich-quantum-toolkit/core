@@ -65,8 +65,8 @@ mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
   const auto& qubitType = mqt::ir::ref::QubitType::get(context);
   auto memRefType =
       mlir::MemRefType::get({static_cast<int64_t>(numQubits)}, qubitType);
-  auto memref = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
-                                                       memRefType);
+  auto memref = builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(),
+                                                      memRefType);
   return memref.getResult();
 }
 

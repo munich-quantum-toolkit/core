@@ -82,8 +82,8 @@ struct ConvertMQTOptAlloc final : OpConversionPattern<opt::AllocOp> {
           op.getLoc(), rewriter.getIndexType(), op.getSize());
     }
 
-    rewriter.replaceOpWithNewOp<memref::AllocaOp>(op, memRefType,
-                                                  ValueRange{numQubits});
+    rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memRefType,
+                                                 ValueRange{numQubits});
     return success();
   }
 };
