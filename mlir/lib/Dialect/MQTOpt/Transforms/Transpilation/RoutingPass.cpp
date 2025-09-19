@@ -13,6 +13,9 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/IR/BuiltinTypes.h"
 
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/Format.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -265,13 +268,12 @@ public:
 
     const QubitIndexPair map = it->second;
     const std::size_t h = map.first;
-
     hardwareQubits_[h] = out;
 
     assert(!mapping_.contains(out) && "forward: output value already mapped");
 
     mapping_.try_emplace(out, map);
-    mapping_.erase(it);
+    mapping_.erase(in);
   }
 
   /**
@@ -301,6 +303,12 @@ public:
     std::swap(layout_[ita->second.second], layout_[itb->second.second]);
   }
 
+  [[nodiscard]] Value getNextHardwareQubit() {
+    const Value q = hardwareQubits_[cycleIndex_];
+    cycleIndex_ = (cycleIndex_ + 1) % getNumQubits();
+    return q;
+  }
+
 private:
   /**
    * @brief Maps SSA values to (hardware, software) index pair.
@@ -323,91 +331,17 @@ private:
    * @brief A history of SWAPs inserted.
    */
   SmallVector<QubitIndexPair, 32> swapHistory_;
+
+  std::size_t cycleIndex_ = 0;
 };
 
 using QubitStateStack = SmallVector<QubitState, 2>;
-
-/**
- * @brief Manages qubit allocations.
- *
- * Provides get(..) and free(...) methods that are to be called when
- * replacing alloc's and dealloc's. Internally, these methods use a queue
- * to manage free / unused hardware indices. This ensures that alloc's and
- * dealloc's can be in any arbitrary order.
- */
-class QubitAllocator {
-public:
-  explicit QubitAllocator(const std::size_t nqubits) : indices_(nqubits) {}
-
-  /**
-   * @brief Initialize the allocator.
-   *
-   * Adds the indices of the given layout to the vector of free indices, s.t.
-   * nqubit consecutive allocations are exactly the initial layout indices.
-   *
-   * @param layout A layout to apply.
-   */
-  void initialize(Layout layout) {
-    std::ranges::copy(layout, indices_.begin());
-  }
-
-  /**
-   * @brief Get unused, free, hardware index.
-   * @return Hardware index or std::nullopt if no more free are left.
-   */
-  [[nodiscard]] std::optional<std::size_t> get() {
-    if (indices_.empty()) {
-      return std::nullopt;
-    }
-
-    const std::size_t i = indices_.front();
-    indices_.pop_front();
-    return i;
-  }
-
-  /**
-   * @brief Release hardware index.
-   */
-  void free(const std::size_t i) { indices_.push_back(i); }
-
-  /**
-   * @brief Return the number of free indices.
-   */
-  [[nodiscard]] std::size_t getNumFree() const { return indices_.size(); }
-
-private:
-  /**
-   * @brief Queue available hardware indices.
-   */
-  std::deque<std::size_t> indices_;
-};
-
-/**
- * @brief Retrieve free, unused, hardware qubit.
- *
- * @return Hardware qubit SSA value OR `nullptr` if there are no more free
- * qubits left.
- */
-Value retrieveFreeQubit(QubitAllocator& allocator, QubitState& state) {
-  const std::optional<std::size_t> index = allocator.get();
-  if (!index.has_value()) {
-    return {};
-  }
-
-  return state.getHardwareValue(index.value());
-}
-
-/**
- * @brief Release used hardware qubit.
- */
-void releaseUsedQubit(Value q, QubitAllocator& allocator, QubitState& state) {
-  allocator.free(state.getHardwareIndex(q));
-}
 
 //===----------------------------------------------------------------------===//
 // Pre-Order Walk Pattern Rewrite Driver
 //===----------------------------------------------------------------------===//
 
+// NOLINTBEGIN(misc-const-correctness)
 struct PreOrderWalkDriverAction final
     : tracing::ActionImpl<PreOrderWalkDriverAction> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PreOrderWalkDriverAction)
@@ -416,6 +350,7 @@ struct PreOrderWalkDriverAction final
   static constexpr StringLiteral tag = "walk-and-apply-patterns-pre-order";
   void print(raw_ostream& os) const override { os << tag; }
 };
+// NOLINTEND(misc-const-correctness)
 
 /**
  * @brief A pre-order version of the walkAndApplyPatterns driver.
@@ -487,6 +422,30 @@ void initEntryPoint(SmallVectorImpl<Value>& qubits, PatternRewriter& rewriter) {
 }
 
 /**
+ * @brief Collect all missing hardware qubits from the results.
+ *
+ * @param old A range of values to check for included qubits.
+ * @param hardwareQubits The hardware qubits.
+ * @return Vector of missing hardware qubits with increasing index.
+ */
+[[nodiscard]] SmallVector<Value, 0>
+getMissingQubits(ValueRange old, ArrayRef<Value> hardwareQubits) {
+  const SmallVector<Value, 0> oldResults(old.begin(), old.end());
+  llvm::DenseSet<Value> included;
+  included.insert(oldResults.begin(), oldResults.end());
+
+  SmallVector<Value, 0> missing;
+  missing.reserve(hardwareQubits.size());
+  for (const Value q : hardwareQubits) {
+    if (!included.contains(q)) {
+      missing.push_back(q);
+    }
+  }
+
+  return missing;
+}
+
+/**
  * @brief Base class for rewrite patterns that require the current routing
  * context.
  *
@@ -494,14 +453,12 @@ void initEntryPoint(SmallVectorImpl<Value>& qubits, PatternRewriter& rewriter) {
  *  - The targeted architecture
  *  - An initial layout generator
  *  - A qubit state stack
- *  - A qubit allocator
  */
 template <class BasePattern> struct ContextualPattern : BasePattern {
 public:
   ContextualPattern(MLIRContext* ctx, Architecture& arch, Layout layout,
-                    QubitStateStack& stack, QubitAllocator& allocator)
-      : BasePattern(ctx), arch_(&arch), layout_(layout), stack_(&stack),
-        allocator_(&allocator) {}
+                    QubitStateStack& stack)
+      : BasePattern(ctx), arch_(&arch), layout_(layout), stack_(&stack) {}
 
 protected:
   [[nodiscard]] QubitState& parentState() const {
@@ -516,13 +473,11 @@ protected:
     assert(!stack_->empty() && "state: expected at least one stack item");
     return stack_->back();
   }
-  [[nodiscard]] QubitAllocator& allocator() const { return *allocator_; }
 
 private:
   Architecture* arch_;
   Layout layout_;
   QubitStateStack* stack_;
-  QubitAllocator* allocator_;
 };
 
 /**
@@ -546,9 +501,9 @@ struct ContextualInterfacePattern
 struct FuncOpPattern final : ContextualOpPattern<func::FuncOp> {
   using ContextualOpPattern<func::FuncOp>::ContextualOpPattern;
 
-  LogicalResult matchAndRewrite(func::FuncOp func,
+  LogicalResult matchAndRewrite(func::FuncOp op,
                                 PatternRewriter& rewriter) const final {
-    if (!containsUnitary(func)) {
+    if (!containsUnitary(op)) {
       return failure();
     }
 
@@ -556,44 +511,19 @@ struct FuncOpPattern final : ContextualOpPattern<func::FuncOp> {
 
     // In this if-branch we would collect (or add) the qubits
     // from (to) the argument-list.
-    if (!func->hasAttr(ENTRY_POINT_ATTR)) {
+    if (!op->hasAttr(ENTRY_POINT_ATTR)) {
       return failure();
     }
 
-    rewriter.setInsertionPointToStart(&func.getBody().front());
+    rewriter.setInsertionPointToStart(&op.getBody().front());
     initEntryPoint(qubits, rewriter);
 
     stack().emplace_back(arch().nqubits());
     state().initialize(qubits, layout());
-    allocator().initialize(layout());
 
     return success();
   }
 };
-
-/**
- * @brief Collect all missing hardware qubits from the results.
- *
- * @param old A range of values to check for included qubits.
- * @param hardwareQubits The hardware qubits.
- * @return Vector of missing hardware qubits with increasing index.
- */
-[[nodiscard]] SmallVector<Value, 0>
-getMissingQubits(ValueRange old, ArrayRef<Value> hardwareQubits) {
-  const SmallVector<Value, 0> oldResults(old.begin(), old.end());
-  llvm::DenseSet<Value> included;
-  included.insert(oldResults.begin(), oldResults.end());
-
-  SmallVector<Value, 0> missing;
-  missing.reserve(hardwareQubits.size());
-  for (const Value q : hardwareQubits) {
-    if (!included.contains(q)) {
-      missing.push_back(q);
-    }
-  }
-
-  return missing;
-}
 
 /**
  * @brief Replaces the 'for' loop with one that includes all hardware qubits in
@@ -622,8 +552,9 @@ struct ForOpPattern final : ContextualOpPattern<scf::ForOp> {
                                              newInitArgs);
 
     // Clone body from the old 'for' to the new one and map block arguments.
-    const SmallVector<Value, 0> mapping(forOp.getBody()->getArguments());
-    rewriter.mergeBlocks(op.getBody(), forOp.getBody(), mapping);
+    const std::size_t nargs = op.getBody()->getNumArguments();
+    rewriter.mergeBlocks(op.getBody(), forOp.getBody(),
+                         forOp.getBody()->getArguments().take_front(nargs));
 
     // Replace or erase old 'for' op.
     const std::size_t nresults = op->getNumResults();
@@ -717,19 +648,12 @@ struct AllocQubitPattern final : ContextualOpPattern<AllocQubitOp> {
   using ContextualOpPattern<AllocQubitOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(AllocQubitOp alloc,
                                 PatternRewriter& rewriter) const final {
-    if (const Value q = retrieveFreeQubit(allocator(), state())) {
-      auto reset = rewriter.create<ResetOp>(alloc.getLoc(), q);
-      rewriter.replaceOp(alloc, reset);
-      rewriter.replaceAllUsesExcept(reset.getInQubit(), reset.getOutQubit(),
-                                    reset);
-      state().forward(reset.getInQubit(), reset.getOutQubit());
-      return success();
-    }
+    auto reset = rewriter.create<ResetOp>(alloc.getLoc(),
+                                          state().getNextHardwareQubit());
+    rewriter.replaceOp(alloc, reset);
 
-    return alloc.emitOpError()
-           << "requires " << (arch().nqubits() + 1)
-           << " qubits but target architecture '" << arch().name()
-           << "' only supports " << arch().nqubits() << " qubits";
+    state().forward(reset.getInQubit(), reset.getOutQubit());
+    return success();
   }
 };
 
@@ -766,6 +690,17 @@ struct NaiveUnitaryPattern final
 
     const auto& [execIn0, execIn1] = getIns(u);
     const auto& [execOut0, execOut1] = getOuts(u);
+
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
+    LLVM_DEBUG({
+      const std::size_t s0 = state().getSoftwareIndex(execIn0);
+      const std::size_t s1 = state().getSoftwareIndex(execIn1);
+      const std::size_t h0 = state().getHardwareIndex(execIn0);
+      const std::size_t h1 = state().getHardwareIndex(execIn1);
+
+      llvm::dbgs() << llvm::format("GATE: s%d/h%d, s%d/h%d\n", s0, h0, s1, h1);
+    });
+
     state().forward(execIn0, execOut0);
     state().forward(execIn1, execOut1);
 
@@ -798,12 +733,21 @@ private:
     const auto& [q0, q1] = getIns(u);
     const auto path = getPath(q0, q1);
     for (std::size_t i = 0; i < path.size() - 2; ++i) {
-      const Value in0 = state().getHardwareValue(path[i]);
-      const Value in1 = state().getHardwareValue(path[i + 1]);
+      const std::size_t h0 = path[i];
+      const std::size_t h1 = path[i + 1];
+
+      const Value in0 = state().getHardwareValue(h0);
+      const Value in1 = state().getHardwareValue(h1);
 
       const std::size_t s0 = state().getSoftwareIndex(in0);
       const std::size_t s1 = state().getSoftwareIndex(in1);
-      state().recordSwap(s0, s1);
+
+      // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
+      LLVM_DEBUG({
+        llvm::dbgs() << llvm::format(
+            "SWAP: s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", s1, h0, s0, h1, s0,
+            h0, s1, h1);
+      });
 
       auto swap = createSwap(u->getLoc(), in0, in1, rewriter);
       const auto& [out0, out1] = getOuts(swap);
@@ -812,6 +756,7 @@ private:
       rewriter.replaceAllUsesExcept(in0, out1, swap);
       rewriter.replaceAllUsesExcept(in1, out0, swap);
 
+      state().recordSwap(s0, s1);
       state().swapSoftwareIndices(in0, in1);
       state().forward(in0, out0);
       state().forward(in1, out1);
@@ -832,7 +777,7 @@ struct DeallocQubitPattern final : ContextualOpPattern<DeallocQubitOp> {
   using ContextualOpPattern<DeallocQubitOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(DeallocQubitOp dealloc,
                                 PatternRewriter& rewriter) const final {
-    releaseUsedQubit(dealloc.getQubit(), allocator(), state());
+    // releaseUsedQubit(dealloc.getQubit(), allocator(), state());
     rewriter.eraseOp(dealloc);
     return success();
   }
@@ -843,12 +788,10 @@ struct DeallocQubitPattern final : ContextualOpPattern<DeallocQubitOp> {
  */
 void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
                                   Architecture& arch, Layout layout,
-                                  QubitStateStack& stack,
-                                  QubitAllocator& allocator) {
+                                  QubitStateStack& stack) {
   patterns.add<FuncOpPattern, ForOpPattern, YieldOpPattern, AllocQubitPattern,
                ResetPattern, NaiveUnitaryPattern, MeasurePattern,
-               DeallocQubitPattern>(patterns.getContext(), arch, layout, stack,
-                                    allocator);
+               DeallocQubitPattern>(patterns.getContext(), arch, layout, stack);
 }
 
 /**
@@ -862,14 +805,21 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     Architecture arch = getArchitecture(ArchitectureName::MQTTest);
 
     QubitStateStack stack{};
-    QubitAllocator allocator(arch.nqubits());
 
-    const auto initialLayout =
-        getRandomLayout(arch.nqubits(), std::random_device()());
+    const std::size_t seed = std::random_device()();
+    const auto initialLayout = getRandomLayout(arch.nqubits(), seed);
+
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
+    LLVM_DEBUG({
+      llvm::dbgs() << "Initial Layout with seed " << seed << ": ";
+      for (const std::size_t i : initialLayout) {
+        llvm::dbgs() << i << ' ';
+      }
+      llvm::dbgs() << '\n';
+    });
 
     RewritePatternSet patterns(module.getContext());
-    populateNaiveRoutingPatterns(patterns, arch, initialLayout, stack,
-                                 allocator);
+    populateNaiveRoutingPatterns(patterns, arch, initialLayout, stack);
     walkPreOrderAndApplyPatterns(module, std::move(patterns));
   }
 };
