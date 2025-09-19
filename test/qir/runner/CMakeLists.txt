@@ -21,4 +21,5 @@ if(TARGET MQT::CoreQIRRunner)
   target_compile_definitions(
     ${TARGET_NAME} PRIVATE EXECUTABLE_PATH="$<TARGET_FILE:MQT::CoreQIRRunner>"
                            QIR_FILES=${QIR_FILES})
+  add_dependencies(${TARGET_NAME} MQT::CoreQIRRunner)
 endif()
