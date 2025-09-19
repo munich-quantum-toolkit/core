@@ -17,6 +17,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <algorithm>
 #include <cassert>
@@ -56,7 +57,7 @@ using namespace mlir;
 /**
  * @brief A function attribute that specifies an (QIR) entry point function.
  */
-constexpr llvm::StringLiteral ATTRIBUTE_ENTRY_POINT{"entry_point"};
+constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
 
 //===----------------------------------------------------------------------===//
 // Utilities
@@ -557,7 +558,7 @@ struct FuncOpPattern final : ContextualOpPattern<func::FuncOp> {
 
     // In this if-branch we would collect (or add) the qubits
     // from (to) the argument-list.
-    if (!func->hasAttr(ATTRIBUTE_ENTRY_POINT)) {
+    if (!func->hasAttr(ENTRY_POINT_ATTR)) {
       return failure();
     }
 
@@ -595,62 +596,6 @@ getMissingQubits(ValueRange old, ArrayRef<Value> hardwareQubits) {
 
   return missing;
 }
-
-struct IfOpPattern final : ContextualOpPattern<scf::IfOp> {
-  using ContextualOpPattern<scf::IfOp>::ContextualOpPattern;
-
-  LogicalResult matchAndRewrite(scf::IfOp op,
-                                PatternRewriter& rewriter) const final {
-    assert(!op.getElseRegion().empty() && "expected else branch");
-
-    [[maybe_unused]] auto ifOp = rewriter.create<scf::IfOp>(
-        op.getLoc(), getNewResultTypes(op, rewriter), op.getCondition(),
-        /*withElseRegion=*/true);
-
-    Block* newThenBlock = &ifOp.getThenRegion().front();
-    Block* oldThenBlock = &op.getThenRegion().front();
-    rewriter.mergeBlocks(oldThenBlock, newThenBlock);
-
-    Block* newElseBlock = &ifOp.getElseRegion().front();
-    Block* oldElseBlock = &op.getElseRegion().front();
-    rewriter.mergeBlocks(oldElseBlock, newElseBlock);
-
-    rewriter.replaceOp(op, ifOp.getResults().take_front(op.getNumResults()));
-
-    // Setup stack for each branch.
-    stack().push_back(state()); // else-block
-    state().clearHistory();
-    stack().push_back(state()); // if-block
-    state().clearHistory();
-
-    return success();
-  }
-
-private:
-  /**
-   * @brief Extend the existing result types with the missing qubit types.
-   *
-   * @param op The 'if' op.
-   * @return Vector of result types, extended by #missing-qubits qubit types.
-   */
-  SmallVector<Type> getNewResultTypes(scf::IfOp op,
-                                      PatternRewriter& rewriter) const {
-    SmallVector<Type, 0> types(op.getResultTypes());
-
-    std::size_t nmissing = state().getNumQubits();
-    for (const auto& t : types) {
-      if (isa<QubitType>(t)) {
-        nmissing--;
-      }
-    }
-
-    for (std::size_t i = 0; i < nmissing; ++i) {
-      types.push_back(rewriter.getType<QubitType>());
-    }
-
-    return types;
-  }
-};
 
 /**
  * @brief Replaces the 'for' loop with one that includes all hardware qubits in
@@ -727,6 +672,10 @@ struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
   using ContextualOpPattern<scf::YieldOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(scf::YieldOp op,
                                 PatternRewriter& rewriter) const final {
+    if (!isa<scf::ForOp>(op->getParentOp())) {
+      return failure();
+    }
+
     const auto swaps = llvm::reverse(state().getSwapHistory());
 
     for (const auto& [s0, s1] : swaps) {
@@ -898,10 +847,10 @@ void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
                                   Architecture& arch, Layout layout,
                                   QubitStateStack& stack,
                                   QubitAllocator& allocator) {
-  patterns.add<FuncOpPattern, ForOpPattern, IfOpPattern, YieldOpPattern,
-               AllocQubitPattern, ResetPattern, NaiveUnitaryPattern,
-               MeasurePattern, DeallocQubitPattern>(patterns.getContext(), arch,
-                                                    layout, stack, allocator);
+  patterns.add<FuncOpPattern, ForOpPattern, YieldOpPattern, AllocQubitPattern,
+               ResetPattern, NaiveUnitaryPattern, MeasurePattern,
+               DeallocQubitPattern>(patterns.getContext(), arch, layout, stack,
+                                    allocator);
 }
 
 /**
