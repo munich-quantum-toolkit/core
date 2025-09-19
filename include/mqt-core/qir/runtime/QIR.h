@@ -18,7 +18,6 @@
 
 #pragma once
 
-// NOLINTBEGIN(bugprone-reserved-identifier)
 // NOLINTBEGIN(modernize-use-using)
 // NOLINTBEGIN(modernize-deprecated-headers)
 // NOLINTBEGIN(readability-identifier-naming)
@@ -122,6 +121,9 @@ void __quantum__qis__ry__body(Qubit*, double);
 void __quantum__qis__rz__body(Qubit*, double);
 void __quantum__qis__p__body(Qubit*, double);
 void __quantum__qis__rxx__body(Qubit*, Qubit*, double);
+void __quantum__qis__ryy__body(Qubit*, Qubit*, double);
+void __quantum__qis__rzz__body(Qubit*, Qubit*, double);
+void __quantum__qis__rzx__body(Qubit*, Qubit*, double);
 void __quantum__qis__u__body(Qubit*, double, double, double);
 void __quantum__qis__u3__body(Qubit*, double, double, double);
 void __quantum__qis__u2__body(Qubit*, double, double);
@@ -135,12 +137,12 @@ void __quantum__qis__cz__body(Qubit*, Qubit*);
 void __quantum__qis__ch__body(Qubit*, Qubit*);
 void __quantum__qis__swap__body(Qubit*, Qubit*);
 void __quantum__qis__cswap__body(Qubit*, Qubit*, Qubit*);
-void __quantum__qis__crz__body(Qubit*, Qubit*, double);
-void __quantum__qis__cry__body(Qubit*, Qubit*, double);
 void __quantum__qis__crx__body(Qubit*, Qubit*, double);
+void __quantum__qis__cry__body(Qubit*, Qubit*, double);
+void __quantum__qis__crz__body(Qubit*, Qubit*, double);
 void __quantum__qis__cp__body(Qubit*, Qubit*, double);
-void __quantum__qis__rzz__body(Qubit*, Qubit*, double);
 void __quantum__qis__ccx__body(Qubit*, Qubit*, Qubit*);
+void __quantum__qis__ccy__body(Qubit*, Qubit*, Qubit*);
 void __quantum__qis__ccz__body(Qubit*, Qubit*, Qubit*);
 Result* __quantum__qis__m__body(Qubit*);
 Result* __quantum__qis__measure__body(Qubit*);
@@ -166,7 +168,6 @@ void __quantum__rt__result_record_output(Result*, const char*);
 // NOLINTEND(readability-identifier-naming)
 // NOLINTEND(modernize-deprecated-headers)
 // NOLINTEND(modernize-use-using)
-// NOLINTEND(bugprone-reserved-identifier)
 
 #ifdef __cplusplus
 } // extern "C"

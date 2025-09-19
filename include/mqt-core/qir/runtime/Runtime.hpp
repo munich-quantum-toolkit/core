@@ -188,7 +188,7 @@ public:
  * order to access an instance of this class from the C function without having
  * a handle to it.
  */
-class Backend {
+class Runtime {
 public:
   static constexpr auto RESULT_ZERO_ADDRESS = 0x10000;
   static constexpr auto RESULT_ONE_ADDRESS = 0x10001;
@@ -211,8 +211,8 @@ private:
   dd::vEdge qState;
   std::mt19937_64 mt;
 
-  Backend();
-  explicit Backend(uint64_t randomSeed);
+  Runtime();
+  explicit Runtime(uint64_t randomSeed);
 
   auto enlargeState(std::uint64_t maxQubit) -> void;
 
@@ -257,12 +257,12 @@ private:
 
 public:
   [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
-  static Backend& getInstance();
+  static Runtime& getInstance();
 
-  Backend(const Backend&) = delete;
-  Backend& operator=(const Backend&) = delete;
-  Backend(Backend&&) = delete;
-  Backend& operator=(Backend&&) = delete;
+  Runtime(const Runtime&) = delete;
+  Runtime& operator=(const Runtime&) = delete;
+  Runtime(Runtime&&) = delete;
+  Runtime& operator=(Runtime&&) = delete;
 
   auto resetBackend() -> void;
   template <qc::OpType Op, typename... Args>
