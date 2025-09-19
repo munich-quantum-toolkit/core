@@ -35,21 +35,28 @@ struct DefinitionMatrixElement {
   Transformation transformation = Transformation::Identity;
 
   double operator()() {
-    switch (transformation) {
-    case Transformation::Identity:
+    if (type == Type::Value) {
+      switch (transformation) {
+      case Transformation::Identity:
+        return value;
+      case Transformation::Sin:
+        return std::sin(value);
+      case Transformation::Cos:
+        return std::cos(value);
+      }
       return value;
-    case Transformation::Sin:
-      return std::sin(value);
-    case Transformation::Cos:
-      return std::cos(value);
+    } else {
+      // TODO
     }
-    return value;
   }
 };
 
-template <size_t N, std::array<DefinitionMatrixElement, (1 << N) * (1 << N)>
-                        DefinitionMatrix>
-class TargetArityTrait {
+template <std::size_t NumQubits> struct DefinitionMatrix {
+  static constexpr std::size_t MatrixSize = 1 << NumQubits;
+  std::array<double(*)(mlir::ValueRange), MatrixSize * MatrixSize> matrix;
+};
+
+template <size_t N, DefinitionMatrix<N> Matrix> class TargetArityTrait {
 public:
   template <typename ConcreteOp>
   class Impl : public mlir::OpTrait::TraitBase<ConcreteOp, Impl> {
@@ -63,9 +70,11 @@ public:
       return mlir::success();
     }
 
-    [[nodiscard]] static auto getDefinitionMatrix() { return DefinitionMatrix; }
-    [[nodiscard]] static double getDefinitionMatrix(int x, int y) {
-      return DefinitionMatrix[y * (1 << N) + x]();
+    [[nodiscard]] static auto getDefinitionMatrix() { return Matrix; }
+    [[nodiscard]] static double getDefinitionMatrix(mlir::Operation* op, int x,
+                                                    int y) {
+      return 0.0;
+      // return Matrix[y * (1 << N) + x]();
     }
   };
 };
