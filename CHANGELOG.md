@@ -11,6 +11,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add SWAP reconstruction patterns to the newly-named `SwapReconstructionAndElision` MLIR pass ([#1207]) ([**@taminob**], [**@burgholzer**])
+- ✨ Add MQTRef-QIR conversions ([#1091]) ([**@li-mingbao**])
 - 🚸 Define custom assembly formats for MLIR operations ([#1209]) ([**@denialhaag**])
 - ✨ Add support for translating `IfElseOperation`s to the `MQTRef` MLIR dialect ([#1164]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add MQT's implementation of a generic FoMaC with Python bindings ([#1150], [#1186]) ([**@ystade**])
@@ -29,6 +31,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 🚚 Rename MLIR pass `ElidePermutations` to `SwapReconstructionAndElision` ([#1207]) ([**@taminob**])
 - ⬆️ Require LLVM 21 for building the MLIR library ([#1180]) ([**@denialhaag**])
 - ⬆️ Update to version 21 of `clang-tidy` ([#1180]) ([**@denialhaag**])
 - 🚚 Rename MLIR pass `CancelConsecutiveInverses` to `GateElimination` ([#1140]) ([**@taminob**])
@@ -188,7 +191,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
-[#1209]: https://github.com/munich-quantum-toolkit/core/pull/1209[#1186]: https://github.com/munich-quantum-toolkit/core/pull/1186
+[#1207]: https://github.com/munich-quantum-toolkit/core/pull/1207
+[#1209]: https://github.com/munich-quantum-toolkit/core/pull/1209
+[#1186]: https://github.com/munich-quantum-toolkit/core/pull/1186
 [#1181]: https://github.com/munich-quantum-toolkit/core/pull/1181
 [#1180]: https://github.com/munich-quantum-toolkit/core/pull/1180
 [#1165]: https://github.com/munich-quantum-toolkit/core/pull/1165
@@ -204,6 +209,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1100]: https://github.com/munich-quantum-toolkit/core/pull/1100
 [#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099
 [#1098]: https://github.com/munich-quantum-toolkit/core/pull/1098
+[#1091]: https://github.com/munich-quantum-toolkit/core/pull/1091
 [#1089]: https://github.com/munich-quantum-toolkit/core/pull/1089
 [#1088]: https://github.com/munich-quantum-toolkit/core/pull/1088
 [#1076]: https://github.com/munich-quantum-toolkit/core/pull/1076
