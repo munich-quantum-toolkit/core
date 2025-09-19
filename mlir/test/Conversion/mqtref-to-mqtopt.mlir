@@ -32,6 +32,7 @@ module {
         // CHECK: %[[Qreg:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}>
 
         %qreg = memref.alloca() : memref<2x!mqtref.Qubit>
+
         return
     }
 }

@@ -98,11 +98,6 @@ public:
     addConversion([ctx](ref::QubitType /*type*/) -> Type {
       return opt::QubitType::get(ctx);
     });
-
-    // QregType conversion
-    addConversion([ctx](MemRefType /*type*/) -> Type {
-      return opt::QubitRegisterType::get(ctx);
-    });
   }
 };
 
@@ -120,13 +115,12 @@ struct ConvertMemRefAlloca final
 
     const auto& qregType = opt::QubitRegisterType::get(rewriter.getContext());
 
-    mlir::Value size;
-    mlir::IntegerAttr sizeAttr;
+    Value size;
+    IntegerAttr sizeAttr;
     if (op.getType().hasStaticShape()) {
-      auto staticSize = op.getType().getShape().front();
-      sizeAttr = rewriter.getI64IntegerAttr(staticSize);
+      sizeAttr = rewriter.getI64IntegerAttr(op.getType().getShape().front());
     } else {
-      size = rewriter.create<mlir::arith::IndexCastOp>(
+      size = rewriter.create<arith::IndexCastOp>(
           op.getLoc(), rewriter.getI64Type(), op.getDynamicSizes().front());
     }
 
@@ -180,7 +174,7 @@ struct ConvertMemRefLoad final : StatefulOpConversionPattern<memref::LoadOp> {
                   ConversionPatternRewriter& rewriter) const override {
     const auto& memRef = op.getMemRef();
     if (!llvm::isa<ref::QubitType>(
-            llvm::cast<mlir::MemRefType>(memRef.getType()).getElementType())) {
+            llvm::cast<MemRefType>(memRef.getType()).getElementType())) {
       return success();
     }
 
@@ -190,13 +184,12 @@ struct ConvertMemRefLoad final : StatefulOpConversionPattern<memref::LoadOp> {
     const auto& qreg = getState().qregMap[memRef];
 
     // Get index
-    mlir::Value index;
-    mlir::IntegerAttr indexAttr;
+    Value index;
+    IntegerAttr indexAttr;
     const auto& indexValue = op.getIndices().front();
-    if (auto indexOp =
-            indexValue.getDefiningOp<mlir::arith::ConstantIndexOp>()) {
+    if (auto indexOp = indexValue.getDefiningOp<arith::ConstantIndexOp>()) {
       indexAttr = rewriter.getI64IntegerAttr(
-          llvm::cast<mlir::IntegerAttr>(indexOp.getValue()).getInt());
+          llvm::cast<IntegerAttr>(indexOp.getValue()).getInt());
     } else {
       index = indexValue;
     }
