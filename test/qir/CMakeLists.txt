@@ -6,5 +6,5 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(backend)
+add_subdirectory(runtime)
 add_subdirectory(runner)

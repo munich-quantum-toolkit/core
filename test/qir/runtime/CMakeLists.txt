@@ -17,7 +17,7 @@ macro(ADD_QIR_CIRCUIT target_name circuit_path)
       DEPENDS ${circuit_path}
       COMMENT "Compiling ${circuit_path} to ${circuit_name}.o")
     add_executable(${target_name} ${circuit_name}.o)
-    target_link_libraries(${target_name} PRIVATE MQT::CoreQIRBackend)
+    target_link_libraries(${target_name} PRIVATE MQT::CoreQIRRuntime)
   endif()
 endmacro()
 
@@ -31,11 +31,11 @@ function(camel_to_dash_lowercase input output)
       PARENT_SCOPE)
 endfunction()
 
-set(TARGET_NAME mqt-core-qir-backend-test)
+set(TARGET_NAME mqt-core-qir-runtime-test)
 
-if(TARGET MQT::CoreQIRBackend)
+if(TARGET MQT::CoreQIRRuntime)
   # add test executable
-  package_add_test(${TARGET_NAME} MQT::CoreQIRBackend test_qir_backend.cpp)
+  package_add_test(${TARGET_NAME} MQT::CoreQIRRuntime test_qir_runtime.cpp)
 
   # add tests for QIR files
   set(QIR_EXECUTABLES "")

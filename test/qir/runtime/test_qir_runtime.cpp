@@ -9,7 +9,7 @@
  */
 
 #include "ir/Definitions.hpp"
-#include "qir/backend/QIR.h"
+#include "qir/runtime/QIR.h"
 
 #include <algorithm>
 #include <array>
@@ -29,7 +29,7 @@
 
 namespace qir {
 
-class QIRBackendTest : public testing::Test {
+class QIRRuntimeTest : public testing::Test {
 protected:
   std::stringstream buffer;
   std::streambuf* old = nullptr;
@@ -37,183 +37,183 @@ protected:
   void TearDown() override { std::cout.rdbuf(old); }
 };
 
-TEST_F(QIRBackendTest, XGate) {
+TEST_F(QIRRuntimeTest, XGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__x__body(q0);
 }
 
-TEST_F(QIRBackendTest, YGate) {
+TEST_F(QIRRuntimeTest, YGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__y__body(q0);
 }
 
-TEST_F(QIRBackendTest, ZGate) {
+TEST_F(QIRRuntimeTest, ZGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__z__body(q0);
 }
 
-TEST_F(QIRBackendTest, HGate) {
+TEST_F(QIRRuntimeTest, HGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__h__body(q0);
 }
 
-TEST_F(QIRBackendTest, SGate) {
+TEST_F(QIRRuntimeTest, SGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__s__body(q0);
 }
 
-TEST_F(QIRBackendTest, SdgGate) {
+TEST_F(QIRRuntimeTest, SdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__sdg__body(q0);
 }
 
-TEST_F(QIRBackendTest, SXGate) {
+TEST_F(QIRRuntimeTest, SXGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__sx__body(q0);
 }
 
-TEST_F(QIRBackendTest, SXdgGate) {
+TEST_F(QIRRuntimeTest, SXdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__sxdg__body(q0);
 }
 
-TEST_F(QIRBackendTest, SqrtXGate) {
+TEST_F(QIRRuntimeTest, SqrtXGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__sqrtx__body(q0);
 }
 
-TEST_F(QIRBackendTest, SqrtXdgGate) {
+TEST_F(QIRRuntimeTest, SqrtXdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__sqrtxdg__body(q0);
 }
 
-TEST_F(QIRBackendTest, TGate) {
+TEST_F(QIRRuntimeTest, TGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__t__body(q0);
 }
 
-TEST_F(QIRBackendTest, TdgGate) {
+TEST_F(QIRRuntimeTest, TdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__tdg__body(q0);
 }
 
-TEST_F(QIRBackendTest, RXGate) {
+TEST_F(QIRRuntimeTest, RXGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__rx__body(q0, qc::PI_2);
 }
 
-TEST_F(QIRBackendTest, RYGate) {
+TEST_F(QIRRuntimeTest, RYGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__ry__body(q0, qc::PI_2);
 }
 
-TEST_F(QIRBackendTest, RZGate) {
+TEST_F(QIRRuntimeTest, RZGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__rz__body(q0, qc::PI_2);
 }
 
-TEST_F(QIRBackendTest, PGate) {
+TEST_F(QIRRuntimeTest, PGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__p__body(q0, qc::PI_2);
 }
 
-TEST_F(QIRBackendTest, RXXGate) {
+TEST_F(QIRRuntimeTest, RXXGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__rxx__body(q0, q1, qc::PI_2);
 }
 
-TEST_F(QIRBackendTest, UGate) {
+TEST_F(QIRRuntimeTest, UGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__u__body(q0, qc::PI_2, 0, qc::PI_4);
 }
 
-TEST_F(QIRBackendTest, U3Gate) {
+TEST_F(QIRRuntimeTest, U3Gate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__u3__body(q0, qc::PI_2, 0, qc::PI_4);
 }
 
-TEST_F(QIRBackendTest, U2Gate) {
+TEST_F(QIRRuntimeTest, U2Gate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__u2__body(q0, qc::PI_2, 0);
 }
 
-TEST_F(QIRBackendTest, U1Gate) {
+TEST_F(QIRRuntimeTest, U1Gate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__u1__body(q0, qc::PI_2);
 }
 
-TEST_F(QIRBackendTest, CU1Gate) {
+TEST_F(QIRRuntimeTest, CU1Gate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__cu1__body(q0, q1, qc::PI_2);
 }
 
-TEST_F(QIRBackendTest, CU3Gate) {
+TEST_F(QIRRuntimeTest, CU3Gate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__cu3__body(q0, q1, qc::PI_2, 0, qc::PI_4);
 }
 
-TEST_F(QIRBackendTest, CNotGate) {
+TEST_F(QIRRuntimeTest, CNotGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__cnot__body(q0, q1);
 }
 
-TEST_F(QIRBackendTest, CXGate) {
+TEST_F(QIRRuntimeTest, CXGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__cx__body(q0, q1);
 }
 
-TEST_F(QIRBackendTest, CYGate) {
+TEST_F(QIRRuntimeTest, CYGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__cy__body(q0, q1);
 }
 
-TEST_F(QIRBackendTest, CZGate) {
+TEST_F(QIRRuntimeTest, CZGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__cz__body(q0, q1);
 }
 
-TEST_F(QIRBackendTest, CHGate) {
+TEST_F(QIRRuntimeTest, CHGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__ch__body(q0, q1);
 }
 
-TEST_F(QIRBackendTest, SwapGate) {
+TEST_F(QIRRuntimeTest, SwapGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   auto* r0 = reinterpret_cast<Result*>(0UL);
@@ -228,7 +228,7 @@ TEST_F(QIRBackendTest, SwapGate) {
   EXPECT_EQ(buffer.str(), "r0: 0\nr1: 1\n");
 }
 
-TEST_F(QIRBackendTest, CSwapGate) {
+TEST_F(QIRRuntimeTest, CSwapGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   auto* q2 = reinterpret_cast<Qubit*>(2UL);
@@ -236,42 +236,42 @@ TEST_F(QIRBackendTest, CSwapGate) {
   __quantum__qis__cswap__body(q0, q1, q2);
 }
 
-TEST_F(QIRBackendTest, CRZGate) {
+TEST_F(QIRRuntimeTest, CRZGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__crz__body(q0, q1, qc::PI_2);
 }
 
-TEST_F(QIRBackendTest, CRYGate) {
+TEST_F(QIRRuntimeTest, CRYGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__cry__body(q0, q1, qc::PI_2);
 }
 
-TEST_F(QIRBackendTest, CRXGate) {
+TEST_F(QIRRuntimeTest, CRXGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__crx__body(q0, q1, qc::PI_2);
 }
 
-TEST_F(QIRBackendTest, CPGate) {
+TEST_F(QIRRuntimeTest, CPGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__cp__body(q0, q1, qc::PI_2);
 }
 
-TEST_F(QIRBackendTest, RZZGate) {
+TEST_F(QIRRuntimeTest, RZZGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__rzz__body(q0, q1, qc::PI_2);
 }
 
-TEST_F(QIRBackendTest, CCXGate) {
+TEST_F(QIRRuntimeTest, CCXGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   auto* q2 = reinterpret_cast<Qubit*>(2UL);
@@ -279,7 +279,7 @@ TEST_F(QIRBackendTest, CCXGate) {
   __quantum__qis__ccx__body(q0, q1, q2);
 }
 
-TEST_F(QIRBackendTest, CCZGate) {
+TEST_F(QIRRuntimeTest, CCZGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   auto* q2 = reinterpret_cast<Qubit*>(2UL);
@@ -287,32 +287,32 @@ TEST_F(QIRBackendTest, CCZGate) {
   __quantum__qis__ccz__body(q0, q1, q2);
 }
 
-TEST_F(QIRBackendTest, MGate) {
+TEST_F(QIRRuntimeTest, MGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__m__body(q0);
 }
 
-TEST_F(QIRBackendTest, MeasureGate) {
+TEST_F(QIRRuntimeTest, MeasureGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__measure__body(q0);
 }
 
-TEST_F(QIRBackendTest, MzGate) {
+TEST_F(QIRRuntimeTest, MzGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* r0 = reinterpret_cast<Result*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__mz__body(q0, r0);
 }
 
-TEST_F(QIRBackendTest, ResetGate) {
+TEST_F(QIRRuntimeTest, ResetGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__reset__body(q0);
 }
 
-TEST_F(QIRBackendTest, BellPairStatic) {
+TEST_F(QIRRuntimeTest, BellPairStatic) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   auto* r0 = reinterpret_cast<Result*>(0UL);
@@ -330,7 +330,7 @@ TEST_F(QIRBackendTest, BellPairStatic) {
   EXPECT_THAT(buffer.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
 }
 
-TEST_F(QIRBackendTest, BellPairDynamic) {
+TEST_F(QIRRuntimeTest, BellPairDynamic) {
   __quantum__rt__initialize(nullptr);
   auto* q0 = __quantum__rt__qubit_allocate();
   auto* q1 = __quantum__rt__qubit_allocate();
@@ -350,7 +350,7 @@ TEST_F(QIRBackendTest, BellPairDynamic) {
   __quantum__rt__result_update_reference_count(r1, -1);
 }
 
-TEST_F(QIRBackendTest, BellPairStaticReverse) {
+TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   auto* r0 = reinterpret_cast<Result*>(0UL);
@@ -368,7 +368,7 @@ TEST_F(QIRBackendTest, BellPairStaticReverse) {
   EXPECT_THAT(buffer.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
 }
 
-TEST_F(QIRBackendTest, BellPairDynamicReverse) {
+TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
   __quantum__rt__initialize(nullptr);
   auto* q0 = __quantum__rt__qubit_allocate();
   auto* q1 = __quantum__rt__qubit_allocate();
@@ -388,7 +388,7 @@ TEST_F(QIRBackendTest, BellPairDynamicReverse) {
   __quantum__rt__result_update_reference_count(r1, -1);
 }
 
-TEST_F(QIRBackendTest, GHZ4Static) {
+TEST_F(QIRRuntimeTest, GHZ4Static) {
   const std::array q = {
       reinterpret_cast<Qubit*>(0UL), reinterpret_cast<Qubit*>(1UL),
       reinterpret_cast<Qubit*>(2UL), reinterpret_cast<Qubit*>(3UL)};
@@ -417,7 +417,7 @@ TEST_F(QIRBackendTest, GHZ4Static) {
   __quantum__rt__result_record_output(r[3], "r3");
 }
 
-TEST_F(QIRBackendTest, GHZ4Dynamic) {
+TEST_F(QIRRuntimeTest, GHZ4Dynamic) {
   __quantum__rt__initialize(nullptr);
   auto* qArr = __quantum__rt__qubit_allocate_array(4);
   const std::array q = {*reinterpret_cast<Qubit**>(
