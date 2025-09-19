@@ -15,9 +15,9 @@
 #include <cassert>
 #include <cstddef>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Value.h>
@@ -179,11 +179,13 @@ private:
    * End of a nested region: Pops top of the stack.
    */
   WalkResult handleYieldOp(scf::YieldOp op) {
-    if (stack.size() < 2) {
-      return op->emitOpError() << "expected at least two elements on stack.";
-    }
+    if (isa<scf::ForOp>(op->getParentOp())) {
+      if (stack.size() < 2) {
+        return op->emitOpError() << "expected at least two elements on stack.";
+      }
 
-    stack.pop();
+      stack.pop();
+    }
     return WalkResult::advance();
   }
 

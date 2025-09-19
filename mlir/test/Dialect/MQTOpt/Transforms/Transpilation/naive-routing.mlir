@@ -168,10 +168,15 @@ module {
             %q1_i_4, %m1 = "mqtopt.measure"(%q1_i_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
             %q2_i_3, %m2 = "mqtopt.measure"(%q2_i_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-            %one = arith.constant 1 : i32
-            %nones1 = arith.addi %nones0, %one : i32
+            %nones2 = scf.if %m0 -> i32 {
+                %one = arith.constant 1 : i32
+                %nones1 = arith.addi %nones0, %one : i32
+                scf.yield %nones1 : i32
+            } else {
+                scf.yield %nones0 : i32
+            }
 
-            scf.yield %nones1, %q0_i_4, %q1_i_4, %q2_i_3 : i32, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
+            scf.yield %nones2, %q0_i_4, %q1_i_4, %q2_i_3 : i32, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
         }
 
         mqtopt.deallocQubit %q0_1_ghz1000
@@ -288,10 +293,15 @@ module {
             %q1_i_4, %m1 = "mqtopt.measure"(%q1_i_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
             %q2_i_3, %m2 = "mqtopt.measure"(%q2_i_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-            %one = arith.constant 1 : i32
-            %nones1 = arith.addi %nones0, %one : i32
+            %nones2 = scf.if %m0 -> i32 {
+                %one = arith.constant 1 : i32
+                %nones1 = arith.addi %nones0, %one : i32
+                scf.yield %nones1 : i32
+            } else {
+                scf.yield %nones0 : i32
+            }
 
-            scf.yield %nones1, %q0_i_4, %q1_i_4, %q2_i_3 : i32, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
+            scf.yield %nones2, %q0_i_4, %q1_i_4, %q2_i_3 : i32, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
         }
 
         mqtopt.deallocQubit %q0_1_ghz1000

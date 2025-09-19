@@ -13,22 +13,20 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/IR/BuiltinTypes.h"
 
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/Support/LogicalResult.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <deque>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Action.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -866,7 +864,8 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     QubitStateStack stack{};
     QubitAllocator allocator(arch.nqubits());
 
-    const auto initialLayout = getIdentityLayout(arch.nqubits());
+    const auto initialLayout =
+        getRandomLayout(arch.nqubits(), std::random_device()());
 
     RewritePatternSet patterns(module.getContext());
     populateNaiveRoutingPatterns(patterns, arch, initialLayout, stack,
