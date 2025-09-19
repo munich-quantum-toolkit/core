@@ -34,4 +34,17 @@ function(add_mqt_core_library name)
     kebab_to_camel(ARG_ALIAS_NAME ${ALIAS_NAME_ARG})
   endif()
   add_library(MQT::Core${ARG_ALIAS_NAME} ALIAS ${name})
+
+  # Set c++ standard
+  target_compile_features(${name} PRIVATE cxx_std_20)
+
+  # Add link libraries for warnings and options
+  target_link_libraries(${name} PRIVATE MQT::ProjectWarnings MQT::ProjectOptions)
+
+  # Set versioning information
+  set_target_properties(
+    ${name}
+    PROPERTIES VERSION ${PROJECT_VERSION}
+               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+               EXPORT_NAME Core${ARG_ALIAS_NAME})
 endfunction()

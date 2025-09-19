@@ -21,18 +21,5 @@ if(NOT TARGET ${TARGET_NAME})
                                        FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/runtime/QIR.h)
 
   # Add link libraries
-  target_link_libraries(
-    ${TARGET_NAME}
-    PUBLIC MQT::CoreIR MQT::CoreDD
-    PRIVATE MQT::ProjectWarnings MQT::ProjectOptions)
-
-  # Set versioning information
-  set_target_properties(
-    ${TARGET_NAME}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreQIRRuntime)
-
-  # Set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
+  target_link_libraries(${TARGET_NAME} PUBLIC MQT::CoreIR MQT::CoreDD)
 endif()
