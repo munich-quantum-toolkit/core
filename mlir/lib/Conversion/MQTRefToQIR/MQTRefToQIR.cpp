@@ -22,9 +22,11 @@
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
+#include <mlir/Conversion/LLVMCommon/MemRefBuilder.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -47,8 +49,9 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
-#include <string>
 #include <utility>
+#include <vector>
+
 namespace mqt::ir {
 
 using namespace mlir;
@@ -136,22 +139,25 @@ struct MQTRefToQIRTypeConverter final : LLVMTypeConverter {
     addConversion([ctx](ref::QubitType /*type*/) {
       return LLVM::LLVMPointerType::get(ctx);
     });
-    // QregType Conversion
-    addConversion([ctx](ref::QubitRegisterType /*type*/) {
-      return LLVM::LLVMPointerType::get(ctx);
-    });
+    addConversion(
+        [ctx](MemRefType /*type*/) { return LLVM::LLVMPointerType::get(ctx); });
   }
 };
 
-struct ConvertMQTRefAllocQIR final : StatefulOpConversionPattern<ref::AllocOp> {
+struct ConvertMemRefAllocQIR final
+    : StatefulOpConversionPattern<memref::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   static constexpr StringLiteral FN_NAME_ALLOCATE_ARRAY =
       "__quantum__rt__qubit_allocate_array";
 
   LogicalResult
-  matchAndRewrite(ref::AllocOp op, OpAdaptor adaptor,
+  matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (!llvm::isa<ref::QubitType>(op.getType().getElementType())) {
+      return success();
+    }
+
     auto* ctx = getContext();
 
     // create signature of the new function
@@ -162,19 +168,19 @@ struct ConvertMQTRefAllocQIR final : StatefulOpConversionPattern<ref::AllocOp> {
     const auto fnDecl = getFunctionDeclaration(
         rewriter, op, FN_NAME_ALLOCATE_ARRAY, qirSignature);
 
-    // create a constantOp if the size is an attribute
-    auto size = adaptor.getSize();
-    if (!size) {
-      size =
-          rewriter.create<LLVM::ConstantOp>(op.getLoc(), op.getSizeAttrAttr());
+    // get size
+    mlir::Value size;
+    if (op.getType().hasStaticShape()) {
+      const auto staticSize = op.getType().getShape().front();
+      getState().numQubits += staticSize;
+      size = rewriter.create<LLVM::ConstantOp>(
+          op.getLoc(), rewriter.getI64IntegerAttr(staticSize));
+    } else {
+      size = adaptor.getDynamicSizes().front();
     }
-    // get the int value of the operation and increase the number of required
-    // qubits
-    auto constantOp = size.getDefiningOp<LLVM::ConstantOp>();
-    const auto value = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
-    getState().numQubits += value;
+
     // replace the old operation with new callOp
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, size);
+    auto callOp = rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, size);
 
     getState().useDynamicQubit = true;
 
@@ -271,31 +277,31 @@ struct ConvertMQTRefDeallocQubitQIR final
   }
 };
 
-struct ConvertMQTRefDeallocQIR final : OpConversionPattern<ref::DeallocOp> {
-  using OpConversionPattern::OpConversionPattern;
+// struct ConvertMQTRefDeallocQIR final : OpConversionPattern<ref::DeallocOp> {
+//   using OpConversionPattern::OpConversionPattern;
 
-  static constexpr StringLiteral FN_NAME_QUBIT_RELEASE_ARRAY =
-      "__quantum__rt__qubit_release_array";
+//   static constexpr StringLiteral FN_NAME_QUBIT_RELEASE_ARRAY =
+//       "__quantum__rt__qubit_release_array";
 
-  LogicalResult
-  matchAndRewrite(ref::DeallocOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto* ctx = getContext();
+//   LogicalResult
+//   matchAndRewrite(ref::DeallocOp op, OpAdaptor adaptor,
+//                   ConversionPatternRewriter& rewriter) const override {
+//     auto* ctx = getContext();
 
-    // create signature of the new function
-    const auto qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
+//     // create signature of the new function
+//     const auto qirSignature = LLVM::LLVMFunctionType::get(
+//         LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
 
-    // get the function declaration
-    const auto fnDecl = getFunctionDeclaration(
-        rewriter, op, FN_NAME_QUBIT_RELEASE_ARRAY, qirSignature);
+//     // get the function declaration
+//     const auto fnDecl = getFunctionDeclaration(
+//         rewriter, op, FN_NAME_QUBIT_RELEASE_ARRAY, qirSignature);
 
-    // replace the old operation with new callOp
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
-                                              adaptor.getOperands());
-    return success();
-  }
-};
+//     // replace the old operation with new callOp
+//     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
+//                                               adaptor.getOperands());
+//     return success();
+//   }
+// };
 
 struct ConvertMQTRefResetQIR final : OpConversionPattern<ref::ResetOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -321,15 +327,22 @@ struct ConvertMQTRefResetQIR final : OpConversionPattern<ref::ResetOp> {
     return success();
   }
 };
-struct ConvertMQTRefExtractQIR final : OpConversionPattern<ref::ExtractOp> {
+
+struct ConvertMemRefLoadQIR final : OpConversionPattern<memref::LoadOp> {
   using OpConversionPattern::OpConversionPattern;
 
   static constexpr StringLiteral FN_NAME_ARRAY_GET_ELEMENT_PTR =
       "__quantum__rt__array_get_element_ptr_1d";
 
   LogicalResult
-  matchAndRewrite(ref::ExtractOp op, OpAdaptor adaptor,
+  matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (!llvm::isa<ref::QubitType>(
+            llvm::cast<mlir::MemRefType>(op.getMemRef().getType())
+                .getElementType())) {
+      return success();
+    }
+
     auto* ctx = getContext();
 
     // create signature of the new function
@@ -341,18 +354,16 @@ struct ConvertMQTRefExtractQIR final : OpConversionPattern<ref::ExtractOp> {
     const auto fnDecl = getFunctionDeclaration(
         rewriter, op, FN_NAME_ARRAY_GET_ELEMENT_PTR, qirSignature);
 
-    // create a constantOp if the index is an attribute
-    auto index = adaptor.getIndex();
-    if (!index) {
-      index =
-          rewriter.create<LLVM::ConstantOp>(op.getLoc(), op.getIndexAttrAttr());
-    }
+    // get qreg from adaptor
+    const auto qreg = adaptor.getOperands().front();
+
+    // get index from adaptor
+    const auto index = adaptor.getIndices().front();
 
     // create the new callOp
     const auto elemPtr =
         rewriter
-            .create<LLVM::CallOp>(op.getLoc(), fnDecl,
-                                  ValueRange{adaptor.getInQreg(), index})
+            .create<LLVM::CallOp>(op.getLoc(), fnDecl, ValueRange{qreg, index})
             .getResult();
 
     // replace the old operation with a loadOp
@@ -636,7 +647,6 @@ struct ConvertMQTRefMeasureQIR final
 
             // erase the alloca op if all store operations are removed
             if (allocaOp.use_empty()) {
-
               rewriter.eraseOp(allocaOp.getDefiningOp<memref::AllocaOp>());
             }
             // delete the unrealized conversion and the constant operation when
@@ -887,11 +897,11 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     addInitialize(main, ctx, &state);
 
     target.addIllegalDialect<ref::MQTRefDialect>();
-    mqtPatterns.add<ConvertMQTRefAllocQIR>(typeConverter, ctx, &state);
-    mqtPatterns.add<ConvertMQTRefDeallocQIR>(typeConverter, ctx);
+    target.addLegalDialect<arith::ArithDialect>();
+    mqtPatterns.add<ConvertMemRefAllocQIR>(typeConverter, ctx, &state);
+    mqtPatterns.add<ConvertMemRefLoadQIR>(typeConverter, ctx);
     mqtPatterns.add<ConvertMQTRefAllocQubitQIR>(typeConverter, ctx, &state);
     mqtPatterns.add<ConvertMQTRefDeallocQubitQIR>(typeConverter, ctx);
-    mqtPatterns.add<ConvertMQTRefExtractQIR>(typeConverter, ctx);
     mqtPatterns.add<ConvertMQTRefResetQIR>(typeConverter, ctx);
     mqtPatterns.add<ConvertMQTRefQubitQIR>(typeConverter, ctx, &state);
     mqtPatterns.add<ConvertMQTRefMeasureQIR>(typeConverter, ctx, &state);

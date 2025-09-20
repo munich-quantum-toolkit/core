@@ -9,6 +9,7 @@
 #ifndef MQTREF_OPS
 #define MQTREF_OPS
 
+include "mlir/IR/BuiltinTypeInterfaces.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
@@ -61,7 +62,7 @@ class MQTRefType<string name, string typeMnemonic, list<Trait> traits = []>
     let mnemonic = typeMnemonic;
 }
 
-def QubitType : MQTRefType<"Qubit", "Qubit"> {
+def QubitType : MQTRefType<"Qubit", "Qubit", [MemRefElementTypeInterface]> {
     let summary = "qubit reference";
 }
 
