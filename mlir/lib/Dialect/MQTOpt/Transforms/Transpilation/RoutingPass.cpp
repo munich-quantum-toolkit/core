@@ -323,36 +323,66 @@ private:
   SmallVector<QubitIndexPair, 32> swapHistory_;
 };
 
-using RoutingStack = SmallVector<QubitState, 2>;
+/**
+ * @brief Manages the routing state stack with clear semantics for accessing
+ * current and parent states.
+ */
+struct RoutingContext {
+  /**
+   * @brief Returns the current (most recent) state.
+   */
+  QubitState& getCurrentState() {
+    assert(!stack_.empty() && "getCurrentState: empty state stack");
+    return stack_.back();
+  }
+
+  /**
+   * @brief Returns the parent of the current state.
+   */
+  QubitState& getParentState() {
+    assert(stack_.size() >= 2 && "getParentState: no parent state available");
+    return stack_[stack_.size() - 2];
+  }
+
+  /**
+   * @brief Pushes a new state with the given number of qubits.
+   */
+  void pushState(const std::size_t nqubits) { stack_.emplace_back(nqubits); }
+
+  /**
+   * @brief Duplicates the current state and pushes it on the stack.
+   */
+  void duplicateCurrentState() {
+    assert(!stack_.empty() && "duplicateCurrentState: empty state stack");
+    stack_.push_back(stack_.back());
+    stack_.back().clearHistory();
+  }
+
+  /**
+   * @brief Pops the current state off the stack.
+   */
+  void popState() {
+    assert(!stack_.empty() && "popState: empty state stack");
+    stack_.pop_back();
+  }
+
+  /**
+   * @brief Returns the number of states in the stack.
+   */
+  [[nodiscard]] std::size_t size() const { return stack_.size(); }
+
+  /**
+   * @brief Returns whether the stack is empty.
+   */
+  [[nodiscard]] bool empty() const { return stack_.empty(); }
+
+private:
+  SmallVector<QubitState, 2> stack_;
+};
 
 /**
- * @brief Return the element on the top of the stack.
- * @param stack The routing stack.
+ * @brief Manages free / used hardware indices.
  */
-QubitState& top(RoutingStack& stack) {
-  assert(!stack.empty() && "state: expected at least one stack item");
-  return stack.back();
-}
-
-/**
- * @brief Return the element below the top of the stack.
- * @param stack The routing stack.
- */
-QubitState& belowTop(RoutingStack& stack) {
-  assert(stack.size() >= 2 && "parentState: expected at least two stack items");
-  return stack[stack.size() - 2];
-}
-
-/**
- * @brief Copy the top of the stack.
- * @param stack The routing stack.
- */
-void duplicateTop(RoutingStack& stack) {
-  assert(!stack.empty() && "state: expected at least one stack item");
-  stack.push_back(stack.back());
-  stack.back().clearHistory();
-}
-
 struct HardwareIndexPool {
 
   /**
@@ -510,19 +540,19 @@ getMissingQubits(ValueRange old, ArrayRef<Value> hardwareQubits) {
 template <class BasePattern> struct ContextualPattern : BasePattern {
 public:
   ContextualPattern(MLIRContext* ctx, Architecture& arch, Layout layout,
-                    RoutingStack& stack, HardwareIndexPool& pool)
-      : BasePattern(ctx), arch_(&arch), layout_(layout), stack_(&stack),
-        pool_(&pool) {}
+                    RoutingContext& routingCtx, HardwareIndexPool& pool)
+      : BasePattern(ctx), arch_(&arch), layout_(layout),
+        routingCtx_(&routingCtx), pool_(&pool) {}
 
   [[nodiscard]] Architecture& arch() const { return *arch_; }
   [[nodiscard]] Layout layout() const { return layout_; }
-  [[nodiscard]] RoutingStack& stack() const { return *stack_; }
+  [[nodiscard]] RoutingContext& routingCtx() const { return *routingCtx_; }
   [[nodiscard]] HardwareIndexPool& pool() const { return *pool_; }
 
 private:
   Architecture* arch_;
   Layout layout_;
-  RoutingStack* stack_;
+  RoutingContext* routingCtx_;
   HardwareIndexPool* pool_;
 };
 
@@ -561,8 +591,7 @@ struct FuncOpPattern final : ContextualOpPattern<func::FuncOp> {
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({
-      llvm::dbgs() << "routing entry_point function: " << op.getSymName()
-                   << '\n';
+      llvm::dbgs() << "routing entry_point: " << op.getSymName() << '\n';
     });
 
     rewriter.setInsertionPointToStart(&op.getBody().front());
@@ -570,8 +599,8 @@ struct FuncOpPattern final : ContextualOpPattern<func::FuncOp> {
     initEntryPoint(qubits, rewriter);
 
     pool().fill(layout());
-    stack().emplace_back(arch().nqubits());
-    top(stack()).initialize(qubits, layout());
+    routingCtx().pushState(arch().nqubits());
+    routingCtx().getCurrentState().initialize(qubits, layout());
 
     return success();
   }
@@ -591,8 +620,8 @@ struct ForOpPattern final : ContextualOpPattern<scf::ForOp> {
 
   LogicalResult matchAndRewrite(scf::ForOp op,
                                 PatternRewriter& rewriter) const final {
-    const auto missingQubits =
-        getMissingQubits(op.getInitArgs(), top(stack()).getHardwareQubits());
+    const auto missingQubits = getMissingQubits(
+        op.getInitArgs(), routingCtx().getCurrentState().getHardwareQubits());
 
     SmallVector<Value, 0> newInitArgs;
     newInitArgs.reserve(op.getInitArgs().size() + missingQubits.size());
@@ -617,15 +646,15 @@ struct ForOpPattern final : ContextualOpPattern<scf::ForOp> {
     }
 
     // Prepare stack.
-    duplicateTop(stack());
+    routingCtx().duplicateCurrentState();
 
     // Forward out-of-loop and in-loop state.
     for (const auto [arg, res, iter] :
          llvm::zip(forOp.getInitArgs(), forOp.getResults(),
                    forOp.getRegionIterArgs())) {
       if (isa<QubitType>(arg.getType())) {
-        belowTop(stack()).forward(arg, res);
-        top(stack()).forward(arg, iter);
+        routingCtx().getParentState().forward(arg, res);
+        routingCtx().getCurrentState().forward(arg, iter);
       }
     }
 
@@ -656,16 +685,15 @@ struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
       return failure();
     }
 
-    auto& state = top(stack());
-
-    const auto swaps = llvm::reverse(state.getSwapHistory());
+    const auto swaps =
+        llvm::reverse(routingCtx().getCurrentState().getSwapHistory());
 
     for (const auto& [s0, s1] : swaps) {
-      const auto layout = state.getLayout();
+      const auto layout = routingCtx().getCurrentState().getLayout();
       const std::size_t h0 = layout[s0];
       const std::size_t h1 = layout[s1];
-      const Value in0 = state.getHardwareValue(h0);
-      const Value in1 = state.getHardwareValue(h1);
+      const Value in0 = routingCtx().getCurrentState().getHardwareValue(h0);
+      const Value in1 = routingCtx().getCurrentState().getHardwareValue(h1);
 
       auto swap = createSwap(op->getLoc(), in0, in1, rewriter);
       const auto [out0, out1] = getOuts(swap);
@@ -674,16 +702,17 @@ struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
       rewriter.replaceAllUsesExcept(in0, out1, swap);
       rewriter.replaceAllUsesExcept(in1, out0, swap);
 
-      state.swapSoftwareIndices(in0, in1);
-      state.forward(in0, out0);
-      state.forward(in1, out1);
+      routingCtx().getCurrentState().swapSoftwareIndices(in0, in1);
+      routingCtx().getCurrentState().forward(in0, out0);
+      routingCtx().getCurrentState().forward(in1, out1);
     }
 
-    assert(llvm::equal(state.getLayout(), belowTop(stack()).getLayout()) &&
+    assert(llvm::equal(routingCtx().getCurrentState().getLayout(),
+                       routingCtx().getParentState().getLayout()) &&
            "layouts must match after restoration");
 
-    const auto missingQubits =
-        getMissingQubits(op.getResults(), state.getHardwareQubits());
+    const auto missingQubits = getMissingQubits(
+        op.getResults(), routingCtx().getCurrentState().getHardwareQubits());
 
     SmallVector<Value, 0> newResults;
     newResults.reserve(op.getResults().size() + missingQubits.size());
@@ -692,7 +721,7 @@ struct YieldOpPattern final : ContextualOpPattern<scf::YieldOp> {
 
     rewriter.replaceOpWithNewOp<scf::YieldOp>(op, newResults);
 
-    stack().pop_back();
+    routingCtx().popState();
 
     return success();
   }
@@ -702,17 +731,16 @@ struct AllocQubitPattern final : ContextualOpPattern<AllocQubitOp> {
   using ContextualOpPattern<AllocQubitOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(AllocQubitOp alloc,
                                 PatternRewriter& rewriter) const final {
-    auto& state = top(stack());
-
     const std::size_t index = pool().retrieve();
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({ llvm::dbgs() << "alloc index: " << index << '\n'; });
-    const Value q = top(stack()).getHardwareValue(index);
+    const Value q = routingCtx().getCurrentState().getHardwareValue(index);
 
     auto reset = rewriter.create<ResetOp>(alloc.getLoc(), q);
     rewriter.replaceOp(alloc, reset);
 
-    state.forward(reset.getInQubit(), reset.getOutQubit());
+    routingCtx().getCurrentState().forward(reset.getInQubit(),
+                                           reset.getOutQubit());
     return success();
   }
 };
@@ -722,7 +750,8 @@ struct DeallocQubitPattern final : ContextualOpPattern<DeallocQubitOp> {
   LogicalResult matchAndRewrite(DeallocQubitOp dealloc,
                                 PatternRewriter& rewriter) const final {
     const Value q = dealloc.getQubit();
-    const std::size_t index = top(stack()).getHardwareIndex(q);
+    const std::size_t index =
+        routingCtx().getCurrentState().getHardwareIndex(q);
 
     if (pool().isUsed(index)) {
       // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
@@ -739,7 +768,8 @@ struct ResetPattern final : ContextualOpPattern<ResetOp> {
   using ContextualOpPattern<ResetOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(ResetOp reset,
                                 PatternRewriter& /*rewriter*/) const final {
-    top(stack()).forward(reset.getInQubit(), reset.getOutQubit());
+    routingCtx().getCurrentState().forward(reset.getInQubit(),
+                                           reset.getOutQubit());
     return success();
   }
 };
@@ -756,11 +786,10 @@ struct NaiveUnitaryPattern final
       return success();
     }
 
-    auto& state = top(stack());
-
     // Single-qubit: Forward mapping.
     if (!isTwoQubitGate(u)) {
-      state.forward(u.getAllInQubits()[0], u.getAllOutQubits()[0]);
+      routingCtx().getCurrentState().forward(u.getAllInQubits()[0],
+                                             u.getAllOutQubits()[0]);
       return success();
     }
 
@@ -773,16 +802,16 @@ struct NaiveUnitaryPattern final
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({
-      const std::size_t s0 = state.getSoftwareIndex(execIn0);
-      const std::size_t s1 = state.getSoftwareIndex(execIn1);
-      const std::size_t h0 = state.getHardwareIndex(execIn0);
-      const std::size_t h1 = state.getHardwareIndex(execIn1);
-
-      llvm::dbgs() << llvm::format("gate: s%d/h%d, s%d/h%d\n", s0, h0, s1, h1);
+      llvm::dbgs() << llvm::format(
+          "gate: s%d/h%d, s%d/h%d\n",
+          routingCtx().getCurrentState().getSoftwareIndex(execIn0),
+          routingCtx().getCurrentState().getHardwareIndex(execIn0),
+          routingCtx().getCurrentState().getSoftwareIndex(execIn1),
+          routingCtx().getCurrentState().getHardwareIndex(execIn1));
     });
 
-    state.forward(execIn0, execOut0);
-    state.forward(execIn1, execOut1);
+    routingCtx().getCurrentState().forward(execIn0, execOut0);
+    routingCtx().getCurrentState().forward(execIn1, execOut1);
 
     return success();
   }
@@ -792,10 +821,10 @@ private:
    * @brief Returns true iff @p u is executable on the targeted architecture.
    */
   [[nodiscard]] bool isExecutable(UnitaryInterface u) const {
-    const auto& state = top(stack());
     const auto& [in0, in1] = getIns(u);
-    return arch().areAdjacent(state.getHardwareIndex(in0),
-                              state.getHardwareIndex(in1));
+    return arch().areAdjacent(
+        routingCtx().getCurrentState().getHardwareIndex(in0),
+        routingCtx().getCurrentState().getHardwareIndex(in1));
   }
 
   /**
@@ -803,28 +832,28 @@ private:
    */
   [[nodiscard]] llvm::SmallVector<std::size_t> getPath(const Value in0,
                                                        const Value in1) const {
-    const auto& state = top(stack());
-    return arch().shortestPathBetween(state.getHardwareIndex(in0),
-                                      state.getHardwareIndex(in1));
+    return arch().shortestPathBetween(
+        routingCtx().getCurrentState().getHardwareIndex(in0),
+        routingCtx().getCurrentState().getHardwareIndex(in1));
   }
 
   /**
    * @brief Insert SWAPs such that @p u is executable.
    */
   void makeExecutable(UnitaryInterface u, PatternRewriter& rewriter) const {
-    auto& state = top(stack());
-
     const auto& [q0, q1] = getIns(u);
     const auto path = getPath(q0, q1);
     for (std::size_t i = 0; i < path.size() - 2; ++i) {
       const std::size_t h0 = path[i];
       const std::size_t h1 = path[i + 1];
 
-      const Value in0 = state.getHardwareValue(h0);
-      const Value in1 = state.getHardwareValue(h1);
+      const Value in0 = routingCtx().getCurrentState().getHardwareValue(h0);
+      const Value in1 = routingCtx().getCurrentState().getHardwareValue(h1);
 
-      const std::size_t s0 = state.getSoftwareIndex(in0);
-      const std::size_t s1 = state.getSoftwareIndex(in1);
+      const std::size_t s0 =
+          routingCtx().getCurrentState().getSoftwareIndex(in0);
+      const std::size_t s1 =
+          routingCtx().getCurrentState().getSoftwareIndex(in1);
 
       // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
       LLVM_DEBUG({
@@ -840,10 +869,10 @@ private:
       rewriter.replaceAllUsesExcept(in0, out1, swap);
       rewriter.replaceAllUsesExcept(in1, out0, swap);
 
-      state.recordSwap(s0, s1);
-      state.swapSoftwareIndices(in0, in1);
-      state.forward(in0, out0);
-      state.forward(in1, out1);
+      routingCtx().getCurrentState().recordSwap(s0, s1);
+      routingCtx().getCurrentState().swapSoftwareIndices(in0, in1);
+      routingCtx().getCurrentState().forward(in0, out0);
+      routingCtx().getCurrentState().forward(in1, out1);
 
       checkZeroUse(out0);
       checkZeroUse(out1);
@@ -860,7 +889,8 @@ private:
    * been allocated previously and now has zero uses.
    */
   void checkZeroUse(const Value q) const {
-    const std::size_t index = top(stack()).getHardwareIndex(q);
+    const std::size_t index =
+        routingCtx().getCurrentState().getHardwareIndex(q);
     if (!q.hasOneUse() && pool().isUsed(index)) {
 
       // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
@@ -877,7 +907,7 @@ struct MeasurePattern final : ContextualOpPattern<MeasureOp> {
   using ContextualOpPattern<MeasureOp>::ContextualOpPattern;
   LogicalResult matchAndRewrite(MeasureOp m,
                                 PatternRewriter& /*rewriter*/) const final {
-    top(stack()).forward(m.getInQubit(), m.getOutQubit());
+    routingCtx().getCurrentState().forward(m.getInQubit(), m.getOutQubit());
     return success();
   }
 };
@@ -887,12 +917,12 @@ struct MeasurePattern final : ContextualOpPattern<MeasureOp> {
  */
 void populateNaiveRoutingPatterns(RewritePatternSet& patterns,
                                   Architecture& arch, Layout layout,
-                                  RoutingStack& stack,
+                                  RoutingContext& routingCtx,
                                   HardwareIndexPool& pool) {
   patterns.add<FuncOpPattern, ForOpPattern, YieldOpPattern, AllocQubitPattern,
                ResetPattern, NaiveUnitaryPattern, MeasurePattern,
-               DeallocQubitPattern>(patterns.getContext(), arch, layout, stack,
-                                    pool);
+               DeallocQubitPattern>(patterns.getContext(), arch, layout,
+                                    routingCtx, pool);
 }
 
 /**
@@ -905,7 +935,7 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
 
     Architecture arch = getArchitecture(ArchitectureName::MQTTest);
 
-    RoutingStack stack{};
+    RoutingContext routingCtx{};
     HardwareIndexPool pool{};
 
     std::random_device rd;
@@ -922,7 +952,7 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     });
 
     RewritePatternSet patterns(module.getContext());
-    populateNaiveRoutingPatterns(patterns, arch, layout, stack, pool);
+    populateNaiveRoutingPatterns(patterns, arch, layout, routingCtx, pool);
     walkPreOrderAndApplyPatterns(module, std::move(patterns));
   }
 };
