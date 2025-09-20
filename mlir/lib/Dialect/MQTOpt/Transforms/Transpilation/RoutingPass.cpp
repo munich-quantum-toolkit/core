@@ -11,11 +11,6 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
-#include "mlir/IR/BuiltinTypes.h"
-
-#include "llvm/ADT/SetVector.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/Format.h"
 
 #include <algorithm>
 #include <cassert>
@@ -23,13 +18,17 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SetVector.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Debug.h>
+#include <llvm/Support/Format.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Action.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -40,6 +39,7 @@
 #include <mlir/Support/TypeID.h>
 #include <mlir/Support/WalkResult.h>
 #include <numeric>
+#include <optional>
 #include <random>
 #include <tuple>
 #include <utility>
