@@ -142,7 +142,7 @@ module {
         //
         // This test shows that the routing algorithm can handle
         // loop-carried qubit (and non-qubit) values as well as
-        // non-qubit if statements.
+        // classical if statements.
 
         %lb = index.constant 0
         %ub = index.constant 1000
