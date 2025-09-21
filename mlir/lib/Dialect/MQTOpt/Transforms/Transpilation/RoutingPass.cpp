@@ -120,6 +120,51 @@ constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
       /* neg_ctrl_in_qubits = */ ValueRange{});
 }
 
+/**
+ * @brief Replace all uses of a value within a region and its nested regions,
+ * except for a specific operation.
+ *
+ * @param oldValue The value to replace
+ * @param newValue The new value to use
+ * @param region The region in which to perform replacements
+ * @param exceptOp Operation to exclude from replacements
+ * @param rewriter The pattern rewriter
+ */
+static void replaceAllUsesInRegionAndChildrenExcept(Value oldValue,
+                                                    Value newValue,
+                                                    Region* region,
+                                                    Operation* exceptOp,
+                                                    PatternRewriter& rewriter) {
+  if (oldValue == newValue) {
+    return;
+  }
+
+  // Create a predicate function that checks if the use is:
+  // 1. In the specified region or one of its nested regions
+  // 2. Not in the excepted operation
+  const auto isInRegionAndNotExcepted = [&](OpOperand& ops) -> bool {
+    Operation* user = ops.getOwner();
+
+    // Skip the excepted operation
+    if (user == exceptOp) {
+      return false;
+    }
+
+    // Check if the user is in the specified region or a child region
+    Region* userRegion = user->getParentRegion();
+    while (userRegion != nullptr) {
+      if (userRegion == region) {
+        return true;
+      }
+      userRegion = userRegion->getParentRegion();
+    }
+
+    return false;
+  };
+
+  rewriter.replaceUsesWithIf(oldValue, newValue, isInRegionAndNotExcepted);
+}
+
 //===----------------------------------------------------------------------===//
 // Initial Layouts
 //===----------------------------------------------------------------------===//
@@ -329,6 +374,14 @@ struct RoutingStack {
   }
 
   /**
+   * @brief Returns the state at the given index.
+   */
+  [[nodiscard]] LayoutState& at(const std::size_t index) {
+    assert(index < stack_.size() && "at: index out of bounds");
+    return stack_[index].state;
+  }
+
+  /**
    * @brief Pushes a new state on to the stack.
    */
   void pushState(ArrayRef<Value> qubits, ArrayRef<std::size_t> initialLayout) {
@@ -481,7 +534,7 @@ public:
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({
-      llvm::dbgs() << llvm::format("gate: s%d/h%d, s%d/h%d\n",
+      llvm::dbgs() << llvm::format("two-qubit gate: s%d/h%d, s%d/h%d\n",
                                    stack.getState().lookupSoftware(execIn0),
                                    stack.getState().lookupHardware(execIn0),
                                    stack.getState().lookupSoftware(execIn1),
@@ -548,6 +601,10 @@ protected:
   }
 };
 
+/**
+ * @brief Inserts SWAPs along the shortest path between two hardware
+ * qubits.
+ */
 class NaiveRouter final : public Router {
 protected:
   void makeExecutable(UnitaryInterface op, RoutingStack& stack,
@@ -580,8 +637,10 @@ protected:
       const auto [qOut0, qOut1] = getOuts(swap);
 
       rewriter.setInsertionPointAfter(swap);
-      rewriter.replaceAllUsesExcept(qIn0, qOut1, swap);
-      rewriter.replaceAllUsesExcept(qIn1, qOut0, swap);
+      replaceAllUsesInRegionAndChildrenExcept(
+          qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
+      replaceAllUsesInRegionAndChildrenExcept(
+          qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
 
       stack.recordSwap(softwareIdx0, softwareIdx1);
       stack.getState().swapSoftwareIndices(qIn0, qIn1);
@@ -664,42 +723,37 @@ WalkResult handleReturn(RoutingStack& stack) {
 }
 
 /**
- * @brief Replaces the 'for' loop with one that includes all hardware qubits in
- * the init arguments. The missing hardware qubits are added to the end of the
+ * @brief Replaces the 'for' loop with one that has all hardware qubits as init
  * arguments.
  *
  * Prepares the stack for the routing of the loop body by adding a copy of the
- * current state to the stack, resetting its SWAP history, and forwarding the
- * respective SSA values.
+ * current state to the stack and resetting its SWAP history. Forwards the
+ * results in the parent state.
  */
 WalkResult handleFor(scf::ForOp op, RoutingStack& stack,
                      PatternRewriter& rewriter) {
-  const auto missingQubits =
-      getMissingQubits(op.getInitArgs(), stack.getState().getHardwareQubits());
+  const std::size_t nargs = op.getBody()->getNumArguments();
+  const std::size_t nresults = op->getNumResults();
 
-  SmallVector<Value> newInitArgs;
-  newInitArgs.reserve(op.getInitArgs().size() + missingQubits.size());
-  newInitArgs.append(op.getInitArgs().begin(), op.getInitArgs().end());
-  newInitArgs.append(missingQubits.begin(), missingQubits.end());
+  /// Construct new init arguments.
+  const ArrayRef<Value> qubits = stack.getState().getHardwareQubits();
+  const SmallVector<Value> newInitArgs(qubits);
 
+  /// Replace old for with a new one with updated init arguments.
   auto forOp = rewriter.create<scf::ForOp>(op.getLoc(), op.getLowerBound(),
                                            op.getUpperBound(), op.getStep(),
                                            newInitArgs);
 
-  // Clone body from the old 'for' to the new one and map block arguments.
-  const std::size_t nargs = op.getBody()->getNumArguments();
   rewriter.mergeBlocks(op.getBody(), forOp.getBody(),
                        forOp.getBody()->getArguments().take_front(nargs));
 
-  // Replace or erase old 'for' op.
-  const std::size_t nresults = op->getNumResults();
   if (nresults > 0) {
     rewriter.replaceOp(op, forOp.getResults().take_front(nresults));
   } else {
     rewriter.eraseOp(op);
   }
 
-  // Prepare stack.
+  /// Prepare stack.
   stack.duplicateCurrentState();
 
   // Forward out-of-loop and in-loop state.
@@ -710,6 +764,56 @@ WalkResult handleFor(scf::ForOp op, RoutingStack& stack,
       stack.getParentState().remapQubitValue(arg, res);
       stack.getState().remapQubitValue(arg, iter);
     }
+  }
+
+  return WalkResult::advance();
+}
+
+/**
+ * @brief Replaces the 'if' statement with one that has all hardware qubits as
+ * result.
+ *
+ * Prepares the stack for the routing of the 'then' and 'else' body by adding a
+ * copy of the current state to the stack and resetting its SWAP history for
+ * each branch. Forwards the results in the parent state.
+ */
+WalkResult handleIf(scf::IfOp op, RoutingStack& stack,
+                    PatternRewriter& rewriter) {
+  const std::size_t nresults = op->getNumResults();
+
+  /// Construct new result types.
+  const ArrayRef<Value> qubits = stack.getState().getHardwareQubits();
+  const auto rng = llvm::map_range(qubits, [](Value q) { return q.getType(); });
+  const SmallVector<Type> resultTypes(rng.begin(), rng.end());
+
+  /// Replace old if with a new one with updated result types.
+  const bool hasElse = !op.getElseRegion().empty();
+  auto ifOp = rewriter.create<scf::IfOp>(op.getLoc(), resultTypes,
+                                         op.getCondition(), hasElse);
+
+  rewriter.mergeBlocks(&op.getThenRegion().front(),
+                       &ifOp.getThenRegion().front());
+  if (hasElse) {
+    rewriter.mergeBlocks(&op.getElseRegion().front(),
+                         &ifOp.getElseRegion().front());
+  }
+
+  if (nresults > 0) {
+    rewriter.replaceOp(op, ifOp.getResults().take_front(nresults));
+  } else {
+    rewriter.eraseOp(op);
+  }
+
+  /// Prepare stack.
+  stack.duplicateCurrentState(); // Else
+  stack.duplicateCurrentState(); // Then
+
+  /// Forward results for all hardware qubits.
+  LayoutState& stateBeforeIf = stack.at(stack.size() - 3);
+  for (std::size_t i = 0; i < qubits.size(); ++i) {
+    const Value in = stateBeforeIf.getHardwareQubits()[i];
+    const Value out = ifOp->getResult(i);
+    stateBeforeIf.remapQubitValue(in, out);
   }
 
   return WalkResult::advance();
@@ -735,7 +839,8 @@ WalkResult handleFor(scf::ForOp op, RoutingStack& stack,
  */
 WalkResult handleYield(scf::YieldOp op, RoutingStack& stack,
                        PatternRewriter& rewriter) {
-  if (!isa<scf::ForOp>(op->getParentOp())) {
+  if (!isa<scf::ForOp>(op->getParentOp()) &&
+      !isa<scf::IfOp>(op->getParentOp())) {
     return WalkResult::skip();
   }
 
@@ -748,8 +853,10 @@ WalkResult handleYield(scf::YieldOp op, RoutingStack& stack,
     const auto [qOut0, qOut1] = getOuts(swap);
 
     rewriter.setInsertionPointAfter(swap);
-    rewriter.replaceAllUsesExcept(qIn0, qOut1, swap);
-    rewriter.replaceAllUsesExcept(qIn1, qOut0, swap);
+    replaceAllUsesInRegionAndChildrenExcept(
+        qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
+    replaceAllUsesInRegionAndChildrenExcept(
+        qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
 
     stack.getState().swapSoftwareIndices(qIn0, qIn1);
     stack.getState().remapQubitValue(qIn0, qOut0);
@@ -763,11 +870,7 @@ WalkResult handleYield(scf::YieldOp op, RoutingStack& stack,
   const auto missingQubits =
       getMissingQubits(op.getResults(), stack.getState().getHardwareQubits());
 
-  SmallVector<Value> newResults;
-  newResults.reserve(op.getResults().size() + missingQubits.size());
-  newResults.append(op.getResults().begin(), op.getResults().end());
-  newResults.append(missingQubits.begin(), missingQubits.end());
-
+  const SmallVector<Value> newResults(stack.getState().getHardwareQubits());
   rewriter.replaceOpWithNewOp<scf::YieldOp>(op, newResults);
 
   stack.popState();
@@ -809,7 +912,6 @@ WalkResult handleDealloc(DeallocQubitOp op, RoutingStack& stack,
                          HardwareIndexPool& pool, PatternRewriter& rewriter) {
   const Value q = op.getQubit();
   const std::size_t index = stack.getState().lookupHardware(q);
-
   if (pool.isUsed(index)) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({ llvm::dbgs() << "dealloc index: " << index << '\n'; });
@@ -862,7 +964,7 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
                     RoutingContext& ctx) {
   PatternRewriter rewriter(mlirCtx);
 
-  // Prepare work-list.
+  /// Prepare work-list.
   SmallVector<Operation*> worklist;
   for (const auto func : module.getOps<func::FuncOp>()) {
     if (!func->hasAttr(ENTRY_POINT_ATTR)) {
@@ -872,7 +974,7 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
         [&](Operation* op) { worklist.push_back(op); });
   }
 
-  // Iterate work-list.
+  /// Iterate work-list.
   for (Operation* curr : worklist) {
     if (curr == nullptr) {
       continue; // Skip erased ops.
@@ -896,6 +998,8 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
             .Case<scf::ForOp>([&](scf::ForOp op) {
               return handleFor(op, ctx.stack, rewriter);
             })
+            .Case<scf::IfOp>(
+                [&](scf::IfOp op) { return handleIf(op, ctx.stack, rewriter); })
             .Case<scf::YieldOp>([&](scf::YieldOp op) {
               return handleYield(op, ctx.stack, rewriter);
             })

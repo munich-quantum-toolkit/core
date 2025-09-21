@@ -84,17 +84,17 @@ module {
         // 1:────────┤ X ├─
         //           └───┘
 
-        %q0_0_bell = mqtopt.allocQubit
-        %q0_1_bell = mqtopt.h() %q0_0_bell : !mqtopt.Qubit
+        %q0_0 = mqtopt.allocQubit
+        %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
 
-        %q1_0_bell = mqtopt.allocQubit
-        %q1_1_bell, %q0_2_bell = mqtopt.x() %q1_0_bell ctrl %q0_1_bell : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q1_0 = mqtopt.allocQubit
+        %q1_1, %q0_2 = mqtopt.x() %q1_0 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-        %q0_3_bell, %m0_0_bell = "mqtopt.measure"(%q0_2_bell) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-        %q1_2_bell, %m1_0_bell = "mqtopt.measure"(%q1_1_bell) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %q0_3, %m0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+        %q1_2, %m1_0 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-        mqtopt.deallocQubit %q0_3_bell
-        mqtopt.deallocQubit %q1_2_bell
+        mqtopt.deallocQubit %q0_3
+        mqtopt.deallocQubit %q1_2
 
         return
     }
@@ -119,17 +119,17 @@ module {
         %step = index.constant 1
 
         scf.for %iv = %lb to %ub step %step {
-            %q0_0_bell1000 = mqtopt.allocQubit
-            %q1_0_bell1000 = mqtopt.allocQubit
+            %q0_0 = mqtopt.allocQubit
+            %q1_0 = mqtopt.allocQubit
 
-            %q0_1_bell1000 = mqtopt.h() %q0_0_bell1000 : !mqtopt.Qubit
-            %q1_1_bell1000, %q0_2_bell1000 = mqtopt.x() %q1_0_bell1000 ctrl %q0_1_bell1000 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
+            %q1_1, %q0_2 = mqtopt.x() %q1_0 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-            %q0_3_bell1000, %m0_0_bell1000 = "mqtopt.measure"(%q0_2_bell1000) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-            %q1_2_bell1000, %m1_0_bell1000 = "mqtopt.measure"(%q1_1_bell1000) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+            %q0_3, %m0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+            %q1_2, %m1_0 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-            mqtopt.deallocQubit %q0_3_bell1000
-            mqtopt.deallocQubit %q1_2_bell1000
+            mqtopt.deallocQubit %q0_3
+            mqtopt.deallocQubit %q1_2
         }
 
         return
@@ -142,21 +142,26 @@ module {
         // GHZ in a loop.
         //
         // This test shows that the routing algorithm can handle
-        // loop-carried qubit (and non-qubit) values as well as
-        // classical if statements.
+        // loop-carried qubit values.
+        //
+        // ┌    ┌───┐                 ┐^1000
+        // │ 0:─┤ H ├────■─────────── │
+        // │    └───┘  ┌─┴─┐          │
+        // │ 1:────────┤ X ├────■──── │
+        // │           └───┘  ┌─┴─┐   │
+        // │ 2:───────────────┤ X ├── │
+        // └                  └───┘   ┘
 
         %lb = index.constant 0
         %ub = index.constant 1000
         %step = index.constant 1
 
-        %q0_0_ghz1000 = mqtopt.allocQubit
-        %q1_0_ghz1000 = mqtopt.allocQubit
-        %q2_0_ghz1000 = mqtopt.allocQubit
+        %q0_0 = mqtopt.allocQubit
+        %q1_0 = mqtopt.allocQubit
+        %q2_0 = mqtopt.allocQubit
 
-        %zero = arith.constant 0 : i32
-
-        %nones, %q0_1_ghz1000, %q1_1_ghz1000, %q2_1_ghz1000 = scf.for %iv = %lb to %ub step %step
-            iter_args(%nones0 = %zero, %q0_i_0 = %q0_0_ghz1000, %q1_i_0 = %q1_0_ghz1000, %q2_i_0 = %q2_0_ghz1000) -> (i32, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit) {
+        %q0_1, %q1_1, %q2_1 = scf.for %iv = %lb to %ub step %step
+            iter_args(%q0_i_0 = %q0_0, %q1_i_0 = %q1_0, %q2_i_0 = %q2_0) -> (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit) {
             %q0_i_1 = "mqtopt.reset"(%q0_i_0) : (!mqtopt.Qubit) -> !mqtopt.Qubit
             %q1_i_1 = "mqtopt.reset"(%q1_i_0) : (!mqtopt.Qubit) -> !mqtopt.Qubit
             %q2_i_1 = "mqtopt.reset"(%q2_i_0) : (!mqtopt.Qubit) -> !mqtopt.Qubit
@@ -169,20 +174,37 @@ module {
             %q1_i_4, %m1 = "mqtopt.measure"(%q1_i_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
             %q2_i_3, %m2 = "mqtopt.measure"(%q2_i_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-            %nones2 = scf.if %m0 -> i32 {
-                %one = arith.constant 1 : i32
-                %nones1 = arith.addi %nones0, %one : i32
-                scf.yield %nones1 : i32
-            } else {
-                scf.yield %nones0 : i32
-            }
-
-            scf.yield %nones2, %q0_i_4, %q1_i_4, %q2_i_3 : i32, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
+            scf.yield %q0_i_4, %q1_i_4, %q2_i_3 : !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
         }
 
-        mqtopt.deallocQubit %q0_1_ghz1000
-        mqtopt.deallocQubit %q1_1_ghz1000
-        mqtopt.deallocQubit %q2_1_ghz1000
+        mqtopt.deallocQubit %q0_1
+        mqtopt.deallocQubit %q1_1
+        mqtopt.deallocQubit %q2_1
+
+        return
+    }
+
+    func.func @entryBranching() attributes { entry_point } {
+        %true = arith.constant 1 : i1
+
+        %q0_0 = mqtopt.allocQubit
+        %q1_0 = mqtopt.allocQubit
+
+        %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
+        %q0_2, %q1_2 = scf.if %true -> (!mqtopt.Qubit, !mqtopt.Qubit) {
+            %q1_1 = mqtopt.x() %q1_0 : !mqtopt.Qubit
+            %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+            scf.yield %q0_2, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
+        } else {
+            %q1_1 = mqtopt.i() %q1_0 : !mqtopt.Qubit
+            %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+            scf.yield %q0_2, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
+        }
+
+        mqtopt.deallocQubit %q0_2
+        mqtopt.deallocQubit %q1_2
 
         return
     }
@@ -278,10 +300,8 @@ module {
         %q1_0_ghz1000 = mqtopt.allocQubit
         %q2_0_ghz1000 = mqtopt.allocQubit
 
-        %zero = arith.constant 0 : i32
-
-        %nones, %q0_1_ghz1000, %q1_1_ghz1000, %q2_1_ghz1000 = scf.for %iv = %lb to %ub step %step
-            iter_args(%nones0 = %zero, %q0_i_0 = %q0_0_ghz1000, %q1_i_0 = %q1_0_ghz1000, %q2_i_0 = %q2_0_ghz1000) -> (i32, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit) {
+        %q0_1_ghz1000, %q1_1_ghz1000, %q2_1_ghz1000 = scf.for %iv = %lb to %ub step %step
+            iter_args(%q0_i_0 = %q0_0_ghz1000, %q1_i_0 = %q1_0_ghz1000, %q2_i_0 = %q2_0_ghz1000) -> (!mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit) {
             %q0_i_1 = "mqtopt.reset"(%q0_i_0) : (!mqtopt.Qubit) -> !mqtopt.Qubit
             %q1_i_1 = "mqtopt.reset"(%q1_i_0) : (!mqtopt.Qubit) -> !mqtopt.Qubit
             %q2_i_1 = "mqtopt.reset"(%q2_i_0) : (!mqtopt.Qubit) -> !mqtopt.Qubit
@@ -294,20 +314,33 @@ module {
             %q1_i_4, %m1 = "mqtopt.measure"(%q1_i_3) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
             %q2_i_3, %m2 = "mqtopt.measure"(%q2_i_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-            %nones2 = scf.if %m0 -> i32 {
-                %one = arith.constant 1 : i32
-                %nones1 = arith.addi %nones0, %one : i32
-                scf.yield %nones1 : i32
-            } else {
-                scf.yield %nones0 : i32
-            }
-
-            scf.yield %nones2, %q0_i_4, %q1_i_4, %q2_i_3 : i32, !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
+            scf.yield %q0_i_4, %q1_i_4, %q2_i_3 : !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
         }
 
         mqtopt.deallocQubit %q0_1_ghz1000
         mqtopt.deallocQubit %q1_1_ghz1000
         mqtopt.deallocQubit %q2_1_ghz1000
+
+        %true = arith.constant 1 : i1
+
+        %q0_0_branch = mqtopt.allocQubit
+        %q1_0_branch = mqtopt.allocQubit
+
+        %q0_1_branch = mqtopt.h() %q0_0_branch : !mqtopt.Qubit
+        %q0_2_branch, %q1_2_branch = scf.if %true -> (!mqtopt.Qubit, !mqtopt.Qubit) {
+            %q1_1_branch = mqtopt.x() %q1_0_branch : !mqtopt.Qubit
+            %q1_2_branch, %q0_2_branch = mqtopt.x() %q1_1_branch ctrl %q0_1_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+            scf.yield %q0_2_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
+        } else {
+            %q1_1_branch = mqtopt.i() %q1_0_branch: !mqtopt.Qubit
+            %q1_2_branch, %q0_2_branch = mqtopt.x() %q1_1_branch ctrl %q0_1_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+            scf.yield %q0_2_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
+        }
+
+        mqtopt.deallocQubit %q0_2_branch
+        mqtopt.deallocQubit %q1_2_branch
 
         return
     }
