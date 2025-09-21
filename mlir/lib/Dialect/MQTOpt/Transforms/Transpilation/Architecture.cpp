@@ -15,7 +15,6 @@
 #include <llvm/ADT/SmallVector.h>
 #include <memory>
 #include <stdexcept>
-#include <string>
 
 namespace mqt::ir::opt {
 [[nodiscard]] llvm::SmallVector<std::size_t>

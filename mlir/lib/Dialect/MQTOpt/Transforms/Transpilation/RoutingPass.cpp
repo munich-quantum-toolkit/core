@@ -26,7 +26,6 @@
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Action.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -35,10 +34,8 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
-#include <mlir/Rewrite/FrozenRewritePatternSet.h>
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/TypeID.h>
 #include <mlir/Support/WalkResult.h>
 #include <numeric>
 #include <optional>
@@ -881,7 +878,7 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
       continue; // Skip erased ops.
     }
 
-    OpBuilder::InsertionGuard guard(rewriter);
+    const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(curr);
 
     const auto res =
