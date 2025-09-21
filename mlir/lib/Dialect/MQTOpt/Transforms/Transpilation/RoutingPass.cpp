@@ -130,11 +130,10 @@ constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
  * @param exceptOp Operation to exclude from replacements
  * @param rewriter The pattern rewriter
  */
-static void replaceAllUsesInRegionAndChildrenExcept(Value oldValue,
-                                                    Value newValue,
-                                                    Region* region,
-                                                    Operation* exceptOp,
-                                                    PatternRewriter& rewriter) {
+void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
+                                             Region* region,
+                                             Operation* exceptOp,
+                                             PatternRewriter& rewriter) {
   if (oldValue == newValue) {
     return;
   }
