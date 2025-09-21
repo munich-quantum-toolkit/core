@@ -83,23 +83,144 @@ private:
 /**
  * @brief Forward SSA values in map.
  */
-LogicalResult forwardOne(QubitIndexMap& map, const Value in, const Value out) {
-  if (in == out) {
-    return in.getDefiningOp()->emitOpError() << "'in' must not equal 'out'";
-  }
-
+void forwardOne(QubitIndexMap& map, const Value in, const Value out) {
+  assert(in != out && "'in' must not equal 'out'");
   const auto it = map.find(in);
-  if (it == map.end()) {
-    return in.getDefiningOp()->emitOpError() << "map must contain 'in'";
-  }
-
+  assert(it != map.end() && "map must contain 'in'");
   map[out] = it->second;
   map.erase(in);
-
-  return success();
 }
 
-} // namespace
+/**
+ * @brief Handle `func::FuncOp`.
+ *
+ * Resets the state and pushes empty map. Skips non entry-point functions.
+ */
+WalkResult handleFunc(func::FuncOp op, VerificationStack& stack) {
+  if (!op->hasAttr(ENTRY_POINT_ATTR)) {
+    return WalkResult::skip();
+  }
+  stack.reset();
+  stack.push();
+  return WalkResult::advance();
+}
+
+/**
+ * @brief Defines the end of a region: Pop the top of the stack.
+ */
+WalkResult handleReturn(VerificationStack& stack) {
+  stack.pop();
+  return WalkResult::advance();
+}
+
+/**
+ * @brief Handle `scf::ForOp`.
+ *
+ * Prepares state for nested regions: Pushes a copy of the top of the state on
+ * the stack. Forwards all out-of-loop and in-loop SSA values for their
+ * respective map in the stack.
+ */
+WalkResult handleFor(scf::ForOp op, VerificationStack& stack) {
+  stack.duplicateTop();
+
+  for (const auto [arg, res, iter] :
+       llvm::zip(op.getInitArgs(), op.getResults(), op.getRegionIterArgs())) {
+    if (isa<QubitType>(arg.getType())) {
+      forwardOne(stack.belowTop(), arg, res);
+      forwardOne(stack.top(), arg, iter);
+    }
+  }
+
+  return WalkResult::advance();
+}
+
+/**
+ * @brief Defines the end of a nested region: Pop the top of the stack.
+ */
+WalkResult handleYield(scf::YieldOp op, VerificationStack& stack) {
+  if (isa<scf::ForOp>(op->getParentOp())) {
+    if (stack.size() < 2) {
+      return op->emitOpError() << "expected at least two elements on stack.";
+    }
+
+    stack.pop();
+  }
+  return WalkResult::advance();
+}
+
+/**
+ * @brief Adds hardware qubit to qubit index map.
+ */
+WalkResult handleQubit(QubitOp op, VerificationStack& stack,
+                       const Architecture& arch) {
+  if (stack.top().size() == arch.nqubits()) {
+    return op->emitOpError()
+           << "requires " << (arch.nqubits() + 1)
+           << " qubits but target architecture '" << arch.name()
+           << "' only supports " << arch.nqubits() << " qubits";
+  }
+
+  stack.top()[op.getQubit()] = op.getIndex();
+  return WalkResult::advance();
+}
+
+/**
+ * @brief Verifies if the unitary acts on either zero, one, or two qubits:
+ * - Advances for zero qubit unitaries (Nothing to do)
+ * - Forwards SSA values for one qubit.
+ * - Verifies executability for two-qubit gates for the given architecture and
+ *   forwards SSA values.
+ */
+WalkResult handleUnitary(UnitaryInterface op, VerificationStack& stack,
+                         const Architecture& arch) {
+  const std::size_t nacts = op.getAllInQubits().size();
+  if (nacts == 0) {
+    return WalkResult::advance();
+  }
+
+  if (nacts > 2) {
+    return op->emitOpError() << "acts on more than two qubits";
+  }
+
+  const Value in0 = op.getAllInQubits()[0];
+  const Value out0 = op.getAllOutQubits()[0];
+
+  if (nacts == 1) {
+    forwardOne(stack.top(), in0, out0);
+    return WalkResult::advance();
+  }
+
+  const Value in1 = op.getAllInQubits()[1];
+  const Value out1 = op.getAllOutQubits()[1];
+
+  if (!arch.areAdjacent(stack.top().at(in0), stack.top().at(in1))) {
+    return op->emitOpError()
+           << "(" << stack.top()[in0] << "," << stack.top()[in1] << ")"
+           << " is not executable on target architecture '" << arch.name()
+           << "'";
+  }
+
+  forwardOne(stack.top(), in0, out0);
+  forwardOne(stack.top(), in1, out1);
+
+  return WalkResult::advance();
+}
+
+/**
+ * @brief Forwards the SSA values.
+ */
+WalkResult handleReset(ResetOp op, VerificationStack& stack) {
+  forwardOne(stack.top(), op.getInQubit(), op.getOutQubit());
+  return WalkResult::advance();
+}
+
+/**
+ * @brief Forwards the SSA values.
+ */
+WalkResult handleMeasure(MeasureOp op, VerificationStack& stack) {
+  forwardOne(stack.top(), op.getInQubit(), op.getOutQubit());
+  return WalkResult::advance();
+}
 
 /**
  * @brief This pass verifies that the constraints of a target architecture are
@@ -108,177 +229,47 @@ LogicalResult forwardOne(QubitIndexMap& map, const Value in, const Value out) {
 struct RoutingVerificationPass final
     : impl::RoutingVerificationPassBase<RoutingVerificationPass> {
   void runOnOperation() override {
+    VerificationStack stack;
+
     const auto arch = getArchitecture(ArchitectureName::MQTTest);
     const auto res =
         getOperation()->walk<WalkOrder::PreOrder>([&](Operation* op) {
           return TypeSwitch<Operation*, WalkResult>(op)
-              .Case<func::FuncOp>([&](auto op) { return handleFuncOp(op); })
-              .Case<scf::ForOp>([&](auto op) { return handleForOp(op); })
-              .Case<scf::YieldOp>([&](auto op) { return handleYieldOp(op); })
-              .Case<QubitOp>([&](auto op) { return handleQubitOp(op, *arch); })
-              .Case<ResetOp>([&](auto op) { return handleResetOp(op); })
-              .Case<UnitaryInterface>(
-                  [&](auto unitary) { return handleUnitaryOp(unitary, *arch); })
-              .Case<MeasureOp>(
-                  [&](auto measure) { return handleMeasureOp(measure); })
+              /// built-in Dialect
+              .Case<ModuleOp>(
+                  [&](ModuleOp /* op */) { return WalkResult::advance(); })
+              /// func Dialect
+              .Case<func::FuncOp>(
+                  [&](func::FuncOp op) { return handleFunc(op, stack); })
+              .Case<func::ReturnOp>(
+                  [&](func::ReturnOp /* op */) { return handleReturn(stack); })
+              /// scf Dialect
+              .Case<scf::ForOp>(
+                  [&](scf::ForOp op) { return handleFor(op, stack); })
+              .Case<scf::YieldOp>(
+                  [&](scf::YieldOp op) { return handleYield(op, stack); })
+              /// mqtopt Dialect
               .Case<AllocQubitOp, DeallocQubitOp>([&](auto op) {
                 return WalkResult(
                     op->emitOpError("not allowed for transpiled program"));
               })
-              .Default([](auto) { return WalkResult::advance(); });
+              .Case<ResetOp>([&](ResetOp op) { return handleReset(op, stack); })
+              .Case<MeasureOp>([&](MeasureOp measure) {
+                return handleMeasure(measure, stack);
+              })
+              .Case<QubitOp>(
+                  [&](QubitOp op) { return handleQubit(op, stack, *arch); })
+              .Case<UnitaryInterface>([&](UnitaryInterface unitary) {
+                return handleUnitary(unitary, stack, *arch);
+              })
+              /// Skip the rest.
+              .Default([](auto) { return WalkResult::skip(); });
         });
 
     if (res.wasInterrupted()) {
       signalPassFailure();
     }
   }
-
-private:
-  /**
-   * @brief Handle `func::FuncOp`.
-   *
-   * Resets the state and pushes empty map. Skips non entry-point functions.
-   */
-  WalkResult handleFuncOp(func::FuncOp op) {
-    if (!op->hasAttr(ENTRY_POINT_ATTR)) {
-      return WalkResult::skip();
-    }
-    stack.reset();
-    stack.push();
-    return WalkResult::advance();
-  }
-
-  /**
-   * @brief Handle `scf::ForOp`.
-   *
-   * Prepares state for nested regions: Pushes a copy of the top of the state on
-   * the stack. Forwards all out-of-loop and in-loop SSA values for their
-   * respective map in the stack.
-   */
-  WalkResult handleForOp(scf::ForOp op) {
-    stack.duplicateTop();
-
-    for (const auto [arg, res, iter] :
-         llvm::zip(op.getInitArgs(), op.getResults(), op.getRegionIterArgs())) {
-      if (isa<QubitType>(arg.getType())) {
-        if (failed(forwardOne(stack.belowTop(), arg, res))) {
-          return WalkResult::interrupt();
-        }
-        if (failed(forwardOne(stack.top(), arg, iter))) {
-          return WalkResult::interrupt();
-        }
-      }
-    }
-
-    return WalkResult::advance();
-  }
-
-  /**
-   * @brief Handle `scf::YieldOp`.
-   *
-   * End of a nested region: Pops top of the stack.
-   */
-  WalkResult handleYieldOp(scf::YieldOp op) {
-    if (isa<scf::ForOp>(op->getParentOp())) {
-      if (stack.size() < 2) {
-        return op->emitOpError() << "expected at least two elements on stack.";
-      }
-
-      stack.pop();
-    }
-    return WalkResult::advance();
-  }
-
-  /**
-   * @brief Handle `mqtopt::QubitOp`.
-   *
-   * Adds hardware qubit to qubit index map.
-   */
-  WalkResult handleQubitOp(QubitOp op, const Architecture& arch) {
-    if (stack.top().size() == arch.nqubits()) {
-      return op->emitOpError()
-             << "requires " << (arch.nqubits() + 1)
-             << " qubits but target architecture '" << arch.name()
-             << "' only supports " << arch.nqubits() << " qubits";
-    }
-
-    stack.top()[op.getQubit()] = op.getIndex();
-    return WalkResult::advance();
-  }
-
-  /**
-   * @brief Handle `mqtopt::ResetOp`.
-   *
-   * Forwards the SSA values.
-   */
-  WalkResult handleResetOp(ResetOp op) {
-    if (failed(forwardOne(stack.top(), op.getInQubit(), op.getOutQubit()))) {
-      return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
-  }
-
-  /**
-   * @brief Handle `mqtopt::UnitaryInterface`.
-   *
-   * Verifies if the unitary acts on either zero, one, or two qubits:
-   * - Advances for zero qubit unitaries (Nothing to do)
-   * - Forwards SSA values for one qubit.
-   * - Verifies executability for two-qubit gates for the given architecture and
-   *   forwards SSA values.
-   */
-  WalkResult handleUnitaryOp(UnitaryInterface op, const Architecture& arch) {
-    const std::size_t nacts = op.getAllInQubits().size();
-    if (nacts == 0) {
-      return WalkResult::advance();
-    }
-
-    if (nacts > 2) {
-      return op->emitOpError() << "acts on more than two qubits";
-    }
-
-    const Value in0 = op.getAllInQubits()[0];
-    const Value out0 = op.getAllOutQubits()[0];
-
-    if (nacts == 1) {
-      if (failed(forwardOne(stack.top(), in0, out0))) {
-        return WalkResult::interrupt();
-      }
-      return WalkResult::advance();
-    }
-
-    const Value in1 = op.getAllInQubits()[1];
-    const Value out1 = op.getAllOutQubits()[1];
-
-    if (!arch.areAdjacent(stack.top().at(in0), stack.top().at(in1))) {
-      return op->emitOpError()
-             << "(" << stack.top()[in0] << "," << stack.top()[in1] << ")"
-             << " is not executable on target architecture '" << arch.name()
-             << "'";
-    }
-
-    if (failed(forwardOne(stack.top(), in0, out0))) {
-      return WalkResult::interrupt();
-    }
-    if (failed(forwardOne(stack.top(), in1, out1))) {
-      return WalkResult::interrupt();
-    }
-
-    return WalkResult::advance();
-  }
-
-  /**
-   * @brief Handle `mqtopt::MeasureOp`.
-   *
-   * Forwards the SSA values.
-   */
-  WalkResult handleMeasureOp(MeasureOp op) {
-    if (failed(forwardOne(stack.top(), op.getInQubit(), op.getOutQubit()))) {
-      return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
-  }
-
-  VerificationStack stack;
 };
+} // namespace
 } // namespace mqt::ir::opt

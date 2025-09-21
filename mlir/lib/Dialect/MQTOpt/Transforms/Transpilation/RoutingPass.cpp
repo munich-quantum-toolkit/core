@@ -886,14 +886,12 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
             /// built-in Dialect
             .Case<ModuleOp>(
                 [&](ModuleOp /* op */) { return WalkResult::advance(); })
-
             /// func Dialect
             .Case<func::FuncOp>(
                 [&](func::FuncOp op) { return handleFunc(op, ctx, rewriter); })
             .Case<func::ReturnOp>([&](func::ReturnOp /* op */) {
               return handleReturn(ctx.stack);
             })
-
             /// scf Dialect
             .Case<scf::ForOp>([&](scf::ForOp op) {
               return handleFor(op, ctx.stack, rewriter);
@@ -901,7 +899,6 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
             .Case<scf::YieldOp>([&](scf::YieldOp op) {
               return handleYield(op, ctx.stack, rewriter);
             })
-
             /// mqtopt Dialect
             .Case<AllocQubitOp>([&](AllocQubitOp op) {
               return handleAlloc(op, ctx.stack, ctx.pool, rewriter);
