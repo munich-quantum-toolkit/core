@@ -57,6 +57,7 @@ module {
     mqtref.x() %q
     %c = mqtref.measure %q
     memref.store %c, %creg[%i] : memref<1xi1>
+    memref.dealloc %qreg : memref<1x!mqtref.Qubit>
     return
   }
 }
