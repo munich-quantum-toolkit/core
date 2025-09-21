@@ -233,19 +233,12 @@ struct ConvertMemRefLoad final : StatefulOpConversionPattern<memref::LoadOp> {
     const auto& qreg = getState().qregMap[memRef];
 
     // Get index
-    Value index;
-    IntegerAttr indexAttr;
-    const auto& indexValue = op.getIndices().front();
-    if (auto indexOp = indexValue.getDefiningOp<arith::ConstantIndexOp>()) {
-      indexAttr = rewriter.getI64IntegerAttr(
-          llvm::cast<IntegerAttr>(indexOp.getValue()).getInt());
-    } else {
-      index = indexValue;
-    }
+    auto index = rewriter.create<arith::IndexCastOp>(
+        op.getLoc(), rewriter.getI64Type(), op.getIndices().front());
 
     // create new operation
     auto optOp = rewriter.create<opt::ExtractOp>(
-        op.getLoc(), qregType, qubitType, qreg, index, indexAttr);
+        op.getLoc(), qregType, qubitType, qreg, index, IntegerAttr{});
 
     const auto& refQubit = op.getResult();
     const auto& optQubit = optOp.getOutQubit();
@@ -259,7 +252,7 @@ struct ConvertMemRefLoad final : StatefulOpConversionPattern<memref::LoadOp> {
 
     // add an entry to the qubitDataMap to store the indices and the register
     // for the insertOperation
-    getState().qubitDataMap.try_emplace(refQubit, memRef, index, indexAttr);
+    getState().qubitDataMap.try_emplace(refQubit, memRef, index, IntegerAttr{});
 
     // append the entry to the qregQubitsMap to store which qubits that were
     // extracted from the register

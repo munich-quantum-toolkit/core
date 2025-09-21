@@ -92,9 +92,9 @@ struct ConvertMQTOptDealloc final : OpConversionPattern<opt::DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(const opt::DeallocOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(const opt::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.eraseOp(op);
+    rewriter.replaceOpWithNewOp<memref::DeallocOp>(op, adaptor.getQreg());
     return success();
   }
 };

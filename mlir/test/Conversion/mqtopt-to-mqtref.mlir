@@ -39,12 +39,25 @@ module {
 }
 
 // -----
+// This test checks if the DeallocOp is converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertDeallocOp
+    func.func @testConvertDeallocOp() {
+        // CHECK: memref.dealloc %[[ANY:.*]]
+
+        %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
+        "mqtopt.deallocQubitRegister"(%r0) : (!mqtopt.QubitRegister) -> ()
+        return
+    }
+}
+
+// -----
 // This test checks if the ExtractOp is converted correctly and the InsertOp is removed using a static attribute.
 module {
     // CHECK-LABEL: func.func @testConvertExtractOpAttribute
     func.func @testConvertExtractOpAttribute() {
         // CHECK: %[[I0:.*]] = arith.constant 0 : index
-        // CHECK: %[[Q0:.*]] = memref.load [[ANY:.*]][%[[I0]]] : memref<?x!mqtref.Qubit>
+        // CHECK: %[[Q0:.*]] = memref.load %[[ANY:.*]][%[[I0]]] : memref<?x!mqtref.Qubit>
         // CHECK-NOT: %[[ANY:.*]] = mqtopt.insertQubit (%[[ANY:.*]], %[[ANY:.*]]) <{index_attr = 0 : i64}>
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtopt.QubitRegister
@@ -87,6 +100,7 @@ module {
         // CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<?x!mqtref.Qubit>
         // CHECK: %[[I2:.*]] = arith.constant 2 : index
         // CHECK: %[[Q2:.*]] = memref.load %[[Qreg]][%[[I2]]] : memref<?x!mqtref.Qubit>
+        // CHECK: memref.dealloc %[[Qreg]] : memref<?x!mqtref.Qubit>
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
@@ -329,6 +343,7 @@ module {
         // CHECK: mqtref.x() %[[Q1]] ctrl %[[Q0]]
         // CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
         // CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
+        // CHECK: memref.dealloc %[[Qreg]] : memref<?x!mqtref.Qubit>
 
         %r0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
         %r1, %q0 = "mqtopt.extractQubit"(%r0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
