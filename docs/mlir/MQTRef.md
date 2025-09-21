@@ -15,12 +15,6 @@ tocdepth: 3
 :start-after: "## Operations"
 ```
 
-## Passes
-
-```{include} Passes/MLIRMQTRefPasses.md
-
-```
-
 ## Interfaces
 
 ```{include} Dialects/MLIRMQTRefInterfaces.md
