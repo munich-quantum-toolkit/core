@@ -28,13 +28,42 @@ Contributions are welcome.
 See the {doc}`contribution guide <../contributing>` for more information.
 :::
 
+## Quantum Registers
+
+### MQTRef
+
+The MQTRef dialect has no dedicated operations to allocate, manipulate, and deallocate quantum registers.
+Instead, we rely on `memref<?x!mqtref.Qubit>` operands to represent quantum registers.
+
+In the module below, a quantum register with two qubits is allocated, both qubits are loaded, and the quantum register is deallocated again.
+
+```mlir
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %i1 = arith.constant 1 : index
+    %i0 = arith.constant 0 : index
+    %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
+    %q0 = memref.load %qreg[%i0] : memref<2x!mqtref.Qubit>
+    %q1 = memref.load %qreg[%i1] : memref<2x!mqtref.Qubit>
+    memref.dealloc %qreg : memref<2x!mqtref.Qubit>
+    return
+  }
+}
+```
+
+### Rationale
+
+The approach of using MLIR-native `memref` operations allows us to stay more flexible.
+We had initially defined an MQTRef-specific `QubitRegister` type, but this restricted us without adding benefits.
+By using `memref<?x!mqtref.Qubit>` operands to rpresent quantum registers, development can be more agnostic to implementation specifics.
+
 ## Classical Result Semantics
 
 The `measure` operations of the MQTRef and MQTOpt dialects return classical results as `i1` values.
-If an input program defines a classical register, a `memref<?xi1>` operation of appropriate size is allocated and measurement results are stored into it.
-Similarly, if the input program contains a classically controlled operation, the necessary `i1` values are loaded from the `memref<?xi1>` operation.
+If an input program defines a classical register, a `memref<?xi1>` operand of appropriate size is allocated and measurement results are stored into it.
+Similarly, if the input program contains a classically controlled operation, the necessary `i1` values are loaded from the `memref<?xi1>` operand.
 
-As an example, consider the following `QuantumComputation`:
+As an example, consider the following quantum computation:
 
 ```qasm3
 OPENQASM 3.0;
@@ -65,9 +94,7 @@ module {
 
 ### Rationale
 
-The approach of using MLIR-native `memref<?xi1>` operations allows us to stay more flexible.
-An alternative definition of an MQT-specific `ClassicalRegister` would have restricted us without adding benefits.
-By using `memref<?xi1>` operations, the development of passes can be more agnostic to implementation specifics.
+The rationale follows along the lines of why we are using `memref<?x!mqtref.Qubit>` operands for representing quantum registers in the MQTRef dialect.
 
 ## Development
 
