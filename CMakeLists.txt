@@ -128,7 +128,11 @@ if(BUILD_MQT_CORE_MLIR)
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
             ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
-    COMMENT "Copying generated MLIR documentation")
+    COMMAND ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
+    COMMENT "Copying and cleaning up generated MLIR documentation"
+    VERBATIM)
+
 endif()
 
 if(MQT_CORE_MASTER_PROJECT)
