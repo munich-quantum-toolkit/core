@@ -25,7 +25,7 @@ Conversions
 This page is a work in progress.
 The content is not yet complete and subject to change.
 Contributions are welcome.
-See the {doc}`contribution guide <contributing>` for more information.
+See the {doc}`contribution guide <../contributing>` for more information.
 :::
 
 ## Classical Result Semantics
