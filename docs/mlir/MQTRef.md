@@ -5,7 +5,7 @@ tocdepth: 3
 # MQTRef Dialect
 
 ```{include} Dialects/MLIRMQTRefDialect.md
-:start-line: 3
+:start-line: 2
 :end-before: "## Operations"
 ```
 
@@ -24,6 +24,6 @@ tocdepth: 3
 ## Interfaces
 
 ```{include} Dialects/MLIRMQTRefInterfaces.md
-:start-line: 3
+:start-line: 2
 :heading-offset: 1
 ```
