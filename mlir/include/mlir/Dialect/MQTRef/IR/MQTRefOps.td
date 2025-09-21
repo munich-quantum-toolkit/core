@@ -66,10 +66,6 @@ def QubitType : MQTRefType<"Qubit", "Qubit", [MemRefElementTypeInterface]> {
     let summary = "qubit reference";
 }
 
-def QregType : MQTRefType<"QubitRegister", "QubitRegister"> {
-    let summary = "array of qubit references";
-}
-
 //===----------------------------------------------------------------------===//
 // Operations
 //===----------------------------------------------------------------------===//
@@ -182,86 +178,6 @@ def DeallocQubitOp : ResourceOp<"deallocQubit"> {
     let arguments = (ins QubitType:$qubit);
     let results = (outs);
     let assemblyFormat = "$qubit attr-dict";
-}
-
-// Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1126
-def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
-    let summary = "Allocates a qubit register";
-
-    let description = [{
-        This class represents an operation that allocates a qubit register. The
-        size can either be specified during runtime as an operand or as an
-        attribute when the size is known at compile time. Before the qubits in
-        the register can be used, they need to be extracted from the register
-        with the `extractQubit` operation.
-
-        Example (size as argument):
-        ```mlir
-        %c0_i64 = arith.constant 2 : i64
-        %0 = "mqtref.allocQubitRegister"(%c0_i64) : (i64) -> !mqtref.QubitRegister
-        ```
-
-        Example (size as attribute):
-        ```mlir
-        %0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-        ```
-    }];
-
-    let arguments = (ins
-        Optional<I64>:$size,
-        OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$size_attr
-    );
-
-    let results = (outs
-        QregType:$qreg
-    );
-}
-
-// Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1126
-def DeallocOp : ResourceOp<"deallocQubitRegister"> {
-    let summary = "Deallocates a qubit register";
-
-    let description = [{
-        This class represents an operation that deallocates a qubit register.
-        The qubit register is no longer valid after this operation.
-
-        Example:
-        ```mlir
-        "mqtref.deallocQubitRegister"(%0) : (!mqtref.QubitRegister) -> ()
-        ```
-    }];
-
-    let arguments = (ins
-        QregType:$qreg
-    );
-}
-
-// Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1126
-def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
-    let summary = "Extract a specific qubit reference from a given register";
-
-    let description = [{
-        This class represents an operation that extracts a specific qubit
-        reference from a given register. Before, the register must be
-        allocated with the allocateQubitRegister operation. Upon invocation
-        of this operation, the returned qubit reference can be used in
-        operations.
-
-        Example:
-        ```mlir
-        %out_qubit = "mqtref.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-        ```
-    }];
-
-    let arguments = (ins
-        QregType:$in_qreg,
-        Optional<I64>:$index,
-        OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index_attr
-    );
-
-    let results = (outs
-        QubitType:$out_qubit
-    );
 }
 
 def QubitOp : ResourceOp<"qubit"> {
