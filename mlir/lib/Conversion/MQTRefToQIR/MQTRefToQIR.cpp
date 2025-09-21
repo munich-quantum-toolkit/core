@@ -277,31 +277,37 @@ struct ConvertMQTRefDeallocQubitQIR final
   }
 };
 
-// struct ConvertMQTRefDeallocQIR final : OpConversionPattern<ref::DeallocOp> {
-//   using OpConversionPattern::OpConversionPattern;
+struct ConvertMemRefDeallocQIR final : OpConversionPattern<memref::DeallocOp> {
+  using OpConversionPattern::OpConversionPattern;
 
-//   static constexpr StringLiteral FN_NAME_QUBIT_RELEASE_ARRAY =
-//       "__quantum__rt__qubit_release_array";
+  static constexpr StringLiteral FN_NAME_QUBIT_RELEASE_ARRAY =
+      "__quantum__rt__qubit_release_array";
 
-//   LogicalResult
-//   matchAndRewrite(ref::DeallocOp op, OpAdaptor adaptor,
-//                   ConversionPatternRewriter& rewriter) const override {
-//     auto* ctx = getContext();
+  LogicalResult
+  matchAndRewrite(memref::DeallocOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (!llvm::isa<ref::QubitType>(
+            llvm::cast<MemRefType>(op->getOperands().front().getType())
+                .getElementType())) {
+      return success();
+    }
 
-//     // create signature of the new function
-//     const auto qirSignature = LLVM::LLVMFunctionType::get(
-//         LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
+    auto* ctx = getContext();
 
-//     // get the function declaration
-//     const auto fnDecl = getFunctionDeclaration(
-//         rewriter, op, FN_NAME_QUBIT_RELEASE_ARRAY, qirSignature);
+    // create signature of the new function
+    const auto qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
 
-//     // replace the old operation with new callOp
-//     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
-//                                               adaptor.getOperands());
-//     return success();
-//   }
-// };
+    // get the function declaration
+    const auto fnDecl = getFunctionDeclaration(
+        rewriter, op, FN_NAME_QUBIT_RELEASE_ARRAY, qirSignature);
+
+    // replace the old operation with new callOp
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
+                                              adaptor.getOperands());
+    return success();
+  }
+};
 
 struct ConvertMQTRefResetQIR final : OpConversionPattern<ref::ResetOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -764,8 +770,8 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
       // make sure that the iterator is valid
       auto& op = *it++;
 
-      if (dyn_cast<ref::DeallocOp>(op) || dyn_cast<ref::DeallocQubitOp>(op) ||
-          dyn_cast<ref::ResetOp>(op) || dyn_cast<ref::MeasureOp>(op) ||
+      if (dyn_cast<ref::DeallocQubitOp>(op) || dyn_cast<ref::ResetOp>(op) ||
+          dyn_cast<ref::MeasureOp>(op) ||
           op.getDialect()->getNamespace() == "memref") {
         // move irreversible quantum operations to the irreversible block
         irreversibleBlockOps.splice(irreversibleBlock->end(), mainBlockOps,
@@ -900,6 +906,7 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     target.addLegalDialect<arith::ArithDialect>();
     mqtPatterns.add<ConvertMemRefAllocQIR>(typeConverter, ctx, &state);
     mqtPatterns.add<ConvertMemRefLoadQIR>(typeConverter, ctx);
+    mqtPatterns.add<ConvertMemRefDeallocQIR>(typeConverter, ctx);
     mqtPatterns.add<ConvertMQTRefAllocQubitQIR>(typeConverter, ctx, &state);
     mqtPatterns.add<ConvertMQTRefDeallocQubitQIR>(typeConverter, ctx);
     mqtPatterns.add<ConvertMQTRefResetQIR>(typeConverter, ctx);

@@ -73,17 +73,17 @@ struct ConvertMQTOptAlloc final : OpConversionPattern<opt::AllocOp> {
     const auto& qubitType = ref::QubitType::get(rewriter.getContext());
     auto memRefType = MemRefType::get({ShapedType::kDynamic}, qubitType);
 
-    Value numQubits;
+    Value size;
     if (op.getSizeAttr()) {
-      numQubits = rewriter.create<mlir::arith::ConstantIndexOp>(
+      size = rewriter.create<mlir::arith::ConstantIndexOp>(
           op.getLoc(), static_cast<int64_t>(*op.getSizeAttr()));
     } else {
-      numQubits = rewriter.create<mlir::arith::IndexCastOp>(
+      size = rewriter.create<mlir::arith::IndexCastOp>(
           op.getLoc(), rewriter.getIndexType(), op.getSize());
     }
 
     rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memRefType,
-                                                 ValueRange{numQubits});
+                                                 ValueRange{size});
     return success();
   }
 };
@@ -130,17 +130,17 @@ struct ConvertMQTOptExtract final : OpConversionPattern<opt::ExtractOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto qreg = adaptor.getInQreg();
 
-    Value indexValue;
+    Value index;
     if (auto indexAttr = op.getIndexAttrAttr()) {
-      indexValue = rewriter.create<mlir::arith::ConstantIndexOp>(
-          op.getLoc(), indexAttr.getInt());
+      index = rewriter.create<mlir::arith::ConstantIndexOp>(op.getLoc(),
+                                                            indexAttr.getInt());
     } else {
-      indexValue = rewriter.create<mlir::arith::IndexCastOp>(
+      index = rewriter.create<mlir::arith::IndexCastOp>(
           op.getLoc(), rewriter.getIndexType(), op.getIndex());
     }
 
-    auto loadOp = rewriter.create<memref::LoadOp>(op.getLoc(), qreg,
-                                                  ValueRange{indexValue});
+    auto loadOp =
+        rewriter.create<memref::LoadOp>(op.getLoc(), qreg, ValueRange{index});
     rewriter.replaceOp(op, {qreg, loadOp.getResult()});
     return success();
   }

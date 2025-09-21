@@ -21,10 +21,10 @@ module {
 }
 
 // -----
-// This test checks if the AllocaOp is converted correctly using a static attribute
+// This test checks if the AllocOp is converted correctly using a static attribute
 module {
-    // CHECK-LABEL: llvm.func @testConvertAllocaStatic()
-    func.func @testConvertAllocaStatic() attributes {passthrough = ["entry_point"]}  {
+    // CHECK-LABEL: llvm.func @testConvertAllocStatic()
+    func.func @testConvertAllocStatic() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : i64) : i64
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
 
@@ -36,15 +36,30 @@ module {
 
 
 // -----
-// This test checks if the AllocaOp is converted correctly using a dynamic operand
+// This test checks if the AllocOp is converted correctly using a dynamic operand
 module {
-    // CHECK-LABEL: llvm.func @testConvertAllocaDynamic()
-    func.func @testConvertAllocaDynamic() attributes {passthrough = ["entry_point"]}  {
+    // CHECK-LABEL: llvm.func @testConvertAllocDynamic()
+    func.func @testConvertAllocDynamic() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[size:.*]] = llvm.mlir.constant(2 : index) : i64
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
 
         %i2 = arith.constant 2 : index
         %qreg = memref.alloc(%i2) : memref<?x!mqtref.Qubit>
+
+        return
+    }
+}
+
+// -----
+// This test checks if the DeallocOp call is correctly converted
+module {
+    // CHECK-LABEL: llvm.func @testConvertDeallocRegister()
+    func.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point"]}  {
+        // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[ANY:.*]]) : (i64) -> !llvm.ptr
+        // CHECK: llvm.call @__quantum__rt__qubit_release_array(%[[r_0]]) : (!llvm.ptr) -> ()
+
+        %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
+        memref.dealloc %qreg : memref<2x!mqtref.Qubit>
 
         return
     }
