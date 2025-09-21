@@ -11,7 +11,6 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
-#include "mlir/Interfaces/SideEffectInterfaces.h"
 
 #include <algorithm>
 #include <cassert>
