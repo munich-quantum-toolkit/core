@@ -115,10 +115,10 @@ struct RoutingVerificationPass final
               .Case<func::FuncOp>([&](auto op) { return handleFuncOp(op); })
               .Case<scf::ForOp>([&](auto op) { return handleForOp(op); })
               .Case<scf::YieldOp>([&](auto op) { return handleYieldOp(op); })
-              .Case<QubitOp>([&](auto op) { return handleQubitOp(op, arch); })
+              .Case<QubitOp>([&](auto op) { return handleQubitOp(op, *arch); })
               .Case<ResetOp>([&](auto op) { return handleResetOp(op); })
               .Case<UnitaryInterface>(
-                  [&](auto unitary) { return handleUnitaryOp(unitary, arch); })
+                  [&](auto unitary) { return handleUnitaryOp(unitary, *arch); })
               .Case<MeasureOp>(
                   [&](auto measure) { return handleMeasureOp(measure); })
               .Case<AllocQubitOp, DeallocQubitOp>([&](auto op) {

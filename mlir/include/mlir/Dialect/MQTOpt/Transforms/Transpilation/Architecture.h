@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -84,6 +85,6 @@ private:
 /**
  * @brief Get architecture by its name.
  */
-Architecture getArchitecture(const ArchitectureName& name);
+std::unique_ptr<Architecture> getArchitecture(const ArchitectureName& name);
 
 }; // namespace mqt::ir::opt

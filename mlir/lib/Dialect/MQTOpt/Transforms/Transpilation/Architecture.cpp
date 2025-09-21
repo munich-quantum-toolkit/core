@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -60,7 +61,7 @@ void Architecture::floydWarshallWithPathReconstruction() {
   }
 }
 
-Architecture getArchitecture(const ArchitectureName& name) {
+std::unique_ptr<Architecture> getArchitecture(const ArchitectureName& name) {
   switch (name) {
   case ArchitectureName::MQTTest: {
     // 0 -- 1
@@ -73,7 +74,7 @@ Architecture getArchitecture(const ArchitectureName& name) {
         {0, 1}, {1, 0}, {0, 2}, {2, 0}, {1, 3}, {3, 1}, {2, 3},
         {3, 2}, {2, 4}, {4, 2}, {3, 5}, {5, 3}, {4, 5}, {5, 4}};
 
-    return Architecture("MQT-Test", 6, couplingMap);
+    return std::make_unique<Architecture>("MQT-Test", 6, couplingMap);
   }
   }
 

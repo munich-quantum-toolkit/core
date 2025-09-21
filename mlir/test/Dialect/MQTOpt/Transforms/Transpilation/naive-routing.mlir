@@ -6,9 +6,10 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(routing,verify-routing)" | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(routing,verify-routing)" -verify-diagnostics | FileCheck %s
 
 module {
+
     // CHECK-LABEL: func.func @entrySABRE
     func.func @entrySABRE() attributes { entry_point } {
 
