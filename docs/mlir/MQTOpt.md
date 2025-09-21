@@ -1,19 +1,12 @@
 ---
-hide-toc: true
+tocdepth: 3
 ---
 
 # MQTOpt Dialect
 
 ```{include} Dialects/MLIRMQTOptDialect.md
-:start-line: 2
+:start-line: 3
 :end-before: "## Operations"
-```
-
-```{contents}
-:depth: 1
-:local:
-:backlinks:
-:class: this-will-duplicate-information-and-it-is-still-useful-here
 ```
 
 ## Operations
@@ -31,6 +24,6 @@ hide-toc: true
 ## Interfaces
 
 ```{include} Dialects/MLIRMQTOptInterfaces.md
-:start-line: 2
+:start-line: 3
 :heading-offset: 1
 ```
