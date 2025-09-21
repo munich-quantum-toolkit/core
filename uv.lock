@@ -1302,6 +1302,18 @@ wheels = [
 ]
 
 [[package]]
+name = "mlir-pygments"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pygments" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/92/75/19719ce387b081efaf47437dfb3cb8cb4b55886e2e49d06622ea6a11e373/mlir_pygments-1.0.0.tar.gz", hash = "sha256:bd518ddcdb1437a42a9beba68bd1b6a6cee48dffdc873e25185904c43ba5eedb", size = 4028, upload-time = "2025-09-20T11:45:22.101Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/f2/01c3bb853a8d4d7eb2236bc7ba39e56fba51f6513ad10079bc96c8425fb2/mlir_pygments-1.0.0-py3-none-any.whl", hash = "sha256:c326fcbd08950a33b4abc49386d5cffc3127985371eb012e948b406c7ce0f9a0", size = 5431, upload-time = "2025-09-20T11:45:20.558Z" },
+]
+
+[[package]]
 name = "mpmath"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1332,6 +1344,7 @@ dev = [
     { name = "breathe" },
     { name = "furo" },
     { name = "graphviz" },
+    { name = "mlir-pygments" },
     { name = "myst-nb" },
     { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "openqasm-pygments" },
@@ -1358,6 +1371,7 @@ docs = [
     { name = "breathe" },
     { name = "furo" },
     { name = "graphviz" },
+    { name = "mlir-pygments" },
     { name = "myst-nb" },
     { name = "openqasm-pygments" },
     { name = "pandas", extra = ["output-formatting"] },
@@ -1400,6 +1414,7 @@ dev = [
     { name = "breathe", specifier = ">=4.36.0" },
     { name = "furo", specifier = ">=2024.8.6" },
     { name = "graphviz", specifier = ">=0.20.3" },
+    { name = "mlir-pygments", specifier = ">=1.0.0" },
     { name = "myst-nb", specifier = ">=1.2.0" },
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1" },
     { name = "openqasm-pygments", specifier = ">=0.1.2" },
@@ -1428,6 +1443,7 @@ docs = [
     { name = "breathe", specifier = ">=4.36.0" },
     { name = "furo", specifier = ">=2024.8.6" },
     { name = "graphviz", specifier = ">=0.20.3" },
+    { name = "mlir-pygments", specifier = ">=1.0.0" },
     { name = "myst-nb", specifier = ">=1.2.0" },
     { name = "openqasm-pygments", specifier = ">=0.1.2" },
     { name = "pandas", extras = ["output-formatting"], specifier = ">=2.1.2" },
@@ -2512,6 +2528,7 @@ dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/e7/b0/66d96f02120f79eeed86b5c5be04029b6821155f31ed4907a4e9f1460671/rustworkx-0.17.1.tar.gz", hash = "sha256:59ea01b4e603daffa4e8827316c1641eef18ae9032f0b1b14aa0181687e3108e", size = 399407, upload-time = "2025-09-15T16:29:46.429Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/20/24/8972ed631fa05fdec05a7bb7f1fc0f8e78ee761ab37e8a93d1ed396ba060/rustworkx-0.17.1-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:c08fb8db041db052da404839b064ebfb47dcce04ba9a3e2eb79d0c65ab011da4", size = 2257491, upload-time = "2025-08-13T01:43:31.466Z" },
     { url = "https://files.pythonhosted.org/packages/23/ae/7b6bbae5e0487ee42072dc6a46edf5db9731a0701ed648db22121fb7490c/rustworkx-0.17.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:4ef8e327dadf6500edd76fedb83f6d888b9266c58bcdbffd5a40c33835c9dd26", size = 2040175, upload-time = "2025-08-13T01:43:33.762Z" },

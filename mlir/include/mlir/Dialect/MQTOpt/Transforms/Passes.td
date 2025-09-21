@@ -45,21 +45,33 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   }];
 }
 
-def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
-  let summary = "This pass removes any permutation (i.e., SWAP gates) it encounters and modifies the order of the qubits instead.";
+def SwapReconstructionAndElision : Pass<"swap-reconstruction-and-elision", "mlir::ModuleOp"> {
+  let summary = "Reconstruct SWAPs from eligible CNOT pairs and eliminate SWAPs by applying the implied qubit permutation.";
   let description = [{
-    Elides permutations (i.e., SWAP gates) by removing them from the circuit and, instead, permuting the respective qubit values.
+    Eliminates all uncontrolled `swap` operations by:
+    1. Reconstructing explicit `swap` ops from eligible CNOT patterns (canonical 3–CNOT form or two alternating CNOT pairs).
+    2. Replacing remaining `swap` ops by applying the induced qubit permutation to subsequent uses.
 
-    This optimization will not preserve the current qubit mapping and has no awareness of potential connectivity limitations.
+    Notes:
+    - No connectivity or coupling constraints are preserved.
+    - Controlled `swap` operations (if ever introduced) are not touched.
 
-    Example:
+    Example (reconstruction):
     ```
-    // before
-    %q0_1, %q1_1 = mqtopt.swap() %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
-    %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+         ┌───┐         ┌───┐
+    ──■──┤ X ├    ──■──┤ X ├──■────■──    ──╳────■──
+    ┌─┴─┐└─┬─┘ => ┌─┴─┐└─┬─┘┌─┴─┐┌─┴─┐ =>   |  ┌─┴─┐
+    ┤ X ├──■──    ┤ X ├──■──┤ X ├┤ X ├    ──╳──┤ X ├
+    └───┘         └───┘     └───┘└───┘         └───┘
+    ```
 
-    // after
-    %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    Example (elision):
+    ```
+                             ┌───┐                 ┌───┐
+    q0 ──╳────■── q0    q0 ──┤ X ├──╳── q0    q0 ──┤ X ├─ q1
+         |  ┌─┴─┐    =>      └─┬─┘  |      =>      └─┬─┘
+    q1 ──╳──┤ X ├ q1    q1 ────■────╳── q1    q1 ────■─── q0
+            └───┘
     ```
   }];
 }
