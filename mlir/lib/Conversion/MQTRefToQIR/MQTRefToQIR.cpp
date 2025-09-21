@@ -49,8 +49,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <string>
 #include <utility>
-#include <vector>
 
 namespace mqt::ir {
 
@@ -180,7 +180,7 @@ struct ConvertMemRefAllocQIR final
     }
 
     // replace the old operation with new callOp
-    auto callOp = rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, size);
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, size);
 
     getState().useDynamicQubit = true;
 
@@ -360,16 +360,12 @@ struct ConvertMemRefLoadQIR final : OpConversionPattern<memref::LoadOp> {
     const auto fnDecl = getFunctionDeclaration(
         rewriter, op, FN_NAME_ARRAY_GET_ELEMENT_PTR, qirSignature);
 
-    // get qreg from adaptor
-    const auto qreg = adaptor.getOperands().front();
-
-    // get index from adaptor
-    const auto index = adaptor.getIndices().front();
-
     // create the new callOp
     const auto elemPtr =
         rewriter
-            .create<LLVM::CallOp>(op.getLoc(), fnDecl, ValueRange{qreg, index})
+            .create<LLVM::CallOp>(op.getLoc(), fnDecl,
+                                  ValueRange{adaptor.getOperands().front(),
+                                             adaptor.getIndices().front()})
             .getResult();
 
     // replace the old operation with a loadOp
