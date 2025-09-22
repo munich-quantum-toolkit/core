@@ -899,12 +899,11 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     addInitialize(main, ctx, &state);
 
     target.addIllegalDialect<ref::MQTRefDialect>();
-    target.addLegalDialect<arith::ArithDialect>();
     mqtPatterns.add<ConvertMemRefAllocQIR>(typeConverter, ctx, &state);
-    mqtPatterns.add<ConvertMemRefLoadQIR>(typeConverter, ctx);
     mqtPatterns.add<ConvertMemRefDeallocQIR>(typeConverter, ctx);
     mqtPatterns.add<ConvertMQTRefAllocQubitQIR>(typeConverter, ctx, &state);
     mqtPatterns.add<ConvertMQTRefDeallocQubitQIR>(typeConverter, ctx);
+    mqtPatterns.add<ConvertMemRefLoadQIR>(typeConverter, ctx);
     mqtPatterns.add<ConvertMQTRefResetQIR>(typeConverter, ctx);
     mqtPatterns.add<ConvertMQTRefQubitQIR>(typeConverter, ctx, &state);
     mqtPatterns.add<ConvertMQTRefMeasureQIR>(typeConverter, ctx, &state);

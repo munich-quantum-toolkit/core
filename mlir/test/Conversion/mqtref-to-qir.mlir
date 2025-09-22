@@ -186,8 +186,8 @@ module {
         // CHECK-DAG: %[[c_1:.*]] = llvm.mlir.constant(1 : i64) : i64
         // CHECK-DAG: %[[ptr_1:.*]] = llvm.inttoptr %[[c_1]] : i64 to !llvm.ptr
         // CHECK: llvm.call @__quantum__qis__mz__body(%[[q_1]], %[[ptr_1]]) : (!llvm.ptr, !llvm.ptr)
-        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
-        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
 
         %q0 = mqtref.allocQubit
         %q1 = mqtref.allocQubit
@@ -219,8 +219,8 @@ module {
         // CHECK: %[[ptr_1:.*]] = llvm.inttoptr %[[c_1]] : i64 to !llvm.ptr
         // CHECK: llvm.call @__quantum__qis__mz__body(%[[ptr_0]], %[[ptr_0]]) : (!llvm.ptr, !llvm.ptr)
         // CHECK: llvm.call @__quantum__qis__mz__body(%[[ptr_1]], %[[ptr_1]]) : (!llvm.ptr, !llvm.ptr)
-        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
-        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_1]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
 
         %q0 = mqtref.qubit 0
         %q1 = mqtref.qubit 1
@@ -250,8 +250,8 @@ module {
         // CHECK-DAG: %[[c_1:.*]] = llvm.mlir.constant(1 : i64) : i64
         // CHECK-DAG: %[[ptr_1:.*]] = llvm.inttoptr %[[c_1]] : i64 to !llvm.ptr
         // CHECK: llvm.call @__quantum__qis__mz__body(%[[q_1]], %[[ptr_1]]) : (!llvm.ptr, !llvm.ptr)
-        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
-        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
 
         %q0 = mqtref.allocQubit
         %q1 = mqtref.allocQubit
@@ -280,8 +280,8 @@ module {
         // CHECK: %[[ptr_1:.*]] = llvm.inttoptr %[[c_1]] : i64 to !llvm.ptr
         // CHECK: llvm.call @__quantum__qis__mz__body(%[[ptr_0]], %[[ptr_0]]) : (!llvm.ptr, !llvm.ptr)
         // CHECK: llvm.call @__quantum__qis__mz__body(%[[ptr_1]], %[[ptr_1]]) : (!llvm.ptr, !llvm.ptr)
-        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
-        // CHECK  llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__result_record_output(%[[ptr_1]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
+        // CHECK: llvm.call @__quantum__rt__result_record_output(%[[ptr_0]], %[[a_0]]) : (!llvm.ptr, !llvm.ptr) -> ()
 
         %q0 = mqtref.qubit 0
         %q1 = mqtref.qubit 1
