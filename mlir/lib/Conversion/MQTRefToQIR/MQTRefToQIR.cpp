@@ -60,6 +60,7 @@ using namespace mlir;
 #include "mlir/Conversion/MQTRefToQIR/MQTRefToQIR.h.inc"
 
 namespace {
+
 /**
  * @brief Look up the function declaration with a given name. If it does not
  exist create one and return it.
@@ -131,6 +132,25 @@ public:
 private:
   LoweringState* state_;
 };
+
+const bool isQubitType(const MemRefType type) {
+  return llvm::isa<ref::QubitType>(type.getElementType());
+}
+
+const bool isQubitType(memref::AllocOp op) { return isQubitType(op.getType()); }
+
+const bool isQubitType(memref::DeallocOp op) {
+  const auto& memRef = op.getMemref();
+  const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
+  return isQubitType(memRefType);
+}
+
+const bool isQubitType(memref::LoadOp op) {
+  const auto& memRef = op.getMemref();
+  const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
+  return isQubitType(memRefType);
+}
+
 } // namespace
 
 struct MQTRefToQIRTypeConverter final : LLVMTypeConverter {
@@ -139,9 +159,10 @@ struct MQTRefToQIRTypeConverter final : LLVMTypeConverter {
     addConversion([ctx](ref::QubitType /*type*/) {
       return LLVM::LLVMPointerType::get(ctx);
     });
-    // Quantum register
+
+    // MemRefType conversion
     addConversion([ctx](MemRefType type) -> Type {
-      if (llvm::isa<ref::QubitType>(type.getElementType())) {
+      if (isQubitType(type)) {
         return LLVM::LLVMPointerType::get(ctx);
       }
       return type;
@@ -159,8 +180,8 @@ struct ConvertMemRefAllocQIR final
   LogicalResult
   matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!llvm::isa<ref::QubitType>(op.getType().getElementType())) {
-      return success();
+    if (!isQubitType(op)) {
+      return failure();
     }
 
     auto* ctx = getContext();
@@ -291,10 +312,8 @@ struct ConvertMemRefDeallocQIR final : OpConversionPattern<memref::DeallocOp> {
   LogicalResult
   matchAndRewrite(memref::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!llvm::isa<ref::QubitType>(
-            llvm::cast<MemRefType>(op->getOperands().front().getType())
-                .getElementType())) {
-      return success();
+    if (!isQubitType(op)) {
+      return failure();
     }
 
     auto* ctx = getContext();
@@ -348,10 +367,8 @@ struct ConvertMemRefLoadQIR final : OpConversionPattern<memref::LoadOp> {
   LogicalResult
   matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!llvm::isa<ref::QubitType>(
-            llvm::cast<MemRefType>(op.getMemRef().getType())
-                .getElementType())) {
-      return success();
+    if (!isQubitType(op)) {
+      return failure();
     }
 
     auto* ctx = getContext();
@@ -776,13 +793,11 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
 
       if (op.getDialect()->getNamespace() == "memref") {
         if (auto allocOp = dyn_cast<memref::AllocOp>(op)) {
-          if (!llvm::isa<ref::QubitType>(allocOp.getType().getElementType())) {
+          if (!isQubitType(allocOp)) {
             continue;
           }
         } else if (auto loadOp = dyn_cast<memref::LoadOp>(op)) {
-          if (!llvm::isa<ref::QubitType>(
-                  llvm::cast<MemRefType>(loadOp.getMemRef().getType())
-                      .getElementType())) {
+          if (!isQubitType(loadOp)) {
             continue;
           }
         } else {
@@ -921,6 +936,14 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     addInitialize(main, ctx, &state);
 
     target.addIllegalDialect<ref::MQTRefDialect>();
+
+    target.addDynamicallyLegalOp<memref::AllocOp>(
+        [&](memref::AllocOp op) { return !isQubitType(op); });
+    target.addDynamicallyLegalOp<memref::DeallocOp>(
+        [&](memref::DeallocOp op) { return !isQubitType(op); });
+    target.addDynamicallyLegalOp<memref::LoadOp>(
+        [&](memref::LoadOp op) { return !isQubitType(op); });
+
     mqtPatterns.add<ConvertMemRefAllocQIR>(typeConverter, ctx, &state);
     mqtPatterns.add<ConvertMemRefDeallocQIR>(typeConverter, ctx);
     mqtPatterns.add<ConvertMQTRefAllocQubitQIR>(typeConverter, ctx, &state);
