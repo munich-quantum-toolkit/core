@@ -331,7 +331,6 @@ std::string getCheckStringTestCaseUnitary(const TestCaseUnitary& testCase) {
   result += "\n";
 
   // Add dealocation
-  // Add register allocation
   result += "CHECK: memref.dealloc %[[Qreg]] : memref<" +
             std::to_string(testCase.numQubits) + "x!mqtref.Qubit>\n";
 
