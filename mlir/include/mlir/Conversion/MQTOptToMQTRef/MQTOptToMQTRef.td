@@ -22,8 +22,8 @@ def MQTOptToMQTRef : Pass<"mqtopt-to-mqtref"> {
 
   // Define dependent dialects
   let dependentDialects = [
+    "mlir::memref::MemRefDialect",
     "::mqt::ir::opt::MQTOptDialect",
-    "::mqt::ir::ref::MQTRefDialect",
-    "mlir::memref::MemRefDialect"
+    "::mqt::ir::ref::MQTRefDialect"
   ];
 }

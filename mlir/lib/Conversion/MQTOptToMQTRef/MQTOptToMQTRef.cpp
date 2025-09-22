@@ -45,6 +45,34 @@ using namespace mlir;
 #define GEN_PASS_DEF_MQTOPTTOMQTREF
 #include "mlir/Conversion/MQTOptToMQTRef/MQTOptToMQTRef.h.inc"
 
+namespace {
+
+const bool isQubitType(const MemRefType type) {
+  return llvm::isa<opt::QubitType>(type.getElementType());
+}
+
+const bool isQubitType(memref::AllocOp op) { return isQubitType(op.getType()); }
+
+const bool isQubitType(memref::DeallocOp op) {
+  const auto& memRef = op.getMemref();
+  const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
+  return isQubitType(memRefType);
+}
+
+const bool isQubitType(memref::LoadOp op) {
+  const auto& memRef = op.getMemref();
+  const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
+  return isQubitType(memRefType);
+}
+
+const bool isQubitType(memref::StoreOp op) {
+  const auto& memRef = op.getMemref();
+  const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
+  return isQubitType(memRefType);
+}
+
+} // namespace
+
 class MQTOptToMQTRefTypeConverter final : public TypeConverter {
 public:
   explicit MQTOptToMQTRefTypeConverter(MLIRContext* ctx) {
@@ -56,45 +84,45 @@ public:
       return ref::QubitType::get(ctx);
     });
 
-    // QregType conversion
-    addConversion([ctx](opt::QubitRegisterType /*type*/) -> Type {
-      auto qubitType = ref::QubitType::get(ctx);
-      return MemRefType::get({ShapedType::kDynamic}, qubitType);
+    // MemRefType conversion
+    addConversion([ctx](MemRefType type) -> Type {
+      if (isQubitType(type)) {
+        return MemRefType::get(type.getShape(), ref::QubitType::get(ctx));
+      }
+      return type;
     });
   }
 };
 
-struct ConvertMQTOptAlloc final : OpConversionPattern<opt::AllocOp> {
+struct ConvertMQTOptMemRefAlloc final : OpConversionPattern<memref::AllocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(opt::AllocOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto& qubitType = ref::QubitType::get(rewriter.getContext());
-    auto memRefType = MemRefType::get({ShapedType::kDynamic}, qubitType);
-
-    Value size;
-    if (op.getSizeAttr()) {
-      size = rewriter.create<mlir::arith::ConstantIndexOp>(
-          op.getLoc(), static_cast<int64_t>(*op.getSizeAttr()));
-    } else {
-      size = rewriter.create<mlir::arith::IndexCastOp>(
-          op.getLoc(), rewriter.getIndexType(), op.getSize());
+    if (!isQubitType(op)) {
+      return failure();
     }
 
+    const auto& qubitType = ref::QubitType::get(rewriter.getContext());
+    const auto& memRefType =
+        MemRefType::get(op.getType().getShape(), qubitType);
+
     rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memRefType,
-                                                 ValueRange{size});
+                                                 op.getDynamicSizes());
+
     return success();
   }
 };
 
-struct ConvertMQTOptDealloc final : OpConversionPattern<opt::DeallocOp> {
+struct ConvertMQTOptMemRefDealloc final
+    : OpConversionPattern<memref::DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(const opt::DeallocOp op, OpAdaptor adaptor,
+  matchAndRewrite(memref::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<memref::DeallocOp>(op, adaptor.getQreg());
+    rewriter.replaceOpWithNewOp<memref::DeallocOp>(op, adaptor.getMemref());
     return success();
   }
 };
@@ -122,39 +150,37 @@ struct ConvertMQTOptDeallocQubit final
   }
 };
 
-struct ConvertMQTOptExtract final : OpConversionPattern<opt::ExtractOp> {
+struct ConvertMQTOptMemRefLoad final : OpConversionPattern<memref::LoadOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(opt::ExtractOp op, OpAdaptor adaptor,
+  matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto qreg = adaptor.getInQreg();
-
-    Value index;
-    if (auto indexAttr = op.getIndexAttrAttr()) {
-      index = rewriter.create<mlir::arith::ConstantIndexOp>(op.getLoc(),
-                                                            indexAttr.getInt());
-    } else {
-      index = rewriter.create<mlir::arith::IndexCastOp>(
-          op.getLoc(), rewriter.getIndexType(), op.getIndex());
+    if (!isQubitType(op)) {
+      return failure();
     }
 
-    auto loadOp =
-        rewriter.create<memref::LoadOp>(op.getLoc(), qreg, ValueRange{index});
-    rewriter.replaceOp(op, {qreg, loadOp.getResult()});
+    const auto& optMemRef = op.getMemref();
+    const auto& refMemRef = adaptor.getMemref();
+
+    auto optLoadOp = rewriter.replaceOpWithNewOp<memref::LoadOp>(
+        op, refMemRef, op.getIndices());
+
     return success();
   }
 };
 
-struct ConvertMQTOptInsert final : OpConversionPattern<opt::InsertOp> {
+struct ConvertMQTOptMemRefStore final : OpConversionPattern<memref::StoreOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(opt::InsertOp op, OpAdaptor adaptor,
+  matchAndRewrite(memref::StoreOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // replace the result of the old operation with the new result and delete
-    // old operation
-    rewriter.replaceOp(op, adaptor.getInQreg());
+    if (!isQubitType(op)) {
+      return failure();
+    }
+
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -266,13 +292,20 @@ struct MQTOptToMQTRef final : impl::MQTOptToMQTRefBase<MQTOptToMQTRef> {
 
     target.addIllegalDialect<opt::MQTOptDialect>();
     target.addLegalDialect<ref::MQTRefDialect>();
-    target.addLegalDialect<arith::ArithDialect>();
-    target.addLegalDialect<memref::MemRefDialect>();
 
-    patterns.add<ConvertMQTOptAlloc, ConvertMQTOptDealloc,
+    target.addDynamicallyLegalOp<memref::AllocOp>(
+        [&](memref::AllocOp op) { return !isQubitType(op); });
+    target.addDynamicallyLegalOp<memref::DeallocOp>(
+        [&](memref::DeallocOp op) { return !isQubitType(op); });
+    target.addDynamicallyLegalOp<memref::LoadOp>(
+        [&](memref::LoadOp op) { return !isQubitType(op); });
+    target.addDynamicallyLegalOp<memref::StoreOp>(
+        [&](memref::StoreOp op) { return !isQubitType(op); });
+
+    patterns.add<ConvertMQTOptMemRefAlloc, ConvertMQTOptMemRefDealloc,
+                 ConvertMQTOptMemRefStore, ConvertMQTOptMemRefLoad,
                  ConvertMQTOptAllocQubit, ConvertMQTOptDeallocQubit,
-                 ConvertMQTOptInsert, ConvertMQTOptExtract,
-                 ConvertMQTOptMeasure, ConvertMQTOptReset, ConvertMQTOptQubit>(
+                 ConvertMQTOptQubit, ConvertMQTOptMeasure, ConvertMQTOptReset>(
         typeConverter, context);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
