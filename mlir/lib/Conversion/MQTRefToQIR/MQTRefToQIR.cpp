@@ -139,8 +139,13 @@ struct MQTRefToQIRTypeConverter final : LLVMTypeConverter {
     addConversion([ctx](ref::QubitType /*type*/) {
       return LLVM::LLVMPointerType::get(ctx);
     });
-    addConversion(
-        [ctx](MemRefType /*type*/) { return LLVM::LLVMPointerType::get(ctx); });
+    // Quantum register
+    addConversion([ctx](MemRefType type) -> Type {
+      if (llvm::isa<ref::QubitType>(type.getElementType())) {
+        return LLVM::LLVMPointerType::get(ctx);
+      }
+      return type;
+    });
   }
 };
 

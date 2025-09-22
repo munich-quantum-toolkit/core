@@ -8,8 +8,7 @@
 
 // RUN: quantum-opt %s -split-input-file --mqtref-to-qir | FileCheck %s
 
-
-// This test checks if the initialize operation and zero operation is inserted
+// This test checks if the initialize operation and zero operation is inserted.
 module {
     // CHECK-LABEL: llvm.func @testInitialize()
     func.func @testInitialize() attributes {passthrough = ["entry_point"]}  {
@@ -21,7 +20,7 @@ module {
 }
 
 // -----
-// This test checks if the AllocOp is converted correctly using a static attribute
+// This test checks if the AllocOp is converted correctly using a static attribute.
 module {
     // CHECK-LABEL: llvm.func @testConvertAllocStatic()
     func.func @testConvertAllocStatic() attributes {passthrough = ["entry_point"]}  {
@@ -36,7 +35,7 @@ module {
 
 
 // -----
-// This test checks if the AllocOp is converted correctly using a dynamic operand
+// This test checks if the AllocOp is converted correctly using a dynamic operand.
 module {
     // CHECK-LABEL: llvm.func @testConvertAllocDynamic()
     func.func @testConvertAllocDynamic() attributes {passthrough = ["entry_point"]}  {
@@ -51,10 +50,10 @@ module {
 }
 
 // -----
-// This test checks if the DeallocOp call is correctly converted
+// This test checks if the DeallocOp call is converted correctly.
 module {
-    // CHECK-LABEL: llvm.func @testConvertDeallocRegister()
-    func.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point"]}  {
+    // CHECK-LABEL: llvm.func @testConvertDealloc()
+    func.func @testConvertDealloc() attributes {passthrough = ["entry_point"]}  {
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[ANY:.*]]) : (i64) -> !llvm.ptr
         // CHECK: llvm.call @__quantum__rt__qubit_release_array(%[[r_0]]) : (!llvm.ptr) -> ()
 
