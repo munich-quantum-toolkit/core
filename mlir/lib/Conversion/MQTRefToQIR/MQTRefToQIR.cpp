@@ -349,7 +349,7 @@ struct ConvertMemRefLoadQIR final : OpConversionPattern<memref::LoadOp> {
   matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     if (!llvm::isa<ref::QubitType>(
-            llvm::cast<mlir::MemRefType>(op.getMemRef().getType())
+            llvm::cast<MemRefType>(op.getMemRef().getType())
                 .getElementType())) {
       return success();
     }
@@ -365,12 +365,15 @@ struct ConvertMemRefLoadQIR final : OpConversionPattern<memref::LoadOp> {
     const auto fnDecl = getFunctionDeclaration(
         rewriter, op, FN_NAME_ARRAY_GET_ELEMENT_PTR, qirSignature);
 
+    // get memref from adaptor
+    const auto memref = adaptor.getOperands().front();
+
     // create the new callOp
     const auto elemPtr =
         rewriter
-            .create<LLVM::CallOp>(op.getLoc(), fnDecl,
-                                  ValueRange{adaptor.getOperands().front(),
-                                             adaptor.getIndices().front()})
+            .create<LLVM::CallOp>(
+                op.getLoc(), fnDecl,
+                ValueRange{memref, adaptor.getIndices().front()})
             .getResult();
 
     // replace the old operation with a loadOp
@@ -771,9 +774,23 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
       // make sure that the iterator is valid
       auto& op = *it++;
 
-      if (dyn_cast<ref::DeallocQubitOp>(op) || dyn_cast<ref::ResetOp>(op) ||
-          dyn_cast<ref::MeasureOp>(op) ||
-          op.getDialect()->getNamespace() == "memref") {
+      if (op.getDialect()->getNamespace() == "memref") {
+        if (auto allocOp = dyn_cast<memref::AllocOp>(op)) {
+          if (!llvm::isa<ref::QubitType>(allocOp.getType().getElementType())) {
+            continue;
+          }
+        } else if (auto loadOp = dyn_cast<memref::LoadOp>(op)) {
+          if (!llvm::isa<ref::QubitType>(
+                  llvm::cast<MemRefType>(loadOp.getMemRef().getType())
+                      .getElementType())) {
+            continue;
+          }
+        } else {
+          irreversibleBlockOps.splice(irreversibleBlock->end(), mainBlockOps,
+                                      Block::iterator(op));
+        }
+      } else if (dyn_cast<ref::DeallocQubitOp>(op) ||
+                 dyn_cast<ref::ResetOp>(op) || dyn_cast<ref::MeasureOp>(op)) {
         // move irreversible quantum operations to the irreversible block
         irreversibleBlockOps.splice(irreversibleBlock->end(), mainBlockOps,
                                     Block::iterator(op));
