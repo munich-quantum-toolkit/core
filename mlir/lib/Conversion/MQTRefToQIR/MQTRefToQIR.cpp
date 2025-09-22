@@ -383,7 +383,7 @@ struct ConvertMemRefLoadQIR final : OpConversionPattern<memref::LoadOp> {
         rewriter, op, FN_NAME_ARRAY_GET_ELEMENT_PTR, qirSignature);
 
     // get memref from adaptor
-    const auto memref = adaptor.getOperands().front();
+    const auto memref = adaptor.getMemref();
 
     // create the new callOp
     const auto elemPtr =
@@ -665,7 +665,7 @@ struct ConvertMQTRefMeasureQIR final
                                     .getDefiningOp<LLVM::ConstantOp>()) {
             index = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
 
-            const auto allocaOp = storeOp.getMemRef();
+            const auto allocaOp = storeOp.getMemref();
 
             // drop the references to update the number of uses immediately
             // as eraseOp only updates them after the patterns
