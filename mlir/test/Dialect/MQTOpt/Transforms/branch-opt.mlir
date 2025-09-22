@@ -15,12 +15,18 @@
 
 module {
   func.func @testPushIntoChildren() {
-    // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-    // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
-    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // CHECK: %[[I1:.*]] = arith.constant 1 : index
+    // CHECK: %[[I0:.*]] = arith.constant 0 : index
+    %i1 = arith.constant 1 : index
+    %i0 = arith.constant 0 : index
+
+    // CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtopt.Qubit>
+    %qreg = memref.alloc() : memref<2x!mqtopt.Qubit>
+
+    // CHECK: %[[Q0_0:.*]] =  memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtopt.Qubit>
+    %q0_0 = memref.load %qreg[%i0] : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[Q1_0:.*]] =  memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtopt.Qubit>
+    %q1_0 = memref.load %qreg[%i1] : memref<2x!mqtopt.Qubit>
 
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
     %q1_1 = mqtopt.x() %q1_0 : !mqtopt.Qubit
@@ -45,9 +51,10 @@ module {
     cf.br ^continue(%q1_3 : !mqtopt.Qubit)
 
   ^continue(%q1_4 : !mqtopt.Qubit):
-    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_4) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+    memref.store %q0_1, %qreg[%i0] : memref<2x!mqtopt.Qubit>
+    memref.store %q1_4, %qreg[%i1] : memref<2x!mqtopt.Qubit>
+    memref.dealloc %qreg : memref<2x!mqtopt.Qubit>
+
     return
   }
 }
@@ -61,12 +68,18 @@ module {
 
 module {
   func.func @testPushIntoChildrenNoBlockParameters() {
-    // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-    // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
-    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // CHECK: %[[I1:.*]] = arith.constant 1 : index
+    // CHECK: %[[I0:.*]] = arith.constant 0 : index
+    %i1 = arith.constant 1 : index
+    %i0 = arith.constant 0 : index
+
+    // CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtopt.Qubit>
+    %qreg = memref.alloc() : memref<2x!mqtopt.Qubit>
+
+    // CHECK: %[[Q0_0:.*]] =  memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtopt.Qubit>
+    %q0_0 = memref.load %qreg[%i0] : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[Q1_0:.*]] =  memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtopt.Qubit>
+    %q1_0 = memref.load %qreg[%i1] : memref<2x!mqtopt.Qubit>
 
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
     %q1_1 = mqtopt.x() %q1_0 : !mqtopt.Qubit
@@ -91,9 +104,10 @@ module {
     cf.br ^continue(%q1_3 : !mqtopt.Qubit)
 
   ^continue(%q1_4 : !mqtopt.Qubit):
-    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_4) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+    memref.store %q0_1, %qreg[%i0] : memref<2x!mqtopt.Qubit>
+    memref.store %q1_4, %qreg[%i1] : memref<2x!mqtopt.Qubit>
+    memref.dealloc %qreg : memref<2x!mqtopt.Qubit>
+
     return
   }
 }
@@ -106,12 +120,18 @@ module {
 
 module {
   func.func @main() {
-    // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-    // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
-    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // CHECK: %[[I1:.*]] = arith.constant 1 : index
+    // CHECK: %[[I0:.*]] = arith.constant 0 : index
+    %i1 = arith.constant 1 : index
+    %i0 = arith.constant 0 : index
+
+    // CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtopt.Qubit>
+    %qreg = memref.alloc() : memref<2x!mqtopt.Qubit>
+
+    // CHECK: %[[Q0_0:.*]] =  memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtopt.Qubit>
+    %q0_0 = memref.load %qreg[%i0] : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[Q1_0:.*]] =  memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtopt.Qubit>
+    %q1_0 = memref.load %qreg[%i1] : memref<2x!mqtopt.Qubit>
 
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
     %q1_1 = mqtopt.x() %q1_0 : !mqtopt.Qubit
@@ -133,9 +153,10 @@ module {
     // CHECK: %[[Q1_2:.*]] = mqtopt.x() %[[Q1_1]]
     %q1_2 = mqtopt.x() %q1_1 : !mqtopt.Qubit
 
-    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_2) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_2) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+    memref.store %q0_1, %qreg[%i0] : memref<2x!mqtopt.Qubit>
+    memref.store %q1_2, %qreg[%i1] : memref<2x!mqtopt.Qubit>
+    memref.dealloc %qreg : memref<2x!mqtopt.Qubit>
+
     return
   }
 }
@@ -148,12 +169,18 @@ module {
 
 module {
   func.func @testWithCriticalEdge() {
-    // CHECK: %[[Reg_0:.*]] = "mqtopt.allocQubitRegister"
-    %reg_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-    // CHECK: %[[Reg_1:.*]], %[[Q0_0:.*]] = "mqtopt.extractQubit"(%[[Reg_0]]) <{index_attr = 0 : i64}>
-    %reg_1, %q0_0 = "mqtopt.extractQubit"(%reg_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    // CHECK: %[[Reg_2:.*]], %[[Q1_0:.*]] = "mqtopt.extractQubit"(%[[Reg_1]]) <{index_attr = 1 : i64}>
-    %reg_2, %q1_0 = "mqtopt.extractQubit"(%reg_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // CHECK: %[[I1:.*]] = arith.constant 1 : index
+    // CHECK: %[[I0:.*]] = arith.constant 0 : index
+    %i1 = arith.constant 1 : index
+    %i0 = arith.constant 0 : index
+
+    // CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtopt.Qubit>
+    %qreg = memref.alloc() : memref<2x!mqtopt.Qubit>
+
+    // CHECK: %[[Q0_0:.*]] =  memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtopt.Qubit>
+    %q0_0 = memref.load %qreg[%i0] : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[Q1_0:.*]] =  memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtopt.Qubit>
+    %q1_0 = memref.load %qreg[%i1] : memref<2x!mqtopt.Qubit>
 
     // CHECK-NOT: %[[ANY:.*]] = mqtopt.x()
     %q1_1 = mqtopt.x() %q1_0 : !mqtopt.Qubit
@@ -173,9 +200,10 @@ module {
 
   // CHECK: ^[[CONTINUE]](%[[Q1_4:.*]]: !mqtopt.Qubit):
   ^continue(%q1_4 : !mqtopt.Qubit):
-    %reg_3 = "mqtopt.insertQubit"(%reg_2, %q0_1) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %reg_4 = "mqtopt.insertQubit"(%reg_3, %q1_4) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%reg_4) : (!mqtopt.QubitRegister) -> ()
+    memref.store %q0_1, %qreg[%i0] : memref<2x!mqtopt.Qubit>
+    memref.store %q1_4, %qreg[%i1] : memref<2x!mqtopt.Qubit>
+    memref.dealloc %qreg : memref<2x!mqtopt.Qubit>
+
     return
   }
 
