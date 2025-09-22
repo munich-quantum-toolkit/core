@@ -185,25 +185,38 @@ module {
     }
 
     func.func @entryBranching() attributes { entry_point } {
-        %true = arith.constant 1 : i1
+
+        //
+        // This test shows that the routing algorithm can handle
+        // classical feedforward and control flow.
+        //
+        //    ┌───┐  ┌───┐
+        // 0:─┤ H ├──┤ M ├─────────■───
+        //    └───┘  └─╦─┘ ┌───┐ ┌─┴─┐
+        // 1:──────────║───┤ X ├─┤ X ├─
+        //             ║   └─┬─┘ └───┘
+        // m:══════════▼═════●═════════
+        //
 
         %q0_0 = mqtopt.allocQubit
         %q1_0 = mqtopt.allocQubit
 
         %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
-        %q0_2, %q1_2 = scf.if %true -> (!mqtopt.Qubit, !mqtopt.Qubit) {
-            %q1_1 = mqtopt.x() %q1_0 : !mqtopt.Qubit
-            %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_2, %m = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-            scf.yield %q0_2, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
+        %q0_3, %q1_2 = scf.if %m0 -> (!mqtopt.Qubit, !mqtopt.Qubit) {
+            %q1_1 = mqtopt.x() %q1_0 : !mqtopt.Qubit
+            %q1_2, %q0_3 = mqtopt.x() %q1_1 ctrl %q0_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+            scf.yield %q0_3, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
         } else {
             %q1_1 = mqtopt.i() %q1_0 : !mqtopt.Qubit
-            %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            %q1_2, %q0_3 = mqtopt.x() %q1_1 ctrl %q0_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-            scf.yield %q0_2, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
+            scf.yield %q0_3, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
         }
 
-        mqtopt.deallocQubit %q0_2
+        mqtopt.deallocQubit %q0_3
         mqtopt.deallocQubit %q1_2
 
         return
