@@ -421,7 +421,6 @@ struct MQTRefToMQTOpt final : impl::MQTRefToMQTOptBase<MQTRefToMQTOpt> {
     MQTRefToMQTOptTypeConverter typeConverter(context);
 
     target.addIllegalDialect<ref::MQTRefDialect>();
-    target.addIllegalDialect<memref::MemRefDialect>();
     target.addLegalDialect<opt::MQTOptDialect>();
     target.addLegalDialect<arith::ArithDialect>();
 
