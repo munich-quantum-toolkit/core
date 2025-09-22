@@ -164,7 +164,7 @@ struct ConvertMQTOptMemRefLoad final : OpConversionPattern<memref::LoadOp> {
     const auto& refMemRef = adaptor.getMemref();
 
     auto optLoadOp = rewriter.replaceOpWithNewOp<memref::LoadOp>(
-        op, refMemRef, op.getIndices());
+        op, refMemRef, adaptor.getIndices());
 
     return success();
   }

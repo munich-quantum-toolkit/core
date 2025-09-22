@@ -225,7 +225,7 @@ struct ConvertMQTRefMemRefLoad final
 
     // create new operation
     auto optLoadOp = rewriter.replaceOpWithNewOp<memref::LoadOp>(
-        op, optMemRef, op.getIndices());
+        op, optMemRef, adaptor.getIndices());
 
     const auto& refQubit = op.getResult();
     const auto& optQubit = optLoadOp.getResult();
@@ -234,7 +234,8 @@ struct ConvertMQTRefMemRefLoad final
     getState().qubitMap.try_emplace(refQubit, optQubit);
 
     // add entry to qubitIndexMap
-    getState().qubitIndexMap.try_emplace(refQubit, op.getIndices().front());
+    getState().qubitIndexMap.try_emplace(refQubit,
+                                         adaptor.getIndices().front());
 
     // append the entry to the qregQubitsMap to store which qubits that were
     // extracted from the register
