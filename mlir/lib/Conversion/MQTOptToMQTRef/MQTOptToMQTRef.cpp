@@ -20,8 +20,7 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
-#include <cstdint>
-#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -47,25 +46,25 @@ using namespace mlir;
 
 namespace {
 
-const bool isQubitType(const MemRefType type) {
+bool isQubitType(const MemRefType type) {
   return llvm::isa<opt::QubitType>(type.getElementType());
 }
 
-const bool isQubitType(memref::AllocOp op) { return isQubitType(op.getType()); }
+bool isQubitType(memref::AllocOp op) { return isQubitType(op.getType()); }
 
-const bool isQubitType(memref::DeallocOp op) {
+bool isQubitType(memref::DeallocOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
   return isQubitType(memRefType);
 }
 
-const bool isQubitType(memref::LoadOp op) {
+bool isQubitType(memref::LoadOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
   return isQubitType(memRefType);
 }
 
-const bool isQubitType(memref::StoreOp op) {
+bool isQubitType(memref::StoreOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
   return isQubitType(memRefType);
@@ -160,11 +159,8 @@ struct ConvertMQTOptMemRefLoad final : OpConversionPattern<memref::LoadOp> {
       return failure();
     }
 
-    const auto& optMemRef = op.getMemref();
-    const auto& refMemRef = adaptor.getMemref();
-
-    auto optLoadOp = rewriter.replaceOpWithNewOp<memref::LoadOp>(
-        op, refMemRef, adaptor.getIndices());
+    rewriter.replaceOpWithNewOp<memref::LoadOp>(op, adaptor.getMemref(),
+                                                adaptor.getIndices());
 
     return success();
   }
@@ -174,7 +170,7 @@ struct ConvertMQTOptMemRefStore final : OpConversionPattern<memref::StoreOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(memref::StoreOp op, OpAdaptor adaptor,
+  matchAndRewrite(memref::StoreOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     if (!isQubitType(op)) {
       return failure();

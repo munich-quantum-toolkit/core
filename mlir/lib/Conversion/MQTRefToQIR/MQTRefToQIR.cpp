@@ -133,19 +133,19 @@ private:
   LoweringState* state_;
 };
 
-const bool isQubitType(const MemRefType type) {
+bool isQubitType(const MemRefType type) {
   return llvm::isa<ref::QubitType>(type.getElementType());
 }
 
-const bool isQubitType(memref::AllocOp op) { return isQubitType(op.getType()); }
+bool isQubitType(memref::AllocOp op) { return isQubitType(op.getType()); }
 
-const bool isQubitType(memref::DeallocOp op) {
+bool isQubitType(memref::DeallocOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
   return isQubitType(memRefType);
 }
 
-const bool isQubitType(memref::LoadOp op) {
+bool isQubitType(memref::LoadOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
   return isQubitType(memRefType);
