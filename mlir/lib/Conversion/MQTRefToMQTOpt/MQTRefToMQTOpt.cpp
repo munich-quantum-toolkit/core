@@ -405,6 +405,7 @@ struct MQTRefToMQTOpt final : impl::MQTRefToMQTOptBase<MQTRefToMQTOpt> {
         [&](memref::DeallocOp op) { return !isQubitType(op); });
     target.addDynamicallyLegalOp<memref::LoadOp>(
         [&](memref::LoadOp op) { return !isQubitType(op); });
+    target.addLegalOp<memref::StoreOp>();
 
     patterns.add<ConvertMQTRefMemRefAlloc>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefMemRefDealloc>(typeConverter, context, &state);

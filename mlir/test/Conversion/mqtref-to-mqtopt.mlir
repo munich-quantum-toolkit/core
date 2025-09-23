@@ -111,6 +111,53 @@ module {
 }
 
 // -----
+// This test checks if StoreOps are inserted correctly for a single register.
+module {
+    // CHECK-LABEL: func.func @testConvertStoreOpSingleRegister
+    func.func @testConvertStoreOpSingleRegister() {
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
+        // CHECK: %[[Qreg:.*]] = memref.alloc() : memref<1x!mqtopt.Qubit>
+        // CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<1x!mqtopt.Qubit>
+        // CHECK: memref.store %[[Q0]], %[[Qreg]][%[[I0]]] : memref<1x!mqtopt.Qubit>
+        // CHECK: memref.dealloc %[[Qreg]] : memref<1x!mqtopt.Qubit>
+
+        %i0 = arith.constant 0 : index
+        %qreg = memref.alloc() : memref<1x!mqtref.Qubit>
+        %q0 = memref.load %qreg[%i0] : memref<1x!mqtref.Qubit>
+        memref.dealloc %qreg : memref<1x!mqtref.Qubit>
+
+        return
+    }
+}
+
+// -----
+// This test checks if StoreOps are inserted correctly for multiple registers.
+module {
+    // CHECK-LABEL: func.func @testConvertStoreOpMultipleRegisters
+    func.func @testConvertStoreOpMultipleRegisters() {
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
+        // CHECK: %[[QregA:.*]] = memref.alloc() : memref<1x!mqtopt.Qubit>
+        // CHECK: %[[QregB:.*]] = memref.alloc() : memref<1x!mqtopt.Qubit>
+        // CHECK: %[[Q0A:.*]] = memref.load %[[QregA]][%[[I0]]] : memref<1x!mqtopt.Qubit>
+        // CHECK: %[[Q0B:.*]] = memref.load %[[QregB]][%[[I0]]] : memref<1x!mqtopt.Qubit>
+        // CHECK: memref.store %[[Q0A]], %[[QregA]][%[[I0]]] : memref<1x!mqtopt.Qubit>
+        // CHECK: memref.dealloc %[[QregA]] : memref<1x!mqtopt.Qubit>
+        // CHECK: memref.store %[[Q0B]], %[[QregB]][%[[I0]]] : memref<1x!mqtopt.Qubit>
+        // CHECK: memref.dealloc %[[QregB]] : memref<1x!mqtopt.Qubit>
+
+        %i0 = arith.constant 0 : index
+        %qrega = memref.alloc() : memref<1x!mqtref.Qubit>
+        %qregb = memref.alloc() : memref<1x!mqtref.Qubit>
+        %q0a = memref.load %qrega[%i0] : memref<1x!mqtref.Qubit>
+        %q0b = memref.load %qregb[%i0] : memref<1x!mqtref.Qubit>
+        memref.dealloc %qrega : memref<1x!mqtref.Qubit>
+        memref.dealloc %qregb : memref<1x!mqtref.Qubit>
+
+        return
+    }
+}
+
+// -----
 // This test checks if the MeasureOp is converted correctly
 module {
     // CHECK-LABEL: func.func @testConvertMeasureOp
