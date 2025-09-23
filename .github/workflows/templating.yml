@@ -19,11 +19,11 @@ jobs:
           JSON_CONTENT=$(cat .github/workflow_inputs/release_drafter_categories.json | jq -c .)
           echo "release_drafter_categories=$JSON_CONTENT" >> $GITHUB_OUTPUT
       - id: create-token
-        uses: actions/create-github-app-token@a8d616148505b5069dccd32f177bb87d7f39123b # v2
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      - uses: munich-quantum-toolkit/templates@79179b743b3909010c5df4073cbb110eb6e0167b # v1.1.5
+      - uses: munich-quantum-toolkit/templates@c31f629609147889858088dcd368b8dbcc71bd44 # v1.1.6
         with:
           token: ${{ steps.create-token.outputs.token }}
           name: Core

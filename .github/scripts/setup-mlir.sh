@@ -69,8 +69,6 @@ case "$OS_NAME" in
     echo "Installing LLVM/MLIR $LLVM_MAJOR on macOS via Homebrew..."
     brew install "llvm@${LLVM_MAJOR}"
     LLVM_PREFIX="$(brew --prefix)/opt/llvm@${LLVM_MAJOR}"
-    append_env "CC=${LLVM_PREFIX}/bin/clang"
-    append_env "CXX=${LLVM_PREFIX}/bin/clang++"
     append_env "LLVM_DIR=${LLVM_PREFIX}/lib/cmake/llvm"
     append_env "MLIR_DIR=${LLVM_PREFIX}/lib/cmake/mlir"
     append_path "${LLVM_PREFIX}/bin"

@@ -23,7 +23,24 @@
 #include <vector>
 
 namespace qdmi {
-auto toString(QDMI_STATUS result) -> std::string {
+
+namespace {
+/**
+ * @brief Function used to mark unreachable code
+ * @details Uses compiler specific extensions if possible. Even if no extension
+ * is used, undefined behavior is still raised by an empty function body and the
+ * noreturn attribute.
+ */
+[[noreturn]] inline void unreachable() {
+#ifdef __GNUC__ // GCC, Clang, ICC
+  __builtin_unreachable();
+#elif defined(_MSC_VER) // MSVC
+  __assume(false);
+#endif
+}
+} // namespace
+
+auto toString(const QDMI_STATUS result) -> std::string {
   switch (result) {
   case QDMI_WARN_GENERAL:
     return "General warning";
@@ -51,9 +68,8 @@ auto toString(QDMI_STATUS result) -> std::string {
     return "Bad state";
   case QDMI_ERROR_TIMEOUT:
     return "Timeout";
-  default:
-    return "Unknown status code";
   }
+  unreachable();
 }
 auto toString(QDMI_Site_Property prop) -> std::string {
   switch (prop) {
@@ -83,9 +99,91 @@ auto toString(QDMI_Site_Property prop) -> std::string {
     return "QDMI_SITE_PROPERTY_MODULEINDEX";
   case QDMI_SITE_PROPERTY_SUBMODULEINDEX:
     return "QDMI_SITE_PROPERTY_SUBMODULEINDEX";
-  default:
+  case QDMI_SITE_PROPERTY_MAX:
+  case QDMI_SITE_PROPERTY_CUSTOM1:
+  case QDMI_SITE_PROPERTY_CUSTOM2:
+  case QDMI_SITE_PROPERTY_CUSTOM3:
+  case QDMI_SITE_PROPERTY_CUSTOM4:
+  case QDMI_SITE_PROPERTY_CUSTOM5:
     return "QDMI_SITE_PROPERTY_UNKNOWN";
   }
+  unreachable();
+}
+auto toString(QDMI_Operation_Property prop) -> std::string {
+  switch (prop) {
+  case QDMI_OPERATION_PROPERTY_NAME:
+    return "QDMI_OPERATION_PROPERTY_NAME";
+  case QDMI_OPERATION_PROPERTY_QUBITSNUM:
+    return "QDMI_OPERATION_PROPERTY_QUBITSNUM";
+  case QDMI_OPERATION_PROPERTY_PARAMETERSNUM:
+    return "QDMI_OPERATION_PROPERTY_PARAMETERSNUM";
+  case QDMI_OPERATION_PROPERTY_DURATION:
+    return "QDMI_OPERATION_PROPERTY_DURATION";
+  case QDMI_OPERATION_PROPERTY_FIDELITY:
+    return "QDMI_OPERATION_PROPERTY_FIDELITY";
+  case QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS:
+    return "QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS";
+  case QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS:
+    return "QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS";
+  case QDMI_OPERATION_PROPERTY_IDLINGFIDELITY:
+    return "QDMI_OPERATION_PROPERTY_IDLINGFIDELITY";
+  case QDMI_OPERATION_PROPERTY_ISZONED:
+    return "QDMI_OPERATION_PROPERTY_ISZONED";
+  case QDMI_OPERATION_PROPERTY_SITES:
+    return "QDMI_OPERATION_PROPERTY_SITES";
+  case QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED:
+    return "QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED";
+  case QDMI_OPERATION_PROPERTY_MAX:
+  case QDMI_OPERATION_PROPERTY_CUSTOM1:
+  case QDMI_OPERATION_PROPERTY_CUSTOM2:
+  case QDMI_OPERATION_PROPERTY_CUSTOM3:
+  case QDMI_OPERATION_PROPERTY_CUSTOM4:
+  case QDMI_OPERATION_PROPERTY_CUSTOM5:
+    return "QDMI_OPERATION_PROPERTY_UNKNOWN";
+  }
+  unreachable();
+}
+auto toString(QDMI_Device_Property prop) -> std::string {
+  switch (prop) {
+  case QDMI_DEVICE_PROPERTY_NAME:
+    return "QDMI_DEVICE_PROPERTY_NAME";
+  case QDMI_DEVICE_PROPERTY_VERSION:
+    return "QDMI_DEVICE_PROPERTY_VERSION";
+  case QDMI_DEVICE_PROPERTY_STATUS:
+    return "QDMI_DEVICE_PROPERTY_STATUS";
+  case QDMI_DEVICE_PROPERTY_LIBRARYVERSION:
+    return "QDMI_DEVICE_PROPERTY_LIBRARYVERSION";
+  case QDMI_DEVICE_PROPERTY_QUBITSNUM:
+    return "QDMI_DEVICE_PROPERTY_QUBITSNUM";
+  case QDMI_DEVICE_PROPERTY_SITES:
+    return "QDMI_DEVICE_PROPERTY_SITES";
+  case QDMI_DEVICE_PROPERTY_OPERATIONS:
+    return "QDMI_DEVICE_PROPERTY_OPERATIONS";
+  case QDMI_DEVICE_PROPERTY_COUPLINGMAP:
+    return "QDMI_DEVICE_PROPERTY_COUPLINGMAP";
+  case QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION:
+    return "QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION";
+  case QDMI_DEVICE_PROPERTY_LENGTHUNIT:
+    return "QDMI_DEVICE_PROPERTY_LENGTHUNIT";
+  case QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR:
+    return "QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR";
+  case QDMI_DEVICE_PROPERTY_DURATIONUNIT:
+    return "QDMI_DEVICE_PROPERTY_DURATIONUNIT";
+  case QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR:
+    return "QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR";
+  case QDMI_DEVICE_PROPERTY_MINATOMDISTANCE:
+    return "QDMI_DEVICE_PROPERTY_MINATOMDISTANCE";
+  case QDMI_DEVICE_PROPERTY_PULSESUPPORT:
+    return "QDMI_DEVICE_PROPERTY_PULSESUPPORT";
+  case QDMI_DEVICE_PROPERTY_MAX:
+  case QDMI_DEVICE_PROPERTY_CUSTOM1:
+  case QDMI_DEVICE_PROPERTY_CUSTOM2:
+  case QDMI_DEVICE_PROPERTY_CUSTOM3:
+  case QDMI_DEVICE_PROPERTY_CUSTOM4:
+  case QDMI_DEVICE_PROPERTY_CUSTOM5:
+    return "QDMI_DEVICE_PROPERTY_UNKNOWN";
+  }
+  unreachable();
 }
 auto throwError(int result, const std::string& msg) -> void {
   std::ostringstream ss;

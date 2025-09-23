@@ -6,7 +6,8 @@
 #
 # Licensed under the MIT License
 
-set(DIALECT_NAME "MQTOPT")
+set(DIALECT_NAME "MQTOpt")
+set(DIALECT_NAME_UPPER "MQTOPT")
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../../Common/IR/StdOps.td.inc
                ${CMAKE_CURRENT_BINARY_DIR}/MQTOptStdOps.td @ONLY)
 

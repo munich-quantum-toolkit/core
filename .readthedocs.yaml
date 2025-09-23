@@ -23,7 +23,7 @@ build:
       - (git --no-pager log --pretty="tformat:%s -- %b" -1 | grep -viq "skip ci") || exit 183
       # Skip docs build if there are no changes related to docs
       - |
-        if [ "$READTHEDOCS_VERSION_TYPE" = "external" ] && git diff --quiet origin/main -- bindings/ include/ docs/ python/ .github/contributing* .github/support* .readthedocs.yaml;
+        if [ "$READTHEDOCS_VERSION_TYPE" = "external" ] && git diff --quiet origin/main -- bindings/ docs/ include/ mlir/include/ python/ .github/contributing* .github/support* .readthedocs.yaml;
         then
           exit 183;
         fi
@@ -35,11 +35,8 @@ build:
       - asdf install uv latest
       - asdf global uv latest
       # Build the MLIR documentation
-      - uvx cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_MLIR=ON -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir -DLLVM_DIR=/usr/lib/llvm-19/lib/cmake/llvm
+      - uvx cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_MLIR=ON -DMQT_MLIR_MIN_VERSION=19.0 -DMLIR_DIR=/usr/lib/llvm-19/lib/cmake/mlir -DLLVM_DIR=/usr/lib/llvm-19/lib/cmake/llvm
       - uvx cmake --build build --target mlir-doc
-      # Remove unwanted artifacts from the MLIR documentation
-      - 'find docs/mlir -name "*.md" -exec sed -i "s@\[TOC\]@@g" {} \;'
-      - 'find docs/mlir -name "*.md" -exec sed -i "s@\[source\](https://github.com/llvm/llvm-project/.*)@@g" {} \;'
     build:
       html:
         - uv run --frozen --no-dev --group docs -m sphinx -T -b html -d docs/_build/doctrees -D language=en docs $READTHEDOCS_OUTPUT/html

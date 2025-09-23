@@ -932,7 +932,7 @@ TEST(DDPackageTest, PackageReset) {
   std::cout << ihash << ": " << reinterpret_cast<uintptr_t>(xGate.p) << "\n";
   // node should be the first in this unique table bucket
   EXPECT_EQ(node, xGate.p);
-  dd->reset();
+  (*dd).reset();
   // after clearing the tables, they should be empty
   EXPECT_EQ(table[ihash], nullptr);
   xGate = getDD(qc::StandardOperation(0, qc::X), *dd);
@@ -960,7 +960,7 @@ TEST(DDPackageTest, ResetClearsRoots) {
   EXPECT_EQ(mRoots.size(), 1U);
   EXPECT_EQ(dRoots.size(), 1U);
 
-  dd->reset();
+  (*dd).reset();
 
   EXPECT_TRUE(vRoots.empty());
   EXPECT_TRUE(mRoots.empty());

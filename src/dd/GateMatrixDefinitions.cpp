@@ -69,10 +69,11 @@ TwoQubitGateMatrix rxxMat(const fp theta) {
   const auto cosTheta = std::cos(theta / 2.);
   const auto sinTheta = std::sin(theta / 2.);
 
-  return TwoQubitGateMatrix{{{cosTheta, 0, 0, {0., -sinTheta}},
-                             {0, cosTheta, {0., -sinTheta}, 0},
-                             {0, {0., -sinTheta}, cosTheta, 0},
-                             {std::complex{0., -sinTheta}, 0, 0, cosTheta}}};
+  return TwoQubitGateMatrix{
+      {{cosTheta, 0, 0, {0., -sinTheta}},
+       {0, cosTheta, {0., -sinTheta}, 0},
+       {0, {0., -sinTheta}, cosTheta, 0},
+       {std::complex<fp>{0., -sinTheta}, 0, 0, cosTheta}}};
 }
 
 TwoQubitGateMatrix ryyMat(const fp theta) {
@@ -82,14 +83,14 @@ TwoQubitGateMatrix ryyMat(const fp theta) {
   return TwoQubitGateMatrix{{{cosTheta, 0, 0, {0., sinTheta}},
                              {0, cosTheta, {0., -sinTheta}, 0},
                              {0, {0., -sinTheta}, cosTheta, 0},
-                             {std::complex{0., sinTheta}, 0, 0, cosTheta}}};
+                             {std::complex<fp>{0., sinTheta}, 0, 0, cosTheta}}};
 }
 
 TwoQubitGateMatrix rzzMat(const fp theta) {
   const auto cosTheta = std::cos(theta / 2.);
   const auto sinTheta = std::sin(theta / 2.);
 
-  return TwoQubitGateMatrix{{{std::complex{cosTheta, -sinTheta}, 0, 0, 0},
+  return TwoQubitGateMatrix{{{std::complex<fp>{cosTheta, -sinTheta}, 0, 0, 0},
                              {0, {cosTheta, sinTheta}, 0, 0},
                              {0, 0, {cosTheta, sinTheta}, 0},
                              {0, 0, 0, {cosTheta, -sinTheta}}}};
@@ -100,7 +101,7 @@ TwoQubitGateMatrix rzxMat(const fp theta) {
   const auto sinTheta = std::sin(theta / 2.);
 
   return TwoQubitGateMatrix{{{cosTheta, {0., -sinTheta}, 0, 0},
-                             {std::complex{0., -sinTheta}, cosTheta, 0, 0},
+                             {std::complex<fp>{0., -sinTheta}, cosTheta, 0, 0},
                              {0, 0, cosTheta, {0., sinTheta}},
                              {0, 0, {0., sinTheta}, cosTheta}}};
 }
@@ -115,7 +116,7 @@ TwoQubitGateMatrix xxMinusYYMat(const fp theta, const fp beta = 0.) {
       {{cosTheta, 0, 0, {-sinBeta * sinTheta, -cosBeta * sinTheta}},
        {0, 1, 0, 0},
        {0, 0, 1, 0},
-       {std::complex{sinBeta * sinTheta, -cosBeta * sinTheta}, 0, 0,
+       {std::complex<fp>{sinBeta * sinTheta, -cosBeta * sinTheta}, 0, 0,
         cosTheta}}};
 }
 
@@ -157,11 +158,11 @@ GateMatrix opToSingleQubitGateMatrix(const qc::OpType t,
   case qc::Tdg:
     return {1, 0, 0, {SQRT2_2, -SQRT2_2}};
   case qc::SX:
-    return {std::complex{0.5, 0.5}, std::complex{0.5, -0.5},
-            std::complex{0.5, -0.5}, std::complex{0.5, 0.5}};
+    return {std::complex<fp>{0.5, 0.5}, std::complex<fp>{0.5, -0.5},
+            std::complex<fp>{0.5, -0.5}, std::complex<fp>{0.5, 0.5}};
   case qc::SXdg:
-    return {std::complex{0.5, -0.5}, std::complex{0.5, 0.5},
-            std::complex{0.5, 0.5}, std::complex{0.5, -0.5}};
+    return {std::complex<fp>{0.5, -0.5}, std::complex<fp>{0.5, 0.5},
+            std::complex<fp>{0.5, 0.5}, std::complex<fp>{0.5, -0.5}};
   case qc::V:
     return {SQRT2_2, {0., -SQRT2_2}, {0., -SQRT2_2}, SQRT2_2};
   case qc::Vdg:
@@ -201,7 +202,7 @@ TwoQubitGateMatrix opToTwoQubitGateMatrix(const qc::OpType t,
     return {{{0, 0, SQRT2_2, {0, SQRT2_2}},
              {0, 0, {0, SQRT2_2}, SQRT2_2},
              {SQRT2_2, {0, -SQRT2_2}, 0, 0},
-             {std::complex{0., -SQRT2_2}, SQRT2_2, 0, 0}}};
+             {std::complex<fp>{0., -SQRT2_2}, SQRT2_2, 0, 0}}};
   case qc::DCX:
     return {{{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}, {0, 1, 0, 0}}};
   case qc::Peres:

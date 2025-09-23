@@ -10,11 +10,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
-import numpy.typing as npt
 import pytest
 
 from mqt.core.dd import DDPackage
+
+if TYPE_CHECKING:
+    import numpy.typing as npt
 
 
 def test_identity() -> None:

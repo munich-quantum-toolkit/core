@@ -10,11 +10,14 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from mqt.core.qdmi.fomac import Device, DeviceStatus, Operation, Site, devices
+from mqt.core.qdmi.fomac import DeviceStatus, Operation, Site, devices
+
+if TYPE_CHECKING:
+    from mqt.core.qdmi.fomac import Device
 
 
 @pytest.fixture(params=devices())
