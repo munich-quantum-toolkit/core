@@ -97,7 +97,7 @@ struct ConvertMQTOptMemRefAlloc final : OpConversionPattern<memref::AllocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     if (!isQubitType(op)) {
       return failure();
@@ -108,7 +108,7 @@ struct ConvertMQTOptMemRefAlloc final : OpConversionPattern<memref::AllocOp> {
         MemRefType::get(op.getType().getShape(), qubitType);
 
     rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memRefType,
-                                                 op.getDynamicSizes());
+                                                 adaptor.getDynamicSizes());
 
     return success();
   }
