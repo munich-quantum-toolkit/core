@@ -9,7 +9,7 @@
  */
 
 #include <cstddef>
-#include <llvm/ADT/SmallVector.h>
+#include <deque>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -80,6 +80,6 @@ public:
   void clear() { stack_.clear(); }
 
 private:
-  mlir::SmallVector<Item, 2> stack_;
+  std::deque<Item> stack_;
 };
 } // namespace mqt::ir::opt
