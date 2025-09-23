@@ -20,6 +20,7 @@
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -35,7 +36,8 @@ namespace mqt::ir::opt {
 /// Analysis pattern that creates MLIR instructions from a given
 /// qc::QuantumComputation. These instructions replace an existing `AllocOp`
 /// that has the `to_replace` attribute set.
-struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
+struct FromQuantumComputationPattern final
+    : mlir::OpRewritePattern<mlir::memref::AllocOp> {
   qc::QuantumComputation& circuit; // NOLINT(*-avoid-const-or-ref-data-members)
 
   explicit FromQuantumComputationPattern(mlir::MLIRContext* context,
@@ -43,49 +45,39 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       : OpRewritePattern(context), circuit(qc) {}
 
   /**
-   * @brief Creates an ExtractOp that extracts the qubit at the given index from
-   * the given register.
+   * @brief Creates a LoadOp for loading a qubit.
    *
-   * @param reg The register to extract the qubit from.
-   * @param index The index of the qubit to extract.
+   * @param reg The register to load the qubit from.
+   * @param index The index of the qubit to load.
    * @param rewriter The pattern rewriter to use.
    *
-   * @return The created ExtractOp.
+   * @return The created LoadOp.
    */
-  static ExtractOp createRegisterAccess(mlir::Value reg, const size_t index,
-                                        mlir::PatternRewriter& rewriter) {
-    return rewriter.create<ExtractOp>(
-        reg.getLoc(),
-        mlir::TypeRange{QubitRegisterType::get(rewriter.getContext()),
-                        QubitType::get(rewriter.getContext())},
-        reg, nullptr,
-        rewriter.getI64IntegerAttr(static_cast<std::int64_t>(index)));
+  static mlir::memref::LoadOp createLoadOp(mlir::Value reg, const size_t index,
+                                           mlir::PatternRewriter& rewriter) {
+    auto indexValue = rewriter.create<mlir::arith::ConstantIndexOp>(
+        reg.getLoc(), static_cast<int64_t>(index));
+    return rewriter.create<mlir::memref::LoadOp>(reg.getLoc(), reg,
+                                                 mlir::ValueRange{indexValue});
   }
 
   /**
-   * @brief Creates an InsertOp that inserts the given qubit into the given
-   * register at the specified index.
+   * @brief Creates a StoreOp for storing a qubit.
    *
-   * @param allocOp The AllocOp that defined the original register.
-   * @param reg The register into which the qubit will be inserted.
-   * @param qubit The qubit to insert into the register.
-   * @param index The index at which to insert the qubit.
+   * @param qubit The qubit to store into the register.
+   * @param reg The register into which the qubit will be stored.
+   * @param index The index at which to store the qubit.
    * @param rewriter The pattern rewriter to use.
    *
-   * @return The created InsertOp.
+   * @return The created StoreOp.
    */
-  static InsertOp createRegisterInsert(AllocOp allocOp,
-                                       mlir::TypedValue<QubitRegisterType> reg,
-                                       mlir::Value qubit, const size_t index,
-                                       mlir::PatternRewriter& rewriter) {
-    auto insert = rewriter.create<InsertOp>(
-        allocOp.getLoc(),
-        QubitRegisterType::get(rewriter.getContext()), // Result type
-        reg,            // The register to insert into
-        qubit, nullptr, // The qubit to insert
-        rewriter.getI64IntegerAttr(static_cast<std::int64_t>(index)) // Index
-    );
-    return insert;
+  static mlir::memref::StoreOp createStoreOp(mlir::Value qubit, mlir::Value reg,
+                                             const size_t index,
+                                             mlir::PatternRewriter& rewriter) {
+    auto indexValue = rewriter.create<mlir::arith::ConstantIndexOp>(
+        reg.getLoc(), static_cast<int64_t>(index));
+    return rewriter.create<mlir::memref::StoreOp>(reg.getLoc(), qubit, reg,
+                                                  mlir::ValueRange{indexValue});
   }
 
 #define CREATE_OP_CASE(opType)                                                 \
@@ -191,7 +183,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    * `i1`. After this update, the measurement results are used instead.
    *
    * @param returnOperation The `return` operation to update.
-   * @param register The register to use as the new return value.
+   * @param reg The register to use as the new return value.
    * @param measurementValues The values to use as the new return values.
    * @param rewriter The pattern rewriter to use.
    */
@@ -208,31 +200,30 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
   }
 
   mlir::LogicalResult
-  matchAndRewrite(AllocOp op, mlir::PatternRewriter& rewriter) const override {
+  matchAndRewrite(mlir::memref::AllocOp op,
+                  mlir::PatternRewriter& rewriter) const override {
     if (op->hasAttr("to_replace")) {
-
       const std::size_t numQubits = circuit.getNqubits();
 
       // Prepare list of measurement results for later use.
       std::vector<mlir::Value> measurementValues(numQubits);
 
       // Create a new qubit register with the correct number of qubits.
-      auto newAlloc = rewriter.create<AllocOp>(
-          op.getLoc(), QubitRegisterType::get(rewriter.getContext()), nullptr,
-          rewriter.getIntegerAttr(rewriter.getI64Type(),
-                                  static_cast<std::int64_t>(numQubits)));
+      const auto& qubitType = QubitType::get(rewriter.getContext());
+      const auto& memRefType = mlir::MemRefType::get(
+          {static_cast<std::int64_t>(numQubits)}, qubitType);
+      auto newAlloc = rewriter.create<mlir::memref::AllocOp>(
+          op.getLoc(), memRefType, mlir::ValueRange{});
       newAlloc->setAttr("mqt_core", rewriter.getUnitAttr());
 
       // We start by first extracting each qubit from the register. The current
       // `Value` representations of each qubit are stored in the
       // `currentQubitVariables` vector.
-      auto currentRegister = newAlloc.getResult();
+      auto reg = newAlloc.getResult();
       std::vector<mlir::Value> currentQubitVariables(numQubits);
       for (size_t i = 0; i < numQubits; i++) {
-        auto newRegisterAccess =
-            createRegisterAccess(currentRegister, i, rewriter);
-        currentQubitVariables[i] = newRegisterAccess.getOutQubit();
-        currentRegister = newRegisterAccess.getOutQreg();
+        auto loadOp = createLoadOp(reg, i, rewriter);
+        currentQubitVariables[i] = loadOp.getResult();
       }
 
       // Iterate over each operation in the circuit and create the corresponding
@@ -309,10 +300,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       // Now insert all the qubits back into the registers they were extracted
       // from.
       for (size_t i = 0; i < numQubits; i++) {
-        auto insertOp = createRegisterInsert(
-            newAlloc, currentRegister, currentQubitVariables[i], i, rewriter);
-        // Keep track of qubit register access
-        currentRegister = insertOp.getOutQreg();
+        createStoreOp(currentQubitVariables[i], reg, i, rewriter);
       }
 
       // Finally, the return operation needs to be updated with the measurement
@@ -324,8 +312,7 @@ struct FromQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
           });
 
       if (returnIt != op->getUsers().end()) {
-        updateReturnOperation(*returnIt, currentRegister, measurementValues,
-                              rewriter);
+        updateReturnOperation(*returnIt, reg, measurementValues, rewriter);
       }
 
       rewriter.replaceOp(op, newAlloc);
