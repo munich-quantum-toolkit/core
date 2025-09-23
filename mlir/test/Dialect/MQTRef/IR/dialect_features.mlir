@@ -25,8 +25,8 @@ module {
 module {
     // CHECK-LABEL: func.func @testAllocOpDynamic
     func.func @testAllocOpDynamic() {
-        // CHECK: %[[Idx4:.*]] = arith.constant 4 : index
-        // CHECK: %[[Qreg:.*]] = memref.alloc(%[[Idx4]]) : memref<?x!mqtref.Qubit>
+        // CHECK: %[[I4:.*]] = arith.constant 4 : index
+        // CHECK: %[[Qreg:.*]] = memref.alloc(%[[I4]]) : memref<?x!mqtref.Qubit>
 
         %i4 = arith.constant 4 : index
         %qreg =  memref.alloc(%i4) : memref<?x!mqtref.Qubit>
@@ -85,8 +85,8 @@ module {
 module {
     // CHECK-LABEL: func.func @testLoadOp
     func.func @testLoadOp() {
-        // CHECK: %[[Idx0:.*]] = arith.constant 0 : index
-        // CHECK: %[[Q0:.*]] = memref.load %[[ANY:.*]][%[[Idx0]]] : memref<2x!mqtref.Qubit>
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
+        // CHECK: %[[Q0:.*]] = memref.load %[[ANY:.*]][%[[I0]]] : memref<2x!mqtref.Qubit>
 
         %i0 = arith.constant 0 : index
         %qreg = memref.alloc() : memref<2x!mqtref.Qubit>
@@ -100,10 +100,10 @@ module {
 module {
     // CHECK-LABEL: func.func @testAllResourcesUsingOperands
     func.func @testAllResourcesUsingOperands() {
-        // CHECK: %[[Idx1:.*]] = arith.constant 1 : index
-        // CHECK: %[[Idx0:.*]] = arith.constant 0 : index
-        // CHECK: %[[Qreg:.*]] = memref.alloc(%[[Idx1]]) : memref<?x!mqtref.Qubit>
-        // CHECK: %[[Q0:.*]] = memref.load %[[Qreg:.*]][%[[Idx0]]] : memref<?x!mqtref.Qubit>
+        // CHECK: %[[I1:.*]] = arith.constant 1 : index
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
+        // CHECK: %[[Qreg:.*]] = memref.alloc(%[[I1]]) : memref<?x!mqtref.Qubit>
+        // CHECK: %[[Q0:.*]] = memref.load %[[Qreg:.*]][%[[I0]]] : memref<?x!mqtref.Qubit>
         // CHECK: memref.dealloc %[[Qreg:.*]] : memref<?x!mqtref.Qubit>
 
         %i1 = arith.constant 1 : index
@@ -1231,11 +1231,11 @@ module {
 module {
     // CHECK-LABEL: func.func @bellState()
     func.func @bellState() {
-        // CHECK: %[[Idx1:.*]] = arith.constant 1 : index
-        // CHECK: %[[Idx0:.*]] = arith.constant 0 : index
+        // CHECK: %[[I1:.*]] = arith.constant 1 : index
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
         // CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtref.Qubit>
-        // CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[Idx0]]] : memref<2x!mqtref.Qubit>
-        // CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[Idx1]]] : memref<2x!mqtref.Qubit>
+        // CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtref.Qubit>
+        // CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtref.Qubit>
         // CHECK: mqtref.h() %[[Q0]]
         // CHECK: mqtref.x() %[[Q1]] ctrl %[[Q0]]
         // CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]

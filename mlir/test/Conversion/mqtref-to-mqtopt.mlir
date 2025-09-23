@@ -45,8 +45,8 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertAllocOpDynamic()
     func.func @testConvertAllocOpDynamic() {
-        // CHECK: %[[Idx2:.*]] = arith.constant 2 : index
-        // CHECK: %[[Qreg:.*]] = memref.alloc(%[[Idx2]]) : memref<?x!mqtopt.Qubit>
+        // CHECK: %[[I2:.*]] = arith.constant 2 : index
+        // CHECK: %[[Qreg:.*]] = memref.alloc(%[[I2]]) : memref<?x!mqtopt.Qubit>
 
         %i2 = arith.constant 2 : index
         %qreg = memref.alloc(%i2) : memref<?x!mqtref.Qubit>
@@ -74,8 +74,8 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertExtractOp
     func.func @testConvertExtractOp() {
-        // CHECK: %[[Idx0:.*]] = arith.constant 0 : index
-        // CHECK: %[[q_0:.*]] = memref.load %[[ANY:.*]][%[[Idx0]]] : memref<1x!mqtopt.Qubit>
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
+        // CHECK: %[[q_0:.*]] = memref.load %[[ANY:.*]][%[[I0]]] : memref<1x!mqtopt.Qubit>
 
         %i0 = arith.constant 0 : index
         %qreg = memref.alloc() : memref<1x!mqtref.Qubit>
@@ -90,13 +90,13 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertOperandChain
     func.func @testConvertOperandChain() {
-        // CHECK: %[[Idx2:.*]] = arith.constant 2 : index
-        // CHECK: %[[Idx1:.*]] = arith.constant 1 : index
-        // CHECK: %[[Idx0:.*]] = arith.constant 0 : index
+        // CHECK: %[[I2:.*]] = arith.constant 2 : index
+        // CHECK: %[[I1:.*]] = arith.constant 1 : index
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
         // CHECK: %[[Qreg:.*]] = memref.alloc() : memref<3x!mqtopt.Qubit>
-        // CHECK: %[[q_0:.*]] = memref.load %[[Qreg]][%[[Idx0]]] : memref<3x!mqtopt.Qubit>
-        // CHECK: %[[q_1:.*]] = memref.load %[[Qreg]][%[[Idx1]]] : memref<3x!mqtopt.Qubit>
-        // CHECK: %[[q_2:.*]] = memref.load %[[Qreg]][%[[Idx2]]] : memref<3x!mqtopt.Qubit>
+        // CHECK: %[[q_0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<3x!mqtopt.Qubit>
+        // CHECK: %[[q_1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<3x!mqtopt.Qubit>
+        // CHECK: %[[q_2:.*]] = memref.load %[[Qreg]][%[[I2]]] : memref<3x!mqtopt.Qubit>
 
         %i2 = arith.constant 2 : index
         %i1 = arith.constant 1 : index
@@ -340,11 +340,11 @@ module {
 module {
     // CHECK-LABEL: func.func @bellConvertState()
     func.func @bellConvertState() {
-        // CHECK: %[[Idx1:.*]] = arith.constant 1 : index
-        // CHECK: %[[Idx0:.*]] = arith.constant 0 : index
+        // CHECK: %[[I1:.*]] = arith.constant 1 : index
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
         // CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtopt.Qubit>
-        // CHECK: %[[q0_1:.*]] = memref.load %[[Qreg]][%[[Idx0]]] : memref<2x!mqtopt.Qubit>
-        // CHECK: %[[q1_1:.*]] = memref.load %[[Qreg]][%[[Idx1]]] : memref<2x!mqtopt.Qubit>
+        // CHECK: %[[q0_1:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtopt.Qubit>
+        // CHECK: %[[q1_1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtopt.Qubit>
         // CHECK: %[[q0_2:.*]] = mqtopt.h() %[[q0_1]] : !mqtopt.Qubit
         // CHECK: %[[q1_2:.*]], %[[q0_3:.*]] = mqtopt.x() %[[q1_1:.*]] ctrl %[[q0_2:.*]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
         // CHECK: %[[q0_4:.*]], %[[m0_0:.*]] = mqtopt.measure %[[q0_3]]
