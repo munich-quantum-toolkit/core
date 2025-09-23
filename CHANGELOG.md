@@ -48,7 +48,6 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Removed
 
 - 🔥 Drop support for Python 3.9 ([#1181]) ([**@denialhaag**])
-- 🔥 Stop testing on `x86` macOS and shipping wheels for Intel-based Macs ([#1165]) ([**@burgholzer**])
 - 🔥 Remove `ClassicControlledOperation` from C++ library and Python package ([#1117]) ([**@denialhaag**])
 
 ### Fixed
