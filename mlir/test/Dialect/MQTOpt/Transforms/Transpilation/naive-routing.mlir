@@ -204,7 +204,7 @@ module {
         %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
         %q0_2, %m = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-        %q0_3, %q1_2 = scf.if %m0 -> (!mqtopt.Qubit, !mqtopt.Qubit) {
+        %q0_3, %q1_2 = scf.if %m -> (!mqtopt.Qubit, !mqtopt.Qubit) {
             %q1_1 = mqtopt.x() %q1_0 : !mqtopt.Qubit
             %q1_2, %q0_3 = mqtopt.x() %q1_1 ctrl %q0_2 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 

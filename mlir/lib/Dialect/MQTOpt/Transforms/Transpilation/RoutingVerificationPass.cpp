@@ -35,6 +35,7 @@ namespace mqt::ir::opt {
 #define GEN_PASS_DEF_ROUTINGVERIFICATIONPASS
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
+namespace {
 using namespace mlir;
 
 /**
@@ -42,7 +43,15 @@ using namespace mlir;
  */
 constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
 
-namespace {
+/**
+ * @brief 'For' pushes once onto the stack, hence the parent is at depth one.
+ */
+constexpr std::size_t FOR_PARENT_DEPTH = 1UL;
+
+/**
+ * @brief 'If' pushes twice onto the stack, hence the parent is at depth two.
+ */
+constexpr std::size_t IF_PARENT_DEPTH = 2UL;
 
 /**
  * @brief The datatype for qubit indices. For now, 64bit.
@@ -74,7 +83,7 @@ WalkResult handleFunc(func::FuncOp op, RoutingStack<QubitIndexMap>& stack) {
     return WalkResult::skip();
   }
   stack.clear();
-  stack.push(QubitIndexMap{});
+  stack.emplace();
   return WalkResult::advance();
 }
 
@@ -92,13 +101,13 @@ WalkResult handleReturn(RoutingStack<QubitIndexMap>& stack) {
  * respective map in the stack.
  */
 WalkResult handleFor(scf::ForOp op, RoutingStack<QubitIndexMap>& stack) {
-  stack.duplicateCurrentState();
+  stack.duplicateTop();
 
   for (const auto [arg, res, iter] :
        llvm::zip(op.getInitArgs(), op.getResults(), op.getRegionIterArgs())) {
     if (isa<QubitType>(arg.getType())) {
-      remapQubitValue(stack.getParentState(), arg, res);
-      remapQubitValue(stack.getState(), arg, iter);
+      remapQubitValue(stack.getItemAtDepth(FOR_PARENT_DEPTH), arg, res);
+      remapQubitValue(stack.top(), arg, iter);
     }
   }
 
@@ -110,18 +119,18 @@ WalkResult handleFor(scf::ForOp op, RoutingStack<QubitIndexMap>& stack) {
  * the stack. Forwards the results in the parent state.
  */
 WalkResult handleIf(scf::IfOp op, RoutingStack<QubitIndexMap>& stack) {
-  /// Collect device qubits.
+  /// Collect hardware qubits.
   SmallVector<Value> qubits(op->getNumResults());
-  for (const auto [q, i] : stack.getState()) {
+  for (const auto [q, i] : stack.top()) {
     qubits[i] = q;
   }
 
   /// Prepare stack.
-  stack.duplicateCurrentState(); // Else
-  stack.duplicateCurrentState(); // If
+  stack.duplicateTop(); // Else
+  stack.duplicateTop(); // If
 
   /// Forward results for all hardware qubits.
-  QubitIndexMap& stateBeforeIf = stack.at(stack.size() - 3);
+  QubitIndexMap& stateBeforeIf = stack.getItemAtDepth(IF_PARENT_DEPTH);
   for (std::size_t i = 0; i < op.getNumResults(); ++i) {
     const Value in = qubits[i];
     const Value out = op->getResult(i);
@@ -150,14 +159,14 @@ WalkResult handleYield(scf::YieldOp op, RoutingStack<QubitIndexMap>& stack) {
  */
 WalkResult handleQubit(QubitOp op, RoutingStack<QubitIndexMap>& stack,
                        const Architecture& arch) {
-  if (stack.getState().size() == arch.nqubits()) {
+  if (stack.top().size() == arch.nqubits()) {
     return op->emitOpError()
            << "requires " << (arch.nqubits() + 1)
            << " qubits but target architecture '" << arch.name()
            << "' only supports " << arch.nqubits() << " qubits";
   }
 
-  stack.getState()[op.getQubit()] = op.getIndex();
+  stack.top()[op.getQubit()] = op.getIndex();
   return WalkResult::advance();
 }
 
@@ -186,7 +195,7 @@ WalkResult handleUnitary(UnitaryInterface op,
   const Value in0 = inQubits[0];
   const Value out0 = outQubits[0];
 
-  QubitIndexMap& state = stack.getState();
+  QubitIndexMap& state = stack.top();
 
   if (nacts == 1) {
     remapQubitValue(state, in0, out0);
@@ -212,7 +221,7 @@ WalkResult handleUnitary(UnitaryInterface op,
  * @brief Forwards the SSA values.
  */
 WalkResult handleReset(ResetOp op, RoutingStack<QubitIndexMap>& stack) {
-  remapQubitValue(stack.getState(), op.getInQubit(), op.getOutQubit());
+  remapQubitValue(stack.top(), op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
 
@@ -220,7 +229,7 @@ WalkResult handleReset(ResetOp op, RoutingStack<QubitIndexMap>& stack) {
  * @brief Forwards the SSA values.
  */
 WalkResult handleMeasure(MeasureOp op, RoutingStack<QubitIndexMap>& stack) {
-  remapQubitValue(stack.getState(), op.getInQubit(), op.getOutQubit());
+  remapQubitValue(stack.top(), op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
 

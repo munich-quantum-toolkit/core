@@ -18,55 +18,54 @@ namespace mqt::ir::opt {
  * @brief Manages the routing state stack with clear semantics for accessing
  * current and parent states.
  */
-template <class StackItem> class [[nodiscard]] RoutingStack {
+template <class Item> class [[nodiscard]] RoutingStack {
 public:
   /**
-   * @brief Returns the current (most recent) state.
+   * @brief Returns the top of the stack.
    */
-  [[nodiscard]] StackItem& getState() {
-    assert(!stack_.empty() && "getState: empty state stack");
+  [[nodiscard]] Item& top() {
+    assert(!stack_.empty() && "top: empty state stack");
     return stack_.back();
   }
 
   /**
-   * @brief Returns the parent of the current state.
+   * @brief Returns the item at the specified depth from the top of the stack.
    */
-  [[nodiscard]] StackItem& getParentState() {
-    assert(stack_.size() >= 2 && "getParentState: no parent state available");
-    return stack_[stack_.size() - 2];
-  }
-
-  /**
-   * @brief Returns the state at the given index.
-   */
-  [[nodiscard]] StackItem& at(const std::size_t index) {
-    assert(index < stack_.size() && "at: index out of bounds");
-    return stack_[index];
+  [[nodiscard]] Item& getItemAtDepth(std::size_t depth) {
+    assert(depth < stack_.size() && "getItemAtDepth: depth out of bounds");
+    return stack_[stack_.size() - 1 - depth];
   }
 
   /**
    * @brief Pushes a new item on to the stack.
    */
-  void push(StackItem item) { stack_.emplace_back(item); }
+  void push(Item item) { stack_.emplace_back(item); }
 
   /**
-   * @brief Duplicates the current state and pushes it on the stack.
+   * @brief Constructs a new item in-place at the top of the stack.
    */
-  void duplicateCurrentState() {
-    assert(!stack_.empty() && "duplicateCurrentState: empty state stack");
+  template <typename... Args> void emplace(Args&&... args) {
+    stack_.emplace_back(std::forward<Args>(args)...);
+  }
+
+  /**
+   * @brief Duplicates the top item.
+   */
+  void duplicateTop() {
+    assert(!stack_.empty() && "duplicateTop: empty state stack");
     stack_.emplace_back(stack_.back());
   }
 
   /**
-   * @brief Pops the current state off the stack.
+   * @brief Pops the top off the stack.
    */
   void pop() {
-    assert(!stack_.empty() && "popState: empty state stack");
+    assert(!stack_.empty() && "pop: empty item stack");
     stack_.pop_back();
   }
 
   /**
-   * @brief Returns the number of states in the stack.
+   * @brief Returns the number of items in the stack.
    */
   [[nodiscard]] std::size_t size() const { return stack_.size(); }
 
@@ -81,6 +80,6 @@ public:
   void clear() { stack_.clear(); }
 
 private:
-  mlir::SmallVector<StackItem, 2> stack_;
+  mlir::SmallVector<Item, 2> stack_;
 };
 } // namespace mqt::ir::opt

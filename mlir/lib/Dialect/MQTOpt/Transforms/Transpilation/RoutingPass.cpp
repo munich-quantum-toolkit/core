@@ -11,6 +11,7 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/RoutingStack.h"
 
 #include <algorithm>
 #include <cassert>
@@ -57,6 +58,26 @@ using namespace mlir;
  * @brief A function attribute that specifies an (QIR) entry point function.
  */
 constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
+
+/**
+ * @brief 'For' pushes once onto the stack, hence the parent is at depth one.
+ */
+constexpr std::size_t FOR_PARENT_DEPTH = 1UL;
+
+/**
+ * @brief 'If' pushes twice onto the stack, hence the parent is at depth two.
+ */
+constexpr std::size_t IF_PARENT_DEPTH = 2UL;
+
+/**
+ * @brief The datatype for qubit indices. For now, 64bit.
+ */
+using QubitIndex = std::size_t;
+
+/**
+ * @brief A pair of software indices.
+ */
+using SoftwareIndexPair = std::pair<QubitIndex, QubitIndex>;
 
 //===----------------------------------------------------------------------===//
 // Utilities
@@ -335,93 +356,47 @@ private:
   SmallVector<std::size_t> softwareToHardware_;
 };
 
-/**
- * @brief Manages the routing state stack with clear semantics for accessing
- * current and parent states.
- */
-struct RoutingStack {
-  using SoftwareIndexPair = std::pair<std::size_t, std::size_t>;
+struct StackItem {
+  explicit StackItem(LayoutState state) : state(std::move(state)) {}
+  LayoutState state;
+  SmallVector<SoftwareIndexPair, 32> history;
+};
+
+class StateStack : public RoutingStack<StackItem> {
+public:
+  /**
+   * @brief Returns the most recent state of the stack.
+   */
+  [[nodiscard]] LayoutState& topState() { return top().state; }
 
   /**
-   * @brief Returns the current (most recent) state.
+   * @brief Returns the item at the specified depth from the top of the stack.
    */
-  [[nodiscard]] LayoutState& getState() {
-    assert(!stack_.empty() && "getState: empty state stack");
-    return stack_.back().state;
+  [[nodiscard]] LayoutState& getStateAtDepth(std::size_t depth) {
+    return getItemAtDepth(depth).state;
+  }
+
+  /**
+   * @brief Duplicates the top state.
+   */
+  void duplicateTopState() {
+    duplicateTop();
+    top().history.clear();
   }
 
   /**
    * @brief Return the current (most recent) swap history.
    */
-  [[nodiscard]] ArrayRef<SoftwareIndexPair> getCurrentHistory() const {
-    return stack_.back().history;
+  [[nodiscard]] ArrayRef<SoftwareIndexPair> getHistory() {
+    return top().history;
   }
 
   /**
    * @brief Record a swap.
    */
   void recordSwap(std::size_t softwareIdx0, std::size_t softwareIdx1) {
-    stack_.back().history.emplace_back(softwareIdx0, softwareIdx1);
+    top().history.emplace_back(softwareIdx0, softwareIdx1);
   }
-
-  /**
-   * @brief Returns the parent of the current state.
-   */
-  [[nodiscard]] LayoutState& getParentState() {
-    assert(stack_.size() >= 2 && "getParentState: no parent state available");
-    return stack_[stack_.size() - 2].state;
-  }
-
-  /**
-   * @brief Returns the state at the given index.
-   */
-  [[nodiscard]] LayoutState& at(const std::size_t index) {
-    assert(index < stack_.size() && "at: index out of bounds");
-    return stack_[index].state;
-  }
-
-  /**
-   * @brief Pushes a new state on to the stack.
-   */
-  void pushState(ArrayRef<Value> qubits, ArrayRef<std::size_t> initialLayout) {
-    stack_.emplace_back(LayoutState(qubits, initialLayout));
-  }
-
-  /**
-   * @brief Duplicates the current state and pushes it on the stack.
-   */
-  void duplicateCurrentState() {
-    assert(!stack_.empty() && "duplicateCurrentState: empty state stack");
-    stack_.emplace_back(stack_.back().state);
-  }
-
-  /**
-   * @brief Pops the current state off the stack.
-   */
-  void popState() {
-    assert(!stack_.empty() && "popState: empty state stack");
-    stack_.pop_back();
-  }
-
-  /**
-   * @brief Returns the number of states in the stack.
-   */
-  [[nodiscard]] std::size_t size() const { return stack_.size(); }
-
-  /**
-   * @brief Returns whether the stack is empty.
-   */
-  [[nodiscard]] bool empty() const { return stack_.empty(); }
-
-private:
-  struct StackItem {
-    explicit StackItem(LayoutState state) : state(std::move(state)) {}
-
-    LayoutState state;
-    SmallVector<SoftwareIndexPair, 32> history;
-  };
-
-  SmallVector<StackItem, 2> stack_;
 };
 
 /**
@@ -475,30 +450,6 @@ private:
 };
 
 /**
- * @brief Collect all missing hardware qubits from the results.
- *
- * @param old A range of values to check for included qubits.
- * @param qubits The hardware qubits.
- * @return Vector of missing hardware qubits with increasing index.
- */
-[[nodiscard]] SmallVector<Value> getMissingQubits(ValueRange old,
-                                                  ArrayRef<Value> qubits) {
-  const SmallVector<Value> oldResults(old.begin(), old.end());
-  llvm::DenseSet<Value> included;
-  included.insert(oldResults.begin(), oldResults.end());
-
-  SmallVector<Value> missing;
-  missing.reserve(qubits.size());
-  for (const Value q : qubits) {
-    if (!included.contains(q)) {
-      missing.push_back(q);
-    }
-  }
-
-  return missing;
-}
-
-/**
  * @brief Base class for all routing algorithms.
  */
 class Router {
@@ -509,7 +460,7 @@ public:
    * @brief Ensures the executability of two-qubit gates on the given target
    * architecture by inserting SWAPs greedily.
    */
-  WalkResult handleUnitary(UnitaryInterface op, RoutingStack& stack,
+  WalkResult handleUnitary(UnitaryInterface op, StateStack& stack,
                            const Architecture& arch, HardwareIndexPool& pool,
                            PatternRewriter& rewriter) {
     // Global-phase or zero-qubit unitary: Nothing to do.
@@ -519,7 +470,7 @@ public:
 
     // Single-qubit: Forward mapping.
     if (!isTwoQubitGate(op)) {
-      stack.getState().remapQubitValue(op.getAllInQubits()[0],
+      stack.topState().remapQubitValue(op.getAllInQubits()[0],
                                        op.getAllOutQubits()[0]);
       return WalkResult::advance();
     }
@@ -534,14 +485,14 @@ public:
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({
       llvm::dbgs() << llvm::format("two-qubit gate: s%d/h%d, s%d/h%d\n",
-                                   stack.getState().lookupSoftware(execIn0),
-                                   stack.getState().lookupHardware(execIn0),
-                                   stack.getState().lookupSoftware(execIn1),
-                                   stack.getState().lookupHardware(execIn1));
+                                   stack.topState().lookupSoftware(execIn0),
+                                   stack.topState().lookupHardware(execIn0),
+                                   stack.topState().lookupSoftware(execIn1),
+                                   stack.topState().lookupHardware(execIn1));
     });
 
-    stack.getState().remapQubitValue(execIn0, execOut0);
-    stack.getState().remapQubitValue(execIn1, execOut1);
+    stack.topState().remapQubitValue(execIn0, execOut0);
+    stack.topState().remapQubitValue(execIn1, execOut1);
 
     return WalkResult::advance();
   }
@@ -550,29 +501,28 @@ protected:
   /**
    * @brief Insert SWAPs such that @p u is executable.
    */
-  virtual void makeExecutable(UnitaryInterface op, RoutingStack& stack,
+  virtual void makeExecutable(UnitaryInterface op, StateStack& stack,
                               const Architecture& arch, HardwareIndexPool& pool,
                               PatternRewriter& rewriter) = 0;
 
   /**
    * @brief Returns true iff @p u is executable on the targeted architecture.
    */
-  [[nodiscard]] static bool isExecutable(UnitaryInterface op,
-                                         RoutingStack& stack,
+  [[nodiscard]] static bool isExecutable(UnitaryInterface op, StateStack& stack,
                                          const Architecture& arch) {
     const auto [in0, in1] = getIns(op);
-    return arch.areAdjacent(stack.getState().lookupHardware(in0),
-                            stack.getState().lookupHardware(in1));
+    return arch.areAdjacent(stack.topState().lookupHardware(in0),
+                            stack.topState().lookupHardware(in1));
   }
 
   /**
    * @brief Get shortest path between @p qStart and @p qEnd.
    */
   [[nodiscard]] static llvm::SmallVector<std::size_t>
-  getPath(const Value qStart, const Value qEnd, RoutingStack& stack,
+  getPath(const Value qStart, const Value qEnd, StateStack& stack,
           const Architecture& arch) {
-    return arch.shortestPathBetween(stack.getState().lookupHardware(qStart),
-                                    stack.getState().lookupHardware(qEnd));
+    return arch.shortestPathBetween(stack.topState().lookupHardware(qStart),
+                                    stack.topState().lookupHardware(qEnd));
   }
 
   /**
@@ -584,9 +534,9 @@ protected:
    * function ensures that we release hardware indices when a qubit that has
    * been allocated and now has zero uses.
    */
-  static void checkZeroUse(const Value q, RoutingStack& stack,
+  static void checkZeroUse(const Value q, StateStack& stack,
                            HardwareIndexPool& pool) {
-    const std::size_t hardwareIdx = stack.getState().lookupHardware(q);
+    const std::size_t hardwareIdx = stack.topState().lookupHardware(q);
     if (q.use_empty() && pool.isUsed(hardwareIdx)) {
 
       // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
@@ -606,7 +556,7 @@ protected:
  */
 class NaiveRouter final : public Router {
 protected:
-  void makeExecutable(UnitaryInterface op, RoutingStack& stack,
+  void makeExecutable(UnitaryInterface op, StateStack& stack,
                       const Architecture& arch, HardwareIndexPool& pool,
                       PatternRewriter& rewriter) final {
     assert(isTwoQubitGate(op) && "makeExecutable: must be two-qubit gate");
@@ -618,11 +568,11 @@ protected:
       const std::size_t hardwareIdx0 = path[i];
       const std::size_t hardwareIdx1 = path[i + 1];
 
-      const Value qIn0 = stack.getState().lookupHardware(hardwareIdx0);
-      const Value qIn1 = stack.getState().lookupHardware(hardwareIdx1);
+      const Value qIn0 = stack.topState().lookupHardware(hardwareIdx0);
+      const Value qIn1 = stack.topState().lookupHardware(hardwareIdx1);
 
-      const std::size_t softwareIdx0 = stack.getState().lookupSoftware(qIn0);
-      const std::size_t softwareIdx1 = stack.getState().lookupSoftware(qIn1);
+      const std::size_t softwareIdx0 = stack.topState().lookupSoftware(qIn0);
+      const std::size_t softwareIdx1 = stack.topState().lookupSoftware(qIn1);
 
       // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
       LLVM_DEBUG({
@@ -642,9 +592,11 @@ protected:
           qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
 
       stack.recordSwap(softwareIdx0, softwareIdx1);
-      stack.getState().swapSoftwareIndices(qIn0, qIn1);
-      stack.getState().remapQubitValue(qIn0, qOut0);
-      stack.getState().remapQubitValue(qIn1, qOut1);
+
+      auto& state = stack.topState();
+      state.swapSoftwareIndices(qIn0, qIn1);
+      state.remapQubitValue(qIn0, qOut0);
+      state.remapQubitValue(qIn1, qOut1);
 
       checkZeroUse(qOut0, stack, pool);
       checkZeroUse(qOut1, stack, pool);
@@ -674,7 +626,7 @@ struct RoutingContext {
   std::unique_ptr<Router> router;
   SmallVector<std::size_t> initialLayout;
 
-  RoutingStack stack{};
+  StateStack stack{};
   HardwareIndexPool pool{};
 };
 
@@ -704,7 +656,7 @@ WalkResult handleFunc(func::FuncOp op, RoutingContext& routingCtx,
   }
 
   routingCtx.pool.fill(routingCtx.initialLayout);
-  routingCtx.stack.pushState(qubits, routingCtx.initialLayout);
+  routingCtx.stack.emplace(LayoutState(qubits, routingCtx.initialLayout));
 
   return WalkResult::advance();
 }
@@ -715,9 +667,9 @@ WalkResult handleFunc(func::FuncOp op, RoutingContext& routingCtx,
  * we currently only route entry_point functions we do not need to return
  * all static qubits here.
  */
-WalkResult handleReturn(RoutingStack& stack) {
+WalkResult handleReturn(StateStack& stack) {
   assert(!stack.empty() && "handleReturn: stack must not be empty");
-  stack.popState();
+  stack.pop();
   return WalkResult::advance();
 }
 
@@ -729,13 +681,13 @@ WalkResult handleReturn(RoutingStack& stack) {
  * current state to the stack and resetting its SWAP history. Forwards the
  * results in the parent state.
  */
-WalkResult handleFor(scf::ForOp op, RoutingStack& stack,
+WalkResult handleFor(scf::ForOp op, StateStack& stack,
                      PatternRewriter& rewriter) {
   const std::size_t nargs = op.getBody()->getNumArguments();
   const std::size_t nresults = op->getNumResults();
 
   /// Construct new init arguments.
-  const ArrayRef<Value> qubits = stack.getState().getHardwareQubits();
+  const ArrayRef<Value> qubits = stack.topState().getHardwareQubits();
   const SmallVector<Value> newInitArgs(qubits);
 
   /// Replace old for with a new one with updated init arguments.
@@ -753,15 +705,15 @@ WalkResult handleFor(scf::ForOp op, RoutingStack& stack,
   }
 
   /// Prepare stack.
-  stack.duplicateCurrentState();
+  stack.duplicateTopState();
 
   // Forward out-of-loop and in-loop state.
   for (const auto [arg, res, iter] :
        llvm::zip(forOp.getInitArgs(), forOp.getResults(),
                  forOp.getRegionIterArgs())) {
     if (isa<QubitType>(arg.getType())) {
-      stack.getParentState().remapQubitValue(arg, res);
-      stack.getState().remapQubitValue(arg, iter);
+      stack.getStateAtDepth(FOR_PARENT_DEPTH).remapQubitValue(arg, res);
+      stack.topState().remapQubitValue(arg, iter);
     }
   }
 
@@ -776,12 +728,12 @@ WalkResult handleFor(scf::ForOp op, RoutingStack& stack,
  * copy of the current state to the stack and resetting its SWAP history for
  * each branch. Forwards the results in the parent state.
  */
-WalkResult handleIf(scf::IfOp op, RoutingStack& stack,
+WalkResult handleIf(scf::IfOp op, StateStack& stack,
                     PatternRewriter& rewriter) {
   const std::size_t nresults = op->getNumResults();
 
   /// Construct new result types.
-  const ArrayRef<Value> qubits = stack.getState().getHardwareQubits();
+  const ArrayRef<Value> qubits = stack.topState().getHardwareQubits();
   const auto rng = llvm::map_range(qubits, [](Value q) { return q.getType(); });
   const SmallVector<Type> resultTypes(rng.begin(), rng.end());
 
@@ -804,11 +756,11 @@ WalkResult handleIf(scf::IfOp op, RoutingStack& stack,
   }
 
   /// Prepare stack.
-  stack.duplicateCurrentState(); // Else
-  stack.duplicateCurrentState(); // Then
+  stack.duplicateTopState(); // Else
+  stack.duplicateTopState(); // Then
 
   /// Forward results for all hardware qubits.
-  LayoutState& stateBeforeIf = stack.at(stack.size() - 3);
+  LayoutState& stateBeforeIf = stack.getStateAtDepth(IF_PARENT_DEPTH);
   for (std::size_t i = 0; i < qubits.size(); ++i) {
     const Value in = stateBeforeIf.getHardwareQubits()[i];
     const Value out = ifOp->getResult(i);
@@ -836,7 +788,7 @@ WalkResult handleIf(scf::IfOp op, RoutingStack& stack,
  * a 'for' of 'if' region always requires 2 * #(SWAPs required for region)
  * additional SWAPS.
  */
-WalkResult handleYield(scf::YieldOp op, RoutingStack& stack,
+WalkResult handleYield(scf::YieldOp op, StateStack& stack,
                        PatternRewriter& rewriter) {
   if (!isa<scf::ForOp>(op->getParentOp()) &&
       !isa<scf::IfOp>(op->getParentOp())) {
@@ -844,9 +796,9 @@ WalkResult handleYield(scf::YieldOp op, RoutingStack& stack,
   }
 
   for (const auto [softwareIdx0, softwareIdx1] :
-       llvm::reverse(stack.getCurrentHistory())) {
-    const Value qIn0 = stack.getState().lookupSoftware(softwareIdx0);
-    const Value qIn1 = stack.getState().lookupSoftware(softwareIdx1);
+       llvm::reverse(stack.getHistory())) {
+    const Value qIn0 = stack.topState().lookupSoftware(softwareIdx0);
+    const Value qIn1 = stack.topState().lookupSoftware(softwareIdx1);
 
     auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
     const auto [qOut0, qOut1] = getOuts(swap);
@@ -857,22 +809,19 @@ WalkResult handleYield(scf::YieldOp op, RoutingStack& stack,
     replaceAllUsesInRegionAndChildrenExcept(
         qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
 
-    stack.getState().swapSoftwareIndices(qIn0, qIn1);
-    stack.getState().remapQubitValue(qIn0, qOut0);
-    stack.getState().remapQubitValue(qIn1, qOut1);
+    stack.topState().swapSoftwareIndices(qIn0, qIn1);
+    stack.topState().remapQubitValue(qIn0, qOut0);
+    stack.topState().remapQubitValue(qIn1, qOut1);
   }
 
-  assert(llvm::equal(stack.getState().getCurrentLayout(),
-                     stack.getParentState().getCurrentLayout()) &&
+  assert(llvm::equal(stack.topState().getCurrentLayout(),
+                     stack.getStateAtDepth(1).getCurrentLayout()) &&
          "layouts must match after restoration");
 
-  const auto missingQubits =
-      getMissingQubits(op.getResults(), stack.getState().getHardwareQubits());
-
-  const SmallVector<Value> newResults(stack.getState().getHardwareQubits());
+  const SmallVector<Value> newResults(stack.topState().getHardwareQubits());
   rewriter.replaceOpWithNewOp<scf::YieldOp>(op, newResults);
 
-  stack.popState();
+  stack.pop();
 
   return WalkResult::advance();
 }
@@ -882,7 +831,7 @@ WalkResult handleYield(scf::YieldOp op, RoutingStack& stack,
  * of the qubit, and replaces the alloc statement with the reset SSA value of
  * the retrieved hardware qubit.
  */
-WalkResult handleAlloc(AllocQubitOp op, RoutingStack& stack,
+WalkResult handleAlloc(AllocQubitOp op, StateStack& stack,
                        HardwareIndexPool& pool, PatternRewriter& rewriter) {
   const std::optional<std::size_t> index = pool.retrieve();
   if (!index) {
@@ -892,12 +841,12 @@ WalkResult handleAlloc(AllocQubitOp op, RoutingStack& stack,
 
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
   LLVM_DEBUG({ llvm::dbgs() << "alloc index: " << *index << '\n'; });
-  const Value q = stack.getState().lookupHardware(*index);
+  const Value q = stack.topState().lookupHardware(*index);
 
   auto reset = rewriter.create<ResetOp>(op.getLoc(), q);
   rewriter.replaceOp(op, reset);
 
-  stack.getState().remapQubitValue(reset.getInQubit(), reset.getOutQubit());
+  stack.topState().remapQubitValue(reset.getInQubit(), reset.getOutQubit());
   return WalkResult::advance();
 }
 
@@ -907,10 +856,10 @@ WalkResult handleAlloc(AllocQubitOp op, RoutingStack& stack,
  * the one allocated. Consequently, we add a `isUsed` check here and deal with
  * allocated, but not properly deallocated, qubits in the `NaiveUnitaryPattern`.
  */
-WalkResult handleDealloc(DeallocQubitOp op, RoutingStack& stack,
+WalkResult handleDealloc(DeallocQubitOp op, StateStack& stack,
                          HardwareIndexPool& pool, PatternRewriter& rewriter) {
   const Value q = op.getQubit();
-  const std::size_t index = stack.getState().lookupHardware(q);
+  const std::size_t index = stack.topState().lookupHardware(q);
   if (pool.isUsed(index)) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({ llvm::dbgs() << "dealloc index: " << index << '\n'; });
@@ -924,16 +873,16 @@ WalkResult handleDealloc(DeallocQubitOp op, RoutingStack& stack,
 /**
  * @brief Forwards SSA Values, i.e., forward 'in' to 'out'.
  */
-WalkResult handleReset(ResetOp op, RoutingStack& stack) {
-  stack.getState().remapQubitValue(op.getInQubit(), op.getOutQubit());
+WalkResult handleReset(ResetOp op, StateStack& stack) {
+  stack.topState().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
 
 /**
  * @brief Forwards SSA Values, i.e., forward 'in' to 'out'.
  */
-WalkResult handleMeasure(MeasureOp op, RoutingStack& stack) {
-  stack.getState().remapQubitValue(op.getInQubit(), op.getOutQubit());
+WalkResult handleMeasure(MeasureOp op, StateStack& stack) {
+  stack.topState().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
 
@@ -956,7 +905,7 @@ WalkResult handleMeasure(MeasureOp op, RoutingStack& stack) {
  * which current drivers of MLIR don't support. However, even if such a driver
  * would exist, it would probably not return logical results which we require
  * for error-handling (similarly to `walkAndApplyPatterns`). Consequently, a
- * custom driver would be require in any case, which adds unnecessary code to
+ * custom driver would be required in any case, which adds unnecessary code to
  * maintain.
  */
 LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
