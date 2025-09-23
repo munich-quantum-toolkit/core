@@ -195,18 +195,35 @@ struct ConvertMemRefAllocQIR final
         rewriter, op, FN_NAME_ALLOCATE_ARRAY, qirSignature);
 
     // get size
-    mlir::Value size;
+    int64_t size = 0;
+    mlir::Value sizeValue;
     if (op.getType().hasStaticShape()) {
-      const auto staticSize = op.getType().getShape().front();
-      getState().numQubits += staticSize;
-      size = rewriter.create<LLVM::ConstantOp>(
-          op.getLoc(), rewriter.getI64IntegerAttr(staticSize));
+      size = op.getType().getShape().front();
+      sizeValue = rewriter.create<LLVM::ConstantOp>(
+          op.getLoc(), rewriter.getI64IntegerAttr(size));
     } else {
-      size = adaptor.getDynamicSizes().front();
+      sizeValue = adaptor.getDynamicSizes().front();
+      auto unrealizedConvOp0 =
+          sizeValue.getDefiningOp<UnrealizedConversionCastOp>();
+      if (!unrealizedConvOp0) {
+        llvm::errs() << "Dynamic size could not be resolved\n";
+        return failure();
+      }
+      auto sizeValueIdx = unrealizedConvOp0->getOperand(0);
+      auto unrealizedConvOp1 =
+          sizeValueIdx.getDefiningOp<UnrealizedConversionCastOp>();
+      if (!unrealizedConvOp1) {
+        llvm::errs() << "Dynamic size could not be resolved\n";
+        return failure();
+      }
+      auto sizeValueInt = unrealizedConvOp1->getOperand(0);
+      auto constantOp = sizeValueInt.getDefiningOp<LLVM::ConstantOp>();
+      size = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
     }
+    getState().numQubits += size;
 
     // replace the old operation with new callOp
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, size);
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, sizeValue);
 
     getState().useDynamicQubit = true;
 
