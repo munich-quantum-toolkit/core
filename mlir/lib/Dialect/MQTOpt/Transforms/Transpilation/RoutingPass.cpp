@@ -16,8 +16,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SetVector.h>
 #include <llvm/ADT/SmallVector.h>
@@ -193,9 +193,9 @@ void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
  * @brief Return identity layout.
  * @param nqubits The number of qubits.
  */
-[[nodiscard, maybe_unused]] SmallVector<std::size_t>
+[[nodiscard, maybe_unused]] SmallVector<QubitIndex>
 getIdentityLayout(const std::size_t nqubits) {
-  SmallVector<std::size_t> layout(nqubits);
+  SmallVector<QubitIndex> layout(nqubits);
   std::iota(layout.begin(), layout.end(), 0);
   return layout;
 }
@@ -205,7 +205,7 @@ getIdentityLayout(const std::size_t nqubits) {
  * @param nqubits The number of qubits.
  * @param seed The seed used for randomization.
  */
-[[nodiscard, maybe_unused]] SmallVector<std::size_t>
+[[nodiscard, maybe_unused]] SmallVector<QubitIndex>
 getRandomLayout(const std::size_t nqubits, const std::size_t seed) {
   std::mt19937_64 rng(seed);
   auto layout = getIdentityLayout(nqubits);
@@ -238,11 +238,11 @@ public:
    * index.
    */
   explicit LayoutState(ArrayRef<Value> qubits,
-                       ArrayRef<std::size_t> initialLayout)
+                       ArrayRef<QubitIndex> initialLayout)
       : qubits_(qubits.size()), softwareToHardware_(qubits.size()) {
     valueToMapping_.reserve(qubits.size());
 
-    for (const std::size_t softwareIdx : initialLayout) {
+    for (const QubitIndex softwareIdx : initialLayout) {
       const QubitInfo info{.hardwareIdx = initialLayout[softwareIdx],
                            .softwareIdx = softwareIdx};
       const Value q = qubits[info.hardwareIdx];
@@ -258,7 +258,7 @@ public:
    * @param q The SSA Value representing the qubit.
    * @return The hardware index where this qubit currently resides.
    */
-  [[nodiscard]] std::size_t lookupHardware(const Value q) const {
+  [[nodiscard]] QubitIndex lookupHardware(const Value q) const {
     return valueToMapping_.at(q).hardwareIdx;
   }
 
@@ -268,7 +268,7 @@ public:
    * @return The SSA value currently representing the qubit at the hardware
    * location.
    */
-  [[nodiscard]] Value lookupHardware(const std::size_t hardwareIdx) const {
+  [[nodiscard]] Value lookupHardware(const QubitIndex hardwareIdx) const {
     assert(hardwareIdx < qubits_.size() && "Hardware index out of bounds");
     return qubits_[hardwareIdx];
   }
@@ -278,7 +278,7 @@ public:
    * @param q The SSA Value representing the qubit.
    * @return The software index where this qubit currently resides.
    */
-  [[nodiscard]] std::size_t lookupSoftware(const Value q) const {
+  [[nodiscard]] QubitIndex lookupSoftware(const Value q) const {
     return valueToMapping_.at(q).softwareIdx;
   }
 
@@ -288,8 +288,8 @@ public:
    * @return The SSA value currently representing the qubit at the software
    * location.
    */
-  [[nodiscard]] Value lookupSoftware(const std::size_t softwareIdx) const {
-    const std::size_t hardwareIdx = softwareToHardware_[softwareIdx];
+  [[nodiscard]] Value lookupSoftware(const QubitIndex softwareIdx) const {
+    const QubitIndex hardwareIdx = softwareToHardware_[softwareIdx];
     return lookupHardware(hardwareIdx);
   }
 
@@ -327,7 +327,7 @@ public:
   /**
    * @brief Return the current layout.
    */
-  ArrayRef<std::size_t> getCurrentLayout() { return softwareToHardware_; }
+  ArrayRef<QubitIndex> getCurrentLayout() { return softwareToHardware_; }
 
   /**
    * @brief Return the SSA values for hardware indices from 0...nqubits.
@@ -336,8 +336,8 @@ public:
 
 private:
   struct QubitInfo {
-    std::size_t hardwareIdx;
-    std::size_t softwareIdx;
+    QubitIndex hardwareIdx;
+    QubitIndex softwareIdx;
   };
 
   /**
@@ -353,7 +353,7 @@ private:
   /**
    * @brief Maps a software qubit index to its hardware index.
    */
-  SmallVector<std::size_t> softwareToHardware_;
+  SmallVector<QubitIndex> softwareToHardware_;
 };
 
 struct StackItem {
@@ -407,9 +407,9 @@ struct HardwareIndexPool {
   /**
    * @brief Fill the pool with indices determined by the given layout.
    */
-  void fill(ArrayRef<std::size_t> layout) {
+  void fill(ArrayRef<QubitIndex> layout) {
     freeHardwareIndices_.clear();
-    for (const std::size_t i : llvm::reverse(layout)) {
+    for (const QubitIndex i : llvm::reverse(layout)) {
       freeHardwareIndices_.insert(i);
     }
   }
@@ -417,17 +417,17 @@ struct HardwareIndexPool {
   /**
    * @brief Re-insert hardware index to set of free indices.
    */
-  void release(const std::size_t index) { freeHardwareIndices_.insert(index); }
+  void release(const QubitIndex index) { freeHardwareIndices_.insert(index); }
 
   /**
    * @brief Retrieve free hardware index if available.
    * @returns The index, or std::nullopt if none is available.
    */
-  [[nodiscard]] std::optional<std::size_t> retrieve() {
+  [[nodiscard]] std::optional<QubitIndex> retrieve() {
     if (freeHardwareIndices_.empty()) {
       return std::nullopt;
     }
-    const std::size_t index = freeHardwareIndices_.back();
+    const QubitIndex index = freeHardwareIndices_.back();
     freeHardwareIndices_.pop_back();
     return index;
   }
@@ -436,7 +436,7 @@ struct HardwareIndexPool {
    * @brief Return true if the index is in-use, i.e., it has been allocated
    * before.
    */
-  [[nodiscard]] bool isUsed(const std::size_t index) const {
+  [[nodiscard]] bool isUsed(const QubitIndex index) const {
     return !freeHardwareIndices_.contains(index);
   }
 
@@ -446,7 +446,7 @@ private:
    *
    * The SetVector ensures a deterministic iteration order.
    */
-  llvm::SetVector<std::size_t> freeHardwareIndices_;
+  llvm::SetVector<QubitIndex> freeHardwareIndices_;
 };
 
 /**
@@ -536,7 +536,7 @@ protected:
    */
   static void checkZeroUse(const Value q, StateStack& stack,
                            HardwareIndexPool& pool) {
-    const std::size_t hardwareIdx = stack.topState().lookupHardware(q);
+    const QubitIndex hardwareIdx = stack.topState().lookupHardware(q);
     if (q.use_empty() && pool.isUsed(hardwareIdx)) {
 
       // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
@@ -565,14 +565,14 @@ protected:
     const auto path = getPath(qStart, qEnd, stack, arch);
 
     for (std::size_t i = 0; i < path.size() - 2; ++i) {
-      const std::size_t hardwareIdx0 = path[i];
-      const std::size_t hardwareIdx1 = path[i + 1];
+      const QubitIndex hardwareIdx0 = path[i];
+      const QubitIndex hardwareIdx1 = path[i + 1];
 
       const Value qIn0 = stack.topState().lookupHardware(hardwareIdx0);
       const Value qIn1 = stack.topState().lookupHardware(hardwareIdx1);
 
-      const std::size_t softwareIdx0 = stack.topState().lookupSoftware(qIn0);
-      const std::size_t softwareIdx1 = stack.topState().lookupSoftware(qIn1);
+      const QubitIndex softwareIdx0 = stack.topState().lookupSoftware(qIn0);
+      const QubitIndex softwareIdx1 = stack.topState().lookupSoftware(qIn1);
 
       // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
       LLVM_DEBUG({
@@ -624,7 +624,7 @@ struct RoutingContext {
 
   std::unique_ptr<Architecture> arch;
   std::unique_ptr<Router> router;
-  SmallVector<std::size_t> initialLayout;
+  SmallVector<QubitIndex> initialLayout;
 
   StateStack stack{};
   HardwareIndexPool pool{};
@@ -833,7 +833,7 @@ WalkResult handleYield(scf::YieldOp op, StateStack& stack,
  */
 WalkResult handleAlloc(AllocQubitOp op, StateStack& stack,
                        HardwareIndexPool& pool, PatternRewriter& rewriter) {
-  const std::optional<std::size_t> index = pool.retrieve();
+  const std::optional<QubitIndex> index = pool.retrieve();
   if (!index) {
     return op.emitOpError(
         "requires one too many qubits for the targeted architecture");
@@ -859,7 +859,7 @@ WalkResult handleAlloc(AllocQubitOp op, StateStack& stack,
 WalkResult handleDealloc(DeallocQubitOp op, StateStack& stack,
                          HardwareIndexPool& pool, PatternRewriter& rewriter) {
   const Value q = op.getQubit();
-  const std::size_t index = stack.topState().lookupHardware(q);
+  const QubitIndex index = stack.topState().lookupHardware(q);
   if (pool.isUsed(index)) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({ llvm::dbgs() << "dealloc index: " << index << '\n'; });
