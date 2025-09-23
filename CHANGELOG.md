@@ -32,7 +32,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- ♻️ Replace MQTRef's `AllocOp`, `DeallocOp`, and `ExtractOp` with MLIR-native `memref` operations ([#1211]) ([**@denialhaag**])
+- ♻️ Replace custom `AllocOp`, `DeallocOp`, `ExtractOp`, and `InsertOp` with MLIR-native `memref` operations ([#1211]) ([**@denialhaag**])
 - 🚚 Rename MLIR pass `ElidePermutations` to `SwapReconstructionAndElision` ([#1207]) ([**@taminob**])
 - ⬆️ Require LLVM 21 for building the MLIR library ([#1180]) ([**@denialhaag**])
 - ⬆️ Update to version 21 of `clang-tidy` ([#1180]) ([**@denialhaag**])
