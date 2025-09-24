@@ -25,7 +25,7 @@ Conversions
 This page is a work in progress.
 The content is not yet complete and subject to change.
 Contributions are welcome.
-See the {doc}`contribution guide <contributing>` for more information.
+See the {doc}`contribution guide <../contributing>` for more information.
 :::
 
 ## Classical Result Semantics
@@ -36,7 +36,7 @@ Similarly, if the input program contains a classically controlled operation, the
 
 As an example, consider the following `QuantumComputation`:
 
-```qasm
+```qasm3
 OPENQASM 3.0;
 include "stdgates.inc";
 qubit[1] q;
