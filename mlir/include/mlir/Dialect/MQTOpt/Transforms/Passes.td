@@ -83,4 +83,18 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   }];
 }
 
+def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
+  let summary = "This pass ensures that a program meets the connectivity constraints of a given architecture.";
+  let description = [{
+    This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.
+  }];
+}
+
+def RoutingVerificationSCPass : Pass<"verify-routing-sc", "mlir::ModuleOp"> {
+  let summary = "This pass verifies that a program meets the connectivity constraints of a given architecture.";
+  let description = [{
+    This pass ensures that all two-qubit gates are executable on the target's architecture.
+  }];
+}
+
 #endif // MQTO_PASSES
