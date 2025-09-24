@@ -51,6 +51,11 @@ class Device(GenericDevice):
             def __eq__(self, other: object) -> bool: ...
             def __ne__(self, other: object) -> bool: ...
 
+        size: Size
+        """
+        The size of the region.
+        """
+
         def __eq__(self, other: object) -> bool: ...
         def __ne__(self, other: object) -> bool: ...
 
@@ -73,12 +78,28 @@ class Device(GenericDevice):
         """
         The offsets of the sublattices.
         """
-        region: Device.Region
+        extent: Device.Region
         """
-        The region of the lattice.
+        The extent of the lattice.
         """
         def __eq__(self, other: object) -> bool: ...
         def __ne__(self, other: object) -> bool: ...
+
+    traps: list[Device.Lattice]
+    """
+    The list of trap positions in the device.
+    """
+    t1: int
+    """
+    The T1 time of the device.
+    """
+    t2: int
+    """
+    The T2 time of the device.
+    """
+
+    def __eq__(self, other: object) -> bool: ...
+    def __ne__(self, other: object) -> bool: ...
 
 def devices() -> list[Device]:
     """Returns a list of available devices."""
