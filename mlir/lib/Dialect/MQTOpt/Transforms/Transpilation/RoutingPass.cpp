@@ -16,7 +16,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <cstdint>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SetVector.h>
@@ -75,9 +74,9 @@ constexpr std::size_t IF_PARENT_DEPTH = 2UL;
 using QubitIndex = std::size_t;
 
 /**
- * @brief A pair of software indices.
+ * @brief A pair of program indices.
  */
-using SoftwareIndexPair = std::pair<QubitIndex, QubitIndex>;
+using ProgramIndexPair = std::pair<QubitIndex, QubitIndex>;
 
 //===----------------------------------------------------------------------===//
 // Utilities
@@ -97,9 +96,10 @@ using SoftwareIndexPair = std::pair<QubitIndex, QubitIndex>;
  * @param u A two-qubit unitary.
  * @return Pair of SSA values consisting of the first and second in-qubits.
  */
-[[nodiscard]] std::pair<Value, Value> getIns(UnitaryInterface u) {
-  assert(isTwoQubitGate(u));
-  return {u.getAllInQubits()[0], u.getAllInQubits()[1]};
+[[nodiscard]] std::pair<Value, Value> getIns(UnitaryInterface op) {
+  assert(isTwoQubitGate(op));
+  const std::vector<Value> inQubits = op.getAllInQubits();
+  return {inQubits[0], inQubits[1]};
 }
 
 /**
@@ -107,9 +107,10 @@ using SoftwareIndexPair = std::pair<QubitIndex, QubitIndex>;
  * @param u A two-qubit unitary.
  * @return Pair of SSA values consisting of the first and second out-qubits.
  */
-[[nodiscard]] std::pair<Value, Value> getOuts(UnitaryInterface u) {
-  assert(isTwoQubitGate(u));
-  return {u.getAllOutQubits()[0], u.getAllOutQubits()[1]};
+[[nodiscard]] std::pair<Value, Value> getOuts(UnitaryInterface op) {
+  assert(isTwoQubitGate(op));
+  const std::vector<Value> outQubits = op.getAllOutQubits();
+  return {outQubits[0], outQubits[1]};
 }
 
 /**
@@ -219,10 +220,10 @@ getRandomLayout(const std::size_t nqubits, const std::size_t seed) {
 
 /**
  * @brief Manage mapping between SSA values and physical hardware indices.
- * This class maintains the bi-directional mapping between software and hardware
+ * This class maintains the bi-directional mapping between program and hardware
  * qubits.
  *
- * Note that we use the terminology "hardware" and "software" qubits here,
+ * Note that we use the terminology "hardware" and "program" qubits here,
  * because "virtual" (opposed to physical) and "static" (opposed to dynamic)
  * are C++ keywords.
  */
@@ -234,21 +235,21 @@ public:
    * Applies initial layout to the given array-ref of hardware qubits.
    *
    * @param qubits The hardware qubits.
-   * @param initialLayout A map from software qubit index to hardware qubit
+   * @param initialLayout A map from a program qubit index to hardware qubit
    * index.
    */
   explicit LayoutState(ArrayRef<Value> qubits,
                        ArrayRef<QubitIndex> initialLayout)
-      : qubits_(qubits.size()), softwareToHardware_(qubits.size()) {
+      : qubits_(qubits.size()), programToHardware_(qubits.size()) {
     valueToMapping_.reserve(qubits.size());
 
-    for (const QubitIndex softwareIdx : initialLayout) {
-      const QubitInfo info{.hardwareIdx = initialLayout[softwareIdx],
-                           .softwareIdx = softwareIdx};
+    for (const QubitIndex programIdx : initialLayout) {
+      const QubitInfo info{.hardwareIdx = initialLayout[programIdx],
+                           .programIdx = programIdx};
       const Value q = qubits[info.hardwareIdx];
 
       qubits_[info.hardwareIdx] = q;
-      softwareToHardware_[softwareIdx] = info.hardwareIdx;
+      programToHardware_[programIdx] = info.hardwareIdx;
       valueToMapping_.try_emplace(q, info);
     }
   }
@@ -274,22 +275,22 @@ public:
   }
 
   /**
-   * @brief Look up software index for a qubit value.
+   * @brief Look up program index for a qubit value.
    * @param q The SSA Value representing the qubit.
-   * @return The software index where this qubit currently resides.
+   * @return The program index where this qubit currently resides.
    */
-  [[nodiscard]] QubitIndex lookupSoftware(const Value q) const {
-    return valueToMapping_.at(q).softwareIdx;
+  [[nodiscard]] QubitIndex lookupProgram(const Value q) const {
+    return valueToMapping_.at(q).programIdx;
   }
 
   /**
-   * @brief Look up qubit value for a software index.
-   * @param softwareIdx The software index.
-   * @return The SSA value currently representing the qubit at the software
+   * @brief Look up qubit value for a program index.
+   * @param programIdx The program index.
+   * @return The SSA value currently representing the qubit at the program
    * location.
    */
-  [[nodiscard]] Value lookupSoftware(const QubitIndex softwareIdx) const {
-    const QubitIndex hardwareIdx = softwareToHardware_[softwareIdx];
+  [[nodiscard]] Value lookupProgram(const QubitIndex programIdx) const {
+    const QubitIndex hardwareIdx = programToHardware_[programIdx];
     return lookupHardware(hardwareIdx);
   }
 
@@ -311,23 +312,23 @@ public:
   }
 
   /**
-   * @brief Swap the locations of two software qubits. This is the effect of a
+   * @brief Swap the locations of two program qubits. This is the effect of a
    * SWAP gate.
    */
-  void swapSoftwareIndices(const Value q0, const Value q1) {
+  void swapProgramIndices(const Value q0, const Value q1) {
     auto ita = valueToMapping_.find(q0);
     auto itb = valueToMapping_.find(q1);
     assert(ita != valueToMapping_.end() && itb != valueToMapping_.end() &&
-           "swapSoftwareIndices: unknown values");
-    std::swap(ita->second.softwareIdx, itb->second.softwareIdx);
-    std::swap(softwareToHardware_[ita->second.softwareIdx],
-              softwareToHardware_[itb->second.softwareIdx]);
+           "swapProgramIndices: unknown values");
+    std::swap(ita->second.programIdx, itb->second.programIdx);
+    std::swap(programToHardware_[ita->second.programIdx],
+              programToHardware_[itb->second.programIdx]);
   }
 
   /**
    * @brief Return the current layout.
    */
-  ArrayRef<QubitIndex> getCurrentLayout() { return softwareToHardware_; }
+  ArrayRef<QubitIndex> getCurrentLayout() { return programToHardware_; }
 
   /**
    * @brief Return the SSA values for hardware indices from 0...nqubits.
@@ -337,7 +338,7 @@ public:
 private:
   struct QubitInfo {
     QubitIndex hardwareIdx;
-    QubitIndex softwareIdx;
+    QubitIndex programIdx;
   };
 
   /**
@@ -351,15 +352,15 @@ private:
   SmallVector<Value> qubits_;
 
   /**
-   * @brief Maps a software qubit index to its hardware index.
+   * @brief Maps a program qubit index to its hardware index.
    */
-  SmallVector<QubitIndex> softwareToHardware_;
+  SmallVector<QubitIndex> programToHardware_;
 };
 
 struct StackItem {
   explicit StackItem(LayoutState state) : state(std::move(state)) {}
   LayoutState state;
-  SmallVector<SoftwareIndexPair, 32> history;
+  SmallVector<ProgramIndexPair, 32> history;
 };
 
 class StateStack : public RoutingStack<StackItem> {
@@ -387,15 +388,15 @@ public:
   /**
    * @brief Return the current (most recent) swap history.
    */
-  [[nodiscard]] ArrayRef<SoftwareIndexPair> getHistory() {
+  [[nodiscard]] ArrayRef<ProgramIndexPair> getHistory() {
     return top().history;
   }
 
   /**
    * @brief Record a swap.
    */
-  void recordSwap(std::size_t softwareIdx0, std::size_t softwareIdx1) {
-    top().history.emplace_back(softwareIdx0, softwareIdx1);
+  void recordSwap(QubitIndex programIdx0, QubitIndex programIdx1) {
+    top().history.emplace_back(programIdx0, programIdx1);
   }
 };
 
@@ -450,11 +451,55 @@ private:
 };
 
 /**
+ * @brief Returns true iff @p u is executable on the targeted architecture.
+ */
+[[nodiscard]] bool isExecutable(UnitaryInterface op, StateStack& stack,
+                                const Architecture& arch) {
+  const auto [in0, in1] = getIns(op);
+  return arch.areAdjacent(stack.topState().lookupHardware(in0),
+                          stack.topState().lookupHardware(in1));
+}
+
+/**
+ * @brief Get shortest path between @p qStart and @p qEnd.
+ */
+[[nodiscard]] llvm::SmallVector<std::size_t> getPath(const Value qStart,
+                                                     const Value qEnd,
+                                                     StateStack& stack,
+                                                     const Architecture& arch) {
+  return arch.shortestPathBetween(stack.topState().lookupHardware(qStart),
+                                  stack.topState().lookupHardware(qEnd));
+}
+
+/**
+ * @brief Check if a qubit's hardware index has been allocated before and now
+ * has zero uses.
+ *
+ * Due to the SWAPs it is possible to deallocate a qubit with a
+ * different hardware index than the one we originally allocated. This
+ * function ensures that we release hardware indices when a qubit that has
+ * been allocated and now has zero uses.
+ */
+void checkZeroUse(const Value q, StateStack& stack, HardwareIndexPool& pool) {
+  const QubitIndex hardwareIdx = stack.topState().lookupHardware(q);
+  if (q.use_empty() && pool.isUsed(hardwareIdx)) {
+
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
+    LLVM_DEBUG({
+      llvm::dbgs() << llvm::format("free index with zero uses: %d\n",
+                                   hardwareIdx);
+    });
+
+    pool.release(hardwareIdx);
+  }
+}
+
+/**
  * @brief Base class for all routing algorithms.
  */
-class Router {
+class RouterBase {
 public:
-  virtual ~Router() = default;
+  virtual ~RouterBase() = default;
 
   /**
    * @brief Ensures the executability of two-qubit gates on the given target
@@ -463,15 +508,22 @@ public:
   WalkResult handleUnitary(UnitaryInterface op, StateStack& stack,
                            const Architecture& arch, HardwareIndexPool& pool,
                            PatternRewriter& rewriter) {
+    const std::vector<Value> inQubits = op.getAllInQubits();
+    const std::vector<Value> outQubits = op.getAllOutQubits();
+    const std::size_t nacts = inQubits.size();
+
     // Global-phase or zero-qubit unitary: Nothing to do.
-    if (op.getAllInQubits().empty()) {
+    if (nacts == 0) {
       return WalkResult::advance();
     }
 
+    if (nacts > 2) {
+      return op->emitOpError() << "acts on more than two qubits";
+    }
+
     // Single-qubit: Forward mapping.
-    if (!isTwoQubitGate(op)) {
-      stack.topState().remapQubitValue(op.getAllInQubits()[0],
-                                       op.getAllOutQubits()[0]);
+    if (nacts == 1) {
+      stack.topState().remapQubitValue(inQubits[0], outQubits[0]);
       return WalkResult::advance();
     }
 
@@ -485,9 +537,9 @@ public:
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({
       llvm::dbgs() << llvm::format("two-qubit gate: s%d/h%d, s%d/h%d\n",
-                                   stack.topState().lookupSoftware(execIn0),
+                                   stack.topState().lookupProgram(execIn0),
                                    stack.topState().lookupHardware(execIn0),
-                                   stack.topState().lookupSoftware(execIn1),
+                                   stack.topState().lookupProgram(execIn1),
                                    stack.topState().lookupHardware(execIn1));
     });
 
@@ -504,57 +556,13 @@ protected:
   virtual void makeExecutable(UnitaryInterface op, StateStack& stack,
                               const Architecture& arch, HardwareIndexPool& pool,
                               PatternRewriter& rewriter) = 0;
-
-  /**
-   * @brief Returns true iff @p u is executable on the targeted architecture.
-   */
-  [[nodiscard]] static bool isExecutable(UnitaryInterface op, StateStack& stack,
-                                         const Architecture& arch) {
-    const auto [in0, in1] = getIns(op);
-    return arch.areAdjacent(stack.topState().lookupHardware(in0),
-                            stack.topState().lookupHardware(in1));
-  }
-
-  /**
-   * @brief Get shortest path between @p qStart and @p qEnd.
-   */
-  [[nodiscard]] static llvm::SmallVector<std::size_t>
-  getPath(const Value qStart, const Value qEnd, StateStack& stack,
-          const Architecture& arch) {
-    return arch.shortestPathBetween(stack.topState().lookupHardware(qStart),
-                                    stack.topState().lookupHardware(qEnd));
-  }
-
-  /**
-   * @brief Check if a qubit's hardware index has been allocated before and now
-   * has zero uses.
-   *
-   * Due to the SWAPs it is possible to deallocate a qubit with a
-   * different hardware index than the one we originally allocated. This
-   * function ensures that we release hardware indices when a qubit that has
-   * been allocated and now has zero uses.
-   */
-  static void checkZeroUse(const Value q, StateStack& stack,
-                           HardwareIndexPool& pool) {
-    const QubitIndex hardwareIdx = stack.topState().lookupHardware(q);
-    if (q.use_empty() && pool.isUsed(hardwareIdx)) {
-
-      // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
-      LLVM_DEBUG({
-        llvm::dbgs() << llvm::format("free index with zero uses: %d\n",
-                                     hardwareIdx);
-      });
-
-      pool.release(hardwareIdx);
-    }
-  }
 };
 
 /**
  * @brief Inserts SWAPs along the shortest path between two hardware
  * qubits.
  */
-class NaiveRouter final : public Router {
+class NaiveRouter final : public RouterBase {
 protected:
   void makeExecutable(UnitaryInterface op, StateStack& stack,
                       const Architecture& arch, HardwareIndexPool& pool,
@@ -571,15 +579,15 @@ protected:
       const Value qIn0 = stack.topState().lookupHardware(hardwareIdx0);
       const Value qIn1 = stack.topState().lookupHardware(hardwareIdx1);
 
-      const QubitIndex softwareIdx0 = stack.topState().lookupSoftware(qIn0);
-      const QubitIndex softwareIdx1 = stack.topState().lookupSoftware(qIn1);
+      const QubitIndex programIdx0 = stack.topState().lookupProgram(qIn0);
+      const QubitIndex programIdx1 = stack.topState().lookupProgram(qIn1);
 
       // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
       LLVM_DEBUG({
         llvm::dbgs() << llvm::format(
-            "swap: s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", softwareIdx1,
-            hardwareIdx0, softwareIdx0, hardwareIdx1, softwareIdx0,
-            hardwareIdx0, softwareIdx1, hardwareIdx1);
+            "swap: s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", programIdx1,
+            hardwareIdx0, programIdx0, hardwareIdx1, programIdx0, hardwareIdx0,
+            programIdx1, hardwareIdx1);
       });
 
       auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
@@ -591,10 +599,10 @@ protected:
       replaceAllUsesInRegionAndChildrenExcept(
           qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
 
-      stack.recordSwap(softwareIdx0, softwareIdx1);
+      stack.recordSwap(programIdx0, programIdx1);
 
       auto& state = stack.topState();
-      state.swapSoftwareIndices(qIn0, qIn1);
+      state.swapProgramIndices(qIn0, qIn1);
       state.remapQubitValue(qIn0, qOut0);
       state.remapQubitValue(qIn1, qOut1);
 
@@ -610,20 +618,20 @@ protected:
  */
 struct RoutingContext {
   explicit RoutingContext(std::unique_ptr<Architecture> arch,
-                          std::unique_ptr<Router> router)
+                          std::unique_ptr<RouterBase> router)
       : arch(std::move(arch)), router(std::move(router)) {
     initialLayout = getIdentityLayout(this->arch->nqubits());
   }
 
   explicit RoutingContext(std::unique_ptr<Architecture> arch,
-                          std::unique_ptr<Router> router,
+                          std::unique_ptr<RouterBase> router,
                           const std::size_t seed)
       : arch(std::move(arch)), router(std::move(router)) {
     initialLayout = getRandomLayout(this->arch->nqubits(), seed);
   }
 
   std::unique_ptr<Architecture> arch;
-  std::unique_ptr<Router> router;
+  std::unique_ptr<RouterBase> router;
   SmallVector<QubitIndex> initialLayout;
 
   StateStack stack{};
@@ -778,7 +786,7 @@ WalkResult handleIf(scf::IfOp op, StateStack& stack,
  *
  * The results of the yield op are extended by the missing hardware
  * qubits, similarly to the 'for' and 'if' op. This is only possible
- * because we restore the layout - the mapping from hardware to software
+ * because we restore the layout - the mapping from hardware to program
  * qubits (and vice versa).
  *
  * Using uncompute has the advantages of (1) being intuitive and
@@ -795,10 +803,10 @@ WalkResult handleYield(scf::YieldOp op, StateStack& stack,
     return WalkResult::skip();
   }
 
-  for (const auto [softwareIdx0, softwareIdx1] :
+  for (const auto [programIdx0, programIdx1] :
        llvm::reverse(stack.getHistory())) {
-    const Value qIn0 = stack.topState().lookupSoftware(softwareIdx0);
-    const Value qIn1 = stack.topState().lookupSoftware(softwareIdx1);
+    const Value qIn0 = stack.topState().lookupProgram(programIdx0);
+    const Value qIn1 = stack.topState().lookupProgram(programIdx1);
 
     auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
     const auto [qOut0, qOut1] = getOuts(swap);
@@ -809,7 +817,7 @@ WalkResult handleYield(scf::YieldOp op, StateStack& stack,
     replaceAllUsesInRegionAndChildrenExcept(
         qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
 
-    stack.topState().swapSoftwareIndices(qIn0, qIn1);
+    stack.topState().swapProgramIndices(qIn0, qIn1);
     stack.topState().remapQubitValue(qIn0, qOut0);
     stack.topState().remapQubitValue(qIn1, qOut1);
   }
