@@ -299,6 +299,7 @@ repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg 
 
 [tool.uv]
 required-version = ">=0.5.20"
+reinstall-package = ["mqt-core"]
 
 [tool.uv.sources]
 mqt-core = { workspace = true }

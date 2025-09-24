@@ -10,6 +10,9 @@
 
 #include "na/fomac/Device.hpp"
 
+#include <algorithm>
+#include <ranges>
+
 namespace na {
 
 FoMaC::Device::Device(const qdmi::FoMaC::Device& device)

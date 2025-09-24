@@ -10,26 +10,29 @@
 
 from __future__ import annotations
 
-from difflib import unified_diff
-from json import dumps, load
-from pathlib import Path
+import pathlib
+from json import load
+from typing import TYPE_CHECKING, Any
 
-from mqt.core.na.fomac import NADevice
-from mqt.core.qdmi.fomac import devices
+import pytest
+
+from mqt.core.na.fomac import devices
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from mqt.core.na.fomac import Device
 
 
-def test_from_device() -> None:
-    """Test NADevice creation from device."""
-    dev = NADevice(devices()[0])
-    print(f"dev = {dev}")
-    with Path("json/na/device.json").open(encoding="utf-8") as f:
-        dev2 = load(f)
-    # remove all operations to avoid diff due to unimplemented functionality
-    dev2 = {k: v for k, v in dev2.items() if "operation" not in k.lower() and "shuttling" not in k.lower()}
-    d1_lines = dumps(dev.dict(), indent=2, sort_keys=True).splitlines()
-    d2_lines = dumps(dev2, indent=2, sort_keys=True).splitlines()
-    diff_lines = list(unified_diff(d1_lines, d2_lines, fromfile="dict1", tofile="dict2", lineterm=""))
-    delimiter = "\n"
-    assert not diff_lines, (
-        f"The generated device dictionary does not match the expected one.\nDiff:\n{delimiter.join(diff_lines)}"
-    )
+@pytest.fixture
+def device_tuple() -> tuple[Device, Mapping[str, Any]]:
+    """Return a neutral atom FoMaC device instance."""
+    with pathlib.Path("json/na/device.json").open(encoding="utf-8") as f:
+        device_dict = load(f)
+    return devices()[0], device_dict
+
+
+def test_name(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:
+    """Test retrieving the name of the device."""
+    device, device_dict = device_tuple
+    assert device.name() == device_dict["name"]

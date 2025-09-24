@@ -79,3 +79,6 @@ class Device(GenericDevice):
         """
         def __eq__(self, other: object) -> bool: ...
         def __ne__(self, other: object) -> bool: ...
+
+def devices() -> list[Device]:
+    """Returns a list of available devices."""
