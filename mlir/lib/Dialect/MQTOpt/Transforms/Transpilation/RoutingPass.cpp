@@ -534,8 +534,6 @@ private:
 void checkZeroUse(const Value q, StateStack& stack, HardwareIndexPool& pool) {
   const QubitIndex hardwareIdx = stack.topState().lookupHardware(q);
   if (q.use_empty() && pool.isUsed(hardwareIdx)) {
-
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({
       llvm::dbgs() << "checkZeroUse: free index= " << hardwareIdx << '\n';
     });
@@ -584,7 +582,6 @@ public:
     const auto [execIn0, execIn1] = getIns(op);
     const auto [execOut0, execOut1] = getOuts(op);
 
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({
       llvm::dbgs() << llvm::format("handleUnitary: gate= s%d/h%d, s%d/h%d\n",
                                    stack.topState().lookupProgram(execIn0),
@@ -632,7 +629,6 @@ protected:
       const QubitIndex programIdx0 = stack.topState().lookupProgram(qIn0);
       const QubitIndex programIdx1 = stack.topState().lookupProgram(qIn1);
 
-      // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
       LLVM_DEBUG({
         llvm::dbgs() << llvm::format(
             "makeExecutable: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n",
@@ -696,14 +692,12 @@ WalkResult handleFunc(func::FuncOp op, RoutingContext& ctx,
                       PatternRewriter& rewriter) {
   assert(ctx.stack().empty() && "handleFunc: stack must be empty");
 
-  // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
   LLVM_DEBUG({
     llvm::dbgs() << "handleFunc: entry_point= " << op.getSymName() << '\n';
   });
 
   ctx.ilg().generate();
 
-  // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
   LLVM_DEBUG({
     llvm::dbgs() << "handleFunc: initial layout= ";
     ctx.ilg().dump();
@@ -904,7 +898,6 @@ WalkResult handleAlloc(AllocQubitOp op, StateStack& stack,
         "requires one too many qubits for the targeted architecture");
   }
 
-  // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
   LLVM_DEBUG({ llvm::dbgs() << "handleAlloc: index= " << *index << '\n'; });
   const Value q = stack.topState().lookupHardware(*index);
 
@@ -926,7 +919,7 @@ WalkResult handleDealloc(DeallocQubitOp op, StateStack& stack,
   const Value q = op.getQubit();
   const QubitIndex index = stack.topState().lookupHardware(q);
   if (pool.isUsed(index)) {
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
+
     LLVM_DEBUG({ llvm::dbgs() << "handleDealloc: index= " << index << '\n'; });
     pool.release(index);
   }
@@ -1052,7 +1045,6 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     std::random_device rd;
     const std::size_t seed = rd();
 
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({ llvm::dbgs() << "runOnOperation: seed=" << seed << '\n'; });
 
     auto arch = getArchitecture(ArchitectureName::MQTTest);
