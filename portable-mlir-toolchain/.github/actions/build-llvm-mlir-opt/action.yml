@@ -152,11 +152,9 @@ runs:
           if gh release download "$tag" -R "$repo" -p "$asset" >/dev/null 2>&1; then
             echo "Downloaded asset: $asset"
             if command -v gtar >/dev/null 2>&1; then TAR=gtar; else TAR=tar; fi
-            # Prefer streaming extraction with zstd for portability across OS
             if command -v zstd >/dev/null 2>&1; then
               zstd -d -c "$asset" | $TAR -xf -
             else
-              # Fallback to tar --zstd if zstd CLI is missing
               $TAR --zstd -xf "$asset"
             fi
             echo "found=true" >> "$GITHUB_OUTPUT"
@@ -186,7 +184,7 @@ runs:
         set -euo pipefail
         bash scripts/toolchain/macos/build.sh '${{ steps.resolve.outputs.sha }}' '${{ inputs.install-dir }}' '${{ inputs.targets }}'
 
-    - name: Build on Windows (host, bash)
+    - name: Build on Windows (host)
       if: steps.dl.outputs.found != 'true' && runner.os == 'Windows'
       shell: bash
       run: |

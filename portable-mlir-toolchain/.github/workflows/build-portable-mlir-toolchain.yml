@@ -1,0 +1,112 @@
+name: Portable LLVM/MLIR Toolchain (PGO + ThinLTO)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "llvm/llvm-project ref (e.g., llvmorg-20.1.8 or commit SHA)"
+        type: string
+        default: "llvmorg-20.1.8"
+        required: true
+      targets:
+        description: "LLVM_TARGETS_TO_BUILD (use 'auto' to infer from host)"
+        type: string
+        default: "auto"
+        required: false
+      toolchain_clean:
+        description: "Set 1 to wipe previous builds"
+        type: string
+        default: "0"
+        required: false
+      stage_from:
+        description: "Stage lower bound (0..2)"
+        type: string
+        default: "0"
+        required: false
+      stage_to:
+        description: "Stage upper bound (0..2)"
+        type: string
+        default: "2"
+        required: false
+      cpu_flags:
+        description: "Extra CPU tuning flags"
+        type: string
+        default: ""
+        required: false
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-24.04
+            runner: ubuntu-24.04
+            os: linux
+          - name: ubuntu-24.04-arm
+            runner: ubuntu-24.04-arm
+            os: linux
+          - name: macos-14
+            runner: macos-14
+            os: macos
+          - name: macos-15-intel
+            runner: macos-15-intel
+            os: macos
+          - name: windows-2022
+            runner: windows-2022
+            os: windows
+          - name: windows-11-arm
+            runner: windows-11-arm
+            os: windows
+    runs-on: ${{ matrix.runner }}
+    env:
+      REF: ${{ inputs.ref }}
+      TARGETS: ${{ inputs.targets }}
+      TOOLCHAIN_CLEAN: ${{ inputs.toolchain_clean }}
+      TOOLCHAIN_STAGE_FROM: ${{ inputs.stage_from }}
+      TOOLCHAIN_STAGE_TO: ${{ inputs.stage_to }}
+      TOOLCHAIN_CPU_FLAGS: ${{ inputs.cpu_flags }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/${{ matrix.name }}"
+          mkdir -p "$GITHUB_WORKSPACE/portable-mlir-toolchain/tmp/${{ matrix.name }}"
+
+      - name: Build (Linux)
+        if: matrix.os == 'linux'
+        shell: bash
+        working-directory: portable-mlir-toolchain
+        run: |
+          set -euo pipefail
+          bash scripts/toolchain/linux/build.sh "$REF" "$GITHUB_WORKSPACE/artifacts/${{ matrix.name }}" "$TARGETS"
+
+      - name: Build (macOS)
+        if: matrix.os == 'macos'
+        shell: bash
+        working-directory: portable-mlir-toolchain/tmp/${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/portable-mlir-toolchain/scripts/toolchain/macos/build.sh" "$REF" "$GITHUB_WORKSPACE/artifacts/${{ matrix.name }}" "$TARGETS"
+
+      - name: Build (Windows)
+        if: matrix.os == 'windows'
+        shell: bash
+        working-directory: portable-mlir-toolchain
+        run: |
+          set -euo pipefail
+          bash scripts/toolchain/windows/build.sh "$REF" "$GITHUB_WORKSPACE/artifacts/${{ matrix.name }}" "$TARGETS"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm-mlir_${{ inputs.ref }}_${{ matrix.name }}
+          if-no-files-found: warn
+          compression-level: 0
+          path: |
+            ${{ github.workspace }}/artifacts/${{ matrix.name }}/**/*.tar.zst
+            ${{ github.workspace }}/portable-mlir-toolchain/tmp/${{ matrix.name }}/*.tar.zst
