@@ -70,7 +70,7 @@ private:
   /**
    * @brief Find all shortest paths in the coupling map between two qubits.
    * @details Vertices are the qubits. Edges connected two qubits. Has a time
-   * and complexity of O(nqubits^3) and O(nqubits^2), respectively.
+   * and memory complexity of O(nqubits^3) and O(nqubits^2), respectively.
    * @link Adapted from https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm
    */
   void floydWarshallWithPathReconstruction();

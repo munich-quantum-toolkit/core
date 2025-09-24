@@ -39,7 +39,7 @@ public:
   /**
    * @brief Pushes a new item on to the stack.
    */
-  void push(Item item) { stack_.emplace_back(item); }
+  void push(Item item) { stack_.emplace_back(std::move(item)); }
 
   /**
    * @brief Constructs a new item in-place at the top of the stack.

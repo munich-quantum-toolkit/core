@@ -236,7 +236,7 @@ public:
    */
   explicit IdentityLayoutGenerator(const std::size_t nqubits)
       : InitialLayoutGeneratorBase(nqubits) {
-    std::iota(this->layout_.begin(), this->layout_.end(), 0);
+    std::iota(layout_.begin(), layout_.end(), 0);
   }
 };
 
@@ -256,8 +256,8 @@ public:
   }
 
   void generate() override {
-    std::iota(this->layout_.begin(), this->layout_.end(), 0);
-    std::shuffle(this->layout_.begin(), this->layout_.end(), rng_);
+    std::iota(layout_.begin(), layout_.end(), 0);
+    std::shuffle(layout_.begin(), layout_.end(), rng_);
   }
 
 private:
@@ -411,7 +411,8 @@ private:
 };
 
 struct StackItem {
-  explicit StackItem(LayoutState state) : state(std::move(state)) {}
+  explicit StackItem(ArrayRef<Value> qubits, ArrayRef<QubitIndex> initialLayout)
+      : state(qubits, initialLayout) {}
   LayoutState state;
   SmallVector<ProgramIndexPair, 32> history;
 };
@@ -504,7 +505,7 @@ private:
 };
 
 /**
- * @brief Returns true iff @p u is executable on the targeted architecture.
+ * @brief Returns true iff @p op is executable on the targeted architecture.
  */
 [[nodiscard]] bool isExecutable(UnitaryInterface op, LayoutState& state,
                                 const Architecture& arch) {
@@ -716,7 +717,7 @@ WalkResult handleFunc(func::FuncOp op, RoutingContext& ctx,
   }
 
   ctx.pool().fill(ctx.ilg().getLayout());
-  ctx.stack().emplace(LayoutState(qubits, ctx.ilg().getLayout()));
+  ctx.stack().emplace(qubits, ctx.ilg().getLayout());
 
   return WalkResult::advance();
 }
@@ -728,7 +729,6 @@ WalkResult handleFunc(func::FuncOp op, RoutingContext& ctx,
  * all static qubits here.
  */
 WalkResult handleReturn(StateStack& stack) {
-  assert(!stack.empty() && "handleReturn: stack must not be empty");
   stack.pop();
   return WalkResult::advance();
 }
@@ -842,7 +842,7 @@ WalkResult handleIf(scf::IfOp op, StateStack& stack,
  * qubits (and vice versa).
  *
  * Using uncompute has the advantages of (1) being intuitive and
- * (2) preserving the optimally of the original SWAP sequence.
+ * (2) preserving the optimality of the original SWAP sequence.
  * Essentially the better the routing algorithm the better the
  * uncompute. Moreover, this has the nice property that routing
  * a 'for' of 'if' region always requires 2 * #(SWAPs required for region)
