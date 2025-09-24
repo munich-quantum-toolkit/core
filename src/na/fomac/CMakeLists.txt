@@ -7,13 +7,13 @@
 # Licensed under the MIT License
 
 # Set target name
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-fomac-na)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-fomac)
 
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
   # Add library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME FoMaCNa)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME NAFoMaC)
 
   # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Device.cpp)
@@ -23,18 +23,20 @@ if(NOT TARGET ${TARGET_NAME})
                                        FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/na/fomac/Device.hpp)
 
   # Link nlohmann_json, spdlog
-  target_link_libraries(
-    ${TARGET_NAME}
-    PUBLIC MQT::CoreQDMIFoMaC
-    PRIVATE spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PUBLIC MQT::CoreQDMIFoMaC nlohmann_json::nlohmann_json)
+
+  # set c++ standard
+  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 
   # set versioning information
   set_target_properties(
     ${TARGET_NAME}
     PROPERTIES VERSION ${PROJECT_VERSION}
                SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreFoMaCNa)
+               EXPORT_NAME CoreNAFoMaC)
 
-  # set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
+  # add to list of MQT core targets
+  set(MQT_CORE_TARGETS
+      ${MQT_CORE_TARGETS} ${TARGET_NAME}
+      PARENT_SCOPE)
 endif()

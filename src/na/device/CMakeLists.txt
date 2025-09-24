@@ -104,7 +104,7 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Generate prefixed QDMI headers
   generate_prefixed_qdmi_headers(${QDMI_PREFIX})
-  file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_na_qdmi/**.hpp)
+  file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_na_qdmi/**.h)
 
   # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Device.cpp)

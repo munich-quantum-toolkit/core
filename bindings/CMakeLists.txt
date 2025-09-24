@@ -12,5 +12,8 @@ add_subdirectory(ir)
 # add the DD bindings package
 add_subdirectory(dd)
 
+# add the NA bindings package
+add_subdirectory(na)
+
 # add the QDMI bindings package
 add_subdirectory(qdmi)
