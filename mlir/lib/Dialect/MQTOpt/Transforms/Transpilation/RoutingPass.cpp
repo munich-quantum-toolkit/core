@@ -453,11 +453,10 @@ private:
 /**
  * @brief Returns true iff @p u is executable on the targeted architecture.
  */
-[[nodiscard]] bool isExecutable(UnitaryInterface op, StateStack& stack,
+[[nodiscard]] bool isExecutable(UnitaryInterface op, LayoutState& state,
                                 const Architecture& arch) {
   const auto [in0, in1] = getIns(op);
-  return arch.areAdjacent(stack.topState().lookupHardware(in0),
-                          stack.topState().lookupHardware(in1));
+  return arch.areAdjacent(state.lookupHardware(in0), state.lookupHardware(in1));
 }
 
 /**
@@ -465,10 +464,10 @@ private:
  */
 [[nodiscard]] llvm::SmallVector<std::size_t> getPath(const Value qStart,
                                                      const Value qEnd,
-                                                     StateStack& stack,
+                                                     LayoutState& state,
                                                      const Architecture& arch) {
-  return arch.shortestPathBetween(stack.topState().lookupHardware(qStart),
-                                  stack.topState().lookupHardware(qEnd));
+  return arch.shortestPathBetween(state.lookupHardware(qStart),
+                                  state.lookupHardware(qEnd));
 }
 
 /**
@@ -527,7 +526,7 @@ public:
       return WalkResult::advance();
     }
 
-    if (!isExecutable(op, stack, arch)) {
+    if (!isExecutable(op, stack.topState(), arch)) {
       makeExecutable(op, stack, arch, pool, rewriter);
     }
 
@@ -570,7 +569,7 @@ protected:
     assert(isTwoQubitGate(op) && "makeExecutable: must be two-qubit gate");
 
     const auto [qStart, qEnd] = getIns(op);
-    const auto path = getPath(qStart, qEnd, stack, arch);
+    const auto path = getPath(qStart, qEnd, stack.topState(), arch);
 
     for (std::size_t i = 0; i < path.size() - 2; ++i) {
       const QubitIndex hardwareIdx0 = path[i];
