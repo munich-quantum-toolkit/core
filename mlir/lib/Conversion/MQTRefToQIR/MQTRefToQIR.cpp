@@ -205,28 +205,27 @@ struct ConvertMemRefAllocQIR final
       sizeValue = rewriter.create<LLVM::ConstantOp>(
           op.getLoc(), rewriter.getI64IntegerAttr(size));
     } else {
+      auto opSizeValue = op.getDynamicSizes().front();
+      auto constantOp = opSizeValue.getDefiningOp<arith::ConstantOp>();
+      if (!constantOp) {
+        llvm::errs() << "Dynamic size could not be resolved. Size is not a "
+                        "ConstantOp.\n";
+        return failure();
+      }
+      auto integerAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
+      if (!integerAttr) {
+        llvm::errs() << "Dynamic size could not be resolved. Size cannot be "
+                        "cast to IntegerAttr.\n";
+        return failure();
+      }
+      size = integerAttr.getInt();
       sizeValue = adaptor.getDynamicSizes().front();
-      auto unrealizedConvOp0 =
-          sizeValue.getDefiningOp<UnrealizedConversionCastOp>();
-      if (!unrealizedConvOp0) {
-        llvm::errs() << "Dynamic size could not be resolved\n";
-        return failure();
-      }
-      auto sizeValueIdx = unrealizedConvOp0->getOperand(0);
-      auto unrealizedConvOp1 =
-          sizeValueIdx.getDefiningOp<UnrealizedConversionCastOp>();
-      if (!unrealizedConvOp1) {
-        llvm::errs() << "Dynamic size could not be resolved\n";
-        return failure();
-      }
-      auto sizeValueInt = unrealizedConvOp1->getOperand(0);
-      auto constantOp = sizeValueInt.getDefiningOp<LLVM::ConstantOp>();
-      size = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
     }
     getState().numQubits += size;
 
     // replace the old operation with new callOp
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, sizeValue);
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
+                                              ValueRange{sizeValue});
 
     getState().useDynamicQubit = true;
 
@@ -675,39 +674,39 @@ struct ConvertMQTRefMeasureQIR final
     // get the index of the register where the result is stored
     for (const auto* users : op->getResult(0).getUsers()) {
       if (auto storeOp = dyn_cast<memref::StoreOp>(users)) {
-        // the conversion of the arith dialect to the llvm dialect before this
-        // conversion pass causes an unrealized conversion cast on the index
-        // type as the llvm dialect does not have a index type
-        if (const auto unrealizedConvOp =
-                storeOp.getIndices()[0]
-                    .getDefiningOp<UnrealizedConversionCastOp>()) {
-          if (auto constantOp = unrealizedConvOp->getOperand(0)
-                                    .getDefiningOp<LLVM::ConstantOp>()) {
-            index = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
-
-            const auto allocaOp = storeOp.getMemref();
-
-            // drop the references to update the number of uses immediately
-            // as eraseOp only updates them after the patterns
-            storeOp->dropAllReferences();
-            rewriter.eraseOp(storeOp);
-
-            // erase the alloca op if all store operations are removed
-            if (allocaOp.use_empty()) {
-              rewriter.eraseOp(allocaOp.getDefiningOp<memref::AllocaOp>());
-            }
-            // delete the unrealized conversion and the constant operation when
-            // there are no users left
-            if (unrealizedConvOp->use_empty()) {
-              unrealizedConvOp->dropAllReferences();
-              rewriter.eraseOp(unrealizedConvOp);
-            }
-            if (constantOp->use_empty()) {
-              rewriter.eraseOp(constantOp);
-            }
-            break;
-          }
+        auto constantOp =
+            storeOp.getIndices()[0].getDefiningOp<arith::ConstantOp>();
+        if (!constantOp) {
+          llvm::errs()
+              << "Index could not be resolved. Index is not a ConstantOp.\n";
+          return failure();
         }
+
+        auto integerAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
+        if (!integerAttr) {
+          llvm::errs() << "Index could not be resolved. Index cannot be cast "
+                          "to IntegerAttr.\n";
+          return failure();
+        }
+        index = integerAttr.getInt();
+
+        const auto allocaOp = storeOp.getMemref();
+
+        // drop the references to update the number of uses immediately
+        // as eraseOp only updates them after the patterns
+        storeOp->dropAllReferences();
+        rewriter.eraseOp(storeOp);
+
+        // erase the alloca op if all store operations are removed
+        if (allocaOp.use_empty()) {
+          rewriter.eraseOp(allocaOp.getDefiningOp<memref::AllocaOp>());
+        }
+
+        // delete the constant op if there are no users left
+        if (constantOp->use_empty()) {
+          rewriter.eraseOp(constantOp);
+        }
+        break;
       }
     }
     Operation* addressOfOp = nullptr;
@@ -928,37 +927,27 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     MLIRContext* ctx = &getContext();
     auto* moduleOp = getOperation();
     ConversionTarget target(*ctx);
-    RewritePatternSet stdPatterns(ctx);
+    RewritePatternSet funcPatterns(ctx);
     RewritePatternSet mqtPatterns(ctx);
+    RewritePatternSet stdPatterns(ctx);
     MQTRefToQIRTypeConverter typeConverter(ctx);
 
-    // transform the default dialects first
     target.addLegalDialect<LLVM::LLVMDialect>();
-    cf::populateControlFlowToLLVMConversionPatterns(typeConverter, stdPatterns);
-    populateFuncToLLVMConversionPatterns(typeConverter, stdPatterns);
-    arith::populateArithToLLVMConversionPatterns(typeConverter, stdPatterns);
 
-    target.addIllegalDialect<arith::ArithDialect>();
+    // convert func to LLVM
     target.addIllegalDialect<func::FuncDialect>();
-    target.addIllegalDialect<cf::ControlFlowDialect>();
 
-    if (failed(
-            applyPartialConversion(moduleOp, target, std::move(stdPatterns)))) {
+    populateFuncToLLVMConversionPatterns(typeConverter, funcPatterns);
+
+    if (applyPartialConversion(moduleOp, target, std::move(funcPatterns))
+            .failed()) {
       signalPassFailure();
     }
 
-    PassManager passManager(ctx);
-    passManager.addPass(createReconcileUnrealizedCastsPass());
-    if (passManager.run(moduleOp).failed()) {
-      signalPassFailure();
-    }
-
-    // get the main function of the module
+    // convert MQTRef to LLVM
     auto main = getMainFunction(moduleOp);
-    // make sure that the blocks for the QIR base profile exist
     ensureBlocks(main);
     LoweringState state;
-    // add the initialize operation
     addInitialize(main, ctx, &state);
 
     target.addIllegalDialect<ref::MQTRefDialect>();
@@ -1014,11 +1003,30 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
     ADD_CONVERT_PATTERN(XXminusYYOp)
     ADD_CONVERT_PATTERN(XXplusYYOp)
 
-    if (failed(
-            applyPartialConversion(moduleOp, target, std::move(mqtPatterns)))) {
+    if (applyPartialConversion(moduleOp, target, std::move(mqtPatterns))
+            .failed()) {
       signalPassFailure();
     }
+
     setAttributes(main, &state);
+
+    // convert arith and cf to LLVM
+    target.addIllegalDialect<arith::ArithDialect>();
+    target.addIllegalDialect<cf::ControlFlowDialect>();
+
+    cf::populateControlFlowToLLVMConversionPatterns(typeConverter, stdPatterns);
+    arith::populateArithToLLVMConversionPatterns(typeConverter, stdPatterns);
+
+    if (applyPartialConversion(moduleOp, target, std::move(stdPatterns))
+            .failed()) {
+      signalPassFailure();
+    }
+
+    PassManager passManager(ctx);
+    passManager.addPass(createReconcileUnrealizedCastsPass());
+    if (passManager.run(moduleOp).failed()) {
+      signalPassFailure();
+    }
   };
 };
 
