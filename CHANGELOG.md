@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add naive quantum program routing MLIR pass ([#1148]) ([**@MatthiasReumann**])
 - ✨ Add QIR runtime using DD-based simulation ([#1210]) ([**@ystade**], [**@burgholzer**])
 - ✨ Add SWAP reconstruction patterns to the newly-named `SwapReconstructionAndElision` MLIR pass ([#1207]) ([**@taminob**], [**@burgholzer**])
 - ✨ Add two-way conversions between MQTRef and QIR ([#1091]) ([**@li-mingbao**])
@@ -201,6 +202,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1164]: https://github.com/munich-quantum-toolkit/core/pull/1164
 [#1157]: https://github.com/munich-quantum-toolkit/core/pull/1157
 [#1151]: https://github.com/munich-quantum-toolkit/core/pull/1151
+[#1148]: https://github.com/munich-quantum-toolkit/core/pull/1148
 [#1147]: https://github.com/munich-quantum-toolkit/core/pull/1147
 [#1140]: https://github.com/munich-quantum-toolkit/core/pull/1140
 [#1139]: https://github.com/munich-quantum-toolkit/core/pull/1139
