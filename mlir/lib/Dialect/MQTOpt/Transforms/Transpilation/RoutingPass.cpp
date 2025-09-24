@@ -901,10 +901,17 @@ WalkResult handleAlloc(AllocQubitOp op, StateStack& stack,
   LLVM_DEBUG({ llvm::dbgs() << "handleAlloc: index= " << *index << '\n'; });
   const Value q = stack.topState().lookupHardware(*index);
 
+  const Operation* defOp = q.getDefiningOp();
+  if (defOp != nullptr && isa<QubitOp>(defOp)) {
+    rewriter.replaceOp(op, q);
+    return WalkResult::advance();
+  }
+
   auto reset = rewriter.create<ResetOp>(op.getLoc(), q);
   rewriter.replaceOp(op, reset);
 
   stack.topState().remapQubitValue(reset.getInQubit(), reset.getOutQubit());
+
   return WalkResult::advance();
 }
 
@@ -919,7 +926,6 @@ WalkResult handleDealloc(DeallocQubitOp op, StateStack& stack,
   const Value q = op.getQubit();
   const QubitIndex index = stack.topState().lookupHardware(q);
   if (pool.isUsed(index)) {
-
     LLVM_DEBUG({ llvm::dbgs() << "handleDealloc: index= " << index << '\n'; });
     pool.release(index);
   }
