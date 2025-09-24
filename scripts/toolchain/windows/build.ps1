@@ -116,6 +116,7 @@ $commonArgs = @(
   '-DLLVM_ENABLE_LTO=Thin',
   '-DLLVM_ENABLE_ZSTD=ON',
   '-DLLVM_INSTALL_UTILS=ON',
+  '-DLLVM_ENABLE_BINDINGS=OFF',
   ("-DLLVM_HOST_TRIPLE=$hostTriple")
 ) + $launcherArgs
 
@@ -135,8 +136,21 @@ if ($stageFrom -le 0 -and 0 -le $stageTo) {
   Build-Install 'build_stage0' 'install'
 }
 
-$env:CC = Join-Path (Join-Path $work 'stage0-install') 'bin/clang.exe'
-$env:CXX = Join-Path (Join-Path $work 'stage0-install') 'bin/clang++.exe'
+$clangStage0 = Join-Path (Join-Path $work 'stage0-install') 'bin/clang.exe'
+$clangxxStage0 = Join-Path (Join-Path $work 'stage0-install') 'bin/clang++.exe'
+if (Test-Path $clangStage0 -PathType Leaf -and Test-Path $clangxxStage0 -PathType Leaf) {
+  $env:CC = $clangStage0
+  $env:CXX = $clangxxStage0
+} else {
+  $clangCmd = Get-Command clang -ErrorAction SilentlyContinue
+  $clangxxCmd = Get-Command clang++ -ErrorAction SilentlyContinue
+  if ($clangCmd -and $clangxxCmd) {
+    $env:CC = $clangCmd.Source
+    $env:CXX = $clangxxCmd.Source
+  } else {
+    Write-Error "No clang/clang++ compiler found and stage0 not built. Please ensure clang is available in PATH or run full Stage0 build."
+  }
+}
 
 # Stage1: instrumented build with tests enabled to collect profiles
 $rawDir = Join-Path $work 'pgoprof\raw'
@@ -180,6 +194,16 @@ if ($stageFrom -le 2 -and 2 -le $stageTo) {
   Invoke-CMake 'llvm-project/llvm' 'build_stage2' $args2
   Build-Install 'build_stage2' 'install'
 }
+
+# Prune any non-essential tools from install (clang/bolt/lld)
+$binDir = Join-Path $Prefix 'bin'
+if (Test-Path $binDir) {
+  Get-ChildItem $binDir -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^(clang|clang\+\+|clangd|clang-format|clang-tidy|lld|llvm-bolt|perf2bolt)(\.exe)?$' -or $_.Name -like 'clang-*' } |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+}
+$clangLibDir = Join-Path (Join-Path $Prefix 'lib') 'clang'
+if (Test-Path $clangLibDir) { Remove-Item -Recurse -Force $clangLibDir -ErrorAction SilentlyContinue }
 
 # Emit compressed archive (.tar.zst) using tar | zstd
 $archiveName = "llvm-mlir_${Ref}_windows_${env:PROCESSOR_ARCHITECTURE}_$($Targets -replace ';','_')_opt.tar.zst"

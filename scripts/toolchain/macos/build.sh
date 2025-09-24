@@ -128,12 +128,14 @@ else
 fi
 
 # CPU tuning: favor modern x86_64 when building on Intel; tune Apple Silicon on arm64
-CPU_FLAGS=""
+CPU_FLAGS_DEFAULT=""
 if [[ "$UNAME_ARCH" == "x86_64" ]]; then
-  CPU_FLAGS="-march=haswell -mtune=haswell"
+  CPU_FLAGS_DEFAULT="-march=haswell -mtune=haswell"
 elif [[ "$UNAME_ARCH" == "arm64" || "$UNAME_ARCH" == "aarch64" ]]; then
-  CPU_FLAGS="-mcpu=apple-m1 -mtune=apple-m1"
+  CPU_FLAGS_DEFAULT="-mcpu=apple-m1 -mtune=apple-m1"
 fi
+# Allow override via TOOLCHAIN_CPU_FLAGS
+CPU_FLAGS=${TOOLCHAIN_CPU_FLAGS:-$CPU_FLAGS_DEFAULT}
 
 # Share common CMake args across stages
 COMMON_LLVM_ARGS=(
@@ -146,6 +148,7 @@ COMMON_LLVM_ARGS=(
   -DLLVM_ENABLE_LTO=Thin
   -DLLVM_ENABLE_ZSTD=ON
   -DLLVM_INSTALL_UTILS=ON
+  -DLLVM_ENABLE_BINDINGS=OFF
   -DLLVM_HOST_TRIPLE=${HOST_TRIPLE}
   -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}
   -DCMAKE_OSX_ARCHITECTURES=${OSX_ARCHS}
@@ -174,8 +177,14 @@ if (( STAGE_FROM <= 0 && 0 <= STAGE_TO )); then
   cmake --build build_stage0 --target install --config Release
 fi
 
-export CC="$WORKDIR/stage0-install/bin/clang"
-export CXX="$WORKDIR/stage0-install/bin/clang++"
+# Prefer stage0 clang if present; otherwise fall back to system clang
+if [[ -x "$WORKDIR/stage0-install/bin/clang" && -x "$WORKDIR/stage0-install/bin/clang++" ]]; then
+  export CC="$WORKDIR/stage0-install/bin/clang"
+  export CXX="$WORKDIR/stage0-install/bin/clang++"
+else
+  export CC=${CC:-clang}
+  export CXX=${CXX:-clang++}
+fi
 
 # Stage1: instrumented build to generate profiles during build/tests
 if (( STAGE_FROM <= 1 && 1 <= STAGE_TO )); then
@@ -219,6 +228,14 @@ if (( STAGE_FROM <= 2 && 2 <= STAGE_TO )); then
   cmake --build build_stage2 --target install --config Release
 fi
 
+# Prune any non-essential tools from install (clang/bolt/lld should not be present)
+if [[ -d "$PREFIX/bin" ]]; then
+  rm -f "$PREFIX/bin"/clang* "$PREFIX/bin"/clang-?* "$PREFIX/bin"/clang++* \
+        "$PREFIX/bin"/clangd "$PREFIX/bin"/clang-format* "$PREFIX/bin"/clang-tidy* \
+        "$PREFIX/bin"/lld* "$PREFIX/bin"/llvm-bolt "$PREFIX/bin"/perf2bolt 2>/dev/null || true
+fi
+rm -rf "$PREFIX/lib/clang" 2>/dev/null || true
+
 # Strip binaries
 if command -v strip >/dev/null 2>&1; then
   find "$PREFIX/bin" -type f -perm -111 -exec strip -S {} + 2>/dev/null || true
@@ -230,7 +247,11 @@ if command -v gtar >/dev/null 2>&1; then TAR=gtar; else TAR=tar; fi
 ART_DIR="$WORKDIR"
 SAFE_TARGETS=${TARGETS//;/_}
 ARCHIVE_NAME="llvm-mlir_${REF}_macos_${UNAME_ARCH}_${SAFE_TARGETS}_opt.tar.zst"
-( cd "${PREFIX}" && $TAR --zstd -cf "${ART_DIR}/${ARCHIVE_NAME}" . ) || true
+if command -v zstd >/dev/null 2>&1; then
+  ( cd "${PREFIX}" && $TAR -cf - . | zstd -T0 -19 -o "${ART_DIR}/${ARCHIVE_NAME}" ) || true
+else
+  ( cd "${PREFIX}" && $TAR --zstd -cf "${ART_DIR}/${ARCHIVE_NAME}" . ) || true
+fi
 
 # Report
 echo "macOS build completed at $PREFIX (incremental, PGO+ThinLTO, Zstd, $([[ $CCACHE_ON -eq 1 ]] && echo ccache || echo no-ccache), HOST_TRIPLE=${HOST_TRIPLE}, TARGETS=${TARGETS})"

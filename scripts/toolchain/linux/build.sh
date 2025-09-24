@@ -65,6 +65,7 @@ sudo docker run --rm --privileged \
   -e TOOLCHAIN_STAGE_FROM="${TOOLCHAIN_STAGE_FROM:-0}" \
   -e TOOLCHAIN_STAGE_TO="${TOOLCHAIN_STAGE_TO:-2}" \
   -e TOOLCHAIN_HOST_TRIPLE="${TOOLCHAIN_HOST_TRIPLE:-}" \
+  -e TOOLCHAIN_CPU_FLAGS="${TOOLCHAIN_CPU_FLAGS:-}" \
   -e CCACHE_DIR="/work/.ccache" \
   "$IMG_TAG" \
   bash /work/scripts/toolchain/linux/in-container.sh

@@ -99,7 +99,7 @@ fi
 # Host triple, CPU tuning, default TARGETS from host
 UNAME_ARCH=$(uname -m)
 if [[ "$UNAME_ARCH" == "x86_64" ]]; then
-  CPU_FLAGS=${TOOLCHAIN_CPU_FLAGS:-"-march=haswell -mtune=haswell"}
+  CPU_FLAGS=${TOOLCHAIN_CPU_FLAGS:-"-march=x86-64-v2 -mtune=haswell"}
   HOST_TRIPLE_COMPUTED="x86_64-unknown-linux-gnu"
   HOST_TARGET="X86"
 elif [[ "$UNAME_ARCH" == "aarch64" || "$UNAME_ARCH" == "arm64" ]]; then
@@ -111,8 +111,8 @@ else
   HOST_TRIPLE_COMPUTED="${UNAME_ARCH}-unknown-linux-gnu"
   HOST_TARGET="X86"
 fi
-HOST_TRIPLE=${TOOLCHAIN_HOST_TRIPLE:-$HOST_TRIPLE_COMPUTED}
-if [[ -n "$TARGETS_ENV" ]]; then
+  HOST_TRIPLE=${TOOLCHAIN_HOST_TRIPLE:-$HOST_TRIPLE_COMPUTED}
+  if [[ -n "$TARGETS_ENV" ]]; then
   TARGETS="$TARGETS_ENV"
 else
   TARGETS="$HOST_TARGET"
@@ -129,6 +129,7 @@ COMMON_LLVM_ARGS=(
   -DLLVM_ENABLE_LTO=Thin
   -DLLVM_ENABLE_ZSTD=ON
   -DLLVM_INSTALL_UTILS=ON
+  -DLLVM_ENABLE_BINDINGS=OFF
   -DLLVM_HOST_TRIPLE=${HOST_TRIPLE}
   "${LAUNCHER_ARGS[@]}"
 )
@@ -149,8 +150,14 @@ if (( STAGE_FROM <= 0 && 0 <= STAGE_TO )); then
     -DCMAKE_INSTALL_PREFIX=/work/stage0-install
   cmake --build build_stage0 --target install --config Release
 fi
-export CC=/work/stage0-install/bin/clang
-export CXX=/work/stage0-install/bin/clang++
+# Prefer stage0 clang if present; otherwise fall back to system clang
+if [[ -x /work/stage0-install/bin/clang && -x /work/stage0-install/bin/clang++ ]]; then
+  export CC=/work/stage0-install/bin/clang
+  export CXX=/work/stage0-install/bin/clang++
+else
+  export CC=${CC:-clang}
+  export CXX=${CXX:-clang++}
+fi
 
 # Stage1: instrumented build with tests, collect .profraw via check-mlir
 PGO_DIR=/tmp/pgoprof
@@ -164,7 +171,7 @@ if (( STAGE_FROM <= 1 && 1 <= STAGE_TO )); then
   cmake -S llvm-project/llvm -B build_stage1 \
     "${COMMON_LLVM_ARGS[@]}" \
     -DLLVM_INCLUDE_TESTS=ON -DLLVM_BUILD_TESTS=ON \
-    -DLLVM_ENABLE_PROJECTS="mlir;llvm" \
+    -DLLVM_ENABLE_PROJECTS="mlir" \
     -DCMAKE_C_COMPILER=${CC} -DCMAKE_CXX_COMPILER=${CXX} -DCMAKE_ASM_COMPILER=${CC} \
     -DCMAKE_C_FLAGS="$INSTR_FLAGS" -DCMAKE_CXX_FLAGS="$INSTR_FLAGS" \
     -DCMAKE_EXE_LINKER_FLAGS="$RELOCS_FLAGS" -DCMAKE_SHARED_LINKER_FLAGS="$RELOCS_FLAGS" \
@@ -186,14 +193,14 @@ else
   /work/stage0-install/bin/llvm-profdata merge -output="$PROFDATA" $RAW_DIR/*.profraw || true
 fi
 
-# Stage2: final PGO+ThinLTO build (add BOLT tools)
+# Stage2: final PGO+ThinLTO build (use BOLT tools from stage0, do not install them)
 if (( STAGE_FROM <= 2 && 2 <= STAGE_TO )); then
   USE_FLAGS="-fprofile-use=$PROFDATA -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date ${CPU_FLAGS}"
   RELOCS_FLAGS="-Wl,--emit-relocs"
   cmake -S llvm-project/llvm -B build_stage2 \
     "${COMMON_LLVM_ARGS[@]}" \
     -DLLVM_INCLUDE_TESTS=ON -DLLVM_BUILD_TESTS=ON \
-    -DLLVM_ENABLE_PROJECTS="mlir;bolt;llvm" \
+    -DLLVM_ENABLE_PROJECTS="mlir" \
     -DCMAKE_C_COMPILER=${CC} -DCMAKE_CXX_COMPILER=${CXX} -DCMAKE_ASM_COMPILER=${CC} \
     -DCMAKE_C_FLAGS="$USE_FLAGS" -DCMAKE_CXX_FLAGS="$USE_FLAGS" \
     -DCMAKE_EXE_LINKER_FLAGS="$RELOCS_FLAGS" -DCMAKE_SHARED_LINKER_FLAGS="$RELOCS_FLAGS" \
@@ -210,8 +217,8 @@ if (( STAGE_FROM <= 2 && 2 <= STAGE_TO )); then
   fi
 
   BIN_DIR=/work/build_stage2/bin
-  PERF2BOLT="$BIN_DIR/perf2bolt"
-  LLVMBOLT="$BIN_DIR/llvm-bolt"
+  PERF2BOLT="/work/stage0-install/bin/perf2bolt"
+  LLVMBOLT="/work/stage0-install/bin/llvm-bolt"
   if [[ -x "$PERF2BOLT" && -x "$LLVMBOLT" && -f "$PERF_DATA" ]]; then
     for exe in "$BIN_DIR/mlir-opt" "$BIN_DIR/mlir-translate"; do
       if [[ -x "$exe" ]]; then
@@ -231,16 +238,24 @@ if (( STAGE_FROM <= 2 && 2 <= STAGE_TO )); then
   cmake --build build_stage2 --config Release --target install
 fi
 
+# Prune any non-essential tools that may have slipped into the install (keep MLIR/LLVM libs & tools only)
+if [[ -d "$PREFIX/bin" ]]; then
+  rm -f "$PREFIX/bin"/clang* "$PREFIX/bin"/clang-?* "$PREFIX/bin"/clang++* \
+        "$PREFIX/bin"/clangd "$PREFIX/bin"/clang-format* "$PREFIX/bin"/clang-tidy* \
+        "$PREFIX/bin"/lld* "$PREFIX/bin"/llvm-bolt "$PREFIX/bin"/perf2bolt 2>/dev/null || true
+fi
+rm -rf "$PREFIX/lib/clang" 2>/dev/null || true
+
 # Strip binaries and libs
 if command -v strip >/dev/null 2>&1; then
   find "$PREFIX/bin" -type f -perm -111 -exec strip -s {} + 2>/dev/null || true
-  find "$PREFIX/lib" -name "*.a" -o -name "*.so*" -exec strip -g {} + 2>/dev/null || true
+  find "$PREFIX/lib" \( -name "*.a" -o -name "*.so*" \) -exec strip -g {} + 2>/dev/null || true
 fi
 
-# Emit compressed archive (.tar.zst) into /out
+# Emit compressed archive (.tar.zst) into /out (max compression)
 SAFE_TARGETS=${TARGETS//;/_}
 ARCHIVE_NAME="llvm-mlir_${REF}_linux_${UNAME_ARCH}_${SAFE_TARGETS}_opt.tar.zst"
-( cd "${PREFIX}" && tar --zstd -cf "/out/${ARCHIVE_NAME}" . ) || true
+( cd "${PREFIX}" && tar -I 'zstd -T0 -19' -cf "/out/${ARCHIVE_NAME}" . ) || true
 
 echo "Install completed at ${PREFIX} (incremental, PGO+ThinLTO, $( [[ $CCACHE_ON -eq 1 ]] && echo cache=ccache || echo no-cache ), Zstd, HOST_TRIPLE=${HOST_TRIPLE}, TARGETS=${TARGETS})"
 echo "Archive: /out/${ARCHIVE_NAME}"
