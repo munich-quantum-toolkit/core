@@ -124,8 +124,8 @@ module {
 module {
     // CHECK-LABEL: llvm.func @testConvertLoadOp()
     func.func @testConvertLoadOp() attributes {passthrough = ["entry_point"]}  {
-        // CHECK-DAG: %[[size:.*]] = llvm.mlir.constant(1 : index) : i64
-        // CHECK-DAG: %[[index:.*]] = llvm.mlir.constant(0 : index) : i64
+        // CHECK: %[[size:.*]] = llvm.mlir.constant(1 : index) : i64
+        // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : index) : i64
         // CHECK: %[[r_0:.*]] = llvm.call @__quantum__rt__qubit_allocate_array(%[[size]]) : (i64) -> !llvm.ptr
         // CHECK: %[[ptr_0:.*]] = llvm.call @__quantum__rt__array_get_element_ptr_1d(%[[r_0]], %[[index]]) : (!llvm.ptr, i64) -> !llvm.ptr
         // CHECK: %[[q_0:.*]] = llvm.load %[[ptr_0]] : !llvm.ptr -> !llvm.ptr
