@@ -191,28 +191,65 @@ void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
 //===----------------------------------------------------------------------===//
 
 /**
- * @brief Return identity layout.
- * @param nqubits The number of qubits.
+ * @brief A base class for all initial layout generator (ilg) strategies.
  */
-[[nodiscard, maybe_unused]] SmallVector<QubitIndex>
-getIdentityLayout(const std::size_t nqubits) {
-  SmallVector<QubitIndex> layout(nqubits);
-  std::iota(layout.begin(), layout.end(), 0);
-  return layout;
-}
+class InitialLayoutGeneratorBase {
+public:
+  explicit InitialLayoutGeneratorBase(const std::size_t nqubits)
+      : layout_(nqubits) {}
+  virtual ~InitialLayoutGeneratorBase() = default;
+
+  /**
+   * @brief Return a view of the initial layout.
+   */
+  ArrayRef<QubitIndex> getLayout() const { return layout_; }
+
+  virtual void generate() { /* no-op */ }
+
+protected:
+  SmallVector<QubitIndex> layout_;
+};
 
 /**
- * @brief Generate random layout.
- * @param nqubits The number of qubits.
- * @param seed The seed used for randomization.
+ * @brief The identity layout.
+ *
+ * Generates the identity layout at construction and never re-generates it.
  */
-[[nodiscard, maybe_unused]] SmallVector<QubitIndex>
-getRandomLayout(const std::size_t nqubits, const std::size_t seed) {
-  std::mt19937_64 rng(seed);
-  auto layout = getIdentityLayout(nqubits);
-  std::shuffle(layout.begin(), layout.end(), rng);
-  return layout;
-}
+class IdentityLayoutGenerator final : public InitialLayoutGeneratorBase {
+public:
+  /**
+   * @brief Construct and generate identity layout.
+   * @param nqubits The number of qubits.
+   */
+  explicit IdentityLayoutGenerator(const std::size_t nqubits)
+      : InitialLayoutGeneratorBase(nqubits) {
+    std::iota(this->layout_.begin(), this->layout_.end(), 0);
+  }
+};
+
+/**
+ * @brief The random layout.
+ */
+class RandomLayoutGenerator final : public InitialLayoutGeneratorBase {
+public:
+  /**
+   * @brief Construct and generate and random layout.
+   * @param nqubits The number of qubits.
+   * @param rng A random number generator.
+   */
+  explicit RandomLayoutGenerator(const std::size_t nqubits, std::mt19937_64 rng)
+      : InitialLayoutGeneratorBase(nqubits), rng_(rng) {
+    generate();
+  }
+
+  void generate() override {
+    std::iota(this->layout_.begin(), this->layout_.end(), 0);
+    std::shuffle(this->layout_.begin(), this->layout_.end(), rng_);
+  }
+
+private:
+  std::mt19937_64 rng_;
+};
 
 //===----------------------------------------------------------------------===//
 // State (Permutation) Management
@@ -241,9 +278,12 @@ public:
   explicit LayoutState(ArrayRef<Value> qubits,
                        ArrayRef<QubitIndex> initialLayout)
       : qubits_(qubits.size()), programToHardware_(qubits.size()) {
+    assert(qubits.size() == initialLayout.size() &&
+           "LayoutState: qubits and initialLayout have diff. sizes");
+
     valueToMapping_.reserve(qubits.size());
 
-    for (const QubitIndex programIdx : initialLayout) {
+    for (QubitIndex programIdx = 0; programIdx < qubits.size(); ++programIdx) {
       const QubitInfo info{.hardwareIdx = initialLayout[programIdx],
                            .programIdx = programIdx};
       const Value q = qubits[info.hardwareIdx];
@@ -612,29 +652,27 @@ protected:
 };
 
 /**
- * @brief Contains all necessary datastructures to route a quantum-classical
- * program.
+ * @brief The necessary datastructures to route a quantum-classical module.
  */
 struct RoutingContext {
   explicit RoutingContext(std::unique_ptr<Architecture> arch,
-                          std::unique_ptr<RouterBase> router)
-      : arch(std::move(arch)), router(std::move(router)) {
-    initialLayout = getIdentityLayout(this->arch->nqubits());
-  }
-
-  explicit RoutingContext(std::unique_ptr<Architecture> arch,
                           std::unique_ptr<RouterBase> router,
-                          const std::size_t seed)
-      : arch(std::move(arch)), router(std::move(router)) {
-    initialLayout = getRandomLayout(this->arch->nqubits(), seed);
-  }
+                          std::unique_ptr<InitialLayoutGeneratorBase> ilg)
+      : arch_(std::move(arch)), router_(std::move(router)),
+        ilg_(std::move(ilg)) {}
 
-  std::unique_ptr<Architecture> arch;
-  std::unique_ptr<RouterBase> router;
-  SmallVector<QubitIndex> initialLayout;
+  [[nodiscard]] Architecture& arch() const { return *arch_; }
+  [[nodiscard]] RouterBase& router() const { return *router_; }
+  [[nodiscard]] InitialLayoutGeneratorBase& ilg() const { return *ilg_; }
+  [[nodiscard]] StateStack& stack() { return stack_; }
+  [[nodiscard]] HardwareIndexPool& pool() { return pool_; }
 
-  StateStack stack{};
-  HardwareIndexPool pool{};
+private:
+  std::unique_ptr<Architecture> arch_;
+  std::unique_ptr<RouterBase> router_;
+  std::unique_ptr<InitialLayoutGeneratorBase> ilg_;
+  StateStack stack_{};
+  HardwareIndexPool pool_{};
 };
 
 /**
@@ -643,9 +681,9 @@ struct RoutingContext {
  * layout is always applied at the beginning of a function. Pushes
  * newly-initialized state on stack.
  */
-WalkResult handleFunc(func::FuncOp op, RoutingContext& routingCtx,
+WalkResult handleFunc(func::FuncOp op, RoutingContext& ctx,
                       PatternRewriter& rewriter) {
-  assert(routingCtx.stack.empty() && "handleFunc: stack must be empty");
+  assert(ctx.stack().empty() && "handleFunc: stack must be empty");
 
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
   LLVM_DEBUG({
@@ -654,7 +692,7 @@ WalkResult handleFunc(func::FuncOp op, RoutingContext& routingCtx,
 
   rewriter.setInsertionPointToStart(&op.getBody().front());
 
-  llvm::SmallVector<Value> qubits(routingCtx.arch->nqubits());
+  llvm::SmallVector<Value> qubits(ctx.arch().nqubits());
   for (std::size_t i = 0; i < qubits.size(); ++i) {
     auto qubitOp =
         rewriter.create<QubitOp>(rewriter.getInsertionPoint()->getLoc(), i);
@@ -662,8 +700,9 @@ WalkResult handleFunc(func::FuncOp op, RoutingContext& routingCtx,
     qubits[i] = qubitOp.getQubit();
   }
 
-  routingCtx.pool.fill(routingCtx.initialLayout);
-  routingCtx.stack.emplace(LayoutState(qubits, routingCtx.initialLayout));
+  ctx.ilg().generate();
+  ctx.pool().fill(ctx.ilg().getLayout());
+  ctx.stack().emplace(LayoutState(qubits, ctx.ilg().getLayout()));
 
   return WalkResult::advance();
 }
@@ -947,31 +986,32 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
             .Case<func::FuncOp>(
                 [&](func::FuncOp op) { return handleFunc(op, ctx, rewriter); })
             .Case<func::ReturnOp>([&](func::ReturnOp /* op */) {
-              return handleReturn(ctx.stack);
+              return handleReturn(ctx.stack());
             })
             /// scf Dialect
             .Case<scf::ForOp>([&](scf::ForOp op) {
-              return handleFor(op, ctx.stack, rewriter);
+              return handleFor(op, ctx.stack(), rewriter);
             })
-            .Case<scf::IfOp>(
-                [&](scf::IfOp op) { return handleIf(op, ctx.stack, rewriter); })
+            .Case<scf::IfOp>([&](scf::IfOp op) {
+              return handleIf(op, ctx.stack(), rewriter);
+            })
             .Case<scf::YieldOp>([&](scf::YieldOp op) {
-              return handleYield(op, ctx.stack, rewriter);
+              return handleYield(op, ctx.stack(), rewriter);
             })
             /// mqtopt Dialect
             .Case<AllocQubitOp>([&](AllocQubitOp op) {
-              return handleAlloc(op, ctx.stack, ctx.pool, rewriter);
+              return handleAlloc(op, ctx.stack(), ctx.pool(), rewriter);
             })
             .Case<DeallocQubitOp>([&](DeallocQubitOp op) {
-              return handleDealloc(op, ctx.stack, ctx.pool, rewriter);
+              return handleDealloc(op, ctx.stack(), ctx.pool(), rewriter);
             })
             .Case<ResetOp>(
-                [&](ResetOp op) { return handleReset(op, ctx.stack); })
+                [&](ResetOp op) { return handleReset(op, ctx.stack()); })
             .Case<MeasureOp>(
-                [&](MeasureOp op) { return handleMeasure(op, ctx.stack); })
+                [&](MeasureOp op) { return handleMeasure(op, ctx.stack()); })
             .Case<UnitaryInterface>([&](UnitaryInterface op) {
-              return ctx.router->handleUnitary(op, ctx.stack, *ctx.arch,
-                                               ctx.pool, rewriter);
+              return ctx.router().handleUnitary(op, ctx.stack(), ctx.arch(),
+                                                ctx.pool(), rewriter);
             })
             /// Skip the rest.
             .Default([](auto) { return WalkResult::skip(); });
@@ -992,19 +1032,24 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
   void runOnOperation() override {
     std::random_device rd;
     const std::size_t seed = rd();
-    RoutingContext routingCtx(getArchitecture(ArchitectureName::MQTTest),
-                              std::make_unique<NaiveRouter>(), seed);
+
+    auto arch = getArchitecture(ArchitectureName::MQTTest);
+    auto router = std::make_unique<NaiveRouter>();
+    auto ilg = std::make_unique<RandomLayoutGenerator>(arch->nqubits(),
+                                                       std::mt19937_64(seed));
+
+    RoutingContext ctx(std::move(arch), std::move(router), std::move(ilg));
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({
       llvm::dbgs() << "initial layout with seed " << seed << ": ";
-      for (const std::size_t i : routingCtx.initialLayout) {
+      for (const std::size_t i : ctx.ilg().getLayout()) {
         llvm::dbgs() << i << ' ';
       }
       llvm::dbgs() << '\n';
     });
 
-    if (failed(route(getOperation(), &getContext(), routingCtx))) {
+    if (failed(route(getOperation(), &getContext(), ctx))) {
       signalPassFailure();
     }
   }
