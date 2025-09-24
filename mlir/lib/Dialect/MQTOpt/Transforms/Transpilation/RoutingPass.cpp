@@ -42,6 +42,7 @@
 #include <random>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #define DEBUG_TYPE "routing"
 
