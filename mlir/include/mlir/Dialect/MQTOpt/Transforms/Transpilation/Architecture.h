@@ -26,7 +26,7 @@ enum class ArchitectureName : std::uint8_t {
 
 /**
  * @brief A quantum accelerator's architecture.
- * @details Computes all-shortest paths at construction in O[nqubits^3].
+ * @details Computes all-shortest paths at construction.
  */
 class Architecture {
 public:
@@ -69,7 +69,8 @@ private:
 
   /**
    * @brief Find all shortest paths in the coupling map between two qubits.
-   * @details Vertices are the qubits. Edges connected two qubits.
+   * @details Vertices are the qubits. Edges connected two qubits. Has a time
+   * and complexity of O(nqubits^3) and O(nqubits^2), respectively.
    * @link Adapted from https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm
    */
   void floydWarshallWithPathReconstruction();
