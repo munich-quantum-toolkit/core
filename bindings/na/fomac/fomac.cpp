@@ -28,6 +28,8 @@ namespace py = pybind11;
 using namespace py::literals;
 
 PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
+  m.import("..qdmi.fomac");
+
   auto device = py::class_<na::FoMaC::Device, qdmi::FoMaC::Device>(m, "Device");
 
   auto lattice = py::class_<na::Device::Lattice>(device, "Lattice");
@@ -39,6 +41,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
     return "<Vector x=" + std::to_string(v.x) + " y=" + std::to_string(v.y) +
            ">";
   });
+  vector.def(py::self == py::self); // NOLINT(misc-redundant-expression)
+  vector.def(py::self != py::self); // NOLINT(misc-redundant-expression)
 
   auto region = py::class_<na::Device::Region>(lattice, "Region");
 
@@ -49,6 +53,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
     return "<Size width=" + std::to_string(s.width) +
            " height=" + std::to_string(s.height) + ">";
   });
+  size.def(py::self == py::self); // NOLINT(misc-redundant-expression)
+  size.def(py::self != py::self); // NOLINT(misc-redundant-expression)
 
   region.def_readonly("origin", &na::Device::Region::origin);
   region.def_readonly("size", &na::Device::Region::size);
@@ -57,6 +63,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
            py::repr(py::cast(r.origin)).cast<std::string>() +
            " size=" + py::repr(py::cast(r.size)).cast<std::string>() + ">";
   });
+  region.def(py::self == py::self); // NOLINT(misc-redundant-expression)
+  region.def(py::self != py::self); // NOLINT(misc-redundant-expression)
 
   lattice.def_readonly("lattice_origin", &na::Device::Lattice::latticeOrigin);
   lattice.def_readonly("lattice_vector_1",
@@ -70,8 +78,10 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
     return "<Lattice origin=" +
            py::repr(py::cast(l.latticeOrigin)).cast<std::string>() + ">";
   });
+  lattice.def(py::self == py::self); // NOLINT(misc-redundant-expression)
+  lattice.def(py::self != py::self); // NOLINT(misc-redundant-expression)
 
-  device.def("traps", &na::FoMaC::Device::getTraps);
+  device.def_property_readonly("traps", &na::FoMaC::Device::getTraps);
   device.def_property_readonly("t1", [](const na::FoMaC::Device& dev) {
     return dev.getDecoherenceTimes().t1;
   });

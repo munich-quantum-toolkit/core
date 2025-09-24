@@ -48,6 +48,8 @@ struct Device {
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Vector, x, y)
+
+    auto operator<=>(const Vector&) const = default;
   };
   /// @brief Represents a region in the device.
   struct Region {
@@ -63,12 +65,16 @@ struct Device {
 
       // NOLINTNEXTLINE(misc-include-cleaner)
       NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Size, width, height)
+
+      auto operator<=>(const Size&) const = default;
     };
     /// @brief The size of the region.
     Size size;
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Region, origin, size)
+
+    auto operator<=>(const Region&) const = default;
   };
   /// @brief Represents a lattice of traps in the device.
   struct Lattice {
@@ -107,6 +113,8 @@ struct Device {
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Lattice, latticeOrigin,
                                                 latticeVector1, latticeVector2,
                                                 sublatticeOffsets, extent)
+
+    auto operator<=>(const Lattice&) const = default;
   };
   /// @brief The list of lattices (trap areas) in the device.
   std::vector<Lattice> traps;
