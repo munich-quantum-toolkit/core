@@ -32,7 +32,7 @@
 
 namespace mqt::ir::opt {
 
-#define GEN_PASS_DEF_ROUTINGVERIFICATIONPASS
+#define GEN_PASS_DEF_ROUTINGVERIFICATIONSCPASS
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 namespace {
@@ -237,8 +237,8 @@ WalkResult handleMeasure(MeasureOp op, RoutingStack<QubitIndexMap>& stack) {
  * @brief This pass verifies that the constraints of a target architecture are
  * met.
  */
-struct RoutingVerificationPass final
-    : impl::RoutingVerificationPassBase<RoutingVerificationPass> {
+struct RoutingVerificationPassSC final
+    : impl::RoutingVerificationSCPassBase<RoutingVerificationPassSC> {
   void runOnOperation() override {
     RoutingStack<QubitIndexMap> stack;
 

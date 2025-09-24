@@ -6,7 +6,7 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(routing,verify-routing)" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(route-sc,verify-routing-sc)" -verify-diagnostics | FileCheck %s
 
 module {
 
@@ -334,25 +334,25 @@ module {
         mqtopt.deallocQubit %q1_1_ghz1000
         mqtopt.deallocQubit %q2_1_ghz1000
 
-        %true = arith.constant 1 : i1
-
         %q0_0_branch = mqtopt.allocQubit
         %q1_0_branch = mqtopt.allocQubit
 
         %q0_1_branch = mqtopt.h() %q0_0_branch : !mqtopt.Qubit
-        %q0_2_branch, %q1_2_branch = scf.if %true -> (!mqtopt.Qubit, !mqtopt.Qubit) {
-            %q1_1_branch = mqtopt.x() %q1_0_branch : !mqtopt.Qubit
-            %q1_2_branch, %q0_2_branch = mqtopt.x() %q1_1_branch ctrl %q0_1_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_2_branch, %m = "mqtopt.measure"(%q0_1_branch) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-            scf.yield %q0_2_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
+        %q0_3_branch, %q1_2_branch = scf.if %m -> (!mqtopt.Qubit, !mqtopt.Qubit) {
+            %q1_1_branch = mqtopt.x() %q1_0_branch : !mqtopt.Qubit
+            %q1_2_branch, %q0_3_branch = mqtopt.x() %q1_1_branch ctrl %q0_2_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+            scf.yield %q0_3_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
         } else {
             %q1_1_branch = mqtopt.i() %q1_0_branch: !mqtopt.Qubit
-            %q1_2_branch, %q0_2_branch = mqtopt.x() %q1_1_branch ctrl %q0_1_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            %q1_2_branch, %q0_3_branch = mqtopt.x() %q1_1_branch ctrl %q0_2_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-            scf.yield %q0_2_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
+            scf.yield %q0_3_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
         }
 
-        mqtopt.deallocQubit %q0_2_branch
+        mqtopt.deallocQubit %q0_3_branch
         mqtopt.deallocQubit %q1_2_branch
 
         return

@@ -48,7 +48,7 @@
 
 namespace mqt::ir::opt {
 
-#define GEN_PASS_DEF_ROUTINGPASS
+#define GEN_PASS_DEF_ROUTINGPASSSC
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 namespace {
@@ -1047,7 +1047,7 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
  * @brief This pass ensures that the connectivity constraints of the target
  * architecture are met.
  */
-struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
+struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
   void runOnOperation() override {
     std::random_device rd;
     const std::size_t seed = rd();

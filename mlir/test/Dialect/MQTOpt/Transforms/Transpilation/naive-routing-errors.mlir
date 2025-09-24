@@ -6,7 +6,7 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(routing,verify-routing)" -verify-diagnostics
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(route-sc,verify-routing-sc)" -verify-diagnostics
 
 
 module {
