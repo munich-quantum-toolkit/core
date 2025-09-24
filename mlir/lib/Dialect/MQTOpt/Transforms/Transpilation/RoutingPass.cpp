@@ -206,6 +206,18 @@ public:
 
   virtual void generate() { /* no-op */ }
 
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+  /**
+   * @brief Dump the current layout to debug output.
+   */
+  void dump() const {
+    for (const auto& qubit : llvm::drop_end(layout_)) {
+      llvm::dbgs() << qubit << " ";
+    }
+    llvm::dbgs() << layout_.back();
+  }
+#endif
+
 protected:
   SmallVector<QubitIndex> layout_;
 };
@@ -525,8 +537,7 @@ void checkZeroUse(const Value q, StateStack& stack, HardwareIndexPool& pool) {
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({
-      llvm::dbgs() << llvm::format("free index with zero uses: %d\n",
-                                   hardwareIdx);
+      llvm::dbgs() << "checkZeroUse: free index= " << hardwareIdx << '\n';
     });
 
     pool.release(hardwareIdx);
@@ -575,7 +586,7 @@ public:
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG({
-      llvm::dbgs() << llvm::format("two-qubit gate: s%d/h%d, s%d/h%d\n",
+      llvm::dbgs() << llvm::format("handleUnitary: gate= s%d/h%d, s%d/h%d\n",
                                    stack.topState().lookupProgram(execIn0),
                                    stack.topState().lookupHardware(execIn0),
                                    stack.topState().lookupProgram(execIn1),
@@ -624,9 +635,9 @@ protected:
       // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
       LLVM_DEBUG({
         llvm::dbgs() << llvm::format(
-            "swap: s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", programIdx1,
-            hardwareIdx0, programIdx0, hardwareIdx1, programIdx0, hardwareIdx0,
-            programIdx1, hardwareIdx1);
+            "makeExecutable: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n",
+            programIdx1, hardwareIdx0, programIdx0, hardwareIdx1, programIdx0,
+            hardwareIdx0, programIdx1, hardwareIdx1);
       });
 
       auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
@@ -687,7 +698,16 @@ WalkResult handleFunc(func::FuncOp op, RoutingContext& ctx,
 
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
   LLVM_DEBUG({
-    llvm::dbgs() << "handleFunc: entry_point: " << op.getSymName() << '\n';
+    llvm::dbgs() << "handleFunc: entry_point= " << op.getSymName() << '\n';
+  });
+
+  ctx.ilg().generate();
+
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
+  LLVM_DEBUG({
+    llvm::dbgs() << "handleFunc: initial layout= ";
+    ctx.ilg().dump();
+    llvm::dbgs() << '\n';
   });
 
   rewriter.setInsertionPointToStart(&op.getBody().front());
@@ -700,7 +720,6 @@ WalkResult handleFunc(func::FuncOp op, RoutingContext& ctx,
     qubits[i] = qubitOp.getQubit();
   }
 
-  ctx.ilg().generate();
   ctx.pool().fill(ctx.ilg().getLayout());
   ctx.stack().emplace(LayoutState(qubits, ctx.ilg().getLayout()));
 
@@ -886,7 +905,7 @@ WalkResult handleAlloc(AllocQubitOp op, StateStack& stack,
   }
 
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
-  LLVM_DEBUG({ llvm::dbgs() << "alloc index: " << *index << '\n'; });
+  LLVM_DEBUG({ llvm::dbgs() << "handleAlloc: index= " << *index << '\n'; });
   const Value q = stack.topState().lookupHardware(*index);
 
   auto reset = rewriter.create<ResetOp>(op.getLoc(), q);
@@ -908,7 +927,7 @@ WalkResult handleDealloc(DeallocQubitOp op, StateStack& stack,
   const QubitIndex index = stack.topState().lookupHardware(q);
   if (pool.isUsed(index)) {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
-    LLVM_DEBUG({ llvm::dbgs() << "dealloc index: " << index << '\n'; });
+    LLVM_DEBUG({ llvm::dbgs() << "handleDealloc: index= " << index << '\n'; });
     pool.release(index);
   }
 
@@ -1033,21 +1052,15 @@ struct RoutingPass final : impl::RoutingPassBase<RoutingPass> {
     std::random_device rd;
     const std::size_t seed = rd();
 
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
+    LLVM_DEBUG({ llvm::dbgs() << "runOnOperation: seed=" << seed << '\n'; });
+
     auto arch = getArchitecture(ArchitectureName::MQTTest);
     auto router = std::make_unique<NaiveRouter>();
     auto ilg = std::make_unique<RandomLayoutGenerator>(arch->nqubits(),
                                                        std::mt19937_64(seed));
 
     RoutingContext ctx(std::move(arch), std::move(router), std::move(ilg));
-
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
-    LLVM_DEBUG({
-      llvm::dbgs() << "initial layout with seed " << seed << ": ";
-      for (const std::size_t i : ctx.ilg().getLayout()) {
-        llvm::dbgs() << i << ' ';
-      }
-      llvm::dbgs() << '\n';
-    });
 
     if (failed(route(getOperation(), &getContext(), ctx))) {
       signalPassFailure();
