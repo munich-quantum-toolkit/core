@@ -29,6 +29,7 @@
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/MemRefBuilder.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -47,6 +48,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/IR/Visitors.h>
+#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -942,6 +944,12 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
 
     if (failed(
             applyPartialConversion(moduleOp, target, std::move(stdPatterns)))) {
+      signalPassFailure();
+    }
+
+    PassManager passManager(ctx);
+    passManager.addPass(createReconcileUnrealizedCastsPass());
+    if (passManager.run(moduleOp).failed()) {
       signalPassFailure();
     }
 
