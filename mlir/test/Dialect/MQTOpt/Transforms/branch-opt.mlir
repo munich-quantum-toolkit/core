@@ -153,7 +153,7 @@ module {
     // CHECK: %[[Q1_2:.*]] = mqtopt.x() %[[Q1_1]]
     %q1_2 = mqtopt.x() %q1_1 : !mqtopt.Qubit
 
-    memref.store %q0_1, %qreg[%i0] : memref<2x!mqtopt.Qubit>
+    memref.store %q0_2, %qreg[%i0] : memref<2x!mqtopt.Qubit>
     memref.store %q1_2, %qreg[%i1] : memref<2x!mqtopt.Qubit>
     memref.dealloc %qreg : memref<2x!mqtopt.Qubit>
 

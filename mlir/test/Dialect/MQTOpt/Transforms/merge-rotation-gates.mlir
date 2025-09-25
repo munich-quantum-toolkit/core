@@ -132,7 +132,7 @@ module {
     %q0_2 = mqtopt.ry(%c_0) %q0_1 : !mqtopt.Qubit
     %q0_3 = mqtopt.rz(%c_1) %q0_2 : !mqtopt.Qubit
 
-    memref.store %q0_2, %qreg[%i0] : memref<1x!mqtopt.Qubit>
+    memref.store %q0_3, %qreg[%i0] : memref<1x!mqtopt.Qubit>
     memref.dealloc %qreg : memref<1x!mqtopt.Qubit>
 
     return
@@ -329,7 +329,7 @@ module {
     // CHECK: %[[Q0_1:.*]]:2 = mqtopt.rxx(%[[Res_1]]) %[[ANY:.*]], %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK: %[[ANY:.*]]:2 = mqtopt.rxx(%[[Res_2]]) %[[Q0_1:.*]]#1, %[[ANY:.*]] : !mqtopt.Qubit, !mqtopt.Qubit
 
-    %i2 = arith.constant 3 : index
+    %i2 = arith.constant 2 : index
     %i1 = arith.constant 1 : index
     %i0 = arith.constant 0 : index
     %qreg = memref.alloc() : memref<3x!mqtopt.Qubit>
@@ -449,7 +449,7 @@ module {
     // CHECK: %[[Q0_1:.*]]:2, %[[Q2_1:.*]] = mqtopt.gphase(%[[Res_1]]) ctrl %[[ANY:.*]], %[[ANY:.*]] nctrl %[[ANY:.*]]: ctrl !mqtopt.Qubit, !mqtopt.Qubit nctrl !mqtopt.Qubit
     // CHECK: %[[ANY:.*]], %[[ANY:.*]]:2 = mqtopt.gphase(%[[Res_2]]) ctrl %[[Q0_1]]#0 nctrl %[[Q0_1]]#1, %[[Q2_1]] : ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit, !mqtopt.Qubit
 
-    %i2 = arith.constant 3 : index
+    %i2 = arith.constant 2 : index
     %i1 = arith.constant 1 : index
     %i0 = arith.constant 0 : index
     %qreg = memref.alloc() : memref<3x!mqtopt.Qubit>
@@ -462,9 +462,9 @@ module {
     %q012_1:3 = mqtopt.gphase(%c_0) ctrl %q0_0, %q1_0 nctrl %q2_0 : ctrl !mqtopt.Qubit, !mqtopt.Qubit nctrl !mqtopt.Qubit
     %q012_2:3 = mqtopt.gphase(%c_1) ctrl %q012_1#0 nctrl %q012_1#1, %q012_1#2 : ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit, !mqtopt.Qubit
 
-    memref.store %q012_1#0, %qreg[%i0] : memref<3x!mqtopt.Qubit>
-    memref.store %q012_1#1, %qreg[%i1] : memref<3x!mqtopt.Qubit>
-    memref.store %q012_1#2, %qreg[%i2] : memref<3x!mqtopt.Qubit>
+    memref.store %q012_2#0, %qreg[%i0] : memref<3x!mqtopt.Qubit>
+    memref.store %q012_2#1, %qreg[%i1] : memref<3x!mqtopt.Qubit>
+    memref.store %q012_2#2, %qreg[%i2] : memref<3x!mqtopt.Qubit>
     memref.dealloc %qreg : memref<3x!mqtopt.Qubit>
 
     return
