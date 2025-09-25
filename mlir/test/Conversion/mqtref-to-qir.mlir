@@ -19,6 +19,7 @@ module {
         %i0 = arith.constant 0 : index
         %memref = memref.alloc() : memref<1xi1>
         %0 = memref.load %memref[%i0] : memref<1xi1>
+        memref.store %0, %memref[%i0] : memref<1xi1>
         memref.dealloc %memref : memref<1xi1>
 
         return

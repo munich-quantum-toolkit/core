@@ -15,12 +15,14 @@ module {
     func.func @testDoNotConvertMemRef() {
         // CHECK: %[[I0:.*]] = arith.constant 0 : index
         // CHECK: %[[Memref:.*]] = memref.alloc() : memref<1xi1>
-        // CHECK: %[[ANY:.*]] = memref.load %[[Memref]][%[[I0]]] : memref<1xi1
+        // CHECK: %[[C:.*]] = memref.load %[[Memref]][%[[I0]]] : memref<1xi1
+        // CHECK: memref.store %[[C]], %[[Memref]][%[[I0]]] : memref<1xi1
         // CHECK: memref.dealloc %[[Memref]] : memref<1xi1>
 
         %i0 = arith.constant 0 : index
         %memref = memref.alloc() : memref<1xi1>
         %0 = memref.load %memref[%i0] : memref<1xi1>
+        memref.store %0, %memref[%i0] : memref<1xi1>
         memref.dealloc %memref : memref<1xi1>
 
         return
