@@ -13,8 +13,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/RoutingStack.h"
 
-#include "llvm/ADT/StringRef.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -22,6 +20,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SetVector.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/Format.h>
