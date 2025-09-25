@@ -27,8 +27,8 @@
           "y": 0
         },
         "size": {
-          "width": 10,
-          "height": 10
+          "width": 9,
+          "height": 9
         }
       }
     }
@@ -43,8 +43,8 @@
           "y": 0
         },
         "size": {
-          "width": 10,
-          "height": 10
+          "width": 9,
+          "height": 9
         }
       },
       "duration": 100,
@@ -61,8 +61,8 @@
           "y": 0
         },
         "size": {
-          "width": 10,
-          "height": 2
+          "width": 9,
+          "height": 1
         }
       },
       "interactionRadius": 2,
@@ -83,8 +83,8 @@
           "y": 0
         },
         "size": {
-          "width": 10,
-          "height": 10
+          "width": 9,
+          "height": 9
         }
       },
       "duration": 2,
@@ -101,8 +101,8 @@
           "y": 0
         },
         "size": {
-          "width": 10,
-          "height": 10
+          "width": 9,
+          "height": 9
         }
       },
       "interactionRadius": 2,
@@ -121,8 +121,8 @@
           "y": 0
         },
         "size": {
-          "width": 10,
-          "height": 10
+          "width": 9,
+          "height": 9
         }
       },
       "meanShuttlingSpeed": 55,

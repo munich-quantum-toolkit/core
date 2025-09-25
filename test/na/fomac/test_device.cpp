@@ -49,7 +49,7 @@ TEST(TestNAFoMaC, TrapsJSONRoundTrip) {
 }
 TEST(TestNAFoMaC, FullJSONRoundTrip) {
   // NOLINTNEXTLINE(misc-include-cleaner)
-  nlohmann::json fomacDevice;
+  nlohmann::json jsonDevice;
   // Open the file
   // NOLINTNEXTLINE(misc-include-cleaner)
   std::ifstream file(NA_DEVICE_JSON);
@@ -57,13 +57,13 @@ TEST(TestNAFoMaC, FullJSONRoundTrip) {
   // Parse the JSON file
   try {
     // NOLINTNEXTLINE(misc-include-cleaner)
-    fomacDevice = nlohmann::json::parse(file);
+    jsonDevice = nlohmann::json::parse(file);
   } catch (const nlohmann::json::parse_error& e) {
     GTEST_FAIL() << "JSON parsing error: " << e.what();
   }
-  nlohmann::json qdmiDevice = FoMaC::getDevices().front();
+  nlohmann::json fomacDevice = FoMaC::getDevices().front();
+  canonicallyOrderLatticeVectors(jsonDevice);
   canonicallyOrderLatticeVectors(fomacDevice);
-  canonicallyOrderLatticeVectors(qdmiDevice);
-  EXPECT_EQ(fomacDevice, qdmiDevice);
+  EXPECT_EQ(jsonDevice, fomacDevice);
 }
 } // namespace na

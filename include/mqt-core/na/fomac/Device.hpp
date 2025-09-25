@@ -41,6 +41,22 @@ public:
         const std::vector<qdmi::FoMaC::Device::Site>& sites) -> Region;
 
     /**
+     * @brief Initializes the name from the underlying QDMI device.
+     */
+    auto initNameFromDevice() -> void;
+
+    /**
+     * @brief Initializes the minimum atom distance from the underlying QDMI
+     * device.
+     */
+    auto initMinAtomDistanceFromDevice() -> void;
+
+    /**
+     * @brief Initializes the number of qubits from the underlying QDMI device.
+     */
+    auto initQubitsNumFromDevice() -> void;
+
+    /**
      * @brief Initializes the length unit from the underlying QDMI device.
      */
     auto initLengthUnitFromDevice() -> void;

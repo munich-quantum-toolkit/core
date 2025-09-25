@@ -27,6 +27,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace na {
@@ -224,6 +225,7 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
 
     const std::vector limits{maxI, maxJ};
     std::vector indices{minI, minJ};
+    std::vector<std::tuple<size_t, int64_t, int64_t>> sites;
     for (bool loop = true; loop;
          loop = increment(indices, limits), ++subModuleCount) {
       // For every sublattice offset, add a site for repetition indices
@@ -235,9 +237,10 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
         y += indices[0] * latticeVector1.y;
         x += indices[1] * latticeVector2.x;
         y += indices[1] * latticeVector2.y;
-        if (origin.x <= x && x < origin.x + extentWidth && origin.y <= y &&
-            y < origin.y + extentHeight) {
+        if (origin.x <= x && x <= origin.x + extentWidth && origin.y <= y &&
+            y <= origin.y + extentHeight) {
           // Only add the site if it is within the extent of the lattice
+          sites.emplace_back(sites.size(), x, y);
           os << ";\\\n  "
                 "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueSite("
              << id << "U, " << moduleCount << "U, " << subModuleCount << "U, "
@@ -251,6 +254,34 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
                          static_cast<int64_t>(operation.region.size.height)) {
               os << ";\\\n  localOp" << operation.name
                  << "Sites.emplace_back(var.back().get())";
+            }
+          }
+          // this generator (same as the device implementation) only supports
+          // two-qubit local operations
+          for (const auto& operation : device.localMultiQubitOperations) {
+            if (x >= operation.region.origin.x &&
+                x <= operation.region.origin.x +
+                         static_cast<int64_t>(operation.region.size.width) &&
+                y >= operation.region.origin.y &&
+                y <= operation.region.origin.y +
+                         static_cast<int64_t>(operation.region.size.height)) {
+              for (const auto& [i2, x2, y2] : sites) {
+                if (x2 >= operation.region.origin.x &&
+                    x2 <=
+                        operation.region.origin.x +
+                            static_cast<int64_t>(operation.region.size.width) &&
+                    y2 >= operation.region.origin.y &&
+                    y2 <= operation.region.origin.y +
+                              static_cast<int64_t>(
+                                  operation.region.size.height)) {
+                  if (std::hypot(x2 - x, y2 - y) <=
+                      operation.interactionRadius) {
+                    os << ";\\\n  localOp" << operation.name
+                       << "Sites.emplace_back(var.at(" << i2
+                       << ").get(), var.back().get())";
+                  }
+                }
+              }
             }
           }
         }

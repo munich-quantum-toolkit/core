@@ -29,6 +29,9 @@ namespace na {
 
 FoMaC::Device::Device(const qdmi::FoMaC::Device& device)
     : qdmi::FoMaC::Device(device) {
+  initNameFromDevice();
+  initMinAtomDistanceFromDevice();
+  initQubitsNumFromDevice();
   initLengthUnitFromDevice();
   initDurationUnitFromDevice();
   initDecoherenceTimesFromDevice();
@@ -56,6 +59,13 @@ auto FoMaC::Device::calculateExtentFromSites(
   return {.origin = Vector(minX, minY),
           .size = Region::Size(static_cast<uint64_t>(maxX - minX),
                                static_cast<uint64_t>(maxY - minY))};
+}
+auto FoMaC::Device::initNameFromDevice() -> void { name = getName(); }
+auto FoMaC::Device::initMinAtomDistanceFromDevice() -> void {
+  minAtomDistance = *getMinAtomDistance();
+}
+auto FoMaC::Device::initQubitsNumFromDevice() -> void {
+  numQubits = getQubitsNum();
 }
 auto FoMaC::Device::initLengthUnitFromDevice() -> void {
   lengthUnit.unit = *qdmi::FoMaC::Device::getLengthUnit();
@@ -172,11 +182,11 @@ auto FoMaC::Device::initGlobalSingleQubitOperationsFromDevice() -> void {
       getOperations() |
           std::views::filter(
               [](const qdmi::FoMaC::Device::Operation& op) -> bool {
-                return op.isZoned() && op.getQubitsNum() == 1;
+                return op.isZoned() == true && op.getQubitsNum() == 1;
               }) |
           std::views::transform([](const qdmi::FoMaC::Device::Operation& op)
                                     -> GlobalSingleQubitOperation {
-            const auto& site = op.getSites()->front();
+            const auto site = op.getSites()->front();
             return GlobalSingleQubitOperation{
                 op.getName(),
                 Region{.origin = Vector{.x = *site.getXCoordinate(),
@@ -192,11 +202,11 @@ auto FoMaC::Device::initGlobalMultiQubitOperationsFromDevice() -> void {
       getOperations() |
           std::views::filter(
               [](const qdmi::FoMaC::Device::Operation& op) -> bool {
-                return op.isZoned() && op.getQubitsNum() > 1;
+                return op.isZoned() == true && op.getQubitsNum() > 1;
               }) |
           std::views::transform([](const qdmi::FoMaC::Device::Operation& op)
                                     -> GlobalMultiQubitOperation {
-            const auto& site = op.getSites()->front();
+            const auto site = op.getSites()->front();
             return GlobalMultiQubitOperation{
                 {.name = op.getName(),
                  .region =
@@ -219,7 +229,7 @@ auto FoMaC::Device::initLocalSingleQubitOperationsFromDevice() -> void {
       getOperations() |
           std::views::filter(
               [](const qdmi::FoMaC::Device::Operation& op) -> bool {
-                return !op.isZoned() && op.getQubitsNum() == 1;
+                return !op.isZoned().value_or(false) && op.getQubitsNum() == 1;
               }) |
           std::views::transform([](const qdmi::FoMaC::Device::Operation& op)
                                     -> LocalSingleQubitOperation {
@@ -234,7 +244,7 @@ auto FoMaC::Device::initLocalMultiQubitOperationsFromDevice() -> void {
       getOperations() |
           std::views::filter(
               [](const qdmi::FoMaC::Device::Operation& op) -> bool {
-                return !op.isZoned() && op.getQubitsNum() > 1;
+                return !op.isZoned().value_or(false) && op.getQubitsNum() > 1;
               }) |
           std::views::transform([](const qdmi::FoMaC::Device::Operation& op)
                                     -> LocalMultiQubitOperation {
