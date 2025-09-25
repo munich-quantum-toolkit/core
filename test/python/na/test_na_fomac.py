@@ -137,69 +137,73 @@ def test_operations(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:
             assert len(sites) == 1
             site = sites[0]
             if qubits_num is None:
-                assert operation.parameters_num() == device_dict["shuttlingUnits"]["numParameters"]
-                assert site.x_coordinate() == device_dict["shuttlingUnits"]["region"]["origin"]["x"]
-                assert site.y_coordinate() == device_dict["shuttlingUnits"]["region"]["origin"]["y"]
-                assert site.x_extent() == device_dict["shuttlingUnits"]["region"]["size"]["width"]
-                assert site.y_extent() == device_dict["shuttlingUnits"]["region"]["size"]["height"]
+                assert operation.parameters_num() == device_dict["shuttlingUnits"][0]["numParameters"]
+                assert site.x_coordinate() == device_dict["shuttlingUnits"][0]["region"]["origin"]["x"]
+                assert site.y_coordinate() == device_dict["shuttlingUnits"][0]["region"]["origin"]["y"]
+                assert site.x_extent() == device_dict["shuttlingUnits"][0]["region"]["size"]["width"]
+                assert site.y_extent() == device_dict["shuttlingUnits"][0]["region"]["size"]["height"]
                 if "load" in operation.name():
-                    assert operation.duration() == device_dict["shuttlingUnits"]["storeFidelity"]
-                    assert operation.fidelity() == device_dict["shuttlingUnits"]["loadFidelity"]
+                    assert operation.duration() == device_dict["shuttlingUnits"][0]["loadDuration"]
+                    assert operation.fidelity() == device_dict["shuttlingUnits"][0]["loadFidelity"]
                 if "move" in operation.name():
-                    assert operation.mean_shuttling_speed() == device_dict["shuttlingUnits"]["meanShuttlingSpeed"]
+                    assert operation.mean_shuttling_speed() == device_dict["shuttlingUnits"][0]["meanShuttlingSpeed"]
                 if "store" in operation.name():
-                    assert operation.duration() == device_dict["shuttlingUnits"]["storeDuration"]
-                    assert operation.fidelity() == device_dict["shuttlingUnits"]["storeFidelity"]
+                    assert operation.duration() == device_dict["shuttlingUnits"][0]["storeDuration"]
+                    assert operation.fidelity() == device_dict["shuttlingUnits"][0]["storeFidelity"]
             elif qubits_num == 1:
-                assert operation.duration() == device_dict["globalSingleQubitOperations"]["duration"]
-                assert operation.fidelity() == device_dict["globalSingleQubitOperations"]["fidelity"]
-                assert operation.parameters_num() == device_dict["globalSingleQubitOperations"]["numParameters"]
-                assert site.x_coordinate() == device_dict["globalSingleQubitOperations"]["region"]["origin"]["x"]
-                assert site.y_coordinate() == device_dict["globalSingleQubitOperations"]["region"]["origin"]["y"]
-                assert site.x_extent() == device_dict["globalSingleQubitOperations"]["region"]["size"]["width"]
-                assert site.y_extent() == device_dict["globalSingleQubitOperations"]["region"]["size"]["height"]
+                assert operation.duration() == device_dict["globalSingleQubitOperations"][0]["duration"]
+                assert operation.fidelity() == device_dict["globalSingleQubitOperations"][0]["fidelity"]
+                assert operation.parameters_num() == device_dict["globalSingleQubitOperations"][0]["numParameters"]
+                assert site.x_coordinate() == device_dict["globalSingleQubitOperations"][0]["region"]["origin"]["x"]
+                assert site.y_coordinate() == device_dict["globalSingleQubitOperations"][0]["region"]["origin"]["y"]
+                assert site.x_extent() == device_dict["globalSingleQubitOperations"][0]["region"]["size"]["width"]
+                assert site.y_extent() == device_dict["globalSingleQubitOperations"][0]["region"]["size"]["height"]
             else:
                 assert qubits_num > 1
-                assert operation.duration() == device_dict["globalMultiQubitOperations"]["duration"]
-                assert operation.fidelity() == device_dict["globalMultiQubitOperations"]["fidelity"]
-                assert operation.parameters_num() == device_dict["globalMultiQubitOperations"]["numParameters"]
-                assert operation.interaction_radius() == device_dict["globalMultiQubitOperations"]["interaction_radius"]
-                assert operation.blocking_radius() == device_dict["globalMultiQubitOperations"]["blocking_radius"]
-                assert operation.idling_fidelity() == device_dict["globalMultiQubitOperations"]["idlingFidelity"]
-                assert operation.qubits_num() == device_dict["globalMultiQubitOperations"]["numQubits"]
-                assert site.x_coordinate() == device_dict["globalMultiQubitOperations"]["region"]["origin"]["x"]
-                assert site.y_coordinate() == device_dict["globalMultiQubitOperations"]["region"]["origin"]["y"]
-                assert site.x_extent() == device_dict["globalMultiQubitOperations"]["region"]["size"]["width"]
-                assert site.y_extent() == device_dict["globalMultiQubitOperations"]["region"]["size"]["height"]
+                assert operation.duration() == device_dict["globalMultiQubitOperations"][0]["duration"]
+                assert operation.fidelity() == device_dict["globalMultiQubitOperations"][0]["fidelity"]
+                assert operation.parameters_num() == device_dict["globalMultiQubitOperations"][0]["numParameters"]
+                assert (
+                    operation.interaction_radius() == device_dict["globalMultiQubitOperations"][0]["interactionRadius"]
+                )
+                assert operation.blocking_radius() == device_dict["globalMultiQubitOperations"][0]["blockingRadius"]
+                assert operation.idling_fidelity() == device_dict["globalMultiQubitOperations"][0]["idlingFidelity"]
+                assert operation.qubits_num() == device_dict["globalMultiQubitOperations"][0]["numQubits"]
+                assert site.x_coordinate() == device_dict["globalMultiQubitOperations"][0]["region"]["origin"]["x"]
+                assert site.y_coordinate() == device_dict["globalMultiQubitOperations"][0]["region"]["origin"]["y"]
+                assert site.x_extent() == device_dict["globalMultiQubitOperations"][0]["region"]["size"]["width"]
+                assert site.y_extent() == device_dict["globalMultiQubitOperations"][0]["region"]["size"]["height"]
         else:
             assert qubits_num is not None
             if qubits_num == 1:
-                assert operation.duration() == device_dict["localSingleQubitOperations"]["duration"]
-                assert operation.fidelity() == device_dict["localSingleQubitOperations"]["fidelity"]
-                assert operation.parameters_num() == device_dict["localSingleQubitOperations"]["numParameters"]
+                assert operation.duration() == device_dict["localSingleQubitOperations"][0]["duration"]
+                assert operation.fidelity() == device_dict["localSingleQubitOperations"][0]["fidelity"]
+                assert operation.parameters_num() == device_dict["localSingleQubitOperations"][0]["numParameters"]
                 sites = operation.sites()
                 assert sites is not None
                 sites = list(sites)
                 assert calculate_extent_from_sites(sites) == (
-                    device_dict["localSingleQubitOperations"]["region"]["origin"]["x"],
-                    device_dict["localSingleQubitOperations"]["region"]["origin"]["y"],
-                    device_dict["localSingleQubitOperations"]["region"]["size"]["width"],
-                    device_dict["localSingleQubitOperations"]["region"]["size"]["height"],
+                    device_dict["localSingleQubitOperations"][0]["region"]["origin"]["x"],
+                    device_dict["localSingleQubitOperations"][0]["region"]["origin"]["y"],
+                    device_dict["localSingleQubitOperations"][0]["region"]["size"]["width"],
+                    device_dict["localSingleQubitOperations"][0]["region"]["size"]["height"],
                 )
             else:
                 assert qubits_num > 1
-                assert operation.duration() == device_dict["localMultiQubitOperations"]["duration"]
-                assert operation.fidelity() == device_dict["localMultiQubitOperations"]["fidelity"]
-                assert operation.parameters_num() == device_dict["localMultiQubitOperations"]["numParameters"]
-                assert operation.interaction_radius() == device_dict["localMultiQubitOperations"]["interaction_radius"]
-                assert operation.blocking_radius() == device_dict["localMultiQubitOperations"]["blocking_radius"]
-                assert operation.qubits_num() == device_dict["localMultiQubitOperations"]["numQubits"]
+                assert operation.duration() == device_dict["localMultiQubitOperations"][0]["duration"]
+                assert operation.fidelity() == device_dict["localMultiQubitOperations"][0]["fidelity"]
+                assert operation.parameters_num() == device_dict["localMultiQubitOperations"][0]["numParameters"]
+                assert (
+                    operation.interaction_radius() == device_dict["localMultiQubitOperations"][0]["interactionRadius"]
+                )
+                assert operation.blocking_radius() == device_dict["localMultiQubitOperations"][0]["blockingRadius"]
+                assert operation.qubits_num() == device_dict["localMultiQubitOperations"][0]["numQubits"]
                 sites = operation.sites()
                 assert sites is not None
                 sites = list(sites)
                 assert calculate_extent_from_sites(sites) == (
-                    device_dict["localMultiQubitOperations"]["region"]["origin"]["x"],
-                    device_dict["localMultiQubitOperations"]["region"]["origin"]["y"],
-                    device_dict["localMultiQubitOperations"]["region"]["size"]["width"],
-                    device_dict["localMultiQubitOperations"]["region"]["size"]["height"],
+                    device_dict["localMultiQubitOperations"][0]["region"]["origin"]["x"],
+                    device_dict["localMultiQubitOperations"][0]["region"]["origin"]["y"],
+                    device_dict["localMultiQubitOperations"][0]["region"]["size"]["width"],
+                    device_dict["localMultiQubitOperations"][0]["region"]["size"]["height"],
                 )
