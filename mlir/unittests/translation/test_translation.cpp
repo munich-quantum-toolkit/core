@@ -361,6 +361,12 @@ TEST_P(OperationTestUnitary, EmitsExpectedOperation) {
 INSTANTIATE_TEST_SUITE_P(
     Operations, OperationTestUnitary,
     ::testing::Values(
+        // Barrier
+        TestCaseUnitary{
+            .name = "Barrier",
+            .numQubits = 1,
+            .build = [](QuantumComputation& qc) { qc.barrier(0); },
+            .checkStringOperation = getCheckStringOperation("barrier", {0})},
         // 1-qubit gates without parameters
         TestCaseUnitary{
             .name = "I",
