@@ -154,12 +154,12 @@ public:
      * @brief The interaction radius of the operation within which two qubits
      * can interact.
      */
-    double interactionRadius = 0.0;
+    uint64_t interactionRadius = 0;
     /**
      * @brief The blocking radius of the operation within which no other
      * operation can be performed to avoid interference.
      */
-    double blockingRadius = 0.0;
+    uint64_t blockingRadius = 0;
     /// @brief The fidelity of the operation when no qubits are interacting.
     double idlingFidelity = 0.0;
     /// @brief The number of qubits involved in the operation.
@@ -184,12 +184,12 @@ public:
      * @brief The interaction radius of the operation within which two qubits
      * can interact.
      */
-    double interactionRadius = 0.0;
+    uint64_t interactionRadius = 0.0;
     /**
      * @brief The blocking radius of the operation within which no other
      * operation can be performed to avoid interference.
      */
-    double blockingRadius = 0.0;
+    uint64_t blockingRadius = 0.0;
     /// @brief The number of qubits involved in the operation.
     uint64_t numQubits = 0;
 
@@ -206,8 +206,6 @@ public:
     size_t id = 0; ///< @brief Unique identifier for the shuttling unit.
     /// @brief The region in which the shuttling unit operates.
     Region region;
-    /// @brief The speed at which the shuttling unit moves.
-    double movingSpeed = 0.0;
     /// @brief The duration of the load operation in the shuttling unit.
     uint64_t loadDuration = 0;
     /// @brief The duration of the store operation in the shuttling unit.
@@ -226,9 +224,9 @@ public:
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(ShuttlingUnit, region,
-                                                movingSpeed, loadDuration,
-                                                storeDuration, loadFidelity,
-                                                storeFidelity, numParameters,
+                                                loadDuration, storeDuration,
+                                                loadFidelity, storeFidelity,
+                                                numParameters,
                                                 meanShuttlingSpeed)
   };
   /// @brief The list of shuttling units supported by the device.

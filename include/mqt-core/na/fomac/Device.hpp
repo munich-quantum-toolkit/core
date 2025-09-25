@@ -13,6 +13,7 @@
 #include "na/device/Generator.hpp"
 #include "qdmi/FoMaC.hpp"
 
+// NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
 #include <vector>
 
@@ -31,6 +32,14 @@ public:
    * converted to `nlohmann::json` objects.
    */
   class Device : public qdmi::FoMaC::Device, na::Device {
+    /**
+     * @brief Calculate the extent of a set of sites.
+     * @param sites The sites to calculate the extent for.
+     * @returns A `Region` object representing the extent of the sites.
+     */
+    static auto calculateExtentFromSites(
+        const std::vector<qdmi::FoMaC::Device::Site>& sites) -> Region;
+
     /**
      * @brief Initializes the length unit from the underlying QDMI device.
      */
@@ -52,7 +61,36 @@ public:
      * information retrieved from the QDMI device, including lattice vectors,
      * sublattice offsets, and extent.
      */
-    auto initLatticesfromDevice() -> void;
+    auto initTrapsfromDevice() -> void;
+
+    /**
+     * @brief Initializes the global single-qubit operations from the
+     * underlying QDMI device.
+     */
+    auto initGlobalSingleQubitOperationsFromDevice() -> void;
+
+    /**
+     * @brief Initializes the global multi-qubit operations from the
+     * underlying QDMI device.
+     */
+    auto initGlobalMultiQubitOperationsFromDevice() -> void;
+
+    /**
+     * @brief Initializes the local single-qubit operations from the
+     * underlying QDMI device.
+     */
+    auto initLocalSingleQubitOperationsFromDevice() -> void;
+
+    /**
+     * @brief Initializes the local multi-qubit operations from the
+     * underlying QDMI device.
+     */
+    auto initLocalMultiQubitOperationsFromDevice() -> void;
+
+    /**
+     * @brief Initializes the shuttling units from the underlying QDMI device.
+     */
+    auto initShuttlingUnitsFromDevice() -> void;
 
   public:
     /**
@@ -85,10 +123,11 @@ public:
     // NLOHMANN_DEFINE_DERIVED_TYPE_INTRUSIVE_ONLY_SERIALIZE(Device, na::Device)
     // without any new attributes, which is the reason the macro cannot be used.
     template <typename BasicJsonType>
-    friend void to_json(BasicJsonType& nlohmann_json_j,
-                        const Device& nlohmann_json_t) {
-      nlohmann::to_json(nlohmann_json_j,
-                        static_cast<const na::Device&>(nlohmann_json_t));
+    friend void to_json(BasicJsonType& nlohmannJsonJ,
+                        const Device& nlohmannJsonT) {
+      // NOLINTNEXTLINE(misc-include-cleaner)
+      nlohmann::to_json(nlohmannJsonJ,
+                        static_cast<const na::Device&>(nlohmannJsonT));
     }
   };
 

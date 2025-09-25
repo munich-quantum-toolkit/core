@@ -428,7 +428,7 @@ public:
           -> std::optional<bool>;
       /// @see QDMI_OPERATION_PROPERTY_SITES
       [[nodiscard]] auto getSites(const std::vector<Site>& sites = {},
-                                  const std::vector<double>& params = {})
+                                  const std::vector<double>& params = {}) const
           -> std::optional<std::vector<Site>>;
       /// @see QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED
       [[nodiscard]] auto

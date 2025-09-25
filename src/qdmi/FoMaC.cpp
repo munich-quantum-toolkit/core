@@ -304,7 +304,7 @@ auto FoMaC::Device::Operation::isZoned(const std::vector<Site>& sites,
                                             sites, params);
 }
 auto FoMaC::Device::Operation::getSites(const std::vector<Site>& sites,
-                                        const std::vector<double>& params)
+                                        const std::vector<double>& params) const
     -> std::optional<std::vector<Site>> {
   const auto& qdmiSites = queryProperty<std::optional<std::vector<QDMI_Site>>>(
       QDMI_OPERATION_PROPERTY_SITES, sites, params);
