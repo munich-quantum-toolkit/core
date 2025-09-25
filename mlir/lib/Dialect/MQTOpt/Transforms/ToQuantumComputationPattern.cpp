@@ -44,12 +44,6 @@ bool isQubitType(const mlir::MemRefType type) {
   return llvm::isa<QubitType>(type.getElementType());
 }
 
-bool isQubitType(mlir::memref::DeallocOp op) {
-  const auto& memRef = op.getMemref();
-  const auto& memRefType = llvm::cast<mlir::MemRefType>(memRef.getType());
-  return isQubitType(memRefType);
-}
-
 bool isQubitType(mlir::memref::LoadOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<mlir::MemRefType>(memRef.getType());
@@ -63,9 +57,6 @@ bool isQubitType(mlir::memref::StoreOp op) {
 }
 
 bool isSupportedMemRefOp(mlir::Operation* op) {
-  if (auto deallocOp = llvm::dyn_cast<mlir::memref::DeallocOp>(op)) {
-    return isQubitType(deallocOp);
-  }
   if (auto loadOp = llvm::dyn_cast<mlir::memref::LoadOp>(op)) {
     return isQubitType(loadOp);
   }
@@ -429,8 +420,7 @@ struct ToQuantumComputationPattern final
         }
         const size_t index = *maybeIndex;
         currentQubitVariables[index] = loadOp.getResult();
-      } else if (llvm::isa<mlir::memref::StoreOp>(current) ||
-                 llvm::isa<mlir::memref::DeallocOp>(current)) {
+      } else if (llvm::isa<mlir::memref::StoreOp>(current)) {
         // Do nothing for now, may (and probably should) change later.
       } else if (llvm::isa<MeasureOp>(current)) {
         // We count the number of measurements and add a measurement operation
