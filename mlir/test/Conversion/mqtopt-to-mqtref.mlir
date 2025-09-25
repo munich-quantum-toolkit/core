@@ -125,13 +125,16 @@ module {
 module {
     // CHECK-LABEL: func.func @testConvertMeasureOp
     func.func @testConvertMeasureOp() {
-        // CHECK: [[m_0:.*]] = mqtref.measure %[[ANY:.*]]
+        // CHECK: %[[m_0:.*]] = mqtref.measure %[[ANY:.*]]
+        // CHECK: memref.store %[[m_0]], %[[ANY:.*]][%[[ANY:.*]]] : memref<1xi1>
 
         %i0 = arith.constant 0 : index
         %qreg = memref.alloc() : memref<1x!mqtopt.Qubit>
+        %creg = memref.alloca() : memref<1xi1>
         %q0 = memref.load %qreg[%i0] : memref<1x!mqtopt.Qubit>
 
         %q1, %m0 = mqtopt.measure %q0
+        memref.store %m0, %creg[%i0] : memref<1xi1>
 
         memref.store %q1, %qreg[%i0] : memref<1x!mqtopt.Qubit>
         memref.dealloc %qreg : memref<1x!mqtopt.Qubit>
@@ -161,7 +164,7 @@ module {
 }
 
 // -----
-// This test checks if single qubit gates are converted correctly
+// This test checks if single-qubit gates are converted correctly
 module {
     // CHECK-LABEL: func.func @testConvertSingleQubitOp
     func.func @testConvertSingleQubitOp() {
@@ -205,10 +208,10 @@ module {
 }
 
 // -----
-// This test checks if two target gates are converted correctly
+// This test checks if two-qubit gates are converted correctly
 module {
-    // CHECK-LABEL: func.func @testConvertTwoTargetOp
-    func.func @testConvertTwoTargetOp() {
+    // CHECK-LABEL: func.func @testConvertTwoQubitOp
+    func.func @testConvertTwoQubitOp() {
         // CHECK: mqtref.swap() %[[q_0:.*]], %[[q_1:.*]]
         // CHECK: mqtref.iswap() %[[q_0]], %[[q_1]]
         // CHECK: mqtref.iswapdg() %[[q_0]], %[[q_1]]
@@ -234,6 +237,42 @@ module {
         memref.store %q0_7, %qreg[%i0] : memref<2x!mqtopt.Qubit>
         memref.store %q1_7, %qreg[%i1] : memref<2x!mqtopt.Qubit>
         memref.dealloc %qreg : memref<2x!mqtopt.Qubit>
+
+        return
+    }
+}
+
+// -----
+// This test checks if controlled gates are converted correctly
+module {
+    // CHECK-LABEL: func.func @testConvertControlledOp
+    func.func @testConvertControlledOp() {
+        // CHECK: %[[I2:.*]] = arith.constant 2 : index
+        // CHECK: %[[I1:.*]] = arith.constant 1 : index
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
+        // CHECK: %[[Qreg:.*]] = memref.alloc() : memref<3x!mqtref.Qubit>
+        // CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<3x!mqtref.Qubit>
+        // CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<3x!mqtref.Qubit>
+        // CHECK: %[[Q2:.*]] = memref.load %[[Qreg]][%[[I2]]] : memref<3x!mqtref.Qubit>
+        // CHECK: mqtref.x() %[[Q1]] ctrl %[[Q2]] nctrl %[[Q0]]
+        // CHECK: mqtref.swap() %[[Q1]], %[[Q0]] ctrl %[[Q2]]
+        // CHECK: memref.dealloc %[[Qreg]] : memref<3x!mqtref.Qubit>
+
+        %i2 = arith.constant 2 : index
+        %i1 = arith.constant 1 : index
+        %i0 = arith.constant 0 : index
+        %qreg = memref.alloc() : memref<3x!mqtopt.Qubit>
+        %q0_0 = memref.load %qreg[%i0] : memref<3x!mqtopt.Qubit>
+        %q1_0 = memref.load %qreg[%i1] : memref<3x!mqtopt.Qubit>
+        %q2_0 = memref.load %qreg[%i2] : memref<3x!mqtopt.Qubit>
+
+        %q1_1, %q2_1, %q0_1 = mqtopt.x() %q1_0 ctrl %q2_0 nctrl %q0_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit nctrl !mqtopt.Qubit
+        %q1_2, %q0_2, %q2_2 = mqtopt.swap() %q1_1, %q0_1 ctrl %q2_1 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+        memref.store %q0_2, %qreg[%i0] : memref<3x!mqtopt.Qubit>
+        memref.store %q1_2, %qreg[%i1] : memref<3x!mqtopt.Qubit>
+        memref.store %q2_2, %qreg[%i2] : memref<3x!mqtopt.Qubit>
+        memref.dealloc %qreg : memref<3x!mqtopt.Qubit>
 
         return
     }
