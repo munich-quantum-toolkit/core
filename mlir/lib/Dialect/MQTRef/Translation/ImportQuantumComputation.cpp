@@ -62,38 +62,36 @@ using BitIndexVec = llvm::SmallVector<BitMemInfo>;
  */
 mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
                          const std::size_t numQubits) {
-  const auto& qregType = mqt::ir::ref::QubitRegisterType::get(context);
-  auto sizeAttr = builder.getI64IntegerAttr(static_cast<int64_t>(numQubits));
-
-  auto allocOp = builder.create<mqt::ir::ref::AllocOp>(
-      builder.getUnknownLoc(), qregType, nullptr, sizeAttr);
-
-  return allocOp.getResult();
+  const auto& qubitType = mqt::ir::ref::QubitType::get(context);
+  auto memRefType =
+      mlir::MemRefType::get({static_cast<int64_t>(numQubits)}, qubitType);
+  auto memref = builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(),
+                                                      memRefType);
+  return memref.getResult();
 }
 
 /**
  * @brief Extracts all qubits from a quantum register.
  *
  * @param builder The MLIR OpBuilder used to create operations
- * @param context The MLIR context in which types are created
  * @param qreg The quantum register from which to extract qubits
  * @param numQubits The number of qubits to extract
  * @return llvm::SmallVector<mlir::Value> Vector of extracted qubit values
  */
 llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
-                                             mlir::MLIRContext* context,
                                              mlir::Value qreg,
                                              const std::size_t numQubits) {
-  const auto& qubitType = mqt::ir::ref::QubitType::get(context);
   llvm::SmallVector<mlir::Value> qubits;
   qubits.reserve(numQubits);
 
-  const auto loc = builder.getUnknownLoc();
   for (std::size_t qubit = 0; qubit < numQubits; ++qubit) {
-    auto indexAttr = builder.getI64IntegerAttr(static_cast<int64_t>(qubit));
-    auto extractOp = builder.create<mqt::ir::ref::ExtractOp>(
-        loc, qubitType, qreg, nullptr, indexAttr);
-    qubits.emplace_back(extractOp.getResult());
+    auto index = builder.create<mlir::arith::ConstantIndexOp>(
+        builder.getUnknownLoc(), qubit);
+    qubits.emplace_back(
+        builder
+            .create<mlir::memref::LoadOp>(builder.getUnknownLoc(), qreg,
+                                          mlir::ValueRange{index})
+            .getResult());
   }
 
   return qubits;
@@ -134,7 +132,7 @@ getQregs(mlir::OpBuilder& builder, mlir::MLIRContext* context,
   llvm::SmallVector<QregInfo> qregs;
   for (const auto* qregPtr : qregPtrs) {
     const auto qreg = allocateQreg(builder, context, qregPtr->getSize());
-    auto qubits = extractQubits(builder, context, qreg, qregPtr->getSize());
+    auto qubits = extractQubits(builder, qreg, qregPtr->getSize());
     qregs.emplace_back(qregPtr, qreg, std::move(qubits));
   }
 
@@ -173,7 +171,7 @@ getQubits(const qc::QuantumComputation& quantumComputation,
  * @param qreg The quantum register to deallocate
  */
 void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
-  builder.create<mqt::ir::ref::DeallocOp>(builder.getUnknownLoc(), qreg);
+  builder.create<mlir::memref::DeallocOp>(builder.getUnknownLoc(), qreg);
 }
 
 /**
@@ -184,9 +182,9 @@ void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
  * @return mlir::Value The allocated classical register value
  */
 mlir::Value allocateBits(mlir::OpBuilder& builder, int64_t numBits) {
-  auto memrefType = mlir::MemRefType::get({numBits}, builder.getI1Type());
+  auto memRefType = mlir::MemRefType::get({numBits}, builder.getI1Type());
   auto memref = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
-                                                       memrefType);
+                                                       memRefType);
   return memref.getResult();
 }
 

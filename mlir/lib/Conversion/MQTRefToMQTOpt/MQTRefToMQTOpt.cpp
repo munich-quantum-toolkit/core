@@ -21,11 +21,13 @@
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
 #include <cstddef>
-#include <cstdint>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -47,22 +49,10 @@ using namespace mlir;
 namespace {
 
 struct LoweringState {
-  /// @brief Holds metadata for qubits.
-  struct QubitData {
-    /// @brief The ref register from which the qubit was extracted.
-    Value qReg;
-    /// @brief Index given as a value.
-    Value index;
-    /// @brief Index given as an attribute.
-    IntegerAttr indexAttr;
-  };
-
   /// @brief Map each initial ref qubit to its latest opt qubit.
   llvm::DenseMap<Value, Value> qubitMap;
-  /// @brief Map each initial ref qubit to its metadata.
-  llvm::DenseMap<Value, QubitData> qubitDataMap;
-  /// @brief Map each initial ref register to its latest opt register.
-  llvm::DenseMap<Value, Value> qregMap;
+  /// @brief Map each initial ref qubit to its index.
+  llvm::DenseMap<Value, Value> qubitIndexMap;
   /// @brief Map each initial ref register to its refQubits.
   llvm::DenseMap<Value, std::vector<Value>> qregQubitsMap;
 };
@@ -83,6 +73,25 @@ public:
 private:
   LoweringState* state_;
 };
+
+bool isQubitType(const MemRefType type) {
+  return llvm::isa<ref::QubitType>(type.getElementType());
+}
+
+bool isQubitType(memref::AllocOp op) { return isQubitType(op.getType()); }
+
+bool isQubitType(memref::DeallocOp op) {
+  const auto& memRef = op.getMemref();
+  const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
+  return isQubitType(memRefType);
+}
+
+bool isQubitType(memref::LoadOp op) {
+  const auto& memRef = op.getMemref();
+  const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
+  return isQubitType(memRefType);
+}
+
 } // namespace
 
 class MQTRefToMQTOptTypeConverter final : public TypeConverter {
@@ -96,83 +105,73 @@ public:
       return opt::QubitType::get(ctx);
     });
 
-    // QregType conversion
-    addConversion([ctx](ref::QubitRegisterType /*type*/) -> Type {
-      return opt::QubitRegisterType::get(ctx);
+    // MemRefType conversion
+    addConversion([ctx](MemRefType type) -> Type {
+      if (isQubitType(type)) {
+        return MemRefType::get(type.getShape(), opt::QubitType::get(ctx));
+      }
+      return type;
     });
   }
 };
 
-struct ConvertMQTRefAlloc final : StatefulOpConversionPattern<ref::AllocOp> {
-  using StatefulOpConversionPattern<ref::AllocOp>::StatefulOpConversionPattern;
+struct ConvertMQTRefMemRefAlloc final
+    : StatefulOpConversionPattern<memref::AllocOp> {
+  using StatefulOpConversionPattern<
+      memref::AllocOp>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(ref::AllocOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // save the ref register
-    const auto& refQreg = op.getQreg();
+    if (!isQubitType(op)) {
+      return failure();
+    }
 
-    // prepare return type
-    const auto& qregType = opt::QubitRegisterType::get(rewriter.getContext());
+    const auto& qubitType = opt::QubitType::get(rewriter.getContext());
+    auto memRefType = MemRefType::get(op.getType().getShape(), qubitType);
 
-    // prepare size attribute
-    auto sizeAttr = op.getSizeAttr()
-                        ? rewriter.getI64IntegerAttr(
-                              static_cast<int64_t>(*op.getSizeAttr()))
-                        : IntegerAttr{};
-
-    // replace the ref alloc operation with an opt alloc operation
-    auto mqtoptOp = rewriter.replaceOpWithNewOp<opt::AllocOp>(
-        op, qregType, op.getSize(), sizeAttr);
-
-    // put the pair of the ref register and the latest opt register in the map
-    getState().qregMap.try_emplace(refQreg, mqtoptOp.getQreg());
+    rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memRefType,
+                                                 adaptor.getDynamicSizes());
 
     return success();
   }
 };
 
-struct ConvertMQTRefDealloc final
-    : StatefulOpConversionPattern<ref::DeallocOp> {
+struct ConvertMQTRefMemRefDealloc final
+    : StatefulOpConversionPattern<memref::DeallocOp> {
   using StatefulOpConversionPattern<
-      ref::DeallocOp>::StatefulOpConversionPattern;
+      memref::DeallocOp>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(ref::DeallocOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(memref::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (!isQubitType(op)) {
+      return failure();
+    }
 
-    // prepare return type
-    const auto& qregType = opt::QubitRegisterType::get(rewriter.getContext());
-
-    const auto& refQreg = op.getQreg();
-    auto& optQreg = getState().qregMap[refQreg];
+    auto refMemRef = op.getMemref();
+    const auto& optMemRef = adaptor.getMemref();
 
     // iterate over all the qubits that were extracted from the register
-    for (const auto& refQubit : getState().qregQubitsMap[refQreg]) {
-      const auto& qubitData = getState().qubitDataMap[refQubit];
+    for (const auto& refQubit : getState().qregQubitsMap[refMemRef]) {
       const auto& optQubit = getState().qubitMap[refQubit];
+      auto index = getState().qubitIndexMap[refQubit];
 
-      auto optInsertOp = rewriter.create<opt::InsertOp>(
-          op.getLoc(), qregType, optQreg, optQubit, qubitData.index,
-          qubitData.indexAttr);
+      auto storeOp = rewriter.create<memref::StoreOp>(
+          op.getLoc(), optQubit, optMemRef, ValueRange{index});
 
       // move it before the current dealloc operation
-      optInsertOp->moveBefore(op);
-
-      // update the optQreg
-      optQreg = optInsertOp.getOutQreg();
+      storeOp->moveBefore(op);
 
       // erase the refQubit entry from the maps
       getState().qubitMap.erase(refQubit);
-      getState().qubitDataMap.erase(refQubit);
+      getState().qubitIndexMap.erase(refQubit);
     }
 
-    // erase the register from the maps
-    getState().qregMap.erase(refQreg);
-    getState().qregQubitsMap.erase(refQreg);
+    // erase the register from the map
+    getState().qregQubitsMap.erase(refMemRef);
 
-    // replace the ref dealloc operation with an opt dealloc operation
-    rewriter.replaceOpWithNewOp<opt::DeallocOp>(op, optQreg);
+    rewriter.replaceOpWithNewOp<memref::DeallocOp>(op, optMemRef);
 
     return success();
   }
@@ -208,49 +207,36 @@ struct ConvertMQTRefDeallocQubit final
   }
 };
 
-struct ConvertMQTRefExtract final
-    : StatefulOpConversionPattern<ref::ExtractOp> {
+struct ConvertMQTRefMemRefLoad final
+    : StatefulOpConversionPattern<memref::LoadOp> {
   using StatefulOpConversionPattern<
-      ref::ExtractOp>::StatefulOpConversionPattern;
+      memref::LoadOp>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(ref::ExtractOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-
-    // create result types
-    const auto& qregType = opt::QubitRegisterType::get(rewriter.getContext());
-    const auto& qubitType = opt::QubitType::get(rewriter.getContext());
-
-    const auto& refQreg = op.getInQreg();
-    const auto& optQreg = getState().qregMap[refQreg];
+    if (!isQubitType(op)) {
+      return failure();
+    }
 
     // create new operation
-    auto mqtoptOp = rewriter.create<opt::ExtractOp>(
-        op.getLoc(), qregType, qubitType, optQreg, op.getIndex(),
-        op.getIndexAttrAttr());
+    auto optLoadOp = rewriter.replaceOpWithNewOp<memref::LoadOp>(
+        op, adaptor.getMemref(), adaptor.getIndices());
 
-    const auto& refQubit = op.getOutQubit();
-    const auto& optQubit = mqtoptOp.getOutQubit();
-    const auto& newOptQreg = mqtoptOp.getOutQreg();
+    const auto& refMemRef = op.getMemref();
+    const auto& refQubit = op.getResult();
+    const auto& optQubit = optLoadOp.getResult();
 
     // put the pair of the ref qubit and the latest opt qubit in the map
     getState().qubitMap.try_emplace(refQubit, optQubit);
 
-    // update the latest opt register of the initial ref register
-    getState().qregMap[refQreg] = newOptQreg;
-
-    // add an entry to the qubitDataMap to store the indices and the register
-    // for the insertOperation
-    getState().qubitDataMap.try_emplace(refQubit, refQreg, op.getIndex(),
-                                        op.getIndexAttrAttr());
+    // add entry to qubitIndexMap
+    getState().qubitIndexMap.try_emplace(refQubit,
+                                         adaptor.getIndices().front());
 
     // append the entry to the qregQubitsMap to store which qubits that were
     // extracted from the register
-    getState().qregQubitsMap[refQreg].emplace_back(refQubit);
-
-    // replace the old operation result with the new result and delete
-    // old operation
-    rewriter.replaceOp(op, optQubit);
+    getState().qregQubitsMap[refMemRef].emplace_back(refQubit);
 
     return success();
   }
@@ -274,11 +260,11 @@ struct ConvertMQTRefMeasure final
     const Value optQubit = getState().qubitMap[refQubit];
 
     // create new operation
-    auto mqtoptOp = rewriter.create<opt::MeasureOp>(
+    auto optOp = rewriter.create<opt::MeasureOp>(
         op.getLoc(), qubitType, op.getOutBit().getType(), optQubit);
 
-    auto outOptQubit = mqtoptOp.getOutQubit();
-    auto newBit = mqtoptOp.getOutBit();
+    auto outOptQubit = optOp.getOutQubit();
+    auto newBit = optOp.getOutBit();
 
     getState().qubitMap[refQubit] = outOptQubit;
 
@@ -306,10 +292,10 @@ struct ConvertMQTRefReset final : StatefulOpConversionPattern<ref::ResetOp> {
     const Value optQubit = getState().qubitMap[refQubit];
 
     // create new operation
-    auto mqtoptOp =
+    auto optOp =
         rewriter.create<opt::ResetOp>(op.getLoc(), qubitType, optQubit);
 
-    auto outOptQubit = mqtoptOp.getOutQubit();
+    auto outOptQubit = optOp.getOutQubit();
 
     getState().qubitMap[refQubit] = outOptQubit;
 
@@ -330,12 +316,12 @@ struct ConvertMQTRefQubit final : StatefulOpConversionPattern<ref::QubitOp> {
     const auto& qubitType = opt::QubitType::get(rewriter.getContext());
 
     // create new operation
-    auto mqtoptOp =
+    auto optOp =
         rewriter.create<opt::QubitOp>(op.getLoc(), qubitType, op.getIndex());
 
     // collect ref and opt SSA value
     const auto& refQubit = op.getQubit();
-    const auto& optQubit = mqtoptOp.getQubit();
+    const auto& optQubit = optOp.getQubit();
 
     // map ref to opt
     getState().qubitMap[refQubit] = optQubit;
@@ -379,7 +365,7 @@ struct ConvertMQTRefGateOp final : StatefulOpConversionPattern<MQTGateRefOp> {
                          : DenseBoolArrayAttr{};
 
     // Create new operation
-    auto mqtoptOp = rewriter.create<MQTGateOptOp>(
+    auto optOp = rewriter.create<MQTGateOptOp>(
         op.getLoc(), ValueRange(optInQubits).getTypes(),
         ValueRange(optPosCtrlQubitsValues).getTypes(),
         ValueRange(optNegCtrlQubitsValues).getTypes(), staticParams, paramMask,
@@ -387,7 +373,7 @@ struct ConvertMQTRefGateOp final : StatefulOpConversionPattern<MQTGateRefOp> {
         optNegCtrlQubitsValues);
 
     // Update qubit map
-    const auto& optResults = mqtoptOp.getAllOutQubits();
+    const auto& optResults = optOp.getAllOutQubits();
     for (size_t i = 0; i < op.getAllInQubits().size(); i++) {
       this->getState().qubitMap[op.getAllInQubits()[i]] = optResults[i];
     }
@@ -412,14 +398,23 @@ struct MQTRefToMQTOpt final : impl::MQTRefToMQTOptBase<MQTRefToMQTOpt> {
 
     target.addIllegalDialect<ref::MQTRefDialect>();
     target.addLegalDialect<opt::MQTOptDialect>();
-    patterns.add<ConvertMQTRefAlloc>(typeConverter, context, &state);
-    patterns.add<ConvertMQTRefDealloc>(typeConverter, context, &state);
+
+    target.addDynamicallyLegalOp<memref::AllocOp>(
+        [&](memref::AllocOp op) { return !isQubitType(op); });
+    target.addDynamicallyLegalOp<memref::DeallocOp>(
+        [&](memref::DeallocOp op) { return !isQubitType(op); });
+    target.addDynamicallyLegalOp<memref::LoadOp>(
+        [&](memref::LoadOp op) { return !isQubitType(op); });
+    target.addLegalOp<memref::StoreOp>();
+
+    patterns.add<ConvertMQTRefMemRefAlloc>(typeConverter, context, &state);
+    patterns.add<ConvertMQTRefMemRefDealloc>(typeConverter, context, &state);
+    patterns.add<ConvertMQTRefMemRefLoad>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefAllocQubit>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefDeallocQubit>(typeConverter, context, &state);
-    patterns.add<ConvertMQTRefExtract>(typeConverter, context, &state);
+    patterns.add<ConvertMQTRefQubit>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefMeasure>(typeConverter, context, &state);
     patterns.add<ConvertMQTRefReset>(typeConverter, context, &state);
-    patterns.add<ConvertMQTRefQubit>(typeConverter, context, &state);
 
     ADD_CONVERT_PATTERN(GPhaseOp)
     ADD_CONVERT_PATTERN(IOp)
