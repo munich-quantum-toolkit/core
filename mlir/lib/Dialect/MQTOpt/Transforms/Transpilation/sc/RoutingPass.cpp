@@ -13,6 +13,8 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/RoutingStack.h"
 
+#include "llvm/ADT/StringRef.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -58,6 +60,11 @@ using namespace mlir;
  * @brief A function attribute that specifies an (QIR) entry point function.
  */
 constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
+
+/**
+ * @brief Attribute to forward function-level attributes to LLVM IR.
+ */
+constexpr llvm::StringLiteral PASSTHROUGH_ATTR{"passthrough"};
 
 /**
  * @brief 'For' pushes once onto the stack, hence the parent is at depth one.
@@ -185,6 +192,21 @@ void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
   };
 
   rewriter.replaceUsesWithIf(oldValue, newValue, isInRegionAndNotExcepted);
+}
+
+/**
+ * @brief Return true if the function contains "entry_point" in the passthrough
+ * attribute.
+ */
+bool isEntryPoint(func::FuncOp op) {
+  const auto passthroughAttr = op->getAttrOfType<ArrayAttr>(PASSTHROUGH_ATTR);
+  if (!passthroughAttr) {
+    return false;
+  }
+
+  return llvm::any_of(passthroughAttr, [](const Attribute attr) {
+    return isa<StringAttr>(attr) && cast<StringAttr>(attr) == ENTRY_POINT_ATTR;
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -980,7 +1002,7 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
   /// Prepare work-list.
   SmallVector<Operation*> worklist;
   for (const auto func : module.getOps<func::FuncOp>()) {
-    if (!func->hasAttr(ENTRY_POINT_ATTR)) {
+    if (!isEntryPoint(func)) {
       continue; // Ignore non entry_point functions for now.
     }
     func->walk<WalkOrder::PreOrder>(

@@ -9,9 +9,8 @@
 // RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(route-sc,verify-routing-sc)" -verify-diagnostics | FileCheck %s
 
 module {
-
     // CHECK-LABEL: func.func @entrySABRE
-    func.func @entrySABRE() attributes { entry_point } {
+    func.func @entrySABRE() attributes {passthrough = ["entry_point"]} {
 
         //
         // Figure 4 in SABRE Paper "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices".
@@ -71,7 +70,7 @@ module {
     }
 
     // CHECK-LABEL: func.func @entryBell
-    func.func @entryBell() attributes { entry_point } {
+    func.func @entryBell() attributes {passthrough = ["entry_point"]} {
 
         //
         // The bell state.
@@ -100,7 +99,7 @@ module {
     }
 
     // CHECK-LABEL: func.func @entryBellLoop
-    func.func @entryBellLoop() attributes { entry_point } {
+    func.func @entryBellLoop() attributes {passthrough = ["entry_point"]} {
 
         //
         // Bell in a loop.
@@ -136,7 +135,7 @@ module {
     }
 
     // CHECK-LABEL: func.func @entryGHZ
-    func.func @entryGHZ() attributes { entry_point } {
+    func.func @entryGHZ() attributes {passthrough = ["entry_point"]} {
 
         //
         // GHZ in a loop.
@@ -184,7 +183,7 @@ module {
         return
     }
 
-    func.func @entryBranching() attributes { entry_point } {
+    func.func @entryBranching() attributes {passthrough = ["entry_point"]} {
 
         //
         // This test shows that the routing algorithm can handle
@@ -223,7 +222,7 @@ module {
     }
 
     // CHECK-LABEL: func.func @entryAll
-    func.func @entryAll() attributes { entry_point } {
+    func.func @entryAll() attributes {passthrough = ["entry_point"]} {
 
         //
         // All of the above quantum computations in a single entry point.
