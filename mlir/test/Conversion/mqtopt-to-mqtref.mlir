@@ -9,6 +9,25 @@
 // RUN: quantum-opt %s -split-input-file --mqtopt-to-mqtref | FileCheck %s
 
 // -----
+// This test checks if a non-!mqtref.Qubit is not converted.
+module {
+    // CHECK-LABEL: func.func @testDoNotConvertMemRef()
+    func.func @testDoNotConvertMemRef() {
+        // CHECK: %[[I0:.*]] = arith.constant 0 : index
+        // CHECK: %[[Memref:.*]] = memref.alloc() : memref<1xi1>
+        // CHECK: %[[ANY:.*]] = memref.load %[[Memref]][%[[I0]]] : memref<1xi1
+        // CHECK: memref.dealloc %[[Memref]] : memref<1xi1>
+
+        %i0 = arith.constant 0 : index
+        %memref = memref.alloc() : memref<1xi1>
+        %0 = memref.load %memref[%i0] : memref<1xi1>
+        memref.dealloc %memref : memref<1xi1>
+
+        return
+    }
+}
+
+// -----
 // This test checks if the AllocOp is converted correctly using a static attribute.
 module {
     // CHECK-LABEL: func.func @testConvertAllocOpStatic()

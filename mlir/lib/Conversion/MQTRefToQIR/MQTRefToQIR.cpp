@@ -812,11 +812,11 @@ struct MQTRefToQIR final : impl::MQTRefToQIRBase<MQTRefToQIR> {
 
       if (op.getDialect()->getNamespace() == "memref") {
         if (auto allocOp = dyn_cast<memref::AllocOp>(op)) {
-          if (!isQubitType(allocOp)) {
+          if (isQubitType(allocOp)) {
             continue;
           }
         } else if (auto loadOp = dyn_cast<memref::LoadOp>(op)) {
-          if (!isQubitType(loadOp)) {
+          if (isQubitType(loadOp)) {
             continue;
           }
         } else {

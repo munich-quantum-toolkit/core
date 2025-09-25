@@ -8,6 +8,24 @@
 
 // RUN: quantum-opt %s -split-input-file --mqtref-to-qir | FileCheck %s
 
+// This test checks if a non-!mqtref.Qubit is not converted.
+module {
+    // CHECK-LABEL: llvm.func @testDoNotConvertMemRef()
+    func.func @testDoNotConvertMemRef() attributes {passthrough = ["entry_point"]} {
+        // CHECK-NOT: llvm.call @__quantum__rt__qubit_allocate_array
+        // CHECK-NOT: llvm.call @__quantum__rt__array_get_element_ptr_1d
+        // CHECK-NOT: llvm.call @__quantum__rt__qubit_release_array
+
+        %i0 = arith.constant 0 : index
+        %memref = memref.alloc() : memref<1xi1>
+        %0 = memref.load %memref[%i0] : memref<1xi1>
+        memref.dealloc %memref : memref<1xi1>
+
+        return
+    }
+}
+
+// -----
 // This test checks if the initialize operation and zero operation is inserted.
 module {
     // CHECK-LABEL: llvm.func @testInitialize()
@@ -32,7 +50,6 @@ module {
         return
     }
 }
-
 
 // -----
 // This test checks if the AllocOp is converted correctly using a dynamic operand.
