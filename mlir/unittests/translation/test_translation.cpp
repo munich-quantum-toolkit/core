@@ -363,10 +363,15 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
         // Barrier
         TestCaseUnitary{
-            .name = "Barrier",
+            .name = "Barrier_0",
             .numQubits = 1,
             .build = [](QuantumComputation& qc) { qc.barrier(0); },
             .checkStringOperation = getCheckStringOperation("barrier", {0})},
+        TestCaseUnitary{
+            .name = "Barrier_01",
+            .numQubits = 2,
+            .build = [](QuantumComputation& qc) { qc.barrier({0, 1}); },
+            .checkStringOperation = getCheckStringOperation("barrier", {0, 1})},
         // 1-qubit gates without parameters
         TestCaseUnitary{
             .name = "I",
