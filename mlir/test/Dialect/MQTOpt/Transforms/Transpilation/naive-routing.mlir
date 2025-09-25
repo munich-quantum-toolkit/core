@@ -356,4 +356,11 @@ module {
 
         return
     }
+
+    // CHECK-LABEL: func.func @noEntryPoint
+    func.func @noEntryPoint() {
+        // CHECK: %[[ANY:.*]] = mqtopt.allocQubit
+        %q0 = mqtopt.allocQubit
+        return
+    }
 }
