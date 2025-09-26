@@ -9,6 +9,7 @@
 #ifndef MQTOPT_OPS
 #define MQTOPT_OPS
 
+include "mlir/IR/BuiltinTypeInterfaces.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
@@ -73,21 +74,12 @@ class MQTOptType<string name, string typeMnemonic, list<Trait> traits = []>
     let mnemonic = typeMnemonic;
 }
 
-def QubitType : MQTOptType<"Qubit", "Qubit"> {
+def QubitType : MQTOptType<"Qubit", "Qubit", [MemRefElementTypeInterface]> {
     let summary = "value-semantic qubit";
 
     let description = [{
         The value-semantic qubit corresponds to a state.
         It can be static or dynamic.
-    }];
-}
-
-def QregType : MQTOptType<"QubitRegister", "QubitRegister"> {
-    let summary = "array of value-semantic qubits";
-
-    let description = [{
-        Each value-semantic qubit corresponds to a state.
-        The qubits can be static or dynamic.
     }];
 }
 
@@ -211,115 +203,6 @@ def DeallocQubitOp : ResourceOp<"deallocQubit"> {
     let arguments = (ins QubitType:$qubit);
     let results = (outs);
     let assemblyFormat = "$qubit attr-dict";
-}
-
-// Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1125
-def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
-    let summary = "Allocates a qubit register";
-
-    let description = [{
-        This class represents an operation that allocates a qubit register. The
-        size can either be specified during runtime as an operand or as an
-        attribute when the size is known at compile time. Before the qubits in
-        the register can be used, they need to be extracted from the register
-        using the `extractQubit` operation.
-
-        Example (size as argument):
-        ```mlir
-        %c0_i64 = arith.constant 2 : i64
-        %0 = "mqtopt.allocQubitRegister"(%c0_i64) : (i64) -> !mqtopt.QubitRegister
-        ```
-
-        Example (size as attribute):
-        ```mlir
-        %0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-        ```
-    }];
-
-    let arguments = (ins
-        Optional<I64>:$size,
-        OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$size_attr
-    );
-
-    let results = (outs
-        QregType:$qreg
-    );
-}
-
-// Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1125
-def DeallocOp : ResourceOp<"deallocQubitRegister"> {
-    let summary = "Deallocates a qubit register";
-
-    let description = [{
-        This class represents an operation that deallocates a qubit register.
-        The qubit register is no longer valid after this operation. To be valid
-        all extracted qubits had to be inserted back into the register. However,
-        this property is not enforced by the dialect.
-
-        Example:
-        ```mlir
-        "mqtopt.deallocQubitRegister"(%0) : (!mqtopt.QubitRegister) -> ()
-        ```
-    }];
-
-    let arguments = (ins
-        QregType:$qreg
-    );
-}
-
-// Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1125
-def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
-    let summary = "Extract a specific qubit from a given register";
-
-    let description = [{
-        This class represents an operation that extracts a specific qubit from
-        a given register. Before, the register must be allocated with the
-        allocateQubitRegister operation. Upon invocation of this operation, the
-        qubit is removed from the register and can be used in operations. A gap
-        is left in the register that can be filled with the insert operation.
-
-        Example:
-        ```mlir
-        %out_qreg, %out_qubit = "mqtopt.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-        ```
-    }];
-
-    let arguments = (ins
-        QregType:$in_qreg,
-        Optional<I64>:$index,
-        OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index_attr
-    );
-
-    let results = (outs
-        QregType:$out_qreg,
-        QubitType:$out_qubit
-    );
-}
-
-// Will be removed with https://github.com/munich-quantum-toolkit/core/issues/1125
-def InsertOp : ResourceOp<"insertQubit", [UniqueIndexDefinition]> {
-    let summary = "Insert a specific qubit into a given register";
-
-    let description = [{
-        This class represents an operation that inserts a qubit back into a qubit
-        register. Before, the same underlying qubit must have been extracted
-        from the same register at the same index. However, this property is not
-        enforced by the dialect. Moreover, the dialect permits the (invalid) insertion
-        of static qubits into registers. The dialect avoids these issues by relying on
-        the fact that the conversion from `mqtref` to `mqtopt` will never produce these
-        invalid operations.
-    }];
-
-    let arguments = (ins
-        QregType:$in_qreg,
-        QubitType:$in_qubit,
-        Optional<I64>:$index,
-        OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index_attr
-    );
-
-    let results = (outs
-        QregType:$out_qreg
-    );
 }
 
 def QubitOp : ResourceOp<"qubit"> {
