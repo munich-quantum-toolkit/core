@@ -110,13 +110,14 @@ auto FoMaC::Device::initTrapsfromDevice() -> void {
           return std::pair{a.getXCoordinate(), a.getYCoordinate()} <
                  std::pair{b.getXCoordinate(), b.getYCoordinate()};
         });
-    const Vector latticeOrigin(*referenceSite0.getXCoordinate(),
-                               *referenceSite0.getYCoordinate());
+    const Vector latticeOrigin{.x = *referenceSite0.getXCoordinate(),
+                               .y = *referenceSite0.getYCoordinate()};
     // get sublattice offsets
     std::vector<Vector> sublatticeOffsets;
     for (const auto& site : submodule0Sites) {
-      sublatticeOffsets.emplace_back(*site.getXCoordinate() - latticeOrigin.x,
-                                     *site.getYCoordinate() - latticeOrigin.y);
+      sublatticeOffsets.emplace_back(
+          Vector{.x = *site.getXCoordinate() - latticeOrigin.x,
+                 .y = *site.getYCoordinate() - latticeOrigin.y});
     }
     // reference sites (other submodules)
     std::unordered_map<uint64_t, Site> referenceSites;
@@ -144,9 +145,9 @@ auto FoMaC::Device::initTrapsfromDevice() -> void {
                                                      const auto& b) {
           return dist(latticeOrigin, a.second) < dist(latticeOrigin, b.second);
         })->second;
-    const Vector latticeVector1(
-        *referenceSite1.getXCoordinate() - latticeOrigin.x,
-        *referenceSite1.getYCoordinate() - latticeOrigin.y);
+    const Vector latticeVector1{
+        .x = *referenceSite1.getXCoordinate() - latticeOrigin.x,
+        .y = *referenceSite1.getYCoordinate() - latticeOrigin.y};
     // find second lattice vector (non-collinear)
     auto nonCollinearReferenceSites =
         referenceSites |
@@ -163,17 +164,23 @@ auto FoMaC::Device::initTrapsfromDevice() -> void {
                                           dist(latticeOrigin, b.second);
                                  })
             ->second;
-    const Vector latticeVector2(
-        *referenceSite2.getXCoordinate() - latticeOrigin.x,
-        *referenceSite2.getYCoordinate() - latticeOrigin.y);
+    const Vector latticeVector2{
+        .x = *referenceSite2.getXCoordinate() - latticeOrigin.x,
+        .y = *referenceSite2.getYCoordinate() - latticeOrigin.y};
     const auto& extent = calculateExtentFromSites(moduleSites);
     // ensure canonical order of lattice vectors
     if (latticeVector1 < latticeVector2) {
-      traps.emplace_back(latticeOrigin, latticeVector1, latticeVector2,
-                         sublatticeOffsets, extent);
+      traps.emplace_back(Lattice{.latticeOrigin = latticeOrigin,
+                                 .latticeVector1 = latticeVector1,
+                                 .latticeVector2 = latticeVector2,
+                                 .sublatticeOffsets = sublatticeOffsets,
+                                 .extent = extent});
     } else {
-      traps.emplace_back(latticeOrigin, latticeVector2, latticeVector1,
-                         sublatticeOffsets, extent);
+      traps.emplace_back(Lattice{.latticeOrigin = latticeOrigin,
+                                 .latticeVector1 = latticeVector2,
+                                 .latticeVector2 = latticeVector1,
+                                 .sublatticeOffsets = sublatticeOffsets,
+                                 .extent = extent});
     }
   }
 }
