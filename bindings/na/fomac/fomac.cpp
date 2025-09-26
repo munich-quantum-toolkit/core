@@ -28,7 +28,7 @@ namespace py = pybind11;
 using namespace py::literals;
 
 PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
-  m.import("mqt.core.qdmi.fomac");
+  pybind11::module_::import("mqt.core.qdmi.fomac");
 
   auto device = py::class_<na::FoMaC::Device, qdmi::FoMaC::Device>(m, "Device");
 
