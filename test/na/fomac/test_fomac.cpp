@@ -28,16 +28,16 @@ auto canonicallyOrderLatticeVectors(nlohmann::json& device) -> void {
   }
 }
 } // namespace
+// ignore the linter warning regarding nlohmann::json and the compile time
+// definitions
+// NOLINTBEGIN(misc-include-cleaner)
 TEST(TestNAFoMaC, TrapsJSONRoundTrip) {
-  // NOLINTNEXTLINE(misc-include-cleaner)
   nlohmann::json fomacDevice;
   // Open the file
-  // NOLINTNEXTLINE(misc-include-cleaner)
   std::ifstream file(NA_DEVICE_JSON);
   ASSERT_TRUE(file.is_open()) << "Failed to open json file: " NA_DEVICE_JSON;
   // Parse the JSON file
   try {
-    // NOLINTNEXTLINE(misc-include-cleaner)
     fomacDevice = nlohmann::json::parse(file);
   } catch (const nlohmann::json::parse_error& e) {
     GTEST_FAIL() << "JSON parsing error: " << e.what();
@@ -48,15 +48,12 @@ TEST(TestNAFoMaC, TrapsJSONRoundTrip) {
   EXPECT_EQ(fomacDevice["traps"], qdmiDevice["traps"]);
 }
 TEST(TestNAFoMaC, FullJSONRoundTrip) {
-  // NOLINTNEXTLINE(misc-include-cleaner)
   nlohmann::json jsonDevice;
   // Open the file
-  // NOLINTNEXTLINE(misc-include-cleaner)
   std::ifstream file(NA_DEVICE_JSON);
   ASSERT_TRUE(file.is_open()) << "Failed to open json file: " NA_DEVICE_JSON;
   // Parse the JSON file
   try {
-    // NOLINTNEXTLINE(misc-include-cleaner)
     jsonDevice = nlohmann::json::parse(file);
   } catch (const nlohmann::json::parse_error& e) {
     GTEST_FAIL() << "JSON parsing error: " << e.what();
@@ -66,4 +63,5 @@ TEST(TestNAFoMaC, FullJSONRoundTrip) {
   canonicallyOrderLatticeVectors(fomacDevice);
   EXPECT_EQ(jsonDevice, fomacDevice);
 }
+// NOLINTEND(misc-include-cleaner)
 } // namespace na
