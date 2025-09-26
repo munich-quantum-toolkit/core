@@ -21,7 +21,7 @@ namespace mqt::ir::opt {
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 /**
- * @brief This pass attempty to sink quantum operations into the block where
+ * @brief This pass attempts to sink quantum operations into the block where
  * their results are used.
  */
 struct QuantumSinkPass final : impl::QuantumSinkPassBase<QuantumSinkPass> {

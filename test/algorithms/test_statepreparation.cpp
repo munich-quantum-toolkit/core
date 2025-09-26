@@ -38,13 +38,15 @@ protected:
 INSTANTIATE_TEST_SUITE_P(
     StatePreparation, StatePreparation,
     testing::Values(
-        std::vector<std::complex<double>>{std::complex{1 / std::sqrt(2)},
-                                          std::complex{-1 / std::sqrt(2)}},
+        std::vector<std::complex<double>>{
+            std::complex<double>{1 / std::sqrt(2)},
+            std::complex<double>{-1 / std::sqrt(2)}},
         std::vector<std::complex<double>>{
             std::complex<double>{1 / std::sqrt(2)},
             std::complex<double>{0, -1 / std::sqrt(2)}},
-        std::vector<std::complex<double>>{0, std::complex{1 / std::sqrt(2)},
-                                          std::complex{-1 / std::sqrt(2)}, 0},
+        std::vector<std::complex<double>>{
+            0, std::complex<double>{1 / std::sqrt(2)},
+            std::complex<double>{-1 / std::sqrt(2)}, 0},
         std::vector<std::complex<double>>{
             std::complex<double>{1 / std::sqrt(13)},
             std::complex<double>{-1 / std::sqrt(13)},
@@ -56,10 +58,11 @@ INSTANTIATE_TEST_SUITE_P(
             std::complex<double>{1. / 4}, std::complex<double>{1. / 4},
             std::complex<double>{1. / 4}, std::complex<double>{3. / 4}},
         std::vector<std::complex<double>>{
-            std::complex<double>{1. / 4}, std::complex<double>{0, 1. / 4},
-            std::complex<double>{1. / 4}, std::complex<double>{0, 1. / 4},
+            std::complex<double>{1. / 4},
             std::complex<double>{0, 1. / 4}, std::complex<double>{1. / 4},
-            std::complex<double>{1. / 4}, std::complex<double>{3. / 4}}));
+            std::complex<double>{0, 1. / 4}, std::complex<double>{0, 1. / 4},
+            std::complex<double>{1. / 4}, std::complex<double>{1. / 4},
+            std::complex<double>{3. / 4}}));
 
 TEST_P(StatePreparation, StatePreparationCircuitSimulation) {
   const auto& expectedAmplitudes = GetParam();

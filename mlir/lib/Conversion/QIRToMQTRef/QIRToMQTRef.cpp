@@ -43,6 +43,7 @@
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -367,7 +368,6 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     // get the name of the operation and prepare the return types
     const auto fnName = op.getCallee();
     const auto qubitType = ref::QubitType::get(ctx);
-    const auto qregType = ref::QubitRegisterType::get(ctx);
     const auto operands = adaptor.getOperands();
 
     // get the new operands from the operandMap
@@ -391,8 +391,13 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     }
     // match alloc register
     if (fnName == "__quantum__rt__qubit_allocate_array") {
-      const auto newOp = rewriter.replaceOpWithNewOp<ref::AllocOp>(
-          op, qregType, adaptor.getOperands());
+      const auto memRefType =
+          MemRefType::get({ShapedType::kDynamic}, qubitType);
+      const auto sizeInt = adaptor.getOperands().front();
+      auto size = rewriter.create<mlir::arith::IndexCastOp>(
+          op.getLoc(), rewriter.getIndexType(), sizeInt);
+      const auto newOp = rewriter.replaceOpWithNewOp<memref::AllocOp>(
+          op, memRefType, ValueRange{size});
 
       // update the operand list
       getState().operandMap.try_emplace(op->getResult(0), newOp->getResult(0));
@@ -414,7 +419,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     }
     // match dealloc register
     if (fnName == "__quantum__rt__qubit_release_array") {
-      rewriter.replaceOpWithNewOp<ref::DeallocOp>(op, newOperands.front());
+      rewriter.replaceOpWithNewOp<memref::DeallocOp>(op, newOperands.front());
       return success();
     }
     // match reset operation
@@ -424,8 +429,11 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     }
     // match extract qubit from register
     if (fnName == "__quantum__rt__array_get_element_ptr_1d") {
-      const auto newOp = rewriter.replaceOpWithNewOp<ref::ExtractOp>(
-          op, qubitType, newOperands);
+      const auto indexInt = newOperands.back();
+      auto index = rewriter.create<mlir::arith::IndexCastOp>(
+          op.getLoc(), rewriter.getIndexType(), indexInt);
+      const auto newOp = rewriter.replaceOpWithNewOp<memref::LoadOp>(
+          op, newOperands.front(), ValueRange{index});
 
       // update the operand list
       getState().operandMap.try_emplace(op->getResult(0),

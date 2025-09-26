@@ -10,9 +10,9 @@
 
 #include "qasm3/Token.hpp"
 
+#include <ir/Definitions.hpp>
 #include <ostream>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 
 namespace qasm3 {
@@ -263,12 +263,8 @@ std::string Token::kindToString(const Kind kind) {
     return "InitialLayout";
   case Kind::OutputPermutation:
     return "OutputPermutation";
-
-  default:
-    // This cannot happen, as we have a case for every enum value.
-    // The default case is only here to silence compiler warnings.
-    throw std::runtime_error("Unknown token kind");
   }
+  qc::unreachable();
 }
 
 std::string Token::toString() const {

@@ -23,19 +23,6 @@ if(NOT TARGET MQT::CoreIR)
     ${MQT_CORE_TARGET_NAME}-ir PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
                                       FILES ${IR_HEADERS})
 
-  # add link libraries
-  target_link_libraries(${MQT_CORE_TARGET_NAME}-ir PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
-
-  # set required C++ standard
-  target_compile_features(${MQT_CORE_TARGET_NAME}-ir PUBLIC cxx_std_20)
-
-  # set versioning information
-  set_target_properties(
-    ${MQT_CORE_TARGET_NAME}-ir
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreIR)
-
   # generate export header
   include(GenerateExportHeader)
   generate_export_header(${MQT_CORE_TARGET_NAME}-ir BASE_NAME mqt_core_ir)

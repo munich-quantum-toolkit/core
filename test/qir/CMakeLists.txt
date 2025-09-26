@@ -6,7 +6,5 @@
 #
 # Licensed under the MIT License
 
-set(LLVM_TARGET_DEFINITIONS Passes.td)
-mlir_tablegen(Passes.h.inc -gen-pass-decls -name MQTRef)
-add_public_tablegen_target(MLIRMQTRefTransformsIncGen)
-add_mlir_doc(Passes MLIRMQTRefPasses Passes/ -gen-pass-doc)
+add_subdirectory(runtime)
+add_subdirectory(runner)

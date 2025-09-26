@@ -83,6 +83,9 @@ add_subdirectory(na)
 # add QDMI package library
 add_subdirectory(qdmi)
 
+# add QIR package library
+add_subdirectory(qir)
+
 # Installation instructions for the main library
 if(MQT_CORE_INSTALL)
   include(CMakePackageConfigHelpers)

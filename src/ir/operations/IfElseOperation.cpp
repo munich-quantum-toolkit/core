@@ -43,9 +43,8 @@ ComparisonKind getInvertedComparisonKind(const ComparisonKind kind) {
     return Neq;
   case Neq:
     return Eq;
-  default:
-    unreachable();
   }
+  unreachable();
 }
 
 std::string toString(const ComparisonKind& kind) {
@@ -62,9 +61,8 @@ std::string toString(const ComparisonKind& kind) {
     return ">";
   case Geq:
     return ">=";
-  default:
-    unreachable();
   }
+  unreachable();
 }
 
 std::ostream& operator<<(std::ostream& os, const ComparisonKind& kind) {

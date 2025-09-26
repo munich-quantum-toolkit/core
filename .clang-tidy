@@ -15,6 +15,7 @@ Checks: |
   -cppcoreguidelines-macro-usage,
   -cppcoreguidelines-pro-type-reinterpret-cast,
   -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-avoid-do-while,
   google-*,
   -google-readability-todo,
   -google-build-using-namespace,

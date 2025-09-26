@@ -186,12 +186,15 @@ TEST_F(ImportTest, AllocationAndDeallocation) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
-    CHECK: "mqtref.deallocQubitRegister"(%[[Reg]]) : (!mqtref.QubitRegister) -> ()
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<3x!mqtref.Qubit>
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<3x!mqtref.Qubit>
+    CHECK: %[[I1:.*]] = arith.constant 1 : index
+    CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<3x!mqtref.Qubit>
+    CHECK: %[[I2:.*]] = arith.constant 2 : index
+    CHECK: %[[Q2:.*]] = memref.load %[[Qreg]][%[[I2]]] : memref<3x!mqtref.Qubit>
+    CHECK: %[[Creg:.*]] = memref.alloca() : memref<2xi1>
+    CHECK: memref.dealloc %[[Qreg]] : memref<3x!mqtref.Qubit>
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -205,16 +208,18 @@ TEST_F(ImportTest, Measure01) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtref.Qubit>
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtref.Qubit>
+    CHECK: %[[I1:.*]] = arith.constant 1 : index
+    CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtref.Qubit>
+    CHECK: %[[Creg:.*]] = memref.alloca() : memref<2xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
     CHECK: %[[I0:.*]] = arith.constant 0 : index
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<2xi1>
+    CHECK: memref.store %[[M0]], %[[Creg]][%[[I0]]] : memref<2xi1>
     CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
     CHECK: %[[I1:.*]] = arith.constant 1 : index
-    CHECK: memref.store %[[M1]], %[[Mem]][%[[I1]]] : memref<2xi1>
+    CHECK: memref.store %[[M1]], %[[Creg]][%[[I1]]] : memref<2xi1>
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -228,16 +233,18 @@ TEST_F(ImportTest, Measure0) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtref.Qubit>
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtref.Qubit>
+    CHECK: %[[I1:.*]] = arith.constant 1 : index
+    CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtref.Qubit>
+    CHECK: %[[Creg:.*]] = memref.alloca() : memref<2xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
     CHECK: %[[I0:.*]] = arith.constant 0 : index
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<2xi1>
+    CHECK: memref.store %[[M0]], %[[Creg]][%[[I0]]] : memref<2xi1>
     CHECK-NOT: mqtref.measure %[[Q1]]
     CHECK-NOT: arith.constant 1 : index
-    CHECK-NOT: memref.store  %[[ANY:.*]], %[[Mem]][%[[ANY:.*]]] : memref<2xi1>
+    CHECK-NOT: memref.store  %[[ANY:.*]], %[[Creg]][%[[ANY:.*]]] : memref<2xi1>
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
@@ -251,9 +258,11 @@ TEST_F(ImportTest, Reset01) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtref.Qubit>
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtref.Qubit>
+    CHECK: %[[I1:.*]] = arith.constant 1 : index
+    CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtref.Qubit>
     CHECK: mqtref.reset %[[Q0]]
     CHECK: mqtref.reset %[[Q1]]
   )";
@@ -269,9 +278,11 @@ TEST_F(ImportTest, Reset0) {
 
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtref.Qubit>
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtref.Qubit>
+    CHECK: %[[I1:.*]] = arith.constant 1 : index
+    CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtref.Qubit>
     CHECK: mqtref.reset %[[Q0]]
     CHECK-NOT: mqtref.reset %[[Q1]]
   )";
@@ -302,27 +313,26 @@ std::string getCheckStringTestCaseUnitary(const TestCaseUnitary& testCase) {
       "CHECK: func.func @main() attributes {passthrough = [\"entry_point\"]}\n";
 
   // Add register allocation
-  result +=
-      "CHECK: %[[Reg:.*]] = \"mqtref.allocQubitRegister\"() <{size_attr = " +
-      std::to_string(testCase.numQubits) +
-      " : i64}> : () -> !mqtref.QubitRegister\n";
+  result += "CHECK: %[[Qreg:.*]] = memref.alloc() : memref<" +
+            std::to_string(testCase.numQubits) + "x!mqtref.Qubit>\n";
 
   // Add qubit extraction
   for (size_t i = 0; i < testCase.numQubits; ++i) {
+    result += "CHECK: %[[I" + std::to_string(i) + ":.*]] = arith.constant " +
+              std::to_string(i) + " : index\n";
     result += "CHECK: %[[Q" + std::to_string(i) +
-              ":.*]] = \"mqtref.extractQubit\"(%[[Reg]]) "
-              "<{index_attr = " +
-              std::to_string(i) +
-              " : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit\n";
+              ":.*]] = memref.load %[[Qreg]][%[[I" + std::to_string(i) +
+              ":.*]]] : memref<" + std::to_string(testCase.numQubits) +
+              "x!mqtref.Qubit>\n";
   }
 
   // Add operation-specific check
   result += testCase.checkStringOperation;
   result += "\n";
 
-  // Add register deallocation
-  result += "CHECK: \"mqtref.deallocQubitRegister\"(%[[Reg]]) : "
-            "(!mqtref.QubitRegister) -> ()\n";
+  // Add dealocation
+  result += "CHECK: memref.dealloc %[[Qreg]] : memref<" +
+            std::to_string(testCase.numQubits) + "x!mqtref.Qubit>\n";
 
   // Add return
   result += "CHECK: return\n";
@@ -351,6 +361,17 @@ TEST_P(OperationTestUnitary, EmitsExpectedOperation) {
 INSTANTIATE_TEST_SUITE_P(
     Operations, OperationTestUnitary,
     ::testing::Values(
+        // Barrier
+        TestCaseUnitary{
+            .name = "Barrier_0",
+            .numQubits = 1,
+            .build = [](QuantumComputation& qc) { qc.barrier(0); },
+            .checkStringOperation = getCheckStringOperation("barrier", {0})},
+        TestCaseUnitary{
+            .name = "Barrier_01",
+            .numQubits = 2,
+            .build = [](QuantumComputation& qc) { qc.barrier({0, 1}); },
+            .checkStringOperation = getCheckStringOperation("barrier", {0, 1})},
         // 1-qubit gates without parameters
         TestCaseUnitary{
             .name = "I",
@@ -568,8 +589,9 @@ getCheckStringTestCaseIfRegister(const TestCaseIfRegister& testCase) {
   result += R"(
     CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
     CHECK: %[[Exp:.*]] = arith.constant 1 : i64
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<1x!mqtref.Qubit>
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<1x!mqtref.Qubit>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
     CHECK: %[[C0:.*]] = arith.extui %[[M0]] : i1 to i64
   )";
@@ -582,7 +604,7 @@ getCheckStringTestCaseIfRegister(const TestCaseIfRegister& testCase) {
     CHECK: scf.if %[[Cnd0]] {
     CHECK: mqtref.x() %[[Q0]]
     CHECK: }
-    CHECK: "mqtref.deallocQubitRegister"(%[[Reg]]) : (!mqtref.QubitRegister) -> ()
+    CHECK: memref.dealloc %[[Qreg]] : memref<1x!mqtref.Qubit>
     CHECK: return
   )";
 
@@ -642,16 +664,16 @@ TEST_F(ImportTest, IfRegisterEq2) {
     CHECK: %[[I2:.*]] = arith.constant 2 : index
     CHECK: %[[I1:.*]] = arith.constant 1 : index
     CHECK: %[[I0:.*]] = arith.constant 0 : index
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtref.Qubit>
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtref.Qubit>
+    CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtref.Qubit>
+    CHECK: %[[Creg:.*]] = memref.alloca() : memref<2xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<2xi1>
+    CHECK: memref.store %[[M0]], %[[Creg]][%[[I0]]] : memref<2xi1>
     CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
-    CHECK: memref.store %[[M1]], %[[Mem]][%[[I1]]] : memref<2xi1>
+    CHECK: memref.store %[[M1]], %[[Creg]][%[[I1]]] : memref<2xi1>
     CHECK: %[[Sum1:.*]] = scf.for %[[Ii:.*]] = %[[I0]] to %[[I2]] step %[[I1]] iter_args(%[[Sumi:.*]] = %[[Sum0]]) -> (i64) {
-    CHECK: %[[Bi:.*]] = memref.load %[[Mem]][%[[Ii]]] : memref<2xi1>
+    CHECK: %[[Bi:.*]] = memref.load %[[Creg]][%[[Ii]]] : memref<2xi1>
     CHECK: %[[Ci:.*]] = arith.extui %[[Bi:.*]] : i1 to i64
     CHECK: %[[Indi:.*]] = arith.index_cast %[[Ii]] : index to i64
     CHECK: %[[Shli:.*]] = arith.shli %[[Ci]], %[[Indi]] : i64
@@ -684,16 +706,16 @@ TEST_F(ImportTest, IfElseRegister) {
     CHECK: %[[I2:.*]] = arith.constant 2 : index
     CHECK: %[[I1:.*]] = arith.constant 1 : index
     CHECK: %[[I0:.*]] = arith.constant 0 : index
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<2xi1>
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtref.Qubit>
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtref.Qubit>
+    CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtref.Qubit>
+    CHECK: %[[Creg:.*]] = memref.alloca() : memref<2xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<2xi1>
+    CHECK: memref.store %[[M0]], %[[Creg]][%[[I0]]] : memref<2xi1>
     CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
-    CHECK: memref.store %[[M1]], %[[Mem]][%[[I1]]] : memref<2xi1>
+    CHECK: memref.store %[[M1]], %[[Creg]][%[[I1]]] : memref<2xi1>
     CHECK: %[[Sum1:.*]] = scf.for %[[Ii:.*]] = %[[I0]] to %[[I2]] step %[[I1]] iter_args(%[[Sumi:.*]] = %[[Sum0]]) -> (i64) {
-    CHECK: %[[Bi:.*]] = memref.load %[[Mem]][%[[Ii]]] : memref<2xi1>
+    CHECK: %[[Bi:.*]] = memref.load %[[Creg]][%[[Ii]]] : memref<2xi1>
     CHECK: %[[Ci:.*]] = arith.extui %[[Bi:.*]] : i1 to i64
     CHECK: %[[Indi:.*]] = arith.index_cast %[[Ii]] : index to i64
     CHECK: %[[Shli:.*]] = arith.shli %[[Ci]], %[[Indi]] : i64
@@ -738,8 +760,9 @@ std::string getCheckStringTestCaseIfBit(const TestCaseIfBit& testCase) {
   }
 
   result += R"(
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<1x!mqtref.Qubit>
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<1x!mqtref.Qubit>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
   )";
 
@@ -755,6 +778,7 @@ std::string getCheckStringTestCaseIfBit(const TestCaseIfBit& testCase) {
   result += R"(
     CHECK: mqtref.x() %[[Q0]]
     CHECK: }
+    CHECK: memref.dealloc %[[Qreg]] : memref<1x!mqtref.Qubit>
     CHECK: return
   )";
 
@@ -817,8 +841,9 @@ std::string getCheckStringTestCaseIfElseBit(const TestCaseIfElseBit& testCase) {
 
   result += R"(
     CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<1x!mqtref.Qubit>
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<1x!mqtref.Qubit>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
     CHECK: scf.if %[[M0]] {
   )";
@@ -829,6 +854,7 @@ std::string getCheckStringTestCaseIfElseBit(const TestCaseIfElseBit& testCase) {
 
   result += R"(
     CHECK: }
+    CHECK: memref.dealloc %[[Qreg]] : memref<1x!mqtref.Qubit>
     CHECK: return
   )";
 
@@ -896,24 +922,27 @@ TEST_F(ImportTest, GHZ) {
   const auto outputString = getOutputString(&module);
   const auto* checkString = R"(
     CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q2:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 2 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Mem:.*]] = memref.alloca() : memref<3xi1>
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<3x!mqtref.Qubit>
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<3x!mqtref.Qubit>
+    CHECK: %[[I1:.*]] = arith.constant 1 : index
+    CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<3x!mqtref.Qubit>
+    CHECK: %[[I2:.*]] = arith.constant 2 : index
+    CHECK: %[[Q2:.*]] = memref.load %[[Qreg]][%[[I2]]] : memref<3x!mqtref.Qubit>
+    CHECK: %[[Creg:.*]] = memref.alloca() : memref<3xi1>
     CHECK: mqtref.h() %[[Q0]]
     CHECK: mqtref.x() %[[Q1]] ctrl %[[Q0]]
     CHECK: mqtref.x() %[[Q2]] ctrl %[[Q0]]
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
     CHECK: %[[I0:.*]] = arith.constant 0 : index
-    CHECK: memref.store %[[M0]], %[[Mem]][%[[I0]]] : memref<3xi1>
+    CHECK: memref.store %[[M0]], %[[Creg]][%[[I0]]] : memref<3xi1>
     CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
     CHECK: %[[I1:.*]] = arith.constant 1 : index
-    CHECK: memref.store %[[M1]], %[[Mem]][%[[I1]]] : memref<3xi1>
+    CHECK: memref.store %[[M1]], %[[Creg]][%[[I1]]] : memref<3xi1>
     CHECK: %[[M2:.*]] = mqtref.measure %[[Q2]]
     CHECK: %[[I2:.*]] = arith.constant 2 : index
-    CHECK: memref.store %[[M2]], %[[Mem]][%[[I2]]] : memref<3xi1>
-    CHECK: "mqtref.deallocQubitRegister"(%[[Reg]]) : (!mqtref.QubitRegister) -> ()
+    CHECK: memref.store %[[M2]], %[[Creg]][%[[I2]]] : memref<3xi1>
+    CHECK: memref.dealloc %[[Qreg]] : memref<3x!mqtref.Qubit>
     CHECK: return
   )";
 
@@ -932,18 +961,20 @@ TEST_F(ImportTest, MultipleClassicalRegistersMeasureStores) {
   const auto output = getOutputString(&module);
   const std::string check = R"(
     CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
-    CHECK: %[[Reg:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg]]) <{index_attr = 1 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[MemA:.*]] = memref.alloca() : memref<1xi1>
-    CHECK: %[[MemB:.*]] = memref.alloca() : memref<1xi1>
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<2x!mqtref.Qubit>
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<2x!mqtref.Qubit>
+    CHECK: %[[I1:.*]] = arith.constant 1 : index
+    CHECK: %[[Q1:.*]] = memref.load %[[Qreg]][%[[I1]]] : memref<2x!mqtref.Qubit>
+    CHECK: %[[CregA:.*]] = memref.alloca() : memref<1xi1>
+    CHECK: %[[CregB:.*]] = memref.alloca() : memref<1xi1>
     CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
     CHECK: %[[I0A:.*]] = arith.constant 0 : index
-    CHECK: memref.store %[[M0]], %[[MemA]][%[[I0A]]] : memref<1xi1>
+    CHECK: memref.store %[[M0]], %[[CregA]][%[[I0A]]] : memref<1xi1>
     CHECK: %[[M1:.*]] = mqtref.measure %[[Q1]]
     CHECK: %[[I0B:.*]] = arith.constant 0 : index
-    CHECK: memref.store %[[M1]], %[[MemB]][%[[I0B]]] : memref<1xi1>
-    CHECK: "mqtref.deallocQubitRegister"(%[[Reg]]) : (!mqtref.QubitRegister) -> ()
+    CHECK: memref.store %[[M1]], %[[CregB]][%[[I0B]]] : memref<1xi1>
+    CHECK: memref.dealloc %[[Qreg]] : memref<2x!mqtref.Qubit>
     CHECK: return
   )";
 
@@ -961,13 +992,15 @@ TEST_F(ImportTest, MultipleQuantumRegistersCX) {
   const auto output = getOutputString(&module);
   const std::string check = R"(
     CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
-    CHECK: %[[Reg0:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q0:.*]] = "mqtref.extractQubit"(%[[Reg0]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: %[[Reg1:.*]] = "mqtref.allocQubitRegister"() <{size_attr = 1 : i64}> : () -> !mqtref.QubitRegister
-    CHECK: %[[Q1:.*]] = "mqtref.extractQubit"(%[[Reg1]]) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-    CHECK: mqtref.x() %[[Q1]] ctrl %[[Q0]]
-    CHECK: "mqtref.deallocQubitRegister"(%[[Reg0]]) : (!mqtref.QubitRegister) -> ()
-    CHECK: "mqtref.deallocQubitRegister"(%[[Reg1]]) : (!mqtref.QubitRegister) -> ()
+    CHECK: %[[QregA:.*]] = memref.alloc() : memref<1x!mqtref.Qubit>
+    CHECK: %[[I0A:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0A:.*]] = memref.load %[[QregA]][%[[I0A]]] : memref<1x!mqtref.Qubit>
+    CHECK: %[[QregB:.*]] = memref.alloc() : memref<1x!mqtref.Qubit>
+    CHECK: %[[I0B:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0B:.*]] = memref.load %[[QregB]][%[[I0B]]] : memref<1x!mqtref.Qubit>
+    CHECK: mqtref.x() %[[Q0B]] ctrl %[[Q0A]]
+    CHECK: memref.dealloc %[[QregA]] : memref<1x!mqtref.Qubit>
+    CHECK: memref.dealloc %[[QregB]] : memref<1x!mqtref.Qubit>
     CHECK: return
   )";
 
