@@ -240,7 +240,7 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
         if (origin.x <= x && x <= origin.x + extentWidth && origin.y <= y &&
             y <= origin.y + extentHeight) {
           // Only add the site if it is within the extent of the lattice
-          sites.emplace_back(sites.size(), x, y);
+          sites.emplace_back(id, x, y);
           os << ";\\\n  "
                 "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueSite("
              << id << "U, " << moduleCount << "U, " << subModuleCount << "U, "
@@ -265,7 +265,8 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
                 y >= operation.region.origin.y &&
                 y <= operation.region.origin.y +
                          static_cast<int64_t>(operation.region.size.height)) {
-              for (const auto& [i2, x2, y2] : sites) {
+              for (const auto& [i2, x2, y2] :
+                   sites | std::views::take(sites.size() - 1)) {
                 if (x2 >= operation.region.origin.x &&
                     x2 <=
                         operation.region.origin.x +
@@ -275,7 +276,7 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
                               static_cast<int64_t>(
                                   operation.region.size.height)) {
                   if (std::hypot(x2 - x, y2 - y) <=
-                      operation.interactionRadius) {
+                      static_cast<double>(operation.interactionRadius)) {
                     os << ";\\\n  localOp" << operation.name
                        << "Sites.emplace_back(var.at(" << i2
                        << ").get(), var.back().get())";
