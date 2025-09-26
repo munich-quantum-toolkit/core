@@ -280,12 +280,11 @@ struct ConvertQuantumCustomOp final
       mqtoptOp = CREATE_GATE_OP(H);
     } else if (gateName == "Identity") {
       mqtoptOp = CREATE_GATE_OP(I);
-    } else if (gateName == "PauliX" || gateName == "CNOT" ||
-               gateName == "Toffoli") {
+    } else if (gateName == "PauliX") {
       mqtoptOp = CREATE_GATE_OP(X);
-    } else if (gateName == "PauliY" || gateName == "CY") {
+    } else if (gateName == "PauliY") {
       mqtoptOp = CREATE_GATE_OP(Y);
-    } else if (gateName == "PauliZ" || gateName == "CZ") {
+    } else if (gateName == "PauliZ") {
       mqtoptOp = CREATE_GATE_OP(Z);
     } else if (gateName == "S") {
       mqtoptOp = CREATE_GATE_OP(S);
@@ -309,6 +308,41 @@ struct ConvertQuantumCustomOp final
       mqtoptOp = CREATE_GATE_OP(P);
     } else if (gateName == "IsingXY") {
       mqtoptOp = CREATE_GATE_OP(XXplusYY);
+    } else if (gateName == "CNOT") {
+      inPosCtrlQubitsVec.emplace_back(inQubits[0]);
+      mqtoptOp = rewriter.create<opt::XOp>(
+          op.getLoc(), inQubits[1].getType(),
+          ValueRange(inPosCtrlQubitsVec).getTypes(),
+          ValueRange(inNegCtrlQubitsVec).getTypes(), staticParams, paramsMask,
+          finalParamValues, inQubits[1], inPosCtrlQubitsVec,
+          inNegCtrlQubitsVec);
+    } else if (gateName == "CY") {
+      inPosCtrlQubitsVec.emplace_back(inQubits[0]);
+      mqtoptOp = rewriter.create<opt::YOp>(
+          op.getLoc(), inQubits[1].getType(),
+          ValueRange(inPosCtrlQubitsVec).getTypes(),
+          ValueRange(inNegCtrlQubitsVec).getTypes(), staticParams, paramsMask,
+          finalParamValues, inQubits[1], inPosCtrlQubitsVec,
+          inNegCtrlQubitsVec);
+    } else if (gateName == "CZ") {
+      inPosCtrlQubitsVec.emplace_back(inQubits[0]);
+      mqtoptOp = rewriter.create<opt::ZOp>(
+          op.getLoc(), inQubits[1].getType(),
+          ValueRange(inPosCtrlQubitsVec).getTypes(),
+          ValueRange(inNegCtrlQubitsVec).getTypes(), staticParams, paramsMask,
+          finalParamValues, inQubits[1], inPosCtrlQubitsVec,
+          inNegCtrlQubitsVec);
+    } else if (gateName == "Toffoli") {
+      // Toffoli gate: 2 control qubits + 1 target qubit
+      // inQubits[0] and inQubits[1] are controls, inQubits[2] is target
+      inPosCtrlQubitsVec.emplace_back(inQubits[0]);
+      inPosCtrlQubitsVec.emplace_back(inQubits[1]);
+      mqtoptOp = rewriter.create<opt::XOp>(
+          op.getLoc(), inQubits[2].getType(),
+          ValueRange(inPosCtrlQubitsVec).getTypes(),
+          ValueRange(inNegCtrlQubitsVec).getTypes(), staticParams, paramsMask,
+          finalParamValues, inQubits[2], inPosCtrlQubitsVec,
+          inNegCtrlQubitsVec);
     } else {
       llvm::errs() << "Unsupported gate: " << gateName << "\n";
       return failure();
