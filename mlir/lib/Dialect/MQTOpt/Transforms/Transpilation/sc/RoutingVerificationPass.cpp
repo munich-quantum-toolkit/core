@@ -11,6 +11,7 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/RoutingStack.h"
 
 #include <cassert>
@@ -27,7 +28,6 @@
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
-#include <vector>
 
 #define DEBUG_TYPE "routing-verification-sc"
 
@@ -65,22 +65,6 @@ constexpr std::size_t IF_PARENT_DEPTH = 2UL;
 using QubitIndex = std::size_t;
 
 /**
- * @brief Maps SSA values to hardware indices.
- */
-using QubitIndexMap = llvm::DenseMap<Value, QubitIndex>;
-
-/**
- * @brief Replace an old SSA value with a new one.
- */
-void remapQubitValue(QubitIndexMap& state, const Value in, const Value out) {
-  assert(in != out && "'in' must not equal 'out'");
-  const auto it = state.find(in);
-  assert(it != state.end() && "map must contain 'in'");
-  state[out] = it->second;
-  state.erase(in);
-}
-
-/**
  * @brief Return true if the function contains "entry_point" in the passthrough
  * attribute.
  */
@@ -96,23 +80,33 @@ bool isEntryPoint(func::FuncOp op) {
 }
 
 /**
+ * @brief The necessary datastructures for verification.
+ */
+struct VerificationContext {
+  explicit VerificationContext(Architecture& arch) : arch(&arch) {}
+
+  Architecture* arch;
+  RoutingStack<Layout<QubitIndex>> stack{};
+};
+
+/**
  * @brief Resets the state and pushes empty map. Skips non entry-point
  * functions.
  */
-WalkResult handleFunc(func::FuncOp op, RoutingStack<QubitIndexMap>& stack) {
+WalkResult handleFunc(func::FuncOp op, VerificationContext& ctx) {
   if (!isEntryPoint(op)) {
     return WalkResult::skip();
   }
-  stack.clear();
-  stack.emplace();
+  ctx.stack.clear();
+  ctx.stack.emplace(ctx.arch->nqubits());
   return WalkResult::advance();
 }
 
 /**
  * @brief Defines the end of a region: Pop the top of the stack.
  */
-WalkResult handleReturn(RoutingStack<QubitIndexMap>& stack) {
-  stack.pop();
+WalkResult handleReturn(VerificationContext& ctx) {
+  ctx.stack.pop();
   return WalkResult::advance();
 }
 
@@ -121,14 +115,14 @@ WalkResult handleReturn(RoutingStack<QubitIndexMap>& stack) {
  * the stack. Forwards all out-of-loop and in-loop SSA values for their
  * respective map in the stack.
  */
-WalkResult handleFor(scf::ForOp op, RoutingStack<QubitIndexMap>& stack) {
-  stack.duplicateTop();
+WalkResult handleFor(scf::ForOp op, VerificationContext& ctx) {
+  ctx.stack.duplicateTop();
 
   for (const auto [arg, res, iter] :
        llvm::zip(op.getInitArgs(), op.getResults(), op.getRegionIterArgs())) {
     if (isa<QubitType>(arg.getType())) {
-      remapQubitValue(stack.getItemAtDepth(FOR_PARENT_DEPTH), arg, res);
-      remapQubitValue(stack.top(), arg, iter);
+      ctx.stack.getItemAtDepth(FOR_PARENT_DEPTH).remapQubitValue(arg, res);
+      ctx.stack.top().remapQubitValue(arg, res);
     }
   }
 
@@ -139,23 +133,19 @@ WalkResult handleFor(scf::ForOp op, RoutingStack<QubitIndexMap>& stack) {
  * @brief Prepares state for nested regions: Pushes two copies of the state on
  * the stack. Forwards the results in the parent state.
  */
-WalkResult handleIf(scf::IfOp op, RoutingStack<QubitIndexMap>& stack) {
-  /// Collect hardware qubits.
-  SmallVector<Value> qubits(op->getNumResults());
-  for (const auto [q, i] : stack.top()) {
-    qubits[i] = q;
-  }
+WalkResult handleIf(scf::IfOp op, VerificationContext& ctx) {
+  ArrayRef<Value> qubits = ctx.stack.top().getHardwareQubits();
 
   /// Prepare stack.
-  stack.duplicateTop(); // Else
-  stack.duplicateTop(); // If
+  ctx.stack.duplicateTop(); // Else
+  ctx.stack.duplicateTop(); // If
 
   /// Forward results for all hardware qubits.
-  QubitIndexMap& stateBeforeIf = stack.getItemAtDepth(IF_PARENT_DEPTH);
+  Layout<QubitIndex>& stateBeforeIf = ctx.stack.getItemAtDepth(IF_PARENT_DEPTH);
   for (std::size_t i = 0; i < op.getNumResults(); ++i) {
     const Value in = qubits[i];
     const Value out = op->getResult(i);
-    remapQubitValue(stateBeforeIf, in, out);
+    stateBeforeIf.remapQubitValue(in, out);
   }
 
   return WalkResult::advance();
@@ -164,13 +154,13 @@ WalkResult handleIf(scf::IfOp op, RoutingStack<QubitIndexMap>& stack) {
 /**
  * @brief Defines the end of a nested region: Pop the top of the stack.
  */
-WalkResult handleYield(scf::YieldOp op, RoutingStack<QubitIndexMap>& stack) {
+WalkResult handleYield(scf::YieldOp op, VerificationContext& ctx) {
   if (isa<scf::ForOp>(op->getParentOp()) || isa<scf::IfOp>(op->getParentOp())) {
-    if (stack.size() < 2) {
+    if (ctx.stack.size() < 2) {
       return op->emitOpError() << "expected at least two elements on stack.";
     }
 
-    stack.pop();
+    ctx.stack.pop();
   }
   return WalkResult::advance();
 }
@@ -178,16 +168,16 @@ WalkResult handleYield(scf::YieldOp op, RoutingStack<QubitIndexMap>& stack) {
 /**
  * @brief Adds hardware qubit to qubit index map.
  */
-WalkResult handleQubit(QubitOp op, RoutingStack<QubitIndexMap>& stack,
-                       const Architecture& arch) {
-  if (stack.top().size() == arch.nqubits()) {
-    return op->emitOpError()
-           << "requires " << (arch.nqubits() + 1)
-           << " qubits but target architecture '" << arch.name()
-           << "' only supports " << arch.nqubits() << " qubits";
-  }
+WalkResult handleQubit(QubitOp op, VerificationContext& ctx) {
+  // TODO.
+  // if (ctx.stack.top().size() == ctx.arch->nqubits()) {
+  //   return op->emitOpError()
+  //          << "requires " << (ctx.arch->nqubits() + 1)
+  //          << " qubits but target architecture '" << arch.name()
+  //          << "' only supports " << arch.nqubits() << " qubits";
+  // }
 
-  stack.top()[op.getQubit()] = op.getIndex();
+  // ctx.stack.top()[op.getQubit()] = op.getIndex();
   return WalkResult::advance();
 }
 
@@ -198,9 +188,7 @@ WalkResult handleQubit(QubitOp op, RoutingStack<QubitIndexMap>& stack,
  * - Verifies executability for two-qubit gates for the given architecture and
  *   forwards SSA values.
  */
-WalkResult handleUnitary(UnitaryInterface op,
-                         RoutingStack<QubitIndexMap>& stack,
-                         const Architecture& arch) {
+WalkResult handleUnitary(UnitaryInterface op, VerificationContext& ctx) {
   const std::vector<Value> inQubits = op.getAllInQubits();
   const std::vector<Value> outQubits = op.getAllOutQubits();
   const std::size_t nacts = inQubits.size();
@@ -216,41 +204,44 @@ WalkResult handleUnitary(UnitaryInterface op,
   const Value in0 = inQubits[0];
   const Value out0 = outQubits[0];
 
-  QubitIndexMap& state = stack.top();
+  Layout<QubitIndex>& state = ctx.stack.top();
 
   if (nacts == 1) {
-    remapQubitValue(state, in0, out0);
+    state.remapQubitValue(in0, out0);
     return WalkResult::advance();
   }
 
   const Value in1 = inQubits[1];
   const Value out1 = outQubits[1];
 
-  if (!arch.areAdjacent(state.at(in0), state.at(in1))) {
-    return op->emitOpError() << "(" << state[in0] << "," << state[in1] << ")"
+  const QubitIndex idx0 = state.lookupHardware(in0);
+  const QubitIndex idx1 = state.lookupHardware(in1);
+
+  if (!ctx.arch->areAdjacent(idx0, idx1)) {
+    return op->emitOpError() << "(" << idx0 << "," << idx1 << ")"
                              << " is not executable on target architecture '"
-                             << arch.name() << "'";
+                             << ctx.arch->name() << "'";
   }
 
-  remapQubitValue(state, in0, out0);
-  remapQubitValue(state, in1, out1);
+  state.remapQubitValue(in0, out0);
+  state.remapQubitValue(in1, out1);
 
   return WalkResult::advance();
 }
 
 /**
- * @brief Forwards the SSA values.
+ * @brief Update layout.
  */
-WalkResult handleReset(ResetOp op, RoutingStack<QubitIndexMap>& stack) {
-  remapQubitValue(stack.top(), op.getInQubit(), op.getOutQubit());
+WalkResult handleReset(ResetOp op, VerificationContext& ctx) {
+  ctx.stack.top().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
 
 /**
- * @brief Forwards the SSA values.
+ * @brief Update layout.
  */
-WalkResult handleMeasure(MeasureOp op, RoutingStack<QubitIndexMap>& stack) {
-  remapQubitValue(stack.top(), op.getInQubit(), op.getOutQubit());
+WalkResult handleMeasure(MeasureOp op, VerificationContext& ctx) {
+  ctx.stack.top().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
 
@@ -261,9 +252,9 @@ WalkResult handleMeasure(MeasureOp op, RoutingStack<QubitIndexMap>& stack) {
 struct RoutingVerificationPassSC final
     : impl::RoutingVerificationSCPassBase<RoutingVerificationPassSC> {
   void runOnOperation() override {
-    RoutingStack<QubitIndexMap> stack;
-
     const auto arch = getArchitecture(ArchitectureName::MQTTest);
+    VerificationContext ctx(*arch);
+
     const auto res =
         getOperation()->walk<WalkOrder::PreOrder>([&](Operation* op) {
           return TypeSwitch<Operation*, WalkResult>(op)
@@ -272,29 +263,26 @@ struct RoutingVerificationPassSC final
                   [&](ModuleOp /* op */) { return WalkResult::advance(); })
               /// func Dialect
               .Case<func::FuncOp>(
-                  [&](func::FuncOp op) { return handleFunc(op, stack); })
+                  [&](func::FuncOp op) { return handleFunc(op, ctx); })
               .Case<func::ReturnOp>(
-                  [&](func::ReturnOp /* op */) { return handleReturn(stack); })
+                  [&](func::ReturnOp /* op */) { return handleReturn(ctx); })
               /// scf Dialect
               .Case<scf::ForOp>(
-                  [&](scf::ForOp op) { return handleFor(op, stack); })
-              .Case<scf::IfOp>(
-                  [&](scf::IfOp op) { return handleIf(op, stack); })
+                  [&](scf::ForOp op) { return handleFor(op, ctx); })
+              .Case<scf::IfOp>([&](scf::IfOp op) { return handleIf(op, ctx); })
               .Case<scf::YieldOp>(
-                  [&](scf::YieldOp op) { return handleYield(op, stack); })
+                  [&](scf::YieldOp op) { return handleYield(op, ctx); })
               /// mqtopt Dialect
               .Case<AllocQubitOp, DeallocQubitOp>([&](auto op) {
                 return WalkResult(
                     op->emitOpError("not allowed for transpiled program"));
               })
-              .Case<ResetOp>([&](ResetOp op) { return handleReset(op, stack); })
-              .Case<MeasureOp>([&](MeasureOp measure) {
-                return handleMeasure(measure, stack);
-              })
-              .Case<QubitOp>(
-                  [&](QubitOp op) { return handleQubit(op, stack, *arch); })
+              .Case<ResetOp>([&](ResetOp op) { return handleReset(op, ctx); })
+              .Case<MeasureOp>(
+                  [&](MeasureOp op) { return handleMeasure(op, ctx); })
+              .Case<QubitOp>([&](QubitOp op) { return handleQubit(op, ctx); })
               .Case<UnitaryInterface>([&](UnitaryInterface unitary) {
-                return handleUnitary(unitary, stack, *arch);
+                return handleUnitary(unitary, ctx);
               })
               /// Skip the rest.
               .Default([](auto) { return WalkResult::skip(); });

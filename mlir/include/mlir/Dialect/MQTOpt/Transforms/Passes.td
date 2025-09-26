@@ -95,7 +95,7 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
 // Transpilation Passes For Semiconducting Devices
 //===----------------------------------------------------------------------===//
 
-def LayoutPassSC : Pass<"layout-sc", "mlir::ModuleOp"> {
+def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
   let summary = "This pass applies a specified initial layout strategy.";
 }
 
