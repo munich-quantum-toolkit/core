@@ -114,6 +114,11 @@ public:
      * @param device The fomac::FoMaC::Device object to wrap.
      */
     explicit Device(const fomac::FoMaC::Device& device);
+    // define copy and move constructors and assignment operators
+    Device(const Device&) = default;
+    Device(Device&&) noexcept = default;
+    auto operator=(const Device&) -> Device& = default;
+    auto operator=(Device&&) noexcept -> Device& = default;
 
     /// @returns the length unit of the device.
     [[nodiscard]] auto getLengthUnit() const -> const Unit& {
