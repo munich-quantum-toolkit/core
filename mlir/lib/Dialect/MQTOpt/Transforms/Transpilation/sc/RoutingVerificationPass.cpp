@@ -21,6 +21,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
@@ -42,6 +43,11 @@ using namespace mlir;
  * @brief A function attribute that specifies an (QIR) entry point function.
  */
 constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
+
+/**
+ * @brief Attribute to forward function-level attributes to LLVM IR.
+ */
+constexpr llvm::StringLiteral PASSTHROUGH_ATTR{"passthrough"};
 
 /**
  * @brief 'For' pushes once onto the stack, hence the parent is at depth one.
@@ -75,11 +81,26 @@ void remapQubitValue(QubitIndexMap& state, const Value in, const Value out) {
 }
 
 /**
+ * @brief Return true if the function contains "entry_point" in the passthrough
+ * attribute.
+ */
+bool isEntryPoint(func::FuncOp op) {
+  const auto passthroughAttr = op->getAttrOfType<ArrayAttr>(PASSTHROUGH_ATTR);
+  if (!passthroughAttr) {
+    return false;
+  }
+
+  return llvm::any_of(passthroughAttr, [](const Attribute attr) {
+    return isa<StringAttr>(attr) && cast<StringAttr>(attr) == ENTRY_POINT_ATTR;
+  });
+}
+
+/**
  * @brief Resets the state and pushes empty map. Skips non entry-point
  * functions.
  */
 WalkResult handleFunc(func::FuncOp op, RoutingStack<QubitIndexMap>& stack) {
-  if (!op->hasAttr(ENTRY_POINT_ATTR)) {
+  if (!isEntryPoint(op)) {
     return WalkResult::skip();
   }
   stack.clear();
