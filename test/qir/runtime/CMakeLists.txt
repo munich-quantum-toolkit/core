@@ -15,7 +15,7 @@ macro(ADD_QIR_CIRCUIT target_name circuit_path)
       OUTPUT ${circuit_name}.o
       COMMAND
         clang
-        "$<$<BOOL:${CMAKE_OSX_DEPLOYMENT_TARGET}>:-mmacosx-version-min ${CMAKE_OSX_DEPLOYMENT_TARGET}>"
+        "$<$<BOOL:${CMAKE_OSX_DEPLOYMENT_TARGET}>:-mmacos-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}>"
         -c ${circuit_path} -o ${circuit_name}.o
       DEPENDS ${circuit_path}
       COMMENT "Compiling ${circuit_path} to ${circuit_name}.o")
