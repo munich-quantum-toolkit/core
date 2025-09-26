@@ -11,7 +11,7 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/RoutingStack.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
 #include <algorithm>
 #include <cassert>
@@ -438,7 +438,7 @@ struct StackItem {
   SmallVector<ProgramIndexPair, 32> history;
 };
 
-class StateStack : public RoutingStack<StackItem> {
+class StateStack : public TranspilationStack<StackItem> {
 public:
   /**
    * @brief Returns the most recent state of the stack.

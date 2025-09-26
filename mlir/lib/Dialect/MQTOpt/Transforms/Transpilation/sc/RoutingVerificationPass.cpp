@@ -12,7 +12,7 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/RoutingStack.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
 #include <cassert>
 #include <cstddef>
@@ -86,7 +86,7 @@ struct VerificationContext {
   explicit VerificationContext(Architecture& arch) : arch(&arch) {}
 
   Architecture* arch;
-  RoutingStack<Layout<QubitIndex>> stack{};
+  TranspilationStack<Layout<QubitIndex>> stack{};
 };
 
 /**

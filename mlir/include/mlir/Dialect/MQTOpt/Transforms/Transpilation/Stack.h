@@ -20,7 +20,7 @@ namespace mqt::ir::opt {
  * @brief Manages the routing state stack with clear semantics for accessing
  * current and parent states.
  */
-template <class Item> class [[nodiscard]] RoutingStack {
+template <class Item> class [[nodiscard]] TranspilationStack {
 public:
   /**
    * @brief Returns the top of the stack.
