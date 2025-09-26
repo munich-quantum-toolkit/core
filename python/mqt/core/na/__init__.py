@@ -6,8 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""
-MQT Core NA - The MQT Core neutral atom module.
+"""MQT Core NA - The MQT Core neutral atom module.
 
 This module contains all neutral atom related functionality of MQT Core.
 """

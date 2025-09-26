@@ -27,7 +27,9 @@ namespace py = pybind11;
 using namespace py::literals;
 
 PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
-  py::native_enum<QDMI_Device_Status>(m, "DeviceStatus", "enum.Enum",
+  auto device = py::class_<fomac::FoMaC::Device>(m, "Device");
+
+  py::native_enum<QDMI_Device_Status>(device, "Status", "enum.Enum",
                                       "Enumeration of device status.")
       .value("offline", QDMI_DEVICE_STATUS_OFFLINE)
       .value("idle", QDMI_DEVICE_STATUS_IDLE)
@@ -37,7 +39,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
       .value("calibration", QDMI_DEVICE_STATUS_CALIBRATION)
       .export_values()
       .finalize();
-  auto site = py::class_<fomac::FoMaC::Device::Site>(m, "Site");
+
+  auto site = py::class_<fomac::FoMaC::Device::Site>(device, "Site");
   site.def("index", &fomac::FoMaC::Device::Site::getIndex);
   site.def("t1", &fomac::FoMaC::Device::Site::getT1);
   site.def("t2", &fomac::FoMaC::Device::Site::getT2);
@@ -57,7 +60,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   site.def(py::self == py::self); // NOLINT(misc-redundant-expression)
   site.def(py::self != py::self); // NOLINT(misc-redundant-expression)
 
-  auto operation = py::class_<fomac::FoMaC::Device::Operation>(m, "Operation");
+  auto operation =
+      py::class_<fomac::FoMaC::Device::Operation>(device, "Operation");
   operation.def("name", &fomac::FoMaC::Device::Operation::getName,
                 "sites"_a = std::vector<fomac::FoMaC::Device::Site>{},
                 "params"_a = std::vector<double>{});
@@ -102,7 +106,6 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   operation.def(py::self == py::self); // NOLINT(misc-redundant-expression)
   operation.def(py::self != py::self); // NOLINT(misc-redundant-expression)
 
-  auto device = py::class_<fomac::FoMaC::Device>(m, "Device");
   device.def("name", &fomac::FoMaC::Device::getName);
   device.def("version", &fomac::FoMaC::Device::getVersion);
   device.def("status", &fomac::FoMaC::Device::getStatus);

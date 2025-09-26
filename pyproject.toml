@@ -91,7 +91,7 @@ build.targets = [
   "mqt-core-ir-bindings",
   "mqt-core-dd-bindings",
   "mqt-core-qdmi-na-device",
-  "mqt-core-qdmi-fomac-bindings",
+  "mqt-core-fomac-bindings",
   "mqt-core-na-fomac",
   "mqt-core-na-fomac-bindings",
 ]

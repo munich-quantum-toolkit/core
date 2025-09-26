@@ -22,8 +22,6 @@ from mqt.core.na.fomac import Device, devices
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from mqt.core.fomac import Site
-
 
 def test_constructor() -> None:
     """Test the constructor of the Device class."""
@@ -114,7 +112,7 @@ def test_traps(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:
             assert offset.y == offset_dict["y"]
 
 
-def calculate_extent_from_sites(sites: list[Site]) -> tuple[int, int, int, int]:
+def calculate_extent_from_sites(sites: list[Device.Site]) -> tuple[int, int, int, int]:
     """Calculate the extent from a list of sites.
 
     Args:

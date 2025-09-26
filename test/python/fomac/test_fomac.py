@@ -10,14 +10,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 
-from mqt.core.fomac import DeviceStatus, Operation, Site, devices
-
-if TYPE_CHECKING:
-    from mqt.core.fomac import Device
+from mqt.core.fomac import Device, devices
 
 
 @pytest.fixture(params=devices())
@@ -31,11 +28,11 @@ def device(request: pytest.FixtureRequest) -> Device:
 
 
 @pytest.fixture(params=devices())
-def device_and_site(request: pytest.FixtureRequest) -> tuple[Device, Site]:
+def device_and_site(request: pytest.FixtureRequest) -> tuple[Device, Device.Site]:
     """Fixture to provide a device for testing.
 
     Returns:
-        tuple[Device, Site]: A tuple containing a quantum device instance and one of its sites.
+        tuple[Device, Device.Site]: A tuple containing a quantum device instance and one of its sites.
     """
     device = request.param
     site = device.sites()[0]
@@ -43,11 +40,11 @@ def device_and_site(request: pytest.FixtureRequest) -> tuple[Device, Site]:
 
 
 @pytest.fixture(params=devices())
-def device_and_operation(request: pytest.FixtureRequest) -> tuple[Device, Operation]:
+def device_and_operation(request: pytest.FixtureRequest) -> tuple[Device, Device.Operation]:
     """Fixture to provide a device for testing.
 
     Returns:
-        tuple[Device, Operation]: A tuple containing a quantum device instance and one of its operations.
+        tuple[Device, Device.Operation]: A tuple containing a quantum device instance and one of its operations.
     """
     device = request.param
     operation = device.operations()[0]
@@ -69,9 +66,9 @@ def test_device_version(device: Device) -> None:
 
 
 def test_device_status(device: Device) -> None:
-    """Test that the device status is a valid DeviceStatus enum member."""
+    """Test that the device status is a valid Device.Status enum member."""
     status = device.status()
-    assert isinstance(status, DeviceStatus)
+    assert isinstance(status, Device.Status)
 
 
 def test_device_library_version(device: Device) -> None:
@@ -89,28 +86,28 @@ def test_device_qubits_num(device: Device) -> None:
 
 
 def test_device_sites(device: Device) -> None:
-    """Test that the device sites is a non-empty list of Site objects."""
+    """Test that the device sites is a non-empty list of Device.Site objects."""
     sites = device.sites()
     assert isinstance(sites, list)
     assert len(sites) > 0
-    assert all(isinstance(site, Site) for site in sites)
+    assert all(isinstance(site, Device.Site) for site in sites)
 
 
 def test_device_operations(device: Device) -> None:
-    """Test that the device operations is a non-empty list of Operation objects."""
+    """Test that the device operations is a non-empty list of Device.Operation objects."""
     operations = device.operations()
     assert isinstance(operations, list)
     assert len(operations) > 0
-    assert all(isinstance(op, Operation) for op in operations)
+    assert all(isinstance(op, Device.Operation) for op in operations)
 
 
 def test_device_coupling_map(device: Device) -> None:
-    """Test that the device coupling map is a list of tuples of Site objects."""
+    """Test that the device coupling map is a list of tuples of Device.Site objects."""
     cm = device.coupling_map()
     if cm is not None:
         assert isinstance(cm, list)
         assert all(len(pair) == 2 for pair in cm)
-        assert all(isinstance(site, Site) for pair in cm for site in pair)
+        assert all(isinstance(site, Device.Site) for pair in cm for site in pair)
 
 
 def test_device_needs_calibration(device: Device) -> None:
@@ -160,7 +157,7 @@ def test_device_min_atom_distance(device: Device) -> None:
         assert mad > 0.0
 
 
-def test_site_index(device_and_site: tuple[Device, Site]) -> None:
+def test_site_index(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site index is a non-negative integer."""
     _device, site = device_and_site
     index = site.index()
@@ -168,7 +165,7 @@ def test_site_index(device_and_site: tuple[Device, Site]) -> None:
     assert index >= 0
 
 
-def test_site_t1(device_and_site: tuple[Device, Site]) -> None:
+def test_site_t1(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site T1 coherence time is a positive integer."""
     _device, site = device_and_site
     t1 = site.t1()
@@ -177,7 +174,7 @@ def test_site_t1(device_and_site: tuple[Device, Site]) -> None:
         assert t1 > 0
 
 
-def test_site_t2(device_and_site: tuple[Device, Site]) -> None:
+def test_site_t2(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site T2 coherence time is a positive integer."""
     _device, site = device_and_site
     t2 = site.t2()
@@ -186,7 +183,7 @@ def test_site_t2(device_and_site: tuple[Device, Site]) -> None:
         assert t2 > 0
 
 
-def test_site_name(device_and_site: tuple[Device, Site]) -> None:
+def test_site_name(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site name is a non-empty string."""
     _device, site = device_and_site
     name = site.name()
@@ -195,7 +192,7 @@ def test_site_name(device_and_site: tuple[Device, Site]) -> None:
         assert len(name) > 0
 
 
-def test_site_x_coordinate(device_and_site: tuple[Device, Site]) -> None:
+def test_site_x_coordinate(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site x coordinate is an integer."""
     _device, site = device_and_site
     x = site.x_coordinate()
@@ -203,7 +200,7 @@ def test_site_x_coordinate(device_and_site: tuple[Device, Site]) -> None:
         assert isinstance(x, int)
 
 
-def test_site_y_coordinate(device_and_site: tuple[Device, Site]) -> None:
+def test_site_y_coordinate(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site y coordinate is an integer."""
     _device, site = device_and_site
     y = site.y_coordinate()
@@ -211,7 +208,7 @@ def test_site_y_coordinate(device_and_site: tuple[Device, Site]) -> None:
         assert isinstance(y, int)
 
 
-def test_site_z_coordinate(device_and_site: tuple[Device, Site]) -> None:
+def test_site_z_coordinate(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site z coordinate is an integer."""
     _device, site = device_and_site
     z = site.z_coordinate()
@@ -219,7 +216,7 @@ def test_site_z_coordinate(device_and_site: tuple[Device, Site]) -> None:
         assert isinstance(z, int)
 
 
-def test_site_is_zone(device_and_site: tuple[Device, Site]) -> None:
+def test_site_is_zone(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site is_zone is a boolean."""
     _device, site = device_and_site
     iz = site.is_zone()
@@ -227,7 +224,7 @@ def test_site_is_zone(device_and_site: tuple[Device, Site]) -> None:
         assert isinstance(iz, bool)
 
 
-def test_site_x_extent(device_and_site: tuple[Device, Site]) -> None:
+def test_site_x_extent(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site x extent is a positive integer."""
     _device, site = device_and_site
     xe = site.x_extent()
@@ -236,7 +233,7 @@ def test_site_x_extent(device_and_site: tuple[Device, Site]) -> None:
         assert xe > 0
 
 
-def test_site_y_extent(device_and_site: tuple[Device, Site]) -> None:
+def test_site_y_extent(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site y extent is a positive integer."""
     _device, site = device_and_site
     ye = site.y_extent()
@@ -245,7 +242,7 @@ def test_site_y_extent(device_and_site: tuple[Device, Site]) -> None:
         assert ye > 0
 
 
-def test_site_z_extent(device_and_site: tuple[Device, Site]) -> None:
+def test_site_z_extent(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site z extent is a positive integer."""
     _device, site = device_and_site
     ze = site.z_extent()
@@ -254,7 +251,7 @@ def test_site_z_extent(device_and_site: tuple[Device, Site]) -> None:
         assert ze > 0
 
 
-def test_site_module_index(device_and_site: tuple[Device, Site]) -> None:
+def test_site_module_index(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site module index is a non-negative integer."""
     _device, site = device_and_site
     mi = site.module_index()
@@ -263,7 +260,7 @@ def test_site_module_index(device_and_site: tuple[Device, Site]) -> None:
         assert mi >= 0
 
 
-def test_site_submodule_index(device_and_site: tuple[Device, Site]) -> None:
+def test_site_submodule_index(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site submodule index is a non-negative integer."""
     _device, site = device_and_site
     smi = site.submodule_index()
@@ -272,7 +269,7 @@ def test_site_submodule_index(device_and_site: tuple[Device, Site]) -> None:
         assert smi >= 0
 
 
-def test_operation_name(device_and_operation: tuple[Device, Operation]) -> None:
+def test_operation_name(device_and_operation: tuple[Device, Device.Operation]) -> None:
     """Test that the operation name is a non-empty string."""
     _device, operation = device_and_operation
     name = operation.name()
@@ -280,7 +277,7 @@ def test_operation_name(device_and_operation: tuple[Device, Operation]) -> None:
     assert len(name) > 0
 
 
-def test_operation_qubits_num(device_and_operation: tuple[Device, Operation]) -> None:
+def test_operation_qubits_num(device_and_operation: tuple[Device, Device.Operation]) -> None:
     """Test that the operation qubits number is a positive integer."""
     _device, operation = device_and_operation
     qn = operation.qubits_num()
@@ -289,7 +286,7 @@ def test_operation_qubits_num(device_and_operation: tuple[Device, Operation]) ->
         assert qn > 0
 
 
-def test_operation_parameters_num(device_and_operation: tuple[Device, Operation]) -> None:
+def test_operation_parameters_num(device_and_operation: tuple[Device, Device.Operation]) -> None:
     """Test that the operation parameters number is a non-negative integer."""
     _device, operation = device_and_operation
     on = operation.parameters_num()
@@ -298,7 +295,7 @@ def test_operation_parameters_num(device_and_operation: tuple[Device, Operation]
         assert on >= 0
 
 
-def test_operation_duration(device_and_operation: tuple[Device, Operation]) -> None:
+def test_operation_duration(device_and_operation: tuple[Device, Device.Operation]) -> None:
     """Test that the operation duration is a positive integer."""
     _device, operation = device_and_operation
     dur = operation.duration()
@@ -307,7 +304,7 @@ def test_operation_duration(device_and_operation: tuple[Device, Operation]) -> N
         assert dur > 0
 
 
-def test_operation_fidelity(device_and_operation: tuple[Device, Operation]) -> None:
+def test_operation_fidelity(device_and_operation: tuple[Device, Device.Operation]) -> None:
     """Test that the operation fidelity is a float between 0 and 1."""
     _device, operation = device_and_operation
     fid = operation.fidelity()
@@ -316,7 +313,7 @@ def test_operation_fidelity(device_and_operation: tuple[Device, Operation]) -> N
         assert 0.0 <= fid <= 1.0
 
 
-def test_operation_interaction_radius(device_and_operation: tuple[Device, Operation]) -> None:
+def test_operation_interaction_radius(device_and_operation: tuple[Device, Device.Operation]) -> None:
     """Test that the operation interaction radius is a non-negative integer."""
     _device, operation = device_and_operation
     ir = operation.interaction_radius()
@@ -325,7 +322,7 @@ def test_operation_interaction_radius(device_and_operation: tuple[Device, Operat
         assert ir >= 0
 
 
-def test_operation_blocking_radius(device_and_operation: tuple[Device, Operation]) -> None:
+def test_operation_blocking_radius(device_and_operation: tuple[Device, Device.Operation]) -> None:
     """Test that the operation blocking radius is a non-negative integer."""
     _device, operation = device_and_operation
     br = operation.blocking_radius()
@@ -334,7 +331,7 @@ def test_operation_blocking_radius(device_and_operation: tuple[Device, Operation
         assert br >= 0
 
 
-def test_operation_idling_fidelity(device_and_operation: tuple[Device, Operation]) -> None:
+def test_operation_idling_fidelity(device_and_operation: tuple[Device, Device.Operation]) -> None:
     """Test that the operation idling fidelity is a float between 0 and 1."""
     _device, operation = device_and_operation
     idf = operation.idling_fidelity()
@@ -343,7 +340,7 @@ def test_operation_idling_fidelity(device_and_operation: tuple[Device, Operation
         assert 0.0 <= idf <= 1.0
 
 
-def test_operation_is_zoned(device_and_operation: tuple[Device, Operation]) -> None:
+def test_operation_is_zoned(device_and_operation: tuple[Device, Device.Operation]) -> None:
     """Test that the operation is_zoned is a boolean."""
     _device, operation = device_and_operation
     iz = operation.is_zoned()
@@ -351,19 +348,19 @@ def test_operation_is_zoned(device_and_operation: tuple[Device, Operation]) -> N
         assert isinstance(iz, bool)
 
 
-def test_operation_sites(device_and_operation: tuple[Device, Operation]) -> None:
-    """Test that the operation sites is a non-empty list of Site objects."""
+def test_operation_sites(device_and_operation: tuple[Device, Device.Operation]) -> None:
+    """Test that the operation sites is a non-empty list of Device.Site objects."""
     device, operation = device_and_operation
     sites = operation.sites()
     if sites is not None:
         assert isinstance(sites, list)
         assert len(sites) > 0
-        assert all(isinstance(site, Site) for site in sites)
+        assert all(isinstance(site, Device.Site) for site in sites)
         device_sites = device.sites()
         assert all(site in device_sites for site in sites)
 
 
-def test_operation_mean_shuttling_speed(device_and_operation: tuple[Device, Operation]) -> None:
+def test_operation_mean_shuttling_speed(device_and_operation: tuple[Device, Device.Operation]) -> None:
     """Test that the operation mean shuttling speed is a positive integer."""
     _device, operation = device_and_operation
     mss = operation.mean_shuttling_speed()

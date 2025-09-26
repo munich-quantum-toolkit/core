@@ -11,89 +11,88 @@ from enum import Enum
 
 __all__ = [
     "Device",
-    "DeviceStatus",
-    "Operation",
-    "Site",
     "devices",
 ]
 
-class DeviceStatus(Enum):
-    offline = ...
-    idle = ...
-    busy = ...
-    error = ...
-    maintenance = ...
-    calibration = ...
-
-class Site:
-    """A site represents a potential qubit location on a quantum device."""
-    def index(self) -> int:
-        """Returns the index of the site."""
-    def t1(self) -> int | None:
-        """Returns the T1 coherence time of the site."""
-    def t2(self) -> int | None:
-        """Returns the T2 coherence time of the site."""
-    def name(self) -> str | None:
-        """Returns the name of the site."""
-    def x_coordinate(self) -> int | None:
-        """Returns the x coordinate of the site."""
-    def y_coordinate(self) -> int | None:
-        """Returns the y coordinate of the site."""
-    def z_coordinate(self) -> int | None:
-        """Returns the z coordinate of the site."""
-    def is_zone(self) -> bool | None:
-        """Returns whether the site is a zone."""
-    def x_extent(self) -> int | None:
-        """Returns the x extent of the site."""
-    def y_extent(self) -> int | None:
-        """Returns the y extent of the site."""
-    def z_extent(self) -> int | None:
-        """Returns the z extent of the site."""
-    def module_index(self) -> int | None:
-        """Returns the index of the module the site belongs to."""
-    def submodule_index(self) -> int | None:
-        """Returns the index of the submodule the site belongs to."""
-    def __eq__(self, other: object) -> bool:
-        """Checks if two sites are equal."""
-    def __ne__(self, other: object) -> bool:
-        """Checks if two sites are not equal."""
-
-class Operation:
-    """An operation represents a quantum operation that can be performed on a quantum device."""
-    def name(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> str:
-        """Returns the name of the operation."""
-    def qubits_num(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> int | None:
-        """Returns the number of qubits the operation acts on."""
-    def parameters_num(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> int:
-        """Returns the number of parameters the operation has."""
-    def duration(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> int | None:
-        """Returns the duration of the operation."""
-    def fidelity(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> float | None:
-        """Returns the fidelity of the operation."""
-    def interaction_radius(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> int | None:
-        """Returns the interaction radius of the operation."""
-    def blocking_radius(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> int | None:
-        """Returns the blocking radius of the operation."""
-    def idling_fidelity(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> float | None:
-        """Returns the idling fidelity of the operation."""
-    def is_zoned(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> bool | None:
-        """Returns whether the operation is zoned."""
-    def sites(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> Iterable[Site] | None:
-        """Returns the list of sites the operation can be performed on."""
-    def mean_shuttling_speed(self, sites: Iterable[Site] = ..., params: Iterable[float] = ...) -> int | None:
-        """Returns the mean shuttling speed of the operation."""
-    def __eq__(self, other: object) -> bool:
-        """Checks if two operations are equal."""
-    def __ne__(self, other: object) -> bool:
-        """Checks if two operations are not equal."""
-
 class Device:
     """A device represents a quantum device with its properties and capabilities."""
+    class Status(Enum):
+        offline = ...
+        idle = ...
+        busy = ...
+        error = ...
+        maintenance = ...
+        calibration = ...
+
+    class Site:
+        """A site represents a potential qubit location on a quantum device."""
+        def index(self) -> int:
+            """Returns the index of the site."""
+        def t1(self) -> int | None:
+            """Returns the T1 coherence time of the site."""
+        def t2(self) -> int | None:
+            """Returns the T2 coherence time of the site."""
+        def name(self) -> str | None:
+            """Returns the name of the site."""
+        def x_coordinate(self) -> int | None:
+            """Returns the x coordinate of the site."""
+        def y_coordinate(self) -> int | None:
+            """Returns the y coordinate of the site."""
+        def z_coordinate(self) -> int | None:
+            """Returns the z coordinate of the site."""
+        def is_zone(self) -> bool | None:
+            """Returns whether the site is a zone."""
+        def x_extent(self) -> int | None:
+            """Returns the x extent of the site."""
+        def y_extent(self) -> int | None:
+            """Returns the y extent of the site."""
+        def z_extent(self) -> int | None:
+            """Returns the z extent of the site."""
+        def module_index(self) -> int | None:
+            """Returns the index of the module the site belongs to."""
+        def submodule_index(self) -> int | None:
+            """Returns the index of the submodule the site belongs to."""
+        def __eq__(self, other: object) -> bool:
+            """Checks if two sites are equal."""
+        def __ne__(self, other: object) -> bool:
+            """Checks if two sites are not equal."""
+
+    class Operation:
+        """An operation represents a quantum operation that can be performed on a quantum device."""
+        def name(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> str:
+            """Returns the name of the operation."""
+        def qubits_num(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> int | None:
+            """Returns the number of qubits the operation acts on."""
+        def parameters_num(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> int:
+            """Returns the number of parameters the operation has."""
+        def duration(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> int | None:
+            """Returns the duration of the operation."""
+        def fidelity(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> float | None:
+            """Returns the fidelity of the operation."""
+        def interaction_radius(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> int | None:
+            """Returns the interaction radius of the operation."""
+        def blocking_radius(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> int | None:
+            """Returns the blocking radius of the operation."""
+        def idling_fidelity(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> float | None:
+            """Returns the idling fidelity of the operation."""
+        def is_zoned(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> bool | None:
+            """Returns whether the operation is zoned."""
+        def sites(
+            self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...
+        ) -> Iterable[Device.Site] | None:
+            """Returns the list of sites the operation can be performed on."""
+        def mean_shuttling_speed(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> int | None:
+            """Returns the mean shuttling speed of the operation."""
+        def __eq__(self, other: object) -> bool:
+            """Checks if two operations are equal."""
+        def __ne__(self, other: object) -> bool:
+            """Checks if two operations are not equal."""
+
     def name(self) -> str:
         """Returns the name of the device."""
     def version(self) -> str:
         """Returns the version of the device."""
-    def status(self) -> DeviceStatus:
+    def status(self) -> Device.Status:
         """Returns the current status of the device."""
     def library_version(self) -> str:
         """Returns the version of the library used to define the device."""
