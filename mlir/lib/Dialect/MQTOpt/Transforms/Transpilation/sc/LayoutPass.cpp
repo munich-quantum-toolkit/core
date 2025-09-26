@@ -11,26 +11,29 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/RoutingStack.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/PatternMatch.h"
-
-#include "llvm/Support/LogicalResult.h"
 
 #include <cassert>
 #include <cstddef>
+#include <deque>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
+#include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+#include <numeric>
+#include <vector>
 
 #define DEBUG_TYPE "layout-sc"
 
@@ -53,140 +56,19 @@ constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
 using QubitIndex = std::size_t;
 
 /**
- * @brief Maps SSA values to hardware indices.
+ * @brief A queue of qubit SSA values.
  */
-using QubitIndexMap = llvm::DenseMap<Value, QubitIndex>;
+using QubitPool = std::deque<Value>;
 
 /**
- * @brief Replace an old SSA value with a new one.
+ * @brief The necessary datastructures to apply the placement.
  */
-void remapQubitValue(QubitIndexMap& state, const Value in, const Value out) {
-  assert(in != out && "'in' must not equal 'out'");
-  const auto it = state.find(in);
-  assert(it != state.end() && "map must contain 'in'");
-  state[out] = it->second;
-  state.erase(in);
-}
-
-/**
- * @brief Manages free / used hardware indices.
- */
-struct HardwareIndexPool {
-
-  /**
-   * @brief Fill the pool with indices determined by the given layout.
-   */
-  void fill(ArrayRef<QubitIndex> layout) {
-    freeHardwareIndices_.clear();
-    for (const QubitIndex i : llvm::reverse(layout)) {
-      freeHardwareIndices_.insert(i);
-    }
-  }
-
-  /**
-   * @brief Re-insert hardware index to set of free indices.
-   */
-  void release(const QubitIndex index) { freeHardwareIndices_.insert(index); }
-
-  /**
-   * @brief Retrieve free hardware index if available.
-   * @returns The index, or std::nullopt if none is available.
-   */
-  [[nodiscard]] std::optional<QubitIndex> retrieve() {
-    if (freeHardwareIndices_.empty()) {
-      return std::nullopt;
-    }
-    const QubitIndex index = freeHardwareIndices_.back();
-    freeHardwareIndices_.pop_back();
-    return index;
-  }
-
-  /**
-   * @brief Return true if the index is in-use, i.e., it has been allocated
-   * before.
-   */
-  [[nodiscard]] bool isUsed(const QubitIndex index) const {
-    return !freeHardwareIndices_.contains(index);
-  }
-
-private:
-  /**
-   * @brief Set of free hardware indices.
-   *
-   * The SetVector ensures a deterministic iteration order.
-   */
-  llvm::SetVector<QubitIndex> freeHardwareIndices_;
-};
-
-template <class Context> class TranspilationStep {
-public:
-  explicit TranspilationStep<Context>(Context& cntx, MLIRContext* ctx)
-      : cntx_(cntx), rewriter_(ctx) {}
-
-  virtual ~TranspilationStep() = default;
-  virtual WalkResult handleFunc(func::FuncOp op) {}
-  virtual WalkResult handleReturn(func::ReturnOp op) {}
-  virtual WalkResult handleAlloc(AllocQubitOp op) {}
-  virtual WalkResult handleDealloc(DeallocQubitOp op) {}
-
-  LogicalResult run(ModuleOp module) {
-
-    /// Prepare work-list.
-    SmallVector<Operation*> worklist;
-    for (const auto func : module.getOps<func::FuncOp>()) {
-      if (!func->hasAttr(ENTRY_POINT_ATTR)) {
-        continue; // Ignore non entry_point functions for now.
-      }
-      func->walk<WalkOrder::PreOrder>(
-          [&](Operation* op) { worklist.push_back(op); });
-    }
-
-    /// Iterate work-list.
-    for (Operation* curr : worklist) {
-      if (curr == nullptr) {
-        continue; // Skip erased ops.
-      }
-
-      const OpBuilder::InsertionGuard guard(rewriter_);
-      rewriter_.setInsertionPoint(curr);
-
-      const auto res =
-          TypeSwitch<Operation*, WalkResult>(curr)
-              /// built-in Dialect
-              .template Case<ModuleOp>(
-                  [&](ModuleOp /* op */) { return WalkResult::advance(); })
-              /// func Dialect
-              .template Case<func::FuncOp>(
-                  [&](func::FuncOp op) { return handleFunc(op); })
-              .template Case<func::ReturnOp>(
-                  [&](func::ReturnOp op) { return handleReturn(op); })
-              /// mqtopt Dialect
-              // .Case<AllocQubitOp>([&](AllocQubitOp op) {
-              //   return handleAlloc(op, ctx.stack(), ctx.pool(), rewriter);
-              // })
-              // .Case<DeallocQubitOp>([&](DeallocQubitOp op) {
-              //   return handleDealloc(op, ctx.stack(), ctx.pool(), rewriter);
-              // })
-              /// Skip the rest.
-              .Default([](auto) { return WalkResult::skip(); });
-
-      if (res.wasInterrupted()) {
-        return failure();
-      }
-    }
-  }
-
-protected:
-  Context cntx_;
-  PatternRewriter rewriter_;
-};
-
 struct LayoutContext {
   explicit LayoutContext(Architecture& arch) : arch(&arch) {}
 
   Architecture* arch;
-  RoutingStack<QubitIndexMap> stack{};
-  HardwareIndexPool pool{};
+  RoutingStack<Layout<QubitIndex>> stack{};
+  QubitPool pool;
 };
 
 /**
@@ -212,14 +94,27 @@ WalkResult handleFunc(func::FuncOp op, LayoutContext& ctx,
   //     llvm::dbgs() << '\n';
   //   });
 
-  ctx.stack.emplace();
+  SmallVector<QubitIndex> initialLayout(ctx.arch->nqubits());
+  std::iota(initialLayout.begin(), initialLayout.end(), 0);
 
-  for (std::size_t i = 0; i < ctx.arch->nqubits(); ++i) {
+  ctx.stack.emplace(ctx.arch->nqubits());
+  ctx.pool.clear();
+
+  /// Create static / hardware qubits for entry_point functions.
+  SmallVector<Value> qubits(ctx.arch->nqubits());
+  for (QubitIndex i = 0; i < ctx.arch->nqubits(); ++i) {
     auto qubitOp =
         rewriter.create<QubitOp>(rewriter.getInsertionPoint()->getLoc(), i);
     rewriter.setInsertionPointAfter(qubitOp);
+    qubits[i] = qubitOp.getQubit();
+  }
 
-    ctx.stack.top().try_emplace(qubitOp.getQubit(), i);
+  /// Initialize pool with qubits in the initial layout order.
+  /// Initialize SSA Value <-> Hardware-Index Mapping.
+  for (const auto [programIdx, hardwareIdx] : llvm::enumerate(initialLayout)) {
+    const Value q = qubits[hardwareIdx];
+    ctx.pool.push_back(q);
+    ctx.stack.top().add(programIdx, hardwareIdx, q);
   }
 
   return WalkResult::advance();
@@ -233,6 +128,66 @@ WalkResult handleFunc(func::FuncOp op, LayoutContext& ctx,
  */
 WalkResult handleReturn(LayoutContext& ctx) {
   ctx.stack.pop();
+  return WalkResult::advance();
+}
+
+/**
+ * @brief Retrieve free qubit from pool and replace the allocated qubit with it.
+ * Reset the qubit if it has already been allocated before.
+ */
+WalkResult handleAlloc(AllocQubitOp op, LayoutContext& ctx,
+                       PatternRewriter& rewriter) {
+  if (ctx.pool.empty()) {
+    return op.emitOpError(
+        "requires one too many qubits for the targeted architecture");
+  }
+
+  /// Retrieve free qubit.
+  const Value q = ctx.pool.front();
+  ctx.pool.pop_front();
+
+  LLVM_DEBUG({
+    const QubitIndex index = ctx.stack.top().lookupHardware(q);
+    llvm::dbgs() << "handleAlloc: index= " << index << '\n';
+  });
+
+  /// Newly allocated?
+  const Operation* defOp = q.getDefiningOp();
+  if (defOp != nullptr && isa<QubitOp>(defOp)) {
+    rewriter.replaceOp(op, q);
+    return WalkResult::advance();
+  }
+
+  auto reset = rewriter.create<ResetOp>(op.getLoc(), q);
+  rewriter.replaceOp(op, reset);
+
+  /// Update layout.
+  ctx.stack.top().remapQubitValue(reset.getInQubit(), reset.getOutQubit());
+
+  return WalkResult::advance();
+}
+
+/**
+ * @brief Release hardware qubit and erase dealloc operation.
+ */
+WalkResult handleDealloc(DeallocQubitOp op, LayoutContext& ctx,
+                         PatternRewriter& rewriter) {
+  ctx.pool.push_back(op.getQubit());
+  rewriter.eraseOp(op);
+  return WalkResult::advance();
+}
+
+/**
+ * @brief Update layout.
+ */
+WalkResult handleUnitary(UnitaryInterface op, LayoutContext& ctx) {
+  const std::vector<Value> inQubits = op.getAllInQubits();
+  const std::vector<Value> outQubits = op.getAllOutQubits();
+
+  for (const auto [in, out] : llvm::zip(inQubits, outQubits)) {
+    ctx.stack.top().remapQubitValue(in, out);
+  }
+
   return WalkResult::advance();
 }
 
@@ -269,6 +224,16 @@ LogicalResult run(ModuleOp module, MLIRContext* mlirCtx, LayoutContext& ctx) {
                          })
                          .Case<func::ReturnOp>([&](func::ReturnOp /* op */) {
                            return handleReturn(ctx);
+                         })
+                         /// mqtopt Dialect
+                         .Case<AllocQubitOp>([&](AllocQubitOp op) {
+                           return handleAlloc(op, ctx, rewriter);
+                         })
+                         .Case<DeallocQubitOp>([&](DeallocQubitOp op) {
+                           return handleDealloc(op, ctx, rewriter);
+                         })
+                         .Case<UnitaryInterface>([&](UnitaryInterface op) {
+                           return handleUnitary(op, ctx);
                          })
                          /// Skip the rest.
                          .Default([](auto) { return WalkResult::skip(); });

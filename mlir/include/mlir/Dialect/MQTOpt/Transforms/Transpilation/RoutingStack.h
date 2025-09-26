@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#pragma once
+
 #include <cstddef>
 #include <deque>
 #include <mlir/IR/Value.h>
