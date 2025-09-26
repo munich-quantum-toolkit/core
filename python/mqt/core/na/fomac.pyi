@@ -10,7 +10,7 @@
 
 from collections.abc import Iterable
 
-from ..qdmi.fomac import Device as GenericDevice
+from ..fomac import Device as GenericDevice
 
 __all__ = ["Device"]
 

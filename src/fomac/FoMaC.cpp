@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/FoMaC.hpp"
+#include "fomac/FoMaC.hpp"
 
 #include <algorithm>
 #include <cstddef>

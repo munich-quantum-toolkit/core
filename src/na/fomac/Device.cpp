@@ -10,7 +10,7 @@
 
 #include "na/fomac/Device.hpp"
 
-#include "qdmi/FoMaC.hpp"
+#include "fomac/FoMaC.hpp"
 
 #include <algorithm>
 #include <array>

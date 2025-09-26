@@ -10,7 +10,7 @@
 
 // These includes must be the first includes for any bindings code
 // clang-format off
-#include "qdmi/FoMaC.hpp"
+#include "fomac/FoMaC.hpp"
 #include <pybind11/cast.h>
 #include <pybind11/operators.h>
 #include <qdmi/client.h>

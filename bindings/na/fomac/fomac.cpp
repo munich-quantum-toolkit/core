@@ -10,7 +10,7 @@
 
 // These includes must be the first includes for any bindings code
 // clang-format off
-#include "qdmi/FoMaC.hpp"
+#include "fomac/FoMaC.hpp"
 #include "na/fomac/Device.hpp"
 #include "na/device/Generator.hpp"
 

@@ -16,13 +16,13 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from mqt.core.fomac import devices as generic_devices
 from mqt.core.na.fomac import Device, devices
-from mqt.core.qdmi.fomac import devices as generic_devices
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from mqt.core.qdmi.fomac import Site
+    from mqt.core.fomac import Site
 
 
 def test_constructor() -> None:

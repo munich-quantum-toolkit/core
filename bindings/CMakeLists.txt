@@ -15,5 +15,5 @@ add_subdirectory(dd)
 # add the NA bindings package
 add_subdirectory(na)
 
-# add the QDMI bindings package
-add_subdirectory(qdmi)
+# add the FoMaC bindings package
+add_subdirectory(fomac)

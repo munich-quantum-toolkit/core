@@ -10,8 +10,8 @@
 
 #pragma once
 
+#include "fomac/FoMaC.hpp"
 #include "na/device/Generator.hpp"
-#include "qdmi/FoMaC.hpp"
 
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>

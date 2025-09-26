@@ -16,9 +16,3 @@ if(TARGET MQT::CoreQDMIDriver)
                                PRIVATE DYN_DEV_LIB="$<TARGET_FILE:MQT::CoreQDMINaDeviceDyn>")
   endif()
 endif()
-
-set(TARGET_NAME mqt-core-qdmi-fomac-test)
-
-if(TARGET MQT::CoreQDMIFoMaC)
-  package_add_test(${TARGET_NAME} MQT::CoreQDMIFoMaC test_fomac.cpp)
-endif()
