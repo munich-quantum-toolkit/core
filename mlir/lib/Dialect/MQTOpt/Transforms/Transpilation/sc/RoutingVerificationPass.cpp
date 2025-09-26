@@ -21,6 +21,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
