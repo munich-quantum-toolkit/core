@@ -260,28 +260,27 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
           // this generator (same as the device implementation) only supports
           // two-qubit local operations
           for (const auto& operation : device.localMultiQubitOperations) {
-            if (x >= operation.region.origin.x &&
+            if (operation.region.origin.x <= x &&
                 x <= operation.region.origin.x +
                          static_cast<int64_t>(operation.region.size.width) &&
-                y >= operation.region.origin.y &&
+                operation.region.origin.y <= y &&
                 y <= operation.region.origin.y +
                          static_cast<int64_t>(operation.region.size.height)) {
               for (const auto& [i2, x2, y2] :
                    sites | std::views::take(sites.size() - 1)) {
-                if (x2 >= operation.region.origin.x &&
+                if (operation.region.origin.x <= x2 &&
                     x2 <=
                         operation.region.origin.x +
                             static_cast<int64_t>(operation.region.size.width) &&
-                    y2 >= operation.region.origin.y &&
+                    operation.region.origin.y <= y2 &&
                     y2 <= operation.region.origin.y +
                               static_cast<int64_t>(
-                                  operation.region.size.height)) {
-                  if (std::hypot(x2 - x, y2 - y) <=
-                      static_cast<double>(operation.interactionRadius)) {
-                    os << ";\\\n  localOp" << operation.name
-                       << "Sites.emplace_back(var.at(" << i2
-                       << ").get(), var.back().get())";
-                  }
+                                  operation.region.size.height) &&
+                    std::hypot(x2 - x, y2 - y) <=
+                        static_cast<double>(operation.interactionRadius)) {
+                  os << ";\\\n  localOp" << operation.name
+                     << "Sites.emplace_back(var.at(" << i2
+                     << ").get(), var.back().get())";
                 }
               }
             }
