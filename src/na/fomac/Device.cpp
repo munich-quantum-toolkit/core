@@ -19,10 +19,12 @@
 #include <cstdint>
 #include <iterator>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <ranges>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace na {
@@ -77,11 +79,17 @@ auto FoMaC::Device::initDurationUnitFromDevice() -> void {
 }
 auto FoMaC::Device::initDecoherenceTimesFromDevice() -> void {
   // find first non-zone site as reference
-  const auto& sites = getSites();
-  auto referenceSite = *std::ranges::find_if(
-      sites, [](const auto& site) { return !site.isZone().value_or(false); });
-  decoherenceTimes.t1 = *referenceSite.getT1();
-  decoherenceTimes.t2 = *referenceSite.getT2();
+  auto regularSites = getSites() | std::views::filter([](const auto& site) {
+                        return !site.isZone().value_or(false);
+                      });
+  const auto count = static_cast<uint64_t>(std::ranges::distance(regularSites));
+  const auto [t1, t2] = std::accumulate(
+      regularSites.begin(), regularSites.end(), std::pair{0ULL, 0ULL},
+      [](const auto& acc, const auto& site) {
+        return std::pair{acc.first + *site.getT1(), acc.second + *site.getT2()};
+      });
+  decoherenceTimes.t1 = t1 / count;
+  decoherenceTimes.t2 = t2 / count;
 }
 auto FoMaC::Device::initTrapsfromDevice() -> void {
   traps.clear();
