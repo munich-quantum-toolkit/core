@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-namespace qdmi {
+namespace fomac {
 
 namespace {
 /**
@@ -420,4 +420,4 @@ auto FoMaC::getDevices() -> std::vector<Device> {
       [](const QDMI_Device& dev) -> Device { return {Token{}, dev}; });
   return devices;
 }
-} // namespace qdmi
+} // namespace fomac

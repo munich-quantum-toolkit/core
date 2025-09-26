@@ -24,7 +24,7 @@
 #include <utility>
 #include <vector>
 
-namespace qdmi {
+namespace fomac {
 /**
  * @brief Concept for ranges that are contiguous in memory and can be
  * constructed with a size.
@@ -178,7 +178,7 @@ inline auto throwIfError(int result, const std::string& msg) -> void {
  * @brief Class representing the FoMaC library.
  * @details This class provides methods to query available devices and
  * manage the QDMI session.
- * @note This class is a singleton
+ * @note This class is a singleton.
  * @see QDMI_Session
  */
 class FoMaC {
@@ -565,4 +565,4 @@ public:
   /// @see QDMI_SESSION_PROPERTY_DEVICES
   [[nodiscard]] static auto getDevices() -> std::vector<Device>;
 };
-} // namespace qdmi
+} // namespace fomac

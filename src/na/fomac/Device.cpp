@@ -27,8 +27,8 @@
 
 namespace na {
 
-FoMaC::Device::Device(const qdmi::FoMaC::Device& device)
-    : qdmi::FoMaC::Device(device) {
+FoMaC::Device::Device(const fomac::FoMaC::Device& device)
+    : fomac::FoMaC::Device(device) {
   initNameFromDevice();
   initMinAtomDistanceFromDevice();
   initQubitsNumFromDevice();
@@ -43,7 +43,7 @@ FoMaC::Device::Device(const qdmi::FoMaC::Device& device)
   initShuttlingUnitsFromDevice();
 }
 auto FoMaC::Device::calculateExtentFromSites(
-    const std::vector<qdmi::FoMaC::Device::Site>& sites) -> Region {
+    const std::vector<fomac::FoMaC::Device::Site>& sites) -> Region {
   auto minX = std::numeric_limits<int64_t>::max();
   auto maxX = std::numeric_limits<int64_t>::min();
   auto minY = std::numeric_limits<int64_t>::max();
@@ -68,11 +68,11 @@ auto FoMaC::Device::initQubitsNumFromDevice() -> void {
   numQubits = getQubitsNum();
 }
 auto FoMaC::Device::initLengthUnitFromDevice() -> void {
-  lengthUnit.unit = *qdmi::FoMaC::Device::getLengthUnit();
+  lengthUnit.unit = *fomac::FoMaC::Device::getLengthUnit();
   lengthUnit.scaleFactor = getLengthScaleFactor().value_or(1.0);
 }
 auto FoMaC::Device::initDurationUnitFromDevice() -> void {
-  durationUnit.unit = *qdmi::FoMaC::Device::getDurationUnit();
+  durationUnit.unit = *fomac::FoMaC::Device::getDurationUnit();
   durationUnit.scaleFactor = getDurationScaleFactor().value_or(1.0);
 }
 auto FoMaC::Device::initDecoherenceTimesFromDevice() -> void {
@@ -188,10 +188,10 @@ auto FoMaC::Device::initGlobalSingleQubitOperationsFromDevice() -> void {
   std::ranges::copy(
       getOperations() |
           std::views::filter(
-              [](const qdmi::FoMaC::Device::Operation& op) -> bool {
+              [](const fomac::FoMaC::Device::Operation& op) -> bool {
                 return op.isZoned() == true && op.getQubitsNum() == 1;
               }) |
-          std::views::transform([](const qdmi::FoMaC::Device::Operation& op)
+          std::views::transform([](const fomac::FoMaC::Device::Operation& op)
                                     -> GlobalSingleQubitOperation {
             const auto site = op.getSites()->front();
             return GlobalSingleQubitOperation{
@@ -210,10 +210,10 @@ auto FoMaC::Device::initGlobalMultiQubitOperationsFromDevice() -> void {
   std::ranges::copy(
       getOperations() |
           std::views::filter(
-              [](const qdmi::FoMaC::Device::Operation& op) -> bool {
+              [](const fomac::FoMaC::Device::Operation& op) -> bool {
                 return op.isZoned() == true && op.getQubitsNum() > 1;
               }) |
-          std::views::transform([](const qdmi::FoMaC::Device::Operation& op)
+          std::views::transform([](const fomac::FoMaC::Device::Operation& op)
                                     -> GlobalMultiQubitOperation {
             const auto site = op.getSites()->front();
             return GlobalMultiQubitOperation{
@@ -236,10 +236,10 @@ auto FoMaC::Device::initLocalSingleQubitOperationsFromDevice() -> void {
   std::ranges::copy(
       getOperations() |
           std::views::filter(
-              [](const qdmi::FoMaC::Device::Operation& op) -> bool {
+              [](const fomac::FoMaC::Device::Operation& op) -> bool {
                 return !op.isZoned().value_or(false) && op.getQubitsNum() == 1;
               }) |
-          std::views::transform([](const qdmi::FoMaC::Device::Operation& op)
+          std::views::transform([](const fomac::FoMaC::Device::Operation& op)
                                     -> LocalSingleQubitOperation {
             return LocalSingleQubitOperation{
                 op.getName(), calculateExtentFromSites(*op.getSites()),
@@ -251,10 +251,10 @@ auto FoMaC::Device::initLocalMultiQubitOperationsFromDevice() -> void {
   std::ranges::copy(
       getOperations() |
           std::views::filter(
-              [](const qdmi::FoMaC::Device::Operation& op) -> bool {
+              [](const fomac::FoMaC::Device::Operation& op) -> bool {
                 return !op.isZoned().value_or(false) && op.getQubitsNum() > 1;
               }) |
-          std::views::transform([](const qdmi::FoMaC::Device::Operation& op)
+          std::views::transform([](const fomac::FoMaC::Device::Operation& op)
                                     -> LocalMultiQubitOperation {
             return LocalMultiQubitOperation{
                 {.name = op.getName(),
@@ -270,15 +270,15 @@ auto FoMaC::Device::initLocalMultiQubitOperationsFromDevice() -> void {
 }
 auto FoMaC::Device::initShuttlingUnitsFromDevice() -> void {
   std::unordered_map<
-      size_t, std::array<std::optional<qdmi::FoMaC::Device::Operation>, 3>>
+      size_t, std::array<std::optional<fomac::FoMaC::Device::Operation>, 3>>
       shuttlingOpTuples;
   std::ranges::for_each(
       getOperations() |
           std::views::filter(
-              [](const qdmi::FoMaC::Device::Operation& op) -> bool {
+              [](const fomac::FoMaC::Device::Operation& op) -> bool {
                 return op.isZoned() && !op.getQubitsNum().has_value();
               }),
-      [&shuttlingOpTuples](const qdmi::FoMaC::Device::Operation& op) {
+      [&shuttlingOpTuples](const fomac::FoMaC::Device::Operation& op) {
         // extract the int from, e.g., `load<0>`, `move<1>`, `store<2>`
         const auto name = op.getName();
         const auto start = name.find('<');
@@ -317,12 +317,12 @@ auto FoMaC::Device::initShuttlingUnitsFromDevice() -> void {
       std::back_inserter(shuttlingUnits));
 }
 auto FoMaC::getDevices() -> std::vector<Device> {
-  const auto& qdmiDevices = qdmi::FoMaC::getDevices();
+  const auto& qdmiDevices = fomac::FoMaC::getDevices();
   std::vector<Device> devices;
   devices.reserve(qdmiDevices.size());
   std::ranges::transform(
       qdmiDevices, std::back_inserter(devices),
-      [](const qdmi::FoMaC::Device& dev) -> Device { return Device(dev); });
+      [](const fomac::FoMaC::Device& dev) -> Device { return Device(dev); });
   return devices;
 }
 } // namespace na

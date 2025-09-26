@@ -21,24 +21,24 @@ namespace na {
 
 /**
  * @brief Class representing the FoMaC library with neutral atom extensions.
- * @see qdmi::FoMaC
+ * @see fomac::FoMaC
  */
-class FoMaC : public qdmi::FoMaC {
+class FoMaC : public fomac::FoMaC {
 public:
   /**
    * @brief Class representing a quantum device with neutral atom extensions.
-   * @see qdmi::FoMaC::Device
+   * @see fomac::FoMaC::Device
    * @note Since it inherits from @ref na::Device, Device objects can be
    * converted to `nlohmann::json` objects.
    */
-  class Device : public qdmi::FoMaC::Device, na::Device {
+  class Device : public fomac::FoMaC::Device, na::Device {
     /**
      * @brief Calculate the extent of a set of sites.
      * @param sites The sites to calculate the extent for.
      * @returns A `Region` object representing the extent of the sites.
      */
     static auto calculateExtentFromSites(
-        const std::vector<qdmi::FoMaC::Device::Site>& sites) -> Region;
+        const std::vector<fomac::FoMaC::Device::Site>& sites) -> Region;
 
     /**
      * @brief Initializes the name from the underlying QDMI device.
@@ -110,10 +110,10 @@ public:
 
   public:
     /**
-     * @brief Constructs a Device object from a qdmi::FoMaC::Device object.
-     * @param device The qdmi::FoMaC::Device object to wrap.
+     * @brief Constructs a Device object from a fomac::FoMaC::Device object.
+     * @param device The fomac::FoMaC::Device object to wrap.
      */
-    explicit Device(const qdmi::FoMaC::Device& device);
+    explicit Device(const fomac::FoMaC::Device& device);
 
     /// @returns the length unit of the device.
     [[nodiscard]] auto getLengthUnit() const -> const Unit& {

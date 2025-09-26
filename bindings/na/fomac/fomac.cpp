@@ -41,7 +41,8 @@ template <pyClass T> [[nodiscard]] auto repr(T c) -> std::string {
 PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   pybind11::module_::import("mqt.core.qdmi.fomac");
 
-  auto device = py::class_<na::FoMaC::Device, qdmi::FoMaC::Device>(m, "Device");
+  auto device =
+      py::class_<na::FoMaC::Device, fomac::FoMaC::Device>(m, "Device");
 
   auto lattice = py::class_<na::Device::Lattice>(device, "Lattice");
 
@@ -90,8 +91,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   lattice.def(py::self == py::self);
   lattice.def(py::self != py::self);
 
-  device.def(py::init<qdmi::FoMaC::Device>(), "Create Device from FoMaC Device",
-             "device"_a);
+  device.def(py::init<fomac::FoMaC::Device>(),
+             "Create Device from FoMaC Device", "device"_a);
   device.def_property_readonly("traps", &na::FoMaC::Device::getTraps);
   device.def_property_readonly("t1", [](const na::FoMaC::Device& dev) {
     return dev.getDecoherenceTimes().t1;
@@ -99,7 +100,7 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   device.def_property_readonly("t2", [](const na::FoMaC::Device& dev) {
     return dev.getDecoherenceTimes().t2;
   });
-  device.def("__repr__", [](const qdmi::FoMaC::Device& dev) {
+  device.def("__repr__", [](const fomac::FoMaC::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
   device.def(py::self == py::self);
