@@ -13,7 +13,10 @@ macro(ADD_QIR_CIRCUIT target_name circuit_path)
     get_filename_component(circuit_name ${circuit_path} NAME_WE)
     add_custom_command(
       OUTPUT ${circuit_name}.o
-      COMMAND clang -c ${circuit_path} -o ${circuit_name}.o
+      COMMAND
+        clang
+        "$<$<BOOL:${CMAKE_OSX_DEPLOYMENT_TARGET}>:-mmacosx-version-min ${CMAKE_OSX_DEPLOYMENT_TARGET}>"
+        -c ${circuit_path} -o ${circuit_name}.o
       DEPENDS ${circuit_path}
       COMMENT "Compiling ${circuit_path} to ${circuit_name}.o")
     add_executable(${target_name} ${circuit_name}.o)
