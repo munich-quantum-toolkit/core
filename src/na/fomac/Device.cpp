@@ -56,9 +56,9 @@ auto FoMaC::Device::calculateExtentFromSites(
     minY = std::min(minY, y);
     maxY = std::max(maxY, y);
   }
-  return {.origin = Vector(minX, minY),
-          .size = Region::Size(static_cast<uint64_t>(maxX - minX),
-                               static_cast<uint64_t>(maxY - minY))};
+  return {.origin = {.x = minX, .y = minY},
+          .size = {.width = static_cast<uint64_t>(maxX - minX),
+                   .height = static_cast<uint64_t>(maxY - minY)}};
 }
 auto FoMaC::Device::initNameFromDevice() -> void { name = getName(); }
 auto FoMaC::Device::initMinAtomDistanceFromDevice() -> void {
@@ -189,11 +189,13 @@ auto FoMaC::Device::initGlobalSingleQubitOperationsFromDevice() -> void {
             const auto site = op.getSites()->front();
             return GlobalSingleQubitOperation{
                 op.getName(),
-                Region{.origin = Vector{.x = *site.getXCoordinate(),
-                                        .y = *site.getYCoordinate()},
-                       .size = Region::Size{.width = *site.getXExtent(),
-                                            .height = *site.getYExtent()}},
-                *op.getDuration(), *op.getFidelity(), op.getParametersNum()};
+                {.origin = {.x = *site.getXCoordinate(),
+                            .y = *site.getYCoordinate()},
+                 .size = {.width = *site.getXExtent(),
+                          .height = *site.getYExtent()}},
+                *op.getDuration(),
+                *op.getFidelity(),
+                op.getParametersNum()};
           }),
       std::back_inserter(globalSingleQubitOperations));
 }
@@ -209,9 +211,8 @@ auto FoMaC::Device::initGlobalMultiQubitOperationsFromDevice() -> void {
             const auto site = op.getSites()->front();
             return GlobalMultiQubitOperation{
                 {.name = op.getName(),
-                 .region =
-                     Region{.origin = Vector{.x = *site.getXCoordinate(),
-                                             .y = *site.getYCoordinate()},
+                 .region = {.origin = {.x = *site.getXCoordinate(),
+                                       .y = *site.getYCoordinate()},
                             .size = Region::Size{.width = *site.getXExtent(),
                                                  .height = *site.getYExtent()}},
                  .duration = *op.getDuration(),
@@ -287,25 +288,25 @@ auto FoMaC::Device::initShuttlingUnitsFromDevice() -> void {
         }
       });
   std::ranges::copy(
-      shuttlingOpTuples | std::views::transform([](const auto& pair) {
-        const auto& [id, triple] = pair;
-        const auto& load = *triple[0];
-        const auto& move = *triple[1];
-        const auto& store = *triple[2];
-        const auto site = move.getSites()->front();
-        return ShuttlingUnit{
-            id,
-            Region{.origin = Vector{.x = *site.getXCoordinate(),
-                                    .y = *site.getYCoordinate()},
-                   .size = Region::Size{.width = *site.getXExtent(),
+      shuttlingOpTuples |
+          std::views::transform([](const auto& pair) -> ShuttlingUnit {
+            const auto& [id, triple] = pair;
+            const auto& load = *triple[0];
+            const auto& move = *triple[1];
+            const auto& store = *triple[2];
+            const auto site = move.getSites()->front();
+            return {.id = id,
+                    .region = {.origin = {.x = *site.getXCoordinate(),
+                                          .y = *site.getYCoordinate()},
+                               .size = {.width = *site.getXExtent(),
                                         .height = *site.getYExtent()}},
-            *load.getDuration(),
-            *store.getDuration(),
-            *load.getFidelity(),
-            *store.getFidelity(),
-            move.getParametersNum(),
-            *move.getMeanShuttlingSpeed()};
-      }),
+                    .loadDuration = *load.getDuration(),
+                    .storeDuration = *store.getDuration(),
+                    .loadFidelity = *load.getFidelity(),
+                    .storeFidelity = *store.getFidelity(),
+                    .numParameters = move.getParametersNum(),
+                    .meanShuttlingSpeed = *move.getMeanShuttlingSpeed()};
+          }),
       std::back_inserter(shuttlingUnits));
 }
 auto FoMaC::getDevices() -> std::vector<Device> {
