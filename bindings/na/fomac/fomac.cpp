@@ -27,6 +27,17 @@ namespace mqt {
 namespace py = pybind11;
 using namespace py::literals;
 
+namespace {
+template <typename T>
+concept pyClass = requires(T t) { py::cast(t); };
+template <pyClass T> [[nodiscard]] auto repr(T c) -> std::string {
+  return py::repr(py::cast(c)).template cast<std::string>();
+}
+} // namespace
+
+// The definition of the (in-)equality operators produces warnings in clang-tidy
+// which are ignored by the following comment
+// NOLINTBEGIN(misc-redundant-expression)
 PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   pybind11::module_::import("mqt.core.qdmi.fomac");
 
@@ -41,8 +52,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
     return "<Vector x=" + std::to_string(v.x) + " y=" + std::to_string(v.y) +
            ">";
   });
-  vector.def(py::self == py::self); // NOLINT(misc-redundant-expression)
-  vector.def(py::self != py::self); // NOLINT(misc-redundant-expression)
+  vector.def(py::self == py::self);
+  vector.def(py::self != py::self);
 
   auto region = py::class_<na::Device::Region>(lattice, "Region");
 
@@ -53,18 +64,16 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
     return "<Size width=" + std::to_string(s.width) +
            " height=" + std::to_string(s.height) + ">";
   });
-  size.def(py::self == py::self); // NOLINT(misc-redundant-expression)
-  size.def(py::self != py::self); // NOLINT(misc-redundant-expression)
+  size.def(py::self == py::self);
+  size.def(py::self != py::self);
 
   region.def_readonly("origin", &na::Device::Region::origin);
   region.def_readonly("size", &na::Device::Region::size);
   region.def("__repr__", [](const na::Device::Region& r) {
-    return "<Region origin=" +
-           py::repr(py::cast(r.origin)).cast<std::string>() +
-           " size=" + py::repr(py::cast(r.size)).cast<std::string>() + ">";
+    return "<Region origin=" + repr(r.origin) + " size=" + repr(r.size) + ">";
   });
-  region.def(py::self == py::self); // NOLINT(misc-redundant-expression)
-  region.def(py::self != py::self); // NOLINT(misc-redundant-expression)
+  region.def(py::self == py::self);
+  region.def(py::self != py::self);
 
   lattice.def_readonly("lattice_origin", &na::Device::Lattice::latticeOrigin);
   lattice.def_readonly("lattice_vector_1",
@@ -78,8 +87,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
     return "<Lattice origin=" +
            py::repr(py::cast(l.latticeOrigin)).cast<std::string>() + ">";
   });
-  lattice.def(py::self == py::self); // NOLINT(misc-redundant-expression)
-  lattice.def(py::self != py::self); // NOLINT(misc-redundant-expression)
+  lattice.def(py::self == py::self);
+  lattice.def(py::self != py::self);
 
   device.def(py::init<qdmi::FoMaC::Device>(), "Create Device from FoMaC Device",
              "device"_a);
@@ -93,10 +102,10 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   device.def("__repr__", [](const qdmi::FoMaC::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
-  device.def(py::self == py::self); // NOLINT(misc-redundant-expression)
-  device.def(py::self != py::self); // NOLINT(misc-redundant-expression)
+  device.def(py::self == py::self);
+  device.def(py::self != py::self);
 
   m.def("devices", &na::FoMaC::getDevices);
 }
-
+// NOLINTEND(misc-redundant-expression)
 } // namespace mqt
