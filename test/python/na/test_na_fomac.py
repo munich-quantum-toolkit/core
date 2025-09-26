@@ -16,13 +16,18 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from mqt.core.na.fomac import devices
+from mqt.core.na.fomac import Device, devices
+from mqt.core.qdmi.fomac import devices as generic_devices
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from mqt.core.na.fomac import Device
     from mqt.core.qdmi.fomac import Site
+
+
+def test_constructor() -> None:
+    """Test the constructor of the Device class."""
+    assert next(iter(devices())) == Device(next(iter(generic_devices())))
 
 
 @pytest.fixture
@@ -30,7 +35,7 @@ def device_tuple() -> tuple[Device, Mapping[str, Any]]:
     """Return a neutral atom FoMaC device instance."""
     with pathlib.Path("json/na/device.json").open(encoding="utf-8") as f:
         device_dict = load(f)
-    return devices()[0], device_dict
+    return next(iter(devices())), device_dict
 
 
 def test_name(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:

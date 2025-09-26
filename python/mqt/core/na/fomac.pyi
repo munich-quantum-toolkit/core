@@ -8,6 +8,8 @@
 
 """Reconstruction of NADevice from QDMI's Device class."""
 
+from collections.abc import Iterable
+
 from ..qdmi.fomac import Device as GenericDevice
 
 __all__ = ["Device"]
@@ -74,7 +76,7 @@ class Device(GenericDevice):
         """
         The second lattice vector.
         """
-        sublattice_offsets: list[Device.Vector]
+        sublattice_offsets: Iterable[Device.Vector]
         """
         The offsets of the sublattices.
         """
@@ -85,7 +87,7 @@ class Device(GenericDevice):
         def __eq__(self, other: object) -> bool: ...
         def __ne__(self, other: object) -> bool: ...
 
-    traps: list[Device.Lattice]
+    traps: Iterable[Device.Lattice]
     """
     The list of trap positions in the device.
     """
@@ -98,8 +100,10 @@ class Device(GenericDevice):
     The T2 time of the device.
     """
 
+    def __init__(self, device: GenericDevice) -> None:
+        """Initializes the Device with a given generic FoMaC device."""
     def __eq__(self, other: object) -> bool: ...
     def __ne__(self, other: object) -> bool: ...
 
-def devices() -> list[Device]:
+def devices() -> Iterable[Device]:
     """Returns a list of available devices."""
