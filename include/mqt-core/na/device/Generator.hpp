@@ -395,7 +395,7 @@ auto writeJSONSchema(const std::string& path) -> void;
  * @param device is the protobuf representation of the device.
  * @param os is the output stream to write the header file to.
  * @throws std::runtime_error if the file cannot be opened or written to.
- * @warning This implementation only supports multi-qubit gates up to two
+ * @note This implementation only supports multi-qubit gates up to two
  * qubits.
  */
 auto writeHeader(const Device& device, std::ostream& os) -> void;
@@ -406,7 +406,7 @@ auto writeHeader(const Device& device, std::ostream& os) -> void;
  * @param device is the protobuf representation of the device.
  * @param path is the path to write the header file to.
  * @throws std::runtime_error if the file cannot be opened or written to.
- * @warning This implementation only supports multi-qubit gates up to two
+ * @note This implementation only supports multi-qubit gates up to two
  * qubits.
  */
 auto writeHeader(const Device& device, const std::string& path) -> void;

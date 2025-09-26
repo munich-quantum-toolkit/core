@@ -23,7 +23,4 @@ if(NOT TARGET ${TARGET_NAME})
     ./na
     LINK_LIBS
     MQT::CoreNAFoMaC)
-
-  # Set C++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 endif()
