@@ -39,7 +39,7 @@ template <pyClass T> [[nodiscard]] auto repr(T c) -> std::string {
 // which are ignored by the following comment
 // NOLINTBEGIN(misc-redundant-expression)
 PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
-  pybind11::module_::import("mqt.core.qdmi.fomac");
+  pybind11::module_::import("mqt.core.fomac");
 
   auto device =
       py::class_<na::FoMaC::Device, fomac::FoMaC::Device>(m, "Device");
