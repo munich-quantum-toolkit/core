@@ -28,7 +28,7 @@
 #include <mlir/Support/WalkResult.h>
 #include <vector>
 
-#define DEBUG_TYPE "routing-verification"
+#define DEBUG_TYPE "routing-verification-sc"
 
 namespace mqt::ir::opt {
 

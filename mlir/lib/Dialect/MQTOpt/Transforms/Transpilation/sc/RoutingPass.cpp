@@ -44,7 +44,7 @@
 #include <utility>
 #include <vector>
 
-#define DEBUG_TYPE "routing"
+#define DEBUG_TYPE "route-sc"
 
 namespace mqt::ir::opt {
 
