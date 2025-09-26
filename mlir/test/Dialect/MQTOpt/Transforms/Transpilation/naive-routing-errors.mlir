@@ -10,7 +10,7 @@
 
 
 module {
-    func.func @entryTooManyQubits() attributes { entry_point } {
+    func.func @entryTooManyQubits() attributes {passthrough = ["entry_point"]} {
         %q0_0 = mqtopt.allocQubit
         %q1_0 = mqtopt.allocQubit
         %q2_0 = mqtopt.allocQubit

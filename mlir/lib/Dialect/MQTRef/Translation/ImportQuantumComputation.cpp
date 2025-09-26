@@ -496,6 +496,7 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
                                  const llvm::SmallVector<mlir::Value>& qubits,
                                  const BitIndexVec& bitMap) {
   switch (operation.getType()) {
+    ADD_OP_CASE(Barrier)
     ADD_OP_CASE(I)
     ADD_OP_CASE(H)
     ADD_OP_CASE(X)
