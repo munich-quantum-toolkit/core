@@ -23,6 +23,7 @@
 #include <istream>
 #include <nlohmann/json.hpp>
 #include <ostream>
+#include <ranges>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>
