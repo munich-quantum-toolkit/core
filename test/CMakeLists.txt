@@ -15,6 +15,7 @@ add_subdirectory(ir)
 add_subdirectory(na)
 add_subdirectory(zx)
 add_subdirectory(qdmi)
+add_subdirectory(fomac)
 add_subdirectory(qir)
 
 # copy test circuits to build directory

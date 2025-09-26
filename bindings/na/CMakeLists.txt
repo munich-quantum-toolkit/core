@@ -10,9 +10,9 @@ add_subdirectory(fomac)
 
 # install the Python stub files in editable mode for better IDE support
 if(SKBUILD_STATE STREQUAL "editable")
-  file(GLOB_RECURSE PYI_FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/qdmi/*.pyi)
+  file(GLOB_RECURSE PYI_FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/na/*.pyi)
   install(
     FILES ${PYI_FILES}
-    DESTINATION ./qdmi
+    DESTINATION ./na
     COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
 endif()

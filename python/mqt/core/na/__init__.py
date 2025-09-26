@@ -6,14 +6,7 @@
 #
 # Licensed under the MIT License
 
-# add the IR bindings package
-add_subdirectory(ir)
+"""MQT Core NA - The MQT Core neutral atom module.
 
-# add the DD bindings package
-add_subdirectory(dd)
-
-# add the NA bindings package
-add_subdirectory(na)
-
-# add the FoMaC bindings package
-add_subdirectory(fomac)
+This module contains all neutral atom related functionality of MQT Core.
+"""
