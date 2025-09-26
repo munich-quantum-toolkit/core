@@ -297,7 +297,11 @@ struct ConvertQuantumCustomOp final
     } else if (gateName == "SWAP" || gateName == "CSWAP") {
       mqtoptOp = CREATE_GATE_OP(SWAP);
     } else if (gateName == "ISWAP") {
-      mqtoptOp = CREATE_GATE_OP(iSWAP);
+      if (op.getAdjoint()) {
+        mqtoptOp = CREATE_GATE_OP(iSWAPdg);
+      } else {
+        mqtoptOp = CREATE_GATE_OP(iSWAP);
+      }
     } else if (gateName == "RX" || gateName == "CRX") {
       mqtoptOp = CREATE_GATE_OP(RX);
     } else if (gateName == "RY" || gateName == "CRY") {
@@ -308,6 +312,12 @@ struct ConvertQuantumCustomOp final
       mqtoptOp = CREATE_GATE_OP(P);
     } else if (gateName == "IsingXY") {
       mqtoptOp = CREATE_GATE_OP(XXplusYY);
+    } else if (gateName == "IsingXX") {
+      mqtoptOp = CREATE_GATE_OP(RXX);
+    } else if (gateName == "IsingYY") {
+      mqtoptOp = CREATE_GATE_OP(RYY);
+    } else if (gateName == "IsingZZ") {
+      mqtoptOp = CREATE_GATE_OP(RZZ);
     } else if (gateName == "CNOT") {
       inPosCtrlQubitsVec.emplace_back(inQubits[0]);
       mqtoptOp = rewriter.create<opt::XOp>(

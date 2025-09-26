@@ -28,14 +28,14 @@ module {
     // CHECK: %[[QR3:.*]], %[[Q2:.*]] = "mqtopt.extractQubit"(%[[QR2]]) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
 
     // --- Uncontrolled -------------------------------------------------------------------------
-    // CHECK: %[[SW:.*]]:2 = mqtopt.swap( static [] mask []) %[[Q0]], %[[Q1]] : !mqtopt.Qubit, !mqtopt.Qubit
-    // CHECK: %[[IS:.*]]:2 = mqtopt.iswap( static [] mask []) %[[SW]]#0, %[[SW]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
-    // CHECK: %[[ISD:.*]]:2 = mqtopt.iswap( static [] mask []) %[[IS]]#0, %[[IS]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[SW:.*]]:2 = mqtopt.swap(static [] mask []) %[[Q0]], %[[Q1]] : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[IS:.*]]:2 = mqtopt.iswap(static [] mask []) %[[SW]]#0, %[[SW]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[ISD:.*]]:2 = mqtopt.iswapdg(static [] mask []) %[[IS]]#0, %[[IS]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
 
     // --- Controlled ----------------------------------------------------------------------------
-    // CHECK: %[[CSW_T:.*]]:2, %[[CSW_C:.*]] = mqtopt.swap( static [] mask []) %[[ISD]]#0, %[[ISD]]#1 ctrl %[[Q2]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
-    // CHECK: %[[CISW_T:.*]]:2, %[[CISW_C:.*]] = mqtopt.iswap( static [] mask []) %[[CSW_T]]#0, %[[CSW_T]]#1 ctrl %[[CSW_C]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
-    // CHECK: %[[CISWD_T:.*]]:2, %[[CISWD_C:.*]] = mqtopt.iswap( static [] mask []) %[[CISW_T]]#0, %[[CISW_T]]#1 ctrl %[[CISW_C]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[CSW_T:.*]]:2, %[[CSW_C:.*]] = mqtopt.swap(static [] mask []) %[[ISD]]#0, %[[ISD]]#1 ctrl %[[Q2]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[CISW_T:.*]]:2, %[[CISW_C:.*]] = mqtopt.iswap(static [] mask []) %[[CSW_T]]#0, %[[CSW_T]]#1 ctrl %[[CSW_C]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[CISWD_T:.*]]:2, %[[CISWD_C:.*]] = mqtopt.iswapdg(static [] mask []) %[[CISW_T]]#0, %[[CISW_T]]#1 ctrl %[[CISW_C]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
 
     // --- Reinsertion ---------------------------------------------------------------------------
     // CHECK: %[[R1:.*]] = "mqtopt.insertQubit"(%[[QR3]], %[[CISWD_T]]#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
