@@ -14,7 +14,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
-#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <llvm/ADT/DenseMap.h>
@@ -39,8 +38,6 @@
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
-#include <numeric>
-#include <random>
 #include <utility>
 #include <vector>
 
@@ -83,10 +80,6 @@ using QubitIndex = std::size_t;
  * @brief A pair of program indices.
  */
 using ProgramIndexPair = std::pair<QubitIndex, QubitIndex>;
-
-//===----------------------------------------------------------------------===//
-// Utilities
-//===----------------------------------------------------------------------===//
 
 /**
  * @brief Check if a unitary acts on two qubits.
@@ -206,83 +199,6 @@ bool isEntryPoint(func::FuncOp op) {
     return isa<StringAttr>(attr) && cast<StringAttr>(attr) == ENTRY_POINT_ATTR;
   });
 }
-
-//===----------------------------------------------------------------------===//
-// Initial Layouts
-//===----------------------------------------------------------------------===//
-
-/**
- * @brief A base class for all initial layout generator (ilg) strategies.
- */
-class InitialLayoutGeneratorBase {
-public:
-  explicit InitialLayoutGeneratorBase(const std::size_t nqubits)
-      : layout_(nqubits) {}
-  virtual ~InitialLayoutGeneratorBase() = default;
-
-  /**
-   * @brief Return a view of the initial layout.
-   */
-  ArrayRef<QubitIndex> getLayout() const { return layout_; }
-
-  virtual void generate() { /* no-op */ }
-
-#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-  /**
-   * @brief Dump the current layout to debug output.
-   */
-  void dump() const {
-    for (const auto& qubit : llvm::drop_end(layout_)) {
-      llvm::dbgs() << qubit << " ";
-    }
-    llvm::dbgs() << layout_.back();
-  }
-#endif
-
-protected:
-  SmallVector<QubitIndex> layout_;
-};
-
-/**
- * @brief The identity layout.
- *
- * Generates the identity layout at construction and never re-generates it.
- */
-class IdentityLayoutGenerator final : public InitialLayoutGeneratorBase {
-public:
-  /**
-   * @brief Construct and generate identity layout.
-   * @param nqubits The number of qubits.
-   */
-  explicit IdentityLayoutGenerator(const std::size_t nqubits)
-      : InitialLayoutGeneratorBase(nqubits) {
-    std::iota(layout_.begin(), layout_.end(), 0);
-  }
-};
-
-/**
- * @brief The random layout.
- */
-class RandomLayoutGenerator final : public InitialLayoutGeneratorBase {
-public:
-  /**
-   * @brief Construct and generate and random layout.
-   * @param nqubits The number of qubits.
-   * @param rng A random number generator.
-   */
-  explicit RandomLayoutGenerator(const std::size_t nqubits, std::mt19937_64 rng)
-      : InitialLayoutGeneratorBase(nqubits), rng_(rng) {
-    generate();
-  }
-
-  void generate() override {
-    std::iota(layout_.begin(), layout_.end(), 0);
-    std::shuffle(layout_.begin(), layout_.end(), rng_);
-  }
-
-private:
-  std::mt19937_64 rng_;
-};
 
 struct StackItem {
   explicit StackItem(const std::size_t nqubits) : state(nqubits) {}
@@ -589,6 +505,8 @@ WalkResult handleYield(scf::YieldOp op, RoutingContext& ctx,
 
 /**
  * @brief Add hardware qubit with respective program & hardware index to layout.
+ *
+ * Thanks to the placement pass, we can apply the identity layout here.
  */
 WalkResult handleQubit(QubitOp op, RoutingContext& ctx) {
   const std::size_t index = op.getIndex();
@@ -697,11 +615,6 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx, RoutingContext& ctx,
  */
 struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
   void runOnOperation() override {
-    std::random_device rd;
-    const std::size_t seed = rd();
-
-    LLVM_DEBUG({ llvm::dbgs() << "runOnOperation: seed=" << seed << '\n'; });
-
     auto arch = getArchitecture(ArchitectureName::MQTTest);
     auto router = std::make_unique<NaiveRouter>();
 

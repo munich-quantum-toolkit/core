@@ -14,6 +14,8 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
+#include "llvm/ADT/SmallVector.h"
+
 #include <cassert>
 #include <cstddef>
 #include <deque>
@@ -23,6 +25,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/LogicalResult.h>
+#include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -33,6 +36,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 #include <numeric>
+#include <random>
 #include <vector>
 
 #define DEBUG_TYPE "placement-sc"
@@ -91,14 +95,62 @@ bool isEntryPoint(func::FuncOp op) {
 }
 
 /**
+ * @brief A base class for all initial placement strategies.
+ */
+class InitialPlacer {
+public:
+  virtual ~InitialPlacer() = default;
+  virtual SmallVector<QubitIndex> operator()() = 0;
+};
+
+/**
+ * @brief Identity initial placement.
+ */
+class IdentityPlacer final : public InitialPlacer {
+public:
+  explicit IdentityPlacer(const std::size_t nqubits) : nqubits_(nqubits) {}
+
+  [[nodiscard]] SmallVector<QubitIndex> operator()() final {
+    SmallVector<QubitIndex> mapping(nqubits_);
+    std::iota(mapping.begin(), mapping.end(), 0);
+    return mapping;
+  }
+
+private:
+  std::size_t nqubits_;
+};
+
+/**
+ * @brief Random initial placement.
+ */
+class RandomPlacer final : public InitialPlacer {
+public:
+  explicit RandomPlacer(const std::size_t nqubits, std::mt19937_64 rng)
+      : nqubits_(nqubits), rng_(rng) {}
+
+  [[nodiscard]] SmallVector<QubitIndex> operator()() final {
+    SmallVector<QubitIndex> mapping(nqubits_);
+    std::iota(mapping.begin(), mapping.end(), 0);
+    std::shuffle(mapping.begin(), mapping.end(), rng_);
+    return mapping;
+  }
+
+private:
+  std::size_t nqubits_;
+  std::mt19937_64 rng_;
+};
+
+/**
  * @brief The necessary datastructures to apply the placement.
  */
 struct PlacementContext {
-  explicit PlacementContext(Architecture& arch) : arch(&arch) {}
+  explicit PlacementContext(Architecture& arch, InitialPlacer& placer)
+      : arch(&arch), placer(&placer) {}
 
   Architecture* arch;
-  TranspilationStack<Layout<QubitIndex>> stack{};
+  InitialPlacer* placer;
   HardwareIndexPool pool;
+  TranspilationStack<Layout<QubitIndex>> stack{};
 };
 
 /**
@@ -116,17 +168,6 @@ WalkResult handleFunc(func::FuncOp op, PlacementContext& ctx,
     llvm::dbgs() << "handleFunc: entry_point= " << op.getSymName() << '\n';
   });
 
-  //   ctx.ilg().generate();
-
-  //   LLVM_DEBUG({
-  //     llvm::dbgs() << "handleFunc: initial layout= ";
-  //     ctx.ilg().dump();
-  //     llvm::dbgs() << '\n';
-  //   });
-
-  SmallVector<QubitIndex> initialLayout(ctx.arch->nqubits());
-  std::iota(initialLayout.begin(), initialLayout.end(), 0);
-
   ctx.stack.emplace(ctx.arch->nqubits());
   ctx.pool.clear();
 
@@ -141,7 +182,8 @@ WalkResult handleFunc(func::FuncOp op, PlacementContext& ctx,
 
   /// Initialize pool with qubits in the initial layout order.
   /// Initialize SSA Value <-> Hardware-Index Mapping.
-  for (const auto [programIdx, hardwareIdx] : llvm::enumerate(initialLayout)) {
+  const auto layout = (*ctx.placer)();
+  for (const auto [programIdx, hardwareIdx] : llvm::enumerate(layout)) {
     const Value q = qubits[hardwareIdx];
     ctx.pool.push_back(hardwareIdx);
     ctx.stack.top().add(programIdx, hardwareIdx, q);
@@ -420,8 +462,13 @@ LogicalResult run(ModuleOp module, MLIRContext* mlirCtx,
  */
 struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
   void runOnOperation() override {
+    std::random_device rd;
+    const std::size_t seed = rd();
+
     const auto arch = getArchitecture(ArchitectureName::MQTTest);
-    PlacementContext ctx(*arch);
+    const auto placer =
+        std::make_unique<RandomPlacer>(arch->nqubits(), std::mt19937_64(seed));
+    PlacementContext ctx(*arch, *placer);
 
     if (failed(run(getOperation(), &getContext(), ctx))) {
       signalPassFailure();
