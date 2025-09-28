@@ -414,7 +414,8 @@ LogicalResult run(ModuleOp module, MLIRContext* mlirCtx,
 }
 
 /**
- * @brief TODO
+ * @brief This pass maps dynamic qubits to static qubits on semiconducting
+ * quantum devices using initial placement strategies.
  */
 struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
   void runOnOperation() override {
