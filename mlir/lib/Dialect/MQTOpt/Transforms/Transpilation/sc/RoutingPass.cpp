@@ -11,6 +11,7 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
@@ -18,7 +19,6 @@
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/Format.h>
@@ -48,31 +48,6 @@ namespace mqt::ir::opt {
 
 namespace {
 using namespace mlir;
-
-/**
- * @brief A function attribute that specifies an (QIR) entry point function.
- */
-constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
-
-/**
- * @brief Attribute to forward function-level attributes to LLVM IR.
- */
-constexpr llvm::StringLiteral PASSTHROUGH_ATTR{"passthrough"};
-
-/**
- * @brief 'For' pushes once onto the stack, hence the parent is at depth one.
- */
-constexpr std::size_t FOR_PARENT_DEPTH = 1UL;
-
-/**
- * @brief 'If' pushes twice onto the stack, hence the parent is at depth two.
- */
-constexpr std::size_t IF_PARENT_DEPTH = 2UL;
-
-/**
- * @brief The datatype for qubit indices. For now, 64bit.
- */
-using QubitIndex = std::size_t;
 
 /**
  * @brief A pair of program indices.
@@ -181,21 +156,6 @@ void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
   };
 
   rewriter.replaceUsesWithIf(oldValue, newValue, isInRegionAndNotExcepted);
-}
-
-/**
- * @brief Return true if the function contains "entry_point" in the passthrough
- * attribute.
- */
-bool isEntryPoint(func::FuncOp op) {
-  const auto passthroughAttr = op->getAttrOfType<ArrayAttr>(PASSTHROUGH_ATTR);
-  if (!passthroughAttr) {
-    return false;
-  }
-
-  return llvm::any_of(passthroughAttr, [](const Attribute attr) {
-    return isa<StringAttr>(attr) && cast<StringAttr>(attr) == ENTRY_POINT_ATTR;
-  });
 }
 
 struct StackItem {
