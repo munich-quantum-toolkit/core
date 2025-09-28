@@ -96,7 +96,7 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
 //===----------------------------------------------------------------------===//
 
 def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
-  let summary = "This pass applies a specified initial layout strategy.";
+  let summary = "This pass maps dynamic qubits to static qubits on semiconducting quantum devices using initial placement strategies.";
 }
 
 def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {

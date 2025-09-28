@@ -155,10 +155,8 @@ struct PlacementContext {
 };
 
 /**
- * @brief Adds nqubit 'mqtopt.qubit' ops for entry_point functions.
- * Initializes the pool and hence applies the initial layout. Consequently,
- * the initial layout is always applied at the beginning of a function. Pushes
- * newly-initialized state on stack.
+ * @brief Adds the necessary hardware qubits for entry_point functions and
+ * prepares the stack for the qubit placement in the function body.
  */
 WalkResult handleFunc(func::FuncOp op, PlacementContext& ctx,
                       PatternRewriter& rewriter) {
@@ -194,10 +192,8 @@ WalkResult handleFunc(func::FuncOp op, PlacementContext& ctx,
 }
 
 /**
- * @brief Defines the end of a region (and hence routing state) defined by a
- * function. Consequently, we pop the region's state from the stack. Since
- * we currently only route entry_point functions we do not need to return
- * all static qubits here.
+ * @brief Indicates the end of a region defined by a function. Consequently, pop
+ * the region's state from the stack.
  */
 WalkResult handleReturn(PlacementContext& ctx) {
   ctx.stack.pop();
@@ -208,9 +204,8 @@ WalkResult handleReturn(PlacementContext& ctx) {
  * @brief Replaces the 'for' loop with one that has all hardware qubits as init
  * arguments.
  *
- * Prepares the stack for the routing of the loop body by adding a copy of the
- * current state to the stack and resetting its SWAP history. Forwards the
- * results in the parent state.
+ * Prepares the stack for the placement of the loop body by adding a copy of the
+ * current state to the stack. Forwards the results in the parent state.
  */
 WalkResult handleFor(scf::ForOp op, PlacementContext& ctx,
                      PatternRewriter& rewriter) {
@@ -255,9 +250,9 @@ WalkResult handleFor(scf::ForOp op, PlacementContext& ctx,
  * @brief Replaces the 'if' statement with one that has all hardware qubits as
  * result.
  *
- * Prepares the stack for the routing of the 'then' and 'else' body by adding a
- * copy of the current state to the stack and resetting its SWAP history for
- * each branch. Forwards the results in the parent state.
+ * Prepares the stack for the placement of the 'then' and 'else' body by adding
+ * a copy of the current state to the stack for each branch. Forwards the
+ * results in the parent state.
  */
 WalkResult handleIf(scf::IfOp op, PlacementContext& ctx,
                     PatternRewriter& rewriter) {
@@ -302,8 +297,8 @@ WalkResult handleIf(scf::IfOp op, PlacementContext& ctx,
 }
 
 /**
- * @brief Defines the end of a region (and hence routing state) defined by a
- * branching op. Consequently, we pop the region's state from the stack.
+ * @brief Indicates the end of a region defined by a branching op. Consequently,
+ * we pop the region's state from the stack.
  */
 WalkResult handleYield(scf::YieldOp op, PlacementContext& ctx,
                        PatternRewriter& rewriter) {

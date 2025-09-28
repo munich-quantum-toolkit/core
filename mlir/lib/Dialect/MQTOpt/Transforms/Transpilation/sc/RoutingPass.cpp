@@ -399,10 +399,8 @@ WalkResult handleFunc([[maybe_unused]] func::FuncOp op, RoutingContext& ctx) {
 }
 
 /**
- * @brief Defines the end of a region (and hence routing state) defined by a
- * function. Consequently, we pop the region's state from the stack. Since
- * we currently only route entry_point functions we do not need to return
- * all static qubits here.
+ * @brief Indicates the end of a region defined by a function. Consequently, we
+ * pop the region's state from the stack.
  */
 WalkResult handleReturn(RoutingContext& ctx) {
   ctx.stack.pop();
@@ -449,15 +447,10 @@ WalkResult handleIf(scf::IfOp op, RoutingContext& ctx) {
 }
 
 /**
- * @brief Defines the end of a region (and hence routing state) defined by a
- * branching op. Consequently, we pop the region's state from the stack.
+ * @brief Indicates the end of a region defined by a branching op. Consequently,
+ * we pop the region's state from the stack.
  *
  * Restores layout by uncomputation and replaces (invalid) yield.
- *
- * The results of the yield op are extended by the missing hardware
- * qubits, similarly to the 'for' and 'if' op. This is only possible
- * because we restore the layout - the mapping from hardware to program
- * qubits (and vice versa).
  *
  * Using uncompute has the advantages of (1) being intuitive and
  * (2) preserving the optimality of the original SWAP sequence.
