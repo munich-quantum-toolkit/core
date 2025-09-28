@@ -16,7 +16,6 @@
 
 #include <cassert>
 #include <cstddef>
-#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -28,6 +27,7 @@
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+#include <vector>
 
 #define DEBUG_TYPE "routing-verification-sc"
 
