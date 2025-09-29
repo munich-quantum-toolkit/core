@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add dedicated `PlacementPass` to MLIR transpilation routines ([#1232]) ([**@MatthiasReumann**])
 - ✨ Enable import of BarrierOp into MQTRef ([#1224]) ([**@denialhaag**])
 - ✨ Add naive quantum program routing MLIR pass ([#1148]) ([**@MatthiasReumann**])
 - ✨ Add QIR runtime using DD-based simulation ([#1210]) ([**@ystade**], [**@burgholzer**])
@@ -54,6 +55,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
+- 🏁 Fix stack overflows in OpenQASM layout parsing on Windows for large circuits ([#1235]) ([**@burgholzer**])
 - ✨ Add missing `StandardOperation` conversions in MLIR roundtrip pass ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 
 ## [3.2.1] - 2025-08-01
@@ -194,6 +196,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1235]: https://github.com/munich-quantum-toolkit/core/pull/1235
+[#1232]: https://github.com/munich-quantum-toolkit/core/pull/1232
 [#1224]: https://github.com/munich-quantum-toolkit/core/pull/1224
 [#1211]: https://github.com/munich-quantum-toolkit/core/pull/1211
 [#1210]: https://github.com/munich-quantum-toolkit/core/pull/1210
