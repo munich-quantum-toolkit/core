@@ -46,7 +46,7 @@ struct VerificationContext {
   explicit VerificationContext(Architecture& arch) : arch(&arch) {}
 
   Architecture* arch;
-  TranspilationStack<Layout<QubitIndex>> stack{};
+  LayoutStack<Layout<QubitIndex>> stack{};
 };
 
 /**

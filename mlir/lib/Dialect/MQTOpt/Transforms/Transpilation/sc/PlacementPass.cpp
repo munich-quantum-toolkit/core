@@ -111,7 +111,7 @@ struct PlacementContext {
   Architecture* arch;
   InitialPlacer* placer;
   HardwareIndexPool pool;
-  TranspilationStack<Layout<QubitIndex>> stack{};
+  LayoutStack<Layout<QubitIndex>> stack{};
 };
 
 /**

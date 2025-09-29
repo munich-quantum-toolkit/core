@@ -164,7 +164,7 @@ struct StackItem {
   SmallVector<ProgramIndexPair, 32> history;
 };
 
-class StateStack : public TranspilationStack<StackItem> {
+class StateStack : public LayoutStack<StackItem> {
 public:
   /**
    * @brief Returns the most recent state of the stack.
