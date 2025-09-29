@@ -37,7 +37,6 @@
 #include <mlir/IR/Visitors.h>
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
 #include <numeric>
 #include <optional>
 #include <random>

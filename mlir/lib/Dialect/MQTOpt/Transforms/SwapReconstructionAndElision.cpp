@@ -40,8 +40,8 @@ struct SwapReconstructionAndElision final
 #if MLIR_VERSION_MAJOR >= 22
     config.setUseTopDownTraversal(true);
 #else
-    // setUseTopDownTraversal not available in older MLIR versions
-    // Use default traversal order
+    // For older MLIR versions, use the useTopDownTraversal field directly
+    config.useTopDownTraversal = true;
 #endif
 
     // Apply patterns in an iterative and greedy manner.
