@@ -23,6 +23,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -60,8 +61,13 @@ using HardwareIndexPool = std::deque<QubitIndex>;
  */
 class InitialPlacer {
 public:
+  InitialPlacer() = default;
+  InitialPlacer(const InitialPlacer&) = default;
+  InitialPlacer& operator=(const InitialPlacer&) = default;
+  InitialPlacer(InitialPlacer&&) noexcept = default;
+  InitialPlacer& operator=(InitialPlacer&&) noexcept = default;
   virtual ~InitialPlacer() = default;
-  virtual SmallVector<QubitIndex> operator()() = 0;
+  [[nodiscard]] virtual SmallVector<QubitIndex> operator()() = 0;
 };
 
 /**
@@ -71,7 +77,7 @@ class IdentityPlacer final : public InitialPlacer {
 public:
   explicit IdentityPlacer(const std::size_t nqubits) : nqubits_(nqubits) {}
 
-  [[nodiscard]] SmallVector<QubitIndex> operator()() final {
+  [[nodiscard]] SmallVector<QubitIndex> operator()() override {
     SmallVector<QubitIndex> mapping(nqubits_);
     std::iota(mapping.begin(), mapping.end(), 0);
     return mapping;
@@ -86,13 +92,13 @@ private:
  */
 class RandomPlacer final : public InitialPlacer {
 public:
-  explicit RandomPlacer(const std::size_t nqubits, std::mt19937_64 rng)
+  explicit RandomPlacer(const std::size_t nqubits, const std::mt19937_64& rng)
       : nqubits_(nqubits), rng_(rng) {}
 
-  [[nodiscard]] SmallVector<QubitIndex> operator()() final {
+  [[nodiscard]] SmallVector<QubitIndex> operator()() override {
     SmallVector<QubitIndex> mapping(nqubits_);
     std::iota(mapping.begin(), mapping.end(), 0);
-    std::shuffle(mapping.begin(), mapping.end(), rng_);
+    std::ranges::shuffle(mapping, rng_);
     return mapping;
   }
 
@@ -141,8 +147,8 @@ WalkResult handleFunc(func::FuncOp op, PlacementContext& ctx,
 
   /// Initialize pool with qubits in the initial layout order.
   /// Initialize SSA Value <-> Hardware-Index Mapping.
-  const auto layout = (*ctx.placer)();
-  for (const auto [programIdx, hardwareIdx] : llvm::enumerate(layout)) {
+  for (const auto layout = (*ctx.placer)();
+       const auto [programIdx, hardwareIdx] : llvm::enumerate(layout)) {
     const Value q = qubits[hardwareIdx];
     ctx.pool.push_back(hardwareIdx);
     ctx.stack.top().add(programIdx, hardwareIdx, q);
@@ -341,10 +347,8 @@ WalkResult handleMeasure(MeasureOp op, PlacementContext& ctx) {
  * @brief Update layout.
  */
 WalkResult handleUnitary(UnitaryInterface op, PlacementContext& ctx) {
-  const std::vector<Value> inQubits = op.getAllInQubits();
-  const std::vector<Value> outQubits = op.getAllOutQubits();
-
-  for (const auto [in, out] : llvm::zip(inQubits, outQubits)) {
+  for (const auto [in, out] :
+       llvm::zip(op.getAllInQubits(), op.getAllOutQubits())) {
     ctx.stack.top().remapQubitValue(in, out);
   }
 
@@ -424,16 +428,15 @@ struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
     const auto arch = getArchitecture(ArchitectureName::MQTTest);
     const auto placer = getPlacer(*arch);
 
-    PlacementContext ctx(*arch, *placer);
-
-    if (failed(run(getOperation(), &getContext(), ctx))) {
+    if (PlacementContext ctx(*arch, *placer);
+        failed(run(getOperation(), &getContext(), ctx))) {
       signalPassFailure();
     }
   }
 
 private:
-  std::unique_ptr<InitialPlacer> getPlacer(const Architecture& arch) {
-    const PlacementStrategy strategy = this->strategy;
+  [[nodiscard]] std::unique_ptr<InitialPlacer>
+  getPlacer(const Architecture& arch) const {
     switch (strategy) {
     case PlacementStrategy::Identity:
       LLVM_DEBUG({ llvm::dbgs() << "getPlacer: identity placement\n"; });
@@ -448,6 +451,7 @@ private:
       return std::make_unique<RandomPlacer>(arch.nqubits(),
                                             std::mt19937_64(seed));
     }
+    llvm_unreachable("Unknown strategy");
   }
 };
 } // namespace
