@@ -92,11 +92,11 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// Transpilation Passes For Semiconducting Devices
+// Transpilation Passes For Superconducting Devices
 //===----------------------------------------------------------------------===//
 
 def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
-  let summary = "This pass maps dynamic qubits to static qubits on semiconducting quantum devices using initial placement strategies.";
+  let summary = "This pass maps dynamic qubits to static qubits on superconducting quantum devices using initial placement strategies.";
 }
 
 def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
