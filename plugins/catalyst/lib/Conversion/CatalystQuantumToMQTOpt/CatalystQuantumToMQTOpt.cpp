@@ -47,6 +47,8 @@ public:
     addConversion([](const Type type) { return type; });
 
     // Convert source QuregType to target MemRefType<QubitType>
+    // Since QuregType doesn't encode size info, we use dynamic memref
+    // The actual size is determined during the conversion of quantum.alloc
     addConversion([ctx](catalyst::quantum::QuregType /*type*/) -> Type {
       auto qubitType = opt::QubitType::get(ctx);
       // Use dynamic memref size for quantum registers
@@ -75,13 +77,20 @@ struct ConvertQuantumAlloc final
 
     auto nqubits = nqubitsAttr.getValue().getZExtValue();
 
-    // Prepare the result type(s) - use memref<Nx!mqtopt.Qubit>
+    // Create the static memref type that we actually want
     auto qubitType = opt::QubitType::get(rewriter.getContext());
-    auto resultType =
+    auto staticMemrefType =
         MemRefType::get({static_cast<int64_t>(nqubits)}, qubitType);
 
-    // Replace with memref.alloc using the standard MLIR pattern
-    rewriter.replaceOpWithNewOp<memref::AllocOp>(op, resultType);
+    // Create the allocation with the static size
+    auto allocOp = rewriter.create<memref::AllocOp>(op.getLoc(), staticMemrefType);
+    
+    // Cast to the dynamic memref type expected by the type converter
+    auto dynamicMemrefType = MemRefType::get({ShapedType::kDynamic}, qubitType);
+    auto castOp = rewriter.create<memref::CastOp>(op.getLoc(), dynamicMemrefType, allocOp);
+    
+    // Replace the original operation with the cast result
+    rewriter.replaceOp(op, castOp.getResult());
     return success();
   }
 };
@@ -140,15 +149,21 @@ struct ConvertQuantumExtract final
     auto indexConstant =
         rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
 
-    // Create the new operation using standard memref.load
-    auto loadOp = rewriter.create<memref::LoadOp>(
-        op.getLoc(), qubitType, adaptor.getQreg(), ValueRange{indexConstant});
+    // Get the dynamic memref from adaptor
+    auto dynamicMemref = adaptor.getQreg();
+    
+    // Find the static memref by tracing back through the cast operation
+    Value staticMemref = dynamicMemref;
+    if (auto castOp = dynamicMemref.getDefiningOp<memref::CastOp>()) {
+      staticMemref = castOp.getSource();
+    }
 
-    // In the memref model, the register doesn't change, only the qubit is
-    // extracted Replace the two results:
-    // - result 0 (new register) -> original register (unchanged)
-    // - result 1 (extracted qubit) -> loaded qubit
-    rewriter.replaceOp(op, ValueRange{adaptor.getQreg(), loadOp.getResult()});
+    // Create the new operation using the static memref for better type info
+    auto loadOp = rewriter.create<memref::LoadOp>(
+        op.getLoc(), qubitType, staticMemref, ValueRange{indexConstant});
+
+    // quantum.extract only returns the extracted qubit, not a modified register
+    rewriter.replaceOp(op, loadOp.getResult());
     return success();
   }
 };
@@ -172,9 +187,18 @@ struct ConvertQuantumInsert final
     auto indexConstant =
         rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
 
-    // Create the new operation using standard memref.store
+    // Get the dynamic memref from adaptor
+    auto dynamicMemref = adaptor.getInQreg();
+    
+    // Find the static memref by tracing back through the cast operation
+    Value staticMemref = dynamicMemref;
+    if (auto castOp = dynamicMemref.getDefiningOp<memref::CastOp>()) {
+      staticMemref = castOp.getSource();
+    }
+
+    // Create the new operation using the static memref for better type info
     rewriter.create<memref::StoreOp>(op.getLoc(), adaptor.getQubit(),
-                                     adaptor.getInQreg(),
+                                     staticMemref,
                                      ValueRange{indexConstant});
 
     // In the memref model, the quantum register is modified in-place,
