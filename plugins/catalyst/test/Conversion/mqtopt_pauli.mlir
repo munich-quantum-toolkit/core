@@ -48,7 +48,7 @@ module {
 
     // Prepare qubits
     %i0 = arith.constant 0 : index
-    %i1 = arith.constant 1 : index  
+    %i1 = arith.constant 1 : index
     %i2 = arith.constant 2 : index
     %r0_0 = memref.alloc() : memref<3x!mqtopt.Qubit>
     %q0_0 = memref.load %r0_0[%i0] : memref<3x!mqtopt.Qubit>

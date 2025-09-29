@@ -72,12 +72,13 @@ struct ConvertQuantumAlloc final
     if (!nqubitsAttr) {
       return op.emitError("AllocOp missing nqubits_attr");
     }
-    
+
     auto nqubits = nqubitsAttr.getValue().getZExtValue();
-    
+
     // Prepare the result type(s) - use memref<Nx!mqtopt.Qubit>
     auto qubitType = opt::QubitType::get(rewriter.getContext());
-    auto resultType = MemRefType::get({static_cast<int64_t>(nqubits)}, qubitType);
+    auto resultType =
+        MemRefType::get({static_cast<int64_t>(nqubits)}, qubitType);
 
     // Replace with memref.alloc using the standard MLIR pattern
     rewriter.replaceOpWithNewOp<memref::AllocOp>(op, resultType);
@@ -129,21 +130,22 @@ struct ConvertQuantumExtract final
     if (!idxAttr) {
       return op.emitError("ExtractOp missing idx_attr");
     }
-    
+
     auto idx = idxAttr.getValue().getZExtValue();
-    
+
     // Prepare the result type(s)
     auto qubitType = opt::QubitType::get(rewriter.getContext());
 
     // Create index constant
-    auto indexConstant = rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
-    
+    auto indexConstant =
+        rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
+
     // Create the new operation using standard memref.load
     auto loadOp = rewriter.create<memref::LoadOp>(
         op.getLoc(), qubitType, adaptor.getQreg(), ValueRange{indexConstant});
 
-    // In the memref model, the register doesn't change, only the qubit is extracted
-    // Replace the two results: 
+    // In the memref model, the register doesn't change, only the qubit is
+    // extracted Replace the two results:
     // - result 0 (new register) -> original register (unchanged)
     // - result 1 (extracted qubit) -> loaded qubit
     rewriter.replaceOp(op, ValueRange{adaptor.getQreg(), loadOp.getResult()});
@@ -158,27 +160,30 @@ struct ConvertQuantumInsert final
   LogicalResult
   matchAndRewrite(catalyst::quantum::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Get the index from the attribute  
+    // Get the index from the attribute
     auto idxAttr = op.getIdxAttrAttr();
     if (!idxAttr) {
       return op.emitError("InsertOp missing idx_attr");
     }
-    
+
     auto idx = idxAttr.getValue().getZExtValue();
-    
+
     // Create index constant
-    auto indexConstant = rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
-    
+    auto indexConstant =
+        rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
+
     // Create the new operation using standard memref.store
-    rewriter.create<memref::StoreOp>(
-        op.getLoc(), adaptor.getQubit(), adaptor.getInQreg(), ValueRange{indexConstant});
+    rewriter.create<memref::StoreOp>(op.getLoc(), adaptor.getQubit(),
+                                     adaptor.getInQreg(),
+                                     ValueRange{indexConstant});
 
     // In the memref model, the quantum register is modified in-place,
     // so we replace the result with the input register (unchanged)
     rewriter.replaceOp(op, adaptor.getInQreg());
     return success();
   }
-};struct ConvertQuantumCustomOp final
+};
+struct ConvertQuantumCustomOp final
     : OpConversionPattern<catalyst::quantum::CustomOp> {
   using OpConversionPattern::OpConversionPattern;
 
