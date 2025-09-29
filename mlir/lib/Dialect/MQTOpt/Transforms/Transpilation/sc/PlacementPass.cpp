@@ -39,7 +39,6 @@
 #include <mlir/Support/WalkResult.h>
 #include <numeric>
 #include <random>
-#include <vector>
 
 #define DEBUG_TYPE "placement-sc"
 
@@ -437,7 +436,7 @@ struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
 private:
   [[nodiscard]] std::unique_ptr<InitialPlacer>
   getPlacer(const Architecture& arch) const {
-    switch (strategy) {
+    switch (static_cast<PlacementStrategy>(strategy)) {
     case PlacementStrategy::Identity:
       LLVM_DEBUG({ llvm::dbgs() << "getPlacer: identity placement\n"; });
       return std::make_unique<IdentityPlacer>(arch.nqubits());
