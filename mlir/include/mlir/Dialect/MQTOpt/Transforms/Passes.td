@@ -97,6 +97,12 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
 
 def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
   let summary = "This pass maps dynamic qubits to static qubits on superconducting quantum devices using initial placement strategies.";
+  let options = [
+    Option<"strategy", "strategy", "PlacementStrategy", "PlacementStrategy::Random",
+           "The initial placement strategy to use.", [{llvm::cl::values(
+             clEnumValN(PlacementStrategy::Random, "random", "Random placement"),
+             clEnumValN(PlacementStrategy::Identity, "identity", "Identity placement"))}]>
+  ];
 }
 
 def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {

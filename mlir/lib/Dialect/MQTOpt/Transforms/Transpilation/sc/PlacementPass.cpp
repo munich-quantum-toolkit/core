@@ -418,17 +418,34 @@ LogicalResult run(ModuleOp module, MLIRContext* mlirCtx,
  * quantum devices using initial placement strategies.
  */
 struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
-  void runOnOperation() override {
-    std::random_device rd;
-    const std::size_t seed = rd();
+  using PlacementPassSCBase::PlacementPassSCBase;
 
+  void runOnOperation() override {
     const auto arch = getArchitecture(ArchitectureName::MQTTest);
-    const auto placer =
-        std::make_unique<RandomPlacer>(arch->nqubits(), std::mt19937_64(seed));
+    const auto placer = getPlacer(*arch);
+
     PlacementContext ctx(*arch, *placer);
 
     if (failed(run(getOperation(), &getContext(), ctx))) {
       signalPassFailure();
+    }
+  }
+
+private:
+  std::unique_ptr<InitialPlacer> getPlacer(const Architecture& arch) {
+    switch (this->strategy) {
+    case PlacementStrategy::Identity:
+      LLVM_DEBUG({ llvm::dbgs() << "getPlacer: identity placement\n"; });
+      return std::make_unique<IdentityPlacer>(arch.nqubits());
+    case PlacementStrategy::Random:
+      std::random_device rd;
+      const std::size_t seed = rd();
+      LLVM_DEBUG({
+        llvm::dbgs() << "getPlacer: random placement with seed = " << seed
+                     << '\n';
+      });
+      return std::make_unique<RandomPlacer>(arch.nqubits(),
+                                            std::mt19937_64(seed));
     }
   }
 };
