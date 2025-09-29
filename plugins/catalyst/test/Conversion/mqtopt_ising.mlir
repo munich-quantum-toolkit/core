@@ -21,12 +21,14 @@
 module {
   // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumIsing
   func.func @testMQTOptToCatalystQuantumIsing() {
-    // --- Allocation & extraction ---------------------------------------------------------------
-    // CHECK: %cst = arith.constant 3.000000e-01 : f64
-    // CHECK: %[[QREG:.*]] = quantum.alloc( 3) : !quantum.reg
-    // CHECK: %[[Q0_0:.*]] = quantum.extract %[[QREG]][ 0] : !quantum.reg -> !quantum.bit
-    // CHECK: %[[Q1_0:.*]] = quantum.extract %[[QREG]][ 1] : !quantum.reg -> !quantum.bit
-    // CHECK: %[[Q2_0:.*]] = quantum.extract %[[QREG]][ 2] : !quantum.reg -> !quantum.bit
+    // CHECK: %[[C3_I64:.*]] = arith.constant 3 : i64
+    // CHECK: %[[QREG:.*]] = quantum.alloc(%[[C3_I64]]) : !quantum.reg
+    // CHECK: %[[IDX0:.*]] = arith.index_cast %c0 : index to i64
+    // CHECK: %[[Q0_0:.*]] = quantum.extract %[[QREG]][%[[IDX0]]] : !quantum.reg -> !quantum.bit
+    // CHECK: %[[IDX1:.*]] = arith.index_cast %c1 : index to i64
+    // CHECK: %[[Q1_0:.*]] = quantum.extract %[[QREG]][%[[IDX1]]] : !quantum.reg -> !quantum.bit
+    // CHECK: %[[IDX2:.*]] = arith.index_cast %c2 : index to i64
+    // CHECK: %[[Q2_0:.*]] = quantum.extract %[[QREG]][%[[IDX2]]] : !quantum.reg -> !quantum.bit
 
     // --- Uncontrolled -------------------------------------------------------------------
     // CHECK: %[[XY_P:.*]]:2 = quantum.custom "IsingXY"(%cst, %cst) %[[Q0_0]], %[[Q1_0]] : !quantum.bit, !quantum.bit
@@ -51,19 +53,22 @@ module {
     // CHECK: %[[H2:.*]], %[[CTRL7:.*]] = quantum.custom "Hadamard"() %[[CZZ_P2]]#1 ctrls(%[[CTRL6]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
 
     // --- Reinsertion ---------------------------------------------------------------------------
-    // CHECK: %[[R1:.*]] = quantum.insert %[[QREG]][ 0], %[[CZZ_P2]]#0 : !quantum.reg, !quantum.bit
-    // CHECK: %[[R2:.*]] = quantum.insert %[[R1]][ 1], %[[H2]] : !quantum.reg, !quantum.bit
-    // CHECK: %[[R3:.*]] = quantum.insert %[[R2]][ 2], %[[CTRL7]] : !quantum.reg, !quantum.bit
-    // CHECK: quantum.dealloc %[[R3]] : !quantum.reg
+    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[CZZ_P2]]#0 : !quantum.reg, !quantum.bit
+    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[H2]] : !quantum.reg, !quantum.bit
+    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[CTRL7]] : !quantum.reg, !quantum.bit
+    // CHECK: quantum.dealloc %[[QREG]] : !quantum.reg
 
-    // Prepare
-    %cst = arith.constant 3.000000e-01 : f64
-    %r0_0 = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
-    %r0_1, %q0_0 = "mqtopt.extractQubit"(%r0_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    %r0_2, %q1_0 = "mqtopt.extractQubit"(%r0_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    %r0_3, %q2_0 = "mqtopt.extractQubit"(%r0_2) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // Prepare qubits
+    %i0 = arith.constant 0 : index
+    %i1 = arith.constant 1 : index
+    %i2 = arith.constant 2 : index
+    %r0_0 = memref.alloc() : memref<3x!mqtopt.Qubit>
+    %q0_0 = memref.load %r0_0[%i0] : memref<3x!mqtopt.Qubit>
+    %q1_0 = memref.load %r0_0[%i1] : memref<3x!mqtopt.Qubit>
+    %q2_0 = memref.load %r0_0[%i2] : memref<3x!mqtopt.Qubit>
 
     // Uncontrolled
+    %cst = arith.constant 3.000000e-01 : f64
     %q0_1, %q1_1 = mqtopt.xx_plus_yy(%cst, %cst) %q0_0, %q1_0 : !mqtopt.Qubit, !mqtopt.Qubit
     %q0_3, %q1_3 = mqtopt.rxx(%cst) %q0_1, %q1_1 : !mqtopt.Qubit, !mqtopt.Qubit
     %q0_4, %q1_4 = mqtopt.ryy(%cst) %q0_3, %q1_3 : !mqtopt.Qubit, !mqtopt.Qubit
@@ -77,11 +82,11 @@ module {
     %q0_11, %q1_11, %q2_5 = mqtopt.rzz(%cst) %q0_10, %q1_10 ctrl %q2_4 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
     %q0_12, %q1_12, %q2_6 = mqtopt.rzx(%cst) %q0_11, %q1_11 ctrl %q2_5 : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-    // Release
-    %r0_4 = "mqtopt.insertQubit"(%r0_3, %q0_12) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %r0_5 = "mqtopt.insertQubit"(%r0_4, %q1_12) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %r0_6 = "mqtopt.insertQubit"(%r0_5, %q2_6) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%r0_6) : (!mqtopt.QubitRegister) -> ()
+    // Release qubits
+    memref.store %q0_12, %r0_0[%i0] : memref<3x!mqtopt.Qubit>
+    memref.store %q1_12, %r0_0[%i1] : memref<3x!mqtopt.Qubit>
+    memref.store %q2_6, %r0_0[%i2] : memref<3x!mqtopt.Qubit>
+    memref.dealloc %r0_0 : memref<3x!mqtopt.Qubit>
     return
   }
 }
