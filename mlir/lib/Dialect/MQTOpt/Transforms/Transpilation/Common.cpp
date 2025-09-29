@@ -11,6 +11,7 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>

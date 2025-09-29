@@ -433,7 +433,8 @@ struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
 
 private:
   std::unique_ptr<InitialPlacer> getPlacer(const Architecture& arch) {
-    switch (this->strategy) {
+    const PlacementStrategy strategy = this->strategy;
+    switch (strategy) {
     case PlacementStrategy::Identity:
       LLVM_DEBUG({ llvm::dbgs() << "getPlacer: identity placement\n"; });
       return std::make_unique<IdentityPlacer>(arch.nqubits());
