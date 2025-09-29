@@ -22,10 +22,12 @@ module {
   // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumParameterized
   func.func @testMQTOptToCatalystQuantumParameterized() {
     // --- Allocation & extraction ---------------------------------------------------------------
-    // CHECK: %cst = arith.constant 3.000000e-01 : f64
-    // CHECK: %[[QREG:.*]] = quantum.alloc( 2) : !quantum.reg
-    // CHECK: %[[Q0_0:.*]] = quantum.extract %[[QREG]][ 0] : !quantum.reg -> !quantum.bit
-    // CHECK: %[[Q1_0:.*]] = quantum.extract %[[QREG]][ 1] : !quantum.reg -> !quantum.bit
+    // CHECK: %[[C2_I64:.*]] = arith.constant 2 : i64
+    // CHECK: %[[QREG:.*]] = quantum.alloc(%[[C2_I64]]) : !quantum.reg
+    // CHECK: %[[IDX0:.*]] = arith.index_cast %c0 : index to i64
+    // CHECK: %[[Q0_0:.*]] = quantum.extract %[[QREG]][%[[IDX0]]] : !quantum.reg -> !quantum.bit
+    // CHECK: %[[IDX1:.*]] = arith.index_cast %c1 : index to i64
+    // CHECK: %[[Q1_0:.*]] = quantum.extract %[[QREG]][%[[IDX1]]] : !quantum.reg -> !quantum.bit
 
     // --- Uncontrolled -------------------------------------------------------------------------
     // CHECK: %[[RX:.*]] = quantum.custom "RX"(%cst) %[[Q0_0]] : !quantum.bit
@@ -41,15 +43,17 @@ module {
     // CHECK: %[[CPS_T:.*]], %[[CPS_C:.*]] = quantum.custom "ControlledPhaseShift"(%cst) %[[CRZ_T]] ctrls(%[[CRZ_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
 
     // --- Reinsertion ---------------------------------------------------------------------------
-    // CHECK: %[[RINS1:.*]] = quantum.insert %[[QREG]][ 1], %[[CPS_C]] : !quantum.reg, !quantum.bit
-    // CHECK: %[[RINS0:.*]] = quantum.insert %[[RINS1]][ 0], %[[CPS_T]] : !quantum.reg, !quantum.bit
-    // CHECK: quantum.dealloc %[[RINS0]] : !quantum.reg
+    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[CPS_T]] : !quantum.reg, !quantum.bit
+    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[CPS_C]] : !quantum.reg, !quantum.bit
+    // CHECK: quantum.dealloc %[[QREG]] : !quantum.reg
 
     // Prepare qubits
     %cst = arith.constant 3.000000e-01 : f64
-    %r0_0 = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-    %r0_1, %q0_0 = "mqtopt.extractQubit"(%r0_0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    %r0_2, %q1_0 = "mqtopt.extractQubit"(%r0_1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    %i0 = arith.constant 0 : index
+    %i1 = arith.constant 1 : index
+    %r0_0 = memref.alloc() : memref<2x!mqtopt.Qubit>
+    %q0_0 = memref.load %r0_0[%i0] : memref<2x!mqtopt.Qubit>
+    %q1_0 = memref.load %r0_0[%i1] : memref<2x!mqtopt.Qubit>
 
     // Non-controlled rotations
     %q0_1 = mqtopt.rx(%cst) %q0_0 : !mqtopt.Qubit
@@ -65,9 +69,9 @@ module {
     %q0_8, %q1_4 = mqtopt.p(%cst) %q0_7 ctrl %q1_3 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
     // Release qubits
-    %r0_3 = "mqtopt.insertQubit"(%r0_2, %q1_4) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    %r0_4 = "mqtopt.insertQubit"(%r0_3, %q0_8) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    "mqtopt.deallocQubitRegister"(%r0_4) : (!mqtopt.QubitRegister) -> ()
+    memref.store %q0_8, %r0_0[%i0] : memref<2x!mqtopt.Qubit>
+    memref.store %q1_4, %r0_0[%i1] : memref<2x!mqtopt.Qubit>
+    memref.dealloc %r0_0 : memref<2x!mqtopt.Qubit>
     return
   }
 }
