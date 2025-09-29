@@ -11,6 +11,10 @@
 
 include "mlir/Pass/PassBase.td"
 
+//===----------------------------------------------------------------------===//
+// Round-Trip Passes
+//===----------------------------------------------------------------------===//
+
 def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
   let summary = "This pass performs a round trip to MQT Core's QuantumComputation and back";
   let description = [{
@@ -25,6 +29,10 @@ def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
     - Unitary operations may also use any number of (positive) controls.
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// Optimization Passes
+//===----------------------------------------------------------------------===//
 
 def GateElimination : Pass<"gate-elimination", "mlir::ModuleOp"> {
   let summary = "This pass searches for consecutive applications of gates and their inverses and cancels them.";
@@ -81,6 +89,20 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   let description = [{
     This pass searches for branch instructions and attempts to push instructions from previous branches into them.
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// Transpilation Passes For Superconducting Devices
+//===----------------------------------------------------------------------===//
+
+def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
+  let summary = "This pass maps dynamic qubits to static qubits on superconducting quantum devices using initial placement strategies.";
+  let options = [
+    Option<"strategy", "strategy", "PlacementStrategy", "PlacementStrategy::Random",
+           "The initial placement strategy to use.", [{llvm::cl::values(
+             clEnumValN(PlacementStrategy::Random, "random", "Random placement"),
+             clEnumValN(PlacementStrategy::Identity, "identity", "Identity placement"))}]>
+  ];
 }
 
 def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
