@@ -2474,3 +2474,10 @@ TEST_F(Qasm3ParserTest, TokenKindTimingLiteralMicrosecondsInteger) {
   EXPECT_EQ(token.kind, qasm3::Token::Kind::TimingLiteral);
   EXPECT_DOUBLE_EQ(token.valReal, 1.0e-6);
 }
+
+TEST_F(Qasm3ParserTest, LargeLayoutParsing) {
+  const auto qc = QuantumComputation(1024);
+  const auto qasm = qc.toQASM();
+  const auto qc2 = qasm3::Importer::imports(qasm);
+  EXPECT_EQ(qc, qc2);
+}
