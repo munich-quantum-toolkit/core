@@ -66,7 +66,7 @@ repos:
 
   # Python linting using ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.13.1
+    rev: v0.13.2
     hooks:
       - id: ruff-check
         args: ["--fix", "--show-fixes"]
@@ -99,7 +99,7 @@ repos:
 
   # Clang-format the C++ part of the code base automatically
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v21.1.1
+    rev: v21.1.2
     hooks:
       - id: clang-format
         types_or: [c++, c, cuda]
@@ -122,7 +122,7 @@ repos:
 
   # Check for spelling
   - repo: https://github.com/crate-ci/typos
-    rev: v1.36.2
+    rev: v1.36.3
     hooks:
       - id: typos
 

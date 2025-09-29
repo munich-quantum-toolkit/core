@@ -8,6 +8,7 @@
 
 # add subdirectories
 add_subdirectory(device)
+add_subdirectory(fomac)
 
 if(NOT TARGET ${MQT_CORE_TARGET_NAME}-na)
   # collect headers and source files

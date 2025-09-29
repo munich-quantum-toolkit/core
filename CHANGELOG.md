@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - ✨ Add dedicated `PlacementPass` to MLIR transpilation routines ([#1232]) ([**@MatthiasReumann**])
+- ✨ Add an NA specific FoMaC implementation ([#1223]) ([**@ystade**])
 - ✨ Enable import of BarrierOp into MQTRef ([#1224]) ([**@denialhaag**])
 - ✨ Add naive quantum program routing MLIR pass ([#1148]) ([**@MatthiasReumann**])
 - ✨ Add QIR runtime using DD-based simulation ([#1210]) ([**@ystade**], [**@burgholzer**])
@@ -19,7 +20,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ✨ Add two-way conversions between MQTRef and QIR ([#1091]) ([**@li-mingbao**])
 - 🚸 Define custom assembly formats for MLIR operations ([#1209]) ([**@denialhaag**])
 - ✨ Add support for translating `IfElseOperation`s to the `MQTRef` MLIR dialect ([#1164]) ([**@denialhaag**], [**@burgholzer**])
-- ✨ Add MQT's implementation of a generic FoMaC with Python bindings ([#1150], [#1186]) ([**@ystade**])
+- ✨ Add MQT's implementation of a generic FoMaC with Python bindings ([#1150], [#1186], [#1223]) ([**@ystade**])
 - ✨ Add new MLIR pass `ElidePermutations` for SWAP gate elimination ([#1151]) ([**@taminob**])
 - ✨ Add new pattern to MLIR pass `GateElimination` for identity gate removal ([#1140]) ([**@taminob**])
 - ✨ Add Clifford block collection pass to `CircuitOptimizer` module ([#885]) ([**jannikpflieger**], [**@burgholzer**])
@@ -199,6 +200,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1235]: https://github.com/munich-quantum-toolkit/core/pull/1235
 [#1232]: https://github.com/munich-quantum-toolkit/core/pull/1232
 [#1224]: https://github.com/munich-quantum-toolkit/core/pull/1224
+[#1223]: https://github.com/munich-quantum-toolkit/core/pull/1223
 [#1211]: https://github.com/munich-quantum-toolkit/core/pull/1211
 [#1210]: https://github.com/munich-quantum-toolkit/core/pull/1210
 [#1207]: https://github.com/munich-quantum-toolkit/core/pull/1207

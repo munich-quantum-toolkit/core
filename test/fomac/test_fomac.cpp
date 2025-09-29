@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/FoMaC.hpp"
+#include "fomac/FoMaC.hpp"
 
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -19,7 +19,7 @@
 #include <tuple>
 #include <vector>
 
-namespace qdmi {
+namespace fomac {
 class DeviceTest : public testing::TestWithParam<FoMaC::Device> {
 protected:
   FoMaC::Device device;
@@ -327,4 +327,4 @@ INSTANTIATE_TEST_SUITE_P(
       std::ranges::replace(name, ' ', '_');
       return name;
     });
-} // namespace qdmi
+} // namespace fomac

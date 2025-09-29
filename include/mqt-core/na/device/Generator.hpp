@@ -11,6 +11,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <istream>
@@ -48,6 +49,8 @@ struct Device {
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Vector, x, y)
+
+    auto operator<=>(const Vector&) const = default;
   };
   /// @brief Represents a region in the device.
   struct Region {
@@ -63,12 +66,16 @@ struct Device {
 
       // NOLINTNEXTLINE(misc-include-cleaner)
       NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Size, width, height)
+
+      auto operator<=>(const Size&) const = default;
     };
     /// @brief The size of the region.
     Size size;
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Region, origin, size)
+
+    auto operator<=>(const Region&) const = default;
   };
   /// @brief Represents a lattice of traps in the device.
   struct Lattice {
@@ -107,6 +114,8 @@ struct Device {
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Lattice, latticeOrigin,
                                                 latticeVector1, latticeVector2,
                                                 sublatticeOffsets, extent)
+
+    auto operator<=>(const Lattice&) const = default;
   };
   /// @brief The list of lattices (trap areas) in the device.
   std::vector<Lattice> traps;
@@ -131,7 +140,8 @@ private:
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Operation, name, region,
-                                                duration, fidelity)
+                                                duration, fidelity,
+                                                numParameters)
   };
 
 public:
@@ -146,12 +156,12 @@ public:
      * @brief The interaction radius of the operation within which two qubits
      * can interact.
      */
-    double interactionRadius = 0.0;
+    uint64_t interactionRadius = 0;
     /**
      * @brief The blocking radius of the operation within which no other
      * operation can be performed to avoid interference.
      */
-    double blockingRadius = 0.0;
+    uint64_t blockingRadius = 0;
     /// @brief The fidelity of the operation when no qubits are interacting.
     double idlingFidelity = 0.0;
     /// @brief The number of qubits involved in the operation.
@@ -176,12 +186,12 @@ public:
      * @brief The interaction radius of the operation within which two qubits
      * can interact.
      */
-    double interactionRadius = 0.0;
+    uint64_t interactionRadius = 0.0;
     /**
      * @brief The blocking radius of the operation within which no other
      * operation can be performed to avoid interference.
      */
-    double blockingRadius = 0.0;
+    uint64_t blockingRadius = 0.0;
     /// @brief The number of qubits involved in the operation.
     uint64_t numQubits = 0;
 
@@ -198,8 +208,6 @@ public:
     size_t id = 0; ///< @brief Unique identifier for the shuttling unit.
     /// @brief The region in which the shuttling unit operates.
     Region region;
-    /// @brief The speed at which the shuttling unit moves.
-    double movingSpeed = 0.0;
     /// @brief The duration of the load operation in the shuttling unit.
     uint64_t loadDuration = 0;
     /// @brief The duration of the store operation in the shuttling unit.
@@ -218,9 +226,9 @@ public:
 
     // NOLINTNEXTLINE(misc-include-cleaner)
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(ShuttlingUnit, region,
-                                                movingSpeed, loadDuration,
-                                                storeDuration, loadFidelity,
-                                                storeFidelity, numParameters,
+                                                loadDuration, storeDuration,
+                                                loadFidelity, storeFidelity,
+                                                numParameters,
                                                 meanShuttlingSpeed)
   };
   /// @brief The list of shuttling units supported by the device.
@@ -387,6 +395,8 @@ auto writeJSONSchema(const std::string& path) -> void;
  * @param device is the protobuf representation of the device.
  * @param os is the output stream to write the header file to.
  * @throws std::runtime_error if the file cannot be opened or written to.
+ * @note This implementation only supports multi-qubit gates up to two
+ * qubits.
  */
 auto writeHeader(const Device& device, std::ostream& os) -> void;
 
@@ -396,6 +406,8 @@ auto writeHeader(const Device& device, std::ostream& os) -> void;
  * @param device is the protobuf representation of the device.
  * @param path is the path to write the header file to.
  * @throws std::runtime_error if the file cannot be opened or written to.
+ * @note This implementation only supports multi-qubit gates up to two
+ * qubits.
  */
 auto writeHeader(const Device& device, const std::string& path) -> void;
 
