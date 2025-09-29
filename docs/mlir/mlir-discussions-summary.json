@@ -1,0 +1,136 @@
+{
+  "version": 3,
+  "generated": "2025-09-29",
+  "sections": {
+    "modifierControlSemantics": {
+      "multipleControls": {
+        "decision": "Allow multiple controls per ctrl/negctrl; normalization flattens nesting.",
+        "rationale": [
+          "Compact IR",
+          "Less traversal",
+          "Still supports nesting for composability"
+        ],
+        "openQuestions": []
+      },
+      "canonicalOrder": {
+        "orderOuterToInner": ["ctrl", "negctrl", "pow", "inv"],
+        "rationale": [
+          "Deterministic structure",
+          "Aids hashing/CSE",
+          "Semantic precedence"
+        ],
+        "status": "decided"
+      },
+      "negativeControls": {
+        "representation": "Distinct ctrl and negctrl ops retained; no automatic normalization to positives.",
+        "transforms": [
+          "Backend-specific rewrites may still introduce/remove X gate sandwiches"
+        ],
+        "autoNormalization": false
+      },
+      "controlCounting": {
+        "rules": {
+          "baseOp": 0,
+          "ctrl": "own + inner",
+          "negctrl": "own + inner",
+          "pow": "forward",
+          "inv": "forward",
+          "seq": 0,
+          "unitaryDefinition": 0
+        },
+        "seqRationale": "Acts like one-off composite; prevents double counting.",
+        "powInvInterfaceNeeded": false
+      }
+    },
+    "gateSet": {
+      "decision": "Retain rich named gate set plus bidirectional canonicalization passes.",
+      "rationale": [
+        "Readability",
+        "Numerical stability",
+        "Trait inference",
+        "Ecosystem alignment",
+        "Backend flexibility"
+      ],
+      "passes": {
+        "namedSimplification": "U3/U2/U1 -> simplest named gate (tolerance-based)",
+        "universalExpansion": "Named single-qubit gate -> canonical U3 form (optional)"
+      },
+      "status": "decided"
+    },
+    "matrixBasedGates": {
+      "status": "included",
+      "decision": "Matrix-based gates part of initial spec; no hard size limit (practically ≤3 qubits).",
+      "mvpOptimizations": ["2x2 fast path", "4x4 fast path"],
+      "attribute": "Flat dense array (row-major) of complex numbers",
+      "validationPass": true,
+      "pros": ["Direct synthesized result expression", "Unambiguous semantics"],
+      "considerations": [
+        "Exponential growth cost accepted",
+        "Future compression out-of-scope for MVP"
+      ],
+      "openQuestions": []
+    },
+    "normalizationPass": {
+      "responsibilities": [
+        "Enforce modifier order",
+        "Merge adjacent compatible modifiers",
+        "Eliminate identities",
+        "Algebraic simplifications (e.g. pow(RZ(pi/2),2)->RZ(pi))",
+        "Flatten nested control wrappers"
+      ],
+      "integration": "Runs always before other transformations via canonicalization pipeline.",
+      "additional": [
+        "Gate definition inlining",
+        "Matrix unitarity validation",
+        "Named simplification",
+        "Universal expansion",
+        "Matrix decomposition (future)"
+      ]
+    },
+    "testing": {
+      "primary": "googletest builder-based structural/semantic equivalence tests",
+      "textualTests": "Minimal parser round-trip smoke tests only",
+      "buildersCoverage": "All ops, modifiers, matrix unitaries, unitary definitions",
+      "helpers": ["assertEquivalent", "fixture utilities", "roundTrip tests"],
+      "avoid": ["Over-reliance on CHECK lines", "SSA name comparisons"]
+    },
+    "pipelines": {
+      "baseline": [
+        "-canonicalize (includes normalization)",
+        "-remove-dead-values",
+        "Named Simplification"
+      ],
+      "universalBackend": ["baseline", "Universal Expansion"],
+      "normalizationAlwaysFirst": true
+    },
+    "openQuestions": [],
+    "decisionsChronological": [
+      "Distinct ctrl and negctrl retained",
+      "Canonical modifier order established",
+      "seq has zero controls",
+      "Named gate set retained (no U3-only)",
+      "Normalization + simplification planned",
+      "Builder-based structural testing adopted",
+      "Baseline pass pipeline selected",
+      "Bidirectional single-qubit canonicalization decided",
+      "Matrix-based gates included in initial spec",
+      "Normalization enforced before all other transformations",
+      "googletest builder-based testing prioritized",
+      "Negative controls remain first-class (no auto-normalization)"
+    ],
+    "futureWork": [
+      "Implement NormalizationPass",
+      "Implement named simplification & universal expansion passes",
+      "Structural equivalence utilities",
+      "Matrix-based unitary op & validation pass",
+      "Matrix decomposition pass (basis lowering)",
+      "Trait inference for composites & matrix ops",
+      "Basis gate registry"
+    ],
+    "metadata": {
+      "source": "Condensed & updated from mlir-discussions.md v3",
+      "intendedUse": "Automated querying / LLM grounding",
+      "stability": "Will evolve; track version key"
+    }
+  }
+}
