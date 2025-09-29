@@ -1,10 +1,3 @@
-# RFC: Quantum Dialect Revamp — Implementation Plan
-
-**Author:** MQT Core Development Team
-**Date:** 2025-09-24
-**Status:** Design Document
-**Scope:** MLIR dialect hierarchy affecting MQTRef and MQTOpt dialects
-
 ## 1. Overview and Goals
 
 ### 1.1 Current State
@@ -30,7 +23,7 @@ This plan proposes a fundamental redesign that addresses these issues through:
 3. **Improved Ergonomics**: Builder APIs and parser sugar for common patterns without sacrificing expressiveness
 4. **Shared Infrastructure**: Common traits, interfaces, and utilities to reduce code duplication
 
-**Rationale**: The current approach of embedding modifiers directly into gate operations creates a multiplicative explosion of variants (X, CX, CCX, inverse-X, controlled-inverse-X, etc.). By making modifiers compositional, we get exponential expressiveness with linear implementation cost. It is also fairly close to how established languages like OpenQASM or Qiskit work, which makes it easier to transition to the new dialect.
+**Rationale**: By making modifiers compositional, we get exponential expressiveness with linear implementation cost. It is also fairly close to how established languages like OpenQASM or Qiskit work, which makes it easier to transition to the new dialect.
 
 ## 2. Architecture Overview
 
@@ -110,7 +103,7 @@ Base gates are the atomic quantum operations and contain only:
 ```mlir
 mqtref.x %q0                                    // Pauli-X gate
 mqtref.rx %q0 {angle = 1.57 : f64}             // X-rotation with static parameter
-mqtref.cnot %q0, %q1                           // Controlled-NOT (2-qubit gate)
+mqtref.cx %q0, %q1                           // Controlled-NOT (2-qubit gate)
 mqtref.u3 %q0 {theta = 0.0, phi = 0.0, lambda = 3.14159} // Generic single-qubit gate
 ```
 
@@ -119,7 +112,7 @@ mqtref.u3 %q0 {theta = 0.0, phi = 0.0, lambda = 3.14159} // Generic single-qubit
 ```mlir
 %q0_out = mqtopt.x %q0_in : !mqtopt.qubit
 %q0_out = mqtopt.rx %q0_in {angle = 1.57 : f64} : !mqtopt.qubit
-%q0_out, %q1_out = mqtopt.cnot %q0_in, %q1_in : !mqtopt.qubit, !mqtopt.qubit
+%q0_out, %q1_out = mqtopt.cx %q0_in, %q1_in : !mqtopt.qubit, !mqtopt.qubit
 ```
 
 **Key Differences**: In mqtref, operations have side effects on qubit references. In mqtopt, operations consume input qubits and produce new output qubits, following SSA principles.
@@ -261,7 +254,7 @@ In `mqtopt`, sequences must explicitly thread all qubit values through the compu
 %q0_out, %q1_out = mqtopt.seq %q0_in, %q1_in : (!mqtopt.qubit, !mqtopt.qubit) -> (!mqtopt.qubit, !mqtopt.qubit) {
 ^entry(%q0: !mqtopt.qubit, %q1: !mqtopt.qubit):
   %q0_h = mqtopt.h %q0 : !mqtopt.qubit
-  %q0_cx, %q1_cx = mqtopt.cnot %q0_h, %q1 : !mqtopt.qubit, !mqtopt.qubit
+  %q0_cx, %q1_cx = mqtopt.cx %q0_h, %q1 : !mqtopt.qubit, !mqtopt.qubit
   %q0_final = mqtopt.h %q0_cx : !mqtopt.qubit
   mqtopt.yield %q0_final, %q1_cx : !mqtopt.qubit, !mqtopt.qubit
 }
@@ -355,7 +348,7 @@ mqtref.apply_gate @pauli_y %q0
 // Define a gate as a sequence of existing operations
 mqtref.gate_def @bell_prep %q0 : !mqtref.qubit, %q1 : !mqtref.qubit {
   mqtref.h %q0
-  mqtref.cnot %q0, %q1
+  mqtref.cx %q0, %q1
 }
 
 // Apply the composite gate
@@ -399,17 +392,6 @@ mqtref.mcx (%c0, %c1, %c2), %t  // → mqtref.ctrl %c0, %c1, %c2 { mqtref.x %t }
 mqtref.mcp (%c0, %c1), %t {phase = 1.57}  // Controlled phase with multiple controls
 ```
 
-**Modifier Shortcuts in Region Context:**
-
-```mlir
-// Within regions, allow modifier keywords as operation prefixes
-mqtref.seq {
-  inv s %q0           // → mqtref.inv { mqtref.s %q0 }
-  ctrl(%c) x %q1      // → mqtref.ctrl %c { mqtref.x %q1 }
-  pow(0.5) h %q2      // → mqtref.pow {exponent = 0.5} { mqtref.h %q2 }
-}
-```
-
 **Rationale**: This approach provides ergonomic shortcuts for common cases without introducing complex chaining operators. The shortcuts expand to the full form during parsing, so all downstream processing sees the canonical representation.
 
 ### 9.2 C++ Builder API
@@ -421,7 +403,7 @@ public:
   // Basic gates with natural names
   QuantumCircuitBuilder& x(Value qubit);
   QuantumCircuitBuilder& h(Value qubit);
-  QuantumCircuitBuilder& cnot(Value control, Value target);
+  QuantumCircuitBuilder& cx(Value control, Value target);
 
   // Modifier combinators
   QuantumCircuitBuilder& ctrl(ValueRange controls, std::function<void()> body);
@@ -527,8 +509,6 @@ mqtref.ctrl %c { mqtref.x %t } →
 **Key Challenges**:
 
 - **SSA Value Threading**: mqtopt requires explicit threading of all qubit values
-- **Region Structure**: Converting between region-based and flat representations
-- **Dominance Preservation**: Ensuring converted code maintains MLIR dominance requirements
 
 **Rationale**: These conversions enable using the same quantum algorithm in different contexts - mqtref for simulation and debugging, mqtopt for optimization and compilation to hardware.
 
@@ -540,14 +520,18 @@ Standard conversion patterns lower high-level operations to target-specific inst
 // Example: Lowering controlled gates to native basis
 mqtref.ctrl %c { mqtref.ry %t {angle = θ} } →
   mqtref.rz %t {angle = θ/2}
-  mqtref.cnot %c, %t
+  mqtref.cx %c, %t
   mqtref.rz %t {angle = -θ/2}
-  mqtref.cnot %c, %t
+  mqtref.cx %c, %t
 ```
 
 **Rationale**: Hardware targets have limited native gate sets, so high-level operations must be decomposed into available primitives while preserving mathematical equivalence.
 
 ## 12. Testing Strategy
+
+Generally, it should be part of this endeavor to come up with a testing strategy that we can exercise across our efforts going forward.
+It has already become quite clear that we do not want to extensively write FileCheck strings as it is very error prone. We are currently likely spending more time on fixing FileCheck strings than actually developing features.
+Hence, even the integration tests down below should be considered to be realized differently in C++.
 
 ### 12.1 Unit Tests (C++)
 
