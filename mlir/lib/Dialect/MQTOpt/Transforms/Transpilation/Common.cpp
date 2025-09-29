@@ -16,6 +16,18 @@
 #include <mlir/IR/BuiltinAttributes.h>
 
 namespace mqt::ir::opt {
+namespace {
+/**
+ * @brief A function attribute that specifies an (QIR) entry point function.
+ */
+constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
+
+/**
+ * @brief Attribute to forward function-level attributes to LLVM IR.
+ */
+constexpr llvm::StringLiteral PASSTHROUGH_ATTR{"passthrough"};
+} // namespace
+
 bool isEntryPoint(mlir::func::FuncOp op) {
   const auto passthroughAttr =
       op->getAttrOfType<mlir::ArrayAttr>(PASSTHROUGH_ATTR);

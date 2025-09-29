@@ -17,16 +17,6 @@
 
 namespace mqt::ir::opt {
 /**
- * @brief A function attribute that specifies an (QIR) entry point function.
- */
-constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
-
-/**
- * @brief Attribute to forward function-level attributes to LLVM IR.
- */
-constexpr llvm::StringLiteral PASSTHROUGH_ATTR{"passthrough"};
-
-/**
  * @brief 'For' pushes once onto the stack, hence the parent is at depth one.
  */
 constexpr std::size_t FOR_PARENT_DEPTH = 1UL;
