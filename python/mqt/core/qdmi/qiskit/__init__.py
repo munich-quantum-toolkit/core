@@ -17,10 +17,35 @@ from __future__ import annotations
 from importlib import import_module
 from typing import TYPE_CHECKING, Final
 
+from .translator import (
+    InstructionContext,
+    build_program_ir,
+    clear_operation_translators,
+    get_operation_translator,
+    list_operation_translators,
+    register_operation_translator,
+    unregister_operation_translator,
+)
+from .types import IRValidationError, ProgramInstruction, ProgramIR
+
 if TYPE_CHECKING:  # pragma: no cover
     from types import ModuleType
 
-__all__ = ["QiskitNotAvailableError", "is_available", "require_qiskit"]
+__all__ = [
+    "IRValidationError",
+    "InstructionContext",
+    "ProgramIR",
+    "ProgramInstruction",
+    "QiskitNotAvailableError",
+    "build_program_ir",
+    "clear_operation_translators",
+    "get_operation_translator",
+    "is_available",
+    "list_operation_translators",
+    "register_operation_translator",
+    "require_qiskit",
+    "unregister_operation_translator",
+]
 
 
 class QiskitNotAvailableError(ImportError):
@@ -63,10 +88,7 @@ def __getattr__(name: str) -> object:  # pragma: no cover - dynamic fallback
         QiskitNotAvailableError: If a future backend symbol is accessed early.
         AttributeError: If the attribute is unknown.
     """
-    if name in {"QiskitBackend", "register_operation_translator", "list_operation_translators"}:
-        msg = (
-            f"'{name}' is not available in Phase Q1/Q2 skeleton. Upgrade to a later version "
-            "implementing the Qiskit backend."
-        )
+    if name == "QiskitBackend":
+        msg = f"'{name}' is not available yet. Upgrade to a later version implementing the Qiskit backend."
         raise QiskitNotAvailableError(msg)
     raise AttributeError(name)
