@@ -13,6 +13,9 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-gen)
 if(NOT TARGET ${TARGET_NAME})
 
   # Add library for device generation
+  #
+  # Note: We use a static library here to avoid issues with RPATH and finding the executable during
+  # the build process in Python builds
   add_library(${TARGET_NAME} STATIC)
   add_library(MQT::CoreQDMINaDeviceGen ALIAS ${TARGET_NAME})
 
