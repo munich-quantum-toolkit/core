@@ -492,13 +492,13 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
       }
     }
   }
-  if (std::ranges::any_of(shuttlingUnitsPerId | std::views::values,
-                          [](const auto& val) {
-                            const auto [load, move, store] = val.second;
-                            return !(load && move && store);
-                          })) {
-    SPDLOG_INFO("Shuttling unit not complete");
-    return false;
+  for (const auto& val : shuttlingUnitsPerId | std::views::values) {
+    const auto [load, move, store] = val.second;
+    if (!(load && move && store)) {
+      SPDLOG_INFO("Shuttling unit not complete");
+      return false;
+    }
+    shuttlingUnits.emplace_back(val.first);
   }
   return true;
 }
