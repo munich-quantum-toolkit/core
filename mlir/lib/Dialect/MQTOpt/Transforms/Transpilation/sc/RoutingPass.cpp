@@ -213,23 +213,12 @@ public:
 /**
  * @brief Get shortest path between @p qStart and @p qEnd.
  */
-[[nodiscard]] llvm::SmallVector<std::size_t> getPath(const Value qStart,
-                                                     const Value qEnd,
-                                                     Layout<QubitIndex>& state,
-                                                     const Architecture& arch) {
+[[nodiscard]] llvm::SmallVector<std::size_t>
+getPath(const Value qStart, const Value qEnd, const Layout<QubitIndex>& state,
+        const Architecture& arch) {
   return arch.shortestPathBetween(state.lookupHardware(qStart),
                                   state.lookupHardware(qEnd));
 }
-
-/**
- * @brief The necessary datastructures to route a quantum-classical module.
- */
-struct RoutingContext {
-  explicit RoutingContext(Architecture& arch) : arch(&arch) {}
-
-  Architecture* arch;
-  StateStack stack{};
-};
 
 /**
  * @brief Base class for all routing algorithms.
@@ -239,57 +228,10 @@ public:
   virtual ~RouterBase() = default;
 
   /**
-   * @brief Ensures the executability of two-qubit gates on the given target
-   * architecture by inserting SWAPs greedily.
-   */
-  WalkResult handleUnitary(UnitaryInterface op, RoutingContext& ctx,
-                           PatternRewriter& rewriter) {
-    const std::vector<Value> inQubits = op.getAllInQubits();
-    const std::vector<Value> outQubits = op.getAllOutQubits();
-    const std::size_t nacts = inQubits.size();
-
-    // Global-phase or zero-qubit unitary: Nothing to do.
-    if (nacts == 0) {
-      return WalkResult::advance();
-    }
-
-    if (nacts > 2) {
-      return op->emitOpError() << "acts on more than two qubits";
-    }
-
-    // Single-qubit: Forward mapping.
-    if (nacts == 1) {
-      ctx.stack.topState().remapQubitValue(inQubits[0], outQubits[0]);
-      return WalkResult::advance();
-    }
-
-    if (!isExecutable(op, ctx.stack.topState(), *ctx.arch)) {
-      makeExecutable(op, ctx, rewriter);
-    }
-
-    const auto [execIn0, execIn1] = getIns(op);
-    const auto [execOut0, execOut1] = getOuts(op);
-
-    LLVM_DEBUG({
-      llvm::dbgs() << llvm::format(
-          "handleUnitary: gate= s%d/h%d, s%d/h%d\n",
-          ctx.stack.topState().lookupProgram(execIn0),
-          ctx.stack.topState().lookupHardware(execIn0),
-          ctx.stack.topState().lookupProgram(execIn1),
-          ctx.stack.topState().lookupHardware(execIn1));
-    });
-
-    ctx.stack.topState().remapQubitValue(execIn0, execOut0);
-    ctx.stack.topState().remapQubitValue(execIn1, execOut1);
-
-    return WalkResult::advance();
-  }
-
-protected:
-  /**
    * @brief Insert SWAPs such that @p u is executable.
    */
-  virtual void makeExecutable(UnitaryInterface op, RoutingContext& ctx,
+  virtual void makeExecutable(UnitaryInterface op, StateStack& stack,
+                              const Architecture& arch,
                               PatternRewriter& rewriter) = 0;
 };
 
@@ -298,23 +240,26 @@ protected:
  * qubits.
  */
 class NaiveRouter final : public RouterBase {
-protected:
-  void makeExecutable(UnitaryInterface op, RoutingContext& ctx,
+public:
+  void makeExecutable(UnitaryInterface op, StateStack& stack,
+                      const Architecture& arch,
                       PatternRewriter& rewriter) final {
     assert(isTwoQubitGate(op) && "makeExecutable: must be two-qubit gate");
 
+    Layout<QubitIndex>& state = stack.topState();
+
     const auto [qStart, qEnd] = getIns(op);
-    const auto path = getPath(qStart, qEnd, ctx.stack.topState(), *ctx.arch);
+    const auto path = getPath(qStart, qEnd, state, arch);
 
     for (std::size_t i = 0; i < path.size() - 2; ++i) {
       const QubitIndex hardwareIdx0 = path[i];
       const QubitIndex hardwareIdx1 = path[i + 1];
 
-      const Value qIn0 = ctx.stack.topState().lookupHardware(hardwareIdx0);
-      const Value qIn1 = ctx.stack.topState().lookupHardware(hardwareIdx1);
+      const Value qIn0 = state.lookupHardware(hardwareIdx0);
+      const Value qIn1 = state.lookupHardware(hardwareIdx1);
 
-      const QubitIndex programIdx0 = ctx.stack.topState().lookupProgram(qIn0);
-      const QubitIndex programIdx1 = ctx.stack.topState().lookupProgram(qIn1);
+      const QubitIndex programIdx0 = state.lookupProgram(qIn0);
+      const QubitIndex programIdx1 = state.lookupProgram(qIn1);
 
       LLVM_DEBUG({
         llvm::dbgs() << llvm::format(
@@ -332,14 +277,32 @@ protected:
       replaceAllUsesInRegionAndChildrenExcept(
           qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
 
-      ctx.stack.recordSwap(programIdx0, programIdx1);
+      stack.recordSwap(programIdx0, programIdx1);
 
-      auto& state = ctx.stack.topState();
       state.swap(qIn0, qIn1);
       state.remapQubitValue(qIn0, qOut0);
       state.remapQubitValue(qIn1, qOut1);
     }
   }
+};
+
+class QMAPRouter final : public RouterBase {
+public:
+  void makeExecutable(UnitaryInterface op, StateStack& stack,
+                      const Architecture& arch,
+                      PatternRewriter& rewriter) final {}
+};
+
+/**
+ * @brief The necessary datastructures to route a quantum-classical module.
+ */
+struct RoutingContext {
+  explicit RoutingContext(Architecture& arch, RouterBase& router)
+      : arch(&arch), router(&router) {}
+
+  Architecture* arch;
+  RouterBase* router;
+  StateStack stack{};
 };
 
 /**
@@ -466,6 +429,52 @@ WalkResult handleQubit(QubitOp op, RoutingContext& ctx) {
 }
 
 /**
+ * @brief Ensures the executability of two-qubit gates on the given target
+ * architecture by inserting SWAPs greedily.
+ */
+WalkResult handleUnitary(UnitaryInterface op, RoutingContext& ctx,
+                         PatternRewriter& rewriter) {
+  const std::vector<Value> inQubits = op.getAllInQubits();
+  const std::vector<Value> outQubits = op.getAllOutQubits();
+  const std::size_t nacts = inQubits.size();
+
+  // Global-phase or zero-qubit unitary: Nothing to do.
+  if (nacts == 0) {
+    return WalkResult::advance();
+  }
+
+  if (nacts > 2) {
+    return op->emitOpError() << "acts on more than two qubits";
+  }
+
+  // Single-qubit: Forward mapping.
+  if (nacts == 1) {
+    ctx.stack.topState().remapQubitValue(inQubits[0], outQubits[0]);
+    return WalkResult::advance();
+  }
+
+  if (!isExecutable(op, ctx.stack.topState(), *ctx.arch)) {
+    ctx.router->makeExecutable(op, ctx.stack, *ctx.arch, rewriter);
+  }
+
+  const auto [execIn0, execIn1] = getIns(op);
+  const auto [execOut0, execOut1] = getOuts(op);
+
+  LLVM_DEBUG({
+    llvm::dbgs() << llvm::format("handleUnitary: gate= s%d/h%d, s%d/h%d\n",
+                                 ctx.stack.topState().lookupProgram(execIn0),
+                                 ctx.stack.topState().lookupHardware(execIn0),
+                                 ctx.stack.topState().lookupProgram(execIn1),
+                                 ctx.stack.topState().lookupHardware(execIn1));
+  });
+
+  ctx.stack.topState().remapQubitValue(execIn0, execOut0);
+  ctx.stack.topState().remapQubitValue(execIn1, execOut1);
+
+  return WalkResult::advance();
+}
+
+/**
  * @brief Update layout.
  */
 WalkResult handleReset(ResetOp op, RoutingContext& ctx) {
@@ -503,8 +512,8 @@ WalkResult handleMeasure(MeasureOp op, RoutingContext& ctx) {
  * custom driver would be required in any case, which adds unnecessary code to
  * maintain.
  */
-LogicalResult route(ModuleOp module, MLIRContext* mlirCtx, RoutingContext& ctx,
-                    RouterBase& router) {
+LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
+                    RoutingContext& ctx) {
   PatternRewriter rewriter(mlirCtx);
 
   /// Prepare work-list.
@@ -529,13 +538,15 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx, RoutingContext& ctx,
     const auto res =
         TypeSwitch<Operation*, WalkResult>(curr)
             /// built-in Dialect
-            .Case<ModuleOp>(
-                [&](ModuleOp /* op */) { return WalkResult::advance(); })
+            .Case<ModuleOp>([&]([[maybe_unused]] ModuleOp op) {
+              return WalkResult::advance();
+            })
             /// func Dialect
             .Case<func::FuncOp>(
                 [&](func::FuncOp op) { return handleFunc(op, ctx); })
-            .Case<func::ReturnOp>(
-                [&](func::ReturnOp /* op */) { return handleReturn(ctx); })
+            .Case<func::ReturnOp>([&]([[maybe_unused]] func::ReturnOp op) {
+              return handleReturn(ctx);
+            })
             /// scf Dialect
             .Case<scf::ForOp>([&](scf::ForOp op) { return handleFor(op, ctx); })
             .Case<scf::IfOp>([&](scf::IfOp op) { return handleIf(op, ctx); })
@@ -547,7 +558,7 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx, RoutingContext& ctx,
             .Case<MeasureOp>(
                 [&](MeasureOp op) { return handleMeasure(op, ctx); })
             .Case<UnitaryInterface>([&](UnitaryInterface op) {
-              return router.handleUnitary(op, ctx, rewriter);
+              return handleUnitary(op, ctx, rewriter);
             })
             /// Skip the rest.
             .Default([](auto) { return WalkResult::skip(); });
@@ -571,9 +582,9 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
     const auto arch = getArchitecture(ArchitectureName::MQTTest);
     const auto router = getRouter();
 
-    RoutingContext ctx(*arch);
+    RoutingContext ctx(*arch, *router);
 
-    if (failed(route(getOperation(), &getContext(), ctx, *router))) {
+    if (failed(route(getOperation(), &getContext(), ctx))) {
       signalPassFailure();
     }
   }
