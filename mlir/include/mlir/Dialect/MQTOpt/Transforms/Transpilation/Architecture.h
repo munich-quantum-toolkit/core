@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#pragma once
+
 #include <cstddef>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
