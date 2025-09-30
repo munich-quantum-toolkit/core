@@ -28,7 +28,6 @@
 #include <ranges>
 #include <regex>
 #include <spdlog/spdlog.h>
-#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -38,6 +37,11 @@
 
 namespace na {
 namespace {
+/**
+ * @brief Calculate the rectangular extent covering all given FoMaC sites.
+ * @param sites is a vector of FoMaC sites
+ * @return the extent covering all given sites
+ */
 auto calculateExtentFromSites(
     const std::vector<fomac::FoMaC::Device::Site>& sites) -> Device::Region {
   auto minX = std::numeric_limits<int64_t>::max();
@@ -56,8 +60,12 @@ auto calculateExtentFromSites(
           .size = {.width = static_cast<uint64_t>(maxX - minX),
                    .height = static_cast<uint64_t>(maxY - minY)}};
 }
-/// Device::Vector does not provide a hash function by default, this is the
-/// replacement
+/**
+ * @brief Device::Vector does not provide a hash function by default, this is
+ * the replacement.
+ * @param v is the vector to hash
+ * @return the hash value
+ */
 struct DeviceVectorHash {
   size_t operator()(const Device::Vector& v) const {
     return qc::combineHash(std::hash<int64_t>{}(v.x),

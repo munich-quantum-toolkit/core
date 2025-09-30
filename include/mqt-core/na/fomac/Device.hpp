@@ -70,6 +70,7 @@ public:
      * @details It reconstructs the entire lattice structure from the
      * information retrieved from the QDMI device, including lattice vectors,
      * sublattice offsets, and extent.
+     * @see na::Device::Lattice
      */
     auto initTrapsfromDevice() -> bool;
 
@@ -81,6 +82,9 @@ public:
     /**
      * @brief Constructs a Device object from a fomac::FoMaC::Device object.
      * @param device The fomac::FoMaC::Device object to wrap.
+     * @note THe constructor does not initialize the additional fields of this
+     * class. For their initialization, the corresponding `init*FromDevice`
+     * methods must be called, see @ref tryCreateFromDevice.
      */
     explicit Device(const fomac::FoMaC::Device& device);
 
@@ -106,9 +110,13 @@ public:
     }
 
     /**
-     * @brief Checks if this class can be instantiated with the given device.
-     * @param device The device to check.
-     * @return An optional containing the instantiated Device if compatible,
+     * @brief Try to create a Device object from a fomac::FoMaC::Device object.
+     * @details This method attempts to create a Device object by initializing
+     * all necessary fields from the provided fomac::FoMaC::Device object. If
+     * any required information is missing or invalid, the method returns
+     * `std::nullopt`.
+     * @param device is the fomac::FoMaC::Device object to wrap.
+     * @return An optional containing the instantiated device if compatible,
      * std::nullopt otherwise.
      */
     [[nodiscard]] static auto
