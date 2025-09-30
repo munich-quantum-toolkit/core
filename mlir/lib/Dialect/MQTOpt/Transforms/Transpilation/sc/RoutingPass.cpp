@@ -33,6 +33,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
+#include <mlir/Pass/Pass.h>
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
@@ -240,14 +241,14 @@ public:
    *
    * @todo Remove SWAP history and use advanced strategies.
    */
-  virtual void restore(UnitaryInterface op, Layout<QubitIndex>& layout,
-                       ArrayRef<ProgramIndexPair> history,
+  virtual void restore(Layout<QubitIndex>& layout,
+                       ArrayRef<ProgramIndexPair> history, Location location,
                        PatternRewriter& rewriter) {
     for (const auto [programIdx0, programIdx1] : llvm::reverse(history)) {
       const Value qIn0 = layout.lookupProgram(programIdx0);
       const Value qIn1 = layout.lookupProgram(programIdx1);
 
-      auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
+      auto swap = createSwap(location, qIn0, qIn1, rewriter);
       const auto [qOut0, qOut1] = getOuts(swap);
 
       rewriter.setInsertionPointAfter(swap);
@@ -428,24 +429,8 @@ WalkResult handleYield(scf::YieldOp op, RoutingContext& ctx,
     return WalkResult::skip();
   }
 
-  for (const auto [programIdx0, programIdx1] :
-       llvm::reverse(ctx.stack.getHistory())) {
-    const Value qIn0 = ctx.stack.topState().lookupProgram(programIdx0);
-    const Value qIn1 = ctx.stack.topState().lookupProgram(programIdx1);
-
-    auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
-    const auto [qOut0, qOut1] = getOuts(swap);
-
-    rewriter.setInsertionPointAfter(swap);
-    replaceAllUsesInRegionAndChildrenExcept(
-        qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
-    replaceAllUsesInRegionAndChildrenExcept(
-        qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
-
-    ctx.stack.topState().swap(qIn0, qIn1);
-    ctx.stack.topState().remapQubitValue(qIn0, qOut0);
-    ctx.stack.topState().remapQubitValue(qIn1, qOut1);
-  }
+  ctx.router->restore(ctx.stack.topState(), ctx.stack.getHistory(),
+                      op->getLoc(), rewriter);
 
   assert(llvm::equal(ctx.stack.topState().getCurrentLayout(),
                      ctx.stack.getStateAtDepth(1).getCurrentLayout()) &&
@@ -469,7 +454,7 @@ WalkResult handleQubit(QubitOp op, RoutingContext& ctx) {
 
 /**
  * @brief Ensures the executability of two-qubit gates on the given target
- * architecture by inserting SWAPs greedily.
+ * architecture by inserting SWAPs.
  */
 WalkResult handleUnitary(UnitaryInterface op, RoutingContext& ctx,
                          PatternRewriter& rewriter) {
