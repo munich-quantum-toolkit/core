@@ -110,6 +110,12 @@ def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
   let description = [{
     This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.
   }];
+  let options = [
+    Option<"method", "method", "RoutingMethod", "RoutingMethod::QMAP",
+           "The initial placement strategy to use.", [{llvm::cl::values(
+             clEnumValN(RoutingMethod::Naive, "naive", "Swap along shortest paths"),
+             clEnumValN(RoutingMethod::QMAP, "qmap", "A*-search based routing algorithm"))}]>
+  ];
 }
 
 def RoutingVerificationSCPass : Pass<"verify-routing-sc", "mlir::ModuleOp"> {

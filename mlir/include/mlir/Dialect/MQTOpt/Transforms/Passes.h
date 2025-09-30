@@ -25,6 +25,8 @@ namespace mqt::ir::opt {
 
 enum class PlacementStrategy : std::uint8_t { Random, Identity };
 
+enum class RoutingMethod : std::uint8_t { Naive, QMAP };
+
 #define GEN_PASS_DECL
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc" // IWYU pragma: export
 

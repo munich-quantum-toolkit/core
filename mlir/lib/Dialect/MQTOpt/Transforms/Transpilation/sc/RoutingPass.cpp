@@ -565,15 +565,31 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx, RoutingContext& ctx,
  * architecture are met.
  */
 struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
+  using RoutingPassSCBase<RoutingPassSC>::RoutingPassSCBase;
+
   void runOnOperation() override {
-    auto arch = getArchitecture(ArchitectureName::MQTTest);
-    auto router = std::make_unique<NaiveRouter>();
+    const auto arch = getArchitecture(ArchitectureName::MQTTest);
+    const auto router = getRouter();
 
     RoutingContext ctx(*arch);
 
     if (failed(route(getOperation(), &getContext(), ctx, *router))) {
       signalPassFailure();
     }
+  }
+
+private:
+  [[nodiscard]] std::unique_ptr<RouterBase> getRouter() const {
+    switch (static_cast<RoutingMethod>(method)) {
+    case RoutingMethod::Naive:
+      LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=naive\n"; });
+      return std::make_unique<NaiveRouter>();
+    case RoutingMethod::QMAP:
+      LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=qmap\n"; });
+      return std::make_unique<NaiveRouter>();
+    }
+
+    llvm_unreachable("Unknown method");
   }
 };
 
