@@ -64,112 +64,6 @@ struct DeviceVectorHash {
                            std::hash<int64_t>{}(v.y));
   }
 };
-[[nodiscard]] auto checkOperationAndAddShuttlingUnit(
-    std::unordered_map<size_t, std::array<bool, 3>>& shuttlingUnits,
-    const fomac::FoMaC::Device::Operation& operation) -> bool {
-  // check properties mandatory for zoned operations
-  const auto& sitesOpt = operation.getSites();
-  if (!sitesOpt.has_value()) {
-    return false;
-  }
-  const auto& qubitsNumOpt = operation.getQubitsNum();
-  if (operation.isZoned().value_or(false)) {
-    // check properties mandatory for zoned operations
-    if (sitesOpt->empty() ||
-        std::ranges::any_of(*sitesOpt,
-                            [](const fomac::FoMaC::Device::Site& site) -> bool {
-                              return !site.isZone().value_or(false);
-                            })) {
-      return false;
-    }
-    if (!qubitsNumOpt.has_value()) {
-      // shuttling operations
-      const auto& name = operation.getName();
-      std::smatch match;
-      if (std::regex_match(name, match, std::regex("load<(\\d+)>"))) {
-        if (!operation.getDuration().has_value() ||
-            !operation.getFidelity().has_value()) {
-          return false;
-        }
-        const auto unitIt =
-            shuttlingUnits.try_emplace(std::stoul(match[1])).first;
-        auto& unitLoad = std::get<0>(unitIt->second);
-        if (unitLoad) {
-          return false;
-        }
-        unitLoad = true;
-      } else if (std::regex_match(name, match, std::regex("move<(\\d+)>"))) {
-        if (!operation.getMeanShuttlingSpeed().has_value()) {
-          return false;
-        }
-        const auto unitIt =
-            shuttlingUnits.try_emplace(std::stoul(match[1])).first;
-        auto& unitMove = std::get<1>(unitIt->second);
-        if (unitMove) {
-          return false;
-        }
-        unitMove = true;
-      } else if (std::regex_match(name, match, std::regex("store<(\\d+)>"))) {
-        if (!operation.getDuration().has_value() ||
-            !operation.getFidelity().has_value()) {
-          return false;
-        }
-        const auto unitIt =
-            shuttlingUnits.try_emplace(std::stoul(match[1])).first;
-        auto& unitStore = std::get<2>(unitIt->second);
-        if (unitStore) {
-          return false;
-        }
-        unitStore = true;
-      } else {
-        return false;
-      }
-    } else if (qubitsNumOpt == 1) {
-      if (!operation.getDuration().has_value() ||
-          !operation.getFidelity().has_value()) {
-        return false;
-      }
-    } else if (qubitsNumOpt == 2) {
-      if (!operation.getDuration().has_value() ||
-          !operation.getFidelity().has_value() ||
-          !operation.getInteractionRadius().has_value() ||
-          !operation.getBlockingRadius().has_value() ||
-          !operation.getIdlingFidelity().has_value()) {
-        return false;
-      }
-    } else {
-      return false;
-    }
-  } else {
-    // check properties mandatory for local operations
-    if (sitesOpt->empty() ||
-        std::ranges::any_of(*sitesOpt,
-                            [](const fomac::FoMaC::Device::Site& site) -> bool {
-                              return site.isZone().value_or(false);
-                            })) {
-      return false;
-    }
-    if (!qubitsNumOpt.has_value()) {
-      return false;
-    }
-    if (qubitsNumOpt == 1) {
-      if (!operation.getDuration().has_value() ||
-          !operation.getFidelity().has_value()) {
-        return false;
-      }
-    } else if (qubitsNumOpt == 2) {
-      if (!operation.getDuration().has_value() ||
-          !operation.getFidelity().has_value() ||
-          !operation.getInteractionRadius().has_value() ||
-          !operation.getBlockingRadius().has_value()) {
-        return false;
-      }
-    } else {
-      return false;
-    }
-  }
-  return true;
-}
 } // namespace
 auto FoMaC::Device::initNameFromDevice() -> void { name = getName(); }
 auto FoMaC::Device::initMinAtomDistanceFromDevice() -> bool {
@@ -612,15 +506,12 @@ FoMaC::Device::Device(const fomac::FoMaC::Device& device)
     : fomac::FoMaC::Device(device) {}
 auto FoMaC::getDevices() -> std::vector<Device> {
   std::vector<Device> devices;
-  std::ranges::copy(fomac::FoMaC::getDevices() |
-                        std::views::transform(
-                            [](const auto& d) -> Device::CompatibilityResult {
-                              return Device::checkCompatiblility(d);
-                            }) |
-                        std::views::filter(std::identity{}) |
-                        std::views::transform(
-                            [](auto& r) -> Device { return r.createDevice(); }),
-                    std::back_inserter(devices));
+  std::ranges::copy(
+      fomac::FoMaC::getDevices() | std::views::transform([](const auto& d) {
+        return Device::checkCompatiblility(d);
+      }) | std::views::filter([](const auto& r) -> bool { return r; }) |
+          std::views::transform([](const auto& r) { return r.createDevice(); }),
+      std::back_inserter(devices));
   return devices;
 }
 } // namespace na

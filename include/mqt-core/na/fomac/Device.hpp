@@ -111,8 +111,8 @@ public:
       GenericCompatibilityResult() = default;
       explicit GenericCompatibilityResult(T&& t)
           : std::optional<T>(std::move(t)) {}
-      using std::optional<T>::operator bool;
-      [[nodiscard]] auto createDevice() const -> T { return std::move(*this); }
+      operator bool() const { return this->has_value(); }
+      [[nodiscard]] auto createDevice() const -> T { return this->value(); }
     };
     using CompatibilityResult = GenericCompatibilityResult<Device>;
 
