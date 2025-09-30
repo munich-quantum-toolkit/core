@@ -175,8 +175,8 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
       SPDLOG_INFO("Site missing y coordinate");
       return false;
     }
-    submoduleIt->second.emplace(*x, *y);
-    retrievedSites.emplace(*x, *y);
+    submoduleIt->second.emplace(Vector{*x, *y});
+    retrievedSites.emplace(Vector{*x, *y});
   }
   for (const auto& [moduleIdx, sitesPerSubmodule] :
        sitesPerModuleAndSubmodule) {
