@@ -82,7 +82,7 @@ public:
     /**
      * @brief Constructs a Device object from a fomac::FoMaC::Device object.
      * @param device The fomac::FoMaC::Device object to wrap.
-     * @note THe constructor does not initialize the additional fields of this
+     * @note The constructor does not initialize the additional fields of this
      * class. For their initialization, the corresponding `init*FromDevice`
      * methods must be called, see @ref tryCreateFromDevice.
      */
