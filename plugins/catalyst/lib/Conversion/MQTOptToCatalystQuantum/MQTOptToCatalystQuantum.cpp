@@ -232,7 +232,7 @@ struct ConvertMQTOptLoad final : OpConversionPattern<memref::LoadOp> {
     Value index = indices.empty() ? nullptr : indices[0];
 
     // Convert index type to i64 if needed
-    if (index && index.getType().isa<IndexType>()) {
+    if (index && mlir::isa<IndexType>(index.getType())) {
       index = rewriter.create<arith::IndexCastOp>(op.getLoc(),
                                                   rewriter.getI64Type(), index);
     }
@@ -264,7 +264,7 @@ struct ConvertMQTOptStore final : OpConversionPattern<memref::StoreOp> {
     Value index = indices.empty() ? nullptr : indices[0];
 
     // Convert index type to i64 if needed
-    if (index && index.getType().isa<IndexType>()) {
+    if (index && mlir::isa<IndexType>(index.getType())) {
       index = rewriter.create<arith::IndexCastOp>(op.getLoc(),
                                                   rewriter.getI64Type(), index);
     }
