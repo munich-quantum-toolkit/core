@@ -187,11 +187,11 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
     const auto& latticeOrigin = minSubmoduleSites.top();
     // get sublattice offsets
     std::vector<Vector> sublatticeOffsets;
-    std::ranges::for_each(minSubmoduleSites.__get_container(),
-                          [&](const auto& v) {
-                            sublatticeOffsets.emplace_back(
-                                v.x - latticeOrigin.x, v.y - latticeOrigin.y);
-                          });
+    std::ranges::for_each(
+        minSubmoduleSites.__get_container(), [&](const auto& v) {
+          sublatticeOffsets.emplace_back(
+              Vector{v.x - latticeOrigin.x, v.y - latticeOrigin.y});
+        });
     // find first lattice vector
     auto otherReferenceSites =
         sitesPerSubmodule | std::views::drop(1) | std::views::values |
@@ -250,7 +250,7 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
       traps, [&constructedSites](const uint64_t /* unused */, const int64_t x,
                                  const int64_t y, const uint64_t /* unused */,
                                  const uint64_t /* unused */) {
-        constructedSites.emplace(x, y);
+        constructedSites.emplace(Vector{x, y});
       });
   return retrievedSites == constructedSites;
 }
