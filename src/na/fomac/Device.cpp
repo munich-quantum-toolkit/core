@@ -72,6 +72,15 @@ struct DeviceVectorHash {
                            std::hash<int64_t>{}(v.y));
   }
 };
+class MinHeap
+    : public std::priority_queue<Device::Vector, std::vector<Device::Vector>,
+                                 std::greater<>> {
+public:
+  /// @returns the underlying container of the priority queue.
+  [[nodiscard]] auto container() const -> const std::vector<Device::Vector>& {
+    return this->c;
+  }
+};
 } // namespace
 auto FoMaC::Device::initNameFromDevice() -> void { name = getName(); }
 auto FoMaC::Device::initMinAtomDistanceFromDevice() -> bool {
@@ -147,10 +156,7 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
     return false;
   }
   std::unordered_set<Vector, DeviceVectorHash> retrievedSites;
-  std::unordered_map<
-      uint64_t,
-      std::map<uint64_t, std::priority_queue<Vector, std::vector<Vector>,
-                                             std::greater<>>>>
+  std::unordered_map<uint64_t, std::map<uint64_t, MinHeap>>
       sitesPerModuleAndSubmodule;
   for (const auto& site : regularSites) {
     const auto& mIdx = site.getModuleIndex();
@@ -187,11 +193,10 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
     const auto& latticeOrigin = minSubmoduleSites.top();
     // get sublattice offsets
     std::vector<Vector> sublatticeOffsets;
-    std::ranges::for_each(
-        minSubmoduleSites.__get_container(), [&](const auto& v) {
-          sublatticeOffsets.emplace_back(
-              Vector{v.x - latticeOrigin.x, v.y - latticeOrigin.y});
-        });
+    std::ranges::for_each(minSubmoduleSites.container(), [&](const auto& v) {
+      sublatticeOffsets.emplace_back(
+          Vector{v.x - latticeOrigin.x, v.y - latticeOrigin.y});
+    });
     // find first lattice vector
     auto otherReferenceSites =
         sitesPerSubmodule | std::views::drop(1) | std::views::values |
@@ -220,7 +225,7 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
     auto maxY = std::numeric_limits<std::int64_t>::min();
     std::ranges::for_each(
         sitesPerSubmodule | std::views::values, [&](const auto& s) {
-          std::ranges::for_each(s.__get_container(), [&](const auto& v) {
+          std::ranges::for_each(s.container(), [&](const auto& v) {
             minX = std::min(minX, v.x);
             maxX = std::max(maxX, v.x);
             minY = std::min(minY, v.y);
