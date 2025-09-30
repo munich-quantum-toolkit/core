@@ -426,7 +426,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
         }
         if (*nq == 1) {
           // zoned single-qubit operations
-          globalSingleQubitOperations.emplace_back(GlobalMultiQubitOperation{
+          globalSingleQubitOperations.emplace_back(GlobalSingleQubitOperation{
               {.name = name,
                .region = region,
                .duration = *d,
