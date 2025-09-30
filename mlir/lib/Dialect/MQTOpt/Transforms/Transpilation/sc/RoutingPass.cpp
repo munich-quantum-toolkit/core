@@ -225,14 +225,47 @@ getPath(const Value qStart, const Value qEnd, const Layout<QubitIndex>& state,
  */
 class RouterBase {
 public:
+  explicit RouterBase(Pass::Statistic& nadd) : nadd(&nadd) {}
+
   virtual ~RouterBase() = default;
 
   /**
    * @brief Insert SWAPs such that @p u is executable.
    */
-  virtual void makeExecutable(UnitaryInterface op, StateStack& stack,
-                              const Architecture& arch,
-                              PatternRewriter& rewriter) = 0;
+  virtual void route(UnitaryInterface op, StateStack& stack,
+                     const Architecture& arch, PatternRewriter& rewriter) = 0;
+
+  /**
+   * @brief Restore layout by uncomputing.
+   *
+   * @todo Remove SWAP history and use advanced strategies.
+   */
+  virtual void restore(UnitaryInterface op, Layout<QubitIndex>& layout,
+                       ArrayRef<ProgramIndexPair> history,
+                       PatternRewriter& rewriter) {
+    for (const auto [programIdx0, programIdx1] : llvm::reverse(history)) {
+      const Value qIn0 = layout.lookupProgram(programIdx0);
+      const Value qIn1 = layout.lookupProgram(programIdx1);
+
+      auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
+      const auto [qOut0, qOut1] = getOuts(swap);
+
+      rewriter.setInsertionPointAfter(swap);
+      replaceAllUsesInRegionAndChildrenExcept(
+          qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
+      replaceAllUsesInRegionAndChildrenExcept(
+          qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
+
+      layout.swap(qIn0, qIn1);
+      layout.remapQubitValue(qIn0, qOut0);
+      layout.remapQubitValue(qIn1, qOut1);
+
+      (*nadd)++;
+    }
+  }
+
+protected:
+  Pass::Statistic* nadd;
 };
 
 /**
@@ -241,10 +274,11 @@ public:
  */
 class NaiveRouter final : public RouterBase {
 public:
-  void makeExecutable(UnitaryInterface op, StateStack& stack,
-                      const Architecture& arch,
-                      PatternRewriter& rewriter) final {
-    assert(isTwoQubitGate(op) && "makeExecutable: must be two-qubit gate");
+  using RouterBase::RouterBase;
+
+  void route(UnitaryInterface op, StateStack& stack, const Architecture& arch,
+             PatternRewriter& rewriter) final {
+    assert(isTwoQubitGate(op) && "route: must be two-qubit gate");
 
     Layout<QubitIndex>& state = stack.topState();
 
@@ -263,9 +297,9 @@ public:
 
       LLVM_DEBUG({
         llvm::dbgs() << llvm::format(
-            "makeExecutable: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n",
-            programIdx1, hardwareIdx0, programIdx0, hardwareIdx1, programIdx0,
-            hardwareIdx0, programIdx1, hardwareIdx1);
+            "route: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", programIdx1,
+            hardwareIdx0, programIdx0, hardwareIdx1, programIdx0, hardwareIdx0,
+            programIdx1, hardwareIdx1);
       });
 
       auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
@@ -282,15 +316,20 @@ public:
       state.swap(qIn0, qIn1);
       state.remapQubitValue(qIn0, qOut0);
       state.remapQubitValue(qIn1, qOut1);
+
+      (*nadd)++;
     }
   }
 };
 
 class QMAPRouter final : public RouterBase {
 public:
-  void makeExecutable(UnitaryInterface op, StateStack& stack,
-                      const Architecture& arch,
-                      PatternRewriter& rewriter) final {}
+  using RouterBase::RouterBase;
+
+  void route(UnitaryInterface op, StateStack& stack, const Architecture& arch,
+             PatternRewriter& rewriter) final {
+    assert(isTwoQubitGate(op) && "route: must be two-qubit gate");
+  }
 };
 
 /**
@@ -454,7 +493,7 @@ WalkResult handleUnitary(UnitaryInterface op, RoutingContext& ctx,
   }
 
   if (!isExecutable(op, ctx.stack.topState(), *ctx.arch)) {
-    ctx.router->makeExecutable(op, ctx.stack, *ctx.arch, rewriter);
+    ctx.router->route(op, ctx.stack, *ctx.arch, rewriter);
   }
 
   const auto [execIn0, execIn1] = getIns(op);
@@ -582,22 +621,21 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
     const auto arch = getArchitecture(ArchitectureName::MQTTest);
     const auto router = getRouter();
 
-    RoutingContext ctx(*arch, *router);
-
-    if (failed(route(getOperation(), &getContext(), ctx))) {
+    if (RoutingContext ctx(*arch, *router);
+        failed(route(getOperation(), &getContext(), ctx))) {
       signalPassFailure();
     }
   }
 
 private:
-  [[nodiscard]] std::unique_ptr<RouterBase> getRouter() const {
+  [[nodiscard]] std::unique_ptr<RouterBase> getRouter() {
     switch (static_cast<RoutingMethod>(method)) {
     case RoutingMethod::Naive:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=naive\n"; });
-      return std::make_unique<NaiveRouter>();
+      return std::make_unique<NaiveRouter>(nadd);
     case RoutingMethod::QMAP:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=qmap\n"; });
-      return std::make_unique<NaiveRouter>();
+      return std::make_unique<QMAPRouter>(nadd);
     }
 
     llvm_unreachable("Unknown method");

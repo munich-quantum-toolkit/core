@@ -116,6 +116,9 @@ def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
              clEnumValN(RoutingMethod::Naive, "naive", "Swap along shortest paths"),
              clEnumValN(RoutingMethod::QMAP, "qmap", "A*-search based routing algorithm"))}]>
   ];
+  let statistics = [
+    Statistic<"nadd", "n-additional-gates", "The number of additional gates">
+  ];
 }
 
 def RoutingVerificationSCPass : Pass<"verify-routing-sc", "mlir::ModuleOp"> {
