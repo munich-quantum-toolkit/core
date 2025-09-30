@@ -11,41 +11,35 @@
 #include "na/fomac/Device.hpp"
 
 #include "fomac/FoMaC.hpp"
+#include "ir/Definitions.hpp"
+#include "na/device/Generator.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <limits>
-#include <numeric>
+#include <map>
 #include <optional>
+#include <queue>
 #include <ranges>
+#include <regex>
+#include <spdlog/spdlog.h>
+#include <stdexcept>
 #include <string>
+#include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace na {
-
-FoMaC::Device::Device(const fomac::FoMaC::Device& device)
-    : fomac::FoMaC::Device(device) {
-  initNameFromDevice();
-  initMinAtomDistanceFromDevice();
-  initQubitsNumFromDevice();
-  initLengthUnitFromDevice();
-  initDurationUnitFromDevice();
-  initDecoherenceTimesFromDevice();
-  initTrapsfromDevice();
-  initGlobalSingleQubitOperationsFromDevice();
-  initGlobalMultiQubitOperationsFromDevice();
-  initLocalSingleQubitOperationsFromDevice();
-  initLocalMultiQubitOperationsFromDevice();
-  initShuttlingUnitsFromDevice();
-}
-auto FoMaC::Device::calculateExtentFromSites(
-    const std::vector<fomac::FoMaC::Device::Site>& sites) -> Region {
+namespace {
+auto calculateExtentFromSites(
+    const std::vector<fomac::FoMaC::Device::Site>& sites) -> Device::Region {
   auto minX = std::numeric_limits<int64_t>::max();
   auto maxX = std::numeric_limits<int64_t>::min();
   auto minY = std::numeric_limits<int64_t>::max();
@@ -62,120 +56,278 @@ auto FoMaC::Device::calculateExtentFromSites(
           .size = {.width = static_cast<uint64_t>(maxX - minX),
                    .height = static_cast<uint64_t>(maxY - minY)}};
 }
+/// Device::Vector does not provide a hash function by default, this is the
+/// replacement
+struct DeviceVectorHash {
+  size_t operator()(const Device::Vector& v) const {
+    return qc::combineHash(std::hash<int64_t>{}(v.x),
+                           std::hash<int64_t>{}(v.y));
+  }
+};
+[[nodiscard]] auto checkOperationAndAddShuttlingUnit(
+    std::unordered_map<size_t, std::array<bool, 3>>& shuttlingUnits,
+    const fomac::FoMaC::Device::Operation& operation) -> bool {
+  // check properties mandatory for zoned operations
+  const auto& sitesOpt = operation.getSites();
+  if (!sitesOpt.has_value()) {
+    return false;
+  }
+  const auto& qubitsNumOpt = operation.getQubitsNum();
+  if (operation.isZoned().value_or(false)) {
+    // check properties mandatory for zoned operations
+    if (sitesOpt->empty() ||
+        std::ranges::any_of(*sitesOpt,
+                            [](const fomac::FoMaC::Device::Site& site) -> bool {
+                              return !site.isZone().value_or(false);
+                            })) {
+      return false;
+    }
+    if (!qubitsNumOpt.has_value()) {
+      // shuttling operations
+      const auto& name = operation.getName();
+      std::smatch match;
+      if (std::regex_match(name, match, std::regex("load<(\\d+)>"))) {
+        if (!operation.getDuration().has_value() ||
+            !operation.getFidelity().has_value()) {
+          return false;
+        }
+        const auto unitIt =
+            shuttlingUnits.try_emplace(std::stoul(match[1])).first;
+        auto& unitLoad = std::get<0>(unitIt->second);
+        if (unitLoad) {
+          return false;
+        }
+        unitLoad = true;
+      } else if (std::regex_match(name, match, std::regex("move<(\\d+)>"))) {
+        if (!operation.getMeanShuttlingSpeed().has_value()) {
+          return false;
+        }
+        const auto unitIt =
+            shuttlingUnits.try_emplace(std::stoul(match[1])).first;
+        auto& unitMove = std::get<1>(unitIt->second);
+        if (unitMove) {
+          return false;
+        }
+        unitMove = true;
+      } else if (std::regex_match(name, match, std::regex("store<(\\d+)>"))) {
+        if (!operation.getDuration().has_value() ||
+            !operation.getFidelity().has_value()) {
+          return false;
+        }
+        const auto unitIt =
+            shuttlingUnits.try_emplace(std::stoul(match[1])).first;
+        auto& unitStore = std::get<2>(unitIt->second);
+        if (unitStore) {
+          return false;
+        }
+        unitStore = true;
+      } else {
+        return false;
+      }
+    } else if (qubitsNumOpt == 1) {
+      if (!operation.getDuration().has_value() ||
+          !operation.getFidelity().has_value()) {
+        return false;
+      }
+    } else if (qubitsNumOpt == 2) {
+      if (!operation.getDuration().has_value() ||
+          !operation.getFidelity().has_value() ||
+          !operation.getInteractionRadius().has_value() ||
+          !operation.getBlockingRadius().has_value() ||
+          !operation.getIdlingFidelity().has_value()) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  } else {
+    // check properties mandatory for local operations
+    if (sitesOpt->empty() ||
+        std::ranges::any_of(*sitesOpt,
+                            [](const fomac::FoMaC::Device::Site& site) -> bool {
+                              return site.isZone().value_or(false);
+                            })) {
+      return false;
+    }
+    if (!qubitsNumOpt.has_value()) {
+      return false;
+    }
+    if (qubitsNumOpt == 1) {
+      if (!operation.getDuration().has_value() ||
+          !operation.getFidelity().has_value()) {
+        return false;
+      }
+    } else if (qubitsNumOpt == 2) {
+      if (!operation.getDuration().has_value() ||
+          !operation.getFidelity().has_value() ||
+          !operation.getInteractionRadius().has_value() ||
+          !operation.getBlockingRadius().has_value()) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+} // namespace
 auto FoMaC::Device::initNameFromDevice() -> void { name = getName(); }
-auto FoMaC::Device::initMinAtomDistanceFromDevice() -> void {
-  minAtomDistance = *getMinAtomDistance();
+auto FoMaC::Device::initMinAtomDistanceFromDevice() -> bool {
+  const auto& d = getMinAtomDistance();
+  if (!d.has_value()) {
+    SPDLOG_INFO("Minimal atom distance not set");
+    return false;
+  }
+  minAtomDistance = *d;
+  return true;
 }
 auto FoMaC::Device::initQubitsNumFromDevice() -> void {
   numQubits = getQubitsNum();
 }
-auto FoMaC::Device::initLengthUnitFromDevice() -> void {
-  lengthUnit.unit = *fomac::FoMaC::Device::getLengthUnit();
+auto FoMaC::Device::initLengthUnitFromDevice() -> bool {
+  const auto& u = fomac::FoMaC::Device::getLengthUnit();
+  if (!u.has_value()) {
+    SPDLOG_INFO("Length unit not set");
+    return false;
+  }
+  lengthUnit.unit = *u;
   lengthUnit.scaleFactor = getLengthScaleFactor().value_or(1.0);
+  return true;
 }
-auto FoMaC::Device::initDurationUnitFromDevice() -> void {
-  durationUnit.unit = *fomac::FoMaC::Device::getDurationUnit();
+auto FoMaC::Device::initDurationUnitFromDevice() -> bool {
+  const auto& u = fomac::FoMaC::Device::getDurationUnit();
+  if (!u.has_value()) {
+    SPDLOG_INFO("Duration unit not set");
+    return false;
+  }
+  durationUnit.unit = *u;
   durationUnit.scaleFactor = getDurationScaleFactor().value_or(1.0);
+  return true;
 }
-auto FoMaC::Device::initDecoherenceTimesFromDevice() -> void {
+auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
   // find first non-zone site as reference
   auto regularSites = getSites() | std::views::filter([](const auto& site) {
                         return !site.isZone().value_or(false);
                       });
+  uint64_t sumT1 = 0;
+  uint64_t sumT2 = 0;
+  for (const auto& site : regularSites) {
+    const auto& t1 = site.getT1();
+    if (!t1.has_value()) {
+      SPDLOG_INFO("Regular site missing t1");
+      return false;
+    }
+    const auto& t2 = site.getT2();
+    if (!t2.has_value()) {
+      SPDLOG_INFO("Regular site missing t2");
+      return false;
+    }
+    sumT1 += *t1;
+    sumT2 += *t2;
+  }
   const auto count = static_cast<uint64_t>(std::ranges::distance(regularSites));
-  const auto [t1, t2] = std::accumulate(
-      regularSites.begin(), regularSites.end(), std::pair{0ULL, 0ULL},
-      [](const auto& acc, const auto& site) {
-        return std::pair{acc.first + *site.getT1(), acc.second + *site.getT2()};
-      });
-  decoherenceTimes.t1 = t1 / count;
-  decoherenceTimes.t2 = t2 / count;
+  decoherenceTimes.t1 = sumT1 / count;
+  decoherenceTimes.t2 = sumT2 / count;
+  return true;
 }
-auto FoMaC::Device::initTrapsfromDevice() -> void {
+auto FoMaC::Device::initTrapsfromDevice() -> bool {
   traps.clear();
-  // get the non-zone sites of the device
-  auto regularSites = getSites() | std::views::filter([](const auto& site) {
+  const auto& sites = getSites();
+  if (sites.empty()) {
+    SPDLOG_INFO("Device returned no sites");
+    return false;
+  }
+  auto regularSites = sites | std::views::filter([](const Site& site) -> bool {
                         return !site.isZone().value_or(false);
                       });
-  // group sites by their module index
-  std::unordered_map<uint64_t, std::vector<Site>> modules;
-  for (const auto& site : regularSites) {
-    auto it = modules.try_emplace(*site.getModuleIndex()).first;
-    it->second.emplace_back(site);
+  if (std::ranges::distance(regularSites) == 0) {
+    SPDLOG_INFO("Device has no regular sites");
+    return false;
   }
-  // iterate over modules
-  traps.reserve(modules.size());
-  for (const auto& [moduleIdx, moduleSites] : modules) {
-    // get submodule sites (submodule 0)
-    const auto submodule0Idx = *moduleSites[0].getSubmoduleIndex();
-    auto submodule0Sites =
-        moduleSites | std::views::filter([=](const auto& site) {
-          return *site.getSubmoduleIndex() == submodule0Idx;
-        });
-    // get reference site (submodule 0) which becomes lattice origin
-    const auto& referenceSite0 = *std::ranges::min_element(
-        submodule0Sites, [](const auto& a, const auto& b) {
-          return std::pair{a.getXCoordinate(), a.getYCoordinate()} <
-                 std::pair{b.getXCoordinate(), b.getYCoordinate()};
-        });
-    const Vector latticeOrigin{.x = *referenceSite0.getXCoordinate(),
-                               .y = *referenceSite0.getYCoordinate()};
+  std::unordered_set<Vector, DeviceVectorHash> retrievedSites;
+  std::unordered_map<
+      uint64_t,
+      std::map<uint64_t, std::priority_queue<Vector, std::vector<Vector>,
+                                             std::greater<>>>>
+      sitesPerModuleAndSubmodule;
+  for (const auto& site : regularSites) {
+    const auto& mIdx = site.getModuleIndex();
+    if (!mIdx.has_value()) {
+      SPDLOG_INFO("Site missing module index");
+      return false;
+    }
+    const auto moduleIt = sitesPerModuleAndSubmodule.try_emplace(*mIdx).first;
+    const auto& smIdx = site.getSubmoduleIndex();
+    if (!smIdx.has_value()) {
+      SPDLOG_INFO("Site missing submodule index");
+      return false;
+    }
+    const auto submoduleIt = moduleIt->second.try_emplace(*smIdx).first;
+    const auto& x = site.getXCoordinate();
+    if (!x.has_value()) {
+      SPDLOG_INFO("Site missing x coordinate");
+      return false;
+    }
+    const auto& y = site.getYCoordinate();
+    if (!y.has_value()) {
+      SPDLOG_INFO("Site missing y coordinate");
+      return false;
+    }
+    submoduleIt->second.emplace(*x, *y);
+    retrievedSites.emplace(*x, *y);
+  }
+  for (const auto& [moduleIdx, sitesPerSubmodule] :
+       sitesPerModuleAndSubmodule) {
+    // get submodule sites (min. submodule)
+    const auto& [minSubmoduleIdx, minSubmoduleSites] =
+        *sitesPerSubmodule.cbegin();
+    // reference site (min. submodule) which becomes lattice origin
+    const auto& latticeOrigin = minSubmoduleSites.top();
     // get sublattice offsets
     std::vector<Vector> sublatticeOffsets;
-    for (const auto& site : submodule0Sites) {
-      sublatticeOffsets.emplace_back(
-          Vector{.x = *site.getXCoordinate() - latticeOrigin.x,
-                 .y = *site.getYCoordinate() - latticeOrigin.y});
-    }
-    // reference sites (other submodules)
-    std::unordered_map<uint64_t, Site> referenceSites;
-    for (const auto& site : moduleSites) {
-      if (const auto idx = *site.getSubmoduleIndex(); idx != submodule0Idx) {
-        auto [it, success] = referenceSites.try_emplace(idx, site);
-        // if already present, keep the one with smaller coordinates
-        if (!success) {
-          if (std::pair{site.getXCoordinate(), site.getYCoordinate()} <
-              std::pair{it->second.getXCoordinate(),
-                        it->second.getYCoordinate()}) {
-            it->second = site;
-          }
-        }
-      }
-    }
-    // distance function
-    const auto dist = [](const Vector& origin, const Site& site) {
-      return std::hypot(*site.getXCoordinate() - origin.x,
-                        *site.getYCoordinate() - origin.y);
-    };
+    std::ranges::for_each(minSubmoduleSites.__get_container(),
+                          [&](const auto& v) {
+                            sublatticeOffsets.emplace_back(
+                                v.x - latticeOrigin.x, v.y - latticeOrigin.y);
+                          });
     // find first lattice vector
-    const auto& referenceSite1 =
-        std::ranges::min_element(referenceSites, [&](const auto& a,
-                                                     const auto& b) {
-          return dist(latticeOrigin, a.second) < dist(latticeOrigin, b.second);
-        })->second;
-    const Vector latticeVector1{
-        .x = *referenceSite1.getXCoordinate() - latticeOrigin.x,
-        .y = *referenceSite1.getYCoordinate() - latticeOrigin.y};
+    auto otherReferenceSites =
+        sitesPerSubmodule | std::views::drop(1) | std::views::values |
+        std::views::transform([&latticeOrigin](const auto& s) {
+          const auto& v = s.top();
+          return Vector{v.x - latticeOrigin.x, v.y - latticeOrigin.y};
+        });
+    const auto& latticeVector1 = *std::ranges::min_element(
+        otherReferenceSites, [&](const auto& a, const auto& b) {
+          return std::hypot(a.x, a.y) < std::hypot(b.x, b.y);
+        });
     // find second lattice vector (non-collinear)
     auto nonCollinearReferenceSites =
-        referenceSites |
-        std::views::filter([&latticeOrigin, &latticeVector1](const auto& pair) {
-          return (*pair.second.getXCoordinate() - latticeOrigin.x) *
-                     latticeVector1.y !=
-                 (*pair.second.getYCoordinate() - latticeOrigin.y) *
-                     latticeVector1.x;
+        otherReferenceSites |
+        std::views::filter([&latticeOrigin, &latticeVector1](const auto& v) {
+          return (v.x - latticeOrigin.x) * latticeVector1.y !=
+                 (v.y - latticeOrigin.y) * latticeVector1.x;
         });
-    const auto& referenceSite2 =
-        std::ranges::min_element(nonCollinearReferenceSites,
-                                 [&](const auto& a, const auto& b) {
-                                   return dist(latticeOrigin, a.second) <
-                                          dist(latticeOrigin, b.second);
-                                 })
-            ->second;
-    const Vector latticeVector2{
-        .x = *referenceSite2.getXCoordinate() - latticeOrigin.x,
-        .y = *referenceSite2.getYCoordinate() - latticeOrigin.y};
-    const auto& extent = calculateExtentFromSites(moduleSites);
+    const auto& latticeVector2 = *std::ranges::min_element(
+        nonCollinearReferenceSites, [&](const auto& a, const auto& b) {
+          return std::hypot(a.x, a.y) < std::hypot(b.x, b.y);
+        });
+    auto minX = std::numeric_limits<std::int64_t>::max();
+    auto maxX = std::numeric_limits<std::int64_t>::min();
+    auto minY = std::numeric_limits<std::int64_t>::max();
+    auto maxY = std::numeric_limits<std::int64_t>::min();
+    std::ranges::for_each(
+        sitesPerSubmodule | std::views::values, [&](const auto& s) {
+          std::ranges::for_each(s.__get_container(), [&](const auto& v) {
+            minX = std::min(minX, v.x);
+            maxX = std::max(maxX, v.x);
+            minY = std::min(minY, v.y);
+            maxY = std::max(maxY, v.y);
+          });
+        });
+    const Region extent{.origin = {.x = minX, .y = minY},
+                        .size = {.width = static_cast<uint64_t>(maxX - minX),
+                                 .height = static_cast<uint64_t>(maxY - minY)}};
     // ensure canonical order of lattice vectors
     if (latticeVector1 < latticeVector2) {
       traps.emplace_back(Lattice{.latticeOrigin = latticeOrigin,
@@ -191,146 +343,284 @@ auto FoMaC::Device::initTrapsfromDevice() -> void {
                                  .extent = extent});
     }
   }
-}
-auto FoMaC::Device::initGlobalSingleQubitOperationsFromDevice() -> void {
-  std::ranges::copy(
-      getOperations() |
-          std::views::filter(
-              [](const fomac::FoMaC::Device::Operation& op) -> bool {
-                return op.isZoned() == true && op.getQubitsNum() == 1;
-              }) |
-          std::views::transform([](const fomac::FoMaC::Device::Operation& op)
-                                    -> GlobalSingleQubitOperation {
-            const auto site = op.getSites()->front();
-            return GlobalSingleQubitOperation{
-                op.getName(),
-                {.origin = {.x = *site.getXCoordinate(),
-                            .y = *site.getYCoordinate()},
-                 .size = {.width = *site.getXExtent(),
-                          .height = *site.getYExtent()}},
-                *op.getDuration(),
-                *op.getFidelity(),
-                op.getParametersNum()};
-          }),
-      std::back_inserter(globalSingleQubitOperations));
-}
-auto FoMaC::Device::initGlobalMultiQubitOperationsFromDevice() -> void {
-  std::ranges::copy(
-      getOperations() |
-          std::views::filter(
-              [](const fomac::FoMaC::Device::Operation& op) -> bool {
-                return op.isZoned() == true && op.getQubitsNum() > 1;
-              }) |
-          std::views::transform([](const fomac::FoMaC::Device::Operation& op)
-                                    -> GlobalMultiQubitOperation {
-            const auto site = op.getSites()->front();
-            return GlobalMultiQubitOperation{
-                {.name = op.getName(),
-                 .region = {.origin = {.x = *site.getXCoordinate(),
-                                       .y = *site.getYCoordinate()},
-                            .size = Region::Size{.width = *site.getXExtent(),
-                                                 .height = *site.getYExtent()}},
-                 .duration = *op.getDuration(),
-                 .fidelity = *op.getFidelity(),
-                 .numParameters = op.getParametersNum()},
-                *op.getInteractionRadius(),
-                *op.getBlockingRadius(),
-                *op.getIdlingFidelity(),
-                *op.getQubitsNum()};
-          }),
-      std::back_inserter(globalMultiQubitOperations));
-}
-auto FoMaC::Device::initLocalSingleQubitOperationsFromDevice() -> void {
-  std::ranges::copy(
-      getOperations() |
-          std::views::filter(
-              [](const fomac::FoMaC::Device::Operation& op) -> bool {
-                return !op.isZoned().value_or(false) && op.getQubitsNum() == 1;
-              }) |
-          std::views::transform([](const fomac::FoMaC::Device::Operation& op)
-                                    -> LocalSingleQubitOperation {
-            return LocalSingleQubitOperation{
-                op.getName(), calculateExtentFromSites(*op.getSites()),
-                *op.getDuration(), *op.getFidelity(), op.getParametersNum()};
-          }),
-      std::back_inserter(localSingleQubitOperations));
-}
-auto FoMaC::Device::initLocalMultiQubitOperationsFromDevice() -> void {
-  std::ranges::copy(
-      getOperations() |
-          std::views::filter(
-              [](const fomac::FoMaC::Device::Operation& op) -> bool {
-                return !op.isZoned().value_or(false) && op.getQubitsNum() > 1;
-              }) |
-          std::views::transform([](const fomac::FoMaC::Device::Operation& op)
-                                    -> LocalMultiQubitOperation {
-            return LocalMultiQubitOperation{
-                {.name = op.getName(),
-                 .region = calculateExtentFromSites(*op.getSites()),
-                 .duration = *op.getDuration(),
-                 .fidelity = *op.getFidelity(),
-                 .numParameters = op.getParametersNum()},
-                *op.getInteractionRadius(),
-                *op.getBlockingRadius(),
-                *op.getQubitsNum()};
-          }),
-      std::back_inserter(localMultiQubitOperations));
-}
-auto FoMaC::Device::initShuttlingUnitsFromDevice() -> void {
-  std::unordered_map<
-      size_t, std::array<std::optional<fomac::FoMaC::Device::Operation>, 3>>
-      shuttlingOpTuples;
-  std::ranges::for_each(
-      getOperations() |
-          std::views::filter(
-              [](const fomac::FoMaC::Device::Operation& op) -> bool {
-                return op.isZoned() && !op.getQubitsNum().has_value();
-              }),
-      [&shuttlingOpTuples](const fomac::FoMaC::Device::Operation& op) {
-        // extract the int from, e.g., `load<0>`, `move<1>`, `store<2>`
-        const auto name = op.getName();
-        const auto start = name.find('<');
-        const auto end = name.find('>');
-        const auto id = static_cast<size_t>(
-            std::stoi(name.substr(start + 1, end - start - 1)));
-        const auto [it, success] = shuttlingOpTuples.try_emplace(id);
-        if (name.starts_with("load")) {
-          it->second[0] = op;
-        } else if (name.starts_with("move")) {
-          it->second[1] = op;
-        } else { // if (name.starts_with("store"))
-          it->second[2] = op;
-        }
+  std::unordered_set<Vector, DeviceVectorHash> constructedSites;
+  forEachRegularSites(
+      traps, [&constructedSites](const uint64_t /* unused */, const int64_t x,
+                                 const int64_t y, const uint64_t /* unused */,
+                                 const uint64_t /* unused */) {
+        constructedSites.emplace(x, y);
       });
-  std::ranges::copy(
-      shuttlingOpTuples |
-          std::views::transform([](const auto& pair) -> ShuttlingUnit {
-            const auto& [id, triple] = pair;
-            const auto& load = *triple[0];
-            const auto& move = *triple[1];
-            const auto& store = *triple[2];
-            const auto site = move.getSites()->front();
-            return {.id = id,
-                    .region = {.origin = {.x = *site.getXCoordinate(),
-                                          .y = *site.getYCoordinate()},
-                               .size = {.width = *site.getXExtent(),
-                                        .height = *site.getYExtent()}},
-                    .loadDuration = *load.getDuration(),
-                    .storeDuration = *store.getDuration(),
-                    .loadFidelity = *load.getFidelity(),
-                    .storeFidelity = *store.getFidelity(),
-                    .numParameters = move.getParametersNum(),
-                    .meanShuttlingSpeed = *move.getMeanShuttlingSpeed()};
-          }),
-      std::back_inserter(shuttlingUnits));
+  return retrievedSites == constructedSites;
 }
+auto FoMaC::Device::initOperationsFromDevice() -> bool {
+  std::map<size_t, std::pair<ShuttlingUnit, std::array<bool, 3>>>
+      shuttlingUnitsPerId;
+  for (const fomac::FoMaC::Device::Operation& op : getOperations()) {
+    const auto zoned = op.isZoned().value_or(false);
+    const auto& nq = op.getQubitsNum();
+    const auto& name = op.getName();
+    const auto& sitesOpt = op.getSites();
+    if (!sitesOpt.has_value() || sitesOpt->empty()) {
+      SPDLOG_INFO("Operation missing sites");
+      return false;
+    }
+    if (zoned) {
+      if (std::ranges::any_of(
+              *sitesOpt, [](const fomac::FoMaC::Device::Site& site) -> bool {
+                return !site.isZone().value_or(false);
+              })) {
+        SPDLOG_INFO("Operation marked as zoned but has non-zone sites");
+        return false;
+      }
+      if (sitesOpt->size() > 1) {
+        SPDLOG_INFO("Shuttling operation must have one site");
+        return false;
+      }
+      const auto& x = sitesOpt->front().getXCoordinate();
+      if (!x.has_value()) {
+        SPDLOG_INFO("Site missing x coordinate");
+        return false;
+      }
+      const auto& y = sitesOpt->front().getYCoordinate();
+      if (!y.has_value()) {
+        SPDLOG_INFO("Site missing y coordinate");
+        return false;
+      }
+      const auto& width = sitesOpt->front().getXExtent();
+      if (!width.has_value()) {
+        SPDLOG_INFO("Site missing x extent");
+        return false;
+      }
+      const auto& height = sitesOpt->front().getYExtent();
+      if (!height.has_value()) {
+        SPDLOG_INFO("Site missing y extent");
+        return false;
+      }
+      const Region region{.origin = {.x = *x, .y = *y},
+                          .size = {.width = static_cast<uint64_t>(*width),
+                                   .height = static_cast<uint64_t>(*height)}};
+      if (!nq.has_value()) {
+        // shuttling operations
+        std::smatch match;
+        if (std::regex_match(name, match, std::regex("load<(\\d+)>"))) {
+          const auto id = std::stoul(match[1]);
+          const auto& d = op.getDuration();
+          if (!d.has_value()) {
+            SPDLOG_INFO("Load Operation missing duration");
+            return false;
+          }
+          const auto& f = op.getFidelity();
+          if (!f.has_value()) {
+            SPDLOG_INFO("Load Operation missing fidelity");
+            return false;
+          }
+          const auto& [it, success] = shuttlingUnitsPerId.try_emplace(id);
+          auto& [unit, triple] = it->second;
+          auto& load = std::get<0>(triple);
+          if (load) {
+            SPDLOG_INFO("Duplicate load operation for shuttling unit");
+            return false;
+          }
+          load = true;
+          if (success) {
+            unit.id = id;
+            unit.numParameters = op.getParametersNum();
+            unit.region = region;
+          } else {
+            if (unit.numParameters != op.getParametersNum()) {
+              SPDLOG_INFO(
+                  "Inconsistent number of parameters for shuttling unit");
+              return false;
+            }
+            if (unit.region != region) {
+              SPDLOG_INFO("Inconsistent region for shuttling unit");
+              return false;
+            }
+          }
+          unit.loadDuration = *d;
+          unit.loadFidelity = *f;
+        } else if (std::regex_match(name, match, std::regex("move<(\\d+)>"))) {
+          const auto id = std::stoul(match[1]);
+          const auto& speed = op.getMeanShuttlingSpeed();
+          if (!speed.has_value()) {
+            SPDLOG_INFO("Move Operation missing mean shuttling speed");
+            return false;
+          }
+          const auto& [it, success] = shuttlingUnitsPerId.try_emplace(id);
+          auto& [unit, triple] = it->second;
+          auto& move = std::get<1>(triple);
+          if (move) {
+            SPDLOG_INFO("Duplicate move operation for shuttling unit");
+            return false;
+          }
+          move = true;
+          if (success) {
+            unit.id = id;
+            unit.numParameters = op.getParametersNum();
+            unit.region = region;
+          } else {
+            if (unit.numParameters != op.getParametersNum()) {
+              SPDLOG_INFO(
+                  "Inconsistent number of parameters for shuttling unit");
+              return false;
+            }
+            if (unit.region != region) {
+              SPDLOG_INFO("Inconsistent region for shuttling unit");
+              return false;
+            }
+          }
+          unit.meanShuttlingSpeed = *speed;
+        } else if (std::regex_match(name, match, std::regex("store<(\\d+)>"))) {
+          const auto id = std::stoul(match[1]);
+          const auto& d = op.getDuration();
+          if (!d.has_value()) {
+            SPDLOG_INFO("Store Operation missing duration");
+            return false;
+          }
+          const auto& f = op.getFidelity();
+          if (!f.has_value()) {
+            SPDLOG_INFO("Store Operation missing fidelity");
+            return false;
+          }
+          const auto& [it, success] = shuttlingUnitsPerId.try_emplace(id);
+          auto& [unit, triple] = it->second;
+          auto& store = std::get<2>(triple);
+          if (store) {
+            SPDLOG_INFO("Duplicate store operation for shuttling unit");
+            return false;
+          }
+          store = true;
+          if (success) {
+            unit.id = id;
+            unit.numParameters = op.getParametersNum();
+            unit.region = region;
+          } else {
+            if (unit.numParameters != op.getParametersNum()) {
+              SPDLOG_INFO(
+                  "Inconsistent number of parameters for shuttling unit");
+              return false;
+            }
+            if (unit.region != region) {
+              SPDLOG_INFO("Inconsistent region for shuttling unit");
+              return false;
+            }
+          }
+          unit.storeDuration = *d;
+          unit.storeFidelity = *f;
+        } else {
+          SPDLOG_INFO("Invalid shuttling operation name");
+          return false;
+        }
+      } else {
+        const auto& d = op.getDuration();
+        if (!d.has_value()) {
+          SPDLOG_INFO("Store Operation missing duration");
+          return false;
+        }
+        const auto& f = op.getFidelity();
+        if (!f.has_value()) {
+          SPDLOG_INFO("Store Operation missing fidelity");
+          return false;
+        }
+        if (*nq == 1) {
+          // zoned single-qubit operations
+          globalSingleQubitOperations.emplace_back(GlobalMultiQubitOperation{
+              {.name = name,
+               .region = region,
+               .duration = *d,
+               .fidelity = *f,
+               .numParameters = op.getParametersNum()}});
+        } else if (*nq == 2) {
+          // zoned two-qubit operations
+          const auto& ir = op.getInteractionRadius();
+          if (!ir.has_value()) {
+            SPDLOG_INFO("Two-qubit Operation missing interaction radius");
+            return false;
+          }
+          const auto& br = op.getBlockingRadius();
+          if (!br.has_value()) {
+            SPDLOG_INFO("Two-qubit Operation missing blocking radius");
+            return false;
+          }
+          const auto& fi = op.getIdlingFidelity();
+          if (!fi.has_value()) {
+            SPDLOG_INFO("Two-qubit Operation missing idling fidelity");
+            return false;
+          }
+          globalMultiQubitOperations.emplace_back(GlobalMultiQubitOperation{
+              {.name = name,
+               .region = region,
+               .duration = *d,
+               .fidelity = *f,
+               .numParameters = op.getParametersNum()},
+              *ir,
+              *br,
+              *fi,
+              *nq});
+        } else {
+          SPDLOG_INFO("Number of Qubits must be 1 or 2");
+        }
+      }
+    } else {
+      if (!nq.has_value()) {
+        SPDLOG_INFO("Operation is missing number of qubits");
+        return false;
+      }
+      const auto& d = op.getDuration();
+      if (!d.has_value()) {
+        SPDLOG_INFO("Store Operation missing duration");
+        return false;
+      }
+      const auto& f = op.getFidelity();
+      if (!f.has_value()) {
+        SPDLOG_INFO("Store Operation missing fidelity");
+        return false;
+      }
+      const auto region = calculateExtentFromSites(*sitesOpt);
+      if (*nq == 1) {
+        localSingleQubitOperations.emplace_back(LocalSingleQubitOperation{
+            {name, region, *d, *f, op.getParametersNum()}});
+      } else if (*nq == 2) {
+        const auto& ir = op.getInteractionRadius();
+        if (!ir.has_value()) {
+          SPDLOG_INFO("Two-qubit Operation missing interaction radius");
+          return false;
+        }
+        const auto& br = op.getBlockingRadius();
+        if (!br.has_value()) {
+          SPDLOG_INFO("Two-qubit Operation missing blocking radius");
+          return false;
+        }
+        localMultiQubitOperations.emplace_back(LocalMultiQubitOperation{
+            {name, region, *d, *f, op.getParametersNum()}, *ir, *br, *nq});
+      } else {
+        SPDLOG_INFO("Number of Qubits must be 1 or 2");
+      }
+    }
+  }
+  if (std::ranges::any_of(shuttlingUnitsPerId | std::views::values,
+                          [](const auto& val) {
+                            const auto [load, move, store] = val.second;
+                            return !(load && move && store);
+                          })) {
+    SPDLOG_INFO("Shuttling unit not complete");
+    return false;
+  }
+  return true;
+}
+FoMaC::Device::Device(const fomac::FoMaC::Device& device)
+    : fomac::FoMaC::Device(device) {}
 auto FoMaC::getDevices() -> std::vector<Device> {
-  const auto& qdmiDevices = fomac::FoMaC::getDevices();
   std::vector<Device> devices;
-  devices.reserve(qdmiDevices.size());
-  std::ranges::transform(
-      qdmiDevices, std::back_inserter(devices),
-      [](const fomac::FoMaC::Device& dev) -> Device { return Device(dev); });
+  std::ranges::copy(fomac::FoMaC::getDevices() |
+                        std::views::transform(
+                            [](const auto& d) -> Device::CompatibilityResult {
+                              return Device::checkCompatiblility(d);
+                            }) |
+                        std::views::filter(std::identity{}) |
+                        std::views::transform(
+                            [](auto& r) -> Device { return r.createDevice(); }),
+                    std::back_inserter(devices));
   return devices;
 }
 } // namespace na

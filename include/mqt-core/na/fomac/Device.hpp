@@ -15,6 +15,8 @@
 
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
+#include <optional>
+#include <utility>
 #include <vector>
 
 namespace na {
@@ -32,13 +34,6 @@ public:
    * converted to `nlohmann::json` objects.
    */
   class Device : public fomac::FoMaC::Device, na::Device {
-    /**
-     * @brief Calculate the extent of a set of sites.
-     * @param sites The sites to calculate the extent for.
-     * @returns A `Region` object representing the extent of the sites.
-     */
-    static auto calculateExtentFromSites(
-        const std::vector<fomac::FoMaC::Device::Site>& sites) -> Region;
 
     /**
      * @brief Initializes the name from the underlying QDMI device.
@@ -49,7 +44,7 @@ public:
      * @brief Initializes the minimum atom distance from the underlying QDMI
      * device.
      */
-    auto initMinAtomDistanceFromDevice() -> void;
+    auto initMinAtomDistanceFromDevice() -> bool;
 
     /**
      * @brief Initializes the number of qubits from the underlying QDMI device.
@@ -59,17 +54,17 @@ public:
     /**
      * @brief Initializes the length unit from the underlying QDMI device.
      */
-    auto initLengthUnitFromDevice() -> void;
+    auto initLengthUnitFromDevice() -> bool;
 
     /**
      * @brief Initializes the duration unit from the underlying QDMI device.
      */
-    auto initDurationUnitFromDevice() -> void;
+    auto initDurationUnitFromDevice() -> bool;
 
     /**
      * @brief Initializes the decoherence times from the underlying QDMI device.
      */
-    auto initDecoherenceTimesFromDevice() -> void;
+    auto initDecoherenceTimesFromDevice() -> bool;
 
     /**
      * @brief Initializes the trap lattices from the underlying QDMI device.
@@ -77,44 +72,20 @@ public:
      * information retrieved from the QDMI device, including lattice vectors,
      * sublattice offsets, and extent.
      */
-    auto initTrapsfromDevice() -> void;
+    auto initTrapsfromDevice() -> bool;
 
     /**
-     * @brief Initializes the global single-qubit operations from the
-     * underlying QDMI device.
+     * @brief Initializes the all operations from the underlying QDMI device.
      */
-    auto initGlobalSingleQubitOperationsFromDevice() -> void;
+    auto initOperationsFromDevice() -> bool;
 
-    /**
-     * @brief Initializes the global multi-qubit operations from the
-     * underlying QDMI device.
-     */
-    auto initGlobalMultiQubitOperationsFromDevice() -> void;
-
-    /**
-     * @brief Initializes the local single-qubit operations from the
-     * underlying QDMI device.
-     */
-    auto initLocalSingleQubitOperationsFromDevice() -> void;
-
-    /**
-     * @brief Initializes the local multi-qubit operations from the
-     * underlying QDMI device.
-     */
-    auto initLocalMultiQubitOperationsFromDevice() -> void;
-
-    /**
-     * @brief Initializes the shuttling units from the underlying QDMI device.
-     */
-    auto initShuttlingUnitsFromDevice() -> void;
-
-  public:
     /**
      * @brief Constructs a Device object from a fomac::FoMaC::Device object.
      * @param device The fomac::FoMaC::Device object to wrap.
      */
     explicit Device(const fomac::FoMaC::Device& device);
 
+  public:
     /// @returns the length unit of the device.
     [[nodiscard]] auto getLengthUnit() const -> const Unit& {
       return lengthUnit;
@@ -133,6 +104,53 @@ public:
     /// @returns the list of trap lattices of the device.
     [[nodiscard]] auto getTraps() const -> const std::vector<Lattice>& {
       return traps;
+    }
+
+    template <typename T> class GenericCompatibilityResult : std::optional<T> {
+    public:
+      GenericCompatibilityResult() = default;
+      explicit GenericCompatibilityResult(T&& t)
+          : std::optional<T>(std::move(t)) {}
+      using std::optional<T>::operator bool;
+      [[nodiscard]] auto createDevice() const -> T { return std::move(*this); }
+    };
+    using CompatibilityResult = GenericCompatibilityResult<Device>;
+
+  private:
+    static const CompatibilityResult INCOMPATIBLE;
+
+  public:
+    /**
+     * @brief Checks if this class can be instantiated with the given device.
+     * @param device The device to check.
+     * @return An optional containing the instantiated Device if compatible,
+     * std::nullopt otherwise.
+     */
+    [[nodiscard]] static auto
+    checkCompatiblility(const fomac::FoMaC::Device& device)
+        -> CompatibilityResult {
+      Device d(device);
+      if (!d.initMinAtomDistanceFromDevice()) {
+        return INCOMPATIBLE;
+      }
+      if (!d.initLengthUnitFromDevice()) {
+        return INCOMPATIBLE;
+      }
+      if (!d.initDurationUnitFromDevice()) {
+        return INCOMPATIBLE;
+      }
+      if (!d.initDecoherenceTimesFromDevice()) {
+        return INCOMPATIBLE;
+      }
+      if (!d.initTrapsfromDevice()) {
+        return INCOMPATIBLE;
+      }
+      if (!d.initOperationsFromDevice()) {
+        return INCOMPATIBLE;
+      }
+      d.initNameFromDevice();
+      d.initQubitsNumFromDevice();
+      return CompatibilityResult{std::move(d)};
     }
 
     // The following is the result of
