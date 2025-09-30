@@ -1,588 +1,483 @@
+# Quantum Dialect Revamp RFC
+
 ## 1. Overview and Goals
 
-### 1.1 Current State
+This RFC proposes a comprehensive revamp of the quantum MLIR dialect(s) to unify unitary representations, improve expressiveness, and enable robust transformations.
 
-We have two quantum dialects:
+Goals:
 
-- `mqtref`: Reference semantics (side-effect based)
-- `mqtopt`: Value semantics (SSA based)
+- Introduce a single abstraction: **UnitaryExpr** (symbolic unitary expression) replacing prior matrix vs expression split.
+- Provide a coherent interface for all operations that apply or produce a unitary (base gates, user-defined gates, modifier-wrapped constructs, sequences).
+- Support both reference semantics (in-place: `mqtref`) and value semantics (SSA threading: `mqtopt`).
+- Add inversion, powering, negative and positive multi-controls, custom gate definitions (matrix & composite), and composition.
+- Unify parameter handling (static + dynamic) with consistent ordering and interface queries.
+- Embed canonicalization rules directly at each operation definition.
+- Establish a normalized modifier nesting order: `negctrl → ctrl → pow → inv`.
+- Enable static matrix extraction where possible and symbolic composition otherwise.
+- Prepare foundations for advanced transformations without speculative overreach.
 
-Both currently provide basic gates and quantum operations but suffer from:
+## 2. Current State and Limitations
 
-- Verbose / inconsistent builder ergonomics (especially for controlled forms)
-- Modifier semantics encoded inconsistently (implicit attributes, ad‑hoc controls)
-- Fragmented interfaces for querying structural properties
-- Limited composability for combined modifiers (e.g., controlled powers of inverses)
+Current issues the revamp addresses:
 
-### 1.2 Proposed Direction
+- Only a rudimentary control modifier exists; missing negative controls, power, inversion.
+- No unified interface for extracting/composing unitaries—leading to ad hoc logic.
+- Matrix vs expression forms diverge; lost optimization opportunities.
+- No user-defined gate (matrix/composite) constructs.
+- Inconsistent parameter model and missing static/dynamic integration.
+- Lack of dual semantics for optimization vs generation workflows.
+- Absent canonicalization strategy for modifier order, parameter folding, gate specialization.
 
-This revamp establishes a uniform, compositional IR that:
+## 3. Dialect Structure and Categories
 
-1. Treats all gate modifiers (controls, negative controls, powers, inverses) as explicit wrapper ops with regions.
-2. Provides a single structural interface (`UnitaryOpInterface`) across both dialects.
-3. Normalizes modifier ordering, merging, and identity elimination early and deterministically.
-4. Supports both a rich named gate set AND matrix-based unitaries.
-5. Emphasizes builder-based structural/semantic testing over brittle text-based checks.
+Two parallel dialects:
 
----
+- `mqtref`: Reference semantics (in-place mutation of qubits; no new results).
+- `mqtopt`: Value semantics (operations consume qubits and yield new qubit results).
 
-## 2. Architecture Overview
+Categories:
 
-### 2.1 Dialect Structure
+1. Resource Operations
+2. Measurement and Reset
+3. UnitaryExpr Concept (applies everywhere for unitaries)
+
+### 3.1 Resource Operations
+
+Purpose: Manage qubit lifetime and references.
+
+Examples (reference semantics):
 
 ```
-Common/
-├── Interfaces (UnitaryOpInterface, etc.)
-├── Traits (Hermitian, Diagonal, SingleTarget, etc.)
-└── Support (UnitaryExpr / UnitaryMatrix utilities)
-
-mqtref/
-├── Types (qubit)
-├── Base Gates (x, rx, cx, u1/u2/u3, etc.)
-├── Modifiers (ctrl, negctrl, pow, inv)
-├── Sequences (seq)
-└── Resources (alloc, measure, ...)
-
-mqtopt/
-└── Parallel set with value semantics (results thread through)
-```
-
-### 2.2 Principles
-
-1. Base gate ops contain only their target operands and parameters (no embedded controls / modifiers).
-2. Modifiers are explicit region wrapper ops enabling arbitrary nesting in canonical order.
-3. Interface / traits provide uniform structural queries (control counts, target counts, matrix form when available).
-4. Reference vs value semantics differences are localized to operation signatures & result threading.
-
-**Rationale:** Predictable structural form enables simpler canonicalization, hashing, CSE, and semantic equivalence checks.
-
----
-
-## 3. Types and Memory Model
-
-### 3.1 Quantum Types
-
-- `!mqtref.qubit`: Stateful reference (in-place mutation semantics).
-- `!mqtopt.qubit`: SSA value (must be threaded; operations consume & produce qubits).
-
-### 3.2 Register Handling
-
-Standard MLIR types (e.g., `memref`) manage collections:
-
-```mlir
-%qreg = memref.alloc() : memref<2x!mqtref.qubit>
-%q0 = memref.load %qreg[%c0] : memref<2x!mqtref.qubit>
-%creg = memref.alloc() : memref<2xi1>
-%bit = mqtref.measure %q0 : i1
-memref.store %bit, %creg[%c0] : memref<2xi1>
-```
-
----
-
-## 4. Base Gate Operations
-
-### 4.1 Philosophy
-
-Minimal, parameterized primitives; all composition via wrappers.
-
-### 4.2 Examples (Reference Semantics)
-
-```mlir
-mqtref.x %q0
-mqtref.rx %q0 {angle = 1.57 : f64}
-mqtref.cx %q0, %q1
-mqtref.u3 %q0 {theta = 0.0 : f64, phi = 0.0 : f64, lambda = 3.14159 : f64}
-```
-
-### 4.3 Examples (Value Semantics)
-
-```mlir
-%q0_out = mqtopt.x %q0_in : !mqtopt.qubit
-%q0_out = mqtopt.rx %q0_in {angle = 1.57 : f64} : !mqtopt.qubit
-%q0_out, %q1_out = mqtopt.cx %q0_in, %q1_in : !mqtopt.qubit, !mqtopt.qubit
-```
-
-### 4.4 Parameterization Strategy
-
-```mlir
-mqtref.rx %q0 {angle = 1.57 : f64}            // static
-%theta = arith.constant 1.57 : f64
-mqtref.rx %q0, %theta : f64                   // dynamic
-%dyn_theta = arith.constant 0.5 : f64
-mqtref.u3 %q0, %dyn_theta {phi = 0.0 : f64, lambda = 3.14159 : f64,
-                           static_mask = [false, true, true]}
-```
-
----
-
-## 5. Modifier Operations
-
-Modifiers are single-region wrappers; canonical nesting: `ctrl` → `negctrl` → `pow` → `inv`.
-
-### 5.1 Controls (`ctrl`) & Negative Controls (`negctrl`)
-
-Reference semantics:
-
-```mlir
-mqtref.ctrl %c0 {
-  mqtref.x %t0           // CNOT
-}
-
-mqtref.ctrl %c0, %c1 {
-  mqtref.x %t0           // Toffoli (CCX)
-}
-
-mqtref.negctrl %c0 {
-  mqtref.x %t0           // Fires when %c0 is |0>
-}
-```
-
-Value semantics (control + target operands; region blocks thread values explicitly):
-
-```mlir
-%c_out, %t_out = mqtopt.ctrl %c_in, %t_in : (!mqtopt.qubit, !mqtopt.qubit) -> (!mqtopt.qubit, !mqtopt.qubit) {
-^entry(%c: !mqtopt.qubit, %t: !mqtopt.qubit):
-  %t_new = mqtopt.x %t : !mqtopt.qubit
-  mqtopt.yield %c, %t_new : !mqtopt.qubit, !mqtopt.qubit
-}
-```
-
-Negative controls are NOT rewritten into positive controls (no implicit X-sandwich canonicalization).
-
-### 5.2 Power (`pow`)
-
-```mlir
-mqtref.pow {exponent = 0.5 : f64} {
-  mqtref.x %q0   // sqrt(X)
-}
-
-%exp = arith.constant 0.25 : f64
-mqtref.pow %exp {
-  mqtref.ry %q0 {angle = 3.14159 : f64}
-}
-```
-
-Value semantics single-qubit power:
-
-```mlir
-%q_out = mqtopt.pow {exponent = 0.5 : f64} %q_in : (!mqtopt.qubit) -> !mqtopt.qubit {
-^entry(%q: !mqtopt.qubit):
-  %q_x = mqtopt.x %q : !mqtopt.qubit
-  mqtopt.yield %q_x : !mqtopt.qubit
-}
-```
-
-### 5.3 Inverse (`inv`)
-
-```mlir
-mqtref.inv {
-  mqtref.s %q0    // S†
-}
-
-%q0_out = mqtopt.inv %q0_in : (!mqtopt.qubit) -> !mqtopt.qubit {
-^entry(%q0: !mqtopt.qubit):
-  %q0_s = mqtopt.s %q0 : !mqtopt.qubit
-  mqtopt.yield %q0_s : !mqtopt.qubit
-}
-```
-
-### 5.4 Nested Modifier Example (Canonical Order)
-
-Reference semantics nested chain:
-
-```mlir
-mqtref.ctrl %c0, %c1 {
-  mqtref.negctrl %c2 {
-    mqtref.pow {exponent = 2.0 : f64} {
-      mqtref.inv {
-        mqtref.x %t0
-      }
-    }
-  }
-}
-```
-
-Value semantics counterpart (illustrative; block arguments explicit at each nesting level):
-
-```mlir
-%c_out, %t_out = mqtopt.ctrl %c_in, %t_in : (!mqtopt.qubit, !mqtopt.qubit) -> (!mqtopt.qubit, !mqtopt.qubit) {
-^entry(%c: !mqtopt.qubit, %t: !mqtopt.qubit):
-  %c_neg_out, %t_neg = mqtopt.negctrl %c, %t : (!mqtopt.qubit, !mqtopt.qubit) -> (!mqtopt.qubit, !mqtopt.qubit) {
-  ^entry(%cn: !mqtopt.qubit, %tn: !mqtopt.qubit):
-    %t_pow = mqtopt.pow {exponent = 2.0 : f64} %tn : (!mqtopt.qubit) -> !mqtopt.qubit {
-      ^entry(%tp: !mqtopt.qubit):
-        %t_inv = mqtopt.inv %tp : (!mqtopt.qubit) -> !mqtopt.qubit {
-          ^entry(%ti: !mqtopt.qubit):
-            %t_x = mqtopt.x %ti : !mqtopt.qubit
-            mqtopt.yield %t_x : !mqtopt.qubit
-        }
-        mqtopt.yield %t_inv : !mqtopt.qubit
-    }
-    mqtopt.yield %cn, %t_pow : !mqtopt.qubit, !mqtopt.qubit
-  }
-  mqtopt.yield %c_neg_out, %t_neg : !mqtopt.qubit, !mqtopt.qubit
-}
-```
-
-(Assumption: Each wrapper result list mirrors its operand list order for pass-through + transformed targets.)
-
-### 5.5 Modifier Semantics Summary
-
-- Control count = sum of outer wrappers + inner (flattened by normalization).
-- `pow` & `inv` forward control counts unchanged.
-- No negctrl → ctrl auto-normalization.
-
----
-
-## 6. Sequence Operations (`seq`)
-
-Sequences group subcircuits; they are control-neutral (always 0 controls) by decision.
-
-Reference semantics:
-
-```mlir
-mqtref.seq {
-  mqtref.h %q0
-  mqtref.ctrl %q0 {
-    mqtref.x %q1
-  }
-  mqtref.h %q0
-}
+%q = mqtref.alloc : mqtref.Qubit
+mqtref.dealloc %q : mqtref.Qubit
+%q_fixed = mqtref.static_qubit @q0 : mqtref.Qubit
 ```
 
 Value semantics:
 
-```mlir
-%q0_out, %q1_out = mqtopt.seq %q0_in, %q1_in : (!mqtopt.qubit, !mqtopt.qubit) -> (!mqtopt.qubit, !mqtopt.qubit) {
-^entry(%q0: !mqtopt.qubit, %q1: !mqtopt.qubit):
-  %q0_h = mqtopt.h %q0 : !mqtopt.qubit
-  %q0_cx, %q1_cx = mqtopt.cx %q0_h, %q1 : !mqtopt.qubit, !mqtopt.qubit
-  %q0_final = mqtopt.h %q0_cx : !mqtopt.qubit
-  mqtopt.yield %q0_final, %q1_cx : !mqtopt.qubit, !mqtopt.qubit
-}
+```
+%q0 = mqtopt.alloc : mqtopt.Qubit
+mqtopt.dealloc %q0 : mqtopt.Qubit
+%q_hw = mqtopt.static_qubit @q7 : mqtopt.Qubit
 ```
 
----
+Canonicalization (patterns / folds):
 
-## 7. Unified Interface Design
+- Remove unused `alloc` (DCE).
+- Elide `dealloc` proven by lifetime analysis.
+- Merge duplicate `static_qubit` references if semantics allow.
 
-### 7.1 `UnitaryOpInterface` (Conceptual Extract)
+### 3.2 Measurement and Reset
 
-```cpp
-class UnitaryOpInterface {
-public:
-  StringRef getIdentifier();
-  size_t getNumTargets();
-  size_t getNumQubits();
-  size_t getNumPosControls();
-  size_t getNumNegControls();
-  size_t getNumControls();           // pos + neg (seq = 0)
-  OperandRange getTargetOperands();
-  OperandRange getPosControlOperands();
-  OperandRange getNegControlOperands();
-  OperandRange getControlOperands(); // concatenated
-  OperandRange getQubitOperands();
-  bool hasResults();
-  ResultRange getTargetResults();
-  // Control results present in value semantics wrappers
-  UnitaryMatrix getUnitaryMatrix();  // Static or computed
-  bool hasStaticUnitary();
-  size_t getNumParams();
-  ArrayAttr getStaticParameters();
-  OperandRange getDynamicParameters();
-};
+Non-unitary (do not implement Unitary interface).
+
+Reference:
+
+```
+%c = mqtref.measure %q : mqtref.Qubit -> i1
+mqtref.reset %q : mqtref.Qubit
 ```
 
-### 7.2 Notes
+Value:
 
-- No explicit enumeration for pow/inv stack layers (decision: unnecessary for MVP).
-- Sequences report 0 controls even if containing controlled ops.
-- Matrix or composite definitions report 0 intrinsic controls; wrappers add controls.
-
----
-
-## 8. Matrix & User-Defined Gates
-
-Matrix-based unitary expression is part of MVP (NOT deferred).
-
-### 8.1 Matrix Unitary Operation
-
-Attribute: flat row‑major dense tensor `tensor<(2^(n)*2^(n)) x complex<f64>>`.
-
-2×2 example (Pauli-Y):
-
-```mlir
-// Row-major: [0  -i ; i  0]
-mqtref.unitary %q0 { matrix = dense<[0.0+0.0i, 0.0-1.0i, 0.0+1.0i, 0.0+0.0i]> : tensor<4xcomplex<f64>> }
+```
+%c = mqtopt.measure %qin : mqtopt.Qubit -> i1
+%qout = mqtopt.reset %qin : mqtopt.Qubit
 ```
 
-Value semantics:
+Canonicalization:
 
-```mlir
-%q0_out = mqtopt.unitary %q0_in { matrix = dense<[0.0+0.0i, 0.0-1.0i, 0.0+1.0i, 0.0+0.0i]> : tensor<4xcomplex<f64>> } : !mqtopt.qubit
+- `reset` immediately after `alloc` → remove `reset`.
+- Consecutive `reset` on same qubit (reference semantics) → single instance.
+
+### 3.3 UnitaryExpr Concept
+
+`UnitaryExpr` is a conceptual abstraction representing a (possibly symbolic) unitary over n targets with optional parameters and controls.
+
+- Static if all parameters are static and analytic matrix is available.
+- Symbolic otherwise (composition, parameterized nodes, modifiers).
+- Provides inversion, powering, and control extension without immediate matrix materialization.
+
+## 4. Unified Unitary Interface Design
+
+All unitary-applying operations implement a common interface (applies to base gates, modifiers, sequences, and user-defined applies).
+
+Interface methods (conceptual API):
+
+- `getNumTargets() -> unsigned`
+- `getNumPosControls() -> unsigned`
+- `getNumNegControls() -> unsigned`
+- `getNumParams() -> unsigned`
+- `getParameter(i) -> ParameterDescriptor`
+  - `ParameterDescriptor`: `isStatic()`, `getConstantValue()?`, `getValueOperand()`
+- `getInput(i)` / `getOutput(i)` (value semantics distinct; reference semantics output = input)
+- `mapOutputToInput(i) -> i` (pure unitaries)
+- `hasStaticUnitary() -> bool`
+- `getOrBuildUnitaryExpr(builder) -> UnitaryExpr`
+- `tryGetStaticMatrix() -> Optional<Attribute>` (2D tensor with shape (2^n, 2^n) and element type `complex<f64>`; written concretely for fixed n as e.g. `tensor<4x4xcomplex<f64>>`)
+- `isInverted() -> bool`
+- `getPower() -> Optional<RationalOrFloat>`
+- `withAddedControls(pos, neg) -> UnitaryExpr`
+- `composeRight(other) -> UnitaryExpr`
+- `getPrincipalLog() -> Optional<Symbolic>`
+
+Identification & Descriptor Tuple:
+`(baseSymbol, orderedParams, posControls, negControls, powerExponent, invertedFlag)` allows canonical equality tests.
+
+Parameter Model:
+
+- Parameters appear in parentheses immediately after mnemonic.
+- Mixed static (attributes) and dynamic (operands) preserve original order.
+- Enumeration returns flattened ordered list; inspect each for static/dynamic.
+
+Static Matrix Extraction:
+
+- Provided if gate analytic and all parameters static, or for matrix-defined user gates.
+- For sequences/composites of static subunits under size threshold, compose matrices.
+
+Inversion & Power Interaction:
+
+- `inv` introduces `invertedFlag` (final canonical position).
+- `pow` stores exponent; negative exponent canonicalized to `inv(pow(+exp))` then reordered.
+
+Control Extension:
+
+- `ctrl` / `negctrl` wrappers extend control sets; interface aggregates flattened sets.
+
+## 5. Base Gate Operations
+
+### 5.1 Philosophy
+
+- Named base gates define analytic unitaries with fixed target arity and parameter arity traits.
+- Provide static matrix when parameters static; symbolic otherwise.
+- Avoid embedding modifier semantics directly—wrappers handle extension.
+
+### 5.2 Gate List (Single-Qubit)
+
+No-parameter: `x, y, z, h, s, sdg, t, tdg, id`
+Parameterized: `rx(%theta), ry(%theta), rz(%theta), phase(%lambda), u(%theta, %phi, %lambda)`
+
+Multi-qubit illustrative: `rzz(%theta)` (two targets), not using `cx` (introduced only via sugar as controlled `x`).
+
+#### 5.2.1 Base Gate Specification Template
+
+For every named base gate op G:
+
+- Purpose: Apply the analytic unitary for gate G to its target qubit(s).
+- Signature (Reference): `mqtref.G(param_list?) %q[,...] : <param types..., qubit types>` (no results)
+- Signature (Value): `%out_targets = mqtopt.G(param_list?) %in_targets : (<param types..., qubit types>) -> <qubit types>`
+- Assembly Format: `G(<params?>) <targets>`; params in parentheses; qubits as trailing operands.
+- Builder Variants:
+  - `build(builder, loc, resultTypes, paramOperands, qubitOperands)` (value)
+  - `build(builder, loc, qubitOperands, paramAttrs)` (reference)
+  - Convenience: static param overloads generate attribute parameters.
+- Interface Implementation Notes:
+  - `getNumTargets()` fixed by trait.
+  - Parameters enumerated in declared order; static vs dynamic via attribute vs operand.
+  - `hasStaticUnitary()` true iff all parameters static.
+  - `mapOutputToInput(i) = i`.
+- Canonicalization Rules: See 5.6 plus gate-specific (e.g., identity elimination, specialization).
+- Examples (Static): `mqtref.rz(3.14159) %q`; `%q2 = mqtopt.rx(0.785398) %q1`.
+- Examples (Dynamic): `%q2 = mqtopt.rx(%theta) %q1`; `mqtref.u(%t,%p,%l) %q`.
+- Conversion (ref↔value): Reference variant lowers to value variant with SSA replacement; reverse drops result.
+
+#### 5.2.2 Example: rx Gate
+
+- Purpose: Single-qubit rotation about X by angle θ.
+- Signatures:
+  - Ref: `mqtref.rx(%theta) %q : f64, mqtref.Qubit`
+  - Value: `%q_out = mqtopt.rx(%theta) %q_in : (f64, mqtopt.Qubit) -> mqtopt.Qubit`
+- Static Example: `%q_out = mqtopt.rx(1.57079632679) %q_in`
+- Dynamic Example: `%q_out = mqtopt.rx(%theta) %q_in`
+- Canonicalization: `rx(0) → id`; two consecutive `rx(a); rx(b)` NOT folded (axis change would require Baker-Campbell-Hausdorff? skip); `inv rx(θ)` handled by modifier → `rx(-θ)`.
+- Static Matrix Available: Yes if θ constant.
+
+#### 5.2.3 Example: rzz Gate
+
+- Purpose: Two-qubit entangling gate `exp(-i θ/2 Z⊗Z)`.
+- Signatures:
+  - Ref: `mqtref.rzz(%theta) %q0, %q1 : f64, mqtref.Qubit, mqtref.Qubit`
+  - Value: `%q0_out, %q1_out = mqtopt.rzz(%theta) %q0_in, %q1_in : (f64, mqtopt.Qubit, mqtopt.Qubit) -> (mqtopt.Qubit, mqtopt.Qubit)`
+- Static Example: `%a1, %b1 = mqtopt.rzz(3.14159) %a0, %b0`
+- Dynamic Example: `%a1, %b1 = mqtopt.rzz(%theta) %a0, %b0`
+- Canonicalization: `rzz(0) → id`; `inv rzz(θ) → rzz(-θ)`.
+- Static Matrix Available: Yes if θ constant.
+
+### 6. Modifier Operations
+
+### 6.1 Overview
+
+Modifiers wrap unitaries, extending functionality or altering semantics.
+
+- Semantics-preserving (e.g., `ctrl`, `negctrl`): canonicalized order, flattened.
+- Transformative (e.g., `pow`, `inv`): applied last, may alter static matrix extraction.
+
+### 6.2 negctrl
+
+Purpose: Add negative controls.
+
+Operation Specification:
+
+- Purpose: Wrap a unitary adding negative (0-state) control qubits.
+- Signatures:
+  - Ref: `mqtref.negctrl %negControls { <unitary-body> }`
+  - Value: `%res_targets = mqtopt.negctrl %negControls { <yielded unitary> } -> <qubit types>`
+- Assembly: `negctrl <ctrl-list> { ... }`.
+- Builder Variants:
+  - `build(builder, loc, resultTypes, negControlOperands, bodyBuilderFn)` (value)
+  - Reference variant omits results.
+- Interface Notes: Aggregates controls into `getNumNegControls()`; targets delegated to child.
+- Canonicalization: Flatten nested, remove empty, reorder relative to other modifiers to canonical chain `negctrl → ctrl → pow → inv`.
+- Examples:
+  - Ref: `mqtref.negctrl %n0 { mqtref.h %t }`
+  - Value: `%t_out = mqtopt.negctrl %n0 { %t1 = mqtopt.rx(%theta) %t_in } -> mqtopt.Qubit`
+- Conversion: Region body value results threaded / dropped analogously to other wrappers.
+
+### 6.3 ctrl
+
+Operation Specification:
+
+- Purpose: Add positive (1-state) controls.
+- Signatures:
+  - Ref: `mqtref.ctrl %posControls { <unitary-body> }`
+  - Value: `%res_targets = mqtopt.ctrl %posControls { <yielded unitary> } -> <qubit types>`
+- Builder: Similar to `negctrl` with positive control list.
+- Interface: `getNumPosControls()` sums flattened list.
+- Canonicalization: Merge nested, remove empty, optionally distribute over `seq`, enforce order after `negctrl`.
+- Examples:
+  - Ref: `mqtref.ctrl %c { mqtref.rzz(%φ) %q0, %q1 }`
+  - Value: `%t_out = mqtopt.ctrl %c { %t1 = mqtopt.rz(%φ) %t_in } -> mqtopt.Qubit`
+- Conversion: As for `negctrl`.
+
+### 6.4 pow
+
+Operation Specification:
+
+- Purpose: Exponentiation of a unitary body.
+- Signatures:
+  - Ref: `mqtref.pow(expAttrOrOperand) { <unitary-body> }`
+  - Value: `%res_targets = mqtopt.pow(expAttrOrOperand) { <yielded unitary> } -> <qubit types>`
+- Assembly: `pow(<int|float|%val>) { ... }`.
+- Builder Variants: integer attribute exponent; float attribute; dynamic f64 operand.
+- Interface: `getPower()` returns rational/float wrapper; static detection when attribute.
+- Canonicalization: Negative -> `inv(pow(abs))`; combine nested powers; remove exponent 1; exponent 0 -> identity passthrough; reorder with other modifiers.
+- Examples:
+  - `%q2 = mqtopt.pow(2) { %q1 = mqtopt.rx(%theta) %q0 }`
+  - `%q2 = mqtopt.pow(%k) { %q1 = mqtopt.rz(%φ) %q0 }`
+- Conversion: Same region adaptation logic.
+
+### 6.5 inv
+
+Operation Specification:
+
+- Purpose: Adjoint of unitary body.
+- Signatures:
+  - Ref: `mqtref.inv { <unitary-body> }`
+  - Value: `%res_targets = mqtopt.inv { <yielded unitary> } -> <qubit types>`
+- Builder: Provide body builder lambda.
+- Interface: `isInverted()` true; nested inversion removed in canonicalization.
+- Canonicalization: Double inversion removal; self-adjoint detection; distribute over `pow` forms (placing `inv` innermost after ordering); axis negation for parameterized rotations.
+- Examples: `%t_out = mqtopt.inv { %t1 = mqtopt.u(%theta,%phi,%lambda) %t_in }`
+- Conversion: Same as other wrappers.
+
+### 6.6 Nested Example
+
+Original value form (non-canonical):
+
+```
+%out = mqtopt.inv { %a = mqtopt.ctrl %c { %b = mqtopt.negctrl %n { %g = mqtopt.rx(%theta) %in } } } -> mqtopt.Qubit
 ```
 
-4×4 example (identity on two qubits):
+Canonical extraction: negctrl(%n), ctrl(%c), inv.
+Reordered canonical:
 
-```mlir
-mqtref.unitary %q0, %q1 { matrix = dense<[
-  1.0+0.0i, 0.0+0.0i, 0.0+0.0i, 0.0+0.0i,
-  0.0+0.0i, 1.0+0.0i, 0.0+0.0i, 0.0+0.0i,
-  0.0+0.0i, 0.0+0.0i, 1.0+0.0i, 0.0+0.0i,
-  0.0+0.0i, 0.0+0.0i, 0.0+0.0i, 1.0+0.0i]> : tensor<16xcomplex<f64>> }
+```
+%out = mqtopt.negctrl %n {
+  %t1 = mqtopt.ctrl %c {
+    %t2 = mqtopt.inv { %t3 = mqtopt.rx(%theta) %in } -> mqtopt.Qubit
+  } -> mqtopt.Qubit
+} -> mqtopt.Qubit
 ```
 
-### 8.2 Gate Definitions (Symbolic / Composite)
+After folding `inv rx(%theta)` → `rx(-%theta)`:
 
-```mlir
-// Composite definition
-mqtref.gate_def @bell_prep %a : !mqtref.qubit, %b : !mqtref.qubit {
-  mqtref.h %a
-  mqtref.cx %a, %b
-}
-
-// Application
-mqtref.apply_gate @bell_prep %q0, %q1
+```
+%out = mqtopt.negctrl %n {
+  %t1 = mqtopt.ctrl %c { %t2 = mqtopt.rx(-%theta) %in } -> mqtopt.Qubit
+} -> mqtopt.Qubit
 ```
 
-### 8.3 Parameterized Definitions
+Reference nested example (explicit):
 
-```mlir
-// Parameters modeled as additional operands (value semantics for numeric params)
-mqtref.gate_def @custom_rotation(%q: !mqtref.qubit, %theta: f64, %phi: f64) {
-  mqtref.rz %q, %phi : f64
-  mqtref.ry %q, %theta : f64
-  mqtref.rz %q, %phi : f64
-}
-
-%theta = arith.constant 1.57 : f64
-%phi    = arith.constant 0.78 : f64
-mqtref.apply_gate @custom_rotation %q0, %theta, %phi : (!mqtref.qubit, f64, f64)
 ```
-
-Definitions themselves are control-neutral; wrapping ops add controls.
-
-### 8.4 Unitarity Validation
-
-A dedicated validation pass (Matrix Unitary Validation) verifies numerical unitarity within tolerance; strict mode (optional) can enforce tighter bounds.
-
----
-
-## 9. Parser Sugar & Builder APIs
-
-### 9.1 Parser Sugar Examples
-
-```mlir
-// Sugar → canonical expansion
-mqtref.cx %c, %t          // expands to: mqtref.ctrl %c { mqtref.x %t }
-mqtref.cz %c, %t          // expands to: mqtref.ctrl %c { mqtref.z %t }
-mqtref.ccx %c0, %c1, %t   // expands to: mqtref.ctrl %c0, %c1 { mqtref.x %t }
-```
-
-### 9.2 C++ Builder (Sketch)
-
-```cpp
-class QuantumCircuitBuilder {
-public:
-  QuantumCircuitBuilder &x(Value q);
-  QuantumCircuitBuilder &h(Value q);
-  QuantumCircuitBuilder &cx(Value c, Value t);
-  QuantumCircuitBuilder &ctrl(ValueRange controls, function_ref<void()> body);
-  QuantumCircuitBuilder &negctrl(ValueRange controls, function_ref<void()> body);
-  QuantumCircuitBuilder &pow(double exponent, function_ref<void()> body);
-  QuantumCircuitBuilder &inv(function_ref<void()> body);
-};
-
-builder.h(q0)
-       .ctrl({c0}, [&](){ builder.x(q1); })
-       .ctrl({c0, c1}, [&](){ builder.x(q2); });
-```
-
----
-
-## 10. Canonicalization & Transformation Stages
-
-### 10.1 Normalization (Early Canonical Form)
-
-Responsibilities (always first):
-
-- Enforce modifier order `ctrl` → `negctrl` → `pow` → `inv`.
-- Flatten nested same-kind control wrappers (aggregate control lists) while preserving neg/pos distinction.
-- Merge adjacent compatible `pow` / eliminate identities (`pow(exp=1)`, `inv(inv(X))`).
-- Algebraic simplifications (e.g., `pow(RZ(pi/2), 2) → RZ(pi)`).
-- Remove dead identity operations (e.g., `pow(exp=0)` → (implicit identity) if allowed by semantics).
-- Prepare IR for subsequent named gate passes.
-
-### 10.2 Named Simplification
-
-- Convert `U3/U2/U1` parameter sets to simplest named gate when within numeric tolerance.
-- Improves readability & hashing stability.
-
-### 10.3 Universal Expansion
-
-- Expand named single-qubit gates to canonical `U3` (backend / pipeline selectable).
-- Typically applied only in universal backends or downstream lowering flows.
-
-### 10.4 Matrix Validation
-
-- Verify matrix attribute size matches `2^(n)*2^(n)`.
-- Check numerical unitarity within tolerance (fast path for 2×2 & 4×4).
-
-### 10.5 (Deferred) Matrix Decomposition
-
-- Future: Decompose large / arbitrary matrix unitaries into basis gates (NOT in MVP).
-
-**No pass rewrites `negctrl` into positive controls.**
-
----
-
-## 11. Pass Inventory
-
-| Pass                        | Purpose                                                                              | Phase                    | Idempotent               | Mandatory                   | Notes                                 |
-| --------------------------- | ------------------------------------------------------------------------------------ | ------------------------ | ------------------------ | --------------------------- | ------------------------------------- |
-| NormalizationPass           | Enforce modifier order; merge & simplify; flatten controls; early algebraic cleanups | Canonicalization (first) | Yes                      | Yes                         | Integrated with canonicalize pipeline |
-| NamedSimplificationPass     | Replace `U3/U2/U1` with simplest named gate                                          | Simplification           | Yes (post-normalization) | Baseline (recommended)      | Tolerance-based                       |
-| UniversalExpansionPass      | Expand named gate → `U3`                                                             | Lowering / Backend Prep  | Yes                      | Optional                    | Backend / pipeline controlled         |
-| MatrixUnitaryValidationPass | Verify matrix size + unitarity                                                       | Verification / Early     | Yes                      | Yes (if matrix ops present) | Fast paths 2×2 & 4×4                  |
-
-### Deferred (Not MVP)
-
-- Matrix decomposition pass
-- Basis gate registry
-- Extended trait inference for composites & matrix ops
-- Advanced symbolic parameter algebra
-
----
-
-## 12. Dialect Conversions
-
-### 12.1 `mqtref` → `mqtopt`
-
-```cpp
-// Side-effect → value threading
-mqtref.x %q  →  %q_new = mqtopt.x %q : !mqtopt.qubit
-
-// Controlled example
-mqtref.ctrl %c { mqtref.x %t } →
-  %c_out, %t_out = mqtopt.ctrl %c, %t {
-    %t_new = mqtopt.x %t : !mqtopt.qubit
-    mqtopt.yield %t_new : !mqtopt.qubit
-  } : (!mqtopt.qubit, !mqtopt.qubit) -> (!mqtopt.qubit, !mqtopt.qubit)
-```
-
-### 12.2 `mqtopt` → `mqtref`
-
-```cpp
-%q_out = mqtopt.x %q_in : !mqtopt.qubit  →  mqtref.x %q_in
-// Drop result, preserve ordering & effects
-```
-
-**Challenges:** Ensuring correct dominance & preserving semantic ordering during un-nesting / region translation.
-
----
-
-## 13. Testing Strategy
-
-Priority shift: structural & semantic equivalence via builders (googletest) > textual pattern checks.
-
-### 13.1 Structural / Semantic Tests (Primary)
-
-- Use IR builders to construct original & expected forms, run normalization + optional passes, then compare via:
-  - Shape / op sequence equivalence (ignoring SSA names).
-  - Control & target counts via `UnitaryOpInterface`.
-  - Optional unitary matrix equivalence (numerical tolerance) for small ops.
-- Idempotence: Run NormalizationPass twice; assert no further changes.
-
-### 13.2 Parser / Printer Smoke (Minimal Textual Tests)
-
-- Round-trip for: base gates, each modifier, nested modifier chain, matrix unitary, composite definition, sequence.
-- FileCheck limited to presence/absence of key ops (avoid brittle SSA checks).
-
-Example smoke test snippet:
-
-```mlir
-// CHECK-LABEL: func @nested_mods
-func.func @nested_mods(%c: !mqtref.qubit, %n: !mqtref.qubit, %t: !mqtref.qubit) {
+mqtref.negctrl %n {
   mqtref.ctrl %c {
-    mqtref.negctrl %n {
-      mqtref.pow {exponent = 2.0 : f64} {
-        mqtref.inv { mqtref.x %t }
-      }
-    }
+    mqtref.inv { mqtref.rx(%theta) %q }
   }
-  return
 }
 ```
 
-### 13.3 Utility Helpers (C++)
+After folding: `mqtref.negctrl %n { mqtref.ctrl %c { mqtref.rx(-%theta) %q } }`
 
-- `assertEquivalent(Op a, Op b, EquivalenceOptions opts)`
-- `buildNestedModifiers(builder, patternSpec)`
-- Matrix validation harness (inject near-unitary perturbations and assert failures).
+## 7. Sequence Operation (`seq`)
 
-### 13.4 Negative Tests
+Purpose: Ordered composition of unitary operations over region block arguments.
 
-- Malformed matrix size
-- Non-unitary matrix beyond tolerance
-- Disallowed modifier order (e.g., `inv` wrapping `ctrl` directly → should be reordered by normalization)
+Operation Specification:
 
-### 13.5 Coverage Summary
+- Purpose: Represent composite product U = U_n … U_2 U_1 in region order.
+- Signatures:
+  - Ref: `mqtref.seq (%args: mqtref.Qubit, ...) { <unitary-ops> mqtref.seq.yield }`
+  - Value: `%results = mqtopt.seq (%args: mqtopt.Qubit, ...) -> (mqtopt.Qubit, ...) { <ops> mqtopt.seq.yield %newArgs }`
+- Assembly: `seq (arg_list) -> (result_types)? { ... }`
+- Builders: Provide argument list + body builder capturing yields; value builder generates result types from argument types.
+- Interface: Targets = block argument count; parameters aggregated from children (none directly); `hasStaticUnitary()` if all child ops static and compose cost acceptable.
+- Canonicalization: Flatten nested, remove empty, inline single op, distribute controls from wrappers if beneficial, inversion reversal & child inversion patterns.
+- Examples:
 
-All ops (base, modifiers, sequences, unitary/matrix, composite definitions) must have:
-
-- Builder creation tests
-- Normalization idempotence tests
-- Interface query sanity tests
-
----
-
-## 14. Analysis & Optimization Infrastructure
-
-### 14.1 `UnitaryMatrix` Utility (Sketch)
-
-```cpp
-class UnitaryMatrix {
-  // Variant representations: small fixed (2x2, 4x4), symbolic, lazy product
-public:
-  UnitaryMatrix compose(const UnitaryMatrix &rhs) const;
-  UnitaryMatrix adjoint() const;
-  UnitaryMatrix power(double exponent) const;
-  UnitaryMatrix control(unsigned numPos, unsigned numNeg) const;
-  DenseElementsAttr toDenseElements(MLIRContext* ctx) const;
-  bool isIdentity() const;
-  bool isUnitary(double tol = 1e-10) const;
-};
+```
+%q0_out, %q1_out = mqtopt.seq (%q0_in: mqtopt.Qubit, %q1_in: mqtopt.Qubit)
+  -> (mqtopt.Qubit, mqtopt.Qubit) {
+  %a0 = mqtopt.h %q0_in
+  %b0, %b1 = mqtopt.rzz(%θ) %a0, %q1_in
+  %c0 = mqtopt.rz(%φ) %b0
+  mqtopt.seq.yield %c0, %b1
+}
 ```
 
-Fast paths for 2×2 & 4×4 feed both transformation heuristics and validation.
+- Conversion: Reference ↔ value via region argument threading and yields.
 
----
+## 8. User Defined Gates & Matrix / Composite Definitions
 
-## 15. Canonical Identities & Algebraic Rules (Non-Exhaustive)
+### 8.1 Matrix Gate Definitions
 
-Guaranteed (within normalization) where semantics preserved:
+Define symbol with matrix attribute (dimension 2^n × 2^n):
 
-- `inv(inv(X)) → X`
-- `pow(X, 1) → X`
-- `pow(X, 0) → identity` (subject to representation policy; may drop operation)
-- `pow(inv(X), k) ↔ inv(pow(X, k))` (normalized placement enforces `pow` outside `inv` → `pow(inv(X), k)` canonicalizes to `pow` wrapping `inv` only if order rule maintained)
-- Consecutive `pow` merges: `pow(pow(X, a), b) → pow(X, a*b)`
-- Control aggregation: nested `ctrl` of `ctrl` flattens; same for nested `negctrl`; mixed pos/neg preserve order lists separately.
+```
+mqt.gatedef.matrix @myPhase(%lambda: f64) targets(1)
+  attr_matrix = #mqt.matrix<2x2>( ... symbolic in %lambda ... )
+```
 
-No rule rewrites `negctrl` into a positive control sandwich.
+Matrix may embed symbolic expressions referencing parameters (internal representation detail).
 
----
+### 8.2 Composite Gate Definitions
 
-## 16. Conclusion
+Sequence-based body yields outputs (value semantics):
 
-The revamp solidifies a compositional, analyzable, and canonical quantum IR:
+```
+mqt.gatedef.composite @entang(%theta: f64)
+  ( %a: mqtopt.Qubit, %b: mqtopt.Qubit ) -> (mqtopt.Qubit, mqtopt.Qubit) {
+  %a1 = mqtopt.h %a
+  %a2, %b1 = mqtopt.rzz(%theta) %a1, %b
+  mqtopt.seq.yield %a2, %b1
+}
+```
 
-- Modifier wrappers with a fixed canonical order including explicit negative controls.
-- Early, mandatory normalization ensuring deterministic structure for all downstream passes.
-- Rich named gate ecosystem retained alongside matrix-based unitaries (with validation) in the MVP.
-- Bidirectional single-qubit canonicalization allows readability and backend flexibility.
-- Testing focus shifts to robust builder-based structural equivalence; textual tests minimized.
+Reference semantics variant has same region arguments but no gate results.
 
-This plan supersedes earlier notions that matrix gates or negative controls might be deferred or normalized away. The resulting infrastructure provides a stable foundation for future extensions (matrix decomposition, basis registries, advanced trait inference) without compromising current clarity or performance.
+### 8.3 Unified Apply Operation
 
-No open questions remain for the MVP scope defined here.
+Value:
+
+```
+%a_out, %b_out = mqtopt.apply @entang(%theta) %a_in, %b_in
+%q1 = mqtopt.apply @myPhase(%lambda) %q0
+```
+
+Reference:
+
+```
+mqtref.apply @entang(%theta) %a, %b
+mqtref.apply @myPhase(3.14159) %q
+```
+
+Operation Specification:
+
+- Purpose: Apply user-defined matrix or composite gate symbol.
+- Signatures:
+  - Ref: `mqtref.apply @symbol(param_list?) %targets`
+  - Value: `%results = mqtopt.apply @symbol(param_list?) %inputs`
+- Assembly: `apply @name(<params?>) <targets>`
+- Builder Variants:
+  - For matrix gate: auto infer target count from definition.
+  - For composite: verify arity against definition region signature.
+  - Parameter list builder with static attribute injection.
+- Interface Notes:
+  - `getNumTargets()` from definition signature.
+  - Parameters enumerated exactly as in definition.
+  - `hasStaticUnitary()` true for matrix gate; composite conditional.
+- Canonicalization: Identity matrix removal; trivial single-op composite inlining; repeated static collapses per algebraic rules.
+- Examples:
+  - Static parameter: `%q1 = mqtopt.apply @myPhase(3.14159) %q0`
+  - Dynamic parameter: `%q1 = mqtopt.apply @myPhase(%lambda) %q0`
+- Conversion: Reference ↔ value semantics by adding/removing results and adjusting uses.
+
+## 9. Parser & Builder Sugar
+
+### 9.1 Sugar Expansions
+
+- `cx %c, %t` → `mqtopt.ctrl %c { %t_out = mqtopt.x %t }` (value)
+- `cz %c, %t` → `ctrl %c { z %t }`
+- `ccx %c0, %c1, %t` → `ctrl %c0, %c1 { x %t }`
+  Parser lowers sugar to canonical IR; printer may re-sugar canonical forms that match patterns.
+
+### 9.2 Fluent Builder API (Conceptual)
+
+Examples:
+
+```
+withControls({c1,c2}).gate("x").on(t)
+withNegControls({n}).gate("rz").param(phi).on(t)
+withPow(3).gate("h").on(q)
+withInv().gate("u").params(a,b,c).on(q)
+sequence({}) RAII style for `seq`
+defineMatrixGate("myPhase").params({lambda}).targets(1).matrix(attr)
+defineCompositeGate("entang").params({theta}).targets(2).body([]{...})
+apply("entang").params(theta).on(q0,q1)
+```
+
+Chaining order auto-normalized to canonical modifier order.
+
+## 10. Testing Strategy
+
+- Structural: verify canonical modifier order and flattening.
+- Matrix correctness: `U†U = I` for static extractions.
+- Interface conformance: each op's counts (targets, controls, params) correct; mapping output→input identity for pure unitaries.
+- Canonicalization idempotence: run pass twice, IR stable.
+- Sugar round-trip: parse sugar → canonical → print (optionally sugar) with equivalence.
+- Folding tests: `rx(0)`, `pow(1){}`, `pow(0){}`, `inv(inv(U))`.
+- Negative exponent normalization tests.
+- Sequence inversion correctness via static matrix comparison for small systems.
+- Apply inlining & identity elimination tests.
+- Negative tests: arity mismatch, invalid matrix dimension, non-unitary matrix, duplicate symbol definition, parameter count mismatch.
+
+## 11. Integrated Canonicalization Rules Summary
+
+(Definitions live inline above; this section aggregates references.)
+
+- Base Gates: parameter folds, identity elimination, specialization to named gates.
+- `negctrl`: flatten & remove empty.
+- `ctrl`: flatten, remove empty, distribute over `seq` when beneficial.
+- `pow`: normalize negatives, remove trivial exponents, combine nested powers.
+- `inv`: double-inversion removal, specialize to inverses/self-adjoint forms.
+- Modifier Ordering: reorder to `negctrl → ctrl → pow → inv`.
+- `seq`: flatten, remove empty, inline single-op.
+- `apply`: inline trivial composite, fold identities, merge repeated static applies.
+- Sugar: lower to canonical, optional re-sugar on print.
+
+## 12. Conclusions and Future Work
+
+Resolved:
+
+- Unified `UnitaryExpr` abstraction with full modifier and composition support.
+- Static + dynamic parameter integration and robust interface methods.
+- Canonical nested modifier ordering and explicit rewrite rules.
+- User-defined gates (matrix & composite) plus unified `apply` op.
+- Dual semantics (`mqtref`, `mqtopt`) standardized.
+
+Future Work (concise):
+
+- Basis decomposition (e.g., KAK, ZX-assisted) using `UnitaryExpr` graphs.
+- Shared control extraction & factoring.
+- Symbolic algebra simplifications (parameter expression normalization).
+- Hardware mapping leveraging `static_qubit` references.
