@@ -164,54 +164,56 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
   }
   // then write all regular sites
   std::vector<std::tuple<size_t, int64_t, int64_t>> sites;
-  forEachRegularSites(device.traps, [&sites, &os,
-                                     &device](const uint64_t id,
-                                              const int64_t x, const int64_t y,
-                                              const uint64_t moduleId,
-                                              const uint64_t subModuleId) {
-    sites.emplace_back(id, x, y);
-    os << ";\\\n  "
-          "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueSite("
-       << id << "U, " << moduleId << "U, " << subModuleId << "U, " << x << ", "
-       << y << "))";
-    for (const auto& operation : device.localSingleQubitOperations) {
-      if (x >= operation.region.origin.x &&
-          x <= operation.region.origin.x +
-                   static_cast<int64_t>(operation.region.size.width) &&
-          y >= operation.region.origin.y &&
-          y <= operation.region.origin.y +
-                   static_cast<int64_t>(operation.region.size.height)) {
-        os << ";\\\n  localOp" << operation.name
-           << "Sites.emplace_back(var.back().get())";
-      }
-    }
-    // this generator (same as the device implementation) only supports
-    // two-qubit local operations
-    for (const auto& operation : device.localMultiQubitOperations) {
-      if (operation.region.origin.x <= x &&
-          x <= operation.region.origin.x +
-                   static_cast<int64_t>(operation.region.size.width) &&
-          operation.region.origin.y <= y &&
-          y <= operation.region.origin.y +
-                   static_cast<int64_t>(operation.region.size.height)) {
-        for (const auto& [i2, x2, y2] :
-             sites | std::views::take(sites.size() - 1)) {
-          if (operation.region.origin.x <= x2 &&
-              x2 <= operation.region.origin.x +
-                        static_cast<int64_t>(operation.region.size.width) &&
-              operation.region.origin.y <= y2 &&
-              y2 <= operation.region.origin.y +
-                        static_cast<int64_t>(operation.region.size.height) &&
-              std::hypot(x2 - x, y2 - y) <=
-                  static_cast<double>(operation.interactionRadius)) {
+  forEachRegularSites(
+      device.traps,
+      [&sites, &os, &device](const uint64_t id, const int64_t x,
+                             const int64_t y, const uint64_t moduleId,
+                             const uint64_t subModuleId) {
+        sites.emplace_back(id, x, y);
+        os << ";\\\n  "
+              "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueSite("
+           << id << "U, " << moduleId << "U, " << subModuleId << "U, " << x
+           << ", " << y << "))";
+        for (const auto& operation : device.localSingleQubitOperations) {
+          if (x >= operation.region.origin.x &&
+              x <= operation.region.origin.x +
+                       static_cast<int64_t>(operation.region.size.width) &&
+              y >= operation.region.origin.y &&
+              y <= operation.region.origin.y +
+                       static_cast<int64_t>(operation.region.size.height)) {
             os << ";\\\n  localOp" << operation.name
-               << "Sites.emplace_back(var.at(" << i2
-               << ").get(), var.back().get())";
+               << "Sites.emplace_back(var.back().get())";
           }
         }
-      }
-    }
-  });
+        // this generator (same as the device implementation) only supports
+        // two-qubit local operations
+        for (const auto& operation : device.localMultiQubitOperations) {
+          if (operation.region.origin.x <= x &&
+              x <= operation.region.origin.x +
+                       static_cast<int64_t>(operation.region.size.width) &&
+              operation.region.origin.y <= y &&
+              y <= operation.region.origin.y +
+                       static_cast<int64_t>(operation.region.size.height)) {
+            for (const auto& [i2, x2, y2] :
+                 sites | std::views::take(sites.size() - 1)) {
+              if (operation.region.origin.x <= x2 &&
+                  x2 <= operation.region.origin.x +
+                            static_cast<int64_t>(operation.region.size.width) &&
+                  operation.region.origin.y <= y2 &&
+                  y2 <=
+                      operation.region.origin.y +
+                          static_cast<int64_t>(operation.region.size.height) &&
+                  std::hypot(x2 - x, y2 - y) <=
+                      static_cast<double>(operation.interactionRadius)) {
+                os << ";\\\n  localOp" << operation.name
+                   << "Sites.emplace_back(var.at(" << i2
+                   << ").get(), var.back().get())";
+              }
+            }
+          }
+        }
+      },
+      count);
   os << "\n";
 }
 
