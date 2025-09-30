@@ -47,11 +47,11 @@ public:
     addConversion([](const Type type) { return type; });
 
     // Convert source QuregType to target MemRefType<QubitType>
-    // Since QuregType doesn't encode size info, we use dynamic memref
-    // The actual size is determined during the conversion of quantum.alloc
+    // We can't know the size here, so we use a placeholder that will be
+    // replaced by the actual static memref during pattern conversion
     addConversion([ctx](catalyst::quantum::QuregType /*type*/) -> Type {
       auto qubitType = opt::QubitType::get(ctx);
-      // Use dynamic memref size for quantum registers
+      // Use dynamic as placeholder - actual patterns will create static memrefs
       return MemRefType::get({ShapedType::kDynamic}, qubitType);
     });
 
@@ -77,20 +77,17 @@ struct ConvertQuantumAlloc final
 
     auto nqubits = nqubitsAttr.getValue().getZExtValue();
 
-    // Create the static memref type that we actually want
+    // Create the static memref type directly
     auto qubitType = opt::QubitType::get(rewriter.getContext());
     auto staticMemrefType =
         MemRefType::get({static_cast<int64_t>(nqubits)}, qubitType);
 
     // Create the allocation with the static size
-    auto allocOp = rewriter.create<memref::AllocOp>(op.getLoc(), staticMemrefType);
-    
-    // Cast to the dynamic memref type expected by the type converter
-    auto dynamicMemrefType = MemRefType::get({ShapedType::kDynamic}, qubitType);
-    auto castOp = rewriter.create<memref::CastOp>(op.getLoc(), dynamicMemrefType, allocOp);
-    
-    // Replace the original operation with the cast result
-    rewriter.replaceOp(op, castOp.getResult());
+    auto allocOp =
+        rewriter.create<memref::AllocOp>(op.getLoc(), staticMemrefType);
+
+    // Replace the original operation with the alloc result directly
+    rewriter.replaceOp(op, allocOp.getResult());
     return success();
   }
 };
@@ -149,18 +146,12 @@ struct ConvertQuantumExtract final
     auto indexConstant =
         rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
 
-    // Get the dynamic memref from adaptor
-    auto dynamicMemref = adaptor.getQreg();
-    
-    // Find the static memref by tracing back through the cast operation
-    Value staticMemref = dynamicMemref;
-    if (auto castOp = dynamicMemref.getDefiningOp<memref::CastOp>()) {
-      staticMemref = castOp.getSource();
-    }
+    // Get the memref from adaptor - should be static now
+    auto memref = adaptor.getQreg();
 
-    // Create the new operation using the static memref for better type info
+    // Create the new operation directly
     auto loadOp = rewriter.create<memref::LoadOp>(
-        op.getLoc(), qubitType, staticMemref, ValueRange{indexConstant});
+        op.getLoc(), qubitType, memref, ValueRange{indexConstant});
 
     // quantum.extract only returns the extracted qubit, not a modified register
     rewriter.replaceOp(op, loadOp.getResult());
@@ -187,18 +178,11 @@ struct ConvertQuantumInsert final
     auto indexConstant =
         rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
 
-    // Get the dynamic memref from adaptor
-    auto dynamicMemref = adaptor.getInQreg();
-    
-    // Find the static memref by tracing back through the cast operation
-    Value staticMemref = dynamicMemref;
-    if (auto castOp = dynamicMemref.getDefiningOp<memref::CastOp>()) {
-      staticMemref = castOp.getSource();
-    }
+    // Get the memref from adaptor - should be static now
+    auto memref = adaptor.getInQreg();
 
-    // Create the new operation using the static memref for better type info
-    rewriter.create<memref::StoreOp>(op.getLoc(), adaptor.getQubit(),
-                                     staticMemref,
+    // Create the new operation directly
+    rewriter.create<memref::StoreOp>(op.getLoc(), adaptor.getQubit(), memref,
                                      ValueRange{indexConstant});
 
     // In the memref model, the quantum register is modified in-place,
@@ -306,7 +290,7 @@ struct ConvertQuantumCustomOp final
       mqtoptOp = CREATE_GATE_OP(SX);
     } else if (gateName == "ECR") {
       mqtoptOp = CREATE_GATE_OP(ECR);
-    } else if (gateName == "SWAP" || gateName == "CSWAP") {
+    } else if (gateName == "SWAP") {
       mqtoptOp = CREATE_GATE_OP(SWAP);
     } else if (gateName == "ISWAP") {
       if (op.getAdjoint()) {
@@ -365,6 +349,16 @@ struct ConvertQuantumCustomOp final
           ValueRange(inNegCtrlQubitsVec).getTypes(), staticParams, paramsMask,
           finalParamValues, inQubits[2], inPosCtrlQubitsVec,
           inNegCtrlQubitsVec);
+    } else if (gateName == "CSWAP") {
+      // CSWAP gate: 1 control qubit + 2 target qubits
+      // inQubits[0] is control, inQubits[1] and inQubits[2] are targets
+      inPosCtrlQubitsVec.emplace_back(inQubits[0]);
+      mqtoptOp = rewriter.create<opt::SWAPOp>(
+          op.getLoc(), ValueRange{inQubits[1], inQubits[2]},
+          ValueRange(inPosCtrlQubitsVec).getTypes(),
+          ValueRange(inNegCtrlQubitsVec).getTypes(), staticParams, paramsMask,
+          finalParamValues, ValueRange{inQubits[1], inQubits[2]},
+          inPosCtrlQubitsVec, inNegCtrlQubitsVec);
     } else {
       llvm::errs() << "Unsupported gate: " << gateName << "\n";
       return failure();

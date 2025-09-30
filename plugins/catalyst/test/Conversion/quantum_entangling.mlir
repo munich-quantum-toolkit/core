@@ -22,26 +22,35 @@ module {
   // CHECK-LABEL: func.func @testCatalystQuantumToMQTOptSwapAndISwap
   func.func @testCatalystQuantumToMQTOptSwapAndISwap() {
     // --- Allocation & extraction ---------------------------------------------------------------
-    // CHECK: %[[QREG:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 3 : i64}> : () -> !mqtopt.QubitRegister
-    // CHECK: %[[QR1:.*]], %[[Q0:.*]] = "mqtopt.extractQubit"(%[[QREG]]) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    // CHECK: %[[QR2:.*]], %[[Q1:.*]] = "mqtopt.extractQubit"(%[[QR1]]) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    // CHECK: %[[QR3:.*]], %[[Q2:.*]] = "mqtopt.extractQubit"(%[[QR2]]) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // CHECK: %[[QREG:.*]] = memref.alloc() : memref<3x!mqtopt.Qubit>
+    // CHECK: %[[CAST:.*]] = memref.cast %[[QREG]] : memref<3x!mqtopt.Qubit> to memref<?x!mqtopt.Qubit>
+    // CHECK: %[[I0:.*]] = arith.constant 0 : index
+    // CHECK: %[[Q0:.*]] = memref.load %[[QREG]][%[[I0]]] : memref<3x!mqtopt.Qubit>
+    // CHECK: %[[I1:.*]] = arith.constant 1 : index
+    // CHECK: %[[Q1:.*]] = memref.load %[[QREG]][%[[I1]]] : memref<3x!mqtopt.Qubit>
+    // CHECK: %[[I2:.*]] = arith.constant 2 : index
+    // CHECK: %[[Q2:.*]] = memref.load %[[QREG]][%[[I2]]] : memref<3x!mqtopt.Qubit>
 
     // --- Uncontrolled -------------------------------------------------------------------------
     // CHECK: %[[SW:.*]]:2 = mqtopt.swap(static [] mask []) %[[Q0]], %[[Q1]] : !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK: %[[IS:.*]]:2 = mqtopt.iswap(static [] mask []) %[[SW]]#0, %[[SW]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK: %[[ISD:.*]]:2 = mqtopt.iswapdg(static [] mask []) %[[IS]]#0, %[[IS]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[ECR:.*]]:2 = mqtopt.ecr(static [] mask []) %[[Q0]], %[[Q1]] : !mqtopt.Qubit, !mqtopt.Qubit
 
     // --- Controlled ----------------------------------------------------------------------------
-    // CHECK: %[[CSW_T:.*]]:2, %[[CSW_C:.*]] = mqtopt.swap(static [] mask []) %[[ISD]]#0, %[[ISD]]#1 ctrl %[[Q2]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[CSW_T:.*]]:2, %[[CSW_C:.*]] = mqtopt.swap(static [] mask []) %[[ECR]]#0, %[[ECR]]#1 ctrl %[[Q2]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[CISW_T:.*]]:2, %[[CISW_C:.*]] = mqtopt.iswap(static [] mask []) %[[CSW_T]]#0, %[[CSW_T]]#1 ctrl %[[CSW_C]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[CISWD_T:.*]]:2, %[[CISWD_C:.*]] = mqtopt.iswapdg(static [] mask []) %[[CISW_T]]#0, %[[CISW_T]]#1 ctrl %[[CISW_C]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[CECR_T:.*]]:2, %[[CECR_C:.*]] = mqtopt.ecr(static [] mask []) %[[CISWD_T]]#0, %[[CISWD_T]]#1 ctrl %[[CISWD_C]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
 
     // --- Reinsertion ---------------------------------------------------------------------------
-    // CHECK: %[[R1:.*]] = "mqtopt.insertQubit"(%[[QR3]], %[[CISWD_T]]#0) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    // CHECK: %[[R2:.*]] = "mqtopt.insertQubit"(%[[R1]], %[[CISWD_T]]#1) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    // CHECK: %[[R3:.*]] = "mqtopt.insertQubit"(%[[R2]], %[[CISWD_C]]) <{index_attr = 2 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    // CHECK: "mqtopt.deallocQubitRegister"(%[[R3]]) : (!mqtopt.QubitRegister) -> ()
+    // CHECK: %[[I0_FINAL:.*]] = arith.constant 0 : index
+    // CHECK: memref.store %[[CECR_T]]#0, %[[QREG]][%[[I0_FINAL]]] : memref<3x!mqtopt.Qubit>
+    // CHECK: %[[I1_FINAL:.*]] = arith.constant 1 : index
+    // CHECK: memref.store %[[CECR_T]]#1, %[[QREG]][%[[I1_FINAL]]] : memref<3x!mqtopt.Qubit>
+    // CHECK: %[[I2_FINAL:.*]] = arith.constant 2 : index
+    // CHECK: memref.store %[[CECR_C]], %[[QREG]][%[[I2_FINAL]]] : memref<3x!mqtopt.Qubit>
+    // CHECK: memref.dealloc %[[CAST]] : memref<?x!mqtopt.Qubit>
 
     // Prepare qubits
     %qreg = quantum.alloc( 3) : !quantum.reg
@@ -53,17 +62,19 @@ module {
     %q0_sw, %q1_sw = quantum.custom "SWAP"() %q0, %q1 : !quantum.bit, !quantum.bit
     %q0_is, %q1_is = quantum.custom "ISWAP"() %q0_sw, %q1_sw : !quantum.bit, !quantum.bit
     %q0_isd, %q1_isd = quantum.custom "ISWAP"() %q0_is, %q1_is adj : !quantum.bit, !quantum.bit
+    %q0_ecr, %q1_ecr = quantum.custom "ECR"() %q0, %q1 : !quantum.bit, !quantum.bit
 
     // Controlled permutation gates
     %true = arith.constant true
-    %q0_csw, %q1_csw, %q2_csw = quantum.custom "SWAP"() %q0_isd, %q1_isd ctrls(%q2) ctrlvals(%true) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+    %q0_csw, %q1_csw, %q2_csw = quantum.custom "SWAP"() %q0_ecr, %q1_ecr ctrls(%q2) ctrlvals(%true) : !quantum.bit, !quantum.bit ctrls !quantum.bit
     %q0_cis, %q1_cis, %q2_cis = quantum.custom "ISWAP"() %q0_csw, %q1_csw ctrls(%q2_csw) ctrlvals(%true) : !quantum.bit, !quantum.bit ctrls !quantum.bit
     %q0_cisd, %q1_cisd, %q2_cisd = quantum.custom "ISWAP"() %q0_cis, %q1_cis adj ctrls(%q2_cis) ctrlvals(%true) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+    %q0_cecr, %q1_cecr, %q2_cecr = quantum.custom "ECR"() %q0_cisd, %q1_cisd ctrls(%q2_cisd) ctrlvals(%true) : !quantum.bit, !quantum.bit ctrls !quantum.bit
 
     // Release qubits
-    %qreg1 = quantum.insert %qreg[ 0], %q0_cisd : !quantum.reg, !quantum.bit
-    %qreg2 = quantum.insert %qreg1[ 1], %q1_cisd : !quantum.reg, !quantum.bit
-    %qreg3 = quantum.insert %qreg2[ 2], %q2_cisd : !quantum.reg, !quantum.bit
+    %qreg1 = quantum.insert %qreg[ 0], %q0_cecr : !quantum.reg, !quantum.bit
+    %qreg2 = quantum.insert %qreg1[ 1], %q1_cecr : !quantum.reg, !quantum.bit
+    %qreg3 = quantum.insert %qreg2[ 2], %q2_cecr : !quantum.reg, !quantum.bit
     quantum.dealloc %qreg3 : !quantum.reg
     return
   }

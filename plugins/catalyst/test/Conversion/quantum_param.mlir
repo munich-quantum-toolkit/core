@@ -23,9 +23,12 @@ module {
   func.func @testCatalystQuantumToMQTOptParameterized() {
     // --- Constants & Allocation & extraction ---------------------------------------------------
     // CHECK: %cst = arith.constant 3.000000e-01 : f64
-    // CHECK: %[[QREG:.*]] = "mqtopt.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtopt.QubitRegister
-    // CHECK: %[[QR1:.*]], %[[Q0:.*]] = "mqtopt.extractQubit"(%[[QREG]]) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
-    // CHECK: %[[QR2:.*]], %[[Q1:.*]] = "mqtopt.extractQubit"(%[[QR1]]) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister) -> (!mqtopt.QubitRegister, !mqtopt.Qubit)
+    // CHECK: %[[QREG:.*]] = memref.alloc() : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[CAST:.*]] = memref.cast %[[QREG]] : memref<2x!mqtopt.Qubit> to memref<?x!mqtopt.Qubit>
+    // CHECK: %[[C0:.*]] = arith.constant 0 : index
+    // CHECK: %[[Q0:.*]] = memref.load %[[QREG]][%[[C0]]] : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[C1:.*]] = arith.constant 1 : index
+    // CHECK: %[[Q1:.*]] = memref.load %[[QREG]][%[[C1]]] : memref<2x!mqtopt.Qubit>
 
     // --- Uncontrolled -------------------------------------------------------------------------
     // CHECK: %[[RX:.*]] = mqtopt.rx(%cst static [] mask [false]) %[[Q0]] : !mqtopt.Qubit
@@ -38,9 +41,11 @@ module {
     // CHECK: %[[CRY_T:.*]], %[[CRY_C:.*]] = mqtopt.ry(%cst static [] mask [false]) %[[CRX_T]] ctrl %[[CRX_C]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
     // --- Reinsertion ---------------------------------------------------------------------------
-    // CHECK: %[[R1:.*]] = "mqtopt.insertQubit"(%[[QR2]], %[[CRY_T]]) <{index_attr = 0 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    // CHECK: %[[R2:.*]] = "mqtopt.insertQubit"(%[[R1]], %[[CRY_C]]) <{index_attr = 1 : i64}> : (!mqtopt.QubitRegister, !mqtopt.Qubit) -> !mqtopt.QubitRegister
-    // CHECK: "mqtopt.deallocQubitRegister"(%[[R2]]) : (!mqtopt.QubitRegister) -> ()
+    // CHECK: %[[C0_FINAL:.*]] = arith.constant 0 : index
+    // CHECK: memref.store %[[CRY_T]], %[[QREG]][%[[C0_FINAL]]] : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[C1_FINAL:.*]] = arith.constant 1 : index
+    // CHECK: memref.store %[[CRY_C]], %[[QREG]][%[[C1_FINAL]]] : memref<2x!mqtopt.Qubit>
+    // CHECK: memref.dealloc %[[CAST]] : memref<?x!mqtopt.Qubit>
 
     // Prepare qubits
     %angle = arith.constant 3.000000e-01 : f64
