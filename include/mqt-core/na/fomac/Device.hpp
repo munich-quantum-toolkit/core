@@ -20,7 +20,6 @@
 #include <vector>
 
 namespace na {
-
 /**
  * @brief Class representing the FoMaC library with neutral atom extensions.
  * @see fomac::FoMaC
@@ -106,20 +105,6 @@ public:
       return traps;
     }
 
-    template <typename T> class GenericCompatibilityResult : std::optional<T> {
-    public:
-      GenericCompatibilityResult() = default;
-      explicit GenericCompatibilityResult(T&& t)
-          : std::optional<T>(std::move(t)) {}
-      operator bool() const { return this->has_value(); }
-      [[nodiscard]] auto createDevice() const -> T { return this->value(); }
-    };
-    using CompatibilityResult = GenericCompatibilityResult<Device>;
-
-  private:
-    static const CompatibilityResult INCOMPATIBLE;
-
-  public:
     /**
      * @brief Checks if this class can be instantiated with the given device.
      * @param device The device to check.
@@ -127,30 +112,30 @@ public:
      * std::nullopt otherwise.
      */
     [[nodiscard]] static auto
-    checkCompatiblility(const fomac::FoMaC::Device& device)
-        -> CompatibilityResult {
+    tryCreateFromDevice(const fomac::FoMaC::Device& device)
+        -> std::optional<Device> {
       Device d(device);
       if (!d.initMinAtomDistanceFromDevice()) {
-        return INCOMPATIBLE;
+        return std::nullopt;
       }
       if (!d.initLengthUnitFromDevice()) {
-        return INCOMPATIBLE;
+        return std::nullopt;
       }
       if (!d.initDurationUnitFromDevice()) {
-        return INCOMPATIBLE;
+        return std::nullopt;
       }
       if (!d.initDecoherenceTimesFromDevice()) {
-        return INCOMPATIBLE;
+        return std::nullopt;
       }
       if (!d.initTrapsfromDevice()) {
-        return INCOMPATIBLE;
+        return std::nullopt;
       }
       if (!d.initOperationsFromDevice()) {
-        return INCOMPATIBLE;
+        return std::nullopt;
       }
       d.initNameFromDevice();
       d.initQubitsNumFromDevice();
-      return CompatibilityResult{std::move(d)};
+      return std::make_optional(d);
     }
 
     // The following is the result of

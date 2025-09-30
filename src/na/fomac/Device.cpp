@@ -508,9 +508,9 @@ auto FoMaC::getDevices() -> std::vector<Device> {
   std::vector<Device> devices;
   std::ranges::copy(
       fomac::FoMaC::getDevices() | std::views::transform([](const auto& d) {
-        return Device::checkCompatiblility(d);
-      }) | std::views::filter([](const auto& r) -> bool { return r; }) |
-          std::views::transform([](const auto& r) { return r.createDevice(); }),
+        return Device::tryCreateFromDevice(d);
+      }) | std::views::filter([](const auto& r) { return r.has_value(); }) |
+          std::views::transform([](const auto& r) { return r.value(); }),
       std::back_inserter(devices));
   return devices;
 }
