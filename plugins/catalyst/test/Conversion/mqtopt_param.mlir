@@ -9,25 +9,26 @@
 // RUN: catalyst --tool=opt \
 // RUN:   --load-pass-plugin=%mqt_plugin_path% \
 // RUN:   --load-dialect-plugin=%mqt_plugin_path% \
-// RUN:   --debug \
 // RUN:   --catalyst-pipeline="builtin.module(mqtopt-to-catalystquantum)" \
 // RUN:   %s | FileCheck %s
 
 
 // ============================================================================
-// Parameterized gates RX/RY/RZ, PhaseShift, GlobalPhase and controlled variants
-// Groups: Constants / Allocation & extraction / Uncontrolled / Controlled / Reinsertion
+// Parameterized gates RX/RY/RZ, PhaseShift and controlled variants
+// Groups: Allocation & extraction / Uncontrolled / Controlled / Reinsertion
 // ============================================================================
 module {
-  // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumParameterized
-  func.func @testMQTOptToCatalystQuantumParameterized() {
+  // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumParameterizedGates
+  func.func @testMQTOptToCatalystQuantumParameterizedGates() {
     // --- Allocation & extraction ---------------------------------------------------------------
     // CHECK: %[[C2_I64:.*]] = arith.constant 2 : i64
     // CHECK: %[[QREG:.*]] = quantum.alloc(%[[C2_I64]]) : !quantum.reg
-    // CHECK: %[[IDX0:.*]] = arith.index_cast %c0 : index to i64
-    // CHECK: %[[Q0_0:.*]] = quantum.extract %[[QREG]][%[[IDX0]]] : !quantum.reg -> !quantum.bit
-    // CHECK: %[[IDX1:.*]] = arith.index_cast %c1 : index to i64
-    // CHECK: %[[Q1_0:.*]] = quantum.extract %[[QREG]][%[[IDX1]]] : !quantum.reg -> !quantum.bit
+    // CHECK: %[[C0:.*]] = arith.constant 0 : index
+    // CHECK: %[[IDX0:.*]] = arith.index_cast %[[C0]] : index to i64
+    // CHECK: %[[Q0:.*]] = quantum.extract %[[QREG]][%[[IDX0]]] : !quantum.reg -> !quantum.bit
+    // CHECK: %[[C1:.*]] = arith.constant 1 : index
+    // CHECK: %[[IDX1:.*]] = arith.index_cast %[[C1]] : index to i64
+    // CHECK: %[[Q1:.*]] = quantum.extract %[[QREG]][%[[IDX1]]] : !quantum.reg -> !quantum.bit
 
     // --- Uncontrolled -------------------------------------------------------------------------
     // CHECK: %[[RX:.*]] = quantum.custom "RX"(%cst) %[[Q0_0]] : !quantum.bit

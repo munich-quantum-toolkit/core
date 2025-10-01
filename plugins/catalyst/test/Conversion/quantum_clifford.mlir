@@ -9,27 +9,26 @@
 // RUN: catalyst --tool=opt \
 // RUN:   --load-pass-plugin=%mqt_plugin_path% \
 // RUN:   --load-dialect-plugin=%mqt_plugin_path% \
-// RUN:   --debug \
 // RUN:   --catalyst-pipeline="builtin.module(catalystquantum-to-mqtopt)" \
 // RUN:   %s | FileCheck %s
 
 
 // ============================================================================
 // Clifford + T and controlled variants
-// Groups: Allocation & extraction / Uncontrolled sequence / Controlled sequence / Reinsertion
+// Groups: Allocation & extraction / Uncontrolled / Controlled / Reinsertion
 // ============================================================================
 module {
   // CHECK-LABEL: func.func @testCatalystQuantumToMQTOptCliffordT
   func.func @testCatalystQuantumToMQTOptCliffordT() {
     // --- Allocation & extraction ---------------------------------------------------------------
-    // CHECK: %[[QREG:.*]] = memref.alloc() : memref<2x!mqtopt.Qubit>
-    // CHECK: %[[CAST:.*]] = memref.cast %[[QREG]] : memref<2x!mqtopt.Qubit> to memref<?x!mqtopt.Qubit>
+    // CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[QREG:.*]] = memref.cast %[[ALLOC]] : memref<2x!mqtopt.Qubit> to memref<?x!mqtopt.Qubit>
     // CHECK: %[[C0:.*]] = arith.constant 0 : index
-    // CHECK: %[[Q0:.*]] = memref.load %[[QREG]][%[[C0]]] : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[Q0:.*]] = memref.load %[[ALLOC]][%[[C0]]] : memref<2x!mqtopt.Qubit>
     // CHECK: %[[C1:.*]] = arith.constant 1 : index
-    // CHECK: %[[Q1:.*]] = memref.load %[[QREG]][%[[C1]]] : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[Q1:.*]] = memref.load %[[ALLOC]][%[[C1]]] : memref<2x!mqtopt.Qubit>
 
-    // --- Uncontrolled sequence -----------------------------------------------------------------
+    // --- Uncontrolled Clifford+T gates ---------------------------------------------------------
     // CHECK: %[[H:.*]]   = mqtopt.h(static [] mask []) %[[Q0]] : !mqtopt.Qubit
     // CHECK: %[[V:.*]]   = mqtopt.sx(static [] mask []) %[[H]] : !mqtopt.Qubit
     // CHECK: %[[VDG:.*]] = mqtopt.sx(static [] mask []) %[[V]] : !mqtopt.Qubit
@@ -38,7 +37,7 @@ module {
     // CHECK: %[[T:.*]]   = mqtopt.t(static [] mask []) %[[SDG]] : !mqtopt.Qubit
     // CHECK: %[[TDG:.*]] = mqtopt.t(static [] mask []) %[[T]] : !mqtopt.Qubit
 
-    // --- Controlled sequence -------------------------------------------------------------------
+    // --- Controlled Clifford+T gates -----------------------------------------------------------
     // CHECK: %[[CH_T:.*]], %[[CH_C:.*]]   = mqtopt.h(static [] mask []) %[[TDG]] ctrl %[[Q1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[CV_T:.*]], %[[CV_C:.*]]   = mqtopt.sx(static [] mask []) %[[CH_T]] ctrl %[[CH_C]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[CVDG_T:.*]], %[[CVDG_C:.*]] = mqtopt.sx(static [] mask []) %[[CV_T]] ctrl %[[CV_C]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
@@ -49,6 +48,10 @@ module {
 
     // --- Reinsertion ---------------------------------------------------------------------------
     // CHECK: %[[C0_FINAL:.*]] = arith.constant 0 : index
+    // CHECK: memref.store %[[CTDG_T]], %[[ALLOC]][%[[C0_FINAL]]] : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[C1_FINAL:.*]] = arith.constant 1 : index
+    // CHECK: memref.store %[[CTDG_C]], %[[ALLOC]][%[[C1_FINAL]]] : memref<2x!mqtopt.Qubit>
+    // CHECK: memref.dealloc %[[QREG]] : memref<?x!mqtopt.Qubit>
     // CHECK: memref.store %[[CTDG_T]], %[[QREG]][%[[C0_FINAL]]] : memref<2x!mqtopt.Qubit>
     // CHECK: %[[C1_FINAL:.*]] = arith.constant 1 : index
     // CHECK: memref.store %[[CTDG_C]], %[[QREG]][%[[C1_FINAL]]] : memref<2x!mqtopt.Qubit>

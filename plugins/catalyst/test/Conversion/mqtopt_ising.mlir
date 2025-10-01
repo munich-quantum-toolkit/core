@@ -9,26 +9,29 @@
 // RUN: catalyst --tool=opt \
 // RUN:   --load-pass-plugin=%mqt_plugin_path% \
 // RUN:   --load-dialect-plugin=%mqt_plugin_path% \
-// RUN:   --debug \
 // RUN:   --catalyst-pipeline="builtin.module(mqtopt-to-catalystquantum)" \
 // RUN:   %s | FileCheck %s
 
 
 // ============================================================================
 // Ising-type gates and controlled variants
-// Groups: Constants / Allocation & extraction / Uncontrolled chain / Controlled chain / Reinsertion
+// Groups: Allocation & extraction / Uncontrolled / Controlled / Reinsertion
 // ============================================================================
 module {
-  // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumIsing
-  func.func @testMQTOptToCatalystQuantumIsing() {
+  // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumIsingGates
+  func.func @testMQTOptToCatalystQuantumIsingGates() {
+    // --- Allocation & extraction ---------------------------------------------------------------
     // CHECK: %[[C3_I64:.*]] = arith.constant 3 : i64
     // CHECK: %[[QREG:.*]] = quantum.alloc(%[[C3_I64]]) : !quantum.reg
-    // CHECK: %[[IDX0:.*]] = arith.index_cast %c0 : index to i64
-    // CHECK: %[[Q0_0:.*]] = quantum.extract %[[QREG]][%[[IDX0]]] : !quantum.reg -> !quantum.bit
-    // CHECK: %[[IDX1:.*]] = arith.index_cast %c1 : index to i64
-    // CHECK: %[[Q1_0:.*]] = quantum.extract %[[QREG]][%[[IDX1]]] : !quantum.reg -> !quantum.bit
-    // CHECK: %[[IDX2:.*]] = arith.index_cast %c2 : index to i64
-    // CHECK: %[[Q2_0:.*]] = quantum.extract %[[QREG]][%[[IDX2]]] : !quantum.reg -> !quantum.bit
+    // CHECK: %[[C0:.*]] = arith.constant 0 : index
+    // CHECK: %[[IDX0:.*]] = arith.index_cast %[[C0]] : index to i64
+    // CHECK: %[[Q0:.*]] = quantum.extract %[[QREG]][%[[IDX0]]] : !quantum.reg -> !quantum.bit
+    // CHECK: %[[C1:.*]] = arith.constant 1 : index
+    // CHECK: %[[IDX1:.*]] = arith.index_cast %[[C1]] : index to i64
+    // CHECK: %[[Q1:.*]] = quantum.extract %[[QREG]][%[[IDX1]]] : !quantum.reg -> !quantum.bit
+    // CHECK: %[[C2:.*]] = arith.constant 2 : index
+    // CHECK: %[[IDX2:.*]] = arith.index_cast %[[C2]] : index to i64
+    // CHECK: %[[Q2:.*]] = quantum.extract %[[QREG]][%[[IDX2]]] : !quantum.reg -> !quantum.bit
 
     // --- Uncontrolled -------------------------------------------------------------------
     // CHECK: %[[XY_P:.*]]:2 = quantum.custom "IsingXY"(%cst, %cst) %[[Q0_0]], %[[Q1_0]] : !quantum.bit, !quantum.bit

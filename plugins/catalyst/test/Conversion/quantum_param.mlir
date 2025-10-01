@@ -9,26 +9,25 @@
 // RUN: catalyst --tool=opt \
 // RUN:   --load-pass-plugin=%mqt_plugin_path% \
 // RUN:   --load-dialect-plugin=%mqt_plugin_path% \
-// RUN:   --debug \
 // RUN:   --catalyst-pipeline="builtin.module(catalystquantum-to-mqtopt)" \
 // RUN:   %s | FileCheck %s
 
 
 // ============================================================================
 // Parameterized gates RX/RY/RZ, PhaseShift and controlled variants
-// Groups: Constants / Allocation & extraction / Uncontrolled / Controlled / Reinsertion
+// Groups: Allocation & extraction / Uncontrolled / Controlled / Reinsertion
 // ============================================================================
 module {
-  // CHECK-LABEL: func.func @testCatalystQuantumToMQTOptParameterized
-  func.func @testCatalystQuantumToMQTOptParameterized() {
-    // --- Constants & Allocation & extraction ---------------------------------------------------
+  // CHECK-LABEL: func.func @testCatalystQuantumToMQTOptParameterizedGates
+  func.func @testCatalystQuantumToMQTOptParameterizedGates() {
+    // --- Allocation & extraction ---------------------------------------------------------------
     // CHECK: %cst = arith.constant 3.000000e-01 : f64
-    // CHECK: %[[QREG:.*]] = memref.alloc() : memref<2x!mqtopt.Qubit>
-    // CHECK: %[[CAST:.*]] = memref.cast %[[QREG]] : memref<2x!mqtopt.Qubit> to memref<?x!mqtopt.Qubit>
+    // CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[QREG:.*]] = memref.cast %[[ALLOC]] : memref<2x!mqtopt.Qubit> to memref<?x!mqtopt.Qubit>
     // CHECK: %[[C0:.*]] = arith.constant 0 : index
-    // CHECK: %[[Q0:.*]] = memref.load %[[QREG]][%[[C0]]] : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[Q0:.*]] = memref.load %[[ALLOC]][%[[C0]]] : memref<2x!mqtopt.Qubit>
     // CHECK: %[[C1:.*]] = arith.constant 1 : index
-    // CHECK: %[[Q1:.*]] = memref.load %[[QREG]][%[[C1]]] : memref<2x!mqtopt.Qubit>
+    // CHECK: %[[Q1:.*]] = memref.load %[[ALLOC]][%[[C1]]] : memref<2x!mqtopt.Qubit>
 
     // --- Uncontrolled -------------------------------------------------------------------------
     // CHECK: %[[RX:.*]] = mqtopt.rx(%cst static [] mask [false]) %[[Q0]] : !mqtopt.Qubit

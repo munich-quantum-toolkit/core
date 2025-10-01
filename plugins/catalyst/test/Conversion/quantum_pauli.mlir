@@ -9,7 +9,6 @@
 // RUN: catalyst --tool=opt \
 // RUN:   --load-pass-plugin=%mqt_plugin_path% \
 // RUN:   --load-dialect-plugin=%mqt_plugin_path% \
-// RUN:   --debug \
 // RUN:   --catalyst-pipeline="builtin.module(catalystquantum-to-mqtopt)" \
 // RUN:   %s | FileCheck %s
 
@@ -21,34 +20,41 @@
 module {
   // CHECK-LABEL: func.func @testCatalystQuantumToMQTOptPauliGates
   func.func @testCatalystQuantumToMQTOptPauliGates() {
-    // Prepare qubits
+    // --- Allocation & extraction ---------------------------------------------------------------
     // CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<4x!mqtopt.Qubit>
     // CHECK: %[[QREG:.*]] = memref.cast %[[ALLOC]] : memref<4x!mqtopt.Qubit> to memref<?x!mqtopt.Qubit>
-    // CHECK: %[[Q0:.*]] = memref.load %[[ALLOC]][%c0] : memref<4x!mqtopt.Qubit>
-    // CHECK: %[[Q1:.*]] = memref.load %[[ALLOC]][%c1] : memref<4x!mqtopt.Qubit>
-    // CHECK: %[[Q2:.*]] = memref.load %[[ALLOC]][%c2] : memref<4x!mqtopt.Qubit>
-    // CHECK: %[[Q3:.*]] = memref.load %[[ALLOC]][%c3] : memref<4x!mqtopt.Qubit>
+    // CHECK: %[[C0:.*]] = arith.constant 0 : index
+    // CHECK: %[[Q0:.*]] = memref.load %[[ALLOC]][%[[C0]]] : memref<4x!mqtopt.Qubit>
+    // CHECK: %[[C1:.*]] = arith.constant 1 : index
+    // CHECK: %[[Q1:.*]] = memref.load %[[ALLOC]][%[[C1]]] : memref<4x!mqtopt.Qubit>
+    // CHECK: %[[C2:.*]] = arith.constant 2 : index
+    // CHECK: %[[Q2:.*]] = memref.load %[[ALLOC]][%[[C2]]] : memref<4x!mqtopt.Qubit>
+    // CHECK: %[[C3:.*]] = arith.constant 3 : index
+    // CHECK: %[[Q3:.*]] = memref.load %[[ALLOC]][%[[C3]]] : memref<4x!mqtopt.Qubit>
 
-    // Non-controlled Pauli gates
+    // --- Uncontrolled Pauli gates --------------------------------------------------------------
     // CHECK: %[[X1:.*]] = mqtopt.x(static [] mask []) %[[Q0]] : !mqtopt.Qubit
     // CHECK: %[[Y1:.*]] = mqtopt.y(static [] mask []) %[[X1]] : !mqtopt.Qubit
     // CHECK: %[[Z1:.*]] = mqtopt.z(static [] mask []) %[[Y1]] : !mqtopt.Qubit
     // CHECK: %[[I1:.*]] = mqtopt.i(static [] mask []) %[[Z1]] : !mqtopt.Qubit
 
-    // Controlled Pauli gates
+    // --- Controlled Pauli gates ----------------------------------------------------------------
     // CHECK: %[[TRUE:.*]] = arith.constant true
     // CHECK: %[[T1:.*]], %[[C1:.*]] = mqtopt.x(static [] mask []) %[[I1]] ctrl %[[Q1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[T2:.*]], %[[C2:.*]] = mqtopt.y(static [] mask []) %[[T1]] ctrl %[[C1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[T3:.*]], %[[C3:.*]] = mqtopt.z(static [] mask []) %[[T2]] ctrl %[[C2]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[T4:.*]], %[[C4:.*]] = mqtopt.i(static [] mask []) %[[T3]] ctrl %[[C3]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-    // C gates
+    // --- Two-qubit controlled gates ------------------------------------------------------------
     // CHECK: %[[T5:.*]], %[[C5:.*]] = mqtopt.x(static [] mask []) %[[C4]] ctrl %[[T4]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[T6:.*]], %[[C6:.*]] = mqtopt.y(static [] mask []) %[[C5]] ctrl %[[T5]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[T7:.*]], %[[C7:.*]] = mqtopt.z(static [] mask []) %[[C6]] ctrl %[[T6]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[T8:.*]], %[[C8:.*]]:2 = mqtopt.x(static [] mask []) %[[Q2]] ctrl %[[T7]], %[[C7]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
 
-    // Controlled-C gates
+    // --- Reinsertion ---------------------------------------------------------------------------
+    // CHECK: memref.store %[[T8]], %[[ALLOC]][%[[C0]]] : memref<4x!mqtopt.Qubit>
+    // CHECK: memref.store %[[C8]]#0, %[[ALLOC]][%[[C1]]] : memref<4x!mqtopt.Qubit>
+    // CHECK: memref.store %[[C8]]#1, %[[ALLOC]][%[[C2]]] : memref<4x!mqtopt.Qubit>
     // CHECK: %[[T9:.*]], %[[C9:.*]]:2 = mqtopt.x(static [] mask []) %[[C8]]#0 ctrl %[[C8]]#1, %[[T8]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK: %[[T10:.*]], %[[C10:.*]]:2 = mqtopt.y(static [] mask []) %[[C9]]#0 ctrl %[[C9]]#1, %[[T9]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK: %[[T11:.*]], %[[C11:.*]]:2 = mqtopt.z(static [] mask []) %[[C10]]#0 ctrl %[[C10]]#1, %[[T10]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
