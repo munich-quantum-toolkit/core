@@ -30,7 +30,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC nlohmann_json::nlohmann_json
-    PRIVATE spdlog::spdlog)
+    PRIVATE spdlog::spdlog MQT::ProjectOptions MQT::ProjectWarnings)
 
   # set versioning information
   set_target_properties(
