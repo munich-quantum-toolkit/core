@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#pragma once
+
 #include <cstddef>
 #include <deque>
 #include <mlir/IR/Value.h>
@@ -15,10 +17,10 @@
 
 namespace mqt::ir::opt {
 /**
- * @brief Manages the routing state stack with clear semantics for accessing
- * current and parent states.
+ * @brief A custom stack implementation to handle multiple nested regions in a
+ * quantum-classical program.
  */
-template <class Item> class [[nodiscard]] RoutingStack {
+template <class Item> class [[nodiscard]] LayoutStack {
 public:
   /**
    * @brief Returns the top of the stack.

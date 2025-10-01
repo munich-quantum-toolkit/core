@@ -91,7 +91,9 @@ build.targets = [
   "mqt-core-ir-bindings",
   "mqt-core-dd-bindings",
   "mqt-core-qdmi-na-device",
-  "mqt-core-qdmi-fomac-bindings",
+  "mqt-core-fomac-bindings",
+  "mqt-core-na-fomac",
+  "mqt-core-na-fomac-bindings",
 ]
 
 # Only install the mqt-core library and Python package components
@@ -298,6 +300,7 @@ repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg 
 
 [tool.uv]
 required-version = ">=0.5.20"
+reinstall-package = ["mqt-core"]
 
 [tool.uv.sources]
 mqt-core = { workspace = true }

@@ -23,6 +23,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 namespace qasm3 {
@@ -58,29 +59,39 @@ std::optional<Token> Scanner::consumeWhitespaceAndComments() {
   }
   if (ch == '/' && peek() == '/') {
     Token t(line, col);
-    // consume until newline
-    std::stringstream content;
+
+    std::string lineStr;
     while (ch != '\n' && ch != 0) {
-      content << ch;
+      lineStr.push_back(ch);
       nextCh();
     }
     if (ch == '\n') {
       nextCh();
     }
 
-    static const auto INITIAL_LAYOUT_REGEX = std::regex("i (\\d+ )*(\\d+)");
-    static const auto OUTPUT_PERMUTATION_REGEX = std::regex("o (\\d+ )*(\\d+)");
+    // Keep original text (with //)
+    t.str = lineStr;
 
-    const auto str = content.str();
-    if (std::regex_search(str, INITIAL_LAYOUT_REGEX)) {
-      t.kind = Token::Kind::InitialLayout;
-    } else if (std::regex_search(str, OUTPUT_PERMUTATION_REGEX)) {
-      t.kind = Token::Kind::OutputPermutation;
-    } else {
-      return consumeWhitespaceAndComments();
+    std::string_view sv(lineStr);
+    sv.remove_prefix(2);
+    // trim leading spaces / tabs
+    while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t')) {
+      sv.remove_prefix(1);
     }
 
-    t.str = content.str();
+    static const std::regex I_RE(R"(^i\s*\d+)",
+                                 std::regex::ECMAScript | std::regex::optimize);
+    static const std::regex O_RE(R"(^o\s*\d+)",
+                                 std::regex::ECMAScript | std::regex::optimize);
+
+    if (std::regex_search(sv.begin(), sv.end(), I_RE)) {
+      t.kind = Token::Kind::InitialLayout;
+    } else if (std::regex_search(sv.begin(), sv.end(), O_RE)) {
+      t.kind = Token::Kind::OutputPermutation;
+    } else {
+      return consumeWhitespaceAndComments(); // recurse as before
+    }
+
     t.endCol = col;
     t.endLine = line;
     return t;

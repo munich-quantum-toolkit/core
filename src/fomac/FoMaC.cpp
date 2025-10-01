@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/FoMaC.hpp"
+#include "fomac/FoMaC.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-namespace qdmi {
+namespace fomac {
 
 namespace {
 /**
@@ -304,7 +304,7 @@ auto FoMaC::Device::Operation::isZoned(const std::vector<Site>& sites,
                                             sites, params);
 }
 auto FoMaC::Device::Operation::getSites(const std::vector<Site>& sites,
-                                        const std::vector<double>& params)
+                                        const std::vector<double>& params) const
     -> std::optional<std::vector<Site>> {
   const auto& qdmiSites = queryProperty<std::optional<std::vector<QDMI_Site>>>(
       QDMI_OPERATION_PROPERTY_SITES, sites, params);
@@ -420,4 +420,4 @@ auto FoMaC::getDevices() -> std::vector<Device> {
       [](const QDMI_Device& dev) -> Device { return {Token{}, dev}; });
   return devices;
 }
-} // namespace qdmi
+} // namespace fomac

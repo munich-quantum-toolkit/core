@@ -6,4 +6,8 @@
 #
 # Licensed under the MIT License
 
-"""Submodule for Quantum Device Management Interface (QDMI) functionality."""
+set(TARGET_NAME mqt-core-fomac-test)
+
+if(TARGET MQT::CoreQDMIFoMaC)
+  package_add_test(${TARGET_NAME} MQT::CoreQDMIFoMaC test_fomac.cpp)
+endif()
