@@ -34,6 +34,23 @@ Architecture::shortestPathBetween(std::size_t u, std::size_t v) const {
   return path;
 }
 
+[[nodiscard]] std::size_t
+Architecture::lengthOfShortestPathBetween(std::size_t u, std::size_t v) const {
+  std::size_t len = 0;
+
+  if (prev_[u][v] == UINT64_MAX) {
+    return {};
+  }
+
+  len++;
+  while (u != v) {
+    v = prev_[u][v];
+    len++;
+  }
+
+  return len;
+}
+
 void Architecture::floydWarshallWithPathReconstruction() {
   for (const auto& [u, v] : couplingMap_) {
     dist_[u][v] = 1;
@@ -58,6 +75,17 @@ void Architecture::floydWarshallWithPathReconstruction() {
       }
     }
   }
+}
+
+[[nodiscard]] llvm::SmallVector<std::size_t>
+Architecture::neighboursOf(std::size_t u) const {
+  llvm::SmallVector<std::size_t> n;
+  for (const auto [i, j] : couplingMap_) {
+    if (i == u) {
+      n.push_back(j);
+    }
+  }
+  return n;
 }
 
 std::unique_ptr<Architecture> getArchitecture(const ArchitectureName& name) {

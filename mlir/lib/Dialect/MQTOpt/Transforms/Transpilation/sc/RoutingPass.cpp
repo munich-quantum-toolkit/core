@@ -14,9 +14,13 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
+#include "mlir/IR/Operation.h"
+
+#include "llvm/ADT/DenseSet.h"
 
 #include <cassert>
 #include <cstddef>
+#include <functional>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -330,6 +334,204 @@ public:
   void route(UnitaryInterface op, StateStack& stack, const Architecture& arch,
              PatternRewriter& rewriter) final {
     assert(isTwoQubitGate(op) && "route: must be two-qubit gate");
+    /// Copy layout.
+    Layout<QubitIndex> layout = stack.topState();
+    /// Collect all front-gates starting from 'op'.
+    const llvm::DenseSet<QubitIndexPair> gates = collectGates(layout);
+    /// Convert to thin layout. TODO: Layout redesign.
+    ArrayRef<QubitIndex> curr = layout.getCurrentLayout();
+    ThinLayout<QubitIndex> thinLayout(curr.size());
+    for (const auto [programIdx, hardwareIdx] : llvm::enumerate(curr)) {
+      thinLayout.add(programIdx, hardwareIdx);
+    }
+
+    const auto seq = search(thinLayout, gates, arch);
+    for (const auto [hardwareIdx0, hardwareIdx1] : llvm::reverse(seq)) {
+      const Value qIn0 = stack.topState().lookupHardware(hardwareIdx0);
+      const Value qIn1 = stack.topState().lookupHardware(hardwareIdx1);
+
+      const QubitIndex programIdx0 = stack.topState().lookupProgram(qIn0);
+      const QubitIndex programIdx1 = stack.topState().lookupProgram(qIn1);
+
+      LLVM_DEBUG({
+        llvm::dbgs() << llvm::format(
+            "route: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", programIdx1,
+            hardwareIdx0, programIdx0, hardwareIdx1, programIdx0, hardwareIdx0,
+            programIdx1, hardwareIdx1);
+      });
+
+      auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
+      const auto [qOut0, qOut1] = getOuts(swap);
+
+      rewriter.setInsertionPointAfter(swap);
+      replaceAllUsesInRegionAndChildrenExcept(
+          qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
+      replaceAllUsesInRegionAndChildrenExcept(
+          qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
+
+      stack.recordSwap(programIdx0, programIdx1);
+
+      stack.topState().swap(qIn0, qIn1);
+      stack.topState().remapQubitValue(qIn0, qOut0);
+      stack.topState().remapQubitValue(qIn1, qOut1);
+
+      (*nadd)++;
+    }
+  }
+
+private:
+  struct SearchNode {
+    llvm::SmallVector<QubitIndexPair> seq;
+    ThinLayout<QubitIndex> layout;
+
+    double cost{};
+    std::size_t depth{};
+
+    SearchNode(llvm::SmallVector<QubitIndexPair> seq, QubitIndexPair swap,
+               ThinLayout<QubitIndex> layout)
+        : seq(std::move(seq)), layout(std::move(layout)) {
+      /// Apply node-specific swap to given layout.
+      this->layout.swap(this->layout.lookupHardware(swap.first),
+                        this->layout.lookupHardware(swap.second));
+      /// TODO: Retrigger unnecessary (2 * size) resize? Linked List?
+      this->seq.push_back(swap);
+    }
+
+    bool operator>(const SearchNode& rhs) const { return cost > rhs.cost; }
+  };
+
+  using MinQueue =
+      std::priority_queue<SearchNode, std::vector<SearchNode>, std::greater<>>;
+
+  static SmallVector<QubitIndexPair>
+  search(const ThinLayout<QubitIndex>& layout,
+         const llvm::DenseSet<QubitIndexPair>& gates,
+         const Architecture& arch) {
+    /// The heuristic cost function counts the number of SWAPs that were
+    /// required if we were to route the gate set naively.
+    const auto heuristic = [&](const SearchNode& node) {
+      double h{};
+      for (const auto [p0, p1] : gates) {
+        const std::size_t nswaps =
+            arch.lengthOfShortestPathBetween(node.layout.lookupHardware(p0),
+                                             node.layout.lookupHardware(p1)) -
+            2;
+        h += static_cast<double>(nswaps);
+      }
+      return h;
+    };
+
+    const auto isGoal = [&](const SearchNode& node) {
+      return std::ranges::all_of(gates, [&](const QubitIndexPair gate) {
+        const auto [p0, p1] = gate;
+        return arch.areAdjacent(node.layout.lookupHardware(p0),
+                                node.layout.lookupHardware(p1));
+      });
+    };
+
+    /// Initialize queue.
+    MinQueue queue{};
+    for (const Exchange swap : collectSWAPs(layout, gates, arch)) {
+      SearchNode node({}, swap, layout);
+      node.cost = heuristic(node);
+
+      queue.emplace(node);
+    }
+
+    /// Iterative searching and expanding.
+    while (!queue.empty()) {
+      SearchNode curr = queue.top();
+      queue.pop();
+
+      if (isGoal(curr)) {
+        return curr.seq;
+      }
+
+      for (const Exchange swap : collectSWAPs(curr.layout, gates, arch)) {
+        SearchNode node(curr.seq, swap, curr.layout);
+        node.depth = curr.depth + 1;
+        node.cost = static_cast<double>(node.depth) + heuristic(node);
+
+        queue.emplace(node);
+      }
+    }
+
+    return {};
+  }
+
+  /// TODO: I don't like the Exchange class here, especially with makeExchange.
+  static SmallVector<Exchange>
+  collectSWAPs(const ThinLayout<QubitIndex>& layout,
+               const llvm::DenseSet<QubitIndexPair>& gates,
+               const Architecture& arch) {
+    // TODO: Adjust (or remove?) assumption of 16.
+    llvm::SmallDenseSet<Exchange, 16> candidates{};
+
+    const auto collect = [&](const QubitIndex p) {
+      const std::size_t h = layout.lookupHardware(p);
+      for (const std::size_t n : arch.neighboursOf(h)) {
+        candidates.insert(makeExchange(h, n));
+      }
+    };
+
+    for (const auto [p0, p1] : gates) {
+      collect(p0);
+      collect(p1);
+    }
+
+    return {candidates.begin(), candidates.end()};
+  }
+
+  [[nodiscard]] static llvm::DenseSet<QubitIndexPair>
+  collectGates(Layout<QubitIndex>& layout) {
+    llvm::DenseSet<UnitaryInterface> candidates;
+
+    for (const Value in : layout.getHardwareQubits()) {
+      Value out = in;
+
+      while (!out.getUsers().empty()) {
+        Operation* user = *out.getUsers().begin();
+
+        if (auto op = dyn_cast<ResetOp>(user)) {
+          out = op.getOutQubit();
+          continue;
+        }
+
+        if (auto op = dyn_cast<UnitaryInterface>(user)) {
+          if (isTwoQubitGate(op)) {
+            candidates.insert(op);
+            break;
+          }
+
+          if (!dyn_cast<GPhaseOp>(user)) {
+            out = op.getOutQubits().front();
+          }
+
+          continue;
+        }
+
+        if (auto measure = dyn_cast<MeasureOp>(user)) {
+          out = measure.getOutQubit();
+          continue;
+        }
+
+        break;
+      }
+
+      if (in != out) {
+        layout.remapQubitValue(in, out);
+      }
+    }
+
+    llvm::DenseSet<QubitIndexPair> gates;
+    for (UnitaryInterface op : candidates) {
+      const auto [in0, in1] = getIns(op);
+      if (layout.contains(in0) && layout.contains(in1)) {
+        gates.insert({layout.lookupProgram(in0), layout.lookupProgram(in1)});
+      }
+    }
+
+    return gates;
   }
 };
 

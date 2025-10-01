@@ -66,6 +66,18 @@ public:
   [[nodiscard]] llvm::SmallVector<std::size_t>
   shortestPathBetween(std::size_t u, std::size_t v) const;
 
+  /**
+   * @brief Return the length of the shortest path between @p u and @p v.
+   */
+  [[nodiscard]] std::size_t lengthOfShortestPathBetween(std::size_t u,
+                                                        std::size_t v) const;
+
+  /**
+   * @brief Collect all neighbours of @p u.
+   */
+  [[nodiscard]] llvm::SmallVector<std::size_t>
+  neighboursOf(std::size_t u) const;
+
 private:
   using Matrix = llvm::SmallVector<llvm::SmallVector<std::size_t>>;
 

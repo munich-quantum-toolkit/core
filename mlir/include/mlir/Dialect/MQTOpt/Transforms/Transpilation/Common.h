@@ -32,6 +32,24 @@ constexpr std::size_t IF_PARENT_DEPTH = 2UL;
 using QubitIndex = std::size_t;
 
 /**
+ * @brief Represents a pair of qubit indices.
+ */
+using QubitIndexPair = std::pair<QubitIndex, QubitIndex>;
+
+/**
+ * @brief Represents a SWAP between two qubits.
+ */
+using Exchange = std::pair<QubitIndex, QubitIndex>;
+
+/**
+ * @brief Create a normalized exchange (smaller index first) for consistent
+ * hashing/comparison.
+ */
+inline Exchange makeExchange(const QubitIndex a, const QubitIndex b) {
+  return a < b ? Exchange{a, b} : Exchange{b, a};
+}
+
+/**
  * @brief Return true if the function contains "entry_point" in the passthrough
  * attribute.
  */

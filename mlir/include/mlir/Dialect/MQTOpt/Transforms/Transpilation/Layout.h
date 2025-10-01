@@ -10,12 +10,80 @@
 
 #pragma once
 
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
+
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
 namespace mqt::ir::opt {
 using namespace mlir;
+
+template <class QubitIndex> class [[nodiscard]] ThinLayout {
+public:
+  explicit ThinLayout(const std::size_t nqubits)
+      : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
+
+  /**
+   * @brief Insert program:hardware index mapping.
+   * @param programIdx The program index.
+   * @param hardwareIdx The hardware index.
+   */
+  void add(QubitIndex programIdx, QubitIndex hardwareIdx) {
+    assert(programIdx < programToHardware_.size() &&
+           "Program index out of bounds");
+    assert(hardwareIdx < hardwareToProgram_.size() &&
+           "Hardware index out of bounds");
+    programToHardware_[programIdx] = hardwareIdx;
+    hardwareToProgram_[hardwareIdx] = programIdx;
+  }
+
+  /**
+   * @brief Look up program index for a hardware index.
+   * @param hardwareIdx The hardware index.
+   * @return The program index of the respective hardware index.
+   */
+  [[nodiscard]] QubitIndex lookupProgram(const QubitIndex hardwareIdx) const {
+    assert(hardwareIdx < hardwareToProgram_.size() &&
+           "Hardware index out of bounds");
+    return hardwareToProgram_[hardwareIdx];
+  }
+
+  /**
+   * @brief Look up hardware index for a program index.
+   * @param programIdx The program index.
+   * @return The hardware index of the respective program index.
+   */
+  [[nodiscard]] QubitIndex lookupHardware(const QubitIndex programIdx) const {
+    assert(programIdx < programToHardware_.size() &&
+           "Program index out of bounds");
+    return programToHardware_[programIdx];
+  }
+
+  /**
+   * @brief Swap the mapping to hardware indices of two program indices.
+   */
+  void swap(const QubitIndex programIdx0, const QubitIndex programIdx1) {
+    const QubitIndex hardwareIdx0 = programToHardware_[programIdx0];
+    const QubitIndex hardwareIdx1 = programToHardware_[programIdx1];
+
+    std::swap(programToHardware_[programIdx0], programToHardware_[programIdx1]);
+
+    hardwareToProgram_[hardwareIdx0] = programIdx1;
+    hardwareToProgram_[hardwareIdx1] = programIdx0;
+  }
+
+private:
+  /**
+   * @brief Maps a program qubit index to its hardware index.
+   */
+  SmallVector<QubitIndex> programToHardware_;
+
+  /**
+   * @brief Maps a hardware qubit index to its program index.
+   */
+  SmallVector<QubitIndex> hardwareToProgram_;
+};
 
 /**
  * @brief This class maintains the bi-directional mapping between program and
@@ -32,6 +100,12 @@ public:
     valueToMapping_.reserve(nqubits);
   }
 
+  /**
+   * @brief Insert program:hardware:value mapping.
+   * @param programIdx The program index.
+   * @param hardwareIdx The hardware index.
+   * @param q The SSA value associated with the indices.
+   */
   void add(QubitIndex programIdx, QubitIndex hardwareIdx, Value q) {
     const QubitInfo info{.hardwareIdx = hardwareIdx, .programIdx = programIdx};
     qubits_[info.hardwareIdx] = q;
@@ -77,6 +151,15 @@ public:
   [[nodiscard]] Value lookupProgram(const QubitIndex programIdx) const {
     const QubitIndex hardwareIdx = programToHardware_[programIdx];
     return lookupHardware(hardwareIdx);
+  }
+
+  /**
+   * @brief Check whether the layout contains a qubit.
+   * @param q The SSA Value representing the qubit.
+   * @return True if the layout contains the qubit, false otherwise.
+   */
+  [[nodiscard]] bool contains(const Value q) const {
+    return valueToMapping_.contains(q);
   }
 
   /**
