@@ -181,8 +181,8 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
       SPDLOG_INFO("Site missing y coordinate");
       return false;
     }
-    submoduleIt->second.emplace(Vector{*x, *y});
-    retrievedSites.emplace(Vector{*x, *y});
+    submoduleIt->second.emplace(Vector{.x = *x, .y = *y});
+    retrievedSites.emplace(Vector{.x = *x, .y = *y});
   }
   for (const auto& [moduleIdx, sitesPerSubmodule] :
        sitesPerModuleAndSubmodule) {
@@ -255,7 +255,7 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
       traps, [&constructedSites](const uint64_t /* unused */, const int64_t x,
                                  const int64_t y, const uint64_t /* unused */,
                                  const uint64_t /* unused */) {
-        constructedSites.emplace(Vector{x, y});
+        constructedSites.emplace(Vector{.x = x, .y = y});
       });
   return retrievedSites == constructedSites;
 }
@@ -486,7 +486,11 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
       const auto region = calculateExtentFromSites(*sitesOpt);
       if (*nq == 1) {
         localSingleQubitOperations.emplace_back(LocalSingleQubitOperation{
-            {name, region, *d, *f, op.getParametersNum()}});
+            {.name = name,
+             .region = region,
+             .duration = *d,
+             .fidelity = *f,
+             .numParameters = op.getParametersNum()}});
       } else if (*nq == 2) {
         const auto& ir = op.getInteractionRadius();
         if (!ir.has_value()) {
@@ -498,13 +502,24 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
           SPDLOG_INFO("Two-qubit Operation missing blocking radius");
           return false;
         }
-        localMultiQubitOperations.emplace_back(LocalMultiQubitOperation{
-            {name, region, *d, *f, op.getParametersNum()}, *ir, *br, *nq});
+        localMultiQubitOperations.emplace_back(
+            LocalMultiQubitOperation{{.name = name,
+                                      .region = region,
+                                      .duration = *d,
+                                      .fidelity = *f,
+                                      .numParameters = op.getParametersNum()},
+                                     *ir,
+                                     *br,
+                                     *nq});
       } else {
         SPDLOG_INFO("Number of Qubits must be 1 or 2");
       }
     }
   }
+  // The suggested use of `std::Ranges::all_of` does not work here because of
+  // the `emplace_back` in the loop body.
+  //
+  // NOLINTNEXTLINE(readability-use-anyofallof)
   for (const auto& val : shuttlingUnitsPerId | std::views::values) {
     const auto [load, move, store] = val.second;
     if (!(load && move && store)) {
