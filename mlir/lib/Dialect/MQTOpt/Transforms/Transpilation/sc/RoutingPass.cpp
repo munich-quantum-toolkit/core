@@ -216,16 +216,6 @@ public:
 }
 
 /**
- * @brief Get shortest path between @p qStart and @p qEnd.
- */
-[[nodiscard]] llvm::SmallVector<std::size_t>
-getPath(const Value qStart, const Value qEnd, const Layout<QubitIndex>& state,
-        const Architecture& arch) {
-  return arch.shortestPathBetween(state.lookupHardware(qStart),
-                                  state.lookupHardware(qEnd));
-}
-
-/**
  * @brief Base class for all routing algorithms.
  */
 class RouterBase {
@@ -234,11 +224,50 @@ public:
 
   virtual ~RouterBase() = default;
 
+  virtual SmallVector<QubitIndexPair>
+  getSwapPlan(UnitaryInterface op, const Layout<QubitIndex>& layout,
+              const Architecture& arch) = 0;
+
   /**
    * @brief Insert SWAPs such that @p u is executable.
    */
-  virtual void route(UnitaryInterface op, StateStack& stack,
-                     const Architecture& arch, PatternRewriter& rewriter) = 0;
+  void route(UnitaryInterface op, StateStack& stack, const Architecture& arch,
+             PatternRewriter& rewriter) {
+    assert(isTwoQubitGate(op) && "route: must be two-qubit gate");
+
+    for (const auto [hardwareIdx0, hardwareIdx1] :
+         getSwapPlan(op, stack.topState(), arch)) {
+      const Value qIn0 = stack.topState().lookupHardware(hardwareIdx0);
+      const Value qIn1 = stack.topState().lookupHardware(hardwareIdx1);
+
+      const QubitIndex programIdx0 = stack.topState().lookupProgram(qIn0);
+      const QubitIndex programIdx1 = stack.topState().lookupProgram(qIn1);
+
+      LLVM_DEBUG({
+        llvm::dbgs() << llvm::format(
+            "route: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", programIdx1,
+            hardwareIdx0, programIdx0, hardwareIdx1, programIdx0, hardwareIdx0,
+            programIdx1, hardwareIdx1);
+      });
+
+      auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
+      const auto [qOut0, qOut1] = getOuts(swap);
+
+      rewriter.setInsertionPointAfter(swap);
+      replaceAllUsesInRegionAndChildrenExcept(
+          qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
+      replaceAllUsesInRegionAndChildrenExcept(
+          qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
+
+      stack.recordSwap(programIdx0, programIdx1);
+
+      stack.topState().swap(qIn0, qIn1);
+      stack.topState().remapQubitValue(qIn0, qOut0);
+      stack.topState().remapQubitValue(qIn1, qOut1);
+
+      (*nadd)++;
+    }
+  }
 
   /**
    * @brief Restore layout by uncomputing.
@@ -281,49 +310,19 @@ class NaiveRouter final : public RouterBase {
 public:
   using RouterBase::RouterBase;
 
-  void route(UnitaryInterface op, StateStack& stack, const Architecture& arch,
-             PatternRewriter& rewriter) final {
-    assert(isTwoQubitGate(op) && "route: must be two-qubit gate");
-
-    Layout<QubitIndex>& state = stack.topState();
-
+  SmallVector<QubitIndexPair> getSwapPlan(UnitaryInterface op,
+                                          const Layout<QubitIndex>& layout,
+                                          const Architecture& arch) final {
     const auto [qStart, qEnd] = getIns(op);
-    const auto path = getPath(qStart, qEnd, state, arch);
+    const auto path = arch.shortestPathBetween(layout.lookupHardware(qStart),
+                                               layout.lookupHardware(qEnd));
 
+    SmallVector<QubitIndexPair> swaps(path.size() - 2);
     for (std::size_t i = 0; i < path.size() - 2; ++i) {
-      const QubitIndex hardwareIdx0 = path[i];
-      const QubitIndex hardwareIdx1 = path[i + 1];
-
-      const Value qIn0 = state.lookupHardware(hardwareIdx0);
-      const Value qIn1 = state.lookupHardware(hardwareIdx1);
-
-      const QubitIndex programIdx0 = state.lookupProgram(qIn0);
-      const QubitIndex programIdx1 = state.lookupProgram(qIn1);
-
-      LLVM_DEBUG({
-        llvm::dbgs() << llvm::format(
-            "route: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", programIdx1,
-            hardwareIdx0, programIdx0, hardwareIdx1, programIdx0, hardwareIdx0,
-            programIdx1, hardwareIdx1);
-      });
-
-      auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
-      const auto [qOut0, qOut1] = getOuts(swap);
-
-      rewriter.setInsertionPointAfter(swap);
-      replaceAllUsesInRegionAndChildrenExcept(
-          qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
-      replaceAllUsesInRegionAndChildrenExcept(
-          qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
-
-      stack.recordSwap(programIdx0, programIdx1);
-
-      state.swap(qIn0, qIn1);
-      state.remapQubitValue(qIn0, qOut0);
-      state.remapQubitValue(qIn1, qOut1);
-
-      (*nadd)++;
+      swaps[i] = {path[i], path[i + 1]};
     }
+
+    return swaps;
   }
 };
 
@@ -331,52 +330,21 @@ class QMAPRouter final : public RouterBase {
 public:
   using RouterBase::RouterBase;
 
-  void route(UnitaryInterface op, StateStack& stack, const Architecture& arch,
-             PatternRewriter& rewriter) final {
-    assert(isTwoQubitGate(op) && "route: must be two-qubit gate");
+  SmallVector<QubitIndexPair> getSwapPlan(UnitaryInterface op,
+                                          const Layout<QubitIndex>& layout,
+                                          const Architecture& arch) final {
     /// Copy layout.
-    Layout<QubitIndex> layout = stack.topState();
+    Layout<QubitIndex> copy = layout;
     /// Collect all front-gates starting from 'op'.
-    const llvm::DenseSet<QubitIndexPair> gates = collectGates(layout);
+    const llvm::DenseSet<QubitIndexPair> gates = collectGates(copy);
     /// Convert to thin layout. TODO: Layout redesign.
-    ArrayRef<QubitIndex> curr = layout.getCurrentLayout();
+    ArrayRef<QubitIndex> curr = copy.getCurrentLayout();
     ThinLayout<QubitIndex> thinLayout(curr.size());
     for (const auto [programIdx, hardwareIdx] : llvm::enumerate(curr)) {
       thinLayout.add(programIdx, hardwareIdx);
     }
 
-    const auto seq = search(thinLayout, gates, arch);
-    for (const auto [hardwareIdx0, hardwareIdx1] : llvm::reverse(seq)) {
-      const Value qIn0 = stack.topState().lookupHardware(hardwareIdx0);
-      const Value qIn1 = stack.topState().lookupHardware(hardwareIdx1);
-
-      const QubitIndex programIdx0 = stack.topState().lookupProgram(qIn0);
-      const QubitIndex programIdx1 = stack.topState().lookupProgram(qIn1);
-
-      LLVM_DEBUG({
-        llvm::dbgs() << llvm::format(
-            "route: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", programIdx1,
-            hardwareIdx0, programIdx0, hardwareIdx1, programIdx0, hardwareIdx0,
-            programIdx1, hardwareIdx1);
-      });
-
-      auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
-      const auto [qOut0, qOut1] = getOuts(swap);
-
-      rewriter.setInsertionPointAfter(swap);
-      replaceAllUsesInRegionAndChildrenExcept(
-          qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
-      replaceAllUsesInRegionAndChildrenExcept(
-          qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
-
-      stack.recordSwap(programIdx0, programIdx1);
-
-      stack.topState().swap(qIn0, qIn1);
-      stack.topState().remapQubitValue(qIn0, qOut0);
-      stack.topState().remapQubitValue(qIn1, qOut1);
-
-      (*nadd)++;
-    }
+    return search(thinLayout, gates, arch);
   }
 
 private:
@@ -459,7 +427,8 @@ private:
     return {};
   }
 
-  /// TODO: I don't like the Exchange class here, especially with makeExchange.
+  /// TODO: I don't like the Exchange class here, especially with
+  /// makeExchange.
   static SmallVector<Exchange>
   collectSWAPs(const ThinLayout<QubitIndex>& layout,
                const llvm::DenseSet<QubitIndexPair>& gates,
@@ -564,8 +533,8 @@ WalkResult handleFunc([[maybe_unused]] func::FuncOp op, RoutingContext& ctx) {
 }
 
 /**
- * @brief Indicates the end of a region defined by a function. Consequently, we
- * pop the region's state from the stack.
+ * @brief Indicates the end of a region defined by a function. Consequently,
+ * we pop the region's state from the stack.
  */
 WalkResult handleReturn(RoutingContext& ctx) {
   ctx.stack.pop();
@@ -612,8 +581,8 @@ WalkResult handleIf(scf::IfOp op, RoutingContext& ctx) {
 }
 
 /**
- * @brief Indicates the end of a region defined by a branching op. Consequently,
- * we pop the region's state from the stack.
+ * @brief Indicates the end of a region defined by a branching op.
+ * Consequently, we pop the region's state from the stack.
  *
  * Restores layout by uncomputation and replaces (invalid) yield.
  *
@@ -644,7 +613,8 @@ WalkResult handleYield(scf::YieldOp op, RoutingContext& ctx,
 }
 
 /**
- * @brief Add hardware qubit with respective program & hardware index to layout.
+ * @brief Add hardware qubit with respective program & hardware index to
+ * layout.
  *
  * Thanks to the placement pass, we can apply the identity layout here.
  */
