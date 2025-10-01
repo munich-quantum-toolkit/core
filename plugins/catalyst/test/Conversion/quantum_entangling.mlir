@@ -14,7 +14,7 @@
 
 
 // ============================================================================
-// Entangling gates (SWAP, ISWAP, ECR) and controlled variants  
+// Entangling gates (SWAP, ISWAP, ECR) and controlled variants
 // Groups: Allocation & extraction / Uncontrolled / Controlled / Reinsertion
 // ============================================================================
 module {

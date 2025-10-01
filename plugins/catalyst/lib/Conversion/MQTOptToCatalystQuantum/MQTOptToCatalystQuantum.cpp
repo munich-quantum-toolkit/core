@@ -67,10 +67,12 @@ ControlInfo extractControlInfo(ValueRange posCtrlQubits,
   }
 
   // Create control values: 1 for positive controls, 0 for negative controls
-  Value one = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
-                                                          /*width=*/1);
-  Value zero = rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
-                                                           /*width=*/1);
+  const Value one =
+      rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/1,
+                                                  /*width=*/1);
+  const Value zero =
+      rewriter.create<mlir::arith::ConstantIntOp>(loc, /*value=*/0,
+                                                  /*width=*/1);
 
   info.ctrlValues.reserve(info.ctrlQubits.size());
   info.ctrlValues.append(posCtrlQubits.size(), one);  // +controls => 1
@@ -90,11 +92,11 @@ template <typename OpAdaptor>
 ExtractedOperands<OpAdaptor>
 extractOperands(OpAdaptor adaptor, ConversionPatternRewriter& rewriter,
                 Location loc) {
-  ValueRange inQubits = adaptor.getInQubits();
-  ValueRange posCtrlQubits = adaptor.getPosCtrlInQubits();
-  ValueRange negCtrlQubits = adaptor.getNegCtrlInQubits();
+  const ValueRange inQubits = adaptor.getInQubits();
+  const ValueRange posCtrlQubits = adaptor.getPosCtrlInQubits();
+  const ValueRange negCtrlQubits = adaptor.getNegCtrlInQubits();
 
-  ControlInfo ctrlInfo =
+  const ControlInfo ctrlInfo =
       extractControlInfo(posCtrlQubits, negCtrlQubits, rewriter, loc);
 
   return {inQubits, ctrlInfo};
@@ -352,7 +354,7 @@ struct ConvertMQTOptAdjointGate final : OpConversionPattern<MQTGateOp> {
     const auto& [gateName, adjoint] = getGateInfo<MQTGateOp>();
 
     // Extract control information
-    ControlInfo ctrlInfo =
+    const ControlInfo ctrlInfo =
         extractControlInfo(adaptor.getPosCtrlInQubits(),
                            adaptor.getNegCtrlInQubits(), rewriter, op.getLoc());
 
@@ -612,7 +614,7 @@ struct ConvertMQTOptSimpleGate<opt::GPhaseOp> final
     // Create output types for GlobalPhaseOp (control qubits only)
     const Type qubitType =
         catalyst::quantum::QubitType::get(rewriter.getContext());
-    SmallVector<Type> outCtrlTypes(ctrlInfo.ctrlQubits.size(), qubitType);
+    const SmallVector<Type> outCtrlTypes(ctrlInfo.ctrlQubits.size(), qubitType);
 
     auto gphase = rewriter.create<catalyst::quantum::GlobalPhaseOp>(
         op.getLoc(), TypeRange(outCtrlTypes), params[0], false,
@@ -897,26 +899,26 @@ struct ConvertMQTOptSimpleGate<opt::PeresOp> final
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
-    Value q0_after_cnot = cnot.getOutQubits()[0];
-    Value q1_after_cnot = cnot.getOutQubits()[1];
+    const Value q0AfterCnot = cnot.getOutQubits()[0];
+    const Value q1AfterCnot = cnot.getOutQubits()[1];
 
     // X(q0')
     auto x = rewriter.create<catalyst::quantum::CustomOp>(
         op.getLoc(),
         /*gate=*/"PauliX",
-        /*in_qubits=*/ValueRange{q0_after_cnot},
+        /*in_qubits=*/ValueRange{q0AfterCnot},
         /*in_ctrl_qubits=*/cnot.getOutCtrlQubits(),
         /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
-    Value q0_final = x.getOutQubits()[0]; // target0
-    Value q1_final = q1_after_cnot;       // target1
+    const Value q0Final = x.getOutQubits()[0]; // target0
+    const Value q1Final = q1AfterCnot;         // target1
 
     // Final: (targets..., controls...)
     SmallVector<Value> finalResults;
-    finalResults.push_back(q0_final);
-    finalResults.push_back(q1_final);
+    finalResults.push_back(q0Final);
+    finalResults.push_back(q1Final);
     finalResults.append(x.getOutCtrlQubits().begin(),
                         x.getOutCtrlQubits().end());
 
@@ -948,13 +950,13 @@ struct ConvertMQTOptSimpleGate<opt::PeresdgOp> final
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
-    Value q0_after_x = x.getOutQubits()[0];
+    const Value q0AfterX = x.getOutQubits()[0];
 
     // CNOT(q0', q1)
     auto cnot = rewriter.create<catalyst::quantum::CustomOp>(
         op.getLoc(),
         /*gate=*/"CNOT",
-        /*in_qubits=*/ValueRange{q0_after_x, extracted.inQubits[1]},
+        /*in_qubits=*/ValueRange{q0AfterX, extracted.inQubits[1]},
         /*in_ctrl_qubits=*/x.getOutCtrlQubits(),
         /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
         /*params=*/ValueRange{},
@@ -1166,32 +1168,36 @@ struct MQTOptToCatalystQuantum final
     // Mark memref operations on qubits as illegal to trigger conversion
     target.addDynamicallyLegalOp<memref::AllocOp>([](memref::AllocOp op) {
       auto memrefType = dyn_cast<MemRefType>(op.getType());
-      if (!memrefType)
+      if (!memrefType) {
         return true;
+      }
       auto elementType = memrefType.getElementType();
       return !isa<opt::QubitType>(elementType);
     });
 
     target.addDynamicallyLegalOp<memref::DeallocOp>([](memref::DeallocOp op) {
       auto memrefType = dyn_cast<MemRefType>(op.getMemref().getType());
-      if (!memrefType)
+      if (!memrefType) {
         return true;
+      }
       auto elementType = memrefType.getElementType();
       return !isa<opt::QubitType>(elementType);
     });
 
     target.addDynamicallyLegalOp<memref::LoadOp>([](memref::LoadOp op) {
       auto memrefType = dyn_cast<MemRefType>(op.getMemRef().getType());
-      if (!memrefType)
+      if (!memrefType) {
         return true;
+      }
       auto elementType = memrefType.getElementType();
       return !isa<opt::QubitType>(elementType);
     });
 
     target.addDynamicallyLegalOp<memref::StoreOp>([](memref::StoreOp op) {
       auto memrefType = dyn_cast<MemRefType>(op.getMemRef().getType());
-      if (!memrefType)
+      if (!memrefType) {
         return true;
+      }
       auto elementType = memrefType.getElementType();
       return !isa<opt::QubitType>(elementType);
     });

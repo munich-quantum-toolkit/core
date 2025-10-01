@@ -117,8 +117,8 @@ struct ConvertQuantumMeasure final
     const auto bitType = rewriter.getI1Type();
 
     // Create the new operation and replace with proper result ordering
-    auto mqtOp = rewriter.replaceOpWithNewOp<opt::MeasureOp>(
-        op, qubitType, bitType, adaptor.getInQubit());
+    rewriter.replaceOpWithNewOp<opt::MeasureOp>(op, qubitType, bitType,
+                                                adaptor.getInQubit());
 
     return success();
   }
