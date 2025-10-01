@@ -21,15 +21,15 @@ module {
   // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumCliffordT
   func.func @testMQTOptToCatalystQuantumCliffordT() {
     // --- Allocation & extraction ---------------------------------------------------------------
+    // CHECK: %[[C0:.*]] = arith.constant 0 : index
+    // CHECK: %[[C1:.*]] = arith.constant 1 : index
+    // CHECK: %[[C2:.*]] = arith.constant 2 : index
     // CHECK: %[[C3_I64:.*]] = arith.constant 3 : i64
     // CHECK: %[[QREG:.*]] = quantum.alloc(%[[C3_I64]]) : !quantum.reg
-    // CHECK: %[[C0:.*]] = arith.constant 0 : index
     // CHECK: %[[IDX0:.*]] = arith.index_cast %[[C0]] : index to i64
     // CHECK: %[[Q0:.*]] = quantum.extract %[[QREG]][%[[IDX0]]] : !quantum.reg -> !quantum.bit
-    // CHECK: %[[C1:.*]] = arith.constant 1 : index
     // CHECK: %[[IDX1:.*]] = arith.index_cast %[[C1]] : index to i64
     // CHECK: %[[Q1:.*]] = quantum.extract %[[QREG]][%[[IDX1]]] : !quantum.reg -> !quantum.bit
-    // CHECK: %[[C2:.*]] = arith.constant 2 : index
     // CHECK: %[[IDX2:.*]] = arith.index_cast %[[C2]] : index to i64
     // CHECK: %[[Q2:.*]] = quantum.extract %[[QREG]][%[[IDX2]]] : !quantum.reg -> !quantum.bit
 
@@ -55,7 +55,7 @@ module {
     // CHECK: %[[TDG:.*]] = quantum.custom "T"() %[[T]] adj : !quantum.bit
 
     // --- Peres gate decomposition -------------------------------------------------------------------
-    // CHECK: %[[PERES_CNOT:.*]]:2 = quantum.custom "CNOT"() %[[TDG]], %[[Q1_0]] : !quantum.bit, !quantum.bit
+    // CHECK: %[[PERES_CNOT:.*]]:2 = quantum.custom "CNOT"() %[[TDG]], %[[Q1]] : !quantum.bit, !quantum.bit
     // CHECK: %[[PERES_X:.*]] = quantum.custom "PauliX"() %[[PERES_CNOT]]#0 : !quantum.bit
 
     // --- Peresdg gate decomposition -------------------------------------------------------------------
@@ -82,7 +82,7 @@ module {
     // CHECK: %[[CSD_T:.*]], %[[CSD_C:.*]] = quantum.custom "S"() %[[CS_T]] adj ctrls(%[[CS_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
 
     // --- Controlled Peres gate -------------------------------------------------------------------
-    // CHECK: %[[CPERES_CNOT:.*]]:2, %[[CPERES_CTRL:.*]] = quantum.custom "CNOT"() %[[CSD_T]], %[[CSD_C]] ctrls(%[[Q2_0]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CPERES_CNOT:.*]]:2, %[[CPERES_CTRL:.*]] = quantum.custom "CNOT"() %[[CSD_T]], %[[CSD_C]] ctrls(%[[Q2]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
     // CHECK: %[[CPERES_X:.*]], %[[CPERES_X_CTRL:.*]] = quantum.custom "PauliX"() %[[CPERES_CNOT]]#0 ctrls(%[[CPERES_CTRL]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
 
     // --- Controlled Peresdg gate -------------------------------------------------------------------

@@ -21,15 +21,15 @@ module {
   // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumPauliGates
   func.func @testMQTOptToCatalystQuantumPauliGates() {
     // --- Allocation & extraction ---------------------------------------------------------------
+    // CHECK: %[[C0:.*]] = arith.constant 0 : index
+    // CHECK: %[[C1:.*]] = arith.constant 1 : index
+    // CHECK: %[[C2:.*]] = arith.constant 2 : index
     // CHECK: %[[C3_I64:.*]] = arith.constant 3 : i64
     // CHECK: %[[QREG:.*]] = quantum.alloc(%[[C3_I64]]) : !quantum.reg
-    // CHECK: %[[C0:.*]] = arith.constant 0 : index
     // CHECK: %[[IDX0:.*]] = arith.index_cast %[[C0]] : index to i64
     // CHECK: %[[Q0:.*]] = quantum.extract %[[QREG]][%[[IDX0]]] : !quantum.reg -> !quantum.bit
-    // CHECK: %[[C1:.*]] = arith.constant 1 : index
     // CHECK: %[[IDX1:.*]] = arith.index_cast %[[C1]] : index to i64
     // CHECK: %[[Q1:.*]] = quantum.extract %[[QREG]][%[[IDX1]]] : !quantum.reg -> !quantum.bit
-    // CHECK: %[[C2:.*]] = arith.constant 2 : index
     // CHECK: %[[IDX2:.*]] = arith.index_cast %[[C2]] : index to i64
     // CHECK: %[[Q2:.*]] = quantum.extract %[[QREG]][%[[IDX2]]] : !quantum.reg -> !quantum.bit
 
@@ -39,11 +39,11 @@ module {
     // CHECK: %[[Z:.*]] = quantum.custom "PauliZ"() %[[Y]] : !quantum.bit
     // CHECK: %[[I:.*]] = quantum.custom "Identity"() %[[Z]] : !quantum.bit
 
-    // CHECK: %[[CNOT_T:.*]], %[[CNOT_C:.*]] = quantum.custom "CNOT"() %[[I]] ctrls(%[[Q1_0]]) ctrlvals(%true) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CNOT_T:.*]], %[[CNOT_C:.*]] = quantum.custom "CNOT"() %[[I]] ctrls(%[[Q1]]) ctrlvals(%true) : !quantum.bit ctrls !quantum.bit
     // CHECK: %[[CY_T:.*]], %[[CY_C:.*]] = quantum.custom "CY"() %[[CNOT_T]] ctrls(%[[CNOT_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
     // CHECK: %[[CZ_T:.*]], %[[CZ_C:.*]] = quantum.custom "CZ"() %[[CY_T]] ctrls(%[[CY_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
     // CHECK: %[[I_T:.*]], %[[I_C:.*]] = quantum.custom "Identity"() %[[CZ_T]] ctrls(%[[CZ_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[TOF_T:.*]], %[[TOF_C:.*]]:2 = quantum.custom "Toffoli"() %[[I_T]] ctrls(%[[I_C]], %[[Q2_0]]) ctrlvals(%true{{.*}}, %true{{.*}}) : !quantum.bit ctrls !quantum.bit, !quantum.bit
+    // CHECK: %[[TOF_T:.*]], %[[TOF_C:.*]]:2 = quantum.custom "Toffoli"() %[[I_T]] ctrls(%[[I_C]], %[[Q2]]) ctrlvals(%true{{.*}}, %true{{.*}}) : !quantum.bit ctrls !quantum.bit, !quantum.bit
 
     // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[TOF_T]] : !quantum.reg, !quantum.bit
     // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[TOF_C]]#0 : !quantum.reg, !quantum.bit

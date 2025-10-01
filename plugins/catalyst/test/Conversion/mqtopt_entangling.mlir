@@ -21,19 +21,20 @@ module {
   // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumEntanglingGates
   func.func @testMQTOptToCatalystQuantumEntanglingGates() {
     // --- Allocation & extraction ---------------------------------------------------------------
+    // CHECK: %[[C0:.*]] = arith.constant 0 : index
+    // CHECK: %[[C1:.*]] = arith.constant 1 : index
+    // CHECK: %[[C2:.*]] = arith.constant 2 : index
     // CHECK: %[[C3_I64:.*]] = arith.constant 3 : i64
     // CHECK: %[[QREG:.*]] = quantum.alloc(%[[C3_I64]]) : !quantum.reg
-    // CHECK: %[[C0:.*]] = arith.constant 0 : index
     // CHECK: %[[IDX0:.*]] = arith.index_cast %[[C0]] : index to i64
     // CHECK: %[[Q0:.*]] = quantum.extract %[[QREG]][%[[IDX0]]] : !quantum.reg -> !quantum.bit
-    // CHECK: %[[C1:.*]] = arith.constant 1 : index
     // CHECK: %[[IDX1:.*]] = arith.index_cast %[[C1]] : index to i64
     // CHECK: %[[Q1:.*]] = quantum.extract %[[QREG]][%[[IDX1]]] : !quantum.reg -> !quantum.bit
-    // CHECK: %[[C2:.*]] = arith.constant 2 : index
-    // CHECK: %[[Q2_0:.*]] = quantum.extract %[[QREG]][%[[IDX2]]] : !quantum.reg -> !quantum.bit
+    // CHECK: %[[IDX2:.*]] = arith.index_cast %[[C2]] : index to i64
+    // CHECK: %[[Q2:.*]] = quantum.extract %[[QREG]][%[[IDX2]]] : !quantum.reg -> !quantum.bit
 
     // --- Uncontrolled -------------------------------------------------------------------------
-    // CHECK: %[[SW0:.*]]:2 = quantum.custom "SWAP"() %[[Q0_0]], %[[Q1_0]] : !quantum.bit, !quantum.bit
+    // CHECK: %[[SW0:.*]]:2 = quantum.custom "SWAP"() %[[Q0]], %[[Q1]] : !quantum.bit, !quantum.bit
     // CHECK: %[[IS0:.*]]:2 = quantum.custom "ISWAP"() %[[SW0]]#0, %[[SW0]]#1 : !quantum.bit, !quantum.bit
     // CHECK: %[[ISD0:.*]]:2 = quantum.custom "ISWAP"() %[[IS0]]#0, %[[IS0]]#1 adj : !quantum.bit, !quantum.bit
     // CHECK: %[[ECR0:.*]]:2 = quantum.custom "ECR"() %[[ISD0]]#0, %[[ISD0]]#1 : !quantum.bit, !quantum.bit
@@ -41,7 +42,7 @@ module {
     // CHECK: %[[DCX1:.*]]:2 = quantum.custom "CNOT"() %[[DCX0]]#1, %[[DCX0]]#0 : !quantum.bit, !quantum.bit
 
     // --- Controlled ----------------------------------------------------------------------------
-    // CHECK: %[[CSW_T:.*]]:2, %[[CSW_C:.*]] = quantum.custom "CSWAP"() %[[DCX1]]#0, %[[DCX1]]#1 ctrls(%[[Q2_0]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CSW_T:.*]]:2, %[[CSW_C:.*]] = quantum.custom "CSWAP"() %[[DCX1]]#0, %[[DCX1]]#1 ctrls(%[[Q2]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
     // CHECK: %[[CISW_T:.*]]:2, %[[CISW_C:.*]] = quantum.custom "ISWAP"() %[[CSW_T]]#0, %[[CSW_T]]#1 ctrls(%[[CSW_C]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
     // CHECK: %[[CISWD_T:.*]]:2, %[[CISWD_C:.*]] = quantum.custom "ISWAP"() %[[CISW_T]]#0, %[[CISW_T]]#1 adj ctrls(%[[CISW_C]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
     // CHECK: %[[CECR_T:.*]]:2, %[[CECR_C:.*]] = quantum.custom "ECR"() %[[CISWD_T]]#0, %[[CISWD_T]]#1 ctrls(%[[CISWD_C]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
