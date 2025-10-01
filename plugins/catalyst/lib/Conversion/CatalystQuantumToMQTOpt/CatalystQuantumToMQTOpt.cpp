@@ -10,6 +10,7 @@
 
 #include "mlir/Conversion/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -46,18 +47,33 @@ public:
     // needed.
     addConversion([](const Type type) { return type; });
 
-    // Convert source QuregType to target MemRefType<QubitType>
-    // We can't know the size here, so we use a placeholder that will be
-    // replaced by the actual static memref during pattern conversion
-    addConversion([ctx](catalyst::quantum::QuregType /*type*/) -> Type {
-      auto qubitType = opt::QubitType::get(ctx);
-      // Use dynamic as placeholder - actual patterns will create static memrefs
-      return MemRefType::get({ShapedType::kDynamic}, qubitType);
-    });
-
     // Convert source QubitType to target QubitType
     addConversion([ctx](catalyst::quantum::QubitType /*type*/) -> Type {
       return opt::QubitType::get(ctx);
+    });
+
+    // Convert QuregType to static memref. 
+    // This signals to the adaptor how to map QuregType operands.
+    // The actual static memref types will flow through from the alloc operation.
+    addConversion([ctx](catalyst::quantum::QuregType /*type*/) -> Type {
+      // We return a "signature" showing QuregType maps to memref, but 
+      // the actual size will come from the alloc operation. 
+      // Using dynamic shape here as a placeholder - the actual static memref 
+      // types will flow through without materialization.
+      auto qubitType = opt::QubitType::get(ctx);
+      return MemRefType::get({ShapedType::kDynamic}, qubitType);
+    });
+
+    // Add target materialization: this is called when the framework needs to 
+    // convert a QuregType value to a memref. The input is the actual static memref
+    // created by the alloc pattern. We just return it directly - no cast needed.
+    addTargetMaterialization([](OpBuilder& builder, Type resultType,
+                                ValueRange inputs, Location loc) -> Value {
+      // Just return the input value - it's already the memref we want
+      if (inputs.size() == 1) {
+        return inputs[0];
+      }
+      return nullptr;
     });
   }
 };
@@ -82,7 +98,7 @@ struct ConvertQuantumAlloc final
     auto staticMemrefType =
         MemRefType::get({static_cast<int64_t>(nqubits)}, qubitType);
 
-    // Create the allocation with the static size
+    // Create the allocation with the static size  
     auto allocOp =
         rewriter.create<memref::AllocOp>(op.getLoc(), staticMemrefType);
 
@@ -99,8 +115,19 @@ struct ConvertQuantumDealloc final
   LogicalResult
   matchAndRewrite(catalyst::quantum::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Replace with memref.dealloc using the standard MLIR pattern
-    rewriter.replaceOpWithNewOp<memref::DeallocOp>(op, adaptor.getQreg());
+    // Get the memref from adaptor
+    Value memref = adaptor.getQreg();
+    
+    // If we got an unrealized_conversion_cast wrapping the static memref,
+    // unwrap it to get the actual static memref
+    if (auto castOp = memref.getDefiningOp<UnrealizedConversionCastOp>()) {
+      if (castOp.getInputs().size() == 1) {
+        memref = castOp.getInputs()[0];
+      }
+    }
+
+    // Replace with memref.dealloc using the static memref
+    rewriter.replaceOpWithNewOp<memref::DeallocOp>(op, memref);
     return success();
   }
 };
@@ -146,10 +173,32 @@ struct ConvertQuantumExtract final
     auto indexConstant =
         rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
 
-    // Get the memref from adaptor - should be static now
-    auto memref = adaptor.getQreg();
+    // Get the memref from adaptor
+    Value memref = adaptor.getQreg();
+    
+    // DEBUG: Print what we got from the adaptor
+    llvm::errs() << "ConvertQuantumExtract DEBUG:\n";
+    llvm::errs() << "  Original operand type: " << op.getQreg().getType() << "\n";
+    llvm::errs() << "  Adaptor operand type: " << memref.getType() << "\n";
+    llvm::errs() << "  Adaptor operand: " << memref << "\n";
+    
+    // If we got an unrealized_conversion_cast wrapping the static memref,
+    // unwrap it to get the actual static memref
+    if (auto castOp = memref.getDefiningOp<UnrealizedConversionCastOp>()) {
+      llvm::errs() << "  Found unrealized_conversion_cast, unwrapping...\n";
+      if (castOp.getInputs().size() == 1) {
+        memref = castOp.getInputs()[0];
+        llvm::errs() << "  Unwrapped memref type: " << memref.getType() << "\n";
+      }
+    }
 
-    // Create the new operation directly
+    // Verify we got a static memref type as expected
+    auto memrefType = dyn_cast<MemRefType>(memref.getType());
+    if (!memrefType || !memrefType.hasStaticShape()) {
+      return op.emitError("Expected static memref type from alloc, got: ") << memref.getType();
+    }
+
+    // Create the new operation directly using the actual memref type
     auto loadOp = rewriter.create<memref::LoadOp>(
         op.getLoc(), qubitType, memref, ValueRange{indexConstant});
 
@@ -178,16 +227,24 @@ struct ConvertQuantumInsert final
     auto indexConstant =
         rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
 
-    // Get the memref from adaptor - should be static now
-    auto memref = adaptor.getInQreg();
+    // Get the memref from adaptor
+    Value memref = adaptor.getInQreg();
+    
+    // If we got an unrealized_conversion_cast wrapping the static memref,
+    // unwrap it to get the actual static memref
+    if (auto castOp = memref.getDefiningOp<UnrealizedConversionCastOp>()) {
+      if (castOp.getInputs().size() == 1) {
+        memref = castOp.getInputs()[0];
+      }
+    }
 
     // Create the new operation directly
     rewriter.create<memref::StoreOp>(op.getLoc(), adaptor.getQubit(), memref,
                                      ValueRange{indexConstant});
 
     // In the memref model, the quantum register is modified in-place,
-    // so we replace the result with the input register (unchanged)
-    rewriter.replaceOp(op, adaptor.getInQreg());
+    // so we replace the result with the memref (unchanged)
+    rewriter.replaceOp(op, memref);
     return success();
   }
 };
@@ -383,6 +440,7 @@ struct CatalystQuantumToMQTOpt final
     ConversionTarget target(*context);
     target.addLegalDialect<opt::MQTOptDialect>();
     target.addLegalDialect<mlir::memref::MemRefDialect>();
+    target.addLegalDialect<mlir::arith::ArithDialect>();
     target.addIllegalDialect<catalyst::quantum::QuantumDialect>();
 
     // Mark operations legal, that have no equivalent in the target dialect

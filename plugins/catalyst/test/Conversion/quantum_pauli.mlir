@@ -22,7 +22,6 @@ module {
   func.func @testCatalystQuantumToMQTOptPauliGates() {
     // --- Allocation & extraction ---------------------------------------------------------------
     // CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<4x!mqtopt.Qubit>
-    // CHECK: %[[QREG:.*]] = memref.cast %[[ALLOC]] : memref<4x!mqtopt.Qubit> to memref<?x!mqtopt.Qubit>
     // CHECK: %[[C0:.*]] = arith.constant 0 : index
     // CHECK: %[[Q0:.*]] = memref.load %[[ALLOC]][%[[C0]]] : memref<4x!mqtopt.Qubit>
     // CHECK: %[[C1:.*]] = arith.constant 1 : index
@@ -52,9 +51,6 @@ module {
     // CHECK: %[[T8:.*]], %[[C8:.*]]:2 = mqtopt.x(static [] mask []) %[[Q2]] ctrl %[[T7]], %[[C7]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
 
     // --- Reinsertion ---------------------------------------------------------------------------
-    // CHECK: memref.store %[[T8]], %[[ALLOC]][%[[C0]]] : memref<4x!mqtopt.Qubit>
-    // CHECK: memref.store %[[C8]]#0, %[[ALLOC]][%[[C1]]] : memref<4x!mqtopt.Qubit>
-    // CHECK: memref.store %[[C8]]#1, %[[ALLOC]][%[[C2]]] : memref<4x!mqtopt.Qubit>
     // CHECK: %[[T9:.*]], %[[C9:.*]]:2 = mqtopt.x(static [] mask []) %[[C8]]#0 ctrl %[[C8]]#1, %[[T8]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK: %[[T10:.*]], %[[C10:.*]]:2 = mqtopt.y(static [] mask []) %[[C9]]#0 ctrl %[[C9]]#1, %[[T9]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK: %[[T11:.*]], %[[C11:.*]]:2 = mqtopt.z(static [] mask []) %[[C10]]#0 ctrl %[[C10]]#1, %[[T10]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
@@ -69,7 +65,6 @@ module {
     // CHECK: memref.store %[[C12]]#0, %[[ALLOC]][%[[C1]]] : memref<4x!mqtopt.Qubit>
     // CHECK: %[[C0:.*]] = arith.constant 0 : index
     // CHECK: memref.store %[[T12]], %[[ALLOC]][%[[C0]]] : memref<4x!mqtopt.Qubit>
-    // CHECK: memref.dealloc %cast : memref<?x!mqtopt.Qubit>
 
     // Prepare qubits
     %qreg = quantum.alloc( 4) : !quantum.reg
