@@ -52,21 +52,23 @@ public:
       return opt::QubitType::get(ctx);
     });
 
-    // Convert QuregType to static memref. 
+    // Convert QuregType to static memref.
     // This signals to the adaptor how to map QuregType operands.
-    // The actual static memref types will flow through from the alloc operation.
+    // The actual static memref types will flow through from the alloc
+    // operation.
     addConversion([ctx](catalyst::quantum::QuregType /*type*/) -> Type {
-      // We return a "signature" showing QuregType maps to memref, but 
-      // the actual size will come from the alloc operation. 
-      // Using dynamic shape here as a placeholder - the actual static memref 
+      // We return a "signature" showing QuregType maps to memref, but
+      // the actual size will come from the alloc operation.
+      // Using dynamic shape here as a placeholder - the actual static memref
       // types will flow through without materialization.
       auto qubitType = opt::QubitType::get(ctx);
       return MemRefType::get({ShapedType::kDynamic}, qubitType);
     });
 
-    // Add target materialization: this is called when the framework needs to 
-    // convert a QuregType value to a memref. The input is the actual static memref
-    // created by the alloc pattern. We just return it directly - no cast needed.
+    // Add target materialization: this is called when the framework needs to
+    // convert a QuregType value to a memref. The input is the actual static
+    // memref created by the alloc pattern. We just return it directly - no cast
+    // needed.
     addTargetMaterialization([](OpBuilder& builder, Type resultType,
                                 ValueRange inputs, Location loc) -> Value {
       // Just return the input value - it's already the memref we want
@@ -98,7 +100,7 @@ struct ConvertQuantumAlloc final
     auto staticMemrefType =
         MemRefType::get({static_cast<int64_t>(nqubits)}, qubitType);
 
-    // Create the allocation with the static size  
+    // Create the allocation with the static size
     auto allocOp =
         rewriter.create<memref::AllocOp>(op.getLoc(), staticMemrefType);
 
@@ -117,7 +119,7 @@ struct ConvertQuantumDealloc final
                   ConversionPatternRewriter& rewriter) const override {
     // Get the memref from adaptor
     Value memref = adaptor.getQreg();
-    
+
     // If we got an unrealized_conversion_cast wrapping the static memref,
     // unwrap it to get the actual static memref
     if (auto castOp = memref.getDefiningOp<UnrealizedConversionCastOp>()) {
@@ -175,27 +177,20 @@ struct ConvertQuantumExtract final
 
     // Get the memref from adaptor
     Value memref = adaptor.getQreg();
-    
-    // DEBUG: Print what we got from the adaptor
-    llvm::errs() << "ConvertQuantumExtract DEBUG:\n";
-    llvm::errs() << "  Original operand type: " << op.getQreg().getType() << "\n";
-    llvm::errs() << "  Adaptor operand type: " << memref.getType() << "\n";
-    llvm::errs() << "  Adaptor operand: " << memref << "\n";
-    
+
     // If we got an unrealized_conversion_cast wrapping the static memref,
     // unwrap it to get the actual static memref
     if (auto castOp = memref.getDefiningOp<UnrealizedConversionCastOp>()) {
-      llvm::errs() << "  Found unrealized_conversion_cast, unwrapping...\n";
       if (castOp.getInputs().size() == 1) {
         memref = castOp.getInputs()[0];
-        llvm::errs() << "  Unwrapped memref type: " << memref.getType() << "\n";
       }
     }
 
     // Verify we got a static memref type as expected
     auto memrefType = dyn_cast<MemRefType>(memref.getType());
     if (!memrefType || !memrefType.hasStaticShape()) {
-      return op.emitError("Expected static memref type from alloc, got: ") << memref.getType();
+      return op.emitError("Expected static memref type from alloc, got: ")
+             << memref.getType();
     }
 
     // Create the new operation directly using the actual memref type
@@ -229,7 +224,7 @@ struct ConvertQuantumInsert final
 
     // Get the memref from adaptor
     Value memref = adaptor.getInQreg();
-    
+
     // If we got an unrealized_conversion_cast wrapping the static memref,
     // unwrap it to get the actual static memref
     if (auto castOp = memref.getDefiningOp<UnrealizedConversionCastOp>()) {

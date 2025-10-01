@@ -50,7 +50,7 @@ module {
     // CHECK: %[[T7:.*]], %[[C7:.*]] = mqtopt.z(static [] mask []) %[[C6]] ctrl %[[T6]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[T8:.*]], %[[C8:.*]]:2 = mqtopt.x(static [] mask []) %[[Q2]] ctrl %[[T7]], %[[C7]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
 
-    // --- Reinsertion ---------------------------------------------------------------------------
+    // --- Controlled two-qubit controlled gates ---------------------------------------------------------------------------
     // CHECK: %[[T9:.*]], %[[C9:.*]]:2 = mqtopt.x(static [] mask []) %[[C8]]#0 ctrl %[[C8]]#1, %[[T8]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK: %[[T10:.*]], %[[C10:.*]]:2 = mqtopt.y(static [] mask []) %[[C9]]#0 ctrl %[[C9]]#1, %[[T9]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK: %[[T11:.*]], %[[C11:.*]]:2 = mqtopt.z(static [] mask []) %[[C10]]#0 ctrl %[[C10]]#1, %[[T10]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit

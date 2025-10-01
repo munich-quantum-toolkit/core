@@ -22,7 +22,6 @@ module {
   func.func @testCatalystQuantumToMQTOptCliffordT() {
     // --- Allocation & extraction ---------------------------------------------------------------
     // CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<2x!mqtopt.Qubit>
-    // CHECK: %[[QREG:.*]] = memref.cast %[[ALLOC]] : memref<2x!mqtopt.Qubit> to memref<?x!mqtopt.Qubit>
     // CHECK: %[[C0:.*]] = arith.constant 0 : index
     // CHECK: %[[Q0:.*]] = memref.load %[[ALLOC]][%[[C0]]] : memref<2x!mqtopt.Qubit>
     // CHECK: %[[C1:.*]] = arith.constant 1 : index
@@ -51,11 +50,7 @@ module {
     // CHECK: memref.store %[[CTDG_T]], %[[ALLOC]][%[[C0_FINAL]]] : memref<2x!mqtopt.Qubit>
     // CHECK: %[[C1_FINAL:.*]] = arith.constant 1 : index
     // CHECK: memref.store %[[CTDG_C]], %[[ALLOC]][%[[C1_FINAL]]] : memref<2x!mqtopt.Qubit>
-    // CHECK: memref.dealloc %[[QREG]] : memref<?x!mqtopt.Qubit>
-    // CHECK: memref.store %[[CTDG_T]], %[[QREG]][%[[C0_FINAL]]] : memref<2x!mqtopt.Qubit>
-    // CHECK: %[[C1_FINAL:.*]] = arith.constant 1 : index
-    // CHECK: memref.store %[[CTDG_C]], %[[QREG]][%[[C1_FINAL]]] : memref<2x!mqtopt.Qubit>
-    // CHECK: memref.dealloc %[[CAST]] : memref<?x!mqtopt.Qubit>
+    // CHECK: memref.dealloc %[[ALLOC]] : memref<2x!mqtopt.Qubit>
 
     // Prepare qubits
     %qreg = quantum.alloc( 2) : !quantum.reg

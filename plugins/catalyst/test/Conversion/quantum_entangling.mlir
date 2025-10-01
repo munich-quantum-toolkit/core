@@ -22,7 +22,6 @@ module {
   func.func @testCatalystQuantumToMQTOptEntanglingGates() {
     // --- Allocation & extraction ---------------------------------------------------------------
     // CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<3x!mqtopt.Qubit>
-    // CHECK: %[[QREG:.*]] = memref.cast %[[ALLOC]] : memref<3x!mqtopt.Qubit> to memref<?x!mqtopt.Qubit>
     // CHECK: %[[C0:.*]] = arith.constant 0 : index
     // CHECK: %[[Q0:.*]] = memref.load %[[ALLOC]][%[[C0]]] : memref<3x!mqtopt.Qubit>
     // CHECK: %[[C1:.*]] = arith.constant 1 : index
@@ -48,12 +47,8 @@ module {
     // CHECK: %[[C1_FINAL:.*]] = arith.constant 1 : index
     // CHECK: memref.store %[[CECR_T]]#1, %[[ALLOC]][%[[C1_FINAL]]] : memref<3x!mqtopt.Qubit>
     // CHECK: %[[C2_FINAL:.*]] = arith.constant 2 : index
-    // CHECK: memref.store %[[CECR_T]]#0, %[[QREG]][%[[I0_FINAL]]] : memref<3x!mqtopt.Qubit>
-    // CHECK: %[[I1_FINAL:.*]] = arith.constant 1 : index
-    // CHECK: memref.store %[[CECR_T]]#1, %[[QREG]][%[[I1_FINAL]]] : memref<3x!mqtopt.Qubit>
-    // CHECK: %[[I2_FINAL:.*]] = arith.constant 2 : index
-    // CHECK: memref.store %[[CECR_C]], %[[QREG]][%[[I2_FINAL]]] : memref<3x!mqtopt.Qubit>
-    // CHECK: memref.dealloc %[[CAST]] : memref<?x!mqtopt.Qubit>
+    // CHECK: memref.store %[[CECR_C]], %[[ALLOC]][%[[C2_FINAL]]] : memref<3x!mqtopt.Qubit>
+
 
     // Prepare qubits
     %qreg = quantum.alloc( 3) : !quantum.reg

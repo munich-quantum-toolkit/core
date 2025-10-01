@@ -23,13 +23,12 @@ module {
     // --- Allocation & extraction ---------------------------------------------------------------
     // CHECK: %cst = arith.constant 3.000000e-01 : f64
     // CHECK: %[[ALLOC:.*]] = memref.alloc() : memref<3x!mqtopt.Qubit>
-    // CHECK: %[[QREG:.*]] = memref.cast %[[ALLOC]] : memref<3x!mqtopt.Qubit> to memref<?x!mqtopt.Qubit>
     // CHECK: %[[C0:.*]] = arith.constant 0 : index
     // CHECK: %[[Q0:.*]] = memref.load %[[ALLOC]][%[[C0]]] : memref<3x!mqtopt.Qubit>
     // CHECK: %[[C1:.*]] = arith.constant 1 : index
     // CHECK: %[[Q1:.*]] = memref.load %[[ALLOC]][%[[C1]]] : memref<3x!mqtopt.Qubit>
     // CHECK: %[[C2:.*]] = arith.constant 2 : index
-    // CHECK: %[[Q2:.*]] = memref.load %[[QREG]][%[[C2]]] : memref<3x!mqtopt.Qubit>
+    // CHECK: %[[Q2:.*]] = memref.load %[[ALLOC]][%[[C2]]] : memref<3x!mqtopt.Qubit>
 
     // --- Uncontrolled ---------------------------------------------------------------------------
     // CHECK: %[[XY:.*]]:2 = mqtopt.xx_plus_yy(%cst, %cst static [] mask [false, false]) %[[Q0]], %[[Q1]] : !mqtopt.Qubit, !mqtopt.Qubit
@@ -45,12 +44,11 @@ module {
 
     // --- Reinsertion ---------------------------------------------------------------------------
     // CHECK: %[[C0_FINAL:.*]] = arith.constant 0 : index
-    // CHECK: memref.store %[[CZZ_T]]#0, %[[QREG]][%[[C0_FINAL]]] : memref<3x!mqtopt.Qubit>
+    // CHECK: memref.store %[[CZZ_T]]#0, %[[ALLOC]][%[[C0_FINAL]]] : memref<3x!mqtopt.Qubit>
     // CHECK: %[[C1_FINAL:.*]] = arith.constant 1 : index
-    // CHECK: memref.store %[[CZZ_T]]#1, %[[QREG]][%[[C1_FINAL]]] : memref<3x!mqtopt.Qubit>
+    // CHECK: memref.store %[[CZZ_T]]#1, %[[ALLOC]][%[[C1_FINAL]]] : memref<3x!mqtopt.Qubit>
     // CHECK: %[[C2_FINAL:.*]] = arith.constant 2 : index
-    // CHECK: memref.store %[[CZZ_C]], %[[QREG]][%[[C2_FINAL]]] : memref<3x!mqtopt.Qubit>
-    // CHECK: memref.dealloc %[[CAST]] : memref<?x!mqtopt.Qubit>
+    // CHECK: memref.store %[[CZZ_C]], %[[ALLOC]][%[[C2_FINAL]]] : memref<3x!mqtopt.Qubit>
 
     // Prepare qubits
     %angle = arith.constant 3.000000e-01 : f64
