@@ -194,32 +194,31 @@ public:
 private:
   void insert(const SmallVector<QubitIndexPair>& swaps, Location location,
               PatternRewriter& rewriter) {
-    for (const auto [hardwareIdx0, hardwareIdx1] : swaps) {
-      const Value qIn0 = stack().top().lookupHardwareValue(hardwareIdx0);
-      const Value qIn1 = stack().top().lookupHardwareValue(hardwareIdx1);
+    for (const auto [hw0, hw1] : swaps) {
+      const Value in0 = stack().top().lookupHardwareValue(hw0);
+      const Value in1 = stack().top().lookupHardwareValue(hw1);
 
-      const QubitIndex programIdx0 = stack().top().lookupProgramIndex(qIn0);
-      const QubitIndex programIdx1 = stack().top().lookupProgramIndex(qIn1);
+      const QubitIndex prog0 = stack().top().lookupProgramIndex(in0);
+      const QubitIndex prog1 = stack().top().lookupProgramIndex(in1);
 
       LLVM_DEBUG({
         llvm::dbgs() << llvm::format(
-            "route: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", programIdx1,
-            hardwareIdx0, programIdx0, hardwareIdx1, programIdx0, hardwareIdx0,
-            programIdx1, hardwareIdx1);
+            "route: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", prog1, hw0,
+            prog0, hw1, prog0, hw0, prog1, hw1);
       });
 
-      auto swap = createSwap(location, qIn0, qIn1, rewriter);
-      const auto [qOut0, qOut1] = getOuts(swap);
+      auto swap = createSwap(location, in0, in1, rewriter);
+      const auto [out0, out1] = getOuts(swap);
 
       rewriter.setInsertionPointAfter(swap);
       replaceAllUsesInRegionAndChildrenExcept(
-          qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
+          in0, out1, swap->getParentRegion(), swap, rewriter);
       replaceAllUsesInRegionAndChildrenExcept(
-          qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
+          in1, out0, swap->getParentRegion(), swap, rewriter);
 
-      stack().top().swap(qIn0, qIn1);
-      stack().top().remapQubitValue(qIn0, qOut0);
-      stack().top().remapQubitValue(qIn1, qOut1);
+      stack().top().swap(in0, in1);
+      stack().top().remapQubitValue(in0, out0);
+      stack().top().remapQubitValue(in1, out1);
 
       (*nadd_)++;
     }
@@ -291,8 +290,8 @@ WalkResult handleIf(scf::IfOp op, Router& router) {
   const auto results = op->getResults().take_front(router.arch().nqubits());
   Layout<QubitIndex>& stateBeforeIf =
       router.stack().getItemAtDepth(IF_PARENT_DEPTH);
-  for (const auto [hardwareIdx, res] : llvm::enumerate(results)) {
-    const Value q = stateBeforeIf.lookupHardwareValue(hardwareIdx);
+  for (const auto [hw, res] : llvm::enumerate(results)) {
+    const Value q = stateBeforeIf.lookupHardwareValue(hw);
     stateBeforeIf.remapQubitValue(q, res);
   }
 

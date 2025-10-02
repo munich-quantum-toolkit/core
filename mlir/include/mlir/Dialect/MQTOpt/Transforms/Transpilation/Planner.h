@@ -46,10 +46,10 @@ struct NaivePlanner : PlannerBase {
     }
 
     mlir::SmallVector<QubitIndexPair, 16> swaps;
-    for (const auto [programIdx0, programIdx1] : gates) {
-      const auto path =
-          arch.shortestPathBetween(layout.getHardwareIndex(programIdx0),
-                                   layout.getHardwareIndex(programIdx1));
+    for (const auto [prog0, prog1] : gates) {
+      const QubitIndex hw0 = layout.getHardwareIndex(prog0);
+      const QubitIndex hw1 = layout.getHardwareIndex(prog1);
+      const auto path = arch.shortestPathBetween(hw0, hw1);
       for (std::size_t i = 0; i < path.size() - 2; ++i) {
         swaps.emplace_back(path[i], path[i + 1]);
       }
@@ -69,11 +69,11 @@ struct QMAPPlanner : PlannerBase {
     /// required if we were to route the gate set naively.
     const auto heuristic = [&](const SearchNode& node) {
       double h{};
-      for (const auto [p0, p1] : gates) {
+      for (const auto [prog0, prog1] : gates) {
+        const QubitIndex hw0 = node.layout.getHardwareIndex(prog0);
+        const QubitIndex hw1 = node.layout.getHardwareIndex(prog1);
         const std::size_t nswaps =
-            arch.lengthOfShortestPathBetween(node.layout.getHardwareIndex(p0),
-                                             node.layout.getHardwareIndex(p1)) -
-            2;
+            arch.lengthOfShortestPathBetween(hw0, hw1) - 2;
         h += static_cast<double>(nswaps);
       }
       return h;
@@ -81,9 +81,9 @@ struct QMAPPlanner : PlannerBase {
 
     const auto isGoal = [&](const SearchNode& node) {
       return std::ranges::all_of(gates, [&](const QubitIndexPair gate) {
-        const auto [p0, p1] = gate;
-        return arch.areAdjacent(node.layout.getHardwareIndex(p0),
-                                node.layout.getHardwareIndex(p1));
+        const auto [prog0, prog1] = gate;
+        return arch.areAdjacent(node.layout.getHardwareIndex(prog0),
+                                node.layout.getHardwareIndex(prog1));
       });
     };
 
@@ -148,20 +148,18 @@ private:
     llvm::SmallDenseSet<QubitIndexPair, 16> candidates{};
 
     const auto collect = [&](const QubitIndex p) {
-      const std::size_t hardwareIdx0 = layout.getHardwareIndex(p);
-      for (const std::size_t hardwareIdx1 : arch.neighboursOf(hardwareIdx0)) {
+      const std::size_t hw0 = layout.getHardwareIndex(p);
+      for (const std::size_t hw1 : arch.neighboursOf(hw0)) {
         /// Ensure consistent hashing/comparison
         const QubitIndexPair swap =
-            hardwareIdx0 < hardwareIdx1
-                ? QubitIndexPair{hardwareIdx0, hardwareIdx1}
-                : QubitIndexPair{hardwareIdx1, hardwareIdx0};
+            hw0 < hw1 ? QubitIndexPair{hw0, hw1} : QubitIndexPair{hw1, hw0};
         candidates.insert(swap);
       }
     };
 
-    for (const auto [p0, p1] : gates) {
-      collect(p0);
-      collect(p1);
+    for (const auto [prog0, prog1] : gates) {
+      collect(prog0);
+      collect(prog1);
     }
 
     return {candidates.begin(), candidates.end()};
