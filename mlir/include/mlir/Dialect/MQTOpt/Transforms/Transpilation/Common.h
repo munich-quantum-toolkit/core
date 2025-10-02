@@ -10,10 +10,14 @@
 
 #pragma once
 
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+
 #include <cstddef>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Value.h>
+#include <utility>
 
 namespace mqt::ir::opt {
 /**
@@ -45,7 +49,8 @@ using Exchange = std::pair<QubitIndex, QubitIndex>;
  * @brief Create a normalized exchange (smaller index first) for consistent
  * hashing/comparison.
  */
-inline Exchange makeExchange(const QubitIndex a, const QubitIndex b) {
+[[nodiscard]] inline Exchange makeExchange(const QubitIndex a,
+                                           const QubitIndex b) {
   return a < b ? Exchange{a, b} : Exchange{b, a};
 }
 
@@ -53,5 +58,26 @@ inline Exchange makeExchange(const QubitIndex a, const QubitIndex b) {
  * @brief Return true if the function contains "entry_point" in the passthrough
  * attribute.
  */
-bool isEntryPoint(mlir::func::FuncOp op);
+[[nodiscard]] bool isEntryPoint(mlir::func::FuncOp op);
+
+/**
+ * @brief Check if a unitary acts on two qubits.
+ * @param u A unitary.
+ * @returns True iff the qubit gate acts on two qubits.
+ */
+[[nodiscard]] bool isTwoQubitGate(UnitaryInterface u);
+
+/**
+ * @brief Return input qubit pair for a two-qubit unitary.
+ * @param u A two-qubit unitary.
+ * @return Pair of SSA values consisting of the first and second in-qubits.
+ */
+[[nodiscard]] std::pair<mlir::Value, mlir::Value> getIns(UnitaryInterface op);
+
+/**
+ * @brief Return output qubit pair for a two-qubit unitary.
+ * @param u A two-qubit unitary.
+ * @return Pair of SSA values consisting of the first and second out-qubits.
+ */
+[[nodiscard]] std::pair<mlir::Value, mlir::Value> getOuts(UnitaryInterface op);
 } // namespace mqt::ir::opt

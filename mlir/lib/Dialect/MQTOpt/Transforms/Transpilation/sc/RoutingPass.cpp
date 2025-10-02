@@ -12,15 +12,14 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layerizer.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Planner.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
-#include "mlir/IR/Operation.h"
-
-#include "llvm/ADT/DenseSet.h"
 
 #include <cassert>
 #include <cstddef>
-#include <functional>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -34,6 +33,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
@@ -53,42 +53,6 @@ namespace mqt::ir::opt {
 
 namespace {
 using namespace mlir;
-
-/**
- * @brief A pair of program indices.
- */
-using ProgramIndexPair = std::pair<QubitIndex, QubitIndex>;
-
-/**
- * @brief Check if a unitary acts on two qubits.
- * @param u A unitary.
- * @returns True iff the qubit gate acts on two qubits.
- */
-[[nodiscard]] bool isTwoQubitGate(UnitaryInterface u) {
-  return u.getAllInQubits().size() == 2;
-}
-
-/**
- * @brief Return input qubit pair for a two-qubit unitary.
- * @param u A two-qubit unitary.
- * @return Pair of SSA values consisting of the first and second in-qubits.
- */
-[[nodiscard]] std::pair<Value, Value> getIns(UnitaryInterface op) {
-  assert(isTwoQubitGate(op));
-  const std::vector<Value> inQubits = op.getAllInQubits();
-  return {inQubits[0], inQubits[1]};
-}
-
-/**
- * @brief Return output qubit pair for a two-qubit unitary.
- * @param u A two-qubit unitary.
- * @return Pair of SSA values consisting of the first and second out-qubits.
- */
-[[nodiscard]] std::pair<Value, Value> getOuts(UnitaryInterface op) {
-  assert(isTwoQubitGate(op));
-  const std::vector<Value> outQubits = op.getAllOutQubits();
-  return {outQubits[0], outQubits[1]};
-}
 
 /**
  * @brief Create and return SWAPOp for two qubits.
@@ -166,7 +130,7 @@ void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
 struct StackItem {
   explicit StackItem(const std::size_t nqubits) : state(nqubits) {}
   Layout<QubitIndex> state;
-  SmallVector<ProgramIndexPair, 32> history;
+  SmallVector<QubitIndexPair, 32> history;
 };
 
 class StateStack : public LayoutStack<StackItem> {
@@ -194,9 +158,7 @@ public:
   /**
    * @brief Return the current (most recent) swap history.
    */
-  [[nodiscard]] ArrayRef<ProgramIndexPair> getHistory() {
-    return top().history;
-  }
+  [[nodiscard]] ArrayRef<QubitIndexPair> getHistory() { return top().history; }
 
   /**
    * @brief Record a swap.
@@ -215,58 +177,26 @@ public:
   return arch.areAdjacent(state.lookupHardware(in0), state.lookupHardware(in1));
 }
 
-/**
- * @brief Base class for all routing algorithms.
- */
-class RouterBase {
+class Router {
 public:
-  explicit RouterBase(Pass::Statistic& nadd) : nadd(&nadd) {}
+  explicit Router(std::unique_ptr<Architecture> arch,
+                  std::unique_ptr<LayerizerBase> layerizer,
+                  std::unique_ptr<PlannerBase> planner, Pass::Statistic& nadd)
+      : arch_(std::move(arch)), layerizer_(std::move(layerizer)),
+        planner_(std::move(planner)), nadd_(&nadd) {}
 
-  virtual ~RouterBase() = default;
+  void route(UnitaryInterface op, PatternRewriter& rewriter) {
+    const auto gates = layerizer_->layerize(op, stack.topState());
 
-  virtual SmallVector<QubitIndexPair>
-  getSwapPlan(UnitaryInterface op, const Layout<QubitIndex>& layout,
-              const Architecture& arch) = 0;
-
-  /**
-   * @brief Insert SWAPs such that @p u is executable.
-   */
-  void route(UnitaryInterface op, StateStack& stack, const Architecture& arch,
-             PatternRewriter& rewriter) {
-    assert(isTwoQubitGate(op) && "route: must be two-qubit gate");
-
-    for (const auto [hardwareIdx0, hardwareIdx1] :
-         getSwapPlan(op, stack.topState(), arch)) {
-      const Value qIn0 = stack.topState().lookupHardware(hardwareIdx0);
-      const Value qIn1 = stack.topState().lookupHardware(hardwareIdx1);
-
-      const QubitIndex programIdx0 = stack.topState().lookupProgram(qIn0);
-      const QubitIndex programIdx1 = stack.topState().lookupProgram(qIn1);
-
-      LLVM_DEBUG({
-        llvm::dbgs() << llvm::format(
-            "route: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", programIdx1,
-            hardwareIdx0, programIdx0, hardwareIdx1, programIdx0, hardwareIdx0,
-            programIdx1, hardwareIdx1);
-      });
-
-      auto swap = createSwap(op->getLoc(), qIn0, qIn1, rewriter);
-      const auto [qOut0, qOut1] = getOuts(swap);
-
-      rewriter.setInsertionPointAfter(swap);
-      replaceAllUsesInRegionAndChildrenExcept(
-          qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
-      replaceAllUsesInRegionAndChildrenExcept(
-          qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
-
-      stack.recordSwap(programIdx0, programIdx1);
-
-      stack.topState().swap(qIn0, qIn1);
-      stack.topState().remapQubitValue(qIn0, qOut0);
-      stack.topState().remapQubitValue(qIn1, qOut1);
-
-      (*nadd)++;
+    /// Convert to thin layout. TODO: Layout redesign.
+    ArrayRef<QubitIndex> curr = stack.topState().getCurrentLayout();
+    ThinLayout<QubitIndex> thinLayout(curr.size());
+    for (const auto [programIdx, hardwareIdx] : llvm::enumerate(curr)) {
+      thinLayout.add(programIdx, hardwareIdx);
     }
+
+    const auto swaps = planner_->plan(gates, thinLayout, arch());
+    insert(swaps, stack, op->getLoc(), rewriter);
   }
 
   /**
@@ -274,9 +204,8 @@ public:
    *
    * @todo Remove SWAP history and use advanced strategies.
    */
-  virtual void restore(Layout<QubitIndex>& layout,
-                       ArrayRef<ProgramIndexPair> history, Location location,
-                       PatternRewriter& rewriter) {
+  void restore(Layout<QubitIndex>& layout, ArrayRef<QubitIndexPair> history,
+               Location location, PatternRewriter& rewriter) {
     for (const auto [programIdx0, programIdx1] : llvm::reverse(history)) {
       const Value qIn0 = layout.lookupProgram(programIdx0);
       const Value qIn1 = layout.lookupProgram(programIdx1);
@@ -294,242 +223,69 @@ public:
       layout.remapQubitValue(qIn0, qOut0);
       layout.remapQubitValue(qIn1, qOut1);
 
-      (*nadd)++;
+      (*nadd_)++;
     }
   }
 
-protected:
-  Pass::Statistic* nadd;
-};
+  [[nodiscard]] Architecture& arch() const { return *arch_; }
 
-/**
- * @brief Inserts SWAPs along the shortest path between two hardware
- * qubits.
- */
-class NaiveRouter final : public RouterBase {
-public:
-  using RouterBase::RouterBase;
-
-  SmallVector<QubitIndexPair> getSwapPlan(UnitaryInterface op,
-                                          const Layout<QubitIndex>& layout,
-                                          const Architecture& arch) final {
-    const auto [qStart, qEnd] = getIns(op);
-    const auto path = arch.shortestPathBetween(layout.lookupHardware(qStart),
-                                               layout.lookupHardware(qEnd));
-
-    SmallVector<QubitIndexPair> swaps(path.size() - 2);
-    for (std::size_t i = 0; i < path.size() - 2; ++i) {
-      swaps[i] = {path[i], path[i + 1]};
-    }
-
-    return swaps;
-  }
-};
-
-class QMAPRouter final : public RouterBase {
-public:
-  using RouterBase::RouterBase;
-
-  SmallVector<QubitIndexPair> getSwapPlan(UnitaryInterface op,
-                                          const Layout<QubitIndex>& layout,
-                                          const Architecture& arch) final {
-    /// Copy layout.
-    Layout<QubitIndex> copy = layout;
-    /// Collect all front-gates starting from 'op'.
-    const llvm::DenseSet<QubitIndexPair> gates = collectGates(copy);
-    /// Convert to thin layout. TODO: Layout redesign.
-    ArrayRef<QubitIndex> curr = copy.getCurrentLayout();
-    ThinLayout<QubitIndex> thinLayout(curr.size());
-    for (const auto [programIdx, hardwareIdx] : llvm::enumerate(curr)) {
-      thinLayout.add(programIdx, hardwareIdx);
-    }
-
-    return search(thinLayout, gates, arch);
-  }
+  StateStack stack{};
 
 private:
-  struct SearchNode {
-    llvm::SmallVector<QubitIndexPair> seq;
-    ThinLayout<QubitIndex> layout;
+  void insert(const SmallVector<QubitIndexPair>& swaps, StateStack& stack,
+              Location location, PatternRewriter& rewriter) {
+    for (const auto [hardwareIdx0, hardwareIdx1] : swaps) {
+      const Value qIn0 = stack.topState().lookupHardware(hardwareIdx0);
+      const Value qIn1 = stack.topState().lookupHardware(hardwareIdx1);
 
-    double cost{};
-    std::size_t depth{};
+      const QubitIndex programIdx0 = stack.topState().lookupProgram(qIn0);
+      const QubitIndex programIdx1 = stack.topState().lookupProgram(qIn1);
 
-    SearchNode(llvm::SmallVector<QubitIndexPair> seq, QubitIndexPair swap,
-               ThinLayout<QubitIndex> layout)
-        : seq(std::move(seq)), layout(std::move(layout)) {
-      /// Apply node-specific swap to given layout.
-      this->layout.swap(this->layout.lookupProgram(swap.first),
-                        this->layout.lookupProgram(swap.second));
-      /// TODO: Retrigger unnecessary (2 * size) resize? Linked List?
-      this->seq.push_back(swap);
-    }
-
-    bool operator>(const SearchNode& rhs) const { return cost > rhs.cost; }
-  };
-
-  using MinQueue =
-      std::priority_queue<SearchNode, std::vector<SearchNode>, std::greater<>>;
-
-  static SmallVector<QubitIndexPair>
-  search(const ThinLayout<QubitIndex>& layout,
-         const llvm::DenseSet<QubitIndexPair>& gates,
-         const Architecture& arch) {
-    /// The heuristic cost function counts the number of SWAPs that were
-    /// required if we were to route the gate set naively.
-    const auto heuristic = [&](const SearchNode& node) {
-      double h{};
-      for (const auto [p0, p1] : gates) {
-        const std::size_t nswaps =
-            arch.lengthOfShortestPathBetween(node.layout.lookupHardware(p0),
-                                             node.layout.lookupHardware(p1)) -
-            2;
-        h += static_cast<double>(nswaps);
-      }
-      return h;
-    };
-
-    const auto isGoal = [&](const SearchNode& node) {
-      return std::ranges::all_of(gates, [&](const QubitIndexPair gate) {
-        const auto [p0, p1] = gate;
-        return arch.areAdjacent(node.layout.lookupHardware(p0),
-                                node.layout.lookupHardware(p1));
+      LLVM_DEBUG({
+        llvm::dbgs() << llvm::format(
+            "route: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", programIdx1,
+            hardwareIdx0, programIdx0, hardwareIdx1, programIdx0, hardwareIdx0,
+            programIdx1, hardwareIdx1);
       });
-    };
 
-    /// Initialize queue.
-    MinQueue queue{};
-    for (const Exchange swap : collectSWAPs(layout, gates, arch)) {
-      llvm::dbgs() << "collectSWAPs (init): " << swap.first << " <-> "
-                   << swap.second << '\n';
-      SearchNode node({}, swap, layout);
-      node.cost = heuristic(node);
+      auto swap = createSwap(location, qIn0, qIn1, rewriter);
+      const auto [qOut0, qOut1] = getOuts(swap);
 
-      queue.emplace(node);
+      rewriter.setInsertionPointAfter(swap);
+      replaceAllUsesInRegionAndChildrenExcept(
+          qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
+      replaceAllUsesInRegionAndChildrenExcept(
+          qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
+
+      stack.recordSwap(programIdx0, programIdx1);
+
+      stack.topState().swap(qIn0, qIn1);
+      stack.topState().remapQubitValue(qIn0, qOut0);
+      stack.topState().remapQubitValue(qIn1, qOut1);
+
+      (*nadd_)++;
     }
-
-    /// Iterative searching and expanding.
-    while (!queue.empty()) {
-      SearchNode curr = queue.top();
-      queue.pop();
-
-      if (isGoal(curr)) {
-        return curr.seq;
-      }
-
-      for (const Exchange swap : collectSWAPs(curr.layout, gates, arch)) {
-        SearchNode node(curr.seq, swap, curr.layout);
-        node.depth = curr.depth + 1;
-        node.cost = static_cast<double>(node.depth) + heuristic(node);
-
-        queue.emplace(node);
-      }
-    }
-
-    return {};
   }
 
-  /// TODO: I don't like the Exchange class here, especially with
-  /// makeExchange.
-  static SmallVector<Exchange>
-  collectSWAPs(const ThinLayout<QubitIndex>& layout,
-               const llvm::DenseSet<QubitIndexPair>& gates,
-               const Architecture& arch) {
-    // TODO: Adjust (or remove?) assumption of 16.
-    llvm::SmallDenseSet<Exchange, 16> candidates{};
+  std::unique_ptr<Architecture> arch_;
+  std::unique_ptr<LayerizerBase> layerizer_;
+  std::unique_ptr<PlannerBase> planner_;
 
-    const auto collect = [&](const QubitIndex p) {
-      const std::size_t h = layout.lookupHardware(p);
-      for (const std::size_t n : arch.neighboursOf(h)) {
-        candidates.insert(makeExchange(h, n));
-      }
-    };
-
-    for (const auto [p0, p1] : gates) {
-      collect(p0);
-      collect(p1);
-    }
-
-    return {candidates.begin(), candidates.end()};
-  }
-
-  [[nodiscard]] static llvm::DenseSet<QubitIndexPair>
-  collectGates(Layout<QubitIndex>& layout) {
-    llvm::DenseSet<UnitaryInterface> candidates;
-
-    for (const Value in : layout.getHardwareQubits()) {
-      Value out = in;
-
-      while (!out.getUsers().empty()) {
-        Operation* user = *out.getUsers().begin();
-
-        if (auto op = dyn_cast<ResetOp>(user)) {
-          out = op.getOutQubit();
-          continue;
-        }
-
-        if (auto op = dyn_cast<UnitaryInterface>(user)) {
-          if (isTwoQubitGate(op)) {
-            candidates.insert(op);
-            break;
-          }
-
-          if (!dyn_cast<GPhaseOp>(user)) {
-            out = op.getOutQubits().front();
-          }
-
-          continue;
-        }
-
-        if (auto measure = dyn_cast<MeasureOp>(user)) {
-          out = measure.getOutQubit();
-          continue;
-        }
-
-        break;
-      }
-
-      if (in != out) {
-        layout.remapQubitValue(in, out);
-      }
-    }
-
-    llvm::DenseSet<QubitIndexPair> gates;
-    for (UnitaryInterface op : candidates) {
-      const auto [in0, in1] = getIns(op);
-      if (layout.contains(in0) && layout.contains(in1)) {
-        gates.insert({layout.lookupProgram(in0), layout.lookupProgram(in1)});
-      }
-    }
-
-    return gates;
-  }
-};
-
-/**
- * @brief The necessary datastructures to route a quantum-classical module.
- */
-struct RoutingContext {
-  explicit RoutingContext(Architecture& arch, RouterBase& router)
-      : arch(&arch), router(&router) {}
-
-  Architecture* arch;
-  RouterBase* router;
-  StateStack stack{};
+  Pass::Statistic* nadd_;
 };
 
 /**
  * @brief Push new state onto the stack.
  */
-WalkResult handleFunc([[maybe_unused]] func::FuncOp op, RoutingContext& ctx) {
-  assert(ctx.stack.empty() && "handleFunc: stack must be empty");
+WalkResult handleFunc([[maybe_unused]] func::FuncOp op, Router& router) {
+  assert(router.stack.empty() && "handleFunc: stack must be empty");
 
   LLVM_DEBUG({
     llvm::dbgs() << "handleFunc: entry_point= " << op.getSymName() << '\n';
   });
 
   /// Function body state.
-  ctx.stack.emplace(ctx.arch->nqubits());
+  router.stack.emplace(router.arch().nqubits());
 
   return WalkResult::advance();
 }
@@ -538,25 +294,26 @@ WalkResult handleFunc([[maybe_unused]] func::FuncOp op, RoutingContext& ctx) {
  * @brief Indicates the end of a region defined by a function. Consequently,
  * we pop the region's state from the stack.
  */
-WalkResult handleReturn(RoutingContext& ctx) {
-  ctx.stack.pop();
+WalkResult handleReturn(Router& router) {
+  router.stack.pop();
   return WalkResult::advance();
 }
 
 /**
  * @brief Push new state for the loop body onto the stack.
  */
-WalkResult handleFor(scf::ForOp op, RoutingContext& ctx) {
+WalkResult handleFor(scf::ForOp op, Router& router) {
   /// Loop body state.
-  ctx.stack.duplicateTopState();
+  router.stack.duplicateTopState();
 
   /// Forward out-of-loop and in-loop values.
-  const auto initArgs = op.getInitArgs().take_front(ctx.arch->nqubits());
-  const auto results = op.getResults().take_front(ctx.arch->nqubits());
-  const auto iterArgs = op.getRegionIterArgs().take_front(ctx.arch->nqubits());
+  const auto initArgs = op.getInitArgs().take_front(router.arch().nqubits());
+  const auto results = op.getResults().take_front(router.arch().nqubits());
+  const auto iterArgs =
+      op.getRegionIterArgs().take_front(router.arch().nqubits());
   for (const auto [arg, res, iter] : llvm::zip(initArgs, results, iterArgs)) {
-    ctx.stack.getStateAtDepth(FOR_PARENT_DEPTH).remapQubitValue(arg, res);
-    ctx.stack.topState().remapQubitValue(arg, iter);
+    router.stack.getStateAtDepth(FOR_PARENT_DEPTH).remapQubitValue(arg, res);
+    router.stack.topState().remapQubitValue(arg, iter);
   }
 
   return WalkResult::advance();
@@ -565,15 +322,15 @@ WalkResult handleFor(scf::ForOp op, RoutingContext& ctx) {
 /**
  * @brief Push two new states for the then and else branches onto the stack.
  */
-WalkResult handleIf(scf::IfOp op, RoutingContext& ctx) {
+WalkResult handleIf(scf::IfOp op, Router& router) {
   /// Prepare stack.
-  ctx.stack.duplicateTopState(); /// Else.
-  ctx.stack.duplicateTopState(); /// Then.
+  router.stack.duplicateTopState(); /// Else.
+  router.stack.duplicateTopState(); /// Then.
 
   /// Forward out-of-if values.
-  const auto results = op->getResults().take_front(ctx.arch->nqubits());
+  const auto results = op->getResults().take_front(router.arch().nqubits());
   Layout<QubitIndex>& stateBeforeIf =
-      ctx.stack.getStateAtDepth(IF_PARENT_DEPTH);
+      router.stack.getStateAtDepth(IF_PARENT_DEPTH);
   for (const auto [hardwareIdx, res] : llvm::enumerate(results)) {
     const Value q = stateBeforeIf.lookupHardware(hardwareIdx);
     stateBeforeIf.remapQubitValue(q, res);
@@ -595,21 +352,21 @@ WalkResult handleIf(scf::IfOp op, RoutingContext& ctx) {
  * a 'for' of 'if' region always requires 2 * #(SWAPs required for region)
  * additional SWAPS.
  */
-WalkResult handleYield(scf::YieldOp op, RoutingContext& ctx,
+WalkResult handleYield(scf::YieldOp op, Router& router,
                        PatternRewriter& rewriter) {
   if (!isa<scf::ForOp>(op->getParentOp()) &&
       !isa<scf::IfOp>(op->getParentOp())) {
     return WalkResult::skip();
   }
 
-  ctx.router->restore(ctx.stack.topState(), ctx.stack.getHistory(),
-                      op->getLoc(), rewriter);
+  router.restore(router.stack.topState(), router.stack.getHistory(),
+                 op->getLoc(), rewriter);
 
-  assert(llvm::equal(ctx.stack.topState().getCurrentLayout(),
-                     ctx.stack.getStateAtDepth(1).getCurrentLayout()) &&
+  assert(llvm::equal(router.stack.topState().getCurrentLayout(),
+                     router.stack.getStateAtDepth(1).getCurrentLayout()) &&
          "layouts must match after restoration");
 
-  ctx.stack.pop();
+  router.stack.pop();
 
   return WalkResult::advance();
 }
@@ -620,9 +377,9 @@ WalkResult handleYield(scf::YieldOp op, RoutingContext& ctx,
  *
  * Thanks to the placement pass, we can apply the identity layout here.
  */
-WalkResult handleQubit(QubitOp op, RoutingContext& ctx) {
+WalkResult handleQubit(QubitOp op, Router& router) {
   const std::size_t index = op.getIndex();
-  ctx.stack.topState().add(index, index, op.getQubit());
+  router.stack.topState().add(index, index, op.getQubit());
   return WalkResult::advance();
 }
 
@@ -630,7 +387,7 @@ WalkResult handleQubit(QubitOp op, RoutingContext& ctx) {
  * @brief Ensures the executability of two-qubit gates on the given target
  * architecture by inserting SWAPs.
  */
-WalkResult handleUnitary(UnitaryInterface op, RoutingContext& ctx,
+WalkResult handleUnitary(UnitaryInterface op, Router& router,
                          PatternRewriter& rewriter) {
   const std::vector<Value> inQubits = op.getAllInQubits();
   const std::vector<Value> outQubits = op.getAllOutQubits();
@@ -647,27 +404,28 @@ WalkResult handleUnitary(UnitaryInterface op, RoutingContext& ctx,
 
   // Single-qubit: Forward mapping.
   if (nacts == 1) {
-    ctx.stack.topState().remapQubitValue(inQubits[0], outQubits[0]);
+    router.stack.topState().remapQubitValue(inQubits[0], outQubits[0]);
     return WalkResult::advance();
   }
 
-  if (!isExecutable(op, ctx.stack.topState(), *ctx.arch)) {
-    ctx.router->route(op, ctx.stack, *ctx.arch, rewriter);
+  if (!isExecutable(op, router.stack.topState(), router.arch())) {
+    router.route(op, rewriter);
   }
 
   const auto [execIn0, execIn1] = getIns(op);
   const auto [execOut0, execOut1] = getOuts(op);
 
   LLVM_DEBUG({
-    llvm::dbgs() << llvm::format("handleUnitary: gate= s%d/h%d, s%d/h%d\n",
-                                 ctx.stack.topState().lookupProgram(execIn0),
-                                 ctx.stack.topState().lookupHardware(execIn0),
-                                 ctx.stack.topState().lookupProgram(execIn1),
-                                 ctx.stack.topState().lookupHardware(execIn1));
+    llvm::dbgs() << llvm::format(
+        "handleUnitary: gate= s%d/h%d, s%d/h%d\n",
+        router.stack.topState().lookupProgram(execIn0),
+        router.stack.topState().lookupHardware(execIn0),
+        router.stack.topState().lookupProgram(execIn1),
+        router.stack.topState().lookupHardware(execIn1));
   });
 
-  ctx.stack.topState().remapQubitValue(execIn0, execOut0);
-  ctx.stack.topState().remapQubitValue(execIn1, execOut1);
+  router.stack.topState().remapQubitValue(execIn0, execOut0);
+  router.stack.topState().remapQubitValue(execIn1, execOut1);
 
   return WalkResult::advance();
 }
@@ -675,16 +433,16 @@ WalkResult handleUnitary(UnitaryInterface op, RoutingContext& ctx,
 /**
  * @brief Update layout.
  */
-WalkResult handleReset(ResetOp op, RoutingContext& ctx) {
-  ctx.stack.topState().remapQubitValue(op.getInQubit(), op.getOutQubit());
+WalkResult handleReset(ResetOp op, Router& router) {
+  router.stack.topState().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
 
 /**
  * @brief Update layout.
  */
-WalkResult handleMeasure(MeasureOp op, RoutingContext& ctx) {
-  ctx.stack.topState().remapQubitValue(op.getInQubit(), op.getOutQubit());
+WalkResult handleMeasure(MeasureOp op, Router& router) {
+  router.stack.topState().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
 
@@ -710,9 +468,8 @@ WalkResult handleMeasure(MeasureOp op, RoutingContext& ctx) {
  * custom driver would be required in any case, which adds unnecessary code to
  * maintain.
  */
-LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
-                    RoutingContext& ctx) {
-  PatternRewriter rewriter(mlirCtx);
+LogicalResult route(ModuleOp module, MLIRContext* ctx, Router& router) {
+  PatternRewriter rewriter(ctx);
 
   /// Prepare work-list.
   SmallVector<Operation*> worklist;
@@ -741,22 +498,24 @@ LogicalResult route(ModuleOp module, MLIRContext* mlirCtx,
             })
             /// func Dialect
             .Case<func::FuncOp>(
-                [&](func::FuncOp op) { return handleFunc(op, ctx); })
+                [&](func::FuncOp op) { return handleFunc(op, router); })
             .Case<func::ReturnOp>([&]([[maybe_unused]] func::ReturnOp op) {
-              return handleReturn(ctx);
+              return handleReturn(router);
             })
             /// scf Dialect
-            .Case<scf::ForOp>([&](scf::ForOp op) { return handleFor(op, ctx); })
-            .Case<scf::IfOp>([&](scf::IfOp op) { return handleIf(op, ctx); })
-            .Case<scf::YieldOp>(
-                [&](scf::YieldOp op) { return handleYield(op, ctx, rewriter); })
+            .Case<scf::ForOp>(
+                [&](scf::ForOp op) { return handleFor(op, router); })
+            .Case<scf::IfOp>([&](scf::IfOp op) { return handleIf(op, router); })
+            .Case<scf::YieldOp>([&](scf::YieldOp op) {
+              return handleYield(op, router, rewriter);
+            })
             /// mqtopt Dialect
-            .Case<QubitOp>([&](QubitOp op) { return handleQubit(op, ctx); })
-            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, ctx); })
+            .Case<QubitOp>([&](QubitOp op) { return handleQubit(op, router); })
+            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, router); })
             .Case<MeasureOp>(
-                [&](MeasureOp op) { return handleMeasure(op, ctx); })
+                [&](MeasureOp op) { return handleMeasure(op, router); })
             .Case<UnitaryInterface>([&](UnitaryInterface op) {
-              return handleUnitary(op, ctx, rewriter);
+              return handleUnitary(op, router, rewriter);
             })
             /// Skip the rest.
             .Default([](auto) { return WalkResult::skip(); });
@@ -777,24 +536,26 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
   using RoutingPassSCBase<RoutingPassSC>::RoutingPassSCBase;
 
   void runOnOperation() override {
-    const auto arch = getArchitecture(ArchitectureName::MQTTest);
-    const auto router = getRouter();
-
-    if (RoutingContext ctx(*arch, *router);
-        failed(route(getOperation(), &getContext(), ctx))) {
+    Router router = getRouter();
+    if (failed(route(getOperation(), &getContext(), router))) {
       signalPassFailure();
     }
   }
 
 private:
-  [[nodiscard]] std::unique_ptr<RouterBase> getRouter() {
+  [[nodiscard]] Router getRouter() {
+    /// TODO: Configurable Architecture.
+    auto arch = getArchitecture(ArchitectureName::MQTTest);
+
     switch (static_cast<RoutingMethod>(method)) {
     case RoutingMethod::Naive:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=naive\n"; });
-      return std::make_unique<NaiveRouter>(nadd);
+      return Router(std::move(arch), std::make_unique<OneOpLayerizer>(),
+                    std::make_unique<NaivePlanner>(), nadd);
     case RoutingMethod::QMAP:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=qmap\n"; });
-      return std::make_unique<QMAPRouter>(nadd);
+      return Router(std::move(arch), std::make_unique<CrawlLayerizer>(),
+                    std::make_unique<QMAPPlanner>(), nadd);
     }
 
     llvm_unreachable("Unknown method");

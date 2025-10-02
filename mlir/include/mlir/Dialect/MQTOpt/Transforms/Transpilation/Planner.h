@@ -1,0 +1,166 @@
+/*
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#pragma once
+
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
+
+#include <mlir/Support/LLVM.h>
+#include <stdexcept>
+
+namespace mqt::ir::opt {
+
+using PlannerResult = SmallVector<QubitIndexPair>;
+
+/**
+ * @brief A planner determines the sequence of swaps required to route an array
+of gates.
+*/
+struct PlannerBase {
+  virtual ~PlannerBase() = default;
+  [[nodiscard]] virtual PlannerResult
+  plan(const ArrayRef<QubitIndexPair>& gates,
+       const ThinLayout<QubitIndex>& layout, const Architecture& arch) = 0;
+};
+
+/**
+ * @brief Implements shortest path swapping.
+ */
+struct NaivePlanner : PlannerBase {
+
+  [[nodiscard]] SmallVector<QubitIndexPair>
+  plan(const ArrayRef<QubitIndexPair>& gates,
+       const ThinLayout<QubitIndex>& layout, const Architecture& arch) final {
+    if (gates.size() != 1) {
+      throw std::invalid_argument(
+          "NaivePlanner expects exactly one gate as input.");
+    }
+
+    SmallVector<QubitIndexPair, 16> swaps;
+    for (const auto [programIdx0, programIdx1] : gates) {
+      const auto path =
+          arch.shortestPathBetween(layout.lookupHardware(programIdx0),
+                                   layout.lookupHardware(programIdx1));
+      for (std::size_t i = 0; i < path.size() - 2; ++i) {
+        swaps.emplace_back(path[i], path[i + 1]);
+      }
+    }
+    return swaps;
+  }
+};
+
+/**
+ * @brief Uses A*-search to make all gates executable.
+ */
+struct QMAPPlanner : PlannerBase {
+  [[nodiscard]] SmallVector<QubitIndexPair>
+  plan(const ArrayRef<QubitIndexPair>& gates,
+       const ThinLayout<QubitIndex>& layout, const Architecture& arch) final {
+    /// The heuristic cost function counts the number of SWAPs that were
+    /// required if we were to route the gate set naively.
+    const auto heuristic = [&](const SearchNode& node) {
+      double h{};
+      for (const auto [p0, p1] : gates) {
+        const std::size_t nswaps =
+            arch.lengthOfShortestPathBetween(node.layout.lookupHardware(p0),
+                                             node.layout.lookupHardware(p1)) -
+            2;
+        h += static_cast<double>(nswaps);
+      }
+      return h;
+    };
+
+    const auto isGoal = [&](const SearchNode& node) {
+      return std::ranges::all_of(gates, [&](const QubitIndexPair gate) {
+        const auto [p0, p1] = gate;
+        return arch.areAdjacent(node.layout.lookupHardware(p0),
+                                node.layout.lookupHardware(p1));
+      });
+    };
+
+    /// Initialize queue.
+    MinQueue queue{};
+    for (const Exchange swap : collectSWAPs(layout, gates, arch)) {
+      SearchNode node({}, swap, layout);
+      node.cost = heuristic(node);
+
+      queue.emplace(node);
+    }
+
+    /// Iterative searching and expanding.
+    while (!queue.empty()) {
+      SearchNode curr = queue.top();
+      queue.pop();
+
+      if (isGoal(curr)) {
+        return curr.seq;
+      }
+
+      for (const Exchange swap : collectSWAPs(curr.layout, gates, arch)) {
+        SearchNode node(curr.seq, swap, curr.layout);
+        node.depth = curr.depth + 1;
+        node.cost = static_cast<double>(node.depth) + heuristic(node);
+
+        queue.emplace(node);
+      }
+    }
+
+    return {};
+  }
+
+private:
+  struct SearchNode {
+    llvm::SmallVector<QubitIndexPair> seq;
+    ThinLayout<QubitIndex> layout;
+
+    double cost{};
+    std::size_t depth{};
+
+    SearchNode(llvm::SmallVector<QubitIndexPair> seq, QubitIndexPair swap,
+               ThinLayout<QubitIndex> layout)
+        : seq(std::move(seq)), layout(std::move(layout)) {
+      /// Apply node-specific swap to given layout.
+      this->layout.swap(this->layout.lookupProgram(swap.first),
+                        this->layout.lookupProgram(swap.second));
+      /// Add swap to sequence.
+      this->seq.push_back(swap);
+    }
+
+    bool operator>(const SearchNode& rhs) const { return cost > rhs.cost; }
+  };
+
+  using MinQueue =
+      std::priority_queue<SearchNode, std::vector<SearchNode>, std::greater<>>;
+
+  static SmallVector<QubitIndexPair>
+  collectSWAPs(const ThinLayout<QubitIndex>& layout,
+               const ArrayRef<QubitIndexPair>& gates,
+               const Architecture& arch) {
+    llvm::SmallDenseSet<Exchange, 16> candidates{};
+
+    const auto collect = [&](const QubitIndex p) {
+      const std::size_t h = layout.lookupHardware(p);
+      for (const std::size_t n : arch.neighboursOf(h)) {
+        candidates.insert(makeExchange(h, n));
+      }
+    };
+
+    for (const auto [p0, p1] : gates) {
+      collect(p0);
+      collect(p1);
+    }
+
+    return {candidates.begin(), candidates.end()};
+  }
+};
+
+} // namespace mqt::ir::opt
