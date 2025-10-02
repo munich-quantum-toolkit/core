@@ -1,0 +1,21 @@
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+@LIT_SITE_CFG_IN_HEADER@
+
+config.llvm_tools_dir = "@LLVM_TOOLS_DIR@"
+config.build_dir      = "@CMAKE_BINARY_DIR@"
+config.source_dir     = "@CMAKE_SOURCE_DIR@"
+
+# Provided by ExternalDependencies.cmake
+config.catalyst_bin   = "@CATALYST_BIN@"
+
+import lit.llvm
+lit.llvm.initialize(lit_config, config)
+
+lit_config.load_config(config, "@CMAKE_SOURCE_DIR@/test/lit.cfg.py")
