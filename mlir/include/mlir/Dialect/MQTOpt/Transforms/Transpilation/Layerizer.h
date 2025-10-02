@@ -18,7 +18,7 @@
 
 namespace mqt::ir::opt {
 
-using LayerizerResult = SmallVector<QubitIndexPair>;
+using LayerizerResult = mlir::SmallVector<QubitIndexPair>;
 
 /**
  * @brief A layerizer divides the circuit into routable sections.
@@ -36,7 +36,7 @@ struct OneOpLayerizer : LayerizerBase {
   [[nodiscard]] LayerizerResult
   layerize(UnitaryInterface op, const Layout<QubitIndex>& layout) final {
     const auto [in0, in1] = getIns(op);
-    return {{layout.lookupProgram(in0), layout.lookupProgram(in1)}};
+    return {{layout.lookupProgramIndex(in0), layout.lookupProgramIndex(in1)}};
   }
 };
 
@@ -49,13 +49,13 @@ struct CrawlLayerizer : LayerizerBase {
   layerize([[maybe_unused]] UnitaryInterface op,
            const Layout<QubitIndex>& layout) final {
     Layout<QubitIndex> copy(layout);
-    DenseSet<UnitaryInterface> candidates;
+    mlir::DenseSet<UnitaryInterface> candidates;
 
-    for (const Value in : copy.getHardwareQubits()) {
-      Value out = in;
+    for (const mlir::Value in : copy.getHardwareQubits()) {
+      mlir::Value out = in;
 
       while (!out.getUsers().empty()) {
-        Operation* user = *out.getUsers().begin();
+        mlir::Operation* user = *out.getUsers().begin();
 
         if (auto op = dyn_cast<ResetOp>(user)) {
           out = op.getOutQubit();
@@ -92,7 +92,8 @@ struct CrawlLayerizer : LayerizerBase {
     for (UnitaryInterface op : candidates) {
       const auto [in0, in1] = getIns(op);
       if (copy.contains(in0) && copy.contains(in1)) {
-        gates.push_back({copy.lookupProgram(in0), copy.lookupProgram(in1)});
+        gates.push_back(
+            {copy.lookupProgramIndex(in0), copy.lookupProgramIndex(in1)});
       }
     }
 

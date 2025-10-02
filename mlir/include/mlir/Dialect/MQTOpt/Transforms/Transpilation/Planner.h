@@ -19,7 +19,7 @@
 
 namespace mqt::ir::opt {
 
-using PlannerResult = SmallVector<QubitIndexPair>;
+using PlannerResult = mlir::SmallVector<QubitIndexPair>;
 
 /**
  * @brief A planner determines the sequence of swaps required to route an array
@@ -28,7 +28,7 @@ of gates.
 struct PlannerBase {
   virtual ~PlannerBase() = default;
   [[nodiscard]] virtual PlannerResult
-  plan(const ArrayRef<QubitIndexPair>& gates,
+  plan(const mlir::ArrayRef<QubitIndexPair>& gates,
        const ThinLayout<QubitIndex>& layout, const Architecture& arch) = 0;
 };
 
@@ -37,19 +37,19 @@ struct PlannerBase {
  */
 struct NaivePlanner : PlannerBase {
 
-  [[nodiscard]] SmallVector<QubitIndexPair>
-  plan(const ArrayRef<QubitIndexPair>& gates,
+  [[nodiscard]] mlir::SmallVector<QubitIndexPair>
+  plan(const mlir::ArrayRef<QubitIndexPair>& gates,
        const ThinLayout<QubitIndex>& layout, const Architecture& arch) final {
     if (gates.size() != 1) {
       throw std::invalid_argument(
           "NaivePlanner expects exactly one gate as input.");
     }
 
-    SmallVector<QubitIndexPair, 16> swaps;
+    mlir::SmallVector<QubitIndexPair, 16> swaps;
     for (const auto [programIdx0, programIdx1] : gates) {
       const auto path =
-          arch.shortestPathBetween(layout.lookupHardware(programIdx0),
-                                   layout.lookupHardware(programIdx1));
+          arch.shortestPathBetween(layout.getHardwareIndex(programIdx0),
+                                   layout.getHardwareIndex(programIdx1));
       for (std::size_t i = 0; i < path.size() - 2; ++i) {
         swaps.emplace_back(path[i], path[i + 1]);
       }
@@ -62,8 +62,8 @@ struct NaivePlanner : PlannerBase {
  * @brief Uses A*-search to make all gates executable.
  */
 struct QMAPPlanner : PlannerBase {
-  [[nodiscard]] SmallVector<QubitIndexPair>
-  plan(const ArrayRef<QubitIndexPair>& gates,
+  [[nodiscard]] mlir::SmallVector<QubitIndexPair>
+  plan(const mlir::ArrayRef<QubitIndexPair>& gates,
        const ThinLayout<QubitIndex>& layout, const Architecture& arch) final {
     /// The heuristic cost function counts the number of SWAPs that were
     /// required if we were to route the gate set naively.
@@ -71,8 +71,8 @@ struct QMAPPlanner : PlannerBase {
       double h{};
       for (const auto [p0, p1] : gates) {
         const std::size_t nswaps =
-            arch.lengthOfShortestPathBetween(node.layout.lookupHardware(p0),
-                                             node.layout.lookupHardware(p1)) -
+            arch.lengthOfShortestPathBetween(node.layout.getHardwareIndex(p0),
+                                             node.layout.getHardwareIndex(p1)) -
             2;
         h += static_cast<double>(nswaps);
       }
@@ -82,8 +82,8 @@ struct QMAPPlanner : PlannerBase {
     const auto isGoal = [&](const SearchNode& node) {
       return std::ranges::all_of(gates, [&](const QubitIndexPair gate) {
         const auto [p0, p1] = gate;
-        return arch.areAdjacent(node.layout.lookupHardware(p0),
-                                node.layout.lookupHardware(p1));
+        return arch.areAdjacent(node.layout.getHardwareIndex(p0),
+                                node.layout.getHardwareIndex(p1));
       });
     };
 
@@ -129,8 +129,8 @@ private:
                ThinLayout<QubitIndex> layout)
         : seq(std::move(seq)), layout(std::move(layout)) {
       /// Apply node-specific swap to given layout.
-      this->layout.swap(this->layout.lookupProgram(swap.first),
-                        this->layout.lookupProgram(swap.second));
+      this->layout.swap(this->layout.getProgramIndex(swap.first),
+                        this->layout.getProgramIndex(swap.second));
       /// Add swap to sequence.
       this->seq.push_back(swap);
     }
@@ -141,14 +141,14 @@ private:
   using MinQueue =
       std::priority_queue<SearchNode, std::vector<SearchNode>, std::greater<>>;
 
-  static SmallVector<QubitIndexPair>
+  static mlir::SmallVector<QubitIndexPair>
   collectSWAPs(const ThinLayout<QubitIndex>& layout,
-               const ArrayRef<QubitIndexPair>& gates,
+               const mlir::ArrayRef<QubitIndexPair>& gates,
                const Architecture& arch) {
     llvm::SmallDenseSet<QubitIndexPair, 16> candidates{};
 
     const auto collect = [&](const QubitIndex p) {
-      const std::size_t hardwareIdx0 = layout.lookupHardware(p);
+      const std::size_t hardwareIdx0 = layout.getHardwareIndex(p);
       for (const std::size_t hardwareIdx1 : arch.neighboursOf(hardwareIdx0)) {
         /// Ensure consistent hashing/comparison
         const QubitIndexPair swap =

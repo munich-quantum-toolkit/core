@@ -140,8 +140,8 @@ public:
    */
   [[nodiscard]] bool isExecutable(UnitaryInterface op) {
     const auto [in0, in1] = getIns(op);
-    return arch().areAdjacent(stack().top().lookupHardware(in0),
-                              stack().top().lookupHardware(in1));
+    return arch().areAdjacent(stack().top().lookupHardwareIndex(in0),
+                              stack().top().lookupHardwareIndex(in1));
   }
 
   /**
@@ -150,15 +150,7 @@ public:
    */
   void route(UnitaryInterface op, PatternRewriter& rewriter) {
     const auto gates = layerizer_->layerize(op, stack().top());
-
-    /// Convert to thin layout. TODO: Layout redesign.
-    ArrayRef<QubitIndex> curr = stack().top().getCurrentLayout();
-    ThinLayout<QubitIndex> thinLayout(curr.size());
-    for (const auto [programIdx, hardwareIdx] : llvm::enumerate(curr)) {
-      thinLayout.add(programIdx, hardwareIdx);
-    }
-
-    const auto swaps = planner_->plan(gates, thinLayout, arch());
+    const auto swaps = planner_->plan(gates, stack().top(), arch());
     insert(swaps, op->getLoc(), rewriter);
   }
 
@@ -203,11 +195,11 @@ private:
   void insert(const SmallVector<QubitIndexPair>& swaps, Location location,
               PatternRewriter& rewriter) {
     for (const auto [hardwareIdx0, hardwareIdx1] : swaps) {
-      const Value qIn0 = stack().top().lookupHardware(hardwareIdx0);
-      const Value qIn1 = stack().top().lookupHardware(hardwareIdx1);
+      const Value qIn0 = stack().top().lookupHardwareValue(hardwareIdx0);
+      const Value qIn1 = stack().top().lookupHardwareValue(hardwareIdx1);
 
-      const QubitIndex programIdx0 = stack().top().lookupProgram(qIn0);
-      const QubitIndex programIdx1 = stack().top().lookupProgram(qIn1);
+      const QubitIndex programIdx0 = stack().top().lookupProgramIndex(qIn0);
+      const QubitIndex programIdx1 = stack().top().lookupProgramIndex(qIn1);
 
       LLVM_DEBUG({
         llvm::dbgs() << llvm::format(
@@ -300,7 +292,7 @@ WalkResult handleIf(scf::IfOp op, Router& router) {
   Layout<QubitIndex>& stateBeforeIf =
       router.stack().getItemAtDepth(IF_PARENT_DEPTH);
   for (const auto [hardwareIdx, res] : llvm::enumerate(results)) {
-    const Value q = stateBeforeIf.lookupHardware(hardwareIdx);
+    const Value q = stateBeforeIf.lookupHardwareValue(hardwareIdx);
     stateBeforeIf.remapQubitValue(q, res);
   }
 
@@ -384,11 +376,12 @@ WalkResult handleUnitary(UnitaryInterface op, Router& router,
   const auto [execOut0, execOut1] = getOuts(op);
 
   LLVM_DEBUG({
-    llvm::dbgs() << llvm::format("handleUnitary: gate= s%d/h%d, s%d/h%d\n",
-                                 router.stack().top().lookupProgram(execIn0),
-                                 router.stack().top().lookupHardware(execIn0),
-                                 router.stack().top().lookupProgram(execIn1),
-                                 router.stack().top().lookupHardware(execIn1));
+    llvm::dbgs() << llvm::format(
+        "handleUnitary: gate= s%d/h%d, s%d/h%d\n",
+        router.stack().top().lookupProgramIndex(execIn0),
+        router.stack().top().lookupHardwareIndex(execIn0),
+        router.stack().top().lookupProgramIndex(execIn1),
+        router.stack().top().lookupHardwareIndex(execIn1));
   });
 
   router.stack().top().remapQubitValue(execIn0, execOut0);
