@@ -127,56 +127,6 @@ void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
   rewriter.replaceUsesWithIf(oldValue, newValue, isInRegionAndNotExcepted);
 }
 
-struct StackItem {
-  explicit StackItem(const std::size_t nqubits) : state(nqubits) {}
-  Layout<QubitIndex> state;
-  SmallVector<QubitIndexPair, 32> history;
-};
-
-class StateStack : public LayoutStack<StackItem> {
-public:
-  /**
-   * @brief Returns the most recent state of the stack.
-   */
-  [[nodiscard]] Layout<QubitIndex>& topState() { return top().state; }
-
-  /**
-   * @brief Returns the item at the specified depth from the top of the stack.
-   */
-  [[nodiscard]] Layout<QubitIndex>& getStateAtDepth(std::size_t depth) {
-    return getItemAtDepth(depth).state;
-  }
-
-  /**
-   * @brief Duplicates the top state.
-   */
-  void duplicateTopState() {
-    duplicateTop();
-    top().history.clear();
-  }
-
-  /**
-   * @brief Return the current (most recent) swap history.
-   */
-  [[nodiscard]] ArrayRef<QubitIndexPair> getHistory() { return top().history; }
-
-  /**
-   * @brief Record a swap.
-   */
-  void recordSwap(QubitIndex programIdx0, QubitIndex programIdx1) {
-    top().history.emplace_back(programIdx0, programIdx1);
-  }
-};
-
-/**
- * @brief Returns true iff @p op is executable on the targeted architecture.
- */
-[[nodiscard]] bool isExecutable(UnitaryInterface op, Layout<QubitIndex>& state,
-                                const Architecture& arch) {
-  const auto [in0, in1] = getIns(op);
-  return arch.areAdjacent(state.lookupHardware(in0), state.lookupHardware(in1));
-}
-
 class Router {
 public:
   explicit Router(std::unique_ptr<Architecture> arch,
@@ -185,61 +135,76 @@ public:
       : arch_(std::move(arch)), layerizer_(std::move(layerizer)),
         planner_(std::move(planner)), nadd_(&nadd) {}
 
+  /**
+   * @brief Returns true iff @p op is executable on the targeted architecture.
+   */
+  [[nodiscard]] bool isExecutable(UnitaryInterface op) {
+    const auto [in0, in1] = getIns(op);
+    return arch().areAdjacent(stack.top().lookupHardware(in0),
+                              stack.top().lookupHardware(in1));
+  }
+
+  /**
+   * @brief Insert SWAPs such that the gates provided by the layerizer are
+   * executable.
+   */
   void route(UnitaryInterface op, PatternRewriter& rewriter) {
-    const auto gates = layerizer_->layerize(op, stack.topState());
+    const auto gates = layerizer_->layerize(op, stack.top());
 
     /// Convert to thin layout. TODO: Layout redesign.
-    ArrayRef<QubitIndex> curr = stack.topState().getCurrentLayout();
+    ArrayRef<QubitIndex> curr = stack.top().getCurrentLayout();
     ThinLayout<QubitIndex> thinLayout(curr.size());
     for (const auto [programIdx, hardwareIdx] : llvm::enumerate(curr)) {
       thinLayout.add(programIdx, hardwareIdx);
     }
 
     const auto swaps = planner_->plan(gates, thinLayout, arch());
-    insert(swaps, stack, op->getLoc(), rewriter);
+    insert(swaps, op->getLoc(), rewriter);
   }
 
   /**
-   * @brief Restore layout by uncomputing.
+   * @brief Restore layout by uncomputing. Clear history afterwards.
    *
    * @todo Remove SWAP history and use advanced strategies.
    */
-  void restore(Layout<QubitIndex>& layout, ArrayRef<QubitIndexPair> history,
-               Location location, PatternRewriter& rewriter) {
-    for (const auto [programIdx0, programIdx1] : llvm::reverse(history)) {
-      const Value qIn0 = layout.lookupProgram(programIdx0);
-      const Value qIn1 = layout.lookupProgram(programIdx1);
+  void restore(Location location, PatternRewriter& rewriter) {
+    // for (const auto [programIdx0, programIdx1] : llvm::reverse(history)) {
+    //   const Value qIn0 = stack.top().lookupProgram(programIdx0);
+    //   const Value qIn1 = stack.top().lookupProgram(programIdx1);
 
-      auto swap = createSwap(location, qIn0, qIn1, rewriter);
-      const auto [qOut0, qOut1] = getOuts(swap);
+    //   auto swap = createSwap(location, qIn0, qIn1, rewriter);
+    //   const auto [qOut0, qOut1] = getOuts(swap);
 
-      rewriter.setInsertionPointAfter(swap);
-      replaceAllUsesInRegionAndChildrenExcept(
-          qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
-      replaceAllUsesInRegionAndChildrenExcept(
-          qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
+    //   rewriter.setInsertionPointAfter(swap);
+    //   replaceAllUsesInRegionAndChildrenExcept(
+    //       qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
+    //   replaceAllUsesInRegionAndChildrenExcept(
+    //       qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
 
-      layout.swap(qIn0, qIn1);
-      layout.remapQubitValue(qIn0, qOut0);
-      layout.remapQubitValue(qIn1, qOut1);
+    //   stack.top().swap(qIn0, qIn1);
+    //   stack.top().remapQubitValue(qIn0, qOut0);
+    //   stack.top().remapQubitValue(qIn1, qOut1);
 
-      (*nadd_)++;
-    }
+    //   (*nadd_)++;
+    // }
   }
 
+  /**
+   * @brief Returns reference to architecture object.
+   */
   [[nodiscard]] Architecture& arch() const { return *arch_; }
 
-  StateStack stack{};
+  LayoutStack<Layout<QubitIndex>> stack{};
 
 private:
-  void insert(const SmallVector<QubitIndexPair>& swaps, StateStack& stack,
-              Location location, PatternRewriter& rewriter) {
+  void insert(const SmallVector<QubitIndexPair>& swaps, Location location,
+              PatternRewriter& rewriter) {
     for (const auto [hardwareIdx0, hardwareIdx1] : swaps) {
-      const Value qIn0 = stack.topState().lookupHardware(hardwareIdx0);
-      const Value qIn1 = stack.topState().lookupHardware(hardwareIdx1);
+      const Value qIn0 = stack.top().lookupHardware(hardwareIdx0);
+      const Value qIn1 = stack.top().lookupHardware(hardwareIdx1);
 
-      const QubitIndex programIdx0 = stack.topState().lookupProgram(qIn0);
-      const QubitIndex programIdx1 = stack.topState().lookupProgram(qIn1);
+      const QubitIndex programIdx0 = stack.top().lookupProgram(qIn0);
+      const QubitIndex programIdx1 = stack.top().lookupProgram(qIn1);
 
       LLVM_DEBUG({
         llvm::dbgs() << llvm::format(
@@ -257,11 +222,9 @@ private:
       replaceAllUsesInRegionAndChildrenExcept(
           qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
 
-      stack.recordSwap(programIdx0, programIdx1);
-
-      stack.topState().swap(qIn0, qIn1);
-      stack.topState().remapQubitValue(qIn0, qOut0);
-      stack.topState().remapQubitValue(qIn1, qOut1);
+      stack.top().swap(qIn0, qIn1);
+      stack.top().remapQubitValue(qIn0, qOut0);
+      stack.top().remapQubitValue(qIn1, qOut1);
 
       (*nadd_)++;
     }
@@ -304,7 +267,7 @@ WalkResult handleReturn(Router& router) {
  */
 WalkResult handleFor(scf::ForOp op, Router& router) {
   /// Loop body state.
-  router.stack.duplicateTopState();
+  router.stack.duplicateTop();
 
   /// Forward out-of-loop and in-loop values.
   const auto initArgs = op.getInitArgs().take_front(router.arch().nqubits());
@@ -312,8 +275,8 @@ WalkResult handleFor(scf::ForOp op, Router& router) {
   const auto iterArgs =
       op.getRegionIterArgs().take_front(router.arch().nqubits());
   for (const auto [arg, res, iter] : llvm::zip(initArgs, results, iterArgs)) {
-    router.stack.getStateAtDepth(FOR_PARENT_DEPTH).remapQubitValue(arg, res);
-    router.stack.topState().remapQubitValue(arg, iter);
+    router.stack.getItemAtDepth(FOR_PARENT_DEPTH).remapQubitValue(arg, res);
+    router.stack.top().remapQubitValue(arg, iter);
   }
 
   return WalkResult::advance();
@@ -324,13 +287,13 @@ WalkResult handleFor(scf::ForOp op, Router& router) {
  */
 WalkResult handleIf(scf::IfOp op, Router& router) {
   /// Prepare stack.
-  router.stack.duplicateTopState(); /// Else.
-  router.stack.duplicateTopState(); /// Then.
+  router.stack.duplicateTop(); /// Else.
+  router.stack.duplicateTop(); /// Then.
 
   /// Forward out-of-if values.
   const auto results = op->getResults().take_front(router.arch().nqubits());
   Layout<QubitIndex>& stateBeforeIf =
-      router.stack.getStateAtDepth(IF_PARENT_DEPTH);
+      router.stack.getItemAtDepth(IF_PARENT_DEPTH);
   for (const auto [hardwareIdx, res] : llvm::enumerate(results)) {
     const Value q = stateBeforeIf.lookupHardware(hardwareIdx);
     stateBeforeIf.remapQubitValue(q, res);
@@ -359,12 +322,12 @@ WalkResult handleYield(scf::YieldOp op, Router& router,
     return WalkResult::skip();
   }
 
-  router.restore(router.stack.topState(), router.stack.getHistory(),
-                 op->getLoc(), rewriter);
+  // TODO: Re-implement restoration logic.
+  // router.restore(op->getLoc(), rewriter);
 
-  assert(llvm::equal(router.stack.topState().getCurrentLayout(),
-                     router.stack.getStateAtDepth(1).getCurrentLayout()) &&
-         "layouts must match after restoration");
+  // assert(llvm::equal(router.stack.top().getCurrentLayout(),
+  //                    router.stack.getItemAtDepth(1).getCurrentLayout()) &&
+  //        "layouts must match after restoration");
 
   router.stack.pop();
 
@@ -379,7 +342,7 @@ WalkResult handleYield(scf::YieldOp op, Router& router,
  */
 WalkResult handleQubit(QubitOp op, Router& router) {
   const std::size_t index = op.getIndex();
-  router.stack.topState().add(index, index, op.getQubit());
+  router.stack.top().add(index, index, op.getQubit());
   return WalkResult::advance();
 }
 
@@ -404,11 +367,11 @@ WalkResult handleUnitary(UnitaryInterface op, Router& router,
 
   // Single-qubit: Forward mapping.
   if (nacts == 1) {
-    router.stack.topState().remapQubitValue(inQubits[0], outQubits[0]);
+    router.stack.top().remapQubitValue(inQubits[0], outQubits[0]);
     return WalkResult::advance();
   }
 
-  if (!isExecutable(op, router.stack.topState(), router.arch())) {
+  if (!router.isExecutable(op)) {
     router.route(op, rewriter);
   }
 
@@ -416,16 +379,15 @@ WalkResult handleUnitary(UnitaryInterface op, Router& router,
   const auto [execOut0, execOut1] = getOuts(op);
 
   LLVM_DEBUG({
-    llvm::dbgs() << llvm::format(
-        "handleUnitary: gate= s%d/h%d, s%d/h%d\n",
-        router.stack.topState().lookupProgram(execIn0),
-        router.stack.topState().lookupHardware(execIn0),
-        router.stack.topState().lookupProgram(execIn1),
-        router.stack.topState().lookupHardware(execIn1));
+    llvm::dbgs() << llvm::format("handleUnitary: gate= s%d/h%d, s%d/h%d\n",
+                                 router.stack.top().lookupProgram(execIn0),
+                                 router.stack.top().lookupHardware(execIn0),
+                                 router.stack.top().lookupProgram(execIn1),
+                                 router.stack.top().lookupHardware(execIn1));
   });
 
-  router.stack.topState().remapQubitValue(execIn0, execOut0);
-  router.stack.topState().remapQubitValue(execIn1, execOut1);
+  router.stack.top().remapQubitValue(execIn0, execOut0);
+  router.stack.top().remapQubitValue(execIn1, execOut1);
 
   return WalkResult::advance();
 }
@@ -434,7 +396,7 @@ WalkResult handleUnitary(UnitaryInterface op, Router& router,
  * @brief Update layout.
  */
 WalkResult handleReset(ResetOp op, Router& router) {
-  router.stack.topState().remapQubitValue(op.getInQubit(), op.getOutQubit());
+  router.stack.top().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
 
@@ -442,7 +404,7 @@ WalkResult handleReset(ResetOp op, Router& router) {
  * @brief Update layout.
  */
 WalkResult handleMeasure(MeasureOp op, Router& router) {
-  router.stack.topState().remapQubitValue(op.getInQubit(), op.getOutQubit());
+  router.stack.top().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
 

@@ -89,7 +89,7 @@ struct QMAPPlanner : PlannerBase {
 
     /// Initialize queue.
     MinQueue queue{};
-    for (const Exchange swap : collectSWAPs(layout, gates, arch)) {
+    for (const QubitIndexPair swap : collectSWAPs(layout, gates, arch)) {
       SearchNode node({}, swap, layout);
       node.cost = heuristic(node);
 
@@ -105,7 +105,7 @@ struct QMAPPlanner : PlannerBase {
         return curr.seq;
       }
 
-      for (const Exchange swap : collectSWAPs(curr.layout, gates, arch)) {
+      for (const QubitIndexPair swap : collectSWAPs(curr.layout, gates, arch)) {
         SearchNode node(curr.seq, swap, curr.layout);
         node.depth = curr.depth + 1;
         node.cost = static_cast<double>(node.depth) + heuristic(node);
@@ -145,12 +145,17 @@ private:
   collectSWAPs(const ThinLayout<QubitIndex>& layout,
                const ArrayRef<QubitIndexPair>& gates,
                const Architecture& arch) {
-    llvm::SmallDenseSet<Exchange, 16> candidates{};
+    llvm::SmallDenseSet<QubitIndexPair, 16> candidates{};
 
     const auto collect = [&](const QubitIndex p) {
-      const std::size_t h = layout.lookupHardware(p);
-      for (const std::size_t n : arch.neighboursOf(h)) {
-        candidates.insert(makeExchange(h, n));
+      const std::size_t hardwareIdx0 = layout.lookupHardware(p);
+      for (const std::size_t hardwareIdx1 : arch.neighboursOf(hardwareIdx0)) {
+        /// Ensure consistent hashing/comparison
+        const QubitIndexPair swap =
+            hardwareIdx0 < hardwareIdx1
+                ? QubitIndexPair{hardwareIdx0, hardwareIdx1}
+                : QubitIndexPair{hardwareIdx1, hardwareIdx0};
+        candidates.insert(swap);
       }
     };
 
