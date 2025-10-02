@@ -359,8 +359,8 @@ private:
                ThinLayout<QubitIndex> layout)
         : seq(std::move(seq)), layout(std::move(layout)) {
       /// Apply node-specific swap to given layout.
-      this->layout.swap(this->layout.lookupHardware(swap.first),
-                        this->layout.lookupHardware(swap.second));
+      this->layout.swap(this->layout.lookupProgram(swap.first),
+                        this->layout.lookupProgram(swap.second));
       /// TODO: Retrigger unnecessary (2 * size) resize? Linked List?
       this->seq.push_back(swap);
     }
@@ -400,6 +400,8 @@ private:
     /// Initialize queue.
     MinQueue queue{};
     for (const Exchange swap : collectSWAPs(layout, gates, arch)) {
+      llvm::dbgs() << "collectSWAPs (init): " << swap.first << " <-> "
+                   << swap.second << '\n';
       SearchNode node({}, swap, layout);
       node.cost = heuristic(node);
 
