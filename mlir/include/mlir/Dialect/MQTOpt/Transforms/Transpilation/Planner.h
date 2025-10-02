@@ -29,17 +29,18 @@ struct PlannerBase {
   virtual ~PlannerBase() = default;
   [[nodiscard]] virtual PlannerResult
   plan(const mlir::ArrayRef<QubitIndexPair>& gates,
-       const ThinLayout<QubitIndex>& layout, const Architecture& arch) = 0;
+       const ThinLayout<QubitIndex>& layout,
+       const Architecture& arch) const = 0;
 };
 
 /**
  * @brief Implements shortest path swapping.
  */
-struct NaivePlanner : PlannerBase {
+struct NaivePlanner final : PlannerBase {
 
-  [[nodiscard]] mlir::SmallVector<QubitIndexPair>
-  plan(const mlir::ArrayRef<QubitIndexPair>& gates,
-       const ThinLayout<QubitIndex>& layout, const Architecture& arch) final {
+  [[nodiscard]] PlannerResult plan(const mlir::ArrayRef<QubitIndexPair>& gates,
+                                   const ThinLayout<QubitIndex>& layout,
+                                   const Architecture& arch) const override {
     if (gates.size() != 1) {
       throw std::invalid_argument(
           "NaivePlanner expects exactly one gate as input.");
@@ -61,10 +62,10 @@ struct NaivePlanner : PlannerBase {
 /**
  * @brief Uses A*-search to make all gates executable.
  */
-struct QMAPPlanner : PlannerBase {
-  [[nodiscard]] mlir::SmallVector<QubitIndexPair>
-  plan(const mlir::ArrayRef<QubitIndexPair>& gates,
-       const ThinLayout<QubitIndex>& layout, const Architecture& arch) final {
+struct QMAPPlanner final : PlannerBase {
+  [[nodiscard]] PlannerResult plan(const mlir::ArrayRef<QubitIndexPair>& gates,
+                                   const ThinLayout<QubitIndex>& layout,
+                                   const Architecture& arch) const override {
     /// The heuristic cost function counts the number of SWAPs that were
     /// required if we were to route the gate set naively.
     const auto heuristic = [&](const SearchNode& node) {
