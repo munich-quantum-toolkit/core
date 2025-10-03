@@ -19,11 +19,10 @@
 
 #include <cassert>
 #include <cstddef>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/Format.h>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -312,7 +311,7 @@ WalkResult handleIf(scf::IfOp op, Router& router) {
  * additional SWAPS.
  */
 WalkResult handleYield(scf::YieldOp op, Router& router,
-                       PatternRewriter& rewriter) {
+                       [[maybe_unused]] PatternRewriter& rewriter) {
   if (!isa<scf::ForOp>(op->getParentOp()) &&
       !isa<scf::IfOp>(op->getParentOp())) {
     return WalkResult::skip();

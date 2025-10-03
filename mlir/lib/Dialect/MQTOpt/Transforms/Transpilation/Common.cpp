@@ -10,6 +10,9 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+
+#include <cassert>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
@@ -17,6 +20,7 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Value.h>
 #include <utility>
+#include <vector>
 
 namespace mqt::ir::opt {
 namespace {
