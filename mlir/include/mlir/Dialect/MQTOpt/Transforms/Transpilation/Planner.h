@@ -14,6 +14,7 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
+#include <algorithm>
 #include <mlir/Support/LLVM.h>
 #include <queue>
 #include <stdexcept>
@@ -90,20 +91,19 @@ private:
   struct SearchNode {
     /**
      * @brief Construct a root node with the given layout. Initialize the
-     * sequence with an empty vector and set the cost and depth to zero.
+     * sequence with an empty vector and set the cost to zero.
      */
     explicit SearchNode(ThinLayout<QubitIndex> layout)
         : layout_(std::move(layout)) {}
 
     /**
      * @brief Construct a non-root node from another node. Apply the given
-     * swap to the layout of the parent node and reevaluate the cost.
+     * swap to the layout of the parent node and evaluate the cost.
      */
     SearchNode(SearchNode node, QubitIndexPair swap,
                const mlir::ArrayRef<QubitIndexPair>& gates,
                const Architecture& arch)
-        : seq_(std::move(node.seq_)), layout_(std::move(node.layout_)),
-          depth_(node.depth_ + 1) {
+        : seq_(std::move(node.seq_)), layout_(std::move(node.layout_)) {
       /// Apply node-specific swap to given layout.
       layout_.swap(layout_.getProgramIndex(swap.first),
                    layout_.getProgramIndex(swap.second));
@@ -146,9 +146,20 @@ private:
     void evaluateCost(const mlir::ArrayRef<QubitIndexPair>& gates,
                       const Architecture& arch) {
 
-      /// The path cost function counts the currently required SWAPs to reach
-      /// this node.
-      const auto g = [&] { return static_cast<double>(depth_); };
+      /// The path cost function evaluates the weighted sum of the currently
+      /// required SWAPs and additionally added depth.
+      const auto g = [&] {
+        mlir::SmallVector<std::size_t> buckets(arch.nqubits(), 0);
+        for (const QubitIndexPair swap : seq_) {
+          buckets[swap.first]++;
+          buckets[swap.second]++;
+        }
+
+        const std::size_t nswaps = seq_.size();
+        const std::size_t ndepth = *std::ranges::max_element(buckets);
+        return (1. * static_cast<double>(nswaps)) +
+               (1. * static_cast<double>(ndepth));
+      };
 
       /// The heuristic cost function calculates the nearest neighbour costs.
       /// That is, the amount of SWAPs that a naive router would require.
@@ -171,7 +182,6 @@ private:
     ThinLayout<QubitIndex> layout_;
 
     double f_{};
-    std::size_t depth_{};
   };
 
   using MinQueue =
