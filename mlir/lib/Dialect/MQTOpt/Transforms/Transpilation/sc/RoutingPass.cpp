@@ -148,8 +148,8 @@ public:
    * executable.
    */
   void route(UnitaryInterface op, PatternRewriter& rewriter) {
-    const auto gates = layerizer_->layerize(op, stack().top());
-    const auto swaps = planner_->plan(gates, stack().top(), arch());
+    const auto layer = layerizer_->layerize(op, stack().top());
+    const auto swaps = planner_->plan(layer, stack().top(), arch());
     insert(swaps, op->getLoc(), rewriter);
   }
 
