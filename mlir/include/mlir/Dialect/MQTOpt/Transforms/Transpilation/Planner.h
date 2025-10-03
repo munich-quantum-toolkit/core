@@ -15,7 +15,9 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
 #include <mlir/Support/LLVM.h>
+#include <queue>
 #include <stdexcept>
+#include <utility>
 
 namespace mqt::ir::opt {
 
@@ -34,10 +36,9 @@ struct PlannerBase {
 };
 
 /**
- * @brief Implements shortest path swapping.
+ * @brief Use shortest path swapping to make one gate executable.
  */
 struct NaivePlanner final : PlannerBase {
-
   [[nodiscard]] PlannerResult plan(const mlir::ArrayRef<QubitIndexPair>& gates,
                                    const ThinLayout<QubitIndex>& layout,
                                    const Architecture& arch) const override {
@@ -60,59 +61,26 @@ struct NaivePlanner final : PlannerBase {
 };
 
 /**
- * @brief Uses A*-search to make all gates executable.
+ * @brief Use A*-search to make all gates executable.
  */
 struct QMAPPlanner final : PlannerBase {
   [[nodiscard]] PlannerResult plan(const mlir::ArrayRef<QubitIndexPair>& gates,
                                    const ThinLayout<QubitIndex>& layout,
                                    const Architecture& arch) const override {
-    /// The heuristic cost function counts the number of SWAPs that were
-    /// required if we were to route the gate set naively.
-    const auto heuristic = [&](const SearchNode& node) {
-      double h{};
-      for (const auto [prog0, prog1] : gates) {
-        const QubitIndex hw0 = node.layout.getHardwareIndex(prog0);
-        const QubitIndex hw1 = node.layout.getHardwareIndex(prog1);
-        const std::size_t nswaps =
-            arch.lengthOfShortestPathBetween(hw0, hw1) - 2;
-        h += static_cast<double>(nswaps);
-      }
-      return h;
-    };
-
-    const auto isGoal = [&](const SearchNode& node) {
-      return std::ranges::all_of(gates, [&](const QubitIndexPair gate) {
-        const auto [prog0, prog1] = gate;
-        return arch.areAdjacent(node.layout.getHardwareIndex(prog0),
-                                node.layout.getHardwareIndex(prog1));
-      });
-    };
-
     /// Initialize queue.
-    MinQueue queue{};
-    for (const QubitIndexPair swap : collectSWAPs(layout, gates, arch)) {
-      SearchNode node({}, swap, layout);
-      node.cost = heuristic(node);
-
-      queue.emplace(node);
-    }
+    MinQueue frontier{};
+    expand(frontier, SearchNode(layout), gates, arch);
 
     /// Iterative searching and expanding.
-    while (!queue.empty()) {
-      SearchNode curr = queue.top();
-      queue.pop();
+    while (!frontier.empty()) {
+      SearchNode curr = frontier.top();
+      frontier.pop();
 
-      if (isGoal(curr)) {
-        return curr.seq;
+      if (curr.isGoal(gates, arch)) {
+        return curr.getSequence();
       }
 
-      for (const QubitIndexPair swap : collectSWAPs(curr.layout, gates, arch)) {
-        SearchNode node(curr.seq, swap, curr.layout);
-        node.depth = curr.depth + 1;
-        node.cost = static_cast<double>(node.depth) + heuristic(node);
-
-        queue.emplace(node);
-      }
+      expand(frontier, curr, gates, arch);
     }
 
     return {};
@@ -120,50 +88,118 @@ struct QMAPPlanner final : PlannerBase {
 
 private:
   struct SearchNode {
-    llvm::SmallVector<QubitIndexPair> seq;
-    ThinLayout<QubitIndex> layout;
+    /**
+     * @brief Construct a root node with the given layout. Initialize the
+     * sequence with an empty vector and set the cost and depth to zero.
+     */
+    explicit SearchNode(ThinLayout<QubitIndex> layout)
+        : layout_(std::move(layout)) {}
 
-    double cost{};
-    std::size_t depth{};
-
-    SearchNode(llvm::SmallVector<QubitIndexPair> seq, QubitIndexPair swap,
-               ThinLayout<QubitIndex> layout)
-        : seq(std::move(seq)), layout(std::move(layout)) {
+    /**
+     * @brief Construct a non-root node from another node. Apply the given
+     * swap to the layout of the parent node and reevaluate the cost.
+     */
+    SearchNode(SearchNode node, QubitIndexPair swap,
+               const mlir::ArrayRef<QubitIndexPair>& gates,
+               const Architecture& arch)
+        : seq_(std::move(node.seq_)), layout_(std::move(node.layout_)),
+          depth_(node.depth_ + 1) {
       /// Apply node-specific swap to given layout.
-      this->layout.swap(this->layout.getProgramIndex(swap.first),
-                        this->layout.getProgramIndex(swap.second));
+      layout_.swap(layout_.getProgramIndex(swap.first),
+                   layout_.getProgramIndex(swap.second));
       /// Add swap to sequence.
-      this->seq.push_back(swap);
+      seq_.push_back(swap);
+
+      /// Evaluate cost.
+      evaluateCost(gates, arch);
     }
 
-    bool operator>(const SearchNode& rhs) const { return cost > rhs.cost; }
+    /**
+     * @brief Return true if the current sequence of SWAPs makes all gates
+     * executable.
+     */
+    [[nodiscard]] bool isGoal(const mlir::ArrayRef<QubitIndexPair>& gates,
+                              const Architecture& arch) const {
+      return std::ranges::all_of(gates, [&](const QubitIndexPair gate) {
+        return arch.areAdjacent(layout_.getHardwareIndex(gate.first),
+                                layout_.getHardwareIndex(gate.second));
+      });
+    }
+
+    /**
+     * @brief Return the sequence of SWAPs.
+     */
+    [[nodiscard]] mlir::SmallVector<QubitIndexPair> getSequence() const {
+      return seq_;
+    }
+
+    /**
+     * @brief Return a const reference to the node's layout.
+     */
+    [[nodiscard]] const ThinLayout<QubitIndex>& getLayout() const {
+      return layout_;
+    }
+
+    bool operator>(const SearchNode& rhs) const { return f_ > rhs.f_; }
+
+  private:
+    void evaluateCost(const mlir::ArrayRef<QubitIndexPair>& gates,
+                      const Architecture& arch) {
+
+      /// The path cost function counts the currently required SWAPs to reach
+      /// this node.
+      const auto g = [&] { return static_cast<double>(depth_); };
+
+      /// The heuristic cost function calculates the nearest neighbour costs.
+      /// That is, the amount of SWAPs that a naive router would require.
+      const auto h = [&] {
+        double h{};
+        for (const auto [prog0, prog1] : gates) {
+          const QubitIndex hw0 = layout_.getHardwareIndex(prog0);
+          const QubitIndex hw1 = layout_.getHardwareIndex(prog1);
+          const std::size_t nswaps =
+              arch.lengthOfShortestPathBetween(hw0, hw1) - 2;
+          h += static_cast<double>(nswaps);
+        }
+        return h;
+      };
+
+      f_ = g() + h();
+    }
+
+    mlir::SmallVector<QubitIndexPair> seq_;
+    ThinLayout<QubitIndex> layout_;
+
+    double f_{};
+    std::size_t depth_{};
   };
 
   using MinQueue =
-      std::priority_queue<SearchNode, std::vector<SearchNode>, std::greater<>>;
+      std::priority_queue<SearchNode, mlir::SmallVector<SearchNode>,
+                          std::greater<>>;
 
-  static mlir::SmallVector<QubitIndexPair>
-  collectSWAPs(const ThinLayout<QubitIndex>& layout,
-               const mlir::ArrayRef<QubitIndexPair>& gates,
-               const Architecture& arch) {
-    llvm::SmallDenseSet<QubitIndexPair, 16> candidates{};
+  static void expand(MinQueue& frontier, const SearchNode& node,
+                     const mlir::ArrayRef<QubitIndexPair>& gates,
+                     const Architecture& arch) {
 
-    const auto collect = [&](const QubitIndex p) {
-      const std::size_t hw0 = layout.getHardwareIndex(p);
-      for (const std::size_t hw1 : arch.neighboursOf(hw0)) {
-        /// Ensure consistent hashing/comparison
-        const QubitIndexPair swap =
-            hw0 < hw1 ? QubitIndexPair{hw0, hw1} : QubitIndexPair{hw1, hw0};
-        candidates.insert(swap);
+    llvm::SmallDenseSet<QubitIndexPair, 16> visited{};
+    for (const QubitIndexPair gate : gates) {
+      for (const QubitIndex prog : {gate.first, gate.second}) {
+        const std::size_t hw0 = node.getLayout().getHardwareIndex(prog);
+        for (const std::size_t hw1 : arch.neighboursOf(hw0)) {
+          /// Ensure consistent hashing/comparison
+          const QubitIndexPair swap =
+              hw0 < hw1 ? QubitIndexPair{hw0, hw1} : QubitIndexPair{hw1, hw0};
+
+          if (visited.contains(swap)) {
+            continue;
+          }
+
+          frontier.emplace(node, swap, gates, arch);
+          visited.insert(swap);
+        }
       }
-    };
-
-    for (const auto [prog0, prog1] : gates) {
-      collect(prog0);
-      collect(prog1);
     }
-
-    return {candidates.begin(), candidates.end()};
   }
 };
 
