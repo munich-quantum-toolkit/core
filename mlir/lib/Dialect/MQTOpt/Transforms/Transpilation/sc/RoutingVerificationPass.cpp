@@ -105,7 +105,7 @@ WalkResult handleIf(scf::IfOp op, VerificationContext& ctx) {
   const auto results = op->getResults().take_front(ctx.arch->nqubits());
   Layout<QubitIndex>& stateBeforeIf = ctx.stack.getItemAtDepth(IF_PARENT_DEPTH);
   for (const auto [hardwareIdx, res] : llvm::enumerate(results)) {
-    const Value q = stateBeforeIf.lookupHardware(hardwareIdx);
+    const Value q = stateBeforeIf.lookupHardwareValue(hardwareIdx);
     stateBeforeIf.remapQubitValue(q, res);
   }
 
@@ -168,8 +168,8 @@ WalkResult handleUnitary(UnitaryInterface op, VerificationContext& ctx) {
   const Value in1 = inQubits[1];
   const Value out1 = outQubits[1];
 
-  const QubitIndex idx0 = state.lookupHardware(in0);
-  const QubitIndex idx1 = state.lookupHardware(in1);
+  const QubitIndex idx0 = state.lookupHardwareIndex(in0);
+  const QubitIndex idx1 = state.lookupHardwareIndex(in1);
 
   if (!ctx.arch->areAdjacent(idx0, idx1)) {
     return op->emitOpError() << "(" << idx0 << "," << idx1 << ")"

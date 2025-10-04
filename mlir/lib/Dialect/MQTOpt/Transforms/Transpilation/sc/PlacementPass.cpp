@@ -297,7 +297,7 @@ WalkResult handleAlloc(AllocQubitOp op, PlacementContext& ctx,
 
   LLVM_DEBUG({ llvm::dbgs() << "handleAlloc: index= " << index << '\n'; });
 
-  const Value q = ctx.stack.top().lookupHardware(index);
+  const Value q = ctx.stack.top().lookupHardwareValue(index);
 
   /// Newly allocated?
   const Operation* defOp = q.getDefiningOp();
@@ -320,7 +320,7 @@ WalkResult handleAlloc(AllocQubitOp op, PlacementContext& ctx,
  */
 WalkResult handleDealloc(DeallocQubitOp op, PlacementContext& ctx,
                          PatternRewriter& rewriter) {
-  const std::size_t index = ctx.stack.top().lookupHardware(op.getQubit());
+  const std::size_t index = ctx.stack.top().lookupHardwareIndex(op.getQubit());
   ctx.pool.push_back(index);
   rewriter.eraseOp(op);
   return WalkResult::advance();
