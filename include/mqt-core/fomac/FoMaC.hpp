@@ -159,7 +159,7 @@ constexpr auto toString(QDMI_Session_Property prop) -> std::string {
 }
 
 /// Throws an exception corresponding to the given QDMI_STATUS code.
-auto throwError(int result, const std::string& msg) -> void;
+[[noreturn]] auto throwError(int result, const std::string& msg) -> void;
 
 /// Throws an exception if the result indicates an error.
 inline auto throwIfError(int result, const std::string& msg) -> void {

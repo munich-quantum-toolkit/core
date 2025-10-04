@@ -100,8 +100,9 @@ class Device(GenericDevice):
     The T2 time of the device.
     """
 
-    def __init__(self, device: GenericDevice) -> None:
-        """Initializes the Device with a given generic FoMaC device."""
+    @staticmethod
+    def try_create_from_device(device: GenericDevice) -> Device:
+        """Create NA FoMaC Device from generic FoMaC Device."""
     def __eq__(self, other: object) -> bool: ...
     def __ne__(self, other: object) -> bool: ...
 
