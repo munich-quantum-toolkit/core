@@ -13,6 +13,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <utility>
 
 namespace mqt::ir::opt {
 
@@ -63,6 +64,30 @@ public:
     assert(prog < programToHardware_.size() &&
            "getHardwareIndex: program index out of bounds");
     return programToHardware_[prog];
+  }
+
+  /**
+   * @brief Convenience function to lookup multiple hardware indices at once.
+   * @param progs The program indices.
+   * @return A tuple of hardware indices.
+   */
+  template <typename... ProgIndices>
+    requires(sizeof...(ProgIndices) > 0) &&
+            ((std::is_convertible_v<ProgIndices, QubitIndex>) && ...)
+  [[nodiscard]] auto getHardwareIndices(ProgIndices... progs) const {
+    return std::tuple{getHardwareIndex(static_cast<QubitIndex>(progs))...};
+  }
+
+  /**
+   * @brief Convenience function to lookup multiple program indices at once.
+   * @param hws The hardware indices.
+   * @return A tuple of program indices.
+   */
+  template <typename... HwIndices>
+    requires(sizeof...(HwIndices) > 0) &&
+            ((std::is_convertible_v<HwIndices, QubitIndex>) && ...)
+  [[nodiscard]] auto getProgramIndices(HwIndices... hws) const {
+    return std::tuple{getHardwareIndex(static_cast<QubitIndex>(hws))...};
   }
 
   /**

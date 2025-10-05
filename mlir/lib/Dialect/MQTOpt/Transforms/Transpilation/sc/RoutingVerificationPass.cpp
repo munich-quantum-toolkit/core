@@ -15,8 +15,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
-#include "llvm/Support/Debug.h"
-
 #include <cassert>
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>

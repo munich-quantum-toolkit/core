@@ -50,8 +50,7 @@ struct NaivePlanner final : PlannerBase {
 
     mlir::SmallVector<QubitIndexPair, 16> swaps;
     for (const auto [prog0, prog1] : layer.gates) {
-      const QubitIndex hw0 = layout.getHardwareIndex(prog0);
-      const QubitIndex hw1 = layout.getHardwareIndex(prog1);
+      const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
       const auto path = arch.shortestPathBetween(hw0, hw1);
       for (std::size_t i = 0; i < path.size() - 2; ++i) {
         swaps.emplace_back(path[i], path[i + 1]);
@@ -150,6 +149,9 @@ private:
       /// The path cost function evaluates the weighted sum of the currently
       /// required SWAPs and additionally added depth.
       const auto g = [&] {
+        /// TODO: Memory/Runtime trade-off. These buckets could also easily be
+        /// stored in the node. As a consequence, this would be O(1) instead of
+        /// O(nqubits).
         mlir::SmallVector<std::size_t> buckets(arch.nqubits(), 0);
         for (const QubitIndexPair swap : seq_) {
           buckets[swap.first]++;
@@ -167,8 +169,7 @@ private:
       const auto h = [&] {
         double nnGates{};
         for (const auto [prog0, prog1] : layer.gates) {
-          const QubitIndex hw0 = layout_.getHardwareIndex(prog0);
-          const QubitIndex hw1 = layout_.getHardwareIndex(prog1);
+          const auto [hw0, hw1] = layout_.getHardwareIndices(prog0, prog1);
           const std::size_t nswaps =
               arch.lengthOfShortestPathBetween(hw0, hw1) - 2;
           nnGates += static_cast<double>(nswaps);
@@ -176,8 +177,7 @@ private:
 
         double nnLookahead{};
         for (const auto [prog0, prog1] : layer.lookahead) {
-          const QubitIndex hw0 = layout_.getHardwareIndex(prog0);
-          const QubitIndex hw1 = layout_.getHardwareIndex(prog1);
+          const auto [hw0, hw1] = layout_.getHardwareIndices(prog0, prog1);
           const std::size_t nswaps =
               arch.lengthOfShortestPathBetween(hw0, hw1) - 2;
           nnLookahead += static_cast<double>(nswaps);

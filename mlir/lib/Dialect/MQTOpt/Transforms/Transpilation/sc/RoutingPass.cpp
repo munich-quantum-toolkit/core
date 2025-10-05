@@ -194,11 +194,10 @@ private:
   void insert(const SmallVector<QubitIndexPair>& swaps, Location location,
               PatternRewriter& rewriter) {
     for (const auto [hw0, hw1] : swaps) {
+      const auto [prog0, prog1] = stack().top().getProgramIndices(hw0, hw1);
+
       const Value in0 = stack().top().lookupHardwareValue(hw0);
       const Value in1 = stack().top().lookupHardwareValue(hw1);
-
-      const QubitIndex prog0 = stack().top().lookupProgramIndex(in0);
-      const QubitIndex prog1 = stack().top().lookupProgramIndex(in1);
 
       LLVM_DEBUG({
         llvm::dbgs() << llvm::format(
