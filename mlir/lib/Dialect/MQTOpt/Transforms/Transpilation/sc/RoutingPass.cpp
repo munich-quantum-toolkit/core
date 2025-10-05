@@ -320,10 +320,6 @@ WalkResult handleYield(scf::YieldOp op, Router& router,
   // TODO: Re-implement restoration logic.
   // router.restore(op->getLoc(), rewriter);
 
-  // assert(llvm::equal(router.stack.top().getCurrentLayout(),
-  //                    router.stack.getItemAtDepth(1).getCurrentLayout()) &&
-  //        "layouts must match after restoration");
-
   router.stack().pop();
 
   return WalkResult::advance();
@@ -356,11 +352,12 @@ WalkResult handleUnitary(UnitaryInterface op, Router& router,
     return WalkResult::advance();
   }
 
+  /// Expect two-qubit gate decomposition.
   if (nacts > 2) {
     return op->emitOpError() << "acts on more than two qubits";
   }
 
-  // Single-qubit: Forward mapping.
+  /// Single-qubit: Forward mapping.
   if (nacts == 1) {
     router.stack().top().remapQubitValue(inQubits[0], outQubits[0]);
     return WalkResult::advance();
@@ -381,6 +378,10 @@ WalkResult handleUnitary(UnitaryInterface op, Router& router,
         router.stack().top().lookupProgramIndex(execIn1),
         router.stack().top().lookupHardwareIndex(execIn1));
   });
+
+  if (isa<SWAPOp>(op)) {
+    router.stack().top().swap(execIn0, execIn1);
+  }
 
   router.stack().top().remapQubitValue(execIn0, execOut0);
   router.stack().top().remapQubitValue(execIn1, execOut1);

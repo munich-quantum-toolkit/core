@@ -15,6 +15,8 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
+#include "llvm/Support/Debug.h"
+
 #include <cassert>
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
@@ -121,6 +123,11 @@ WalkResult handleYield(scf::YieldOp op, VerificationContext& ctx) {
       return op->emitOpError() << "expected at least two elements on stack.";
     }
 
+    if (!llvm::equal(ctx.stack.top().getCurrentLayout(),
+                     ctx.stack.getItemAtDepth(1).getCurrentLayout())) {
+      return op.emitOpError() << "layouts must match after restoration";
+    }
+
     ctx.stack.pop();
   }
   return WalkResult::advance();
@@ -175,6 +182,10 @@ WalkResult handleUnitary(UnitaryInterface op, VerificationContext& ctx) {
     return op->emitOpError() << "(" << idx0 << "," << idx1 << ")"
                              << " is not executable on target architecture '"
                              << ctx.arch->name() << "'";
+  }
+
+  if (isa<SWAPOp>(op)) {
+    state.swap(in0, in1);
   }
 
   state.remapQubitValue(in0, out0);
