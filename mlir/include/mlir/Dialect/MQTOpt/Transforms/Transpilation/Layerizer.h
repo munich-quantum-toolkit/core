@@ -22,19 +22,23 @@
 
 namespace mqt::ir::opt {
 
-struct LayerizerResult {
-  /// @brief The to-be routed gates.
-  mlir::SmallVector<QubitIndexPair> gates;
-  /// @brief Lookahead gates.
-  mlir::SmallVector<QubitIndexPair> lookahead;
-};
+/**
+ * @brief A vector of gates.
+ */
+using Layer = mlir::SmallVector<QubitIndexPair>;
+
+/**
+ * @brief A vector of layers.
+ * [0]=current, [1]=lookahead (optional), >=2 future layers
+ */
+using Layers = mlir::SmallVector<Layer, 2>;
 
 /**
  * @brief A layerizer divides the circuit into routable sections.
  */
 struct LayerizerBase {
   virtual ~LayerizerBase() = default;
-  [[nodiscard]] virtual LayerizerResult
+  [[nodiscard]] virtual Layers
   layerize(UnitaryInterface op, const Layout<QubitIndex>& layout) const = 0;
 };
 
@@ -42,13 +46,11 @@ struct LayerizerBase {
  * @brief A one-op layerizer simply returns the given op.
  */
 struct OneOpLayerizer final : LayerizerBase {
-  [[nodiscard]] LayerizerResult
+  [[nodiscard]] Layers
   layerize(UnitaryInterface op,
            const Layout<QubitIndex>& layout) const override {
     const auto [in0, in1] = getIns(op);
-    return {.gates = {{layout.lookupProgramIndex(in0),
-                       layout.lookupProgramIndex(in1)}},
-            .lookahead = {}};
+    return {{{layout.lookupProgramIndex(in0), layout.lookupProgramIndex(in1)}}};
   }
 };
 
@@ -57,7 +59,7 @@ struct OneOpLayerizer final : LayerizerBase {
  * in parallel, i.e., they don't depend each others results.
  */
 struct CrawlLayerizer final : LayerizerBase {
-  [[nodiscard]] LayerizerResult
+  [[nodiscard]] Layers
   layerize([[maybe_unused]] UnitaryInterface op,
            const Layout<QubitIndex>& layout) const override {
     Layout<QubitIndex> copy(layout);
@@ -125,7 +127,7 @@ struct CrawlLayerizer final : LayerizerBase {
       return gates;
     };
 
-    return {.gates = crawl(), .lookahead = crawl()};
+    return {crawl(), crawl()};
   }
 };
 } // namespace mqt::ir::opt
