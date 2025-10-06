@@ -6,15 +6,16 @@
 #
 # Licensed under the MIT License
 
-"""Operation translation registry and neutral IR builder (Phase Q3).
+"""Operation translation registry and neutral IR builder.
 
 This module provides a lightweight registry mapping canonical *device operation
 names* to translator callables that convert a generic :class:`InstructionContext`
 into one or more :class:`~mqt.core.qdmi.qiskit.types.ProgramInstruction` objects.
 
 No Qiskit imports are performed here to keep the optional dependency isolated;
-context objects are generic and may be constructed by higher layers (e.g., a
-future BackendV2 integration) from Qiskit instructions or other front ends.
+context objects are generic and may be constructed by higher layers from Qiskit
+instructions (e.g., via :class:`~mqt.core.qdmi.qiskit.QiskitBackend`) or other
+front ends.
 """
 
 from __future__ import annotations
@@ -104,8 +105,36 @@ def _default_measure_translator(ctx: InstructionContext) -> Sequence[ProgramInst
     return [ProgramInstruction(name="measure", qubits=ctx.qubits, params=None, metadata=meta)]
 
 
+def _passthrough_translator(ctx: InstructionContext) -> Sequence[ProgramInstruction]:
+    """Pass-through translator for operations that map directly to neutral IR.
+
+    Args:
+        ctx: Instruction context to translate.
+
+    Returns:
+        Single-element sequence containing the translated instruction.
+    """
+    return [ProgramInstruction(name=ctx.name, qubits=ctx.qubits, params=ctx.params, metadata={})]
+
+
 # Register built-in translators at import time (idempotent if re-imported)
 _TRANSLATORS.setdefault("measure", _default_measure_translator)
+
+# Register common single-qubit gates
+for gate_name in ["x", "y", "z", "h", "i", "id", "s", "sdg", "t", "tdg", "sx", "sxdg"]:
+    _TRANSLATORS.setdefault(gate_name, _passthrough_translator)
+
+# Register common parametric single-qubit gates
+for gate_name in ["rx", "ry", "rz", "p", "phase", "r", "prx", "u", "u2", "u3"]:
+    _TRANSLATORS.setdefault(gate_name, _passthrough_translator)
+
+# Register common two-qubit gates
+for gate_name in ["cx", "cnot", "cy", "cz", "ch", "swap", "iswap", "dcx", "ecr"]:
+    _TRANSLATORS.setdefault(gate_name, _passthrough_translator)
+
+# Register common two-qubit parametric gates
+for gate_name in ["rxx", "ryy", "rzz", "rzx", "xx_plus_yy", "xx_minus_yy"]:
+    _TRANSLATORS.setdefault(gate_name, _passthrough_translator)
 
 # ---------------------------------------------------------------------------
 # Public registry API
@@ -164,7 +193,24 @@ def clear_operation_translators(*, keep_defaults: bool = True) -> None:
     """
     _TRANSLATORS.clear()
     if keep_defaults:
+        # Re-register all built-in translators
         _TRANSLATORS["measure"] = _default_measure_translator
+
+        # Register common single-qubit gates
+        for gate_name in ["x", "y", "z", "h", "i", "id", "s", "sdg", "t", "tdg", "sx", "sxdg"]:
+            _TRANSLATORS[gate_name] = _passthrough_translator
+
+        # Register common parametric single-qubit gates
+        for gate_name in ["rx", "ry", "rz", "p", "phase", "r", "prx", "u", "u2", "u3"]:
+            _TRANSLATORS[gate_name] = _passthrough_translator
+
+        # Register common two-qubit gates
+        for gate_name in ["cx", "cnot", "cy", "cz", "ch", "swap", "iswap", "dcx", "ecr"]:
+            _TRANSLATORS[gate_name] = _passthrough_translator
+
+        # Register common two-qubit parametric gates
+        for gate_name in ["rxx", "ryy", "rzz", "rzx", "xx_plus_yy", "xx_minus_yy"]:
+            _TRANSLATORS[gate_name] = _passthrough_translator
 
 
 # ---------------------------------------------------------------------------

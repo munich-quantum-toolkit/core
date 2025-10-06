@@ -6,13 +6,12 @@
 #
 # Licensed under the MIT License
 
-"""QDMI Device capability extraction & caching (Phase Q2).
+"""QDMI Device capability extraction & caching.
 
 This module provides lightweight, dependency-free (no Qiskit required) data
 classes and helper functions to introspect a FoMaC-backed QDMI device and
 produce a normalized, hashable capability snapshot. The snapshot is suitable
-for embedding in higher-level backend metadata (e.g., Qiskit BackendV2 Target
-construction in later phases).
+for embedding in higher-level backend metadata (e.g., Qiskit BackendV2 Target).
 
 Design goals:
 - Pure Python; safe to import regardless of optional extras.
@@ -22,10 +21,6 @@ Design goals:
   is deferred to later layers.
 - Provide stable dataclasses forming part of an intended public extension API
   (users may reference them for plugin development or inspection).
-
-Phase Scope:
-- No Qiskit integration yet (that appears in later phases).
-- No translator registry; this concentrates solely on device metadata.
 """
 
 from __future__ import annotations

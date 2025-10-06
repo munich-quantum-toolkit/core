@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Tests for QDMI Qiskit translator registry & neutral IR (Phase Q3)."""
+"""Tests for QDMI Qiskit translator registry & neutral IR."""
 
 from __future__ import annotations
 
@@ -34,22 +34,22 @@ def setup_module() -> None:  # noqa: D103
 def test_register_and_list_translators() -> None:
     """Register a new translator and ensure it appears in the listing."""
 
-    def _rx(ctx: InstructionContext) -> list[ProgramInstruction]:  # simple passthrough
-        return [ProgramInstruction(name="rx", qubits=ctx.qubits, params=ctx.params)]
+    def _custom_gate(ctx: InstructionContext) -> list[ProgramInstruction]:  # simple passthrough
+        return [ProgramInstruction(name="custom_gate", qubits=ctx.qubits, params=ctx.params)]
 
-    register_operation_translator("rx", _rx)
+    register_operation_translator("custom_gate", _custom_gate)
     names = list_operation_translators()
     assert "measure" in names  # default
-    assert "rx" in names
+    assert "custom_gate" in names
     # retrieve translator
-    retrieved = get_operation_translator("rx")
-    assert retrieved is _rx
+    retrieved = get_operation_translator("custom_gate")
+    assert retrieved is _custom_gate
 
 
 def test_unregister_translator() -> None:
     """Unregister an existing translator and verify it's removed."""
-    unregister_operation_translator("rx")
-    assert "rx" not in list_operation_translators()
+    unregister_operation_translator("custom_gate")
+    assert "custom_gate" not in list_operation_translators()
 
 
 def test_overwrite_flag() -> None:

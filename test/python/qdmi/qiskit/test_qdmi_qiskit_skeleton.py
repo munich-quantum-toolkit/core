@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Tests for Phase Q1 Qiskit backend skeleton (dependency guards only).
+"""Tests for Qiskit backend (dependency guards only).
 
 These tests adapt automatically depending on whether the optional
 `qiskit` dependency is present in the environment.

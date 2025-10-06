@@ -17,6 +17,20 @@ from __future__ import annotations
 from importlib import import_module
 from typing import TYPE_CHECKING, Final
 
+# Conditional backend import (optional dependency)
+try:
+    from .backend import QiskitBackend
+
+    _BACKEND_AVAILABLE = True
+except Exception:  # noqa: BLE001
+    _BACKEND_AVAILABLE = False
+
+from .exceptions import (
+    CapabilityMismatchError,
+    QDMIQiskitError,
+    TranslationError,
+    UnsupportedOperationError,
+)
 from .translator import (
     InstructionContext,
     build_program_ir,
@@ -32,11 +46,15 @@ if TYPE_CHECKING:  # pragma: no cover
     from types import ModuleType
 
 __all__ = [
+    "CapabilityMismatchError",
     "IRValidationError",
     "InstructionContext",
     "ProgramIR",
     "ProgramInstruction",
+    "QDMIQiskitError",
     "QiskitNotAvailableError",
+    "TranslationError",
+    "UnsupportedOperationError",
     "build_program_ir",
     "clear_operation_translators",
     "get_operation_translator",
@@ -46,6 +64,14 @@ __all__ = [
     "require_qiskit",
     "unregister_operation_translator",
 ]
+if _BACKEND_AVAILABLE:
+    __all__ += [
+        "CapabilityMismatchError",
+        "QDMIQiskitError",
+        "QiskitBackend",
+        "TranslationError",
+        "UnsupportedOperationError",
+    ]
 
 
 class QiskitNotAvailableError(ImportError):
@@ -82,13 +108,13 @@ def require_qiskit() -> ModuleType:
 
 
 def __getattr__(name: str) -> object:  # pragma: no cover - dynamic fallback
-    """Dynamic attribute guard for phase placeholders.
+    """Dynamic attribute guard for optional backend symbol.
 
     Raises:
-        QiskitNotAvailableError: If a future backend symbol is accessed early.
-        AttributeError: If the attribute is unknown.
+        QiskitNotAvailableError: If backend requested when qiskit missing.
+        AttributeError: For any other unknown attribute.
     """
-    if name == "QiskitBackend":
-        msg = f"'{name}' is not available yet. Upgrade to a later version implementing the Qiskit backend."
+    if name == "QiskitBackend" and not _BACKEND_AVAILABLE:
+        msg = "'QiskitBackend' requires the optional qiskit dependency. Install with 'pip install mqt-core[qiskit]'"
         raise QiskitNotAvailableError(msg)
     raise AttributeError(name)

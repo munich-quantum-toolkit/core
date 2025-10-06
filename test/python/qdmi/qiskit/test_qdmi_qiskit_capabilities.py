@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Tests for Phase Q2 capability extraction & caching.
+"""Tests for capability extraction & caching.
 
 These tests exercise the pure-Python capabilities module without requiring
 Qiskit. They rely on the built-in NA device exposed via FoMaC bindings.
