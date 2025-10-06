@@ -16,11 +16,11 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
 #include <algorithm>
-#include <cmath>
 #include <mlir/Support/LLVM.h>
 #include <queue>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace mqt::ir::opt {
 
@@ -71,9 +71,10 @@ struct QMAPPlanner final : PlannerBase {
   [[nodiscard]] PlannerResult plan(const Layers& layers,
                                    const ThinLayout<QubitIndex>& layout,
                                    const Architecture& arch) const override {
+
     /// Initialize queue.
     MinQueue frontier{};
-    expand(frontier, SearchNode(layout), layers, arch);
+    expand(frontier, SearchNode(layout, arch), layers, arch);
 
     /// Iterative searching and expanding.
     while (!frontier.empty()) {
@@ -96,23 +97,30 @@ private:
      * @brief Construct a root node with the given layout. Initialize the
      * sequence with an empty vector and set the cost to zero.
      */
-    explicit SearchNode(ThinLayout<QubitIndex> layout)
-        : layout_(std::move(layout)) {}
+    explicit SearchNode(ThinLayout<QubitIndex> layout, const Architecture& arch)
+        : layout_(std::move(layout)), depthBuckets_(arch.nqubits()) {}
 
     /**
-     * @brief Construct a non-root node from another node. Apply the given
+     * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node and evaluate the cost.
      */
-    SearchNode(SearchNode node, QubitIndexPair swap, const Layers& layers,
-               const Architecture& arch)
-        : seq_(std::move(node.seq_)), layout_(std::move(node.layout_)) {
+    SearchNode(const SearchNode& parent, QubitIndexPair swap,
+               const Layers& layers, const Architecture& arch)
+        : seq_(parent.seq_), layout_(parent.layout_),
+          depthBuckets_(parent.depthBuckets_) {
       /// Apply node-specific swap to given layout.
       layout_.swap(layout_.getProgramIndex(swap.first),
                    layout_.getProgramIndex(swap.second));
       /// Add swap to sequence.
       seq_.push_back(swap);
 
-      /// Evaluate cost.
+      /// Update degrees.
+      depthBuckets_[swap.first]++;
+      depthBuckets_[swap.second]++;
+      ndepth_ = std::max(
+          {depthBuckets_[swap.first], depthBuckets_[swap.second], ndepth_});
+
+      /// Evaluate cost function.
       evaluateCost(layers, arch);
     }
 
@@ -142,43 +150,42 @@ private:
       return layout_;
     }
 
-    bool operator>(const SearchNode& rhs) const { return f_ > rhs.f_; }
+    [[nodiscard]] bool operator>(const SearchNode& rhs) const {
+      return f_ > rhs.f_;
+    }
 
   private:
     void evaluateCost(const Layers& layers, const Architecture& arch) {
-      constexpr double alpha = 1.;
-      constexpr double beta = 1.;
-      constexpr double gamma = 0.5;
+      constexpr float alpha = 1.;
+      constexpr float beta = 1.;
+      constexpr float lambda = 0.9;
+
+      /// TODO: Hoist outside and make variables configurable.
+      mlir::SmallVector<float, 2> lambdas(layers.size());
+      lambdas[0] = 1.0;
+      for (std::size_t i = 1; i < lambdas.size(); ++i) {
+        lambdas[i] = lambdas[i - 1] * lambda;
+      }
 
       /// The path cost function evaluates the weighted sum of the currently
       /// required SWAPs and additionally added depth.
       const auto g = [&] {
-        /// TODO: Memory/Runtime trade-off. These buckets could also easily be
-        /// stored in the node. As a consequence, this would be O(1) instead of
-        /// O(nqubits).
-        mlir::SmallVector<std::size_t> buckets(arch.nqubits(), 0);
-        for (const QubitIndexPair swap : seq_) {
-          buckets[swap.first]++;
-          buckets[swap.second]++;
-        }
-
-        const std::size_t nswaps = seq_.size();
-        const std::size_t ndepth = *std::ranges::max_element(buckets);
-        return (alpha * static_cast<double>(nswaps)) +
-               (beta * static_cast<double>(ndepth));
+        return (alpha * static_cast<float>(seq_.size())) +
+               (beta * static_cast<float>(ndepth_));
       };
 
       /// The heuristic cost function calculates the nearest neighbour costs.
       /// That is, the amount of SWAPs that a naive router would require.
       /// Gamma acts like a decay.
       const auto h = [&] {
-        double nn{};
+        float nn{0};
         for (const auto [i, layer] : llvm::enumerate(layers)) {
           for (const auto [prog0, prog1] : layer) {
             const auto [hw0, hw1] = layout_.getHardwareIndices(prog0, prog1);
             const std::size_t nswaps =
                 arch.lengthOfShortestPathBetween(hw0, hw1) - 2;
-            nn += std::pow(gamma, i) * static_cast<double>(nswaps);
+            nn += lambdas[i] * static_cast<float>(nswaps) /
+                  static_cast<float>(layer.size());
           }
         }
         return nn;
@@ -190,12 +197,14 @@ private:
     mlir::SmallVector<QubitIndexPair> seq_;
     ThinLayout<QubitIndex> layout_;
 
-    double f_{};
+    mlir::SmallVector<uint16_t> depthBuckets_;
+    uint16_t ndepth_{0};
+
+    float f_{0};
   };
 
   using MinQueue =
-      std::priority_queue<SearchNode, mlir::SmallVector<SearchNode>,
-                          std::greater<>>;
+      std::priority_queue<SearchNode, std::vector<SearchNode>, std::greater<>>;
 
   static void expand(MinQueue& frontier, const SearchNode& node,
                      const Layers& layers, const Architecture& arch) {
