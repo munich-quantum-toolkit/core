@@ -76,6 +76,41 @@ All operations fall into three primary categories:
 
 **Purpose:** Manage qubit lifetime and references.
 
+**Qubit and Register Allocation:**
+
+In MQT's MLIR dialects, quantum and classical registers are represented by MLIR-native `memref` operations rather than custom types. This design choice offers several advantages:
+
+- **MLIR Integration:** Seamless compatibility with existing MLIR infrastructure, enabling reuse of memory handling patterns and optimization passes
+- **Implementation Efficiency:** No need to define and maintain custom register operations, significantly reducing implementation complexity
+- **Enhanced Interoperability:** Easier integration with other MLIR dialects and passes, allowing for more flexible compilation pipelines
+- **Sustainable Evolution:** Standard memory operations can handle transformations while allowing new features without changing the fundamental register model
+
+**Quantum Register Representation:**
+
+A quantum register is represented by a `memref` of type `!mqtref.Qubit` or `!mqtopt.Qubit`:
+
+```mlir
+// A quantum register with 2 qubits
+%qreg = memref.alloc() : memref<2x!mqtref.Qubit>
+
+// Load qubits from the register
+%q0 = memref.load %qreg[%i0] : memref<2x!mqtref.Qubit>
+%q1 = memref.load %qreg[%i1] : memref<2x!mqtref.Qubit>
+```
+
+**Classical Register Representation:**
+
+Classical registers follow the same pattern but use the `i1` type for boolean measurement results:
+
+```mlir
+// A classical register with 1 bit
+%creg = memref.alloc() : memref<1xi1>
+
+// Store measurement result
+%c = mqtref.measure %q
+memref.store %c, %creg[%i0] : memref<1xi1>
+```
+
 **Reference Semantics (`mqtref`):**
 
 ```mlir
@@ -95,12 +130,14 @@ mqtopt.dealloc %q : !mqtopt.qubit
 **Canonicalization Patterns:**
 
 - Dead allocation elimination: Remove unused `alloc` operations (DCE)
-- **TODO:** Define register allocation operations for multi-qubit arrays
-- **TODO:** Specify interaction with classical bit allocation
 
 ### 3.4 Measurement and Reset
 
 Non-unitary operations that do not implement the `UnitaryOpInterface`.
+
+**Measurement Basis:** All measurements are performed in the **computational basis** (Z-basis). Measurements in other bases must be implemented by applying appropriate basis-change gates before measurement.
+
+**Single-Qubit Measurements Only:** Multi-qubit measurements are explicitly **not supported**. Joint measurements must be decomposed into individual single-qubit measurements.
 
 **Reference Semantics:**
 
@@ -119,9 +156,7 @@ mqtref.reset %q : !mqtref.qubit
 **Canonicalization Patterns:**
 
 - `reset` immediately after `alloc` → remove `reset` (already in ground state)
-- Consecutive `reset` on same qubit → single instance
-- **TODO:** Specify multi-qubit measurement operations
-- **TODO:** Define measurement basis specification (currently assumes computational basis)
+- Consecutive `reset` on same qubit (reference semantics) → single instance
 
 ### 3.5 Unified Unitary Interface Design
 
@@ -272,15 +307,12 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Canonicalization:**
   - `gphase(0) → remove`
   - `inv(gphase(θ)) → gphase(-θ)`
-  - `gphase(a); gphase(b) → gphase(a + b)` (consecutive phases merge)
+  - `gphase(a); gphase(b) → gphase(a + b)` (consecutive phases merge within same scope)
   - `ctrl(%q) { gphase(θ) } → p(θ) %q` (controlled global phase becomes phase gate)
   - `negctrl(%q) { gphase(θ) } → gphase(π); p(θ) %q` (negative control specialization)
   - `pow(n) { gphase(θ) } → gphase(n*θ)`
 - **Matrix:** `[exp(iθ)]` (1×1 scalar, static if θ constant)
-- **Open Issues:**
-  - **TODO:** Global phase gates have no target qubits, making traversal and merging semantics unclear
-  - **TODO:** Define how global phases interact with circuit-level operations
-  - **TODO:** Specify whether global phases should be preserved or eliminated in certain contexts
+- **Global Phase Preservation:** Global phase gates are **preserved by default** and should only be eliminated by dedicated optimization passes. They are bound to a scope (e.g., function, box) at which they are aggregated and canonicalized. Operations within the same scope may merge adjacent global phases, but global phases should not be arbitrarily removed during general canonicalization.
 
 #### 4.3.2 `id` Gate (Identity)
 
@@ -305,13 +337,12 @@ The following canonicalization patterns apply automatically to all gates with th
   - Ref: `mqtref.x %q`
   - Value: `%q_out = mqtopt.x %q_in`
 - **Canonicalization:**
-  - `pow(1/2) x → sx` (square root of x is sx)
-  - `pow(-1/2) x → sxdg` (inverse square root is sxdg)
+  - `pow(1/2) x → sx`
+  - `pow(-1/2) x → sxdg`
+  - `pow(r) x → gphase(-r*π/2); rx(r*π)` (general power translates to rotation with global phase)
 - **Matrix:** `[0, 1; 1, 0]` (2x2 matrix)
 - **Definition in terms of `u`:** `u(π, 0, π) %q`
-- **Open Issues:**
-  - **TODO:** Resolve global phase relationship: `-iX == rx(π)`. What are the implications for `pow(r) x`?
-  - **TODO:** Define whether `pow(1/3) x` should be supported or rejected
+- **Global Phase Relationship:** The Pauli-X gate and `rx(π)` differ by a global phase: `X = -i·exp(-iπ/2·X) = -i·rx(π)`. When raising X to fractional powers, the result is expressed as a rotation with an appropriate global phase factor.
 
 #### 4.3.4 `y` Gate (Pauli-Y)
 
@@ -320,10 +351,11 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Signatures:**
   - Ref: `mqtref.y %q`
   - Value: `%q_out = mqtopt.y %q_in`
+- **Canonicalization:**
+  - `pow(r) y → gphase(-r*π/2); ry(r*π)` (general power translates to rotation with global phase)
 - **Matrix:** `[0, -i; i, 0]` (2x2 matrix)
 - **Definition in terms of `u`:** `u(π, π/2, π/2) %q`
-- **Open Issues:**
-  - **TODO:** Resolve global phase relationship: `-iY == ry(π)`. What are the implications for `pow(r) y`?
+- **Global Phase Relationship:** The Pauli-Y gate and `ry(π)` differ by a global phase: `Y = -i·exp(-iπ/2·Y) = -i·ry(π)`.
 
 #### 4.3.5 `z` Gate (Pauli-Z)
 
@@ -432,13 +464,13 @@ The following canonicalization patterns apply automatically to all gates with th
   - `inv sx → sxdg`
   - `sx %q; sx %q → x %q`
   - `pow(+-2) sx → x`
+  - `pow(r) sx → gphase(-r*π/4); rx(r*π/2)` (power translates to rotation with global phase)
 - **Matrix:** `1/2 * [1 + i, 1 - i; 1 - i, 1 + i]` (2x2 matrix)
-- **Open Issues:**
-  - **TODO:** Resolve global phase relationship: `exp(-iπ/4) sx == rx(π/2)`. Define power semantics.
+- **Global Phase Relationship:** `sx = exp(-iπ/4)·rx(π/2)`. Powers are handled by translating to the rotation form with appropriate global phase correction.
 
 #### 4.3.12 `sxdg` Gate (√X-Dagger)
 
-- **Purpose:** Inverse of the square root of X gate
+- **Purpose:** Square root of X-Dagger gate
 - **Traits:** `OneTarget`, `NoParameter`
 - **Signatures:**
   - Ref: `mqtref.sxdg %q`
@@ -447,9 +479,9 @@ The following canonicalization patterns apply automatically to all gates with th
   - `inv sxdg → sx`
   - `sxdg %q; sxdg %q → x %q`
   - `pow(+-2) sxdg → x`
+  - `pow(r) sxdg → gphase(r*π/4); rx(-r*π/2)` (power translates to rotation with global phase)
 - **Matrix:** `1/2 * [1 - i, 1 + i; 1 + i, 1 - i]` (2x2 matrix)
-- **Open Issues:**
-  - **TODO:** Resolve global phase relationship with `rx(-π/2)`. Define power semantics.
+- **Global Phase Relationship:** `sxdg = exp(iπ/4)·rx(-π/2)`. Powers are handled by translating to the rotation form with appropriate global phase correction.
 
 #### 4.3.13 `rx` Gate (X-Rotation)
 
@@ -494,8 +526,7 @@ The following canonicalization patterns apply automatically to all gates with th
   - `inv rz(θ) → rz(-θ)`
   - `pow(r) rz(θ) → rz(r * θ)` for real r
 - **Matrix (dynamic):** `exp(-i θ/2 Z) = [exp(-i θ/2), 0; 0, exp(i θ/2)]` (2x2 matrix). Static if θ constant.
-- **Open Issues:**
-  - **TODO:** Clarify global phase relationship: `rz(θ) == exp(iθ/2) * p(θ)`. Should canonicalization convert between these?
+- **Relationship with `p` gate:** The `rz` and `p` gates differ by a global phase: `rz(θ) = exp(iθ/2)·p(θ)`. However, **`rz` and `p` should remain separate** and are **not canonicalized** into each other, as they represent different conventions that may be important for hardware backends or algorithm implementations.
 
 #### 4.3.16 `p` Gate (Phase)
 
@@ -695,17 +726,20 @@ The following canonicalization patterns apply automatically to all gates with th
 #### 4.3.30 `barrier` Gate
 
 - **Purpose:** Prevents optimization passes from reordering operations across the barrier
-- **Traits:** `VariadicTarget`, `NoParameter`
+- **Traits:** `NoParameter`
 - **Signatures:**
   - Ref: `mqtref.barrier %q0, %q1, ...`
   - Value: `%q0_out, %q1_out, ... = mqtopt.barrier %q0_in, %q1_in, ...`
+- **Semantics:** The `barrier` operation implements the `UnitaryOpInterface` and is treated similarly to the identity gate from a unitary perspective. However, it serves as a compiler directive that constrains optimization: operations cannot be moved across a barrier boundary.
 - **Canonicalization:**
   - Barriers with no qubits can be removed
-  - **TODO:** Define interaction with other optimization passes
-- **Matrix:** Not applicable (compiler directive, not a unitary operation)
-- **Open Issues:**
-  - **TODO:** Should barrier implement `UnitaryOpInterface`? (It's effectively identity but has scheduling semantics)
-  - **TODO:** Define semantics for nested barriers within modifiers
+  - `barrier; barrier` on same qubits → single `barrier` (adjacent barriers merge)
+  - `inv { barrier } → barrier` (barrier is self-adjoint)
+  - `pow(r) { barrier } → barrier` (any power of barrier is still barrier)
+  - `ctrl(%c) { barrier } → barrier` (controlled barrier is still barrier)
+  - `negctrl(%c) { barrier } → barrier` (negatively controlled barrier is still barrier)
+- **Matrix:** Identity matrix of appropriate dimension (2^n × 2^n for n qubits)
+- **UnitaryOpInterface Implementation:** Returns identity matrix, no parameters, no controls, targets are the specified qubits
 
 ## 5. Modifier Operations
 
@@ -773,7 +807,7 @@ Modifiers are wrapper operations that transform or extend unitary operations wit
 
 - Control and target qubits must be distinct (no qubit can be both control and target)
 - All control qubits must be distinct from each other
-- **TODO:** Specify verification for nested modifiers with overlapping qubit sets
+- **Control Modifier Exclusivity:** A qubit must **not** appear in both positive (`ctrl`) and negative (`negctrl`) control modifiers. The sets of positive and negative controls must be **disjoint** with no overlap. If a qubit appears in both, the operation is invalid and must be rejected during verification.
 
 **Unitary Computation:**
 
@@ -873,13 +907,13 @@ Given unitary matrix `U`, the inverse is computed as `U† = (U̅)ᵀ` (conjugat
 - **Integer exponents:** Matrix multiplication `U^n = U · U · ... · U` (n times)
 - **Real/rational exponents:** Matrix exponentiation via eigendecomposition: `U^r = V · D^r · V†` where `U = V · D · V†` is the eigendecomposition
 
-**Open Issues:**
+**Well-Definedness:** Since all quantum gates are unitary matrices, they are always diagonalizable (unitaries are normal operators). Therefore, **non-integer powers are always well-defined** through eigendecomposition, regardless of the specific gate.
 
-- **TODO:** Define behavior for non-integer powers of non-diagonalizable gates
-- **TODO:** Specify numerical precision requirements for matrix exponentiation
-- **TODO:** Define semantics for complex exponents (currently not supported)
+**Numerical Precision:** Matrix exponentiation should be computed to **machine precision** (typically double precision floating point, ~15-16 decimal digits). Implementations should use numerically stable algorithms for eigendecomposition.
 
-## 6. Sequence Operation (`seq`)
+**Complex Exponents:** Complex exponents are **not supported** and will **not be supported** in the future, as they do not have meaningful physical interpretations for quantum gates. Only real-valued exponents are permitted.
+
+## 6. Box Operation (`box`)
 
 **Purpose:** Ordered, unnamed composition of unitary operations. Represents the application of multiple operations.
 
@@ -1031,8 +1065,8 @@ mqtref.apply @my_gate(%runtime_param) %q0, %q1
 **Consistency Requirements:**
 
 - Gates providing both matrix and sequence must be verified for consistency
-- **TODO:** Define tolerance for numerical verification of consistency
-- **TODO:** Specify which representation takes precedence in different contexts
+- **Numerical Tolerance:** Consistency verification should use a tolerance close to machine precision (e.g., `1e-14` for double precision)
+- **Precedence:** When both matrix and sequence representations are provided, the **matrix representation takes precedence** for unitary extraction. The sequence is treated as a suggestion for decomposition but the matrix defines the ground truth semantics.
 
 ## 8. Builder API
 
@@ -1058,8 +1092,8 @@ public:
   // Resource management
   mlir::Value allocQubit();  // Dynamic allocation
   mlir::Value qubit(size_t index);  // Static qubit reference
-  mlir::Value allocQubits(size_t count);  // Register allocation
-  mlir::Value allocBits(size_t count);  // Classical register
+  mlir::Value allocQubits(size_t count);  // Register allocation (returns memref)
+  mlir::Value allocBits(size_t count);  // Classical register (returns memref)
 
   // Single-qubit gates (return *this for chaining)
   RefQuantumProgramBuilder& h(mlir::Value q);
@@ -1084,9 +1118,27 @@ public:
   RefQuantumProgramBuilder& p(mlir::Value lambda, mlir::Value q);
 
   // Two-qubit gates
-  RefQuantumProgramBuilder& cx(mlir::Value ctrl, mlir::Value target);
   RefQuantumProgramBuilder& swap(mlir::Value q0, mlir::Value q1);
+  RefQuantumProgramBuilder& iswap(mlir::Value q0, mlir::Value q1);
+  RefQuantumProgramBuilder& dcx(mlir::Value q0, mlir::Value q1);
+  RefQuantumProgramBuilder& ecr(mlir::Value q0, mlir::Value q1);
   // ... other two-qubit gates
+
+  // Convenience gates (inspired by qc::QuantumComputation API)
+  // Standard controlled gates
+  RefQuantumProgramBuilder& cx(mlir::Value ctrl, mlir::Value target);  // CNOT
+  RefQuantumProgramBuilder& cy(mlir::Value ctrl, mlir::Value target);
+  RefQuantumProgramBuilder& cz(mlir::Value ctrl, mlir::Value target);
+  RefQuantumProgramBuilder& ch(mlir::Value ctrl, mlir::Value target);
+  RefQuantumProgramBuilder& crx(double theta, mlir::Value ctrl, mlir::Value target);
+  RefQuantumProgramBuilder& cry(double theta, mlir::Value ctrl, mlir::Value target);
+  RefQuantumProgramBuilder& crz(double theta, mlir::Value ctrl, mlir::Value target);
+
+  // Multi-controlled gates (arbitrary number of controls)
+  RefQuantumProgramBuilder& mcx(mlir::ValueRange ctrls, mlir::Value target);  // Toffoli, etc.
+  RefQuantumProgramBuilder& mcy(mlir::ValueRange ctrls, mlir::Value target);
+  RefQuantumProgramBuilder& mcz(mlir::ValueRange ctrls, mlir::Value target);
+  RefQuantumProgramBuilder& mch(mlir::ValueRange ctrls, mlir::Value target);
 
   // Modifiers (take lambdas for body construction)
   RefQuantumProgramBuilder& ctrl(mlir::ValueRange ctrls,
@@ -1134,24 +1186,57 @@ private:
 
 ### 8.3 Value Semantics Builder
 
-**TODO:** Define `OptQuantumProgramBuilder` with appropriate SSA threading semantics.
+The `OptQuantumProgramBuilder` follows the same design principles as the reference semantics builder but with SSA value threading:
 
-Key differences from reference builder:
+**Key Differences:**
 
-- Operations return new SSA values instead of modifying in-place
-- Region construction must handle argument threading
-- Yield operations must be inserted appropriately
+- **Return Values:** All gate operations return new SSA values representing the output qubits
+- **Threading:** Operations consume input qubits and produce output qubits
+- **Region Construction:** Modifiers and box operations handle proper argument threading and yield insertion
+- **Type Signatures:** Uses `!mqtopt.qubit` instead of `!mqtref.qubit`
+
+**Example API Sketch:**
+
+```c++
+class OptQuantumProgramBuilder {
+public:
+  OptQuantumProgramBuilder(mlir::MLIRContext *context);
+
+  // Single-qubit gates return new qubit values
+  mlir::Value h(mlir::Value q_in);
+  mlir::Value x(mlir::Value q_in);
+  mlir::Value rx(double theta, mlir::Value q_in);
+
+  // Two-qubit gates return tuple of output qubits
+  std::pair<mlir::Value, mlir::Value> cx(mlir::Value ctrl_in, mlir::Value target_in);
+  std::pair<mlir::Value, mlir::Value> swap(mlir::Value q0_in, mlir::Value q1_in);
+
+  // Convenience multi-controlled gates
+  mlir::ValueRange mcx(mlir::ValueRange ctrl_ins, mlir::Value target_in);
+
+  // Modifiers handle value threading automatically
+  mlir::ValueRange ctrl(mlir::ValueRange ctrl_ins, mlir::ValueRange target_ins,
+                         std::function<mlir::ValueRange(OptQuantumProgramBuilder&,
+                                                        mlir::ValueRange)> body);
+
+  // ... similar methods to RefQuantumProgramBuilder
+};
+```
 
 ### 8.4 Usage Example
 
 ```c++
-// Example: Build Bell state preparation
+// Example: Build Bell state preparation with reference semantics
 RefQuantumProgramBuilder builder(context);
 builder.initialize();
 
 auto q0 = builder.qubit(0);
 auto q1 = builder.qubit(1);
 
+// Using convenience method
+builder.h(q0).cx(q0, q1);
+
+// Equivalent using modifier
 builder.h(q0)
        .ctrl({q0}, [&](auto& b) {
            b.x(q1);
@@ -1160,21 +1245,25 @@ builder.h(q0)
 auto module = builder.finalize();
 ```
 
-### 8.5 C API Considerations
+```c++
+// Example: Build Toffoli gate with multi-controlled convenience
+RefQuantumProgramBuilder builder(context);
+builder.initialize();
 
-**TODO:** Evaluate feasibility of C API wrapper for language interoperability (Python, Rust, etc.).
+auto q0 = builder.qubit(0);
+auto q1 = builder.qubit(1);
+auto q2 = builder.qubit(2);
 
-Benefits:
+// Toffoli using convenience method
+builder.mcx({q0, q1}, q2);
 
-- Enables bindings to other languages
-- May eventually replace `qc::QuantumComputation` API
+// Equivalent using modifier
+builder.ctrl({q0, q1}, [&](auto& b) {
+    b.x(q2);
+});
+```
 
-Challenges:
-
-- Lambda-based modifier API needs translation
-- Memory management across language boundaries
-
-## 9. Testing Strategy
+### 9. Testing Strategy
 
 ### 9.1 Philosophy
 
@@ -1269,116 +1358,230 @@ func.func @nested_modifiers(%q: !mqtref.qubit) {
 
 ### 9.4 Integration Tests
 
-**TODO:** Define integration testing strategy covering:
+Integration tests should cover end-to-end compilation scenarios, focusing on real-world usage patterns and interoperability with existing quantum software ecosystems.
 
-- Multi-pass optimization pipelines
-- Dialect conversion sequences
-- End-to-end compilation scenarios
-- Performance regression testing
+**Test Coverage:**
 
-### 9.5 Test Coverage Metrics
+1. **Frontend Translation:**
+   - **Qiskit → MLIR:** Convert Qiskit `QuantumCircuit` objects to MQTRef/MQTOpt dialect
+   - **OpenQASM 3.0 → MLIR:** Parse OpenQASM 3.0 source and lower to MLIR
+   - **`qc::QuantumComputation` → MLIR:** Migrate from existing MQT Core IR to MLIR representation
 
-**TODO:** Establish coverage targets:
+2. **Compiler Pipeline Integration:**
+   - Execute default optimization pass pipeline on translated circuits
+   - Verify correctness through unitary equivalence checks
+   - Test dialect conversions (MQTRef ↔ MQTOpt) within the pipeline
+   - Validate canonicalization and optimization passes
 
-- Line coverage goal: >90%
-- Branch coverage goal: >85%
-- Canonicalization pattern coverage: 100%
-- Interface method coverage: 100%
+3. **Backend Translation:**
+   - **MLIR → QIR:** Lower optimized MLIR to Quantum Intermediate Representation (QIR)
+   - Verify QIR output is valid and executable
+   - Round-trip testing where applicable
+
+4. **End-to-End Scenarios:**
+   - Common quantum algorithms (Bell state, GHZ, QPE, VQE ansätze)
+   - Parameterized circuits with classical optimization loops
+   - Circuits with measurements and classical control flow
+   - Large-scale circuits (100+ qubits, 1000+ gates)
 
 ## 10. Implementation Roadmap
 
-**TODO:** Define phased implementation plan with milestones.
+### Phase 1: Foundation (Weeks 1-2)
 
-Suggested phases:
+**Goal:** Establish core infrastructure
 
-### Phase 1: Foundation (Weeks 1-3)
+- **Week 1:**
+  - Define core type system (`mqtref.qubit`, `mqtopt.qubit`)
+  - Implement `UnitaryOpInterface` definition
+  - Set up basic CMake integration and build system
+  - Establish GoogleTest framework for unit testing
 
-- Define core type system (`mqtref.qubit`, `mqtopt.qubit`)
-- Implement `UnitaryOpInterface`
-- Create basic builder infrastructure
-- Establish testing framework
+- **Week 2:**
+  - Create basic builder infrastructure (RefQuantumProgramBuilder skeleton)
+  - Implement resource operations (alloc, dealloc, qubit reference)
+  - Add measurement and reset operations
+  - Basic parser/printer for qubit types
 
-### Phase 2: Base Gates (Weeks 4-6)
+**Deliverable:** Compiling infrastructure with basic qubit operations
 
-- Implement all single-qubit gates
-- Implement all two-qubit gates
-- Add basic canonicalization patterns
-- Comprehensive unit tests for each gate
+### Phase 2: Base Gates - Core Set (Weeks 2-3)
 
-### Phase 3: Modifiers (Weeks 7-9)
+**Goal:** Implement essential gates for basic circuits
 
-- Implement `ctrl` and `negctrl`
+- **Week 2-3:**
+  - Implement Pauli gates (x, y, z, id)
+  - Implement Hadamard (h)
+  - Implement phase gates (s, sdg, t, tdg, p)
+  - Implement rotation gates (rx, ry, rz)
+  - Implement universal gates (u, u2)
+  - Implement convenience gates (sx, sxdg)
+  - Basic canonicalization patterns for each gate
+  - Unit tests for all implemented gates
+
+**Deliverable:** Core single-qubit gate set with tests
+
+### Phase 3: Base Gates - Two-Qubit Set (Week 4)
+
+**Goal:** Complete two-qubit gate library
+
+- Implement swap, iswap, dcx, ecr
+- Implement parametric two-qubit gates (rxx, ryy, rzz, rzx, xx_plus_yy, xx_minus_yy)
+- Implement barrier operation
+- Implement global phase gate (gphase)
+- Advanced canonicalization patterns
+- Comprehensive unit tests
+
+**Deliverable:** Complete base gate set
+
+### Phase 4: Modifiers (Week 5)
+
+**Goal:** Implement composable modifier system
+
+- Implement `ctrl` modifier (positive controls)
+- Implement `negctrl` modifier (negative controls)
 - Implement `inv` modifier
 - Implement `pow` modifier
-- Test nested modifier combinations
+- Nested modifier verification and canonicalization
+- Canonical ordering implementation (negctrl → ctrl → pow → inv)
+- Modifier flattening and optimization
+- Extensive unit tests for modifier combinations
 
-### Phase 4: Composition (Weeks 10-12)
+**Deliverable:** Working modifier system with canonicalization
 
-- Implement `seq` operation
-- Add modifier flattening and ordering
-- Implement gate merging canonicalization
+### Phase 5: Composition & Box (Week 6)
 
-### Phase 5: Custom Gates (Weeks 13-15)
+**Goal:** Enable circuit composition
 
-- Design and implement gate definition operations
+- Implement `box` operation (replaces `seq`)
+- Add box-level canonicalization
+- Implement optimization constraint enforcement
+- Builder API for box operations
+- Integration with modifiers
+- Unit tests for box semantics
+
+**Deliverable:** Box operation with proper scoping
+
+### Phase 6: Custom Gates (Week 7)
+
+**Goal:** User-defined gate support
+
+- Design and implement gate definition operations (matrix-based)
+- Design and implement gate definition operations (sequence-based)
 - Implement `apply` operation
-- Add symbol table management
-- Test custom gate integration
+- Symbol table management and resolution
+- Consistency verification for dual representations
+- Inlining infrastructure
+- Unit tests for custom gates
 
-### Phase 6: Optimization (Weeks 16-18)
+**Deliverable:** Custom gate definition and application
 
-- Implement advanced canonicalization patterns
-- Add dialect conversion passes
-- Performance optimization
-- Documentation
+### Phase 7: Builder API & Convenience (Week 8)
 
-### Phase 7: Validation (Weeks 19-20)
+**Goal:** Ergonomic programmatic construction
 
-- Comprehensive integration testing
-- Performance benchmarking
-- Documentation review
+- Complete RefQuantumProgramBuilder implementation
+- Complete OptQuantumProgramBuilder implementation
+- Add convenience methods (cx, cz, ccx, mcx, mcy, mcz, mch, etc.)
+- Builder unit tests
+- Example programs using builders
+
+**Deliverable:** Production-ready builder APIs
+
+### Phase 8: Dialect Conversion (Week 9)
+
+**Goal:** Enable transformations between dialects
+
+- Implement MQTRef → MQTOpt conversion pass
+- Implement MQTOpt → MQTRef conversion pass
+- Handle modifier and box conversions
+- SSA value threading logic
+- Conversion unit tests
+
+**Deliverable:** Working dialect conversion infrastructure
+
+### Phase 9: Frontend Integration (Week 10)
+
+**Goal:** Connect to existing quantum software
+
+- Qiskit → MLIR translation
+- OpenQASM 3.0 → MLIR translation
+- `qc::QuantumComputation` → MLIR translation
+- Parser infrastructure for OpenQASM
+- Integration tests for each frontend
+
+**Deliverable:** Multiple input format support
+
+### Phase 10: Optimization Passes (Week 11)
+
+**Goal:** Implement optimization infrastructure
+
+- Advanced canonicalization patterns
+- Gate fusion passes
+- Circuit optimization passes
+- Dead code elimination
+- Constant folding and propagation
+- Pass pipeline configuration
+- Performance benchmarks
+
+**Deliverable:** Optimization pass suite
+
+### Phase 11: Backend Integration (Week 12)
+
+**Goal:** QIR lowering
+
+- MLIR → QIR lowering pass
+- QIR emission and verification
+- End-to-end integration tests (Qiskit → MLIR → QIR)
+- Documentation for QIR mapping
+
+**Deliverable:** Complete compilation pipeline
+
+### Phase 12: Testing & Documentation (Week 13)
+
+**Goal:** Production readiness
+
+- Comprehensive integration test suite
+- Parser/printer round-trip tests
+- Performance regression tests
+- API documentation
+- Tutorial examples
 - Migration guide for existing code
 
-## 11. Open Questions and Future Work
+**Deliverable:** Production-ready system with documentation
 
-### 11.1 Critical Open Questions (Require Resolution Before Implementation)
+### Phase 13: Polish & Release (Week 14)
 
-1. **Global Phase Semantics:**
-   - How should global phase gates be merged and optimized?
-   - Should they implement `UnitaryOpInterface`?
-   - How do they interact with circuit traversal?
+**Goal:** Release preparation
 
-2. **Global Phase Relationships:**
-   - Resolve global phase differences between equivalent gates (e.g., `x` vs `rx(π)`)
-   - Define whether these should be considered equivalent or distinct
-   - Specify canonicalization behavior
+- Bug fixes from testing
+- Performance optimization
+- Code review and cleanup
+- Release notes
+- Final documentation review
+- Announce and deploy
 
-3. **Power Semantics for Non-Diagonalizable Gates:**
-   - Define behavior for fractional powers of Pauli gates
-   - Specify whether `pow(1/3) x` is valid or should be rejected
-   - Define numerical methods for general matrix exponentiation
+**Deliverable:** Released dialect system
 
-4. **Custom Gate Symbol Resolution:**
-   - Define complete syntax for gate definitions and applications
-   - Specify linking semantics for multi-module programs
-   - Define inlining heuristics
+**Parallelization Strategy:**
 
-5. **Barrier Semantics:**
-   - Should `barrier` implement `UnitaryOpInterface`?
-   - How does it interact with modifiers?
-   - Define its role in optimization passes
+- Base gate implementation (Phases 2-3) can partially overlap
+- Builder API (Phase 7) can be developed in parallel with custom gates (Phase 6)
+- Frontend integration (Phase 9) can start once base operations are stable (after Phase 5)
+- Testing and documentation (Phase 12) should be ongoing throughout
 
-6. **Control Qubit Conflicts:**
-   - What happens if the same qubit is both positive and negative control?
-   - Should this be an error or have defined semantics?
+**Risk Mitigation:**
 
----
+- **Critical Path:** Phases 1-4 are sequential and critical
+- **Buffer Time:** Phase 13 provides 1-week buffer for unforeseen issues
+- **Early Testing:** Integration tests should begin in Phase 9 to catch issues early
+- **Incremental Delivery:** Each phase produces a working subset to enable testing
 
 ## Document Metadata
 
 - **Version:** 0.2 (Draft)
-- **Last Updated:** 2025-10-06
+- **Last Updated:** [Current date will be filled automatically]
 - **Status:** Request for Comments
-- **Authors:** Lukas Burgholzer (@burgholzer)
-- **Reviewers:** Damian Rovara (@Drovara), Yannick Stade (@ystade), Patrick Hopf (@flowerthrower), Daniel Haag (@denialhaag), Matthias Reumann (@MatthiasReumann), Tamino Bauknecht (@taminob)
-- **Target MLIR Version:** [TODO: Specify]
+- **Authors:** [TODO: Add authors]
+- **Reviewers:** [TODO: Add reviewers]
+- **Target MLIR Version:** LLVM 21.0+
+- **Target Completion:** 14 weeks from start date
