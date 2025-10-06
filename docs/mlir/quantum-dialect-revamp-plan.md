@@ -6,7 +6,6 @@ This RFC proposes a comprehensive revamp of the quantum MLIR dialect(s) to unify
 
 Goals:
 
-- Introduce a single abstraction: **UnitaryExpr** (symbolic unitary expression) replacing prior matrix vs expression split.
 - Provide a coherent interface for all operations that apply or produce a unitary (base gates, user-defined gates, modifier-wrapped constructs, sequences).
 - Support both reference semantics (in-place: `mqtref`) and value semantics (SSA threading: `mqtopt`).
 - Add inversion, powering, negative and positive multi-controls, custom gate definitions (matrix & composite), and composition.
@@ -20,13 +19,13 @@ Goals:
 
 Current issues the revamp addresses:
 
-- Only a rudimentary control modifier exists; missing negative controls, power, inversion.
+- Only a control modifier exists and is directly embedded in the unitary operations (interface); missing power, inversion.
 - No unified interface for extracting/composing unitaries—leading to ad hoc logic.
-- Matrix vs expression forms diverge; lost optimization opportunities.
+- No way to obtain matrix representations for gates.
 - No user-defined gate (matrix/composite) constructs.
-- Inconsistent parameter model and missing static/dynamic integration.
-- Lack of dual semantics for optimization vs generation workflows.
 - Absent canonicalization strategy for modifier order, parameter folding, gate specialization.
+- Mostly FileCheck-based testing that is cumbersome and error prone to write.
+- No convenient builders for programs at the moment.
 
 ## 3. Dialect Structure and Categories
 
@@ -39,7 +38,7 @@ Categories:
 
 1. Resource Operations
 2. Measurement and Reset
-3. UnitaryExpr Concept (applies everywhere for unitaries)
+3. UnitaryInterface Operations
 
 ### 3.1 Resource Operations
 
@@ -50,22 +49,22 @@ Examples (reference semantics):
 ```
 %q = mqtref.alloc : mqtref.Qubit
 mqtref.dealloc %q : mqtref.Qubit
-%q_fixed = mqtref.static_qubit @q0 : mqtref.Qubit
+%q0 = mqtref.qubit 0 : mqtref.Qubit
 ```
 
 Value semantics:
 
 ```
-%q0 = mqtopt.alloc : mqtopt.Qubit
-mqtopt.dealloc %q0 : mqtopt.Qubit
-%q_hw = mqtopt.static_qubit @q7 : mqtopt.Qubit
+%q = mqtopt.alloc : mqtopt.Qubit
+mqtopt.dealloc %q : mqtopt.Qubit
+%q0 = mqtopt.qubit 0 : mqtopt.Qubit
 ```
 
 Canonicalization (patterns / folds):
 
 - Remove unused `alloc` (DCE).
-- Elide `dealloc` proven by lifetime analysis.
-- Merge duplicate `static_qubit` references if semantics allow.
+- Elide `dealloc` proven by lifetime analysis. // TODO
+- Merge duplicate `qubit` references if semantics allow. // TODO
 
 ### 3.2 Measurement and Reset
 
@@ -81,7 +80,7 @@ mqtref.reset %q : mqtref.Qubit
 Value:
 
 ```
-%c = mqtopt.measure %qin : mqtopt.Qubit -> i1
+%qout, %c = mqtopt.measure %qin : mqtopt.Qubit -> (mqtopt.Qubit, i1)
 %qout = mqtopt.reset %qin : mqtopt.Qubit
 ```
 
@@ -90,36 +89,24 @@ Canonicalization:
 - `reset` immediately after `alloc` → remove `reset`.
 - Consecutive `reset` on same qubit (reference semantics) → single instance.
 
-### 3.3 UnitaryExpr Concept
+### 3.3 Unified Unitary Interface Design
 
-`UnitaryExpr` is a conceptual abstraction representing a (possibly symbolic) unitary over n targets with optional parameters and controls.
-
-- Static if all parameters are static and analytic matrix is available.
-- Symbolic otherwise (composition, parameterized nodes, modifiers).
-- Provides inversion, powering, and control extension without immediate matrix materialization.
-
-## 4. Unified Unitary Interface Design
-
-All unitary-applying operations implement a common interface (applies to base gates, modifiers, sequences, and user-defined applies).
+All unitary-applying operations implement a common interface (applies to base gates, modifiers, sequences, and user-defined operations).
 
 Interface methods (conceptual API):
 
-- `getNumTargets() -> unsigned`
-- `getNumPosControls() -> unsigned`
-- `getNumNegControls() -> unsigned`
-- `getNumParams() -> unsigned`
+- `getNumTargets() -> size_t`
+- `getNumPosControls() -> size_t`
+- `getNumNegControls() -> size_t`
+- `getNumParams() -> size_t`
 - `getParameter(i) -> ParameterDescriptor`
   - `ParameterDescriptor`: `isStatic()`, `getConstantValue()?`, `getValueOperand()`
 - `getInput(i)` / `getOutput(i)` (value semantics distinct; reference semantics output = input)
-- `mapOutputToInput(i) -> i` (pure unitaries)
+- `mapOutputToInput(i) -> i` (pure unitaries) // TODO: should map mlir::Value to mlir::Value. should include getters for targets and controls.
 - `hasStaticUnitary() -> bool`
-- `getOrBuildUnitaryExpr(builder) -> UnitaryExpr`
 - `tryGetStaticMatrix() -> Optional<Attribute>` (2D tensor with shape (2^n, 2^n) and element type `complex<f64>`; written concretely for fixed n as e.g. `tensor<4x4xcomplex<f64>>`)
 - `isInverted() -> bool`
 - `getPower() -> Optional<RationalOrFloat>`
-- `withAddedControls(pos, neg) -> UnitaryExpr`
-- `composeRight(other) -> UnitaryExpr`
-- `getPrincipalLog() -> Optional<Symbolic>`
 
 Identification & Descriptor Tuple:
 `(baseSymbol, orderedParams, posControls, negControls, powerExponent, invertedFlag)` allows canonical equality tests.
@@ -132,8 +119,8 @@ Parameter Model:
 
 Static Matrix Extraction:
 
-- Provided if gate analytic and all parameters static, or for matrix-defined user gates.
-- For sequences/composites of static subunits under size threshold, compose matrices.
+- Provided if gate is analytic, all parameters are static, or for matrix-defined user gates.
+- For sequences/composites of static subunits, compose matrices.
 
 Inversion & Power Interaction:
 
@@ -144,30 +131,25 @@ Control Extension:
 
 - `ctrl` / `negctrl` wrappers extend control sets; interface aggregates flattened sets.
 
-## 5. Base Gate Operations
+## 4. Base Gate Operations
 
-### 5.1 Philosophy
+### 4.1 Philosophy
 
-- Named base gates define analytic unitaries with fixed target arity and parameter arity traits.
-- Provide static matrix when parameters static; symbolic otherwise.
+- Named base gates define unitaries with fixed target arity and parameter arity traits.
+- Provide static matrix when parameters static or no parameters; symbolic otherwise.
 - Avoid embedding modifier semantics directly—wrappers handle extension.
 
-### 5.2 Gate List (Single-Qubit)
-
-No-parameter: `x, y, z, h, s, sdg, t, tdg, id`
-Parameterized: `rx(%theta), ry(%theta), rz(%theta), phase(%lambda), u(%theta, %phi, %lambda)`
-
-Multi-qubit illustrative: `rzz(%theta)` (two targets), not using `cx` (introduced only via sugar as controlled `x`).
-
-#### 5.2.1 Base Gate Specification Template
+### 4.2 Base Gate Specification Template
 
 For every named base gate op G:
 
-- Purpose: Apply the analytic unitary for gate G to its target qubit(s).
+// TODO: mixed dynamic and static parameters should be clearly explained and demonstrated here. example from existing code: `mqtref.u(%c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, false, true]) %q0`
+
+- Purpose: Apply the unitary for gate G to its target qubit(s).
 - Signature (Reference): `mqtref.G(param_list?) %q[,...] : <param types..., qubit types>` (no results)
 - Signature (Value): `%out_targets = mqtopt.G(param_list?) %in_targets : (<param types..., qubit types>) -> <qubit types>`
 - Assembly Format: `G(<params?>) <targets>`; params in parentheses; qubits as trailing operands.
-- Builder Variants:
+- Builder Variants: // TODO: types should be inferred automatically based on `InferTypeOpInterface`
   - `build(builder, loc, resultTypes, paramOperands, qubitOperands)` (value)
   - `build(builder, loc, qubitOperands, paramAttrs)` (reference)
   - Convenience: static param overloads generate attribute parameters.
@@ -175,242 +157,610 @@ For every named base gate op G:
   - `getNumTargets()` fixed by trait.
   - Parameters enumerated in declared order; static vs dynamic via attribute vs operand.
   - `hasStaticUnitary()` true iff all parameters static.
-  - `mapOutputToInput(i) = i`.
-- Canonicalization Rules: See 5.6 plus gate-specific (e.g., identity elimination, specialization).
-- Examples (Static): `mqtref.rz(3.14159) %q`; `%q2 = mqtopt.rx(0.785398) %q1`.
-- Examples (Dynamic): `%q2 = mqtopt.rx(%theta) %q1`; `mqtref.u(%t,%p,%l) %q`.
+  - `mapOutputToInput(i) = i`. // TODO
 - Conversion (ref↔value): Reference variant lowers to value variant with SSA replacement; reverse drops result.
 
-#### 5.2.2 Example: rx Gate
+### 4.3 Gate List
 
-- Purpose: Single-qubit rotation about X by angle θ.
+Overview:
+
+Zero-qubit gates:
+Parametrized: `gphase(%theta)`
+
+Single-qubit gates:
+No-parameter: `id, x, y, z, h, s, sdg, t, tdg, sx, sxdg`
+Parameterized: `rx(%theta), ry(%theta), rz(%theta), p(%lambda), r(theta, %phi), u(%theta, %phi, %lambda), u2(%phi, %lambda)`
+
+Two-qubit gates:
+No-parameter: `swap, iswap, dcx, ecr`
+Parameterized: `rxx(%theta), ryy(%theta), rzz(%theta), rzx(%theta), xx_minus_yy(%theta, %beta), xx_plus_yy(%theta, %beta)`
+
+Variable qubit gates:
+No-parameter: `barrier`
+
+General canonicalization based on traits (not repeated for individual gates):
+
+- Hermitian: `inv G → G`
+- Hermitian: `pow(n: int) G => if n % 2 == 0 then id else G`
+- Hermitian: `G %q; G %q => cancel`
+
+#### 4.3.1 `gphase` Gate
+
+- Purpose: global phase `exp(i θ)`.
+- Traits: NoTarget, OneParameter
 - Signatures:
-  - Ref: `mqtref.rx(%theta) %q : f64, mqtref.Qubit`
-  - Value: `%q_out = mqtopt.rx(%theta) %q_in : (f64, mqtopt.Qubit) -> mqtopt.Qubit`
-- Static Example: `%q_out = mqtopt.rx(1.57079632679) %q_in`
-- Dynamic Example: `%q_out = mqtopt.rx(%theta) %q_in`
-- Canonicalization: `rx(0) → id`; two consecutive `rx(a); rx(b)` NOT folded (axis change would require Baker-Campbell-Hausdorff? skip); `inv rx(θ)` handled by modifier → `rx(-θ)`.
-- Static Matrix Available: Yes if θ constant.
+  - Ref: `mqtref.gphase(%theta)`
+  - Value: `mqtopt.gphase(%theta)`
+- Static Example: `mqtref.gphase(3.14159)`
+- Dynamic Example: `mqtref.gphase(%theta)`
+- Canonicalization:
+  - `gphase(0) → remove`
+  - `inv gphase(θ) → gphase(-θ)`
+  - Two consecutive `gphase(a); gphase(b)` folded by adding angles.
+  - `ctrl(%q0) { gphase(θ) } → p(θ) %q0` (specialization to `p` gate).
+  - `negctrl(%q0) { gphase(θ) } → gphase(pi); p(θ) %q0` (specialization for negative control)
+  - `pow(n) { gphase(θ) } → gphase(n*θ)`
+- Matrix (dynamic): `[exp(i θ)]` (1x1 matrix). Static if θ constant.
+- To be figured out: These gates have no users per definition as they have no targets. It is unclear how they should be merged and how they are included in traversals.
 
-#### 5.2.3 Example: rzz Gate
+### 4.3.2 `id` Gate
 
-- Purpose: Two-qubit entangling gate `exp(-i θ/2 Z⊗Z)`.
+- Purpose: Identity gate.
+- Traits: OneTarget, NoParameter, Hermitian, Diagonal
 - Signatures:
-  - Ref: `mqtref.rzz(%theta) %q0, %q1 : f64, mqtref.Qubit, mqtref.Qubit`
-  - Value: `%q0_out, %q1_out = mqtopt.rzz(%theta) %q0_in, %q1_in : (f64, mqtopt.Qubit, mqtopt.Qubit) -> (mqtopt.Qubit, mqtopt.Qubit)`
-- Static Example: `%a1, %b1 = mqtopt.rzz(3.14159) %a0, %b0`
-- Dynamic Example: `%a1, %b1 = mqtopt.rzz(%theta) %a0, %b0`
-- Canonicalization: `rzz(0) → id`; `inv rzz(θ) → rzz(-θ)`.
-- Static Matrix Available: Yes if θ constant.
+  - Ref: `mqtref.id %q`
+  - Value: `%q_out mqtopt.id %q_in`
+- Canonicalization:
+  - `id → remove`
+  - `pow(r) id => id`
+  - `ctrl(...) { id } => id`
+  - `negctrl(...) { id } => id`
+- Matrix (static): `[1, 0; 0, 1]` (2x2 matrix).
+- Definition in terms of `u`: `u(0, 0, 0) %q`
 
-### 6. Modifier Operations
+#### 4.3.3 `x` Gate
 
-### 6.1 Overview
+- Purpose: Pauli-X gate
+- Traits: OneTarget, NoParameter, Hermitian
+- Signatures:
+  - Ref: `mqtref.x %q`
+  - Value: `%q_out mqtopt.x %q_in`
+- Canonicalization:
+  - `pow(1/2) x => sx`
+  - `pow(-1/2) x => sxdg`
+- Matrix (static): `[0, 1; 1, 0]` (2x2 matrix).
+- Definition in terms of `u`: `u(π, 0, π) %q`
+- To be figured out: `-iX == rx(pi)` (global phase difference between `rx(pi)` and `x`). `pow(r) rx(θ) => rx(r*θ)`. What does this imply for `pow(r) x`?
+
+#### 4.3.4 `y` Gate
+
+- Purpose: Pauli-Y gate
+- Traits: OneTarget, NoParameter, Hermitian
+- Signatures:
+  - Ref: `mqtref.y %q`
+  - Value: `%q_out mqtopt.y %q_in`
+- Matrix (static): `[0, -i; i, 0]` (2x2 matrix).
+- Definition in terms of `u`: `u(π, π/2, π/2) %q`
+- To be figured out: `-iY == ry(pi)` (global phase difference between `ry(pi)` and `y`). `pow(r) ry(θ) => ry(r*θ)`. What does this imply for `pow(r) y`?
+
+#### 4.3.5 `z` Gate
+
+- Purpose: Pauli-Z gate
+- Traits: OneTarget, NoParameter, Hermitian, Diagonal
+- Signatures:
+  - Ref: `mqtref.z %q`
+  - Value: `%q_out mqtopt.z %q_in`
+- Canonicalization:
+  - `pow(1/2) z => s`
+  - `pow(-1/2) z => sdg`
+  - `pow(1/4) z => t`
+  - `pow(-1/4) z => tdg`
+  - `pow(r) z => p(π * r)` for real r
+- Matrix (static): `[1, 0; 0, -1]` (2x2 matrix).
+- Definition in terms of `u`: `u(0, 0, π) %q`
+
+#### 4.3.6 `h` Gate
+
+- Purpose: Hadamard gate.
+- Traits: OneTarget, NoParameter, Hermitian
+- Signatures:
+  - Ref: `mqtref.h %q`
+  - Value: `%q_out mqtopt.h %q_in`
+- Matrix (static): `1/sqrt(2) * [1, 1; 1, -1]` (2x2 matrix).
+- Definition in terms of `u`: `u(π/2, 0, π) %q`
+
+#### 4.3.7 `s` Gate
+
+- Purpose: S gate.
+- Traits: OneTarget, NoParameter, Diagonal
+- Signatures:
+  - Ref: `mqtref.s %q`
+  - Value: `%q_out mqtopt.s %q_in`
+- Canonicalization:
+  - `inv s => sdg`
+  - `s %q; s %q => z %q`
+  - `pow(n: int) s => if n % 4 == 0 then id else if n % 4 == 1 then s else if n % 4 == 2 then z else sdg`
+  - `pow(1/2) s => t`
+  - `pow(-1/2) s => tdg`
+  - `pow(+-2) s => z`
+  - `pow(r) s => p(π/2 * r)` for real r
+- Matrix (static): `[1, 0; 0, i]` (2x2 matrix).
+- Definition in terms of `u`: `u(0, 0, π/2) %q`
+
+#### 4.3.8 `sdg` Gate
+
+- Purpose: Sdg gate.
+- Traits: OneTarget, NoParameter, Diagonal
+- Signatures:
+  - Ref: `mqtref.sdg %q`
+  - Value: `%q_out mqtopt.sdg %q_in`
+- Canonicalization:
+  - `inv sdg => s`
+  - `sdg %q; sdg %q => z %q`
+  - `pow(n: int) sdg => if n % 4 == 0 then id else if n % 4 == 1 then sdg else if n % 4 == 2 then z else s`
+  - `pow(1/2) sdg => tdg`
+  - `pow(-1/2) sdg => t`
+  - `pow(+-2) sdg => z`
+  - `pow(r) sdg => p(-π/2 * r)` for real r
+- Matrix (static): `[1, 0; 0, -i]` (2x2 matrix).
+- Definition in terms of `u`: `u(0, 0, -π/2) %q`
+
+#### 4.3.9 `t` Gate
+
+- Purpose: T gate.
+- Traits: OneTarget, NoParameter, Diagonal
+- Signatures:
+  - Ref: `mqtref.t %q`
+  - Value: `%q_out mqtopt.t %q_in`
+- Canonicalization:
+  - `inv t => tdg`
+  - `t %q; t %q; => s %q`
+  - `pow(2) t => s`
+  - `pow(-2) t => sdg`
+  - `pow(+-4) t => z`
+  - `pow(r) t => p(π/4 * r)` for real r
+- Matrix (static): `[1, 0; 0, exp(i π/4)]` (2x2 matrix).
+- Definition in terms of `u`: `u(0, 0, π/4) %q`
+
+#### 4.3.10 `tdg` Gate
+
+- Purpose: Tdg gate.
+- Traits: OneTarget, NoParameter, Diagonal
+- Signatures:
+  - Ref: `mqtref.tdg %q`
+  - Value: `%q_out mqtopt.tdg %q_in`
+- Canonicalization:
+  - `inv tdg => t`
+  - `tdg %q; tdg %q; => sdg %q`
+  - `pow(2) tdg => sdg`
+  - `pow(-2) tdg => s`
+  - `pow(+-4) tdg => z`
+  - `pow(r) tdg => p(-π/4 * r)` for real r
+- Matrix (static): `[1, 0; 0, exp(-i π/4)]` (2x2 matrix).
+- Definition in terms of `u`: `u(0, 0, -π/4) %q`
+
+#### 4.3.11 `sx` Gate
+
+- Purpose: sqrt(x) gate.
+- Traits: OneTarget, NoParameter
+- Signatures:
+  - Ref: `mqtref.sx %q`
+  - Value: `%q_out mqtopt.sx %q_in`
+- Canonicalization:
+  - `inv sx => sxdg`
+  - `sx %q; sx %q => x %q`
+  - `pow(+-2) sx => x`
+- Matrix (static): `1/2 * [1 + i, 1 - i; 1 - i, 1 + i]` (2x2 matrix).
+- To be figured out: `e^(-i pi/4) sx == rx(pi/2)` (global phase difference between `rx(pi/2)` and `sx`). `pow(r) rx(θ) => rx(r*θ)`. What does this imply for `pow(r) sx`?
+
+#### 4.3.12 `sxdg` Gate
+
+- Purpose: sqrt(x) gate.
+- Traits: OneTarget, NoParameter
+- Signatures:
+  - Ref: `mqtref.sxdg %q`
+  - Value: `%q_out mqtopt.sxdg %q_in`
+- Canonicalization:
+  - `inv sxdg => sx`
+  - `sxdg %q; sxdg %q => x %q`
+  - `pow(+-2) sxdg => x`
+- Matrix (static): `1/2 * [1 - i, 1 + i; 1 + i, 1 - i]` (2x2 matrix).
+- To be figured out: `exp(-i pi/4) sxdg == rx(-pi/2)` (global phase difference between `rx(-pi/2)` and `sxdg`). `pow(r) rx(θ) => rx(r*θ)`. What does this imply for `pow(r) sxdg`?
+
+#### 4.3.13 `rx` Gate
+
+- Purpose: Rotation around the x-axis.
+- Traits: OneTarget, OneParameter
+- Signatures:
+  - Ref: `mqtref.rx(%theta) %q`
+  - Value: `%q_out mqtopt.rx(%theta) %q_in`
+- Static variant: `mqtref.rx(3.14159) %q`
+- Canonicalization:
+  - `rx(a) %q; rx(b) %q => rx(a + b) %q`
+  - `inv rx(θ) => rx(-θ)`
+  - `pow(r) rx(θ) => rx(r * θ)` for real r
+- Matrix (dynamic): `exp(-i θ X) = [cos(θ/2), -i sin(θ/2); -i sin(θ/2), cos(θ/2)]` (2x2 matrix). Static if θ constant.
+- Definition in terms of `u`: `u(θ, -π/2, π/2) %q`
+
+#### 4.3.14 `ry` Gate
+
+- Purpose: Rotation around the y-axis.
+- Traits: OneTarget, OneParameter
+- Signatures:
+  - Ref: `mqtref.ry(%theta) %q`
+  - Value: `%q_out mqtopt.ry(%theta) %q_in`
+- Static variant: `mqtref.ry(3.14159) %q`
+- Canonicalization:
+  - `ry(a) %q; ry(b) %q => ry(a + b) %q`
+  - `inv ry(θ) => ry(-θ)`
+  - `pow(r) ry(θ) => ry(r * θ)` for real r
+- Matrix (dynamic): `exp(-i θ Y) = [cos(θ/2), -sin(θ/2); sin(θ/2), cos(θ/2)]` (2x2 matrix). Static if θ constant.
+- Definition in terms of `u`: `u(θ, 0, 0) %q`
+
+#### 4.3.15 `rz` Gate
+
+- Purpose: Rotation around the z-axis.
+- Traits: OneTarget, OneParameter, Diagonal
+- Signatures:
+  - Ref: `mqtref.rz(%theta) %q`
+  - Value: `%q_out mqtopt.rz(%theta) %q_in`
+- Static variant: `mqtref.rz(3.14159) %q`
+- Canonicalization:
+  - `rz(a) %q; rz(b) %q => rz(a + b) %q`
+  - `inv rz(θ) => rz(-θ)`
+  - `pow(r) rz(θ) => rz(r * θ)` for real r
+- Matrix (dynamic): `exp(-i θ Z) = [exp(-i θ/2), 0; 0, exp(i θ/2)]` (2x2 matrix). Static if θ constant.
+- To be figured out: `rz(θ) == exp(i*θ/2) * p(θ)` (global phase difference between `rz(θ)` and `p(θ)`).
+
+#### 4.3.16 `p` Gate
+
+- Purpose: Phase gate.
+- Traits: OneTarget, OneParameter, Diagonal
+- Signatures:
+  - Ref: `mqtref.p(%theta) %q`
+  - Value: `%q_out mqtopt.p(%theta) %q_in`
+- Static variant: `mqtref.p(3.14159) %q`
+- Canonicalization:
+  - `p(a) %q; p(b) %q => p(a + b) %q`
+  - `inv p(θ) => p(-θ)`
+  - `pow(r) p(θ) => p(r * θ)` for real r
+- Matrix (dynamic): `[1, 0; 0, exp(i θ)]` (2x2 matrix). Static if θ constant.
+- Definition in terms of `u`: `u(0, 0, θ) %q`
+
+#### 4.3.17 `r` Gate
+
+- Purpose: General rotation around an axis in the XY-plane.
+- Traits: OneTarget, TwoParameter
+- Signatures:
+  - Ref: `mqtref.r(%theta, %phi) %q`
+  - Value: `%q_out mqtopt.r(%theta, %phi) %q_in`
+- Static variant: `mqtref.r(3.14159, 1.5708) %q`
+- Mixed variant: `mqtref.r(%theta, 1.5708) %q`
+- Canonicalization:
+  - `inv r(θ, φ) => r(-θ, φ)`
+  - `pow(real) r(θ, φ) => r(real * θ, φ)` for real `real`
+  - `r(θ, 0) => rx(θ)`
+  - `r(θ, π/2) => ry(θ)`
+- Matrix (dynamic): `exp(-i θ (cos(φ) X + sin(φ) Y)) = [cos(θ/2), -i exp(-i φ) sin(θ/2); -i exp(i φ) sin(θ/2), cos(θ/2)]` (2x2 matrix). Static if θ and φ constant.
+- Definition in terms of `u`: `u(θ, -π/2 + φ, π/2 - φ) %q`
+
+#### 4.3.18 `u` Gate
+
+- Purpose: Universal single-qubit gate.
+- Traits: OneTarget, ThreeParameter
+- Signatures:
+  - Ref: `mqtref.u(%theta, %phi, %lambda) %q`
+  - Value: `%q_out mqtopt.u(%theta, %phi, %lambda) %q_in`
+- Static variant: `mqtref.u(3.14159, 1.5708, 0.785398) %q`
+- Mixed variant: `mqtref.u(%theta, 1.5708, 0.785398) %q`
+- Canonicalization:
+  - `inv u(θ, φ, λ) => u(-θ, -φ, -λ)`
+  - `rx(θ) == u(θ, -π/2, π/2)`
+  - `ry(θ) == u(θ, 0, 0)`
+  - `p(λ) == u(0, 0, λ)`
+- Matrix (dynamic): `p(φ) ry(θ) p(λ) = exp(i (φ + λ)/2) * rz(φ) ry(θ) rz(λ) = [cos(θ/2), -exp(i λ) sin(θ/2); exp(i φ) sin(θ/2), exp(i (φ + λ)) cos(θ/2)]` (2x2 matrix). Static if θ, φ, λ constant.
+
+#### 4.3.19 `u2` Gate
+
+- Purpose: Simplified universal single-qubit gate.
+- Traits: OneTarget, TwoParameter
+- Signatures
+  - Ref: `mqtref.u2(%phi, %lambda) %q`
+  - Value: `%q_out mqtopt.u2(%phi, %lambda) %q_in`
+- Static variant: `mqtref.u2(1.5708, 0.785398) %q`
+- Mixed variant: `mqtref.u2(%phi, 0.785398) %q`
+- Canonicalization:
+  - `inv u2(φ, λ) => u2(-λ - π, -φ + π)`
+  - `u2(0, π) => h`
+  - `u2(0, 0) => ry(π/2)`
+  - `u2(-π/2, π/2) => rx(π/2)`
+- Matrix (dynamic): `1/sqrt(2) * [1, -exp(i λ); exp(i φ), exp(i (φ + λ))]` (2x2 matrix). Static if φ, λ constant.
+- Definition in terms of `u`: `u2(φ, λ) == u(π/2, φ, λ)`
+
+#### 4.3.20 `swap` Gate
+
+- Purpose: Swap two qubits.
+- Traits: TwoTarget, NoParameter, Hermitian
+- Signatures:
+  - Ref: `mqtref.swap %q0, %q1`
+  - Value: `%q0_out, %q1_out = mqtopt.swap %q0_in, %q1_in`
+- Matrix (static): `[1, 0, 0, 0; 0, 0, 1, 0; 0, 1, 0, 0; 0, 0, 0, 1]` (4x4 matrix).
+
+#### 4.3.21 `iswap` Gate
+
+- Purpose: Swap two qubits.
+- Traits: TwoTarget, NoParameter
+- Signatures:
+  - Ref: `mqtref.iswap %q0, %q1`
+  - Value: `%q0_out, %q1_out = mqtopt.iswap %q0_in, %q1_in`
+- Canonicalization:
+  - `pow(r) iswap => xx_plus_yy(-π * r)`
+- Matrix (static): `[1, 0, 0, 0; 0, 0, 1j, 0; 0, 1j, 0, 0; 0, 0, 0, 1]` (4x4 matrix).
+
+#### 4.3.22 `dcx` Gate
+
+- Purpose: Double CX gate.
+- Traits: TwoTarget, NoParameter
+- Signatures:
+  - Ref: `mqtref.dcx %q0, %q1`
+  - Value: `%q0_out, %q1_out = mqtopt.dcx %q0_in, %q1_in`
+- Canonicalization:
+  - `inv dcx %q0, q1 => dcx %q1, %q0`
+- Matrix (static): `[1, 0, 0, 0; 0, 0, 1, 0; 0, 0, 0, 1; 0, 1, 0, 0]` (4x4 matrix).`
+
+#### 4.3.23 `ecr` Gate
+
+- Purpose: Echoed cross-resonance gate.
+- Traits: TwoTarget, NoParameter, Hermitian
+- Signatures:
+  - Ref: `mqtref.ecr %q0, %q1`
+  - Value: `%q0_out, %q1_out = mqtopt.ecr %q0_in, %q1_in`
+- Matrix (static): `1/sqrt(2) * [0, 0, 1, 1j; 0, 0, 1j, 1; 1, -1j, 0, 0; -1j, 1, 0, 0]` (4x4 matrix).
+
+#### 4.3.24 `rxx` Gate
+
+- Purpose: General two-qubit rotation around XX.
+- Traits: TwoTarget, OneParameter
+- Signatures:
+  - Ref: `mqtref.rxx(%theta) %q0, %q1`
+  - Value: `%q0_out, %q1_out = mqtopt.rxx(%theta) %q0_in, %q1_in`
+- Static variant: `mqtref.rxx(3.14159) %q0, %q1`
+- Canonicalization:
+  - `inv rxx(%theta) => rxx(-%theta)`
+  - `pow(r) rxx(%theta) => rxx(r * %theta)` for real r
+  - `rxx(0) => remove`
+  - `rxx(a) %q0, %q1; rxx(b) %q0, %q1 => rxx(a + b) %q0, %q1`
+- Matrix (dynamic): `cos(θ/2) * [1, 0, 0, 0; 0, 1, 0, 0; 0, 0, 1, 0; 0, 0, 0, 1] - 1j * sin(θ/2) * [0, 0, 0, 1; 0, 0, 1, 0; 0, 1, 0, 0; 1, 0, 0, 0]` (4x4 matrix). Static if θ constant.
+
+#### 4.3.25 `ryy` Gate
+
+- Purpose: General two-qubit gate around YY.
+- Traits: TwoTarget, OneParameter
+- Signatures:
+  - Ref: `mqtref.ryy(%theta) %q0, %q1`
+  - Value: `%q0_out, %q1_out = mqtopt.ryy(%theta) %q0_in, %q1_in`
+- Static variant: `mqtref.ryy(3.14159) %q0, %q1`
+- Canonicalization:
+  - `inv ryy(%theta) => ryy(-%theta)`
+  - `pow(r) ryy(%theta) => ryy(r * %theta)` for real r
+  - `ryy(0) => remove`
+  - `ryy(a) %q0, %q1; ryy(b) %q0, %q1 => ryy(a + b) %q0, %q1`
+- Matrix (dynamic): `cos(θ/2) * [1, 0, 0, 0; 0, 1, 0, 0; 0, 0, 1, 0; 0, 0, 0, 1] + 1j * sin(θ/2) * [0, 0, 0, 1; 0, 0, -1, 0; 0, -1, 0, 0; 1, 0, 0, 0]` (4x4 matrix). Static if θ constant.
+
+#### 4.3.26 `rzx` Gate
+
+- Purpose: General two-qubit gate around ZX.
+- Traits: TwoTarget, OneParameter
+- Signatures:
+  - Ref: `mqtref.rzx(%theta) %q0, %q1`
+  - Value: `%q0_out, %q1_out = mqtopt.rzx(%theta) %q0_in, %q1_in`
+- Static variant: `mqtref.rzx(3.14159) %q0, %q1`
+- Canonicalization:
+  - `inv rzx(%theta) => rzx(-%theta)`
+  - `pow(r) rzx(%theta) => rzx(r * %theta)` for real r
+  - `rzx(0) => remove`
+  - `rzx(a) %q0, %q1; rzx(b) %q0, %q1 => rzx(a + b) %q0, %q1`
+- Matrix (dynamic): `cos(θ/2) * [1, 0, 0, 0; 0, 1, 0, 0; 0, 0, 1, 0; 0, 0, 0, 1] + 1j * sin(θ/2) * [0, -1, 0, 0; -1, 0, 0, 0; 0, 0, 0, 1; 0, 0, 1, 0]` (4x4 matrix). Static if θ constant.
+
+#### 4.3.27 `rzz` Gate
+
+- Purpose: General two-qubit gate around ZZ.
+- Traits: TwoTarget, OneParameter, Diagonal
+- Signatures:
+  - Ref: `mqtref.rzz(%theta) %q0, %q1`
+  - Value: `%q0_out, %q1_out = mqtopt.rzz(%theta) %q0_in, %q1_in`
+- Static variant: `mqtref.rzz(3.14159) %q0, %q1`
+- Canonicalization:
+  - `inv rzz(%theta) => rzz(-%theta)`
+  - `pow(r) rzz(%theta) => rzz(r * %theta)` for real r
+  - `rzz(0) => remove`
+  - `rzz(a) %q0, %q1; rzz(b) %q0, %q1 => rzz(a + b) %q0, %q1`
+- Matrix (dynamic): `diag[exp(-i θ/2), exp(i θ/2), exp(i θ/2), exp(-i θ/2)]` (4x4 matrix). Static if θ constant.
+
+#### 4.3.28 `xx_plus_yy` Gate
+
+- Purpose: General two-qubit gate around XX+YY.
+- Traits: TwoTarget, TwoParameter
+- Signatures:
+  - Ref: `mqtref.xx_plus_yy(%theta, %beta) %q0, %q1`
+  - Value: `%q0_out, %q1_out = mqtopt.xx_plus_yy(%theta, %beta) %q0_in, %q1_in`
+- Static variant: `mqtref.xx_plus_yy(3.14159, 1.5708) %q0, %q1`
+- Mixed variant: `mqtref.xx_plus_yy(%theta, 1.5708) %q0, %q1`
+- Canonicalization:
+  - `inv xx_plus_yy(θ, β) => xx_plus_yy(-θ, β)`
+  - `pow(r) xx_plus_yy(θ, β) => xx_plus_yy(r * θ, β)` for real r
+  - `xx_plus_yy(θ1, β) %q0, %q1; xx_plus_yy(θ2, β) %q0, %q1 => xx_plus_yy(θ1 + θ2, β) %q0, %q1`
+- Matrix (dynamic): `[1, 0, 0, 0; 0, cos(θ/2), sin(θ/2) * exp(-i β), 0; 0, -sin(θ/2) * exp(i β), cos(θ/2), 0; 0, 0, 0, 1]` (4x4 matrix). Static if θ and β constant.
+
+#### 4.3.29 `xx_minus_yy` Gate
+
+- Purpose: General two-qubit gate around XX-YY.
+- Traits: TwoTarget, TwoParameter
+- Signatures:
+  - Ref: `mqtref.xx_minus_yy(%theta, %beta) %q0, %q1`
+  - Value: `%q0_out, %q1_out = mqtopt.xx_minus_yy(%theta, %beta) %q0_in, %q1_in`
+- Static variant: `mqtref.xx_minus_yy(3.14159, 1.5708) %q0, %q1`
+- Mixed variant: `mqtref.xx_minus_yy(%theta, 1.5708) %q0, %q1`
+- Canonicalization:
+  - `inv xx_minus_yy(θ, β) => xx_minus_yy(-θ, β)`
+  - `pow(r) xx_minus_yy(θ, β) => xx_minus_yy(r * θ, β)` for real r
+  - `xx_minus_yy(θ1, β) %q0, %q1; xx_minus_yy(θ2, β) %q0, %q1 => xx_minus_yy(θ1 + θ2, β) %q0, %q1`
+- Matrix (dynamic): `[cos(θ/2), 0, 0, -sin(θ/2) * exp(i β); 0, 1, 0, 0; 0, 0, 1, 0; sin(θ/2) * exp(-i β), 0, 0, cos(θ/2)]` (4x4 matrix). Static if θ and β constant.
+
+### 5. Modifier Operations
+
+### 5.1 Overview
 
 Modifiers wrap unitaries, extending functionality or altering semantics.
+They contain exactly one region with a single block whose only operation implements the `UnitaryOpInterface`.
+In the reference semantics dialect, modifiers are statements without results.
+In the value semantics dialect, modifiers thread their values through region arguments and yield results.
+Converting from the value semantics to the reference semantics is straightforward.
+The reverse direction requires a bit of care as the SSA values of the contained unitary need to be added to the region arguments as well as the results need to be yielded.
+Modifiers may be arbitrarily nested, with canonicalization rules to flatten and reorder them.
 
-- Semantics-preserving (e.g., `ctrl`, `negctrl`): canonicalized order, flattened.
-- Transformative (e.g., `pow`, `inv`): applied last, may alter static matrix extraction.
+There are three types of modifiers:
 
-### 6.2 negctrl
+- Control modifiers: `ctrl` and `negctrl`. These add additional (control) qubits to an operation. They extend the qubit list of the unitary operation in question.
+- Inverse modifier: `inv`. This takes the adjoint of the unitary operation. Specializations for many of the basis gates exist and are defined as canonicalization rules.
+- Power modifier: `pow`. This takes the power of the unitary operation. Canonicalization rules are provided to simplify common cases.
 
-Purpose: Add negative controls.
+The canonical ordering for these modifiers is (from outside to inside): `negtrcl` -> `ctrl` -> `pow` -> `inv`.
 
-Operation Specification:
+All modifiers share a common verifier: they must have a single block with a single operation implementing the `UnitaryOpInterface`.
 
-- Purpose: Wrap a unitary adding negative (0-state) control qubits.
+### 5.2 Control Modifiers
+
+- Purpose: Add additional (control) qubits to an operation. Control qubits can either be positive (1-state) or negative (0-state) controls. The modifier itself holds a variadic list of qubits.
+- Signatures (just shown for `ctrl` for simplicity):
+  - Ref: `mqtref.ctrl(%ctrls) { mqtref.unitaryOp %targets }`
+  - Value:
+    ```
+    %ctrl_outs, %unitary_outs = mqtopt.ctrl(%ctrl_ins, %unitary_ins) {
+      %u_outs = mqtopt.unitaryOp %unitary_ins
+      mqtopt.yield %u_outs
+    }
+    ```
+- Builders: Provide list of qubits + body builder.
+- Interface:
+  - Targets: targets of child unitary
+  - Controls: controls of modifier plus controls of child unitary
+  - Parameters: aggregated from child unitary (none directly)
+  - `hasStaticUnitary()` if child unitary static
+- Canonicalization:
+  - Flatten nested control modifiers by merging control lists.
+  - Remove empty control modifiers.
+  - Controls applied to global phase gate +> pick one (arbitrary control) and replace the global phase gate with a (controlled) phase gate.
+  - Canonical modifier ordering:
+    - `ctrl negctrl U => negctrl ctrl U`
+- Verifiers:
+  - Ensure control and target qubits are distinct.
+- Unitary computation: Computed by expanding the unitary of the child operation to the larger space defined by the additional control qubits.
+
+### 5.3 Inverse Modifier
+
+- Purpose: Take the adjoint of the unitary operation.
 - Signatures:
-  - Ref: `mqtref.negctrl %negControls { <unitary-body> }`
-  - Value: `%res_targets = mqtopt.negctrl %negControls { <yielded unitary> } -> <qubit types>`
-- Assembly: `negctrl <ctrl-list> { ... }`.
-- Builder Variants:
-  - `build(builder, loc, resultTypes, negControlOperands, bodyBuilderFn)` (value)
-  - Reference variant omits results.
-- Interface Notes: Aggregates controls into `getNumNegControls()`; targets delegated to child.
-- Canonicalization: Flatten nested, remove empty, reorder relative to other modifiers to canonical chain `negctrl → ctrl → pow → inv`.
-- Examples:
-  - Ref: `mqtref.negctrl %n0 { mqtref.h %t }`
-  - Value: `%t_out = mqtopt.negctrl %n0 { %t1 = mqtopt.rx(%theta) %t_in } -> mqtopt.Qubit`
-- Conversion: Region body value results threaded / dropped analogously to other wrappers.
+  - Ref: `mqtref.inv { mqtref.unitaryOp %targets }`
+  - Value:
+    ```
+    %unitary_outs = mqtopt.inv(%unitary_ins) {
+      %u_outs = mqtopt.unitaryOp %unitary_ins
+      mqtopt.yield %u_outs
+    }
+    ```
+- Builders: Provide body builder.
+- Interface:
+  - Targets: targets of child unitary
+  - Controls: controls of child unitary
+  - Parameters: aggregated from child unitary (none directly)
+  - `hasStaticUnitary()` if child unitary static
+- Canonicalization:
+  - Pairs of nested inverses cancel, i.e. `inv inv U => U`.
+  - Specializations for many basis gates exist and are defined as canonicalization rules.
+  - Canonical modifier ordering:
+    - `inv ctrl U => ctrl inv U`
+    - `inv negctrl U => negctrl inv U`
+- Verifiers: None additional.
+- Unitary computation: Computed by inverting the unitary of the child operation. Given how the underlying operation is unitary, the inverse is given by the conjugate transpose.
 
-### 6.3 ctrl
+### 5.4 Power Modifier
 
-Operation Specification:
-
-- Purpose: Add positive (1-state) controls.
+- Purpose: Take the power of the unitary operation.
 - Signatures:
-  - Ref: `mqtref.ctrl %posControls { <unitary-body> }`
-  - Value: `%res_targets = mqtopt.ctrl %posControls { <yielded unitary> } -> <qubit types>`
-- Builder: Similar to `negctrl` with positive control list.
-- Interface: `getNumPosControls()` sums flattened list.
-- Canonicalization: Merge nested, remove empty, optionally distribute over `seq`, enforce order after `negctrl`.
-- Examples:
-  - Ref: `mqtref.ctrl %c { mqtref.rzz(%φ) %q0, %q1 }`
-  - Value: `%t_out = mqtopt.ctrl %c { %t1 = mqtopt.rz(%φ) %t_in } -> mqtopt.Qubit`
-- Conversion: As for `negctrl`.
+  - Ref: `mqtref.pow(%exponent) { mqtref.unitaryOp %targets }`
+  - Value:
+    ```
+    %unitary_outs = mqtopt.pow(%exponent, %unitary_ins) {
+      %u_outs = mqtopt.unitaryOp %unitary_ins
+      mqtopt.yield %u_outs
+    }
+    ```
+- Static variant: `mqtref.pow(3) { mqtref.unitaryOp %targets }`
+- Builders: Provide exponent value (or attribute) + body builder.
+- Interface:
+  - Targets: targets of child unitary
+  - Controls: controls of child unitary
+  - Parameters: aggregated from child unitary + exponent (either counted as static or dynamic parameter)
+  - `hasStaticUnitary()` if child unitary static and exponent static
+- Canonicalization:
+  - Flatten nested power modifiers by multiplying exponents.
+  - Remove power modifier with exponent 1.
+  - `pow(0) U => remove` completely removed the modifier and the operation
+  - Specializations for many basis gates exist and are defined as canonicalization rules.
+  - Constant folding and propagation of exponents, e.g., replacing constant values by attributes.
+  - Negative exponents are pushed into the child unitary by inverting it, e.g., `pow(-r) U => pow(r) inv(U)`.
+  - Canonical modifier ordering:
+    - `pow ctrl U => ctrl pow U`
+    - `pow negctrl U => negctrl pow U`
+- Verifiers: None additional.
+- Unitary computation: Computed by raising the unitary of the child operation to the given power. For positive integer exponents, this is simply a matrix multiplication. For real-valued exponents, this can be computed by exponentiation.
 
-### 6.4 pow
+## 6. Sequence Operation (`seq`)
 
-Operation Specification:
-
-- Purpose: Exponentiation of a unitary body.
+- Purpose: Ordered, unnamed composition of unitary operations over region block arguments.
 - Signatures:
-  - Ref: `mqtref.pow(expAttrOrOperand) { <unitary-body> }`
-  - Value: `%res_targets = mqtopt.pow(expAttrOrOperand) { <yielded unitary> } -> <qubit types>`
-- Assembly: `pow(<int|float|%val>) { ... }`.
-- Builder Variants: integer attribute exponent; float attribute; dynamic f64 operand.
-- Interface: `getPower()` returns rational/float wrapper; static detection when attribute.
-- Canonicalization: Negative -> `inv(pow(abs))`; combine nested powers; remove exponent 1; exponent 0 -> identity passthrough; reorder with other modifiers.
-- Examples:
-  - `%q2 = mqtopt.pow(2) { %q1 = mqtopt.rx(%theta) %q0 }`
-  - `%q2 = mqtopt.pow(%k) { %q1 = mqtopt.rz(%φ) %q0 }`
-- Conversion: Same region adaptation logic.
+  - Ref: `mqtref.seq { <unitary-ops> }`
+  - Value:
+    ```
+    %results = mqtopt.seq(%args) -> (%result_types) {
+      <ops>
+      mqtopt.yield %newArgs
+    }
+    ```
+- Builders: Provide body builder.
+- Interface:
+  - Targets = Aggregated targets of child unitary ops (none directly)
+  - Controls = None
+  - Parameters = Aggregated parameters of child unitary ops (none directly)
+  - `hasStaticUnitary()` if all child ops static`
+- Canonicalization:
+  - Remove empty sequence.
+  - Replace sequence with a single operation by inlining that operation.
+  - Provide inlining capabilities for flattening nested sequences.
+- Verifiers: All block operations must implement the `UnitaryOpInterface`.
+- Unitary computation: Computed by computing the product of the unitaries of the child operations, i.e., `U_n U_{n-1} ... U_1 U_0`.
+- Conversion:
+  - Value semantics to reference semantics: Remove block arguments and results, replace uses of arguments with direct uses of the corresponding values.
+  - Reference semantics to value semantics: Add block arguments and results, replace direct use of values with uses of the corresponding arguments.
 
-### 6.5 inv
+## 7. User Defined Gates & Matrix / Composite Definitions
 
-Operation Specification:
+In addition to the unnamed sequence operation, the dialect also provides a mechanism for defining custom (unitary) gates that produce a symbol that can be referenced in an `apply` operation.
+Conceptionally, this should be very close to an actual MLIR function definition and call.
 
-- Purpose: Adjoint of unitary body.
-- Signatures:
-  - Ref: `mqtref.inv { <unitary-body> }`
-  - Value: `%res_targets = mqtopt.inv { <yielded unitary> } -> <qubit types>`
-- Builder: Provide body builder lambda.
-- Interface: `isInverted()` true; nested inversion removed in canonicalization.
-- Canonicalization: Double inversion removal; self-adjoint detection; distribute over `pow` forms (placing `inv` innermost after ordering); axis negation for parameterized rotations.
-- Examples: `%t_out = mqtopt.inv { %t1 = mqtopt.u(%theta,%phi,%lambda) %t_in }`
-- Conversion: Same as other wrappers.
+These gates can be defined in two ways:
 
-### 6.6 Nested Example
+- Matrix-based definition: Define a gate using a matrix representation.
+- Sequence-based definition: Define a gate using a sequence of (unitary) operations.
 
-Original value form (non-canonical):
+The matrix-based definition is very efficient for small qubit numbers, but does not scale well for larger numbers of qubits.
+The sequence-based definition is more general, but requires more processing to compute the underlying functionality.
+Definitions might even provide both a matrix and a sequence representation, which should be consistent.
 
-```
-%out = mqtopt.inv { %a = mqtopt.ctrl %c { %b = mqtopt.negctrl %n { %g = mqtopt.rx(%theta) %in } } } -> mqtopt.Qubit
-```
-
-Canonical extraction: negctrl(%n), ctrl(%c), inv.
-Reordered canonical:
-
-```
-%out = mqtopt.negctrl %n {
-  %t1 = mqtopt.ctrl %c {
-    %t2 = mqtopt.inv { %t3 = mqtopt.rx(%theta) %in } -> mqtopt.Qubit
-  } -> mqtopt.Qubit
-} -> mqtopt.Qubit
-```
-
-After folding `inv rx(%theta)` → `rx(-%theta)`:
-
-```
-%out = mqtopt.negctrl %n {
-  %t1 = mqtopt.ctrl %c { %t2 = mqtopt.rx(-%theta) %in } -> mqtopt.Qubit
-} -> mqtopt.Qubit
-```
-
-Reference nested example (explicit):
-
-```
-mqtref.negctrl %n {
-  mqtref.ctrl %c {
-    mqtref.inv { mqtref.rx(%theta) %q }
-  }
-}
-```
-
-After folding: `mqtref.negctrl %n { mqtref.ctrl %c { mqtref.rx(-%theta) %q } }`
-
-## 7. Sequence Operation (`seq`)
-
-Purpose: Ordered composition of unitary operations over region block arguments.
-
-Operation Specification:
-
-- Purpose: Represent composite product U = U_n … U_2 U_1 in region order.
-- Signatures:
-  - Ref: `mqtref.seq (%args: mqtref.Qubit, ...) { <unitary-ops> mqtref.seq.yield }`
-  - Value: `%results = mqtopt.seq (%args: mqtopt.Qubit, ...) -> (mqtopt.Qubit, ...) { <ops> mqtopt.seq.yield %newArgs }`
-- Assembly: `seq (arg_list) -> (result_types)? { ... }`
-- Builders: Provide argument list + body builder capturing yields; value builder generates result types from argument types.
-- Interface: Targets = block argument count; parameters aggregated from children (none directly); `hasStaticUnitary()` if all child ops static and compose cost acceptable.
-- Canonicalization: Flatten nested, remove empty, inline single op, distribute controls from wrappers if beneficial, inversion reversal & child inversion patterns.
-- Examples:
-
-```
-%q0_out, %q1_out = mqtopt.seq (%q0_in: mqtopt.Qubit, %q1_in: mqtopt.Qubit)
-  -> (mqtopt.Qubit, mqtopt.Qubit) {
-  %a0 = mqtopt.h %q0_in
-  %b0, %b1 = mqtopt.rzz(%θ) %a0, %q1_in
-  %c0 = mqtopt.rz(%φ) %b0
-  mqtopt.seq.yield %c0, %b1
-}
-```
-
-- Conversion: Reference ↔ value via region argument threading and yields.
-
-## 8. User Defined Gates & Matrix / Composite Definitions
-
-### 8.1 Matrix Gate Definitions
-
-Define symbol with matrix attribute (dimension 2^n × 2^n):
-
-```
-mqt.gatedef.matrix @myPhase(%lambda: f64) targets(1)
-  attr_matrix = #mqt.matrix<2x2>( ... symbolic in %lambda ... )
-```
-
-Matrix may embed symbolic expressions referencing parameters (internal representation detail).
-
-### 8.2 Composite Gate Definitions
-
-Sequence-based body yields outputs (value semantics):
-
-```
-mqt.gatedef.composite @entang(%theta: f64)
-  ( %a: mqtopt.Qubit, %b: mqtopt.Qubit ) -> (mqtopt.Qubit, mqtopt.Qubit) {
-  %a1 = mqtopt.h %a
-  %a2, %b1 = mqtopt.rzz(%theta) %a1, %b
-  mqtopt.seq.yield %a2, %b1
-}
-```
-
-Reference semantics variant has same region arguments but no gate results.
-
-### 8.3 Unified Apply Operation
-
-Value:
-
-```
-%a_out, %b_out = mqtopt.apply @entang(%theta) %a_in, %b_in
-%q1 = mqtopt.apply @myPhase(%lambda) %q0
-```
-
-Reference:
-
-```
-mqtref.apply @entang(%theta) %a, %b
-mqtref.apply @myPhase(3.14159) %q
-```
-
-Operation Specification:
-
-- Purpose: Apply user-defined matrix or composite gate symbol.
-- Signatures:
-  - Ref: `mqtref.apply @symbol(param_list?) %targets`
-  - Value: `%results = mqtopt.apply @symbol(param_list?) %inputs`
-- Assembly: `apply @name(<params?>) <targets>`
-- Builder Variants:
-  - For matrix gate: auto infer target count from definition.
-  - For composite: verify arity against definition region signature.
-  - Parameter list builder with static attribute injection.
-- Interface Notes:
-  - `getNumTargets()` from definition signature.
-  - Parameters enumerated exactly as in definition.
-  - `hasStaticUnitary()` true for matrix gate; composite conditional.
-- Canonicalization: Identity matrix removal; trivial single-op composite inlining; repeated static collapses per algebraic rules.
-- Examples:
-  - Static parameter: `%q1 = mqtopt.apply @myPhase(3.14159) %q0`
-  - Dynamic parameter: `%q1 = mqtopt.apply @myPhase(%lambda) %q0`
-- Conversion: Reference ↔ value semantics by adding/removing results and adjusting uses.
+Matrix-based definitions may be fully static or might be based on symbolic expressions, e.g., rotation gates.
+Fully static matrices may be specified as dense array attributes.
+Any dynamic definitions must be (somehow) specified as symbolic expressions.
 
 ## 9. Parser & Builder Sugar
 
