@@ -1,68 +1,157 @@
-# Quantum Dialect Revamp RFC
+# MQT MLIR Compilation Infrastructure: Technical Concept
 
 ## Executive Summary
 
-This RFC proposes a comprehensive redesign of the MQT quantum MLIR dialect to provide a unified, extensible framework for quantum circuit representation and optimization.
-The revamp introduces a dual-dialect approach (`mqtref` for reference semantics, `mqtopt` for value semantics), a unified unitary interface, composable modifiers (control, inversion, power), user-defined gates, and a robust canonicalization framework.
+This document describes the technical design of the MQT's MLIR-based compilation infrastructure for quantum computing.
+The infrastructure provides a unified, extensible framework for quantum circuit representation, optimization, and compilation through a multi-dialect architecture built on MLIR (Multi-Level Intermediate Representation).
 
-**Key Benefits:**
+**Architecture Overview:**
 
-- **Unified Interface:** All unitary operations expose consistent APIs for introspection and composition
+The MQT MLIR infrastructure consists of two complementary dialects that work together to enable flexible quantum program representation and optimization:
+
+- **Quartz Dialect** (`quartz`): Uses reference semantics with in-place qubit mutation, optimized for direct hardware mapping and straightforward translation to/from existing quantum programming languages.
+- **Flux Dialect** (`flux`): Uses SSA value semantics with functional-style transformations, designed for powerful compiler optimizations and circuit transformations.
+
+Both dialects implement a unified unitary interface, composable gate modifiers, and comprehensive canonicalization frameworks that enable seamless interoperability and progressive optimization strategies.
+
+**Key Features:**
+
+- **Unified Interface:** All unitary operations expose consistent APIs for introspection and composition across dialects
 - **Enhanced Expressiveness:** Support for arbitrary gate modifications, custom gate definitions, and symbolic parameters
-- **Optimization-Ready:** Built-in canonicalization rules and transformation hooks
-- **Dual Semantics:** Choose between reference semantics (hardware-like) or value semantics (SSA-based optimization)
+- **Optimization-Ready:** Built-in canonicalization rules and transformation hooks throughout the representation
+- **Dual Semantics:** Choose the appropriate dialect for each compilation stage—reference semantics for I/O boundaries, value semantics for optimization
+- **Extensible Architecture:** Designed to accommodate additional dialects and abstraction levels as the quantum computing field evolves
 
-## 1. Overview and Goals
+**Design Rationale:**
 
-This RFC proposes a comprehensive revamp of the quantum MLIR dialect(s) to unify unitary representations, improve expressiveness, and enable robust transformations.
+The dual-dialect architecture reflects a fundamental insight: different stages of quantum compilation benefit from different representations.
+Reference semantics (Quartz) provides a natural bridge to hardware and existing quantum programming ecosystems, while value semantics (Flux) unlocks the full power of compiler analysis and optimization.
+Conversion passes between dialects enable compilation strategies that leverage the strengths of each representation at the appropriate stage.
 
-**Primary Goals:**
+## 1. Overview and Design Philosophy
 
-- **Unified Unitary Interface:** Provide a coherent interface for all operations that apply or produce a unitary (base gates, user-defined gates, modifier-wrapped constructs, sequences)
-- **Dual Semantics Support:** Support both reference semantics (in-place: `mqtref`) and value semantics (SSA threading: `mqtopt`)
-- **Rich Modifier System:** Add inversion, powering, and positive/negative multi-controls as composable modifiers
-- **Custom Gate Support:** Enable user-defined gates via matrix and composite (sequence-based) definitions
-- **Consistent Parameterization:** Unify parameter handling (static + dynamic) with consistent ordering and interface queries
-- **Canonicalization Framework:** Embed canonicalization rules directly at each operation definition
-- **Normalized Modifier Nesting:** Establish a canonical modifier nesting order: `negctrl → ctrl → pow → inv`
-- **Matrix Extraction:** Enable static matrix extraction where possible and symbolic composition otherwise
+The MQT MLIR compilation infrastructure represents a comprehensive approach to quantum program compilation, building on MLIR's proven multi-level intermediate representation framework.
+This design enables quantum computing to benefit from decades of classical compiler research while addressing the unique challenges of quantum circuits.
 
-## 2. Current State and Limitations
+**Design Goals:**
 
-The current implementation has several significant limitations that this revamp addresses:
+- **Unified Unitary Interface:** Provide a coherent interface for all operations that apply or produce a unitary transformation (base gates, user-defined gates, modified operations, compositions)
+- **Multi-Level Representation:** Support both reference semantics (Quartz) for hardware-oriented representations and value semantics (Flux) for optimization-oriented transformations
+- **Composable Modifiers:** Enable arbitrary combinations of inversion, powering, and positive/negative control modifications through a clean modifier system
+- **Custom Gate Support:** Allow users to define gates via matrix representations or compositional sequences, enabling domain-specific abstractions
+- **Consistent Parameterization:** Unify handling of static and dynamic parameters with consistent ordering and introspection capabilities
+- **Systematic Canonicalization:** Embed optimization rules directly at operation definitions for predictable and composable transformations
+- **Normalized Representations:** Establish canonical forms (e.g., modifier ordering: `negctrl → ctrl → pow → inv`) to simplify pattern matching and optimization
+- **Matrix Extraction:** Enable static matrix computation where possible while supporting symbolic composition for dynamic cases
 
-**Existing Issues:**
+**Architectural Principles:**
 
-- **Limited Modifiers:** Only a control modifier exists, directly embedded in unitary operations; missing power and inversion modifiers
-- **Missing Matrix Support:** No way to obtain matrix representations for gates
-- **No Custom Gates:** No support for user-defined gates (neither matrix-based nor composite)
-- **Absent Canonicalization:** No systematic canonicalization strategy for modifier order, parameter folding, or gate specialization
-- **Testing Challenges:** Mostly FileCheck-based testing that is cumbersome and error-prone to write
-- **Limited Builders:** No convenient programmatic builders for constructing quantum programs
+1. **Separation of Concerns:** Base gates are modifier-free; extensions are applied via wrapper operations
+2. **Progressive Refinement:** Compilation proceeds through multiple passes, each operating at appropriate abstraction levels
+3. **Semantic Preservation:** All transformations maintain unitary equivalence (or explicitly document approximations)
+4. **Extensibility:** The architecture accommodates future dialects for pulse-level control, error correction, or domain-specific optimizations
 
-These limitations hinder both expressiveness and optimization capabilities, motivating the comprehensive redesign proposed in this RFC.
+## 2. Motivation and Context
 
-## 3. Dialect Structure and Categories
+**The MLIR Opportunity:**
 
-The revamp introduces two parallel dialects with identical operation sets but different operational semantics:
+MLIR provides a proven framework for building progressive compilation pipelines with multiple levels of abstraction.
+By building quantum compilation infrastructure on MLIR, we gain:
+
+- Mature ecosystem of transformation passes and analysis frameworks
+- Standard infrastructure for dialect definition, conversion, and optimization
+- Established patterns for SSA-based transformations and rewrites
+- Interoperability with classical compilation infrastructure for hybrid quantum-classical systems
+
+**Why Dual Dialects?**
+
+The Quartz/Flux dual-dialect architecture reflects a key insight: quantum compilation benefits from different semantic models at different stages:
+
+- **Quartz (Reference Semantics):** Provides an intuitive, hardware-like model where gates modify qubits in place. These semantics align naturally with:
+  - Physical quantum hardware models
+  - Existing quantum programming languages (OpenQASM, Qiskit, etc.)
+  - Direct circuit representations
+  - Backend code generation
+
+- **Flux (Value Semantics):** Provides a functional, SSA-based model where operations produce new quantum values. These semantics enable:
+  - Powerful dataflow analysis
+  - Safe parallelization and reordering
+  - Sophisticated optimization passes
+  - Clear dependency tracking
+
+Conversion passes between dialects allow compilation strategies to use the right representation at the right time.
+
+## 3. Dialect Architecture
+
+The MQT MLIR infrastructure consists of two parallel dialects with identical operation sets but different operational semantics.
+This section describes the architectural design shared across both dialects.
 
 ### 3.1 Dialect Overview
 
-**`mqtref` (Reference Semantics):**
+**Quartz Dialect (`quartz`):**
 
-- Operations mutate qubits in-place (similar to hardware model)
-- No SSA results for qubit operations
-- More natural for hardware mapping and direct circuit representation
-- Example: `mqtref.h %q` applies Hadamard to qubit `%q` in-place
+Quartz uses **reference semantics** where quantum operations modify qubits in place, similar to how hardware physically transforms quantum states.
+This model provides:
 
-**`mqtopt` (Value Semantics):**
+- Natural mapping to hardware execution models
+- Intuitive representation for circuit descriptions
+- Direct compatibility with imperative quantum programming languages
+- Straightforward backend code generation
 
-- Operations consume and produce new SSA values (functional style)
-- Enables powerful SSA-based optimizations and transformations
-- More natural for compiler optimization passes
-- Example: `%q_out = mqtopt.h %q_in` consumes `%q_in` and produces `%q_out`
+The name "Quartz" reflects the crystalline, structured nature of hardware-oriented representations—operations have fixed positions and transform states in place, like atoms in a crystal lattice.
 
-Both dialects share the same operation names and semantics, differing only in their type system and SSA threading model. Conversion passes enable moving between the two dialects as needed.
+**Example:**
+
+```mlir
+quartz.h %q              // Applies Hadamard to qubit %q in place
+quartz.swap %q0, %q1       // Applies SWAP using %q0, %q1 as targets
+```
+
+**Flux Dialect (`flux`):**
+
+Flux uses **value semantics** where quantum operations consume input qubits and produce new output values, following the functional programming and SSA paradigm.
+This model enables:
+
+- Powerful compiler optimizations through clear dataflow
+- Safe reordering and parallelization analysis
+- Advanced transformation passes
+- Explicit dependency tracking
+
+The name "Flux" captures the flowing, transformative nature of value-based representations—quantum states flow through operations, each transformation producing new values like a river flowing through a landscape.
+
+**Example:**
+
+```mlir
+%q_out = flux.h %q_in                    // Consumes %q_in, produces %q_out
+%q0_out, %q1_out = flux.swap %q0_in, %q1_in  // Consumes inputs, produces outputs
+```
+
+**Dialect Interoperability:**
+
+Both dialects share operation names and core semantics, differing only in their type systems and value threading models. Bidirectional conversion passes enable flexible compilation strategies:
+
+```
+Frontend (Qiskit, OpenQASM3, ...) → Quartz → Flux → Optimizations → Flux → Quartz → Backend (QIR, OpenQASM 3, ...)
+                                           ↑_____(conversion passes)_____↑
+                                  ↑______________(translation passes)_____________↑
+```
+
+This architecture allows:
+
+- Input from quantum programming languages via Quartz
+- Optimization in Flux using SSA transformations
+- Output to hardware backends via Quartz
+
+**Future Extensibility:**
+
+The architecture anticipates additional dialects for:
+
+- Pulse-level control representations
+- Error-corrected logical circuits
+- Tensor network representations (e.g., ZX calculus)
+- Domain-specific optimizations
+
+Each dialect can target specific optimization goals while maintaining interoperability through conversion passes.
 
 ### 3.2 Operation Categories
 
@@ -78,7 +167,7 @@ All operations fall into three primary categories:
 
 **Qubit and Register Allocation:**
 
-In MQT's MLIR dialects, quantum and classical registers are represented by MLIR-native `memref` operations rather than custom types. This design choice offers several advantages:
+The MQT MLIR dialects represent quantum and classical registers using MLIR-native `memref` operations rather than custom types. This design choice offers several advantages:
 
 - **MLIR Integration:** Seamless compatibility with existing MLIR infrastructure, enabling reuse of memory handling patterns and optimization passes
 - **Implementation Efficiency:** No need to define and maintain custom register operations, significantly reducing implementation complexity
@@ -87,44 +176,44 @@ In MQT's MLIR dialects, quantum and classical registers are represented by MLIR-
 
 **Quantum Register Representation:**
 
-A quantum register is represented by a `memref` of type `!mqtref.Qubit` or `!mqtopt.Qubit`:
+A quantum register is represented by a `memref` of type `!quartz.Qubit` or `!flux.Qubit`:
 
 ```mlir
 // A quantum register with 2 qubits
-%qreg = memref.alloc() : memref<2x!mqtref.Qubit>
+%qreg = memref.alloc() : memref<2x!quartz.Qubit>
 
 // Load qubits from the register
-%q0 = memref.load %qreg[%i0] : memref<2x!mqtref.Qubit>
-%q1 = memref.load %qreg[%i1] : memref<2x!mqtref.Qubit>
+%q0 = memref.load %qreg[%i0] : memref<2x!quartz.Qubit>
+%q1 = memref.load %qreg[%i1] : memref<2x!quartz.Qubit>
 ```
 
 **Classical Register Representation:**
 
-Classical registers follow the same pattern but use the `i1` type for boolean measurement results:
+Classical registers follow the same pattern but use the `i1` type for Boolean measurement results:
 
 ```mlir
 // A classical register with 1 bit
 %creg = memref.alloc() : memref<1xi1>
 
 // Store measurement result
-%c = mqtref.measure %q
+%c = quartz.measure %q
 memref.store %c, %creg[%i0] : memref<1xi1>
 ```
 
-**Reference Semantics (`mqtref`):**
+**Quartz Dialect (Reference Semantics):**
 
 ```mlir
-%q = mqtref.alloc : !mqtref.qubit
-mqtref.dealloc %q : !mqtref.qubit
-%q0 = mqtref.qubit 0 : !mqtref.qubit  // Static qubit reference
+%q = quartz.alloc : !quartz.qubit
+quartz.dealloc %q : !quartz.qubit
+%q0 = quartz.qubit 0 : !quartz.qubit  // Static qubit reference
 ```
 
-**Value Semantics (`mqtopt`):**
+**Flux Dialect (Value Semantics):**
 
 ```mlir
-%q = mqtopt.alloc : !mqtopt.qubit
-mqtopt.dealloc %q : !mqtopt.qubit
-%q0 = mqtopt.qubit 0 : !mqtopt.qubit  // Static qubit reference
+%q = flux.alloc : !flux.qubit
+flux.dealloc %q : !flux.qubit
+%q0 = flux.qubit 0 : !flux.qubit  // Static qubit reference
 ```
 
 **Canonicalization Patterns:**
@@ -139,18 +228,18 @@ Non-unitary operations that do not implement the `UnitaryOpInterface`.
 
 **Single-Qubit Measurements Only:** Multi-qubit measurements are explicitly **not supported**. Joint measurements must be decomposed into individual single-qubit measurements.
 
-**Reference Semantics:**
+**Quartz Dialect (Reference Semantics):**
 
 ```mlir
-%c = mqtref.measure %q : !mqtref.qubit -> i1
-mqtref.reset %q : !mqtref.qubit
+%c = quartz.measure %q : !quartz.qubit -> i1
+quartz.reset %q : !quartz.qubit
 ```
 
-**Value Semantics:**
+**Flux Dialect (Value Semantics):**
 
 ```mlir
-%q_out, %c = mqtopt.measure %q_in : !mqtopt.qubit -> (!mqtopt.qubit, i1)
-%q_out = mqtopt.reset %q_in : !mqtopt.qubit -> !mqtopt.qubit
+%q_out, %c = flux.measure %q_in : !flux.qubit -> (!flux.qubit, i1)
+%q_out = flux.reset %q_in : !flux.qubit -> !flux.qubit
 ```
 
 **Canonicalization Patterns:**
@@ -218,7 +307,7 @@ This enables canonical equality tests and efficient deduplication.
 - Parameters appear in parentheses immediately after the operation mnemonic
 - Support for mixed static (attributes) and dynamic (SSA values) parameters in original order
 - Enumeration returns a flattened ordered list where each parameter can be inspected for static/dynamic nature
-- Example: `mqtref.u(%theta, 1.5708, %lambda) %q` has three parameters: dynamic, static, dynamic
+- Example: `quartz.u(%theta, 1.5708, %lambda) %q` has three parameters: dynamic, static, dynamic
 
 **Static Matrix Extraction:**
 
@@ -242,7 +331,7 @@ This enables canonical equality tests and efficient deduplication.
 - **Named Basis Gates:** Each base gate defines a unitary with fixed target arity and parameter arity (expressed via traits)
 - **Static Matrix When Possible:** Provide static matrix representations when parameters are static or absent
 - **Modifier-Free Core:** Avoid embedding modifier semantics directly—use wrapper operations instead
-- **Consistent Signatures:** Maintain uniform syntax across reference and value semantics
+- **Consistent Signatures:** Maintain uniform syntax across Quartz and Flux dialects
 
 **Benefits:**
 
@@ -259,8 +348,8 @@ For every named base gate operation `G`:
 - **Purpose:** Brief description of the unitary operation
 - **Traits:** Target arity (e.g., `OneTarget`, `TwoTarget`), parameter arity (e.g., `OneParameter`), special properties (e.g., `Hermitian`, `Diagonal`)
 - **Signatures:**
-  - Reference: `mqtref.G(param_list?) %targets : (param_types..., qubit_types...)`
-  - Value: `%out_targets = mqtopt.G(param_list?) %in_targets : (param_types..., qubit_types...) -> (qubit_types...)`
+  - Quartz: `quartz.G(param_list?) %targets : (param_types..., qubit_types...)`
+  - Flux: `%out_targets = flux.G(param_list?) %in_targets : (param_types..., qubit_types...) -> (qubit_types...)`
 - **Assembly Format:** `G(params?) targets` where params are in parentheses, qubits as trailing operands
 - **Interface Implementation:**
   - `getNumTargets()` fixed by target arity trait
@@ -299,11 +388,11 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Apply global phase `exp(iθ)` to the quantum state
 - **Traits:** `NoTarget`, `OneParameter`
 - **Signatures:**
-  - Ref: `mqtref.gphase(%theta)`
-  - Value: `mqtopt.gphase(%theta)`
+  - Quartz: `quartz.gphase(%theta)`
+  - Flux: `flux.gphase(%theta)`
 - **Examples:**
-  - Static: `mqtref.gphase(3.14159)`
-  - Dynamic: `mqtref.gphase(%theta)`
+  - Static: `quartz.gphase(3.14159)`
+  - Dynamic: `quartz.gphase(%theta)`
 - **Canonicalization:**
   - `gphase(0) → remove`
   - `inv(gphase(θ)) → gphase(-θ)`
@@ -319,8 +408,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Identity operation (does nothing)
 - **Traits:** `OneTarget`, `NoParameter`, `Hermitian`, `Diagonal`
 - **Signatures:**
-  - Ref: `mqtref.id %q`
-  - Value: `%q_out = mqtopt.id %q_in`
+  - Quartz: `quartz.id %q`
+  - Flux: `%q_out = flux.id %q_in`
 - **Canonicalization:**
   - `id → remove` (no effect)
   - `pow(r) id → id` (any power is still id)
@@ -334,11 +423,11 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Pauli-X gate (bit flip)
 - **Traits:** `OneTarget`, `NoParameter`, `Hermitian`
 - **Signatures:**
-  - Ref: `mqtref.x %q`
-  - Value: `%q_out = mqtopt.x %q_in`
+  - Quartz: `quartz.x %q`
+  - Flux: `%q_out = flux.x %q_in`
 - **Canonicalization:**
-  - `pow(1/2) x → sx`
-  - `pow(-1/2) x → sxdg`
+  - `pow(1/2) x → gphase(-π/4); sx` (square root with global phase correction)
+  - `pow(-1/2) x → gphase(π/4); sxdg`
   - `pow(r) x → gphase(-r*π/2); rx(r*π)` (general power translates to rotation with global phase)
 - **Matrix:** `[0, 1; 1, 0]` (2x2 matrix)
 - **Definition in terms of `u`:** `u(π, 0, π) %q`
@@ -349,8 +438,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Pauli-Y gate (bit and phase flip)
 - **Traits:** `OneTarget`, `NoParameter`, `Hermitian`
 - **Signatures:**
-  - Ref: `mqtref.y %q`
-  - Value: `%q_out = mqtopt.y %q_in`
+  - Quartz: `quartz.y %q`
+  - Flux: `%q_out = flux.y %q_in`
 - **Canonicalization:**
   - `pow(r) y → gphase(-r*π/2); ry(r*π)` (general power translates to rotation with global phase)
 - **Matrix:** `[0, -i; i, 0]` (2x2 matrix)
@@ -362,8 +451,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Pauli-Z gate (phase flip)
 - **Traits:** `OneTarget`, `NoParameter`, `Hermitian`, `Diagonal`
 - **Signatures:**
-  - Ref: `mqtref.z %q`
-  - Value: `%q_out = mqtopt.z %q_in`
+  - Quartz: `quartz.z %q`
+  - Flux: `%q_out = flux.z %q_in`
 - **Canonicalization:**
   - `pow(1/2) z → s`
   - `pow(-1/2) z → sdg`
@@ -378,8 +467,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Hadamard gate (creates superposition)
 - **Traits:** `OneTarget`, `NoParameter`, `Hermitian`
 - **Signatures:**
-  - Ref: `mqtref.h %q`
-  - Value: `%q_out = mqtopt.h %q_in`
+  - Quartz: `quartz.h %q`
+  - Flux: `%q_out = flux.h %q_in`
 - **Matrix:** `1/sqrt(2) * [1, 1; 1, -1]` (2x2 matrix)
 - **Definition in terms of `u`:** `u(π/2, 0, π) %q`
 
@@ -388,8 +477,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** S gate (applies a phase of π/2)
 - **Traits:** `OneTarget`, `NoParameter`, `Diagonal`
 - **Signatures:**
-  - Ref: `mqtref.s %q`
-  - Value: `%q_out = mqtopt.s %q_in`
+  - Quartz: `quartz.s %q`
+  - Flux: `%q_out = flux.s %q_in`
 - **Canonicalization:**
   - `inv s → sdg`
   - `s %q; s %q → z %q`
@@ -406,8 +495,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Sdg gate (applies a phase of -π/2)
 - **Traits:** `OneTarget`, `NoParameter`, `Diagonal`
 - **Signatures:**
-  - Ref: `mqtref.sdg %q`
-  - Value: `%q_out = mqtopt.sdg %q_in`
+  - Quartz: `quartz.sdg %q`
+  - Flux: `%q_out = flux.sdg %q_in`
 - **Canonicalization:**
   - `inv sdg → s`
   - `sdg %q; sdg %q → z %q`
@@ -424,8 +513,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** T gate (applies a phase of π/4)
 - **Traits:** `OneTarget`, `NoParameter`, `Diagonal`
 - **Signatures:**
-  - Ref: `mqtref.t %q`
-  - Value: `%q_out = mqtopt.t %q_in`
+  - Quartz: `quartz.t %q`
+  - Flux: `%q_out = flux.t %q_in`
 - **Canonicalization:**
   - `inv t → tdg`
   - `t %q; t %q; → s %q`
@@ -441,8 +530,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Tdg gate (applies a phase of -π/4)
 - **Traits:** `OneTarget`, `NoParameter`, `Diagonal`
 - **Signatures:**
-  - Ref: `mqtref.tdg %q`
-  - Value: `%q_out = mqtopt.tdg %q_in`
+  - Quartz: `quartz.tdg %q`
+  - Flux: `%q_out = flux.tdg %q_in`
 - **Canonicalization:**
   - `inv tdg → t`
   - `tdg %q; tdg %q; → sdg %q`
@@ -458,8 +547,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Square root of X gate
 - **Traits:** `OneTarget`, `NoParameter`
 - **Signatures:**
-  - Ref: `mqtref.sx %q`
-  - Value: `%q_out = mqtopt.sx %q_in`
+  - Quartz: `quartz.sx %q`
+  - Flux: `%q_out = flux.sx %q_in`
 - **Canonicalization:**
   - `inv sx → sxdg`
   - `sx %q; sx %q → x %q`
@@ -473,8 +562,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Square root of X-Dagger gate
 - **Traits:** `OneTarget`, `NoParameter`
 - **Signatures:**
-  - Ref: `mqtref.sxdg %q`
-  - Value: `%q_out = mqtopt.sxdg %q_in`
+  - Quartz: `quartz.sxdg %q`
+  - Flux: `%q_out = flux.sxdg %q_in`
 - **Canonicalization:**
   - `inv sxdg → sx`
   - `sxdg %q; sxdg %q → x %q`
@@ -488,9 +577,9 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Rotation around the X-axis by angle θ
 - **Traits:** `OneTarget`, `OneParameter`
 - **Signatures:**
-  - Ref: `mqtref.rx(%theta) %q`
-  - Value: `%q_out = mqtopt.rx(%theta) %q_in`
-- **Static variant:** `mqtref.rx(3.14159) %q`
+  - Quartz: `quartz.rx(%theta) %q`
+  - Flux: `%q_out = flux.rx(%theta) %q_in`
+- **Static variant:** `quartz.rx(3.14159) %q`
 - **Canonicalization:**
   - `rx(a) %q; rx(b) %q → rx(a + b) %q`
   - `inv rx(θ) → rx(-θ)`
@@ -503,9 +592,9 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Rotation around the Y-axis by angle θ
 - **Traits:** `OneTarget`, `OneParameter`
 - **Signatures:**
-  - Ref: `mqtref.ry(%theta) %q`
-  - Value: `%q_out = mqtopt.ry(%theta) %q_in`
-- **Static variant:** `mqtref.ry(3.14159) %q`
+  - Quartz: `quartz.ry(%theta) %q`
+  - Flux: `%q_out = flux.ry(%theta) %q_in`
+- **Static variant:** `quartz.ry(3.14159) %q`
 - **Canonicalization:**
   - `ry(a) %q; ry(b) %q → ry(a + b) %q`
   - `inv ry(θ) → ry(-θ)`
@@ -518,9 +607,9 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Rotation around the Z-axis by angle θ
 - **Traits:** `OneTarget`, `OneParameter`, `Diagonal`
 - **Signatures:**
-  - Ref: `mqtref.rz(%theta) %q`
-  - Value: `%q_out = mqtopt.rz(%theta) %q_in`
-- **Static variant:** `mqtref.rz(3.14159) %q`
+  - Quartz: `quartz.rz(%theta) %q`
+  - Flux: `%q_out = flux.rz(%theta) %q_in`
+- **Static variant:** `quartz.rz(3.14159) %q`
 - **Canonicalization:**
   - `rz(a) %q; rz(b) %q → rz(a + b) %q`
   - `inv rz(θ) → rz(-θ)`
@@ -533,9 +622,9 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Phase gate (applies a phase of θ)
 - **Traits:** `OneTarget`, `OneParameter`, `Diagonal`
 - **Signatures:**
-  - Ref: `mqtref.p(%theta) %q`
-  - Value: `%q_out = mqtopt.p(%theta) %q_in`
-- **Static variant:** `mqtref.p(3.14159) %q`
+  - Quartz: `quartz.p(%theta) %q`
+  - Flux: `%q_out = flux.p(%theta) %q_in`
+- **Static variant:** `quartz.p(3.14159) %q`
 - **Canonicalization:**
   - `p(a) %q; p(b) %q → p(a + b) %q`
   - `inv p(θ) → p(-θ)`
@@ -548,10 +637,10 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Rotation around an arbitrary axis in the XY-plane by angles θ and φ
 - **Traits:** `OneTarget`, `TwoParameter`
 - **Signatures:**
-  - Ref: `mqtref.r(%theta, %phi) %q`
-  - Value: `%q_out = mqtopt.r(%theta, %phi) %q_in`
-- **Static variant:** `mqtref.r(3.14159, 1.5708) %q`
-- **Mixed variant:** `mqtref.r(%theta, 1.5708) %q`
+  - Quartz: `quartz.r(%theta, %phi) %q`
+  - Flux: `%q_out = flux.r(%theta, %phi) %q_in`
+- **Static variant:** `quartz.r(3.14159, 1.5708) %q`
+- **Mixed variant:** `quartz.r(%theta, 1.5708) %q`
 - **Canonicalization:**
   - `inv r(θ, φ) → r(-θ, φ)`
   - `pow(real) r(θ, φ) → r(real * θ, φ)` for real `real`
@@ -565,10 +654,10 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Universal single-qubit gate (can implement any single-qubit operation)
 - **Traits:** `OneTarget`, `ThreeParameter`
 - **Signatures:**
-  - Ref: `mqtref.u(%theta, %phi, %lambda) %q`
-  - Value: `%q_out = mqtopt.u(%theta, %phi, %lambda) %q_in`
-- **Static variant:** `mqtref.u(3.14159, 1.5708, 0.785398) %q`
-- **Mixed variant:** `mqtref.u(%theta, 1.5708, 0.785398) %q`
+  - Quartz: `quartz.u(%theta, %phi, %lambda) %q`
+  - Flux: `%q_out = flux.u(%theta, %phi, %lambda) %q_in`
+- **Static variant:** `quartz.u(3.14159, 1.5708, 0.785398) %q`
+- **Mixed variant:** `quartz.u(%theta, 1.5708, 0.785398) %q`
 - **Canonicalization:**
   - `inv u(θ, φ, λ) → u(-θ, -φ, -λ)`
   - `rx(θ) == u(θ, -π/2, π/2)`
@@ -581,10 +670,10 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Simplified universal single-qubit gate (special case of `u` gate)
 - **Traits:** `OneTarget`, `TwoParameter`
 - \*\*Signatures
-  - Ref: `mqtref.u2(%phi, %lambda) %q`
-  - Value: `%q_out = mqtopt.u2(%phi, %lambda) %q_in`
-- **Static variant:** `mqtref.u2(1.5708, 0.785398) %q`
-- **Mixed variant:** `mqtref.u2(%phi, 0.785398) %q`
+  - Quartz: `quartz.u2(%phi, %lambda) %q`
+  - Flux: `%q_out = flux.u2(%phi, %lambda) %q_in`
+- **Static variant:** `quartz.u2(1.5708, 0.785398) %q`
+- **Mixed variant:** `quartz.u2(%phi, 0.785398) %q`
 - **Canonicalization:**
   - `inv u2(φ, λ) → u2(-λ - π, -φ + π)`
   - `u2(0, π) → h`
@@ -598,8 +687,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Swap two qubits
 - **Traits:** `TwoTarget`, `NoParameter`, `Hermitian`
 - **Signatures:**
-  - Ref: `mqtref.swap %q0, %q1`
-  - Value: `%q0_out, %q1_out = mqtopt.swap %q0_in, %q1_in`
+  - Quartz: `quartz.swap %q0, %q1`
+  - Flux: `%q0_out, %q1_out = flux.swap %q0_in, %q1_in`
 - **Matrix:** `[1, 0, 0, 0; 0, 0, 1, 0; 0, 1, 0, 0; 0, 0, 0, 1]` (4x4 matrix)
 
 #### 4.3.21 `iswap` Gate
@@ -607,8 +696,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Swap two qubits with imaginary coefficient
 - **Traits:** `TwoTarget`, `NoParameter`
 - **Signatures:**
-  - Ref: `mqtref.iswap %q0, %q1`
-  - Value: `%q0_out, %q1_out = mqtopt.iswap %q0_in, %q1_in`
+  - Quartz: `quartz.iswap %q0, %q1`
+  - Flux: `%q0_out, %q1_out = flux.iswap %q0_in, %q1_in`
 - **Canonicalization:**
   - `pow(r) iswap → xx_plus_yy(-π * r)`
 - **Matrix:** `[1, 0, 0, 0; 0, 0, 1j, 0; 0, 1j, 0, 0; 0, 0, 0, 1]` (4x4 matrix)
@@ -618,8 +707,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Double control-NOT gate
 - **Traits:** `TwoTarget`, `NoParameter`
 - **Signatures:**
-  - Ref: `mqtref.dcx %q0, %q1`
-  - Value: `%q0_out, %q1_out = mqtopt.dcx %q0_in, %q1_in`
+  - Quartz: `quartz.dcx %q0, %q1`
+  - Flux: `%q0_out, %q1_out = flux.dcx %q0_in, %q1_in`
 - **Canonicalization:**
   - `inv dcx %q0, q1 => dcx %q1, %q0`
 - **Matrix:** `[1, 0, 0, 0; 0, 0, 1, 0; 0, 0, 0, 1; 0, 1, 0, 0]` (4x4 matrix)
@@ -629,8 +718,8 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** Cross-resonance gate with echo
 - **Traits:** `TwoTarget`, `NoParameter`, `Hermitian`
 - **Signatures:**
-  - Ref: `mqtref.ecr %q0, %q1`
-  - Value: `%q0_out, %q1_out = mqtopt.ecr %q0_in, %q1_in`
+  - Quartz: `quartz.ecr %q0, %q1`
+  - Flux: `%q0_out, %q1_out = flux.ecr %q0_in, %q1_in`
 - **Matrix:** `1/sqrt(2) * [0, 0, 1, 1j; 0, 0, 1j, 1; 1, -1j, 0, 0; -1j, 1, 0, 0]` (4x4 matrix)
 
 #### 4.3.24 `rxx` Gate (XX-Rotation)
@@ -638,9 +727,9 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** General two-qubit rotation around XX.
 - **Traits:** `TwoTarget`, `OneParameter`
 - **Signatures:**
-  - Ref: `mqtref.rxx(%theta) %q0, %q1`
-  - Value: `%q0_out, %q1_out = mqtopt.rxx(%theta) %q0_in, %q1_in`
-- **Static variant:** `mqtref.rxx(3.14159) %q0, %q1`
+  - Quartz: `quartz.rxx(%theta) %q0, %q1`
+  - Flux: `%q0_out, %q1_out = flux.rxx(%theta) %q0_in, %q1_in`
+- **Static variant:** `quartz.rxx(3.14159) %q0, %q1`
 - **Canonicalization:**
   - `inv rxx(%theta) => rxx(-%theta)`
   - `pow(r) rxx(%theta) => rxx(r * %theta)` for real r
@@ -653,9 +742,9 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** General two-qubit gate around YY.
 - **Traits:** `TwoTarget`, `OneParameter`
 - **Signatures:**
-  - Ref: `mqtref.ryy(%theta) %q0, %q1`
-  - Value: `%q0_out, %q1_out = mqtopt.ryy(%theta) %q0_in, %q1_in`
-- **Static variant:** `mqtref.ryy(3.14159) %q0, %q1`
+  - Quartz: `quartz.ryy(%theta) %q0, %q1`
+  - Flux: `%q0_out, %q1_out = flux.ryy(%theta) %q0_in, %q1_in`
+- **Static variant:** `quartz.ryy(3.14159) %q0, %q1`
 - **Canonicalization:**
   - `inv ryy(%theta) => ryy(-%theta)`
   - `pow(r) ryy(%theta) => ryy(r * %theta)` for real r
@@ -668,9 +757,9 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** General two-qubit gate around ZX.
 - **Traits:** `TwoTarget`, `OneParameter`
 - **Signatures:**
-  - Ref: `mqtref.rzx(%theta) %q0, %q1`
-  - Value: `%q0_out, %q1_out = mqtopt.rzx(%theta) %q0_in, %q1_in`
-- **Static variant:** `mqtref.rzx(3.14159) %q0, %q1`
+  - Quartz: `quartz.rzx(%theta) %q0, %q1`
+  - Flux: `%q0_out, %q1_out = flux.rzx(%theta) %q0_in, %q1_in`
+- **Static variant:** `quartz.rzx(3.14159) %q0, %q1`
 - **Canonicalization:**
   - `inv rzx(%theta) => rzx(-%theta)`
   - `pow(r) rzx(%theta) => rzx(r * %theta)` for real r
@@ -683,9 +772,9 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** General two-qubit gate around ZZ.
 - **Traits:** `TwoTarget`, `OneParameter`, `Diagonal`
 - **Signatures:**
-  - Ref: `mqtref.rzz(%theta) %q0, %q1`
-  - Value: `%q0_out, %q1_out = mqtopt.rzz(%theta) %q0_in, %q1_in`
-- **Static variant:** `mqtref.rzz(3.14159) %q0, %q1`
+  - Quartz: `quartz.rzz(%theta) %q0, %q1`
+  - Flux: `%q0_out, %q1_out = flux.rzz(%theta) %q0_in, %q1_in`
+- **Static variant:** `quartz.rzz(3.14159) %q0, %q1`
 - **Canonicalization:**
   - `inv rzz(%theta) => rzz(-%theta)`
   - `pow(r) rzz(%theta) => rzz(r * %theta)` for real r
@@ -698,10 +787,10 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** General two-qubit gate around XX+YY.
 - **Traits:** `TwoTarget`, `TwoParameter`
 - \*\*Signatures:
-  - Ref: `mqtref.xx_plus_yy(%theta, %beta) %q0, %q1`
-  - Value: `%q0_out, %q1_out = mqtopt.xx_plus_yy(%theta, %beta) %q0_in, %q1_in`
-- **Static variant:** `mqtref.xx_plus_yy(3.14159, 1.5708) %q0, %q1`
-- **Mixed variant:** `mqtref.xx_plus_yy(%theta, 1.5708) %q0, %q1`
+  - Quartz: `quartz.xx_plus_yy(%theta, %beta) %q0, %q1`
+  - Flux: `%q0_out, %q1_out = flux.xx_plus_yy(%theta, %beta) %q0_in, %q1_in`
+- **Static variant:** `quartz.xx_plus_yy(3.14159, 1.5708) %q0, %q1`
+- **Mixed variant:** `quartz.xx_plus_yy(%theta, 1.5708) %q0, %q1`
 - **Canonicalization:**
   - `inv xx_plus_yy(θ, β) => xx_plus_yy(-θ, β)`
   - `pow(r) xx_plus_yy(θ, β) => xx_plus_yy(r * θ, β)` for real r
@@ -713,10 +802,10 @@ The following canonicalization patterns apply automatically to all gates with th
 - **Purpose:** General two-qubit gate around XX-YY.
 - **Traits:** `TwoTarget`, `TwoParameter`
 - \*\*Signatures:
-  - Ref: `mqtref.xx_minus_yy(%theta, %beta) %q0, %q1`
-  - Value: `%q0_out, %q1_out = mqtopt.xx_minus_yy(%theta, %beta) %q0_in, %q1_in`
-- **Static variant:** `mqtref.xx_minus_yy(3.14159, 1.5708) %q0, %q1`
-- **Mixed variant:** `mqtref.xx_minus_yy(%theta, 1.5708) %q0, %q1`
+  - Quartz: `quartz.xx_minus_yy(%theta, %beta) %q0, %q1`
+  - Flux: `%q0_out, %q1_out = flux.xx_minus_yy(%theta, %beta) %q0_in, %q1_in`
+- **Static variant:** `quartz.xx_minus_yy(3.14159, 1.5708) %q0, %q1`
+- **Mixed variant:** `quartz.xx_minus_yy(%theta, 1.5708) %q0, %q1`
 - **Canonicalization:**
   - `inv xx_minus_yy(θ, β) => xx_minus_yy(-θ, β)`
   - `pow(r) xx_minus_yy(θ, β) => xx_minus_yy(r * θ, β)` for real r
@@ -726,18 +815,16 @@ The following canonicalization patterns apply automatically to all gates with th
 #### 4.3.30 `barrier` Gate
 
 - **Purpose:** Prevents optimization passes from reordering operations across the barrier
-- **Traits:** `NoParameter`
+- **Traits:** `OneTarget`, `TwoTarget`, `NoParameter` (overloaded for different qubit counts)
 - **Signatures:**
-  - Ref: `mqtref.barrier %q0, %q1, ...`
-  - Value: `%q0_out, %q1_out, ... = mqtopt.barrier %q0_in, %q1_in, ...`
+  - Quartz: `quartz.barrier %q0, %q1, ...`
+  - Flux: `%q0_out, %q1_out, ... = flux.barrier %q0_in, %q1_in, ...`
 - **Semantics:** The `barrier` operation implements the `UnitaryOpInterface` and is treated similarly to the identity gate from a unitary perspective. However, it serves as a compiler directive that constrains optimization: operations cannot be moved across a barrier boundary.
 - **Canonicalization:**
   - Barriers with no qubits can be removed
   - `barrier; barrier` on same qubits → single `barrier` (adjacent barriers merge)
   - `inv { barrier } → barrier` (barrier is self-adjoint)
   - `pow(r) { barrier } → barrier` (any power of barrier is still barrier)
-  - `ctrl(%c) { barrier } → barrier` (controlled barrier is still barrier)
-  - `negctrl(%c) { barrier } → barrier` (negatively controlled barrier is still barrier)
 - **Matrix:** Identity matrix of appropriate dimension (2^n × 2^n for n qubits)
 - **UnitaryOpInterface Implementation:** Returns identity matrix, no parameters, no controls, targets are the specified qubits
 
@@ -758,13 +845,13 @@ Modifiers are wrapper operations that transform or extend unitary operations wit
 - **Single-Operation Regions:** Each modifier contains exactly one region with a single block whose only operation implements `UnitaryOpInterface`
 - **Arbitrary Nesting:** Modifiers may be arbitrarily nested
 - **Canonical Ordering:** Canonicalization rules flatten and reorder modifiers to a standard form: `negctrl → ctrl → pow → inv`
-- **Dialect Consistency:** Both `mqtref` and `mqtopt` variants with corresponding semantics
+- **Dialect Consistency:** Both `quartz` and `flux` variants with corresponding semantics
 
 **Value vs. Reference Semantics:**
 
-- **Reference:** Modifiers are statements without results; wrapped operation mutates qubits in-place
-- **Value:** Modifiers thread SSA values through region arguments and yield results
-- **Conversion:** `mqtopt → mqtref` is straightforward; `mqtref → mqtopt` requires adding SSA values to region arguments and yields
+- **Quartz (Reference):** Modifiers are statements without results; wrapped operation mutates qubits in-place
+- **Flux (Value):** Modifiers thread SSA values through region arguments and yield results
+- **Conversion:** `flux → quartz` is straightforward; `quartz → flux` requires adding SSA values to region arguments and yields
 
 ### 5.2 Control Modifiers (`ctrl` and `negctrl`)
 
@@ -772,19 +859,19 @@ Modifiers are wrapper operations that transform or extend unitary operations wit
 
 **Signatures (shown for `ctrl`; `negctrl` is analogous):**
 
-- **Reference:**
+- **Quartz (Reference Semantics):**
 
   ```mlir
-  mqtref.ctrl(%ctrl0, %ctrl1, ...) {
-    mqtref.unitaryOp %target0, %target1, ...
+  quartz.ctrl(%ctrl0, %ctrl1, ...) {
+    quartz.unitaryOp %target0, %target1, ...
   }
   ```
 
-- **Value:**
+- **Flux (Value Semantics):**
   ```mlir
-  %ctrl_outs, %target_outs = mqtopt.ctrl(%ctrl_ins, %target_ins) {
-    %new_targets = mqtopt.unitaryOp %target_ins
-    mqtopt.yield %new_targets
+  %ctrl_outs, %target_outs = flux.ctrl(%ctrl_ins, %target_ins) {
+    %new_targets = flux.unitaryOp %target_ins
+    flux.yield %new_targets
   }
   ```
 
@@ -825,19 +912,19 @@ For negative controls, `|1⟩⟨1|` is replaced with `|0⟩⟨0|`.
 
 **Signatures:**
 
-- **Reference:**
+- **Quartz (Reference Semantics):**
 
   ```mlir
-  mqtref.inv {
-    mqtref.unitaryOp %targets
+  quartz.inv {
+    quartz.unitaryOp %targets
   }
   ```
 
-- **Value:**
+- **Flux (Value Semantics):**
   ```mlir
-  %targets_out = mqtopt.inv(%targets_in) {
-    %new_targets = mqtopt.unitaryOp %targets_in
-    mqtopt.yield %new_targets
+  %targets_out = flux.inv(%targets_in) {
+    %new_targets = flux.unitaryOp %targets_in
+    flux.yield %new_targets
   }
   ```
 
@@ -866,21 +953,21 @@ Given unitary matrix `U`, the inverse is computed as `U† = (U̅)ᵀ` (conjugat
 
 **Signatures:**
 
-- **Reference:**
+- **Quartz (Reference Semantics):**
 
   ```mlir
-  mqtref.pow(%exponent) {
-    mqtref.unitaryOp %targets
+  quartz.pow(%exponent) {
+    quartz.unitaryOp %targets
   }
   ```
 
-  Static variant: `mqtref.pow {exponent = 2.0 : f64} { ... }`
+  Static variant: `quartz.pow {exponent = 2.0 : f64} { ... }`
 
-- **Value:**
+- **Flux (Value Semantics):**
   ```mlir
-  %targets_out = mqtopt.pow(%exponent, %targets_in) {
-    %new_targets = mqtopt.unitaryOp %targets_in
-    mqtopt.yield %new_targets
+  %targets_out = flux.pow(%exponent, %targets_in) {
+    %new_targets = flux.unitaryOp %targets_in
+    flux.yield %new_targets
   }
   ```
 
@@ -915,27 +1002,27 @@ Given unitary matrix `U`, the inverse is computed as `U† = (U̅)ᵀ` (conjugat
 
 ## 6. Box Operation (`box`)
 
-**Purpose:** Ordered, unnamed composition of unitary operations. Represents the application of multiple operations.
+**Purpose:** Scoped composition of unitary operations with timing and optimization constraints. Inspired by OpenQASM 3.0's `box` statement, this operation encapsulates a sequence of operations while constraining how optimizations may interact with them.
 
 **Signatures:**
 
-- **Reference:**
+- **Quartz (Reference Semantics):**
 
   ```mlir
-  mqtref.seq {
-    mqtref.h %q0
-    mqtref.cx %q0, %q1
-    mqtref.rz(1.57) %q1
+  quartz.box {
+    quartz.h %q0
+    quartz.cx %q0, %q1
+    quartz.rz(1.57) %q1
   }
   ```
 
-- **Value:**
+- **Flux (Value Semantics):**
   ```mlir
-  %q0_out, %q1_out = mqtopt.seq(%q0_in, %q1_in) : (!mqtopt.qubit, !mqtopt.qubit) -> (!mqtopt.qubit, !mqtopt.qubit) {
-    %q0_1 = mqtopt.h %q0_in
-    %q0_2, %q1_1 = mqtopt.cx %q0_1, %q1_in
-    %q1_2 = mqtopt.rz(1.57) %q1_1
-    mqtopt.yield %q0_2, %q1_2
+  %q0_out, %q1_out = flux.box(%q0_in, %q1_in) : (!flux.qubit, !flux.qubit) -> (!flux.qubit, !flux.qubit) {
+    %q0_1 = flux.h %q0_in
+    %q0_2, %q1_1 = flux.cx %q0_1, %q1_in
+    %q1_2 = flux.rz(1.57) %q1_1
+    flux.yield %q0_2, %q1_2
   }
   ```
 
@@ -948,9 +1035,9 @@ Given unitary matrix `U`, the inverse is computed as `U† = (U̅)ᵀ` (conjugat
 
 **Canonicalization:**
 
-- Empty sequence elimination: `seq { } → remove`
-- Single-operation inlining: `seq { U } → U`
-- Nested sequence flattening: `seq { seq { U; V }; W } → seq { U; V; W }`
+- Empty sequence elimination: `box { } → remove`
+- Single-operation inlining: `box { U } → U`
+- Nested sequence flattening: `box { box { U; V }; W } → box { U; V; W }`
 
 **Verifiers:**
 
@@ -962,129 +1049,31 @@ Given unitary matrix `U`, the inverse is computed as `U† = (U̅)ᵀ` (conjugat
 The composite unitary is computed as the product of child unitaries in reverse order (right-to-left multiplication, since operations apply left-to-right):
 
 ```
-U_seq = U_n · U_{n-1} · ... · U_1 · U_0
+U_box = U_n · U_{n-1} · ... · U_1 · U_0
 ```
 
 **Conversion Between Dialects:**
 
-- **`mqtopt → mqtref`:** Remove block arguments and results; replace argument uses with direct value references
-- **`mqtref → mqtopt`:** Add block arguments for all used qubits; thread SSA values through operations; add yield with final values
-
-## 7. User-Defined Gates & Matrix/Composite Definitions
-
-**Purpose:** Enable users to define custom gates that can be referenced and instantiated throughout the program, similar to function definitions and calls.
-
-### 7.1 Overview
-
-User-defined gates provide two definition mechanisms:
-
-1. **Matrix-based definitions:** Define a gate via its unitary matrix (efficient for small qubit counts)
-2. **Sequence-based definitions:** Define a gate as a composition of existing operations (more general, better for larger circuits)
-
-Definitions may optionally provide both representations for the same gate, which should be consistent.
-
-**Symbol Management:**
-
-- Gate definitions create symbols (similar to `func.func`)
-- Symbols are referenced by `apply` operations (similar to `func.call`)
-- Symbols have module-level scope and must be unique within a module
-
-### 7.2 Matrix-Based Gate Definitions
-
-**Purpose:** Define a custom gate using its unitary matrix representation.
-
-**Signature:**
-
-```mlir
-mqt.define_matrix_gate @my_gate(%param0: f64, %param1: f64) : (2 qubits) {
-  matrix = dense<[[complex_values]]> : tensor<4x4xcomplex<f64>>
-  // Or symbolic expression attribute
-}
-```
-
-**Open Issues:**
-
-- **TODO:** Define complete syntax for matrix-based definitions
-- **TODO:** Specify format for dynamic (parameterized) matrices using symbolic expressions
-- **TODO:** Define verification rules for matrix unitarity
-- **TODO:** Specify maximum practical qubit count (matrices scale as 2^n × 2^n)
-
-### 7.3 Sequence-Based Gate Definitions
-
-**Purpose:** Define a custom gate as a composition of existing unitary operations.
-
-**Signature (draft):**
-
-```mlir
-mqt.define_composite_gate @my_gate(%param0: f64) : (2 qubits) {
-^bb0(%q0: !mqt.qubit, %q1: !mqt.qubit):
-  %q0_1 = mqt.ry(%param0) %q0
-  %q0_2, %q1_1 = mqt.cx %q0_1, %q1
-  mqt.return %q0_2, %q1_1
-}
-```
-
-**Open Issues:**
-
-- **TODO:** Define complete syntax with proper dialect prefix
-- **TODO:** Specify parameter binding mechanism
-- **TODO:** Define qubit argument conventions
-- **TODO:** Clarify relationship with `seq` operation
-- **TODO:** Specify whether recursive definitions are allowed
-
-### 7.4 Gate Application (`apply`)
-
-**Purpose:** Instantiate a user-defined gate by referencing its symbol.
-
-**Signature (draft):**
-
-```mlir
-mqtref.apply @my_gate(%runtime_param) %q0, %q1
-```
-
-**Open Issues:**
-
-- **TODO:** Complete specification of `apply` operation
-- **TODO:** Define parameter passing mechanisms (static vs. dynamic)
-- **TODO:** Specify how `apply` implements `UnitaryOpInterface`
-- **TODO:** Define inlining behavior and thresholds
-- **TODO:** Specify linking semantics for multi-module programs
-
-### 7.5 Design Considerations
-
-**Matrix vs. Sequence Trade-offs:**
-
-- **Matrix definitions:**
-  - Pros: Direct representation, efficient evaluation for small gates, exact
-  - Cons: Exponential space complexity, no structure for optimization
-
-- **Sequence definitions:**
-  - Pros: Scalable, exposes structure for optimization, composable
-  - Cons: May require complex unitary extraction, potential overhead
-
-**Consistency Requirements:**
-
-- Gates providing both matrix and sequence must be verified for consistency
-- **Numerical Tolerance:** Consistency verification should use a tolerance close to machine precision (e.g., `1e-14` for double precision)
-- **Precedence:** When both matrix and sequence representations are provided, the **matrix representation takes precedence** for unitary extraction. The sequence is treated as a suggestion for decomposition but the matrix defines the ground truth semantics.
+- **`flux → quartz`:** Remove block arguments and results; replace argument uses with direct value references
+- **`quartz → flux`:** Add block arguments for all used qubits; thread SSA values through operations; add yield with final values
 
 ## 8. Builder API
 
-**Purpose:** Provide a programmatic API for constructing quantum programs, replacing FileCheck-based test construction with type-safe builders.
+**Purpose:** Provide a programmatic API for constructing quantum programs within the MQT MLIR infrastructure. The builder APIs offer type-safe, ergonomic interfaces for both Quartz and Flux dialects.
 
 ### 8.1 Design Goals
 
 - **Ergonomic:** Easy chaining and nesting of operations
 - **Type-safe:** Leverage C++ type system to catch errors at compile time
-- **Dialect-aware:** Separate builders for `mqtref` and `mqtopt`
+- **Dialect-aware:** Separate builders for Quartz and Flux
 - **Testable:** Enable structural comparison of circuits in unit tests
 
-### 8.2 Reference Semantics Builder (Draft API)
+### 8.2 Quartz Builder (Reference Semantics)
 
 ```c++
-class RefQuantumProgramBuilder {
+class QuartzProgramBuilder {
 public:
-  RefQuantumProgramBuilder(mlir::MLIRContext *context);
+  QuartzProgramBuilder(mlir::MLIRContext *context);
 
   // Initialization
   void initialize();
@@ -1096,81 +1085,81 @@ public:
   mlir::Value allocBits(size_t count);  // Classical register (returns memref)
 
   // Single-qubit gates (return *this for chaining)
-  RefQuantumProgramBuilder& h(mlir::Value q);
-  RefQuantumProgramBuilder& x(mlir::Value q);
-  RefQuantumProgramBuilder& y(mlir::Value q);
-  RefQuantumProgramBuilder& z(mlir::Value q);
-  RefQuantumProgramBuilder& s(mlir::Value q);
-  RefQuantumProgramBuilder& sdg(mlir::Value q);
-  RefQuantumProgramBuilder& t(mlir::Value q);
-  RefQuantumProgramBuilder& tdg(mlir::Value q);
-  RefQuantumProgramBuilder& sx(mlir::Value q);
-  RefQuantumProgramBuilder& sxdg(mlir::Value q);
+  QuartzProgramBuilder& h(mlir::Value q);
+  QuartzProgramBuilder& x(mlir::Value q);
+  QuartzProgramBuilder& y(mlir::Value q);
+  QuartzProgramBuilder& z(mlir::Value q);
+  QuartzProgramBuilder& s(mlir::Value q);
+  QuartzProgramBuilder& sdg(mlir::Value q);
+  QuartzProgramBuilder& t(mlir::Value q);
+  QuartzProgramBuilder& tdg(mlir::Value q);
+  QuartzProgramBuilder& sx(mlir::Value q);
+  QuartzProgramBuilder& sxdg(mlir::Value q);
 
   // Parametric single-qubit gates
-  RefQuantumProgramBuilder& rx(double theta, mlir::Value q);
-  RefQuantumProgramBuilder& rx(mlir::Value theta, mlir::Value q);  // Dynamic
-  RefQuantumProgramBuilder& ry(double theta, mlir::Value q);
-  RefQuantumProgramBuilder& ry(mlir::Value theta, mlir::Value q);
-  RefQuantumProgramBuilder& rz(double theta, mlir::Value q);
-  RefQuantumProgramBuilder& rz(mlir::Value theta, mlir::Value q);
-  RefQuantumProgramBuilder& p(double lambda, mlir::Value q);
-  RefQuantumProgramBuilder& p(mlir::Value lambda, mlir::Value q);
+  QuartzProgramBuilder& rx(double theta, mlir::Value q);
+  QuartzProgramBuilder& rx(mlir::Value theta, mlir::Value q);  // Dynamic
+  QuartzProgramBuilder& ry(double theta, mlir::Value q);
+  QuartzProgramBuilder& ry(mlir::Value theta, mlir::Value q);
+  QuartzProgramBuilder& rz(double theta, mlir::Value q);
+  QuartzProgramBuilder& rz(mlir::Value theta, mlir::Value q);
+  QuartzProgramBuilder& p(double lambda, mlir::Value q);
+  QuartzProgramBuilder& p(mlir::Value lambda, mlir::Value q);
 
   // Two-qubit gates
-  RefQuantumProgramBuilder& swap(mlir::Value q0, mlir::Value q1);
-  RefQuantumProgramBuilder& iswap(mlir::Value q0, mlir::Value q1);
-  RefQuantumProgramBuilder& dcx(mlir::Value q0, mlir::Value q1);
-  RefQuantumProgramBuilder& ecr(mlir::Value q0, mlir::Value q1);
+  QuartzProgramBuilder& swap(mlir::Value q0, mlir::Value q1);
+  QuartzProgramBuilder& iswap(mlir::Value q0, mlir::Value q1);
+  QuartzProgramBuilder& dcx(mlir::Value q0, mlir::Value q1);
+  QuartzProgramBuilder& ecr(mlir::Value q0, mlir::Value q1);
   // ... other two-qubit gates
 
   // Convenience gates (inspired by qc::QuantumComputation API)
   // Standard controlled gates
-  RefQuantumProgramBuilder& cx(mlir::Value ctrl, mlir::Value target);  // CNOT
-  RefQuantumProgramBuilder& cy(mlir::Value ctrl, mlir::Value target);
-  RefQuantumProgramBuilder& cz(mlir::Value ctrl, mlir::Value target);
-  RefQuantumProgramBuilder& ch(mlir::Value ctrl, mlir::Value target);
-  RefQuantumProgramBuilder& crx(double theta, mlir::Value ctrl, mlir::Value target);
-  RefQuantumProgramBuilder& cry(double theta, mlir::Value ctrl, mlir::Value target);
-  RefQuantumProgramBuilder& crz(double theta, mlir::Value ctrl, mlir::Value target);
+  QuartzProgramBuilder& cx(mlir::Value ctrl, mlir::Value target);  // CNOT
+  QuartzProgramBuilder& cy(mlir::Value ctrl, mlir::Value target);
+  QuartzProgramBuilder& cz(mlir::Value ctrl, mlir::Value target);
+  QuartzProgramBuilder& ch(mlir::Value ctrl, mlir::Value target);
+  QuartzProgramBuilder& crx(double theta, mlir::Value ctrl, mlir::Value target);
+  QuartzProgramBuilder& cry(double theta, mlir::Value ctrl, mlir::Value target);
+  QuartzProgramBuilder& crz(double theta, mlir::Value ctrl, mlir::Value target);
 
   // Multi-controlled gates (arbitrary number of controls)
-  RefQuantumProgramBuilder& mcx(mlir::ValueRange ctrls, mlir::Value target);  // Toffoli, etc.
-  RefQuantumProgramBuilder& mcy(mlir::ValueRange ctrls, mlir::Value target);
-  RefQuantumProgramBuilder& mcz(mlir::ValueRange ctrls, mlir::Value target);
-  RefQuantumProgramBuilder& mch(mlir::ValueRange ctrls, mlir::Value target);
+  QuartzProgramBuilder& mcx(mlir::ValueRange ctrls, mlir::Value target);  // Toffoli, etc.
+  QuartzProgramBuilder& mcy(mlir::ValueRange ctrls, mlir::Value target);
+  QuartzProgramBuilder& mcz(mlir::ValueRange ctrls, mlir::Value target);
+  QuartzProgramBuilder& mch(mlir::ValueRange ctrls, mlir::Value target);
 
   // Modifiers (take lambdas for body construction)
-  RefQuantumProgramBuilder& ctrl(mlir::ValueRange ctrls,
-                                   std::function<void(RefQuantumProgramBuilder&)> body);
-  RefQuantumProgramBuilder& negctrl(mlir::ValueRange ctrls,
-                                      std::function<void(RefQuantumProgramBuilder&)> body);
-  RefQuantumProgramBuilder& inv(std::function<void(RefQuantumProgramBuilder&)> body);
-  RefQuantumProgramBuilder& pow(double exponent,
-                                 std::function<void(RefQuantumProgramBuilder&)> body);
-  RefQuantumProgramBuilder& pow(mlir::Value exponent,
-                                 std::function<void(RefQuantumProgramBuilder&)> body);
+  QuartzProgramBuilder& ctrl(mlir::ValueRange ctrls,
+                                   std::function<void(QuartzProgramBuilder&)> body);
+  QuartzProgramBuilder& negctrl(mlir::ValueRange ctrls,
+                                      std::function<void(QuartzProgramBuilder&)> body);
+  QuartzProgramBuilder& inv(std::function<void(QuartzProgramBuilder&)> body);
+  QuartzProgramBuilder& pow(double exponent,
+                                 std::function<void(QuartzProgramBuilder&)> body);
+  QuartzProgramBuilder& pow(mlir::Value exponent,
+                                 std::function<void(QuartzProgramBuilder&)> body);
 
-  // Sequence
-  RefQuantumProgramBuilder& seq(std::function<void(RefQuantumProgramBuilder&)> body);
+  // Box (scoped sequence with optimization constraints)
+  QuartzProgramBuilder& box(std::function<void(QuartzProgramBuilder&)> body);
 
   // Gate definitions
   void defineMatrixGate(mlir::StringRef name, size_t numQubits,
                         mlir::DenseElementsAttr matrix);
   void defineCompositeGate(mlir::StringRef name, size_t numQubits,
                            mlir::ArrayRef<mlir::Type> paramTypes,
-                           std::function<void(RefQuantumProgramBuilder&,
+                           std::function<void(QuartzProgramBuilder&,
                                             mlir::ValueRange qubits,
                                             mlir::ValueRange params)> body);
 
   // Apply custom gate
-  RefQuantumProgramBuilder& apply(mlir::StringRef gateName,
+  QuartzProgramBuilder& apply(mlir::StringRef gateName,
                                    mlir::ValueRange targets,
                                    mlir::ValueRange params = {});
 
   // Measurement and reset
   mlir::Value measure(mlir::Value q);
-  RefQuantumProgramBuilder& reset(mlir::Value q);
+  QuartzProgramBuilder& reset(mlir::Value q);
 
   // Finalization
   mlir::ModuleOp finalize();
@@ -1184,23 +1173,23 @@ private:
 };
 ```
 
-### 8.3 Value Semantics Builder
+### 8.3 Flux Builder (Value Semantics)
 
-The `OptQuantumProgramBuilder` follows the same design principles as the reference semantics builder but with SSA value threading:
+The `FluxProgramBuilder` follows the same design principles as the Quartz builder but with SSA value threading:
 
 **Key Differences:**
 
 - **Return Values:** All gate operations return new SSA values representing the output qubits
 - **Threading:** Operations consume input qubits and produce output qubits
 - **Region Construction:** Modifiers and box operations handle proper argument threading and yield insertion
-- **Type Signatures:** Uses `!mqtopt.qubit` instead of `!mqtref.qubit`
+- **Type Signatures:** Uses `!flux.qubit` instead of `!quartz.qubit`
 
 **Example API Sketch:**
 
 ```c++
-class OptQuantumProgramBuilder {
+class FluxProgramBuilder {
 public:
-  OptQuantumProgramBuilder(mlir::MLIRContext *context);
+  FluxProgramBuilder(mlir::MLIRContext *context);
 
   // Single-qubit gates return new qubit values
   mlir::Value h(mlir::Value q_in);
@@ -1212,22 +1201,23 @@ public:
   std::pair<mlir::Value, mlir::Value> swap(mlir::Value q0_in, mlir::Value q1_in);
 
   // Convenience multi-controlled gates
-  mlir::ValueRange mcx(mlir::ValueRange ctrl_ins, mlir::Value target_in);
+  mlir::Value mcx(mlir::ValueRange ctrl_ins, mlir::Value target_in,
+                   mlir::ValueRange& ctrl_outs);
 
   // Modifiers handle value threading automatically
   mlir::ValueRange ctrl(mlir::ValueRange ctrl_ins, mlir::ValueRange target_ins,
-                         std::function<mlir::ValueRange(OptQuantumProgramBuilder&,
+                         std::function<mlir::ValueRange(FluxProgramBuilder&,
                                                         mlir::ValueRange)> body);
 
-  // ... similar methods to RefQuantumProgramBuilder
+  // ... similar methods to QuartzProgramBuilder
 };
 ```
 
-### 8.4 Usage Example
+### 8.4 Usage Examples
 
 ```c++
-// Example: Build Bell state preparation with reference semantics
-RefQuantumProgramBuilder builder(context);
+// Example: Build Bell state preparation with Quartz dialect
+QuartzProgramBuilder builder(context);
 builder.initialize();
 
 auto q0 = builder.qubit(0);
@@ -1247,7 +1237,7 @@ auto module = builder.finalize();
 
 ```c++
 // Example: Build Toffoli gate with multi-controlled convenience
-RefQuantumProgramBuilder builder(context);
+QuartzProgramBuilder builder(context);
 builder.initialize();
 
 auto q0 = builder.qubit(0);
@@ -1263,7 +1253,7 @@ builder.ctrl({q0, q1}, [&](auto& b) {
 });
 ```
 
-### 9. Testing Strategy
+## 9. Testing Strategy
 
 ### 9.1 Philosophy
 
@@ -1333,15 +1323,15 @@ TEST(QuantumDialectTest, InverseInverseCanonicalizes) {
 // RUN: mqt-opt %s | mqt-opt | FileCheck %s
 
 // CHECK-LABEL: func @nested_modifiers
-func.func @nested_modifiers(%q: !mqtref.qubit) {
-  // CHECK: mqtref.ctrl
-  // CHECK-NEXT: mqtref.pow
-  // CHECK-NEXT: mqtref.inv
-  // CHECK-NEXT: mqtref.x
-  mqtref.ctrl %c {
-    mqtref.pow {exponent = 2.0 : f64} {
-      mqtref.inv {
-        mqtref.x %q
+func.func @nested_modifiers(%q: !quartz.qubit) {
+  // CHECK: quartz.ctrl
+  // CHECK-NEXT: quartz.pow
+  // CHECK-NEXT: quartz.inv
+  // CHECK-NEXT: quartz.x
+  quartz.ctrl %c {
+    quartz.pow {exponent = 2.0 : f64} {
+      quartz.inv {
+        quartz.x %q
       }
     }
   }
@@ -1358,19 +1348,19 @@ func.func @nested_modifiers(%q: !mqtref.qubit) {
 
 ### 9.4 Integration Tests
 
-Integration tests should cover end-to-end compilation scenarios, focusing on real-world usage patterns and interoperability with existing quantum software ecosystems.
+Integration tests validate the complete MQT MLIR compilation infrastructure, covering end-to-end scenarios from frontend ingestion through optimization to backend emission.
 
 **Test Coverage:**
 
 1. **Frontend Translation:**
-   - **Qiskit → MLIR:** Convert Qiskit `QuantumCircuit` objects to MQTRef/MQTOpt dialect
+   - **Qiskit → MLIR:** Convert Qiskit `QuantumCircuit` objects to Quartz/Flux dialects
    - **OpenQASM 3.0 → MLIR:** Parse OpenQASM 3.0 source and lower to MLIR
-   - **`qc::QuantumComputation` → MLIR:** Migrate from existing MQT Core IR to MLIR representation
+   - **`qc::QuantumComputation` → MLIR:** Translate from existing MQT Core IR to MLIR representation
 
 2. **Compiler Pipeline Integration:**
    - Execute default optimization pass pipeline on translated circuits
    - Verify correctness through unitary equivalence checks
-   - Test dialect conversions (MQTRef ↔ MQTOpt) within the pipeline
+   - Test dialect conversions (Quartz ↔ Flux) within the pipeline
    - Validate canonicalization and optimization passes
 
 3. **Backend Translation:**
@@ -1386,18 +1376,20 @@ Integration tests should cover end-to-end compilation scenarios, focusing on rea
 
 ## 10. Implementation Roadmap
 
+**Timeline:** 14-week implementation plan to complete the MQT MLIR compilation infrastructure.
+
 ### Phase 1: Foundation (Weeks 1-2)
 
 **Goal:** Establish core infrastructure
 
 - **Week 1:**
-  - Define core type system (`mqtref.qubit`, `mqtopt.qubit`)
+  - Define core type system (`quartz.qubit`, `flux.qubit`)
   - Implement `UnitaryOpInterface` definition
   - Set up basic CMake integration and build system
   - Establish GoogleTest framework for unit testing
 
 - **Week 2:**
-  - Create basic builder infrastructure (RefQuantumProgramBuilder skeleton)
+  - Create basic builder infrastructure (QuartzProgramBuilder skeleton)
   - Implement resource operations (alloc, dealloc, qubit reference)
   - Add measurement and reset operations
   - Basic parser/printer for qubit types
@@ -1575,13 +1567,3 @@ Integration tests should cover end-to-end compilation scenarios, focusing on rea
 - **Buffer Time:** Phase 13 provides 1-week buffer for unforeseen issues
 - **Early Testing:** Integration tests should begin in Phase 9 to catch issues early
 - **Incremental Delivery:** Each phase produces a working subset to enable testing
-
-## Document Metadata
-
-- **Version:** 0.2 (Draft)
-- **Last Updated:** [Current date will be filled automatically]
-- **Status:** Request for Comments
-- **Authors:** [TODO: Add authors]
-- **Reviewers:** [TODO: Add reviewers]
-- **Target MLIR Version:** LLVM 21.0+
-- **Target Completion:** 14 weeks from start date
