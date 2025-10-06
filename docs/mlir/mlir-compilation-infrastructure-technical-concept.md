@@ -1452,6 +1452,104 @@ Integration tests validate the complete MQT MLIR compilation infrastructure, cov
    - Circuits with measurements and classical control flow
    - Large-scale circuits (100+ qubits, 1000+ gates)
 
+### 9.5 Default Compiler Passes
+
+**Purpose:** Define a standard set of compiler passes that should be applied by default to ensure consistent, optimized IR across the MQT MLIR infrastructure.
+
+**Rationale:**
+
+The MQT MLIR dialects define extensive canonicalization patterns for all operations (base gates, modifiers, boxes, and custom gates).
+To ensure these canonicalization are consistently applied and to maintain clean IR for downstream passes, certain compiler passes should be run by default in most compilation scenarios.
+
+**Recommended Default Passes:**
+
+1. **Canonicalization Pass (`-canonicalize`):**
+   - **Purpose:** Apply all canonicalization patterns defined in the dialect operations
+   - **Benefits:**
+     - Simplifies IR by applying algebraic identities (e.g., `inv { inv { U } } → U`)
+     - Normalizes modifier ordering to canonical form (`negctrl → ctrl → pow → inv`)
+     - Merges adjacent compatible operations (e.g., `rx(a); rx(b) → rx(a+b)`)
+     - Eliminates identity operations and no-ops
+     - Hoists constants to the top of modules/functions
+     - Enables pattern matching for subsequent optimization passes
+   - **When to Apply:** After every major transformation pass, and as part of the default pipeline
+   - **Justification:** Given the rich set of canonicalization rules defined throughout this specification, this pass is essential to maintaining normalized IR
+
+2. **Remove Dead Values Pass (`-remove-dead-values`):**
+   - **Purpose:** Eliminate unused SSA values and operations with no side effects
+   - **Benefits:**
+     - Cleans up intermediate values from transformations
+     - Reduces IR size and complexity
+     - Improves readability of generated IR
+     - Essential for Flux dialect (SSA-based) to remove unused qubit values
+   - **When to Apply:** After canonicalization, as part of the default pipeline
+   - **Justification:** Particularly important in Flux dialect where value threading can create unused intermediate values
+
+**Default Pass Pipeline:**
+
+For most compilation scenarios, the following minimal pass pipeline should be applied:
+
+```bash
+mqt-opt \
+  --canonicalize \
+  --remove-dead-values \
+  input.mlir
+```
+
+For more aggressive optimization, this can be extended:
+
+```bash
+mqt-opt \
+  --canonicalize \
+  --remove-dead-values \
+  --canonicalize \
+  input.mlir
+```
+
+**Testing Implications:**
+
+- **Consistent Test IR:** Running default passes ensures that constants are always defined at the top of modules in test files, improving readability and consistency
+- **Normalized Forms:** Tests can rely on canonical forms (e.g., modifier ordering) rather than handling all possible equivalent representations
+- **Reduced Brittleness:** Tests that check IR structure benefit from normalized representations with dead code eliminated
+
+**Integration with Custom Passes:**
+
+Custom optimization passes should be inserted into pipelines alongside the default passes:
+
+```bash
+mqt-opt \
+  --canonicalize \
+  --remove-dead-values \
+  --custom-optimization-pass \
+  --canonicalize \
+  --remove-dead-values \
+  input.mlir
+```
+
+This pattern ensures that custom passes operate on normalized IR and that their outputs are subsequently normalized.
+
+**Builder API Integration:**
+
+The builder APIs may optionally apply these passes automatically when `finalize()` is called, controlled by a configuration flag:
+
+```c++
+QuartzProgramBuilder builder(context);
+builder.setApplyDefaultPasses(true);  // Enable automatic canonicalization
+// ... build circuit ...
+auto module = builder.finalize();  // Applies canonicalize + remove-dead-values
+```
+
+**Future Considerations:**
+
+As the dialect matures, additional passes may be added to the default pipeline:
+
+- Constant folding and propagation
+- Common subexpression elimination (for parameterized gates)
+- Gate fusion optimizations
+- Circuit optimization passes (commutation-based reordering)
+
+However, the core default passes (`-canonicalize` and `-remove-dead-values`) should remain stable and universally applicable.
+
 ## 10. Implementation Roadmap
 
 **Timeline:** 14-week implementation plan to complete the MQT MLIR compilation infrastructure.
