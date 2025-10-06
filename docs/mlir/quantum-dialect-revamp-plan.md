@@ -63,8 +63,6 @@ mqtopt.dealloc %q : mqtopt.Qubit
 Canonicalization (patterns / folds):
 
 - Remove unused `alloc` (DCE).
-- Elide `dealloc` proven by lifetime analysis. // TODO
-- Merge duplicate `qubit` references if semantics allow. // TODO
 
 ### 3.2 Measurement and Reset
 
@@ -101,8 +99,9 @@ Interface methods (conceptual API):
 - `getNumParams() -> size_t`
 - `getParameter(i) -> ParameterDescriptor`
   - `ParameterDescriptor`: `isStatic()`, `getConstantValue()?`, `getValueOperand()`
-- `getInput(i)` / `getOutput(i)` (value semantics distinct; reference semantics output = input)
-- `mapOutputToInput(i) -> i` (pure unitaries) // TODO: should map mlir::Value to mlir::Value. should include getters for targets and controls.
+- `getInput(i) -> mlir::Value` / `getOutput(i) -> mlir::Value` (value semantics distinct; reference semantics output = input)
+- `getOutputForInput(mlir::Value) -> mlir::Value` (value semantics distinct; reference semantics output = input)
+- `getInputForOutput(mlir::Value) -> mlir::Value` (value semantics distinct; reference semantics output = input)
 - `hasStaticUnitary() -> bool`
 - `tryGetStaticMatrix() -> Optional<Attribute>` (2D tensor with shape (2^n, 2^n) and element type `complex<f64>`; written concretely for fixed n as e.g. `tensor<4x4xcomplex<f64>>`)
 - `isInverted() -> bool`
@@ -143,22 +142,14 @@ Control Extension:
 
 For every named base gate op G:
 
-// TODO: mixed dynamic and static parameters should be clearly explained and demonstrated here. example from existing code: `mqtref.u(%c0_f64 static [1.00000e-01, 2.00000e-01] mask [true, false, true]) %q0`
-
 - Purpose: Apply the unitary for gate G to its target qubit(s).
 - Signature (Reference): `mqtref.G(param_list?) %q[,...] : <param types..., qubit types>` (no results)
 - Signature (Value): `%out_targets = mqtopt.G(param_list?) %in_targets : (<param types..., qubit types>) -> <qubit types>`
 - Assembly Format: `G(<params?>) <targets>`; params in parentheses; qubits as trailing operands.
-- Builder Variants: // TODO: types should be inferred automatically based on `InferTypeOpInterface`
-  - `build(builder, loc, resultTypes, paramOperands, qubitOperands)` (value)
-  - `build(builder, loc, qubitOperands, paramAttrs)` (reference)
-  - Convenience: static param overloads generate attribute parameters.
 - Interface Implementation Notes:
   - `getNumTargets()` fixed by trait.
   - Parameters enumerated in declared order; static vs dynamic via attribute vs operand.
   - `hasStaticUnitary()` true iff all parameters static.
-  - `mapOutputToInput(i) = i`. // TODO
-- Conversion (ref↔value): Reference variant lowers to value variant with SSA replacement; reverse drops result.
 
 ### 4.3 Gate List
 
@@ -762,72 +753,98 @@ Matrix-based definitions may be fully static or might be based on symbolic expre
 Fully static matrices may be specified as dense array attributes.
 Any dynamic definitions must be (somehow) specified as symbolic expressions.
 
-## 9. Parser & Builder Sugar
+## 8. Builder API
 
-### 9.1 Sugar Expansions
+To make testing easier, a Builder API shall be provided similar to the `mlir::OpBuilder`.
+It should allow for easy chaining of operations including modifiers.
+The following operations shall be supported:
 
-- `cx %c, %t` → `mqtopt.ctrl %c { %t_out = mqtopt.x %t }` (value)
-- `cz %c, %t` → `ctrl %c { z %t }`
-- `ccx %c0, %c1, %t` → `ctrl %c0, %c1 { x %t }`
-  Parser lowers sugar to canonical IR; printer may re-sugar canonical forms that match patterns.
+- dynamic qubit allocation
+- static qubit allocation
+- qubit register allocation
+- classical (bit) register allocation
+- all base gates defined above
+- modifiers: `ctrl`, `negctrl`, `inv`, `pow`
+- `seq`
+- `apply`
+- gate definitions (matrix and sequence based)
 
-### 9.2 Fluent Builder API (Conceptual)
+Such a builder should be defined for both the reference semantics dialect as well as the value semantics dialect.
+A draft for an API of the reference semantics dialect is given below.
 
-Examples:
-
+```c++
+class QuantumProgramBuilder {
+public:
+  QuantumProgramBuilder(mlir::MLIRContext *context);
+  // Initialize
+  void initialize();
+  // Memory management
+  mlir::Value allocateStaticQubit(size_t index);
+  mlir::Value allocateDynamicQubit();
+  mlir::Value allocateQubitRegister(size_t size);
+  mlir::Value allocateBitRegister(size_t size);
+  // Base gates
+  QuantumProgramBuilder& h(mlir::Value target);
+  QuantumProgramBuilder& x(mlir::Value target);
+  QuantumProgramBuilder& y(mlir::Value target);
+  QuantumProgramBuilder& z(mlir::Value target);
+  /// ...
+  // Modifiers
+  QuantumProgramBuilder& ctrl(mlir::ValueRange controls, std::function<void(QuantumProgramBuilder&)> body);
+  QuantumProgramBuilder& negctrl(mlir::ValueRange controls, std::function<void(QuantumProgramBuilder&)> body);
+  QuantumProgramBuilder& inv(std::function<void(QuantumProgramBuilder&)> body);
+  QuantumProgramBuilder& pow(mlir::Value exponent, std::function<void(QuantumProgramBuilder&)> body);
+  // Sequence
+  QuantumProgramBuilder& seq(std::function<void(QuantumProgramBuilder&)> body);
+  // Gate definitions
+  void defineMatrixGate(mlir::StringRef name, size_t numQubits, mlir::ArrayAttr matrix);
+  void defineCompositeGate(mlir::StringRef name, size_t numQubits, std::function<void(QuantumProgramBuilder&)> body);
+  // Apply
+  QuantumProgramBuilder& apply(mlir::StringRef gateName, mlir::ValueRange targets, mlir::ValueRange parameters);
+  // Finalize
+  mlir::ModuleOp finalize();
+private:
+  mlir::OpBuilder builder;
+  mlir::ModuleOp module;
+  // ...
+};
 ```
-withControls({c1,c2}).gate("x").on(t)
-withNegControls({n}).gate("rz").param(phi).on(t)
-withPow(3).gate("h").on(q)
-withInv().gate("u").params(a,b,c).on(q)
-sequence({}) RAII style for `seq`
-defineMatrixGate("myPhase").params({lambda}).targets(1).matrix(attr)
-defineCompositeGate("entang").params({theta}).targets(2).body([]{...})
-apply("entang").params(theta).on(q0,q1)
+
+This API should turn out to be very similar to the existing MQT Core IR `qc::QuantumComputation` API and may, eventually, replace it.
+It could be beneficial to design this as a C API to ensure portability to other languages, but this is not a priority.
+
+## 9. Testing Strategy
+
+### 9.1 Unit Tests
+
+Priority shift: structural & semantic equivalence via builders (googletest) > textual pattern checks.
+Use IR builders to construct original & expected forms, run normalization + optional passes, then compare via:
+
+- Shape / op sequence equivalence (ignoring SSA names).
+- Control & target counts via `UnitaryOpInterface`.
+- Optional unitary matrix equivalence (numerical tolerance) for small ops.
+
+Unit tests should be written for all operations, modifiers, and gate definitions.
+All canonization rules and folds should be tested. (e.g., `inv inv U => U`)
+Negative tests should be written for all errors.
+
+### 9.2 Parser / Printer Smoke (Minimal Textual Tests)
+
+- Round-trip for: base gates, each modifier, nested modifier chain, matrix unitary, composite definition, sequence.
+- FileCheck limited to presence/absence of key ops (avoid brittle SSA checks).
+
+Example smoke test snippet:
+
+```mlir
+// CHECK-LABEL: func @nested_mods
+func.func @nested_mods(%c: !mqtref.qubit, %n: !mqtref.qubit, %t: !mqtref.qubit) {
+  mqtref.ctrl %c {
+    mqtref.negctrl %n {
+      mqtref.pow {exponent = 2.0 : f64} {
+        mqtref.inv { mqtref.x %t }
+      }
+    }
+  }
+  return
+}
 ```
-
-Chaining order auto-normalized to canonical modifier order.
-
-## 10. Testing Strategy
-
-- Structural: verify canonical modifier order and flattening.
-- Matrix correctness: `U†U = I` for static extractions.
-- Interface conformance: each op's counts (targets, controls, params) correct; mapping output→input identity for pure unitaries.
-- Canonicalization idempotence: run pass twice, IR stable.
-- Sugar round-trip: parse sugar → canonical → print (optionally sugar) with equivalence.
-- Folding tests: `rx(0)`, `pow(1){}`, `pow(0){}`, `inv(inv(U))`.
-- Negative exponent normalization tests.
-- Sequence inversion correctness via static matrix comparison for small systems.
-- Apply inlining & identity elimination tests.
-- Negative tests: arity mismatch, invalid matrix dimension, non-unitary matrix, duplicate symbol definition, parameter count mismatch.
-
-## 11. Integrated Canonicalization Rules Summary
-
-(Definitions live inline above; this section aggregates references.)
-
-- Base Gates: parameter folds, identity elimination, specialization to named gates.
-- `negctrl`: flatten & remove empty.
-- `ctrl`: flatten, remove empty, distribute over `seq` when beneficial.
-- `pow`: normalize negatives, remove trivial exponents, combine nested powers.
-- `inv`: double-inversion removal, specialize to inverses/self-adjoint forms.
-- Modifier Ordering: reorder to `negctrl → ctrl → pow → inv`.
-- `seq`: flatten, remove empty, inline single-op.
-- `apply`: inline trivial composite, fold identities, merge repeated static applies.
-- Sugar: lower to canonical, optional re-sugar on print.
-
-## 12. Conclusions and Future Work
-
-Resolved:
-
-- Unified `UnitaryExpr` abstraction with full modifier and composition support.
-- Static + dynamic parameter integration and robust interface methods.
-- Canonical nested modifier ordering and explicit rewrite rules.
-- User-defined gates (matrix & composite) plus unified `apply` op.
-- Dual semantics (`mqtref`, `mqtopt`) standardized.
-
-Future Work (concise):
-
-- Basis decomposition (e.g., KAK, ZX-assisted) using `UnitaryExpr` graphs.
-- Shared control extraction & factoring.
-- Symbolic algebra simplifications (parameter expression normalization).
-- Hardware mapping leveraging `static_qubit` references.
