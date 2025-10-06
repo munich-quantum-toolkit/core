@@ -33,24 +33,28 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
 
   /**
    * @brief Checks if the uses of a qubit allocated by `allocQubit` is disjoint
-   * from the uses of a qubit involved in a deallocation.
+   * from the uses of a qubit involved in a sink (dealloc or reset) operation.
    * @param allocQubit The allocated qubit to check.
-   * @param dealloc The deallocation operation to check against.
+   * @param sink The sink operation that trashes a qubit.
    * @return `true` if the qubits are disjoint, `false` otherwise.
    */
-  static bool areQubitsDisjoint(mlir::Value allocQubit,
-                                DeallocQubitOp dealloc) {
+  static llvm::DenseSet<mlir::Operation*>
+  areQubitsDisjoint(mlir::Value allocQubit, mlir::Operation* sink,
+                    llvm::DenseSet<mlir::Operation*>& nonDisjointGates) {
     // If traversing the def-use chain from the "alloc" qubit never reaches the
     // "dealloc" qubit, they are disjoint.
+    llvm::DenseSet<mlir::Operation*> reachableSinks;
     llvm::SmallVector<mlir::Operation*> toVisit{allocQubit.getUsers().begin(),
                                                 allocQubit.getUsers().end()};
+    llvm::DenseSet<mlir::Operation*> visited;
     while (!toVisit.empty()) {
       auto* current = toVisit.back();
       toVisit.pop_back();
+      visited.insert(current);
 
       // If we reach the dealloc operation, the qubits are not disjoint.
-      if (current == dealloc) {
-        return false;
+      if (mlir::isa<DeallocQubitOp>(current)) {
+        reachableSinks.insert(current);
       }
 
       if (auto yieldOp = mlir::dyn_cast<mlir::scf::YieldOp>(current)) {
@@ -61,12 +65,48 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
       }
 
       // Add all users of the current operation to the visit list.
-      for (auto* user : current->getUsers()) {
-        toVisit.push_back(user);
+      for (auto result : current->getResults()) {
+        for (auto* user : result.getUsers()) {
+          if (visited.contains(user)) {
+            continue;
+          }
+          toVisit.push_back(user);
+        }
       }
     }
 
-    return true;
+    return reachableSinks;
+  }
+
+  static DeallocQubitOp findDealloc(mlir::Value qubit) {
+    mlir::Value currentQubit = qubit;
+    mlir::Operation* current = *qubit.getUsers().begin();
+    unsigned int operandIndex = 0;
+    while (!mlir::isa<DeallocQubitOp>(current)) {
+      if (auto unitaryOp = mlir::dyn_cast<UnitaryInterface>(current)) {
+        currentQubit = unitaryOp.getCorrespondingOutput(currentQubit);
+        auto& use = *currentQubit.getUses().begin();
+        current = use.getOwner();
+        operandIndex = use.getOperandNumber();
+        continue;
+      }
+      if (auto yieldOp = mlir::dyn_cast<mlir::scf::YieldOp>(current)) {
+        // current becomes the corresponding output of the parent `scf.if`
+        auto* parent = yieldOp->getParentOp();
+        currentQubit = parent->getResult(operandIndex);
+        auto& use = *currentQubit.getUses().begin();
+        current = use.getOwner();
+        operandIndex = use.getOperandNumber();
+      }
+      currentQubit =
+          *llvm::find_if(current->getResults(), [&](mlir::Value result) {
+            return mlir::isa<QubitType>(result.getType());
+          });
+      auto& use = *currentQubit.getUses().begin();
+      current = use.getOwner();
+      operandIndex = use.getOperandNumber();
+    }
+    return mlir::dyn_cast<DeallocQubitOp>(current);
   }
 
   /**
@@ -87,6 +127,8 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
         continue; // Already in the correct order.
       }
       rewriter.moveOpAfter(user, op);
+      // llvm::outs() << "Moving operation before " <<
+      // user->getName().getStringRef().str() << "(" << user << ")\n";
 
       reorderUsers(user, rewriter);
     }
@@ -97,16 +139,35 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
    * qubit instead.
    *
    * @param alloc The allocation that will be replaced by qubit reuse.
-   * @param dealloc The deallocation that will be replaced by a reset operation.
+   * @param sink The deallocation/reset that will be replaced by a new reset
+   * operation.
    * @param rewriter The pattern rewriter to use for the rewrite.
    */
-  static void rewriteForReuse(AllocQubitOp alloc, DeallocQubitOp dealloc,
+  static void rewriteForReuse(AllocQubitOp alloc, mlir::Operation* sink,
                               mlir::PatternRewriter& rewriter) {
-    rewriter.setInsertionPointAfter(dealloc);
+    // alloc.print(llvm::outs());
+    // llvm::outs() << "\n";
+    //     sink->print(llvm::outs());
+    //     llvm::outs() << "\n";
+    rewriter.setInsertionPointAfter(sink);
+    const mlir::Value originalInput = sink->getOperand(0);
     auto reset = rewriter.replaceOpWithNewOp<ResetOp>(
-        alloc, alloc.getQubit().getType(), dealloc.getQubit());
-    rewriter.eraseOp(dealloc);
-
+        alloc, alloc.getQubit().getType(), originalInput);
+    if (auto originalReset = mlir::dyn_cast<ResetOp>(sink)) {
+      // The replaced operation is a Reset.
+      // This means it has an output which should be placed after
+      // the `dealloc` of the qubit use chain it is replaced by.
+      DeallocQubitOp dealloc = findDealloc(reset.getOutQubit());
+      rewriter.setInsertionPoint(dealloc);
+      auto newReset = rewriter.replaceOpWithNewOp<ResetOp>(
+          dealloc, originalReset.getOutQubit().getType(), dealloc.getQubit());
+      rewriter.replaceAllUsesWith(originalReset.getOutQubit(),
+                                  newReset.getOutQubit());
+      reorderUsers(newReset, rewriter);
+    } else {
+      rewriter.eraseOp(sink);
+    }
+    // TODO this probably shouldn't be recursive
     reorderUsers(reset, rewriter);
   }
 
@@ -115,18 +176,38 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
                   mlir::PatternRewriter& rewriter) const override {
     auto* currentBlock = op->getBlock();
     auto deallocs = currentBlock->getOps<DeallocQubitOp>();
-    auto reusable = llvm::find_if(deallocs, [&](DeallocQubitOp dealloc) {
-      // Check if the qubit to be deallocated is disjoint from the qubit to be
-      // allocated.
-      return areQubitsDisjoint(op.getQubit(), dealloc);
-    });
+    llvm::DenseSet<mlir::Operation*> nonDisjointGates;
+    llvm::DenseSet<mlir::Operation*> reachableSinks =
+        areQubitsDisjoint(op.getQubit(), nullptr, nonDisjointGates);
+    auto reusableDeallocs =
+        llvm::find_if(llvm::reverse(deallocs), [&](DeallocQubitOp dealloc) {
+          // Check if the qubit to be deallocated is disjoint from the qubit to
+          // be allocated.
+          // return areQubitsDisjoint(op.getQubit(), dealloc, nonDisjointGates);
+          return !reachableSinks.contains(dealloc);
+        });
 
-    if (reusable == deallocs.end()) {
-      // No reusable qubit found, nothing to do.
+    mlir::Operation* reusable = nullptr;
+
+    if (reusableDeallocs == llvm::reverse(deallocs).end()) {
       return mlir::failure();
+      // No reusable dealloc found, check resets next.
+      /*auto reset = currentBlock->getOps<ResetOp>();
+      auto reusableResets = llvm::find_if(reset, [&](ResetOp reset) {
+        // Check if the qubit to be reset is disjoint from the qubit to be
+        // allocated.
+        return areQubitsDisjoint(op.getQubit(), reset, nonDisjointGates);
+      });
+      if (reusableResets == reset.end()) {
+        // No reusable qubit found.
+        return mlir::failure();
+      }
+      reusable = *reusableResets;*/
+    } else {
+      reusable = *reusableDeallocs;
     }
 
-    rewriteForReuse(op, *reusable, rewriter);
+    rewriteForReuse(op, reusable, rewriter);
     return mlir::success();
   }
 };
