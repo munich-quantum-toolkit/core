@@ -1057,6 +1057,84 @@ U_box = U_n · U_{n-1} · ... · U_1 · U_0
 - **`flux → quartz`:** Remove block arguments and results; replace argument uses with direct value references
 - **`quartz → flux`:** Add block arguments for all used qubits; thread SSA values through operations; add yield with final values
 
+## 7. User-Defined Gates & Matrix/Composite Definitions
+
+**Purpose:** Enable users to define custom gates that can be referenced and instantiated throughout the program, similar to function definitions and calls.
+
+### 7.1 Overview
+
+User-defined gates follow a `func.func`-like design pattern with definitions and application sites:
+
+- **Gate definitions** create module-level symbols (similar to `func.func`)
+- **Application operations** reference these symbols to instantiate gates (similar to `func.call`)
+- All user-defined gate operations **implement the unitary interface**, enabling consistent introspection and composition
+
+Two definition mechanisms are provided to accommodate different use cases:
+
+1. **Matrix-based definitions (`define_matrix_gate`):** Define a gate via its unitary matrix representation
+   - Suitable for small qubit counts where the matrix is tractable (2^n × 2^n complexity)
+   - Provides exact representation and efficient unitary extraction
+   - Can be parameterized using symbolic expressions
+
+2. **Composite definitions (`define_composite_gate`):** Define a gate as a sequence of existing unitary operations
+   - Scalable to larger qubit counts
+   - Exposes internal structure for optimization and analysis
+   - Enables hierarchical abstractions
+
+**Separation Rationale:** The distinction between matrix and composite definitions is fundamental:
+
+- Matrix definitions provide a **semantic ground truth** via explicit unitary matrices
+- Composite definitions provide **structural decomposition** that can be analyzed and optimized
+- Gates may provide both representations, with the matrix taking precedence for unitary extraction
+
+### 7.2 Design Principles
+
+**Symbol Management:**
+
+- Gate definitions have module-level scope with unique symbol names
+- Symbols are referenced by `apply` operations for instantiation
+- Symbol resolution follows standard MLIR visibility rules
+
+**Parameterization:**
+
+- Both definition types support static and dynamic parameters
+- Parameter binding follows standard calling conventions
+- Parameters flow through to the unitary interface for matrix computation
+
+**Unitary Interface Implementation:**
+
+- Both `define_matrix_gate` and `define_composite_gate` implement the unitary interface
+- Matrix definitions provide direct unitary extraction
+- Composite definitions compute unitaries by composing constituent operations
+- Application operations (`apply`) delegate to their referenced definitions
+
+**Consistency:**
+
+- When both matrix and composite representations are provided, they must represent the same unitary (within numerical tolerance)
+- The matrix representation takes precedence as the semantic ground truth
+- The composite representation serves as a preferred decomposition hint for optimization
+
+### 7.3 Integration with Modifier System
+
+User-defined gates integrate seamlessly with the modifier system described in Section 5:
+
+- `inv`, `pow`, `ctrl`, and `negctrl` can wrap `apply` operations
+- Modifiers are applied to the resolved unitary from the definition
+- This enables flexible composition: `inv(pow(apply(@my_gate), 2))`
+
+### 7.4 Future Work
+
+The detailed specification of user-defined gates—including concrete syntax, verification rules, inlining strategies, and builder API integration—is deferred to a subsequent design phase. Key open questions include:
+
+- Precise syntax for matrix attributes and symbolic parameterization
+- Verification rules for matrix unitarity and consistency checking
+- Inlining heuristics and thresholds for composite definitions
+- Recursive definition policies
+- Multi-module linking semantics
+- Builder API convenience methods for gate definition
+
+This deferred specification allows the infrastructure to stabilize around core operations before committing to user-defined gate semantics.
+
 ## 8. Builder API
 
 **Purpose:** Provide a programmatic API for constructing quantum programs within the MQT MLIR infrastructure. The builder APIs offer type-safe, ergonomic interfaces for both Quartz and Flux dialects.
