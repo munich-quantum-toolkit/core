@@ -149,6 +149,16 @@ public:
    */
   void route(UnitaryInterface op, PatternRewriter& rewriter) {
     const auto layers = layerizer_->layerize(op, stack().top());
+    LLVM_DEBUG({
+      llvm::dbgs() << "route: layers=\n";
+      for (const auto [i, layer] : llvm::enumerate(layers)) {
+        llvm::dbgs() << '\t' << i << "= ";
+        for (const auto [prog0, prog1] : layer) {
+          llvm::dbgs() << "(" << prog0 << "," << prog1 << "), ";
+        }
+        llvm::dbgs() << '\n';
+      }
+    });
     const auto swaps = planner_->plan(layers, stack().top(), arch());
     insert(swaps, op->getLoc(), rewriter);
   }
@@ -316,9 +326,7 @@ WalkResult handleYield(scf::YieldOp op, Router& router,
     return WalkResult::skip();
   }
 
-  // TODO: Re-implement restoration logic.
-  // router.restore(op->getLoc(), rewriter);
-
+  router.restore(op->getLoc(), rewriter);
   router.stack().pop();
 
   return WalkResult::advance();

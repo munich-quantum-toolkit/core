@@ -13,15 +13,12 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
+#include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
-
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Support/LLVM.h>
-#include <utility>
 
 namespace mqt::ir::opt {
 
@@ -65,69 +62,72 @@ struct CrawlLayerizer final : LayerizerBase {
   std::size_t nlookahead = 1;
 
   [[nodiscard]] Layers
-  layerize([[maybe_unused]] UnitaryInterface op,
+  layerize(UnitaryInterface op,
            const Layout<QubitIndex>& layout) const override {
     Layout<QubitIndex> copy(layout);
     Layers layers(1 + nlookahead);
 
+    const mlir::Region* region = op->getParentRegion();
+    const mlir::ArrayRef<mlir::Value> qubits = copy.getHardwareQubits();
+    const std::size_t nqubits = qubits.size();
+
     for (Layer& layer : layers) {
-      mlir::DenseSet<UnitaryInterface> visited;
-      mlir::SmallVector<UnitaryInterface> gates;
+      mlir::DenseSet<UnitaryInterface> seenTwoQubit;
+      mlir::SmallVector<UnitaryInterface> readyToQubit;
 
-      for (const mlir::Value curr : copy.getHardwareQubits()) {
-        mlir::Value next = curr;
-        while (!next.getUsers().empty()) {
+      /// The maximum amount of two-qubit gates in a layer is nqubits / 2.
+      /// Assuming sparsity we half this value: nqubits / (2 * 2)
+      seenTwoQubit.reserve(nqubits / 4);
+      readyToQubit.reserve(nqubits / 4);
 
-          mlir::Operation* user = *next.getUsers().begin();
-          const bool stop =
-              mlir::TypeSwitch<mlir::Operation*, bool>(user)
-                  .Case<mlir::scf::ForOp>([&](auto op) {
-                    next = op->getResult(copy.lookupHardwareIndex(next));
-                    return false;
-                  })
-                  .Case<mlir::scf::IfOp>([&](auto op) {
-                    next = op->getResult(copy.lookupHardwareIndex(next));
-                    return false;
-                  })
-                  .Case<ResetOp>([&](auto op) {
-                    next = op.getOutQubit();
-                    return false;
-                  })
-                  .Case<MeasureOp>([&](auto op) {
-                    next = op.getOutQubit();
-                    return false;
-                  })
-                  .Case<UnitaryInterface>([&](auto op) {
-                    if (mlir::isa<GPhaseOp>(op)) {
-                      return true;
-                    }
+      for (const mlir::Value q : qubits) {
+        bool stop = false;
+        mlir::Value prev = q;
+        mlir::Value head = q;
 
-                    if (isTwoQubitGate(op)) {
-                      /// If we visit a two-qubit gate twice, it is "ready".
-                      if (visited.contains(op)) {
-                        gates.emplace_back(op);
-                        return true;
-                      }
-
-                      visited.insert(op);
-                      return true;
-                    }
-
-                    next = op.getOutQubits().front();
-                    return false;
-                  })
-                  .Default([&](mlir::Operation*) { return true; });
-
-          if (stop) {
-            if (next != curr) {
-              copy.remapQubitValue(curr, next);
-            }
+        while (!head.use_empty() && !stop) {
+          mlir::Operation* user = getUserInRegion(head, region);
+          if (user == nullptr) {
             break;
+          }
+
+          mlir::TypeSwitch<mlir::Operation*>(user)
+              .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp op) {
+                head = op->getResult(copy.lookupHardwareIndex(head));
+              })
+              .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
+                head = op->getResult(copy.lookupHardwareIndex(head));
+              })
+              .Case<ResetOp>([&](ResetOp op) { head = op.getOutQubit(); })
+              .Case<MeasureOp>([&](MeasureOp op) { head = op.getOutQubit(); })
+              .Case<UnitaryInterface>([&](UnitaryInterface op) {
+                if (mlir::isa<GPhaseOp>(op)) {
+                  stop = true;
+                  return;
+                }
+
+                /// Insert two-qubit gates into seen-set.
+                /// If this is the second encounter, the gate is ready.
+                if (isTwoQubitGate(op)) {
+                  if (!seenTwoQubit.insert(op).second) {
+                    readyToQubit.emplace_back(op);
+                  }
+                  stop = true;
+                  return;
+                }
+
+                head = op.getOutQubits().front();
+              })
+              .Default([&](mlir::Operation*) { stop = true; });
+
+          if (prev != head) {
+            copy.remapQubitValue(prev, head);
+            prev = head;
           }
         }
       }
 
-      for (const UnitaryInterface op : gates) {
+      for (const UnitaryInterface op : readyToQubit) {
         const auto [in0, in1] = getIns(op);
         const auto [out0, out1] = getOuts(op);
         layer.emplace_back(copy.lookupProgramIndex(in0),
@@ -138,6 +138,17 @@ struct CrawlLayerizer final : LayerizerBase {
     }
 
     return layers;
+  }
+
+private:
+  static mlir::Operation* getUserInRegion(const mlir::Value v,
+                                          const mlir::Region* region) {
+    for (mlir::Operation* user : v.getUsers()) {
+      if (user->getParentRegion() == region) {
+        return user;
+      }
+    }
+    return nullptr;
   }
 };
 } // namespace mqt::ir::opt
