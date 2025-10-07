@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 add_mlir_dialect_library(
-  MLIRFlux
+  MLIRFluxDialect
   FluxOps.cpp
   ADDITIONAL_HEADER_DIRS
   ${PROJECT_SOURCE_DIR}/mlir/include/mlir/Dialect/Flux
@@ -25,7 +25,7 @@ file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/F
 
 # add public headers using file sets
 target_sources(
-  MLIRFlux
+  MLIRFluxDialect
   PUBLIC FILE_SET
          HEADERS
          BASE_DIRS
