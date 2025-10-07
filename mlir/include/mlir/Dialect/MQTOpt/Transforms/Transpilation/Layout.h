@@ -87,7 +87,7 @@ public:
     requires(sizeof...(HwIndices) > 0) &&
             ((std::is_convertible_v<HwIndices, QubitIndex>) && ...)
   [[nodiscard]] auto getProgramIndices(HwIndices... hws) const {
-    return std::tuple{getHardwareIndex(static_cast<QubitIndex>(hws))...};
+    return std::tuple{getProgramIndex(static_cast<QubitIndex>(hws))...};
   }
 
   /**

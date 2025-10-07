@@ -15,6 +15,8 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layerizer.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
+#include "llvm/Support/Debug.h"
+
 #include <algorithm>
 #include <mlir/Support/LLVM.h>
 #include <queue>
@@ -205,8 +207,8 @@ private:
       for (const auto [i, layer] : llvm::enumerate(layers)) {
         for (const auto [prog0, prog1] : layer) {
           const auto [hw0, hw1] = layout_.getHardwareIndices(prog0, prog1);
-          const std::size_t nswaps =
-              arch.lengthOfShortestPathBetween(hw0, hw1) - 2;
+          const std::size_t dist = arch.distanceBetween(hw0, hw1);
+          const std::size_t nswaps = dist < 2 ? 0 : dist - 2;
           nn += weights.lambdas[i] * static_cast<float>(nswaps);
         }
       }

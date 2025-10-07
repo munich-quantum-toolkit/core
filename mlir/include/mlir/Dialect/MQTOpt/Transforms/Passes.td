@@ -115,7 +115,7 @@ def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
   }];
   let options = [
     Option<"method", "method", "RoutingMethod", "RoutingMethod::QMAP",
-           "The initial placement strategy to use.", [{llvm::cl::values(
+           "The routing method to use.", [{llvm::cl::values(
              clEnumValN(RoutingMethod::Naive, "naive", "Swap along shortest paths"),
              clEnumValN(RoutingMethod::QMAP, "qmap", "A*-search based routing algorithm"))}]>,
     Option<"nlookahead", "nlookahead", "std::size_t", "1",

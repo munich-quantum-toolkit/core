@@ -34,21 +34,12 @@ Architecture::shortestPathBetween(std::size_t u, std::size_t v) const {
   return path;
 }
 
-[[nodiscard]] std::size_t
-Architecture::lengthOfShortestPathBetween(std::size_t u, std::size_t v) const {
-  std::size_t len = 0;
-
+[[nodiscard]] std::size_t Architecture::distanceBetween(std::size_t u,
+                                                        std::size_t v) const {
   if (prev_[u][v] == UINT64_MAX) {
-    return {};
+    return 0UL;
   }
-
-  len++;
-  while (u != v) {
-    v = prev_[u][v];
-    len++;
-  }
-
-  return len;
+  return dist_[u][v];
 }
 
 void Architecture::floydWarshallWithPathReconstruction() {
