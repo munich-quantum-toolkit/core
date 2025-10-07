@@ -61,7 +61,7 @@ class FluxType<string name, string typeMnemonic, list<Trait> traits = []>
     let mnemonic = typeMnemonic;
 }
 
-def QubitType : FluxType<"Qubit", "qubit", [MemRefElementTypeInterface]> {
+def QubitType : FluxType<"Qubit", "qubit"> {
     let summary = "Flux qubit value type";
     let description = [{
         The `!flux.qubit` type represents an SSA value holding a quantum bit
@@ -95,14 +95,34 @@ def AllocOp : FluxOp<"alloc"> {
         Allocates a new qubit dynamically and returns an SSA value representing it.
         The qubit is initialized to the |0⟩ state.
 
-        Example:
+        Optionally, the qubit can be part of a register by specifying:
+        - `register_name`: The name of the register this qubit belongs to
+        - `register_size`: The total size of the register
+        - `register_index`: The index of this qubit within the register
+
+        Example (single qubit):
         ```mlir
         %q = flux.alloc : !flux.qubit
         ```
+
+        Example (qubits in a register):
+        ```mlir
+        %q0 = flux.alloc q[3, 0] : !flux.qubit
+        %q1 = flux.alloc q[3, 1] : !flux.qubit
+        %q2 = flux.alloc q[3, 2] : !flux.qubit
+        ```
     }];
 
+    let arguments = (ins OptionalAttr<StrAttr>:$register_name,
+                     OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
+                     OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
     let results = (outs QubitType:$result);
-    let assemblyFormat = "attr-dict `:` type($result)";
+    let assemblyFormat = [{
+        ($register_name^ `[` $register_size `,` $register_index `]`)?
+        attr-dict `:` type($result)
+    }];
+
+    let hasVerifier = 1;
 }
 
 def DeallocOp : FluxOp<"dealloc"> {
@@ -173,8 +193,6 @@ def ResetOp : FluxOp<"reset", [Idempotent, SameOperandsAndResultType]> {
     let arguments = (ins QubitType:$qubit_in);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
-
-    let hasCanonicalizer = 1;
 }
 
 #endif // FluxOPS
