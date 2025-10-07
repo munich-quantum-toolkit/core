@@ -101,8 +101,7 @@ void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
     return;
   }
 
-  Block* swapBlock = exceptOp->getBlock();
-
+  const Block* swapBlock = exceptOp->getBlock();
   rewriter.replaceUsesWithIf(oldValue, newValue, [&](OpOperand& use) {
     Operation* user = use.getOwner();
     if (user == exceptOp) {

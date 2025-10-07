@@ -89,7 +89,7 @@ struct CrawlLayerizer final : LayerizerBase {
         mlir::Value head = q;
 
         while (!head.use_empty() && !stop) {
-          mlir::Operation* user = getUserInRegion(head, region);
+          mlir::Operation* user = getFirstUserInRegion(head, region);
           if (user == nullptr) {
             break;
           }
@@ -155,8 +155,8 @@ struct CrawlLayerizer final : LayerizerBase {
   }
 
 private:
-  static mlir::Operation* getUserInRegion(const mlir::Value v,
-                                          const mlir::Region* region) {
+  static mlir::Operation* getFirstUserInRegion(const mlir::Value v,
+                                               const mlir::Region* region) {
     for (mlir::Operation* user : v.getUsers()) {
       if (user->getParentRegion() == region) {
         return user;
