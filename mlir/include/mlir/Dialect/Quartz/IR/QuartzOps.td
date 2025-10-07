@@ -60,20 +60,13 @@ class QuartzType<string name, string typeMnemonic, list<Trait> traits = []>
     let mnemonic = typeMnemonic;
 }
 
-def QubitType : QuartzType<"Qubit", "qubit", [MemRefElementTypeInterface]> {
+def QubitType : QuartzType<"Qubit", "qubit"> {
     let summary = "Quartz qubit reference type";
     let description = [{
         The `!quartz.qubit` type represents a reference to a quantum bit in the
         Quartz dialect. Operations using this type modify qubits in place using
         reference semantics, similar to how classical imperative languages handle
         mutable references.
-
-        This type can be used as an element type in memref to represent quantum
-        registers:
-        ```mlir
-        %qreg = memref.alloc() : memref<2x!quartz.qubit>
-        %q0 = memref.load %qreg[%c0] : memref<2x!quartz.qubit>
-        ```
     }];
 }
 
@@ -94,14 +87,34 @@ def AllocOp : QuartzOp<"alloc"> {
         Allocates a new qubit dynamically and returns a reference to it.
         The qubit is initialized to the |0⟩ state.
 
-        Example:
+        Optionally, the qubit can be part of a register by specifying:
+        - `register_name`: The name of the register this qubit belongs to
+        - `register_size`: The total size of the register
+        - `register_index`: The index of this qubit within the register
+
+        Example (single qubit):
         ```mlir
         %q = quartz.alloc : !quartz.qubit
         ```
+
+        Example (qubits in a register):
+        ```mlir
+        %q0 = quartz.alloc q[3, 0] : !quartz.qubit
+        %q1 = quartz.alloc q[3, 1] : !quartz.qubit
+        %q2 = quartz.alloc q[3, 2] : !quartz.qubit
+        ```
     }];
 
+    let arguments = (ins OptionalAttr<StrAttr>:$register_name,
+                     OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
+                     OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
     let results = (outs QubitType:$result);
-    let assemblyFormat = "attr-dict `:` type($result)";
+    let assemblyFormat = [{
+        ($register_name^ `[` $register_size `,` $register_index `]`)?
+        attr-dict `:` type($result)
+    }];
+
+    let hasVerifier = 1;
 }
 
 def DeallocOp : QuartzOp<"dealloc"> {

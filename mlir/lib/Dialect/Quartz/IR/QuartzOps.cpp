@@ -58,3 +58,26 @@ void QuartzDialect::initialize() {
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/Quartz/IR/QuartzOps.cpp.inc"
+
+LogicalResult AllocOp::verify() {
+  const auto registerName = getRegisterName();
+  const auto registerSize = getRegisterSize();
+  const auto registerIndex = getRegisterIndex();
+
+  const auto hasSize = registerSize.has_value();
+  const auto hasIndex = registerIndex.has_value();
+  const auto hasName = registerName.has_value();
+
+  if (hasName != hasSize || hasName != hasIndex) {
+    return emitOpError("register attributes must all be present or all absent");
+  }
+
+  if (hasName) {
+    if (*registerIndex >= *registerSize) {
+      return emitOpError("register_index (")
+             << *registerIndex << ") must be less than register_size ("
+             << *registerSize << ")";
+    }
+  }
+  return success();
+}
