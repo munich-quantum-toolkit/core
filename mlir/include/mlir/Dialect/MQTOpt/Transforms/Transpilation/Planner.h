@@ -47,7 +47,7 @@ struct NaivePlanner final : PlannerBase {
   [[nodiscard]] PlannerResult plan(const Layers& layers,
                                    const ThinLayout<QubitIndex>& layout,
                                    const Architecture& arch) const override {
-    if (layers.size() != 1 && layers.front().size() != 1) {
+    if (layers.size() != 1 || layers.front().size() != 1) {
       throw std::invalid_argument(
           "NaivePlanner expects exactly one layer with one gate");
     }
