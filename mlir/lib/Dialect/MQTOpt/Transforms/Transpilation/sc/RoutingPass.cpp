@@ -159,9 +159,7 @@ public:
    * @todo Remove SWAP history and use advanced strategies.
    */
   void restore(Location location, PatternRewriter& rewriter) {
-    llvm::dbgs() << "restore: history.size= " << historyStack_.size() << '\n';
     const auto swaps = llvm::to_vector(llvm::reverse(historyStack_.top()));
-    llvm::dbgs() << "restore: nswaps=" << swaps.size() << '\n';
     insert(swaps, location, rewriter);
   }
 
@@ -509,8 +507,11 @@ private:
                     std::make_unique<NaivePlanner>(), nadd);
     case RoutingMethod::QMAP:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=qmap\n"; });
-      return Router(std::move(arch), std::make_unique<CrawlLayerizer>(),
-                    std::make_unique<QMAPPlanner>(), nadd);
+      const HeuristicWeights weights(this->alpha, this->beta, this->lambda,
+                                     this->nlookahead);
+      return Router(std::move(arch),
+                    std::make_unique<CrawlLayerizer>(this->nlookahead),
+                    std::make_unique<QMAPPlanner>(weights), nadd);
     }
 
     llvm_unreachable("Unknown method");

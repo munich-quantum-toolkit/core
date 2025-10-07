@@ -114,7 +114,15 @@ def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
     Option<"method", "method", "RoutingMethod", "RoutingMethod::QMAP",
            "The initial placement strategy to use.", [{llvm::cl::values(
              clEnumValN(RoutingMethod::Naive, "naive", "Swap along shortest paths"),
-             clEnumValN(RoutingMethod::QMAP, "qmap", "A*-search based routing algorithm"))}]>
+             clEnumValN(RoutingMethod::QMAP, "qmap", "A*-search based routing algorithm"))}]>,
+    Option<"nlookahead", "nlookahead", "std::size_t", "1",
+           "qmap option: Number of lookahead steps (heuristic horizon)">,
+    Option<"alpha", "alpha", "float", "1.0F",
+           "qmap option: The alpha factor in the cost function">,
+    Option<"beta", "beta", "float", "1.0F",
+           "qmap option: The beta factor in the cost function">,
+    Option<"lambda", "lambda", "float", "0.9F",
+           "qmap option: The lambda factor in the cost function">
   ];
   let statistics = [
     Statistic<"nadd", "n-additional-gates", "The number of additional gates">

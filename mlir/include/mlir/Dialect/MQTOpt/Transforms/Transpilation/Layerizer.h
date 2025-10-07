@@ -62,13 +62,14 @@ struct OneOpLayerizer final : LayerizerBase {
  * in parallel, i.e., they don't depend each others results.
  */
 struct CrawlLayerizer final : LayerizerBase {
-  std::size_t nlookahead = 1;
+  explicit CrawlLayerizer(const std::size_t nlookahead)
+      : nlookahead_(nlookahead) {}
 
   [[nodiscard]] Layers
   layerize(UnitaryInterface op,
            const Layout<QubitIndex>& layout) const override {
     Layout<QubitIndex> copy(layout);
-    Layers layers(1 + nlookahead);
+    Layers layers(1 + nlookahead_);
 
     const mlir::Region* region = op->getParentRegion();
     const mlir::ArrayRef<mlir::Value> qubits = copy.getHardwareQubits();
@@ -164,5 +165,7 @@ private:
     }
     return nullptr;
   }
+
+  std::size_t nlookahead_ = 1;
 };
 } // namespace mqt::ir::opt
