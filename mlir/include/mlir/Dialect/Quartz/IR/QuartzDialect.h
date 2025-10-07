@@ -8,10 +8,46 @@
  * Licensed under the MIT License
  */
 
-#ifndef MLIR_DIALECT_QUARTZ_IR_QUARTZDIALECT_H
-#define MLIR_DIALECT_QUARTZ_IR_QUARTZDIALECT_H
+#pragma once
+
+#include <mlir/Bytecode/BytecodeOpInterface.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
+
+// Suppress warnings about ambiguous reversed operators in MLIR
+// (see https://github.com/llvm/llvm-project/issues/45853)
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
+#endif
+#include <mlir/Interfaces/InferTypeOpInterface.h>
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+
+#define DIALECT_NAME_FLUX "quartz"
+
+//===----------------------------------------------------------------------===//
+// Dialect
+//===----------------------------------------------------------------------===//
 
 #include "mlir/Dialect/Quartz/IR/QuartzOpsDialect.h.inc"
-#include "mlir/IR/Dialect.h"
 
-#endif // MLIR_DIALECT_QUARTZ_IR_QUARTZDIALECT_H
+//===----------------------------------------------------------------------===//
+// Types
+//===----------------------------------------------------------------------===//
+
+#define GET_TYPEDEF_CLASSES
+#include "mlir/Dialect/Quartz/IR/QuartzOpsTypes.h.inc"
+
+//===----------------------------------------------------------------------===//
+// Interfaces
+//===----------------------------------------------------------------------===//
+
+#include "mlir/Dialect/Quartz/IR/QuartzInterfaces.h.inc" // IWYU pragma: export
+
+//===----------------------------------------------------------------------===//
+// Operations
+//===----------------------------------------------------------------------===//
+
+#define GET_OP_CLASSES
+#include "mlir/Dialect/Quartz/IR/QuartzOps.h.inc" // IWYU pragma: export

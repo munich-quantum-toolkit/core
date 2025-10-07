@@ -9,26 +9,86 @@
 #ifndef QUARTZ_OPS
 #define QUARTZ_OPS
 
-include "mlir/Dialect/Quartz/IR/QuartzDialect.td"
-include "mlir/Dialect/Quartz/IR/QuartzTypes.td"
-include "mlir/Dialect/Quartz/IR/QuartzInterfaces.td"
+include "mlir/IR/BuiltinTypeInterfaces.td"
+include "mlir/IR/DialectBase.td"
+include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
-include "mlir/IR/BuiltinAttributes.td"
-include "mlir/IR/BuiltinTypes.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+
+//===----------------------------------------------------------------------===//
+// Quartz Dialect Definition
+//===----------------------------------------------------------------------===//
+
+def QuartzDialect : Dialect {
+    let name = "quartz";
+
+    let summary = "The Quartz (reference semantics) dialect for quantum computing.";
+
+    let description = [{
+        The Quartz dialect uses **reference semantics** where quantum operations
+        modify qubits in place, similar to how hardware physically transforms
+        quantum states. This model provides:
+
+        - Natural mapping to hardware execution models
+        - Intuitive representation for circuit descriptions
+        - Direct compatibility with imperative quantum programming languages
+        - Straightforward backend code generation
+
+        The name "Quartz" reflects the crystalline, structured nature of
+        hardware-oriented representations—operations have fixed positions and
+        transform states in place, like atoms in a crystal lattice.
+
+        Example:
+        ```mlir
+        quartz.h %q              // Applies Hadamard to qubit %q in place
+        quartz.swap %q0, %q1     // Applies SWAP using %q0, %q1 as targets
+        ```
+    }];
+
+    let cppNamespace = "::mlir::quartz";
+
+    let useDefaultTypePrinterParser = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// Quartz Type Definitions
+//===----------------------------------------------------------------------===//
+
+class QuartzType<string name, string typeMnemonic, list<Trait> traits = []>
+        : TypeDef<QuartzDialect, name, traits> {
+    let mnemonic = typeMnemonic;
+}
+
+def QubitType : QuartzType<"Qubit", "qubit", [MemRefElementTypeInterface]> {
+    let summary = "Quartz qubit reference type";
+    let description = [{
+        The `!quartz.qubit` type represents a reference to a quantum bit in the
+        Quartz dialect. Operations using this type modify qubits in place using
+        reference semantics, similar to how classical imperative languages handle
+        mutable references.
+
+        This type can be used as an element type in memref to represent quantum
+        registers:
+        ```mlir
+        %qreg = memref.alloc() : memref<2x!quartz.qubit>
+        %q0 = memref.load %qreg[%c0] : memref<2x!quartz.qubit>
+        ```
+    }];
+}
 
 //===----------------------------------------------------------------------===//
 // Base Operation Classes
 //===----------------------------------------------------------------------===//
 
-class Quartz_Op<string mnemonic, list<Trait> traits = []> :
-    Op<Quartz_Dialect, mnemonic, traits>;
+class QuartzOp<string mnemonic, list<Trait> traits = []> :
+    Op<QuartzDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
 // Resource Operations
 //===----------------------------------------------------------------------===//
 
-def Quartz_AllocOp : Quartz_Op<"alloc", [Pure]> {
+def AllocOp : QuartzOp<"alloc", [Pure]> {
     let summary = "Allocate a qubit dynamically";
     let description = [{
         Allocates a new qubit dynamically and returns a reference to it.
@@ -40,11 +100,11 @@ def Quartz_AllocOp : Quartz_Op<"alloc", [Pure]> {
         ```
     }];
 
-    let results = (outs Quartz_QubitType:$result);
+    let results = (outs QubitType:$result);
     let assemblyFormat = "attr-dict `:` type($result)";
 }
 
-def Quartz_DeallocOp : Quartz_Op<"dealloc"> {
+def DeallocOp : QuartzOp<"dealloc"> {
     let summary = "Deallocate a qubit";
     let description = [{
         Deallocates a qubit, releasing its resources.
@@ -55,15 +115,33 @@ def Quartz_DeallocOp : Quartz_Op<"dealloc"> {
         ```
     }];
 
-    let arguments = (ins Quartz_QubitType:$qubit);
+    let arguments = (ins QubitType:$qubit);
     let assemblyFormat = "$qubit attr-dict `:` type($qubit)";
+}
+
+def StaticOp : QuartzOp<"static", [Pure]> {
+    let summary = "Retrieve a static qubit by index";
+    let description = [{
+        The `quartz.static` operation produces an SSA value representing a qubit
+        identified by a static index. This is useful for referring to fixed
+        qubits in a quantum program or to hardware-mapped qubits.
+
+        Example:
+        ```mlir
+        %q = quartz.static 0 : !quartz.qubit
+        ```
+    }];
+
+    let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
+    let results = (outs QubitType:$qubit);
+    let assemblyFormat = "$index attr-dict `:` type($qubit)";
 }
 
 //===----------------------------------------------------------------------===//
 // Measurement and Reset Operations
 //===----------------------------------------------------------------------===//
 
-def Quartz_MeasureOp : Quartz_Op<"measure"> {
+def MeasureOp : QuartzOp<"measure"> {
     let summary = "Measure a qubit in the computational basis";
     let description = [{
         Measures a qubit in the computational (Z) basis, collapsing the state
@@ -75,12 +153,12 @@ def Quartz_MeasureOp : Quartz_Op<"measure"> {
         ```
     }];
 
-    let arguments = (ins Quartz_QubitType:$qubit);
+    let arguments = (ins QubitType:$qubit);
     let results = (outs I1:$result);
     let assemblyFormat = "$qubit attr-dict `:` type($qubit) `->` type($result)";
 }
 
-def Quartz_ResetOp : Quartz_Op<"reset"> {
+def ResetOp : QuartzOp<"reset"> {
     let summary = "Reset a qubit to |0⟩ state";
     let description = [{
         Resets a qubit to the |0⟩ state, regardless of its current state.
@@ -91,10 +169,8 @@ def Quartz_ResetOp : Quartz_Op<"reset"> {
         ```
     }];
 
-    let arguments = (ins Quartz_QubitType:$qubit);
+    let arguments = (ins QubitType:$qubit);
     let assemblyFormat = "$qubit attr-dict `:` type($qubit)";
-
-    let hasCanonicalizer = 1;
 }
 
 #endif // QUARTZ_OPS

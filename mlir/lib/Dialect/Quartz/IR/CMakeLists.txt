@@ -7,8 +7,7 @@
 # Licensed under the MIT License
 
 add_mlir_dialect_library(
-  MLIRQuartzDialect
-  QuartzDialect.cpp
+  MLIRQuartz
   QuartzOps.cpp
   ADDITIONAL_HEADER_DIRS
   ${PROJECT_SOURCE_DIR}/mlir/include/mlir/Dialect/Quartz
@@ -19,3 +18,23 @@ add_mlir_dialect_library(
   PUBLIC
   MLIRIR
   MLIRSideEffectInterfaces)
+
+# collect header files
+file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/Quartz/IR/*.h")
+file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/Quartz/IR/*.inc")
+
+# add public headers using file sets
+target_sources(
+  MLIRQuartz
+  PUBLIC FILE_SET
+         HEADERS
+         BASE_DIRS
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+         FILES
+         ${IR_HEADERS_SOURCE}
+         FILE_SET
+         HEADERS
+         BASE_DIRS
+         ${MQT_MLIR_BUILD_INCLUDE_DIR}
+         FILES
+         ${IR_HEADERS_BUILD})
