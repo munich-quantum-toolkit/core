@@ -24,7 +24,7 @@
 #pragma clang diagnostic pop
 #endif
 
-#define DIALECT_NAME_FLUX "quartz"
+#define DIALECT_NAME_QUARTZ "quartz"
 
 //===----------------------------------------------------------------------===//
 // Dialect
