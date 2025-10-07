@@ -88,7 +88,7 @@ class QuartzOp<string mnemonic, list<Trait> traits = []> :
 // Resource Operations
 //===----------------------------------------------------------------------===//
 
-def AllocOp : QuartzOp<"alloc", [Pure]> {
+def AllocOp : QuartzOp<"alloc"> {
     let summary = "Allocate a qubit dynamically";
     let description = [{
         Allocates a new qubit dynamically and returns a reference to it.
