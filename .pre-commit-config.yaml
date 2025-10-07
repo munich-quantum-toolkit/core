@@ -168,6 +168,7 @@ repos:
             "--months",
             "--blank-lines",
             "--sort",
+            "--strip-enclosing-braces",
             "--sort-fields",
             "--trailing-commas",
             "--remove-empty-fields",
