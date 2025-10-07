@@ -13,12 +13,15 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
-#include "mlir/IR/Operation.h"
-#include "mlir/IR/Value.h"
 
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Debug.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+
+#define DEBUG_TYPE "route-sc"
 
 namespace mqt::ir::opt {
 
@@ -136,6 +139,17 @@ struct CrawlLayerizer final : LayerizerBase {
         copy.remapQubitValue(in1, out1);
       }
     }
+
+    LLVM_DEBUG({
+      llvm::dbgs() << "crawl layerizer: layers=\n";
+      for (const auto [i, layer] : llvm::enumerate(layers)) {
+        llvm::dbgs() << '\t' << i << "= ";
+        for (const auto [prog0, prog1] : layer) {
+          llvm::dbgs() << "(" << prog0 << "," << prog1 << "), ";
+        }
+        llvm::dbgs() << '\n';
+      }
+    });
 
     return layers;
   }

@@ -20,6 +20,7 @@
 #include <cassert>
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -149,18 +150,9 @@ public:
    */
   void route(UnitaryInterface op, PatternRewriter& rewriter) {
     const auto layers = layerizer_->layerize(op, stack().top());
-    LLVM_DEBUG({
-      llvm::dbgs() << "route: layers=\n";
-      for (const auto [i, layer] : llvm::enumerate(layers)) {
-        llvm::dbgs() << '\t' << i << "= ";
-        for (const auto [prog0, prog1] : layer) {
-          llvm::dbgs() << "(" << prog0 << "," << prog1 << "), ";
-        }
-        llvm::dbgs() << '\n';
-      }
-    });
     const auto swaps = planner_->plan(layers, stack().top(), arch());
     insert(swaps, op->getLoc(), rewriter);
+    historyStack_.top().append(swaps.begin(), swaps.end());
   }
 
   /**
@@ -169,25 +161,10 @@ public:
    * @todo Remove SWAP history and use advanced strategies.
    */
   void restore(Location location, PatternRewriter& rewriter) {
-    // for (const auto [programIdx0, programIdx1] : llvm::reverse(history)) {
-    //   const Value qIn0 = stack.top().lookupProgram(programIdx0);
-    //   const Value qIn1 = stack.top().lookupProgram(programIdx1);
-
-    //   auto swap = createSwap(location, qIn0, qIn1, rewriter);
-    //   const auto [qOut0, qOut1] = getOuts(swap);
-
-    //   rewriter.setInsertionPointAfter(swap);
-    //   replaceAllUsesInRegionAndChildrenExcept(
-    //       qIn0, qOut1, swap->getParentRegion(), swap, rewriter);
-    //   replaceAllUsesInRegionAndChildrenExcept(
-    //       qIn1, qOut0, swap->getParentRegion(), swap, rewriter);
-
-    //   stack.top().swap(qIn0, qIn1);
-    //   stack.top().remapQubitValue(qIn0, qOut0);
-    //   stack.top().remapQubitValue(qIn1, qOut1);
-
-    //   (*nadd_)++;
-    // }
+    llvm::dbgs() << "restore: history.size= " << historyStack_.size() << '\n';
+    const auto swaps = llvm::to_vector(llvm::reverse(historyStack_.top()));
+    llvm::dbgs() << "restore: nswaps=" << swaps.size() << '\n';
+    insert(swaps, location, rewriter);
   }
 
   /**
@@ -196,12 +173,19 @@ public:
   [[nodiscard]] LayoutStack<Layout<QubitIndex>>& stack() { return stack_; }
 
   /**
+   * @brief Return reference to the history stack object.
+   */
+  [[nodiscard]] LayoutStack<SmallVector<QubitIndexPair>>& historyStack() {
+    return historyStack_;
+  }
+
+  /**
    * @brief Return reference to architecture object.
    */
   [[nodiscard]] Architecture& arch() const { return *arch_; }
 
 private:
-  void insert(const SmallVector<QubitIndexPair>& swaps, Location location,
+  void insert(ArrayRef<QubitIndexPair> swaps, Location location,
               PatternRewriter& rewriter) {
     for (const auto [hw0, hw1] : swaps) {
       const auto [prog0, prog1] = stack().top().getProgramIndices(hw0, hw1);
@@ -237,6 +221,7 @@ private:
   std::unique_ptr<PlannerBase> planner_;
 
   LayoutStack<Layout<QubitIndex>> stack_{};
+  LayoutStack<SmallVector<QubitIndexPair>> historyStack_{};
 
   Pass::Statistic* nadd_;
 };
@@ -253,6 +238,7 @@ WalkResult handleFunc([[maybe_unused]] func::FuncOp op, Router& router) {
 
   /// Function body state.
   router.stack().emplace(router.arch().nqubits());
+  router.historyStack().emplace();
 
   return WalkResult::advance();
 }
@@ -263,6 +249,7 @@ WalkResult handleFunc([[maybe_unused]] func::FuncOp op, Router& router) {
  */
 WalkResult handleReturn(Router& router) {
   router.stack().pop();
+  router.historyStack().pop();
   return WalkResult::advance();
 }
 
@@ -272,6 +259,7 @@ WalkResult handleReturn(Router& router) {
 WalkResult handleFor(scf::ForOp op, Router& router) {
   /// Loop body state.
   router.stack().duplicateTop();
+  router.historyStack().emplace();
 
   /// Forward out-of-loop and in-loop values.
   const auto initArgs = op.getInitArgs().take_front(router.arch().nqubits());
@@ -293,6 +281,8 @@ WalkResult handleIf(scf::IfOp op, Router& router) {
   /// Prepare stack.
   router.stack().duplicateTop(); /// Else.
   router.stack().duplicateTop(); /// Then.
+  router.historyStack().emplace();
+  router.historyStack().emplace();
 
   /// Forward out-of-if values.
   const auto results = op->getResults().take_front(router.arch().nqubits());
@@ -328,6 +318,7 @@ WalkResult handleYield(scf::YieldOp op, Router& router,
 
   router.restore(op->getLoc(), rewriter);
   router.stack().pop();
+  router.historyStack().pop();
 
   return WalkResult::advance();
 }

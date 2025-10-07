@@ -229,5 +229,4 @@ private:
     }
   }
 };
-
 } // namespace mqt::ir::opt
