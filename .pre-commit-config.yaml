@@ -125,7 +125,6 @@ repos:
     rev: v1.37.2
     hooks:
       - id: typos
-        exclude: docs/refs.bib
 
   # Catch common capitalization mistakes
   - repo: local
