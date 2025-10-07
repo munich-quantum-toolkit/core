@@ -103,6 +103,9 @@ def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
              clEnumValN(PlacementStrategy::Random, "random", "Random placement"),
              clEnumValN(PlacementStrategy::Identity, "identity", "Identity placement"))}]>
   ];
+  let statistics = [
+    Statistic<"tms", "runtime-milliseconds", "The runtime in milliseconds">
+  ];
 }
 
 def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
@@ -125,7 +128,8 @@ def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
            "qmap option: The lambda factor in the cost function">
   ];
   let statistics = [
-    Statistic<"nadd", "n-additional-gates", "The number of additional gates">
+    Statistic<"nadd", "n-additional-gates", "The number of additional gates">,
+    Statistic<"tms", "runtime-milliseconds", "The runtime in milliseconds">
   ];
 }
 

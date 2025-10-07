@@ -18,6 +18,7 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -490,9 +491,14 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
 
   void runOnOperation() override {
     Router router = getRouter();
+
+    const auto start = std::chrono::steady_clock::now();
     if (failed(route(getOperation(), &getContext(), router))) {
       signalPassFailure();
     }
+    const auto end = std::chrono::steady_clock::now();
+    tms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+              .count();
   }
 
 private:
@@ -507,10 +513,9 @@ private:
                     std::make_unique<NaivePlanner>(), nadd);
     case RoutingMethod::QMAP:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=qmap\n"; });
-      const HeuristicWeights weights(this->alpha, this->beta, this->lambda,
-                                     this->nlookahead);
+      const HeuristicWeights weights(alpha, beta, lambda, nlookahead);
       return Router(std::move(arch),
-                    std::make_unique<CrawlLayerizer>(this->nlookahead),
+                    std::make_unique<CrawlLayerizer>(nlookahead),
                     std::make_unique<QMAPPlanner>(weights), nadd);
     }
 

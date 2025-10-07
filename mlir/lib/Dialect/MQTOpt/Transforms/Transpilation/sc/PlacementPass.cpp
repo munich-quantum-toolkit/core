@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <deque>
 #include <llvm/ADT/STLExtras.h>
@@ -427,10 +428,14 @@ struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
     const auto arch = getArchitecture(ArchitectureName::MQTTest);
     const auto placer = getPlacer(*arch);
 
+    const auto start = std::chrono::steady_clock::now();
     if (PlacementContext ctx(*arch, *placer);
         failed(run(getOperation(), &getContext(), ctx))) {
       signalPassFailure();
     }
+    const auto end = std::chrono::steady_clock::now();
+    tms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+              .count();
   }
 
 private:
