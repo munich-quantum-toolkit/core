@@ -136,10 +136,11 @@ private:
       seq_.push_back(swap);
 
       /// Update degrees.
-      depthBuckets_[swap.first]++;
-      depthBuckets_[swap.second]++;
-      ndepth_ = std::max(
-          {depthBuckets_[swap.first], depthBuckets_[swap.second], ndepth_});
+      const uint16_t start =
+          std::max(depthBuckets_[swap.first], depthBuckets_[swap.second]);
+      const uint16_t finish = start + 1;
+      depthBuckets_[swap.first] = depthBuckets_[swap.second] = finish;
+      ndepth_ = std::max(ndepth_, finish);
 
       /// Evaluate cost function.
       f_ = g(weights) + h(layers, arch, weights); // NOLINT
