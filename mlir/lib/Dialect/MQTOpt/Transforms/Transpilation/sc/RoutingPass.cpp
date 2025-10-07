@@ -101,30 +101,29 @@ void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
     return;
   }
 
-  // Create a predicate function that checks if the use is:
-  // 1. In the specified region or one of its nested regions
-  // 2. Not in the excepted operation
-  const auto isInRegionAndNotExcepted = [&](OpOperand& ops) -> bool {
-    Operation* user = ops.getOwner();
+  Block* swapBlock = exceptOp->getBlock();
 
-    // Skip the excepted operation
+  rewriter.replaceUsesWithIf(oldValue, newValue, [&](OpOperand& use) {
+    Operation* user = use.getOwner();
     if (user == exceptOp) {
       return false;
     }
 
-    // Check if the user is in the specified region or a child region
+    // Only replace uses in same block that come AFTER the swap
+    if (user->getBlock() == swapBlock) {
+      return exceptOp->isBeforeInBlock(user);
+    }
+
+    // For other blocks, check if in region tree
     Region* userRegion = user->getParentRegion();
-    while (userRegion != nullptr) {
+    while (userRegion) {
       if (userRegion == region) {
         return true;
       }
       userRegion = userRegion->getParentRegion();
     }
-
     return false;
-  };
-
-  rewriter.replaceUsesWithIf(oldValue, newValue, isInRegionAndNotExcepted);
+  });
 }
 
 class Router {
