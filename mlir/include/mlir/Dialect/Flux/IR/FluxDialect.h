@@ -11,6 +11,7 @@
 #pragma once
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 
 // Suppress warnings about ambiguous reversed operators in MLIR
 // (see https://github.com/llvm/llvm-project/issues/45853)
@@ -18,7 +19,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
 #endif
-#include "mlir/Interfaces/InferTypeOpInterface.h"
+#include <mlir/Interfaces/InferTypeOpInterface.h>
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #endif
@@ -29,14 +30,14 @@
 // Dialect
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/Flux/IR/FluxOpsDialect.h.inc" // IWYU pragma: export
+#include "mlir/Dialect/Flux/IR/FluxOpsDialect.h.inc"
 
 //===----------------------------------------------------------------------===//
 // Types
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/Flux/IR/FluxOpsTypes.h.inc" // IWYU pragma: export
+#include "mlir/Dialect/Flux/IR/FluxOpsTypes.h.inc"
 
 //===----------------------------------------------------------------------===//
 // Interfaces
