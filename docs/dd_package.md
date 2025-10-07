@@ -375,7 +375,7 @@ If $q_1$ is in the $\ket{0}$ state (following the left successor), then $q_0$ ha
 If $q_1$ is in the $\ket{1}$ state (following the right successor), it is guaranteed that the remaining qubit is in the $\ket{0}$ state.
 ````
 
-Overall, statevectors are represented as decision diagrams conceptionally equivalent to halving the vector in a recursive fashion until it is fully decomposed.
+Overall, statevectors are represented as decision diagrams conceptually equivalent to halving the vector in a recursive fashion until it is fully decomposed.
 The key idea is to exploit the redundancies in the resulting diagrams to create a more compact representation.
 Some interesting properties that are worth pointing out:
 
