@@ -266,6 +266,29 @@ struct GateDecompositionPattern final
     throw std::logic_error{"Unknown MagicBasisTransform direction!"};
   }
 
+  static qc::fp trace_to_fid(const qfp& x) {
+    auto x_abs = std::abs(x);
+    return (4.0 + x_abs * x_abs) / 20.0;
+  }
+
+  static qc::fp closest_partial_swap(qc::fp a, qc::fp b, qc::fp c) {
+    auto m = (a + b + c) / 3.;
+    auto [am, bm, cm] = std::array{a - m, b - m, c - m};
+    auto [ab, bc, ca] = std::array{a - b, b - c, c - a};
+    return m + am * bm * cm * (6. + ab * ab + bc * bc + ca * ca) / 18.;
+  }
+
+  static matrix2x2 rx_matrix(qc::fp theta) {
+    auto half_theta = theta / 2.;
+    auto cos = qfp(std::cos(half_theta), 0.);
+    auto isin = qfp(0., -std::sin(half_theta));
+    return {cos, isin, isin, cos};
+  }
+
+  static std::array<qc::fp, 4> params_xyx_inner(const matrix2x2& matrix) {
+
+  }
+
   static constexpr std::complex<qc::fp> C_ZERO{0., 0.};
   static constexpr std::complex<qc::fp> C_ONE{1., 0.};
   static constexpr std::complex<qc::fp> C_M_ONE{-1., 0.};
@@ -285,7 +308,7 @@ struct GateDecompositionPattern final
     // EulerBasis default_euler_basis; // TODO: simply use ZYZ?
     std::optional<qc::fp> requested_fidelity;
     qc::fp calculated_fidelity;
-    dd::TwoQubitGateMatrix unitary_matrix;
+    matrix4x4 unitary_matrix;
 
     static TwoQubitWeylDecomposition
     new_inner(matrix4x4 unitary_matrix,
@@ -474,347 +497,382 @@ struct GateDecompositionPattern final
         global_phase -= qc::PI_2;
       }
       auto [a, b, c] = std::tie(cs[1], cs[0], cs[2]);
-      let is_close = | ap : f64, bp : f64, cp : f64 |->bool {
-        let[da, db, dc] = [ a - ap, b - bp, c - cp ];
-        let tr = 4. * c64(da.cos() * db.cos() * dc.cos(),
-                          da.sin() * db.sin() * dc.sin(), );
-        match fidelity {
-          Some(fid) = > tr.trace_to_fid() >= fid,
-          // Set to false here to default to general specialization in the
-          // absence of a fidelity and provided specialization.
-              None = > false,
+      auto is_close = [&](qc::fp ap, qc::fp bp, qc::fp cp) -> bool {
+        auto da = a - ap;
+        auto db = b - bp;
+        auto dc = c - cp;
+        auto tr = 4. * qfp(std::cos(da) * std::cos(db) * std::cos(dc),
+                           std::sin(da) * std::sin(db) * std::sin(dc));
+        if (fidelity) {
+          return trace_to_fid(tr) >= *fidelity;
+        }
+        return false;
+      };
+
+      auto closest_abc = closest_partial_swap(a, b, c);
+      auto closest_ab_minus_c = closest_partial_swap(a, b, -c);
+      auto flipped_from_original = false;
+
+      auto get_default_specialzation = [&]() {
+        if (is_close(0., 0., 0.)) {
+          return Specialization::IdEquiv;
+        } else if (is_close(qc::PI_4, qc::PI_4, qc::PI_4) ||
+                   is_close(qc::PI_4, qc::PI_4, -qc::PI_4)) {
+          return Specialization::SWAPEquiv;
+        } else if (is_close(closest_abc, closest_abc, closest_abc)) {
+          return Specialization::PartialSWAPEquiv;
+        } else if (is_close(closest_ab_minus_c, closest_ab_minus_c,
+                            -closest_ab_minus_c)) {
+          return Specialization::PartialSWAPFlipEquiv;
+        } else if (is_close(a, 0., 0.)) {
+          return Specialization::ControlledEquiv;
+        } else if (is_close(qc::PI_4, qc::PI_4, c)) {
+          return Specialization::MirrorControlledEquiv;
+        } else if (is_close((a + b) / 2., (a + b) / 2., c)) {
+          return Specialization::fSimaabEquiv;
+        } else if (is_close(a, (b + c) / 2., (b + c) / 2.)) {
+          return Specialization::fSimabbEquiv;
+        } else if (is_close(a, (b - c) / 2., (c - b) / 2.)) {
+          return Specialization::fSimabmbEquiv;
+        } else {
+          return Specialization::General;
         }
       };
-
-      let closest_abc = closest_partial_swap(a, b, c);
-      let closest_ab_minus_c = closest_partial_swap(a, b, -c);
-      auto flipped_from_original = false;
-      let specialization = match _specialization{
-          Some(specialization) = > specialization,
-          None =>{
-              if is_close (0., 0., 0.){
-                  Specialization::IdEquiv} else if is_close (qc::PI_4, qc::PI_4,
-                                                             qc::PI_4) ||
-              is_close(qc::PI_4, qc::PI_4, -qc::PI_4){
-                  Specialization::SWAPEquiv} else if is_close (closest_abc,
-                                                               closest_abc,
-                                                               closest_abc){
-                  Specialization::
-                      PartialSWAPEquiv} else if is_close (closest_ab_minus_c,
-                                                          closest_ab_minus_c,
-                                                          -closest_ab_minus_c){
-                  Specialization::PartialSWAPFlipEquiv} else if is_close (a, 0.,
-                                                                          0.){
-                  Specialization::ControlledEquiv} else if is_close (qc::PI_4,
-                                                                     qc::PI_4,
-                                                                     c){
-                  Specialization::
-                      MirrorControlledEquiv} else if is_close ((a + b) / 2.,
-                                                               (a + b) / 2., c){
-                  Specialization::fSimaabEquiv} else if is_close (a,
-                                                                  (b + c) / 2.,
-                                                                  (b + c) / 2.){
-                  Specialization::fSimabbEquiv} else if is_close (a,
-                                                                  (b - c) / 2.,
-                                                                  (c - b) / 2.){
-                  Specialization::fSimabmbEquiv} else {
-                  Specialization::General}}};
-      let general = TwoQubitWeylDecomposition{
-        a,
-        b,
-        c,
-        global_phase,
-        K1l,
-        K1r,
-        K2l,
-        K2r,
-        specialization : Specialization::General,
-        default_euler_basis,
-        requested_fidelity : fidelity,
-        calculated_fidelity : -1.0,
-        unitary_matrix,
+      auto specialization =
+          _specialization.value_or(get_default_specialzation());
+      TwoQubitWeylDecomposition general{
+          a,
+          b,
+          c,
+          global_phase,
+          K1l,
+          K1r,
+          K2l,
+          K2r,
+          Specialization::General,
+          // default_euler_basis,
+          fidelity,
+          -1.0,
+          unitary_matrix,
       };
-      auto specialized
-          : TwoQubitWeylDecomposition = match specialization{
-                // :math:`U \sim U_d(0,0,0) \sim Id`
-                //
-                // This gate binds 0 parameters, we make it canonical by
-                // setting
-                // :math:`K2_l = Id` , :math:`K2_r = Id`.
-                Specialization::IdEquiv = > TwoQubitWeylDecomposition{
-                  specialization,
-                  a : 0.,
-                  b : 0.,
-                  c : 0.,
-                  K1l : general.K1l.dot(&general.K2l),
-                  K1r : general.K1r.dot(&general.K2r),
-                  K2l : Array2::eye(2),
-                  K2r : Array2::eye(2),
-                  ..general
-                },
-                // :math:`U \sim U_d(\pi/4, \pi/4, \pi/4) \sim U(\pi/4, \pi/4,
-                // -\pi/4) \sim \text{SWAP}`
-                //
-                // This gate binds 0 parameters, we make it canonical by
-                // setting
-                // :math:`K2_l = Id` , :math:`K2_r = Id`.
-                Specialization::SWAPEquiv =>{
-                    if c > 0. {TwoQubitWeylDecomposition{
-                      specialization,
-                      a : qc::PI_4,
-                      b : qc::PI_4,
-                      c : qc::PI_4,
-                      K1l : general.K1l.dot(&general.K2r),
-                      K1r : general.K1r.dot(&general.K2l),
-                      K2l : Array2::eye(2),
-                      K2r : Array2::eye(2),
-                      ..general
-                    }} else {flipped_from_original = true;
-      TwoQubitWeylDecomposition {
-        specialization,
-            a : qc::PI_4,
-                b : qc::PI_4,
-                    c : qc::PI_4,
-                        global_phase : global_phase + qc::PI_2,
-                        K1l : general.K1l.dot(&ipz).dot(&general.K2r),
-                        K1r : general.K1r.dot(&ipz).dot(&general.K2l),
-                        K2l : Array2::eye(2),
-                              K2r : Array2::eye(2),
-                                    ..general
-      }
-    }
-  }
-  // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, \alpha\pi/4) \sim
-  // \text{SWAP}^\alpha`
-  //
-  // This gate binds 3 parameters, we make it canonical by setting:
-  //
-  // :math:`K2_l = Id`.
-  Specialization::PartialSWAPEquiv => {
-    let closest = closest_partial_swap(a, b, c);
-    auto k2l_dag = general.K2l.t().to_owned();
-    k2l_dag.view_mut().mapv_inplace(| x | x.conj());
-    TwoQubitWeylDecomposition {
-      specialization, a : closest,
-                          b : closest,
-                              c : closest,
-                                  K1l : general.K1l.dot(&general.K2l),
-                                  K1r : general.K1r.dot(&general.K2l),
-                                  K2r : k2l_dag.dot(&general.K2r),
-                                  K2l : Array2::eye(2),
+      auto get_specialized_decomposition = [&]() {
+        // :math:`U \sim U_d(0,0,0) \sim Id`
+        //
+        // This gate binds 0 parameters, we make it canonical by
+        // setting
+        // :math:`K2_l = Id` , :math:`K2_r = Id`.
+        if (specialization == Specialization::IdEquiv) {
+          return TwoQubitWeylDecomposition{
+              0.,
+              0.,
+              0.,
+              general.global_phase,
+              dot(general.K1l, general.K2l),
+              identityGate,
+              dot(general.K1r, general.K2r),
+              identityGate,
+              specialization,
+              general.requested_fidelity,
+              general.calculated_fidelity,
+              general.unitary_matrix,
+          };
+        }
+        // :math:`U \sim U_d(\pi/4, \pi/4, \pi/4) \sim U(\pi/4, \pi/4,
+        // -\pi/4) \sim \text{SWAP}`
+        //
+        // This gate binds 0 parameters, we make it canonical by
+        // setting
+        // :math:`K2_l = Id` , :math:`K2_r = Id`.
+        if (specialization == Specialization::SWAPEquiv) {
+          if (c > 0.) {
+            return TwoQubitWeylDecomposition{
+                qc::PI_4,
+                qc::PI_4,
+                qc::PI_4,
+                general.global_phase,
+                dot(general.K1l, general.K2r),
+                identityGate,
+                dot(general.K1r, general.K2l),
+                identityGate,
+                specialization,
+                general.requested_fidelity,
+                general.calculated_fidelity,
+                general.unitary_matrix,
+            };
+          } else {
+            flipped_from_original = true;
+            return TwoQubitWeylDecomposition{
+                qc::PI_4,
+                qc::PI_4,
+                qc::PI_4,
+                global_phase + qc::PI_2,
+                dot(dot(general.K1l, IPZ), general.K2r),
+                identityGate,
+                dot(dot(general.K1r, IPZ), general.K2l),
+                identityGate,
+                specialization,
+                general.requested_fidelity,
+                general.calculated_fidelity,
+                general.unitary_matrix,
+            };
+          }
+        }
+        // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, \alpha\pi/4) \sim
+        // \text{SWAP}^\alpha`
+        //
+        // This gate binds 3 parameters, we make it canonical by setting:
+        //
+        // :math:`K2_l = Id`.
+        if (specialization == Specialization::PartialSWAPEquiv) {
+          auto closest = closest_partial_swap(a, b, c);
+          auto k2l_dag = transpose(general.K2l);
+          llvm::transform(k2l_dag, k2l_dag.begin(),
+                          [](auto&& x) { return std::conj(x); });
+
+          return TwoQubitWeylDecomposition{
+              closest,
+              closest,
+              closest,
+              general.global_phase,
+              dot(general.K1l, general.K2l),
+              identityGate,
+              dot(general.K1r, general.K2l),
+              dot(k2l_dag, general.K2r),
+              specialization,
+              general.requested_fidelity,
+              general.calculated_fidelity,
+              general.unitary_matrix,
+          };
+        }
+        // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, -\alpha\pi/4) \sim
+        // \text{SWAP}^\alpha`
+        //
+        // (a non-equivalent root of SWAP from the TwoQubitWeylPartialSWAPEquiv
+        // similar to how :math:`x = (\pm \sqrt(x))^2`)
+        //
+        // This gate binds 3 parameters, we make it canonical by setting:
+        //
+        // :math:`K2_l = Id`
+        if (specialization == Specialization::PartialSWAPFlipEquiv) {
+          auto closest = closest_partial_swap(a, b, -c);
+          auto k2l_dag = transpose(general.K2l);
+          llvm::transform(k2l_dag, k2l_dag.begin(),
+                          [](auto&& x) { return std::conj(x); });
+
+          return TwoQubitWeylDecomposition{
+              closest,
+              closest,
+              -closest,
+              general.global_phase,
+              dot(general.K1l, general.K2l),
+              identityGate,
+              dot(dot(dot(general.K1r, IPZ), general.K2l), IPZ),
+              dot(dot(dot(IPZ, k2l_dag), IPZ), general.K2r),
+              specialization,
+              general.requested_fidelity,
+              general.calculated_fidelity,
+              general.unitary_matrix,
+          };
+        }
+        // :math:`U \sim U_d(\alpha, 0, 0) \sim \text{Ctrl-U}`
+        //
+        // This gate binds 4 parameters, we make it canonical by setting:
+        //
+        //      :math:`K2_l = Ry(\theta_l) Rx(\lambda_l)` ,
+        //      :math:`K2_r = Ry(\theta_r) Rx(\lambda_r)` .
+        if (specialization == Specialization::ControlledEquiv) {
+          auto euler_basis = EulerBasis::XYX;
+          auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
+              angles_from_unitary(general.K2l, euler_basis);
+          auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
+              angles_from_unitary(general.K2r, euler_basis);
+          return TwoQubitWeylDecomposition{
+              a,
+              0.,
+              0.,
+              global_phase + k2lphase + k2rphase,
+              dot(general.K1l, rx_matrix(k2lphi)),
+              ry_matrix(k2ltheta).dot(&rx_matrix(k2llambda)),
+              dot(general.K1r, rx_matrix(k2rphi)),
+              ry_matrix(k2rtheta).dot(&rx_matrix(k2rlambda)),
+              // default_euler_basis : euler_basis,
+              specialization,
+              general.requested_fidelity,
+              general.calculated_fidelity,
+              general.unitary_matrix,
+          };
+        }
+        // :math:`U \sim U_d(\pi/4, \pi/4, \alpha) \sim \text{SWAP} \cdot
+        // \text{Ctrl-U}`
+        //
+        // This gate binds 4 parameters, we make it canonical by setting:
+        //
+        // :math:`K2_l = Ry(\theta_l)\cdot Rz(\lambda_l)` , :math:`K2_r =
+        // Ry(\theta_r)\cdot Rz(\lambda_r)`
+        Specialization::MirrorControlledEquiv => {
+          let[k2ltheta, k2lphi, k2llambda, k2lphase] =
+              angles_from_unitary(general.K2l.view(), EulerBasis::ZYZ);
+          let[k2rtheta, k2rphi, k2rlambda, k2rphase] =
+              angles_from_unitary(general.K2r.view(), EulerBasis::ZYZ);
+          TwoQubitWeylDecomposition {
+            specialization,
+                a : qc::PI_4,
+                    b : qc::PI_4,
+                        c,
+                        global_phase : global_phase + k2lphase + k2rphase,
+                        K1l : general.K1l.dot(&rz_matrix(k2rphi)),
+                        K1r : general.K1r.dot(&rz_matrix(k2lphi)),
+                        K2l : ry_matrix(k2ltheta).dot(&rz_matrix(k2llambda)),
+                        K2r : ry_matrix(k2rtheta).dot(&rz_matrix(k2rlambda)),
+                        ..general
+          }
+        }
+        // :math:`U \sim U_d(\alpha, \alpha, \beta), \alpha \geq |\beta|`
+        //
+        // This gate binds 5 parameters, we make it canonical by setting:
+        //
+        // :math:`K2_l = Ry(\theta_l)\cdot Rz(\lambda_l)`.
+        Specialization::fSimaabEquiv => {
+          let[k2ltheta, k2lphi, k2llambda, k2lphase] =
+              angles_from_unitary(general.K2l.view(), EulerBasis::ZYZ);
+          TwoQubitWeylDecomposition {
+            specialization, a : (a + b) / 2., b : (a + b) / 2., c,
+                global_phase : global_phase + k2lphase,
+                K1r : general.K1r.dot(&rz_matrix(k2lphi)),
+                K1l : general.K1l.dot(&rz_matrix(k2lphi)),
+                K2l : ry_matrix(k2ltheta).dot(&rz_matrix(k2llambda)),
+                K2r : rz_matrix(-k2lphi).dot(&general.K2r), ..general
+          }
+        }
+        // :math:`U \sim U_d(\alpha, \beta, -\beta), \alpha \geq \beta \geq 0`
+        //
+        // This gate binds 5 parameters, we make it canonical by setting:
+        //
+        // :math:`K2_l = Ry(\theta_l)Rx(\lambda_l)`
+        Specialization::fSimabbEquiv => {
+          let euler_basis = EulerBasis::XYX;
+          let[k2ltheta, k2lphi, k2llambda, k2lphase] =
+              angles_from_unitary(general.K2l.view(), euler_basis);
+          TwoQubitWeylDecomposition {
+            specialization, a, b : (b + c) / 2., c : (b + c) / 2.,
+                global_phase : global_phase + k2lphase,
+                K1r : general.K1r.dot(&rx_matrix(k2lphi)),
+                K1l : general.K1l.dot(&rx_matrix(k2lphi)),
+                K2l : ry_matrix(k2ltheta).dot(&rx_matrix(k2llambda)),
+                K2r : rx_matrix(-k2lphi).dot(&general.K2r),
+                default_euler_basis : euler_basis, ..general
+          }
+        }
+        // :math:`U \sim U_d(\alpha, \beta, -\beta), \alpha \geq \beta \geq 0`
+        //
+        // This gate binds 5 parameters, we make it canonical by setting:
+        //
+        // :math:`K2_l = Ry(\theta_l)Rx(\lambda_l)`
+        Specialization::fSimabmbEquiv => {
+          let euler_basis = EulerBasis::XYX;
+          let[k2ltheta, k2lphi, k2llambda, k2lphase] =
+              angles_from_unitary(general.K2l.view(), euler_basis);
+          TwoQubitWeylDecomposition {
+            specialization, a, b : (b - c) / 2.,
+                c
+                : -((b - c) / 2.),
+                  global_phase : global_phase + k2lphase,
+                  K1l : general.K1l.dot(&rx_matrix(k2lphi)),
+                  K1r : general.K1r.dot(&ipz).dot(&rx_matrix(k2lphi)).dot(&ipz),
+                  K2l : ry_matrix(k2ltheta).dot(&rx_matrix(k2llambda)),
+                  K2r : ipz.dot(&rx_matrix(-k2lphi))
+                            .dot(&ipz)
+                            .dot(&general.K2r),
+                  default_euler_basis : euler_basis,
                                         ..general
-    }
-  }
-  // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, -\alpha\pi/4) \sim
-  // \text{SWAP}^\alpha`
-  //
-  // (a non-equivalent root of SWAP from the TwoQubitWeylPartialSWAPEquiv
-  // similar to how :math:`x = (\pm \sqrt(x))^2`)
-  //
-  // This gate binds 3 parameters, we make it canonical by setting:
-  //
-  // :math:`K2_l = Id`
-  Specialization::PartialSWAPFlipEquiv => {
-    let closest = closest_partial_swap(a, b, -c);
-    auto k2l_dag = general.K2l.t().to_owned();
-    k2l_dag.mapv_inplace(| x | x.conj());
-    TwoQubitWeylDecomposition {
-      specialization,
-          a : closest,
-              b : closest,
-                  c : -closest,
-                      K1l : general.K1l.dot(&general.K2l),
-                      K1r : general.K1r.dot(&ipz).dot(&general.K2l).dot(&ipz),
-                      K2r : ipz.dot(&k2l_dag).dot(&ipz).dot(&general.K2r),
-                      K2l : Array2::eye(2),
-                            ..general
-    }
-  }
-  // :math:`U \sim U_d(\alpha, 0, 0) \sim \text{Ctrl-U}`
-  //
-  // This gate binds 4 parameters, we make it canonical by setting:
-  //
-  //      :math:`K2_l = Ry(\theta_l) Rx(\lambda_l)` ,
-  //      :math:`K2_r = Ry(\theta_r) Rx(\lambda_r)` .
-  Specialization::ControlledEquiv => {
-    let euler_basis = EulerBasis::XYX;
-    let[k2ltheta, k2lphi, k2llambda, k2lphase] =
-        angles_from_unitary(general.K2l.view(), euler_basis);
-    let[k2rtheta, k2rphi, k2rlambda, k2rphase] =
-        angles_from_unitary(general.K2r.view(), euler_basis);
-    TwoQubitWeylDecomposition {
-      specialization, a, b : 0., c : 0.,
-          global_phase : global_phase + k2lphase + k2rphase,
-          K1l : general.K1l.dot(&rx_matrix(k2lphi)),
-          K1r : general.K1r.dot(&rx_matrix(k2rphi)),
-          K2l : ry_matrix(k2ltheta).dot(&rx_matrix(k2llambda)),
-          K2r : ry_matrix(k2rtheta).dot(&rx_matrix(k2rlambda)),
-          default_euler_basis : euler_basis, ..general
-    }
-  }
-  // :math:`U \sim U_d(\pi/4, \pi/4, \alpha) \sim \text{SWAP} \cdot
-  // \text{Ctrl-U}`
-  //
-  // This gate binds 4 parameters, we make it canonical by setting:
-  //
-  // :math:`K2_l = Ry(\theta_l)\cdot Rz(\lambda_l)` , :math:`K2_r =
-  // Ry(\theta_r)\cdot Rz(\lambda_r)`
-  Specialization::MirrorControlledEquiv => {
-    let[k2ltheta, k2lphi, k2llambda, k2lphase] =
-        angles_from_unitary(general.K2l.view(), EulerBasis::ZYZ);
-    let[k2rtheta, k2rphi, k2rlambda, k2rphase] =
-        angles_from_unitary(general.K2r.view(), EulerBasis::ZYZ);
-    TwoQubitWeylDecomposition {
-      specialization,
-          a : qc::PI_4,
-              b : qc::PI_4,
-                  c,
-                  global_phase : global_phase + k2lphase + k2rphase,
-                  K1l : general.K1l.dot(&rz_matrix(k2rphi)),
-                  K1r : general.K1r.dot(&rz_matrix(k2lphi)),
-                  K2l : ry_matrix(k2ltheta).dot(&rz_matrix(k2llambda)),
-                  K2r : ry_matrix(k2rtheta).dot(&rz_matrix(k2rlambda)),
-                  ..general
-    }
-  }
-  // :math:`U \sim U_d(\alpha, \alpha, \beta), \alpha \geq |\beta|`
-  //
-  // This gate binds 5 parameters, we make it canonical by setting:
-  //
-  // :math:`K2_l = Ry(\theta_l)\cdot Rz(\lambda_l)`.
-  Specialization::fSimaabEquiv => {
-    let[k2ltheta, k2lphi, k2llambda, k2lphase] =
-        angles_from_unitary(general.K2l.view(), EulerBasis::ZYZ);
-    TwoQubitWeylDecomposition {
-      specialization, a : (a + b) / 2., b : (a + b) / 2., c,
-          global_phase : global_phase + k2lphase,
-          K1r : general.K1r.dot(&rz_matrix(k2lphi)),
-          K1l : general.K1l.dot(&rz_matrix(k2lphi)),
-          K2l : ry_matrix(k2ltheta).dot(&rz_matrix(k2llambda)),
-          K2r : rz_matrix(-k2lphi).dot(&general.K2r), ..general
-    }
-  }
-  // :math:`U \sim U_d(\alpha, \beta, -\beta), \alpha \geq \beta \geq 0`
-  //
-  // This gate binds 5 parameters, we make it canonical by setting:
-  //
-  // :math:`K2_l = Ry(\theta_l)Rx(\lambda_l)`
-  Specialization::fSimabbEquiv => {
-    let euler_basis = EulerBasis::XYX;
-    let[k2ltheta, k2lphi, k2llambda, k2lphase] =
-        angles_from_unitary(general.K2l.view(), euler_basis);
-    TwoQubitWeylDecomposition {
-      specialization, a, b : (b + c) / 2., c : (b + c) / 2.,
-          global_phase : global_phase + k2lphase,
-          K1r : general.K1r.dot(&rx_matrix(k2lphi)),
-          K1l : general.K1l.dot(&rx_matrix(k2lphi)),
-          K2l : ry_matrix(k2ltheta).dot(&rx_matrix(k2llambda)),
-          K2r : rx_matrix(-k2lphi).dot(&general.K2r),
-          default_euler_basis : euler_basis, ..general
-    }
-  }
-  // :math:`U \sim U_d(\alpha, \beta, -\beta), \alpha \geq \beta \geq 0`
-  //
-  // This gate binds 5 parameters, we make it canonical by setting:
-  //
-  // :math:`K2_l = Ry(\theta_l)Rx(\lambda_l)`
-  Specialization::fSimabmbEquiv => {
-    let euler_basis = EulerBasis::XYX;
-    let[k2ltheta, k2lphi, k2llambda, k2lphase] =
-        angles_from_unitary(general.K2l.view(), euler_basis);
-    TwoQubitWeylDecomposition {
-      specialization, a, b : (b - c) / 2.,
-          c : -((b - c) / 2.),
-              global_phase : global_phase + k2lphase,
-              K1l : general.K1l.dot(&rx_matrix(k2lphi)),
-              K1r : general.K1r.dot(&ipz).dot(&rx_matrix(k2lphi)).dot(&ipz),
-              K2l : ry_matrix(k2ltheta).dot(&rx_matrix(k2llambda)),
-              K2r : ipz.dot(&rx_matrix(-k2lphi)).dot(&ipz).dot(&general.K2r),
-              default_euler_basis : euler_basis,
-                                    ..general
-    }
-  }
-  // U has no special symmetry.
-  //
-  // This gate binds all 6 possible parameters, so there is no need to make the
-  // single-qubit pre-/post-gates canonical.
-  Specialization::General = > general,
-}
+          }
+        }
+        // U has no special symmetry.
+        //
+        // This gate binds all 6 possible parameters, so there is no need to
+        // make the single-qubit pre-/post-gates canonical.
+        Specialization::General = > general,
+      };
+      TwoQubitWeylDecomposition specialized = match specialization
 
-let tr = if flipped_from_original {
-  let[da, db, dc] = [
-    qc::PI_2 - a - specialized.a,
-    b - specialized.b,
-    -c - specialized.c,
-  ];
-  4. * c64(da.cos() * db.cos() * dc.cos(), da.sin() * db.sin() * dc.sin(), )
-}
-else {
-  let[da, db, dc] = [ a - specialized.a, b - specialized.b, c - specialized.c ];
-  4. * c64(da.cos() * db.cos() * dc.cos(), da.sin() * db.sin() * dc.sin(), )
-};
-specialized.calculated_fidelity = tr.trace_to_fid();
-if let
-  Some(fid) = specialized.requested_fidelity {
-    if specialized
-      .calculated_fidelity + 1.0e-13 < fid {
-        return Err(QiskitError::new_err(format !(
-            "Specialization: {:?} calculated fidelity: {} is worse than "
-            "requested fidelity: {}",
-            specialized.specialization, specialized.calculated_fidelity, fid)));
+          let tr = if flipped_from_original {
+        let[da, db, dc] = [
+          qc::PI_2 - a - specialized.a,
+          b - specialized.b,
+          -c - specialized.c,
+        ];
+        4. * c64(da.cos() * db.cos() * dc.cos(),
+                 da.sin() * db.sin() * dc.sin(), )
       }
-  }
-specialized.global_phase += tr.arg();
-Ok(specialized)
-} // namespace mqt::ir::opt
-}
-;
-
-void twoQubitDecompose(dd::TwoQubitGateMatrix unitaryMatrix) {
-  qc::fp basis_fidelity = 1.0;
-  let target_decomposed = TwoQubitWeylDecomposition::new_inner(
-      unitary, Some(DEFAULT_FIDELITY), None)
-      ? ;
-  let traces = self.traces(&target_decomposed);
-  let best_nbasis = _num_basis_uses.unwrap_or_else(
-      ||
-      {traces.into_iter()
-           .enumerate()
-           .map(| (idx, trace) |
-                (idx, trace.trace_to_fid() * basis_fidelity.powi(idx as i32)))
-           .min_by(| (_idx1, fid1),
-                   (_idx2, fid2) | fid2.partial_cmp(fid1).unwrap())
-           .unwrap() .0 as u8});
-  let decomposition = match best_nbasis{
-      0 = > decomp0_inner(&target_decomposed),
-      1 = > self.decomp1_inner(&target_decomposed),
-      2 = > self.decomp2_supercontrolled_inner(&target_decomposed),
-      3 = > self.decomp3_supercontrolled_inner(&target_decomposed),
-      _ = > unreachable !("Invalid basis to use"),
+      else {
+        let[da, db, dc] =
+            [ a - specialized.a, b - specialized.b, c - specialized.c ];
+        4. * c64(da.cos() * db.cos() * dc.cos(),
+                 da.sin() * db.sin() * dc.sin(), )
+      };
+      specialized.calculated_fidelity = tr.trace_to_fid();
+      if let
+        Some(fid) = specialized.requested_fidelity {
+          if specialized
+            .calculated_fidelity + 1.0e-13 < fid {
+              return Err(QiskitError::new_err(format !(
+                  "Specialization: {:?} calculated fidelity: {} is worse than "
+                  "requested fidelity: {}",
+                  specialized.specialization, specialized.calculated_fidelity,
+                  fid)));
+            }
+        }
+      specialized.global_phase += tr.arg();
+      Ok(specialized)
+    } // namespace mqt::ir::opt
   };
-  let pulse_optimize = self.pulse_optimize.unwrap_or(true);
-  let sequence = if pulse_optimize {
-    self.pulse_optimal_chooser(best_nbasis, &decomposition, &target_decomposed)
-        ?
-  }
-  else {None};
-  if let
-    Some(seq) = sequence { return Ok(seq); }
-  auto target_1q_basis_list = EulerBasisSet::new ();
-  target_1q_basis_list.add_basis(self.euler_basis);
-  let euler_decompositions
-      : SmallVec<[Option<OneQubitGateSequence>; 8]> =
-            decomposition.iter()
-                .map(| decomp |
-                     {unitary_to_gate_sequence_inner(decomp.view(),
-                                                     &target_1q_basis_list, 0,
-                                                     None, true, None, )})
-                .collect();
-  auto gates = Vec::with_capacity(TWO_QUBIT_SEQUENCE_DEFAULT_CAPACITY);
-  auto global_phase = target_decomposed.global_phase;
-  global_phase -= best_nbasis as f64 * self.basis_decomposer.global_phase;
-  if best_nbasis
-    == 2 { global_phase += PI; }
+
+  void twoQubitDecompose(dd::TwoQubitGateMatrix unitaryMatrix) {
+    qc::fp basis_fidelity = 1.0;
+    let target_decomposed = TwoQubitWeylDecomposition::new_inner(
+        unitary, Some(DEFAULT_FIDELITY), None)
+        ? ;
+    let traces = self.traces(&target_decomposed);
+    let best_nbasis = _num_basis_uses.unwrap_or_else(
+        ||
+        {traces.into_iter()
+             .enumerate()
+             .map(| (idx, trace) |
+                  (idx, trace.trace_to_fid() * basis_fidelity.powi(idx as i32)))
+             .min_by(| (_idx1, fid1),
+                     (_idx2, fid2) | fid2.partial_cmp(fid1).unwrap())
+             .unwrap() .0 as u8});
+    let decomposition = match best_nbasis{
+        0 = > decomp0_inner(&target_decomposed),
+        1 = > self.decomp1_inner(&target_decomposed),
+        2 = > self.decomp2_supercontrolled_inner(&target_decomposed),
+        3 = > self.decomp3_supercontrolled_inner(&target_decomposed),
+        _ = > unreachable !("Invalid basis to use"),
+    };
+    let pulse_optimize = self.pulse_optimize.unwrap_or(true);
+    let sequence = if pulse_optimize {
+      self.pulse_optimal_chooser(best_nbasis, &decomposition,
+                                 &target_decomposed)
+          ?
+    }
+    else {None};
+    if let
+      Some(seq) = sequence { return Ok(seq); }
+    auto target_1q_basis_list = EulerBasisSet::new ();
+    target_1q_basis_list.add_basis(self.euler_basis);
+    let euler_decompositions
+        : SmallVec<[Option<OneQubitGateSequence>; 8]> =
+              decomposition.iter()
+                  .map(| decomp |
+                       {unitary_to_gate_sequence_inner(decomp.view(),
+                                                       &target_1q_basis_list, 0,
+                                                       None, true, None, )})
+                  .collect();
+    auto gates = Vec::with_capacity(TWO_QUBIT_SEQUENCE_DEFAULT_CAPACITY);
+    auto global_phase = target_decomposed.global_phase;
+    global_phase -= best_nbasis as f64 * self.basis_decomposer.global_phase;
+    if best_nbasis
+      == 2 { global_phase += PI; }
     for
       i in 0..best_nbasis as usize {
         if let
@@ -856,24 +914,24 @@ void twoQubitDecompose(dd::TwoQubitGateMatrix unitaryMatrix) {
         gates,
         global_phase,
     })
-}
+  }
 
-std::array<std::complex<qc::fp>, 4> traces(TwoQubitWeylDecomposition target) {
-  return {
-      4. * std::complex<qc::fp>(
-               target.a.cos() * target.b.cos() * target.c.cos(),
-               target.a.sin() * target.b.sin() * target.c.sin(), ),
-      4. * c64((qc::PI_4 - target.a).cos() *
-                   (self.basis_decomposer.b - target.b).cos() * target.c.cos(),
-               (qc::PI_4 - target.a).sin() *
-                   (self.basis_decomposer.b - target.b).sin() *
-                   target.c.sin(), ),
-      c64(4. * target.c.cos(), 0.),
-      c64(4., 0.),
-  };
-}
-}
-;
+  std::array<std::complex<qc::fp>, 4> traces(TwoQubitWeylDecomposition target) {
+    return {
+        4. * std::complex<qc::fp>(
+                 target.a.cos() * target.b.cos() * target.c.cos(),
+                 target.a.sin() * target.b.sin() * target.c.sin(), ),
+        4. *
+            c64((qc::PI_4 - target.a).cos() *
+                    (self.basis_decomposer.b - target.b).cos() * target.c.cos(),
+                (qc::PI_4 - target.a).sin() *
+                    (self.basis_decomposer.b - target.b).sin() *
+                    target.c.sin(), ),
+        c64(4. * target.c.cos(), 0.),
+        c64(4., 0.),
+    };
+  }
+};
 
 /**
  * @brief Populates the given pattern set with patterns for gate
