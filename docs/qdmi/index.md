@@ -9,4 +9,5 @@ This part of MQT Core contains the implementation of QDMI's different components
 
 NA QDMI Device <na_device>
 QDMI Driver <driver>
+Qiskit Backend <qiskit_backend>
 ```
