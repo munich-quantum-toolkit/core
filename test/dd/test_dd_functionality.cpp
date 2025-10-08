@@ -18,7 +18,6 @@
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
@@ -546,7 +545,7 @@ TEST_F(DDFunctionality, FuseSingleQubitGatesAcrossOtherGates) {
   EXPECT_EQ(counts.reals, 0);
 }
 
-TEST_F(DDFunctionality, ClassicControlledOperationConditions) {
+TEST_F(DDFunctionality, IfElseOperationConditions) {
   const auto cmpKinds = {ComparisonKind::Eq, ComparisonKind::Neq};
   for (const auto kind : cmpKinds) {
     QuantumComputation qc(1U, 1U);
@@ -556,7 +555,7 @@ TEST_F(DDFunctionality, ClassicControlledOperationConditions) {
     qc.measure(0, 0);
     // apply a classic-controlled X gate whenever the measured result compares
     // as specified by kind with the previously measured result.
-    qc.classicControlled(X, 0, 0, 1U, kind);
+    qc.if_(X, 0, 0, true, kind);
     // measure into the same register to check the result.
     qc.measure(0, 0);
 
@@ -572,6 +571,23 @@ TEST_F(DDFunctionality, ClassicControlledOperationConditions) {
       EXPECT_EQ(key, "1");
     }
   }
+}
+
+TEST_F(DDFunctionality, IfElseOperationElseBranch) {
+  QuantumComputation qc(1U, 1U);
+  qc.x(0);
+  qc.measure(0, 0);
+  qc.ifElse(std::make_unique<StandardOperation>(0, I),
+            std::make_unique<StandardOperation>(0, X), 0, false);
+  qc.measure(0, 0);
+
+  constexpr auto shots = 16U;
+  const auto hist = sample(qc, shots);
+
+  EXPECT_EQ(hist.size(), 1);
+  const auto& [key, value] = *hist.begin();
+  EXPECT_EQ(value, shots);
+  EXPECT_EQ(key, "0");
 }
 
 TEST_F(DDFunctionality, VectorKroneckerWithTerminal) {
@@ -599,7 +615,7 @@ TEST_F(DDFunctionality, DynamicCircuitSimulationWithSWAP) {
   qc.x(0);
   qc.swap(0, 1);
   qc.measure(1, 0);
-  qc.classicControlled(X, 0, 0);
+  qc.if_(X, 0, 0);
   qc.measure(0, 1);
 
   constexpr auto shots = 16U;

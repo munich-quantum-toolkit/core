@@ -22,7 +22,7 @@
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -38,9 +38,39 @@
 #include <vector>
 
 namespace mqt::ir::opt {
+
+namespace {
+bool isQubitType(const mlir::MemRefType type) {
+  return llvm::isa<QubitType>(type.getElementType());
+}
+
+bool isQubitType(mlir::memref::LoadOp op) {
+  const auto& memRef = op.getMemref();
+  const auto& memRefType = llvm::cast<mlir::MemRefType>(memRef.getType());
+  return isQubitType(memRefType);
+}
+
+bool isQubitType(mlir::memref::StoreOp op) {
+  const auto& memRef = op.getMemref();
+  const auto& memRefType = llvm::cast<mlir::MemRefType>(memRef.getType());
+  return isQubitType(memRefType);
+}
+
+bool isSupportedMemRefOp(mlir::Operation* op) {
+  if (auto loadOp = llvm::dyn_cast<mlir::memref::LoadOp>(op)) {
+    return isQubitType(loadOp);
+  }
+  if (auto storeOp = llvm::dyn_cast<mlir::memref::StoreOp>(op)) {
+    return isQubitType(storeOp);
+  }
+  return false;
+}
+} // namespace
+
 /// Analysis pattern that filters out all quantum operations from a given
 /// program and creates a quantum computation from them.
-struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
+struct ToQuantumComputationPattern final
+    : mlir::OpRewritePattern<mlir::memref::AllocOp> {
   qc::QuantumComputation& circuit; // NOLINT(*-avoid-const-or-ref-data-members)
 
   explicit ToQuantumComputationPattern(mlir::MLIRContext* context,
@@ -83,7 +113,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       if (currentQubitVariables[i] != nullptr) {
         auto opResult =
             llvm::dyn_cast<mlir::OpResult>(currentQubitVariables[i]);
-        // E.g., index `1` if it comes from an extract op
+        // E.g., index `1` if it comes from a load op
         qubitArrayIndex = opResult.getResultNumber();
       } else {
         // Qubit is not (yet) in currentQubitVariables
@@ -153,16 +183,17 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
                        std::vector<mlir::Value>& currentQubitVariables) const {
 
     // Add the operation to the QuantumComputation.
-    qc::OpType opType = qc::OpType::H; // init placeholder-"H" overwritten next
-    if (llvm::isa<HOp>(op)) {
-      opType = qc::OpType::H;
-    } else if (llvm::isa<XOp>(op)) {
-      opType = qc::OpType::X;
-    } else { // TODO: support for more operations
-      throw std::runtime_error("Unsupported operation type!");
+    qc::OpType opType = qc::OpType::None;
+
+    try {
+      const std::string type = op->getName().stripDialect().str();
+      opType = qc::opTypeFromString(type);
+    } catch (const std::invalid_argument& e) {
+      throw std::runtime_error("Unsupported operation type: " +
+                               op->getName().getStringRef().str());
     }
 
-    const auto in = op.getInQubits()[0];
+    const auto in = op.getInQubits();
     const auto posCtrlIns = op.getPosCtrlInQubits();
     const auto negCtrlIns = op.getNegCtrlInQubits();
     const auto outs = op.getAllOutQubits();
@@ -170,7 +201,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // Get the qubit index of every control qubit.
     std::vector<size_t> posCtrlInsIndices;
     std::vector<size_t> negCtrlInsIndices;
-    size_t targetIndex = 0; // Placeholder
+    std::vector<size_t> targetIndex(2); // adapted for two-target gates
     try {
       for (const auto& val : posCtrlIns) {
         posCtrlInsIndices.emplace_back(
@@ -181,7 +212,10 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
             findQubitIndex(val, currentQubitVariables));
       }
       // Get the qubit index of the target qubit (if already collected).
-      targetIndex = findQubitIndex(in, currentQubitVariables);
+      targetIndex[0] = findQubitIndex(in[0], currentQubitVariables);
+      if (in.size() > 1) {
+        targetIndex[1] = findQubitIndex(in[1], currentQubitVariables);
+      }
     } catch (const std::runtime_error& e) {
       if (strcmp(e.what(),
                  "Qubit was not found in list of previously defined qubits") ==
@@ -199,7 +233,10 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
       currentQubitVariables[negCtrlInsIndices[i]] =
           outs[i + 1 + posCtrlInsIndices.size()];
     }
-    currentQubitVariables[targetIndex] = outs[0];
+    currentQubitVariables[targetIndex[0]] = outs[0];
+    if (op.getOutQubits().size() > 1) {
+      currentQubitVariables[targetIndex[1]] = outs[1];
+    }
 
     // Add the operation to the QuantumComputation.
     qc::Controls controls;
@@ -209,7 +246,23 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     for (const auto& index : negCtrlInsIndices) {
       controls.emplace(static_cast<qc::Qubit>(index), qc::Control::Type::Neg);
     }
-    circuit.emplace_back<qc::StandardOperation>(controls, targetIndex, opType);
+
+    std::vector<double> parameters;
+    if (const auto staticParamsAttr =
+            op->getAttrOfType<mlir::DenseF64ArrayAttr>("static_params")) {
+      parameters.reserve(staticParamsAttr.size());
+      for (const auto& param : staticParamsAttr.asArrayRef()) {
+        parameters.emplace_back(param);
+      }
+    }
+
+    if (op.getOutQubits().size() > 1) {
+      circuit.emplace_back<qc::StandardOperation>(
+          controls, targetIndex[0], targetIndex[1], opType, parameters);
+    } else {
+      circuit.emplace_back<qc::StandardOperation>(controls, targetIndex[0],
+                                                  opType, parameters);
+    }
 
     return true;
   }
@@ -227,7 +280,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
    */
   static void deleteRecursively(mlir::Operation& op,
                                 mlir::PatternRewriter& rewriter) {
-    if (llvm::isa<AllocOp>(op)) {
+    if (llvm::isa<mlir::memref::AllocOp>(op)) {
       return; // Do not delete alloc operations.
     }
     if (!op.getUsers().empty()) {
@@ -269,7 +322,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
             "Interleaving of qubits with non MQTOpt-operations not supported "
             "by round-trip pass!");
       }
-      if (llvm::isa<QubitRegisterType>(type)) {
+      if (llvm::isa<mlir::MemRefType>(type)) {
         // Operations that used the old `qreg` will now use the new one
         // instead.
         cloned->setOperand(i - 1, qreg);
@@ -286,56 +339,42 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     rewriter.replaceOp(&op, cloned);
   }
 
-  static std::optional<size_t> getExtractIndex(ExtractOp extractOp) {
-    // Case 1: Static attribute index
-    if (const auto indexAttr = extractOp.getIndexAttr();
-        indexAttr.has_value()) {
-      return static_cast<size_t>(*indexAttr);
-    }
-
-    // Case 2: Dynamic index via operand
-    if (const mlir::Value index = extractOp.getIndex()) {
-      // Case 2a: Direct constant
+  static std::optional<size_t> getLoadIndex(mlir::memref::LoadOp loadOp) {
+    if (const auto index = loadOp.getIndices().front()) {
       if (auto constOp = index.getDefiningOp<mlir::arith::ConstantOp>()) {
         if (auto intAttr =
                 llvm::dyn_cast<mlir::IntegerAttr>(constOp.getValue())) {
           return static_cast<size_t>(intAttr.getInt());
         }
       }
-      // Case 2b: Extract from tensor computation
-      if (auto tensorExtract = index.getDefiningOp<mlir::tensor::ExtractOp>()) {
-        return std::nullopt;
-      }
-      // Case 2c: unknown or unsupported dynamic index pattern
-      return std::nullopt;
     }
-
-    // No index present at all
     return std::nullopt;
   }
 
   mlir::LogicalResult
-  matchAndRewrite(AllocOp op, mlir::PatternRewriter& rewriter) const override {
-
+  matchAndRewrite(mlir::memref::AllocOp op,
+                  mlir::PatternRewriter& rewriter) const override {
     // Skip if already marked
     if (op->hasAttr("to_replace") || op->hasAttr("mqt_core")) {
       return mlir::failure();
     }
 
-    const auto& sizeAttr = op.getSizeAttr();
-
-    // First, we create a new `AllocOp` that will replace the old one. It
-    // includes the flag `to_replace`.
-    auto newAlloc = rewriter.create<AllocOp>(
-        op.getLoc(), QubitRegisterType::get(rewriter.getContext()), nullptr,
-        rewriter.getIntegerAttr(rewriter.getI64Type(), 0));
-    newAlloc->setAttr("to_replace", rewriter.getUnitAttr());
-
-    if (!sizeAttr) {
+    if (!op.getType().hasStaticShape()) {
       throw std::runtime_error(
           "Failed to resolve size of qubit register in alloc operation");
     }
-    const std::size_t numQubits = *sizeAttr;
+    auto size = op.getType().getShape().front();
+
+    // First, we create a new `AllocOp` that will replace the old one. It
+    // includes the flag `to_replace`.
+    // Create a new qubit register with the correct number of qubits.
+    const auto& qubitType = QubitType::get(rewriter.getContext());
+    const auto& memRefType = mlir::MemRefType::get({0}, qubitType);
+    auto newAlloc = rewriter.create<mlir::memref::AllocOp>(
+        op.getLoc(), memRefType, mlir::ValueRange{});
+    newAlloc->setAttr("to_replace", rewriter.getUnitAttr());
+
+    const std::size_t numQubits = size;
     // `currentQubitVariables` holds the current `Value` representation of each
     // qubit from the original register.
     std::vector<mlir::Value> currentQubitVariables(numQubits);
@@ -355,7 +394,8 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     while (current != nullptr) {
       // no need to visit non-mqtopt operations
       if (visited.contains(current) ||
-          current->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
+          (current->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT &&
+           !isSupportedMemRefOp(current))) {
         current = current->getNextNode();
         continue;
       }
@@ -363,24 +403,24 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
 
       // collect all non-mqtopt users of the current operation
       for (mlir::Operation* user : current->getUsers()) {
-        if (user->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT) {
+        if (user->getDialect()->getNamespace() != DIALECT_NAME_MQTOPT &&
+            !isSupportedMemRefOp(user)) {
           mqtUsers.insert(user);
         }
       }
 
-      if (llvm::isa<XOp>(current) || llvm::isa<HOp>(current)) {
+      if (llvm::isa<UnitaryInterface>(current)) {
         auto unitaryOp = llvm::dyn_cast<UnitaryInterface>(current);
         handleUnitaryOp(unitaryOp, currentQubitVariables);
-      } else if (auto extractOp = llvm::dyn_cast<ExtractOp>(current)) {
-        auto maybeIndex = getExtractIndex(extractOp);
+      } else if (auto loadOp = llvm::dyn_cast<mlir::memref::LoadOp>(current)) {
+        auto maybeIndex = getLoadIndex(loadOp);
         if (!maybeIndex.has_value()) {
           throw std::runtime_error(
               "Failed to resolve index in extractQubit operation");
         }
         const size_t index = *maybeIndex;
-        currentQubitVariables[index] = extractOp.getOutQubit();
-      } else if (llvm::isa<InsertOp>(current) ||
-                 llvm::isa<DeallocOp>(current)) {
+        currentQubitVariables[index] = loadOp.getResult();
+      } else if (llvm::isa<mlir::memref::StoreOp>(current)) {
         // Do nothing for now, may (and probably should) change later.
       } else if (llvm::isa<MeasureOp>(current)) {
         // We count the number of measurements and add a measurement operation
@@ -406,7 +446,7 @@ struct ToQuantumComputationPattern final : mlir::OpRewritePattern<AllocOp> {
     // Update the inputs of all non-mqtopt operations that use mqtopt operations
     // as inputs, as these will be deleted later.
     for (auto* operation : mqtUsers) {
-      updateMQTOptInputs(*operation, rewriter, newAlloc.getQreg());
+      updateMQTOptInputs(*operation, rewriter, newAlloc.getMemref());
     }
 
     // Remove all dead mqtopt operations except AllocOp.

@@ -10,13 +10,14 @@
 
 #include "mlir/Conversion/MQTOptToMQTRef/MQTOptToMQTRef.h" // IWYU pragma: keep
 #include "mlir/Conversion/MQTRefToMQTOpt/MQTRefToMQTOpt.h" // IWYU pragma: keep
+#include "mlir/Conversion/MQTRefToQIR/MQTRefToQIR.h"       // IWYU pragma: keep
+#include "mlir/Conversion/QIRToMQTRef/QIRToMQTRef.h"       // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"          // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"         // IWYU pragma: keep
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"          // IWYU pragma: keep
-#include "mlir/Dialect/MQTRef/Transforms/Passes.h"         // IWYU pragma: keep
 
 // Suppress warnings about implicit captures of `this` in lambdas
-#if defined(__clang__)
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-this-capture"
 #endif
@@ -27,16 +28,17 @@
 #include <mlir/InitAllPasses.h>
 #include <mlir/Tools/mlir-opt/MlirOptMain.h>
 
-#if defined(__clang__)
+#ifdef __clang__
 #pragma clang diagnostic pop
 #endif
 
 int main(const int argc, char** argv) {
   mlir::registerAllPasses();
   mqt::ir::opt::registerMQTOptPasses();
-  mqt::ir::ref::registerMQTRefPasses();
   mqt::ir::registerMQTRefToMQTOptPasses();
   mqt::ir::registerMQTOptToMQTRefPasses();
+  mqt::ir::registerQIRToMQTRefPasses();
+  mqt::ir::registerMQTRefToQIRPass();
 
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);

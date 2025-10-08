@@ -8,11 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/Common/Compat.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <utility>
 
 namespace mqt::ir::opt {
@@ -21,7 +21,7 @@ namespace mqt::ir::opt {
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 /**
- * @brief This pass attempty to sink quantum operations into the block where
+ * @brief This pass attempts to sink quantum operations into the block where
  * their results are used.
  */
 struct QuantumSinkPass final : impl::QuantumSinkPassBase<QuantumSinkPass> {
@@ -37,7 +37,7 @@ struct QuantumSinkPass final : impl::QuantumSinkPassBase<QuantumSinkPass> {
     populateQuantumSinkPushPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(APPLY_PATTERNS_GREEDILY(op, std::move(patterns)))) {
+    if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }

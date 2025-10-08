@@ -27,8 +27,8 @@
           "y": 0
         },
         "size": {
-          "width": 10,
-          "height": 10
+          "width": 9,
+          "height": 9
         }
       }
     }
@@ -43,8 +43,8 @@
           "y": 0
         },
         "size": {
-          "width": 10,
-          "height": 10
+          "width": 9,
+          "height": 9
         }
       },
       "duration": 100,
@@ -61,8 +61,8 @@
           "y": 0
         },
         "size": {
-          "width": 10,
-          "height": 2
+          "width": 9,
+          "height": 1
         }
       },
       "interactionRadius": 2,
@@ -83,12 +83,10 @@
           "y": 0
         },
         "size": {
-          "width": 10,
-          "height": 10
+          "width": 9,
+          "height": 9
         }
       },
-      "numRows": 10,
-      "numColumns": 10,
       "duration": 2,
       "fidelity": 0.999,
       "numParameters": 1
@@ -103,14 +101,12 @@
           "y": 0
         },
         "size": {
-          "width": 10,
-          "height": 10
+          "width": 9,
+          "height": 9
         }
       },
       "interactionRadius": 2,
       "blockingRadius": 4,
-      "numRows": 10,
-      "numColumns": 10,
       "duration": 1,
       "fidelity": 0.994,
       "numQubits": 2,
@@ -119,20 +115,17 @@
   ],
   "shuttlingUnits": [
     {
-      "name": "aod",
       "region": {
         "origin": {
           "x": 0,
           "y": 0
         },
         "size": {
-          "width": 10,
-          "height": 10
+          "width": 9,
+          "height": 9
         }
       },
-      "numRows": 10,
-      "numColumns": 10,
-      "movingSpeed": 55,
+      "meanShuttlingSpeed": 55,
       "loadDuration": 20,
       "storeDuration": 20,
       "loadFidelity": 0.99,
@@ -148,7 +141,7 @@
     "scaleFactor": 1.0,
     "unit": "um"
   },
-  "timeUnit": {
+  "durationUnit": {
     "scaleFactor": 1.0,
     "unit": "us"
   }

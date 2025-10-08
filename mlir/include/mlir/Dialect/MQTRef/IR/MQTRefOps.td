@@ -9,6 +9,7 @@
 #ifndef MQTREF_OPS
 #define MQTREF_OPS
 
+include "mlir/IR/BuiltinTypeInterfaces.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
@@ -26,14 +27,14 @@ def MQTRefDialect : Dialect {
     // The dialect name used in the MLIR file to prefix operations.
     let name = "mqtref";
 
-    let summary = "The MQT reference semantics (mqtref) dialect.";
+    let summary = "The MQT reference semantics (`mqtref`) dialect.";
 
     let description = [{
         This dialect uses memory semantics to represent and work with qubits.
         Similar to many existing quantum programming languages, operations can
         just be applied to qubits without needing to track state updates.
 
-        This dialect is designed as a 'compatibility' dialect that simplifies
+        This dialect is designed as a "compatibility" dialect that simplifies
         translations from and to existing languages such as QASM or QIR.
         Its optimization capabilities are more limited compared to the
         `mqtopt` dialect, which is designed for optimization.
@@ -61,12 +62,8 @@ class MQTRefType<string name, string typeMnemonic, list<Trait> traits = []>
     let mnemonic = typeMnemonic;
 }
 
-def QubitType : MQTRefType<"Qubit", "Qubit"> {
-    let summary = "A (dynamic or static) qubit reference.";
-}
-
-def QregType : MQTRefType<"QubitRegister", "QubitRegister"> {
-    let summary = "An array of qubit references.";
+def QubitType : MQTRefType<"Qubit", "Qubit", [MemRefElementTypeInterface]> {
+    let summary = "qubit reference";
 }
 
 //===----------------------------------------------------------------------===//
@@ -97,7 +94,9 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
     let results = (outs);
 
     let assemblyFormat = [{
-        `(` $params ( `static` $static_params^ )? ( `mask` $params_mask^ )? `)` attr-dict $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
+        `(` custom<RefParams>($params, $static_params, $params_mask) `)`
+        attr-dict
+        $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
     }];
 }
 
@@ -107,9 +106,10 @@ def MeasureOp : GateOp<"measure", []> {
     let summary = "A measure operation";
 
     let description = [{
-        This class represents a measure operation. It takes a single qubit as
-        input and returns a bit. After the measurement, the referenced qubit
-        is either in the state |0> or |1> and is indicated by the returned bit.
+        This class represents a measure operation.
+        It takes a single qubit as input and returns a bit.
+        After the measurement, the referenced qubit is in state "0" or "1".
+        The value of the state is indicated by the returned bit.
 
         Example:
         ```mlir
@@ -117,37 +117,27 @@ def MeasureOp : GateOp<"measure", []> {
         ```
     }];
 
-    let arguments = (ins
-        QubitType:$in_qubit
-    );
-
-    let results = (outs
-        I1:$out_bit
-    );
-
-    let assemblyFormat = [{
-        attr-dict $in_qubit
-    }];
+    let arguments = (ins QubitType:$in_qubit);
+    let results = (outs I1:$out_bit);
+    let assemblyFormat = "$in_qubit attr-dict";
 }
 
 def ResetOp : GateOp<"reset", []> {
     let summary = "A reset operation";
 
     let description = [{
-        This class represents a reset operation. It takes a single qubit as
-        input and and resets its value |0>.
+        This class represents a reset operation.
+        It takes a single qubit as input and and resets its state to "0".
 
         Example:
         ```mlir
-        "mqtref.reset"(%0) : (!mqtopt.Qubit) -> ()
+        mqtref.reset %0
         ```
     }];
 
-    let arguments = (ins
-        QubitType:$in_qubit
-    );
-
+    let arguments = (ins QubitType:$in_qubit);
     let results = (outs);
+    let assemblyFormat = "$in_qubit attr-dict";
 }
 
 class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTRefOp<mnemonic, traits>;
@@ -156,55 +146,19 @@ def AllocQubitOp : ResourceOp<"allocQubit"> {
     let summary = "Allocates a single qubit";
 
     let description = [{
-        Allocates a single qubit in the |0> state.
+        Allocates a single qubit in the "0" state.
         The qubit can be used in operations after allocation.
         It must be deallocated with the `deallocQubit` operation.
 
-        ### Example (custom syntax)
+        Example:
         ```mlir
         %q = mqtref.allocQubit
         ```
-
-        ### Example (generic syntax)
-        ```mlir
-        %q = "mqtref.allocQubit"() : () -> !mqtref.Qubit
-        ```
-
-        Both are equivalent; the first form is enabled by this op's `assemblyFormat`.
     }];
 
     let arguments = (ins);
     let results = (outs QubitType:$qubit);
     let assemblyFormat = "attr-dict";
-}
-
-def AllocOp : ResourceOp<"allocQubitRegister", [UniqueSizeDefinition]> {
-    let summary = "Allocates a qubit register";
-
-    let description = [{
-        This class represents an operation that allocates a qubit register. The
-        size can either be specified during runtime as an operand or as an
-        attribute when the size is known at compile time. Before the qubits in
-        the register can be used, they need to be extracted from the register
-        with the extract operation.
-
-        Example:
-        ```mlir
-        %0 = "mqtref.allocQubitRegister"() <{size_attr = 2 : i64}> : () -> !mqtref.QubitRegister
-
-        %c0_i64 = arith.constant 2 : i64
-        %1 = "mqtref.allocQubitRegister"(%c0_i64) : (i64) -> !mqtref.QubitRegister
-        ```
-    }];
-
-    let arguments = (ins
-        Optional<I64>:$size,
-        OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$size_attr
-    );
-
-    let results = (outs
-        QregType:$qreg
-    );
 }
 
 def DeallocQubitOp : ResourceOp<"deallocQubit"> {
@@ -215,67 +169,15 @@ def DeallocQubitOp : ResourceOp<"deallocQubit"> {
         `allocQubit` operation. After this operation, the qubit is no longer
         valid and cannot be used in further operations.
 
-        ### Example (custom syntax)
+        Example:
         ```mlir
         mqtref.deallocQubit %q
         ```
-
-        ### Example (generic syntax)
-        ```mlir
-        "mqtref.deallocQubit"(%0) : (!mqtref.Qubit) -> ()
-        ```
-
-        Both are equivalent; the first form is enabled by this op's `assemblyFormat`.
     }];
 
     let arguments = (ins QubitType:$qubit);
     let results = (outs);
     let assemblyFormat = "$qubit attr-dict";
-}
-
-def DeallocOp : ResourceOp<"deallocQubitRegister"> {
-    let summary = "Deallocates a qubit register";
-
-    let description = [{
-        This class represents an operation that deallocates a qubit register.
-        The qubit register is no longer valid after this operation.
-
-        Example:
-        ```mlir
-        "mqtref.deallocQubitRegister"(%0) : (!mqtref.QubitRegister) -> ()
-        ```
-    }];
-
-    let arguments = (ins
-        QregType:$qreg
-    );
-}
-
-def ExtractOp : ResourceOp<"extractQubit", [UniqueIndexDefinition]> {
-    let summary = "Extract a specific qubit reference from a given register";
-
-    let description = [{
-        This class represents an operation that extracts a specific qubit
-        reference from a given register. Before, the register must be
-        allocated with the allocateQubitRegister operation. Upon invocation
-        of this operation, the returned qubit reference can be used in
-        operations.
-
-        Example:
-        ```mlir
-        %out_qubit = "mqtref.extractQubit"(%0) <{index_attr = 0 : i64}> : (!mqtref.QubitRegister) -> !mqtref.Qubit
-        ```
-    }];
-
-    let arguments = (ins
-        QregType:$in_qreg,
-        Optional<I64>:$index,
-        OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$index_attr
-    );
-
-    let results = (outs
-        QubitType:$out_qubit
-    );
 }
 
 def QubitOp : ResourceOp<"qubit"> {
@@ -286,16 +188,13 @@ def QubitOp : ResourceOp<"qubit"> {
 
         Example:
         ```mlir
-        // Static (hardware) qubit with address '0'.
-        %q = "mqtref.qubit"() <{index = 0 : i64}> : () -> !mqtref.Qubit
-
-        // Using custom assembly.
         %q = mqtref.qubit 0
         ```
     }];
+
     let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
     let results = (outs QubitType:$qubit);
-    let assemblyFormat = " attr-dict $index ";
+    let assemblyFormat = "$index attr-dict";
 }
 
 #endif // MQTREF_OPS

@@ -17,9 +17,10 @@ set(LIBS
     ${passes_libs}
     MLIROptLib
     MLIRMQTOptTransforms
-    MLIRMQTRefTransforms
     MQTRefToMQTOpt
-    MQTOptToMQTRef)
+    MQTOptToMQTRef
+    MQTRefToQIR
+    QIRToMQTRef)
 
 add_mlir_tool(quantum-opt quantum-opt.cpp DEPENDS ${LIBS} SUPPORT_PLUGINS)
 target_compile_options(quantum-opt PRIVATE -fexceptions)

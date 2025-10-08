@@ -23,17 +23,7 @@ if(NOT TARGET MQT::CoreQASM)
                                         FILES ${QASM_HEADERS})
 
   # add link libraries
-  target_link_libraries(
-    ${MQT_CORE_TARGET_NAME}-qasm
-    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings
-    PUBLIC MQT::CoreIR)
-
-  # set versioning information
-  set_target_properties(
-    ${MQT_CORE_TARGET_NAME}-qasm
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreQASM)
+  target_link_libraries(${MQT_CORE_TARGET_NAME}-qasm PUBLIC MQT::CoreIR)
 
   # generate export header
   include(GenerateExportHeader)

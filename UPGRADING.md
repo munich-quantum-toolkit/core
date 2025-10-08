@@ -4,6 +4,31 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+This release introduces an `IfElseOperation` to the C++ library and the Python package to support Qiskit's `IfElseOp`.
+The new operation replaces the `ClassicControlledOperation`.
+
+An `IfElseOperation` can be added to a `QuantumComputation` using `if_else()`.
+
+```python
+qc.if_else(
+    then_operation=StandardOperation(target=0, op_type=OpType.x),
+    else_operation=StandardOperation(target=0, op_type=OpType.y),
+    control_bit=0,
+)
+```
+
+If no else-operation is needed, the `if_()` method can be used.
+
+```python
+qc.if_(op_type=OpType.x, target=0, control_bit=0)
+```
+
+### End of support for Python 3.9
+
+Starting with this release, MQT Core no longer supports Python 3.9.
+This is in line with the scheduled end of life of the version.
+As a result, MQT Core is no longer tested under Python 3.9 and no longer ships Python 3.9 wheels.
+
 ## [3.2.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.1` to `3.2`.

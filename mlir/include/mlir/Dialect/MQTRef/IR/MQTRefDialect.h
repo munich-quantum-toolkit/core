@@ -55,3 +55,15 @@
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/MQTRef/IR/MQTRefOps.h.inc" // IWYU pragma: export
+
+namespace mqt::ir::ref {
+mlir::ParseResult parseRefParams(
+    mlir::OpAsmParser& parser,
+    llvm::SmallVectorImpl<mlir::OpAsmParser::UnresolvedOperand>& params,
+    mlir::Attribute& staticParams, mlir::Attribute& paramsMask);
+
+void printRefParams(mlir::OpAsmPrinter& printer, mlir::Operation* op,
+                    mlir::ValueRange params,
+                    mlir::DenseF64ArrayAttr staticParams,
+                    mlir::DenseBoolArrayAttr paramsMask);
+} // namespace mqt::ir::ref

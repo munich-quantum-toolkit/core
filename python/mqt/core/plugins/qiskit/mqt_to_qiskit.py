@@ -12,7 +12,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from qiskit.circuit import AncillaRegister, ClassicalRegister, Clbit, QuantumCircuit, QuantumRegister, Qubit
+from qiskit.circuit import (
+    AncillaRegister,
+    ClassicalRegister,
+    IfElseOp,
+    QuantumCircuit,
+    QuantumRegister,
+)
+from qiskit.circuit.classical import expr
 from qiskit.circuit.library import (
     DCXGate,
     ECRGate,
@@ -46,11 +53,11 @@ from qiskit.transpiler.layout import Layout, TranspileLayout
 
 from ...ir import Permutation
 from ...ir.operations import (
-    ClassicControlledOperation,
+    ComparisonKind,
     CompoundOperation,
     Control,
+    IfElseOperation,
     NonUnitaryOperation,
-    Operation,
     OpType,
     StandardOperation,
 )
@@ -58,9 +65,11 @@ from ...ir.operations import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from qiskit.circuit import Clbit, Qubit
     from qiskit.circuit.singleton import SingletonGate
 
     from ...ir import QuantumComputation
+    from ...ir.operations import Operation
 
 __all__ = ["mqt_to_qiskit"]
 
@@ -205,7 +214,10 @@ def _add_standard_operation(circ: QuantumCircuit, op: StandardOperation, qubit_m
 
 
 def _add_non_unitary_operation(
-    circ: QuantumCircuit, op: NonUnitaryOperation, qubit_map: Mapping[int, Qubit], clbit_map: Mapping[int, Clbit]
+    circ: QuantumCircuit,
+    op: NonUnitaryOperation,
+    qubit_map: Mapping[int, Qubit],
+    clbit_map: Mapping[int, Clbit],
 ) -> None:
     """Add a :class:`~mqt.core.ir.operations.NonUnitaryOperation`.
 
@@ -216,7 +228,7 @@ def _add_non_unitary_operation(
         clbit_map: A mapping from classical bit indices to Qiskit :class:`~qiskit.circuit.Clbit`.
     """
     if op.type_ == OpType.measure:
-        for qubit, clbit in zip(op.targets, op.classics):
+        for qubit, clbit in zip(op.targets, op.classics, strict=False):
             circ.measure(qubit_map[qubit], clbit_map[clbit])
         return
 
@@ -227,7 +239,10 @@ def _add_non_unitary_operation(
 
 
 def _add_compound_operation(
-    circ: QuantumCircuit, op: CompoundOperation, qubit_map: Mapping[int, Qubit], clbit_map: Mapping[int, Clbit]
+    circ: QuantumCircuit,
+    op: CompoundOperation,
+    qubit_map: Mapping[int, Qubit],
+    clbit_map: Mapping[int, Clbit],
 ) -> None:
     """Add a :class:`~mqt.core.ir.operations.CompoundOperation`.
 
@@ -243,8 +258,59 @@ def _add_compound_operation(
     circ.append(inner_circ.to_instruction(), circ.qubits, circ.clbits)
 
 
+def _add_if_else_operation(
+    circ: QuantumCircuit,
+    op: IfElseOperation,
+    qubit_map: Mapping[int, Qubit],
+    clbit_map: Mapping[int, Clbit],
+) -> None:
+    """Add a :class:`~.IfElseOperation`.
+
+    Args:
+        circ: The Qiskit circuit to add the operation to.
+        op: The :class:`~.IfElseOperation` operation to add.
+        qubit_map: A mapping from qubit indices to Qiskit :class:`~qiskit.circuit.Qubit`.
+        clbit_map: A mapping from classical bit indices to Qiskit :class:`~qiskit.circuit.Clbit`.
+    """
+    if op.control_register is not None:
+        left_hand_side = next(reg for reg in circ.cregs if reg.name == op.control_register.name)
+        right_hand_side = op.expected_value_register
+    else:
+        assert op.control_bit is not None
+        left_hand_side = clbit_map[op.control_bit]
+        right_hand_side = op.expected_value_bit
+
+    condition: expr.Expr | tuple[ClassicalRegister | Clbit, int]
+    if op.comparison_kind == ComparisonKind.eq:
+        # directly handle equality conditions without expressions
+        condition = (left_hand_side, right_hand_side)
+    elif op.comparison_kind == ComparisonKind.neq:
+        condition = expr.not_equal(left_hand_side, right_hand_side)
+    elif op.comparison_kind == ComparisonKind.lt:
+        condition = expr.less(left_hand_side, right_hand_side)
+    elif op.comparison_kind == ComparisonKind.leq:
+        condition = expr.less_equal(left_hand_side, right_hand_side)
+    elif op.comparison_kind == ComparisonKind.gt:
+        condition = expr.greater(left_hand_side, right_hand_side)
+    elif op.comparison_kind == ComparisonKind.geq:
+        condition = expr.greater_equal(left_hand_side, right_hand_side)
+
+    then_circ = QuantumCircuit(*circ.qregs, *circ.cregs)
+    _add_operation(then_circ, op.then_operation, qubit_map, clbit_map)
+
+    else_circ: QuantumCircuit | None = None
+    if op.else_operation is not None:
+        else_circ = QuantumCircuit(*circ.qregs, *circ.cregs)
+        _add_operation(else_circ, op.else_operation, qubit_map, clbit_map)
+
+    circ.append(IfElseOp(condition, then_circ, else_circ), circ.qubits, circ.clbits)
+
+
 def _add_operation(
-    circ: QuantumCircuit, op: Operation, qubit_map: Mapping[int, Qubit], clbit_map: Mapping[int, Clbit]
+    circ: QuantumCircuit,
+    op: Operation,
+    qubit_map: Mapping[int, Qubit],
+    clbit_map: Mapping[int, Clbit],
 ) -> None:
     """Add an operation to a Qiskit circuit.
 
@@ -256,7 +322,6 @@ def _add_operation(
 
     Raises:
         TypeError: If the operation type is not supported.
-        NotImplementedError: If the operation type is not yet supported.
     """
     if isinstance(op, StandardOperation):
         _add_standard_operation(circ, op, qubit_map)
@@ -264,9 +329,8 @@ def _add_operation(
         _add_non_unitary_operation(circ, op, qubit_map, clbit_map)
     elif isinstance(op, CompoundOperation):
         _add_compound_operation(circ, op, qubit_map, clbit_map)
-    elif isinstance(op, ClassicControlledOperation):
-        msg = "Conversion of classic-controlled operations to Qiskit is not yet supported."
-        raise NotImplementedError(msg)
+    elif isinstance(op, IfElseOperation):
+        _add_if_else_operation(circ, op, qubit_map, clbit_map)
     else:
         msg = f"Unsupported operation type: {type(op)}"
         raise TypeError(msg)

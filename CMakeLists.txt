@@ -47,7 +47,7 @@ if(BUILD_MQT_CORE_BINDINGS)
   endif()
 
   # top-level call to find Python
-  find_package(Python 3.9 REQUIRED COMPONENTS Interpreter Development.Module)
+  find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module)
 endif()
 
 # check if this is the master project or used via add_subdirectory
@@ -84,12 +84,20 @@ if(MQT_CORE_INSTALL)
   else()
     set(BASEPOINT $ORIGIN)
   endif()
-  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR})
+  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR}
+                          ${BASEPOINT}/../${CMAKE_INSTALL_LIBDIR})
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
+
+option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
+if(BUILD_MQT_CORE_MLIR)
+  include(SetupMLIR)
+endif()
+cmake_dependent_option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON
+                       "BUILD_MQT_CORE_MLIR" OFF)
 
 # add main library code
 add_subdirectory(src)
@@ -111,10 +119,20 @@ if(BUILD_MQT_CORE_BENCHMARKS)
   add_subdirectory(eval)
 endif()
 
-option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
 if(BUILD_MQT_CORE_MLIR)
-  include(SetupMLIR)
   add_subdirectory(mlir)
+
+  # copy generated MLIR documentation
+  add_custom_command(
+    TARGET mlir-doc
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
+            ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
+    COMMAND ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
+    COMMENT "Copying and cleaning up generated MLIR documentation"
+    VERBATIM)
+
 endif()
 
 if(MQT_CORE_MASTER_PROJECT)

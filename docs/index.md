@@ -38,8 +38,9 @@ installation
 mqt_core_ir
 dd_package
 zx_package
-mlir
-NA QDMI Device <na_qdmi_device>
+mlir/index
+qdmi/index
+qir/index
 references
 CHANGELOG
 UPGRADING
@@ -63,7 +64,6 @@ dd_package_evaluation
 
 contributing
 support
-DevelopmentGuide
 ```
 ````
 

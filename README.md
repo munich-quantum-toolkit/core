@@ -31,6 +31,7 @@ MQT Core is an open-source C++20 and Python library for quantum computing that f
 - Fully fledged intermediate representation (IR) for quantum computations.
 - A state-of-the-art decision diagram (DD) package for quantum computing.
 - A dedicated ZX-diagram package for working with the ZX-calculus.
+- A QIR runtime based on the decision diagram package.
 
 If you have any questions, feel free to create a [discussion](https://github.com/munich-quantum-toolkit/core/discussions) or an [issue](https://github.com/munich-quantum-toolkit/core/issues) on [GitHub](https://github.com/munich-quantum-toolkit/core).
 
@@ -50,7 +51,7 @@ Thank you to all the contributors who have helped make MQT Core a reality!
 
 <p align="center">
   <a href="https://github.com/munich-quantum-toolkit/core/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=munich-quantum-toolkit/core" />
+  <img src="https://contrib.rocks/image?repo=munich-quantum-toolkit/core" alt="Contributors to munich-quantum-toolkit/core" />
   </a>
 </p>
 
@@ -74,7 +75,7 @@ To support this endeavor, please consider:
 
 ## Getting Started
 
-`mqt.core` is available via [PyPI](https://pypi.org/project/mqt.core/) for all major operating systems and supports Python 3.9 to 3.14.
+`mqt.core` is available via [PyPI](https://pypi.org/project/mqt.core/).
 
 ```console
 (.venv) $ pip install mqt.core
@@ -97,15 +98,17 @@ print(qc)
 
 ## System Requirements
 
-Building (and running) is continuously tested under Linux, MacOS, and Windows using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
-However, the implementation should be compatible with any current C++ compiler supporting C++20 and a minimum CMake version of 3.24.
+Building the project requires a C++ compiler with support for C++20 and CMake 3.24 or newer.
+For details on how to build the project, please refer to the [documentation](https://mqt.readthedocs.io/projects/core).
+Building (and running) is continuously tested under Linux, macOS, and Windows using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
+MQT Core is compatible with all [officially supported Python versions](https://devguide.python.org/versions/).
 
-MQT Core relies on some external dependencies:
+The project relies on some external dependencies:
 
-- [nlohmann/json](https://github.com/nlohmann/json): A JSON library for modern C++.
 - [boost/multiprecision](https://github.com/boostorg/multiprecision): A library for multiprecision arithmetic (used in the ZX package).
+- [nlohmann/json](https://github.com/nlohmann/json): A JSON library for modern C++.
+- [pybind/pybind11_json](https://github.com/pybind/pybind11_json): A library for using `nlohmann::json` with `pybind11` (only used for creating the Python bindings).
 - [google/googletest](https://github.com/google/googletest): A testing framework for C++ (only used in tests).
-- [pybind/pybind11_json](https://github.com/pybind/pybind11_json): Using nlohmann::json with pybind11 (only used for creating the Python bindings).
 
 CMake will automatically look for installed versions of these libraries. If it does not find them, they will be fetched automatically at configure time via the [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html) module (check out the documentation for more information on how to customize this behavior).
 
@@ -116,7 +119,6 @@ If you want to use the ZX library, it is recommended (although not strictly nece
 ## Cite This
 
 Please cite the work that best fits your use case.
-If both apply, include both references.
 
 ### MQT Core (the tool)
 
@@ -124,16 +126,16 @@ When citing the software itself or results produced with it, cite the MQT Core p
 
 ```bibtex
 @article{burgholzer2025MQTCore,
-    title        = {{{MQT Core}}: {{The}} Backbone of the {{Munich Quantum Toolkit (MQT)}}},
-    author       = {Lukas Burgholzer and Yannick Stade and Tom Peham and Robert Wille},
-    year         = 2025,
-    journal      = {Journal of Open Source Software},
-    publisher    = {The Open Journal},
-    volume       = 10,
-    number       = 108,
-    pages        = 7478,
-    doi          = {10.21105/joss.07478},
-    url          = {https://doi.org/10.21105/joss.07478},
+  title        = {{{MQT Core}}: {{The}} Backbone of the {{Munich Quantum Toolkit (MQT)}}},
+  author       = {Burgholzer, Lukas and Stade, Yannick and Peham, Tom and Wille, Robert},
+  year         = 2025,
+  journal      = {Journal of Open Source Software},
+  publisher    = {The Open Journal},
+  volume       = 10,
+  number       = 108,
+  pages        = 7478,
+  doi          = {10.21105/joss.07478},
+  url          = {https://doi.org/10.21105/joss.07478}
 }
 ```
 
@@ -143,15 +145,15 @@ When discussing the overall MQT project or its ecosystem, cite the MQT Handbook:
 
 ```bibtex
 @inproceedings{mqt,
-    title        = {The {{MQT}} Handbook: {{A}} Summary of Design Automation Tools and Software for Quantum Computing},
-    shorttitle   = {{The MQT Handbook}},
-    author       = {Robert Wille and Lucas Berent and Tobias Forster and Jagatheesan Kunasaikaran and Kevin Mato and Tom Peham and Nils Quetschlich and Damian Rovara and Aaron Sander and Ludwig Schmid and Daniel Schoenberger and Yannick Stade and Lukas Burgholzer},
-    booktitle    = {IEEE International Conference on Quantum Software (QSW)},
-    doi          = {10.1109/QSW62656.2024.00013},
-    year         = 2024,
-    eprint       = {2405.17543},
-    eprinttype   = {arxiv},
-    addendum     = {A live version of this document is available at \url{https://mqt.readthedocs.io}},
+  title        = {The {{MQT}} Handbook: {{A}} Summary of Design Automation Tools and Software for Quantum Computing},
+  shorttitle   = {{The MQT Handbook}},
+  author       = {Wille, Robert and Berent, Lucas and Forster, Tobias and Kunasaikaran, Jagatheesan and Mato, Kevin and Peham, Tom and Quetschlich, Nils and Rovara, Damian and Sander, Aaron and Schmid, Ludwig and Schoenberger, Daniel and Stade, Yannick and Burgholzer, Lukas},
+  year         = 2024,
+  booktitle    = {IEEE International Conference on Quantum Software (QSW)},
+  doi          = {10.1109/QSW62656.2024.00013},
+  eprint       = {2405.17543},
+  eprinttype   = {arxiv},
+  addendum     = {A live version of this document is available at \url{https://mqt.readthedocs.io}}
 }
 ```
 
@@ -159,10 +161,7 @@ When discussing the overall MQT project or its ecosystem, cite the MQT Handbook:
 
 ## Acknowledgements
 
-The Munich Quantum Toolkit has been supported by the European
-Research Council (ERC) under the European Union's Horizon 2020 research and innovation program (grant agreement
-No. 101001318), the Bavarian State Ministry for Science and Arts through the Distinguished Professorship Program, as well as the
-Munich Quantum Valley, which is supported by the Bavarian state government with funds from the Hightech Agenda Bayern Plus.
+The Munich Quantum Toolkit has been supported by the European Research Council (ERC) under the European Union's Horizon 2020 research and innovation program (grant agreement No. 101001318), the Bavarian State Ministry for Science and Arts through the Distinguished Professorship Program, as well as the Munich Quantum Valley, which is supported by the Bavarian state government with funds from the Hightech Agenda Bayern Plus.
 
 <p align="center">
   <picture>

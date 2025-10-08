@@ -23,10 +23,12 @@
 #include <istream>
 #include <nlohmann/json.hpp>
 #include <ostream>
+#include <ranges>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace na {
@@ -71,45 +73,9 @@ auto populateArrayFields(Device& device) -> void {
 }
 
 /**
- * Computes the time unit factor based on the device configuration.
- * @param device is the device object containing the time unit.
- * @returns a factor every time value must be multiplied with to convert it to
- * microseconds.
- */
-[[nodiscard]] auto getTimeUnit(const Device& device) -> double {
-  if (device.timeUnit.unit == "us") {
-    return static_cast<double>(device.timeUnit.scaleFactor);
-  }
-  if (device.timeUnit.unit == "ns") {
-    return static_cast<double>(device.timeUnit.scaleFactor) * 1e-3;
-  }
-  std::stringstream ss;
-  ss << "Unsupported time unit: " << device.timeUnit.unit;
-  throw std::runtime_error(ss.str());
-}
-
-/**
- * Computes the length unit factor based on the device configuration.
- * @param device is the device object containing the length unit.
- * @returns a factor every length value must be multiplied with to convert it to
- * micrometers.
- */
-[[nodiscard]] auto getLengthUnit(const Device& device) -> double {
-  if (device.lengthUnit.unit == "um") {
-    return static_cast<double>(device.lengthUnit.scaleFactor);
-  }
-  if (device.lengthUnit.unit == "nm") {
-    return static_cast<double>(device.lengthUnit.scaleFactor) * 1e-3;
-  }
-  std::stringstream ss;
-  ss << "Unsupported length unit: " << device.lengthUnit.unit;
-  throw std::runtime_error(ss.str());
-}
-
-/**
  * @brief Writes the name from the device object.
  * @param device is the device object containing the name.
- * @param os is the output stream to write the sites to.
+ * @param os is the output stream to write the name to.
  */
 auto writeName(const Device& device, std::ostream& os) -> void {
   os << "#define INITIALIZE_NAME(var) var = \"" << device.name << "\"\n";
@@ -118,7 +84,7 @@ auto writeName(const Device& device, std::ostream& os) -> void {
 /**
  * @brief Writes the qubits number from the device object.
  * @param device is the device object containing the number of qubits.
- * @param os is the output stream to write the sites to.
+ * @param os is the output stream to write the qubits number to.
  */
 auto writeQubitsNum(const Device& device, std::ostream& os) -> void {
   os << "#define INITIALIZE_QUBITSNUM(var) var = " << device.numQubits
@@ -126,52 +92,128 @@ auto writeQubitsNum(const Device& device, std::ostream& os) -> void {
 }
 
 /**
+ * @brief Writes the length unit from the device object.
+ * @param device is the device object containing the length unit.
+ * @param os is the output stream to write the length unit to.
+ */
+auto writeLengthUnit(const Device& device, std::ostream& os) -> void {
+  os << "#define INITIALIZE_LENGTHUNIT(var) var = {\"" << device.lengthUnit.unit
+     << "\", " << device.lengthUnit.scaleFactor << "}\n";
+}
+
+/**
+ * @brief Writes the duration unit from the device object.
+ * @param device is the device object containing the duration unit.
+ * @param os is the output stream to write the duration unit to.
+ */
+auto writeDurationUnit(const Device& device, std::ostream& os) -> void {
+  os << "#define INITIALIZE_DURATIONUNIT(var) var = {\""
+     << device.durationUnit.unit << "\", " << device.durationUnit.scaleFactor
+     << "}\n";
+}
+
+/**
+ * @brief Writes the minimum atom distance from the device object.
+ * @param device is the device object containing the minimum atom distance.
+ * @param os is the output stream to write the minimum atom distance to.
+ */
+auto writeMinAtomDistance(const Device& device, std::ostream& os) -> void {
+  os << "#define INITIALIZE_MINATOMDISTANCE(var) var = "
+     << device.minAtomDistance << "\n";
+}
+
+/**
  * @brief Writes the sites from the device object.
- * @param device is the device object containing the sites configuration.
+ * @param device is the device object containing the sites.
  * @param os is the output stream to write the sites to.
  */
 auto writeSites(const Device& device, std::ostream& os) -> void {
   size_t count = 0;
+  os << "#define INITIALIZE_SITES(var) var.clear()";
+  // first write all zone sites
+  for (const auto& operation : device.globalMultiQubitOperations) {
+    const auto& [origin, size] = operation.region;
+    const auto id = count++;
+    const auto x = origin.x;
+    const auto y = origin.y;
+    const auto width = size.width;
+    const auto height = size.height;
+    os << ";\\\n  "
+          "MQT_NA_QDMI_Site globalOp"
+       << operation.name
+       << "ZoneSite = "
+          "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueZone("
+       << id << "U, " << x << ", " << y << ", " << width << "U, " << height
+       << "U)).get()";
+  }
+  for (const auto& operation : device.globalSingleQubitOperations) {
+    const auto& [origin, size] = operation.region;
+    const auto id = count++;
+    const auto x = origin.x;
+    const auto y = origin.y;
+    const auto width = size.width;
+    const auto height = size.height;
+    os << ";\\\n  "
+          "MQT_NA_QDMI_Site globalOp"
+       << operation.name
+       << "ZoneSite = "
+          "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueZone("
+       << id << "U, " << x << ", " << y << ", " << width << "U, " << height
+       << "U)).get()";
+  }
+  for (const auto& shuttlingUnit : device.shuttlingUnits) {
+    const auto& [origin, size] = shuttlingUnit.region;
+    const auto id = count++;
+    const auto x = origin.x;
+    const auto y = origin.y;
+    const auto width = size.width;
+    const auto height = size.height;
+    os << ";\\\n  "
+          "MQT_NA_QDMI_Site shuttlingUnit"
+       << shuttlingUnit.id
+       << "ZoneSite = "
+          "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueZone("
+       << id << "U, " << x << ", " << y << ", " << width << "U, " << height
+       << "U)).get()";
+  }
+  for (const auto& operation : device.localSingleQubitOperations) {
+    os << ";\\\n  std::vector<MQT_NA_QDMI_Site> localOp" << operation.name
+       << "Sites";
+  }
+  for (const auto& operation : device.localMultiQubitOperations) {
+    os << ";\\\n  std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>> "
+          "localOp"
+       << operation.name << "Sites";
+  }
+  // then write all regular sites
   size_t moduleCount = 0;
-  const auto lengthUnit = getLengthUnit(device);
-
-  os << "#define INITIALIZE_SITES(var) var.clear();";
-  for (const auto& lattice : device.traps) {
+  for (const auto& [latticeOrigin, latticeVector1, latticeVector2,
+                    sublatticeOffsets, extent] : device.traps) {
     size_t subModuleCount = 0;
-
-    const auto latticeOriginX = lattice.latticeOrigin.x;
-    const auto latticeOriginY = lattice.latticeOrigin.y;
-    const auto baseVector1X = lattice.latticeVector1.x;
-    const auto baseVector1Y = lattice.latticeVector1.y;
-    const auto baseVector2X = lattice.latticeVector2.x;
-    const auto baseVector2Y = lattice.latticeVector2.y;
-    const auto extentOriginX = lattice.extent.origin.x;
-    const auto extentOriginY = lattice.extent.origin.y;
-    const auto extentWidth = static_cast<int64_t>(lattice.extent.size.width);
-    const auto extentHeight = static_cast<int64_t>(lattice.extent.size.height);
+    const auto& [origin, size] = extent;
+    const auto extentWidth = static_cast<int64_t>(size.width);
+    const auto extentHeight = static_cast<int64_t>(size.height);
 
     // approximate indices of the bottom left corner
     const auto& [bottomLeftI, bottomLeftJ] = solve2DLinearEquation<int64_t>(
-        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
-        extentOriginX - latticeOriginX, extentOriginY - latticeOriginY);
+        latticeVector1.x, latticeVector2.x, latticeVector1.y, latticeVector2.y,
+        origin.x - latticeOrigin.x, origin.y - latticeOrigin.y);
 
     // approximate indices of the bottom right corner
     const auto& [bottomRightI, bottomRightJ] = solve2DLinearEquation<int64_t>(
-        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
-        extentOriginX + extentWidth - latticeOriginX,
-        extentOriginY - latticeOriginY);
+        latticeVector1.x, latticeVector2.x, latticeVector1.y, latticeVector2.y,
+        origin.x + extentWidth - latticeOrigin.x, origin.y - latticeOrigin.y);
 
     // approximate indices of the top left corner
     const auto& [topLeftI, topLeftJ] = solve2DLinearEquation<int64_t>(
-        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
-        extentOriginX - latticeOriginX,
-        extentOriginY + extentHeight - latticeOriginY);
+        latticeVector1.x, latticeVector2.x, latticeVector1.y, latticeVector2.y,
+        origin.x - latticeOrigin.x, origin.y + extentHeight - latticeOrigin.y);
 
     // approximate indices of the top right corner
     const auto& [topRightI, topRightJ] = solve2DLinearEquation<int64_t>(
-        baseVector1X, baseVector2X, baseVector1Y, baseVector2Y,
-        extentOriginX + extentWidth - latticeOriginX,
-        extentOriginY + extentHeight - latticeOriginY);
+        latticeVector1.x, latticeVector2.x, latticeVector1.y, latticeVector2.y,
+        origin.x + extentWidth - latticeOrigin.x,
+        origin.y + extentHeight - latticeOrigin.y);
 
     const auto minI = static_cast<int64_t>(
         std::floor(std::min({bottomLeftI, bottomRightI, topLeftI, topRightI})));
@@ -184,25 +226,65 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
 
     const std::vector limits{maxI, maxJ};
     std::vector indices{minI, minJ};
+    std::vector<std::tuple<size_t, int64_t, int64_t>> sites;
     for (bool loop = true; loop;
          loop = increment(indices, limits), ++subModuleCount) {
       // For every sublattice offset, add a site for repetition indices
-      for (const auto& offset : lattice.sublatticeOffsets) {
+      for (const auto& [xOffset, yOffset] : sublatticeOffsets) {
         const auto id = count++;
-        auto x = latticeOriginX + offset.x;
-        auto y = latticeOriginY + offset.y;
-        x += indices[0] * baseVector1X;
-        y += indices[0] * baseVector1Y;
-        x += indices[1] * baseVector2X;
-        y += indices[1] * baseVector2Y;
-        if (extentOriginX <= x && x < extentOriginX + extentWidth &&
-            extentOriginY <= y && y < extentOriginY + extentHeight) {
+        auto x = latticeOrigin.x + xOffset;
+        auto y = latticeOrigin.y + yOffset;
+        x += indices[0] * latticeVector1.x;
+        y += indices[0] * latticeVector1.y;
+        x += indices[1] * latticeVector2.x;
+        y += indices[1] * latticeVector2.y;
+        if (origin.x <= x && x <= origin.x + extentWidth && origin.y <= y &&
+            y <= origin.y + extentHeight) {
           // Only add the site if it is within the extent of the lattice
-          os << "\\\n  "
-                "var.emplace_back(std::make_unique<MQT_NA_QDMI_Site_impl_d>("
-             << id << ", " << moduleCount << ", " << subModuleCount << ", "
-             << static_cast<double>(x) * lengthUnit << ", "
-             << static_cast<double>(y) * lengthUnit << "));";
+          sites.emplace_back(id, x, y);
+          os << ";\\\n  "
+                "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueSite("
+             << id << "U, " << moduleCount << "U, " << subModuleCount << "U, "
+             << x << ", " << y << "))";
+          for (const auto& operation : device.localSingleQubitOperations) {
+            if (x >= operation.region.origin.x &&
+                x <= operation.region.origin.x +
+                         static_cast<int64_t>(operation.region.size.width) &&
+                y >= operation.region.origin.y &&
+                y <= operation.region.origin.y +
+                         static_cast<int64_t>(operation.region.size.height)) {
+              os << ";\\\n  localOp" << operation.name
+                 << "Sites.emplace_back(var.back().get())";
+            }
+          }
+          // this generator (same as the device implementation) only supports
+          // two-qubit local operations
+          for (const auto& operation : device.localMultiQubitOperations) {
+            if (operation.region.origin.x <= x &&
+                x <= operation.region.origin.x +
+                         static_cast<int64_t>(operation.region.size.width) &&
+                operation.region.origin.y <= y &&
+                y <= operation.region.origin.y +
+                         static_cast<int64_t>(operation.region.size.height)) {
+              for (const auto& [i2, x2, y2] :
+                   sites | std::views::take(sites.size() - 1)) {
+                if (operation.region.origin.x <= x2 &&
+                    x2 <=
+                        operation.region.origin.x +
+                            static_cast<int64_t>(operation.region.size.width) &&
+                    operation.region.origin.y <= y2 &&
+                    y2 <= operation.region.origin.y +
+                              static_cast<int64_t>(
+                                  operation.region.size.height) &&
+                    std::hypot(x2 - x, y2 - y) <=
+                        static_cast<double>(operation.interactionRadius)) {
+                  os << ";\\\n  localOp" << operation.name
+                     << "Sites.emplace_back(var.at(" << i2
+                     << ").get(), var.back().get())";
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -214,69 +296,72 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
 /**
  * @brief Writes the operations from the device object.
  * @param device is the device object containing the operations configuration.
- * @param timeUnit is the time unit to use for the operations durations.
  * @param os is the output stream to write the operations to.
  */
-auto writeOperations(const Device& device, const double timeUnit,
-                     std::ostream& os) -> void {
-  os << "#define INITIALIZE_OPERATIONS(var) var.clear();";
+auto writeOperations(const Device& device, std::ostream& os) -> void {
+  os << "#define INITIALIZE_OPERATIONS(var) var.clear()";
   for (const auto& operation : device.globalSingleQubitOperations) {
-    os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
-       << operation.name
-       << "\", MQT_NA_QDMI_Operation_impl_d::Type::GlobalSingleQubit, "
-       << operation.numParameters << ", 1, "
-       << static_cast<double>(operation.duration) * timeUnit << ", "
-       << operation.fidelity << "));";
+    os << ";\\\n"
+          "  "
+          "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
+          "makeUniqueGlobalSingleQubit(\""
+       << operation.name << "\", " << operation.numParameters << ", "
+       << operation.duration << ", " << operation.fidelity << ", globalOp"
+       << operation.name << "ZoneSite))";
   }
   for (const auto& operation : device.globalMultiQubitOperations) {
-    os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
-       << operation.name
-       << "\", MQT_NA_QDMI_Operation_impl_d::Type::GlobalMultiQubit, "
-       << operation.numParameters << ", " << operation.numQubits << ", "
-       << static_cast<double>(operation.duration) * timeUnit << ", "
-       << operation.fidelity << "));";
+    os << ";\\\n"
+          "  "
+          "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
+          "makeUniqueGlobalMultiQubit(\""
+       << operation.name << "\", " << operation.numParameters << ", "
+       << operation.numQubits << ", " << operation.duration << ", "
+       << operation.fidelity << ", " << operation.interactionRadius << ", "
+       << operation.blockingRadius << ", " << operation.idlingFidelity
+       << ", globalOp" << operation.name << "ZoneSite))";
   }
   for (const auto& operation : device.localSingleQubitOperations) {
-    os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
-       << operation.name
-       << "\", MQT_NA_QDMI_Operation_impl_d::Type::LocalSingleQubit, "
-       << operation.numParameters << ", 1, "
-       << static_cast<double>(operation.duration) * timeUnit << ", "
-       << operation.fidelity << "));";
+    os << ";\\\n"
+          "  "
+          "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
+          "makeUniqueLocalSingleQubit(\""
+       << operation.name << "\", " << operation.numParameters << ", "
+       << operation.duration << ", " << operation.fidelity << ", localOp"
+       << operation.name << "Sites))";
   }
   for (const auto& operation : device.localMultiQubitOperations) {
-    os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
-       << operation.name
-       << "\", MQT_NA_QDMI_Operation_impl_d::Type::LocalMultiQubit, "
-       << operation.numParameters << ", " << operation.numQubits << ", "
-       << static_cast<double>(operation.duration) * timeUnit << ", "
-       << operation.fidelity << "));";
+    os << ";\\\n"
+          "  "
+          "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
+          "makeUniqueLocalTwoQubit(\""
+       << operation.name << "\", " << operation.numParameters << ", "
+       << operation.numQubits << ", " << operation.duration << ", "
+       << operation.fidelity << "," << operation.interactionRadius << ", "
+       << operation.blockingRadius << ", localOp" << operation.name
+       << "Sites))";
   }
-  for (const auto& operation : device.shuttlingUnits) {
-    os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
-       << operation.name
-       << " (Load)\", MQT_NA_QDMI_Operation_impl_d::Type::ShuttlingLoad, "
-       << operation.numParameters << ", 0, "
-       << static_cast<double>(operation.loadDuration) * timeUnit << ", "
-       << operation.loadFidelity << "));";
-    os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>("
-          "MQT_NA_QDMI_Operation_impl_d{\""
-       << operation.name
-       << " (Move)\", MQT_NA_QDMI_Operation_impl_d::Type::ShuttlingMove, "
-       << operation.numParameters << ", 0, 0, 0}));";
-    os << "\\\n"
-          "  var.emplace_back(std::make_unique<MQT_NA_QDMI_Operation_impl_d>(\""
-       << operation.name
-       << " (Store)\", MQT_NA_QDMI_Operation_impl_d::Type::ShuttlingStore, "
-       << operation.numParameters << ", 0, "
-       << static_cast<double>(operation.storeDuration) * timeUnit << ", "
-       << operation.storeFidelity << "));";
+  for (const auto& shuttlingUnit : device.shuttlingUnits) {
+    os << ";\\\n"
+          "  "
+          "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
+          "makeUniqueShuttlingLoad(\"load<"
+       << shuttlingUnit.id << ">\", " << shuttlingUnit.numParameters << ", "
+       << shuttlingUnit.loadDuration << ", " << shuttlingUnit.loadFidelity
+       << ", shuttlingUnit" << shuttlingUnit.id << "ZoneSite))";
+    os << ";\\\n"
+          "  "
+          "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
+          "makeUniqueShuttlingMove(\"move<"
+       << shuttlingUnit.id << ">\", " << shuttlingUnit.numParameters
+       << ", shuttlingUnit" << shuttlingUnit.id << "ZoneSite, "
+       << shuttlingUnit.meanShuttlingSpeed << "))";
+    os << ";\\\n"
+          "  "
+          "var.emplace_back(MQT_NA_QDMI_Operation_impl_d::"
+          "makeUniqueShuttlingStore(\"store<"
+       << shuttlingUnit.id << ">\", " << shuttlingUnit.numParameters << ", "
+       << shuttlingUnit.storeDuration << ", " << shuttlingUnit.storeFidelity
+       << ", shuttlingUnit" << shuttlingUnit.id << "ZoneSite))";
   }
   os << "\n";
 }
@@ -284,15 +369,12 @@ auto writeOperations(const Device& device, const double timeUnit,
 /**
  * @brief Writes the decoherence times from the device object.
  * @param device is the device object containing the decoherence times.
- * @param timeUnit is the time unit to use for the decoherence times.
  * @param os is the output stream to write the sites to.
  */
-auto writeDecoherenceTimes(const Device& device, const double timeUnit,
-                           std::ostream& os) -> void {
-  os << "#define INITIALIZE_T1(var) var = "
-     << static_cast<double>(device.decoherenceTimes.t1) * timeUnit << ";\n";
-  os << "#define INITIALIZE_T2(var) var = "
-     << static_cast<double>(device.decoherenceTimes.t2) * timeUnit << ";\n";
+auto writeDecoherenceTimes(const Device& device, std::ostream& os) -> void {
+  os << "#define INITIALIZE_DECOHERENCETIMES(var) var = {"
+     << device.decoherenceTimes.t1 << ", " << device.decoherenceTimes.t2
+     << "}\n";
 }
 } // namespace
 
@@ -351,12 +433,14 @@ auto writeJSONSchema(const std::string& path) -> void {
 
 auto writeHeader(const Device& device, std::ostream& os) -> void {
   os << "#pragma once\n\n";
-  const auto timeUnit = getTimeUnit(device);
   writeName(device, os);
   writeQubitsNum(device, os);
+  writeLengthUnit(device, os);
+  writeDurationUnit(device, os);
+  writeMinAtomDistance(device, os);
   writeSites(device, os);
-  writeOperations(device, timeUnit, os);
-  writeDecoherenceTimes(device, timeUnit, os);
+  writeOperations(device, os);
+  writeDecoherenceTimes(device, os);
 }
 
 auto writeHeader(const Device& device, const std::string& path) -> void {

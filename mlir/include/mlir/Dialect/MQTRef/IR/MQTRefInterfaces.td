@@ -70,6 +70,15 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return controls;
             }]>,
         InterfaceMethod<
+            /*desc=*/        "Returns true if the operation has any control qubits, otherwise false.",
+            /*returnType=*/  "bool",
+            /*methodName=*/  "isControlled",
+            /*args=*/        (ins),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                return !$_op.getPosCtrlInQubits().empty() || !$_op.getNegCtrlInQubits().empty();
+            }]>,
+        InterfaceMethod<
             /*desc=*/        "Returns all input qubits of the operation incl. all controlling qubits.",
             /*returnType=*/  "std::vector<mlir::Value>",
             /*methodName=*/  "getAllInQubits",
@@ -83,6 +92,15 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 operands.insert(operands.end(), inQubits.begin(), inQubits.end());
                 operands.insert(operands.end(), controls.begin(), controls.end());
                 return operands;
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Returns the name of the gate.",
+            /*returnType=*/  "llvm::StringRef",
+            /*methodName=*/  "getIdentifier",
+            /*args=*/        (ins),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+               return  $_op->getName().getStringRef().split('.').second;
             }]>
     ];
 }

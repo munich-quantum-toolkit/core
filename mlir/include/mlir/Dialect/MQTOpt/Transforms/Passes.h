@@ -13,6 +13,7 @@
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
+#include <cstdint>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Pass/Pass.h>
 
@@ -24,11 +25,15 @@ class RewritePatternSet;
 
 namespace mqt::ir::opt {
 
+enum class PlacementStrategy : std::uint8_t { Random, Identity };
+
 #define GEN_PASS_DECL
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc" // IWYU pragma: export
 
-void populateCancelInversesPatterns(mlir::RewritePatternSet& patterns);
+void populateGateEliminationPatterns(mlir::RewritePatternSet& patterns);
 void populateMergeRotationGatesPatterns(mlir::RewritePatternSet& patterns);
+void populateSwapReconstructionAndElisionPatterns(
+    mlir::RewritePatternSet& patterns);
 void populateQuantumSinkShiftPatterns(mlir::RewritePatternSet& patterns);
 void populateQuantumSinkPushPatterns(mlir::RewritePatternSet& patterns);
 void populateLiftMeasurementsAboveControlsPatterns(

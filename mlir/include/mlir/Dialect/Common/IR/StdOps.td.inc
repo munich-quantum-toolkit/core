@@ -6,8 +6,10 @@
 //
 // Licensed under the MIT License
 
-#ifndef @DIALECT_NAME@_STD_OPS
-#define @DIALECT_NAME@_STD_OPS
+#ifndef @DIALECT_NAME_UPPER@_STD_OPS
+#define @DIALECT_NAME_UPPER@_STD_OPS
+
+include "mlir/Dialect/@DIALECT_NAME@/IR/@DIALECT_NAME@Ops.td"
 
 def GPhaseOp : UnitaryOp<"gphase", [NoTarget, OneParameter]> {
     let summary = "GPhase operation";
@@ -309,24 +311,24 @@ def RZXOp : UnitaryOp<"rzx", [TwoTarget, OneParameter]> {
     }];
 }
 
-def XXminusYYOp : UnitaryOp<"xxminusyy", [TwoTarget, TwoParameters]> {
-    let summary = "XXminusYY operation";
+def XXminusYYOp : UnitaryOp<"xx_minus_yy", [TwoTarget, TwoParameters]> {
+    let summary = "XX-YY operation";
 
     let description = [{
-        This class represents an XXminusYY gate. It takes two qubits and a
+        This class represents an XX-YY gate. It takes two qubits and a
         variadic list of positive/negative controls as input. Additionally, it
         accepts two parameters indicating the degree of the rotation angles.
     }];
 }
 
-def XXplusYYOp : UnitaryOp<"xxplusyy", [TwoTarget, TwoParameters]> {
-    let summary = "XXplusYY operation";
+def XXplusYYOp : UnitaryOp<"xx_plus_yy", [TwoTarget, TwoParameters]> {
+    let summary = "XX+YY operation";
 
     let description = [{
-        This class represents an XXplusYY gate. It takes two qubits and a
+        This class represents an XX+YY gate. It takes two qubits and a
         variadic list of positive/negative controls as input. Additionally, it
         accepts two parameters indicating the degree of the rotation angles.
     }];
 }
 
-#endif // @DIALECT_NAME@_STD_OPS
+#endif // @DIALECT_NAME_UPPER@_STD_OPS

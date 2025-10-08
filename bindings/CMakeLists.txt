@@ -11,3 +11,9 @@ add_subdirectory(ir)
 
 # add the DD bindings package
 add_subdirectory(dd)
+
+# add the NA bindings package
+add_subdirectory(na)
+
+# add the FoMaC bindings package
+add_subdirectory(fomac)

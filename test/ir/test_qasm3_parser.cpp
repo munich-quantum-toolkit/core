@@ -9,7 +9,7 @@
  */
 
 #include "ir/QuantumComputation.hpp"
-#include "ir/operations/ClassicControlledOperation.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "qasm3/Exception.hpp"
 #include "qasm3/Importer.hpp"
@@ -468,8 +468,7 @@ TEST_F(Qasm3ParserTest, ImportQasm3IfElseStatement) {
                                "c[0] = measure q[0];\n"
                                "if (c[0]) {\n"
                                "  x q[1];\n"
-                               "}\n"
-                               "if (!c[0]) {\n"
+                               "} else {\n"
                                "  x q[0];\n"
                                "  x q[1];\n"
                                "}\n";
@@ -502,8 +501,7 @@ TEST_F(Qasm3ParserTest, ImportQasm3IfElseStatementRegister) {
                                "c[0] = measure q[0];\n"
                                "if (c == 1) {\n"
                                "  x q[1];\n"
-                               "}\n"
-                               "if (c != 1) {\n"
+                               "} else {\n"
                                "  x q[0];\n"
                                "  x q[1];\n"
                                "}\n";
@@ -2475,4 +2473,11 @@ TEST_F(Qasm3ParserTest, TokenKindTimingLiteralMicrosecondsInteger) {
   const auto token = scanner.next();
   EXPECT_EQ(token.kind, qasm3::Token::Kind::TimingLiteral);
   EXPECT_DOUBLE_EQ(token.valReal, 1.0e-6);
+}
+
+TEST_F(Qasm3ParserTest, LargeLayoutParsing) {
+  const auto qc = QuantumComputation(1024);
+  const auto qasm = qc.toQASM();
+  const auto qc2 = qasm3::Importer::imports(qasm);
+  EXPECT_EQ(qc, qc2);
 }

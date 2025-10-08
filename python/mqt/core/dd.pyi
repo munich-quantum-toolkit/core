@@ -10,13 +10,12 @@
 
 from collections.abc import Iterable
 from enum import Enum
-from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 
 from .ir import Permutation, QuantumComputation
-from .ir.operations import ClassicControlledOperation, Control, NonUnitaryOperation, Operation
+from .ir.operations import Control, IfElseOperation, NonUnitaryOperation, Operation
 
 __all__ = [
     "BasisStates",
@@ -289,7 +288,7 @@ class DDPackage:
             The resulting state is guaranteed to have its reference count increased.
         """
 
-    def from_vector(self, state: npt.NDArray[(Any,), np.cdouble]) -> VectorDD:
+    def from_vector(self, state: npt.NDArray[np.cdouble]) -> VectorDD:
         """Create a DD from a state vector.
 
         Args:
@@ -361,10 +360,10 @@ class DDPackage:
             The input DD must have a non-zero reference count.
         """
 
-    def apply_classic_controlled_operation(
+    def apply_if_else_operation(
         self,
         vec: VectorDD,
-        operation: ClassicControlledOperation,
+        operation: IfElseOperation,
         measurements: list[bool],
         permutation: Permutation = ...,
     ) -> VectorDD:
@@ -374,8 +373,7 @@ class DDPackage:
             vec: The input DD.
             operation: The classically controlled operation.
             measurements: A list of bits with stored measurement outcomes.
-            permutation: The permutation of the qubits.
-                         Defaults to the identity permutation.
+            permutation: The permutation of the qubits. Defaults to the identity permutation.
 
         Returns:
             The resulting DD after the operation.
