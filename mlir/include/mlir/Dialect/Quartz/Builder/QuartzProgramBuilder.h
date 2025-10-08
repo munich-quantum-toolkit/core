@@ -128,7 +128,7 @@ public:
    * useful for referring to fixed qubits in a quantum program or to
    * hardware-mapped qubits.
    *
-   * @param index The index of the qubit to reference
+   * @param index The index of the qubit to reference (must be non-negative)
    * @return A Value representing the qubit at the given index
    *
    * @par Example:
@@ -143,7 +143,7 @@ public:
    * %q1 = quartz.static 1 : !quartz.qubit
    * ```
    */
-  Value staticQubit(size_t index);
+  Value staticQubit(int64_t index);
 
   /**
    * @brief Allocate a qubit register as a sequence of individual qubits
@@ -156,7 +156,7 @@ public:
    * The returned SmallVector can be used directly or converted to ValueRange
    * as needed.
    *
-   * @param size The number of qubits in the register
+   * @param size The number of qubits in the register (must be positive)
    * @param name The symbolic name for the register (default: "q")
    * @return A SmallVector containing the allocated qubits
    *
@@ -173,7 +173,7 @@ public:
    * %q2 = quartz.alloc q[3, 2] : !quartz.qubit
    * ```
    */
-  SmallVector<Value> allocQubitRegister(size_t size, StringRef name = "q");
+  SmallVector<Value> allocQubitRegister(int64_t size, StringRef name = "q");
 
   /**
    * @brief Allocate a classical bit register
@@ -196,7 +196,7 @@ public:
    * %c = memref.alloc() {sym_name = "c"} : memref<3xi1>
    * ```
    */
-  Value allocClassicalBitRegister(size_t size, StringRef name = "c");
+  Value allocClassicalBitRegister(int64_t size, StringRef name = "c");
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
@@ -237,6 +237,7 @@ public:
    * @param qubit The qubit to measure
    * @param memref The classical register to store the result in
    * @param index The index in the register where the result should be stored
+   * (must be non-negative)
    * @return A reference to this builder for method chaining
    *
    * @par Example:
@@ -262,7 +263,7 @@ public:
    * memref.store %r1, %c[%c1] : memref<2xi1>
    * ```
    */
-  QuartzProgramBuilder& measure(Value qubit, Value memref, size_t index);
+  QuartzProgramBuilder& measure(Value qubit, Value memref, int64_t index);
 
   /**
    * @brief Reset a qubit to the |0⟩ state
