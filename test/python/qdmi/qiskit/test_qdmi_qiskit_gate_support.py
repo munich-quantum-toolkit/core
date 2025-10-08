@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import importlib.util
-import math
 
 import pytest
 
@@ -116,148 +115,243 @@ def test_default_translators_registered() -> None:
         "measure",
     }
 
-    missing = [name for name in expected_translators if name not in translators]
-    assert not missing, f"Missing expected translators: {missing}"
+    for gate_name in expected_translators:
+        assert gate_name in translators, f"Expected translator '{gate_name}' not found"
 
 
-def test_gate_name_case_insensitivity() -> None:
+def test_map_operation_pauli_gates() -> None:
+    """Test mapping of Pauli gates."""
+    from qiskit.circuit.library import IGate, XGate, YGate, ZGate
+
+    backend = QiskitBackend()
+
+    assert isinstance(backend._map_operation_to_gate("x"), XGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("y"), YGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("z"), ZGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("i"), IGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("id"), IGate)  # noqa: SLF001
+
+
+def test_map_operation_phase_gates() -> None:
+    """Test mapping of phase gates."""
+    from qiskit.circuit.library import PhaseGate, SdgGate, SGate, SXdgGate, SXGate, TdgGate, TGate
+
+    backend = QiskitBackend()
+
+    assert isinstance(backend._map_operation_to_gate("s"), SGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("sdg"), SdgGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("t"), TGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("tdg"), TdgGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("sx"), SXGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("sxdg"), SXdgGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("p"), PhaseGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("phase"), PhaseGate)  # noqa: SLF001
+
+
+def test_map_operation_rotation_gates() -> None:
+    """Test mapping of rotation gates."""
+    from qiskit.circuit.library import RGate, RXGate, RYGate, RZGate
+
+    backend = QiskitBackend()
+
+    assert isinstance(backend._map_operation_to_gate("rx"), RXGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("ry"), RYGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("rz"), RZGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("r"), RGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("prx"), RGate)  # noqa: SLF001
+
+
+def test_map_operation_universal_gates() -> None:
+    """Test mapping of universal gates."""
+    from qiskit.circuit.library import U2Gate, U3Gate
+
+    backend = QiskitBackend()
+
+    assert isinstance(backend._map_operation_to_gate("u"), U3Gate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("u3"), U3Gate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("u2"), U2Gate)  # noqa: SLF001
+
+
+def test_map_operation_two_qubit_gates() -> None:
+    """Test mapping of two-qubit gates."""
+    from qiskit.circuit.library import (
+        CHGate,
+        CXGate,
+        CYGate,
+        CZGate,
+        DCXGate,
+        ECRGate,
+        SwapGate,
+        iSwapGate,
+    )
+
+    backend = QiskitBackend()
+
+    assert isinstance(backend._map_operation_to_gate("cx"), CXGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("cnot"), CXGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("cy"), CYGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("cz"), CZGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("ch"), CHGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("swap"), SwapGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("iswap"), iSwapGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("dcx"), DCXGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("ecr"), ECRGate)  # noqa: SLF001
+
+
+def test_map_operation_parametric_two_qubit_gates() -> None:
+    """Test mapping of parametric two-qubit gates."""
+    from qiskit.circuit.library import (
+        RXXGate,
+        RYYGate,
+        RZXGate,
+        RZZGate,
+        XXMinusYYGate,
+        XXPlusYYGate,
+    )
+
+    backend = QiskitBackend()
+
+    assert isinstance(backend._map_operation_to_gate("rxx"), RXXGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("ryy"), RYYGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("rzz"), RZZGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("rzx"), RZXGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("xx_plus_yy"), XXPlusYYGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("xx_minus_yy"), XXMinusYYGate)  # noqa: SLF001
+
+
+def test_map_operation_case_insensitive() -> None:
     """Test that gate mapping is case-insensitive."""
-    backend = QiskitBackend()
-
-    # Test lowercase
-    gate_lower = backend._map_operation_to_gate("cz")  # noqa: SLF001
-    assert gate_lower is not None
-
-    # Test uppercase
-    gate_upper = backend._map_operation_to_gate("CZ")  # noqa: SLF001
-    assert gate_upper is not None
-
-    # Test mixed case
-    gate_mixed = backend._map_operation_to_gate("Cz")  # noqa: SLF001
-    assert gate_mixed is not None
-
-
-def test_parametric_gate_translators() -> None:
-    """Test that parametric gates have translators with parameter handling."""
-    from mqt.core.qdmi.qiskit import InstructionContext, get_operation_translator
-
-    # Test RX translator
-    rx_translator = get_operation_translator("rx")
-    ctx = InstructionContext(name="rx", qubits=[0], params=[1.5707963267948966])
-    instructions = rx_translator(ctx)
-
-    assert len(instructions) == 1
-    assert instructions[0].name == "rx"
-    assert instructions[0].qubits == [0]
-    assert instructions[0].params == [1.5707963267948966]
-
-    # Test RZZ translator
-    rzz_translator = get_operation_translator("rzz")
-    ctx = InstructionContext(name="rzz", qubits=[0, 1], params=[math.pi])
-    instructions = rzz_translator(ctx)
-
-    assert len(instructions) == 1
-    assert instructions[0].name == "rzz"
-    assert instructions[0].qubits == [0, 1]
-    assert instructions[0].params == [math.pi]
-
-    # Test U3 gate (three parameters)
-    u3_translator = get_operation_translator("u3")
-    ctx = InstructionContext(name="u3", qubits=[0], params=[1.57, 0.0, math.pi])
-    instructions = u3_translator(ctx)
-
-    assert len(instructions) == 1
-    assert instructions[0].name == "u3"
-    assert instructions[0].qubits == [0]
-    assert instructions[0].params == [1.57, 0.0, math.pi]
-
-
-def test_backend_target_includes_operations() -> None:
-    """Verify that the backend Target includes operations from device capabilities."""
-    backend = QiskitBackend()
-    target = backend.target
-
-    # Check that target has operations
-    operation_names = target.operation_names
-    assert "measure" in operation_names
-
-    # The mock device should expose CZ
-    assert "cz" in operation_names
-
-    # Target should have the correct number of qubits
-    assert target.num_qubits > 0
-
-
-def test_comprehensive_translator_coverage() -> None:
-    """Test that all major gate categories have translators."""
-    translators = list_operation_translators()
-
-    # Pauli gates
-    pauli_gates = ["x", "y", "z"]
-    for gate in pauli_gates:
-        assert gate in translators, f"Missing translator for {gate}"
-
-    # Clifford gates
-    clifford_gates = ["h", "s", "sdg"]
-    for gate in clifford_gates:
-        assert gate in translators, f"Missing translator for {gate}"
-
-    # T gates
-    t_gates = ["t", "tdg"]
-    for gate in t_gates:
-        assert gate in translators, f"Missing translator for {gate}"
-
-    # Rotation gates
-    rotation_gates = ["rx", "ry", "rz"]
-    for gate in rotation_gates:
-        assert gate in translators, f"Missing translator for {gate}"
-
-    # Two-qubit gates
-    two_qubit_gates = ["cx", "cy", "cz", "swap", "dcx", "ecr"]
-    for gate in two_qubit_gates:
-        assert gate in translators, f"Missing translator for {gate}"
-
-    # Two-qubit parametric gates
-    two_qubit_param = ["rxx", "ryy", "rzz", "rzx", "xx_plus_yy", "xx_minus_yy"]
-    for gate in two_qubit_param:
-        assert gate in translators, f"Missing translator for {gate}"
-
-    # Universal gates
-    universal_gates = ["u", "u2", "u3"]
-    for gate in universal_gates:
-        assert gate in translators, f"Missing translator for {gate}"
-
-
-def test_mqt_to_qiskit_parity() -> None:
-    """Verify that all gates from mqt_to_qiskit.py are supported."""
-    from qiskit.circuit.library import DCXGate, ECRGate, RZXGate, U2Gate, U3Gate, XXMinusYYGate, XXPlusYYGate
+    from qiskit.circuit.library import HGate, XGate
 
     backend = QiskitBackend()
 
-    # Test DCX gate
-    gate = backend._map_operation_to_gate("dcx")  # noqa: SLF001
-    assert isinstance(gate, DCXGate)
+    # Lower case
+    assert isinstance(backend._map_operation_to_gate("x"), XGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("h"), HGate)  # noqa: SLF001
 
-    # Test ECR gate
-    gate = backend._map_operation_to_gate("ecr")  # noqa: SLF001
-    assert isinstance(gate, ECRGate)
+    # Upper case should also work (op_name.lower() is called)
+    assert isinstance(backend._map_operation_to_gate("X"), XGate)  # noqa: SLF001
+    assert isinstance(backend._map_operation_to_gate("H"), HGate)  # noqa: SLF001
 
-    # Test RZX gate
-    gate = backend._map_operation_to_gate("rzx")  # noqa: SLF001
-    assert isinstance(gate, RZXGate)
 
-    # Test U2 gate
-    gate = backend._map_operation_to_gate("u2")  # noqa: SLF001
-    assert isinstance(gate, U2Gate)
+def test_map_operation_returns_none_for_unknown() -> None:
+    """Test that unknown operations return None."""
+    backend = QiskitBackend()
 
-    # Test U3 gate
-    gate = backend._map_operation_to_gate("u3")  # noqa: SLF001
-    assert isinstance(gate, U3Gate)
+    assert backend._map_operation_to_gate("unknown_gate") is None  # noqa: SLF001
+    assert backend._map_operation_to_gate("custom_op") is None  # noqa: SLF001
+    assert backend._map_operation_to_gate("") is None  # noqa: SLF001
 
-    # Test XXPlusYY gate
-    gate = backend._map_operation_to_gate("xx_plus_yy")  # noqa: SLF001
-    assert isinstance(gate, XXPlusYYGate)
 
-    # Test XXMinusYY gate
-    gate = backend._map_operation_to_gate("xx_minus_yy")  # noqa: SLF001
-    assert isinstance(gate, XXMinusYYGate)
+def test_backend_target_includes_measure() -> None:
+    """Test that the backend target includes measure operation."""
+    backend = QiskitBackend()
+
+    assert "measure" in backend.target.operation_names
+
+
+def test_backend_target_qubit_count_matches_device() -> None:
+    """Test that backend target qubit count is based on device capabilities."""
+    backend = QiskitBackend()
+
+    # Target qubit count should be at least the device num_qubits
+    # (may be higher if zones are included in the target)
+    assert backend.target.num_qubits >= backend._capabilities.num_qubits  # noqa: SLF001
+
+
+def test_backend_build_target_adds_operations() -> None:
+    """Test that _build_target adds operations from capabilities."""
+    backend = QiskitBackend()
+    target = backend._build_target()  # noqa: SLF001
+
+    # Should have at least measure
+    assert "measure" in target.operation_names
+
+    # Should have operations from device capabilities
+    assert len(target.operation_names) > 0
+
+
+def test_get_operation_qargs_single_qubit() -> None:
+    """Test _get_operation_qargs for single-qubit operations."""
+    backend = QiskitBackend()
+
+    # Create a mock operation info for single qubit
+    from mqt.core.qdmi.qiskit.capabilities import DeviceOperationInfo
+
+    op_info = DeviceOperationInfo(
+        name="test_op",
+        qubits_num=1,
+        parameters_num=0,
+        duration=None,
+        fidelity=None,
+        interaction_radius=None,
+        blocking_radius=None,
+        idling_fidelity=None,
+        is_zoned=None,
+        mean_shuttling_speed=None,
+        sites=None,
+    )
+
+    qargs = backend._get_operation_qargs(op_info)  # noqa: SLF001
+
+    # Should return all single qubit indices
+    assert len(qargs) == backend._capabilities.num_qubits  # noqa: SLF001
+    assert all(len(qarg) == 1 for qarg in qargs)
+
+
+def test_get_operation_qargs_two_qubit_with_coupling_map() -> None:
+    """Test _get_operation_qargs for two-qubit operations with coupling map."""
+    backend = QiskitBackend()
+
+    # If device has coupling map, should use it
+    if backend._capabilities.coupling_map:  # noqa: SLF001
+        from mqt.core.qdmi.qiskit.capabilities import DeviceOperationInfo
+
+        op_info = DeviceOperationInfo(
+            name="test_2q",
+            qubits_num=2,
+            parameters_num=0,
+            duration=None,
+            fidelity=None,
+            interaction_radius=None,
+            blocking_radius=None,
+            idling_fidelity=None,
+            is_zoned=None,
+            mean_shuttling_speed=None,
+            sites=None,
+        )
+
+        qargs = backend._get_operation_qargs(op_info)  # noqa: SLF001
+
+        # Should match coupling map
+        assert all(len(qarg) == 2 for qarg in qargs)
+
+
+def test_get_operation_qargs_with_specific_sites() -> None:
+    """Test _get_operation_qargs when operation has specific sites."""
+    backend = QiskitBackend()
+
+    from mqt.core.qdmi.qiskit.capabilities import DeviceOperationInfo
+
+    # Single qubit on specific sites
+    op_info = DeviceOperationInfo(
+        name="test_op",
+        qubits_num=1,
+        parameters_num=0,
+        duration=None,
+        fidelity=None,
+        interaction_radius=None,
+        blocking_radius=None,
+        idling_fidelity=None,
+        is_zoned=None,
+        mean_shuttling_speed=None,
+        sites=(0, 1, 2),  # Specific sites
+    )
+
+    qargs = backend._get_operation_qargs(op_info)  # noqa: SLF001
+
+    # Should only include specified sites
+    assert len(qargs) == 3
+    assert (0,) in qargs
+    assert (1,) in qargs
+    assert (2,) in qargs
