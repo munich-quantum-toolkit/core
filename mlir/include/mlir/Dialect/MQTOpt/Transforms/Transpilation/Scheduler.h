@@ -69,9 +69,9 @@ struct CrawlScheduler final : SchedulerBase {
     Layout layoutCopy(layout);
     Layers layers(1 + nlookahead_);
 
-    const mlir::Region* region = op->getParentRegion();
-    const mlir::ArrayRef<mlir::Value> qubits = layoutCopy.getHardwareQubits();
-    const std::size_t nqubits = qubits.size();
+    const auto* region = op->getParentRegion();
+    const auto qubits = layoutCopy.getHardwareQubits();
+    const auto nqubits = qubits.size();
 
     for (Layer& layer : layers) {
       mlir::DenseSet<UnitaryInterface> seenTwoQubit;
@@ -88,7 +88,7 @@ struct CrawlScheduler final : SchedulerBase {
         mlir::Value head = q;
 
         while (!head.use_empty() && !stop) {
-          mlir::Operation* user = getFirstUserInRegion(head, region);
+          mlir::Operation* user = getUserInRegion(head, region);
           if (user == nullptr) {
             break;
           }
@@ -154,8 +154,8 @@ struct CrawlScheduler final : SchedulerBase {
   }
 
 private:
-  static mlir::Operation* getFirstUserInRegion(const mlir::Value v,
-                                               const mlir::Region* region) {
+  static mlir::Operation* getUserInRegion(const mlir::Value v,
+                                          const mlir::Region* region) {
     for (mlir::Operation* user : v.getUsers()) {
       if (user->getParentRegion() == region) {
         return user;

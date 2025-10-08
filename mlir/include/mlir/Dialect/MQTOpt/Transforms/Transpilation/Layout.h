@@ -100,9 +100,7 @@ public:
     const qc::Qubit hw1 = programToHardware_[prog1];
 
     std::swap(programToHardware_[prog0], programToHardware_[prog1]);
-
-    hardwareToProgram_[hw0] = prog1;
-    hardwareToProgram_[hw1] = prog0;
+    std::swap(hardwareToProgram_[hw0], hardwareToProgram_[hw1]);
   }
 
 protected:
@@ -201,13 +199,14 @@ public:
    */
   void remapQubitValue(const mlir::Value in, const mlir::Value out) {
     const auto it = valueToMapping_.find(in);
-    assert(it != valueToMapping_.end() && "forward: unknown input value");
+    assert(it != valueToMapping_.end() &&
+           "remapQubitValue: unknown input value");
 
     const QubitInfo info = it->second;
     qubits_[info.hw] = out;
 
     assert(!valueToMapping_.contains(out) &&
-           "forward: output value already mapped");
+           "remapQubitValue: output value already mapped");
 
     valueToMapping_.try_emplace(out, info);
     valueToMapping_.erase(in);
