@@ -36,7 +36,7 @@ void QuartzProgramBuilder::initialize() {
 
   // Create main function as entry point
   auto funcType = builder.getFunctionType({}, {});
-  auto mainFunc = builder.create<mlir::func::FuncOp>(loc, "main", funcType);
+  auto mainFunc = builder.create<func::FuncOp>(loc, "main", funcType);
 
   // Add entry_point attribute to identify the main function
   auto entryPointAttr = StringAttr::get(builder.getContext(), "entry_point");
@@ -54,24 +54,24 @@ Value QuartzProgramBuilder::allocQubit() {
   return allocOp.getResult();
 }
 
-Value QuartzProgramBuilder::staticQubit(size_t index) {
+Value QuartzProgramBuilder::staticQubit(int64_t index) {
   // Create the StaticOp with the given index
-  auto indexAttr = builder.getI64IntegerAttr(static_cast<int64_t>(index));
+  auto indexAttr = builder.getI64IntegerAttr(index);
   auto staticOp = builder.create<StaticOp>(loc, indexAttr);
   return staticOp.getQubit();
 }
 
-SmallVector<Value> QuartzProgramBuilder::allocQubitRegister(size_t size,
+SmallVector<Value> QuartzProgramBuilder::allocQubitRegister(int64_t size,
                                                             StringRef name) {
   // Allocate a sequence of qubits with register metadata
   SmallVector<Value> qubits;
-  qubits.reserve(size);
+  qubits.reserve(static_cast<size_t>(size));
 
   auto nameAttr = builder.getStringAttr(name);
-  auto sizeAttr = builder.getI64IntegerAttr(static_cast<int64_t>(size));
+  auto sizeAttr = builder.getI64IntegerAttr(size);
 
-  for (size_t i = 0; i < size; ++i) {
-    auto indexAttr = builder.getI64IntegerAttr(static_cast<int64_t>(i));
+  for (int64_t i = 0; i < size; ++i) {
+    auto indexAttr = builder.getI64IntegerAttr(i);
     auto allocOp = builder.create<AllocOp>(loc, nameAttr, sizeAttr, indexAttr);
     qubits.push_back(allocOp.getResult());
   }
@@ -79,14 +79,13 @@ SmallVector<Value> QuartzProgramBuilder::allocQubitRegister(size_t size,
   return qubits;
 }
 
-Value QuartzProgramBuilder::allocClassicalBitRegister(size_t size,
+Value QuartzProgramBuilder::allocClassicalBitRegister(int64_t size,
                                                       StringRef name) {
   // Create memref type
-  auto memrefType =
-      MemRefType::get({static_cast<int64_t>(size)}, builder.getI1Type());
+  auto memrefType = MemRefType::get({size}, builder.getI1Type());
 
   // Allocate the memref
-  auto allocOp = builder.create<memref::AllocOp>(loc, memrefType);
+  auto allocOp = builder.create<memref::AllocaOp>(loc, memrefType);
 
   allocOp->setAttr("sym_name", builder.getStringAttr(name));
 
@@ -99,13 +98,12 @@ Value QuartzProgramBuilder::measure(Value qubit) {
 }
 
 QuartzProgramBuilder& QuartzProgramBuilder::measure(Value qubit, Value memref,
-                                                    size_t index) {
+                                                    int64_t index) {
   // Measure the qubit
   auto result = measure(qubit);
 
   // Create constant index for the store operation
-  auto indexValue = builder.create<mlir::arith::ConstantIndexOp>(
-      loc, static_cast<int64_t>(index));
+  auto indexValue = builder.create<arith::ConstantIndexOp>(loc, index);
 
   // Store the result in the memref at the given index
   builder.create<memref::StoreOp>(loc, result, memref,
@@ -121,7 +119,7 @@ QuartzProgramBuilder& QuartzProgramBuilder::reset(Value qubit) {
 
 OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
   // Add return statement to the main function
-  builder.create<mlir::func::ReturnOp>(loc);
+  builder.create<func::ReturnOp>(loc);
 
   // Transfer ownership to the caller
   return module;
