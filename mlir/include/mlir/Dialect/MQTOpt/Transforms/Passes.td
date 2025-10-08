@@ -103,7 +103,7 @@ def ReuseQubitsPass : Pass<"reuse-qubits", "mlir::ModuleOp"> {
   let description = [{
     This pass performs qubit reuse, searching for qubits that are first referenced after the final reference to a different qubit.
     In these cases, rather than using a new qubit, the old qubit can be reset and reused.
-  ];
+  }];
 }
 
 //===----------------------------------------------------------------------===//
