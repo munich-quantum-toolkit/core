@@ -24,13 +24,13 @@ pip install "mqt-core[qiskit]"
 from mqt.core.qdmi.qiskit import QiskitBackend
 from qiskit import QuantumCircuit
 
-# Create a backend (uses the first available FoMaC device)
+# Create a backend (uses the first available FoMaC device, i.e., MQT NA Default QDMI Device)
 backend = QiskitBackend()
 
 # Create a simple circuit
 qc = QuantumCircuit(2, 2)
-qc.h(0)
-qc.cx(0, 1)
+qc.ry(1.5708, 0)  # π/2 rotation
+qc.cz(0, 1)
 qc.measure([0, 1], [0, 1])
 
 # Execute the circuit
@@ -59,18 +59,18 @@ Execute multiple circuits in a single job:
 ```{code-cell} ipython3
 # Create multiple circuits for batch execution
 qc1 = QuantumCircuit(2, 2)
-qc1.h(0)
-qc1.cx(0, 1)
+qc1.ry(1.5708, 0)  # π/2 rotation
+qc1.cz(0, 1)
 qc1.measure([0, 1], [0, 1])
 
 qc2 = QuantumCircuit(2, 2)
-qc2.x(0)
+qc2.ry(3.1416, 0)  # π rotation
 qc2.cz(0, 1)
 qc2.measure([0, 1], [0, 1])
 
 qc3 = QuantumCircuit(2, 2)
-qc3.h(0)
-qc3.h(1)
+qc3.ry(1.5708, 0)  # π/2 rotation
+qc3.ry(1.5708, 1)  # π/2 rotation
 qc3.measure([0, 1], [0, 1])
 
 circuits = [qc1, qc2, qc3]
