@@ -185,9 +185,9 @@ module {
     // CHECK: %[[q2_2:.*]], %[[c2:.*]] = "mqtopt.measure"(%[[q2_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: mqtopt.deallocQubit %[[q2_2]]
     // CHECK: return %[[c0]], %[[c1]], %[[c2]] : i1, i1, i1
-    %q0_0 = mqtopt.allocQubit
     %q1_0 = mqtopt.allocQubit
     %q2_0 = mqtopt.allocQubit
+    %q0_0 = mqtopt.allocQubit
 
     %q0_1 = mqtopt.h() %q0_0 : !mqtopt.Qubit
     %q0_2, %q1_1 = mqtopt.h() %q0_1 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit

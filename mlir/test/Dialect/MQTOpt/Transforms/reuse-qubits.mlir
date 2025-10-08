@@ -79,10 +79,10 @@ module {
     // CHECK: %[[q1_1:.*]], %[[q0_2:.*]] = mqtopt.h() %[[q1_0]] ctrl %[[q0_1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[q0_3:.*]], %[[c0:.*]] = "mqtopt.measure"(%[[q0_2]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[q1_2:.*]], %[[c1:.*]] = "mqtopt.measure"(%[[q1_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-    // CHECK: %[[q2_0:.*]] = "mqtopt.reset"(%[[q0_3]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
+    // CHECK: mqtopt.deallocQubit %[[q0_3]]
+    // CHECK: %[[q2_0:.*]] = "mqtopt.reset"(%[[q1_2]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
     // CHECK: %[[q2_1:.*]] = mqtopt.h() %[[q2_0]] : !mqtopt.Qubit
     // CHECK: %[[q2_2:.*]], %[[c2:.*]] = "mqtopt.measure"(%[[q2_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-    // CHECK: mqtopt.deallocQubit %[[q1_2]]
     // CHECK: mqtopt.deallocQubit %[[q2_2]]
     // CHECK: return %[[c0]], %[[c1]], %[[c2]] : i1, i1, i1
     %q0_0 = mqtopt.allocQubit
@@ -116,11 +116,11 @@ module {
     // CHECK: %[[q1_1:.*]], %[[q0_2:.*]] = mqtopt.h() %[[q1_0]] ctrl %[[q0_1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[q0_3:.*]], %[[c0:.*]] = "mqtopt.measure"(%[[q0_2]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[q1_2:.*]], %[[c1:.*]] = "mqtopt.measure"(%[[q1_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
-    // CHECK: %[[q2_0:.*]] = "mqtopt.reset"(%[[q0_3]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
+    // CHECK: mqtopt.deallocQubit %[[q0_3]]
+    // CHECK: %[[q2_0:.*]] = "mqtopt.reset"(%[[q1_2]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
     // CHECK: %[[q2_1:.*]] = mqtopt.h() %[[q2_0]] : !mqtopt.Qubit
     // CHECK: %[[q2_2:.*]], %[[c2:.*]] = "mqtopt.measure"(%[[q2_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: mqtopt.deallocQubit %[[q2_2]]
-    // CHECK: mqtopt.deallocQubit %[[q1_2]]
     // CHECK: return %[[c0]], %[[c1]], %[[c2]] : i1, i1, i1
     %q0_0 = mqtopt.allocQubit
     %q1_0 = mqtopt.allocQubit
@@ -155,10 +155,10 @@ module {
     // q2 is reused first because we start from the last dealloc.
     // CHECK: %[[q2_0:.*]] = "mqtopt.reset"(%[[q0_2]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
     // CHECK: %[[q2_1:.*]] = mqtopt.h() %[[q2_0]] : !mqtopt.Qubit
-    // CHECK: %[[q2_2:.*]], %[[c2:.*]] = "mqtopt.measure"(%[[q1_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[q2_2:.*]], %[[c1:.*]] = "mqtopt.measure"(%[[q1_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: %[[q1_0:.*]] = "mqtopt.reset"(%[[q2_2]]) : (!mqtopt.Qubit) -> !mqtopt.Qubit
     // CHECK: %[[q1_1:.*]] = mqtopt.h() %[[q1_0]] : !mqtopt.Qubit
-    // CHECK: %[[q1_2:.*]], %[[c1:.*]] = "mqtopt.measure"(%[[q1_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[q1_2:.*]], %[[c2:.*]] = "mqtopt.measure"(%[[q1_1]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
     // CHECK: mqtopt.deallocQubit %[[q1_2]]
     // CHECK: return %[[c0]], %[[c1]], %[[c2]] : i1, i1, i1
     %q0_0 = mqtopt.allocQubit

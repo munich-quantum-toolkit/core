@@ -183,6 +183,37 @@ module {
   }
 }
 
+// -----
+// This test checks that measurements can be lifted over controlled parametrized gates and the resulting classically controlled parametrized gates
+// still have the correct parameters.
+
+module {
+  // CHECK-LABEL: func.func @testLiftControlledParametrizedGate
+  func.func @testLiftControlledParametrizedGate() -> (i1, i1) {
+    // CHECK: %[[Q1_1:.*]], %[[C1:.*]] = "mqtopt.measure"(%[[Q1_0:.*]]) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    // CHECK: %[[Q0_1:.*]] = scf.if %[[C1]] -> (!mqtopt.Qubit) {
+    // CHECK-NEXT: %[[Q0_1IF:.*]] = mqtopt.rx(%[[ANGLE:.*]]) %[[Q0_0:.*]] : !mqtopt.Qubit
+    // CHECK-NEXT: scf.yield %[[Q0_1IF]]
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT: scf.yield %[[Q0_0]]
+    // CHECK-NEXT: }
+
+    %q0_0 = mqtopt.allocQubit
+    %q1_0 = mqtopt.allocQubit
+
+    %angle = arith.constant 3.000000e-01 : f64
+
+    %q0_1, %q1_1 = mqtopt.rx(%angle) %q0_0 ctrl %q1_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+    %q0_2, %c0 = "mqtopt.measure"(%q0_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+    %q1_2, %c1 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
+
+    mqtopt.deallocQubit %q0_2
+    mqtopt.deallocQubit %q1_2
+    return %c0, %c1 : i1, i1
+  }
+}
+
 // =================================================== Lift over 1Q Gates =========================================================================
 
 // -----
