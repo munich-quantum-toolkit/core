@@ -253,11 +253,12 @@ def build_program_ir(
 
     instructions: list[ProgramInstruction] = []
     for ctx in instruction_contexts:
+        key = ctx.name.lower()
         if ctx.name in pseudo:
             # structural pseudo op: represented directly
-            instructions.append(ProgramInstruction(name=ctx.name, qubits=ctx.qubits, params=None, metadata={}))
+            instructions.append(ProgramInstruction(name=key, qubits=ctx.qubits, params=None, metadata={}))
             continue
-        translator = _TRANSLATORS.get(ctx.name.lower())
+        translator = _TRANSLATORS.get(key)
         if translator is None:
             msg = f"No translator registered for operation '{ctx.name}'"
             raise IRValidationError(msg)

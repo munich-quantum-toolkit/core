@@ -119,6 +119,8 @@ For vendor-specific needs, subclass {py:class}`~mqt.core.qdmi.qiskit.QiskitBacke
 from mqt.core.qdmi.qiskit import QiskitBackend
 from qiskit import qasm3
 
+# from your_vendor_sdk import ProgramFormat  # replace with actual import
+
 
 class VendorBackend(QiskitBackend):
     """Backend that executes on real QDMI hardware."""

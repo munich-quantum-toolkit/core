@@ -27,6 +27,8 @@ from .job import QiskitJob
 from .translator import InstructionContext, build_program_ir
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from qiskit.circuit import Instruction
 
 __all__ = ["QiskitBackend"]
@@ -73,7 +75,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         if not devices_list:
             msg = "No FoMaC devices available"
             raise RuntimeError(msg)
-        if device_index >= len(devices_list):
+        if device_index < 0 or device_index >= len(devices_list):
             msg = f"Device index {device_index} out of range (available: {len(devices_list)})"
             raise IndexError(msg)
 
@@ -255,14 +257,14 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
         return gate_map.get(op_name.lower())
 
-    def _get_operation_qargs(self, op_info: Any) -> list[tuple[int, ...]]:  # noqa: ANN401
+    def _get_operation_qargs(self, op_info: Any) -> Sequence[tuple[int, ...]]:  # noqa: ANN401
         """Get the qubit argument tuples for an operation.
 
         Args:
             op_info: Device operation metadata.
 
         Returns:
-            List of qubit index tuples this operation can act on.
+            Sequence of qubit index tuples this operation can act on.
         """
         qubits_num = op_info.qubits_num if op_info.qubits_num is not None else 1
         num_qubits = self._capabilities.num_qubits
@@ -272,13 +274,18 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             if qubits_num == 1:
                 return [(site,) for site in op_info.sites]
             if qubits_num == 2:
-                # Use coupling map or generate all pairs from sites
-                pairs: list[tuple[int, ...]] = [
-                    (op_info.sites[i], op_info.sites[j])
-                    for i in range(len(op_info.sites))
-                    for j in range(i + 1, len(op_info.sites))
+                # Respect coupling map if available; otherwise generate all pairs from sites
+                site_indices = list(op_info.sites)
+                pairs: list[tuple[int, int]] = [
+                    (site_indices[i], site_indices[j])
+                    for i in range(len(site_indices))
+                    for j in range(i + 1, len(site_indices))
                 ]
-                return pairs[:MAX_COUPLING_PAIRS]  # limit pairs to prevent excessive combinations
+                cm = self._capabilities.coupling_map
+                if cm:
+                    cm_set = {(int(a), int(b)) for (a, b) in cm}
+                    pairs = [p for p in pairs if p in cm_set or (p[1], p[0]) in cm_set]
+                return pairs[:MAX_COUPLING_PAIRS]
 
         # Generate all possible qubit combinations
         if qubits_num == 1:
@@ -475,6 +482,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
         # Store program_ir in metadata for potential use by subclasses
         result = self._submit_to_device(circuit, shots)
+        result.setdefault("metadata", {})
         result["metadata"]["program_name"] = program_ir.name
 
         return result

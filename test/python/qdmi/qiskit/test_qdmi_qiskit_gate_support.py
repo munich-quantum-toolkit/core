@@ -15,11 +15,7 @@ import math
 
 import pytest
 
-from mqt.core.qdmi.qiskit import (
-    QiskitBackend,
-    clear_operation_translators,
-    list_operation_translators,
-)
+from mqt.core.qdmi.qiskit import clear_operation_translators, list_operation_translators
 
 _qiskit_present = importlib.util.find_spec("qiskit") is not None
 
@@ -27,6 +23,8 @@ pytestmark = pytest.mark.skipif(not _qiskit_present, reason="qiskit not installe
 
 if _qiskit_present:
     from qiskit import QuantumCircuit
+
+    from mqt.core.qdmi.qiskit import QiskitBackend
 
 
 def setup_module() -> None:  # noqa: D103

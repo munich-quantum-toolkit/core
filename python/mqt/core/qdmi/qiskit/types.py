@@ -48,12 +48,16 @@ class ProgramInstruction:
     params: list[float] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self) -> None:  # basic structural checks
+    def __post_init__(self) -> None:
         """Validate structural invariants after dataclass initialization.
 
         Raises:
-            IRValidationError: If the instruction name is empty, a qubit index is
-                negative, or params is not None and not a list.
+            IRValidationError: If the instruction name is empty or a qubit index is
+                negative.
+
+        Note:
+            Type constraints (e.g., params being a list or None) are enforced
+            statically by type checkers, i.e., mypy.
         """
         if not self.name:
             msg = "Instruction name must be non-empty"
