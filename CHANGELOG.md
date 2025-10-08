@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ A `--reuse-qubits` pass implementing an advanced form of qubit reuse to reduce the qubit count of quantum circuits ([#1108]) ([**@DRovara**])
 - ✨ Add dedicated `PlacementPass` to MLIR transpilation routines ([#1232]) ([**@MatthiasReumann**])
 - ✨ Add an NA specific FoMaC implementation ([#1223]) ([**@ystade**])
 - ✨ Enable import of BarrierOp into MQTRef ([#1224]) ([**@denialhaag**])
@@ -218,6 +219,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1139]: https://github.com/munich-quantum-toolkit/core/pull/1139
 [#1117]: https://github.com/munich-quantum-toolkit/core/pull/1117
 [#1116]: https://github.com/munich-quantum-toolkit/core/pull/1116
+[#1108]: https://github.com/munich-quantum-toolkit/core/pull/1108
 [#1106]: https://github.com/munich-quantum-toolkit/core/pull/1106
 [#1100]: https://github.com/munich-quantum-toolkit/core/pull/1100
 [#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099
