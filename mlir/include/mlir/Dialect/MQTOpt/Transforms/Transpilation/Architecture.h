@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "ir/Definitions.hpp"
+
 #include <cstddef>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
@@ -32,7 +34,7 @@ enum class ArchitectureName : std::uint8_t {
  */
 class Architecture {
 public:
-  using CouplingMap = llvm::DenseSet<std::pair<std::size_t, std::size_t>>;
+  using CouplingMap = llvm::DenseSet<std::pair<qc::Qubit, qc::Qubit>>;
 
   explicit Architecture(std::string name, std::size_t nqubits,
                         CouplingMap couplingMap)
@@ -56,7 +58,7 @@ public:
   /**
    * @brief Return true if @p u and @p v are adjacent.
    */
-  [[nodiscard]] bool areAdjacent(std::size_t u, std::size_t v) const {
+  [[nodiscard]] bool areAdjacent(qc::Qubit u, qc::Qubit v) const {
     return couplingMap_.contains({u, v});
   }
 
@@ -64,18 +66,17 @@ public:
    * @brief Collect the shortest path between @p u and @p v.
    */
   [[nodiscard]] llvm::SmallVector<std::size_t>
-  shortestPathBetween(std::size_t u, std::size_t v) const;
+  shortestPathBetween(qc::Qubit u, qc::Qubit v) const;
 
   /**
    * @brief Return the length of the shortest path between @p u and @p v.
    */
-  [[nodiscard]] std::size_t distanceBetween(std::size_t u, std::size_t v) const;
+  [[nodiscard]] std::size_t distanceBetween(qc::Qubit u, qc::Qubit v) const;
 
   /**
    * @brief Collect all neighbours of @p u.
    */
-  [[nodiscard]] llvm::SmallVector<std::size_t>
-  neighboursOf(std::size_t u) const;
+  [[nodiscard]] llvm::SmallVector<qc::Qubit> neighboursOf(qc::Qubit u) const;
 
 private:
   using Matrix = llvm::SmallVector<llvm::SmallVector<std::size_t>>;

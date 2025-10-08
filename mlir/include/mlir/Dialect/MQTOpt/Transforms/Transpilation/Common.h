@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "ir/Definitions.hpp"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <cstddef>
@@ -31,14 +32,9 @@ constexpr std::size_t FOR_PARENT_DEPTH = 1UL;
 constexpr std::size_t IF_PARENT_DEPTH = 2UL;
 
 /**
- * @brief The datatype for qubit indices. For now, 64bit.
- */
-using QubitIndex = std::size_t;
-
-/**
  * @brief Represents a pair of qubit indices.
  */
-using QubitIndexPair = std::pair<QubitIndex, QubitIndex>;
+using QubitIndexPair = std::pair<qc::Qubit, qc::Qubit>;
 /**
  * @brief Return true if the function contains "entry_point" in the passthrough
  * attribute.

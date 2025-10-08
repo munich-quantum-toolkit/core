@@ -41,17 +41,16 @@ using Layers = mlir::SmallVector<Layer>;
  */
 struct LayerizerBase {
   virtual ~LayerizerBase() = default;
-  [[nodiscard]] virtual Layers
-  layerize(UnitaryInterface op, const Layout<QubitIndex>& layout) const = 0;
+  [[nodiscard]] virtual Layers layerize(UnitaryInterface op,
+                                        const Layout& layout) const = 0;
 };
 
 /**
  * @brief A one-op layerizer simply returns the given op.
  */
 struct OneOpLayerizer final : LayerizerBase {
-  [[nodiscard]] Layers
-  layerize(UnitaryInterface op,
-           const Layout<QubitIndex>& layout) const override {
+  [[nodiscard]] Layers layerize(UnitaryInterface op,
+                                const Layout& layout) const override {
     const auto [in0, in1] = getIns(op);
     return {{{layout.lookupProgramIndex(in0), layout.lookupProgramIndex(in1)}}};
   }
@@ -65,14 +64,13 @@ struct CrawlLayerizer final : LayerizerBase {
   explicit CrawlLayerizer(const std::size_t nlookahead)
       : nlookahead_(nlookahead) {}
 
-  [[nodiscard]] Layers
-  layerize(UnitaryInterface op,
-           const Layout<QubitIndex>& layout) const override {
-    Layout<QubitIndex> copy(layout);
+  [[nodiscard]] Layers layerize(UnitaryInterface op,
+                                const Layout& layout) const override {
+    Layout layoutCopy(layout);
     Layers layers(1 + nlookahead_);
 
     const mlir::Region* region = op->getParentRegion();
-    const mlir::ArrayRef<mlir::Value> qubits = copy.getHardwareQubits();
+    const mlir::ArrayRef<mlir::Value> qubits = layoutCopy.getHardwareQubits();
     const std::size_t nqubits = qubits.size();
 
     for (Layer& layer : layers) {
@@ -97,10 +95,10 @@ struct CrawlLayerizer final : LayerizerBase {
 
           mlir::TypeSwitch<mlir::Operation*>(user)
               .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp op) {
-                head = op->getResult(copy.lookupHardwareIndex(head));
+                head = op->getResult(layoutCopy.lookupHardwareIndex(head));
               })
               .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
-                head = op->getResult(copy.lookupHardwareIndex(head));
+                head = op->getResult(layoutCopy.lookupHardwareIndex(head));
               })
               .Case<ResetOp>([&](ResetOp op) { head = op.getOutQubit(); })
               .Case<MeasureOp>([&](MeasureOp op) { head = op.getOutQubit(); })
@@ -125,7 +123,7 @@ struct CrawlLayerizer final : LayerizerBase {
               .Default([&](mlir::Operation*) { stop = true; });
 
           if (prev != head) {
-            copy.remapQubitValue(prev, head);
+            layoutCopy.remapQubitValue(prev, head);
             prev = head;
           }
         }
@@ -134,10 +132,10 @@ struct CrawlLayerizer final : LayerizerBase {
       for (const UnitaryInterface op : readyToQubit) {
         const auto [in0, in1] = getIns(op);
         const auto [out0, out1] = getOuts(op);
-        layer.emplace_back(copy.lookupProgramIndex(in0),
-                           copy.lookupProgramIndex(in1));
-        copy.remapQubitValue(in0, out0);
-        copy.remapQubitValue(in1, out1);
+        layer.emplace_back(layoutCopy.lookupProgramIndex(in0),
+                           layoutCopy.lookupProgramIndex(in1));
+        layoutCopy.remapQubitValue(in0, out0);
+        layoutCopy.remapQubitValue(in1, out1);
       }
     }
 

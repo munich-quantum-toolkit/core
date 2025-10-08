@@ -167,7 +167,7 @@ public:
   /**
    * @brief Return reference to the stack object.
    */
-  [[nodiscard]] LayoutStack<Layout<QubitIndex>>& stack() { return stack_; }
+  [[nodiscard]] LayoutStack<Layout>& stack() { return stack_; }
 
   /**
    * @brief Return reference to the history stack object.
@@ -217,7 +217,7 @@ private:
   std::unique_ptr<LayerizerBase> layerizer_;
   std::unique_ptr<PlannerBase> planner_;
 
-  LayoutStack<Layout<QubitIndex>> stack_{};
+  LayoutStack<Layout> stack_{};
   LayoutStack<SmallVector<QubitIndexPair>> historyStack_{};
 
   Pass::Statistic* nadd_;
@@ -283,11 +283,10 @@ WalkResult handleIf(scf::IfOp op, Router& router) {
 
   /// Forward out-of-if values.
   const auto results = op->getResults().take_front(router.arch().nqubits());
-  Layout<QubitIndex>& stateBeforeIf =
-      router.stack().getItemAtDepth(IF_PARENT_DEPTH);
+  Layout& layoutBeforeIf = router.stack().getItemAtDepth(IF_PARENT_DEPTH);
   for (const auto [hw, res] : llvm::enumerate(results)) {
-    const Value q = stateBeforeIf.lookupHardwareValue(hw);
-    stateBeforeIf.remapQubitValue(q, res);
+    const Value q = layoutBeforeIf.lookupHardwareValue(hw);
+    layoutBeforeIf.remapQubitValue(q, res);
   }
 
   return WalkResult::advance();

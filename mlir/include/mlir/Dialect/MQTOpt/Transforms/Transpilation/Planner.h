@@ -15,8 +15,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layerizer.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
-#include "llvm/Support/Debug.h"
-
 #include <algorithm>
 #include <mlir/Support/LLVM.h>
 #include <queue>
@@ -37,8 +35,7 @@ of gates.
 */
 struct PlannerBase {
   virtual ~PlannerBase() = default;
-  [[nodiscard]] virtual PlannerResult plan(const Layers&,
-                                           const ThinLayout<QubitIndex>&,
+  [[nodiscard]] virtual PlannerResult plan(const Layers&, const ThinLayout&,
                                            const Architecture&) const = 0;
 };
 
@@ -47,7 +44,7 @@ struct PlannerBase {
  */
 struct NaivePlanner final : PlannerBase {
   [[nodiscard]] PlannerResult plan(const Layers& layers,
-                                   const ThinLayout<QubitIndex>& layout,
+                                   const ThinLayout& layout,
                                    const Architecture& arch) const override {
     if (layers.size() != 1 || layers.front().size() != 1) {
       throw std::invalid_argument(
@@ -92,7 +89,7 @@ struct QMAPPlanner final : PlannerBase {
       : weights_(std::move(weights)) {}
 
   [[nodiscard]] PlannerResult plan(const Layers& layers,
-                                   const ThinLayout<QubitIndex>& layout,
+                                   const ThinLayout& layout,
                                    const Architecture& arch) const override {
     /// Initialize queue.
     MinQueue frontier{};
@@ -119,7 +116,7 @@ private:
      * @brief Construct a root node with the given layout. Initialize the
      * sequence with an empty vector and set the cost to zero.
      */
-    explicit SearchNode(ThinLayout<QubitIndex> layout, const Architecture& arch)
+    SearchNode(ThinLayout layout, const Architecture& arch)
         : layout_(std::move(layout)), depthBuckets_(arch.nqubits()) {}
 
     /**
@@ -170,9 +167,7 @@ private:
     /**
      * @brief Return a const reference to the node's layout.
      */
-    [[nodiscard]] const ThinLayout<QubitIndex>& getLayout() const {
-      return layout_;
-    }
+    [[nodiscard]] const ThinLayout& getLayout() const { return layout_; }
 
     [[nodiscard]] bool operator>(const SearchNode& rhs) const {
       return f_ > rhs.f_;
@@ -216,7 +211,7 @@ private:
     }
 
     mlir::SmallVector<QubitIndexPair> seq_;
-    ThinLayout<QubitIndex> layout_;
+    ThinLayout layout_;
 
     mlir::SmallVector<uint16_t> depthBuckets_;
     uint16_t ndepth_{0};
@@ -235,7 +230,7 @@ private:
               const Architecture& arch) const {
     llvm::SmallDenseSet<QubitIndexPair, 16> visited{};
     for (const QubitIndexPair gate : layers.front()) {
-      for (const QubitIndex prog : {gate.first, gate.second}) {
+      for (const auto prog : {gate.first, gate.second}) {
         const std::size_t hw0 = node.getLayout().getHardwareIndex(prog);
         for (const std::size_t hw1 : arch.neighboursOf(hw0)) {
           /// Ensure consistent hashing/comparison

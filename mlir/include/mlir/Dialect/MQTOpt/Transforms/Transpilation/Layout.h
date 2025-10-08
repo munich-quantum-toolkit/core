@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "ir/Definitions.hpp"
+
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -25,7 +27,7 @@ namespace mqt::ir::opt {
  * because "virtual" (opposed to physical) and "static" (opposed to dynamic)
  * are C++ keywords.
  */
-template <class QubitIndex> class [[nodiscard]] ThinLayout {
+class [[nodiscard]] ThinLayout {
 public:
   explicit ThinLayout(const std::size_t nqubits)
       : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
@@ -35,7 +37,7 @@ public:
    * @param prog The program index.
    * @param hw The hardware index.
    */
-  void add(QubitIndex prog, QubitIndex hw) {
+  void add(qc::Qubit prog, qc::Qubit hw) {
     assert(prog < programToHardware_.size() &&
            "add: program index out of bounds");
     assert(hw < hardwareToProgram_.size() &&
@@ -49,7 +51,7 @@ public:
    * @param hw The hardware index.
    * @return The program index of the respective hardware index.
    */
-  [[nodiscard]] QubitIndex getProgramIndex(const QubitIndex hw) const {
+  [[nodiscard]] qc::Qubit getProgramIndex(const qc::Qubit hw) const {
     assert(hw < hardwareToProgram_.size() &&
            "getProgramIndex: hardware index out of bounds");
     return hardwareToProgram_[hw];
@@ -60,7 +62,7 @@ public:
    * @param prog The program index.
    * @return The hardware index of the respective program index.
    */
-  [[nodiscard]] QubitIndex getHardwareIndex(const QubitIndex prog) const {
+  [[nodiscard]] qc::Qubit getHardwareIndex(const qc::Qubit prog) const {
     assert(prog < programToHardware_.size() &&
            "getHardwareIndex: program index out of bounds");
     return programToHardware_[prog];
@@ -73,9 +75,9 @@ public:
    */
   template <typename... ProgIndices>
     requires(sizeof...(ProgIndices) > 0) &&
-            ((std::is_convertible_v<ProgIndices, QubitIndex>) && ...)
+            ((std::is_convertible_v<ProgIndices, qc::Qubit>) && ...)
   [[nodiscard]] auto getHardwareIndices(ProgIndices... progs) const {
-    return std::tuple{getHardwareIndex(static_cast<QubitIndex>(progs))...};
+    return std::tuple{getHardwareIndex(static_cast<qc::Qubit>(progs))...};
   }
 
   /**
@@ -85,17 +87,17 @@ public:
    */
   template <typename... HwIndices>
     requires(sizeof...(HwIndices) > 0) &&
-            ((std::is_convertible_v<HwIndices, QubitIndex>) && ...)
+            ((std::is_convertible_v<HwIndices, qc::Qubit>) && ...)
   [[nodiscard]] auto getProgramIndices(HwIndices... hws) const {
-    return std::tuple{getProgramIndex(static_cast<QubitIndex>(hws))...};
+    return std::tuple{getProgramIndex(static_cast<qc::Qubit>(hws))...};
   }
 
   /**
    * @brief Swap the mapping to hardware indices of two program indices.
    */
-  void swap(const QubitIndex prog0, const QubitIndex prog1) {
-    const QubitIndex hw0 = programToHardware_[prog0];
-    const QubitIndex hw1 = programToHardware_[prog1];
+  void swap(const qc::Qubit prog0, const qc::Qubit prog1) {
+    const qc::Qubit hw0 = programToHardware_[prog0];
+    const qc::Qubit hw1 = programToHardware_[prog1];
 
     std::swap(programToHardware_[prog0], programToHardware_[prog1]);
 
@@ -107,12 +109,12 @@ protected:
   /**
    * @brief Maps a program qubit index to its hardware index.
    */
-  mlir::SmallVector<QubitIndex> programToHardware_;
+  mlir::SmallVector<qc::Qubit> programToHardware_;
 
   /**
    * @brief Maps a hardware qubit index to its program index.
    */
-  mlir::SmallVector<QubitIndex> hardwareToProgram_;
+  mlir::SmallVector<qc::Qubit> hardwareToProgram_;
 };
 
 /**
@@ -120,11 +122,10 @@ protected:
  * capabilities. This is the recommended replacement for the original Layout
  * class.
  */
-template <class QubitIndex>
-class [[nodiscard]] Layout : public ThinLayout<QubitIndex> {
+class [[nodiscard]] Layout : public ThinLayout {
 public:
   explicit Layout(const std::size_t nqubits)
-      : ThinLayout<QubitIndex>(nqubits), qubits_(nqubits) {
+      : ThinLayout(nqubits), qubits_(nqubits) {
     valueToMapping_.reserve(nqubits);
   }
 
@@ -134,8 +135,8 @@ public:
    * @param hw The hardware index.
    * @param q The SSA value associated with the indices.
    */
-  void add(QubitIndex prog, QubitIndex hw, mlir::Value q) {
-    ThinLayout<QubitIndex>::add(prog, hw);
+  void add(qc::Qubit prog, qc::Qubit hw, mlir::Value q) {
+    ThinLayout::add(prog, hw);
     qubits_[hw] = q;
     valueToMapping_.try_emplace(q, prog, hw);
   }
@@ -145,7 +146,7 @@ public:
    * @param q The SSA Value representing the qubit.
    * @return The hardware index where this qubit currently resides.
    */
-  [[nodiscard]] QubitIndex lookupHardwareIndex(const mlir::Value q) const {
+  [[nodiscard]] qc::Qubit lookupHardwareIndex(const mlir::Value q) const {
     const auto it = valueToMapping_.find(q);
     assert(it != valueToMapping_.end() && "lookupHardwareIndex: unknown value");
     return it->second.hw;
@@ -157,7 +158,7 @@ public:
    * @return The SSA value currently representing the qubit at the hardware
    * location.
    */
-  [[nodiscard]] mlir::Value lookupHardwareValue(const QubitIndex hw) const {
+  [[nodiscard]] mlir::Value lookupHardwareValue(const qc::Qubit hw) const {
     assert(hw < qubits_.size() &&
            "lookupHardwareValue: hardware index out of bounds");
     return qubits_[hw];
@@ -168,7 +169,7 @@ public:
    * @param q The SSA Value representing the qubit.
    * @return The program index where this qubit currently resides.
    */
-  [[nodiscard]] QubitIndex lookupProgramIndex(const mlir::Value q) const {
+  [[nodiscard]] qc::Qubit lookupProgramIndex(const mlir::Value q) const {
     const auto it = valueToMapping_.find(q);
     assert(it != valueToMapping_.end() && "lookupProgramIndex: unknown value");
     return it->second.prog;
@@ -180,7 +181,7 @@ public:
    * @return The SSA value currently representing the qubit at the program
    * location.
    */
-  [[nodiscard]] mlir::Value lookupProgramValue(const QubitIndex prog) const {
+  [[nodiscard]] mlir::Value lookupProgramValue(const qc::Qubit prog) const {
     assert(prog < this->programToHardware_.size() &&
            "lookupProgramValue: program index out of bounds");
     return qubits_[this->programToHardware_[prog]];
@@ -222,18 +223,18 @@ public:
     assert(it0 != valueToMapping_.end() && it1 != valueToMapping_.end() &&
            "swap: unknown values");
 
-    const QubitIndex prog0 = it0->second.prog;
-    const QubitIndex prog1 = it1->second.prog;
+    const qc::Qubit prog0 = it0->second.prog;
+    const qc::Qubit prog1 = it1->second.prog;
 
     std::swap(it0->second.prog, it1->second.prog);
 
-    ThinLayout<QubitIndex>::swap(prog0, prog1);
+    ThinLayout::swap(prog0, prog1);
   }
 
   /**
    * @brief Return the current layout.
    */
-  mlir::ArrayRef<QubitIndex> getCurrentLayout() const {
+  mlir::ArrayRef<qc::Qubit> getCurrentLayout() const {
     return this->programToHardware_;
   }
 
@@ -246,8 +247,8 @@ public:
 
 private:
   struct QubitInfo {
-    QubitIndex prog;
-    QubitIndex hw;
+    qc::Qubit prog;
+    qc::Qubit hw;
   };
 
   /**
