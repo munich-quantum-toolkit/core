@@ -33,40 +33,6 @@ def setup_module() -> None:  # noqa: D103
     clear_operation_translators(keep_defaults=True)
 
 
-def test_default_translators_registered() -> None:
-    """Verify that all default gate translators are registered."""
-    translators = list_operation_translators()
-
-    # Check single-qubit Pauli gates
-    assert "x" in translators
-    assert "y" in translators
-    assert "z" in translators
-    assert "h" in translators
-    assert "i" in translators or "id" in translators
-
-    # Check phase gates
-    assert "s" in translators
-    assert "sdg" in translators
-    assert "t" in translators
-    assert "tdg" in translators
-    assert "sx" in translators
-    assert "sxdg" in translators
-
-    # Check rotation gates
-    assert "rx" in translators
-    assert "ry" in translators
-    assert "rz" in translators
-
-    # Check two-qubit gates
-    assert "cx" in translators or "cnot" in translators
-    assert "cy" in translators
-    assert "cz" in translators
-    assert "swap" in translators
-
-    # Check measurement
-    assert "measure" in translators
-
-
 def test_gate_mapping_to_qiskit_gates() -> None:
     """Test that device operations are correctly mapped to Qiskit gates."""
     from qiskit.circuit.library import CZGate, HGate, RXGate, XGate
@@ -108,13 +74,52 @@ def test_backend_supports_cz_gate() -> None:
     assert sum(counts.values()) == 100
 
 
-def test_translator_count() -> None:
-    """Verify that many default translators are registered."""
+def test_default_translators_registered() -> None:
+    """Verify that all expected default translators are registered."""
     translators = list_operation_translators()
+    expected_translators = {
+        "x",
+        "y",
+        "z",
+        "h",
+        "i",
+        "id",
+        "s",
+        "sdg",
+        "t",
+        "tdg",
+        "sx",
+        "sxdg",
+        "rx",
+        "ry",
+        "rz",
+        "p",
+        "phase",
+        "r",
+        "prx",
+        "u",
+        "u2",
+        "u3",
+        "cx",
+        "cnot",
+        "cy",
+        "cz",
+        "ch",
+        "swap",
+        "iswap",
+        "dcx",
+        "ecr",
+        "rxx",
+        "ryy",
+        "rzz",
+        "rzx",
+        "xx_plus_yy",
+        "xx_minus_yy",
+        "measure",
+    }
 
-    # Should have at least 30 translators now (including new gates from mqt_to_qiskit.py)
-    # This verifies the expanded gate support is in place
-    assert len(translators) >= 30
+    missing = [name for name in expected_translators if name not in translators]
+    assert not missing, f"Missing expected translators: {missing}"
 
 
 def test_gate_name_case_insensitivity() -> None:

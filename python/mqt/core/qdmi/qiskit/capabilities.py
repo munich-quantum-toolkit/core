@@ -207,15 +207,15 @@ def _safe_operation_info(op: fomac.Device.Operation) -> DeviceOperationInfo | No
     site_indices = tuple(sorted(s.index() for s in site_list)) if site_list is not None else None
     return DeviceOperationInfo(
         name=name,
-        qubits_num=op.qubits_num() if hasattr(op, "qubits_num") else None,
-        parameters_num=op.parameters_num() if hasattr(op, "parameters_num") else 0,
-        duration=op.duration() if hasattr(op, "duration") else None,
-        fidelity=op.fidelity() if hasattr(op, "fidelity") else None,
-        interaction_radius=op.interaction_radius() if hasattr(op, "interaction_radius") else None,
-        blocking_radius=op.blocking_radius() if hasattr(op, "blocking_radius") else None,
-        idling_fidelity=op.idling_fidelity() if hasattr(op, "idling_fidelity") else None,
-        is_zoned=op.is_zoned() if hasattr(op, "is_zoned") else None,
-        mean_shuttling_speed=op.mean_shuttling_speed() if hasattr(op, "mean_shuttling_speed") else None,
+        qubits_num=getattr(op, "qubits_num", lambda: None)(),
+        parameters_num=getattr(op, "parameters_num", lambda: 0)(),
+        duration=getattr(op, "duration", lambda: None)(),
+        fidelity=getattr(op, "fidelity", lambda: None)(),
+        interaction_radius=getattr(op, "interaction_radius", lambda: None)(),
+        blocking_radius=getattr(op, "blocking_radius", lambda: None)(),
+        idling_fidelity=getattr(op, "idling_fidelity", lambda: None)(),
+        is_zoned=getattr(op, "is_zoned", lambda: None)(),
+        mean_shuttling_speed=getattr(op, "mean_shuttling_speed", lambda: None)(),
         sites=site_indices,
     )
 

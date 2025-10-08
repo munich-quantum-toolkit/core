@@ -22,7 +22,7 @@ try:
     from .backend import QiskitBackend
 
     _BACKEND_AVAILABLE = True
-except Exception:  # noqa: BLE001
+except ImportError:
     _BACKEND_AVAILABLE = False
 
 from .exceptions import (
@@ -46,15 +46,11 @@ if TYPE_CHECKING:  # pragma: no cover
     from types import ModuleType
 
 __all__ = [
-    "CapabilityMismatchError",
     "IRValidationError",
     "InstructionContext",
     "ProgramIR",
     "ProgramInstruction",
-    "QDMIQiskitError",
     "QiskitNotAvailableError",
-    "TranslationError",
-    "UnsupportedOperationError",
     "build_program_ir",
     "clear_operation_translators",
     "get_operation_translator",
@@ -85,9 +81,9 @@ def is_available() -> bool:
     """Return True if the optional Qiskit dependency is installed."""
     try:  # pragma: no cover - trivial success path
         import_module(_QISKIT_MODULE_NAME)
-    except Exception:  # noqa: BLE001
+    except ImportError:
         return False
-    else:  # TRY300 explicit else
+    else:
         return True
 
 
@@ -102,9 +98,9 @@ def require_qiskit() -> ModuleType:
     """
     try:
         return import_module(_QISKIT_MODULE_NAME)
-    except Exception as exc:
+    except ImportError as err:
         msg = "Qiskit is not installed. Install with 'pip install mqt-core[qiskit]'"
-        raise QiskitNotAvailableError(msg) from exc
+        raise QiskitNotAvailableError(msg) from err
 
 
 def __getattr__(name: str) -> object:  # pragma: no cover - dynamic fallback

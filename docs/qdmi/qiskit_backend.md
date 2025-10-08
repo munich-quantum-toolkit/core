@@ -57,6 +57,22 @@ print(f"Capabilities hash: {backend.capabilities_hash}")
 Execute multiple circuits in a single job:
 
 ```{code-cell} ipython3
+# Create multiple circuits for batch execution
+qc1 = QuantumCircuit(2, 2)
+qc1.h(0)
+qc1.cx(0, 1)
+qc1.measure([0, 1], [0, 1])
+
+qc2 = QuantumCircuit(2, 2)
+qc2.x(0)
+qc2.cz(0, 1)
+qc2.measure([0, 1], [0, 1])
+
+qc3 = QuantumCircuit(2, 2)
+qc3.h(0)
+qc3.h(1)
+qc3.measure([0, 1], [0, 1])
+
 circuits = [qc1, qc2, qc3]
 job = backend.run(circuits, shots=2000)
 result = job.result()
