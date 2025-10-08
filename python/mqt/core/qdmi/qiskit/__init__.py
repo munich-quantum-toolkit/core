@@ -46,11 +46,15 @@ if TYPE_CHECKING:  # pragma: no cover
     from types import ModuleType
 
 __all__ = [
+    "CapabilityMismatchError",
     "IRValidationError",
     "InstructionContext",
     "ProgramIR",
     "ProgramInstruction",
+    "QDMIQiskitError",
     "QiskitNotAvailableError",
+    "TranslationError",
+    "UnsupportedOperationError",
     "build_program_ir",
     "clear_operation_translators",
     "get_operation_translator",
@@ -62,11 +66,7 @@ __all__ = [
 ]
 if _BACKEND_AVAILABLE:
     __all__ += [
-        "CapabilityMismatchError",
-        "QDMIQiskitError",
         "QiskitBackend",
-        "TranslationError",
-        "UnsupportedOperationError",
     ]
 
 
