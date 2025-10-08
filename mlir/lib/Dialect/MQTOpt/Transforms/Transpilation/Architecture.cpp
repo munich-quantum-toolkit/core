@@ -22,7 +22,8 @@ Architecture::shortestPathBetween(std::size_t u, std::size_t v) const {
   llvm::SmallVector<std::size_t> path;
 
   if (prev_[u][v] == UINT64_MAX) {
-    return {};
+    throw std::domain_error("No path between qubits " + std::to_string(u) +
+                            " and " + std::to_string(v));
   }
 
   path.push_back(v);
@@ -37,7 +38,8 @@ Architecture::shortestPathBetween(std::size_t u, std::size_t v) const {
 [[nodiscard]] std::size_t Architecture::distanceBetween(std::size_t u,
                                                         std::size_t v) const {
   if (prev_[u][v] == UINT64_MAX) {
-    return 0UL;
+    throw std::domain_error("No path between qubits " + std::to_string(u) +
+                            " and " + std::to_string(v));
   }
   return dist_[u][v];
 }
