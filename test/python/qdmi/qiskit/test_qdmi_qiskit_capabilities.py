@@ -39,7 +39,7 @@ def test_extract_capabilities_basic() -> None:
     assert caps.device_name
     assert caps.num_qubits >= 0
     assert caps.capabilities_hash is not None
-    assert len(caps.capabilities_hash or "") == 64
+    assert len(caps.capabilities_hash) == 64
     if caps.sites:
         assert isinstance(caps.sites[0], DeviceSiteInfo)
     if caps.operations:

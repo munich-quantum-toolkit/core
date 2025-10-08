@@ -26,6 +26,7 @@ Design goals:
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 from typing import TYPE_CHECKING
@@ -145,6 +146,7 @@ class DeviceCapabilities:
 
 
 _capability_cache: dict[str, DeviceCapabilities] = {}
+_cache_lock = threading.Lock()
 
 
 def _compute_device_signature(device: fomac.Device) -> str:
@@ -179,21 +181,24 @@ def _safe_site_info(s: fomac.Device.Site) -> DeviceSiteInfo | None:
     Returns:
         A populated DeviceSiteInfo instance, or ``None`` if extraction failed.
     """
-    return DeviceSiteInfo(
-        index=s.index(),
-        name=s.name(),
-        x=s.x_coordinate(),
-        y=s.y_coordinate(),
-        z=s.z_coordinate(),
-        is_zone=s.is_zone(),
-        x_extent=s.x_extent(),
-        y_extent=s.y_extent(),
-        z_extent=s.z_extent(),
-        module_index=s.module_index(),
-        submodule_index=s.submodule_index(),
-        t1=s.t1(),
-        t2=s.t2(),
-    )
+    try:
+        return DeviceSiteInfo(
+            index=s.index(),
+            name=s.name(),
+            x=s.x_coordinate(),
+            y=s.y_coordinate(),
+            z=s.z_coordinate(),
+            is_zone=s.is_zone(),
+            x_extent=s.x_extent(),
+            y_extent=s.y_extent(),
+            z_extent=s.z_extent(),
+            module_index=s.module_index(),
+            submodule_index=s.submodule_index(),
+            t1=s.t1(),
+            t2=s.t2(),
+        )
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _safe_operation_info(op: fomac.Device.Operation) -> DeviceOperationInfo | None:
@@ -229,7 +234,7 @@ def extract_capabilities(device: fomac.Device) -> DeviceCapabilities:
     signature = _compute_device_signature(device)
 
     site_infos: list[DeviceSiteInfo] = []
-    for s in device.sites():
+    for s in sorted(device.sites(), key=lambda x: x.index()):
         site_info = _safe_site_info(s)
         if site_info is not None:
             site_infos.append(site_info)
@@ -243,6 +248,7 @@ def extract_capabilities(device: fomac.Device) -> DeviceCapabilities:
     cm = device.coupling_map()
     coupling_indices_list = sorted((pair[0].index(), pair[1].index()) for pair in cm) if cm is not None else None
 
+    status = device.status()
     cap = DeviceCapabilities(
         device_name=device.name(),
         device_version=device.version(),
@@ -253,7 +259,7 @@ def extract_capabilities(device: fomac.Device) -> DeviceCapabilities:
         length_unit=device.length_unit(),
         length_scale_factor=device.length_scale_factor(),
         min_atom_distance=device.min_atom_distance(),
-        status=device.status().name if hasattr(device.status(), "name") else str(device.status()),
+        status=getattr(status, "name", None) or str(status),
         sites=site_infos,
         operations=op_infos,
         coupling_map=coupling_indices_list,
@@ -275,12 +281,14 @@ def get_capabilities(device: fomac.Device, *, use_cache: bool = True) -> DeviceC
     """
     signature = _compute_device_signature(device)
     if use_cache:
-        cached = _capability_cache.get(signature)
-        if cached is not None:
-            return cached
+        with _cache_lock:
+            cached = _capability_cache.get(signature)
+            if cached is not None:
+                return cached
     cap = extract_capabilities(device)
     if use_cache:
-        _capability_cache[signature] = cap
+        with _cache_lock:
+            _capability_cache[signature] = cap
     return cap
 
 

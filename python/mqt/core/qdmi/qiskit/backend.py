@@ -320,7 +320,15 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
 
         # Update options
-        shots = options.get("shots", self._options.shots)
+        shots_opt = options.get("shots", self._options.shots)
+        try:
+            shots = int(shots_opt)
+        except Exception as exc:
+            msg = f"Invalid 'shots' value: {shots_opt!r}"
+            raise TranslationError(msg) from exc
+        if shots < 1:
+            msg = f"'shots' must be >= 1, got {shots}"
+            raise TranslationError(msg)
 
         # Translate and execute circuits
         try:
@@ -420,11 +428,23 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             if hasattr(instruction.operation, "params") and instruction.operation.params:
                 # Convert parameters to floats
                 param_list = []
+                from qiskit.circuit import ParameterExpression
+
                 for p in instruction.operation.params:
+                    # Explicitly reject unbound symbols
                     if isinstance(p, Parameter):
                         msg = f"Unbound parameter '{p.name}' in circuit"
                         raise TranslationError(msg)
-                    param_list.append(float(p))
+                    if isinstance(p, ParameterExpression) and getattr(p, "parameters", None):
+                        # ParameterExpression with free parameters is unbound
+                        names = ", ".join(sorted(par.name for par in p.parameters))
+                        msg = f"Unbound parameter expression with symbols: {names}"
+                        raise TranslationError(msg)
+                    try:
+                        param_list.append(float(p))
+                    except Exception as conv_exc:
+                        msg = f"Non-numeric parameter value: {p!r}"
+                        raise TranslationError(msg) from conv_exc
                 params = param_list
 
             ctx = InstructionContext(
@@ -440,6 +460,8 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         allowed_ops.add("measure")
 
         try:
+            from .types import IRValidationError
+
             program_ir = build_program_ir(
                 name=circuit.name or "circuit",
                 instruction_contexts=contexts,
@@ -447,7 +469,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
                 num_qubits=self._capabilities.num_qubits,
                 pseudo_ops=["barrier"],
             )
-        except Exception as exc:
+        except IRValidationError as exc:
             msg = f"Failed to build program IR: {exc}"
             raise UnsupportedOperationError(msg) from exc
 

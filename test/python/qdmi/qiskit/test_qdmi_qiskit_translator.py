@@ -48,6 +48,11 @@ def test_register_and_list_translators() -> None:
 
 def test_unregister_translator() -> None:
     """Unregister an existing translator and verify it's removed."""
+
+    def _custom_gate(ctx: InstructionContext) -> list[ProgramInstruction]:  # noqa: ARG001
+        return [ProgramInstruction(name="custom_gate", qubits=[0])]
+
+    register_operation_translator("custom_gate", _custom_gate, overwrite=True)
     unregister_operation_translator("custom_gate")
     assert "custom_gate" not in list_operation_translators()
 
@@ -91,6 +96,7 @@ def test_build_program_ir_basic_measure_and_barrier() -> None:
     )
     assert isinstance(ir, ProgramIR)
     assert [inst.name for inst in ir.instructions] == ["cz", "barrier", "measure"]
+    unregister_operation_translator("cz")
 
 
 def test_measure_translator_requires_clbits() -> None:

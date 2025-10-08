@@ -114,7 +114,7 @@ def _passthrough_translator(ctx: InstructionContext) -> Sequence[ProgramInstruct
     Returns:
         Single-element sequence containing the translated instruction.
     """
-    return [ProgramInstruction(name=ctx.name, qubits=ctx.qubits, params=ctx.params, metadata={})]
+    return [ProgramInstruction(name=ctx.name, qubits=ctx.qubits, params=ctx.params, metadata=ctx.metadata or {})]
 
 
 # Register built-in translators at import time (idempotent if re-imported)
@@ -161,10 +161,11 @@ def register_operation_translator(
     if not name:
         msg = "Translator name must be non-empty"
         raise ValueError(msg)
-    if name in _TRANSLATORS and not overwrite:
-        msg = f"Translator already registered for '{name}'"
+    key = name.lower()
+    if key in _TRANSLATORS and not overwrite:
+        msg = f"Translator already registered for '{key}'"
         raise ValueError(msg)
-    _TRANSLATORS[name] = translator
+    _TRANSLATORS[key] = translator
 
 
 def unregister_operation_translator(name: str) -> None:
@@ -172,12 +173,12 @@ def unregister_operation_translator(name: str) -> None:
 
     Silently does nothing if the name is not present.
     """
-    _TRANSLATORS.pop(name, None)
+    _TRANSLATORS.pop(name.lower(), None)
 
 
 def get_operation_translator(name: str) -> OperationTranslator:
     """Return the translator for ``name`` (KeyError if missing)."""
-    return _TRANSLATORS[name]
+    return _TRANSLATORS[name.lower()]
 
 
 def list_operation_translators() -> list[str]:
@@ -256,7 +257,7 @@ def build_program_ir(
             # structural pseudo op: represented directly
             instructions.append(ProgramInstruction(name=ctx.name, qubits=ctx.qubits, params=None, metadata={}))
             continue
-        translator = _TRANSLATORS.get(ctx.name)
+        translator = _TRANSLATORS.get(ctx.name.lower())
         if translator is None:
             msg = f"No translator registered for operation '{ctx.name}'"
             raise IRValidationError(msg)
