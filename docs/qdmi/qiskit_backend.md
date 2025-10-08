@@ -8,15 +8,33 @@ mystnb:
 
 # Qiskit Backend Integration
 
-The `mqt.core.qdmi.qiskit` package provides a Qiskit {py:class}`~qiskit.providers.BackendV2`-compatible interface to QDMI devices via FoMaC.
+The {py:mod}`mqt.core.qdmi.qiskit` module provides a Qiskit {py:class}`~qiskit.providers.BackendV2`-compatible interface to QDMI devices via FoMaC.
 
 ## Installation
 
 Install MQT Core with Qiskit support:
 
-```bash
-pip install "mqt-core[qiskit]"
+::::{tab-set}
+:sync-group: installer
+
+:::{tab-item} {code}`uv` _(recommended)_
+:sync: uv
+
+```console
+$ uv pip install "mqt-core[qiskit]"
 ```
+
+:::
+
+:::{tab-item} {code}`pip`
+:sync: pip
+
+```console
+(.venv) $ python -m pip install "mqt-core[qiskit]"
+```
+
+:::
+::::
 
 ## Quickstart
 
@@ -154,5 +172,5 @@ The base {py:class}`~mqt.core.qdmi.qiskit.QiskitBackend` is a **neutral framewor
 
 :::{note}
 This design keeps MQT Core vendor-neutral while providing a complete integration framework.
-For complete API documentation, see {py:class}`mqt.core.qdmi.qiskit.QiskitBackend`.
+For complete API documentation, see {py:class}`~mqt.core.qdmi.qiskit.QiskitBackend`.
 :::
