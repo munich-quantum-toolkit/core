@@ -37,19 +37,19 @@ using Layer = mlir::SmallVector<QubitIndexPair>;
 using Layers = mlir::SmallVector<Layer>;
 
 /**
- * @brief A layerizer divides the circuit into routable sections.
+ * @brief A scheduler divides the circuit into routable sections.
  */
-struct LayerizerBase {
-  virtual ~LayerizerBase() = default;
-  [[nodiscard]] virtual Layers layerize(UnitaryInterface op,
+struct SchedulerBase {
+  virtual ~SchedulerBase() = default;
+  [[nodiscard]] virtual Layers schedule(UnitaryInterface op,
                                         const Layout& layout) const = 0;
 };
 
 /**
- * @brief A one-op layerizer simply returns the given op.
+ * @brief A one-op scheduler simply returns the given op.
  */
-struct OneOpLayerizer final : LayerizerBase {
-  [[nodiscard]] Layers layerize(UnitaryInterface op,
+struct OneOpScheduler final : SchedulerBase {
+  [[nodiscard]] Layers schedule(UnitaryInterface op,
                                 const Layout& layout) const override {
     const auto [in0, in1] = getIns(op);
     return {{{layout.lookupProgramIndex(in0), layout.lookupProgramIndex(in1)}}};
@@ -58,13 +58,13 @@ struct OneOpLayerizer final : LayerizerBase {
 
 /**
  * @brief A crawl layerizer "crawls" the DAG for all gates that can be executed
- * in parallel, i.e., they don't depend each others results.
+ * in parallel, i.e., they act on different qubits.
  */
-struct CrawlLayerizer final : LayerizerBase {
-  explicit CrawlLayerizer(const std::size_t nlookahead)
+struct CrawlScheduler final : SchedulerBase {
+  explicit CrawlScheduler(const std::size_t nlookahead)
       : nlookahead_(nlookahead) {}
 
-  [[nodiscard]] Layers layerize(UnitaryInterface op,
+  [[nodiscard]] Layers schedule(UnitaryInterface op,
                                 const Layout& layout) const override {
     Layout layoutCopy(layout);
     Layers layers(1 + nlookahead_);
@@ -75,12 +75,12 @@ struct CrawlLayerizer final : LayerizerBase {
 
     for (Layer& layer : layers) {
       mlir::DenseSet<UnitaryInterface> seenTwoQubit;
-      mlir::SmallVector<UnitaryInterface> readyToQubit;
+      mlir::SmallVector<UnitaryInterface> readyTwoQubit;
 
       /// The maximum amount of two-qubit gates in a layer is nqubits / 2.
       /// Assuming sparsity we half this value: nqubits / (2 * 2)
       seenTwoQubit.reserve(nqubits / 4);
-      readyToQubit.reserve(nqubits / 4);
+      readyTwoQubit.reserve(nqubits / 4);
 
       for (const mlir::Value q : qubits) {
         bool stop = false;
@@ -112,7 +112,7 @@ struct CrawlLayerizer final : LayerizerBase {
                 /// If this is the second encounter, the gate is ready.
                 if (isTwoQubitGate(op)) {
                   if (!seenTwoQubit.insert(op).second) {
-                    readyToQubit.emplace_back(op);
+                    readyTwoQubit.emplace_back(op);
                   }
                   stop = true;
                   return;
@@ -129,7 +129,7 @@ struct CrawlLayerizer final : LayerizerBase {
         }
       }
 
-      for (const UnitaryInterface op : readyToQubit) {
+      for (const UnitaryInterface op : readyTwoQubit) {
         const auto [in0, in1] = getIns(op);
         const auto [out0, out1] = getOuts(op);
         layer.emplace_back(layoutCopy.lookupProgramIndex(in0),

@@ -12,8 +12,8 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layerizer.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Scheduler.h"
 
 #include <algorithm>
 #include <mlir/Support/LLVM.h>

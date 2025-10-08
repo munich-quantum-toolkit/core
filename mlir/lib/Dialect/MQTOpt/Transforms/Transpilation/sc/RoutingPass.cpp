@@ -12,9 +12,9 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layerizer.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Planner.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Scheduler.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
 #include <cassert>
@@ -129,7 +129,7 @@ void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
 class Router {
 public:
   explicit Router(std::unique_ptr<Architecture> arch,
-                  std::unique_ptr<LayerizerBase> layerizer,
+                  std::unique_ptr<SchedulerBase> layerizer,
                   std::unique_ptr<PlannerBase> planner, Pass::Statistic& nadd)
       : arch_(std::move(arch)), layerizer_(std::move(layerizer)),
         planner_(std::move(planner)), nadd_(&nadd) {}
@@ -148,7 +148,7 @@ public:
    * executable.
    */
   void route(UnitaryInterface op, PatternRewriter& rewriter) {
-    const auto layers = layerizer_->layerize(op, stack().top());
+    const auto layers = layerizer_->schedule(op, stack().top());
     const auto swaps = planner_->plan(layers, stack().top(), arch());
     insert(swaps, op->getLoc(), rewriter);
     historyStack_.top().append(swaps.begin(), swaps.end());
@@ -214,7 +214,7 @@ private:
   }
 
   std::unique_ptr<Architecture> arch_;
-  std::unique_ptr<LayerizerBase> layerizer_;
+  std::unique_ptr<SchedulerBase> layerizer_;
   std::unique_ptr<PlannerBase> planner_;
 
   LayoutStack<Layout> stack_{};
@@ -508,13 +508,13 @@ private:
     switch (static_cast<RoutingMethod>(method)) {
     case RoutingMethod::Naive:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=naive\n"; });
-      return Router(std::move(arch), std::make_unique<OneOpLayerizer>(),
+      return Router(std::move(arch), std::make_unique<OneOpScheduler>(),
                     std::make_unique<NaivePlanner>(), nadd);
     case RoutingMethod::QMAP:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=qmap\n"; });
       const HeuristicWeights weights(alpha, beta, lambda, nlookahead);
       return Router(std::move(arch),
-                    std::make_unique<CrawlLayerizer>(nlookahead),
+                    std::make_unique<CrawlScheduler>(nlookahead),
                     std::make_unique<QMAPPlanner>(weights), nadd);
     }
 
