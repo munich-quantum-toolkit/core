@@ -102,16 +102,10 @@ void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
     return;
   }
 
-  const Block* swapBlock = exceptOp->getBlock();
   rewriter.replaceUsesWithIf(oldValue, newValue, [&](OpOperand& use) {
     Operation* user = use.getOwner();
     if (user == exceptOp) {
       return false;
-    }
-
-    // Only replace uses in same block that come AFTER the swap
-    if (user->getBlock() == swapBlock) {
-      return exceptOp->isBeforeInBlock(user);
     }
 
     // For other blocks, check if in region tree
@@ -510,7 +504,7 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
 private:
   [[nodiscard]] Router getRouter() {
     /// TODO: Configurable Architecture.
-    auto arch = getArchitecture(ArchitectureName::MQTTest);
+    auto arch = getArchitecture(ArchitectureName::IBMFalcon);
 
     switch (static_cast<RoutingMethod>(method)) {
     case RoutingMethod::Naive:
