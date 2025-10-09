@@ -119,7 +119,6 @@ struct ReplaceBasisStateControlsWithIfPattern final
     mlir::OperationState state(op.getLoc(), op->getName());
     state.addOperands(remainingOperands);
     state.addTypes(remainingTypes);
-    state.addAttributes(op->getAttrs());
 
     // We need to update the `operandSegmentSizes` and `resultSegmentSizes`
     // attributes to reflect the removed operand.
@@ -276,7 +275,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
  */
 void populateReplaceBasisStateControlsWithIfPatterns(
     mlir::RewritePatternSet& patterns) {
-  // patterns.add<ReplaceBasisStateControlsWithIfPattern>(patterns.getContext());
+  patterns.add<ReplaceBasisStateControlsWithIfPattern>(patterns.getContext());
 }
 
 } // namespace mqt::ir::opt
