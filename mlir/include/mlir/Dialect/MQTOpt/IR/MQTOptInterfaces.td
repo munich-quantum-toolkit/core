@@ -172,9 +172,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 auto outQubits = op.getAllOutQubits();
 
                 auto it = llvm::find(outQubits, outQubit);
-                if (it == outQubits.end()) {
-                    llvm::report_fatal_error("output qubit not found in operation");
-                }
+                assert(it != outQubits.end() && "output qubit not found in operation");
                 size_t index = std::distance(outQubits.begin(), it);
                 return inQubits[index];
             }]>,
@@ -191,9 +189,7 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 auto outQubits = op.getAllOutQubits();
 
                 auto it = llvm::find(inQubits, inQubit);
-                if (it == inQubits.end()) {
-                    llvm::report_fatal_error("input qubit not found in operation");
-                }
+                assert(it != inQubits.end() && "input qubit not found in operation");
                 size_t index = std::distance(inQubits.begin(), it);
                 return outQubits[index];
             }]>,
