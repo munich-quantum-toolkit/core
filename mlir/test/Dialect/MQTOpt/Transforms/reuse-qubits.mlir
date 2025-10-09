@@ -155,7 +155,7 @@ module {
     // q2 is reused first because we start from the last dealloc.
     // CHECK: %[[q2_0:.*]] = mqtopt.reset %[[q0_2]]
     // CHECK: %[[q2_1:.*]] = mqtopt.h() %[[q2_0]] : !mqtopt.Qubit
-    // CHECK: %[[q2_2:.*]], %[[c1:.*]] = mqtopt.measure %[[q1_1]]
+    // CHECK: %[[q2_2:.*]], %[[c1:.*]] = mqtopt.measure %[[q2_1]]
     // CHECK: %[[q1_0:.*]] = mqtopt.reset %[[q2_2]]
     // CHECK: %[[q1_1:.*]] = mqtopt.h() %[[q1_0]] : !mqtopt.Qubit
     // CHECK: %[[q1_2:.*]], %[[c2:.*]] = mqtopt.measure %[[q1_1]]
