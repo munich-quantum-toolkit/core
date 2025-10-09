@@ -40,8 +40,7 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
    */
   static llvm::DenseSet<mlir::Operation*>
   findAllReachableDeallocs(mlir::Value allocQubit) {
-    // If traversing the def-use chain from the "alloc" qubit never reaches the
-    // "dealloc" qubit, they are disjoint.
+    // Traverse def-use chain using BFS.
     llvm::DenseSet<mlir::Operation*> reachableSinks;
     llvm::SmallVector<mlir::Operation*> toVisit{allocQubit.getUsers().begin(),
                                                 allocQubit.getUsers().end()};
@@ -51,14 +50,14 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
       toVisit.pop_back();
       visited.insert(current);
 
-      // If we reach the dealloc operation, the qubits are not disjoint.
+      // If we reach the dealloc operation, we add it to the list of sinks.
       if (mlir::isa<DeallocQubitOp>(current)) {
         reachableSinks.insert(current);
       }
 
       if (auto yieldOp = mlir::dyn_cast<mlir::scf::YieldOp>(current)) {
         // If we reach a yield operation, we continue from the corresponding
-        // `parent`.
+        // `parent` (e.g. `scf.if`).
         toVisit.push_back(yieldOp->getParentOp());
         continue;
       }
@@ -77,36 +76,6 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
     return reachableSinks;
   }
 
-  static DeallocQubitOp findDealloc(mlir::Value qubit) {
-    mlir::Value currentQubit = qubit;
-    mlir::Operation* current = *qubit.getUsers().begin();
-    unsigned int operandIndex = 0;
-    while (!mlir::isa<DeallocQubitOp>(current)) {
-      if (auto unitaryOp = mlir::dyn_cast<UnitaryInterface>(current)) {
-        currentQubit = unitaryOp.getCorrespondingOutput(currentQubit);
-        auto& use = *currentQubit.getUses().begin();
-        current = use.getOwner();
-        operandIndex = use.getOperandNumber();
-        continue;
-      }
-      if (auto yieldOp = mlir::dyn_cast<mlir::scf::YieldOp>(current)) {
-        // current becomes the corresponding output of the parent `scf.if`
-        auto* parent = yieldOp->getParentOp();
-        currentQubit = parent->getResult(operandIndex);
-        auto& use = *currentQubit.getUses().begin();
-        current = use.getOwner();
-      }
-      currentQubit =
-          *llvm::find_if(current->getResults(), [&](mlir::Value result) {
-            return mlir::isa<QubitType>(result.getType());
-          });
-      auto& use = *currentQubit.getUses().begin();
-      current = use.getOwner();
-      operandIndex = use.getOperandNumber();
-    }
-    return mlir::dyn_cast<DeallocQubitOp>(current);
-  }
-
   /**
    * @brief Reorders the users of the given operation to ensure that they are
    * after it.
@@ -115,7 +84,7 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
    */
   static void reorderUsers(mlir::Operation* startingOp,
                            mlir::PatternRewriter& rewriter) {
-    // Search for operations that need re-ordering using DFS.
+    // Search for operations that need re-ordering using BFS.
     mlir::DenseSet<mlir::Operation*> toVisit{startingOp};
     mlir::DenseSet<mlir::Operation*> visited;
 
