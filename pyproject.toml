@@ -339,6 +339,7 @@ test = [
   "pandas[output-formatting]>=2.2.3; python_version >= '3.13'",
   "qiskit[qasm3-import]>=1.0.0",
   "numpy>=2.1; python_version >= '3.13'",
+  "numpy>=2.3.2; python_version >= '3.14'",
 ]
 dev = [
   {include-group = "build"},
