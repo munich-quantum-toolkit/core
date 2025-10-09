@@ -1465,6 +1465,8 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "pandas", extras = ["output-formatting"], marker = "python_full_version >= '3.13' and extra == 'evaluation'", specifier = ">=2.2.3" },
+    { name = "pandas", extras = ["output-formatting"], marker = "python_full_version >= '3.14' and extra == 'evaluation'", specifier = ">=2.3.3" },
     { name = "pandas", extras = ["output-formatting"], marker = "extra == 'evaluation'", specifier = ">=2.1.2" },
     { name = "qiskit", extras = ["qasm3-import"], marker = "extra == 'qiskit'", specifier = ">=1.0.0" },
 ]
@@ -1487,6 +1489,7 @@ dev = [
     { name = "openqasm-pygments", specifier = ">=0.1.2" },
     { name = "pandas", extras = ["output-formatting"], specifier = ">=2.1.2" },
     { name = "pandas", extras = ["output-formatting"], marker = "python_full_version >= '3.13'", specifier = ">=2.2.3" },
+    { name = "pandas", extras = ["output-formatting"], marker = "python_full_version >= '3.14'", specifier = ">=2.3.3" },
     { name = "pybind11", specifier = ">=3.0.0" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-console-scripts", specifier = ">=1.4.1" },
@@ -1514,6 +1517,8 @@ docs = [
     { name = "myst-nb", specifier = ">=1.2.0" },
     { name = "openqasm-pygments", specifier = ">=0.1.2" },
     { name = "pandas", extras = ["output-formatting"], specifier = ">=2.1.2" },
+    { name = "pandas", extras = ["output-formatting"], marker = "python_full_version >= '3.13'", specifier = ">=2.2.3" },
+    { name = "pandas", extras = ["output-formatting"], marker = "python_full_version >= '3.14'", specifier = ">=2.3.3" },
     { name = "qiskit", extras = ["qasm3-import", "visualization"], specifier = ">=1.0.0" },
     { name = "setuptools-scm", specifier = ">=8.2" },
     { name = "sphinx", specifier = ">=8.1.3" },
@@ -1530,6 +1535,7 @@ test = [
     { name = "numpy", marker = "python_full_version >= '3.14'", specifier = ">=2.3.2" },
     { name = "pandas", extras = ["output-formatting"], specifier = ">=2.1.2" },
     { name = "pandas", extras = ["output-formatting"], marker = "python_full_version >= '3.13'", specifier = ">=2.2.3" },
+    { name = "pandas", extras = ["output-formatting"], marker = "python_full_version >= '3.14'", specifier = ">=2.3.3" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-console-scripts", specifier = ">=1.4.1" },
     { name = "pytest-cov", specifier = ">=6.1.1" },
