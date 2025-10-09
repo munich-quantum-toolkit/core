@@ -44,7 +44,7 @@
 
 namespace mlir {
 
-using namespace mlir::quartz;
+using namespace quartz;
 
 #define GEN_PASS_DEF_QUARTZTOQIR
 #include "mlir/Conversion/QuartzToQIR/QuartzToQIR.h.inc"

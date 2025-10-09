@@ -18,4 +18,6 @@ add_mlir_library(
   MLIRLLVMDialect
   MLIRFluxDialect
   MLIRArithDialect
-  MLIRFuncDialect)
+  MLIRFuncDialect
+  MLIRFuncToLLVM
+  MLIRReconcileUnrealizedCasts)

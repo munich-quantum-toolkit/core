@@ -12,8 +12,10 @@
 
 #include <mlir/Pass/Pass.h> // from @llvm-project
 
-#define GEN_PASS_DECL
+namespace mlir {
+#define GEN_PASS_DECL_QUARTZTOFLUX
 #include "mlir/Conversion/QuartzToFlux/QuartzToFlux.h.inc"
 
 #define GEN_PASS_REGISTRATION
 #include "mlir/Conversion/QuartzToFlux/QuartzToFlux.h.inc"
+} // namespace mlir
