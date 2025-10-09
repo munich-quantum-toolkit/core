@@ -187,12 +187,11 @@ private:
   void insert(ArrayRef<QubitIndexPair> swaps, Location location,
               PatternRewriter& rewriter) {
     for (const auto [hw0, hw1] : swaps) {
-      const auto [prog0, prog1] = stack().top().getProgramIndices(hw0, hw1);
-
       const Value in0 = stack().top().lookupHardwareValue(hw0);
       const Value in1 = stack().top().lookupHardwareValue(hw1);
 
       LLVM_DEBUG({
+        const auto [prog0, prog1] = stack().top().getProgramIndices(hw0, hw1);
         llvm::dbgs() << llvm::format(
             "route: swap= p%d:h%d, p%d:h%d <- p%d:h%d, p%d:h%d\n", prog1, hw0,
             prog0, hw1, prog0, hw0, prog1, hw1);
@@ -350,6 +349,12 @@ WalkResult handleUnitary(UnitaryInterface op, Router& router,
 
   /// Expect two-qubit gate decomposition.
   if (nacts > 2) {
+    if (isa<BarrierOp>(op)) {
+      for (const auto [in, out] : llvm::zip(inQubits, outQubits)) {
+        router.stack().top().remapQubitValue(in, out);
+      }
+      return WalkResult::advance();
+    }
     return op->emitOpError() << "acts on more than two qubits";
   }
 
