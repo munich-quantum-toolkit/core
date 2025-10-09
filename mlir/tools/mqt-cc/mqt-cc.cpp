@@ -39,10 +39,6 @@ static cl::opt<std::string> outputFilename("o", cl::desc("Output filename"),
                                            cl::value_desc("filename"),
                                            cl::init("-"));
 
-static cl::opt<bool>
-    runOptimization("optimize", cl::desc("Run quantum optimization passes"),
-                    cl::init(false));
-
 static cl::opt<bool> convertToQIR("emit-qir",
                                   cl::desc("Convert to QIR at the end"),
                                   cl::init(false));
@@ -55,17 +51,10 @@ static cl::opt<bool> enableStatistics("mlir-statistics",
                                       cl::desc("Enable pass statistics"),
                                       cl::init(false));
 
-static cl::opt<bool> printIRAfterAll("mlir-print-ir-after-all",
-                                     cl::desc("Print IR after each pass"),
-                                     cl::init(false));
-
-static cl::opt<bool> printIRAfterFailure("mlir-print-ir-after-failure",
-                                         cl::desc("Print IR after failures"),
-                                         cl::init(false));
-
-static cl::opt<bool> verifyDiagnostics("verify-diagnostics",
-                                       cl::desc("Verify expected diagnostics"),
-                                       cl::init(false));
+static cl::opt<bool>
+    printIRAfterAllStages("mlir-print-ir-after-all-stages",
+                          cl::desc("Print IR after each compiler stage"),
+                          cl::init(false));
 
 /**
  * @brief Load and parse a .mlir file
@@ -131,12 +120,10 @@ int main(int argc, char** argv) {
 
   // Configure the compiler pipeline
   QuantumCompilerConfig config;
-  config.runOptimization = runOptimization;
   config.convertToQIR = convertToQIR;
   config.enableTiming = enableTiming;
   config.enableStatistics = enableStatistics;
-  config.printIRAfterAll = printIRAfterAll;
-  config.printIRAfterFailure = printIRAfterFailure;
+  config.printIRAfterAllStages = printIRAfterAllStages;
 
   // Run the compilation pipeline
   if (const QuantumCompilerPipeline pipeline(config);

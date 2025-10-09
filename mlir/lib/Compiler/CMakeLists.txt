@@ -20,6 +20,7 @@ add_mlir_library(
   QuartzToFlux
   FluxToQuartz
   QuartzToQIR
+  MQT::MLIRSupport
   MQT::ProjectOptions)
 
 # collect header files

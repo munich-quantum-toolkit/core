@@ -25,9 +25,6 @@ class ModuleOp;
  * diagnostic options for profiling and debugging.
  */
 struct QuantumCompilerConfig {
-  /// Run quantum optimization passes (placeholder for future passes)
-  bool runOptimization = false;
-
   /// Convert to QIR at the end of the pipeline
   bool convertToQIR = false;
 
@@ -40,11 +37,8 @@ struct QuantumCompilerConfig {
   /// Enable pass statistics (MLIR builtin)
   bool enableStatistics = false;
 
-  /// Print IR after each pass (MLIR builtin, for debugging)
-  bool printIRAfterAll = false;
-
-  /// Print IR after failures only (MLIR builtin)
-  bool printIRAfterFailure = false;
+  /// Print IR after each stage
+  bool printIRAfterAllStages = false;
 };
 
 /**
@@ -80,7 +74,7 @@ struct CompilationRecord {
  * 2. Canonicalization + cleanup
  * 3. Flux dialect (value semantics) - enables SSA-based optimizations
  * 4. Canonicalization + cleanup
- * 5. Quantum optimization passes (optional, TODO: to be implemented)
+ * 5. Quantum optimization passes
  * 6. Canonicalization + cleanup
  * 7. Quartz dialect - converted back for backend lowering
  * 8. Canonicalization + cleanup

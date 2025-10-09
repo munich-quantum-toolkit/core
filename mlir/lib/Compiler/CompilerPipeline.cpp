@@ -13,6 +13,7 @@
 #include "mlir/Conversion/FluxToQuartz/FluxToQuartz.h"
 #include "mlir/Conversion/QuartzToFlux/QuartzToFlux.h"
 #include "mlir/Conversion/QuartzToQIR/QuartzToQIR.h"
+#include "mlir/Support/PrettyPrinting.h"
 
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -38,23 +39,40 @@ void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
   if (config_.enableStatistics) {
     pm.enableStatistics();
   }
+}
 
-  // Enable IR printing options if requested
-  if (config_.printIRAfterAll) {
-    pm.enableIRPrinting(
-        /*shouldPrintBeforePass=*/[](Pass*, Operation*) { return false; },
-        /*shouldPrintAfterPass=*/[](Pass*, Operation*) { return true; },
-        /*printModuleScope=*/true,
-        /*printAfterOnlyOnChange=*/true,
-        /*printAfterOnlyOnFailure=*/false);
-  } else if (config_.printIRAfterFailure) {
-    pm.enableIRPrinting(
-        /*shouldPrintBeforePass=*/[](Pass*, Operation*) { return false; },
-        /*shouldPrintAfterPass=*/[](Pass*, Operation*) { return false; },
-        /*printModuleScope=*/true,
-        /*printAfterOnlyOnChange=*/false,
-        /*printAfterOnlyOnFailure=*/true);
-  }
+/**
+ * @brief Pretty print IR with ASCII art borders and stage identifier
+ *
+ * @param module The module to print
+ * @param stageName Name of the compilation stage
+ * @param stageNumber Current stage number
+ * @param totalStages Total number of stages (for progress indication)
+ */
+static void prettyPrintStage(ModuleOp module, const StringRef stageName,
+                             const int stageNumber, const int totalStages) {
+  llvm::errs() << "\n";
+  printBoxTop();
+
+  // Build the stage header
+  const std::string stageHeader = "Stage " + std::to_string(stageNumber) + "/" +
+                                  std::to_string(totalStages) + ": " +
+                                  stageName.str();
+  printBoxLine(stageHeader);
+
+  printBoxMiddle();
+
+  // Capture the IR to a string so we can wrap it in box lines
+  std::string irString;
+  llvm::raw_string_ostream irStream(irString);
+  module.print(irStream);
+  irStream.flush();
+
+  // Print the IR with box lines and wrapping
+  printBoxText(irString);
+
+  printBoxBottom();
+  llvm::errs().flush();
 }
 
 LogicalResult
@@ -65,9 +83,22 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   // Configure PassManager with diagnostic options
   configurePassManager(pm);
 
+  // Determine total number of stages for progress indication
+  auto totalStages =
+      8; // Base stages: Initial + Flux + FluxCanon + Optimization +
+         // OptimizationCanon + QuartzBack + QuartzCanon
+  if (config_.convertToQIR) {
+    totalStages += 2; // QIR + QIRCanon
+  }
+  auto currentStage = 0;
+
   // Record initial state if requested
   if (record != nullptr && config_.recordIntermediates) {
     record->afterQuartzImport = captureIR(module);
+    if (config_.printIRAfterAllStages) {
+      prettyPrintStage(module, "Quartz Import (Initial)", ++currentStage,
+                       totalStages);
+    }
   }
 
   // Stage 1: Initial canonicalization
@@ -77,6 +108,10 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   if (record != nullptr && config_.recordIntermediates) {
     record->afterInitialCanon = captureIR(module);
+    if (config_.printIRAfterAllStages) {
+      prettyPrintStage(module, "Initial Canonicalization", ++currentStage,
+                       totalStages);
+    }
   }
   pm.clear();
 
@@ -87,6 +122,10 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   if (record != nullptr && config_.recordIntermediates) {
     record->afterFluxConversion = captureIR(module);
+    if (config_.printIRAfterAllStages) {
+      prettyPrintStage(module, "Quartz → Flux Conversion", ++currentStage,
+                       totalStages);
+    }
   }
   pm.clear();
 
@@ -97,53 +136,71 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   if (record != nullptr && config_.recordIntermediates) {
     record->afterFluxCanon = captureIR(module);
+    if (config_.printIRAfterAllStages) {
+      prettyPrintStage(module, "Flux Canonicalization", ++currentStage,
+                       totalStages);
+    }
   }
   pm.clear();
 
-  // Stage 4: Optimization passes (if enabled)
-  if (config_.runOptimization) {
-    // TODO: Add optimization passes
-    addCleanupPasses(pm);
-    if (failed(pm.run(module))) {
-      return failure();
-    }
-    if (record != nullptr && config_.recordIntermediates) {
-      record->afterOptimization = captureIR(module);
-    }
-    pm.clear();
-
-    // Canonicalize after optimization
-    addCleanupPasses(pm);
-    if (failed(pm.run(module))) {
-      return failure();
-    }
-    if (record != nullptr && config_.recordIntermediates) {
-      record->afterOptimizationCanon = captureIR(module);
-    }
-    pm.clear();
+  // Stage 4: Optimization passes
+  // TODO: Add optimization passes
+  addCleanupPasses(pm);
+  if (failed(pm.run(module))) {
+    return failure();
   }
+  if (record != nullptr && config_.recordIntermediates) {
+    record->afterOptimization = captureIR(module);
+    if (config_.printIRAfterAllStages) {
+      prettyPrintStage(module, "Optimization Passes", ++currentStage,
+                       totalStages);
+    }
+  }
+  pm.clear();
 
-  // Stage 5: Convert back to Quartz
+  // Stage 5: Canonicalize after optimization
+  addCleanupPasses(pm);
+  if (failed(pm.run(module))) {
+    return failure();
+  }
+  if (record != nullptr && config_.recordIntermediates) {
+    record->afterOptimizationCanon = captureIR(module);
+    if (config_.printIRAfterAllStages) {
+      prettyPrintStage(module, "Post-Optimization Canonicalization",
+                       ++currentStage, totalStages);
+    }
+  }
+  pm.clear();
+
+  // Stage 6: Convert back to Quartz
   pm.addPass(createFluxToQuartz());
   if (failed(pm.run(module))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
     record->afterQuartzConversion = captureIR(module);
+    if (config_.printIRAfterAllStages) {
+      prettyPrintStage(module, "Flux → Quartz Conversion", ++currentStage,
+                       totalStages);
+    }
   }
   pm.clear();
 
-  // Stage 6: Canonicalize Quartz
+  // Stage 7: Canonicalize Quartz
   addCleanupPasses(pm);
   if (failed(pm.run(module))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
     record->afterQuartzCanon = captureIR(module);
+    if (config_.printIRAfterAllStages) {
+      prettyPrintStage(module, "Final Quartz Canonicalization", ++currentStage,
+                       totalStages);
+    }
   }
   pm.clear();
 
-  // Stage 7: Optional QIR conversion
+  // Stage 8: Optional QIR conversion
   if (config_.convertToQIR) {
     pm.addPass(createQuartzToQIR());
     if (failed(pm.run(module))) {
@@ -151,6 +208,10 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     }
     if (record != nullptr && config_.recordIntermediates) {
       record->afterQIRConversion = captureIR(module);
+      if (config_.printIRAfterAllStages) {
+        prettyPrintStage(module, "Quartz → QIR Conversion", ++currentStage,
+                         totalStages);
+      }
     }
     pm.clear();
 
@@ -161,14 +222,32 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     }
     if (record != nullptr && config_.recordIntermediates) {
       record->afterQIRCanon = captureIR(module);
+      if (config_.printIRAfterAllStages) {
+        prettyPrintStage(module, "Final QIR Canonicalization", ++currentStage,
+                         totalStages);
+      }
     }
   }
 
+  // Print compilation summary
+  if (config_.printIRAfterAllStages) {
+    llvm::errs() << "\n";
+    printBoxTop();
+
+    printBoxLine("✓ Compilation Complete");
+
+    std::string summaryLine =
+        "Successfully processed " + std::to_string(currentStage) + " stages";
+    printBoxLine(summaryLine, 1); // Indent by 1 space
+
+    printBoxBottom();
+    llvm::errs() << "\n";
+    llvm::errs().flush();
+  }
   return success();
 }
 
 std::string captureIR(ModuleOp module) {
-  module.dump();
   std::string result;
   llvm::raw_string_ostream os(result);
   module.print(os);
