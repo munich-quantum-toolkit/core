@@ -144,9 +144,9 @@ public:
  *
  * Example transformation:
  * ```mlir
- * %q = quartz.alloc q[3, 0] : !quartz.qubit
+ * %q = quartz.alloc("q", 3, 0) : !quartz.qubit
  * // becomes:
- * %q0 = flux.alloc q[3, 0] : !flux.qubit
+ * %q0 = flux.alloc("q", 3, 0) : !flux.qubit
  * ```
  */
 struct ConvertQuartzAllocOp final
