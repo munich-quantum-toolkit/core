@@ -107,9 +107,9 @@ def AllocOp : FluxOp<"alloc"> {
 
         Example (qubits in a register):
         ```mlir
-        %q0 = flux.alloc q[3, 0] : !flux.qubit
-        %q1 = flux.alloc q[3, 1] : !flux.qubit
-        %q2 = flux.alloc q[3, 2] : !flux.qubit
+        %q0 = flux.alloc("q", 3, 0) : !flux.qubit
+        %q1 = flux.alloc("q", 3, 1) : !flux.qubit
+        %q2 = flux.alloc("q", 3, 2) : !flux.qubit
         ```
     }];
 
@@ -118,7 +118,7 @@ def AllocOp : FluxOp<"alloc"> {
                      OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
     let results = (outs QubitType:$result);
     let assemblyFormat = [{
-        ($register_name^ `[` $register_size `,` $register_index `]`)?
+        (`(` $register_name^ `,` $register_size `,` $register_index `)`)?
         attr-dict `:` type($result)
     }];
 
