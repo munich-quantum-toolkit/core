@@ -135,7 +135,7 @@ public:
         planner_(std::move(planner)), nadd_(&nadd) {}
 
   /**
-   * @brief Return true iff @p op is executable on the targeted architecture.
+   * @returns true iff @p op is executable on the targeted architecture.
    */
   [[nodiscard]] bool isExecutable(UnitaryInterface op) {
     const auto [in0, in1] = getIns(op);
@@ -167,19 +167,19 @@ public:
   }
 
   /**
-   * @brief Return reference to the stack object.
+   * @returns reference to the stack object.
    */
   [[nodiscard]] LayoutStack<Layout>& stack() { return stack_; }
 
   /**
-   * @brief Return reference to the history stack object.
+   * @returns reference to the history stack object.
    */
   [[nodiscard]] LayoutStack<SmallVector<QubitIndexPair>>& historyStack() {
     return historyStack_;
   }
 
   /**
-   * @brief Return reference to architecture object.
+   * @returns reference to architecture object.
    */
   [[nodiscard]] Architecture& arch() const { return *arch_; }
 
