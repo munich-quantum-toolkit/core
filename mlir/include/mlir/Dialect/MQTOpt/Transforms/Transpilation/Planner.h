@@ -93,7 +93,7 @@ struct QMAPPlanner final : PlannerBase {
                                    const Architecture& arch) const override {
     /// Initialize queue.
     MinQueue frontier{};
-    expand(frontier, SearchNode(layout, arch), layers, arch);
+    expand(frontier, SearchNode(layout, arch.nqubits()), layers, arch);
 
     /// Iterative searching and expanding.
     while (!frontier.empty()) {
@@ -116,8 +116,8 @@ private:
      * @brief Construct a root node with the given layout. Initialize the
      * sequence with an empty vector and set the cost to zero.
      */
-    SearchNode(ThinLayout layout, const Architecture& arch)
-        : layout_(std::move(layout)), depthBuckets_(arch.nqubits()) {}
+    SearchNode(ThinLayout layout, const std::size_t nqubits)
+        : layout_(std::move(layout)), depthBuckets_(nqubits) {}
 
     /**
      * @brief Construct a non-root node from its parent node. Apply the given
@@ -231,8 +231,8 @@ private:
     llvm::SmallDenseSet<QubitIndexPair, 16> visited{};
     for (const QubitIndexPair gate : layers.front()) {
       for (const auto prog : {gate.first, gate.second}) {
-        const std::size_t hw0 = node.getLayout().getHardwareIndex(prog);
-        for (const std::size_t hw1 : arch.neighboursOf(hw0)) {
+        const auto hw0 = node.getLayout().getHardwareIndex(prog);
+        for (const auto hw1 : arch.neighboursOf(hw0)) {
           /// Ensure consistent hashing/comparison
           const QubitIndexPair swap =
               hw0 < hw1 ? QubitIndexPair{hw0, hw1} : QubitIndexPair{hw1, hw0};
