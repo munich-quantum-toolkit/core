@@ -6,6 +6,8 @@
 //
 // Licensed under the MIT License
 
+// Instead of applying CHECKKs, the routing verifier pass ensures the validity of this program.
+
 // RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=random}, route-sc{method=naive},verify-routing-sc)" -verify-diagnostics | FileCheck %s
 
 module {
