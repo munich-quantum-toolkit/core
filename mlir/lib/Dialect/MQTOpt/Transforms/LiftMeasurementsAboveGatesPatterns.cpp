@@ -77,7 +77,7 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
       return mlir::failure();
     }
 
-    const auto name = predecessor->getName().stripDialect().str();
+    const auto name = predecessorUnitary->getName().stripDialect().str();
     if (DIAGONAL_GATES.count(name) == 1) {
       swapGateWithMeasurement(predecessorUnitary, op, rewriter);
       return mlir::success();
