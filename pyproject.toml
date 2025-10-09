@@ -97,7 +97,7 @@ build.targets = [
 ]
 
 # Only install the mqt-core library and Python package components
-install.components = ["mqt-core_Python", "mqt-core_Development", "mqt-core_Runtime", "nlohmann_json"]
+install.components = ["mqt-core_Python", "mqt-core_Development", "mqt-core_Runtime"]
 
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
 sdist.include = ["python/mqt/core/_version.py"]
