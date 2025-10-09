@@ -194,7 +194,7 @@ private:
 
       LLVM_DEBUG({
         llvm::dbgs() << llvm::format(
-            "route: swap= s%d/h%d, s%d/h%d <- s%d/h%d, s%d/h%d\n", prog1, hw0,
+            "route: swap= p%d:h%d, p%d:h%d <- p%d:h%d, p%d:h%d\n", prog1, hw0,
             prog0, hw1, prog0, hw0, prog1, hw1);
       });
 
@@ -368,7 +368,7 @@ WalkResult handleUnitary(UnitaryInterface op, Router& router,
 
   LLVM_DEBUG({
     llvm::dbgs() << llvm::format(
-        "handleUnitary: gate= s%d/h%d, s%d/h%d\n",
+        "handleUnitary: gate= p%d:h%d, p%d:h%d\n",
         router.stack().top().lookupProgramIndex(execIn0),
         router.stack().top().lookupHardwareIndex(execIn0),
         router.stack().top().lookupProgramIndex(execIn1),
