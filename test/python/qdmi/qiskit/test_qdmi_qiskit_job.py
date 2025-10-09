@@ -179,3 +179,4 @@ def test_job_result_metadata() -> None:
     # Check that metadata is included
     assert result.results[0].metadata is not None
     assert "program_name" in result.results[0].metadata
+    assert "capabilities_hash" in result.results[0].metadata

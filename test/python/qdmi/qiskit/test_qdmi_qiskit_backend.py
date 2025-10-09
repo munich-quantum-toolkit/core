@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING
 import pytest
 
 from mqt.core.qdmi.qiskit import (
-    QiskitBackend,
     TranslationError,
     UnsupportedOperationError,
     clear_operation_translators,
@@ -36,6 +35,8 @@ pytestmark = pytest.mark.skipif(not _qiskit_present, reason="qiskit not installe
 if _qiskit_present:
     from qiskit import QuantumCircuit
     from qiskit.circuit import Parameter
+
+    from mqt.core.qdmi.qiskit import QiskitBackend
 
 
 def setup_module() -> None:  # noqa: D103
@@ -73,7 +74,7 @@ def test_single_circuit_run_counts() -> None:
 def test_unsupported_operation() -> None:
     """Unsupported operation raises the expected error type."""
     qc = QuantumCircuit(1, 1)
-    qc.x(0)  # 'x' translator not registered
+    qc.x(0)  # 'x' not supported by device capabilities
     qc.measure(0, 0)
     backend = QiskitBackend()
     with pytest.raises(UnsupportedOperationError):

@@ -44,6 +44,7 @@ def test_register_and_list_translators() -> None:
     # retrieve translator
     retrieved = get_operation_translator("custom_gate")
     assert retrieved is _custom_gate
+    unregister_operation_translator("custom_gate")
 
 
 def test_unregister_translator() -> None:
@@ -213,7 +214,9 @@ def test_clear_operation_translators_without_defaults() -> None:
 
     # Both default and custom should be gone
     assert "tmp" not in list_operation_translators()
-    # measure might also be gone depending on implementation
+
+    # Restore defaults to avoid leaking state into other tests
+    clear_operation_translators(keep_defaults=True)
 
 
 def test_clear_operation_translators_with_defaults() -> None:
