@@ -157,6 +157,12 @@ WalkResult handleUnitary(UnitaryInterface op, VerificationContext& ctx) {
   }
 
   if (nacts > 2) {
+    if (isa<BarrierOp>(op)) {
+      for (const auto [in, out] : llvm::zip(inQubits, outQubits)) {
+        ctx.stack.top().remapQubitValue(in, out);
+      }
+      return WalkResult::advance();
+    }
     return op->emitOpError() << "acts on more than two qubits";
   }
 
@@ -215,7 +221,7 @@ WalkResult handleMeasure(MeasureOp op, VerificationContext& ctx) {
 struct RoutingVerificationPassSC final
     : impl::RoutingVerificationSCPassBase<RoutingVerificationPassSC> {
   void runOnOperation() override {
-    const auto arch = getArchitecture(ArchitectureName::MQTTest);
+    const auto arch = getArchitecture(ArchitectureName::IBMFalcon);
     VerificationContext ctx(*arch);
 
     const auto res =
