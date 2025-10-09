@@ -10,8 +10,6 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
@@ -27,10 +25,6 @@ namespace mqt::ir::opt {
  */
 struct LiftMeasurementsPass final
     : impl::LiftMeasurementsPassBase<LiftMeasurementsPass> {
-
-  void getDependentDialects(mlir::DialectRegistry& registry) const override {
-    registry.insert<mlir::scf::SCFDialect>();
-  }
 
   void runOnOperation() override {
     // Get the current operation being operated on.

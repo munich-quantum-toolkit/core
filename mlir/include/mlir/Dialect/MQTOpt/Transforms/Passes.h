@@ -13,6 +13,7 @@
 #include "ir/QuantumComputation.hpp"
 
 #include <cstdint>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Pass/Pass.h>
 
 namespace mlir {

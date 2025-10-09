@@ -92,6 +92,7 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
 }
 
 def LiftMeasurementsPass : Pass<"lift-measurements", "mlir::ModuleOp"> {
+  let dependentDialects = [ "mlir::scf::SCFDialect" ];
   let summary = "This pass attempts to lift measurements as much as possible by replacing quantum operations with classical operations where possible.";
   let description = [{
     This pass consists of several patterns that attempt to push different structures of quantum gates below measurements.
@@ -99,6 +100,7 @@ def LiftMeasurementsPass : Pass<"lift-measurements", "mlir::ModuleOp"> {
 }
 
 def ReuseQubitsPass : Pass<"reuse-qubits", "mlir::ModuleOp"> {
+  let dependentDialects = [ "mlir::scf::SCFDialect" ];
   let summary = "Reduce the number of required qubits by reusing existing ones that are no longer used.";
   let description = [{
     This pass performs qubit reuse, searching for qubits that are first referenced after the final reference to a different qubit.
