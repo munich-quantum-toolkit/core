@@ -99,9 +99,9 @@ def AllocOp : QuartzOp<"alloc"> {
 
         Example (qubits in a register):
         ```mlir
-        %q0 = quartz.alloc q[3, 0] : !quartz.qubit
-        %q1 = quartz.alloc q[3, 1] : !quartz.qubit
-        %q2 = quartz.alloc q[3, 2] : !quartz.qubit
+        %q0 = quartz.alloc("q", 3, 0) : !quartz.qubit
+        %q1 = quartz.alloc("q", 3, 1) : !quartz.qubit
+        %q2 = quartz.alloc("q", 3, 2) : !quartz.qubit
         ```
     }];
 
@@ -110,7 +110,7 @@ def AllocOp : QuartzOp<"alloc"> {
                      OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
     let results = (outs QubitType:$result);
     let assemblyFormat = [{
-        ($register_name^ `[` $register_size `,` $register_index `]`)?
+        (`(` $register_name^ `,` $register_size `,` $register_index `)`)?
         attr-dict `:` type($result)
     }];
 

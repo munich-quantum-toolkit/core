@@ -74,9 +74,9 @@ public:
  *
  * Example transformation:
  * ```mlir
- * %q0 = flux.alloc q[3, 0] : !flux.qubit
+ * %q0 = flux.alloc("q", 3, 0) : !flux.qubit
  * // becomes:
- * %q = quartz.alloc q[3, 0] : !quartz.qubit
+ * %q = quartz.alloc("q", 3, 0) : !quartz.qubit
  * ```
  */
 struct ConvertFluxAllocOp final : OpConversionPattern<flux::AllocOp> {

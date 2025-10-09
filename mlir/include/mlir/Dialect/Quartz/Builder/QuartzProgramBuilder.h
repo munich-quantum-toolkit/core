@@ -168,9 +168,9 @@ public:
    *
    * This generates:
    * ```mlir
-   * %q0 = quartz.alloc q[3, 0] : !quartz.qubit
-   * %q1 = quartz.alloc q[3, 1] : !quartz.qubit
-   * %q2 = quartz.alloc q[3, 2] : !quartz.qubit
+   * %q0 = quartz.alloc("q", 3, 0) : !quartz.qubit
+   * %q1 = quartz.alloc("q", 3, 1) : !quartz.qubit
+   * %q2 = quartz.alloc("q", 3, 2) : !quartz.qubit
    * ```
    */
   SmallVector<Value> allocQubitRegister(int64_t size, StringRef name = "q");
