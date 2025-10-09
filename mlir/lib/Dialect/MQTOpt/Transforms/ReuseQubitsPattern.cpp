@@ -95,7 +95,6 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
         currentQubit = parent->getResult(operandIndex);
         auto& use = *currentQubit.getUses().begin();
         current = use.getOwner();
-        operandIndex = use.getOperandNumber();
       }
       currentQubit =
           *llvm::find_if(current->getResults(), [&](mlir::Value result) {
