@@ -11,6 +11,6 @@ add_executable(mqt-core-mlir-compiler-pipeline-test test_compiler_pipeline.cpp)
 target_link_libraries(
   mqt-core-mlir-compiler-pipeline-test
   PRIVATE GTest::gtest_main MQTCompilerPipeline MLIRQuartzTranslation MLIRQuartzProgramBuilder
-          MQT::CoreIR MQT::ProjectOptions)
+          MLIRParser MQT::CoreIR)
 
 gtest_discover_tests(mqt-core-mlir-compiler-pipeline-test)
