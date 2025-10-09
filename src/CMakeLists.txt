@@ -139,14 +139,4 @@ if(MQT_CORE_INSTALL)
           ${PROJECT_SOURCE_DIR}/cmake/StandardProjectSettings.cmake
     DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-
-  # Install nlohmann_json as part of the Development component
-  if(JSON_Install)
-    install(
-      TARGETS nlohmann_json
-      EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
-      INCLUDES
-      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-      COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-  endif()
 endif()
