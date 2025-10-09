@@ -17,3 +17,9 @@ add_subdirectory(na)
 
 # add the FoMaC bindings package
 add_subdirectory(fomac)
+
+# install device.json
+install(
+  FILES ${PROJECT_SOURCE_DIR}/json/na/device.json
+  DESTINATION json/na
+  COMPONENT ${MQT_CORE_TARGET_NAME}_Python)

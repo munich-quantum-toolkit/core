@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import pathlib
+from importlib.resources import files
 from json import load
 from typing import TYPE_CHECKING, Any
 
@@ -31,8 +32,12 @@ def test_constructor() -> None:
 @pytest.fixture
 def device_tuple() -> tuple[Device, Mapping[str, Any]]:
     """Return a neutral atom FoMaC device instance."""
-    with pathlib.Path("json/na/device.json").open(encoding="utf-8") as f:
-        device_dict = load(f)
+    try:
+        with pathlib.Path("json/na/device.json").open(encoding="utf-8") as f:
+            device_dict = load(f)
+    except FileNotFoundError:
+        with files("mqt.core").joinpath("json/na/device.json").open(encoding="utf-8") as f:
+            device_dict = load(f)
     return next(iter(devices())), device_dict
 
 
