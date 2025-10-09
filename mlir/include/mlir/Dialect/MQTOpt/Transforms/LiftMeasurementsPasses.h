@@ -10,11 +10,17 @@
 
 #pragma once
 
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+namespace mlir {
 
-#include <mlir/IR/PatternMatch.h>
+class PatternRewriter;
+
+} // namespace mlir
 
 namespace mqt::ir::opt {
+
+class UnitaryInterface;
+class MeasureOp;
+
 /**
  * @brief Moves a measurement before the given gate.
  * @param gate The UnitaryInterface gate to swap with the measurement.

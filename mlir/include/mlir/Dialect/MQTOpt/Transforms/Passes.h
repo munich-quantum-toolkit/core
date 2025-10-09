@@ -11,10 +11,8 @@
 #pragma once
 
 #include "ir/QuantumComputation.hpp"
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <cstdint>
-#include <mlir/IR/PatternMatch.h>
 #include <mlir/Pass/Pass.h>
 
 namespace mlir {
