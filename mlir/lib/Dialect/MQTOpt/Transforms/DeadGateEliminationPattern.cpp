@@ -28,17 +28,24 @@ struct DeadGateEliminationPattern final
     : mlir::OpInterfaceRewritePattern<UnitaryInterface> {
 
   /**
-       * @brief Constructs a DeadGateEliminationPattern associated with the given MLIR context.
-       */
-      explicit DeadGateEliminationPattern(mlir::MLIRContext* context)
+   * @brief Constructs a DeadGateEliminationPattern associated with the given
+   * MLIR context.
+   */
+  explicit DeadGateEliminationPattern(mlir::MLIRContext* context)
       : OpInterfaceRewritePattern<UnitaryInterface>(context) {}
 
   /**
-   * @brief Eliminates a unitary operation whose outputs are only deallocated by replacing its outputs with the corresponding inputs and erasing the operation.
+   * @brief Eliminates a unitary operation whose outputs are only deallocated by
+   * replacing its outputs with the corresponding inputs and erasing the
+   * operation.
    *
    * @param op The unitary operation to match and potentially rewrite.
-   * @param rewriter Pattern rewriter used to perform replacements and erase the operation.
-   * @return mlir::LogicalResult `mlir::success()` if every user of `op` was a `DeallocQubitOp`, the outputs were replaced with their corresponding inputs, and `op` was erased; `mlir::failure()` if any user is not a `DeallocQubitOp`.
+   * @param rewriter Pattern rewriter used to perform replacements and erase the
+   * operation.
+   * @return mlir::LogicalResult `mlir::success()` if every user of `op` was a
+   * `DeallocQubitOp`, the outputs were replaced with their corresponding
+   * inputs, and `op` was erased; `mlir::failure()` if any user is not a
+   * `DeallocQubitOp`.
    */
   mlir::LogicalResult
   matchAndRewrite(UnitaryInterface op,

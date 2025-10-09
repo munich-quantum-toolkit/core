@@ -21,24 +21,24 @@ namespace mlir {
 
 class RewritePatternSet;
 
-} /**
- * Populate patterns that remove or simplify gates that have no effect.
- * @param patterns Pattern set to populate with gate-elimination patterns.
- */
+} // namespace mlir
 /**
- * Populate patterns that merge adjacent rotation gates into equivalent rotations.
+ * Populate patterns that merge adjacent rotation gates into equivalent
+ * rotations.
  * @param patterns Pattern set to populate with rotation-merge patterns.
  */
 /**
  * Populate patterns that reconstruct and elide swaps when possible.
- * @param patterns Pattern set to populate with swap reconstruction and elision patterns.
+ * @param patterns Pattern set to populate with swap reconstruction and elision
+ * patterns.
  */
 /**
  * Populate patterns that shift quantum sink operations to enable optimizations.
  * @param patterns Pattern set to populate with quantum sink shift patterns.
  */
 /**
- * Populate patterns that push quantum sink operations toward sinks for simplification.
+ * Populate patterns that push quantum sink operations toward sinks for
+ * simplification.
  * @param patterns Pattern set to populate with quantum sink push patterns.
  */
 /**
@@ -46,30 +46,41 @@ class RewritePatternSet;
  * @param patterns Pattern set to populate with measurement-lifting patterns.
  */
 /**
- * Populate patterns that replace controls on basis-state values with conditional `if` constructs.
- * @param patterns Pattern set to populate with replacement patterns for basis-state controls.
+ * Populate patterns that replace controls on basis-state values with
+ * conditional `if` constructs.
+ * @param patterns Pattern set to populate with replacement patterns for
+ * basis-state controls.
  */
 /**
- * Populate patterns that lift measurements above generic quantum gates when valid.
- * @param patterns Pattern set to populate with measurement-vs-gate reordering patterns.
+ * Populate patterns that lift measurements above generic quantum gates when
+ * valid.
+ * @param patterns Pattern set to populate with measurement-vs-gate reordering
+ * patterns.
  */
 /**
  * Populate patterns that eliminate dead (unused) gates from circuits.
  * @param patterns Pattern set to populate with dead-gate-elimination patterns.
  */
 /**
- * Populate patterns that identify and enable reuse of physical qubits within a circuit.
+ * Populate patterns that identify and enable reuse of physical qubits within a
+ * circuit.
  * @param patterns Pattern set to populate with qubit-reuse patterns.
  */
 /**
- * Populate patterns that convert MLIR MQTOpt operations into a QuantumComputation representation.
- * @param patterns Pattern set to populate with conversion-to-QuantumComputation patterns.
- * @param circuit Target QuantumComputation to populate or update with converted operations.
+ * Populate patterns that convert MLIR MQTOpt operations into a
+ * QuantumComputation representation.
+ * @param patterns Pattern set to populate with conversion-to-QuantumComputation
+ * patterns.
+ * @param circuit Target QuantumComputation to populate or update with converted
+ * operations.
  */
 /**
- * Populate patterns that convert a QuantumComputation into MLIR MQTOpt operations.
- * @param patterns Pattern set to populate with conversion-from-QuantumComputation patterns.
- * @param circuit Source QuantumComputation whose contents are converted into MLIR ops.
+ * Populate patterns that convert a QuantumComputation into MLIR MQTOpt
+ * operations.
+ * @param patterns Pattern set to populate with
+ * conversion-from-QuantumComputation patterns.
+ * @param circuit Source QuantumComputation whose contents are converted into
+ * MLIR ops.
  */
 
 namespace mqt::ir::opt {

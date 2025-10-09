@@ -29,21 +29,27 @@ namespace mqt::ir::opt {
 struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
 
   /**
-       * @brief Constructs a ReuseQubitsPattern and registers it with the given MLIR context.
-       *
-       * @param context MLIR context used to initialize the underlying OpRewritePattern.
-       */
-      explicit ReuseQubitsPattern(mlir::MLIRContext* context)
+   * @brief Constructs a ReuseQubitsPattern and registers it with the given MLIR
+   * context.
+   *
+   * @param context MLIR context used to initialize the underlying
+   * OpRewritePattern.
+   */
+  explicit ReuseQubitsPattern(mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
   /**
-   * @brief Collects all deallocation operations that can be reached from a qubit value.
+   * @brief Collects all deallocation operations that can be reached from a
+   * qubit value.
    *
-   * Traverses uses of the provided qubit value and follows control-flow yields into parent ops
-   * (for example, scf.if regions) to discover reachable DeallocQubitOp operations.
+   * Traverses uses of the provided qubit value and follows control-flow yields
+   * into parent ops (for example, scf.if regions) to discover reachable
+   * DeallocQubitOp operations.
    *
-   * @param allocQubit The qubit value whose reachable deallocations are to be found.
-   * @return llvm::DenseSet<mlir::Operation*> Set of `DeallocQubitOp` operations reachable from `allocQubit`.
+   * @param allocQubit The qubit value whose reachable deallocations are to be
+   * found.
+   * @return llvm::DenseSet<mlir::Operation*> Set of `DeallocQubitOp` operations
+   * reachable from `allocQubit`.
    */
   static llvm::DenseSet<mlir::Operation*>
   findAllReachableDeallocs(mlir::Value allocQubit) {
@@ -84,12 +90,15 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
   }
 
   /**
-   * @brief Ensures all users reachable from the given operation appear after it in their blocks.
+   * @brief Ensures all users reachable from the given operation appear after it
+   * in their blocks.
    *
-   * Traverses user operations reachable from @p startingOp and reorders them so each user is placed after
-   * the operation it depends on, updating block-local operation order via the provided rewriter.
+   * Traverses user operations reachable from @p startingOp and reorders them so
+   * each user is placed after the operation it depends on, updating block-local
+   * operation order via the provided rewriter.
    *
-   * @param startingOp Operation from which reachable user operations are reordered.
+   * @param startingOp Operation from which reachable user operations are
+   * reordered.
    * @param rewriter Pattern rewriter used to move operations.
    */
   static void reorderUsers(mlir::Operation* startingOp,
@@ -121,14 +130,18 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
   }
 
   /**
-   * @brief Replace an allocation with a reset to reuse an existing qubit and remove the corresponding deallocation.
+   * @brief Replace an allocation with a reset to reuse an existing qubit and
+   * remove the corresponding deallocation.
    *
-   * Replaces `alloc` with a `ResetOp` that reuses the qubit previously freed by `sink`, erases `sink`, and
-   * reorders affected users to preserve block ordering.
+   * Replaces `alloc` with a `ResetOp` that reuses the qubit previously freed by
+   * `sink`, erases `sink`, and reorders affected users to preserve block
+   * ordering.
    *
    * @param alloc The AllocQubitOp to be replaced.
-   * @param sink The DeallocQubitOp whose freed qubit will be reused (replaced/erased).
-   * @param rewriter Pattern rewriter used to perform the replacement and reorder operations.
+   * @param sink The DeallocQubitOp whose freed qubit will be reused
+   * (replaced/erased).
+   * @param rewriter Pattern rewriter used to perform the replacement and
+   * reorder operations.
    */
   static void rewriteForReuse(AllocQubitOp alloc, mlir::Operation* sink,
                               mlir::PatternRewriter& rewriter) {

@@ -30,11 +30,13 @@ struct LiftMeasurementsAboveControlsPattern final
     : mlir::OpRewritePattern<MeasureOp> {
 
   /**
-       * @brief Constructs a rewrite pattern that lifts measurement operations above their control gates.
-       *
-       * @param context MLIR context used to initialize the base OpRewritePattern and access MLIR types and operations.
-       */
-      explicit LiftMeasurementsAboveControlsPattern(mlir::MLIRContext* context)
+   * @brief Constructs a rewrite pattern that lifts measurement operations above
+   * their control gates.
+   *
+   * @param context MLIR context used to initialize the base OpRewritePattern
+   * and access MLIR types and operations.
+   */
+  explicit LiftMeasurementsAboveControlsPattern(mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
   /**
@@ -72,9 +74,11 @@ struct LiftMeasurementsAboveControlsPattern final
 };
 
 /**
- * @brief Add a rewrite pattern that lifts measurement operations above their control gates.
+ * @brief Add a rewrite pattern that lifts measurement operations above their
+ * control gates.
  *
- * Inserts an instance of LiftMeasurementsAboveControlsPattern into the provided pattern set so it will be considered during pattern-driven rewrites.
+ * Inserts an instance of LiftMeasurementsAboveControlsPattern into the provided
+ * pattern set so it will be considered during pattern-driven rewrites.
  *
  * @param patterns The rewrite pattern set to populate.
  */

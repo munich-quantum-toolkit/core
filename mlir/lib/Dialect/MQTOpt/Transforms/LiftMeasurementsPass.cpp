@@ -41,12 +41,14 @@ struct LiftMeasurementsPass final
   }
 
   /**
-   * @brief Applies rewrite patterns to the current operation to lift measurements.
+   * @brief Applies rewrite patterns to the current operation to lift
+   * measurements.
    *
-   * Populates a RewritePatternSet with patterns that replace basis-state controls with
-   * conditional operations, lift measurement ops above control and gate constructs,
-   * and remove dead gates; then applies those patterns greedily to the operation.
-   * Signals the pass as failed if pattern application does not succeed.
+   * Populates a RewritePatternSet with patterns that replace basis-state
+   * controls with conditional operations, lift measurement ops above control
+   * and gate constructs, and remove dead gates; then applies those patterns
+   * greedily to the operation. Signals the pass as failed if pattern
+   * application does not succeed.
    */
   void runOnOperation() override {
     // Get the current operation being operated on.
