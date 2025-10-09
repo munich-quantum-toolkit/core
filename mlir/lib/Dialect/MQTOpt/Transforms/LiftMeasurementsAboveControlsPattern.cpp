@@ -29,9 +29,25 @@ namespace mqt::ir::opt {
 struct LiftMeasurementsAboveControlsPattern final
     : mlir::OpRewritePattern<MeasureOp> {
 
-  explicit LiftMeasurementsAboveControlsPattern(mlir::MLIRContext* context)
+  /**
+       * @brief Constructs a rewrite pattern that lifts measurement operations above their control gates.
+       *
+       * @param context MLIR context used to initialize the base OpRewritePattern and access MLIR types and operations.
+       */
+      explicit LiftMeasurementsAboveControlsPattern(mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
+  /**
+   * @brief Attempts to lift a measurement above its controlling unitary gate.
+   *
+   * Applies when the measured qubit is produced by a unitary operation and that
+   * qubit is used as a control (not an output target) of the unitary; in that
+   * case the pattern swaps the gate with the measurement to defer the
+   * measurement.
+   *
+   * @return mlir::LogicalResult `mlir::success()` if the measurement was lifted
+   * and the rewrite applied, `mlir::failure()` otherwise.
+   */
   mlir::LogicalResult
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
@@ -56,10 +72,11 @@ struct LiftMeasurementsAboveControlsPattern final
 };
 
 /**
- * @brief Populates the given pattern set with the
- * `LiftMeasurementsAboveControlsPattern`.
+ * @brief Add a rewrite pattern that lifts measurement operations above their control gates.
  *
- * @param patterns The pattern set to populate.
+ * Inserts an instance of LiftMeasurementsAboveControlsPattern into the provided pattern set so it will be considered during pattern-driven rewrites.
+ *
+ * @param patterns The rewrite pattern set to populate.
  */
 void populateLiftMeasurementsAboveControlsPatterns(
     mlir::RewritePatternSet& patterns) {

@@ -42,18 +42,32 @@ static const std::unordered_set<std::string> DIAGONAL_GATES = {
 struct ReplaceBasisStateControlsWithIfPattern final
     : mlir::OpInterfaceRewritePattern<UnitaryInterface> {
 
-  explicit ReplaceBasisStateControlsWithIfPattern(mlir::MLIRContext* context)
+  /**
+       * @brief Construct a pattern that replaces basis-state controls with conditional `scf::If` regions.
+       *
+       * Binds the pattern to the provided MLIR context so it can be added to a RewritePatternSet and used
+       * by the pattern rewriter.
+       */
+      explicit ReplaceBasisStateControlsWithIfPattern(mlir::MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
 
   /**
-   * @brief Clones the given Unitary operation without the specified control
-   * operand.
+   * @brief Produce a clone of a Unitary operation with a specified control removed.
    *
-   * @param op The Unitary operation to clone.
-   * @param operand The control operand to remove.
-   * @param rewriter The pattern rewriter to use for creating the new operation.
-   * @return A new operation that is a clone of `op` without the specified
-   * control operand.
+   * Creates a new Unitary operation identical to `op` but without `operand` as a
+   * control: parameters are preserved, the specified in-qubit is omitted, and
+   * the corresponding result is removed. If `operand` is a negative control and
+   * there are no positive controls, an X gate is inserted on that qubit and the
+   * op's uses are rewired so the new X gate output is used by the cloned op.
+   * The returned operation's operand and result segment size attributes are
+   * updated to reflect the removed control.
+   *
+   * @param op The original Unitary operation to clone.
+   * @param operand The control qubit value to remove from `op`.
+   * @param rewriter Pattern rewriter used to create and modify operations and
+   *                 attributes.
+   * @return UnitaryInterface A new Unitary operation equivalent to `op` but
+   *         without the specified control operand.
    */
   static UnitaryInterface
   cloneUnitaryOpWithoutControl(UnitaryInterface op, mlir::Value operand,
@@ -140,13 +154,18 @@ struct ReplaceBasisStateControlsWithIfPattern final
   }
 
   /**
-   * @brief Matches and rewrites a single control of a Unitary operation
+   * @brief Transform a single basis-state control of a Unitary operation into an scf.if driven by its measurement outcome.
+   *
+   * If the specified control operand originates from a MeasureOp, this rewrites the Unitary by removing that control,
+   * creating a reduced Unitary operation and an scf::IfOp that executes the reduced operation when the measurement
+   * condition is satisfied and yields original inputs otherwise. The rewrite replaces uses of the original results with
+   * the IfOp results and erases the original Unitary op.
+   *
    * @param op The Unitary operation to match and rewrite.
-   * @param operand The control operand to match.
-   * @param positive Whether the control is positive or negative.
-   * @param rewriter The pattern rewriter to use for creating the new operation.
-   * @return A new UnitaryInterface operation if the control was successfully or
-   * `nullptr` if the control could not be matched or rewritten.
+   * @param operand The control operand to match; must be produced by a MeasureOp for the rewrite to succeed.
+   * @param positive True if the control is positive (execute reduced op when measurement bit is 1), false if negative.
+   * @param rewriter The PatternRewriter used to construct and apply the transformation.
+   * @return UnitaryInterface The reduced Unitary operation with the specified control removed if the rewrite was applied, `nullptr` otherwise.
    */
   static UnitaryInterface
   matchAndRewriteSingleControl(UnitaryInterface op, mlir::Value operand,
@@ -202,18 +221,22 @@ struct ReplaceBasisStateControlsWithIfPattern final
   }
 
   /**
-   * @brief Tries to process the control set (positive or negative) of a Unitary
-   * operation.
+   * @brief Attempt to process the first applicable control in a control set and
+   * produce the resulting Unitary operation.
    *
-   * Returns a new UnitaryInterface with updated controls once the first control
-   * is successfully processed.
+   * Iterates the provided control operands and applies a single-control rewrite
+   * when possible; stops after the first successful rewrite and returns the
+   * updated operation.
    *
    * @param op The Unitary operation to process.
-   * @param controls The set of control operands to process.
-   * @param isPositive Whether the controls are positive or negative.
-   * @param rewriter The pattern rewriter to use for creating the new operation.
-   * @return The new UnitaryInterface operation if a control was successfully
-   * processed, or `std::nullopt` if no controls were processed.
+   * @param controls A collection of control operands to attempt processing.
+   * @param isPositive True when the provided controls are positive controls,
+   *                   false for negative controls.
+   * @param rewriter PatternRewriter used to create and replace IR during the
+   *                 transformation.
+   * @return std::optional<UnitaryInterface> Containing the new UnitaryInterface
+   *         with the processed control if a rewrite occurred, or `std::nullopt`
+   *         if no control was processed.
    */
   std::optional<UnitaryInterface>
   tryProcessControls(UnitaryInterface op, const auto& controls, bool isPositive,
@@ -227,6 +250,22 @@ struct ReplaceBasisStateControlsWithIfPattern final
     return std::nullopt;
   }
 
+  /**
+   * @brief Iteratively removes basis-state controls from a Unitary operation by
+   *        transforming matched controls into conditional `scf.if` blocks.
+   *
+   * The pattern repeatedly attempts to process positive controls, negative
+   * controls, and—when the op is a diagonal gate with extra in-qubits—targets
+   * treated as controls. When a control is processed the operation is updated to
+   * the reduced form and the loop continues until no further controls can be
+   * transformed.
+   *
+   * @param op The Unitary operation to match and rewrite; may be updated as
+   *           controls are removed.
+   * @param rewriter PatternRewriter used to perform rewrites and create new ops.
+   * @return mlir::LogicalResult `success(true)` if at least one control was
+   *         transformed, `success(false)` if no changes were made.
+   */
   mlir::LogicalResult
   matchAndRewrite(UnitaryInterface op,
                   mlir::PatternRewriter& rewriter) const override {

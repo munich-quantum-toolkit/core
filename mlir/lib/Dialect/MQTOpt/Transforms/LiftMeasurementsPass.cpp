@@ -28,10 +28,26 @@ namespace mqt::ir::opt {
 struct LiftMeasurementsPass final
     : impl::LiftMeasurementsPassBase<LiftMeasurementsPass> {
 
+  /**
+   * @brief Registers dialects required by this pass.
+   *
+   * Inserts the SCF dialect into the provided dialect registry so the pass can
+   * create and manipulate SCF operations during transformation.
+   *
+   * @param registry Dialect registry to populate with required dialects.
+   */
   void getDependentDialects(mlir::DialectRegistry& registry) const override {
     registry.insert<mlir::scf::SCFDialect>();
   }
 
+  /**
+   * @brief Applies rewrite patterns to the current operation to lift measurements.
+   *
+   * Populates a RewritePatternSet with patterns that replace basis-state controls with
+   * conditional operations, lift measurement ops above control and gate constructs,
+   * and remove dead gates; then applies those patterns greedily to the operation.
+   * Signals the pass as failed if pattern application does not succeed.
+   */
   void runOnOperation() override {
     // Get the current operation being operated on.
     auto op = getOperation();

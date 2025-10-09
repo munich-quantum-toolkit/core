@@ -27,9 +27,19 @@ namespace mqt::ir::opt {
 struct DeadGateEliminationPattern final
     : mlir::OpInterfaceRewritePattern<UnitaryInterface> {
 
-  explicit DeadGateEliminationPattern(mlir::MLIRContext* context)
+  /**
+       * @brief Constructs a DeadGateEliminationPattern associated with the given MLIR context.
+       */
+      explicit DeadGateEliminationPattern(mlir::MLIRContext* context)
       : OpInterfaceRewritePattern<UnitaryInterface>(context) {}
 
+  /**
+   * @brief Eliminates a unitary operation whose outputs are only deallocated by replacing its outputs with the corresponding inputs and erasing the operation.
+   *
+   * @param op The unitary operation to match and potentially rewrite.
+   * @param rewriter Pattern rewriter used to perform replacements and erase the operation.
+   * @return mlir::LogicalResult `mlir::success()` if every user of `op` was a `DeallocQubitOp`, the outputs were replaced with their corresponding inputs, and `op` was erased; `mlir::failure()` if any user is not a `DeallocQubitOp`.
+   */
   mlir::LogicalResult
   matchAndRewrite(UnitaryInterface op,
                   mlir::PatternRewriter& rewriter) const override {
@@ -49,10 +59,9 @@ struct DeadGateEliminationPattern final
 };
 
 /**
- * @brief Populates the given pattern set with the
- * `DeadGateEliminationPattern`.
+ * @brief Registers the DeadGateEliminationPattern into a rewrite pattern set.
  *
- * @param patterns The pattern set to populate.
+ * @param patterns Rewrite pattern set to which the pattern will be added.
  */
 void populateDeadGateEliminationPatterns(mlir::RewritePatternSet& patterns) {
   patterns.add<DeadGateEliminationPattern>(patterns.getContext());

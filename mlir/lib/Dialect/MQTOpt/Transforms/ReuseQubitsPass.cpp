@@ -26,6 +26,12 @@ namespace mqt::ir::opt {
  */
 struct ReuseQubitsPass final : impl::ReuseQubitsPassBase<ReuseQubitsPass> {
 
+  /**
+   * @brief Run the reuse-qubits transformation on the current operation.
+   *
+   * Populates rewrite patterns that enable qubit reuse and applies them greedily
+   * to the operation. If pattern application fails, the pass is marked as failed.
+   */
   void runOnOperation() override {
     // Get the current operation being operated on.
     auto op = getOperation();

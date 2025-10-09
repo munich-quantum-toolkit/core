@@ -28,15 +28,22 @@ namespace mqt::ir::opt {
  */
 struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
 
-  explicit ReuseQubitsPattern(mlir::MLIRContext* context)
+  /**
+       * @brief Constructs a ReuseQubitsPattern and registers it with the given MLIR context.
+       *
+       * @param context MLIR context used to initialize the underlying OpRewritePattern.
+       */
+      explicit ReuseQubitsPattern(mlir::MLIRContext* context)
       : OpRewritePattern(context) {}
 
   /**
-   * @brief Finds all reachable `DeallocQubitOp` operation starting from some
-   * qubit.
-   * @param allocQubit The starting qubit to check (e.g. a newly  allocated
-   * qubit).
-   * @return A set of all DeallocQubitOp operations reachable from the given
+   * @brief Collects all deallocation operations that can be reached from a qubit value.
+   *
+   * Traverses uses of the provided qubit value and follows control-flow yields into parent ops
+   * (for example, scf.if regions) to discover reachable DeallocQubitOp operations.
+   *
+   * @param allocQubit The qubit value whose reachable deallocations are to be found.
+   * @return llvm::DenseSet<mlir::Operation*> Set of `DeallocQubitOp` operations reachable from `allocQubit`.
    */
   static llvm::DenseSet<mlir::Operation*>
   findAllReachableDeallocs(mlir::Value allocQubit) {
@@ -77,10 +84,13 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
   }
 
   /**
-   * @brief Reorders the users of the given operation to ensure that they are
-   * after it.
-   * @param op The operation whose users should be reordered.
-   * @param rewriter The pattern rewriter to use for moving operations.
+   * @brief Ensures all users reachable from the given operation appear after it in their blocks.
+   *
+   * Traverses user operations reachable from @p startingOp and reorders them so each user is placed after
+   * the operation it depends on, updating block-local operation order via the provided rewriter.
+   *
+   * @param startingOp Operation from which reachable user operations are reordered.
+   * @param rewriter Pattern rewriter used to move operations.
    */
   static void reorderUsers(mlir::Operation* startingOp,
                            mlir::PatternRewriter& rewriter) {
@@ -111,13 +121,14 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
   }
 
   /**
-   * @brief Rewrites the given `AllocQubitOp` and `DeallocQubitOp` to reuse the
-   * qubit instead.
+   * @brief Replace an allocation with a reset to reuse an existing qubit and remove the corresponding deallocation.
    *
-   * @param alloc The allocation that will be replaced by qubit reuse.
-   * @param sink The deallocation that will be replaced by a new reset
-   * operation.
-   * @param rewriter The pattern rewriter to use for the rewrite.
+   * Replaces `alloc` with a `ResetOp` that reuses the qubit previously freed by `sink`, erases `sink`, and
+   * reorders affected users to preserve block ordering.
+   *
+   * @param alloc The AllocQubitOp to be replaced.
+   * @param sink The DeallocQubitOp whose freed qubit will be reused (replaced/erased).
+   * @param rewriter Pattern rewriter used to perform the replacement and reorder operations.
    */
   static void rewriteForReuse(AllocQubitOp alloc, mlir::Operation* sink,
                               mlir::PatternRewriter& rewriter) {
@@ -130,6 +141,19 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
     reorderUsers(reset, rewriter);
   }
 
+  /**
+   * Attempts to reuse an existing qubit deallocation in the same block for the
+   * given AllocQubitOp by replacing the allocation with a reuse pattern.
+   *
+   * Searches deallocations in the current block and, if a deallocation that is
+   * disjoint from the alloc's reachable deallocations is found, rewrites the
+   * allocation to reuse that deallocated qubit via the provided rewriter.
+   *
+   * @param op The AllocQubitOp to match and potentially rewrite.
+   * @param rewriter PatternRewriter used to perform the transformation.
+   * @return `mlir::success()` if the alloc was rewritten to reuse an existing
+   * deallocation, `mlir::failure()` otherwise.
+   */
   mlir::LogicalResult
   matchAndRewrite(AllocQubitOp op,
                   mlir::PatternRewriter& rewriter) const override {
@@ -164,10 +188,9 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
 };
 
 /**
- * @brief Populates the given pattern set with the
- * `ReuseQubitsPattern`.
+ * @brief Register the ReuseQubitsPattern into a rewrite pattern set.
  *
- * @param patterns The pattern set to populate.
+ * @param patterns Pattern set to which the ReuseQubitsPattern will be added.
  */
 void populateReuseQubitsPatterns(mlir::RewritePatternSet& patterns) {
   patterns.add<ReuseQubitsPattern>(patterns.getContext());

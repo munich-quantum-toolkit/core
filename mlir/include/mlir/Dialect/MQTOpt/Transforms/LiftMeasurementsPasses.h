@@ -14,6 +14,12 @@
 
 #include <mlir/IR/PatternMatch.h>
 
+/**
+ * Move a measurement operation to precede a specified unitary gate by swapping their positions.
+ *
+ * @param gate The unitary gate to swap with the measurement.
+ * @param measurement The measurement operation to move before the gate.
+ */
 namespace mqt::ir::opt {
 /**
  * @brief Moves a measurement before the given gate.
