@@ -13,6 +13,7 @@
 #include "ir/QuantumComputation.hpp"
 
 #include <cstdint>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Pass/Pass.h>
 
 namespace mlir {
@@ -34,6 +35,14 @@ void populateSwapReconstructionAndElisionPatterns(
     mlir::RewritePatternSet& patterns);
 void populateQuantumSinkShiftPatterns(mlir::RewritePatternSet& patterns);
 void populateQuantumSinkPushPatterns(mlir::RewritePatternSet& patterns);
+void populateLiftMeasurementsAboveControlsPatterns(
+    mlir::RewritePatternSet& patterns);
+void populateReplaceBasisStateControlsWithIfPatterns(
+    mlir::RewritePatternSet& patterns);
+void populateLiftMeasurementsAboveGatesPatterns(
+    mlir::RewritePatternSet& patterns);
+void populateDeadGateEliminationPatterns(mlir::RewritePatternSet& patterns);
+void populateReuseQubitsPatterns(mlir::RewritePatternSet& patterns);
 void populateToQuantumComputationPatterns(mlir::RewritePatternSet& patterns,
                                           qc::QuantumComputation& circuit);
 void populateFromQuantumComputationPatterns(mlir::RewritePatternSet& patterns,
