@@ -74,7 +74,7 @@ struct CrawlScheduler final : SchedulerBase {
     const auto nqubits = qubits.size();
 
     for (Layer& layer : layers) {
-      mlir::DenseSet<UnitaryInterface> seenTwoQubit;
+      mlir::DenseSet<mlir::Operation*> seenTwoQubit;
       mlir::SmallVector<UnitaryInterface> readyTwoQubit;
 
       /// The maximum amount of two-qubit gates in a layer is nqubits / 2.
@@ -102,6 +102,15 @@ struct CrawlScheduler final : SchedulerBase {
               })
               .Case<ResetOp>([&](ResetOp op) { head = op.getOutQubit(); })
               .Case<MeasureOp>([&](MeasureOp op) { head = op.getOutQubit(); })
+              .Case<BarrierOp>([&](BarrierOp op) {
+                for (const auto [i, q] : llvm::enumerate(op.getInQubits())) {
+                  if (q == head) {
+                    head = op.getOutQubits()[i];
+                    break;
+                  }
+                }
+                return true;
+              })
               .Case<UnitaryInterface>([&](UnitaryInterface op) {
                 if (mlir::isa<GPhaseOp>(op)) {
                   stop = true;
@@ -111,7 +120,7 @@ struct CrawlScheduler final : SchedulerBase {
                 /// Insert two-qubit gates into seen-set.
                 /// If this is the second encounter, the gate is ready.
                 if (isTwoQubitGate(op)) {
-                  if (!seenTwoQubit.insert(op).second) {
+                  if (!seenTwoQubit.insert(op.getOperation()).second) {
                     readyTwoQubit.emplace_back(op);
                   }
                   stop = true;
@@ -140,7 +149,7 @@ struct CrawlScheduler final : SchedulerBase {
     }
 
     LLVM_DEBUG({
-      llvm::dbgs() << "crawl layerizer: layers=\n";
+      llvm::dbgs() << "crawl scheduler: layers=\n";
       for (const auto [i, layer] : llvm::enumerate(layers)) {
         llvm::dbgs() << '\t' << i << "= ";
         for (const auto [prog0, prog1] : layer) {
