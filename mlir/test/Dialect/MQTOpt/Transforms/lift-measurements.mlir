@@ -383,7 +383,7 @@ module {
     %q0_2, %c0 = mqtopt.measure %q0_1
 
     mqtopt.deallocQubit %q1_1
-    mqtopt.deallocQubit %q0_1
+    mqtopt.deallocQubit %q0_2
     return %c0 : i1
   }
 }
