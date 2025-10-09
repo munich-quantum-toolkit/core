@@ -17,6 +17,9 @@ namespace qc {
 class QuantumComputation;
 }
 
-mlir::OwningOpRef<mlir::ModuleOp>
-translateQuantumComputationToMLIR(mlir::MLIRContext* context,
-                                  const qc::QuantumComputation& qc);
+namespace mlir {
+
+OwningOpRef<ModuleOp>
+translateQuantumComputationToQuartz(MLIRContext* context,
+                                    const qc::QuantumComputation& qc);
+}

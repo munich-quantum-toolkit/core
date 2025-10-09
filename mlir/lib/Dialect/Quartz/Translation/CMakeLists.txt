@@ -10,7 +10,7 @@ add_compile_options("-fexceptions")
 
 add_mlir_library(
   MLIRQuartzTranslation
-  ImportQuantumComputation.cpp
+  TranslateQuantumComputationToQuartz.cpp
   LINK_LIBS
   MLIRArithDialect
   MLIRFuncDialect
