@@ -155,7 +155,9 @@ public:
   }
 
   /**
-   * @brief Restore layout by uncomputing. Clear history afterwards.
+   * @brief Restore layout by uncomputing.
+   *
+   * History is cleared by the caller (e.g., via stack/history pop in handlers).
    *
    * @todo Remove SWAP history and use advanced strategies.
    */

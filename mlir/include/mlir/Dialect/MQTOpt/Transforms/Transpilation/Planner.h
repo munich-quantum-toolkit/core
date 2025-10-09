@@ -51,6 +51,7 @@ struct NaivePlanner final : PlannerBase {
           "NaivePlanner expects exactly one layer with one gate");
     }
 
+    /// This assumes an avg. of 16 SWAPs per gate.
     mlir::SmallVector<QubitIndexPair, 16> swaps;
     for (const auto [prog0, prog1] : layers.front()) {
       const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
