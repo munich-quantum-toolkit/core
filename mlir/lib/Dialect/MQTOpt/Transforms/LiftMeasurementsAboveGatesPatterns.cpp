@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+#include "mlir/Dialect/MQTOpt/Transforms/LiftMeasurementsPasses.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
 #include <llvm/ADT/STLExtras.h>
