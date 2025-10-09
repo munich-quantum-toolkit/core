@@ -359,7 +359,7 @@ module {
 
 // -----
 // This test checks that measurements can be lifted over
-// the targets of controlled gates if target and control are intercheangable.
+// the targets of controlled gates if target and control are interchangeable.
 
 module {
   // CHECK-LABEL: func.func @testLiftOverTargetAsControlInDiagonalGate
@@ -390,7 +390,7 @@ module {
 
 // -----
 // This test checks that measurements can be lifted over
-// the targets of controlled gates if target and negative control are intercheangable.
+// the targets of controlled gates if target and negative control are interchangeable.
 
 module {
   // CHECK-LABEL: func.func @testLiftOverTargetAsNegativeControlInDiagonalGate
