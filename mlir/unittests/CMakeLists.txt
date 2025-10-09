@@ -7,4 +7,4 @@
 # Licensed under the MIT License
 
 add_subdirectory(translation)
-add_subdirectory(translation_new)
+add_subdirectory(pipeline)

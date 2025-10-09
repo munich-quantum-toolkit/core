@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/Quartz/Translation/ImportQuantumComputation.h"
+#include "mlir/Dialect/Quartz/Translation/TranslateQuantumComputationToQuartz.h"
 
 #include "ir/QuantumComputation.hpp"
 #include "ir/Register.hpp"
@@ -28,7 +28,9 @@
 #include <mlir/IR/Value.h>
 #include <ranges>
 
-namespace mlir::quartz {
+namespace mlir {
+
+using namespace quartz;
 
 namespace {
 
@@ -61,7 +63,7 @@ using BitIndexVec = SmallVector<BitMemInfo>;
  * @return Vector containing information about all quantum registers
  */
 SmallVector<QregInfo>
-allocateQregs(quartz::QuartzProgramBuilder& builder,
+allocateQregs(QuartzProgramBuilder& builder,
               const qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
   SmallVector<const qc::QuantumRegister*> qregPtrs;
@@ -114,8 +116,7 @@ buildQubitMap(const qc::QuantumComputation& quantumComputation,
 
   for (const auto& qreg : qregs) {
     for (std::size_t i = 0; i < qreg.qregPtr->getSize(); ++i) {
-      const auto globalIdx =
-          static_cast<size_t>(qreg.qregPtr->getStartIndex() + i);
+      const auto globalIdx = qreg.qregPtr->getStartIndex() + i;
       flatQubits[globalIdx] = qreg.qubits[i];
     }
   }
@@ -136,12 +137,13 @@ buildQubitMap(const qc::QuantumComputation& quantumComputation,
  * @return Vector mapping global bit indices to memref and local indices
  */
 BitIndexVec
-allocateClassicalRegisters(quartz::QuartzProgramBuilder& builder,
+allocateClassicalRegisters(QuartzProgramBuilder& builder,
                            const qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
   SmallVector<const qc::ClassicalRegister*> cregPtrs;
   cregPtrs.reserve(quantumComputation.getClassicalRegisters().size());
-  for (const auto& [_, reg] : quantumComputation.getClassicalRegisters()) {
+  for (const auto& reg :
+       quantumComputation.getClassicalRegisters() | std::views::values) {
     cregPtrs.emplace_back(&reg);
   }
 
@@ -178,8 +180,7 @@ allocateClassicalRegisters(quartz::QuartzProgramBuilder& builder,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  * @param bitMap Mapping from global bit index to (memref, local_index)
  */
-void addMeasureOp(quartz::QuartzProgramBuilder& builder,
-                  const qc::Operation& operation,
+void addMeasureOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
                   const SmallVector<Value>& qubits, const BitIndexVec& bitMap) {
   const auto& measureOp =
       dynamic_cast<const qc::NonUnitaryOperation&>(operation);
@@ -207,8 +208,7 @@ void addMeasureOp(quartz::QuartzProgramBuilder& builder,
  * @param operation The reset operation to translate
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  */
-void addResetOp(quartz::QuartzProgramBuilder& builder,
-                const qc::Operation& operation,
+void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
                 const SmallVector<Value>& qubits) {
   for (const auto& target : operation.getTargets()) {
     const Value qubit = qubits[target];
@@ -235,7 +235,7 @@ void addResetOp(quartz::QuartzProgramBuilder& builder,
  * @return Success if all supported operations were translated
  */
 LogicalResult
-translateOperations(quartz::QuartzProgramBuilder& builder,
+translateOperations(QuartzProgramBuilder& builder,
                     const qc::QuantumComputation& quantumComputation,
                     const SmallVector<Value>& qubits,
                     const BitIndexVec& bitMap) {
@@ -287,10 +287,10 @@ translateOperations(quartz::QuartzProgramBuilder& builder,
  * @param quantumComputation The quantum computation to translate
  * @return OwningOpRef containing the translated MLIR module
  */
-OwningOpRef<ModuleOp> translateQuantumComputationToMLIR(
+OwningOpRef<ModuleOp> translateQuantumComputationToQuartz(
     MLIRContext* context, const qc::QuantumComputation& quantumComputation) {
   // Create and initialize the builder (creates module and main function)
-  quartz::QuartzProgramBuilder builder(context);
+  QuartzProgramBuilder builder(context);
   builder.initialize();
 
   // Allocate quantum registers using the builder
@@ -314,4 +314,4 @@ OwningOpRef<ModuleOp> translateQuantumComputationToMLIR(
   return builder.finalize();
 }
 
-} // namespace mlir::quartz
+} // namespace mlir
