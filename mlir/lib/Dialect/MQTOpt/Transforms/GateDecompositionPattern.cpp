@@ -564,8 +564,8 @@ struct GateDecompositionPattern final
           c,
           global_phase,
           K1l,
-          K1r,
           K2l,
+          K1r,
           K2r,
           Specialization::General,
           default_euler_basis,
@@ -867,7 +867,7 @@ struct GateDecompositionPattern final
       }
       specialized.global_phase += std::arg(tr);
       return specialized;
-    } // namespace mqt::ir::opt
+    }
   };
 
   static constexpr auto DEFAULT_FIDELITY = 1.0 - 1.0e-9;
@@ -916,7 +916,7 @@ struct GateDecompositionPattern final
       auto get_default_nbasis = [&]() {
         auto minValue = std::numeric_limits<qc::fp>::max();
         auto minIndex = -1;
-        for(std::size_t i = 0; i < traces.size(); ++i) {
+        for (std::size_t i = 0; i < traces.size(); ++i) {
           auto value = trace_to_fid(traces[i]) * std::pow(basis_fidelity, i);
           if (value < minValue) {
             minIndex = i;
@@ -928,20 +928,20 @@ struct GateDecompositionPattern final
       auto best_nbasis = _num_basis_uses.value_or(get_default_nbasis());
       auto choose_decomposition = [&]() {
         if (best_nbasis == 0) {
-          return decomp0_inner(&target_decomposed);
+          return decomp0_inner(target_decomposed);
         }
         if (best_nbasis == 1) {
-          return decomp1_inner(&target_decomposed);
+          return decomp1_inner(target_decomposed);
         }
         if (best_nbasis == 2) {
-          return decomp2_supercontrolled_inner(&target_decomposed);
+          return decomp2_supercontrolled_inner(target_decomposed);
         }
         if (best_nbasis == 3) {
-          return decomp3_supercontrolled_inner(&target_decomposed);
+          return decomp3_supercontrolled_inner(target_decomposed);
         }
         throw std::logic_error{"Invalid basis to use"};
       };
-      auto pulse_optimize = this->pulse_optimize.unwrap_or(true);
+      auto pulse_optimize = this->pulse_optimize.value_or(true);
       auto sequence = if (pulse_optimize) {
         self.pulse_optimal_chooser(best_nbasis, &decomposition,
                                    &target_decomposed)
@@ -1008,20 +1008,393 @@ struct GateDecompositionPattern final
     })
     }
 
-    std::array<qfp, 4> traces(TwoQubitWeylDecomposition target) {
+  private:
+    [[nodiscard]] std::vector<matrix2x2>
+    decomp0_inner(const TwoQubitWeylDecomposition& target) const {
       return {
-          4. * qfp(std::cos(target.a) * std::cos(target.b) * std::cos(target.c),
-                   std::sin(target.a) * std::sin(target.b) *
-                       std::sin(target.c), ),
+          dot(target.K1r, target.K2r),
+          dot(target.K1l, target.K2l),
+      };
+    }
+
+    [[nodiscard]] std::vector<matrix2x2>
+    decomp1_inner(const TwoQubitWeylDecomposition& target) const {
+      auto transpose_conjugate = [](auto&& matrix) {
+        auto result = transpose(matrix);
+        llvm::transform(result, result.begin(),
+                        [](auto&& x) { return std::conj(x); });
+        return result;
+      };
+
+      // FIXME: fix for z!=0 and c!=0 using closest reflection (not always in
+      // the Weyl chamber)
+      return {
+          dot(transpose_conjugate(basis_decomposer.K2r), target.K2r),
+          dot(transpose_conjugate(basis_decomposer.K2l), target.K2l),
+          dot(target.K1r, transpose_conjugate(basis_decomposer.K1r)),
+          dot(target.K1l, transpose_conjugate(basis_decomposer.K1l)),
+      };
+    }
+
+    [[nodiscard]] std::vector<matrix2x2> decomp2_supercontrolled_inner(
+        const TwoQubitWeylDecomposition& target) const {
+      return {
+          dot(q2r, target.K2r),
+          dot(q2l, target.K2l),
+          dot(dot(q1ra, rz_matrix(2. * target.b)), q1rb),
+          dot(dot(q1la, rz_matrix(-2. * target.a)), q1lb),
+          dot(target.K1r, q0r),
+          dot(target.K1l, q0l),
+      };
+    }
+
+    [[nodiscard]] std::vector<matrix2x2> decomp3_supercontrolled_inner(
+        const TwoQubitWeylDecomposition& target) const {
+      return {
+          dot(u3r, target.K2r),
+          dot(u3l, target.K2l),
+          dot(dot(u2ra, rz_matrix(2. * target.b)), u2rb),
+          dot(dot(u2la, rz_matrix(-2. * target.a)), u2lb),
+          dot(dot(u1ra, rz_matrix(-2. * target.c)), u1rb),
+          u1l,
+          dot(target.K1r, u0r),
+          dot(target.K1l, u0l),
+      };
+    }
+
+    std::optional<std::vector<matrix4x4>>
+    pulse_optimal_chooser(std::uint8_t best_nbasis,
+                          std::vector<matrix2x2> decomposition,
+                          const TwoQubitWeylDecomposition& target_decomposed) {
+      if (pulse_optimize.has_value() &&
+          (best_nbasis == 0 || best_nbasis == 1 || best_nbasis > 3)) {
+        return std::nullopt;
+      }
+      if (euler_basis != EulerBasis::ZSX && euler_basis != EulerBasis::ZSXX) {
+        if (pulse_optimize.has_value()) {
+          throw std::runtime_error{
+              "'pulse_optimize' currently only works with ZSX basis"};
+        }
+        return std::nullopt;
+      }
+
+      if (gate != "cx") {
+        if (pulse_optimize.has_value()) {
+          throw std::runtime_error{
+              "pulse_optimizer currently only works with CNOT entangling gate"};
+        }
+        return std::nullopt;
+      }
+      auto result = if (best_nbasis == 3) {
+        self.get_sx_vz_3cx_efficient_euler(decomposition, target_decomposed)
+      }
+      else if (best_nbasis == 2) {
+        self.get_sx_vz_2cx_efficient_euler(decomposition, target_decomposed)
+      }
+      else {None};
+      if (pulse_optimize.has_value() && result.is_none()) {
+        throw std::runtime_error{
+            "Failed to compute requested pulse optimal decomposition"};
+      }
+      return result;
+    }
+    ///
+    /// Decomposition of SU(4) gate for device with SX, virtual RZ, and CNOT
+    /// gates assuming two CNOT gates are needed.
+    ///
+    /// This first decomposes each unitary from the KAK decomposition into ZXZ
+    /// on the source qubit of the CNOTs and XZX on the targets in order to
+    /// commute operators to beginning and end of decomposition. The beginning
+    /// and ending single qubit gates are then collapsed and re-decomposed with
+    /// the single qubit decomposer. This last step could be avoided if
+    /// performance is a concern.
+    std::optional<std::vector<matrix4x4>> get_sx_vz_2cx_efficient_euler(
+        const std::vector<matrix2x2>& decomposition,
+        const TwoQubitWeylDecomposition& target_decomposed) {
+      std::vector<matrix4x4> gates;
+      auto global_phase = target_decomposed.global_phase;
+      global_phase -= 2. * basis_decomposer.global_phase;
+
+      auto get_euler_angles = [&](std::size_t startIndex, EulerBasis basis) {
+        std::vector<std::array<qc::fp, 3>> result;
+        for (std::size_t i = startIndex; i < decomposition.size(); i += 2) {
+          auto euler_angles = angles_from_unitary(decomposition[i], basis);
+          global_phase += euler_angles[3];
+          result.push_back({euler_angles[2], euler_angles[0], euler_angles[1]});
+        }
+        return result;
+      };
+
+      auto euler_q0 = get_euler_angles(0, EulerBasis::ZXZ);
+      auto euler_q1 = get_euler_angles(1, EulerBasis::XZX);
+
+      auto euler_matrix_q0 =
+          dot(rx_matrix(euler_q0[0][1]), rz_matrix(euler_q0[0][0]));
+      euler_matrix_q0 =
+          dot(rz_matrix(euler_q0[0][2] + euler_q0[1][0] + qc::PI_2),
+              euler_matrix_q0);
+      append_1q_sequence(gates, global_phase, euler_matrix_q0, 0);
+      let mut euler_matrix_q1 =
+          rz_matrix(euler_q1[0][1]).dot(&rx_matrix(euler_q1[0][0]));
+      euler_matrix_q1 =
+          rx_matrix(euler_q1[0][2] + euler_q1[1][0]).dot(&euler_matrix_q1);
+      self.append_1q_sequence(&mut gates, &mut global_phase,
+                              euler_matrix_q1.view(), 1);
+      gates.push((Some(StandardGate::CX), smallvec ![], smallvec ![ 0, 1 ]));
+      gates.push((Some(StandardGate::SX), smallvec ![], smallvec ![0]));
+      gates.push((Some(StandardGate::RZ), smallvec ![euler_q0[1][1] - PI],
+                  smallvec ![0], ));
+      gates.push((Some(StandardGate::SX), smallvec ![], smallvec ![0]));
+      gates.push((Some(StandardGate::RZ), smallvec ![euler_q1[1][1]],
+                  smallvec ![1], ));
+      global_phase += PI2;
+      gates.push((Some(StandardGate::CX), smallvec ![], smallvec ![ 0, 1 ]));
+      let mut euler_matrix_q0 =
+          rx_matrix(euler_q0[2][1])
+              .dot(&rz_matrix(euler_q0[1][2] + euler_q0[2][0] + PI2));
+      euler_matrix_q0 = rz_matrix(euler_q0[2][2]).dot(&euler_matrix_q0);
+      self.append_1q_sequence(&mut gates, &mut global_phase,
+                              euler_matrix_q0.view(), 0);
+      let mut euler_matrix_q1 =
+          rz_matrix(euler_q1[2][1])
+              .dot(&rx_matrix(euler_q1[1][2] + euler_q1[2][0]));
+      euler_matrix_q1 = rx_matrix(euler_q1[2][2]).dot(&euler_matrix_q1);
+      self.append_1q_sequence(&mut gates, &mut global_phase,
+                              euler_matrix_q1.view(), 1);
+      Some(TwoQubitGateSequence{
+          gates,
+          global_phase,
+      })
+    }
+
+    /// Decomposition of SU(4) gate for device with SX, virtual RZ, and CNOT
+    /// gates assuming three CNOT gates are needed.
+    ///
+    /// This first decomposes each unitary from the KAK decomposition into ZXZ
+    /// on the source qubit of the CNOTs and XZX on the targets in order commute
+    /// operators to beginning and end of decomposition. Inserting Hadamards
+    /// reverses the direction of the CNOTs and transforms a variable Rx ->
+    /// variable virtual Rz. The beginning and ending single qubit gates are
+    /// then collapsed and re-decomposed with the single qubit decomposer. This
+    /// last step could be avoided if performance is a concern.
+    fn get_sx_vz_3cx_efficient_euler(
+        &self, decomposition : &SmallVec<[Array2<Complex64>; 8]>,
+        target_decomposed : &TwoQubitWeylDecomposition, )
+        -> Option<TwoQubitGateSequence> {
+      let mut gates = Vec::new ();
+      let mut global_phase = target_decomposed.global_phase;
+      global_phase -= 3. * self.basis_decomposer.global_phase;
+      global_phase = global_phase.rem_euclid(TWO_PI);
+      let atol = 1e-10; // absolute tolerance for floats
+                        // Decompose source unitaries to zxz
+      let euler_q0
+          : Vec<[f64; 3]> =
+                decomposition.iter()
+                    .step_by(2)
+                    .map(| decomp |
+                         {
+                           let euler_angles = angles_from_unitary(
+                               decomp.view(), EulerBasis::ZXZ);
+                           global_phase += euler_angles[3];
+                           [ euler_angles[2], euler_angles[0], euler_angles[1] ]
+                         })
+                    .collect();
+      // Decompose target unitaries to xzx
+      let euler_q1
+          : Vec<[f64; 3]> =
+                decomposition.iter()
+                    .skip(1)
+                    .step_by(2)
+                    .map(| decomp |
+                         {
+                           let euler_angles = angles_from_unitary(
+                               decomp.view(), EulerBasis::XZX);
+                           global_phase += euler_angles[3];
+                           [ euler_angles[2], euler_angles[0], euler_angles[1] ]
+                         })
+                    .collect();
+
+      let x12 = euler_q0[1][2] + euler_q0[2][0];
+      let x12_is_non_zero = !abs_diff_eq !(x12, 0., epsilon = atol);
+      let mut x12_is_old_mult = None;
+      let mut x12_phase = 0.;
+      let x12_is_pi_mult = abs_diff_eq !(x12.sin(), 0., epsilon = atol);
+      if x12_is_pi_mult {
+        x12_is_old_mult = Some(abs_diff_eq !(x12.cos(), -1., epsilon = atol));
+        x12_phase = PI * x12.cos();
+      }
+      let x02_add = x12 - euler_q0[1][0];
+      let x12_is_half_pi = abs_diff_eq !(x12, PI2, epsilon = atol);
+
+      let mut euler_matrix_q0 =
+          rx_matrix(euler_q0[0][1]).dot(&rz_matrix(euler_q0[0][0]));
+      if x12_is_non_zero
+        &&x12_is_pi_mult {
+          euler_matrix_q0 =
+              rz_matrix(euler_q0[0][2] - x02_add).dot(&euler_matrix_q0);
+        }
+      else {
+        euler_matrix_q0 =
+            rz_matrix(euler_q0[0][2] + euler_q0[1][0]).dot(&euler_matrix_q0);
+      }
+      euler_matrix_q0 = aview2(&H_GATE).dot(&euler_matrix_q0);
+      self.append_1q_sequence(&mut gates, &mut global_phase,
+                              euler_matrix_q0.view(), 0);
+
+      let rx_0 = rx_matrix(euler_q1[0][0]);
+      let rz = rz_matrix(euler_q1[0][1]);
+      let rx_1 = rx_matrix(euler_q1[0][2] + euler_q1[1][0]);
+      let mut euler_matrix_q1 = rz.dot(&rx_0);
+      euler_matrix_q1 = rx_1.dot(&euler_matrix_q1);
+      euler_matrix_q1 = aview2(&H_GATE).dot(&euler_matrix_q1);
+      self.append_1q_sequence(&mut gates, &mut global_phase,
+                              euler_matrix_q1.view(), 1);
+
+      gates.push((Some(StandardGate::CX), smallvec ![], smallvec ![ 1, 0 ]));
+
+      if x12_is_pi_mult {
+        // even or odd multiple
+        if x12_is_non_zero {
+          global_phase += x12_phase;
+        }
+        if x12_is_non_zero
+          &&x12_is_old_mult.unwrap() {
+            gates.push((Some(StandardGate::RZ), smallvec ![-euler_q0[1][1]],
+                        smallvec ![0], ));
+          }
+        else {
+          gates.push((Some(StandardGate::RZ), smallvec ![euler_q0[1][1]],
+                      smallvec ![0], ));
+          global_phase += PI;
+        }
+      }
+      if x12_is_half_pi {
+        gates.push((Some(StandardGate::SX), smallvec ![], smallvec ![0]));
+        global_phase -= PI4;
+      } else if x12_is_non_zero
+        &&!x12_is_pi_mult {
+          if self
+            .pulse_optimize.is_none() {
+              self.append_1q_sequence(&mut gates, &mut global_phase,
+                                      rx_matrix(x12).view(), 0);
+            }
+          else {
+            return None;
+          }
+        }
+      if abs_diff_eq
+        !(euler_q1[1][1], PI2, epsilon = atol) {
+          gates.push((Some(StandardGate::SX), smallvec ![], smallvec ![1]));
+          global_phase -= PI4
+        }
+      else if self
+        .pulse_optimize.is_none() {
+          self.append_1q_sequence(&mut gates, &mut global_phase,
+                                  rx_matrix(euler_q1[1][1]).view(), 1, );
+        }
+      else {
+        return None;
+      }
+      gates.push((Some(StandardGate::RZ),
+                  smallvec ![euler_q1[1][2] + euler_q1[2][0]],
+                  smallvec ![1], ));
+      gates.push((Some(StandardGate::CX), smallvec ![], smallvec ![ 1, 0 ]));
+      gates.push((Some(StandardGate::RZ), smallvec ![euler_q0[2][1]],
+                  smallvec ![0], ));
+      if abs_diff_eq
+        !(euler_q1[2][1], PI2, epsilon = atol) {
+          gates.push((Some(StandardGate::SX), smallvec ![], smallvec ![1]));
+          global_phase -= PI4;
+        }
+      else if self
+        .pulse_optimize.is_none() {
+          self.append_1q_sequence(&mut gates, &mut global_phase,
+                                  rx_matrix(euler_q1[2][1]).view(), 1, );
+        }
+      else {
+        return None;
+      }
+      gates.push((Some(StandardGate::CX), smallvec ![], smallvec ![ 1, 0 ]));
+      let mut euler_matrix =
+          rz_matrix(euler_q0[2][2] + euler_q0[3][0]).dot(&aview2(&H_GATE));
+      euler_matrix = rx_matrix(euler_q0[3][1]).dot(&euler_matrix);
+      euler_matrix = rz_matrix(euler_q0[3][2]).dot(&euler_matrix);
+      self.append_1q_sequence(&mut gates, &mut global_phase,
+                              euler_matrix.view(), 0);
+
+      let mut euler_matrix =
+          rx_matrix(euler_q1[2][2] + euler_q1[3][0]).dot(&aview2(&H_GATE));
+      euler_matrix = rz_matrix(euler_q1[3][1]).dot(&euler_matrix);
+      euler_matrix = rx_matrix(euler_q1[3][2]).dot(&euler_matrix);
+      self.append_1q_sequence(&mut gates, &mut global_phase,
+                              euler_matrix.view(), 1);
+
+      let out_unitary = compute_unitary(&gates, global_phase);
+      // TODO: fix the sign problem to avoid correction here
+      if abs_diff_eq
+        !(target_decomposed.unitary_matrix[[ 0, 0 ]], -out_unitary[[ 0, 0 ]],
+          epsilon = atol) {
+          global_phase += PI;
+        }
+      Some(TwoQubitGateSequence{
+          gates,
+          global_phase,
+      })
+    }
+
+    void append_1q_sequence(std::vector<matrix2x2>& gates, qc::fp& global_phase,
+                            matrix4x4 unitary, std::uint8_t qubit) {
+      std::vector<EulerBasis> target_1q_basis_list;
+      target_1q_basis_list.push_back(euler_basis);
+      auto sequence = unitary_to_gate_sequence_inner(
+          unitary, &target_1q_basis_list, qubit as usize, None, true, None, );
+      if let
+        Some(sequence) = sequence {
+          *global_phase += sequence.global_phase;
+            for
+              gate in sequence.gates {
+                gates.push((Some(gate.0), gate.1, smallvec ![qubit]));
+              }
+        }
+    }
+
+    [[nodiscard]] std::array<qfp, 4>
+    traces(TwoQubitWeylDecomposition target) const {
+      return {
+          4. *
+              qfp(std::cos(target.a) * std::cos(target.b) * std::cos(target.c),
+                  std::sin(target.a) * std::sin(target.b) * std::sin(target.c)),
           4. * qfp(std::cos(qc::PI_4 - target.a) *
-                       std::cos(self.basis_decomposer.b - target.b) *
+                       std::cos(basis_decomposer.b - target.b) *
                        std::cos(target.c),
                    std::sin(qc::PI_4 - target.a) *
-                       std::sin(self.basis_decomposer.b - target.b) *
+                       std::sin(basis_decomposer.b - target.b) *
                        std::sin(target.c)),
           qfp(4. * std::cos(target.c), 0.),
           qfp(4., 0.),
       };
+    }
+
+    std::optional<std::vector<matrix2x2>> unitary_to_gate_sequence_inner(
+        matrix4x4 unitary_mat, const std::vector<EulerBasis>& target_basis_list,
+        std::size_t qubit,
+        std::vector<std::unordered_map<std::string, qc::fp>> error_map,
+        bool simplify, std::optional<qc::fp> atol) {
+      target_basis_list.get_bases()
+          .map(| target_basis |
+               {
+                 let[theta, phi, lam, phase] =
+                     angles_from_unitary(unitary_mat, target_basis);
+                 generate_circuit(&target_basis, theta, phi, lam, phase,
+                                  simplify, atol)
+                     .unwrap()
+               })
+          .min_by(
+              | a, b | {
+                  let error_a = compare_error_fn(a, &error_map, qubit);
+                  let error_b = compare_error_fn(b, &error_map, qubit);
+                  error_a.partial_cmp(&error_b).unwrap_or(Ordering::Equal)
+                })
     }
   };
 };
