@@ -70,7 +70,6 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
                   mlir::PatternRewriter& rewriter) const override {
     const auto qubitVariable = op.getInQubit();
     auto* predecessor = qubitVariable.getDefiningOp();
-    const auto name = predecessor->getName().stripDialect().str();
 
     auto predecessorUnitary = mlir::dyn_cast<UnitaryInterface>(predecessor);
 
@@ -78,6 +77,7 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
       return mlir::failure();
     }
 
+    const auto name = predecessor->getName().stripDialect().str();
     if (DIAGONAL_GATES.count(name) == 1) {
       swapGateWithMeasurement(predecessorUnitary, op, rewriter);
       return mlir::success();
