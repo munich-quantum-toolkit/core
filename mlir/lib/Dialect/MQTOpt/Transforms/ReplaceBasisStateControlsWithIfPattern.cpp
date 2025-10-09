@@ -80,7 +80,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
       } else {
         // If there are no positive controls, we can also use a negative control
         // by setting the groupIndex to 2. In this case, however, we first need
-        // to add an x gate to8 the corresponding qubit.
+        // to add an x gate to the corresponding qubit.
         auto targetNegCtrlInput = op.getNegCtrlInQubits().front();
         rewriter.setInsertionPoint(op);
         auto xGate = rewriter.create<XOp>(
@@ -276,7 +276,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
  */
 void populateReplaceBasisStateControlsWithIfPatterns(
     mlir::RewritePatternSet& patterns) {
-  patterns.add<ReplaceBasisStateControlsWithIfPattern>(patterns.getContext());
+  // patterns.add<ReplaceBasisStateControlsWithIfPattern>(patterns.getContext());
 }
 
 } // namespace mqt::ir::opt
