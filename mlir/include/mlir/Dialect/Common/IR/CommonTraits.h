@@ -24,10 +24,10 @@ namespace mqt::ir::common {
 template <std::size_t NumQubits> struct DefinitionMatrix {
   static constexpr std::size_t MatrixSize = 1 << NumQubits;
 
-  template<typename T>
+  template <typename T>
   using MatrixType = std::array<T, MatrixSize * MatrixSize>;
 
-  MatrixType<double(*)(mlir::ValueRange)> matrix;
+  MatrixType<double (*)(mlir::ValueRange)> matrix;
 
   static constexpr std::size_t index(std::size_t x, std::size_t y) {
     return (y * MatrixSize) + x;
@@ -58,14 +58,14 @@ public:
       return mlir::success();
     }
 
-    [[nodiscard]] static auto getDefinitionMatrix() {
-      return Matrix;
-    }
+    [[nodiscard]] static auto getDefinitionMatrix() { return Matrix; }
     [[nodiscard]] static auto getDefinitionMatrix(mlir::Operation* op) {
       auto concreteOp = mlir::cast<ConcreteOp>(op);
       return Matrix.getMatrix(concreteOp.getParams());
     }
-    [[nodiscard]] static double getDefinitionMatrixElement(mlir::Operation* op, std::size_t x, std::size_t y) {
+    [[nodiscard]] static double getDefinitionMatrixElement(mlir::Operation* op,
+                                                           std::size_t x,
+                                                           std::size_t y) {
       return getDefinitionMatrix(op).at(DefinitionMatrix<N>::index(x, y));
     }
   };
