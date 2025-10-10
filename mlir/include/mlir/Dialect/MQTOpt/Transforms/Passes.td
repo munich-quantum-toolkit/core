@@ -103,6 +103,9 @@ def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
              clEnumValN(PlacementStrategy::Random, "random", "Random placement"),
              clEnumValN(PlacementStrategy::Identity, "identity", "Identity placement"))}]>
   ];
+  let statistics = [
+    Statistic<"tms", "runtime-milliseconds", "The runtime in milliseconds">
+  ];
 }
 
 def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
@@ -110,6 +113,24 @@ def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
   let description = [{
     This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.
   }];
+  let options = [
+    Option<"method", "method", "RoutingMethod", "RoutingMethod::QMAP",
+           "The routing method to use.", [{llvm::cl::values(
+             clEnumValN(RoutingMethod::Naive, "naive", "Swap along shortest paths"),
+             clEnumValN(RoutingMethod::QMAP, "qmap", "A*-search based routing algorithm"))}]>,
+    Option<"nlookahead", "nlookahead", "std::size_t", "1",
+           "qmap option: Number of lookahead steps (heuristic horizon)">,
+    Option<"alpha", "alpha", "float", "1.0F",
+           "qmap option: The alpha factor in the cost function">,
+    Option<"beta", "beta", "float", "1.0F",
+           "qmap option: The beta factor in the cost function">,
+    Option<"lambda", "lambda", "float", "0.9F",
+           "qmap option: The lambda factor in the cost function">
+  ];
+  let statistics = [
+    Statistic<"nadd", "n-additional-gates", "The number of additional gates">,
+    Statistic<"tms", "runtime-milliseconds", "The runtime in milliseconds">
+  ];
 }
 
 def RoutingVerificationSCPass : Pass<"verify-routing-sc", "mlir::ModuleOp"> {
