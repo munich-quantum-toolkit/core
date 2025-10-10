@@ -258,7 +258,13 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
   forEachRegularSites(traps, [&constructedSites](const SiteInfo& site) {
     constructedSites.emplace(Vector{.x = site.x, .y = site.y});
   });
-  return retrievedSites == constructedSites;
+  if (retrievedSites != constructedSites) {
+    SPDLOG_INFO("Lattice reconstruction validation failed: {} retrieved sites, "
+                "{} constructed sites",
+                retrievedSites.size(), constructedSites.size());
+    return false;
+  }
+  return true;
 }
 auto FoMaC::Device::initOperationsFromDevice() -> bool {
   std::map<size_t, std::pair<ShuttlingUnit, std::array<bool, 3>>>
@@ -517,17 +523,12 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
       }
     }
   }
-  // The suggested use of `std::Ranges::all_of` does not work here because of
-  // the `emplace_back` in the loop body.
-  //
-  // NOLINTNEXTLINE(readability-use-anyofallof)
-  for (const auto& val : shuttlingUnitsPerId | std::views::values) {
-    const auto [load, move, store] = val.second;
-    if (!(load && move && store)) {
+  for (const auto& [unit, config] : shuttlingUnitsPerId | std::views::values) {
+    if (const auto [load, move, store] = config; !(load && move && store)) {
       SPDLOG_INFO("Shuttling unit not complete");
       return false;
     }
-    shuttlingUnits.emplace_back(val.first);
+    shuttlingUnits.emplace_back(unit);
   }
   return true;
 }
