@@ -137,6 +137,10 @@ auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
     sumT2 += *t2;
   }
   const auto count = static_cast<uint64_t>(std::ranges::distance(regularSites));
+  if (count == 0) {
+    SPDLOG_INFO("Device has no regular sites with decoherence data");
+    return false;
+  }
   decoherenceTimes.t1 = sumT1 / count;
   decoherenceTimes.t2 = sumT2 / count;
   return true;
