@@ -317,7 +317,7 @@ auto writeDecoherenceTimes(const Device& device, std::ostream& os) -> void {
  * @param y0 Right-hand side of the second equation.
  * @returns A pair containing the solution (x, y).
  * @throws std::runtime_error if the system has no unique solution (determinant
- * is zero).
+ * is near zero).
  */
 template <typename T>
 [[nodiscard]] auto solve2DLinearEquation(const T x1, const T x2, const T y1,
@@ -325,7 +325,7 @@ template <typename T>
     -> std::pair<double, double> {
   // Calculate the determinant
   const auto det = static_cast<double>((x1 * y2) - (x2 * y1));
-  if (det == 0) {
+  if (constexpr auto epsilon = 1e-10; std::abs(det) < epsilon) {
     throw std::runtime_error("The system of equations has no unique solution.");
   }
   // Calculate the solution
