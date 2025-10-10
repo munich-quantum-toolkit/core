@@ -188,8 +188,8 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
     submoduleIt->second.emplace(Vector{.x = *x, .y = *y});
     retrievedSites.emplace(Vector{.x = *x, .y = *y});
   }
-  for (const auto& [moduleIdx, sitesPerSubmodule] :
-       sitesPerModuleAndSubmodule) {
+  for (const auto& sitesPerSubmodule :
+       sitesPerModuleAndSubmodule | std::views::values) {
     // get submodule sites (min. submodule)
     const auto& [minSubmoduleIdx, minSubmoduleSites] =
         *sitesPerSubmodule.cbegin();
@@ -208,18 +208,28 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
           const auto& v = s.top();
           return Vector{v.x - latticeOrigin.x, v.y - latticeOrigin.y};
         });
-    const auto& latticeVector1 = *std::ranges::min_element(
+    if (std::ranges::begin(otherReferenceSites) ==
+        std::ranges::end(otherReferenceSites)) {
+      SPDLOG_INFO("No other submodule found for lattice reconstruction");
+      return false;
+    }
+    const auto latticeVector1 = *std::ranges::min_element(
         otherReferenceSites, [&](const auto& a, const auto& b) {
           return std::hypot(a.x, a.y) < std::hypot(b.x, b.y);
         });
     // find second lattice vector (non-collinear)
     auto nonCollinearReferenceSites =
         otherReferenceSites |
-        std::views::filter([&latticeOrigin, &latticeVector1](const auto& v) {
-          return (v.x - latticeOrigin.x) * latticeVector1.y !=
-                 (v.y - latticeOrigin.y) * latticeVector1.x;
+        std::views::filter([&latticeVector1](const auto& v) {
+          return v.x * latticeVector1.y != v.y * latticeVector1.x;
         });
-    const auto& latticeVector2 = *std::ranges::min_element(
+    if (std::ranges::begin(nonCollinearReferenceSites) ==
+        std::ranges::end(nonCollinearReferenceSites)) {
+      SPDLOG_INFO(
+          "Cannot determine second lattice vector: all sites are collinear");
+      return false;
+    }
+    const auto latticeVector2 = *std::ranges::min_element(
         nonCollinearReferenceSites, [&](const auto& a, const auto& b) {
           return std::hypot(a.x, a.y) < std::hypot(b.x, b.y);
         });
