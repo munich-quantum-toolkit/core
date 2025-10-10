@@ -100,8 +100,8 @@ class Device(GenericDevice):
     The T2 time of the device.
     """
 
-    @staticmethod
-    def try_create_from_device(device: GenericDevice) -> Device | None:
+    @classmethod
+    def try_create_from_device(cls, device: GenericDevice) -> Device | None:
         """Create NA FoMaC Device from generic FoMaC Device.
 
         Args:
