@@ -58,7 +58,7 @@ struct OneOpScheduler final : SchedulerBase {
 
 /**
  * @brief A crawl layerizer "crawls" the DAG for all gates that can be executed
- * in parallel, i.e., they act on different qubits.
+ * simultaneously, i.e., they act on different qubits.
  */
 struct CrawlScheduler final : SchedulerBase {
   explicit CrawlScheduler(const std::size_t nlookahead)
@@ -95,17 +95,20 @@ struct CrawlScheduler final : SchedulerBase {
 
           mlir::TypeSwitch<mlir::Operation*>(user)
               .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp op) {
+                /// This assumes that the first n results are the hardw. qubits.
                 head = op->getResult(layoutCopy.lookupHardwareIndex(head));
               })
               .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
+                /// This assumes that the first n results are the hardw. qubits.
                 head = op->getResult(layoutCopy.lookupHardwareIndex(head));
               })
               .Case<ResetOp>([&](ResetOp op) { head = op.getOutQubit(); })
               .Case<MeasureOp>([&](MeasureOp op) { head = op.getOutQubit(); })
               .Case<BarrierOp>([&](BarrierOp op) {
-                for (const auto [i, q] : llvm::enumerate(op.getInQubits())) {
-                  if (q == head) {
-                    head = op.getOutQubits()[i];
+                for (const auto [in, out] :
+                     llvm::zip_equal(op.getInQubits(), op.getOutQubits())) {
+                  if (in == head) {
+                    head = out;
                     break;
                   }
                 }
@@ -149,7 +152,7 @@ struct CrawlScheduler final : SchedulerBase {
     }
 
     LLVM_DEBUG({
-      llvm::dbgs() << "crawl scheduler: layers=\n";
+      llvm::dbgs() << "schedule: layers=\n";
       for (const auto [i, layer] : llvm::enumerate(layers)) {
         llvm::dbgs() << '\t' << i << "= ";
         for (const auto [prog0, prog1] : layer) {
