@@ -57,6 +57,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
+- 🐛 Fix CMake installation to make `find_package(mqt-core CONFIG)` succeed ([#1247]) ([**@burgholzer**], [**@denialhaag**])
 - 🏁 Fix stack overflows in OpenQASM layout parsing on Windows for large circuits ([#1235]) ([**@burgholzer**])
 - ✨ Add missing `StandardOperation` conversions in MLIR roundtrip pass ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 
@@ -198,6 +199,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1247]: https://github.com/munich-quantum-toolkit/core/pull/1247
 [#1246]: https://github.com/munich-quantum-toolkit/core/pull/1246
 [#1235]: https://github.com/munich-quantum-toolkit/core/pull/1235
 [#1232]: https://github.com/munich-quantum-toolkit/core/pull/1232
