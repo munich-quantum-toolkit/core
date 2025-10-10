@@ -122,6 +122,8 @@ public:
     tryCreateFromDevice(const fomac::FoMaC::Device& device)
         -> std::optional<Device> {
       Device d(device);
+      // The sequence of the following method calls does not matter.
+      // They are independent of each other.
       if (!d.initMinAtomDistanceFromDevice()) {
         return std::nullopt;
       }
