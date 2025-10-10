@@ -497,7 +497,11 @@ auto forEachRegularSites(const std::vector<Device::Lattice>& lattices,
         if (origin.x <= x && x <= origin.x + extentWidth && origin.y <= y &&
             y <= origin.y + extentHeight) {
           // Only add the site if it is within the extent of the lattice
-          f(SiteInfo{id, x, y, moduleCount, subModuleCount});
+          f(SiteInfo{.id = id,
+                     .x = x,
+                     .y = y,
+                     .moduleId = moduleCount,
+                     .subModuleId = subModuleCount});
         }
       }
     }
