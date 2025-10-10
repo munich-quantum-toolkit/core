@@ -56,9 +56,6 @@ if(NOT TARGET MQT::ProjectOptions)
   list(APPEND MQT_CORE_TARGETS project_options)
 endif()
 
-# add the nlohmann_json dependency (wrapper)
-add_subdirectory(nlohmann_json)
-
 # add the IR package
 add_subdirectory(ir)
 
