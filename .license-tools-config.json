@@ -33,6 +33,7 @@
     ".*\\.tex",
     "uv\\.lock",
     "py\\.typed",
-    ".*build.*"
+    ".*build.*",
+    "vendor/.*"
   ]
 }

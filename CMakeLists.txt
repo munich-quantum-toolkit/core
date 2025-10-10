@@ -74,6 +74,7 @@ project(
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
 include(cmake/ExternalDependencies.cmake)
+add_subdirectory(vendor)
 
 # set the include directory for the build tree
 set(MQT_CORE_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/mqt-core")

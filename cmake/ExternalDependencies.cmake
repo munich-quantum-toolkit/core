@@ -28,17 +28,6 @@ if(BUILD_MQT_CORE_BINDINGS)
   find_package(pybind11 3.0.0 CONFIG REQUIRED)
 endif()
 
-set(JSON_VERSION
-    3.12.0
-    CACHE STRING "nlohmann_json version")
-set(JSON_URL https://github.com/nlohmann/json/releases/download/v${JSON_VERSION}/json.tar.xz)
-set(JSON_SystemInclude
-    ON
-    CACHE INTERNAL "Treat the library headers like system headers")
-cmake_dependent_option(JSON_Install "Install nlohmann_json library" ON "MQT_CORE_INSTALL" OFF)
-FetchContent_Declare(nlohmann_json URL ${JSON_URL} FIND_PACKAGE_ARGS ${JSON_VERSION})
-list(APPEND FETCH_PACKAGES nlohmann_json)
-
 option(USE_SYSTEM_BOOST "Whether to try to use the system Boost installation" OFF)
 set(BOOST_MIN_VERSION
     1.80.0

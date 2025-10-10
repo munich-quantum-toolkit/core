@@ -123,6 +123,16 @@ if(MQT_CORE_INSTALL)
             COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
   # cmake-format: on
 
+  # add the `nlohmann_json` target to the development component as well
+  if(TARGET nlohmann_json::nlohmann_json)
+    install(
+      TARGETS nlohmann_json
+      EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
+      FILE_SET HEADERS
+      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
+  endif()
+
   install(
     EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
     FILE ${MQT_CORE_PROJECT_TARGETS_FILE}
