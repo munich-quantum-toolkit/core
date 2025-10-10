@@ -10,8 +10,6 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 
-#include "ir/Definitions.hpp"
-
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
@@ -21,7 +19,7 @@
 
 namespace mqt::ir::opt {
 [[nodiscard]] llvm::SmallVector<std::size_t>
-Architecture::shortestPathBetween(qc::Qubit u, qc::Qubit v) const {
+Architecture::shortestPathBetween(QubitIndex u, QubitIndex v) const {
   llvm::SmallVector<std::size_t> path;
 
   if (prev_[u][v] == UINT64_MAX) {
@@ -38,8 +36,8 @@ Architecture::shortestPathBetween(qc::Qubit u, qc::Qubit v) const {
   return path;
 }
 
-[[nodiscard]] std::size_t Architecture::distanceBetween(qc::Qubit u,
-                                                        qc::Qubit v) const {
+[[nodiscard]] std::size_t Architecture::distanceBetween(QubitIndex u,
+                                                        QubitIndex v) const {
   if (dist_[u][v] == UINT64_MAX) {
     throw std::domain_error("No path between qubits " + std::to_string(u) +
                             " and " + std::to_string(v));
@@ -73,9 +71,9 @@ void Architecture::floydWarshallWithPathReconstruction() {
   }
 }
 
-[[nodiscard]] llvm::SmallVector<qc::Qubit>
-Architecture::neighboursOf(qc::Qubit u) const {
-  llvm::SmallVector<qc::Qubit> n;
+[[nodiscard]] llvm::SmallVector<QubitIndex>
+Architecture::neighboursOf(QubitIndex u) const {
+  llvm::SmallVector<QubitIndex> n;
   for (const auto [i, j] : couplingMap_) {
     if (i == u) {
       n.push_back(j);

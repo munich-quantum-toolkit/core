@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "ir/Definitions.hpp"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Value.h>
@@ -37,7 +37,7 @@ public:
    * @param prog The program index.
    * @param hw The hardware index.
    */
-  void add(qc::Qubit prog, qc::Qubit hw) {
+  void add(QubitIndex prog, QubitIndex hw) {
     assert(prog < programToHardware_.size() &&
            "add: program index out of bounds");
     assert(hw < hardwareToProgram_.size() &&
@@ -51,7 +51,7 @@ public:
    * @param hw The hardware index.
    * @return The program index of the respective hardware index.
    */
-  [[nodiscard]] qc::Qubit getProgramIndex(const qc::Qubit hw) const {
+  [[nodiscard]] QubitIndex getProgramIndex(const QubitIndex hw) const {
     assert(hw < hardwareToProgram_.size() &&
            "getProgramIndex: hardware index out of bounds");
     return hardwareToProgram_[hw];
@@ -62,7 +62,7 @@ public:
    * @param prog The program index.
    * @return The hardware index of the respective program index.
    */
-  [[nodiscard]] qc::Qubit getHardwareIndex(const qc::Qubit prog) const {
+  [[nodiscard]] QubitIndex getHardwareIndex(const QubitIndex prog) const {
     assert(prog < programToHardware_.size() &&
            "getHardwareIndex: program index out of bounds");
     return programToHardware_[prog];
@@ -75,9 +75,9 @@ public:
    */
   template <typename... ProgIndices>
     requires(sizeof...(ProgIndices) > 0) &&
-            ((std::is_convertible_v<ProgIndices, qc::Qubit>) && ...)
+            ((std::is_convertible_v<ProgIndices, QubitIndex>) && ...)
   [[nodiscard]] auto getHardwareIndices(ProgIndices... progs) const {
-    return std::tuple{getHardwareIndex(static_cast<qc::Qubit>(progs))...};
+    return std::tuple{getHardwareIndex(static_cast<QubitIndex>(progs))...};
   }
 
   /**
@@ -87,17 +87,17 @@ public:
    */
   template <typename... HwIndices>
     requires(sizeof...(HwIndices) > 0) &&
-            ((std::is_convertible_v<HwIndices, qc::Qubit>) && ...)
+            ((std::is_convertible_v<HwIndices, QubitIndex>) && ...)
   [[nodiscard]] auto getProgramIndices(HwIndices... hws) const {
-    return std::tuple{getProgramIndex(static_cast<qc::Qubit>(hws))...};
+    return std::tuple{getProgramIndex(static_cast<QubitIndex>(hws))...};
   }
 
   /**
    * @brief Swap the mapping to hardware indices of two program indices.
    */
-  void swap(const qc::Qubit prog0, const qc::Qubit prog1) {
-    const qc::Qubit hw0 = programToHardware_[prog0];
-    const qc::Qubit hw1 = programToHardware_[prog1];
+  void swap(const QubitIndex prog0, const QubitIndex prog1) {
+    const QubitIndex hw0 = programToHardware_[prog0];
+    const QubitIndex hw1 = programToHardware_[prog1];
 
     std::swap(programToHardware_[prog0], programToHardware_[prog1]);
     std::swap(hardwareToProgram_[hw0], hardwareToProgram_[hw1]);
@@ -107,12 +107,12 @@ protected:
   /**
    * @brief Maps a program qubit index to its hardware index.
    */
-  mlir::SmallVector<qc::Qubit> programToHardware_;
+  mlir::SmallVector<QubitIndex> programToHardware_;
 
   /**
    * @brief Maps a hardware qubit index to its program index.
    */
-  mlir::SmallVector<qc::Qubit> hardwareToProgram_;
+  mlir::SmallVector<QubitIndex> hardwareToProgram_;
 };
 
 /**
@@ -133,7 +133,7 @@ public:
    * @param hw The hardware index.
    * @param q The SSA value associated with the indices.
    */
-  void add(qc::Qubit prog, qc::Qubit hw, mlir::Value q) {
+  void add(QubitIndex prog, QubitIndex hw, mlir::Value q) {
     ThinLayout::add(prog, hw);
     qubits_[hw] = q;
     valueToMapping_.try_emplace(q, prog, hw);
@@ -144,7 +144,7 @@ public:
    * @param q The SSA Value representing the qubit.
    * @return The hardware index where this qubit currently resides.
    */
-  [[nodiscard]] qc::Qubit lookupHardwareIndex(const mlir::Value q) const {
+  [[nodiscard]] QubitIndex lookupHardwareIndex(const mlir::Value q) const {
     const auto it = valueToMapping_.find(q);
     assert(it != valueToMapping_.end() && "lookupHardwareIndex: unknown value");
     return it->second.hw;
@@ -156,7 +156,7 @@ public:
    * @return The SSA value currently representing the qubit at the hardware
    * location.
    */
-  [[nodiscard]] mlir::Value lookupHardwareValue(const qc::Qubit hw) const {
+  [[nodiscard]] mlir::Value lookupHardwareValue(const QubitIndex hw) const {
     assert(hw < qubits_.size() &&
            "lookupHardwareValue: hardware index out of bounds");
     return qubits_[hw];
@@ -167,7 +167,7 @@ public:
    * @param q The SSA Value representing the qubit.
    * @return The program index where this qubit currently resides.
    */
-  [[nodiscard]] qc::Qubit lookupProgramIndex(const mlir::Value q) const {
+  [[nodiscard]] QubitIndex lookupProgramIndex(const mlir::Value q) const {
     const auto it = valueToMapping_.find(q);
     assert(it != valueToMapping_.end() && "lookupProgramIndex: unknown value");
     return it->second.prog;
@@ -179,7 +179,7 @@ public:
    * @return The SSA value currently representing the qubit at the program
    * location.
    */
-  [[nodiscard]] mlir::Value lookupProgramValue(const qc::Qubit prog) const {
+  [[nodiscard]] mlir::Value lookupProgramValue(const QubitIndex prog) const {
     assert(prog < this->programToHardware_.size() &&
            "lookupProgramValue: program index out of bounds");
     return qubits_[this->programToHardware_[prog]];
@@ -222,8 +222,8 @@ public:
     assert(it0 != valueToMapping_.end() && it1 != valueToMapping_.end() &&
            "swap: unknown values");
 
-    const qc::Qubit prog0 = it0->second.prog;
-    const qc::Qubit prog1 = it1->second.prog;
+    const QubitIndex prog0 = it0->second.prog;
+    const QubitIndex prog1 = it1->second.prog;
 
     std::swap(it0->second.prog, it1->second.prog);
 
@@ -233,7 +233,7 @@ public:
   /**
    * @brief Return the current layout.
    */
-  mlir::ArrayRef<qc::Qubit> getCurrentLayout() const {
+  mlir::ArrayRef<QubitIndex> getCurrentLayout() const {
     return this->programToHardware_;
   }
 
@@ -246,8 +246,8 @@ public:
 
 private:
   struct QubitInfo {
-    qc::Qubit prog;
-    qc::Qubit hw;
+    QubitIndex prog;
+    QubitIndex hw;
   };
 
   /**

@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "ir/Definitions.hpp"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <cstddef>
@@ -32,9 +31,14 @@ constexpr std::size_t FOR_PARENT_DEPTH = 1UL;
 constexpr std::size_t IF_PARENT_DEPTH = 2UL;
 
 /**
+ * @brief Type alias for qubit indices.
+ */
+using QubitIndex = uint32_t;
+
+/**
  * @brief Represents a pair of qubit indices.
  */
-using QubitIndexPair = std::pair<qc::Qubit, qc::Qubit>;
+using QubitIndexPair = std::pair<QubitIndex, QubitIndex>;
 /**
  * @brief Return true if the function contains "entry_point" in the passthrough
  * attribute.
