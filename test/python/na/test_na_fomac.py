@@ -36,7 +36,7 @@ def device_tuple() -> tuple[Device, Mapping[str, Any]]:
         with pathlib.Path("json/na/device.json").open(encoding="utf-8") as f:
             device_dict = load(f)
     except FileNotFoundError:
-        with files("mqt.core").joinpath("json/na/device.json").open(encoding="utf-8") as f:
+        with files("mqt.core").joinpath("na/device.json").open(encoding="utf-8") as f:
             device_dict = load(f)
     return next(iter(devices())), device_dict
 
