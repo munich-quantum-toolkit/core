@@ -50,7 +50,7 @@ auto calculateExtentFromSites(
   auto maxY = std::numeric_limits<int64_t>::min();
   for (const auto& site : sites) {
     const auto x = *site.getXCoordinate();
-    const auto y = *site.getXCoordinate();
+    const auto y = *site.getYCoordinate();
     minX = std::min(minX, x);
     maxX = std::max(maxX, x);
     minY = std::min(minY, y);
