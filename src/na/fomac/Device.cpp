@@ -251,12 +251,9 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
     }
   }
   std::unordered_set<Vector, DeviceVectorHash> constructedSites;
-  forEachRegularSites(
-      traps, [&constructedSites](const uint64_t /* unused */, const int64_t x,
-                                 const int64_t y, const uint64_t /* unused */,
-                                 const uint64_t /* unused */) {
-        constructedSites.emplace(Vector{.x = x, .y = y});
-      });
+  forEachRegularSites(traps, [&constructedSites](const SiteInfo& site) {
+    constructedSites.emplace(Vector{.x = site.x, .y = site.y});
+  });
   return retrievedSites == constructedSites;
 }
 auto FoMaC::Device::initOperationsFromDevice() -> bool {

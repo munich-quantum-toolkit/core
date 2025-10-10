@@ -412,23 +412,36 @@ auto writeHeader(const Device& device, std::ostream& os) -> void;
 auto writeHeader(const Device& device, const std::string& path) -> void;
 
 /**
+ * @brief Information about a regular site in a lattice.
+ * @details This struct encapsulates all relevant information about a site
+ * for use in the forEachRegularSites callback.
+ */
+struct SiteInfo {
+  /// @brief The unique identifier of the site.
+  uint64_t id;
+  /// @brief The x-coordinate of the site.
+  int64_t x;
+  /// @brief The y-coordinate of the site.
+  int64_t y;
+  /// @brief The identifier of the lattice (module) the site belongs to.
+  uint64_t moduleId;
+  /// @brief The identifier of the sublattice (submodule) the site belongs to.
+  uint64_t subModuleId;
+};
+
+/**
  * @brief Iterates over all regular sites created by the given lattices and
  * calls the given function for each site.
  * @param lattices is the list of lattices to iterate over.
- * @param f is the function to call for each regular site. The function takes
- * the following parameters:
- * - `uint64_t id`: The unique identifier of the site.
- * - `int64_t x`: The x-coordinate of the site.
- * - `int64_t y`: The y-coordinate of the site.
- * - `uint64_t moduleId`: The identifier of the lattice (module) the site
- * belongs to.
- * - `uint64_t subModuleId`: The identifier of the sublattice (submodule) the
- * site belongs to.
+ * @param f is the function to call for each regular site, receiving a SiteInfo
+ * struct containing all site information.
  * @param startId is the starting identifier for the sites. Default is 0.
+ * @throws std::runtime_error if lattice vectors are degenerate (i.e., the
+ * determinant of the lattice vector matrix is near zero, causing the system
+ * of equations to have no unique solution).
  */
 auto forEachRegularSites(const std::vector<Device::Lattice>& lattices,
-                         const std::function<void(uint64_t, int64_t, int64_t,
-                                                  uint64_t, uint64_t)>& f,
+                         const std::function<void(const SiteInfo&)>& f,
                          size_t startId = 0) -> void;
 
 } // namespace na

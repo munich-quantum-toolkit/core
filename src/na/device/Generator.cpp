@@ -166,21 +166,20 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
   std::vector<std::tuple<size_t, int64_t, int64_t>> sites;
   forEachRegularSites(
       device.traps,
-      [&sites, &os, &device](const uint64_t id, const int64_t x,
-                             const int64_t y, const uint64_t moduleId,
-                             const uint64_t subModuleId) {
-        sites.emplace_back(id, x, y);
+      [&sites, &os, &device](const SiteInfo& site) {
+        sites.emplace_back(site.id, site.x, site.y);
         os << ";\\\n  "
               "var.emplace_back(MQT_NA_QDMI_Site_impl_d::makeUniqueSite("
-           << id << "U, " << moduleId << "U, " << subModuleId << "U, " << x
-           << ", " << y << "))";
+           << site.id << "U, " << site.moduleId << "U, " << site.subModuleId
+           << "U, " << site.x << ", " << site.y << "))";
         for (const auto& operation : device.localSingleQubitOperations) {
-          if (x >= operation.region.origin.x &&
-              x <= operation.region.origin.x +
-                       static_cast<int64_t>(operation.region.size.width) &&
-              y >= operation.region.origin.y &&
-              y <= operation.region.origin.y +
-                       static_cast<int64_t>(operation.region.size.height)) {
+          if (site.x >= operation.region.origin.x &&
+              site.x <= operation.region.origin.x +
+                            static_cast<int64_t>(operation.region.size.width) &&
+              site.y >= operation.region.origin.y &&
+              site.y <=
+                  operation.region.origin.y +
+                      static_cast<int64_t>(operation.region.size.height)) {
             os << ";\\\n  localOp" << operation.name
                << "Sites.emplace_back(var.back().get())";
           }
@@ -188,12 +187,13 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
         // this generator (same as the device implementation) only supports
         // two-qubit local operations
         for (const auto& operation : device.localMultiQubitOperations) {
-          if (operation.region.origin.x <= x &&
-              x <= operation.region.origin.x +
-                       static_cast<int64_t>(operation.region.size.width) &&
-              operation.region.origin.y <= y &&
-              y <= operation.region.origin.y +
-                       static_cast<int64_t>(operation.region.size.height)) {
+          if (operation.region.origin.x <= site.x &&
+              site.x <= operation.region.origin.x +
+                            static_cast<int64_t>(operation.region.size.width) &&
+              operation.region.origin.y <= site.y &&
+              site.y <=
+                  operation.region.origin.y +
+                      static_cast<int64_t>(operation.region.size.height)) {
             for (const auto& [i2, x2, y2] :
                  sites | std::views::take(sites.size() - 1)) {
               if (operation.region.origin.x <= x2 &&
@@ -203,7 +203,7 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
                   y2 <=
                       operation.region.origin.y +
                           static_cast<int64_t>(operation.region.size.height) &&
-                  std::hypot(x2 - x, y2 - y) <=
+                  std::hypot(x2 - site.x, y2 - site.y) <=
                       static_cast<double>(operation.interactionRadius)) {
                 os << ";\\\n  localOp" << operation.name
                    << "Sites.emplace_back(var.at(" << i2
@@ -439,8 +439,7 @@ auto writeHeader(const Device& device, const std::string& path) -> void {
   SPDLOG_INFO("Header file written to {}", path);
 }
 auto forEachRegularSites(const std::vector<Device::Lattice>& lattices,
-                         const std::function<void(uint64_t, int64_t, int64_t,
-                                                  uint64_t, uint64_t)>& f,
+                         const std::function<void(const SiteInfo&)>& f,
                          const size_t startId) -> void {
   size_t count = startId;
   size_t moduleCount = 0;
@@ -498,7 +497,7 @@ auto forEachRegularSites(const std::vector<Device::Lattice>& lattices,
         if (origin.x <= x && x <= origin.x + extentWidth && origin.y <= y &&
             y <= origin.y + extentHeight) {
           // Only add the site if it is within the extent of the lattice
-          f(id, x, y, moduleCount, subModuleCount);
+          f(SiteInfo{id, x, y, moduleCount, subModuleCount});
         }
       }
     }
