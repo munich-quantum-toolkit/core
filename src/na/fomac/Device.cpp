@@ -523,6 +523,12 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
       }
     }
   }
+
+  // The suggested use of `std::ranges::all_of` does not work here because of
+  // the `emplace_back` in the loop body. Splitting it into two loops would be
+  // possible, but inefficient.
+  //
+  // NOLINTNEXTLINE(readability-use-anyofallof)
   for (const auto& [unit, config] : shuttlingUnitsPerId | std::views::values) {
     if (const auto [load, move, store] = config; !(load && move && store)) {
       SPDLOG_INFO("Shuttling unit not complete");
