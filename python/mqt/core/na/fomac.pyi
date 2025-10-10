@@ -101,8 +101,15 @@ class Device(GenericDevice):
     """
 
     @staticmethod
-    def try_create_from_device(device: GenericDevice) -> Device:
-        """Create NA FoMaC Device from generic FoMaC Device."""
+    def try_create_from_device(device: GenericDevice) -> Device | None:
+        """Create NA FoMaC Device from generic FoMaC Device.
+
+        Args:
+            device: The generic FoMaC Device to convert.
+
+        Returns:
+            The converted NA FoMaC Device or None if the conversion is not possible.
+        """
     def __eq__(self, other: object) -> bool: ...
     def __ne__(self, other: object) -> bool: ...
 
