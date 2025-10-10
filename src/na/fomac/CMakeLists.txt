@@ -23,7 +23,7 @@ if(NOT TARGET ${TARGET_NAME})
                                        FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/na/fomac/Device.hpp)
 
   # Link nlohmann_json, spdlog
-  target_link_libraries(${TARGET_NAME} PUBLIC MQT::CoreFoMaC nlohmann_json::nlohmann_json)
+  target_link_libraries(${TARGET_NAME} PUBLIC MQT::CoreFoMaC MQT::nlohmann_json)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS

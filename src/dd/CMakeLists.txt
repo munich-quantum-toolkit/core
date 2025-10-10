@@ -23,7 +23,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
                                       FILES ${DD_HEADERS})
 
   # add link libraries
-  target_link_libraries(${MQT_CORE_TARGET_NAME}-dd PUBLIC MQT::CoreIR nlohmann_json::nlohmann_json)
+  target_link_libraries(${MQT_CORE_TARGET_NAME}-dd PUBLIC MQT::CoreIR MQT::nlohmann_json)
 
   # generate export header
   include(GenerateExportHeader)

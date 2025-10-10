@@ -56,6 +56,9 @@ if(NOT TARGET MQT::ProjectOptions)
   list(APPEND MQT_CORE_TARGETS project_options)
 endif()
 
+# add the nlohmann_json dependency (wrapper)
+add_subdirectory(nlohmann_json)
+
 # add the IR package
 add_subdirectory(ir)
 
@@ -122,16 +125,6 @@ if(MQT_CORE_INSTALL)
             DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mqt-core
             COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
   # cmake-format: on
-
-  # add the `nlohmann_json` target to the development component as well
-  if(TARGET nlohmann_json::nlohmann_json)
-    install(
-      TARGETS nlohmann_json
-      EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
-      FILE_SET HEADERS
-      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann
-      COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-  endif()
 
   install(
     EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
