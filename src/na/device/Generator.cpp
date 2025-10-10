@@ -337,13 +337,15 @@ template <typename T>
 /**
  * @brief Increments the indices in lexicographic order.
  * @details This function increments the first index that is less than its
- * limit, resets all previous indices to zero.
+ * limit, resets all previous indices to their minimum values.
  * @param indices The vector of indices to increment.
+ * @param minima The minimum values for each index (used when resetting).
  * @param limits The limits for each index.
  * @returns true if the increment was successful, false if all indices have
  * reached their limits.
  */
 [[nodiscard]] auto increment(std::vector<int64_t>& indices,
+                             const std::vector<int64_t>& minima,
                              const std::vector<int64_t>& limits) -> bool {
   size_t i = 0;
   for (; i < indices.size() && indices[i] == limits[i]; ++i) {
@@ -353,7 +355,7 @@ template <typename T>
     return false;
   }
   for (size_t j = 0; j < i; ++j) {
-    indices[j] = 0; // Reset all previous indices
+    indices[j] = minima[j]; // Reset all previous indices to their minima
   }
   ++indices[i]; // Increment the next index
   return true;
@@ -479,10 +481,11 @@ auto forEachRegularSites(const std::vector<Device::Lattice>& lattices,
     const auto maxJ = static_cast<int64_t>(
         std::floor(std::max({bottomLeftJ, bottomRightJ, topLeftJ, topRightJ})));
 
+    const std::vector minima{minI, minJ};
     const std::vector limits{maxI, maxJ};
     std::vector indices{minI, minJ};
     for (bool loop = true; loop;
-         loop = increment(indices, limits), ++subModuleCount) {
+         loop = increment(indices, minima, limits), ++subModuleCount) {
       // For every sublattice offset, add a site for repetition indices
       for (const auto& [xOffset, yOffset] : sublatticeOffsets) {
         const auto id = count++;
