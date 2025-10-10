@@ -148,7 +148,7 @@ std::unique_ptr<Architecture> getArchitecture(const ArchitectureName& name) {
         {123, 122}, {123, 124}, {124, 123}, {124, 125}, {125, 124}, {125, 126},
         {126, 112}, {126, 125}};
 
-    return std::make_unique<Architecture>("MQT-Test", 127, couplingMap);
+    return std::make_unique<Architecture>("IBM-Falcon", 127, couplingMap);
   }
   }
 
