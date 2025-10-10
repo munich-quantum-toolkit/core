@@ -10,6 +10,8 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
