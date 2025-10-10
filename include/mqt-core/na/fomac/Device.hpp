@@ -15,10 +15,10 @@
 
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <vector>
 
 namespace na {
-
 /**
  * @brief Class representing the FoMaC library with neutral atom extensions.
  * @see fomac::FoMaC
@@ -32,13 +32,6 @@ public:
    * converted to `nlohmann::json` objects.
    */
   class Device : public fomac::FoMaC::Device, na::Device {
-    /**
-     * @brief Calculate the extent of a set of sites.
-     * @param sites The sites to calculate the extent for.
-     * @returns A `Region` object representing the extent of the sites.
-     */
-    static auto calculateExtentFromSites(
-        const std::vector<fomac::FoMaC::Device::Site>& sites) -> Region;
 
     /**
      * @brief Initializes the name from the underlying QDMI device.
@@ -49,7 +42,7 @@ public:
      * @brief Initializes the minimum atom distance from the underlying QDMI
      * device.
      */
-    auto initMinAtomDistanceFromDevice() -> void;
+    auto initMinAtomDistanceFromDevice() -> bool;
 
     /**
      * @brief Initializes the number of qubits from the underlying QDMI device.
@@ -59,62 +52,42 @@ public:
     /**
      * @brief Initializes the length unit from the underlying QDMI device.
      */
-    auto initLengthUnitFromDevice() -> void;
+    auto initLengthUnitFromDevice() -> bool;
 
     /**
      * @brief Initializes the duration unit from the underlying QDMI device.
      */
-    auto initDurationUnitFromDevice() -> void;
+    auto initDurationUnitFromDevice() -> bool;
 
     /**
      * @brief Initializes the decoherence times from the underlying QDMI device.
      */
-    auto initDecoherenceTimesFromDevice() -> void;
+    auto initDecoherenceTimesFromDevice() -> bool;
 
     /**
      * @brief Initializes the trap lattices from the underlying QDMI device.
      * @details It reconstructs the entire lattice structure from the
      * information retrieved from the QDMI device, including lattice vectors,
      * sublattice offsets, and extent.
+     * @see na::Device::Lattice
      */
-    auto initTrapsfromDevice() -> void;
+    auto initTrapsfromDevice() -> bool;
 
     /**
-     * @brief Initializes the global single-qubit operations from the
-     * underlying QDMI device.
+     * @brief Initializes the all operations from the underlying QDMI device.
      */
-    auto initGlobalSingleQubitOperationsFromDevice() -> void;
+    auto initOperationsFromDevice() -> bool;
 
-    /**
-     * @brief Initializes the global multi-qubit operations from the
-     * underlying QDMI device.
-     */
-    auto initGlobalMultiQubitOperationsFromDevice() -> void;
-
-    /**
-     * @brief Initializes the local single-qubit operations from the
-     * underlying QDMI device.
-     */
-    auto initLocalSingleQubitOperationsFromDevice() -> void;
-
-    /**
-     * @brief Initializes the local multi-qubit operations from the
-     * underlying QDMI device.
-     */
-    auto initLocalMultiQubitOperationsFromDevice() -> void;
-
-    /**
-     * @brief Initializes the shuttling units from the underlying QDMI device.
-     */
-    auto initShuttlingUnitsFromDevice() -> void;
-
-  public:
     /**
      * @brief Constructs a Device object from a fomac::FoMaC::Device object.
      * @param device The fomac::FoMaC::Device object to wrap.
+     * @note The constructor does not initialize the additional fields of this
+     * class. For their initialization, the corresponding `init*FromDevice`
+     * methods must be called, see @ref tryCreateFromDevice.
      */
     explicit Device(const fomac::FoMaC::Device& device);
 
+  public:
     /// @returns the length unit of the device.
     [[nodiscard]] auto getLengthUnit() const -> const Unit& {
       return lengthUnit;
@@ -133,6 +106,45 @@ public:
     /// @returns the list of trap lattices of the device.
     [[nodiscard]] auto getTraps() const -> const std::vector<Lattice>& {
       return traps;
+    }
+
+    /**
+     * @brief Try to create a Device object from a fomac::FoMaC::Device object.
+     * @details This method attempts to create a Device object by initializing
+     * all necessary fields from the provided fomac::FoMaC::Device object. If
+     * any required information is missing or invalid, the method returns
+     * `std::nullopt`.
+     * @param device is the fomac::FoMaC::Device object to wrap.
+     * @return An optional containing the instantiated device if compatible,
+     * std::nullopt otherwise.
+     */
+    [[nodiscard]] static auto
+    tryCreateFromDevice(const fomac::FoMaC::Device& device)
+        -> std::optional<Device> {
+      Device d(device);
+      // The sequence of the following method calls does not matter.
+      // They are independent of each other.
+      if (!d.initMinAtomDistanceFromDevice()) {
+        return std::nullopt;
+      }
+      if (!d.initLengthUnitFromDevice()) {
+        return std::nullopt;
+      }
+      if (!d.initDurationUnitFromDevice()) {
+        return std::nullopt;
+      }
+      if (!d.initDecoherenceTimesFromDevice()) {
+        return std::nullopt;
+      }
+      if (!d.initTrapsfromDevice()) {
+        return std::nullopt;
+      }
+      if (!d.initOperationsFromDevice()) {
+        return std::nullopt;
+      }
+      d.initNameFromDevice();
+      d.initQubitsNumFromDevice();
+      return d;
     }
 
     // The following is the result of

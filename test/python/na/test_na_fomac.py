@@ -16,16 +16,12 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from mqt.core.fomac import devices as generic_devices
-from mqt.core.na.fomac import Device, devices
+from mqt.core.na.fomac import devices
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-
-def test_constructor() -> None:
-    """Test the constructor of the Device class."""
-    assert next(iter(devices())) == Device(next(iter(generic_devices())))
+    from mqt.core.na.fomac import Device
 
 
 @pytest.fixture
