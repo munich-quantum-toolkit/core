@@ -143,7 +143,7 @@ public:
       }
       d.initNameFromDevice();
       d.initQubitsNumFromDevice();
-      return std::make_optional(d);
+      return d;
     }
 
     // The following is the result of

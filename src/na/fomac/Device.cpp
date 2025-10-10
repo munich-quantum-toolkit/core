@@ -535,12 +535,11 @@ FoMaC::Device::Device(const fomac::FoMaC::Device& device)
     : fomac::FoMaC::Device(device) {}
 auto FoMaC::getDevices() -> std::vector<Device> {
   std::vector<Device> devices;
-  std::ranges::copy(
-      fomac::FoMaC::getDevices() | std::views::transform([](const auto& d) {
-        return Device::tryCreateFromDevice(d);
-      }) | std::views::filter([](const auto& r) { return r.has_value(); }) |
-          std::views::transform([](const auto& r) { return r.value(); }),
-      std::back_inserter(devices));
+  for (const auto& d : fomac::FoMaC::getDevices()) {
+    if (auto r = Device::tryCreateFromDevice(d); r.has_value()) {
+      devices.emplace_back(r.value());
+    }
+  }
   return devices;
 }
 } // namespace na
