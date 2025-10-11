@@ -270,11 +270,20 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         num_qubits = self._capabilities.num_qubits
 
         if op_info.sites is not None:
-            # Operation restricted to specific sites
+            # Check if sites is a tuple of tuples (local multi-qubit with valid combinations)
+            # or a flat tuple (single-qubit or global operations)
+            if op_info.sites and isinstance(op_info.sites[0], tuple):
+                # Local multi-qubit operation: sites already contains valid combinations
+                # Each inner tuple represents a valid combination of qubit indices
+                return cast("list[tuple[int, ...]]", list(op_info.sites[:MAX_COUPLING_PAIRS]))
+
+            # Single-qubit or global operation: sites is a flat tuple of individual indices
             if qubits_num == 1:
                 return [(site,) for site in op_info.sites]
+
+            # Fallback for multi-qubit operations without proper tuple structure
+            # (shouldn't happen, but keep for safety)
             if qubits_num == 2:
-                # Respect coupling map if available; otherwise generate all pairs from sites
                 site_indices = list(op_info.sites)
                 pairs: list[tuple[int, int]] = [
                     (site_indices[i], site_indices[j])

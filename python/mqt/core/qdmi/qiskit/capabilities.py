@@ -29,7 +29,7 @@ import json
 import threading
 from dataclasses import asdict, dataclass, field
 from hashlib import sha256
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from mqt.core import fomac
@@ -74,8 +74,12 @@ class DeviceSiteInfo:
 class DeviceOperationInfo:
     """Normalized per-operation metadata.
 
-    The ``sites`` field contains a tuple of site indices if the operation
-    enumerates specific allowed sites; ``None`` otherwise.
+    The ``sites`` field interpretation depends on the operation type:
+    - For local multi-qubit operations: tuple of tuples, where each inner tuple
+        represents a valid combination of site indices for the operation.
+    - For single-qubit operations: tuple of individual site indices.
+    - For global (zoned) operations: tuple of zone site indices.
+    - ``None`` if the operation applies to all qubits.
     """
 
     name: str
@@ -88,7 +92,7 @@ class DeviceOperationInfo:
     idling_fidelity: float | None
     is_zoned: bool | None
     mean_shuttling_speed: int | None
-    sites: tuple[int, ...] | None
+    sites: tuple[int, ...] | tuple[tuple[int, ...], ...] | None
 
 
 @dataclass(slots=True)
@@ -204,25 +208,94 @@ def _safe_site_info(s: fomac.Device.Site) -> DeviceSiteInfo | None:
 def _safe_operation_info(op: fomac.Device.Operation) -> DeviceOperationInfo | None:
     """Safely build a DeviceOperationInfo for an operation or return None.
 
+    Interprets the sites list according to QDMI specification:
+    - For local multi-qubit operations: returns tuples of site combinations
+    - For single-qubit and global operations: returns individual sites
+
     Returns:
         A populated DeviceOperationInfo instance, or ``None`` if extraction failed.
     """
     name = op.name()
     site_list = op.sites()
-    site_indices = tuple(sorted(s.index() for s in site_list)) if site_list is not None else None
+
+    # Determine how to interpret the sites based on operation type
+    qubits_num = getattr(op, "qubits_num", lambda: None)()
+    is_zoned = getattr(op, "is_zoned", lambda: None)()
+
+    site_indices: tuple[int, ...] | tuple[tuple[int, ...], ...] | None = None
+
+    if site_list is not None:
+        # Extract raw site indices
+        raw_indices = [s.index() for s in site_list]
+
+        # For local multi-qubit operations, the flat list represents consecutive pairs
+        # due to reinterpret_cast from vector<pair<Site, Site>> to vector<Site>
+        if not is_zoned and qubits_num is not None and qubits_num > 1:
+            # Group consecutive elements into tuples of size qubits_num
+            if len(raw_indices) % qubits_num == 0:
+                site_tuples = [tuple(raw_indices[i : i + qubits_num]) for i in range(0, len(raw_indices), qubits_num)]
+                site_indices = tuple(site_tuples)
+            else:
+                # Fallback: treat as flat list if not evenly divisible
+                site_indices = tuple(sorted(set(raw_indices)))
+        else:
+            # For single-qubit and global operations, use flat list
+            site_indices = tuple(sorted(set(raw_indices)))
+
     return DeviceOperationInfo(
         name=name,
-        qubits_num=getattr(op, "qubits_num", lambda: None)(),
+        qubits_num=qubits_num,
         parameters_num=getattr(op, "parameters_num", lambda: 0)(),
         duration=getattr(op, "duration", lambda: None)(),
         fidelity=getattr(op, "fidelity", lambda: None)(),
         interaction_radius=getattr(op, "interaction_radius", lambda: None)(),
         blocking_radius=getattr(op, "blocking_radius", lambda: None)(),
         idling_fidelity=getattr(op, "idling_fidelity", lambda: None)(),
-        is_zoned=getattr(op, "is_zoned", lambda: None)(),
+        is_zoned=is_zoned,
         mean_shuttling_speed=getattr(op, "mean_shuttling_speed", lambda: None)(),
         sites=site_indices,
     )
+
+
+def _remap_operation_sites(
+    op_info: DeviceOperationInfo,
+    site_index_to_qubit_index: dict[int, int],
+) -> DeviceOperationInfo:
+    """Remap site indices in an operation to logical qubit indices.
+
+    Args:
+        op_info: Operation info with raw site indices.
+        site_index_to_qubit_index: Mapping from raw site indices to logical qubit indices.
+
+    Returns:
+        Operation info with remapped site indices.
+    """
+    if op_info.sites is None:
+        return op_info
+
+    # Check if sites is a tuple of tuples (local multi-qubit) or flat tuple
+    if op_info.sites and isinstance(op_info.sites[0], tuple):
+        # Local multi-qubit operation: remap each tuple
+        # Cast to help mypy understand we're in the tuple[tuple[int, ...], ...] branch
+        sites_as_tuples = cast("tuple[tuple[int, ...], ...]", op_info.sites)
+        remapped_tuples = []
+        for site_tuple in sites_as_tuples:
+            remapped_tuple = tuple(
+                site_index_to_qubit_index[site_idx] for site_idx in site_tuple if site_idx in site_index_to_qubit_index
+            )
+            if len(remapped_tuple) == len(site_tuple):  # Only include if all sites mapped
+                remapped_tuples.append(remapped_tuple)
+        op_info.sites = tuple(remapped_tuples) if remapped_tuples else None
+    else:
+        # Single-qubit or global operation: remap flat list
+        # Cast to help mypy understand we're in the tuple[int, ...] branch
+        sites_as_ints = cast("tuple[int, ...]", op_info.sites)
+        remapped_sites = [
+            site_index_to_qubit_index[site_idx] for site_idx in sites_as_ints if site_idx in site_index_to_qubit_index
+        ]
+        op_info.sites = tuple(sorted(remapped_sites)) if remapped_sites else None
+
+    return op_info
 
 
 def extract_capabilities(device: fomac.Device) -> DeviceCapabilities:
@@ -253,13 +326,7 @@ def extract_capabilities(device: fomac.Device) -> DeviceCapabilities:
         op_info = _safe_operation_info(op)
         if op_info is not None:
             # Remap site indices in operations to logical qubit indices
-            if op_info.sites is not None:
-                remapped_sites = [
-                    site_index_to_qubit_index[site_idx]
-                    for site_idx in op_info.sites
-                    if site_idx in site_index_to_qubit_index
-                ]
-                op_info.sites = tuple(sorted(remapped_sites)) if remapped_sites else None
+            op_info = _remap_operation_sites(op_info, site_index_to_qubit_index)
             op_infos[op_info.name] = op_info
 
     cm = device.coupling_map()
