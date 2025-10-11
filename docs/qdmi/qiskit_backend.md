@@ -42,8 +42,8 @@ $ uv pip install "mqt-core[qiskit]"
 from mqt.core.qdmi.qiskit import QiskitBackend
 from qiskit import QuantumCircuit
 
-# Create a backend (uses the first available FoMaC device, i.e., MQT NA Default QDMI Device)
-backend = QiskitBackend()
+# Create a backend (uses the FoMaC device at index 0, i.e., MQT NA Default QDMI Device)
+backend = QiskitBackend(device_index=0)
 
 # Create a simple circuit
 qc = QuantumCircuit(2, 2)
@@ -163,12 +163,12 @@ class VendorBackend(QiskitBackend):
 
 ## Current Implementation
 
-The base {py:class}`~mqt.core.qdmi.qiskit.QiskitBackend` is a **neutral framework** designed for extension:
+The base {py:class}`~mqt.core.qdmi.qiskit.QiskitBackend` is a **generic hardware-agnostic framework** designed for extension:
 
 - Returns deterministic zero-state counts for demonstration
 - Provides complete capability introspection and circuit validation
 - Supports 40+ common quantum gates (see full API documentation)
-- Vendors override `_submit_to_device()` for actual device execution
+- Offers overriding `_submit_to_device()` in a vendor-specific way
 
 :::{note}
 This design keeps MQT Core vendor-neutral while providing a complete integration framework.
