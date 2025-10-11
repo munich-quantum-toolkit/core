@@ -219,8 +219,8 @@ def _safe_operation_info(op: fomac.Device.Operation) -> DeviceOperationInfo | No
     site_list = op.sites()
 
     # Determine how to interpret the sites based on operation type
-    qubits_num = getattr(op, "qubits_num", lambda: None)()
-    is_zoned = getattr(op, "is_zoned", lambda: None)()
+    qubits_num = op.qubits_num()
+    is_zoned = op.is_zoned()
 
     site_indices: tuple[int, ...] | tuple[tuple[int, ...], ...] | None = None
 
@@ -245,14 +245,14 @@ def _safe_operation_info(op: fomac.Device.Operation) -> DeviceOperationInfo | No
     return DeviceOperationInfo(
         name=name,
         qubits_num=qubits_num,
-        parameters_num=getattr(op, "parameters_num", lambda: 0)(),
-        duration=getattr(op, "duration", lambda: None)(),
-        fidelity=getattr(op, "fidelity", lambda: None)(),
-        interaction_radius=getattr(op, "interaction_radius", lambda: None)(),
-        blocking_radius=getattr(op, "blocking_radius", lambda: None)(),
-        idling_fidelity=getattr(op, "idling_fidelity", lambda: None)(),
+        parameters_num=op.parameters_num(),
+        duration=op.duration(),
+        fidelity=op.fidelity(),
+        interaction_radius=op.interaction_radius(),
+        blocking_radius=op.blocking_radius(),
+        idling_fidelity=op.idling_fidelity(),
         is_zoned=is_zoned,
-        mean_shuttling_speed=getattr(op, "mean_shuttling_speed", lambda: None)(),
+        mean_shuttling_speed=op.mean_shuttling_speed(),
         sites=site_indices,
     )
 
@@ -351,7 +351,7 @@ def extract_capabilities(device: fomac.Device) -> DeviceCapabilities:
         length_unit=device.length_unit(),
         length_scale_factor=device.length_scale_factor(),
         min_atom_distance=device.min_atom_distance(),
-        status=getattr(status, "name", None) or str(status),
+        status=status.name,
         sites=site_infos,
         operations=op_infos,
         coupling_map=coupling_indices_list,
