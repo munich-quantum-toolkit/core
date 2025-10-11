@@ -11,22 +11,13 @@
 from __future__ import annotations
 
 import importlib.util
-from typing import TYPE_CHECKING
 
 import pytest
 
 from mqt.core.qdmi.qiskit import (
     TranslationError,
     UnsupportedOperationError,
-    clear_operation_translators,
-    register_operation_translator,
 )
-
-if TYPE_CHECKING:
-    from mqt.core.qdmi.qiskit import (
-        InstructionContext,
-        ProgramInstruction,
-    )
 
 _qiskit_present = importlib.util.find_spec("qiskit") is not None
 
@@ -37,18 +28,6 @@ if _qiskit_present:
     from qiskit.circuit import Parameter
 
     from mqt.core.qdmi.qiskit import QiskitBackend
-
-
-def setup_module() -> None:  # noqa: D103
-    clear_operation_translators(keep_defaults=True)
-    # Register minimal translators used in tests
-
-    def _cz(ctx: InstructionContext) -> list[ProgramInstruction]:
-        from mqt.core.qdmi.qiskit import ProgramInstruction
-
-        return [ProgramInstruction(name="cz", qubits=ctx.qubits)]
-
-    register_operation_translator("cz", _cz, overwrite=True)
 
 
 def test_backend_instantiation() -> None:
@@ -194,7 +173,7 @@ def test_backend_circuit_with_unbound_parameter() -> None:
     qc.ry(theta, 0)
     qc.measure([0, 1], [0, 1])
 
-    with pytest.raises(TranslationError, match="Unbound parameter 'theta'"):
+    with pytest.raises(TranslationError, match="Circuit contains unbound parameters"):
         backend.run(qc)
 
 
@@ -223,7 +202,7 @@ def test_backend_circuit_with_parameter_expression() -> None:
     qc.ry(theta + phi, 0)  # Parameter expression
     qc.measure([0, 1], [0, 1])
 
-    with pytest.raises(TranslationError, match="Unbound parameter expression"):
+    with pytest.raises(TranslationError, match="Circuit contains unbound parameters"):
         backend.run(qc)
 
 
@@ -310,8 +289,8 @@ def test_backend_unnamed_circuit() -> None:
     assert "name" in result.results[0].header
 
 
-def test_backend_result_metadata_includes_program_name() -> None:
-    """Backend result metadata should include program name."""
+def test_backend_result_metadata_includes_circuit_name() -> None:
+    """Backend result metadata should include circuit name."""
     backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
@@ -319,7 +298,7 @@ def test_backend_result_metadata_includes_program_name() -> None:
 
     job = backend.run(qc, shots=100)
     result = job.result()
-    assert "program_name" in result.results[0].metadata
+    assert "circuit_name" in result.results[0].metadata
 
 
 def test_backend_result_metadata_includes_capabilities_hash() -> None:

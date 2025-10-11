@@ -24,7 +24,6 @@ from mqt.core import fomac
 from .capabilities import get_capabilities
 from .exceptions import TranslationError, UnsupportedOperationError
 from .job import QiskitJob
-from .translator import InstructionContext, build_program_ir
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -171,7 +170,6 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         Returns:
             Qiskit gate instance or None if not mappable.
         """
-        from qiskit.circuit import Parameter
         from qiskit.circuit.library import (
             CHGate,
             CXGate,
@@ -429,69 +427,28 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             Result dictionary with counts and metadata.
 
         Raises:
-            TranslationError: If circuit translation fails or contains unbound parameters.
+            TranslationError: If circuit contains unbound parameters or invalid configuration.
             UnsupportedOperationError: If circuit contains unsupported operations.
         """
-        # Build instruction contexts from circuit
-        contexts = []
+        # Validate circuit has no unbound parameters
+        if circuit.parameters:
+            param_names = ", ".join(sorted(p.name for p in circuit.parameters))
+            msg = f"Circuit contains unbound parameters: {param_names}"
+            raise TranslationError(msg)
+
+        # Validate operations are supported
+        allowed_ops = set(self._capabilities.operations.keys())
+        allowed_ops.update({"measure", "barrier"})  # Always allow measure and barrier
+
         for instruction in circuit.data:
             op_name = instruction.operation.name
-            qubits = [circuit.find_bit(q).index for q in instruction.qubits]
-            clbits = [circuit.find_bit(c).index for c in instruction.clbits] if instruction.clbits else None
+            if op_name not in allowed_ops:
+                msg = f"Unsupported operation: '{op_name}'"
+                raise UnsupportedOperationError(msg)
 
-            # Extract parameters
-            params = None
-            if hasattr(instruction.operation, "params") and instruction.operation.params:
-                # Convert parameters to floats
-                param_list = []
-                from qiskit.circuit import ParameterExpression
-
-                for p in instruction.operation.params:
-                    # Explicitly reject unbound symbols
-                    if isinstance(p, Parameter):
-                        msg = f"Unbound parameter '{p.name}' in circuit"
-                        raise TranslationError(msg)
-                    if isinstance(p, ParameterExpression) and getattr(p, "parameters", None):
-                        # ParameterExpression with free parameters is unbound
-                        names = ", ".join(sorted(par.name for par in p.parameters))
-                        msg = f"Unbound parameter expression with symbols: {names}"
-                        raise TranslationError(msg)
-                    try:
-                        param_list.append(float(p))
-                    except Exception as conv_exc:
-                        msg = f"Non-numeric parameter value: {p!r}"
-                        raise TranslationError(msg) from conv_exc
-                params = param_list
-
-            ctx = InstructionContext(
-                name=op_name,
-                qubits=qubits,
-                params=params,
-                clbits=clbits,
-            )
-            contexts.append(ctx)
-
-        # Build program IR
-        allowed_ops = set(self._capabilities.operations.keys())
-        allowed_ops.add("measure")
-
-        try:
-            from .types import IRValidationError
-
-            program_ir = build_program_ir(
-                name=circuit.name or "circuit",
-                instruction_contexts=contexts,
-                allowed_operations=allowed_ops,
-                num_qubits=self._capabilities.num_qubits,
-                pseudo_ops=["barrier"],
-            )
-        except IRValidationError as exc:
-            msg = f"Failed to build program IR: {exc}"
-            raise UnsupportedOperationError(msg) from exc
-
-        # Store program_ir in metadata for potential use by subclasses
+        # Submit circuit to device
         result = self._submit_to_device(circuit, shots)
         result.setdefault("metadata", {})
-        result["metadata"]["program_name"] = program_ir.name
+        result["metadata"]["circuit_name"] = circuit.name or "circuit"
 
         return result

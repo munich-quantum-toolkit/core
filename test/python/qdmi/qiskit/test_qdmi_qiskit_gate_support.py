@@ -14,8 +14,6 @@ import importlib.util
 
 import pytest
 
-from mqt.core.qdmi.qiskit import clear_operation_translators, list_operation_translators
-
 _qiskit_present = importlib.util.find_spec("qiskit") is not None
 
 pytestmark = pytest.mark.skipif(not _qiskit_present, reason="qiskit not installed")
@@ -24,10 +22,6 @@ if _qiskit_present:
     from qiskit import QuantumCircuit
 
     from mqt.core.qdmi.qiskit import QiskitBackend
-
-
-def setup_module() -> None:  # noqa: D103
-    clear_operation_translators(keep_defaults=True)
 
 
 def test_gate_mapping_to_qiskit_gates() -> None:
@@ -69,54 +63,6 @@ def test_backend_supports_cz_gate() -> None:
     job = backend.run(qc, shots=100)
     counts = job.get_counts()
     assert sum(counts.values()) == 100
-
-
-def test_default_translators_registered() -> None:
-    """Verify that all expected default translators are registered."""
-    translators = list_operation_translators()
-    expected_translators = {
-        "x",
-        "y",
-        "z",
-        "h",
-        "i",
-        "id",
-        "s",
-        "sdg",
-        "t",
-        "tdg",
-        "sx",
-        "sxdg",
-        "rx",
-        "ry",
-        "rz",
-        "p",
-        "phase",
-        "r",
-        "prx",
-        "u",
-        "u2",
-        "u3",
-        "cx",
-        "cnot",
-        "cy",
-        "cz",
-        "ch",
-        "swap",
-        "iswap",
-        "dcx",
-        "ecr",
-        "rxx",
-        "ryy",
-        "rzz",
-        "rzx",
-        "xx_plus_yy",
-        "xx_minus_yy",
-        "measure",
-    }
-
-    for gate_name in expected_translators:
-        assert gate_name in translators, f"Expected translator '{gate_name}' not found"
 
 
 def test_map_operation_pauli_gates() -> None:

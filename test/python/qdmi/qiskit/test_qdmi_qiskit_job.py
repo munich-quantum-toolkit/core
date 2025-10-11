@@ -22,12 +22,7 @@ if _qiskit_present:
     from qiskit import QuantumCircuit
     from qiskit.providers import JobStatus
 
-    from mqt.core.qdmi.qiskit import QiskitBackend, clear_operation_translators
-
-
-def setup_module() -> None:  # noqa: D103
-    if _qiskit_present:
-        clear_operation_translators(keep_defaults=True)
+    from mqt.core.qdmi.qiskit import QiskitBackend
 
 
 def test_job_status() -> None:
@@ -178,5 +173,5 @@ def test_job_result_metadata() -> None:
 
     # Check that metadata is included
     assert result.results[0].metadata is not None
-    assert "program_name" in result.results[0].metadata
+    assert "circuit_name" in result.results[0].metadata
     assert "capabilities_hash" in result.results[0].metadata

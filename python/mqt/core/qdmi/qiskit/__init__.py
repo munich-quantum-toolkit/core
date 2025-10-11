@@ -31,38 +31,18 @@ from .exceptions import (
     TranslationError,
     UnsupportedOperationError,
 )
-from .translator import (
-    InstructionContext,
-    build_program_ir,
-    clear_operation_translators,
-    get_operation_translator,
-    list_operation_translators,
-    register_operation_translator,
-    unregister_operation_translator,
-)
-from .types import IRValidationError, ProgramInstruction, ProgramIR
 
 if TYPE_CHECKING:  # pragma: no cover
     from types import ModuleType
 
 __all__ = [
     "CapabilityMismatchError",
-    "IRValidationError",
-    "InstructionContext",
-    "ProgramIR",
-    "ProgramInstruction",
     "QDMIQiskitError",
     "QiskitNotAvailableError",
     "TranslationError",
     "UnsupportedOperationError",
-    "build_program_ir",
-    "clear_operation_translators",
-    "get_operation_translator",
     "is_available",
-    "list_operation_translators",
-    "register_operation_translator",
     "require_qiskit",
-    "unregister_operation_translator",
 ]
 if _BACKEND_AVAILABLE:
     __all__ += [
