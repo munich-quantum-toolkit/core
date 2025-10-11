@@ -233,20 +233,45 @@ def extract_capabilities(device: fomac.Device) -> DeviceCapabilities:
     """
     signature = _compute_device_signature(device)
 
+    # Filter out zone sites - they are not qubits
+    all_sites = sorted(device.sites(), key=lambda x: x.index())
+    non_zone_sites = [s for s in all_sites if not s.is_zone()]
+
+    # Create a mapping from site index to logical qubit index (0-based, excluding zones)
+    site_index_to_qubit_index = {s.index(): i for i, s in enumerate(non_zone_sites)}
+
     site_infos: list[DeviceSiteInfo] = []
-    for s in sorted(device.sites(), key=lambda x: x.index()):
+    for s in non_zone_sites:
         site_info = _safe_site_info(s)
         if site_info is not None:
+            # Remap the index to the logical qubit index
+            site_info.index = site_index_to_qubit_index[s.index()]
             site_infos.append(site_info)
 
     op_infos: dict[str, DeviceOperationInfo] = {}
     for op in device.operations():
         op_info = _safe_operation_info(op)
         if op_info is not None:
+            # Remap site indices in operations to logical qubit indices
+            if op_info.sites is not None:
+                remapped_sites = [
+                    site_index_to_qubit_index[site_idx]
+                    for site_idx in op_info.sites
+                    if site_idx in site_index_to_qubit_index
+                ]
+                op_info.sites = tuple(sorted(remapped_sites)) if remapped_sites else None
             op_infos[op_info.name] = op_info
 
     cm = device.coupling_map()
-    coupling_indices_list = sorted((pair[0].index(), pair[1].index()) for pair in cm) if cm is not None else None
+    coupling_indices_list = None
+    if cm is not None:
+        # Remap coupling map indices to logical qubit indices
+        remapped_coupling = []
+        for pair in cm:
+            idx0, idx1 = pair[0].index(), pair[1].index()
+            if idx0 in site_index_to_qubit_index and idx1 in site_index_to_qubit_index:
+                remapped_coupling.append((site_index_to_qubit_index[idx0], site_index_to_qubit_index[idx1]))
+        coupling_indices_list = sorted(remapped_coupling) if remapped_coupling else None
 
     status = device.status()
     cap = DeviceCapabilities(
