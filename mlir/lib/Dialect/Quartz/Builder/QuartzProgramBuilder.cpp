@@ -51,7 +51,12 @@ void QuartzProgramBuilder::initialize() {
 Value QuartzProgramBuilder::allocQubit() {
   // Create the AllocOp without register metadata
   auto allocOp = builder.create<AllocOp>(loc);
-  return allocOp.getResult();
+  const auto qubit = allocOp.getResult();
+
+  // Track the allocated qubit for automatic deallocation
+  allocatedQubits.insert(qubit);
+
+  return qubit;
 }
 
 Value QuartzProgramBuilder::staticQubit(int64_t index) {
@@ -73,7 +78,9 @@ SmallVector<Value> QuartzProgramBuilder::allocQubitRegister(int64_t size,
   for (int64_t i = 0; i < size; ++i) {
     auto indexAttr = builder.getI64IntegerAttr(i);
     auto allocOp = builder.create<AllocOp>(loc, nameAttr, sizeAttr, indexAttr);
-    qubits.push_back(allocOp.getResult());
+    const auto& qubit = qubits.emplace_back(allocOp.getResult());
+    // Track the allocated qubit for automatic deallocation
+    allocatedQubits.insert(qubit);
   }
 
   return qubits;
@@ -117,7 +124,31 @@ QuartzProgramBuilder& QuartzProgramBuilder::reset(Value qubit) {
   return *this;
 }
 
+QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
+  // Check if the qubit is in the tracking set
+  if (allocatedQubits.erase(qubit) == 0) {
+    // Qubit was not found in the set - either never allocated or already
+    // deallocated
+    llvm::errs() << "Error: Attempting to deallocate a qubit that was not "
+                    "allocated or has already been deallocated\n";
+    llvm_unreachable("Double deallocation or invalid qubit deallocation");
+  }
+
+  // Create the DeallocOp
+  builder.create<DeallocOp>(loc, qubit);
+
+  return *this;
+}
+
 OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
+  // Automatically deallocate all remaining allocated qubits
+  for (Value qubit : allocatedQubits) {
+    builder.create<DeallocOp>(loc, qubit);
+  }
+
+  // Clear the tracking set
+  allocatedQubits.clear();
+
   // Add return statement to the main function
   builder.create<func::ReturnOp>(loc);
 

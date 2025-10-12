@@ -13,6 +13,7 @@
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 
 #include <cstddef>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -290,6 +291,38 @@ public:
    */
   QuartzProgramBuilder& reset(Value qubit);
 
+  /**
+   * @brief Explicitly deallocate a qubit
+   *
+   * @details
+   * Deallocates a previously allocated qubit, releasing its resources.
+   * The qubit must have been allocated using allocQubit() or
+   * allocQubitRegister(). Attempting to deallocate the same qubit twice
+   * will result in an error.
+   *
+   * Note: Deallocation is automatically performed for all remaining allocated
+   * qubits when finalize() is called, so explicit deallocation is optional
+   * but can be used for precise resource management.
+   *
+   * @param qubit The qubit to deallocate
+   * @return A reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * auto q = builder.allocQubit();
+   * // ... use qubit ...
+   * builder.dealloc(q);
+   * ```
+   *
+   * This generates:
+   * ```mlir
+   * %q = quartz.alloc : !quartz.qubit
+   * // ... operations ...
+   * quartz.dealloc %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& dealloc(Value qubit);
+
   //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
@@ -299,8 +332,14 @@ public:
    *
    * @details
    * Completes the construction of the quantum program by:
-   * 1. Adding a return statement to the main function
-   * 2. Transferring ownership of the module to the caller
+   * 1. Automatically deallocating all remaining allocated qubits
+   * 2. Adding a return statement to the main function
+   * 3. Transferring ownership of the module to the caller
+   *
+   * Any qubits allocated via allocQubit() or allocQubitRegister() that have
+   * not been explicitly deallocated using dealloc() will be automatically
+   * deallocated at this point, ensuring proper resource management and
+   * preventing "qubit leaks".
    *
    * After calling this method, the builder is invalidated and should not be
    * used to add more operations. The returned OwningOpRef takes ownership of
@@ -312,9 +351,10 @@ public:
    * ```c++
    * QuartzProgramBuilder builder(context);
    * builder.initialize();
-   * auto q = builder.staticQubit(0);
-   * builder.h(q);
+   * auto q = builder.allocQubit();
+   * // ... use qubit ...
    * auto module = builder.finalize();
+   * // q is automatically deallocated here
    * // module now owns the MLIR module, builder is invalidated
    * ```
    */
@@ -324,5 +364,8 @@ private:
   OpBuilder builder;
   ModuleOp module;
   Location loc;
+
+  /// Track allocated qubits for automatic deallocation
+  llvm::DenseSet<Value> allocatedQubits;
 };
 } // namespace mlir::quartz
