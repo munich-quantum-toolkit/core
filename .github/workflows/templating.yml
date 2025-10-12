@@ -23,7 +23,7 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      - uses: munich-quantum-toolkit/templates@842d18d2fae61d82de309cc3b78a45e13be042d6 # v1.1.7
+      - uses: munich-quantum-toolkit/templates@bdbd5a77dbfe7e133ac644a71e260f3e5bfab291 # v1.1.8
         with:
           token: ${{ steps.create-token.outputs.token }}
           name: Core
