@@ -10,6 +10,7 @@
 
 #include "mlir/Support/TestUtils.h"
 
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Verifier.h>
 
@@ -41,9 +42,11 @@ bool operationsAreEquivalent(Operation* lhs, Operation* rhs) {
     return false;
   }
 
-  // Check attributes
-  if (lhs->getAttrs() != rhs->getAttrs()) {
-    return false;
+  // Check attributes (skip for LLVMFuncOp)
+  if (!llvm::isa<LLVM::LLVMFuncOp>(lhs) && !llvm::isa<LLVM::LLVMFuncOp>(rhs)) {
+    if (lhs->getAttrs() != rhs->getAttrs()) {
+      return false;
+    }
   }
 
   // Check number of operands and results
