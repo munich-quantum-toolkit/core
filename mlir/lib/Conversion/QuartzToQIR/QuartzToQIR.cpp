@@ -10,6 +10,7 @@
 
 #include "mlir/Conversion/QuartzToQIR/QuartzToQIR.h"
 
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 
 #include <cstddef>
@@ -45,54 +46,12 @@
 namespace mlir {
 
 using namespace quartz;
+using namespace qir;
 
 #define GEN_PASS_DEF_QUARTZTOQIR
 #include "mlir/Conversion/QuartzToQIR/QuartzToQIR.h.inc"
 
 namespace {
-
-/**
- * @brief Looks up or creates a QIR function declaration
- *
- * @details
- * Searches for an existing function declaration in the symbol table. If not
- * found, creates a new function declaration at the end of the module.
- *
- * For QIR functions that are irreversible (measurement, reset, deallocation),
- * the "irreversible" attribute is added automatically.
- *
- * @param rewriter The pattern rewriter to use
- * @param op The operation requesting the function
- * @param fnName The name of the QIR function
- * @param fnType The LLVM function type signature
- * @return The LLVM function declaration
- */
-LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
-                                        Operation* op, StringRef fnName,
-                                        Type fnType) {
-  // Check if the function already exists
-  auto* fnDecl =
-      SymbolTable::lookupNearestSymbolFrom(op, rewriter.getStringAttr(fnName));
-
-  if (fnDecl == nullptr) {
-    // Create the declaration at the end of the module
-    const PatternRewriter::InsertionGuard insertGuard(rewriter);
-    auto module = op->getParentOfType<ModuleOp>();
-    rewriter.setInsertionPointToEnd(module.getBody());
-
-    fnDecl = rewriter.create<LLVM::LLVMFuncOp>(op->getLoc(), fnName, fnType);
-
-    // Add irreversible attribute to irreversible quantum operations
-    if (fnName == "__quantum__qis__mz__body" ||
-        fnName == "__quantum__rt__qubit_release" ||
-        fnName == "__quantum__qis__reset__body") {
-      fnDecl->setAttr("passthrough",
-                      rewriter.getStrArrayAttr({"irreversible"}));
-    }
-  }
-
-  return cast<LLVM::LLVMFuncOp>(fnDecl);
-}
 
 /**
  * @brief State object for tracking lowering information during QIR conversion
@@ -105,23 +64,13 @@ LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
  * - Result output mapping
  * - Whether dynamic memory management is needed
  */
-struct LoweringState {
+struct LoweringState : QIRMetadata {
   /// Map from qubit index to pointer value for reuse
   DenseMap<size_t, Value> ptrMap;
   /// Map from result index to addressOf operation for output recording
   DenseMap<size_t, Operation*> outputMap;
   /// Index for the next measure operation label
   size_t index{};
-  /// Number of qubits used in the module
-  size_t numQubits{};
-  /// Number of measurement results stored in the module
-  size_t numResults{};
-  /// Whether the module uses dynamic qubit management (true when `quartz.alloc`
-  /// is used, false when only `quartz.static` is used)
-  bool useDynamicQubit{};
-  /// Whether the module uses dynamic result management (expected: false for
-  /// Quartz at the moment)
-  bool useDynamicResult{};
 };
 
 /**
@@ -244,9 +193,6 @@ struct ConvertQuartzStaticQIR final : StatefulOpConversionPattern<StaticOp> {
 struct ConvertQuartzAllocQIR final : StatefulOpConversionPattern<AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
-  static constexpr StringLiteral FN_NAME_ALLOCATE =
-      "__quantum__rt__qubit_allocate";
-
   LogicalResult
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
@@ -257,8 +203,8 @@ struct ConvertQuartzAllocQIR final : StatefulOpConversionPattern<AllocOp> {
         LLVM::LLVMFunctionType::get(LLVM::LLVMPointerType::get(ctx), {});
 
     // Get or create function declaration
-    const auto fnDecl =
-        getFunctionDeclaration(rewriter, op, FN_NAME_ALLOCATE, qirSignature);
+    const auto fnDecl = getOrCreateFunctionDeclaration(
+        rewriter, op, QIR_QUBIT_ALLOCATE, qirSignature);
 
     // Replace with call to qubit_allocate
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, ValueRange{});
@@ -291,9 +237,6 @@ struct ConvertQuartzAllocQIR final : StatefulOpConversionPattern<AllocOp> {
 struct ConvertQuartzDeallocQIR final : OpConversionPattern<DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
 
-  static constexpr StringLiteral FN_NAME_QUBIT_RELEASE =
-      "__quantum__rt__qubit_release";
-
   LogicalResult
   matchAndRewrite(DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -304,8 +247,8 @@ struct ConvertQuartzDeallocQIR final : OpConversionPattern<DeallocOp> {
         LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
 
     // Get or create function declaration
-    const auto fnDecl = getFunctionDeclaration(
-        rewriter, op, FN_NAME_QUBIT_RELEASE, qirSignature);
+    const auto fnDecl = getOrCreateFunctionDeclaration(
+        rewriter, op, QIR_QUBIT_RELEASE, qirSignature);
 
     // Replace with call to qubit_release
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
@@ -333,8 +276,6 @@ struct ConvertQuartzDeallocQIR final : OpConversionPattern<DeallocOp> {
 struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
   using OpConversionPattern::OpConversionPattern;
 
-  static constexpr StringLiteral FN_NAME_RESET = "__quantum__qis__reset__body";
-
   LogicalResult
   matchAndRewrite(ResetOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -346,7 +287,7 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
 
     // Get or create function declaration
     const auto fnDecl =
-        getFunctionDeclaration(rewriter, op, FN_NAME_RESET, qirSignature);
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_RESET, qirSignature);
 
     // Replace with call to reset
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
@@ -392,67 +333,6 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
 struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
-  static constexpr StringLiteral FN_NAME_MEASURE = "__quantum__qis__mz__body";
-  static constexpr StringLiteral FN_NAME_RECORD_OUTPUT =
-      "__quantum__rt__result_record_output";
-
-  /**
-   * @brief Creates a global constant and addressOf for result labeling
-   *
-   * @details
-   * Creates a global string constant at module level with the label "rN\0"
-   * where N is the index, and returns an addressOf operation pointing to it.
-   * The addressOf is placed at the start of the main function.
-   *
-   * @param op The measure operation
-   * @param rewriter The rewriter
-   * @param state The lowering state
-   * @return The addressOf operation for the global constant
-   */
-  static Operation* getAddressOfOp(Operation* op,
-                                   ConversionPatternRewriter& rewriter,
-                                   LoweringState& state) {
-    // Create global at module level
-    auto module = op->getParentOfType<ModuleOp>();
-    rewriter.setInsertionPointToStart(module.getBody());
-
-    // Calculate string length for array size
-    auto num = state.index;
-    auto digits = 1;
-    while (num >= 10) {
-      num /= 10;
-      ++digits;
-    }
-
-    // Create global with label "r0\0", "r1\0", etc.
-    const auto symbolName = rewriter.getStringAttr(
-        "mlir.llvm.nameless_global_" + std::to_string(state.index));
-    const auto llvmArrayType =
-        LLVM::LLVMArrayType::get(rewriter.getIntegerType(8), digits + 2);
-    const auto stringInitializer =
-        rewriter.getStringAttr("r" + std::to_string(state.index) + '\0');
-
-    auto globalOp = rewriter.create<LLVM::GlobalOp>(
-        op->getLoc(), llvmArrayType, /*isConstant=*/true,
-        LLVM::Linkage::Internal, symbolName, stringInitializer);
-    globalOp->setAttr("addr_space", rewriter.getI32IntegerAttr(0));
-    globalOp->setAttr("dso_local", rewriter.getUnitAttr());
-
-    // Create addressOf at start of main function
-    auto main = op->getParentOfType<LLVM::LLVMFuncOp>();
-    auto& firstBlock = *(main.getBlocks().begin());
-    rewriter.setInsertionPointToStart(&firstBlock);
-    const auto addressOfOp = rewriter.create<LLVM::AddressOfOp>(
-        op->getLoc(), LLVM::LLVMPointerType::get(rewriter.getContext()),
-        symbolName);
-
-    // Restore insertion point
-    rewriter.setInsertionPoint(op);
-    state.index++;
-
-    return addressOfOp;
-  }
-
   LogicalResult
   matchAndRewrite(MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -466,7 +346,7 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
     if (ptrMap.contains(getState().numResults)) {
       resultValue = ptrMap.at(getState().numResults);
     } else {
-      auto constantOp = rewriter.create<LLVM::ConstantOp>(
+      const auto constantOp = rewriter.create<LLVM::ConstantOp>(
           op.getLoc(), rewriter.getI64IntegerAttr(
                            static_cast<int64_t>(getState().numResults)));
       resultValue = rewriter
@@ -480,7 +360,7 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
     const auto mzSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx), {ptrType, ptrType});
     const auto mzDecl =
-        getFunctionDeclaration(rewriter, op, FN_NAME_MEASURE, mzSignature);
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, mzSignature);
     rewriter.create<LLVM::CallOp>(op.getLoc(), mzDecl,
                                   ValueRange{adaptor.getQubit(), resultValue});
 
@@ -497,7 +377,7 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
           return failure();
         }
 
-        auto integerAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
+        const auto integerAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
         if (!integerAttr) {
           op.emitError("Measurement index could not be resolved. Index cannot "
                        "be cast to IntegerAttr.");
@@ -527,8 +407,8 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
     // Create result_record_output call
     const auto recordSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx), {ptrType, ptrType});
-    const auto recordDecl = getFunctionDeclaration(
-        rewriter, op, FN_NAME_RECORD_OUTPUT, recordSignature);
+    const auto recordDecl = getOrCreateFunctionDeclaration(
+        rewriter, op, QIR_RECORD_OUTPUT, recordSignature);
 
     // Get or create output label addressOf for this index
     Operation* labelOp = nullptr;
@@ -538,7 +418,8 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
       labelOp = outputMap.at(index);
     } else {
       // Create new label
-      labelOp = getAddressOfOp(op, rewriter, getState());
+      labelOp = createResultLabel(rewriter, op,
+                                  "r" + std::to_string(getState().index));
       outputMap.try_emplace(index, labelOp);
       // Only increment result count for new labels
       getState().numResults++;
@@ -580,43 +461,6 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
  */
 struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
   using QuartzToQIRBase::QuartzToQIRBase;
-
-  /// QIR runtime initialization function name
-  static constexpr StringLiteral FN_NAME_INITIALIZE =
-      "__quantum__rt__initialize";
-
-  /**
-   * @brief Finds the main entry point function in the module
-   *
-   * @details
-   * Searches for the LLVM function marked with the "entry_point" attribute in
-   * the passthrough attributes. This is the main entry point created by the
-   * QuartzProgramBuilder.
-   *
-   * @param op The module operation to search in
-   * @return The main LLVM function, or nullptr if not found
-   */
-  static LLVM::LLVMFuncOp getMainFunction(Operation* op) {
-    auto module = dyn_cast<ModuleOp>(op);
-    if (!module) {
-      return nullptr;
-    }
-
-    // Search for function with entry_point attribute
-    for (auto funcOp : module.getOps<LLVM::LLVMFuncOp>()) {
-      auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
-      if (!passthrough) {
-        continue;
-      }
-      if (llvm::any_of(passthrough, [](Attribute attr) {
-            auto strAttr = dyn_cast<StringAttr>(attr);
-            return strAttr && strAttr.getValue() == "entry_point";
-          })) {
-        return funcOp;
-      }
-    }
-    return nullptr;
-  }
 
   /**
    * @brief Ensures proper block structure for QIR base profile
@@ -722,74 +566,19 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
 
     // Get or create the initialize function declaration
     auto* fnDecl = SymbolTable::lookupNearestSymbolFrom(
-        main, builder.getStringAttr(FN_NAME_INITIALIZE));
+        main, builder.getStringAttr(QIR_INITIALIZE));
     if (fnDecl == nullptr) {
       const PatternRewriter::InsertionGuard insertGuard(builder);
       builder.setInsertionPointToEnd(moduleOp.getBody());
       auto fnSignature = LLVM::LLVMFunctionType::get(
           LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
-      fnDecl = builder.create<LLVM::LLVMFuncOp>(
-          main->getLoc(), FN_NAME_INITIALIZE, fnSignature);
+      fnDecl = builder.create<LLVM::LLVMFuncOp>(main->getLoc(), QIR_INITIALIZE,
+                                                fnSignature);
     }
 
     // Create the initialization call
     builder.create<LLVM::CallOp>(main->getLoc(), cast<LLVM::LLVMFuncOp>(fnDecl),
                                  ValueRange{zeroOp->getResult(0)});
-  }
-
-  /**
-   * @brief Sets QIR base profile metadata attributes on the main function
-   *
-   * @details
-   * Adds the required metadata attributes for QIR base profile compliance:
-   * - `entry_point`: Marks the main entry point function
-   * - `output_labeling_schema`: schema_id
-   * - `qir_profiles`: base_profile
-   * - `required_num_qubits`: Number of qubits used
-   * - `required_num_results`: Number of measurement results
-   * - `qir_major_version`: 1
-   * - `qir_minor_version`: 0
-   * - `dynamic_qubit_management`: true/false
-   * - `dynamic_result_management`: true/false
-   *
-   * These attributes are required by the QIR specification and inform QIR
-   * consumers about the module's resource requirements and capabilities.
-   *
-   * @param main The main LLVM function to annotate
-   * @param state The lowering state containing qubit/result counts
-   */
-  static void setAttributes(LLVM::LLVMFuncOp& main, LoweringState* state) {
-    OpBuilder builder(main.getBody());
-    SmallVector<Attribute> attributes;
-
-    // Core QIR attributes
-    attributes.emplace_back(builder.getStringAttr("entry_point"));
-    attributes.emplace_back(
-        builder.getStrArrayAttr({"output_labeling_schema", "schema_id"}));
-    attributes.emplace_back(
-        builder.getStrArrayAttr({"qir_profiles", "base_profile"}));
-
-    // Resource requirements
-    attributes.emplace_back(builder.getStrArrayAttr(
-        {"required_num_qubits", std::to_string(state->numQubits)}));
-    attributes.emplace_back(builder.getStrArrayAttr(
-        {"required_num_results", std::to_string(state->numResults)}));
-
-    // QIR version
-    attributes.emplace_back(
-        builder.getStrArrayAttr({"qir_major_version", "1"}));
-    attributes.emplace_back(
-        builder.getStrArrayAttr({"qir_minor_version", "0"}));
-
-    // Management model
-    attributes.emplace_back(
-        builder.getStrArrayAttr({"dynamic_qubit_management",
-                                 state->useDynamicQubit ? "true" : "false"}));
-    attributes.emplace_back(
-        builder.getStrArrayAttr({"dynamic_result_management",
-                                 state->useDynamicResult ? "true" : "false"}));
-
-    main->setAttr("passthrough", builder.getArrayAttr(attributes));
   }
 
   /**
@@ -877,7 +666,7 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
     }
 
     // Stage 4: Set QIR metadata attributes
-    setAttributes(main, &state);
+    setQIRAttributes(main, state);
 
     // Stage 5: Convert standard dialects to LLVM
     {
