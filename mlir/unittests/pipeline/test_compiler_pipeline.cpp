@@ -10,7 +10,9 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
+#include "mlir/Dialect/Flux/Builder/FluxProgramBuilder.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
+#include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/Quartz/Builder/QuartzProgramBuilder.h"
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 #include "mlir/Dialect/Quartz/Translation/TranslateQuantumComputationToQuartz.h"
@@ -30,11 +32,104 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Transforms/Passes.h>
+#include <sstream>
 #include <string>
 
 namespace {
 
 using namespace mlir;
+
+//===----------------------------------------------------------------------===//
+// Stage Verification Utility
+//===----------------------------------------------------------------------===//
+
+/**
+ * @brief Helper to verify a compilation stage matches expected IR
+ *
+ * @details
+ * Provides detailed error messages including actual and expected IR when
+ * verification fails.
+ */
+class StageVerifier {
+public:
+  explicit StageVerifier(MLIRContext* ctx) : context(ctx) {}
+
+  /**
+   * @brief Verify a stage matches expected module
+   *
+   * @param stageName Human-readable stage name for error messages
+   * @param actualIR String IR from CompilationRecord
+   * @param expectedModule Expected module to compare against
+   * @return True if modules match, false otherwise with diagnostic output
+   */
+  [[nodiscard]] ::testing::AssertionResult
+  verify(const std::string& stageName, const std::string& actualIR,
+         ModuleOp expectedModule) const {
+    // Parse actual IR
+    const auto actualModule =
+        parseSourceString<ModuleOp>(actualIR, ParserConfig(context));
+    if (!actualModule) {
+      return ::testing::AssertionFailure()
+             << "Failed to parse " << stageName << " IR\n"
+             << "Raw IR string:\n"
+             << actualIR;
+    }
+
+    // Compare modules
+    if (!modulesAreEquivalent(actualModule.get(), expectedModule)) {
+      std::ostringstream msg;
+      msg << stageName << " IR does not match expected structure\n\n";
+
+      msg << "=== EXPECTED IR ===\n";
+      std::string expectedStr;
+      llvm::raw_string_ostream expectedStream(expectedStr);
+      expectedModule.print(expectedStream);
+      msg << expectedStr << "\n\n";
+
+      msg << "=== ACTUAL IR ===\n";
+      msg << actualIR << "\n\n";
+
+      msg << "=== DIFFERENCE ===\n";
+      msg << "Modules are structurally different. ";
+      msg << "Check operation types, attributes, and structure.\n";
+
+      return ::testing::AssertionFailure() << msg.str();
+    }
+
+    return ::testing::AssertionSuccess();
+  }
+
+private:
+  MLIRContext* context;
+};
+
+//===----------------------------------------------------------------------===//
+// Stage Expectation Builder
+//===----------------------------------------------------------------------===//
+
+/**
+ * @brief Helper to build expected IR for multiple stages at once
+ *
+ * @details
+ * Reduces boilerplate by allowing specification of which stages should
+ * match which expected IR.
+ */
+struct StageExpectations {
+  ModuleOp quartzImport;
+  ModuleOp initialCanon;
+  ModuleOp fluxConversion;
+  ModuleOp fluxCanon;
+  ModuleOp optimization;
+  ModuleOp optimizationCanon;
+  ModuleOp quartzConversion;
+  ModuleOp quartzCanon;
+  ModuleOp qirConversion;
+  ModuleOp qirCanon;
+};
+
+//===----------------------------------------------------------------------===//
+// Base Test Fixture
+//===----------------------------------------------------------------------===//
 
 /**
  * @brief Base test fixture for end-to-end compiler pipeline tests
@@ -47,29 +142,42 @@ using namespace mlir;
 class CompilerPipelineTest : public testing::Test {
 protected:
   std::unique_ptr<MLIRContext> context;
+  std::unique_ptr<StageVerifier> verifier;
   QuantumCompilerConfig config;
+  CompilationRecord record;
+
+  OwningOpRef<ModuleOp> emptyQuartz;
+  OwningOpRef<ModuleOp> emptyFlux;
+  OwningOpRef<ModuleOp> emptyQIR;
 
   void SetUp() override {
     // Register all dialects needed for the full compilation pipeline
     DialectRegistry registry;
-    registry.insert<quartz::QuartzDialect>();
-    registry.insert<flux::FluxDialect>();
-    registry.insert<arith::ArithDialect>();
-    registry.insert<cf::ControlFlowDialect>();
-    registry.insert<func::FuncDialect>();
-    registry.insert<memref::MemRefDialect>();
-    registry.insert<scf::SCFDialect>();
-    registry.insert<LLVM::LLVMDialect>();
+    registry
+        .insert<quartz::QuartzDialect, flux::FluxDialect, arith::ArithDialect,
+                cf::ControlFlowDialect, func::FuncDialect,
+                memref::MemRefDialect, scf::SCFDialect, LLVM::LLVMDialect>();
 
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
 
-    // Enable QIR conversion by default
+    verifier = std::make_unique<StageVerifier>(context.get());
+
+    // Enable QIR conversion and recording by default
     config.convertToQIR = true;
     config.recordIntermediates = true;
-    config.printIRAfterAllStages = true;
+    config.printIRAfterAllStages =
+        false; /// TODO: Change back after everything is running
+
+    emptyQuartz = buildQuartzIR([](quartz::QuartzProgramBuilder&) {});
+    emptyFlux = buildFluxIR([](flux::FluxProgramBuilder&) {});
+    emptyQIR = buildQIR([](qir::QIRProgramBuilder&) {});
   }
+
+  //===--------------------------------------------------------------------===//
+  // Quantum Circuit Construction and Import
+  //===--------------------------------------------------------------------===//
 
   /**
    * @brief Pretty print quantum computation with ASCII art borders
@@ -114,7 +222,7 @@ protected:
   /**
    * @brief Import a QuantumComputation into Quartz dialect
    */
-  OwningOpRef<ModuleOp>
+  [[nodiscard]] OwningOpRef<ModuleOp>
   importQuantumCircuit(const qc::QuantumComputation& qc) const {
     if (config.printIRAfterAllStages) {
       prettyPrintQuantumComputation(qc);
@@ -123,48 +231,21 @@ protected:
   }
 
   /**
-   * @brief Run the compiler pipeline with specified configuration
+   * @brief Run the compiler pipeline with the current configuration
    */
-  static LogicalResult runCompiler(ModuleOp module,
-                                   const QuantumCompilerConfig& config,
-                                   CompilationRecord* record = nullptr) {
+  [[nodiscard]] LogicalResult runPipeline(const ModuleOp module) {
     const QuantumCompilerPipeline pipeline(config);
-    return pipeline.runPipeline(module, record);
+    return pipeline.runPipeline(module, &record);
   }
 
-  /**
-   * @brief Clone a module for comparison purposes
-   *
-   * @details
-   * Creates a deep copy of the module so we can compare it later
-   * without worrying about in-place mutations.
-   */
-  static OwningOpRef<ModuleOp> cloneModule(ModuleOp module) {
-    return module.clone();
-  }
+  //===--------------------------------------------------------------------===//
+  // Expected IR Builder Methods
+  //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Parse IR string back into a module
-   *
-   * @details
-   * Useful for reconstructing modules from CompilationRecord strings.
+   * @brief Build expected Quartz IR programmatically
    */
-  OwningOpRef<ModuleOp> parseModule(const std::string& irString) const {
-    return mlir::parseSourceString<ModuleOp>(irString,
-                                             ParserConfig(context.get()));
-  }
-
-  /**
-   * @brief Check if IR contains a specific pattern (for quick checks)
-   */
-  static bool irContains(const std::string& ir, const std::string& pattern) {
-    return ir.find(pattern) != std::string::npos;
-  }
-
-  /**
-   * @brief Build expected Quartz IR programmatically for comparison
-   */
-  OwningOpRef<ModuleOp> buildExpectedQuartzIR(
+  [[nodiscard]] OwningOpRef<ModuleOp> buildQuartzIR(
       const std::function<void(quartz::QuartzProgramBuilder&)>& buildFunc)
       const {
     quartz::QuartzProgramBuilder builder(context.get());
@@ -174,41 +255,146 @@ protected:
   }
 
   /**
-   * @brief Apply canonicalization to a module (for building expected IR)
+   * @brief Build expected Flux IR programmatically
    */
-  LogicalResult applyCanonicalization(ModuleOp module) const {
-    PassManager pm(context.get());
-    pm.addPass(createCanonicalizerPass());
-    pm.addPass(createRemoveDeadValuesPass());
-    return pm.run(module);
+  [[nodiscard]] OwningOpRef<ModuleOp> buildFluxIR(
+      const std::function<void(flux::FluxProgramBuilder&)>& buildFunc) const {
+    flux::FluxProgramBuilder builder(context.get());
+    builder.initialize();
+    buildFunc(builder);
+    return builder.finalize();
   }
 
   /**
-   * @brief Verify module at a specific stage matches expected
+   * @brief Build expected QIR programmatically
    */
-  void verifyStageMatchesExpected(const std::string& stageName,
-                                  const std::string& actualIR,
-                                  ModuleOp expectedModule) const {
-    const auto actualModule = parseModule(actualIR);
-    ASSERT_TRUE(actualModule) << "Failed to parse " << stageName << " IR";
-
-    EXPECT_TRUE(modulesAreEquivalent(actualModule.get(), expectedModule))
-        << stageName << " IR does not match expected structure";
+  [[nodiscard]] OwningOpRef<ModuleOp> buildQIR(
+      const std::function<void(qir::QIRProgramBuilder&)>& buildFunc) const {
+    qir::QIRProgramBuilder builder(context.get());
+    builder.initialize();
+    buildFunc(builder);
+    return builder.finalize();
   }
 
-  void TearDown() override {}
+  //===--------------------------------------------------------------------===//
+  // Stage Verification Methods
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Verify all stages match their expected IR
+   *
+   * @details
+   * Simplifies test writing by checking all stages with one call.
+   * Stages without expectations are skipped.
+   */
+  void verifyAllStages(const StageExpectations& expectations) const {
+    if (expectations.quartzImport) {
+      EXPECT_TRUE(verifier->verify("Quartz Import", record.afterQuartzImport,
+                                   expectations.quartzImport));
+    }
+
+    if (expectations.initialCanon) {
+      EXPECT_TRUE(verifier->verify("Initial Canonicalization",
+                                   record.afterInitialCanon,
+                                   expectations.initialCanon));
+    }
+
+    if (expectations.fluxConversion) {
+      EXPECT_TRUE(verifier->verify("Flux Conversion",
+                                   record.afterFluxConversion,
+                                   expectations.fluxConversion));
+    }
+
+    if (expectations.fluxCanon) {
+      EXPECT_TRUE(verifier->verify("Flux Canonicalization",
+                                   record.afterFluxCanon,
+                                   expectations.fluxCanon));
+    }
+
+    if (expectations.optimization) {
+      EXPECT_TRUE(verifier->verify("Optimization", record.afterOptimization,
+                                   expectations.optimization));
+    }
+
+    if (expectations.optimizationCanon) {
+      EXPECT_TRUE(verifier->verify("Optimization Canonicalization",
+                                   record.afterOptimizationCanon,
+                                   expectations.optimizationCanon));
+    }
+
+    if (expectations.quartzConversion) {
+      EXPECT_TRUE(verifier->verify("Quartz Conversion",
+                                   record.afterQuartzConversion,
+                                   expectations.quartzConversion));
+    }
+
+    if (expectations.quartzCanon) {
+      EXPECT_TRUE(verifier->verify("Quartz Canonicalization",
+                                   record.afterQuartzCanon,
+                                   expectations.quartzCanon));
+    }
+
+    if (expectations.qirConversion) {
+      EXPECT_TRUE(verifier->verify("QIR Conversion", record.afterQIRConversion,
+                                   expectations.qirConversion));
+    }
+
+    if (expectations.qirCanon) {
+      EXPECT_TRUE(verifier->verify("QIR Canonicalization", record.afterQIRCanon,
+                                   expectations.qirCanon));
+    }
+  }
+
+  /**
+   * @brief Verify a single stage
+   */
+  void verifyStage(const std::string& stageName, const std::string& actualIR,
+                   const ModuleOp expectedModule) const {
+    EXPECT_TRUE(verifier->verify(stageName, actualIR, expectedModule));
+  }
+
+  void TearDown() override {
+    // Verify all stages were recorded (basic sanity check)
+    EXPECT_FALSE(record.afterQuartzImport.empty())
+        << "Quartz import stage was not recorded";
+    EXPECT_FALSE(record.afterInitialCanon.empty())
+        << "Initial canonicalization stage was not recorded";
+    EXPECT_FALSE(record.afterFluxConversion.empty())
+        << "Flux conversion stage was not recorded";
+    EXPECT_FALSE(record.afterFluxCanon.empty())
+        << "Flux canonicalization stage was not recorded";
+    EXPECT_FALSE(record.afterOptimization.empty())
+        << "Optimization stage was not recorded";
+    EXPECT_FALSE(record.afterOptimizationCanon.empty())
+        << "Optimization canonicalization stage was not recorded";
+    EXPECT_FALSE(record.afterQuartzConversion.empty())
+        << "Quartz conversion stage was not recorded";
+    EXPECT_FALSE(record.afterQuartzCanon.empty())
+        << "Quartz canonicalization stage was not recorded";
+
+    if (config.convertToQIR) {
+      EXPECT_FALSE(record.afterQIRConversion.empty())
+          << "QIR conversion stage was not recorded";
+      EXPECT_FALSE(record.afterQIRCanon.empty())
+          << "QIR canonicalization stage was not recorded";
+    }
+  }
 };
+
+//===----------------------------------------------------------------------===//
+// Test Cases
+//===----------------------------------------------------------------------===//
 
 // ##################################################
 // # Empty Circuit Tests
 // ##################################################
 
 /**
- * @brief Test: Empty circuit construction
+ * @brief Test: Empty circuit compilation
  *
  * @details
- * Verifies that an empty QuantumComputation() can be imported and compiled
- * without errors. Checks multiple stages of the pipeline.
+ * Verifies that an empty circuit compiles correctly through all stages,
+ * producing empty but valid IR at each stage.
  */
 TEST_F(CompilerPipelineTest, EmptyCircuit) {
   // Create empty circuit
@@ -218,39 +404,22 @@ TEST_F(CompilerPipelineTest, EmptyCircuit) {
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
 
-  // Build expected IR for initial Quartz import
-  const auto expectedQuartzInitial =
-      buildExpectedQuartzIR([](quartz::QuartzProgramBuilder& b) {
-        // Empty circuit - just initialize
-      });
-  ASSERT_TRUE(expectedQuartzInitial);
-
   // Run compilation
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Verify Quartz import stage
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-
-  // Verify canonicalized Quartz stage
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzInitial.get());
-
-  // Verify final Quartz stage (after round-trip through Flux)
-  verifyStageMatchesExpected("Final Quartz Canonicalization",
-                             record.afterQuartzCanon,
-                             expectedQuartzInitial.get());
-
-  // Verify the IR is valid at all stages
-  EXPECT_FALSE(record.afterQuartzImport.empty());
-  EXPECT_FALSE(record.afterFluxConversion.empty());
-  EXPECT_FALSE(record.afterQuartzConversion.empty());
-
-  // QIR stages should also be present
-  EXPECT_FALSE(record.afterQIRConversion.empty());
-  EXPECT_FALSE(record.afterQIRCanon.empty());
+  // Verify all stages
+  verifyAllStages({
+      .quartzImport = emptyQuartz.get(),
+      .initialCanon = emptyQuartz.get(),
+      .fluxConversion = emptyFlux.get(),
+      .fluxCanon = emptyFlux.get(),
+      .optimization = emptyFlux.get(),
+      .optimizationCanon = emptyFlux.get(),
+      .quartzConversion = emptyQuartz.get(),
+      .quartzCanon = emptyQuartz.get(),
+      .qirConversion = emptyQIR.get(),
+      .qirCanon = emptyQIR.get(),
+  });
 }
 
 // ##################################################
@@ -261,8 +430,8 @@ TEST_F(CompilerPipelineTest, EmptyCircuit) {
  * @brief Test: Single qubit register allocation
  *
  * @details
- * Tests addQubitRegister with a single qubit. Verifies import and
- * canonicalized stages.
+ * Since the register is unused, it should be removed during canonicalization
+ * in the Flux dialect.
  */
 TEST_F(CompilerPipelineTest, SingleQubitRegister) {
   qc::QuantumComputation qc;
@@ -270,24 +439,25 @@ TEST_F(CompilerPipelineTest, SingleQubitRegister) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Build expected IR for initial import
-  const auto expectedQuartzInitial = buildExpectedQuartzIR(
+  const auto quartzExpected = buildQuartzIR(
       [](quartz::QuartzProgramBuilder& b) { b.allocQubitRegister(1, "q"); });
-  ASSERT_TRUE(expectedQuartzInitial);
+  const auto fluxExpected = buildFluxIR(
+      [](flux::FluxProgramBuilder& b) { b.allocQubitRegister(1, "q"); });
 
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  // Verify multiple stages
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Final Quartz Canonicalization",
-                             record.afterQuartzCanon,
-                             expectedQuartzInitial.get());
+  verifyAllStages({
+      .quartzImport = quartzExpected.get(),
+      .initialCanon = quartzExpected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .fluxCanon = emptyFlux.get(),
+      .optimization = emptyFlux.get(),
+      .optimizationCanon = emptyFlux.get(),
+      .quartzConversion = emptyQuartz.get(),
+      .quartzCanon = emptyQuartz.get(),
+      .qirConversion = emptyQIR.get(),
+      .qirCanon = emptyQIR.get(),
+  });
 }
 
 /**
@@ -297,25 +467,27 @@ TEST_F(CompilerPipelineTest, MultiQubitRegister) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(3, "q");
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Build expected IR
-  auto expectedQuartzInitial = buildExpectedQuartzIR(
+  const auto quartzExpected = buildQuartzIR(
       [](quartz::QuartzProgramBuilder& b) { b.allocQubitRegister(3, "q"); });
-  ASSERT_TRUE(expectedQuartzInitial);
+  const auto fluxExpected = buildFluxIR(
+      [](flux::FluxProgramBuilder& b) { b.allocQubitRegister(3, "q"); });
 
-  auto expectedQuartzCanon = cloneModule(expectedQuartzInitial.get());
-  ASSERT_TRUE(succeeded(applyCanonicalization(expectedQuartzCanon.get())));
-
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzCanon.get());
+  verifyAllStages({
+      .quartzImport = quartzExpected.get(),
+      .initialCanon = quartzExpected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .fluxCanon = emptyFlux.get(),
+      .optimization = emptyFlux.get(),
+      .optimizationCanon = emptyFlux.get(),
+      .quartzConversion = emptyQuartz.get(),
+      .quartzCanon = emptyQuartz.get(),
+      .qirConversion = emptyQIR.get(),
+      .qirCanon = emptyQIR.get(),
+  });
 }
 
 /**
@@ -326,28 +498,32 @@ TEST_F(CompilerPipelineTest, MultipleQuantumRegisters) {
   qc.addQubitRegister(2, "q");
   qc.addQubitRegister(3, "aux");
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Build expected IR
-  auto expectedQuartzInitial =
-      buildExpectedQuartzIR([](quartz::QuartzProgramBuilder& b) {
+  const auto quartzExpected =
+      buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
         b.allocQubitRegister(2, "q");
         b.allocQubitRegister(3, "aux");
       });
-  ASSERT_TRUE(expectedQuartzInitial);
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    b.allocQubitRegister(2, "q");
+    b.allocQubitRegister(3, "aux");
+  });
 
-  auto expectedQuartzCanon = cloneModule(expectedQuartzInitial.get());
-  ASSERT_TRUE(succeeded(applyCanonicalization(expectedQuartzCanon.get())));
-
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzCanon.get());
+  verifyAllStages({
+      .quartzImport = quartzExpected.get(),
+      .initialCanon = quartzExpected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .fluxCanon = emptyFlux.get(),
+      .optimization = emptyFlux.get(),
+      .optimizationCanon = emptyFlux.get(),
+      .quartzConversion = emptyQuartz.get(),
+      .quartzCanon = emptyQuartz.get(),
+      .qirConversion = emptyQIR.get(),
+      .qirCanon = emptyQIR.get(),
+  });
 }
 
 /**
@@ -357,17 +533,9 @@ TEST_F(CompilerPipelineTest, LargeQubitRegister) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(100, "q");
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  // Verify compilation succeeded and produced valid IR at all stages
-  EXPECT_FALSE(record.afterQuartzImport.empty());
-  EXPECT_FALSE(record.afterFluxConversion.empty());
-  EXPECT_FALSE(record.afterQuartzCanon.empty());
-  EXPECT_FALSE(record.afterQIRCanon.empty());
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 }
 
 // ##################################################
@@ -376,94 +544,101 @@ TEST_F(CompilerPipelineTest, LargeQubitRegister) {
 
 /**
  * @brief Test: Single classical bit register
+ *
+ * @details
+ * Since the register is unused, it should be removed during canonicalization.
  */
 TEST_F(CompilerPipelineTest, SingleClassicalBitRegister) {
   qc::QuantumComputation qc;
   qc.addClassicalRegister(1, "c");
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Build expected IR
-  auto expectedQuartzInitial =
-      buildExpectedQuartzIR([](quartz::QuartzProgramBuilder& b) {
-        b.allocClassicalBitRegister(1, "c");
-      });
-  ASSERT_TRUE(expectedQuartzInitial);
+  const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    b.allocClassicalBitRegister(1, "c");
+  });
 
-  auto expectedQuartzCanon = cloneModule(expectedQuartzInitial.get());
-  ASSERT_TRUE(succeeded(applyCanonicalization(expectedQuartzCanon.get())));
-
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzCanon.get());
+  verifyAllStages({
+      .quartzImport = expected.get(),
+      .initialCanon = emptyQuartz.get(),
+      .fluxConversion = emptyFlux.get(),
+      .fluxCanon = emptyFlux.get(),
+      .optimization = emptyFlux.get(),
+      .optimizationCanon = emptyFlux.get(),
+      .quartzConversion = emptyQuartz.get(),
+      .quartzCanon = emptyQuartz.get(),
+      .qirConversion = emptyQIR.get(),
+      .qirCanon = emptyQIR.get(),
+  });
 }
 
 /**
  * @brief Test: Multi-bit classical register
+ *
+ * @details
+ * Since the register is unused, it should be removed during canonicalization.
  */
 TEST_F(CompilerPipelineTest, MultiBitClassicalRegister) {
   qc::QuantumComputation qc;
   qc.addClassicalRegister(5, "c");
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Build expected IR
-  auto expectedQuartzInitial =
-      buildExpectedQuartzIR([](quartz::QuartzProgramBuilder& b) {
-        b.allocClassicalBitRegister(5, "c");
-      });
-  ASSERT_TRUE(expectedQuartzInitial);
+  const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    b.allocClassicalBitRegister(5, "c");
+  });
 
-  auto expectedQuartzCanon = cloneModule(expectedQuartzInitial.get());
-  ASSERT_TRUE(succeeded(applyCanonicalization(expectedQuartzCanon.get())));
-
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzCanon.get());
+  verifyAllStages({
+      .quartzImport = expected.get(),
+      .initialCanon = emptyQuartz.get(),
+      .fluxConversion = emptyFlux.get(),
+      .fluxCanon = emptyFlux.get(),
+      .optimization = emptyFlux.get(),
+      .optimizationCanon = emptyFlux.get(),
+      .quartzConversion = emptyQuartz.get(),
+      .quartzCanon = emptyQuartz.get(),
+      .qirConversion = emptyQIR.get(),
+      .qirCanon = emptyQIR.get(),
+  });
 }
 
 /**
  * @brief Test: Multiple classical registers
+ *
+ * @details
+ * Since the registers are unused, they should be removed during
+ * canonicalization.
  */
 TEST_F(CompilerPipelineTest, MultipleClassicalRegisters) {
   qc::QuantumComputation qc;
   qc.addClassicalRegister(3, "c");
-  qc.addClassicalRegister(2, "result");
+  qc.addClassicalRegister(2, "d");
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Build expected IR
-  auto expectedQuartzInitial =
-      buildExpectedQuartzIR([](quartz::QuartzProgramBuilder& b) {
-        b.allocClassicalBitRegister(3, "c");
-        b.allocClassicalBitRegister(2, "result");
-      });
-  ASSERT_TRUE(expectedQuartzInitial);
+  const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    b.allocClassicalBitRegister(3, "c");
+    b.allocClassicalBitRegister(2, "d");
+  });
 
-  auto expectedQuartzCanon = cloneModule(expectedQuartzInitial.get());
-  ASSERT_TRUE(succeeded(applyCanonicalization(expectedQuartzCanon.get())));
-
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzCanon.get());
+  verifyAllStages({
+      .quartzImport = expected.get(),
+      .initialCanon = emptyQuartz.get(),
+      .fluxConversion = emptyFlux.get(),
+      .fluxCanon = emptyFlux.get(),
+      .optimization = emptyFlux.get(),
+      .optimizationCanon = emptyFlux.get(),
+      .quartzConversion = emptyQuartz.get(),
+      .quartzCanon = emptyQuartz.get(),
+      .qirConversion = emptyQIR.get(),
+      .qirCanon = emptyQIR.get(),
+  });
 }
 
 /**
@@ -473,16 +648,9 @@ TEST_F(CompilerPipelineTest, LargeClassicalBitRegister) {
   qc::QuantumComputation qc;
   qc.addClassicalRegister(128, "c");
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  // Verify compilation succeeded
-  EXPECT_FALSE(record.afterQuartzImport.empty());
-  EXPECT_FALSE(record.afterQuartzCanon.empty());
-  EXPECT_FALSE(record.afterQIRCanon.empty());
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 }
 
 // ##################################################
@@ -491,40 +659,49 @@ TEST_F(CompilerPipelineTest, LargeClassicalBitRegister) {
 
 /**
  * @brief Test: Single reset in single qubit circuit
+ *
+ * @details
+ * Since the reset directly follows an allocation, it should be removed during
+ * canonicalization.
  */
 TEST_F(CompilerPipelineTest, SingleResetInSingleQubitCircuit) {
   qc::QuantumComputation qc(1);
   qc.reset(0);
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Build expected IR
-  auto expectedQuartzInitial =
-      buildExpectedQuartzIR([](quartz::QuartzProgramBuilder& b) {
-        auto q = b.staticQubit(0);
-        b.reset(q);
-      });
-  ASSERT_TRUE(expectedQuartzInitial);
+  const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    const auto q = b.allocQubitRegister(1, "q");
+    b.reset(q[0]);
+  });
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    const auto q = b.allocQubitRegister(1, "q");
+    b.reset(q[0]);
+  });
 
-  auto expectedQuartzCanon = cloneModule(expectedQuartzInitial.get());
-  ASSERT_TRUE(succeeded(applyCanonicalization(expectedQuartzCanon.get())));
-
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzCanon.get());
-
-  // Verify Flux conversion contains flux.reset
-  EXPECT_TRUE(irContains(record.afterFluxConversion, "flux.reset"));
+  verifyAllStages({
+      .quartzImport = expected.get(),
+      .initialCanon = expected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .fluxCanon = emptyFlux.get(),
+      .optimization = emptyFlux.get(),
+      .optimizationCanon = emptyFlux.get(),
+      .quartzConversion = emptyQuartz.get(),
+      .quartzCanon = emptyQuartz.get(),
+      .qirConversion = emptyQIR.get(),
+      .qirCanon = emptyQIR.get(),
+  });
 }
 
 /**
  * @brief Test: Consecutive reset operations
+ *
+ * @details
+ * Since reset is idempotent, consecutive resets should be reduced to a single
+ * reset during canonicalization. Since that single reset directly follows an
+ * allocation, it should be removed as well.
  */
 TEST_F(CompilerPipelineTest, ConsecutiveResetOperations) {
   qc::QuantumComputation qc(1);
@@ -532,30 +709,36 @@ TEST_F(CompilerPipelineTest, ConsecutiveResetOperations) {
   qc.reset(0);
   qc.reset(0);
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Build expected IR
-  auto expectedQuartzInitial =
-      buildExpectedQuartzIR([](quartz::QuartzProgramBuilder& b) {
-        auto q = b.staticQubit(0);
-        b.reset(q);
-        b.reset(q);
-        b.reset(q);
-      });
-  ASSERT_TRUE(expectedQuartzInitial);
+  const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    const auto q = b.allocQubitRegister(1, "q");
+    b.reset(q[0]);
+    b.reset(q[0]);
+    b.reset(q[0]);
+  });
 
-  auto expectedQuartzCanon = cloneModule(expectedQuartzInitial.get());
-  ASSERT_TRUE(succeeded(applyCanonicalization(expectedQuartzCanon.get())));
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1, "q");
+    q[0] = b.reset(q[0]);
+    q[0] = b.reset(q[0]);
+    q[0] = b.reset(q[0]);
+  });
 
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzCanon.get());
+  verifyAllStages({
+      .quartzImport = expected.get(),
+      .initialCanon = expected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .fluxCanon = emptyFlux.get(),
+      .optimization = emptyFlux.get(),
+      .optimizationCanon = emptyFlux.get(),
+      .quartzConversion = emptyQuartz.get(),
+      .quartzCanon = emptyQuartz.get(),
+      .qirConversion = emptyQIR.get(),
+      .qirCanon = emptyQIR.get(),
+  });
 }
 
 /**
@@ -566,30 +749,34 @@ TEST_F(CompilerPipelineTest, SeparateResetsInTwoQubitSystem) {
   qc.reset(0);
   qc.reset(1);
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Build expected IR
-  auto expectedQuartzInitial =
-      buildExpectedQuartzIR([](quartz::QuartzProgramBuilder& b) {
-        auto q0 = b.staticQubit(0);
-        auto q1 = b.staticQubit(1);
-        b.reset(q0);
-        b.reset(q1);
-      });
-  ASSERT_TRUE(expectedQuartzInitial);
+  const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    const auto q = b.allocQubitRegister(2, "q");
+    b.reset(q[0]);
+    b.reset(q[1]);
+  });
 
-  auto expectedQuartzCanon = cloneModule(expectedQuartzInitial.get());
-  ASSERT_TRUE(succeeded(applyCanonicalization(expectedQuartzCanon.get())));
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto q = b.allocQubitRegister(2, "q");
+    q[0] = b.reset(q[0]);
+    q[1] = b.reset(q[1]);
+  });
 
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzCanon.get());
+  verifyAllStages({
+      .quartzImport = expected.get(),
+      .initialCanon = expected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .fluxCanon = emptyFlux.get(),
+      .optimization = emptyFlux.get(),
+      .optimizationCanon = emptyFlux.get(),
+      .quartzConversion = emptyQuartz.get(),
+      .quartzCanon = emptyQuartz.get(),
+      .qirConversion = emptyQIR.get(),
+      .qirCanon = emptyQIR.get(),
+  });
 }
 
 // ##################################################
@@ -600,35 +787,42 @@ TEST_F(CompilerPipelineTest, SeparateResetsInTwoQubitSystem) {
  * @brief Test: Single measurement to single bit
  */
 TEST_F(CompilerPipelineTest, SingleMeasurementToSingleBit) {
-  qc::QuantumComputation qc(1);
+  qc::QuantumComputation qc(1, 1);
   qc.measure(0, 0);
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Build expected IR
-  auto expectedQuartzInitial =
-      buildExpectedQuartzIR([](quartz::QuartzProgramBuilder& b) {
-        auto q = b.staticQubit(0);
-        auto c = b.allocClassicalBitRegister(1);
-        b.measure(q, c, 0);
-      });
-  ASSERT_TRUE(expectedQuartzInitial);
+  const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1);
+    const auto c = b.allocClassicalBitRegister(1);
+    b.measure(q[0], c, 0);
+  });
 
-  auto expectedQuartzCanon = cloneModule(expectedQuartzInitial.get());
-  ASSERT_TRUE(succeeded(applyCanonicalization(expectedQuartzCanon.get())));
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1);
+    const auto c = b.allocClassicalBitRegister(1);
+    b.measure(q[0], c, 0);
+  });
 
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
+  const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1);
+    b.measure(q[0], 0);
+  });
 
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzCanon.get());
-
-  // Verify Flux conversion contains flux.measure
-  EXPECT_TRUE(irContains(record.afterFluxConversion, "flux.measure"));
+  verifyAllStages({
+      .quartzImport = expected.get(),
+      .initialCanon = expected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .fluxCanon = fluxExpected.get(),
+      .optimization = fluxExpected.get(),
+      .optimizationCanon = fluxExpected.get(),
+      .quartzConversion = expected.get(),
+      .quartzCanon = expected.get(),
+      .qirConversion = qirExpected.get(),
+      .qirCanon = qirExpected.get(),
+  });
 }
 
 /**
@@ -637,34 +831,44 @@ TEST_F(CompilerPipelineTest, SingleMeasurementToSingleBit) {
 TEST_F(CompilerPipelineTest, RepeatedMeasurementToSameBit) {
   qc::QuantumComputation qc(1);
   qc.measure(0, 0);
-  qc.reset(0);
   qc.measure(0, 0);
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Build expected IR
-  auto expectedQuartzInitial =
-      buildExpectedQuartzIR([](quartz::QuartzProgramBuilder& b) {
-        auto q = b.staticQubit(0);
-        auto c = b.allocClassicalBitRegister(1);
-        b.measure(q, c, 0);
-        b.reset(q);
-        b.measure(q, c, 0);
-      });
-  ASSERT_TRUE(expectedQuartzInitial);
+  const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1);
+    const auto c = b.allocClassicalBitRegister(1);
+    b.measure(q[0], c, 0);
+    b.measure(q[0], c, 0);
+  });
 
-  auto expectedQuartzCanon = cloneModule(expectedQuartzInitial.get());
-  ASSERT_TRUE(succeeded(applyCanonicalization(expectedQuartzCanon.get())));
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1);
+    const auto c = b.allocClassicalBitRegister(1);
+    q[0] = b.measure(q[0], c, 0);
+    q[0] = b.measure(q[0], c, 0);
+  });
 
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
+  const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1);
+    b.measure(q[0], 0);
+    b.measure(q[0], 0);
+  });
 
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzCanon.get());
+  verifyAllStages({
+      .quartzImport = expected.get(),
+      .initialCanon = expected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .fluxCanon = fluxExpected.get(),
+      .optimization = fluxExpected.get(),
+      .optimizationCanon = fluxExpected.get(),
+      .quartzConversion = expected.get(),
+      .quartzCanon = expected.get(),
+      .qirConversion = qirExpected.get(),
+      .qirCanon = qirExpected.get(),
+  });
 }
 
 /**
@@ -674,38 +878,48 @@ TEST_F(CompilerPipelineTest, RepeatedMeasurementOnSeparateBits) {
   qc::QuantumComputation qc(1);
   qc.addClassicalRegister(3);
   qc.measure(0, 0);
-  qc.reset(0);
   qc.measure(0, 1);
-  qc.reset(0);
   qc.measure(0, 2);
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  // Build expected IR
-  auto expectedQuartzInitial =
-      buildExpectedQuartzIR([](quartz::QuartzProgramBuilder& b) {
-        auto q = b.staticQubit(0);
-        auto c = b.allocClassicalBitRegister(3);
-        b.measure(q, c, 0);
-        b.reset(q);
-        b.measure(q, c, 1);
-        b.reset(q);
-        b.measure(q, c, 2);
-      });
-  ASSERT_TRUE(expectedQuartzInitial);
+  const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1);
+    const auto c = b.allocClassicalBitRegister(3);
+    b.measure(q[0], c, 0);
+    b.measure(q[0], c, 1);
+    b.measure(q[0], c, 2);
+  });
 
-  auto expectedQuartzCanon = cloneModule(expectedQuartzInitial.get());
-  ASSERT_TRUE(succeeded(applyCanonicalization(expectedQuartzCanon.get())));
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1);
+    const auto c = b.allocClassicalBitRegister(3);
+    q[0] = b.measure(q[0], c, 0);
+    q[0] = b.measure(q[0], c, 1);
+    q[0] = b.measure(q[0], c, 2);
+  });
 
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
+  const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1);
+    b.measure(q[0], 0);
+    b.measure(q[0], 1);
+    b.measure(q[0], 2);
+  });
 
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzCanon.get());
+  verifyAllStages({
+      .quartzImport = expected.get(),
+      .initialCanon = expected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .fluxCanon = fluxExpected.get(),
+      .optimization = fluxExpected.get(),
+      .optimizationCanon = fluxExpected.get(),
+      .quartzConversion = expected.get(),
+      .quartzCanon = expected.get(),
+      .qirConversion = qirExpected.get(),
+      .qirCanon = qirExpected.get(),
+  });
 }
 
 /**
@@ -713,181 +927,49 @@ TEST_F(CompilerPipelineTest, RepeatedMeasurementOnSeparateBits) {
  */
 TEST_F(CompilerPipelineTest, MultipleClassicalRegistersAndMeasurements) {
   qc::QuantumComputation qc(2);
-  qc.addClassicalRegister(2, "c1");
-  qc.addClassicalRegister(2, "c2");
-  qc.measure(0, 0);
-  qc.measure(1, 1);
+  auto& c1 = qc.addClassicalRegister(1, "c1");
+  auto& c2 = qc.addClassicalRegister(1, "c2");
+  qc.measure(0, c1[0]);
+  qc.measure(1, c2[0]);
 
-  auto module = importQuantumCircuit(qc);
+  const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runPipeline(module.get())));
 
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
+  const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto q = b.allocQubitRegister(2);
+    const auto creg1 = b.allocClassicalBitRegister(1, "c1");
+    const auto creg2 = b.allocClassicalBitRegister(1, "c2");
+    b.measure(q[0], creg1, 0);
+    b.measure(q[1], creg2, 0);
+  });
 
-  // Verify all stages completed
-  EXPECT_FALSE(record.afterQuartzImport.empty());
-  EXPECT_FALSE(record.afterFluxConversion.empty());
-  EXPECT_FALSE(record.afterQuartzCanon.empty());
-  EXPECT_FALSE(record.afterQIRCanon.empty());
-}
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto q = b.allocQubitRegister(2);
+    const auto creg1 = b.allocClassicalBitRegister(1, "c1");
+    const auto creg2 = b.allocClassicalBitRegister(1, "c2");
+    q[0] = b.measure(q[0], creg1, 0);
+    q[1] = b.measure(q[1], creg2, 0);
+  });
 
-// ##################################################
-// # Combined Feature Tests
-// ##################################################
+  const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto q = b.allocQubitRegister(2);
+    b.measure(q[0], 0);
+    b.measure(q[1], 1);
+  });
 
-/**
- * @brief Test: Quantum and classical registers with operations
- */
-TEST_F(CompilerPipelineTest, QuantumClassicalRegistersWithOperations) {
-  qc::QuantumComputation qc;
-  qc.addQubitRegister(3, "q");
-  qc.addClassicalRegister(3, "c");
-
-  // Reset all qubits
-  qc.reset(0);
-  qc.reset(1);
-  qc.reset(2);
-
-  // Measure all qubits
-  qc.measure(0, 0);
-  qc.measure(1, 1);
-  qc.measure(2, 2);
-
-  auto module = importQuantumCircuit(qc);
-  ASSERT_TRUE(module);
-
-  // Build expected IR
-  auto expectedQuartzInitial =
-      buildExpectedQuartzIR([](quartz::QuartzProgramBuilder& b) {
-        auto q = b.allocQubitRegister(3, "q");
-        auto c = b.allocClassicalBitRegister(3, "c");
-        b.reset(q[0]);
-        b.reset(q[1]);
-        b.reset(q[2]);
-        b.measure(q[0], c, 0);
-        b.measure(q[1], c, 1);
-        b.measure(q[2], c, 2);
-      });
-  ASSERT_TRUE(expectedQuartzInitial);
-
-  auto expectedQuartzCanon = cloneModule(expectedQuartzInitial.get());
-  ASSERT_TRUE(succeeded(applyCanonicalization(expectedQuartzCanon.get())));
-
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  verifyStageMatchesExpected("Quartz Import", record.afterQuartzImport,
-                             expectedQuartzInitial.get());
-  verifyStageMatchesExpected("Initial Canonicalization",
-                             record.afterInitialCanon,
-                             expectedQuartzCanon.get());
-
-  // Verify conversions to other dialects succeeded
-  EXPECT_TRUE(irContains(record.afterFluxConversion, "flux"));
-  EXPECT_TRUE(irContains(record.afterQIRConversion, "llvm"));
-}
-
-/**
- * @brief Test: End-to-end pipeline with all stages
- */
-TEST_F(CompilerPipelineTest, EndToEndPipelineAllStages) {
-  qc::QuantumComputation qc(2);
-  qc.addClassicalRegister(2);
-  qc.reset(0);
-  qc.reset(1);
-  qc.measure(0, 0);
-  qc.measure(1, 1);
-
-  auto module = importQuantumCircuit(qc);
-  ASSERT_TRUE(module);
-
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  // Verify each stage produces non-empty output
-  EXPECT_FALSE(record.afterQuartzImport.empty());
-  EXPECT_FALSE(record.afterInitialCanon.empty());
-  EXPECT_FALSE(record.afterFluxConversion.empty());
-  EXPECT_FALSE(record.afterFluxCanon.empty());
-  EXPECT_FALSE(record.afterOptimization.empty());
-  EXPECT_FALSE(record.afterOptimizationCanon.empty());
-  EXPECT_FALSE(record.afterQuartzConversion.empty());
-  EXPECT_FALSE(record.afterQuartzCanon.empty());
-  EXPECT_FALSE(record.afterQIRConversion.empty());
-  EXPECT_FALSE(record.afterQIRCanon.empty());
-
-  // Verify dialect transitions
-  EXPECT_TRUE(irContains(record.afterQuartzImport, "quartz"));
-  EXPECT_TRUE(irContains(record.afterFluxConversion, "flux"));
-  EXPECT_TRUE(irContains(record.afterQuartzConversion, "quartz"));
-  EXPECT_TRUE(irContains(record.afterQIRConversion, "llvm"));
-}
-
-/**
- * @brief Test: Complex circuit with interleaved operations
- */
-TEST_F(CompilerPipelineTest, ComplexInterleavedOperations) {
-  qc::QuantumComputation qc;
-  qc.addQubitRegister(4, "q");
-  qc.addClassicalRegister(4, "c1");
-  qc.addClassicalRegister(2, "c2");
-
-  // Interleaved operations
-  qc.reset(0);
-  qc.measure(0, 0);
-  qc.reset(1);
-  qc.reset(2);
-  qc.measure(1, 1);
-  qc.measure(2, 2);
-  qc.reset(3);
-  qc.measure(3, 3);
-
-  auto module = importQuantumCircuit(qc);
-  ASSERT_TRUE(module);
-
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  // Verify all pipeline stages succeeded
-  EXPECT_FALSE(record.afterQuartzImport.empty());
-  EXPECT_FALSE(record.afterFluxConversion.empty());
-  EXPECT_FALSE(record.afterQuartzCanon.empty());
-  EXPECT_FALSE(record.afterQIRCanon.empty());
-
-  // Verify operations are present in appropriate dialects
-  EXPECT_TRUE(irContains(record.afterQuartzImport, "quartz.reset"));
-  EXPECT_TRUE(irContains(record.afterQuartzImport, "quartz.measure"));
-  EXPECT_TRUE(irContains(record.afterFluxConversion, "flux.reset"));
-  EXPECT_TRUE(irContains(record.afterFluxConversion, "flux.measure"));
-}
-
-/**
- * @brief Test: Scalability with large mixed operations
- */
-TEST_F(CompilerPipelineTest, ScalabilityLargeMixedOperations) {
-  constexpr size_t NUM_QUBITS = 50;
-
-  qc::QuantumComputation qc;
-  qc.addQubitRegister(NUM_QUBITS, "q");
-  qc.addClassicalRegister(NUM_QUBITS, "c");
-
-  // Add operations for all qubits
-  for (size_t i = 0; i < NUM_QUBITS; ++i) {
-    qc.reset(i);
-    qc.measure(i, i);
-  }
-
-  auto module = importQuantumCircuit(qc);
-  ASSERT_TRUE(module);
-
-  CompilationRecord record;
-  ASSERT_TRUE(succeeded(runCompiler(module.get(), config, &record)));
-
-  // Verify compilation succeeded and produced valid output at all stages
-  EXPECT_FALSE(record.afterQuartzImport.empty());
-  EXPECT_FALSE(record.afterFluxConversion.empty());
-  EXPECT_FALSE(record.afterQuartzCanon.empty());
-  EXPECT_FALSE(record.afterQIRCanon.empty());
+  verifyAllStages({
+      .quartzImport = expected.get(),
+      .initialCanon = expected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .fluxCanon = fluxExpected.get(),
+      .optimization = fluxExpected.get(),
+      .optimizationCanon = fluxExpected.get(),
+      .quartzConversion = expected.get(),
+      .quartzCanon = expected.get(),
+      .qirConversion = qirExpected.get(),
+      .qirCanon = qirExpected.get(),
+  });
 }
 
 } // namespace
