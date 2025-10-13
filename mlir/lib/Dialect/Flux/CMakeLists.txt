@@ -6,4 +6,5 @@
 #
 # Licensed under the MIT License
 
+add_subdirectory(Builder)
 add_subdirectory(IR)
