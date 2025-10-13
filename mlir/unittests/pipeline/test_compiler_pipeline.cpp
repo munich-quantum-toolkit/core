@@ -28,6 +28,7 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Transforms/Passes.h>
@@ -53,21 +54,30 @@ using namespace mlir;
 [[nodiscard]] testing::AssertionResult verify(const std::string& stageName,
                                               const std::string& actualIR,
                                               ModuleOp expectedModule) {
-  // dump expected module to text-based IR
-  std::string expectedStr;
-  llvm::raw_string_ostream expectedStream(expectedStr);
-  expectedModule.print(expectedStream);
+  // Parse the actual IR string into a ModuleOp
+  const auto actualModule =
+      parseSourceString<ModuleOp>(actualIR, expectedModule.getContext());
+  if (!actualModule) {
+    return testing::AssertionFailure()
+           << stageName << " failed to parse actual IR";
+  }
 
-  // Compare modules
-  if (actualIR != expectedStr) {
+  if (!OperationEquivalence::isEquivalentTo(
+          actualModule.get(), expectedModule,
+          OperationEquivalence::ignoreValueEquivalence, nullptr,
+          OperationEquivalence::IgnoreLocations |
+              OperationEquivalence::IgnoreDiscardableAttrs |
+              OperationEquivalence::IgnoreProperties)) {
     std::ostringstream msg;
     msg << stageName << " IR does not match expected structure\n\n";
 
-    msg << "=== EXPECTED IR ===\n";
-    msg << expectedStr << "\n\n";
+    std::string expectedStr;
+    llvm::raw_string_ostream expectedStream(expectedStr);
+    expectedModule.print(expectedStream);
+    expectedStream.flush();
 
-    msg << "=== ACTUAL IR ===\n";
-    msg << actualIR << "\n";
+    msg << "=== EXPECTED IR ===\n" << expectedStr << "\n\n";
+    msg << "=== ACTUAL IR ===\n" << actualIR << "\n";
 
     return testing::AssertionFailure() << msg.str();
   }
