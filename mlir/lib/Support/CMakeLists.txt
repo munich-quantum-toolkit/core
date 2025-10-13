@@ -7,7 +7,6 @@
 add_mlir_library(
   MLIRSupportMQT
   PrettyPrinting.cpp
-  TestUtils.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Support
   LINK_LIBS
