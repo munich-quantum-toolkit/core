@@ -4,6 +4,13 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+## [3.3.0]
+
+The shared library ABI version (`SOVERSION`) is increased from `3.0` to `3.1`.
+Thus, consuming libraries need to update their wheel repair configuration for `cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the wheel repair step.
+
+### IfElseOperation
+
 This release introduces an `IfElseOperation` to the C++ library and the Python package to support Qiskit's `IfElseOp`.
 The new operation replaces the `ClassicControlledOperation`.
 
@@ -17,7 +24,7 @@ qc.if_else(
 )
 ```
 
-If no else-operation is needed, the `if_()` method can be used.
+If no else operation is needed, the `if_()` method can be used.
 
 ```python
 qc.if_(op_type=OpType.x, target=0, control_bit=0)
@@ -108,7 +115,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.2.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/munich-quantum-toolkit/core/compare/v2.7.0...v3.0.0
