@@ -21,6 +21,14 @@
 
 namespace mqt::ir::opt::helpers {
 
+inline auto flatten(const dd::TwoQubitGateMatrix& matrix) {
+  std::array<std::complex<qc::fp>, 16> result;
+  for (std::size_t i = 0; i < result.size(); ++i) {
+    result[i] = matrix[i / 4][i % 4];
+  }
+  return result;
+}
+
 std::optional<qc::fp> mlirValueToFp(mlir::Value value);
 
 template <typename T, typename Func>
@@ -127,7 +135,6 @@ inline std::optional<qc::fp> mlirValueToFp(mlir::Value value) {
   auto&& outQubits = op.getOutQubits();
   bool isSingleQubitOp =
       inQubits.size() == 1 && outQubits.size() == 1 && !op.isControlled();
-  assert(isSingleQubitOp == qc::isSingleQubitGate(getQcType(op)));
   return isSingleQubitOp;
 }
 
@@ -143,7 +150,6 @@ inline std::optional<qc::fp> mlirValueToFp(mlir::Value value) {
   auto outQubitSize =
       outQubits.size() + outPosCtrlQubits.size() + outNegCtrlQubits.size();
   bool isTwoQubitOp = inQubitSize == 2 && outQubitSize == 2;
-  assert(isTwoQubitOp == qc::isTwoQubitGate(getQcType(op)));
   return isTwoQubitOp;
 }
 
@@ -154,6 +160,9 @@ getUnitaryMatrix(UnitaryInterface op) {
 
   if (isTwoQubitOperation(op)) {
     return dd::opToTwoQubitGateMatrix(type, parameters);
+  } else if (isSingleQubitOperation(op)) {
+    auto matrix = dd::opToSingleQubitGateMatrix(type, parameters);
+    // TODO
   }
   return std::nullopt;
 }
@@ -162,6 +171,20 @@ getUnitaryMatrix(UnitaryInterface op) {
                                              dd::GateMatrix matrix) {
   return {factor * matrix.at(0), factor * matrix.at(1), factor * matrix.at(2),
           factor * matrix.at(3)};
+}
+
+[[nodiscard]] inline auto
+multiply(const std::array<std::complex<qc::fp>, 16>& lhs,
+         const std::array<std::complex<qc::fp>, 16>& rhs) {
+  std::array<std::complex<qc::fp>, 16> result;
+  for (int i = 0; i < 4; i++) {
+    for (int j = 0; j < 4; j++) {
+      for (int k = 0; k < 4; k++) {
+        result[i * 4 + j] += lhs[i * 4 + k] * rhs[k * 4 + j];
+      }
+    }
+  }
+  return result;
 }
 
 [[nodiscard]] inline dd::TwoQubitGateMatrix
