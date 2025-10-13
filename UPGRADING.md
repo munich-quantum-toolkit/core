@@ -6,7 +6,7 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [3.3.0]
 
-The shared library ABI version (`SOVERSION`) is increased from `3.0` to `3.1`.
+The shared library ABI version (`SOVERSION`) is increased from `3.2` to `3.3`.
 Thus, consuming libraries need to update their wheel repair configuration for `cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the wheel repair step.
 
 ### IfElseOperation
