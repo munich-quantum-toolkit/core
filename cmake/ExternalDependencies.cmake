@@ -106,3 +106,19 @@ list(APPEND FETCH_PACKAGES spdlog)
 
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
+
+# Patch for spdlog cmake files to be installed in a common cmake directory
+if(SPDLOG_INSTALL)
+  include(GNUInstallDirs)
+  install(
+    CODE "
+    file(GLOB SPDLOG_CMAKE_FILES
+      \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/cmake/spdlog/*\")
+    if(SPDLOG_CMAKE_FILES)
+      file(MAKE_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/cmake/spdlog\")
+      file(COPY \${SPDLOG_CMAKE_FILES}
+        DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/cmake/spdlog\")
+      file(REMOVE_RECURSE \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/cmake/spdlog\")
+    endif()
+  ")
+endif()
