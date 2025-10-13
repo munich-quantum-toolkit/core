@@ -23,7 +23,7 @@ namespace mlir::qir {
 LLVM::LLVMFuncOp getMainFunction(Operation* op) {
   auto module = dyn_cast<ModuleOp>(op);
   if (!module) {
-    return nullptr;
+    module = op->getParentOfType<ModuleOp>();
   }
 
   // Search for function with entry_point attribute

@@ -39,6 +39,11 @@ void QIRProgramBuilder::initialize() {
       LLVM::LLVMVoidType::get(builder.getContext()), {});
   mainFunc = builder.create<LLVM::LLVMFuncOp>(loc, "main", funcType);
 
+  // Add entry_point attribute to identify the main function
+  auto entryPointAttr = StringAttr::get(builder.getContext(), "entry_point");
+  mainFunc->setAttr("passthrough",
+                    ArrayAttr::get(builder.getContext(), {entryPointAttr}));
+
   // Create the 4-block structure for QIR base profile
   entryBlock = mainFunc.addEntryBlock(builder);
   mainBlock = mainFunc.addBlock();
@@ -69,8 +74,8 @@ void QIRProgramBuilder::initialize() {
   const auto initType = LLVM::LLVMFunctionType::get(
       LLVM::LLVMVoidType::get(builder.getContext()),
       LLVM::LLVMPointerType::get(builder.getContext()));
-  auto initFunc = getOrCreateFunctionDeclaration(builder, module.getOperation(),
-                                                 QIR_INITIALIZE, initType);
+  auto initFunc =
+      getOrCreateFunctionDeclaration(builder, module, QIR_INITIALIZE, initType);
   builder.create<LLVM::CallOp>(loc, initFunc, ValueRange{zeroOp.getResult()});
 
   // Set insertion point to main block for user operations
@@ -83,7 +88,7 @@ Value QIRProgramBuilder::allocQubit() {
       LLVM::LLVMPointerType::get(builder.getContext()), {});
 
   auto fnDecl = getOrCreateFunctionDeclaration(
-      builder, module.getOperation(), QIR_QUBIT_ALLOCATE, qirSignature);
+      builder, module, QIR_QUBIT_ALLOCATE, qirSignature);
 
   // Call qubit_allocate
   auto callOp = builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{});
@@ -163,8 +168,8 @@ Value QIRProgramBuilder::measure(const Value qubit, const size_t resultIndex) {
   // Create mz call
   const auto mzSignature = LLVM::LLVMFunctionType::get(
       LLVM::LLVMVoidType::get(builder.getContext()), {ptrType, ptrType});
-  auto mzDecl = getOrCreateFunctionDeclaration(builder, module.getOperation(),
-                                               QIR_MEASURE, mzSignature);
+  auto mzDecl =
+      getOrCreateFunctionDeclaration(builder, module, QIR_MEASURE, mzSignature);
   builder.create<LLVM::CallOp>(loc, mzDecl, ValueRange{qubit, resultValue});
 
   // Get or create result label
@@ -173,8 +178,8 @@ Value QIRProgramBuilder::measure(const Value qubit, const size_t resultIndex) {
     labelOp = resultLabelCache.at(resultIndex);
   } else {
     // Use common utility function to create result label
-    labelOp = createResultLabel(builder, module.getOperation(),
-                                "r" + std::to_string(resultIndex));
+    labelOp =
+        createResultLabel(builder, module, "r" + std::to_string(resultIndex));
     resultLabelCache.try_emplace(resultIndex, labelOp);
     metadata_.numResults++;
   }
@@ -183,7 +188,7 @@ Value QIRProgramBuilder::measure(const Value qubit, const size_t resultIndex) {
   const auto recordSignature = LLVM::LLVMFunctionType::get(
       LLVM::LLVMVoidType::get(builder.getContext()), {ptrType, ptrType});
   auto recordDecl = getOrCreateFunctionDeclaration(
-      builder, module.getOperation(), QIR_RECORD_OUTPUT, recordSignature);
+      builder, module, QIR_RECORD_OUTPUT, recordSignature);
   builder.create<LLVM::CallOp>(loc, recordDecl,
                                ValueRange{resultValue, labelOp.getResult()});
 
@@ -201,8 +206,8 @@ QIRProgramBuilder& QIRProgramBuilder::reset(const Value qubit) {
   const auto qirSignature = LLVM::LLVMFunctionType::get(
       LLVM::LLVMVoidType::get(builder.getContext()),
       LLVM::LLVMPointerType::get(builder.getContext()));
-  auto fnDecl = getOrCreateFunctionDeclaration(builder, module.getOperation(),
-                                               QIR_RESET, qirSignature);
+  auto fnDecl =
+      getOrCreateFunctionDeclaration(builder, module, QIR_RESET, qirSignature);
   builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit});
 
   return *this;
@@ -221,7 +226,7 @@ QIRProgramBuilder& QIRProgramBuilder::dealloc(const Value qubit) {
   const auto qirSignature = LLVM::LLVMFunctionType::get(
       LLVM::LLVMVoidType::get(builder.getContext()),
       LLVM::LLVMPointerType::get(builder.getContext()));
-  auto fnDecl = getOrCreateFunctionDeclaration(builder, module.getOperation(),
+  auto fnDecl = getOrCreateFunctionDeclaration(builder, module,
                                                QIR_QUBIT_RELEASE, qirSignature);
   builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit});
 
