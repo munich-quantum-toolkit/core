@@ -122,6 +122,18 @@ def AllocOp : FluxOp<"alloc"> {
         attr-dict `:` type($result)
     }];
 
+    let builders = [
+        OpBuilder<(ins), [{
+            build($_builder, $_state, QubitType::get($_builder.getContext()), nullptr, nullptr, nullptr);
+        }]>,
+        OpBuilder<(ins "::mlir::StringAttr":$register_name,
+                       "::mlir::IntegerAttr":$register_size,
+                       "::mlir::IntegerAttr":$register_index), [{
+            build($_builder, $_state, QubitType::get($_builder.getContext()),
+                  register_name, register_size, register_index);
+        }]>
+    ];
+
     let hasVerifier = 1;
 }
 
