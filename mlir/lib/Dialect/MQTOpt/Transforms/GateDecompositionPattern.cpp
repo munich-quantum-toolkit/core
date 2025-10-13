@@ -43,18 +43,29 @@ struct GateDecompositionPattern final
   matchAndRewrite(UnitaryInterface op,
                   mlir::PatternRewriter& rewriter) const override {
     auto series = getTwoQubitSeries(op);
+    llvm::errs() << "SERIES SIZE: " << series.size() << '\n';
+
     if (series.size() <= 3) {
       return mlir::failure();
     }
 
-    dd::TwoQubitGateMatrix unitaryMatrix = dd::opToTwoQubitGateMatrix(qc::I);
+    matrix4x4 unitaryMatrix =
+        helpers::flatten(dd::opToTwoQubitGateMatrix(qc::I));
     for (auto&& gate : series) {
       if (auto gateMatrix = helpers::getUnitaryMatrix(gate)) {
-        unitaryMatrix = helpers::multiply(unitaryMatrix, *gateMatrix);
+        unitaryMatrix =
+            helpers::multiply(unitaryMatrix, helpers::flatten(*gateMatrix));
       }
     }
 
-    twoQubitDecompose(unitaryMatrix);
+    TwoQubitBasisDecomposer decomposer;
+    auto sequence = decomposer.twoQubitDecompose(unitaryMatrix, DEFAULT_FIDELITY, true,
+                                 std::nullopt);
+    if (!sequence) {
+      return mlir::failure();
+    }
+
+    applySeries(rewriter, series, *sequence);
 
     return mlir::success();
   }
@@ -71,14 +82,22 @@ struct GateDecompositionPattern final
     } else {
       return result;
     }
+    result.push_back(op);
+
     while (true) {
-      for (auto&& user : op->getUsers()) {
-        auto userUnitary = llvm::cast<UnitaryInterface>(user);
+      for (auto&& user : llvm::concat<mlir::Operation*>(qubits[0].getUsers(),
+                                                        qubits[1].getUsers())) {
+        auto userUnitary = mlir::dyn_cast<UnitaryInterface>(user);
+        if (!userUnitary) {
+          return result;
+        }
+
         if (helpers::isSingleQubitOperation(userUnitary)) {
           auto&& operand = userUnitary->getOperand(0);
           auto* it = llvm::find(qubits, operand);
           if (it == qubits.end()) {
-            return result;
+            throw std::logic_error{"Operand of single-qubit op and user of "
+                                   "qubit is not in qubits"};
           }
           *it = userUnitary->getResult(0);
 
@@ -99,7 +118,48 @@ struct GateDecompositionPattern final
           return result;
         }
       }
-      return result;
+    }
+    return result;
+  }
+
+  /**
+   * @brief Creates a new rotation gate with no controls.
+   *
+   * @tparam OpType The type of the operation to be created.
+   * @param op The first instance of the rotation gate.
+   * @param rewriter The pattern rewriter.
+   * @return A new rotation gate.
+   */
+  template <typename OpType>
+  static OpType createOneParameterGate(mlir::PatternRewriter& rewriter,
+                                       mlir::Location location,
+                                       qc::fp parameter,                                       mlir::ValueRange inQubits) {
+    auto parameterValue = rewriter.create<mlir::arith::ConstantOp>(
+        location, rewriter.getF64Type(), rewriter.getF64FloatAttr(parameter));
+
+    return rewriter.create<OpType>(
+        location, inQubits.getType(), mlir::TypeRange{}, mlir::TypeRange{},
+        mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{},
+        mlir::ValueRange{parameterValue}, inQubits, mlir::ValueRange{},
+        mlir::ValueRange{});
+  }
+
+
+    struct QubitGateSequence {
+      struct Gate {
+        qc::OpType type{qc::I};
+        std::vector<qc::fp> parameter;
+        std::vector<std::size_t> qubit_id = {0};
+      };
+      std::vector<Gate> gates;
+      qc::fp globalPhase;
+    };
+    using OneQubitGateSequence = QubitGateSequence;
+    using TwoQubitGateSequence = QubitGateSequence;
+
+  static void applySeries(mlir::PatternRewriter& rewriter, const llvm::SmallVector<UnitaryInterface>& series, const TwoQubitGateSequence& sequence) {
+    if (sequence.globalPhase != 0.0) {
+        createOneParameterGate<GPhaseOp>(rewriter, series[0]->getLoc(), sequence.globalPhase, {});
     }
   }
 
@@ -154,6 +214,21 @@ struct GateDecompositionPattern final
     return (r < 0.0) ? r + std::abs(b) : r;
   }
 
+  // Wrap angle into interval [-π,π). If within atol of the endpoint, clamp
+  // to -π
+  static qc::fp
+  mod2pi(qc::fp angle,
+         qc::fp angleZeroEpsilon = std::numeric_limits<qc::fp>::epsilon()) {
+    // remEuclid() isn't exactly the same as Python's % operator, but
+    // because the RHS here is a constant and positive it is effectively
+    // equivalent for this case
+    auto wrapped = remEuclid(angle + qc::PI, 2. * qc::PI) - qc::PI;
+    if (std::abs(wrapped - qc::PI) < angleZeroEpsilon) {
+      return -qc::PI;
+    }
+    return wrapped;
+  }
+
   static matrix2x2 dot(const matrix2x2& lhs, const matrix2x2& rhs) {
     return lhs;
   }
@@ -163,6 +238,13 @@ struct GateDecompositionPattern final
 
   static matrix2x2 transpose(const matrix2x2& x) { return x; }
   static matrix4x4 transpose(const matrix4x4& x) { return x; }
+
+  static matrix2x2 transpose_conjugate(const matrix2x2& matrix) {
+    auto result = transpose(matrix);
+    llvm::transform(result, result.begin(),
+                    [](auto&& x) { return std::conj(x); });
+    return result;
+  };
 
   static qfp determinant(const matrix2x2& x) { return 0.0; };
   static qfp determinant(const matrix4x4& x) { return 0.0; };
@@ -308,13 +390,58 @@ struct GateDecompositionPattern final
     throw std::invalid_argument{"Unknown EulerBasis for angles_from_unitary"};
   }
 
-  static std::array<qc::fp, 4> params_xyx_inner(const matrix2x2& matrix) {}
+  static std::array<qc::fp, 4> params_zyz_inner(const matrix2x2& matrix) {
+    auto getIndex = [](auto x, auto y) { return (y * 2) + x; };
+    auto determinant = [getIndex](auto&& matrix) {
+      return (matrix.at(getIndex(0, 0)) * matrix.at(getIndex(1, 1))) -
+             (matrix.at(getIndex(1, 0)) * matrix.at(getIndex(0, 1)));
+    };
+
+    auto detArg = std::arg(determinant(matrix));
+    auto phase = 0.5 * detArg;
+    auto theta = 2. * std::atan2(std::abs(matrix.at(getIndex(1, 0))),
+                                 std::abs(matrix.at(getIndex(0, 0))));
+    auto ang1 = std::arg(matrix.at(getIndex(1, 1)));
+    auto ang2 = std::arg(matrix.at(getIndex(1, 0)));
+    auto phi = ang1 + ang2 - detArg;
+    auto lam = ang1 - ang2;
+    return {theta, phi, lam, phase};
+  }
+
+  static std::array<qc::fp, 4> params_xyx_inner(const matrix2x2& matrix) {
+    auto mat_zyz = std::array{
+        0.5 * (matrix.at(0 * 2 + 0) + matrix.at(0 * 2 + 1 * 2 * 2) +
+               matrix.at(1 * 2 + 0) + matrix.at(1 * 2 + 1)),
+        0.5 * (matrix.at(0 * 2 + 0) - matrix.at(0 * 2 + 1 * 2 * 2) +
+               matrix.at(1 * 2 + 0) - matrix.at(1 * 2 + 1)),
+        0.5 * (matrix.at(0 * 2 + 0) + matrix.at(0 * 2 + 1 * 2 * 2) -
+               matrix.at(1 * 2 + 0) - matrix.at(1 * 2 + 1)),
+        0.5 * (matrix.at(0 * 2 + 0) - matrix.at(0 * 2 + 1 * 2 * 2) -
+               matrix.at(1 * 2 + 0) + matrix.at(1 * 2 + 1)),
+    };
+    auto [theta, phi, lam, phase] = params_zyz_inner(mat_zyz);
+    auto new_phi = mod2pi(phi + qc::PI, 0.);
+    auto new_lam = mod2pi(lam + qc::PI, 0.);
+    return {
+        theta,
+        new_phi,
+        new_lam,
+        phase + (new_phi + new_lam - phi - lam) / 2.,
+    };
+  }
 
   static constexpr std::complex<qc::fp> C_ZERO{0., 0.};
   static constexpr std::complex<qc::fp> C_ONE{1., 0.};
   static constexpr std::complex<qc::fp> C_M_ONE{-1., 0.};
   static constexpr std::complex<qc::fp> IM{0., 1.};
   static constexpr std::complex<qc::fp> M_IM{0., -1.};
+
+  static constexpr std::array<std::complex<qc::fp>, 4> IPZ = {IM, C_ZERO,
+                                                              C_ZERO, M_IM};
+  static constexpr std::array<std::complex<qc::fp>, 4> IPY = {C_ZERO, C_ONE,
+                                                              C_M_ONE, C_ZERO};
+  static constexpr std::array<std::complex<qc::fp>, 4> IPX = {C_ZERO, IM, IM,
+                                                              C_ZERO};
 
   struct TwoQubitWeylDecomposition {
     qc::fp a;
@@ -336,13 +463,6 @@ struct GateDecompositionPattern final
 
               std::optional<qc::fp> fidelity,
               std::optional<Specialization> _specialization) {
-      constexpr std::array<std::complex<qc::fp>, 4> IPZ = {IM, C_ZERO, C_ZERO,
-                                                           M_IM};
-      constexpr std::array<std::complex<qc::fp>, 4> IPY = {C_ZERO, C_ONE,
-                                                           C_M_ONE, C_ZERO};
-      constexpr std::array<std::complex<qc::fp>, 4> IPX = {C_ZERO, IM, IM,
-                                                           C_ZERO};
-
       auto& u = unitary_matrix;
       auto det_u = determinant(u);
       auto det_pow = std::pow(det_u, static_cast<qc::fp>(-0.25));
@@ -837,6 +957,7 @@ struct GateDecompositionPattern final
         if (specialization == Specialization::General) {
           return general;
         }
+        throw std::logic_error{"Unknown specialization"};
       };
 
       TwoQubitWeylDecomposition specialized = get_specialized_decomposition();
@@ -877,7 +998,7 @@ struct GateDecompositionPattern final
 
   struct TwoQubitBasisDecomposer {
     qc::OpType gate;
-    std::optional<qc::fp> gate_params;
+    std::vector<qc::fp> gate_params;
     qc::fp basis_fidelity;
     EulerBasis euler_basis;
     std::optional<bool> pulse_optimize;
@@ -903,17 +1024,166 @@ struct GateDecompositionPattern final
     matrix2x2 q2l;
     matrix2x2 q2r;
 
-    struct QubitGateSequence {
-      struct Gate {
-        qc::OpType type{qc::I};
-        std::optional<qc::fp> parameter;
-        std::vector<std::size_t> qubit_id = {0};
+    TwoQubitBasisDecomposer
+    new_inner(qc::OpType gate = qc::X, // CX
+              const std::vector<qc::fp>& gate_params = {},
+              matrix4x4 gate_matrix = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0,
+                                       1, 0}, // CX matrix
+              qc::fp basis_fidelity = 1.0,
+              EulerBasis euler_basis = EulerBasis::ZYZ,
+              std::optional<bool> pulse_optimize = std::nullopt) {
+      auto relative_eq = [](auto&& lhs, auto&& rhs, auto&& epsilon,
+                            auto&& max_relative) {
+        // Handle same infinities
+        if (lhs == rhs) {
+          return true;
+        }
+
+        // Handle remaining infinities
+        if (std::isinf(lhs) || std::isinf(rhs)) {
+          return false;
+        }
+
+        auto abs_diff = std::abs(lhs - rhs);
+
+        // For when the numbers are really close together
+        if (abs_diff <= epsilon) {
+          return true;
+        }
+
+        auto abs_lhs = std::abs(lhs);
+        auto abs_rhs = std::abs(rhs);
+        if (abs_rhs > abs_lhs) {
+          return abs_diff <= abs_rhs * max_relative;
+        }
+        return abs_diff <= abs_lhs * max_relative;
       };
-      std::vector<Gate> gates;
-      qc::fp globalPhase;
-    };
-    using OneQubitGateSequence = QubitGateSequence;
-    using TwoQubitGateSequence = QubitGateSequence;
+      constexpr auto FRAC_1_SQRT_2 = 0.707106781186547524400844362104849039;
+      constexpr auto K12R_ARR = std::array{
+          qfp(0., FRAC_1_SQRT_2),
+          qfp(FRAC_1_SQRT_2, 0.),
+          qfp(-FRAC_1_SQRT_2, 0.),
+          qfp(0., -FRAC_1_SQRT_2),
+      };
+      constexpr auto K12L_ARR = std::array{
+          qfp(0.5, 0.5),
+          qfp(0.5, 0.5),
+          qfp(-0.5, 0.5),
+          qfp(0.5, -0.5),
+      };
+
+      auto basis_decomposer = TwoQubitWeylDecomposition::new_inner(
+          gate_matrix, DEFAULT_FIDELITY, std::nullopt);
+      auto super_controlled =
+          relative_eq(basis_decomposer.a, qc::PI_4,
+                      std::numeric_limits<qc::fp>::epsilon(), 1e-09) &&
+          relative_eq(basis_decomposer.c, 0.0,
+                      std::numeric_limits<qc::fp>::epsilon(), 1e-09);
+
+      // Create some useful matrices U1, U2, U3 are equivalent to the basis,
+      // expand as Ui = Ki1.Ubasis.Ki2
+      auto b = basis_decomposer.b;
+      auto temp = qfp(0.5, -0.5);
+      auto k11l = std::array{
+          temp * (M_IM * std::exp(qfp(0., -b))), temp * std::exp(qfp(0., -b)),
+          temp * (M_IM * std::exp(qfp(0., b))), temp * -(std::exp(qfp(0., b)))};
+      auto k11r = std::array{FRAC_1_SQRT_2 * std::exp((IM * qfp(0., -b))),
+                             FRAC_1_SQRT_2 * -std::exp(qfp(0., -b)),
+                             FRAC_1_SQRT_2 * std::exp(qfp(0., b)),
+                             FRAC_1_SQRT_2 * (M_IM * std::exp(qfp(0., b)))};
+      auto k32l_k21l = std::array{FRAC_1_SQRT_2 * std::cos(qfp(1., (2. * b))),
+                                  FRAC_1_SQRT_2 * (IM * std::sin((2. * b))),
+                                  FRAC_1_SQRT_2 * (IM * std::sin(2. * b)),
+                                  FRAC_1_SQRT_2 * qfp(1., -std::cos(2. * b))};
+      temp = qfp(0.5, 0.5);
+      auto k21r = std::array{
+          temp * (M_IM * std::exp(qfp(0., -2. * b))),
+          temp * std::exp(qfp(0., -2. * b)),
+          temp * (IM * std::exp(qfp(0., 2. * b))),
+          temp * std::exp(qfp(0., 2. * b)),
+      };
+      constexpr auto K22L_ARR = std::array{
+          qfp(FRAC_1_SQRT_2, 0.),
+          qfp(-FRAC_1_SQRT_2, 0.),
+          qfp(FRAC_1_SQRT_2, 0.),
+          qfp(FRAC_1_SQRT_2, 0.),
+      };
+      constexpr auto K22R_ARR = std::array{C_ZERO, C_ONE, C_M_ONE, C_ZERO};
+      auto k31l = std::array{
+          FRAC_1_SQRT_2 * std::exp(qfp(0., -b)),
+          FRAC_1_SQRT_2 * std::exp(qfp(0., -b)),
+          FRAC_1_SQRT_2 * -std::exp(qfp(0., b)),
+          FRAC_1_SQRT_2 * std::exp(qfp(0., b)),
+      };
+      auto k31r = std::array{
+          IM * std::exp(qfp(0., b)),
+          C_ZERO,
+          C_ZERO,
+          M_IM * std::exp(qfp(0., -b)),
+      };
+      temp = qfp(0.5, 0.5);
+      auto k32r = std::array{
+          temp * std::exp(qfp(0., b)),
+          temp * -std::exp(qfp(0., -b)),
+          temp * (M_IM * std::exp(qfp(0., b))),
+          temp * (M_IM * std::exp(qfp(0., -b))),
+      };
+      auto k1ld = transpose_conjugate(basis_decomposer.K1l);
+      auto k1rd = transpose_conjugate(basis_decomposer.K1r);
+      auto k2ld = transpose_conjugate(basis_decomposer.K2l);
+      auto k2rd = transpose_conjugate(basis_decomposer.K2r);
+      // Pre-build the fixed parts of the matrices used in 3-part decomposition
+      auto u0l = dot(k31l, k1ld);
+      auto u0r = dot(k31r, k1rd);
+      auto u1l = dot(dot(k2ld, k32l_k21l), k1ld);
+      auto u1ra = dot(k2rd, k32r);
+      auto u1rb = dot(k21r, k1rd);
+      auto u2la = dot(k2ld, K22L_ARR);
+      auto u2lb = dot(k11l, k1ld);
+      auto u2ra = dot(k2rd, K22R_ARR);
+      auto u2rb = dot(k11r, k1rd);
+      auto u3l = dot(k2ld, K12L_ARR);
+      auto u3r = dot(k2rd, K12R_ARR);
+      // Pre-build the fixed parts of the matrices used in the 2-part
+      // decomposition
+      auto q0l = dot(transpose_conjugate(K12L_ARR), k1ld);
+      auto q0r = dot(dot(transpose_conjugate(K12R_ARR), IPZ), k1rd);
+      auto q1la = dot(k2ld, transpose_conjugate(k11l));
+      auto q1lb = dot(k11l, k1ld);
+      auto q1ra = dot(dot(k2rd, IPZ), transpose_conjugate(k11r));
+      auto q1rb = dot(k11r, k1rd);
+      auto q2l = dot(k2ld, K12L_ARR);
+      auto q2r = dot(k2rd, K12R_ARR);
+
+      return TwoQubitBasisDecomposer{
+          gate,
+          gate_params,
+          basis_fidelity,
+          euler_basis,
+          pulse_optimize,
+          basis_decomposer,
+          super_controlled,
+          u0l,
+          u0r,
+          u1l,
+          u1ra,
+          u1rb,
+          u2la,
+          u2lb,
+          u2ra,
+          u2rb,
+          u3l,
+          u3r,
+          q0l,
+          q0r,
+          q1la,
+          q1lb,
+          q1ra,
+          q1rb,
+          q2l,
+          q2r,
+      };
+    }
 
     std::optional<TwoQubitGateSequence>
     twoQubitDecompose(const matrix4x4& unitaryMatrix,
@@ -971,6 +1241,7 @@ struct GateDecompositionPattern final
             decomp, target_1q_basis_list, 0, {}, true, std::nullopt);
         euler_decompositions.push_back(euler_decomp);
       }
+      TwoQubitGateSequence gates{.globalPhase = target_decomposed.global_phase};
       // Worst case length is 5x 1q gates for each 1q decomposition + 1x 2q gate
       // We might overallocate a bit if the euler basis is different but
       // the worst case is just 16 extra elements with just a String and 2
@@ -978,7 +1249,6 @@ struct GateDecompositionPattern final
       // aren't long lived and are just used to create a QuantumCircuit or
       // DAGCircuit when we return to Python space.
       constexpr auto TWO_QUBIT_SEQUENCE_DEFAULT_CAPACITY = 21;
-      TwoQubitGateSequence gates{.globalPhase = target_decomposed.global_phase};
       gates.gates.reserve(TWO_QUBIT_SEQUENCE_DEFAULT_CAPACITY);
       gates.globalPhase -= best_nbasis * basis_decomposer.global_phase;
       if (best_nbasis == 2) {
@@ -1022,13 +1292,6 @@ struct GateDecompositionPattern final
 
     [[nodiscard]] std::vector<matrix2x2>
     decomp1_inner(const TwoQubitWeylDecomposition& target) const {
-      auto transpose_conjugate = [](auto&& matrix) {
-        auto result = transpose(matrix);
-        llvm::transform(result, result.begin(),
-                        [](auto&& x) { return std::conj(x); });
-        return result;
-      };
-
       // FIXME: fix for z!=0 and c!=0 using closest reflection (not always in
       // the Weyl chamber)
       return {
@@ -1081,7 +1344,7 @@ struct GateDecompositionPattern final
         return std::nullopt;
       }
 
-      if (gate != "cx") {
+      if (gate != qc::X) { // CX
         if (pulse_optimize.has_value()) {
           throw std::runtime_error{
               "pulse_optimizer currently only works with CNOT entangling gate"};
@@ -1108,7 +1371,7 @@ struct GateDecompositionPattern final
         return {qfp{0.5, 0.5}, qfp{0.5, -0.5}, qfp{0.5, -0.5}, qfp{0.5, 0.5}};
       }
       if (gate.type == qc::RZ) {
-        return rz_matrix(gate.parameter.value());
+        return rz_matrix(gate.parameter.at(0));
       }
       if (gate.type == qc::X) {
         return {0, 1, 1, 0};
@@ -1190,11 +1453,11 @@ struct GateDecompositionPattern final
           {.type = qc::X, .qubit_id = {0, 1}}); // TODO: mark CX somehow?
       gates.gates.push_back({.type = qc::SX, .qubit_id = {0}});
       gates.gates.push_back({.type = qc::RZ,
-                             .parameter = euler_q0[1][1] - qc::PI,
+                             .parameter = {euler_q0[1][1] - qc::PI},
                              .qubit_id = {0}});
       gates.gates.push_back({.type = qc::SX, .qubit_id = {0}});
       gates.gates.push_back(
-          {.type = qc::RZ, .parameter = euler_q1[1][1], .qubit_id = {1}});
+          {.type = qc::RZ, .parameter = {euler_q1[1][1]}, .qubit_id = {1}});
       gates.globalPhase += qc::PI_2;
       gates.gates.push_back(
           {.type = qc::X, .qubit_id = {0, 1}}); // TODO: mark CX somehow?
@@ -1438,8 +1701,8 @@ struct GateDecompositionPattern final
           bestCircuit = circuit;
           minError = error;
         }
-        return bestCircuit;
       }
+      return bestCircuit;
     }
 
     // TODO: copied+adapted from single-qubit decomposition
@@ -1465,23 +1728,6 @@ struct GateDecompositionPattern final
         angleZeroEpsilon = -1.0;
       }
 
-      auto remEuclid = [](qc::fp a, qc::fp b) {
-        auto r = std::fmod(a, b);
-        return (r < 0.0) ? r + std::abs(b) : r;
-      };
-      // Wrap angle into interval [-π,π). If within atol of the endpoint, clamp
-      // to -π
-      auto mod2pi = [&](qc::fp angle) -> qc::fp {
-        // remEuclid() isn't exactly the same as Python's % operator, but
-        // because the RHS here is a constant and positive it is effectively
-        // equivalent for this case
-        auto wrapped = remEuclid(angle + qc::PI, 2. * qc::PI) - qc::PI;
-        if (std::abs(wrapped - qc::PI) < angleZeroEpsilon) {
-          return -qc::PI;
-        }
-        return wrapped;
-      };
-
       qc::fp globalPhase = phase - ((phi + lambda) / 2.);
 
       std::vector<OneQubitGateSequence::Gate> gates;
@@ -1489,7 +1735,7 @@ struct GateDecompositionPattern final
         lambda += phi;
         lambda = mod2pi(lambda);
         if (std::abs(lambda) > angleZeroEpsilon) {
-          gates.push_back({kGate, lambda});
+          gates.push_back({kGate, {lambda}});
           globalPhase += lambda / 2.0;
         }
         return {gates, globalPhase};
@@ -1509,13 +1755,13 @@ struct GateDecompositionPattern final
       lambda = mod2pi(lambda);
       if (std::abs(lambda) > angleZeroEpsilon) {
         globalPhase += lambda / 2.0;
-        gates.push_back({kGate, lambda});
+        gates.push_back({kGate, {lambda}});
       }
-      gates.push_back({aGate, theta});
+      gates.push_back({aGate, {theta}});
       phi = mod2pi(phi);
       if (std::abs(phi) > angleZeroEpsilon) {
         globalPhase += phi / 2.0;
-        gates.push_back({kGate, phi});
+        gates.push_back({kGate, {phi}});
       }
       return {gates, globalPhase};
     }
