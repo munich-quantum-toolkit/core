@@ -17,7 +17,6 @@
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 #include "mlir/Dialect/Quartz/Translation/TranslateQuantumComputationToQuartz.h"
 #include "mlir/Support/PrettyPrinting.h"
-#include "mlir/Support/TestUtils.h"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -44,64 +43,37 @@ using namespace mlir;
 //===----------------------------------------------------------------------===//
 
 /**
- * @brief Helper to verify a compilation stage matches expected IR
+ * @brief Verify a stage matches expected module
  *
- * @details
- * Provides detailed error messages including actual and expected IR when
- * verification fails.
+ * @param stageName Human-readable stage name for error messages
+ * @param actualIR String IR from CompilationRecord
+ * @param expectedModule Expected module to compare against
+ * @return True if modules match, false otherwise with diagnostic output
  */
-class StageVerifier {
-public:
-  explicit StageVerifier(MLIRContext* ctx) : context(ctx) {}
+[[nodiscard]] testing::AssertionResult verify(const std::string& stageName,
+                                              const std::string& actualIR,
+                                              ModuleOp expectedModule) {
+  // dump expected module to text-based IR
+  std::string expectedStr;
+  llvm::raw_string_ostream expectedStream(expectedStr);
+  expectedModule.print(expectedStream);
 
-  /**
-   * @brief Verify a stage matches expected module
-   *
-   * @param stageName Human-readable stage name for error messages
-   * @param actualIR String IR from CompilationRecord
-   * @param expectedModule Expected module to compare against
-   * @return True if modules match, false otherwise with diagnostic output
-   */
-  [[nodiscard]] ::testing::AssertionResult
-  verify(const std::string& stageName, const std::string& actualIR,
-         ModuleOp expectedModule) const {
-    // Parse actual IR
-    const auto actualModule =
-        parseSourceString<ModuleOp>(actualIR, ParserConfig(context));
-    if (!actualModule) {
-      return ::testing::AssertionFailure()
-             << "Failed to parse " << stageName << " IR\n"
-             << "Raw IR string:\n"
-             << actualIR;
-    }
+  // Compare modules
+  if (actualIR != expectedStr) {
+    std::ostringstream msg;
+    msg << stageName << " IR does not match expected structure\n\n";
 
-    // Compare modules
-    if (!modulesAreEquivalent(actualModule.get(), expectedModule)) {
-      std::ostringstream msg;
-      msg << stageName << " IR does not match expected structure\n\n";
+    msg << "=== EXPECTED IR ===\n";
+    msg << expectedStr << "\n\n";
 
-      msg << "=== EXPECTED IR ===\n";
-      std::string expectedStr;
-      llvm::raw_string_ostream expectedStream(expectedStr);
-      expectedModule.print(expectedStream);
-      msg << expectedStr << "\n\n";
+    msg << "=== ACTUAL IR ===\n";
+    msg << actualIR << "\n";
 
-      msg << "=== ACTUAL IR ===\n";
-      msg << actualIR << "\n\n";
-
-      msg << "=== DIFFERENCE ===\n";
-      msg << "Modules are structurally different. ";
-      msg << "Check operation types, attributes, and structure.\n";
-
-      return ::testing::AssertionFailure() << msg.str();
-    }
-
-    return ::testing::AssertionSuccess();
+    return testing::AssertionFailure() << msg.str();
   }
 
-private:
-  MLIRContext* context;
-};
+  return testing::AssertionSuccess();
+}
 
 //===----------------------------------------------------------------------===//
 // Stage Expectation Builder
@@ -142,7 +114,6 @@ struct StageExpectations {
 class CompilerPipelineTest : public testing::Test {
 protected:
   std::unique_ptr<MLIRContext> context;
-  std::unique_ptr<StageVerifier> verifier;
   QuantumCompilerConfig config;
   CompilationRecord record;
 
@@ -161,8 +132,6 @@ protected:
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
-
-    verifier = std::make_unique<StageVerifier>(context.get());
 
     // Enable QIR conversion and recording by default
     config.convertToQIR = true;
@@ -289,68 +258,55 @@ protected:
    */
   void verifyAllStages(const StageExpectations& expectations) const {
     if (expectations.quartzImport) {
-      EXPECT_TRUE(verifier->verify("Quartz Import", record.afterQuartzImport,
-                                   expectations.quartzImport));
+      EXPECT_TRUE(verify("Quartz Import", record.afterQuartzImport,
+                         expectations.quartzImport));
     }
 
     if (expectations.initialCanon) {
-      EXPECT_TRUE(verifier->verify("Initial Canonicalization",
-                                   record.afterInitialCanon,
-                                   expectations.initialCanon));
+      EXPECT_TRUE(verify("Initial Canonicalization", record.afterInitialCanon,
+                         expectations.initialCanon));
     }
 
     if (expectations.fluxConversion) {
-      EXPECT_TRUE(verifier->verify("Flux Conversion",
-                                   record.afterFluxConversion,
-                                   expectations.fluxConversion));
+      EXPECT_TRUE(verify("Flux Conversion", record.afterFluxConversion,
+                         expectations.fluxConversion));
     }
 
     if (expectations.fluxCanon) {
-      EXPECT_TRUE(verifier->verify("Flux Canonicalization",
-                                   record.afterFluxCanon,
-                                   expectations.fluxCanon));
+      EXPECT_TRUE(verify("Flux Canonicalization", record.afterFluxCanon,
+                         expectations.fluxCanon));
     }
 
     if (expectations.optimization) {
-      EXPECT_TRUE(verifier->verify("Optimization", record.afterOptimization,
-                                   expectations.optimization));
+      EXPECT_TRUE(verify("Optimization", record.afterOptimization,
+                         expectations.optimization));
     }
 
     if (expectations.optimizationCanon) {
-      EXPECT_TRUE(verifier->verify("Optimization Canonicalization",
-                                   record.afterOptimizationCanon,
-                                   expectations.optimizationCanon));
+      EXPECT_TRUE(verify("Optimization Canonicalization",
+                         record.afterOptimizationCanon,
+                         expectations.optimizationCanon));
     }
 
     if (expectations.quartzConversion) {
-      EXPECT_TRUE(verifier->verify("Quartz Conversion",
-                                   record.afterQuartzConversion,
-                                   expectations.quartzConversion));
+      EXPECT_TRUE(verify("Quartz Conversion", record.afterQuartzConversion,
+                         expectations.quartzConversion));
     }
 
     if (expectations.quartzCanon) {
-      EXPECT_TRUE(verifier->verify("Quartz Canonicalization",
-                                   record.afterQuartzCanon,
-                                   expectations.quartzCanon));
+      EXPECT_TRUE(verify("Quartz Canonicalization", record.afterQuartzCanon,
+                         expectations.quartzCanon));
     }
 
     if (expectations.qirConversion) {
-      EXPECT_TRUE(verifier->verify("QIR Conversion", record.afterQIRConversion,
-                                   expectations.qirConversion));
+      EXPECT_TRUE(verify("QIR Conversion", record.afterQIRConversion,
+                         expectations.qirConversion));
     }
 
     if (expectations.qirCanon) {
-      EXPECT_TRUE(verifier->verify("QIR Canonicalization", record.afterQIRCanon,
-                                   expectations.qirCanon));
+      EXPECT_TRUE(verify("QIR Canonicalization", record.afterQIRCanon,
+                         expectations.qirCanon));
     }
-  }
-
-  /**
-   * @brief Verify a single stage
-   */
-  void verifyStage(const std::string& stageName, const std::string& actualIR,
-                   const ModuleOp expectedModule) const {
-    EXPECT_TRUE(verifier->verify(stageName, actualIR, expectedModule));
   }
 
   void TearDown() override {
@@ -829,7 +785,7 @@ TEST_F(CompilerPipelineTest, SingleMeasurementToSingleBit) {
  * @brief Test: Repeated measurement to same bit
  */
 TEST_F(CompilerPipelineTest, RepeatedMeasurementToSameBit) {
-  qc::QuantumComputation qc(1);
+  qc::QuantumComputation qc(1, 1);
   qc.measure(0, 0);
   qc.measure(0, 0);
 
