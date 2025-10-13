@@ -15,6 +15,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/DialectImplementation.h>
+#include <mlir/IR/PatternMatch.h>
 // IWYU pragma: end_keep
 
 using namespace mlir;
@@ -80,4 +81,60 @@ LogicalResult AllocOp::verify() {
     }
   }
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Canonicalization Patterns
+//===----------------------------------------------------------------------===//
+
+namespace {
+/**
+ * @class RemoveAllocDeallocPair
+ * @brief A class designed to identify and remove matching allocation and
+ * deallocation pairs without operations between them.
+ */
+struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(DeallocOp deallocOp,
+                                PatternRewriter& rewriter) const override {
+    // Check if the predecessor is an AllocOp
+    auto allocOp = deallocOp.getQubit().getDefiningOp<AllocOp>();
+    if (!allocOp) {
+      return failure();
+    }
+
+    // Remove the AllocOp and the DeallocOp
+    rewriter.eraseOp(allocOp);
+    rewriter.eraseOp(deallocOp);
+    return success();
+  }
+};
+
+struct RemoveResetAfterAlloc final : OpRewritePattern<ResetOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ResetOp resetOp,
+                                PatternRewriter& rewriter) const override {
+    // Check if the predecessor is an AllocOp
+    if (auto allocOp = resetOp.getQubitIn().getDefiningOp<AllocOp>();
+        !allocOp) {
+      return failure();
+    }
+
+    // Remove the ResetOp
+    rewriter.replaceOp(resetOp, resetOp.getQubitIn());
+    return success();
+  }
+};
+} // namespace
+
+void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                            MLIRContext* context) {
+  results.add<RemoveAllocDeallocPair>(context);
+}
+
+void ResetOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                          MLIRContext* context) {
+  results.add<RemoveResetAfterAlloc>(context);
 }
