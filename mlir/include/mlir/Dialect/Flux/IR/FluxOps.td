@@ -150,6 +150,7 @@ def DeallocOp : FluxOp<"dealloc"> {
 
     let arguments = (ins QubitType:$qubit);
     let assemblyFormat = "$qubit attr-dict `:` type($qubit)";
+    let hasCanonicalizer = 1;
 }
 
 def StaticOp : FluxOp<"static"> {
@@ -205,6 +206,7 @@ def ResetOp : FluxOp<"reset", [Idempotent, SameOperandsAndResultType]> {
     let arguments = (ins QubitType:$qubit_in);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+    let hasCanonicalizer = 1;
 }
 
 #endif // FluxOPS
