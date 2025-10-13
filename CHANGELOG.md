@@ -11,8 +11,9 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- 👷 Enable testing on Python 3.14 ([#1246]) ([**@denialhaag**])
 - ✨ Add dedicated `PlacementPass` to MLIR transpilation routines ([#1232]) ([**@MatthiasReumann**])
-- ✨ Add an NA specific FoMaC implementation ([#1223]) ([**@ystade**])
+- ✨ Add an NA-specific FoMaC implementation ([#1223], [#1236]) ([**@ystade**], [**@burgholzer**])
 - ✨ Enable import of BarrierOp into MQTRef ([#1224]) ([**@denialhaag**])
 - ✨ Add naive quantum program routing MLIR pass ([#1148]) ([**@MatthiasReumann**])
 - ✨ Add QIR runtime using DD-based simulation ([#1210]) ([**@ystade**], [**@burgholzer**])
@@ -56,6 +57,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
+- 🐛 Fix CMake installation to make `find_package(mqt-core CONFIG)` succeed ([#1247]) ([**@burgholzer**], [**@denialhaag**])
 - 🏁 Fix stack overflows in OpenQASM layout parsing on Windows for large circuits ([#1235]) ([**@burgholzer**])
 - ✨ Add missing `StandardOperation` conversions in MLIR roundtrip pass ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 
@@ -197,6 +199,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1247]: https://github.com/munich-quantum-toolkit/core/pull/1247
+[#1246]: https://github.com/munich-quantum-toolkit/core/pull/1246
+[#1236]: https://github.com/munich-quantum-toolkit/core/pull/1236
 [#1235]: https://github.com/munich-quantum-toolkit/core/pull/1235
 [#1232]: https://github.com/munich-quantum-toolkit/core/pull/1232
 [#1224]: https://github.com/munich-quantum-toolkit/core/pull/1224
