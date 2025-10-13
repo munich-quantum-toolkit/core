@@ -15,8 +15,9 @@ add_mlir_library(
   QuartzToQIRIncGen
   LINK_LIBS
   PUBLIC
+  MLIRQIRUtils
   MLIRLLVMDialect
-  MLIRFluxDialect
+  MLIRQuartzDialect
   MLIRArithDialect
   MLIRFuncDialect
   MLIRFuncToLLVM
