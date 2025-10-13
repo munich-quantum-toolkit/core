@@ -71,7 +71,7 @@ public:
     // needed.
     addTargetMaterialization([](OpBuilder& builder, Type resultType,
                                 ValueRange inputs, Location loc) -> Value {
-      // Just return the input value - it's already the memref we want
+      // Just return the input value - it is already the memref we want
       if (inputs.size() == 1) {
         return inputs[0];
       }
@@ -145,9 +145,18 @@ struct ConvertQuantumMeasure final
     const auto qubitType = opt::QubitType::get(rewriter.getContext());
     const auto bitType = rewriter.getI1Type();
 
-    // Create the new operation and replace with proper result ordering
-    rewriter.replaceOpWithNewOp<opt::MeasureOp>(op, qubitType, bitType,
-                                                adaptor.getInQubit());
+    // Create the new operation
+    // Note: quantum.measure returns (i1, !quantum.bit)
+    //       mqtopt.measure returns (!mqtopt.Qubit, i1)
+    // So we need to swap the result ordering when replacing
+    auto measureOp = rewriter.create<opt::MeasureOp>(
+        op.getLoc(), qubitType, bitType, adaptor.getInQubit());
+
+    // Replace with results in the correct order:
+    // op.getResult(0) is i1 -> maps to measureOp.getResult(1) (i1)
+    // op.getResult(1) is !quantum.bit -> maps to measureOp.getResult(0)
+    // (!mqtopt.Qubit)
+    rewriter.replaceOp(op, {measureOp.getResult(1), measureOp.getResult(0)});
 
     return success();
   }
@@ -160,20 +169,33 @@ struct ConvertQuantumExtract final
   LogicalResult
   matchAndRewrite(catalyst::quantum::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Get the index from the attribute
-    auto idxAttr = op.getIdxAttrAttr();
-    if (!idxAttr) {
-      return op.emitError("ExtractOp missing idx_attr");
-    }
-
-    auto idx = idxAttr.getValue().getZExtValue();
-
     // Prepare the result type(s)
     auto qubitType = opt::QubitType::get(rewriter.getContext());
 
-    // Create index constant
-    auto indexConstant =
-        rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
+    // Get the index - either from attribute (compile-time) or operand (runtime)
+    Value indexValue;
+    auto idxAttr = op.getIdxAttrAttr();
+
+    if (idxAttr) {
+      // Compile-time constant index from attribute
+      auto idx = idxAttr.getValue().getZExtValue();
+      indexValue = rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
+    } else {
+      // Runtime dynamic index from operand
+      // The index is the second operand (first is qreg)
+      auto idxOperand = adaptor.getIdx();
+      if (!idxOperand) {
+        return op.emitError("ExtractOp missing both idx_attr and idx operand");
+      }
+
+      // Convert i64 to index type if needed
+      if (isa<IntegerType>(idxOperand.getType())) {
+        indexValue = rewriter.create<arith::IndexCastOp>(
+            op.getLoc(), rewriter.getIndexType(), idxOperand);
+      } else {
+        indexValue = idxOperand;
+      }
+    }
 
     // Get the memref from adaptor
     Value memref = adaptor.getQreg();
@@ -195,7 +217,7 @@ struct ConvertQuantumExtract final
 
     // Create the new operation directly using the actual memref type
     auto loadOp = rewriter.create<memref::LoadOp>(
-        op.getLoc(), qubitType, memref, ValueRange{indexConstant});
+        op.getLoc(), qubitType, memref, ValueRange{indexValue});
 
     // quantum.extract only returns the extracted qubit, not a modified register
     rewriter.replaceOp(op, loadOp.getResult());
@@ -210,17 +232,29 @@ struct ConvertQuantumInsert final
   LogicalResult
   matchAndRewrite(catalyst::quantum::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Get the index from the attribute
+    // Get the index - either from attribute (compile-time) or operand (runtime)
+    Value indexValue;
     auto idxAttr = op.getIdxAttrAttr();
-    if (!idxAttr) {
-      return op.emitError("InsertOp missing idx_attr");
+
+    if (idxAttr) {
+      // Compile-time constant index from attribute
+      auto idx = idxAttr.getValue().getZExtValue();
+      indexValue = rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
+    } else {
+      // Runtime dynamic index from operand
+      auto idxOperand = adaptor.getIdx();
+      if (!idxOperand) {
+        return op.emitError("InsertOp missing both idx_attr and idx operand");
+      }
+
+      // Convert i64 to index type if needed
+      if (isa<IntegerType>(idxOperand.getType())) {
+        indexValue = rewriter.create<arith::IndexCastOp>(
+            op.getLoc(), rewriter.getIndexType(), idxOperand);
+      } else {
+        indexValue = idxOperand;
+      }
     }
-
-    auto idx = idxAttr.getValue().getZExtValue();
-
-    // Create index constant
-    auto indexConstant =
-        rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
 
     // Get the memref from adaptor
     Value memref = adaptor.getInQreg();
@@ -235,7 +269,7 @@ struct ConvertQuantumInsert final
 
     // Create the new operation directly
     rewriter.create<memref::StoreOp>(op.getLoc(), adaptor.getQubit(), memref,
-                                     ValueRange{indexConstant});
+                                     ValueRange{indexValue});
 
     // In the memref model, the quantum register is modified in-place,
     // so we replace the result with the memref (unchanged)
