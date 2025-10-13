@@ -33,10 +33,6 @@ if TYPE_CHECKING:
 
 __all__ = ["QiskitBackend"]
 
-# Maximum number of coupling pairs to generate for two-qubit operations
-# This prevents excessive combinations when device has many qubits
-MAX_COUPLING_PAIRS = 50
-
 
 class QiskitBackend(BackendV2):  # type: ignore[misc]
     """A Qiskit BackendV2 adapter for QDMI devices via FoMaC.
@@ -279,7 +275,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             if op_info.sites and isinstance(op_info.sites[0], tuple):
                 # Local multi-qubit operation: sites already contains valid combinations
                 # Each inner tuple represents a valid combination of qubit indices
-                return cast("list[tuple[int, ...]]", list(op_info.sites[:MAX_COUPLING_PAIRS]))
+                return cast("list[tuple[int, ...]]", list(op_info.sites))
 
             # Single-qubit or global operation: sites is a flat tuple of individual indices
             if qubits_num == 1:
@@ -298,7 +294,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
                 if cm:
                     cm_set = {(int(a), int(b)) for (a, b) in cm}
                     pairs = [p for p in pairs if p in cm_set or (p[1], p[0]) in cm_set]
-                return pairs[:MAX_COUPLING_PAIRS]
+                return pairs
 
         # Generate all possible qubit combinations
         if qubits_num == 1:
