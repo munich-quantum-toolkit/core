@@ -13,6 +13,7 @@ Provides a Qiskit BackendV2-compatible interface to QDMI devices via FoMaC.
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any, cast
 
 from qiskit.circuit import Measure, Parameter, QuantumCircuit
@@ -85,7 +86,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         self._target = self._build_target()
 
         # Set backend options
-        self._options = Options(shots=1024)
+        self._options = self._default_options()
 
     @property
     def capabilities_hash(self) -> str:
@@ -138,7 +139,12 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             # Map known operations to Qiskit gates
             gate = self._map_operation_to_gate(op_name)
             if gate is None:
-                continue  # Skip unsupported operations
+                warnings.warn(
+                    f"Device operation '{op_name}' cannot be mapped to a Qiskit gate and will be skipped",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                continue
 
             # Determine which qubit pairs/singles this operation applies to
             qargs = self._get_operation_qargs(op_info)
