@@ -265,11 +265,14 @@ struct ConvertQuartzStaticOp final
  * performs the measurement, updates the mapping with the output qubit,
  * and returns the classical bit result.
  *
+ * Register metadata (name, size, index) for output recording is preserved
+ * during conversion.
+ *
  * Example transformation:
  * ```mlir
- * %c = quartz.measure %q : !quartz.qubit -> i1
+ * %c = quartz.measure("c", 2, 0) %q : !quartz.qubit -> i1
  * // becomes (where %q maps to %q_in):
- * %q_out, %c = flux.measure %q_in : !flux.qubit -> (!flux.qubit, i1)
+ * %q_out, %c = flux.measure("c", 2, 0) %q_in : !flux.qubit
  * // state updated: %q now maps to %q_out
  * ```
  */
@@ -281,9 +284,6 @@ struct ConvertQuartzMeasureOp final
   matchAndRewrite(quartz::MeasureOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
 
-    // Prepare result type
-    const auto& qubitType = flux::QubitType::get(rewriter.getContext());
-
     const auto& quartzQubit = op.getQubit();
 
     // Get the latest Flux qubit value from the state map
@@ -291,10 +291,11 @@ struct ConvertQuartzMeasureOp final
 
     // Create flux.measure operation (returns both output qubit and bit result)
     auto fluxOp = rewriter.create<flux::MeasureOp>(
-        op.getLoc(), qubitType, op.getResult().getType(), fluxQubit);
+        op.getLoc(), fluxQubit, op.getRegisterNameAttr(),
+        op.getRegisterSizeAttr(), op.getRegisterIndexAttr());
 
-    auto outFluxQubit = fluxOp.getQubitOut();
-    auto newBit = fluxOp.getResult();
+    const auto outFluxQubit = fluxOp.getQubitOut();
+    const auto newBit = fluxOp.getResult();
 
     // Update mapping: the Quartz qubit now corresponds to the output qubit
     getState().qubitMap[quartzQubit] = outFluxQubit;

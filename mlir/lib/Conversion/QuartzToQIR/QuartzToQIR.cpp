@@ -61,16 +61,23 @@ namespace {
  * operations to QIR (Quantum Intermediate Representation). It tracks:
  * - Qubit and result counts for QIR metadata
  * - Pointer value caching for reuse
- * - Result output mapping
  * - Whether dynamic memory management is needed
+ * - Sequence of measurements for output recording
  */
 struct LoweringState : QIRMetadata {
   /// Map from qubit index to pointer value for reuse
   DenseMap<size_t, Value> ptrMap;
-  /// Map from result index to addressOf operation for output recording
-  DenseMap<size_t, Operation*> outputMap;
-  /// Index for the next measure operation label
-  size_t index{};
+
+  /// Map from classical result index to pointer value for reuse
+  DenseMap<size_t, Value> resultPtrMap;
+
+  /// Map from (register_name, register_index) to result pointer
+  /// This allows caching result pointers for measurements with register info
+  DenseMap<std::pair<StringRef, size_t>, Value> registerResultMap;
+
+  /// Sequence of measurements to record in output block
+  /// Each entry: (result_ptr, register_name, register_index)
+  SmallVector<std::tuple<Value, StringRef, size_t>> measurementSequence;
 };
 
 /**
@@ -297,37 +304,28 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
 };
 
 /**
- * @brief Converts quartz.measure operation to QIR measurement and output
- * recording
+ * @brief Converts quartz.measure operation to QIR measurement
  *
  * @details
- * Converts qubit measurement to two QIR calls:
- * 1. `__quantum__qis__mz__body`: Performs the measurement
- * 2. `__quantum__rt__result_record_output`: Records the result for output
+ * Converts qubit measurement to a QIR call to `__quantum__qis__mz__body`.
+ * Unlike the previous implementation, this does NOT immediately record output.
+ * Instead, it tracks measurements in the lowering state for deferred output
+ * recording in a separate output block, as required by the QIR Base Profile.
  *
- * The converter examines the users of the measurement result to find
- * memref.store operations, extracting the classical register index from them.
- * This ensures faithful translation of which classical bit receives the
- * measurement result, including cases where multiple measurements target the
- * same bit.
+ * For measurements with register information, the result pointer is mapped
+ * to (register_name, register_index) for later retrieval. For measurements
+ * without register information, a sequential result pointer is assigned.
  *
- * The result pointer is created using inttoptr and cached for reuse. A global
- * constant is created for the result label (r0, r1, etc.) based on the
- * classical register index.
- *
- * @par Example:
+ * @par Example (with register):
  * ```mlir
- * %result = quartz.measure %q : !quartz.qubit -> i1
- * %c0 = arith.constant 0 : index
- * memref.store %result, %creg[%c0] : memref<2xi1>
+ * %result = quartz.measure("c", 2, 0) %q : !quartz.qubit -> i1
  * ```
  * becomes:
  * ```mlir
  * %c0_i64 = llvm.mlir.constant(0 : i64) : i64
  * %result_ptr = llvm.inttoptr %c0_i64 : i64 to !llvm.ptr
  * llvm.call @__quantum__qis__mz__body(%q, %result_ptr) : (!llvm.ptr, !llvm.ptr)
- * -> () llvm.call @__quantum__rt__result_record_output(%result_ptr, %label0) :
- * (!llvm.ptr, !llvm.ptr) -> ()
+ * -> ()
  * ```
  */
 struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
@@ -337,23 +335,53 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
   matchAndRewrite(MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
-    auto& ptrMap = getState().ptrMap;
-    auto& outputMap = getState().outputMap;
     const auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    auto& state = getState();
+    auto& numResults = state.numResults;
+    auto& resultPtrMap = state.resultPtrMap;
+    auto& registerResultMap = state.registerResultMap;
+    auto& measurementSequence = state.measurementSequence;
 
-    // Get or create result pointer
-    Value resultValue = nullptr;
-    if (ptrMap.contains(getState().numResults)) {
-      resultValue = ptrMap.at(getState().numResults);
+    // Get or create result pointer value
+    Value resultValue;
+    if (op.getRegisterName() && op.getRegisterSize() && op.getRegisterIndex()) {
+      const auto registerName = op.getRegisterName().value();
+      const auto registerIndex =
+          static_cast<size_t>(op.getRegisterIndex().value());
+      const auto key = std::make_pair(registerName, registerIndex);
+
+      if (const auto it = registerResultMap.find(key);
+          it != registerResultMap.end()) {
+        resultValue = it->second;
+      } else {
+        const auto constantOp = rewriter.create<LLVM::ConstantOp>(
+            op.getLoc(),
+            rewriter.getI64IntegerAttr(
+                static_cast<int64_t>(numResults))); // Sequential result index
+        resultValue = rewriter
+                          .create<LLVM::IntToPtrOp>(op.getLoc(), ptrType,
+                                                    constantOp->getResult(0))
+                          .getResult();
+        resultPtrMap[numResults] = resultValue;
+        registerResultMap.insert({key, resultValue});
+        numResults++;
+      }
+
+      // Track this measurement for output recording
+      measurementSequence.emplace_back(resultValue, registerName,
+                                       registerIndex);
     } else {
+      // No register info - assign sequential result pointer
       const auto constantOp = rewriter.create<LLVM::ConstantOp>(
-          op.getLoc(), rewriter.getI64IntegerAttr(
-                           static_cast<int64_t>(getState().numResults)));
+          op.getLoc(), rewriter.getI64IntegerAttr(static_cast<int64_t>(
+                           numResults))); // Sequential result index
       resultValue = rewriter
                         .create<LLVM::IntToPtrOp>(op.getLoc(), ptrType,
                                                   constantOp->getResult(0))
                         .getResult();
-      ptrMap.try_emplace(getState().numResults, resultValue);
+      resultPtrMap[numResults] = resultValue;
+      measurementSequence.emplace_back(resultValue, "c", numResults);
+      numResults++;
     }
 
     // Create mz (measure) call: mz(qubit, result)
@@ -364,72 +392,6 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
     rewriter.create<LLVM::CallOp>(op.getLoc(), mzDecl,
                                   ValueRange{adaptor.getQubit(), resultValue});
 
-    // Find the classical register index by examining store operations
-    size_t index = 0;
-    for (const auto* user : op->getResult(0).getUsers()) {
-      if (auto storeOp = dyn_cast<memref::StoreOp>(user)) {
-        // Extract the index from the store operation
-        auto constantOp =
-            storeOp.getIndices()[0].getDefiningOp<arith::ConstantOp>();
-        if (!constantOp) {
-          op.emitError("Measurement index could not be resolved. Index is not "
-                       "a ConstantOp.");
-          return failure();
-        }
-
-        const auto integerAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
-        if (!integerAttr) {
-          op.emitError("Measurement index could not be resolved. Index cannot "
-                       "be cast to IntegerAttr.");
-          return failure();
-        }
-        index = integerAttr.getInt();
-
-        const auto allocaOp = storeOp.getMemref();
-
-        // Clean up the store operation and related ops
-        storeOp->dropAllReferences();
-        rewriter.eraseOp(storeOp);
-
-        // Erase the alloca if all stores are removed
-        if (allocaOp.use_empty()) {
-          rewriter.eraseOp(allocaOp.getDefiningOp<memref::AllocaOp>());
-        }
-
-        // Delete the constant if there are no users left
-        if (constantOp->use_empty()) {
-          rewriter.eraseOp(constantOp);
-        }
-        break;
-      }
-    }
-
-    // Create result_record_output call
-    const auto recordSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), {ptrType, ptrType});
-    const auto recordDecl = getOrCreateFunctionDeclaration(
-        rewriter, op, QIR_RECORD_OUTPUT, recordSignature);
-
-    // Get or create output label addressOf for this index
-    Operation* labelOp = nullptr;
-    if (outputMap.contains(index)) {
-      // Reuse existing label for this index (handles multiple measurements to
-      // same bit)
-      labelOp = outputMap.at(index);
-    } else {
-      // Create new label
-      labelOp = createResultLabel(rewriter, op,
-                                  "r" + std::to_string(getState().index));
-      outputMap.try_emplace(index, labelOp);
-      // Only increment result count for new labels
-      getState().numResults++;
-    }
-
-    rewriter.create<LLVM::CallOp>(
-        op.getLoc(), recordDecl,
-        ValueRange{resultValue, labelOp->getResult(0)});
-
-    // Remove the original operation
     rewriter.eraseOp(op);
 
     return success();
@@ -468,14 +430,14 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
    * @details
    * The QIR base profile requires a specific 4-block structure:
    * 1. **Entry block**: Contains constant operations and initialization
-   * 2. **Main block**: Contains reversible quantum operations (gates)
-   * 3. **Irreversible block**: Contains irreversible operations (measure,
+   * 2. **Body block**: Contains reversible quantum operations (gates)
+   * 3. **Measurements block**: Contains irreversible operations (measure,
    *    reset, dealloc)
-   * 4. **End block**: Contains return operation
+   * 4. **Output block**: Contains output recording calls
    *
-   * Blocks are connected with unconditional jumps (entry → main →
-   * irreversible → end). This structure ensures proper QIR semantics and
-   * enables optimizations.
+   * Blocks are connected with unconditional jumps (entry → body →
+   * measurements → output). This structure ensures proper QIR Base
+   * Profile semantics.
    *
    * If the function already has multiple blocks, this function does nothing.
    *
@@ -488,52 +450,50 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
     }
 
     // Get the existing block
-    auto* mainBlock = &main.front();
+    auto* bodyBlock = &main.front();
     OpBuilder builder(main.getBody());
 
     // Create the required blocks
     auto* entryBlock = builder.createBlock(&main.getBody());
-    // Move the entry block before the main block
-    main.getBlocks().splice(Region::iterator(mainBlock), main.getBlocks(),
+    // Move the entry block before the body block
+    main.getBlocks().splice(Region::iterator(bodyBlock), main.getBlocks(),
                             entryBlock);
-    Block* irreversibleBlock = builder.createBlock(&main.getBody());
-    Block* endBlock = builder.createBlock(&main.getBody());
+    Block* measurementsBlock = builder.createBlock(&main.getBody());
+    Block* outputBlock = builder.createBlock(&main.getBody());
 
-    auto& mainBlockOps = mainBlock->getOperations();
-    auto& endBlockOps = endBlock->getOperations();
-    auto& irreversibleBlockOps = irreversibleBlock->getOperations();
+    auto& bodyBlockOps = bodyBlock->getOperations();
+    auto& outputBlockOps = outputBlock->getOperations();
+    auto& measurementsBlockOps = measurementsBlock->getOperations();
 
     // Move operations to appropriate blocks
-    for (auto it = mainBlock->begin(); it != mainBlock->end();) {
+    for (auto it = bodyBlock->begin(); it != bodyBlock->end();) {
       // Ensure iterator remains valid after potential move
-      auto& op = *it++;
-
-      // Check for irreversible operations
-      if (op.getDialect()->getNamespace() == "memref") {
-        // Keep memref operations for classical bits in place (they're not
-        // quantum operations)
-        continue;
-      }
-      if (isa<DeallocOp>(op) || isa<ResetOp>(op) || isa<MeasureOp>(op)) {
-        // Move irreversible quantum operations to irreversible block
-        irreversibleBlockOps.splice(irreversibleBlock->end(), mainBlockOps,
+      if (auto& op = *it++;
+          isa<DeallocOp>(op) || isa<ResetOp>(op) || isa<MeasureOp>(op)) {
+        // Move irreversible quantum operations to measurements block
+        measurementsBlockOps.splice(measurementsBlock->end(), bodyBlockOps,
                                     Block::iterator(op));
       } else if (isa<LLVM::ReturnOp>(op)) {
-        // Move return to end block
-        endBlockOps.splice(endBlock->end(), mainBlockOps, Block::iterator(op));
+        // Move return to output block
+        outputBlockOps.splice(outputBlock->end(), bodyBlockOps,
+                              Block::iterator(op));
+      } else if (op.hasTrait<OpTrait::ConstantLike>()) {
+        // Move constant like operations to the entry block
+        entryBlock->getOperations().splice(entryBlock->end(), bodyBlockOps,
+                                           Block::iterator(op));
       }
-      // All other operations (gates, etc.) stay in main block
+      // All other operations (gates, etc.) stay in body block
     }
 
     // Add unconditional jumps between blocks
     builder.setInsertionPointToEnd(entryBlock);
-    builder.create<LLVM::BrOp>(main->getLoc(), mainBlock);
+    builder.create<LLVM::BrOp>(main->getLoc(), bodyBlock);
 
-    builder.setInsertionPointToEnd(mainBlock);
-    builder.create<LLVM::BrOp>(main->getLoc(), irreversibleBlock);
+    builder.setInsertionPointToEnd(bodyBlock);
+    builder.create<LLVM::BrOp>(main->getLoc(), measurementsBlock);
 
-    builder.setInsertionPointToEnd(irreversibleBlock);
-    builder.create<LLVM::BrOp>(main->getLoc(), endBlock);
+    builder.setInsertionPointToEnd(measurementsBlock);
+    builder.create<LLVM::BrOp>(main->getLoc(), outputBlock);
   }
 
   /**
@@ -547,7 +507,6 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
    *
    * @param main The main LLVM function
    * @param ctx The MLIR context
-   * @param state The lowering state (unused but kept for consistency)
    */
   static void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                             LoweringState* /*state*/) {
@@ -582,6 +541,117 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
   }
 
   /**
+   * @brief Adds output recording calls to the output block
+   *
+   * @details
+   * Generates output recording calls in the output block based on the
+   * measurements tracked during conversion. Follows the QIR Base Profile
+   * specification for labeled output schema.
+   *
+   * For each classical register, creates:
+   * 1. An array_record_output call with the register size and label
+   * 2. Individual result_record_output calls for each measurement in the
+   * register
+   *
+   * Labels follow the format: "{registerName}{resultIndex}r"
+   * - registerName: Name of the classical register (e.g., "c")
+   * - resultIndex: Index within the array
+   * - 'r' suffix: Indicates this is a result record
+   *
+   * Example output:
+   * ```
+   * @0 = internal constant [3 x i8] c"c\00"
+   * @1 = internal constant [5 x i8] c"c0r\00"
+   * @2 = internal constant [5 x i8] c"c1r\00"
+   * call void @__quantum__rt__array_record_output(i64 2, ptr @0)
+   * call void @__quantum__rt__result_record_output(ptr %result0, ptr @1)
+   * call void @__quantum__rt__result_record_output(ptr %result1, ptr @2)
+   * ```
+   *
+   * Any output recording calls that are not part of registers (i.e.,
+   * measurements without register info) are grouped under a default label
+   * "c" and recorded similarly.
+   *
+   * @param main The main LLVM function
+   * @param ctx The MLIR context
+   * @param state The lowering state containing measurement information
+   */
+  static void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
+                                 LoweringState* state) {
+    if (state->measurementSequence.empty()) {
+      return; // No measurements to record
+    }
+
+    OpBuilder builder(ctx);
+    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
+
+    // Find the output block (4th block: entry, body, measurements, output, end)
+    auto& outputBlock = main.getBlocks().back();
+
+    // Insert before the branch to end block
+    builder.setInsertionPoint(&outputBlock.back());
+
+    // Group measurements by register
+    llvm::StringMap<SmallVector<std::pair<size_t, Value>>> registerGroups;
+    for (const auto& [resultPtr, regName, regIdx] :
+         state->measurementSequence) {
+      if (!regName.empty()) {
+        registerGroups[regName].emplace_back(regIdx, resultPtr);
+      }
+    }
+
+    // Sort registers by name for deterministic output
+    SmallVector<std::pair<StringRef, SmallVector<std::pair<size_t, Value>>>>
+        sortedRegisters;
+    for (auto& [name, measurements] : registerGroups) {
+      sortedRegisters.emplace_back(name, std::move(measurements));
+    }
+    llvm::sort(sortedRegisters,
+               [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    // create function declarations for output recording
+    const auto arrayRecordSig = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx), {builder.getI64Type(), ptrType});
+    const auto arrayRecordDecl = getOrCreateFunctionDeclaration(
+        builder, main, QIR_ARRAY_RECORD_OUTPUT, arrayRecordSig);
+
+    const auto resultRecordSig = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx), {ptrType, ptrType});
+    const auto resultRecordDecl = getOrCreateFunctionDeclaration(
+        builder, main, QIR_RECORD_OUTPUT, resultRecordSig);
+
+    // Generate output recording for each register
+    for (auto& [registerName, measurements] : sortedRegisters) {
+      // Sort measurements by register index
+      llvm::sort(measurements, [](const auto& a, const auto& b) {
+        return a.first < b.first;
+      });
+
+      const auto arraySize = measurements.size();
+      auto arrayLabelOp = createResultLabel(builder, main, registerName);
+      auto arraySizeConst = builder.create<LLVM::ConstantOp>(
+          main->getLoc(),
+          builder.getI64IntegerAttr(static_cast<int64_t>(arraySize)));
+
+      builder.create<LLVM::CallOp>(
+          main->getLoc(), arrayRecordDecl,
+          ValueRange{arraySizeConst.getResult(), arrayLabelOp.getResult()});
+
+      // Create result_record_output calls for each measurement
+      for (auto [regIdx, resultPtr] : measurements) {
+        // Create label for result: "{arrayCounter+1+i}_{registerName}{i}r"
+        const std::string resultLabel =
+            registerName.str() + std::to_string(regIdx) + "r";
+        auto resultLabelOp = createResultLabel(builder, main, resultLabel);
+
+        builder.create<LLVM::CallOp>(
+            main->getLoc(), resultRecordDecl,
+            ValueRange{resultPtr, resultLabelOp.getResult()});
+      }
+    }
+  }
+
+  /**
    * @brief Executes the Quartz to QIR conversion pass
    *
    * @details
@@ -598,7 +668,7 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
    *
    * **Stage 3: Quartz to LLVM**
    * Convert Quartz dialect operations to QIR calls (static, alloc, dealloc,
-   * measure, reset).
+   * measure, reset) and add output recording to the output block.
    *
    * **Stage 4: QIR attributes**
    * Add QIR base profile metadata to the main function, including qubit/result
@@ -663,6 +733,8 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
         signalPassFailure();
         return;
       }
+
+      addOutputRecording(main, ctx, &state);
     }
 
     // Stage 4: Set QIR metadata attributes
