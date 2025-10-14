@@ -277,6 +277,83 @@ struct ConvertQuantumInsert final
     return success();
   }
 };
+
+struct ConvertQuantumGlobalPhase final
+    : OpConversionPattern<catalyst::quantum::GlobalPhaseOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(catalyst::quantum::GlobalPhaseOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract the parameter
+    auto param = adaptor.getParams();
+
+    // Extract control qubits and control values
+    auto inCtrlQubits = adaptor.getInCtrlQubits();
+    auto inCtrlValues = adaptor.getInCtrlValues();
+
+    // Convert to SmallVector for manipulation
+    SmallVector<Value> inPosCtrlQubitsVec;
+    SmallVector<Value> inNegCtrlQubitsVec;
+
+    // Derive positive and negative control qubits from existing control qubits
+    for (size_t i = 0; i < inCtrlQubits.size(); ++i) {
+      if (inCtrlValues[i]) {
+        inPosCtrlQubitsVec.emplace_back(inCtrlQubits[i]);
+      } else {
+        inNegCtrlQubitsVec.emplace_back(inCtrlQubits[i]);
+      }
+    }
+
+    // Create the parameter attributes
+    // GPhase has a single parameter
+    SmallVector<double> staticParamsVec;
+    SmallVector<bool> paramsMaskVec;
+    SmallVector<Value> finalParamValues;
+
+    // If the parameter is a constant, make it static
+    if (auto constOp = param.getDefiningOp<arith::ConstantOp>()) {
+      if (auto floatAttr = dyn_cast<FloatAttr>(constOp.getValue())) {
+        staticParamsVec.push_back(floatAttr.getValueAsDouble());
+        paramsMaskVec.push_back(true);
+      } else {
+        // Dynamic parameter
+        finalParamValues.push_back(param);
+        paramsMaskVec.push_back(false);
+      }
+    } else {
+      // Dynamic parameter
+      finalParamValues.push_back(param);
+      paramsMaskVec.push_back(false);
+    }
+
+    auto staticParams =
+        DenseF64ArrayAttr::get(rewriter.getContext(), staticParamsVec);
+    auto paramsMask =
+        DenseBoolArrayAttr::get(rewriter.getContext(), paramsMaskVec);
+
+    // Create the mqtopt.gphase operation
+    // Note: GPhase has no target qubits (NoTarget trait), only control qubits
+    // The builder signature is: (loc, out_qubits, pos_ctrl_out, neg_ctrl_out,
+    //                            static_params, params_mask, params,
+    //                            in_qubits, pos_ctrl_in, neg_ctrl_in)
+    // Both out_qubits and in_qubits should be empty for GPhase
+    auto gphaseOp = rewriter.create<opt::GPhaseOp>(
+        op.getLoc(), TypeRange{}, // out_qubits - empty for NoTarget
+        ValueRange(inPosCtrlQubitsVec).getTypes(), // pos_ctrl_out_qubits
+        ValueRange(inNegCtrlQubitsVec).getTypes(), // neg_ctrl_out_qubits
+        staticParams, paramsMask,
+        finalParamValues,                // params
+        ValueRange{},                    // in_qubits - empty for NoTarget
+        ValueRange(inPosCtrlQubitsVec),  // pos_ctrl_in_qubits
+        ValueRange(inNegCtrlQubitsVec)); // neg_ctrl_in_qubits
+
+    // Replace the original with the new operation
+    rewriter.replaceOp(op, gphaseOp);
+    return success();
+  }
+};
+
 struct ConvertQuantumCustomOp final
     : OpConversionPattern<catalyst::quantum::CustomOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -483,10 +560,11 @@ struct CatalystQuantumToMQTOpt final
     RewritePatternSet patterns(context);
     const CatalystQuantumToMQTOptTypeConverter typeConverter(context);
 
-    patterns.add<ConvertQuantumAlloc, ConvertQuantumDealloc,
-                 ConvertQuantumExtract, ConvertQuantumMeasure,
-                 ConvertQuantumInsert, ConvertQuantumCustomOp>(typeConverter,
-                                                               context);
+    patterns
+        .add<ConvertQuantumAlloc, ConvertQuantumDealloc, ConvertQuantumExtract,
+             ConvertQuantumMeasure, ConvertQuantumInsert,
+             ConvertQuantumGlobalPhase, ConvertQuantumCustomOp>(typeConverter,
+                                                                context);
 
     // Boilerplate code to prevent "unresolved materialization" errors when the
     // IR contains ops with signature or operand/result types not yet rewritten:
