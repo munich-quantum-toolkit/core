@@ -35,12 +35,12 @@ namespace mlir::qir {
  * boilerplate structure including proper block organization and metadata
  * attributes.
  *
- * @par QIR Structure:
- * QIR programs follow a specific structure with:
+ * @par QIR Base Profile Structure:
+ * QIR Base Profile compliant programs follow a specific 4-block structure:
  * - Entry block: Constants and initialization (__quantum__rt__initialize)
- * - Main block: Reversible quantum operations (gates)
- * - Irreversible block: Measurements, resets, deallocations
- * - End block: Return statement
+ * - Body block: Reversible quantum operations (gates)
+ * - Measurements block: Measurements, resets, deallocations
+ * - Output block: Output recording calls (array-based, grouped by register)
  *
  * @par Example Usage:
  * ```c++
@@ -52,7 +52,10 @@ namespace mlir::qir {
  *
  * // Operations use QIR function calls
  * builder.h(q0).cx(q0, q1);
- * auto result = builder.measure(q0, 0);
+ *
+ * // Measure with register info for proper output recording
+ * builder.measure(q0, "c", 0);
+ * builder.measure(q1, "c", 1);
  *
  * auto module = builder.finalize();
  * ```
@@ -135,15 +138,16 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Measure a qubit and record the result
+   * @brief Measure a qubit and record the result (simple version)
    *
    * @details
-   * Performs a Z-basis measurement using __quantum__qis__mz__body and
-   * records the result using __quantum__rt__result_record_output. The
-   * result is labeled with the provided index (e.g., "r0", "r1").
+   * Performs a Z-basis measurement using __quantum__qis__mz__body. The
+   * result is tracked for deferred output recording in the output block.
+   * This version does NOT include register information, so output will
+   * not be grouped by register.
    *
    * @param qubit The qubit to measure
-   * @param resultIndex The classical bit index for result labeling
+   * @param resultIndex The classical bit index for result pointer
    * @return An LLVM pointer to the measurement result
    *
    * @par Example:
@@ -151,14 +155,54 @@ public:
    * auto result = builder.measure(q0, 0);
    * ```
    * ```mlir
+   * // In measurements block:
    * %c0 = llvm.mlir.constant(0 : i64) : i64
    * %r = llvm.inttoptr %c0 : i64 to !llvm.ptr
-   * llvm.call @__quantum__qis__mz__body(%q0, %r) : (!llvm.ptr, !llvm.ptr) ->
-   * () llvm.call @__quantum__rt__result_record_output(%r, %label0) :
-   * (!llvm.ptr, !llvm.ptr) -> ()
+   * llvm.call @__quantum__qis__mz__body(%q0, %r) : (!llvm.ptr, !llvm.ptr) -> ()
+   *
+   * // Output recording deferred to output block
    * ```
    */
   Value measure(Value qubit, size_t resultIndex);
+
+  /**
+   * @brief Measure a qubit into a classical register
+   *
+   * @details
+   * Performs a Z-basis measurement using __quantum__qis__mz__body and tracks
+   * the measurement with register information for array-based output recording.
+   * Output recording is deferred to the output block during finalize(), where
+   * measurements are grouped by register and recorded using:
+   * 1. __quantum__rt__array_record_output for each register
+   * 2. __quantum__rt__result_record_output for each measurement in the register
+   *
+   * @param qubit The qubit to measure
+   * @param registerName The name of the classical register (e.g., "c")
+   * @param registerIndex The index within the register for this measurement
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.measure(q0, "c", 0);
+   * builder.measure(q1, "c", 1);
+   * ```
+   * ```mlir
+   * // In measurements block:
+   * llvm.call @__quantum__qis__mz__body(%q0, %r0) : (!llvm.ptr, !llvm.ptr) ->
+   * () llvm.call @__quantum__qis__mz__body(%q1, %r1) : (!llvm.ptr, !llvm.ptr)
+   * -> ()
+   *
+   * // In output block (generated during finalize):
+   * @0 = internal constant [3 x i8] c"c\00"
+   * @1 = internal constant [5 x i8] c"c0r\00"
+   * @2 = internal constant [5 x i8] c"c1r\00"
+   * llvm.call @__quantum__rt__array_record_output(i64 2, ptr @0)
+   * llvm.call @__quantum__rt__result_record_output(ptr %r0, ptr @1)
+   * llvm.call @__quantum__rt__result_record_output(ptr %r1, ptr @2)
+   * ```
+   */
+  QIRProgramBuilder& measure(Value qubit, StringRef registerName,
+                             size_t registerIndex);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -207,9 +251,11 @@ public:
    * @brief Finalize the program and return the constructed module
    *
    * @details
-   * Automatically deallocates all remaining allocated qubits, ensures proper
-   * QIR metadata attributes are set, and transfers ownership of the module to
-   * the caller. The builder should not be used after calling this method.
+   * Automatically deallocates all remaining allocated qubits, generates
+   * array-based output recording in the output block (grouped by register),
+   * ensures proper QIR metadata attributes are set, and transfers ownership
+   * of the module to the caller. The builder should not be used after calling
+   * this method.
    *
    * @return OwningOpRef containing the constructed QIR program module
    */
@@ -223,27 +269,45 @@ private:
 
   /// Entry block: constants and initialization
   Block* entryBlock{};
-  /// Main block: reversible operations (gates)
-  Block* mainBlock{};
-  /// Irreversible block: measurements, resets, deallocations
-  Block* irreversibleBlock{};
-  /// End block: return statement
-  Block* endBlock{};
+  /// Body block: reversible operations (gates)
+  Block* bodyBlock{};
+  /// Measurements block: measurements, resets, deallocations
+  Block* measurementsBlock{};
+  /// Output block: output recording calls
+  Block* outputBlock{};
+
+  /// Exit code constant (created in entry block, used in output block)
+  LLVM::ConstantOp exitCode;
 
   /// Track allocated qubits for automatic deallocation
-  llvm::DenseSet<Value> allocatedQubits;
+  DenseSet<Value> allocatedQubits;
 
   /// Cache static qubit pointers for reuse
-  llvm::DenseMap<size_t, Value> staticQubitCache;
+  DenseMap<size_t, Value> staticQubitCache;
 
   /// Cache result pointers for reuse (separate from qubits)
-  llvm::DenseMap<size_t, Value> resultPointerCache;
+  DenseMap<size_t, Value> resultPointerCache;
 
-  /// Track result labels to avoid duplicates
-  llvm::DenseMap<size_t, LLVM::AddressOfOp> resultLabelCache;
+  /// Map from (register_name, register_index) to result pointer
+  DenseMap<std::pair<StringRef, size_t>, Value> registerResultMap;
+
+  /// Sequence of measurements to record in output block
+  /// Each entry: (result_ptr, register_name, register_index)
+  SmallVector<std::tuple<Value, StringRef, size_t>> measurementSequence;
 
   /// Track qubit and result counts for QIR metadata
   QIRMetadata metadata_;
+
+  /**
+   * @brief Generate array-based output recording in the output block
+   *
+   * @details
+   * Called by finalize() to generate output recording calls for all tracked
+   * measurements. Groups measurements by register and generates:
+   * 1. array_record_output for each register
+   * 2. result_record_output for each measurement in the register
+   */
+  void generateOutputRecording();
 };
 
 } // namespace mlir::qir

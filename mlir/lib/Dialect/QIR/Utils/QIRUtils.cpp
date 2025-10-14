@@ -49,7 +49,7 @@ void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
   // Core QIR attributes
   attributes.emplace_back(builder.getStringAttr("entry_point"));
   attributes.emplace_back(
-      builder.getStrArrayAttr({"output_labeling_schema", "schema_id"}));
+      builder.getStrArrayAttr({"output_labeling_schema", "labeled"}));
   attributes.emplace_back(
       builder.getStrArrayAttr({"qir_profiles", "base_profile"}));
 
@@ -59,8 +59,8 @@ void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
   attributes.emplace_back(builder.getStrArrayAttr(
       {"required_num_results", std::to_string(metadata.numResults)}));
 
-  // QIR version
-  attributes.emplace_back(builder.getStrArrayAttr({"qir_major_version", "1"}));
+  // QIR version (Base Profile spec requires version 2.0)
+  attributes.emplace_back(builder.getStrArrayAttr({"qir_major_version", "2"}));
   attributes.emplace_back(builder.getStrArrayAttr({"qir_minor_version", "0"}));
 
   // Management model
