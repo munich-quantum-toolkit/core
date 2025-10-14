@@ -37,10 +37,10 @@ struct SwapReconstructionAndElision final
 
     // Configure greedy driver
     mlir::GreedyRewriteConfig config;
-#if MLIR_VERSION_MAJOR >= 22
+#if MLIR_VERSION_MAJOR >= 21
     config.setUseTopDownTraversal(true);
 #else
-    // For older MLIR versions, use the useTopDownTraversal field directly
+    // For older MLIR versions the field was public
     config.useTopDownTraversal = true;
 #endif
 
