@@ -12,7 +12,7 @@
 
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 
-#include <cstddef>
+#include <cstdint>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Builders.h>
@@ -125,20 +125,52 @@ public:
   SmallVector<Value> allocQubitRegister(int64_t size, StringRef name = "q");
 
   /**
+   * @brief A small structure representing a single classical bit within a
+   * classical register.
+   */
+  struct Bit {
+    /// Name of the register containing this bit
+    StringRef registerName;
+    /// Size of the register containing this bit
+    int64_t registerSize{};
+    /// Index of this bit within the register
+    int64_t registerIndex{};
+  };
+
+  /**
+   * @brief A small structure representing a classical bit register.
+   */
+  struct ClassicalRegister {
+    /// Name of the classical register
+    StringRef name;
+    /// Size of the classical register
+    int64_t size;
+
+    /**
+     * @brief Access a specific bit in the classical register
+     * @param index The index of the bit to access (must be less than size)
+     * @return A Bit structure representing the specified bit
+     */
+    Bit operator[](const int64_t index) const {
+      assert(index < size);
+      return {
+          .registerName = name, .registerSize = size, .registerIndex = index};
+    }
+  };
+
+  /**
    * @brief Allocate a classical bit register
    * @param size Number of bits
    * @param name Register name (default: "c")
-   * @return Memref of i1 elements
+   * @return A reference to a ClassicalRegister structure
    *
    * @par Example:
    * ```c++
    * auto c = builder.allocClassicalBitRegister(3, "c");
    * ```
-   * ```mlir
-   * %c = memref.alloca() {sym_name = "c"} : memref<3xi1>
-   * ```
    */
-  Value allocClassicalBitRegister(int64_t size, StringRef name = "c");
+  ClassicalRegister& allocClassicalBitRegister(int64_t size,
+                                               StringRef name = "c");
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
@@ -166,24 +198,21 @@ public:
   std::pair<Value, Value> measure(Value qubit);
 
   /**
-   * @brief Measure a qubit and store result in a classical register
+   * @brief Measure a qubit and record the result in a bit of a register
    *
    * @param qubit Input qubit (must be valid/unconsumed)
-   * @param memref Classical register
-   * @param index Storage index
+   * @param bit The classical bit to record the result
    * @return Output qubit value
    *
    * @par Example:
    * ```c++
-   * q0 = builder.measure(q0, c, 0);
+   * q0 = builder.measure(q0, c[0]);
    * ```
    * ```mlir
-   * %q0_out, %r0 = flux.measure %q0 : !flux.qubit
-   * %c0 = arith.constant 0 : index
-   * memref.store %r0, %c[%c0] : memref<2xi1>
+   * %q0_out, %r0 = flux.measure("c", 3, 0) %q0 : !flux.qubit
    * ```
    */
-  Value measure(Value qubit, Value memref, int64_t index);
+  Value measure(Value qubit, const Bit& bit);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -234,7 +263,8 @@ public:
    *
    * @details
    * Automatically deallocates all remaining valid qubits, adds a return
-   * statement, and transfers ownership of the module to the caller.
+   * statement with exit code 0 (indicating successful execution), and
+   * transfers ownership of the module to the caller.
    * The builder should not be used after calling this method.
    *
    * @return OwningOpRef containing the constructed quantum program module
@@ -269,5 +299,8 @@ private:
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
   llvm::DenseSet<Value> validQubits;
+
+  /// Track allocated classical Registers
+  SmallVector<ClassicalRegister> allocatedClassicalRegisters;
 };
 } // namespace mlir::flux

@@ -13,6 +13,7 @@
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -35,7 +36,7 @@ void FluxProgramBuilder::initialize() {
   builder.setInsertionPointToStart(module.getBody());
 
   // Create main function as entry point
-  auto funcType = builder.getFunctionType({}, {});
+  auto funcType = builder.getFunctionType({}, {builder.getI64Type()});
   auto mainFunc = builder.create<func::FuncOp>(loc, "main", funcType);
 
   // Add entry_point attribute to identify the main function
@@ -58,7 +59,7 @@ Value FluxProgramBuilder::allocQubit() {
   return qubit;
 }
 
-Value FluxProgramBuilder::staticQubit(int64_t index) {
+Value FluxProgramBuilder::staticQubit(const int64_t index) {
   auto indexAttr = builder.getI64IntegerAttr(index);
   auto staticOp = builder.create<StaticOp>(loc, indexAttr);
   const auto qubit = staticOp.getQubit();
@@ -89,17 +90,9 @@ FluxProgramBuilder::allocQubitRegister(const int64_t size,
   return qubits;
 }
 
-Value FluxProgramBuilder::allocClassicalBitRegister(int64_t size,
-                                                    StringRef name) {
-  // Create memref type
-  auto memrefType = MemRefType::get({size}, builder.getI1Type());
-
-  // Allocate the memref
-  auto allocOp = builder.create<memref::AllocaOp>(loc, memrefType);
-
-  allocOp->setAttr("sym_name", builder.getStringAttr(name));
-
-  return allocOp.getResult();
+FluxProgramBuilder::ClassicalRegister&
+FluxProgramBuilder::allocClassicalBitRegister(int64_t size, StringRef name) {
+  return allocatedClassicalRegisters.emplace_back(name, size);
 }
 
 //===----------------------------------------------------------------------===//
@@ -143,17 +136,16 @@ std::pair<Value, Value> FluxProgramBuilder::measure(Value qubit) {
   return {qubitOut, result};
 }
 
-Value FluxProgramBuilder::measure(const Value qubit, Value memref,
-                                  int64_t index) {
-  // Measure the qubit
-  auto [qubitOut, result] = measure(qubit);
+Value FluxProgramBuilder::measure(Value qubit, const Bit& bit) {
+  auto nameAttr = builder.getStringAttr(bit.registerName);
+  auto sizeAttr = builder.getI64IntegerAttr(bit.registerSize);
+  auto indexAttr = builder.getI64IntegerAttr(bit.registerIndex);
+  auto measureOp =
+      builder.create<MeasureOp>(loc, qubit, nameAttr, sizeAttr, indexAttr);
+  const auto qubitOut = measureOp.getQubitOut();
 
-  // Create constant index for the store operation
-  auto indexValue = builder.create<arith::ConstantIndexOp>(loc, index);
-
-  // Store the result in the memref at the given index
-  builder.create<memref::StoreOp>(loc, result, memref,
-                                  ValueRange{indexValue.getResult()});
+  // Update tracking
+  updateQubitTracking(qubit, qubitOut);
 
   return qubitOut;
 }
@@ -179,13 +171,18 @@ FluxProgramBuilder& FluxProgramBuilder::dealloc(Value qubit) {
 
 OwningOpRef<ModuleOp> FluxProgramBuilder::finalize() {
   // Automatically deallocate all remaining valid qubits
-  for (Value qubit : validQubits) {
+  for (const auto qubit : validQubits) {
     builder.create<DeallocOp>(loc, qubit);
   }
 
   validQubits.clear();
 
-  builder.create<func::ReturnOp>(loc);
+  // Create constant 0 for successful exit code
+  auto exitCode =
+      builder.create<arith::ConstantOp>(loc, builder.getI64IntegerAttr(0));
+
+  // Add return statement with exit code 0 to the main function
+  builder.create<func::ReturnOp>(loc, ValueRange{exitCode});
 
   return module;
 }

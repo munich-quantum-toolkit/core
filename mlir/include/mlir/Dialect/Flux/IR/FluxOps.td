@@ -181,14 +181,41 @@ def MeasureOp : FluxOp<"measure"> {
         Measures a qubit in the computational (Z) basis, collapsing the state
         and returning both the output qubit and a classical bit result.
 
-        Example:
+        Optionally, the measurement can be recorded to an output register by
+        specifying:
+        - `register_name`: Name of the classical register (e.g., "c")
+        - `register_size`: Total size of the register
+        - `register_index`: Index within the register for this measurement
+
+        Example (simple measurement):
         ```mlir
-        %q_out, %c = flux.measure %q_in : !flux.qubit
+        %q_out, %result = flux.measure %q_in : !flux.qubit
+        ```
+
+        Example (measurement with output recording):
+        ```mlir
+        %q_out, %result = flux.measure("c", 2, 0) %q_in : !flux.qubit
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit_in);
+    let arguments = (ins QubitType:$qubit_in,
+                     OptionalAttr<StrAttr>:$register_name,
+                     OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
+                     OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
     let results = (outs QubitType:$qubit_out, I1:$result);
+    let assemblyFormat = [{
+        (`(` $register_name^ `,` $register_size `,` $register_index `)`)?
+        $qubit_in `:` type($qubit_in) attr-dict
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit_in), [{
+            build($_builder, $_state, QubitType::get($_builder.getContext()), $_builder.getI1Type(),
+                  qubit_in, nullptr, nullptr, nullptr);
+        }]>
+    ];
+
+    let hasVerifier = 1;
 }
 
 def ResetOp : FluxOp<"reset", [Idempotent, SameOperandsAndResultType]> {
