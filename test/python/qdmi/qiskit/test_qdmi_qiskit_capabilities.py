@@ -51,18 +51,21 @@ def test_extract_capabilities_basic() -> None:
 
 
 def test_get_capabilities_cache_hit() -> None:
-    """Ensure repeated cached lookups return identical object instance."""
+    """Ensure repeated lookups return equivalent data (C++ caches underlying queries)."""
     dev = _get_single_device()
-    c1 = get_capabilities(dev, use_cache=True)
-    c2 = get_capabilities(dev, use_cache=True)
-    assert c1 is c2
+    c1 = get_capabilities(dev)
+    c2 = get_capabilities(dev)
+    # C++ caching means underlying queries are cached, but Python creates new objects
+    assert c1 is not c2  # Different Python objects
+    assert c1.signature == c2.signature  # Same structural signature
+    assert c1.capabilities_hash == c2.capabilities_hash  # Same capability hash
 
 
 def test_get_capabilities_force_refresh() -> None:
     """A forced refresh returns a new object but with identical signature/hash."""
     dev = _get_single_device()
-    cached = get_capabilities(dev, use_cache=True)
-    fresh = get_capabilities(dev, use_cache=False)
+    cached = get_capabilities(dev)
+    fresh = get_capabilities(dev)
     assert fresh is not cached
     assert fresh.signature == cached.signature
     assert fresh.capabilities_hash == cached.capabilities_hash
@@ -205,11 +208,14 @@ def test_extract_capabilities_is_fresh() -> None:
 
 
 def test_get_capabilities_default_uses_cache() -> None:
-    """get_capabilities should use cache by default."""
+    """get_capabilities creates fresh Python objects but uses C++ cached queries."""
     dev = _get_single_device()
     caps1 = get_capabilities(dev)  # Default is use_cache=True
     caps2 = get_capabilities(dev)
-    assert caps1 is caps2
+    # C++ caching means underlying queries are cached, but Python creates new objects
+    assert caps1 is not caps2  # Different Python objects
+    assert caps1.signature == caps2.signature  # Same structural signature
+    assert caps1.capabilities_hash == caps2.capabilities_hash  # Same capability hash
 
 
 def test_device_capabilities_hash_is_sha256() -> None:

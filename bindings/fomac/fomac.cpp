@@ -125,8 +125,6 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   device.def("__repr__", [](const fomac::FoMaC::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
-  device.def(py::self == py::self); // NOLINT(misc-redundant-expression)
-  device.def(py::self != py::self); // NOLINT(misc-redundant-expression)
 
   m.def("devices", &fomac::FoMaC::getDevices);
 }

@@ -11,6 +11,7 @@
 #include "fomac/FoMaC.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <gtest/gtest.h>
 #include <new>
 #include <qdmi/client.h>
@@ -204,6 +205,54 @@ TEST_P(DeviceTest, DurationScaleFactor) {
 
 TEST_P(DeviceTest, MinAtomDistance) {
   EXPECT_NO_THROW(std::ignore = device.getMinAtomDistance());
+}
+
+TEST_P(DeviceTest, CachingSites) {
+  // Test that repeated calls to getSites() return equivalent data
+  const auto sites1 = device.getSites();
+  const auto sites2 = device.getSites();
+
+  // Both calls should return the same number of sites
+  EXPECT_EQ(sites1.size(), sites2.size());
+
+  // Verify that the sites are equivalent (same indices)
+  for (std::size_t i = 0; i < sites1.size(); ++i) {
+    EXPECT_EQ(sites1[i].getIndex(), sites2[i].getIndex());
+  }
+}
+
+TEST_P(DeviceTest, CachingOperations) {
+  // Test that repeated calls to getOperations() return equivalent data
+  const auto ops1 = device.getOperations();
+  const auto ops2 = device.getOperations();
+
+  // Both calls should return the same number of operations
+  EXPECT_EQ(ops1.size(), ops2.size());
+
+  // Verify that the operations are equivalent (same names)
+  for (std::size_t i = 0; i < ops1.size(); ++i) {
+    EXPECT_EQ(ops1[i].getName(), ops2[i].getName());
+  }
+}
+
+TEST_P(DeviceTest, CachingCouplingMap) {
+  // Test that repeated calls to getCouplingMap() return equivalent data
+  const auto cm1 = device.getCouplingMap();
+  const auto cm2 = device.getCouplingMap();
+
+  // Both calls should have the same value (both present or both nullopt)
+  EXPECT_EQ(cm1.has_value(), cm2.has_value());
+
+  if (cm1.has_value() && cm2.has_value()) {
+    // If present, they should have the same size and content
+    EXPECT_EQ(cm1->size(), cm2->size());
+
+    // Verify that the coupling pairs are equivalent
+    for (std::size_t i = 0; i < cm1->size(); ++i) {
+      EXPECT_EQ((*cm1)[i].first.getIndex(), (*cm2)[i].first.getIndex());
+      EXPECT_EQ((*cm1)[i].second.getIndex(), (*cm2)[i].second.getIndex());
+    }
+  }
 }
 
 TEST_P(SiteTest, Index) { EXPECT_NO_THROW(std::ignore = site.getIndex()); }

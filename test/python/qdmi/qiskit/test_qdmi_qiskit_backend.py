@@ -78,12 +78,6 @@ def test_backend_negative_device_index() -> None:
         QiskitBackend(device_index=-1)
 
 
-def test_backend_use_cache_false() -> None:
-    """Backend can be instantiated with use_cache=False."""
-    backend = QiskitBackend(use_cache=False)
-    assert backend.target.num_qubits > 0
-
-
 def test_backend_max_circuits() -> None:
     """Backend max_circuits should return None (no limit)."""
     backend = QiskitBackend()

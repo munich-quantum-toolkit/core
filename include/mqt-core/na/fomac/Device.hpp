@@ -110,10 +110,10 @@ public:
 
   public:
     /**
-     * @brief Constructs a Device object from a fomac::FoMaC::Device object.
-     * @param device The fomac::FoMaC::Device object to wrap.
+     * @brief Constructs a Device object from a FoMaC device.
+     * @param device The FoMaC device to wrap.
      */
-    explicit Device(const fomac::FoMaC::Device& device);
+    explicit Device(fomac::FoMaC::Device&& device);
 
     /// @returns the length unit of the device.
     [[nodiscard]] auto getLengthUnit() const -> const Unit& {

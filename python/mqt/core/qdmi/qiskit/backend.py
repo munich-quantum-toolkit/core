@@ -53,12 +53,11 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         capabilities_hash: SHA256 hash of the device capabilities snapshot.
     """
 
-    def __init__(self, device_index: int = 0, *, use_cache: bool = True) -> None:
+    def __init__(self, device_index: int = 0) -> None:
         """Initialize the backend with a FoMaC device.
 
         Args:
             device_index: Index of the device to use from fomac.devices() (default: 0).
-            use_cache: Whether to use cached device capabilities (default: True).
 
         Raises:
             RuntimeError: If no FoMaC devices are available.
@@ -76,7 +75,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             raise IndexError(msg)
 
         self._device = devices_list[device_index]
-        self._capabilities = get_capabilities(self._device, use_cache=use_cache)
+        self._capabilities = get_capabilities(self._device)
 
         # Build Target from capabilities
         self._target = self._build_target()

@@ -91,8 +91,6 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   lattice.def(py::self == py::self);
   lattice.def(py::self != py::self);
 
-  device.def(py::init<fomac::FoMaC::Device>(),
-             "Create Device from FoMaC Device", "device"_a);
   device.def_property_readonly("traps", &na::FoMaC::Device::getTraps);
   device.def_property_readonly("t1", [](const na::FoMaC::Device& dev) {
     return dev.getDecoherenceTimes().t1;
