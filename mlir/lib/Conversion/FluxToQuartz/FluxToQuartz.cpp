@@ -163,11 +163,14 @@ struct ConvertFluxStaticOp final : OpConversionPattern<flux::StaticOp> {
  * alongside the measurement bit. MLIR's conversion infrastructure automatically
  * routes subsequent uses of the Flux output qubit to this Quartz reference.
  *
+ * Register metadata (name, size, index) for output recording is preserved
+ * during conversion.
+ *
  * Example transformation:
  * ```mlir
- * %q_out, %c = flux.measure %q_in : !flux.qubit -> (!flux.qubit, i1)
+ * %q_out, %c = flux.measure("c", 2, 0) %q_in : !flux.qubit
  * // becomes:
- * %c = quartz.measure %q : !quartz.qubit -> i1
+ * %c = quartz.measure("c", 2, 0) %q : !quartz.qubit -> i1
  * // %q_out uses are replaced with %q (the adaptor-converted input)
  * ```
  */
@@ -181,8 +184,10 @@ struct ConvertFluxMeasureOp final : OpConversionPattern<flux::MeasureOp> {
     const auto& quartzQubit = adaptor.getQubitIn();
 
     // Create quartz.measure (in-place operation, returns only bit)
+    // Preserve register metadata for output recording
     auto quartzOp = rewriter.create<quartz::MeasureOp>(
-        op.getLoc(), op.getResult().getType(), quartzQubit);
+        op.getLoc(), quartzQubit, op.getRegisterNameAttr(),
+        op.getRegisterSizeAttr(), op.getRegisterIndexAttr());
 
     auto measureBit = quartzOp.getResult();
 
