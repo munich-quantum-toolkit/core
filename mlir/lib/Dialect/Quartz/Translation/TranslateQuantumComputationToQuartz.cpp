@@ -46,7 +46,8 @@ struct QregInfo {
   SmallVector<Value> qubits;
 };
 
-using BitMemInfo = std::pair<Value, std::size_t>; // (memref, localIdx)
+using BitMemInfo = std::pair<QuartzProgramBuilder::ClassicalRegister*,
+                             std::size_t>; // (register ref, localIdx)
 using BitIndexVec = SmallVector<BitMemInfo>;
 
 /**
@@ -128,13 +129,13 @@ buildQubitMap(const qc::QuantumComputation& quantumComputation,
  * @brief Allocates classical registers using the QuartzProgramBuilder
  *
  * @details
- * Creates classical bit registers (memrefs) and builds a mapping from
- * global classical bit indices to (memref, local_index) pairs. This is
- * used for measurement result storage.
+ * Creates classical bit registers and builds a mapping from global classical
+ * bit indices to (register, local_index) pairs. This is used for measurement
+ * result storage.
  *
  * @param builder The QuartzProgramBuilder used to create operations
  * @param quantumComputation The quantum computation to translate
- * @return Vector mapping global bit indices to memref and local indices
+ * @return Vector mapping global bit indices to register and local indices
  */
 BitIndexVec
 allocateClassicalRegisters(QuartzProgramBuilder& builder,
@@ -157,11 +158,11 @@ allocateClassicalRegisters(QuartzProgramBuilder& builder,
   BitIndexVec bitMap;
   bitMap.resize(quantumComputation.getNcbits());
   for (const auto* reg : cregPtrs) {
-    auto mem =
+    auto& mem =
         builder.allocClassicalBitRegister(reg->getSize(), reg->getName());
     for (std::size_t i = 0; i < reg->getSize(); ++i) {
       const auto globalIdx = static_cast<std::size_t>(reg->getStartIndex() + i);
-      bitMap[globalIdx] = {mem, i};
+      bitMap[globalIdx] = {&mem, i};
     }
   }
 
@@ -178,7 +179,7 @@ allocateClassicalRegisters(QuartzProgramBuilder& builder,
  * @param builder The QuartzProgramBuilder used to create operations
  * @param operation The measurement operation to translate
  * @param qubits Flat vector of qubit values indexed by physical qubit index
- * @param bitMap Mapping from global bit index to (memref, local_index)
+ * @param bitMap Mapping from global bit index to (register, local_index)
  */
 void addMeasureOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
                   const SmallVector<Value>& qubits, const BitIndexVec& bitMap) {
@@ -192,8 +193,8 @@ void addMeasureOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
     const auto bitIdx = static_cast<std::size_t>(classics[i]);
     const auto& [mem, localIdx] = bitMap[bitIdx];
 
-    // Use builder's measure method which stores to memref
-    builder.measure(qubit, mem, localIdx);
+    // Use builder's measure method which keeps output record
+    builder.measure(qubit, (*mem)[localIdx]);
   }
 }
 
@@ -231,7 +232,7 @@ void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
  * @param builder The QuartzProgramBuilder used to create operations
  * @param quantumComputation The quantum computation to translate
  * @param qubits Flat vector of qubit values indexed by physical qubit index
- * @param bitMap Mapping from global bit index to (memref, local_index)
+ * @param bitMap Mapping from global bit index to (register, local_index)
  * @return Success if all supported operations were translated
  */
 LogicalResult
@@ -270,11 +271,15 @@ translateOperations(QuartzProgramBuilder& builder,
  * translation.
  *
  * The translation process:
- * 1. Creates a QuartzProgramBuilder and initializes it (creates main function)
+ * 1. Creates a QuartzProgramBuilder and initializes it (creates main function
+ *    with signature () -> i64)
  * 2. Allocates quantum registers using quartz.alloc with register metadata
- * 3. Allocates classical registers using memref.alloc
+ * 3. Tracks classical registers for measurement results
  * 4. Translates operations (currently: measure, reset)
- * 5. Finalizes the module (adds return statement)
+ * 5. Finalizes the module (adds return statement with exit code 0)
+ *
+ * The generated main function returns exit code 0 to indicate successful
+ * execution of the quantum program.
  *
  * Currently supported operations:
  * - Measurement (quartz.measure)
@@ -294,13 +299,13 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQuartz(
   builder.initialize();
 
   // Allocate quantum registers using the builder
-  auto qregs = allocateQregs(builder, quantumComputation);
+  const auto qregs = allocateQregs(builder, quantumComputation);
 
   // Build flat qubit mapping for easy lookup
-  auto qubits = buildQubitMap(quantumComputation, qregs);
+  const auto qubits = buildQubitMap(quantumComputation, qregs);
 
   // Allocate classical registers using the builder
-  auto bitMap = allocateClassicalRegisters(builder, quantumComputation);
+  const auto bitMap = allocateClassicalRegisters(builder, quantumComputation);
 
   // Translate operations
   if (translateOperations(builder, quantumComputation, qubits, bitMap)
