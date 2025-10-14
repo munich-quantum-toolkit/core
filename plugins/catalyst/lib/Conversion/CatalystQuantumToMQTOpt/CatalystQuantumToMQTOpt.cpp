@@ -333,11 +333,6 @@ struct ConvertQuantumGlobalPhase final
         DenseBoolArrayAttr::get(rewriter.getContext(), paramsMaskVec);
 
     // Create the mqtopt.gphase operation
-    // Note: GPhase has no target qubits (NoTarget trait), only control qubits
-    // The builder signature is: (loc, out_qubits, pos_ctrl_out, neg_ctrl_out,
-    //                            static_params, params_mask, params,
-    //                            in_qubits, pos_ctrl_in, neg_ctrl_in)
-    // Both out_qubits and in_qubits should be empty for GPhase
     auto gphaseOp = rewriter.create<opt::GPhaseOp>(
         op.getLoc(), TypeRange{}, // out_qubits - empty for NoTarget
         ValueRange(inPosCtrlQubitsVec).getTypes(), // pos_ctrl_out_qubits
