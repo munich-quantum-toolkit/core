@@ -762,14 +762,14 @@ TEST_F(CompilerPipelineTest, SingleMeasurementToSingleBit) {
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto q = b.allocQubitRegister(1);
-    const auto c = b.allocClassicalBitRegister(1);
-    b.measure(q[0], c, 0);
+    const auto& c = b.allocClassicalBitRegister(1);
+    b.measure(q[0], c[0]);
   });
 
   const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto q = b.allocQubitRegister(1);
-    const auto c = b.allocClassicalBitRegister(1);
-    b.measure(q[0], c, 0);
+    const auto& c = b.allocClassicalBitRegister(1);
+    b.measure(q[0], c[0]);
   });
 
   const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
@@ -805,16 +805,16 @@ TEST_F(CompilerPipelineTest, RepeatedMeasurementToSameBit) {
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto q = b.allocQubitRegister(1);
-    const auto c = b.allocClassicalBitRegister(1);
-    b.measure(q[0], c, 0);
-    b.measure(q[0], c, 0);
+    const auto& c = b.allocClassicalBitRegister(1);
+    b.measure(q[0], c[0]);
+    b.measure(q[0], c[0]);
   });
 
   const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto q = b.allocQubitRegister(1);
-    const auto c = b.allocClassicalBitRegister(1);
-    q[0] = b.measure(q[0], c, 0);
-    q[0] = b.measure(q[0], c, 0);
+    const auto& c = b.allocClassicalBitRegister(1);
+    q[0] = b.measure(q[0], c[0]);
+    q[0] = b.measure(q[0], c[0]);
   });
 
   const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
@@ -853,18 +853,18 @@ TEST_F(CompilerPipelineTest, RepeatedMeasurementOnSeparateBits) {
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto q = b.allocQubitRegister(1);
-    const auto c = b.allocClassicalBitRegister(3);
-    b.measure(q[0], c, 0);
-    b.measure(q[0], c, 1);
-    b.measure(q[0], c, 2);
+    const auto& c = b.allocClassicalBitRegister(3);
+    b.measure(q[0], c[0]);
+    b.measure(q[0], c[1]);
+    b.measure(q[0], c[2]);
   });
 
   const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto q = b.allocQubitRegister(1);
-    const auto c = b.allocClassicalBitRegister(3);
-    q[0] = b.measure(q[0], c, 0);
-    q[0] = b.measure(q[0], c, 1);
-    q[0] = b.measure(q[0], c, 2);
+    const auto& c = b.allocClassicalBitRegister(3);
+    q[0] = b.measure(q[0], c[0]);
+    q[0] = b.measure(q[0], c[1]);
+    q[0] = b.measure(q[0], c[2]);
   });
 
   const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
@@ -904,18 +904,18 @@ TEST_F(CompilerPipelineTest, MultipleClassicalRegistersAndMeasurements) {
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto q = b.allocQubitRegister(2);
-    const auto creg1 = b.allocClassicalBitRegister(1, "c1");
-    const auto creg2 = b.allocClassicalBitRegister(1, "c2");
-    b.measure(q[0], creg1, 0);
-    b.measure(q[1], creg2, 0);
+    const auto& creg1 = b.allocClassicalBitRegister(1, "c1");
+    const auto& creg2 = b.allocClassicalBitRegister(1, "c2");
+    b.measure(q[0], creg1[0]);
+    b.measure(q[1], creg2[0]);
   });
 
   const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto q = b.allocQubitRegister(2);
-    const auto creg1 = b.allocClassicalBitRegister(1, "c1");
-    const auto creg2 = b.allocClassicalBitRegister(1, "c2");
-    q[0] = b.measure(q[0], creg1, 0);
-    q[1] = b.measure(q[1], creg2, 0);
+    const auto& creg1 = b.allocClassicalBitRegister(1, "c1");
+    const auto& creg2 = b.allocClassicalBitRegister(1, "c2");
+    q[0] = b.measure(q[0], creg1[0]);
+    q[1] = b.measure(q[1], creg2[0]);
   });
 
   const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
