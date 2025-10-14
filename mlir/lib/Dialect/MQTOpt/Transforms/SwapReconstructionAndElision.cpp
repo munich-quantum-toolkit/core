@@ -15,6 +15,19 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <utility>
 
+namespace mqt::ir::opt::detail {
+// Prefer the setter if present (newer MLIR 21/22+), otherwise fall back to the
+// public field (older 20/21).
+template <typename T>
+auto setTopDown(T& cfg, int)
+    -> decltype((void)cfg.setUseTopDownTraversal(true), void()) {
+  cfg.setUseTopDownTraversal(true);
+}
+template <typename T> void setTopDown(T& cfg, long) {
+  cfg.useTopDownTraversal = true;
+}
+} // namespace mqt::ir::opt::detail
+
 namespace mqt::ir::opt {
 
 #define GEN_PASS_DEF_SWAPRECONSTRUCTIONANDELISION
@@ -31,20 +44,13 @@ struct SwapReconstructionAndElision final
     auto op = getOperation();
     auto* ctx = &getContext();
 
-    // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
     populateSwapReconstructionAndElisionPatterns(patterns);
 
-    // Configure greedy driver
     mlir::GreedyRewriteConfig config;
-#if MLIR_VERSION_MAJOR >= 21
-    config.setUseTopDownTraversal(true);
-#else
-    // For older MLIR versions the field was public
-    config.useTopDownTraversal = true;
-#endif
+    mqt::ir::opt::detail::setTopDown(config,
+                                     0); // tries setter first, else field
 
-    // Apply patterns in an iterative and greedy manner.
     if (mlir::failed(
             mlir::applyPatternsGreedily(op, std::move(patterns), config))) {
       signalPassFailure();
