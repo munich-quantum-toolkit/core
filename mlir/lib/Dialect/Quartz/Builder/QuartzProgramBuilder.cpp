@@ -35,7 +35,7 @@ void QuartzProgramBuilder::initialize() {
   builder.setInsertionPointToStart(module.getBody());
 
   // Create main function as entry point
-  auto funcType = builder.getFunctionType({}, {});
+  auto funcType = builder.getFunctionType({}, {builder.getI64Type()});
   auto mainFunc = builder.create<func::FuncOp>(loc, "main", funcType);
 
   // Add entry_point attribute to identify the main function
@@ -59,18 +59,19 @@ Value QuartzProgramBuilder::allocQubit() {
   return qubit;
 }
 
-Value QuartzProgramBuilder::staticQubit(int64_t index) {
+Value QuartzProgramBuilder::staticQubit(const int64_t index) {
   // Create the StaticOp with the given index
   auto indexAttr = builder.getI64IntegerAttr(index);
   auto staticOp = builder.create<StaticOp>(loc, indexAttr);
   return staticOp.getQubit();
 }
 
-SmallVector<Value> QuartzProgramBuilder::allocQubitRegister(int64_t size,
-                                                            StringRef name) {
+SmallVector<Value>
+QuartzProgramBuilder::allocQubitRegister(const int64_t size,
+                                         const StringRef name) {
   // Allocate a sequence of qubits with register metadata
   SmallVector<Value> qubits;
-  qubits.reserve(static_cast<size_t>(size));
+  qubits.reserve(size);
 
   auto nameAttr = builder.getStringAttr(name);
   auto sizeAttr = builder.getI64IntegerAttr(size);
@@ -86,17 +87,9 @@ SmallVector<Value> QuartzProgramBuilder::allocQubitRegister(int64_t size,
   return qubits;
 }
 
-Value QuartzProgramBuilder::allocClassicalBitRegister(int64_t size,
-                                                      StringRef name) {
-  // Create memref type
-  auto memrefType = MemRefType::get({size}, builder.getI1Type());
-
-  // Allocate the memref
-  auto allocOp = builder.create<memref::AllocaOp>(loc, memrefType);
-
-  allocOp->setAttr("sym_name", builder.getStringAttr(name));
-
-  return allocOp.getResult();
+QuartzProgramBuilder::ClassicalRegister&
+QuartzProgramBuilder::allocClassicalBitRegister(int64_t size, StringRef name) {
+  return allocatedClassicalRegisters.emplace_back(name, size);
 }
 
 Value QuartzProgramBuilder::measure(Value qubit) {
@@ -104,18 +97,12 @@ Value QuartzProgramBuilder::measure(Value qubit) {
   return measureOp.getResult();
 }
 
-QuartzProgramBuilder& QuartzProgramBuilder::measure(Value qubit, Value memref,
-                                                    int64_t index) {
-  // Measure the qubit
-  auto result = measure(qubit);
-
-  // Create constant index for the store operation
-  auto indexValue = builder.create<arith::ConstantIndexOp>(loc, index);
-
-  // Store the result in the memref at the given index
-  builder.create<memref::StoreOp>(loc, result, memref,
-                                  ValueRange{indexValue.getResult()});
-
+QuartzProgramBuilder& QuartzProgramBuilder::measure(Value qubit,
+                                                    const Bit& bit) {
+  auto nameAttr = builder.getStringAttr(bit.registerName);
+  auto sizeAttr = builder.getI64IntegerAttr(bit.registerSize);
+  auto indexAttr = builder.getI64IntegerAttr(bit.registerIndex);
+  builder.create<MeasureOp>(loc, qubit, nameAttr, sizeAttr, indexAttr);
   return *this;
 }
 
@@ -126,7 +113,7 @@ QuartzProgramBuilder& QuartzProgramBuilder::reset(Value qubit) {
 
 QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
   // Check if the qubit is in the tracking set
-  if (allocatedQubits.erase(qubit) == 0) {
+  if (!allocatedQubits.erase(qubit)) {
     // Qubit was not found in the set - either never allocated or already
     // deallocated
     llvm::errs() << "Error: Attempting to deallocate a qubit that was not "
@@ -142,15 +129,19 @@ QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
 
 OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
   // Automatically deallocate all remaining allocated qubits
-  for (Value qubit : allocatedQubits) {
+  for (const Value qubit : allocatedQubits) {
     builder.create<DeallocOp>(loc, qubit);
   }
 
   // Clear the tracking set
   allocatedQubits.clear();
 
-  // Add return statement to the main function
-  builder.create<func::ReturnOp>(loc);
+  // Create constant 0 for successful exit code
+  auto exitCode =
+      builder.create<arith::ConstantOp>(loc, builder.getI64IntegerAttr(0));
+
+  // Add return statement with exit code 0 to the main function
+  builder.create<func::ReturnOp>(loc, ValueRange{exitCode});
 
   // Transfer ownership to the caller
   return module;

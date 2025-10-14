@@ -12,7 +12,7 @@
 
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 
-#include <cstddef>
+#include <cstdint>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Builders.h>
@@ -118,20 +118,52 @@ public:
   SmallVector<Value> allocQubitRegister(int64_t size, StringRef name = "q");
 
   /**
+   * @brief A small structure representing a single classical bit within a
+   * classical register.
+   */
+  struct Bit {
+    /// Name of the register containing this bit
+    StringRef registerName;
+    /// Size of the register containing this bit
+    int64_t registerSize{};
+    /// Index of this bit within the register
+    int64_t registerIndex{};
+  };
+
+  /**
+   * @brief A small structure representing a classical bit register.
+   */
+  struct ClassicalRegister {
+    /// Name of the classical register
+    StringRef name;
+    /// Size of the classical register
+    int64_t size;
+
+    /**
+     * @brief Access a specific bit in the classical register
+     * @param index The index of the bit to access (must be less than size)
+     * @return A Bit structure representing the specified bit
+     */
+    Bit operator[](const int64_t index) const {
+      assert(0 <= index && index < size);
+      return {
+          .registerName = name, .registerSize = size, .registerIndex = index};
+    }
+  };
+
+  /**
    * @brief Allocate a classical bit register
    * @param size Number of bits
    * @param name Register name (default: "c")
-   * @return Memref of i1 elements
+   * @return A reference to a ClassicalRegister structure
    *
    * @par Example:
    * ```c++
    * auto c = builder.allocClassicalBitRegister(3, "c");
    * ```
-   * ```mlir
-   * %c = memref.alloca() {sym_name = "c"} : memref<3xi1>
-   * ```
    */
-  Value allocClassicalBitRegister(int64_t size, StringRef name = "c");
+  ClassicalRegister& allocClassicalBitRegister(int64_t size,
+                                               StringRef name = "c");
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
@@ -157,24 +189,20 @@ public:
   Value measure(Value qubit);
 
   /**
-   * @brief Measure a qubit and store the result in a classical register
+   * @brief Measure a qubit and store the result in a bit of a register
    *
    * @param qubit The qubit to measure
-   * @param memref Classical register
-   * @param index Storage index
-   * @return Reference to this builder for method chaining
+   * @param bit The classical bit to store the result
    *
    * @par Example:
    * ```c++
-   * builder.measure(q0, c, 0);
+   * builder.measure(q0, c[0]);
    * ```
    * ```mlir
-   * %r0 = quartz.measure %q0 : !quartz.qubit -> i1
-   * %c0 = arith.constant 0 : index
-   * memref.store %r0, %c[%c0] : memref<2xi1>
+   * %r0 = quartz.measure("c", 3, 0) %q0 : !quartz.qubit -> i1
    * ```
    */
-  QuartzProgramBuilder& measure(Value qubit, Value memref, int64_t index);
+  QuartzProgramBuilder& measure(Value qubit, const Bit& bit);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -224,7 +252,8 @@ public:
    *
    * @details
    * Automatically deallocates all remaining allocated qubits, adds a return
-   * statement, and transfers ownership of the module to the caller.
+   * statement with exit code 0 (indicating successful execution), and
+   * transfers ownership of the module to the caller.
    * The builder should not be used after calling this method.
    *
    * @return OwningOpRef containing the constructed quantum program module
@@ -238,5 +267,8 @@ private:
 
   /// Track allocated qubits for automatic deallocation
   llvm::DenseSet<Value> allocatedQubits;
+
+  /// Track allocated classical Registers
+  SmallVector<ClassicalRegister> allocatedClassicalRegisters;
 };
 } // namespace mlir::quartz

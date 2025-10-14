@@ -172,15 +172,40 @@ def MeasureOp : QuartzOp<"measure"> {
         Measures a qubit in the computational (Z) basis, collapsing the state
         and returning a classical bit result.
 
-        Example:
+        Optionally, the measurement can be recorded to an output register by
+        specifying:
+        - `register_name`: Name of the classical register (e.g., "c")
+        - `register_size`: Total size of the register
+        - `register_index`: Index within the register for this measurement
+
+        Example (simple measurement):
         ```mlir
-        %c = quartz.measure %q : !quartz.qubit -> i1
+        %result = quartz.measure %q : !quartz.qubit -> i1
+        ```
+
+        Example (measurement with output recording):
+        ```mlir
+        %result = quartz.measure("c", 2, 0) %q : !quartz.qubit -> i1
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit);
+    let arguments = (ins QubitType:$qubit,
+                     OptionalAttr<StrAttr>:$register_name,
+                     OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
+                     OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
     let results = (outs I1:$result);
-    let assemblyFormat = "$qubit attr-dict `:` type($qubit) `->` type($result)";
+    let assemblyFormat = [{
+        (`(` $register_name^ `,` $register_size `,` $register_index `)`)?
+        $qubit `:` type($qubit) `->` type($result) attr-dict
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit), [{
+            build($_builder, $_state, $_builder.getI1Type(), qubit, nullptr, nullptr, nullptr);
+        }]>
+    ];
+
+    let hasVerifier = 1;
 }
 
 def ResetOp : QuartzOp<"reset"> {
