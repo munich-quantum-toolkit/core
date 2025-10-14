@@ -19,6 +19,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <string>
+#include <utility>
 
 namespace mlir::qir {
 
@@ -34,9 +35,8 @@ void QIRProgramBuilder::initialize() {
   // Set insertion point to the module body
   builder.setInsertionPointToStart(module.getBody());
 
-  // Create main function: () -> void
-  auto funcType = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()), {});
+  // Create main function: () -> i64
+  auto funcType = LLVM::LLVMFunctionType::get(builder.getI64Type(), {});
   mainFunc = builder.create<LLVM::LLVMFuncOp>(loc, "main", funcType);
 
   // Add entry_point attribute to identify the main function
@@ -44,33 +44,19 @@ void QIRProgramBuilder::initialize() {
   mainFunc->setAttr("passthrough",
                     ArrayAttr::get(builder.getContext(), {entryPointAttr}));
 
-  // Create the 4-block structure for QIR base profile
+  // Create the 4-block structure for QIR Base Profile
   entryBlock = mainFunc.addEntryBlock(builder);
-  mainBlock = mainFunc.addBlock();
-  irreversibleBlock = mainFunc.addBlock();
-  endBlock = mainFunc.addBlock();
+  bodyBlock = mainFunc.addBlock();
+  measurementsBlock = mainFunc.addBlock();
+  outputBlock = mainFunc.addBlock();
 
-  // Add unconditional branches between blocks
-  builder.setInsertionPointToEnd(entryBlock);
-  builder.create<LLVM::BrOp>(loc, mainBlock);
-
-  builder.setInsertionPointToEnd(mainBlock);
-  builder.create<LLVM::BrOp>(loc, irreversibleBlock);
-
-  builder.setInsertionPointToEnd(irreversibleBlock);
-  builder.create<LLVM::BrOp>(loc, endBlock);
-
-  builder.setInsertionPointToEnd(endBlock);
-  builder.create<LLVM::ReturnOp>(loc, ValueRange{});
-
-  // Add QIR initialization call in entry block
+  // Create exit code constant in entry block (where constants belong) and add
+  // QIR initialization call in entry block (after exit code constant)
   builder.setInsertionPointToStart(entryBlock);
   auto zeroOp = builder.create<LLVM::ZeroOp>(
       loc, LLVM::LLVMPointerType::get(builder.getContext()));
-
-  // Move to before the branch
-  builder.setInsertionPoint(entryBlock->getTerminator());
-
+  exitCode =
+      builder.create<LLVM::ConstantOp>(loc, builder.getI64IntegerAttr(0));
   const auto initType = LLVM::LLVMFunctionType::get(
       LLVM::LLVMVoidType::get(builder.getContext()),
       LLVM::LLVMPointerType::get(builder.getContext()));
@@ -78,8 +64,22 @@ void QIRProgramBuilder::initialize() {
       getOrCreateFunctionDeclaration(builder, module, QIR_INITIALIZE, initType);
   builder.create<LLVM::CallOp>(loc, initFunc, ValueRange{zeroOp.getResult()});
 
-  // Set insertion point to main block for user operations
-  builder.setInsertionPointToStart(mainBlock);
+  // Add unconditional branches between blocks
+  builder.setInsertionPointToEnd(entryBlock);
+  builder.create<LLVM::BrOp>(loc, bodyBlock);
+
+  builder.setInsertionPointToEnd(bodyBlock);
+  builder.create<LLVM::BrOp>(loc, measurementsBlock);
+
+  builder.setInsertionPointToEnd(measurementsBlock);
+  builder.create<LLVM::BrOp>(loc, outputBlock);
+
+  // Return the exit code (success) in output block
+  builder.setInsertionPointToEnd(outputBlock);
+  builder.create<LLVM::ReturnOp>(loc, ValueRange{exitCode.getResult()});
+
+  // Set insertion point to body block for user operations
+  builder.setInsertionPointToStart(bodyBlock);
 }
 
 Value QIRProgramBuilder::allocQubit() {
@@ -123,7 +123,7 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
   staticQubitCache[static_cast<size_t>(index)] = qubit;
 
   // Update qubit count
-  if (static_cast<size_t>(index) >= metadata_.numQubits) {
+  if (std::cmp_greater_equal(index, metadata_.numQubits)) {
     metadata_.numQubits = static_cast<size_t>(index) + 1;
   }
 
@@ -145,8 +145,8 @@ Value QIRProgramBuilder::measure(const Value qubit, const size_t resultIndex) {
   // Save current insertion point
   const OpBuilder::InsertionGuard insertGuard(builder);
 
-  // Insert in irreversible block (before branch)
-  builder.setInsertionPoint(irreversibleBlock->getTerminator());
+  // Insert in measurements block (before branch)
+  builder.setInsertionPoint(measurementsBlock->getTerminator());
 
   auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
 
@@ -161,8 +161,11 @@ Value QIRProgramBuilder::measure(const Value qubit, const size_t resultIndex) {
         createPointerFromIndex(builder, loc, static_cast<int64_t>(resultIndex));
     resultPointerCache[resultIndex] = resultValue;
 
-    // Restore to irreversible block
-    builder.setInsertionPoint(irreversibleBlock->getTerminator());
+    // Track for output recording
+    metadata_.numResults++;
+
+    // Restore to measurements block
+    builder.setInsertionPoint(measurementsBlock->getTerminator());
   }
 
   // Create mz call
@@ -172,35 +175,63 @@ Value QIRProgramBuilder::measure(const Value qubit, const size_t resultIndex) {
       getOrCreateFunctionDeclaration(builder, module, QIR_MEASURE, mzSignature);
   builder.create<LLVM::CallOp>(loc, mzDecl, ValueRange{qubit, resultValue});
 
-  // Get or create result label
-  LLVM::AddressOfOp labelOp;
-  if (resultLabelCache.contains(resultIndex)) {
-    labelOp = resultLabelCache.at(resultIndex);
-  } else {
-    // Use common utility function to create result label
-    labelOp =
-        createResultLabel(builder, module, "r" + std::to_string(resultIndex));
-    resultLabelCache.try_emplace(resultIndex, labelOp);
-    metadata_.numResults++;
-  }
-
-  // Create record_output call
-  const auto recordSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()), {ptrType, ptrType});
-  auto recordDecl = getOrCreateFunctionDeclaration(
-      builder, module, QIR_RECORD_OUTPUT, recordSignature);
-  builder.create<LLVM::CallOp>(loc, recordDecl,
-                               ValueRange{resultValue, labelOp.getResult()});
+  // Track this measurement for deferred output recording (without register
+  // info)
+  measurementSequence.emplace_back(resultValue, "c", resultIndex);
 
   return resultValue;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::measure(const Value qubit,
+                                              const StringRef registerName,
+                                              const size_t registerIndex) {
+  // Save current insertion point
+  const OpBuilder::InsertionGuard insertGuard(builder);
+
+  // Insert in measurements block (before branch)
+  builder.setInsertionPoint(measurementsBlock->getTerminator());
+
+  auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
+
+  // Check if we already have a result pointer for this register slot
+  const auto key = std::make_pair(registerName, registerIndex);
+
+  Value resultValue = nullptr;
+  if (const auto it = registerResultMap.find(key);
+      it != registerResultMap.end()) {
+    resultValue = it->second;
+  } else {
+    // Create at start of entry block
+    builder.setInsertionPoint(entryBlock->getTerminator());
+    resultValue = createPointerFromIndex(
+        builder, loc, static_cast<int64_t>(metadata_.numResults));
+    // Cache for reuse
+    resultPointerCache[metadata_.numResults] = resultValue;
+    registerResultMap.insert({key, resultValue});
+    metadata_.numResults++;
+    // Restore to measurements block
+    builder.setInsertionPoint(measurementsBlock->getTerminator());
+  }
+
+  // Create mz call
+  const auto mzSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()), {ptrType, ptrType});
+  auto mzDecl =
+      getOrCreateFunctionDeclaration(builder, module, QIR_MEASURE, mzSignature);
+  builder.create<LLVM::CallOp>(loc, mzDecl, ValueRange{qubit, resultValue});
+
+  // Track this measurement for deferred output recording (with register info)
+  measurementSequence.emplace_back(resultValue, registerName, registerIndex);
+
+  return *this;
 }
 
 QIRProgramBuilder& QIRProgramBuilder::reset(const Value qubit) {
   // Save current insertion point
   const OpBuilder::InsertionGuard insertGuard(builder);
 
-  // Insert in irreversible block (before branch)
-  builder.setInsertionPoint(irreversibleBlock->getTerminator());
+  // Insert in measurements block (before branch)
+  builder.setInsertionPoint(measurementsBlock->getTerminator());
 
   // Create reset call
   const auto qirSignature = LLVM::LLVMFunctionType::get(
@@ -219,8 +250,8 @@ QIRProgramBuilder& QIRProgramBuilder::dealloc(const Value qubit) {
   // Save current insertion point
   const OpBuilder::InsertionGuard insertGuard(builder);
 
-  // Insert in irreversible block (before branch)
-  builder.setInsertionPoint(irreversibleBlock->getTerminator());
+  // Insert in measurements block (before branch)
+  builder.setInsertionPoint(measurementsBlock->getTerminator());
 
   // Create release call
   const auto qirSignature = LLVM::LLVMFunctionType::get(
@@ -233,11 +264,87 @@ QIRProgramBuilder& QIRProgramBuilder::dealloc(const Value qubit) {
   return *this;
 }
 
+void QIRProgramBuilder::generateOutputRecording() {
+  if (measurementSequence.empty()) {
+    return; // No measurements to record
+  }
+
+  // Save current insertion point
+  const OpBuilder::InsertionGuard insertGuard(builder);
+
+  // Insert in output block (before return)
+  builder.setInsertionPoint(outputBlock->getTerminator());
+
+  auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
+
+  // Group measurements by register
+  llvm::StringMap<SmallVector<std::pair<size_t, Value>>> registerGroups;
+  for (const auto& [resultValue, regName, regIdx] : measurementSequence) {
+    if (!regName.empty()) {
+      registerGroups[regName].emplace_back(regIdx, resultValue);
+    }
+  }
+
+  // Sort registers by name for deterministic output
+  SmallVector<std::pair<StringRef, SmallVector<std::pair<size_t, Value>>>>
+      sortedRegisters;
+  for (auto& [name, measurements] : registerGroups) {
+    sortedRegisters.emplace_back(name, std::move(measurements));
+  }
+  llvm::sort(sortedRegisters,
+             [](const auto& a, const auto& b) { return a.first < b.first; });
+
+  // Create array_record_output call
+  const auto arrayRecordSig =
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(builder.getContext()),
+                                  {builder.getI64Type(), ptrType});
+  const auto arrayRecordDecl = getOrCreateFunctionDeclaration(
+      builder, module, QIR_ARRAY_RECORD_OUTPUT, arrayRecordSig);
+
+  // Create result_record_output calls for each measurement
+  const auto resultRecordSig = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()), {ptrType, ptrType});
+  const auto resultRecordDecl = getOrCreateFunctionDeclaration(
+      builder, module, QIR_RECORD_OUTPUT, resultRecordSig);
+
+  // Generate output recording for each register
+  for (auto& [registerName, measurements] : sortedRegisters) {
+    // Sort measurements by register index
+    llvm::sort(measurements,
+               [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    const auto arraySize = measurements.size();
+    auto arrayLabelOp = createResultLabel(builder, module, registerName);
+    auto arraySizeConst = builder.create<LLVM::ConstantOp>(
+        loc, builder.getI64IntegerAttr(static_cast<int64_t>(arraySize)));
+
+    builder.create<LLVM::CallOp>(
+        loc, arrayRecordDecl,
+        ValueRange{arraySizeConst.getResult(), arrayLabelOp.getResult()});
+
+    for (size_t i = 0; i < measurements.size(); ++i) {
+      const auto [regIdx, resultPtr] = measurements[i];
+
+      // Create label for result: "{registerName}{i}r"
+      const std::string resultLabel =
+          registerName.str() + std::to_string(i) + "r";
+      auto resultLabelOp = createResultLabel(builder, module, resultLabel);
+
+      builder.create<LLVM::CallOp>(
+          loc, resultRecordDecl,
+          ValueRange{resultPtr, resultLabelOp.getResult()});
+    }
+  }
+}
+
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   for (const Value qubit : allocatedQubits) {
     dealloc(qubit);
   }
   allocatedQubits.clear();
+
+  // Generate output recording in the output block
+  generateOutputRecording();
 
   setQIRAttributes(mainFunc, metadata_);
 

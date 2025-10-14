@@ -23,6 +23,8 @@ static constexpr auto QIR_QUBIT_ALLOCATE = "__quantum__rt__qubit_allocate";
 static constexpr auto QIR_QUBIT_RELEASE = "__quantum__rt__qubit_release";
 static constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
 static constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
+static constexpr auto QIR_ARRAY_RECORD_OUTPUT =
+    "__quantum__rt__array_record_output";
 static constexpr auto QIR_RESET = "__quantum__qis__reset__body";
 
 /**
