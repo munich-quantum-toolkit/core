@@ -456,16 +456,83 @@ struct ConvertQuantumCustomOp final
       } else {
         mqtoptOp = CREATE_GATE_OP(iSWAP);
       }
-    } else if (gateName == "RX" || gateName == "CRX") {
+    } else if (gateName == "RX") {
       mqtoptOp = CREATE_GATE_OP(RX);
-    } else if (gateName == "RY" || gateName == "CRY") {
+    } else if (gateName == "RY") {
       mqtoptOp = CREATE_GATE_OP(RY);
-    } else if (gateName == "RZ" || gateName == "CRZ") {
+    } else if (gateName == "RZ") {
       mqtoptOp = CREATE_GATE_OP(RZ);
-    } else if (gateName == "PhaseShift" || gateName == "ControlledPhaseShift") {
+    } else if (gateName == "PhaseShift") {
       mqtoptOp = CREATE_GATE_OP(P);
+    } else if (gateName == "CRX") {
+      // CRX gate: 1 control qubit + 1 target qubit
+      // inQubits[0] is control, inQubits[1] is target
+      inPosCtrlQubitsVec.emplace_back(inQubits[0]);
+      mqtoptOp = rewriter.create<opt::RXOp>(
+          op.getLoc(), inQubits[1].getType(),
+          ValueRange(inPosCtrlQubitsVec).getTypes(),
+          ValueRange(inNegCtrlQubitsVec).getTypes(), staticParams, paramsMask,
+          finalParamValues, inQubits[1], inPosCtrlQubitsVec,
+          inNegCtrlQubitsVec);
+    } else if (gateName == "CRY") {
+      // CRY gate: 1 control qubit + 1 target qubit
+      // inQubits[0] is control, inQubits[1] is target
+      inPosCtrlQubitsVec.emplace_back(inQubits[0]);
+      mqtoptOp = rewriter.create<opt::RYOp>(
+          op.getLoc(), inQubits[1].getType(),
+          ValueRange(inPosCtrlQubitsVec).getTypes(),
+          ValueRange(inNegCtrlQubitsVec).getTypes(), staticParams, paramsMask,
+          finalParamValues, inQubits[1], inPosCtrlQubitsVec,
+          inNegCtrlQubitsVec);
+    } else if (gateName == "CRZ") {
+      // CRZ gate: 1 control qubit + 1 target qubit
+      // inQubits[0] is control, inQubits[1] is target
+      inPosCtrlQubitsVec.emplace_back(inQubits[0]);
+      mqtoptOp = rewriter.create<opt::RZOp>(
+          op.getLoc(), inQubits[1].getType(),
+          ValueRange(inPosCtrlQubitsVec).getTypes(),
+          ValueRange(inNegCtrlQubitsVec).getTypes(), staticParams, paramsMask,
+          finalParamValues, inQubits[1], inPosCtrlQubitsVec,
+          inNegCtrlQubitsVec);
+    } else if (gateName == "ControlledPhaseShift") {
+      // ControlledPhaseShift gate: 1 control qubit + 1 target qubit
+      // inQubits[0] is control, inQubits[1] is target
+      inPosCtrlQubitsVec.emplace_back(inQubits[0]);
+      mqtoptOp = rewriter.create<opt::POp>(
+          op.getLoc(), inQubits[1].getType(),
+          ValueRange(inPosCtrlQubitsVec).getTypes(),
+          ValueRange(inNegCtrlQubitsVec).getTypes(), staticParams, paramsMask,
+          finalParamValues, inQubits[1], inPosCtrlQubitsVec,
+          inNegCtrlQubitsVec);
     } else if (gateName == "IsingXY") {
-      mqtoptOp = CREATE_GATE_OP(XXplusYY);
+      // PennyLane IsingXY has 1 parameter (phi), OpenQASM XXPlusYY needs 2
+      // (theta, beta) Relationship: IsingXY(phi) = XXPlusYY(phi, pi) Add pi as
+      // second parameter
+      SmallVector<Value> isingxyParams(finalParamValues.begin(),
+                                       finalParamValues.end());
+      isingxyParams.push_back(rewriter
+                                  .create<arith::ConstantFloatOp>(
+                                      op.getLoc(), APFloat(3.141592653589793),
+                                      rewriter.getF64Type())
+                                  .getResult());
+
+      SmallVector<double> isingxyStaticParams(staticParamsVec.begin(),
+                                              staticParamsVec.end());
+      SmallVector<bool> isingxyParamsMask(paramsMaskVec.begin(),
+                                          paramsMaskVec.end());
+      isingxyParamsMask.push_back(false); // pi is a dynamic constant
+
+      auto isingxyStaticParamsAttr =
+          DenseF64ArrayAttr::get(rewriter.getContext(), isingxyStaticParams);
+      auto isingxyParamsMaskAttr =
+          DenseBoolArrayAttr::get(rewriter.getContext(), isingxyParamsMask);
+
+      mqtoptOp = rewriter.create<opt::XXplusYYOp>(
+          op.getLoc(), inQubits.getTypes(),
+          ValueRange(inPosCtrlQubitsVec).getTypes(),
+          ValueRange(inNegCtrlQubitsVec).getTypes(), isingxyStaticParamsAttr,
+          isingxyParamsMaskAttr, isingxyParams, inQubits, inPosCtrlQubitsVec,
+          inNegCtrlQubitsVec);
     } else if (gateName == "IsingXX") {
       mqtoptOp = CREATE_GATE_OP(RXX);
     } else if (gateName == "IsingYY") {
