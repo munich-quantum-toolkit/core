@@ -89,7 +89,7 @@ class FluxOp<string mnemonic, list<Trait> traits = []> :
 // Resource Operations
 //===----------------------------------------------------------------------===//
 
-def AllocOp : FluxOp<"alloc"> {
+def AllocOp : FluxOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
     let summary = "Allocate a qubit dynamically";
     let description = [{
         Allocates a new qubit dynamically and returns an SSA value representing it.
@@ -137,7 +137,7 @@ def AllocOp : FluxOp<"alloc"> {
     let hasVerifier = 1;
 }
 
-def DeallocOp : FluxOp<"dealloc"> {
+def DeallocOp : FluxOp<"dealloc", [MemoryEffects<[MemFree]>]> {
     let summary = "Deallocate a qubit";
     let description = [{
         Deallocates a qubit, releasing its resources.
@@ -153,7 +153,7 @@ def DeallocOp : FluxOp<"dealloc"> {
     let hasCanonicalizer = 1;
 }
 
-def StaticOp : FluxOp<"static"> {
+def StaticOp : FluxOp<"static", [Pure]> {
     let summary = "Retrieve a static qubit by index";
     let description = [{
         The `flux.static` operation produces an SSA value representing a qubit
@@ -198,7 +198,7 @@ def MeasureOp : FluxOp<"measure"> {
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit_in,
+    let arguments = (ins Arg<QubitType, "the qubit to measure", [MemRead]>:$qubit_in,
                      OptionalAttr<StrAttr>:$register_name,
                      OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
                      OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
@@ -230,7 +230,7 @@ def ResetOp : FluxOp<"reset", [Idempotent, SameOperandsAndResultType]> {
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit_in);
+    let arguments = (ins Arg<QubitType, "the qubit to reset", [MemRead]>:$qubit_in);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
     let hasCanonicalizer = 1;

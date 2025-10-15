@@ -81,7 +81,7 @@ class QuartzOp<string mnemonic, list<Trait> traits = []> :
 // Resource Operations
 //===----------------------------------------------------------------------===//
 
-def AllocOp : QuartzOp<"alloc"> {
+def AllocOp : QuartzOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
     let summary = "Allocate a qubit dynamically";
     let description = [{
         Allocates a new qubit dynamically and returns a reference to it.
@@ -129,7 +129,7 @@ def AllocOp : QuartzOp<"alloc"> {
     let hasVerifier = 1;
 }
 
-def DeallocOp : QuartzOp<"dealloc"> {
+def DeallocOp : QuartzOp<"dealloc", [MemoryEffects<[MemFree]>]> {
     let summary = "Deallocate a qubit";
     let description = [{
         Deallocates a qubit, releasing its resources.
@@ -189,7 +189,7 @@ def MeasureOp : QuartzOp<"measure"> {
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit,
+    let arguments = (ins Arg<QubitType, "the qubit to measure", [MemRead, MemWrite]>:$qubit,
                      OptionalAttr<StrAttr>:$register_name,
                      OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
                      OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
@@ -219,7 +219,7 @@ def ResetOp : QuartzOp<"reset"> {
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit);
+    let arguments = (ins Arg<QubitType, "the qubit to reset", [MemRead, MemWrite]>:$qubit);
     let assemblyFormat = "$qubit attr-dict `:` type($qubit)";
 }
 
