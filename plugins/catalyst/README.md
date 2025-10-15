@@ -106,21 +106,29 @@ uv sync --verbose --active
 
 ### 3) Use the MQT plugin with your PennyLane code
 
-The following code gives an example on how to use an MQT pass with PennyLane's Catalyst
+The MQT plugin provides device configuration utilities to prevent Catalyst from decomposing gates into unitary matrices, enabling lossless roundtrip conversions.
+
+**Important:** Use `get_device()` from the MQT plugin instead of `qml.device()` directly:
 
 ```python3
 import catalyst
 import pennylane as qml
 from catalyst.passes import apply_pass
+from mqt.core.plugins.catalyst import get_device
+
+# Use get_device() to configure the device for MQT plugin compatibility
+# This prevents gates from being decomposed into unitary matrices
+device = get_device("lightning.qubit", wires=2)
 
 
 @apply_pass("mqt.mqtopt-to-catalystquantum")
-@apply_pass("mqt.mqt-core-round-trip")
 @apply_pass("mqt.catalystquantum-to-mqtopt")
-@qml.qnode(qml.device("lightning.qubit", wires=2))
+@qml.qnode(device)
 def circuit() -> None:
     qml.Hadamard(wires=[0])
     qml.CNOT(wires=[0, 1])
+    # Controlled gates will NOT be decomposed to matrices
+    qml.ctrl(qml.PauliX(wires=0), control=1)
     catalyst.measure(0)
     catalyst.measure(1)
 
@@ -128,6 +136,19 @@ def circuit() -> None:
 @qml.qjit(target="mlir", autograph=True)
 def module() -> None:
     return circuit()
+
+
+# Get the optimized MLIR representation
+mlir_output = module.mlir_opt
+```
+
+**Alternative:** You can also configure an existing device:
+
+```python3
+from mqt.core.plugins.catalyst import configure_device_for_mqt
+
+device = qml.device("lightning.qubit", wires=2)
+device = configure_device_for_mqt(device)
 ```
 
 ## System Requirements

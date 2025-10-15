@@ -14,6 +14,8 @@ import platform
 from importlib import resources
 from pathlib import Path
 
+from mqt.core.plugins.catalyst.device import configure_device_for_mqt, get_device
+
 
 def get_catalyst_plugin_abs_path() -> Path:
     """Locate the mqt-catalyst-plugin shared library.
@@ -68,4 +70,9 @@ def name2pass(name: str) -> tuple[Path, str]:
     return get_catalyst_plugin_abs_path(), name
 
 
-__all__ = ["get_catalyst_plugin_abs_path", "name2pass"]
+__all__ = [
+    "configure_device_for_mqt",
+    "get_catalyst_plugin_abs_path",
+    "get_device",
+    "name2pass",
+]
