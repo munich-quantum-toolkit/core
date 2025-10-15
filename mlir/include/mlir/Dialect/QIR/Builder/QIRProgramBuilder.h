@@ -12,7 +12,6 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <cstddef>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
@@ -163,7 +162,7 @@ public:
    * // Output recording deferred to output block
    * ```
    */
-  Value measure(Value qubit, size_t resultIndex);
+  Value measure(Value qubit, int64_t resultIndex);
 
   /**
    * @brief Measure a qubit into a classical register
@@ -202,7 +201,7 @@ public:
    * ```
    */
   QIRProgramBuilder& measure(Value qubit, StringRef registerName,
-                             size_t registerIndex);
+                             int64_t registerIndex);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -283,17 +282,13 @@ private:
   DenseSet<Value> allocatedQubits;
 
   /// Cache static qubit pointers for reuse
-  DenseMap<size_t, Value> staticQubitCache;
+  DenseMap<int64_t, Value> staticQubitCache;
 
   /// Cache result pointers for reuse (separate from qubits)
-  DenseMap<size_t, Value> resultPointerCache;
+  DenseMap<int64_t, Value> resultPointerCache;
 
   /// Map from (register_name, register_index) to result pointer
-  DenseMap<std::pair<StringRef, size_t>, Value> registerResultMap;
-
-  /// Sequence of measurements to record in output block
-  /// Each entry: (result_ptr, register_name, register_index)
-  SmallVector<std::tuple<Value, StringRef, size_t>> measurementSequence;
+  DenseMap<std::pair<StringRef, int64_t>, Value> registerResultMap;
 
   /// Track qubit and result counts for QIR metadata
   QIRMetadata metadata_;
