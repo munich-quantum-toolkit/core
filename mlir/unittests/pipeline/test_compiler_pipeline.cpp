@@ -98,15 +98,10 @@ using namespace mlir;
  */
 struct StageExpectations {
   ModuleOp quartzImport;
-  ModuleOp initialCanon;
   ModuleOp fluxConversion;
-  ModuleOp fluxCanon;
   ModuleOp optimization;
-  ModuleOp optimizationCanon;
   ModuleOp quartzConversion;
-  ModuleOp quartzCanon;
   ModuleOp qirConversion;
-  ModuleOp qirCanon;
 };
 
 //===----------------------------------------------------------------------===//
@@ -147,7 +142,7 @@ protected:
     config.convertToQIR = true;
     config.recordIntermediates = true;
     config.printIRAfterAllStages =
-        false; /// TODO: Change back after everything is running
+        true; /// TODO: Change back after everything is running
 
     emptyQuartz = buildQuartzIR([](quartz::QuartzProgramBuilder&) {});
     emptyFlux = buildFluxIR([](flux::FluxProgramBuilder&) {});
@@ -222,7 +217,19 @@ protected:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Build expected Quartz IR programmatically
+   * @brief Run canonicalization
+   */
+  void runCanonicalizationPasses(ModuleOp module) const {
+    PassManager pm(module.getContext());
+    pm.addPass(createCanonicalizerPass());
+    pm.addPass(createCSEPass());
+    if (failed(pm.run(module))) {
+      llvm::errs() << "Failed to run canonicalization passes\n";
+    }
+  }
+
+  /**
+   * @brief Build expected Quartz IR programmatically and run canonicalization
    */
   [[nodiscard]] OwningOpRef<ModuleOp> buildQuartzIR(
       const std::function<void(quartz::QuartzProgramBuilder&)>& buildFunc)
@@ -230,29 +237,35 @@ protected:
     quartz::QuartzProgramBuilder builder(context.get());
     builder.initialize();
     buildFunc(builder);
-    return builder.finalize();
+    auto module = builder.finalize();
+    runCanonicalizationPasses(module.get());
+    return module;
   }
 
   /**
-   * @brief Build expected Flux IR programmatically
+   * @brief Build expected Flux IR programmatically and run canonicalization
    */
   [[nodiscard]] OwningOpRef<ModuleOp> buildFluxIR(
       const std::function<void(flux::FluxProgramBuilder&)>& buildFunc) const {
     flux::FluxProgramBuilder builder(context.get());
     builder.initialize();
     buildFunc(builder);
-    return builder.finalize();
+    auto module = builder.finalize();
+    runCanonicalizationPasses(module.get());
+    return module;
   }
 
   /**
-   * @brief Build expected QIR programmatically
+   * @brief Build expected QIR programmatically and run canonicalization
    */
   [[nodiscard]] OwningOpRef<ModuleOp> buildQIR(
       const std::function<void(qir::QIRProgramBuilder&)>& buildFunc) const {
     qir::QIRProgramBuilder builder(context.get());
     builder.initialize();
     buildFunc(builder);
-    return builder.finalize();
+    auto module = builder.finalize();
+    runCanonicalizationPasses(module.get());
+    return module;
   }
 
   //===--------------------------------------------------------------------===//
@@ -267,55 +280,29 @@ protected:
    * Stages without expectations are skipped.
    */
   void verifyAllStages(const StageExpectations& expectations) const {
-    if (expectations.quartzImport) {
-      EXPECT_TRUE(verify("Quartz Import", record.afterQuartzImport,
+    if (expectations.quartzImport != nullptr) {
+      EXPECT_TRUE(verify("Quartz Import", record.afterInitialCanon,
                          expectations.quartzImport));
     }
 
-    if (expectations.initialCanon) {
-      EXPECT_TRUE(verify("Initial Canonicalization", record.afterInitialCanon,
-                         expectations.initialCanon));
-    }
-
-    if (expectations.fluxConversion) {
-      EXPECT_TRUE(verify("Flux Conversion", record.afterFluxConversion,
+    if (expectations.fluxConversion != nullptr) {
+      EXPECT_TRUE(verify("Flux Conversion", record.afterFluxCanon,
                          expectations.fluxConversion));
     }
 
-    if (expectations.fluxCanon) {
-      EXPECT_TRUE(verify("Flux Canonicalization", record.afterFluxCanon,
-                         expectations.fluxCanon));
-    }
-
-    if (expectations.optimization) {
-      EXPECT_TRUE(verify("Optimization", record.afterOptimization,
+    if (expectations.optimization != nullptr) {
+      EXPECT_TRUE(verify("Optimization", record.afterOptimizationCanon,
                          expectations.optimization));
     }
 
-    if (expectations.optimizationCanon) {
-      EXPECT_TRUE(verify("Optimization Canonicalization",
-                         record.afterOptimizationCanon,
-                         expectations.optimizationCanon));
-    }
-
-    if (expectations.quartzConversion) {
-      EXPECT_TRUE(verify("Quartz Conversion", record.afterQuartzConversion,
+    if (expectations.quartzConversion != nullptr) {
+      EXPECT_TRUE(verify("Quartz Conversion", record.afterQuartzCanon,
                          expectations.quartzConversion));
     }
 
-    if (expectations.quartzCanon) {
-      EXPECT_TRUE(verify("Quartz Canonicalization", record.afterQuartzCanon,
-                         expectations.quartzCanon));
-    }
-
-    if (expectations.qirConversion) {
-      EXPECT_TRUE(verify("QIR Conversion", record.afterQIRConversion,
+    if (expectations.qirConversion != nullptr) {
+      EXPECT_TRUE(verify("QIR Conversion", record.afterQIRCanon,
                          expectations.qirConversion));
-    }
-
-    if (expectations.qirCanon) {
-      EXPECT_TRUE(verify("QIR Canonicalization", record.afterQIRCanon,
-                         expectations.qirCanon));
     }
   }
 
@@ -376,15 +363,10 @@ TEST_F(CompilerPipelineTest, EmptyCircuit) {
   // Verify all stages
   verifyAllStages({
       .quartzImport = emptyQuartz.get(),
-      .initialCanon = emptyQuartz.get(),
       .fluxConversion = emptyFlux.get(),
-      .fluxCanon = emptyFlux.get(),
       .optimization = emptyFlux.get(),
-      .optimizationCanon = emptyFlux.get(),
       .quartzConversion = emptyQuartz.get(),
-      .quartzCanon = emptyQuartz.get(),
       .qirConversion = emptyQIR.get(),
-      .qirCanon = emptyQIR.get(),
   });
 }
 
@@ -414,15 +396,10 @@ TEST_F(CompilerPipelineTest, SingleQubitRegister) {
 
   verifyAllStages({
       .quartzImport = quartzExpected.get(),
-      .initialCanon = quartzExpected.get(),
       .fluxConversion = fluxExpected.get(),
-      .fluxCanon = emptyFlux.get(),
       .optimization = emptyFlux.get(),
-      .optimizationCanon = emptyFlux.get(),
       .quartzConversion = emptyQuartz.get(),
-      .quartzCanon = emptyQuartz.get(),
       .qirConversion = emptyQIR.get(),
-      .qirCanon = emptyQIR.get(),
   });
 }
 
@@ -444,15 +421,10 @@ TEST_F(CompilerPipelineTest, MultiQubitRegister) {
 
   verifyAllStages({
       .quartzImport = quartzExpected.get(),
-      .initialCanon = quartzExpected.get(),
       .fluxConversion = fluxExpected.get(),
-      .fluxCanon = emptyFlux.get(),
       .optimization = emptyFlux.get(),
-      .optimizationCanon = emptyFlux.get(),
       .quartzConversion = emptyQuartz.get(),
-      .quartzCanon = emptyQuartz.get(),
       .qirConversion = emptyQIR.get(),
-      .qirCanon = emptyQIR.get(),
   });
 }
 
@@ -480,15 +452,10 @@ TEST_F(CompilerPipelineTest, MultipleQuantumRegisters) {
 
   verifyAllStages({
       .quartzImport = quartzExpected.get(),
-      .initialCanon = quartzExpected.get(),
       .fluxConversion = fluxExpected.get(),
-      .fluxCanon = emptyFlux.get(),
       .optimization = emptyFlux.get(),
-      .optimizationCanon = emptyFlux.get(),
       .quartzConversion = emptyQuartz.get(),
-      .quartzCanon = emptyQuartz.get(),
       .qirConversion = emptyQIR.get(),
-      .qirCanon = emptyQIR.get(),
   });
 }
 
@@ -528,15 +495,10 @@ TEST_F(CompilerPipelineTest, SingleClassicalBitRegister) {
 
   verifyAllStages({
       .quartzImport = expected.get(),
-      .initialCanon = emptyQuartz.get(),
       .fluxConversion = emptyFlux.get(),
-      .fluxCanon = emptyFlux.get(),
       .optimization = emptyFlux.get(),
-      .optimizationCanon = emptyFlux.get(),
       .quartzConversion = emptyQuartz.get(),
-      .quartzCanon = emptyQuartz.get(),
       .qirConversion = emptyQIR.get(),
-      .qirCanon = emptyQIR.get(),
   });
 }
 
@@ -560,15 +522,10 @@ TEST_F(CompilerPipelineTest, MultiBitClassicalRegister) {
 
   verifyAllStages({
       .quartzImport = expected.get(),
-      .initialCanon = emptyQuartz.get(),
       .fluxConversion = emptyFlux.get(),
-      .fluxCanon = emptyFlux.get(),
       .optimization = emptyFlux.get(),
-      .optimizationCanon = emptyFlux.get(),
       .quartzConversion = emptyQuartz.get(),
-      .quartzCanon = emptyQuartz.get(),
       .qirConversion = emptyQIR.get(),
-      .qirCanon = emptyQIR.get(),
   });
 }
 
@@ -595,15 +552,10 @@ TEST_F(CompilerPipelineTest, MultipleClassicalRegisters) {
 
   verifyAllStages({
       .quartzImport = expected.get(),
-      .initialCanon = emptyQuartz.get(),
       .fluxConversion = emptyFlux.get(),
-      .fluxCanon = emptyFlux.get(),
       .optimization = emptyFlux.get(),
-      .optimizationCanon = emptyFlux.get(),
       .quartzConversion = emptyQuartz.get(),
-      .quartzCanon = emptyQuartz.get(),
       .qirConversion = emptyQIR.get(),
-      .qirCanon = emptyQIR.get(),
   });
 }
 
@@ -649,15 +601,10 @@ TEST_F(CompilerPipelineTest, SingleResetInSingleQubitCircuit) {
 
   verifyAllStages({
       .quartzImport = expected.get(),
-      .initialCanon = expected.get(),
       .fluxConversion = fluxExpected.get(),
-      .fluxCanon = emptyFlux.get(),
       .optimization = emptyFlux.get(),
-      .optimizationCanon = emptyFlux.get(),
       .quartzConversion = emptyQuartz.get(),
-      .quartzCanon = emptyQuartz.get(),
       .qirConversion = emptyQIR.get(),
-      .qirCanon = emptyQIR.get(),
   });
 }
 
@@ -695,15 +642,10 @@ TEST_F(CompilerPipelineTest, ConsecutiveResetOperations) {
 
   verifyAllStages({
       .quartzImport = expected.get(),
-      .initialCanon = expected.get(),
       .fluxConversion = fluxExpected.get(),
-      .fluxCanon = emptyFlux.get(),
       .optimization = emptyFlux.get(),
-      .optimizationCanon = emptyFlux.get(),
       .quartzConversion = emptyQuartz.get(),
-      .quartzCanon = emptyQuartz.get(),
       .qirConversion = emptyQIR.get(),
-      .qirCanon = emptyQIR.get(),
   });
 }
 
@@ -733,15 +675,10 @@ TEST_F(CompilerPipelineTest, SeparateResetsInTwoQubitSystem) {
 
   verifyAllStages({
       .quartzImport = expected.get(),
-      .initialCanon = expected.get(),
       .fluxConversion = fluxExpected.get(),
-      .fluxCanon = emptyFlux.get(),
       .optimization = emptyFlux.get(),
-      .optimizationCanon = emptyFlux.get(),
       .quartzConversion = emptyQuartz.get(),
-      .quartzCanon = emptyQuartz.get(),
       .qirConversion = emptyQIR.get(),
-      .qirCanon = emptyQIR.get(),
   });
 }
 
@@ -779,15 +716,10 @@ TEST_F(CompilerPipelineTest, SingleMeasurementToSingleBit) {
 
   verifyAllStages({
       .quartzImport = expected.get(),
-      .initialCanon = expected.get(),
       .fluxConversion = fluxExpected.get(),
-      .fluxCanon = fluxExpected.get(),
       .optimization = fluxExpected.get(),
-      .optimizationCanon = fluxExpected.get(),
       .quartzConversion = expected.get(),
-      .quartzCanon = expected.get(),
       .qirConversion = qirExpected.get(),
-      .qirCanon = qirExpected.get(),
   });
 }
 
@@ -825,15 +757,10 @@ TEST_F(CompilerPipelineTest, RepeatedMeasurementToSameBit) {
 
   verifyAllStages({
       .quartzImport = expected.get(),
-      .initialCanon = expected.get(),
       .fluxConversion = fluxExpected.get(),
-      .fluxCanon = fluxExpected.get(),
       .optimization = fluxExpected.get(),
-      .optimizationCanon = fluxExpected.get(),
       .quartzConversion = expected.get(),
-      .quartzCanon = expected.get(),
       .qirConversion = qirExpected.get(),
-      .qirCanon = qirExpected.get(),
   });
 }
 
@@ -876,15 +803,10 @@ TEST_F(CompilerPipelineTest, RepeatedMeasurementOnSeparateBits) {
 
   verifyAllStages({
       .quartzImport = expected.get(),
-      .initialCanon = expected.get(),
       .fluxConversion = fluxExpected.get(),
-      .fluxCanon = fluxExpected.get(),
       .optimization = fluxExpected.get(),
-      .optimizationCanon = fluxExpected.get(),
       .quartzConversion = expected.get(),
-      .quartzCanon = expected.get(),
       .qirConversion = qirExpected.get(),
-      .qirCanon = qirExpected.get(),
   });
 }
 
@@ -893,8 +815,8 @@ TEST_F(CompilerPipelineTest, RepeatedMeasurementOnSeparateBits) {
  */
 TEST_F(CompilerPipelineTest, MultipleClassicalRegistersAndMeasurements) {
   qc::QuantumComputation qc(2);
-  auto& c1 = qc.addClassicalRegister(1, "c1");
-  auto& c2 = qc.addClassicalRegister(1, "c2");
+  const auto& c1 = qc.addClassicalRegister(1, "c1");
+  const auto& c2 = qc.addClassicalRegister(1, "c2");
   qc.measure(0, c1[0]);
   qc.measure(1, c2[0]);
 
@@ -920,21 +842,16 @@ TEST_F(CompilerPipelineTest, MultipleClassicalRegistersAndMeasurements) {
 
   const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
     auto q = b.allocQubitRegister(2);
-    b.measure(q[0], 0);
-    b.measure(q[1], 1);
+    b.measure(q[0], "c1", 0);
+    b.measure(q[1], "c2", 0);
   });
 
   verifyAllStages({
       .quartzImport = expected.get(),
-      .initialCanon = expected.get(),
       .fluxConversion = fluxExpected.get(),
-      .fluxCanon = fluxExpected.get(),
       .optimization = fluxExpected.get(),
-      .optimizationCanon = fluxExpected.get(),
       .quartzConversion = expected.get(),
-      .quartzCanon = expected.get(),
       .qirConversion = qirExpected.get(),
-      .qirCanon = qirExpected.get(),
   });
 }
 
