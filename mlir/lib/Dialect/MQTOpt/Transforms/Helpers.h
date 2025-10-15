@@ -21,6 +21,20 @@
 
 namespace mqt::ir::opt::helpers {
 
+// TODO: remove
+  template<std::size_t N>
+  void print(std::array<std::complex<qc::fp>, N> matrix) {
+    int i{};
+    for (auto&& a : matrix) {
+      llvm::errs() << a.real() << 'i' << a.imag() << ' ';
+      if (++i % 4 == 0) {
+        llvm::errs() << '\n';
+      }
+    }
+    llvm::errs() << '\n';
+
+  }
+
 inline auto flatten(const dd::TwoQubitGateMatrix& matrix) {
   std::array<std::complex<qc::fp>, 16> result;
   for (std::size_t i = 0; i < result.size(); ++i) {
@@ -153,34 +167,22 @@ inline std::optional<qc::fp> mlirValueToFp(mlir::Value value) {
   return isTwoQubitOp;
 }
 
-[[nodiscard]] inline std::optional<dd::TwoQubitGateMatrix>
-getUnitaryMatrix(UnitaryInterface op) {
-  auto type = getQcType(op);
-  auto parameters = getParameters(op);
-
-  if (isTwoQubitOperation(op)) {
-    return dd::opToTwoQubitGateMatrix(type, parameters);
-  } else if (isSingleQubitOperation(op)) {
-    auto matrix = dd::opToSingleQubitGateMatrix(type, parameters);
-    // TODO
-  }
-  return std::nullopt;
-}
-
 [[nodiscard]] inline dd::GateMatrix multiply(std::complex<qc::fp> factor,
                                              dd::GateMatrix matrix) {
   return {factor * matrix.at(0), factor * matrix.at(1), factor * matrix.at(2),
           factor * matrix.at(3)};
 }
 
+template<typename T, std::size_t N>
 [[nodiscard]] inline auto
-multiply(const std::array<std::complex<qc::fp>, 16>& lhs,
-         const std::array<std::complex<qc::fp>, 16>& rhs) {
-  std::array<std::complex<qc::fp>, 16> result;
-  for (int i = 0; i < 4; i++) {
-    for (int j = 0; j < 4; j++) {
-      for (int k = 0; k < 4; k++) {
-        result[i * 4 + j] += lhs[i * 4 + k] * rhs[k * 4 + j];
+multiply(const std::array<T, N>& lhs,
+         const std::array<T, N>& rhs) {
+  std::array<T, N> result;
+  const auto n = std::sqrt(N);
+  for (int i = 0; i < n; i++) {
+    for (int j = 0; j < n; j++) {
+      for (int k = 0; k < n; k++) {
+        result[i * n + j] += lhs[i * n + k] * rhs[k * n + j];
       }
     }
   }
@@ -193,8 +195,60 @@ kroneckerProduct(dd::GateMatrix lhs, dd::GateMatrix rhs) {
           multiply(lhs.at(2), rhs), multiply(lhs.at(3), rhs)};
 }
 
-[[nodiscard]] inline dd::TwoQubitGateMatrix
-multiply(dd::TwoQubitGateMatrix lhs, dd::TwoQubitGateMatrix rhs) {
-  return {};
+template<typename T>
+[[nodiscard]] inline auto LUdecomposition(std::array<T, 16> matrix) {
+    std::array<T, 16> L{};
+    std::array<T, 16> U{};
+    int rowPermutations = 0;
+
+    for (int i = 0; i < 4; i++) {
+        // --- Partial pivoting: find max row in column i ---
+        int pivotRow = i;
+        auto maxVal = matrix[i * 4 + i];
+
+        for (int r = i + 1; r < 4; r++) {
+            auto val = matrix[r * 4 + i];
+            if (std::abs(val) > std::abs(maxVal)) {
+                maxVal = val;
+                pivotRow = r;
+            }
+        }
+
+        // --- Swap rows in matrix if needed ---
+        if (pivotRow != i) {
+            for (int col = 0; col < 4; ++col) {
+                std::swap(matrix[i * 4 + col], matrix[pivotRow * 4 + col]);
+            }
+            ++rowPermutations;
+        }
+
+        // --- Compute L matrix (column-wise) ---
+        for (int j = 0; j < 4; j++) {
+            if (j < i)
+                L[j * 4 + i] = 0;
+            else {
+                L[j * 4 + i] = matrix[j * 4 + i];
+                for (int k = 0; k < i; k++) {
+                    L[j * 4 + i] -= L[j * 4 + k] * U[k * 4 + i];
+                }
+            }
+        }
+
+        // --- Compute U matrix (row-wise) ---
+        for (int j = 0; j < 4; j++) {
+            if (j < i)
+                U[i * 4 + j] = 0;
+            else if (j == i)
+                U[i * 4 + j] = 1;  // Diagonal of U is set to 1
+            else {
+                U[i * 4 + j] = matrix[i * 4 + j] / L[i * 4 + i];
+                for (int k = 0; k < i; k++) {
+                    U[i * 4 + j] -= (L[i * 4 + k] * U[k * 4 + j]) / L[i * 4 + i];
+                }
+            }
+        }
+    }
+
+    return std::make_tuple(L, U, rowPermutations);
 }
 } // namespace mqt::ir::opt::helpers
