@@ -17,6 +17,7 @@
 
 #include <Quantum/IR/QuantumDialect.h>
 #include <Quantum/IR/QuantumOps.h>
+#include <cmath>
 #include <cstddef>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -985,42 +986,38 @@ StringRef ConvertMQTOptSimpleGate<opt::IOp>::getGateName(
 template <>
 StringRef
 ConvertMQTOptSimpleGate<opt::XOp>::getGateName(const std::size_t numControls) {
-  if (numControls == 0) {
-    return "PauliX";
-  }
   if (numControls == 1) {
     return "CNOT";
   }
   if (numControls == 2) {
     return "Toffoli";
   }
-  return "";
+  // 0 or 3+ controls: use PauliX with explicit control qubits
+  return "PauliX";
 }
 
-// -- YOp (PauliY, CY)
+// -- YOp (PauliY, CY for 1 control, PauliY for 2+ controls)
 template <>
 StringRef
 ConvertMQTOptSimpleGate<opt::YOp>::getGateName(const std::size_t numControls) {
-  if (numControls == 0) {
-    return "PauliY";
-  }
+  // CY is the special name for exactly 1 control
   if (numControls == 1) {
     return "CY";
   }
-  return "";
+  // 0 or 2+ controls: use PauliY with explicit control qubits
+  return "PauliY";
 }
 
-// -- ZOp (PauliZ, CZ)
+// -- ZOp (PauliZ, CZ for 1 control, PauliZ for 2+ controls)
 template <>
 StringRef
 ConvertMQTOptSimpleGate<opt::ZOp>::getGateName(const std::size_t numControls) {
-  if (numControls == 0) {
-    return "PauliZ";
-  }
+  // CZ is the special name for exactly 1 control
   if (numControls == 1) {
     return "CZ";
   }
-  return "";
+  // 0 or 2+ controls: use PauliZ with explicit control qubits
+  return "PauliZ";
 }
 
 // -- HOp (Hadamard)
@@ -1144,12 +1141,96 @@ StringRef ConvertMQTOptSimpleGate<opt::RZZOp>::getGateName(
   return "IsingZZ";
 }
 
-// -- XXplusYY (IsingXY)
+// -- XXplusYY (IsingXY) - Special handling with decomposition
 template <>
-StringRef ConvertMQTOptSimpleGate<opt::XXplusYYOp>::getGateName(
-    [[maybe_unused]] std::size_t numControls) {
-  return "IsingXY";
-}
+struct ConvertMQTOptSimpleGate<opt::XXplusYYOp> final
+    : OpConversionPattern<opt::XXplusYYOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(opt::XXplusYYOp op, opt::XXplusYYOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operands and control information
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
+
+    // XXplusYY(phi, beta) = (I ⊗ Rz(beta - pi)) · IsingXY(phi) · (I ⊗ Rz(pi -
+    // beta)) We need to extract both parameters
+
+    auto params = adaptor.getParams();
+    auto staticParams = op.getStaticParams();
+    auto paramMask = op.getParamsMask();
+
+    // Extract parameters: phi (theta) and beta
+    SmallVector<Value> paramValues;
+    size_t dynamicIdx = 0;
+    size_t staticIdx = 0;
+
+    for (size_t i = 0; i < 2; ++i) {
+      if (paramMask && (*paramMask)[i]) {
+        // Static parameter
+        auto floatAttr = rewriter.getF64FloatAttr((*staticParams)[staticIdx++]);
+        paramValues.push_back(
+            rewriter.create<ConstantOp>(op.getLoc(), floatAttr));
+      } else {
+        // Dynamic parameter
+        paramValues.push_back(params[dynamicIdx++]);
+      }
+    }
+
+    Value phi = paramValues[0];  // First parameter
+    Value beta = paramValues[1]; // Second parameter
+
+    // Create constants for pi
+    auto pi = rewriter.create<ConstantOp>(op.getLoc(),
+                                          rewriter.getF64FloatAttr(M_PI));
+
+    // Compute beta - pi
+    auto betaMinusPi = rewriter.create<SubFOp>(op.getLoc(), beta, pi);
+
+    // Compute pi - beta
+    auto piMinusBeta = rewriter.create<SubFOp>(op.getLoc(), pi, beta);
+
+    // Apply Rz(pi - beta) on qubit 1 (second qubit)
+    auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(),
+        /*gate=*/"RZ",
+        /*in_qubits=*/ValueRange{extracted.inQubits[1]},
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
+        /*params=*/ValueRange{piMinusBeta},
+        /*adjoint=*/false);
+
+    // Apply IsingXY(phi) on both qubits
+    auto isingxy = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(),
+        /*gate=*/"IsingXY",
+        /*in_qubits=*/ValueRange{extracted.inQubits[0], rz1.getOutQubits()[0]},
+        /*in_ctrl_qubits=*/rz1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
+        /*params=*/ValueRange{phi},
+        /*adjoint=*/false);
+
+    // Apply Rz(beta - pi) on qubit 1 (second qubit)
+    auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(),
+        /*gate=*/"RZ",
+        /*in_qubits=*/ValueRange{isingxy.getOutQubits()[1]},
+        /*in_ctrl_qubits=*/isingxy.getOutCtrlQubits(),
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
+        /*params=*/ValueRange{betaMinusPi},
+        /*adjoint=*/false);
+
+    // Final results: (q0_final, q1_final, controls...)
+    SmallVector<Value> finalResults;
+    finalResults.push_back(isingxy.getOutQubits()[0]); // q0 from IsingXY
+    finalResults.push_back(rz2.getOutQubits()[0]);     // q1 after final Rz
+    finalResults.append(rz2.getOutCtrlQubits().begin(),
+                        rz2.getOutCtrlQubits().end());
+
+    rewriter.replaceOp(op, finalResults);
+    return success();
+  }
+};
 
 struct MQTOptToCatalystQuantum final
     : impl::MQTOptToCatalystQuantumBase<MQTOptToCatalystQuantum> {
