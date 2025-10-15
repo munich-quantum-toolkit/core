@@ -36,9 +36,6 @@ struct GateDecompositionPattern final
   explicit GateDecompositionPattern(mlir::MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
 
-  dd::TwoQubitGateMatrix twoQubitIdentity = {
-      {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}}};
-
   mlir::LogicalResult
   matchAndRewrite(UnitaryInterface op,
                   mlir::PatternRewriter& rewriter) const override {
@@ -49,18 +46,17 @@ struct GateDecompositionPattern final
       return mlir::failure();
     }
 
-    matrix4x4 unitaryMatrix =
-        helpers::flatten(dd::opToTwoQubitGateMatrix(qc::I));
+    matrix4x4 unitaryMatrix = kroneckerProduct(identityGate, identityGate);
     for (auto&& gate : series) {
-      if (auto gateMatrix = helpers::getUnitaryMatrix(gate)) {
-        unitaryMatrix =
-            helpers::multiply(unitaryMatrix, helpers::flatten(*gateMatrix));
-      }
+      auto gateMatrix = getTwoQubitMatrix({.type = helpers::getQcType(gate),
+                                           .parameter = {/*TODO*/},
+                                           .qubit_id = {0, 1}});
+      unitaryMatrix = helpers::multiply(unitaryMatrix, gateMatrix);
     }
 
-    TwoQubitBasisDecomposer decomposer;
-    auto sequence = decomposer.twoQubitDecompose(unitaryMatrix, DEFAULT_FIDELITY, true,
-                                 std::nullopt);
+    auto decomposer = TwoQubitBasisDecomposer::new_inner();
+    auto sequence = decomposer.twoQubitDecompose(
+        unitaryMatrix, DEFAULT_FIDELITY, true, std::nullopt);
     if (!sequence) {
       return mlir::failure();
     }
@@ -84,42 +80,50 @@ struct GateDecompositionPattern final
     }
     result.push_back(op);
 
+    auto findNextInSeries = [&](mlir::Operation* user) {
+      auto userUnitary = mlir::dyn_cast<UnitaryInterface>(user);
+      if (!userUnitary) {
+        return false;
+      }
+
+      if (helpers::isSingleQubitOperation(userUnitary)) {
+        auto&& operand = userUnitary->getOperand(0);
+        auto* it = llvm::find(qubits, operand);
+        if (it == qubits.end()) {
+          throw std::logic_error{"Operand of single-qubit op and user of "
+                                 "qubit is not in qubits"};
+        }
+        *it = userUnitary->getResult(0);
+
+        result.push_back(userUnitary);
+        return true;
+      }
+      if (helpers::isTwoQubitOperation(userUnitary)) {
+        auto&& firstOperand = userUnitary->getOperand(0);
+        auto&& secondOperand = userUnitary->getOperand(1);
+        auto* firstQubitIt = llvm::find(qubits, firstOperand);
+        auto* secondQubitIt = llvm::find(qubits, secondOperand);
+        if (firstQubitIt == qubits.end() || secondQubitIt == qubits.end()) {
+          return false;
+        }
+        *firstQubitIt = userUnitary->getResult(0);
+        *secondQubitIt = userUnitary->getResult(1);
+
+        result.push_back(userUnitary);
+        return true;
+      }
+      return false;
+    };
+
     while (true) {
-      for (auto&& user : llvm::concat<mlir::Operation*>(qubits[0].getUsers(),
-                                                        qubits[1].getUsers())) {
-        auto userUnitary = mlir::dyn_cast<UnitaryInterface>(user);
-        if (!userUnitary) {
-          return result;
-        }
-
-        if (helpers::isSingleQubitOperation(userUnitary)) {
-          auto&& operand = userUnitary->getOperand(0);
-          auto* it = llvm::find(qubits, operand);
-          if (it == qubits.end()) {
-            throw std::logic_error{"Operand of single-qubit op and user of "
-                                   "qubit is not in qubits"};
-          }
-          *it = userUnitary->getResult(0);
-
-          result.push_back(userUnitary);
-        } else if (helpers::isTwoQubitOperation(userUnitary)) {
-          auto&& firstOperand = userUnitary->getOperand(0);
-          auto&& secondOperand = userUnitary->getOperand(1);
-          auto* firstQubitIt = llvm::find(qubits, firstOperand);
-          auto* secondQubitIt = llvm::find(qubits, secondOperand);
-          if (firstQubitIt == qubits.end() || secondQubitIt == qubits.end()) {
-            return result;
-          }
-          *firstQubitIt = userUnitary->getResult(0);
-          *secondQubitIt = userUnitary->getResult(1);
-
-          result.push_back(userUnitary);
-        } else {
-          return result;
-        }
+      assert(qubits[0].hasOneUse());
+      assert(qubits[1].hasOneUse());
+      bool isSeriesOngoing = findNextInSeries(*qubits[0].getUsers().begin()) ||
+                             findNextInSeries(*qubits[1].getUsers().begin());
+      if (!isSeriesOngoing) {
+        return result;
       }
     }
-    return result;
   }
 
   /**
@@ -133,7 +137,8 @@ struct GateDecompositionPattern final
   template <typename OpType>
   static OpType createOneParameterGate(mlir::PatternRewriter& rewriter,
                                        mlir::Location location,
-                                       qc::fp parameter,                                       mlir::ValueRange inQubits) {
+                                       qc::fp parameter,
+                                       mlir::ValueRange inQubits) {
     auto parameterValue = rewriter.create<mlir::arith::ConstantOp>(
         location, rewriter.getF64Type(), rewriter.getF64FloatAttr(parameter));
 
@@ -144,22 +149,24 @@ struct GateDecompositionPattern final
         mlir::ValueRange{});
   }
 
-
-    struct QubitGateSequence {
-      struct Gate {
-        qc::OpType type{qc::I};
-        std::vector<qc::fp> parameter;
-        std::vector<std::size_t> qubit_id = {0};
-      };
-      std::vector<Gate> gates;
-      qc::fp globalPhase;
+  struct QubitGateSequence {
+    struct Gate {
+      qc::OpType type{qc::I};
+      std::vector<qc::fp> parameter;
+      std::vector<std::size_t> qubit_id = {0};
     };
-    using OneQubitGateSequence = QubitGateSequence;
-    using TwoQubitGateSequence = QubitGateSequence;
+    std::vector<Gate> gates;
+    qc::fp globalPhase;
+  };
+  using OneQubitGateSequence = QubitGateSequence;
+  using TwoQubitGateSequence = QubitGateSequence;
 
-  static void applySeries(mlir::PatternRewriter& rewriter, const llvm::SmallVector<UnitaryInterface>& series, const TwoQubitGateSequence& sequence) {
+  static void applySeries(mlir::PatternRewriter& rewriter,
+                          const llvm::SmallVector<UnitaryInterface>& series,
+                          const TwoQubitGateSequence& sequence) {
     if (sequence.globalPhase != 0.0) {
-        createOneParameterGate<GPhaseOp>(rewriter, series[0]->getLoc(), sequence.globalPhase, {});
+      createOneParameterGate<GPhaseOp>(rewriter, series[0]->getLoc(),
+                                       sequence.globalPhase, {});
     }
   }
 
@@ -230,14 +237,25 @@ struct GateDecompositionPattern final
   }
 
   static matrix2x2 dot(const matrix2x2& lhs, const matrix2x2& rhs) {
-    return lhs;
+    return helpers::multiply(lhs, rhs);
   }
   static matrix4x4 dot(const matrix4x4& lhs, const matrix4x4& rhs) {
-    return lhs;
+    return helpers::multiply(lhs, rhs);
   }
 
-  static matrix2x2 transpose(const matrix2x2& x) { return x; }
-  static matrix4x4 transpose(const matrix4x4& x) { return x; }
+  static matrix2x2 transpose(const matrix2x2& matrix) {
+    return {matrix[0 * 2 + 0], matrix[1 * 2 + 0], matrix[0 * 2 + 1],
+            matrix[1 * 2 + 1]};
+  }
+  static matrix4x4 transpose(const matrix4x4& x) {
+    matrix4x4 result;
+    for (size_t i = 0; i < 4; ++i) {
+      for (size_t j = 0; j < 4; ++j) {
+        result[j * 4 + i] = x[i * 4 + j];
+      }
+    }
+    return result;
+  }
 
   static matrix2x2 transpose_conjugate(const matrix2x2& matrix) {
     auto result = transpose(matrix);
@@ -246,8 +264,60 @@ struct GateDecompositionPattern final
     return result;
   };
 
-  static qfp determinant(const matrix2x2& x) { return 0.0; };
-  static qfp determinant(const matrix4x4& x) { return 0.0; };
+  static qfp determinant(const matrix2x2& mat) {
+    return mat[0] * mat[3] - mat[1] * mat[2];
+  }
+
+  static qfp determinant(const std::array<qfp, 9>& mat) {
+    return mat[0] * (mat[4] * mat[8] - mat[5] * mat[7]) -
+           mat[1] * (mat[3] * mat[8] - mat[5] * mat[6]) +
+           mat[2] * (mat[3] * mat[7] - mat[4] * mat[6]);
+  }
+
+  static std::array<qfp, 9> get3x3Submatrix(const matrix4x4& mat,
+                                            int rowToBeRemoved,
+                                            int columnToBeRemoved) {
+    std::array<std::complex<qc::fp>, 9> result;
+    int subIndex = 0;
+    for (int i = 0; i < 4; ++i) {
+      if (i != rowToBeRemoved) {
+        for (int j = 0; j < 4; ++j) {
+          if (j != columnToBeRemoved) {
+            result[subIndex++] = mat[i * 4 + j];
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  static qfp determinant(const matrix4x4& mat) {
+    auto [l, u, rowPermutations] = helpers::LUdecomposition(mat);
+    auto det = C_ONE;
+    for (int i = 0; i < 4; ++i) {
+      det *= l[i * 4 + i];
+    }
+
+    if (rowPermutations % 2 != 0) {
+      det = -det;
+    }
+    return det;
+
+    // auto det = -C_ZERO;
+    // for (int column = 0; column < 4; ++column) {
+    //   auto submatrix = get3x3Submatrix(mat, 0, column);
+    //   auto subDet = determinant(submatrix);
+    //   auto tmp = mat[0 * 4 + column] * subDet;
+    //   if (column % 2 == 0 &&
+    //       tmp !=
+    //           C_ZERO) { // TODO: better way to get negative 0.0 in determinant?
+    //     det += tmp;
+    //   } else if (tmp != -C_ZERO) {
+    //     det -= tmp;
+    //   }
+    // }
+    // return det;
+  }
 
   static matrix2x2 multiply(qfp factor, matrix2x2 matrix) {
     llvm::transform(matrix, matrix.begin(),
@@ -270,15 +340,85 @@ struct GateDecompositionPattern final
         second_quadrant[0 * 2 + 0], second_quadrant[0 * 2 + 1],
         first_quadrant[1 * 2 + 0],  first_quadrant[1 * 2 + 1],
         second_quadrant[1 * 2 + 0], second_quadrant[1 * 2 + 1],
-        third_quadrant[0 * 2 + 0],  first_quadrant[0 * 2 + 1],
+        third_quadrant[0 * 2 + 0],  third_quadrant[0 * 2 + 1],
         fourth_quadrant[0 * 2 + 0], fourth_quadrant[0 * 2 + 1],
-        third_quadrant[1 * 2 + 0],  first_quadrant[1 * 2 + 1],
+        third_quadrant[1 * 2 + 0],  third_quadrant[1 * 2 + 1],
         fourth_quadrant[1 * 2 + 0], fourth_quadrant[1 * 2 + 1],
     };
   }
 
+  // Helper function to perform QR decomposition (simplified)
+  static void qrDecomposition(std::array<qc::fp, 16>& A,
+                              std::array<qc::fp, 16>& Q,
+                              std::array<qc::fp, 16>& R) {
+    // QR decomposition is simplified for this 4x4 case
+    for (size_t i = 0; i < 4; ++i) {
+      qc::fp norm = 0.0;
+      for (size_t j = 0; j < 4; ++j) {
+        norm += A[j * 4 + i] * A[j * 4 + i];
+      }
+      norm = std::sqrt(norm);
+
+      // Normalize the column
+      for (size_t j = 0; j < 4; ++j) {
+        Q[j * 4 + i] = A[j * 4 + i] / norm;
+      }
+
+      // Compute the R matrix
+      for (size_t j = i; j < 4; ++j) {
+        qc::fp dot = 0.0;
+        for (size_t k = 0; k < 4; ++k) {
+          dot += Q[k * 4 + i] * A[k * 4 + j];
+        }
+        R[i * 4 + j] = dot;
+      }
+
+      // Subtract to make A orthogonal
+      for (size_t j = 0; j < 4; ++j) {
+        for (size_t k = i; k < 4; ++k) {
+          A[j * 4 + k] -= Q[j * 4 + i] * R[i * 4 + k];
+        }
+      }
+    }
+  }
+
+  // Function to perform self-adjoint eigenvalue decomposition (4x4 matrix)
+  static std::array<qc::fp, 16>               // eigenvectors (4x4)
+  self_adjoint_evd(std::array<qc::fp, 16>& A, // input symmetric matrix (4x4)
+                   std::array<qc::fp, 4>& s   // eigenvalues
+  ) {
+    // Step 1: Zero out the upper triangle (we are only interested in the lower
+    // half)
+    for (size_t i = 0; i < 4; ++i) {
+      for (size_t j = i + 1; j < 4; ++j) {
+        A[i * 4 + j] = 0; // Set the upper triangle to zero
+      }
+    }
+
+    // Step 2: Perform QR decomposition
+    std::array<qc::fp, 16> Q, R;
+    for (int iter = 0; iter < 1000;
+         ++iter) { // Arbitrary number of iterations for convergence
+      qrDecomposition(A, Q, R);
+      A = helpers::multiply(R, Q); // Update A = R * Q
+    }
+
+    // Step 3: Extract eigenvalues (diagonal of the matrix)
+    for (size_t i = 0; i < 4; ++i) {
+      s[i] = A[i * 4 + i]; // Eigenvalues are the diagonal elements
+    }
+
+    return Q;
+  }
+
   // https://docs.rs/faer/latest/faer/mat/generic/struct.Mat.html#method.self_adjoint_eigen
-  static matrix4x4 self_adjoint_eigen_lower(const matrix4x4& x) { return x; }
+  static std::array<qc::fp, 16>
+  self_adjoint_eigen_lower(std::array<qc::fp, 16> A) {
+    std::array<qc::fp, 4> S;
+    auto U = self_adjoint_evd(A, S);
+
+    return U;
+  }
 
   static std::tuple<matrix2x2, matrix2x2, qc::fp>
   decompose_two_qubit_product_gate(matrix4x4 special_unitary) {
@@ -299,9 +439,7 @@ struct GateDecompositionPattern final
     llvm::transform(r, r.begin(),
                     [&](auto&& x) { return x / std::sqrt(det_r); });
     // transpose with complex conjugate of each element
-    matrix2x2 r_t_conj;
-    llvm::transform(transpose(r), r_t_conj.begin(),
-                    [](auto&& x) { return std::conj(x); });
+    matrix2x2 r_t_conj = transpose_conjugate(r);
 
     auto temp = kroneckerProduct(identityGate, r_t_conj);
     temp = dot(special_unitary, temp);
@@ -443,6 +581,48 @@ struct GateDecompositionPattern final
   static constexpr std::array<std::complex<qc::fp>, 4> IPX = {C_ZERO, IM, IM,
                                                               C_ZERO};
 
+  static matrix2x2 getSingleQubitMatrix(const QubitGateSequence::Gate& gate) {
+    if (gate.type == qc::SX) {
+      return {qfp{0.5, 0.5}, qfp{0.5, -0.5}, qfp{0.5, -0.5}, qfp{0.5, 0.5}};
+    }
+    if (gate.type == qc::RZ) {
+      return rz_matrix(gate.parameter.at(0));
+    }
+    if (gate.type == qc::X) {
+      return {0, 1, 1, 0};
+    }
+    throw std::invalid_argument{
+        "unsupported gate type for single qubit matrix"};
+  }
+
+  static matrix4x4 getTwoQubitMatrix(const QubitGateSequence::Gate& gate) {
+    if (gate.qubit_id.empty()) {
+      return kroneckerProduct(identityGate, identityGate);
+    }
+    if (gate.qubit_id.size() == 1) {
+      if (gate.qubit_id[0] == 0) {
+        return kroneckerProduct(identityGate, getSingleQubitMatrix(gate));
+      }
+      if (gate.qubit_id[0] == 1) {
+        return kroneckerProduct(getSingleQubitMatrix(gate), identityGate);
+      }
+      throw std::logic_error{"Invalid qubit ID in compute_unitary"};
+    }
+    if (gate.qubit_id.size() == 2) {
+      if (gate.type == qc::X) {
+        // controlled X (CX)
+        if (gate.qubit_id == std::vector<std::size_t>{0, 1}) {
+          return {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0};
+        }
+        if (gate.qubit_id == std::vector<std::size_t>{1, 0}) {
+          return {1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0};
+        }
+      }
+      throw std::invalid_argument{"unsupported gate type for two qubit matrix"};
+    }
+    throw std::logic_error{"Invalid number of qubit IDs in compute_unitary"};
+  }
+
   struct TwoQubitWeylDecomposition {
     qc::fp a;
     qc::fp b;
@@ -459,18 +639,24 @@ struct GateDecompositionPattern final
     matrix4x4 unitary_matrix;
 
     static TwoQubitWeylDecomposition
-    new_inner(matrix4x4 unitary_matrix,
-
-              std::optional<qc::fp> fidelity,
+    new_inner(matrix4x4 unitary_matrix, std::optional<qc::fp> fidelity,
               std::optional<Specialization> _specialization) {
       auto& u = unitary_matrix;
       auto det_u = determinant(u);
-      auto det_pow = std::pow(det_u, static_cast<qc::fp>(-0.25));
+      llvm::errs() << "DET_U: " << det_u.real() << 'i' << det_u.imag() << '\n';
+      // auto cpow = [](auto&& x, auto&& y) { // TODO: remove
+      //   auto mag = std::abs(x);
+      //   auto phase = std::arg(x);
+      //   return std::polar(std::pow(mag, y), phase * y); };
+      auto det_pow = std::pow(det_u, -qc::fp(0.25));
+      llvm::errs() << "DET_POW: " << det_pow.real() << 'i' << det_pow.imag()
+                   << '\n';
       llvm::transform(u, u.begin(), [&](auto&& x) { return x * det_pow; });
       auto global_phase = std::arg(det_u) / 4.;
       auto u_p = magic_basis_transform(u, MagicBasisTransform::OutOf);
       auto m2 = dot(transpose(u_p), u_p);
       auto default_euler_basis = EulerBasis::ZYZ;
+      helpers::print(m2);
 
       // M2 is a symmetric complex matrix. We need to decompose it as M2 = P D
       // P^T where P ∈ SO(4), D is diagonal with unit-magnitude elements.
@@ -489,8 +675,9 @@ struct GateDecompositionPattern final
       auto state = std::mt19937{2023};
       std::normal_distribution<qc::fp> dist;
       auto found = false;
-      diagonal4x4 d;
-      matrix4x4 p;
+      diagonal4x4 d{{C_ZERO}};
+      matrix4x4 p{{C_ZERO}};
+
       for (int i = 0; i < 100; ++i) {
         qc::fp rand_a;
         qc::fp rand_b;
@@ -506,11 +693,15 @@ struct GateDecompositionPattern final
           rand_a = dist(state);
           rand_b = dist(state);
         }
-        matrix4x4 m2_real;
+        std::array<qc::fp, 16> m2_real;
         llvm::transform(m2, m2_real.begin(), [&](const qfp& val) {
           return rand_a * val.real() + rand_b * val.imag();
         });
-        matrix4x4 p_inner = self_adjoint_eigen_lower(m2_real);
+        auto p_inner_real =
+            std::get<1>(helpers::LUdecomposition(self_adjoint_eigen_lower(m2_real)));
+        matrix4x4 p_inner;
+        llvm::transform(p_inner_real, p_inner.begin(),
+                        [](auto&& x) { return qfp(x, 0.0); });
         auto d_inner = diagonal(dot(dot(transpose(p_inner), m2), p_inner));
         matrix4x4 diag_d{}; // zero initialization
         diag_d[0 * 4 + 0] = d_inner[0];
@@ -1024,7 +1215,8 @@ struct GateDecompositionPattern final
     matrix2x2 q2l;
     matrix2x2 q2r;
 
-    TwoQubitBasisDecomposer
+  public:
+    static TwoQubitBasisDecomposer
     new_inner(qc::OpType gate = qc::X, // CX
               const std::vector<qc::fp>& gate_params = {},
               matrix4x4 gate_matrix = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0,
@@ -1364,49 +1556,6 @@ struct GateDecompositionPattern final
             "Failed to compute requested pulse optimal decomposition"};
       }
       return result;
-    }
-
-    matrix2x2 getSingleQubitMatrix(const QubitGateSequence::Gate& gate) {
-      if (gate.type == qc::SX) {
-        return {qfp{0.5, 0.5}, qfp{0.5, -0.5}, qfp{0.5, -0.5}, qfp{0.5, 0.5}};
-      }
-      if (gate.type == qc::RZ) {
-        return rz_matrix(gate.parameter.at(0));
-      }
-      if (gate.type == qc::X) {
-        return {0, 1, 1, 0};
-      }
-      throw std::invalid_argument{
-          "unsupported gate type for single qubit matrix"};
-    }
-
-    matrix4x4 getTwoQubitMatrix(const QubitGateSequence::Gate& gate) {
-      if (gate.qubit_id.empty()) {
-        return kroneckerProduct(identityGate, identityGate);
-      } else if (gate.qubit_id.size() == 1) {
-        if (gate.qubit_id[0] == 0) {
-          return kroneckerProduct(identityGate, getSingleQubitMatrix(gate));
-        } else if (gate.qubit_id[0] == 1) {
-          return kroneckerProduct(getSingleQubitMatrix(gate), identityGate);
-        } else {
-          throw std::logic_error{"Invalid qubit ID in compute_unitary"};
-        }
-      } else if (gate.qubit_id.size() == 2) {
-        if (gate.type == qc::X) {
-          // controlled X (CX)
-          if (gate.qubit_id == std::vector<std::size_t>{0, 1}) {
-            return {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0};
-          }
-          if (gate.qubit_id == std::vector<std::size_t>{1, 0}) {
-            return {1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0};
-          }
-        }
-        throw std::invalid_argument{
-            "unsupported gate type for two qubit matrix"};
-      } else {
-        throw std::logic_error{
-            "Invalid number of qubit IDs in compute_unitary"};
-      }
     }
 
     ///
