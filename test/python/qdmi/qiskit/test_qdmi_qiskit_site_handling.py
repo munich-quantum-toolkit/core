@@ -34,9 +34,9 @@ def backend() -> QiskitBackend:
     """Create a QiskitBackend instance for testing.
 
     Returns:
-        QiskitBackend instance of the FoMaC device at index 0.
+        QiskitBackend instance with cache disabled for testing.
     """
-    return QiskitBackend(device_index=0)
+    return QiskitBackend(device_index=0, use_cache=False)
 
 
 @pytest.fixture

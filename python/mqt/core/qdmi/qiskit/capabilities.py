@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""QDMI Device capability extraction.
+"""QDMI Device capability extraction & caching.
 
 This module provides lightweight, dependency-free (no Qiskit required) data
 classes and helper functions to introspect a FoMaC-backed QDMI device and
@@ -15,6 +15,8 @@ for embedding in higher-level backend metadata (e.g., Qiskit BackendV2 Target).
 
 Design goals:
 - Pure Python; safe to import regardless of optional extras.
+- Avoid repeated expensive native calls via an object cache keyed by a
+  deterministic *device signature* (structural hash of salient properties).
 - Preserve optional values (None) without interpretation; semantic derivation
   is deferred to later layers.
 - Provide stable dataclasses forming part of an intended public extension API
@@ -24,6 +26,7 @@ Design goals:
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 from typing import TYPE_CHECKING, cast
@@ -144,6 +147,10 @@ class DeviceCapabilities:
             "signature": self.signature,
         }
         return json.dumps(obj, sort_keys=True, separators=(",", ":"))
+
+
+_capability_cache: dict[str, DeviceCapabilities] = {}
+_cache_lock = threading.Lock()
 
 
 def _compute_device_signature(device: fomac.Device) -> str:
@@ -292,16 +299,10 @@ def _remap_operation_sites(
 
 
 def extract_capabilities(device: fomac.Device) -> DeviceCapabilities:
-    """Extract full capabilities from a FoMaC device.
-
-    Note: The underlying C++ FoMaC Device class caches queries for sites,
-    operations, and coupling_map. This means repeated calls to this function
-    benefit from C++ caching even though a new Python DeviceCapabilities
-    object is created each time.
+    """Extract full capabilities from a FoMaC device (no caching).
 
     Returns:
-        Fresh :class:`DeviceCapabilities` snapshot with data from the device
-        (leveraging C++ cached queries where applicable).
+        Fresh :class:`DeviceCapabilities` snapshot.
     """
     signature = _compute_device_signature(device)
 
@@ -360,15 +361,29 @@ def extract_capabilities(device: fomac.Device) -> DeviceCapabilities:
     return cap
 
 
-def get_capabilities(device: fomac.Device) -> DeviceCapabilities:
-    """Extract capabilities from a FoMaC device.
+def get_capabilities(device: fomac.Device, *, use_cache: bool = True) -> DeviceCapabilities:
+    """Return cached capabilities for ``device`` (extracting if necessary).
 
     Args:
         device: FoMaC device instance.
+        use_cache: If ``False``, force re-extraction (cache not updated).
 
     Returns:
-        :class:`DeviceCapabilities` snapshot. A new Python object is created
-        each time, but the underlying C++ queries (sites, operations,
-        coupling_map) are cached automatically by the Device class.
+        Cached or freshly extracted :class:`DeviceCapabilities` snapshot.
     """
-    return extract_capabilities(device)
+    signature = _compute_device_signature(device)
+    if use_cache:
+        with _cache_lock:
+            cached = _capability_cache.get(signature)
+            if cached is not None:
+                return cached
+    cap = extract_capabilities(device)
+    if use_cache:
+        with _cache_lock:
+            _capability_cache[signature] = cap
+    return cap
+
+
+def _cache_info() -> dict[str, int]:  # pragma: no cover - debug helper
+    """Return basic cache metrics (for diagnostics)."""
+    return {"entries": len(_capability_cache)}

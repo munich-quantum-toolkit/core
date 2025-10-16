@@ -16,13 +16,11 @@
 #include <cstdint>
 #include <iostream>
 #include <iterator>
-#include <mutex>
 #include <optional>
 #include <qdmi/client.h>
 #include <ranges>
 #include <string>
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -443,16 +441,6 @@ public:
     /// @brief The underlying QDMI_Device object.
     QDMI_Device device_;
 
-    /// @brief Mutex for thread-safe cache access.
-    mutable std::mutex cacheMutex_;
-    /// @brief Cached sites list.
-    mutable std::optional<std::vector<Site>> cachedSites_;
-    /// @brief Cached operations list.
-    mutable std::optional<std::vector<Operation>> cachedOperations_;
-    /// @brief Cached coupling map.
-    mutable std::optional<std::optional<std::vector<std::pair<Site, Site>>>>
-        cachedCouplingMap_;
-
     template <maybe_optional_value_or_string_or_vector T>
     [[nodiscard]] auto queryProperty(QDMI_Device_Property prop) const -> T {
       if constexpr (string_or_optional_string<T>) {
@@ -507,33 +495,11 @@ public:
      * @param device The QDMI_Device handle to wrap.
      */
     Device(FoMaC::Token /* unused */, QDMI_Device device) : device_(device) {}
-
-    // Delete copy constructor and copy assignment (due to mutex member)
-    Device(const Device&) = delete;
-    Device& operator=(const Device&) = delete;
-
-    // Define move constructor and move assignment
-    Device(Device&& other) noexcept
-        : device_(other.device_), cachedSites_(std::move(other.cachedSites_)),
-          cachedOperations_(std::move(other.cachedOperations_)),
-          cachedCouplingMap_(std::move(other.cachedCouplingMap_)) {}
-
-    Device& operator=(Device&& other) noexcept {
-      if (this != &other) {
-        device_ = other.device_;
-        std::lock_guard<std::mutex> lock(cacheMutex_);
-        cachedSites_ = std::move(other.cachedSites_);
-        cachedOperations_ = std::move(other.cachedOperations_);
-        cachedCouplingMap_ = std::move(other.cachedCouplingMap_);
-      }
-      return *this;
-    }
-
     /// @returns the underlying QDMI_Device object.
     [[nodiscard]] auto getQDMIDevice() const -> QDMI_Device { return device_; }
     // NOLINTNEXTLINE(google-explicit-constructor)
     operator QDMI_Device() const { return device_; }
-
+    auto operator<=>(const Device&) const = default;
     /// @see QDMI_DEVICE_PROPERTY_NAME
     [[nodiscard]] auto getName() const -> std::string;
     /// @see QDMI_DEVICE_PROPERTY_VERSION

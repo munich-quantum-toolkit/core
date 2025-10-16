@@ -29,8 +29,8 @@
 
 namespace na {
 
-FoMaC::Device::Device(fomac::FoMaC::Device&& device)
-    : fomac::FoMaC::Device(std::move(device)) {
+FoMaC::Device::Device(const fomac::FoMaC::Device& device)
+    : fomac::FoMaC::Device(device) {
   initNameFromDevice();
   initMinAtomDistanceFromDevice();
   initQubitsNumFromDevice();
@@ -325,15 +325,12 @@ auto FoMaC::Device::initShuttlingUnitsFromDevice() -> void {
       std::back_inserter(shuttlingUnits));
 }
 auto FoMaC::getDevices() -> std::vector<Device> {
-  auto qdmiDevices = fomac::FoMaC::getDevices();
+  const auto& qdmiDevices = fomac::FoMaC::getDevices();
   std::vector<Device> devices;
   devices.reserve(qdmiDevices.size());
-  std::ranges::transform(std::make_move_iterator(qdmiDevices.begin()),
-                         std::make_move_iterator(qdmiDevices.end()),
-                         std::back_inserter(devices),
-                         [](fomac::FoMaC::Device&& dev) -> Device {
-                           return Device(std::move(dev));
-                         });
+  std::ranges::transform(
+      qdmiDevices, std::back_inserter(devices),
+      [](const fomac::FoMaC::Device& dev) -> Device { return Device(dev); });
   return devices;
 }
 } // namespace na

@@ -341,14 +341,6 @@ auto FoMaC::Device::getQubitsNum() const -> size_t {
   return queryProperty<size_t>(QDMI_DEVICE_PROPERTY_QUBITSNUM);
 }
 auto FoMaC::Device::getSites() const -> std::vector<Site> {
-  std::lock_guard<std::mutex> lock(cacheMutex_);
-
-  // Return cached value if available
-  if (cachedSites_.has_value()) {
-    return *cachedSites_;
-  }
-
-  // Query from QDMI and cache the result
   const auto& qdmiSites =
       queryProperty<std::vector<QDMI_Site>>(QDMI_DEVICE_PROPERTY_SITES);
   std::vector<Site> sites;
@@ -357,20 +349,9 @@ auto FoMaC::Device::getSites() const -> std::vector<Site> {
                          [device = device_](const QDMI_Site& site) -> Site {
                            return {Token{}, device, site};
                          });
-
-  // Cache the result
-  cachedSites_ = sites;
   return sites;
 }
 auto FoMaC::Device::getOperations() const -> std::vector<Operation> {
-  std::lock_guard<std::mutex> lock(cacheMutex_);
-
-  // Return cached value if available
-  if (cachedOperations_.has_value()) {
-    return *cachedOperations_;
-  }
-
-  // Query from QDMI and cache the result
   const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(
       QDMI_DEVICE_PROPERTY_OPERATIONS);
   std::vector<Operation> operations;
@@ -380,27 +361,14 @@ auto FoMaC::Device::getOperations() const -> std::vector<Operation> {
       [device = device_](const QDMI_Operation& op) -> Operation {
         return {Token{}, device, op};
       });
-
-  // Cache the result
-  cachedOperations_ = operations;
   return operations;
 }
 auto FoMaC::Device::getCouplingMap() const
     -> std::optional<std::vector<std::pair<Site, Site>>> {
-  std::lock_guard<std::mutex> lock(cacheMutex_);
-
-  // Return cached value if available
-  if (cachedCouplingMap_.has_value()) {
-    return *cachedCouplingMap_;
-  }
-
-  // Query from QDMI and cache the result
   const auto& qdmiCouplingMap = queryProperty<
       std::optional<std::vector<std::pair<QDMI_Site, QDMI_Site>>>>(
       QDMI_DEVICE_PROPERTY_COUPLINGMAP);
   if (!qdmiCouplingMap.has_value()) {
-    // Cache the nullopt result
-    cachedCouplingMap_ = std::nullopt;
     return std::nullopt;
   }
   std::vector<std::pair<Site, Site>> couplingMap;
@@ -411,9 +379,6 @@ auto FoMaC::Device::getCouplingMap() const
                            return {Site{Token{}, device_, pair.first},
                                    Site{Token{}, device_, pair.second}};
                          });
-
-  // Cache the result
-  cachedCouplingMap_ = couplingMap;
   return couplingMap;
 }
 auto FoMaC::Device::getNeedsCalibration() const -> std::optional<size_t> {
