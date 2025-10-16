@@ -21,12 +21,19 @@ These tests ensure that:
 
 from __future__ import annotations
 
+import importlib.util
 from typing import cast
 
 import pytest
 
 from mqt.core import fomac
-from mqt.core.qdmi.qiskit import QiskitBackend
+
+_qiskit_present = importlib.util.find_spec("qiskit") is not None
+
+pytestmark = pytest.mark.skipif(not _qiskit_present, reason="qiskit not installed")
+
+if _qiskit_present:
+    from mqt.core.qdmi.qiskit import QiskitBackend
 
 
 @pytest.fixture
