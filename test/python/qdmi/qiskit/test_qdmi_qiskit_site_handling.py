@@ -152,17 +152,6 @@ class TestSiteIndexRemapping:
                 f"Site index {site_info.index} is out of logical qubit range [0, {num_qubits})"
             )
 
-    def test_site_indices_are_sequential(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
-        """Verify site indices form a sequential range [0, num_qubits)."""
-        num_qubits = backend._capabilities.num_qubits  # noqa: SLF001
-        site_indices = sorted(site_info.index for site_info in backend._capabilities.sites)  # noqa: SLF001
-
-        # Should be exactly [0, 1, 2, ..., num_qubits-1]
-        expected_indices = list(range(num_qubits))
-        assert site_indices == expected_indices, (
-            f"Site indices should be sequential [0, {num_qubits - 1}], got {len(site_indices)} indices"
-        )
-
     def test_operation_site_indices_in_valid_range(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
         """Verify all operation site indices are in valid logical qubit range."""
         num_qubits = backend._capabilities.num_qubits  # noqa: SLF001

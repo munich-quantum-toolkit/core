@@ -25,83 +25,89 @@ from mqt.core.qdmi.qiskit.capabilities import (
 )
 
 
-def _get_single_device() -> fomac.Device:
+@pytest.fixture
+def device() -> fomac.Device:
+    """Fixture providing a single FoMaC device for testing.
+
+    Returns:
+        First available FoMaC device.
+
+    Note:
+        Skips the test if no devices are available in the test environment.
+    """
     devices = list(fomac.devices())
-    # Skip gracefully if no device is present in the environment
     if not devices:
         pytest.skip("No FoMaC devices available in test environment")
     return devices[0]
 
 
-def test_extract_capabilities_basic() -> None:
+@pytest.fixture
+def capabilities(device: fomac.Device) -> DeviceCapabilities:
+    """Fixture providing extracted device capabilities.
+
+    Args:
+        device: FoMaC device fixture.
+
+    Returns:
+        Extracted device capabilities.
+    """
+    return extract_capabilities(device)
+
+
+def test_extract_capabilities_basic(capabilities: DeviceCapabilities) -> None:
     """Extract snapshot and verify core structural and hash invariants."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    assert isinstance(caps, DeviceCapabilities)
-    assert caps.device_name
-    assert caps.num_qubits >= 0
-    assert caps.capabilities_hash is not None
-    assert len(caps.capabilities_hash) == 64
-    if caps.sites:
-        assert isinstance(caps.sites[0], DeviceSiteInfo)
-    if caps.operations:
-        first_key = next(iter(caps.operations))
-        assert isinstance(caps.operations[first_key], DeviceOperationInfo)
+    assert isinstance(capabilities, DeviceCapabilities)
+    assert capabilities.device_name
+    assert capabilities.num_qubits >= 0
+    assert capabilities.capabilities_hash is not None
+    assert len(capabilities.capabilities_hash) == 64
+    if capabilities.sites:
+        assert isinstance(capabilities.sites[0], DeviceSiteInfo)
+    if capabilities.operations:
+        first_key = next(iter(capabilities.operations))
+        assert isinstance(capabilities.operations[first_key], DeviceOperationInfo)
 
 
-def test_device_capabilities_has_device_name() -> None:
+def test_device_capabilities_has_device_name(capabilities: DeviceCapabilities) -> None:
     """DeviceCapabilities should contain device name."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    assert caps.device_name
-    assert isinstance(caps.device_name, str)
+    assert capabilities.device_name
+    assert isinstance(capabilities.device_name, str)
 
 
-def test_device_capabilities_has_version() -> None:
+def test_device_capabilities_has_version(capabilities: DeviceCapabilities) -> None:
     """DeviceCapabilities should contain device version."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    assert caps.device_version
-    assert isinstance(caps.device_version, str)
+    assert capabilities.device_version
+    assert isinstance(capabilities.device_version, str)
 
 
-def test_device_capabilities_has_library_version() -> None:
+def test_device_capabilities_has_library_version(capabilities: DeviceCapabilities) -> None:
     """DeviceCapabilities should contain library version."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    assert caps.library_version
-    assert isinstance(caps.library_version, str)
+    assert capabilities.library_version
+    assert isinstance(capabilities.library_version, str)
 
 
-def test_device_capabilities_operations_non_empty() -> None:
+def test_device_capabilities_operations_non_empty(capabilities: DeviceCapabilities) -> None:
     """DeviceCapabilities should contain at least one operation."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    assert len(caps.operations) > 0
+    assert len(capabilities.operations) > 0
 
 
-def test_device_operation_info_has_name() -> None:
+def test_device_operation_info_has_name(capabilities: DeviceCapabilities) -> None:
     """DeviceOperationInfo should have a name."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    for op_name, op_info in caps.operations.items():
+    for op_name, op_info in capabilities.operations.items():
         assert op_info.name == op_name
         assert isinstance(op_info.name, str)
 
 
-def test_device_capabilities_signature_is_stable() -> None:
+def test_device_capabilities_signature_is_stable(device: fomac.Device) -> None:
     """Device signature should be stable across multiple extractions."""
-    dev = _get_single_device()
-    caps1 = extract_capabilities(dev)
-    caps2 = extract_capabilities(dev)
+    caps1 = extract_capabilities(device)
+    caps2 = extract_capabilities(device)
     assert caps1.signature == caps2.signature
 
 
-def test_device_capabilities_to_canonical_json() -> None:
+def test_device_capabilities_to_canonical_json(capabilities: DeviceCapabilities) -> None:
     """DeviceCapabilities should produce valid canonical JSON."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    json_str = caps.to_canonical_json()
+    json_str = capabilities.to_canonical_json()
 
     assert isinstance(json_str, str)
     assert len(json_str) > 0
@@ -114,11 +120,9 @@ def test_device_capabilities_to_canonical_json() -> None:
     assert "operations" in parsed
 
 
-def test_device_capabilities_canonical_json_excludes_hash() -> None:
+def test_device_capabilities_canonical_json_excludes_hash(capabilities: DeviceCapabilities) -> None:
     """Canonical JSON should not include the capabilities_hash itself."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    json_str = caps.to_canonical_json()
+    json_str = capabilities.to_canonical_json()
 
     # Parse and check
     import json
@@ -127,111 +131,95 @@ def test_device_capabilities_canonical_json_excludes_hash() -> None:
     assert "capabilities_hash" not in parsed
 
 
-def test_device_capabilities_coupling_map() -> None:
+def test_device_capabilities_coupling_map(capabilities: DeviceCapabilities) -> None:
     """DeviceCapabilities should include coupling map if available."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
     # Coupling map may be None or a list
-    if caps.coupling_map is not None:
-        assert isinstance(caps.coupling_map, list)
-        if caps.coupling_map:
+    if capabilities.coupling_map is not None:
+        assert isinstance(capabilities.coupling_map, list)
+        if capabilities.coupling_map:
             # Should contain tuples of ints
-            assert isinstance(caps.coupling_map[0], tuple)
-            assert len(caps.coupling_map[0]) == 2
+            assert isinstance(capabilities.coupling_map[0], tuple)
+            assert len(capabilities.coupling_map[0]) == 2
 
 
-def test_device_site_info_has_index() -> None:
+def test_device_site_info_has_index(capabilities: DeviceCapabilities) -> None:
     """DeviceSiteInfo should have an index."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    if caps.sites:
-        for site in caps.sites:
+    if capabilities.sites:
+        for site in capabilities.sites:
             assert isinstance(site.index, int)
             assert site.index >= 0
 
 
-def test_device_operation_info_parameters_num() -> None:
+def test_device_operation_info_parameters_num(capabilities: DeviceCapabilities) -> None:
     """DeviceOperationInfo should have parameters_num field."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    for op_info in caps.operations.values():
+    for op_info in capabilities.operations.values():
         assert isinstance(op_info.parameters_num, int)
         assert op_info.parameters_num >= 0
 
 
-def test_device_capabilities_sites_sorted_by_index() -> None:
+def test_device_capabilities_sites_sorted_by_index(capabilities: DeviceCapabilities) -> None:
     """Device sites should be sorted by index."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    if len(caps.sites) > 1:
-        indices = [site.index for site in caps.sites]
+    if len(capabilities.sites) > 1:
+        indices = [site.index for site in capabilities.sites]
         assert indices == sorted(indices)
 
 
-def test_device_capabilities_status() -> None:
+def test_device_capabilities_status(capabilities: DeviceCapabilities) -> None:
     """DeviceCapabilities should include status."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    assert caps.status is not None
-    assert isinstance(caps.status, str)
+    assert capabilities.status is not None
+    assert isinstance(capabilities.status, str)
 
 
-def test_extract_capabilities_is_fresh() -> None:
-    """extract_capabilities should always create a new object."""
-    dev = _get_single_device()
-    caps1 = extract_capabilities(dev)
-    caps2 = extract_capabilities(dev)
+def test_extract_capabilities_is_fresh(device: fomac.Device) -> None:
+    """extract_capabilities should always create a new object.
+
+    Note:
+        While device objects returned by different calls to fomac.devices()
+        compare positively with == (same device, different object instances),
+        extracted capabilities should always create fresh DeviceCapabilities objects.
+    """
+    caps1 = extract_capabilities(device)
+    caps2 = extract_capabilities(device)
     assert caps1 is not caps2  # Different objects
     assert caps1.signature == caps2.signature  # Same content
 
 
-def test_device_capabilities_hash_is_sha256() -> None:
+def test_device_capabilities_hash_is_sha256(capabilities: DeviceCapabilities) -> None:
     """Capabilities hash should be a valid SHA256 hex string."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    assert caps.capabilities_hash is not None
-    assert len(caps.capabilities_hash) == 64  # SHA256 hex length
+    assert capabilities.capabilities_hash is not None
+    assert len(capabilities.capabilities_hash) == 64  # SHA256 hex length
     # Should be valid hex
-    int(caps.capabilities_hash, 16)  # Raises if not valid hex
+    int(capabilities.capabilities_hash, 16)  # Raises if not valid hex
 
 
-def test_device_capabilities_hash_deterministic() -> None:
+def test_device_capabilities_hash_deterministic(device: fomac.Device) -> None:
     """Capabilities hash should be deterministic for same device state."""
-    dev = _get_single_device()
-    caps1 = extract_capabilities(dev)
-    caps2 = extract_capabilities(dev)
+    caps1 = extract_capabilities(device)
+    caps2 = extract_capabilities(device)
     assert caps1.capabilities_hash == caps2.capabilities_hash
 
 
-def test_device_operation_info_sites_is_tuple_or_none() -> None:
+def test_device_operation_info_sites_is_tuple_or_none(capabilities: DeviceCapabilities) -> None:
     """DeviceOperationInfo.sites should be a tuple or None."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    for op_info in caps.operations.values():
+    for op_info in capabilities.operations.values():
         if op_info.sites is not None:
             assert isinstance(op_info.sites, tuple)
 
 
-def test_device_capabilities_duration_units() -> None:
+def test_device_capabilities_duration_units(capabilities: DeviceCapabilities) -> None:
     """DeviceCapabilities should have duration unit and scale factor."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
     # These may be None, but should exist
-    assert hasattr(caps, "duration_unit")
-    assert hasattr(caps, "duration_scale_factor")
+    assert hasattr(capabilities, "duration_unit")
+    assert hasattr(capabilities, "duration_scale_factor")
 
 
-def test_device_capabilities_length_units() -> None:
+def test_device_capabilities_length_units(capabilities: DeviceCapabilities) -> None:
     """DeviceCapabilities should have length unit and scale factor."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
     # These may be None, but should exist
-    assert hasattr(caps, "length_unit")
-    assert hasattr(caps, "length_scale_factor")
+    assert hasattr(capabilities, "length_unit")
+    assert hasattr(capabilities, "length_scale_factor")
 
 
-def test_device_capabilities_min_atom_distance() -> None:
+def test_device_capabilities_min_atom_distance(capabilities: DeviceCapabilities) -> None:
     """DeviceCapabilities should have min_atom_distance field."""
-    dev = _get_single_device()
-    caps = extract_capabilities(dev)
-    assert hasattr(caps, "min_atom_distance")
+    assert hasattr(capabilities, "min_atom_distance")

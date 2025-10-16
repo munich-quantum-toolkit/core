@@ -27,7 +27,30 @@ if _qiskit_present:
     from qiskit import QuantumCircuit
     from qiskit.circuit import Parameter
 
+    from mqt.core import fomac
     from mqt.core.qdmi.qiskit import QiskitBackend
+
+
+def _get_na_device_index() -> int:
+    """Get the device index for the MQT NA Default QDMI Device.
+
+    Returns:
+        Index of the NA device in the device list.
+
+    Raises:
+        RuntimeError: If no NA device is found.
+
+    Note:
+        This helper is used for tests that rely on specific NA device characteristics.
+        In the future, these tests should be generalized or parameterized across device types.
+        See tracking issue for generalization of device-specific tests.
+    """
+    devices_list = list(fomac.devices())
+    for idx, device in enumerate(devices_list):
+        if device.name() == "MQT NA Default QDMI Device":
+            return idx
+    msg = "MQT NA Default QDMI Device not found"
+    raise RuntimeError(msg)
 
 
 def test_backend_instantiation() -> None:
@@ -38,7 +61,13 @@ def test_backend_instantiation() -> None:
 
 
 def test_single_circuit_run_counts() -> None:
-    """Running a circuit yields deterministic all-zero counts with specified shots."""
+    """Running a circuit yields counts with specified shots.
+
+    Note:
+        This test allows for non-deterministic results (e.g., noise on real devices).
+        It validates that all measurement outcomes are valid binary strings and that
+        the total number of shots matches the requested amount.
+    """
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure(0, 0)
@@ -46,16 +75,29 @@ def test_single_circuit_run_counts() -> None:
     backend = QiskitBackend()
     job = backend.run(qc, shots=256)
     counts = job.get_counts()
-    assert list(counts.values()) == [256]
-    assert list(counts.keys()) == ["00"]
+
+    # Verify total shots
+    assert sum(counts.values()) == 256
+
+    # Verify all keys are valid 2-bit binary strings
+    for key in counts:
+        assert len(key) == 2
+        assert all(bit in {"0", "1"} for bit in key)
 
 
 def test_unsupported_operation() -> None:
-    """Unsupported operation raises the expected error type."""
+    """Unsupported operation raises the expected error type.
+
+    Note:
+        This test currently assumes the NA device is used, which doesn't support 'x' gates.
+        TODO: Generalize this test to work with different device types or parameterize
+        across devices with known unsupported operations.
+    """
+    na_device_index = _get_na_device_index()
     qc = QuantumCircuit(1, 1)
-    qc.x(0)  # 'x' not supported by device capabilities
+    qc.x(0)  # 'x' not supported by NA device capabilities
     qc.measure(0, 0)
-    backend = QiskitBackend()
+    backend = QiskitBackend(device_index=na_device_index)
     with pytest.raises(UnsupportedOperationError):
         backend.run(qc)
 
@@ -245,11 +287,16 @@ def test_backend_target_operation_names() -> None:
 
 
 def test_backend_name() -> None:
-    """Backend should have a name attribute."""
+    """Backend should have a name attribute.
+
+    Note:
+        QDMI enforces that every device has a non-empty string name according
+        to the interface definition, so the name should never be None.
+    """
     backend = QiskitBackend()
     assert hasattr(backend, "name")
-    # Name can be None or a string
-    assert backend.name is None or isinstance(backend.name, str)
+    assert isinstance(backend.name, str)
+    assert len(backend.name) > 0
 
 
 def test_backend_version() -> None:

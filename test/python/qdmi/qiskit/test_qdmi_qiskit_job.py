@@ -60,7 +60,7 @@ def test_job_result_with_timeout() -> None:
     qc.measure([0, 1], [0, 1])
 
     job = backend.run(qc, shots=50)
-    result = job.result(timeout=10.0)
+    result = job.result(timeout=10)
 
     assert result.success is True
     assert result.results[0].shots == 50

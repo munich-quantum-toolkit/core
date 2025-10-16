@@ -62,8 +62,6 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             RuntimeError: If no FoMaC devices are available.
             IndexError: If device_index is out of range.
         """
-        super().__init__()
-
         # Get the device from FoMaC
         devices_list = list(fomac.devices())
         if not devices_list:
@@ -75,6 +73,9 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
         self._device = devices_list[device_index]
         self._capabilities = extract_capabilities(self._device)
+
+        # Initialize parent with device name
+        super().__init__(name=self._capabilities.device_name)
 
         # Build Target from capabilities
         self._target = self._build_target()
