@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""QDMI Device capability extraction & caching.
+"""QDMI Device capability extraction.
 
 This module provides lightweight, dependency-free (no Qiskit required) data
 classes and helper functions to introspect a FoMaC-backed QDMI device and
@@ -15,8 +15,6 @@ for embedding in higher-level backend metadata (e.g., Qiskit BackendV2 Target).
 
 Design goals:
 - Pure Python; safe to import regardless of optional extras.
-- Avoid repeated expensive native calls via an object cache keyed by a
-  deterministic *device signature* (structural hash of salient properties).
 - Preserve optional values (None) without interpretation; semantic derivation
   is deferred to later layers.
 - Provide stable dataclasses forming part of an intended public extension API
@@ -26,7 +24,6 @@ Design goals:
 from __future__ import annotations
 
 import json
-import threading
 from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 from typing import TYPE_CHECKING, cast
@@ -39,8 +36,8 @@ __all__ = [
     "DeviceOperationInfo",
     "DeviceSiteInfo",
     "extract_capabilities",
-    "get_capabilities",
 ]
+
 
 # ---------------------------------------------------------------------------
 # Dataclasses representing a normalized capability snapshot
@@ -100,10 +97,9 @@ class DeviceCapabilities:
     """Aggregate capability snapshot for a FoMaC device.
 
     The ``signature`` captures stable structural attributes (name, version,
-    number of qubits, operation name set, coupling map) to enable cache reuse
-    across minor performance fluctuations. ``capabilities_hash`` is a SHA256 of
-    a canonical JSON representation (including optional properties) and thus
-    changes whenever *any* included field changes.
+    number of qubits, operation name set, coupling map). ``capabilities_hash``
+    is a SHA256 of a canonical JSON representation (including optional properties)
+    and thus changes whenever *any* included field changes.
     """
 
     device_name: str
@@ -149,16 +145,10 @@ class DeviceCapabilities:
         return json.dumps(obj, sort_keys=True, separators=(",", ":"))
 
 
-_capability_cache: dict[str, DeviceCapabilities] = {}
-_cache_lock = threading.Lock()
-
-
 def _compute_device_signature(device: fomac.Device) -> str:
     """Compute a concise structural signature string for a device.
 
-    The signature *excludes* performance / temporal metrics that may fluctuate
-    (e.g., site coherence times) to maximize cache hit utility. It captures the
-    static structure relevant for backend Target construction.
+    The signature captures the static structure relevant for backend Target construction.
 
     Returns:
         JSON string (compact, sorted keys) capturing structural attributes.
@@ -299,7 +289,7 @@ def _remap_operation_sites(
 
 
 def extract_capabilities(device: fomac.Device) -> DeviceCapabilities:
-    """Extract full capabilities from a FoMaC device (no caching).
+    """Extract full capabilities from a FoMaC device.
 
     Returns:
         Fresh :class:`DeviceCapabilities` snapshot.
@@ -359,31 +349,3 @@ def extract_capabilities(device: fomac.Device) -> DeviceCapabilities:
     )
     cap.capabilities_hash = sha256(cap.to_canonical_json().encode("utf-8")).hexdigest()
     return cap
-
-
-def get_capabilities(device: fomac.Device, *, use_cache: bool = True) -> DeviceCapabilities:
-    """Return cached capabilities for ``device`` (extracting if necessary).
-
-    Args:
-        device: FoMaC device instance.
-        use_cache: If ``False``, force re-extraction (cache not updated).
-
-    Returns:
-        Cached or freshly extracted :class:`DeviceCapabilities` snapshot.
-    """
-    signature = _compute_device_signature(device)
-    if use_cache:
-        with _cache_lock:
-            cached = _capability_cache.get(signature)
-            if cached is not None:
-                return cached
-    cap = extract_capabilities(device)
-    if use_cache:
-        with _cache_lock:
-            _capability_cache[signature] = cap
-    return cap
-
-
-def _cache_info() -> dict[str, int]:  # pragma: no cover - debug helper
-    """Return basic cache metrics (for diagnostics)."""
-    return {"entries": len(_capability_cache)}

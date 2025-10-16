@@ -22,7 +22,6 @@ from mqt.core.qdmi.qiskit.capabilities import (
     DeviceOperationInfo,
     DeviceSiteInfo,
     extract_capabilities,
-    get_capabilities,
 )
 
 
@@ -48,24 +47,6 @@ def test_extract_capabilities_basic() -> None:
     if caps.operations:
         first_key = next(iter(caps.operations))
         assert isinstance(caps.operations[first_key], DeviceOperationInfo)
-
-
-def test_get_capabilities_cache_hit() -> None:
-    """Ensure repeated cached lookups return identical object instance."""
-    dev = _get_single_device()
-    c1 = get_capabilities(dev, use_cache=True)
-    c2 = get_capabilities(dev, use_cache=True)
-    assert c1 is c2
-
-
-def test_get_capabilities_force_refresh() -> None:
-    """A forced refresh returns a new object but with identical signature/hash."""
-    dev = _get_single_device()
-    cached = get_capabilities(dev, use_cache=True)
-    fresh = get_capabilities(dev, use_cache=False)
-    assert fresh is not cached
-    assert fresh.signature == cached.signature
-    assert fresh.capabilities_hash == cached.capabilities_hash
 
 
 def test_device_capabilities_has_device_name() -> None:
@@ -202,14 +183,6 @@ def test_extract_capabilities_is_fresh() -> None:
     caps2 = extract_capabilities(dev)
     assert caps1 is not caps2  # Different objects
     assert caps1.signature == caps2.signature  # Same content
-
-
-def test_get_capabilities_default_uses_cache() -> None:
-    """get_capabilities should use cache by default."""
-    dev = _get_single_device()
-    caps1 = get_capabilities(dev)  # Default is use_cache=True
-    caps2 = get_capabilities(dev)
-    assert caps1 is caps2
 
 
 def test_device_capabilities_hash_is_sha256() -> None:
