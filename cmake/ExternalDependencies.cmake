@@ -97,9 +97,28 @@ set(SPDLOG_VERSION
 set(SPDLOG_URL https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz)
 # Add position independent code for spdlog, this is required for python bindings on linux
 set(SPDLOG_BUILD_PIC ON)
+set(SPDLOG_SYSTEM_INCLUDES
+    ON
+    CACHE INTERNAL "Treat the library headers like system headers")
 cmake_dependent_option(SPDLOG_INSTALL "Install spdlog library" ON "MQT_CORE_INSTALL" OFF)
 FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
 list(APPEND FETCH_PACKAGES spdlog)
 
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
+
+# Patch for spdlog cmake files to be installed in a common cmake directory
+if(SPDLOG_INSTALL)
+  include(GNUInstallDirs)
+  install(
+    CODE "
+    file(GLOB SPDLOG_CMAKE_FILES
+      \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/cmake/spdlog/*\")
+    if(SPDLOG_CMAKE_FILES)
+      file(MAKE_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/cmake/spdlog\")
+      file(COPY \${SPDLOG_CMAKE_FILES}
+        DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/cmake/spdlog\")
+      file(REMOVE_RECURSE \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/cmake/spdlog\")
+    endif()
+  ")
+endif()
