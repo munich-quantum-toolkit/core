@@ -19,34 +19,42 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Operation.h>
 
+namespace mqt::ir::opt {
+  using fp = long double;
+  using qfp = std::complex<fp>;
+  using diagonal4x4 = std::array<qfp, 4>;
+  using vector2d = std::vector<qfp>;
+  using matrix2x2 = std::array<qfp, 4>;
+  using matrix4x4 = std::array<qfp, 16>;
+} // namespace mqt::ir::opt
+
 namespace mqt::ir::opt::helpers {
 
 // TODO: remove
-  template<std::size_t N>
-  void print(std::array<std::complex<qc::fp>, N> matrix) {
-    int i{};
-    for (auto&& a : matrix) {
-      llvm::errs() << a.real() << 'i' << a.imag() << ' ';
-      if (++i % 4 == 0) {
-        llvm::errs() << '\n';
-      }
+template <std::size_t N>
+void print(std::array<std::complex<fp>, N> matrix) {
+  int i{};
+  for (auto&& a : matrix) {
+    std::cerr << std::setprecision(50) << a.real() << 'i' << a.imag() << ' ';
+    if (++i % 4 == 0) {
+      llvm::errs() << '\n';
     }
-    llvm::errs() << '\n';
-
   }
+  llvm::errs() << '\n';
+}
 
 inline auto flatten(const dd::TwoQubitGateMatrix& matrix) {
-  std::array<std::complex<qc::fp>, 16> result;
+  std::array<std::complex<fp>, 16> result;
   for (std::size_t i = 0; i < result.size(); ++i) {
     result[i] = matrix[i / 4][i % 4];
   }
   return result;
 }
 
-std::optional<qc::fp> mlirValueToFp(mlir::Value value);
+std::optional<fp> mlirValueToFp(mlir::Value value);
 
 template <typename T, typename Func>
-std::optional<qc::fp> performMlirFloatBinaryOp(mlir::Value value, Func&& func) {
+std::optional<fp> performMlirFloatBinaryOp(mlir::Value value, Func&& func) {
   if (auto op = value.getDefiningOp<T>()) {
     auto lhs = mlirValueToFp(op.getLhs());
     auto rhs = mlirValueToFp(op.getRhs());
@@ -58,7 +66,7 @@ std::optional<qc::fp> performMlirFloatBinaryOp(mlir::Value value, Func&& func) {
 }
 
 template <typename T, typename Func>
-std::optional<qc::fp> performMlirFloatUnaryOp(mlir::Value value, Func&& func) {
+std::optional<fp> performMlirFloatUnaryOp(mlir::Value value, Func&& func) {
   if (auto op = value.getDefiningOp<T>()) {
     if (auto operand = mlirValueToFp(op.getOperand())) {
       return std::invoke(std::forward<Func>(func), *operand);
@@ -67,7 +75,7 @@ std::optional<qc::fp> performMlirFloatUnaryOp(mlir::Value value, Func&& func) {
   return std::nullopt;
 }
 
-inline std::optional<qc::fp> mlirValueToFp(mlir::Value value) {
+inline std::optional<fp> mlirValueToFp(mlir::Value value) {
   if (auto op = value.getDefiningOp<mlir::arith::ConstantOp>()) {
     if (auto attr = llvm::dyn_cast<mlir::FloatAttr>(op.getValue())) {
       return attr.getValueAsDouble();
@@ -75,58 +83,58 @@ inline std::optional<qc::fp> mlirValueToFp(mlir::Value value) {
     return std::nullopt;
   }
   if (auto result = performMlirFloatUnaryOp<mlir::arith::NegFOp>(
-          value, [](qc::fp a) { return -a; })) {
+          value, [](fp a) { return -a; })) {
     return result;
   }
   if (auto result = performMlirFloatUnaryOp<mlir::arith::ExtFOp>(
-          value, [](qc::fp a) { return a; })) {
+          value, [](fp a) { return a; })) {
     return result;
   }
   if (auto result = performMlirFloatUnaryOp<mlir::arith::TruncFOp>(
-          value, [](qc::fp a) { return a; })) {
+          value, [](fp a) { return a; })) {
     return result;
   }
   if (auto result = performMlirFloatBinaryOp<mlir::arith::MaxNumFOp>(
-          value, [](qc::fp a, qc::fp b) { return std::max(a, b); })) {
+          value, [](fp a, fp b) { return std::max(a, b); })) {
     return result;
   }
   if (auto result = performMlirFloatBinaryOp<mlir::arith::MaximumFOp>(
-          value, [](qc::fp a, qc::fp b) { return std::max(a, b); })) {
+          value, [](fp a, fp b) { return std::max(a, b); })) {
     return result;
   }
   if (auto result = performMlirFloatBinaryOp<mlir::arith::MinNumFOp>(
-          value, [](qc::fp a, qc::fp b) { return std::min(a, b); })) {
+          value, [](fp a, fp b) { return std::min(a, b); })) {
     return result;
   }
   if (auto result = performMlirFloatBinaryOp<mlir::arith::MinimumFOp>(
-          value, [](qc::fp a, qc::fp b) { return std::min(a, b); })) {
+          value, [](fp a, fp b) { return std::min(a, b); })) {
     return result;
   }
   if (auto result = performMlirFloatBinaryOp<mlir::arith::RemFOp>(
-          value, [](qc::fp a, qc::fp b) { return std::fmod(a, b); })) {
+          value, [](fp a, fp b) { return std::fmod(a, b); })) {
     return result;
   }
   if (auto result = performMlirFloatBinaryOp<mlir::arith::AddFOp>(
-          value, [](qc::fp a, qc::fp b) { return a + b; })) {
+          value, [](fp a, fp b) { return a + b; })) {
     return result;
   }
   if (auto result = performMlirFloatBinaryOp<mlir::arith::MulFOp>(
-          value, [](qc::fp a, qc::fp b) { return a + b; })) {
+          value, [](fp a, fp b) { return a + b; })) {
     return result;
   }
   if (auto result = performMlirFloatBinaryOp<mlir::arith::DivFOp>(
-          value, [](qc::fp a, qc::fp b) { return a + b; })) {
+          value, [](fp a, fp b) { return a + b; })) {
     return result;
   }
   if (auto result = performMlirFloatBinaryOp<mlir::arith::SubFOp>(
-          value, [](qc::fp a, qc::fp b) { return a + b; })) {
+          value, [](fp a, fp b) { return a + b; })) {
     return result;
   }
   return std::nullopt;
 }
 
-[[nodiscard]] inline std::vector<qc::fp> getParameters(UnitaryInterface op) {
-  std::vector<qc::fp> parameters;
+[[nodiscard]] inline std::vector<fp> getParameters(UnitaryInterface op) {
+  std::vector<fp> parameters;
   for (auto&& param : op.getParams()) {
     if (auto value = helpers::mlirValueToFp(param)) {
       parameters.push_back(*value);
@@ -167,18 +175,52 @@ inline std::optional<qc::fp> mlirValueToFp(mlir::Value value) {
   return isTwoQubitOp;
 }
 
-[[nodiscard]] inline dd::GateMatrix multiply(std::complex<qc::fp> factor,
-                                             dd::GateMatrix matrix) {
+template <typename T, std::size_t N>
+T kahanSum(const std::array<T, N>& values) {
+  auto sum = T{};
+  auto c = T{}; // Compensation for lost low-order bits
+
+  for (auto&& value : values) {
+    auto y = value - c; // Correct for error so far
+    auto t = sum + y;   // Add the value to the running sum
+    c = (t - sum) - y;  // Recompute the error
+    sum = t;
+  }
+
+  return sum;
+}
+
+// Modify the matrix multiplication to use Kahan summation
+template <typename T, std::size_t N>
+std::array<T, N> matrixMultiplyWithKahan(const std::array<T, N>& lhs,
+                                         const std::array<T, N>& rhs) {
+  std::array<T, N> result;
+
+  const std::size_t n = std::sqrt(N);
+  for (size_t i = 0; i < n; ++i) {
+    for (size_t j = 0; j < n; ++j) {
+      std::array<T, n> terms;
+      for (size_t k = 0; k < n; ++k) {
+        terms[k] = lhs[i * n + k] * rhs[k * n + j];
+      }
+      result[i * n + j] = kahanSum(terms);
+    }
+  }
+  return result;
+}
+
+[[nodiscard]] inline matrix2x2 multiply(qfp factor,
+                                             const matrix2x2& matrix) {
   return {factor * matrix.at(0), factor * matrix.at(1), factor * matrix.at(2),
           factor * matrix.at(3)};
 }
 
-template<typename T, std::size_t N>
-[[nodiscard]] inline auto
-multiply(const std::array<T, N>& lhs,
-         const std::array<T, N>& rhs) {
-  std::array<T, N> result;
-  const auto n = std::sqrt(N);
+template <typename T, std::size_t N>
+[[nodiscard]] inline auto multiply(const std::array<T, N>& lhs,
+                                   const std::array<T, N>& rhs) {
+  // return matrixMultiplyWithKahan(lhs, rhs);
+  std::array<T, N> result{{T{}}};
+  const int n = std::sqrt(N);
   for (int i = 0; i < n; i++) {
     for (int j = 0; j < n; j++) {
       for (int k = 0; k < n; k++) {
@@ -189,66 +231,60 @@ multiply(const std::array<T, N>& lhs,
   return result;
 }
 
-[[nodiscard]] inline dd::TwoQubitGateMatrix
-kroneckerProduct(dd::GateMatrix lhs, dd::GateMatrix rhs) {
-  return {multiply(lhs.at(0), rhs), multiply(lhs.at(1), rhs),
-          multiply(lhs.at(2), rhs), multiply(lhs.at(3), rhs)};
-}
-
-template<typename T>
+template <typename T>
 [[nodiscard]] inline auto LUdecomposition(std::array<T, 16> matrix) {
-    std::array<T, 16> L{};
-    std::array<T, 16> U{};
-    int rowPermutations = 0;
+  std::array<T, 16> L{};
+  std::array<T, 16> U{};
+  int rowPermutations = 0;
 
-    for (int i = 0; i < 4; i++) {
-        // --- Partial pivoting: find max row in column i ---
-        int pivotRow = i;
-        auto maxVal = matrix[i * 4 + i];
+  for (int i = 0; i < 4; i++) {
+    // --- Partial pivoting: find max row in column i ---
+    int pivotRow = i;
+    auto maxVal = matrix[i * 4 + i];
 
-        for (int r = i + 1; r < 4; r++) {
-            auto val = matrix[r * 4 + i];
-            if (std::abs(val) > std::abs(maxVal)) {
-                maxVal = val;
-                pivotRow = r;
-            }
-        }
-
-        // --- Swap rows in matrix if needed ---
-        if (pivotRow != i) {
-            for (int col = 0; col < 4; ++col) {
-                std::swap(matrix[i * 4 + col], matrix[pivotRow * 4 + col]);
-            }
-            ++rowPermutations;
-        }
-
-        // --- Compute L matrix (column-wise) ---
-        for (int j = 0; j < 4; j++) {
-            if (j < i)
-                L[j * 4 + i] = 0;
-            else {
-                L[j * 4 + i] = matrix[j * 4 + i];
-                for (int k = 0; k < i; k++) {
-                    L[j * 4 + i] -= L[j * 4 + k] * U[k * 4 + i];
-                }
-            }
-        }
-
-        // --- Compute U matrix (row-wise) ---
-        for (int j = 0; j < 4; j++) {
-            if (j < i)
-                U[i * 4 + j] = 0;
-            else if (j == i)
-                U[i * 4 + j] = 1;  // Diagonal of U is set to 1
-            else {
-                U[i * 4 + j] = matrix[i * 4 + j] / L[i * 4 + i];
-                for (int k = 0; k < i; k++) {
-                    U[i * 4 + j] -= (L[i * 4 + k] * U[k * 4 + j]) / L[i * 4 + i];
-                }
-            }
-        }
+    for (int r = i + 1; r < 4; r++) {
+      auto val = matrix[r * 4 + i];
+      if (std::abs(val) > std::abs(maxVal)) {
+        maxVal = val;
+        pivotRow = r;
+      }
     }
 
-    return std::make_tuple(L, U, rowPermutations);
+    // --- Swap rows in matrix if needed ---
+    if (pivotRow != i) {
+      for (int col = 0; col < 4; ++col) {
+        std::swap(matrix[i * 4 + col], matrix[pivotRow * 4 + col]);
+      }
+      ++rowPermutations;
+    }
+
+    // --- Compute L matrix (column-wise) ---
+    for (int j = 0; j < 4; j++) {
+      if (j < i)
+        L[j * 4 + i] = 0;
+      else {
+        L[j * 4 + i] = matrix[j * 4 + i];
+        for (int k = 0; k < i; k++) {
+          L[j * 4 + i] -= L[j * 4 + k] * U[k * 4 + i];
+        }
+      }
+    }
+
+    // --- Compute U matrix (row-wise) ---
+    for (int j = 0; j < 4; j++) {
+      if (j < i)
+        U[i * 4 + j] = 0;
+      else if (j == i)
+        U[i * 4 + j] = 1; // Diagonal of U is set to 1
+      else {
+        U[i * 4 + j] = matrix[i * 4 + j] / L[i * 4 + i];
+        for (int k = 0; k < i; k++) {
+          U[i * 4 + j] -= (L[i * 4 + k] * U[k * 4 + j]) / L[i * 4 + i];
+        }
+      }
+    }
+  }
+
+  return std::make_tuple(L, U, rowPermutations);
 }
 } // namespace mqt::ir::opt::helpers
