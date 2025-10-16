@@ -14,7 +14,7 @@ preventing Catalyst from decomposing gates into quantum.unitary operations with 
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import pennylane as qml
@@ -40,6 +40,9 @@ def configure_device_for_mqt(device: qml.devices.Device) -> qml.devices.Device:
 
     Returns:
         The same device instance with modified capabilities.
+
+    Raises:
+        ValueError: If the device does not have a config_filepath attribute set.
 
     Example:
         >>> import pennylane as qml
@@ -69,7 +72,7 @@ def configure_device_for_mqt(device: qml.devices.Device) -> qml.devices.Device:
     # Clear _to_matrix_ops to avoid Catalyst validation at qjit_device.py:322
     # which requires QubitUnitary support if _to_matrix_ops is set
     if hasattr(device, "_to_matrix_ops"):
-        device._to_matrix_ops = set()
+        device._to_matrix_ops = set()  # noqa: SLF001
 
     # Set the qjit_capabilities hook so QJITDevice uses our modified capabilities
     # This bypasses the normal TOML loading in _load_device_capabilities
@@ -78,7 +81,7 @@ def configure_device_for_mqt(device: qml.devices.Device) -> qml.devices.Device:
     return device
 
 
-def get_device(device_name: str, **kwargs) -> qml.devices.Device:
+def get_device(device_name: str, **kwargs: Any) -> qml.devices.Device:  # noqa: ANN401
     """Create and configure a PennyLane device for use with the MQT plugin.
 
     This is a convenience function that creates a device and automatically configures
