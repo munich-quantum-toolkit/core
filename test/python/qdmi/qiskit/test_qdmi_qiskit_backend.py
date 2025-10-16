@@ -31,24 +31,24 @@ if _qiskit_present:
     from mqt.core.qdmi.qiskit import QiskitBackend
 
 
-def _get_na_device_index() -> int:
-    """Get the device index for the MQT NA Default QDMI Device.
+@pytest.fixture
+def na_backend() -> QiskitBackend:
+    """Fixture providing a QiskitBackend configured with the NA device.
 
     Returns:
-        Index of the NA device in the device list.
+        QiskitBackend instance configured with the MQT NA Default QDMI Device.
 
     Raises:
-        RuntimeError: If no NA device is found.
+        RuntimeError: If the MQT NA Default QDMI Device is not found.
 
     Note:
-        This helper is used for tests that rely on specific NA device characteristics.
+        This fixture is used for tests that rely on specific NA device characteristics.
         In the future, these tests should be generalized or parameterized across device types.
-        See tracking issue for generalization of device-specific tests.
     """
     devices_list = list(fomac.devices())
     for idx, device in enumerate(devices_list):
         if device.name() == "MQT NA Default QDMI Device":
-            return idx
+            return QiskitBackend(device_index=idx)
     msg = "MQT NA Default QDMI Device not found"
     raise RuntimeError(msg)
 
@@ -85,21 +85,19 @@ def test_single_circuit_run_counts() -> None:
         assert all(bit in {"0", "1"} for bit in key)
 
 
-def test_unsupported_operation() -> None:
+def test_unsupported_operation(na_backend: QiskitBackend) -> None:
     """Unsupported operation raises the expected error type.
 
     Note:
-        This test currently assumes the NA device is used, which doesn't support 'x' gates.
+        This test uses the NA device, which doesn't support 'x' gates.
         TODO: Generalize this test to work with different device types or parameterize
         across devices with known unsupported operations.
     """
-    na_device_index = _get_na_device_index()
     qc = QuantumCircuit(1, 1)
     qc.x(0)  # 'x' not supported by NA device capabilities
     qc.measure(0, 0)
-    backend = QiskitBackend(device_index=na_device_index)
     with pytest.raises(UnsupportedOperationError):
-        backend.run(qc)
+        na_backend.run(qc)
 
 
 def test_backend_device_index() -> None:
