@@ -151,11 +151,11 @@ jobs:
       contents: read
       id-token: write
 
-  cpp-linter: # TODO: exclude the plugin directory from linting here (is done manually in ci_mlir_plugin.yml)
+  cpp-linter:
     name: 🇨‌ Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-linter)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@input_from_caller # v1.17.0
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@33b0da0cc448ad3abc9df3716ccbd89332d3d491 # v1.17.0
     with:
       cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_MLIR=ON -DBUILD_MQT_CORE_BINDINGS=ON
       clang-version: 21
