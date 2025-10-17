@@ -114,21 +114,21 @@ def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
     This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.
   }];
   let options = [
-    Option<"method", "method", "RoutingMethod", "RoutingMethod::QMAP",
+    Option<"method", "method", "RoutingMethod", "RoutingMethod::AStar",
            "The routing method to use.", [{llvm::cl::values(
              clEnumValN(RoutingMethod::Naive, "naive", "Swap along shortest paths"),
-             clEnumValN(RoutingMethod::QMAP, "astar", "A*-search-based routing algorithm"))}]>,
+             clEnumValN(RoutingMethod::AStar, "astar", "A*-search-based routing algorithm"))}]>,
     Option<"nlookahead", "nlookahead", "std::size_t", "1",
            "qmap option: Number of lookahead steps (heuristic horizon)">,
     Option<"alpha", "alpha", "float", "1.0F",
            "qmap option: The alpha factor in the cost function">,
     Option<"beta", "beta", "float", "1.0F",
            "qmap option: The beta factor in the cost function">,
-    Option<"lambda", "lambda", "float", "0.9F",
+    Option<"lambda", "lambda", "float", "0.5F",
            "qmap option: The lambda factor in the cost function">
   ];
   let statistics = [
-    Statistic<"nadd", "n-additional-gates", "The number of additional gates">,
+    Statistic<"n_swaps", "n-additional-swaps", "The number of additional SWAPs">,
     Statistic<"t_ms", "runtime-milliseconds", "The runtime in milliseconds">
   ];
 }

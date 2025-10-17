@@ -13,7 +13,7 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Planner.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Router.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Scheduler.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
@@ -120,13 +120,13 @@ void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
   });
 }
 
-class Router {
+class Mapper {
 public:
-  explicit Router(std::unique_ptr<Architecture> arch,
-                  std::unique_ptr<SchedulerBase> layerizer,
-                  std::unique_ptr<PlannerBase> planner, Pass::Statistic& nadd)
-      : arch_(std::move(arch)), layerizer_(std::move(layerizer)),
-        planner_(std::move(planner)), nadd_(&nadd) {}
+  explicit Mapper(std::unique_ptr<Architecture> arch,
+                  std::unique_ptr<SchedulerBase> scheduler,
+                  std::unique_ptr<RouterBase> router, Pass::Statistic& nswaps)
+      : arch_(std::move(arch)), scheduler_(std::move(scheduler)),
+        router_(std::move(router)), nswaps_(&nswaps) {}
 
   /**
    * @returns true iff @p op is executable on the targeted architecture.
@@ -138,12 +138,12 @@ public:
   }
 
   /**
-   * @brief Insert SWAPs such that the gates provided by the layerizer are
+   * @brief Insert SWAPs such that the gates provided by the scheduler are
    * executable.
    */
-  void route(UnitaryInterface op, PatternRewriter& rewriter) {
-    const auto layers = layerizer_->schedule(op, stack().top());
-    const auto swaps = planner_->plan(layers, stack().top(), arch());
+  void map(UnitaryInterface op, PatternRewriter& rewriter) {
+    const auto layers = scheduler_->schedule(op, stack().top());
+    const auto swaps = router_->route(layers, stack().top(), arch());
     insert(swaps, op->getLoc(), rewriter);
     historyStack_.top().append(swaps.begin(), swaps.end());
   }
@@ -204,24 +204,24 @@ private:
       stack().top().remapQubitValue(in0, out0);
       stack().top().remapQubitValue(in1, out1);
 
-      (*nadd_)++;
+      (*nswaps_)++;
     }
   }
 
   std::unique_ptr<Architecture> arch_;
-  std::unique_ptr<SchedulerBase> layerizer_;
-  std::unique_ptr<PlannerBase> planner_;
+  std::unique_ptr<SchedulerBase> scheduler_;
+  std::unique_ptr<RouterBase> router_;
 
   LayoutStack<Layout> stack_{};
   LayoutStack<SmallVector<QubitIndexPair>> historyStack_{};
 
-  Pass::Statistic* nadd_;
+  Pass::Statistic* nswaps_;
 };
 
 /**
  * @brief Push new state onto the stack.
  */
-WalkResult handleFunc([[maybe_unused]] func::FuncOp op, Router& router) {
+WalkResult handleFunc([[maybe_unused]] func::FuncOp op, Mapper& router) {
   assert(router.stack().empty() && "handleFunc: stack must be empty");
 
   LLVM_DEBUG({
@@ -239,7 +239,7 @@ WalkResult handleFunc([[maybe_unused]] func::FuncOp op, Router& router) {
  * @brief Indicates the end of a region defined by a function. Consequently,
  * we pop the region's state from the stack.
  */
-WalkResult handleReturn(Router& router) {
+WalkResult handleReturn(Mapper& router) {
   router.stack().pop();
   router.historyStack().pop();
   return WalkResult::advance();
@@ -248,7 +248,7 @@ WalkResult handleReturn(Router& router) {
 /**
  * @brief Push new state for the loop body onto the stack.
  */
-WalkResult handleFor(scf::ForOp op, Router& router) {
+WalkResult handleFor(scf::ForOp op, Mapper& router) {
   /// Loop body state.
   router.stack().duplicateTop();
   router.historyStack().emplace();
@@ -269,7 +269,7 @@ WalkResult handleFor(scf::ForOp op, Router& router) {
 /**
  * @brief Push two new states for the then and else branches onto the stack.
  */
-WalkResult handleIf(scf::IfOp op, Router& router) {
+WalkResult handleIf(scf::IfOp op, Mapper& router) {
   /// Prepare stack.
   router.stack().duplicateTop(); /// Else.
   router.stack().duplicateTop(); /// Then.
@@ -300,8 +300,8 @@ WalkResult handleIf(scf::IfOp op, Router& router) {
  * a 'for' of 'if' region always requires 2 * #(SWAPs required for region)
  * additional SWAPS.
  */
-WalkResult handleYield(scf::YieldOp op, Router& router,
-                       [[maybe_unused]] PatternRewriter& rewriter) {
+WalkResult handleYield(scf::YieldOp op, Mapper& router,
+                       PatternRewriter& rewriter) {
   if (!isa<scf::ForOp>(op->getParentOp()) &&
       !isa<scf::IfOp>(op->getParentOp())) {
     return WalkResult::skip();
@@ -320,7 +320,7 @@ WalkResult handleYield(scf::YieldOp op, Router& router,
  *
  * Thanks to the placement pass, we can apply the identity layout here.
  */
-WalkResult handleQubit(QubitOp op, Router& router) {
+WalkResult handleQubit(QubitOp op, Mapper& router) {
   const std::size_t index = op.getIndex();
   router.stack().top().add(index, index, op.getQubit());
   return WalkResult::advance();
@@ -330,7 +330,7 @@ WalkResult handleQubit(QubitOp op, Router& router) {
  * @brief Ensures the executability of two-qubit gates on the given target
  * architecture by inserting SWAPs.
  */
-WalkResult handleUnitary(UnitaryInterface op, Router& router,
+WalkResult handleUnitary(UnitaryInterface op, Mapper& router,
                          PatternRewriter& rewriter) {
   const std::vector<Value> inQubits = op.getAllInQubits();
   const std::vector<Value> outQubits = op.getAllOutQubits();
@@ -359,7 +359,7 @@ WalkResult handleUnitary(UnitaryInterface op, Router& router,
   }
 
   if (!router.isExecutable(op)) {
-    router.route(op, rewriter);
+    router.map(op, rewriter);
   }
 
   const auto [execIn0, execIn1] = getIns(op);
@@ -387,7 +387,7 @@ WalkResult handleUnitary(UnitaryInterface op, Router& router,
 /**
  * @brief Update layout.
  */
-WalkResult handleReset(ResetOp op, Router& router) {
+WalkResult handleReset(ResetOp op, Mapper& router) {
   router.stack().top().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
@@ -395,7 +395,7 @@ WalkResult handleReset(ResetOp op, Router& router) {
 /**
  * @brief Update layout.
  */
-WalkResult handleMeasure(MeasureOp op, Router& router) {
+WalkResult handleMeasure(MeasureOp op, Mapper& router) {
   router.stack().top().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
@@ -422,7 +422,7 @@ WalkResult handleMeasure(MeasureOp op, Router& router) {
  * custom driver would be required in any case, which adds unnecessary code to
  * maintain.
  */
-LogicalResult route(ModuleOp module, MLIRContext* ctx, Router& router) {
+LogicalResult route(ModuleOp module, MLIRContext* ctx, Mapper& router) {
   PatternRewriter rewriter(ctx);
 
   /// Prepare work-list.
@@ -490,33 +490,33 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
   using RoutingPassSCBase<RoutingPassSC>::RoutingPassSCBase;
 
   void runOnOperation() override {
-    Router router = getRouter();
+    Mapper router = getRouter();
 
     const auto start = std::chrono::steady_clock::now();
     if (failed(route(getOperation(), &getContext(), router))) {
       signalPassFailure();
     }
     const auto end = std::chrono::steady_clock::now();
-    tms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
-              .count();
+    t_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+               .count();
   }
 
 private:
-  [[nodiscard]] Router getRouter() {
+  [[nodiscard]] Mapper getRouter() {
     /// TODO: Configurable Architecture.
     auto arch = getArchitecture(ArchitectureName::MQTTest);
 
     switch (static_cast<RoutingMethod>(method)) {
     case RoutingMethod::Naive:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=naive\n"; });
-      return Router(std::move(arch), std::make_unique<OneOpScheduler>(),
-                    std::make_unique<NaivePlanner>(), nadd);
-    case RoutingMethod::QMAP:
-      LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=qmap\n"; });
+      return Mapper(std::move(arch), std::make_unique<SequentialOpScheduler>(),
+                    std::make_unique<NaiveRouter>(), n_swaps);
+    case RoutingMethod::AStar:
+      LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=astar\n"; });
       const HeuristicWeights weights(alpha, beta, lambda, nlookahead);
-      return Router(std::move(arch),
-                    std::make_unique<CrawlScheduler>(nlookahead),
-                    std::make_unique<QMAPPlanner>(weights), nadd);
+      return Mapper(std::move(arch),
+                    std::make_unique<ParallelOpScheduler>(nlookahead),
+                    std::make_unique<AStarHeuristicRouter>(weights), n_swaps);
     }
 
     llvm_unreachable("Unknown method");

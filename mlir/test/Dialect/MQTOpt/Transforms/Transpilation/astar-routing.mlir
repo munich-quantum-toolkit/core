@@ -8,7 +8,7 @@
 
 // Instead of applying CHECKKs, the routing verifier pass ensures the validity of this program.
 
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity}, route-sc{method=qmap},verify-routing-sc)" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity}, route-sc{method=astar},verify-routing-sc)" -verify-diagnostics | FileCheck %s
 
 module {
     // CHECK-LABEL: func.func @entrySABRE

@@ -46,9 +46,9 @@ struct SchedulerBase {
 };
 
 /**
- * @brief A one-op scheduler simply returns the given op.
+ * @brief A sequential scheduler simply returns the given op.
  */
-struct OneOpScheduler final : SchedulerBase {
+struct SequentialOpScheduler final : SchedulerBase {
   [[nodiscard]] Layers schedule(UnitaryInterface op,
                                 const Layout& layout) const override {
     const auto [in0, in1] = getIns(op);
@@ -57,11 +57,11 @@ struct OneOpScheduler final : SchedulerBase {
 };
 
 /**
- * @brief A crawl layerizer "crawls" the DAG for all gates that can be executed
- * simultaneously, i.e., they act on different qubits.
+ * @brief A crawl scheduler "crawls" the DAG for all gates that can be executed
+ * in parallel, i.e., they act on different qubits.
  */
-struct CrawlScheduler final : SchedulerBase {
-  explicit CrawlScheduler(const std::size_t nlookahead)
+struct ParallelOpScheduler final : SchedulerBase {
+  explicit ParallelOpScheduler(const std::size_t nlookahead)
       : nlookahead_(nlookahead) {}
 
   [[nodiscard]] Layers schedule(UnitaryInterface op,

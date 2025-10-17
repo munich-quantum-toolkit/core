@@ -33,22 +33,22 @@ using PlannerResult = mlir::SmallVector<QubitIndexPair>;
  * @brief A planner determines the sequence of swaps required to route an array
 of gates.
 */
-struct PlannerBase {
-  virtual ~PlannerBase() = default;
-  [[nodiscard]] virtual PlannerResult plan(const Layers&, const ThinLayout&,
-                                           const Architecture&) const = 0;
+struct RouterBase {
+  virtual ~RouterBase() = default;
+  [[nodiscard]] virtual PlannerResult route(const Layers&, const ThinLayout&,
+                                            const Architecture&) const = 0;
 };
 
 /**
  * @brief Use shortest path swapping to make one gate executable.
  */
-struct NaivePlanner final : PlannerBase {
-  [[nodiscard]] PlannerResult plan(const Layers& layers,
-                                   const ThinLayout& layout,
-                                   const Architecture& arch) const override {
+struct NaiveRouter final : RouterBase {
+  [[nodiscard]] PlannerResult route(const Layers& layers,
+                                    const ThinLayout& layout,
+                                    const Architecture& arch) const override {
     if (layers.size() != 1 || layers.front().size() != 1) {
       throw std::invalid_argument(
-          "NaivePlanner expects exactly one layer with one gate");
+          "NaiveRouter expects exactly one layer with one gate");
     }
 
     /// This assumes an avg. of 16 SWAPs per gate.
@@ -85,13 +85,13 @@ struct HeuristicWeights {
 /**
  * @brief Use A*-search to make all gates executable.
  */
-struct QMAPPlanner final : PlannerBase {
-  explicit QMAPPlanner(HeuristicWeights weights)
+struct AStarHeuristicRouter final : RouterBase {
+  explicit AStarHeuristicRouter(HeuristicWeights weights)
       : weights_(std::move(weights)) {}
 
-  [[nodiscard]] PlannerResult plan(const Layers& layers,
-                                   const ThinLayout& layout,
-                                   const Architecture& arch) const override {
+  [[nodiscard]] PlannerResult route(const Layers& layers,
+                                    const ThinLayout& layout,
+                                    const Architecture& arch) const override {
     /// Initialize queue.
     MinQueue frontier{};
     expand(frontier, SearchNode(layout, arch.nqubits()), layers, arch);
