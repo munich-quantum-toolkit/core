@@ -79,14 +79,22 @@ class TestZoneSiteFiltering:
             f"Expected {len(non_zone_sites)}, got {len(capabilities.sites)}"
         )
 
-        # Verify no zone sites in capabilities
-        for site_info in capabilities.sites:
-            # All sites in capabilities should be non-zone
-            # We can't directly check is_zone on DeviceSiteInfo, but we can verify
-            # that all indices are in the expected range
-            assert 0 <= site_info.index < len(non_zone_sites), (
-                f"Site index {site_info.index} is out of expected range [0, {len(non_zone_sites)})"
-            )
+        # Verify no zone sites in capabilities by checking that all site indices
+        # in capabilities are distinct and correspond to non-zone sites.
+        # Note: QDMI does not mandate zero-based or consecutive indexing,
+        # so we cannot assume indices are in range [0, num_qubits).
+        capability_site_indices = {site_info.index for site_info in capabilities.sites}
+
+        # All indices should be distinct (no duplicates)
+        assert len(capability_site_indices) == len(capabilities.sites), (
+            "Capability site indices should be distinct (no duplicates)"
+        )
+
+        # Number of capability sites should match number of non-zone sites
+        assert len(capability_site_indices) == len(non_zone_sites), (
+            f"Number of capability site indices ({len(capability_site_indices)}) should match "
+            f"number of non-zone sites ({len(non_zone_sites)})"
+        )
 
     def test_zone_sites_not_in_operation_sites(self, backend: QiskitBackend, device: fomac.Device) -> None:  # noqa: PLR6301
         """Verify operation sites only reference logical qubits, not zone sites.
