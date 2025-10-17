@@ -100,8 +100,16 @@ class Device(GenericDevice):
     The T2 time of the device.
     """
 
-    def __init__(self, device: GenericDevice) -> None:
-        """Initializes the Device with a given generic FoMaC device."""
+    @classmethod
+    def try_create_from_device(cls, device: GenericDevice) -> Device | None:
+        """Create NA FoMaC Device from generic FoMaC Device.
+
+        Args:
+            device: The generic FoMaC Device to convert.
+
+        Returns:
+            The converted NA FoMaC Device or None if the conversion is not possible.
+        """
     def __eq__(self, other: object) -> bool: ...
     def __ne__(self, other: object) -> bool: ...
 
