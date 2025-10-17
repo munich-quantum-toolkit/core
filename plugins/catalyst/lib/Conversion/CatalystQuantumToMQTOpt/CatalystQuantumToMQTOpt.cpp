@@ -10,24 +10,23 @@
 
 #include "mlir/Conversion/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h"
 
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/IR/BuiltinTypes.h"
 
 #include <Quantum/IR/QuantumDialect.h>
 #include <Quantum/IR/QuantumOps.h>
 #include <cassert>
 #include <cstddef>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/TypeRange.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LogicalResult.h>
@@ -39,39 +38,30 @@ namespace mqt::ir::conversions {
 #include "mlir/Conversion/CatalystQuantumToMQTOpt/CatalystQuantumToMQTOpt.h.inc"
 
 using namespace mlir;
+using namespace mlir::arith;
 
 class CatalystQuantumToMQTOptTypeConverter final : public TypeConverter {
 public:
   explicit CatalystQuantumToMQTOptTypeConverter(MLIRContext* ctx) {
-    // Identity conversion: Allow all types to pass through unmodified if
-    // needed.
+    // Identity conversion: Allow all types to pass through unmodified if needed
     addConversion([](const Type type) { return type; });
 
-    // Convert source QubitType to target QubitType
+    // Convert Catalyst QubitType to MQTOpt QubitType
     addConversion([ctx](catalyst::quantum::QubitType /*type*/) -> Type {
       return opt::QubitType::get(ctx);
     });
 
-    // Convert QuregType to static memref.
-    // This signals to the adaptor how to map QuregType operands.
-    // The actual static memref types will flow through from the alloc
-    // operation.
+    // Convert Catalyst QuregType to dynamic memref as placeholder
+    // The actual static memref types will flow through from alloc operations
     addConversion([ctx](catalyst::quantum::QuregType /*type*/) -> Type {
-      // We return a "signature" showing QuregType maps to memref, but
-      // the actual size will come from the alloc operation.
-      // Using dynamic shape here as a placeholder - the actual static memref
-      // types will flow through without materialization.
       auto qubitType = opt::QubitType::get(ctx);
       return MemRefType::get({ShapedType::kDynamic}, qubitType);
     });
 
-    // Add target materialization: this is called when the framework needs to
-    // convert a QuregType value to a memref. The input is the actual static
-    // memref created by the alloc pattern. We just return it directly - no cast
-    // needed.
+    // Target materialization: converts values during pattern application
+    // Just returns the input - the actual memref is already created by alloc
     addTargetMaterialization([](OpBuilder& builder, Type resultType,
                                 ValueRange inputs, Location loc) -> Value {
-      // Just return the input value - it is already the memref we want
       if (inputs.size() == 1) {
         return inputs[0];
       }
@@ -93,18 +83,17 @@ struct ConvertQuantumAlloc final
       return op.emitError("AllocOp missing nqubits_attr");
     }
 
-    auto nqubits = nqubitsAttr.getValue().getZExtValue();
+    const auto nqubits = nqubitsAttr.getValue().getZExtValue();
 
-    // Create the static memref type directly
-    auto qubitType = opt::QubitType::get(rewriter.getContext());
-    auto staticMemrefType =
+    // Prepare the result type(s)
+    const auto qubitType = opt::QubitType::get(rewriter.getContext());
+    const auto memrefType =
         MemRefType::get({static_cast<int64_t>(nqubits)}, qubitType);
 
-    // Create the allocation with the static size
-    auto allocOp =
-        rewriter.create<memref::AllocOp>(op.getLoc(), staticMemrefType);
+    // Create the new operation
+    auto allocOp = rewriter.create<memref::AllocOp>(op.getLoc(), memrefType);
 
-    // Replace the original operation with the alloc result directly
+    // Replace the original with the new operation
     rewriter.replaceOp(op, allocOp.getResult());
     return success();
   }
@@ -117,18 +106,17 @@ struct ConvertQuantumDealloc final
   LogicalResult
   matchAndRewrite(catalyst::quantum::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Get the memref from adaptor
+    // Extract operand(s)
     Value memref = adaptor.getQreg();
 
-    // If we got an unrealized_conversion_cast wrapping the static memref,
-    // unwrap it to get the actual static memref
+    // Unwrap unrealized_conversion_cast if present
     if (auto castOp = memref.getDefiningOp<UnrealizedConversionCastOp>()) {
-      if (castOp.getInputs().size() == 1) {
+      if (!castOp.getInputs().empty()) {
         memref = castOp.getInputs()[0];
       }
     }
 
-    // Replace with memref.dealloc using the static memref
+    // Create the new operation
     rewriter.replaceOpWithNewOp<memref::DeallocOp>(op, memref);
     return success();
   }
@@ -141,6 +129,9 @@ struct ConvertQuantumMeasure final
   LogicalResult
   matchAndRewrite(catalyst::quantum::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    // Extract operand(s)
+    const auto inQubit = adaptor.getInQubit();
+
     // Prepare the result type(s)
     const auto qubitType = opt::QubitType::get(rewriter.getContext());
     const auto bitType = rewriter.getI1Type();
@@ -148,16 +139,11 @@ struct ConvertQuantumMeasure final
     // Create the new operation
     // Note: quantum.measure returns (i1, !quantum.bit)
     //       mqtopt.measure returns (!mqtopt.Qubit, i1)
-    // So we need to swap the result ordering when replacing
-    auto measureOp = rewriter.create<opt::MeasureOp>(
-        op.getLoc(), qubitType, bitType, adaptor.getInQubit());
+    const auto mqtoptOp = rewriter.create<opt::MeasureOp>(
+        op.getLoc(), qubitType, bitType, inQubit);
 
-    // Replace with results in the correct order:
-    // op.getResult(0) is i1 -> maps to measureOp.getResult(1) (i1)
-    // op.getResult(1) is !quantum.bit -> maps to measureOp.getResult(0)
-    // (!mqtopt.Qubit)
-    rewriter.replaceOp(op, {measureOp.getResult(1), measureOp.getResult(0)});
-
+    // Replace with results in the correct order
+    rewriter.replaceOp(op, {mqtoptOp.getResult(1), mqtoptOp.getResult(0)});
     return success();
   }
 };
@@ -170,19 +156,18 @@ struct ConvertQuantumExtract final
   matchAndRewrite(catalyst::quantum::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Prepare the result type(s)
-    auto qubitType = opt::QubitType::get(rewriter.getContext());
+    const auto qubitType = opt::QubitType::get(rewriter.getContext());
 
-    // Get the index - either from attribute (compile-time) or operand (runtime)
+    // Get index (either from attribute or operand)
     Value indexValue;
     auto idxAttr = op.getIdxAttrAttr();
 
     if (idxAttr) {
       // Compile-time constant index from attribute
-      auto idx = idxAttr.getValue().getZExtValue();
-      indexValue = rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
+      const auto idx = idxAttr.getValue().getZExtValue();
+      indexValue = rewriter.create<ConstantIndexOp>(op.getLoc(), idx);
     } else {
       // Runtime dynamic index from operand
-      // The index is the second operand (first is qreg)
       auto idxOperand = adaptor.getIdx();
       if (!idxOperand) {
         return op.emitError("ExtractOp missing both idx_attr and idx operand");
@@ -190,20 +175,19 @@ struct ConvertQuantumExtract final
 
       // Convert i64 to index type if needed
       if (isa<IntegerType>(idxOperand.getType())) {
-        indexValue = rewriter.create<arith::IndexCastOp>(
+        indexValue = rewriter.create<IndexCastOp>(
             op.getLoc(), rewriter.getIndexType(), idxOperand);
       } else {
         indexValue = idxOperand;
       }
     }
 
-    // Get the memref from adaptor
+    // Extract operand(s)
     Value memref = adaptor.getQreg();
 
-    // If we got an unrealized_conversion_cast wrapping the static memref,
-    // unwrap it to get the actual static memref
+    // Unwrap unrealized_conversion_cast if present
     if (auto castOp = memref.getDefiningOp<UnrealizedConversionCastOp>()) {
-      if (castOp.getInputs().size() == 1) {
+      if (!castOp.getInputs().empty()) {
         memref = castOp.getInputs()[0];
       }
     }
@@ -215,11 +199,11 @@ struct ConvertQuantumExtract final
              << memref.getType();
     }
 
-    // Create the new operation directly using the actual memref type
+    // Create the new operation
     auto loadOp = rewriter.create<memref::LoadOp>(
         op.getLoc(), qubitType, memref, ValueRange{indexValue});
 
-    // quantum.extract only returns the extracted qubit, not a modified register
+    // Replace the extract operation with the loaded qubit
     rewriter.replaceOp(op, loadOp.getResult());
     return success();
   }
@@ -232,14 +216,14 @@ struct ConvertQuantumInsert final
   LogicalResult
   matchAndRewrite(catalyst::quantum::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Get the index - either from attribute (compile-time) or operand (runtime)
+    // Get index (either from attribute or operand)
     Value indexValue;
     auto idxAttr = op.getIdxAttrAttr();
 
     if (idxAttr) {
       // Compile-time constant index from attribute
-      auto idx = idxAttr.getValue().getZExtValue();
-      indexValue = rewriter.create<arith::ConstantIndexOp>(op.getLoc(), idx);
+      const auto idx = idxAttr.getValue().getZExtValue();
+      indexValue = rewriter.create<ConstantIndexOp>(op.getLoc(), idx);
     } else {
       // Runtime dynamic index from operand
       auto idxOperand = adaptor.getIdx();
@@ -249,30 +233,28 @@ struct ConvertQuantumInsert final
 
       // Convert i64 to index type if needed
       if (isa<IntegerType>(idxOperand.getType())) {
-        indexValue = rewriter.create<arith::IndexCastOp>(
+        indexValue = rewriter.create<IndexCastOp>(
             op.getLoc(), rewriter.getIndexType(), idxOperand);
       } else {
         indexValue = idxOperand;
       }
     }
 
-    // Get the memref from adaptor
+    // Extract operand(s)
     Value memref = adaptor.getInQreg();
 
-    // If we got an unrealized_conversion_cast wrapping the static memref,
-    // unwrap it to get the actual static memref
+    // Unwrap unrealized_conversion_cast if present
     if (auto castOp = memref.getDefiningOp<UnrealizedConversionCastOp>()) {
-      if (castOp.getInputs().size() == 1) {
+      if (!castOp.getInputs().empty()) {
         memref = castOp.getInputs()[0];
       }
     }
 
-    // Create the new operation directly
+    // Create the new operation
     rewriter.create<memref::StoreOp>(op.getLoc(), adaptor.getQubit(), memref,
                                      ValueRange{indexValue});
 
-    // In the memref model, the quantum register is modified in-place,
-    // so we replace the result with the memref (unchanged)
+    // In the memref model, the register is modified in-place
     rewriter.replaceOp(op, memref);
     return success();
   }
@@ -285,18 +267,15 @@ struct ConvertQuantumGlobalPhase final
   LogicalResult
   matchAndRewrite(catalyst::quantum::GlobalPhaseOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Extract the parameter
-    auto param = adaptor.getParams();
+    // Extract operand(s) and attribute(s)
+    const auto param = adaptor.getParams();
+    const auto inCtrlQubits = adaptor.getInCtrlQubits();
+    const auto inCtrlValues = adaptor.getInCtrlValues();
 
-    // Extract control qubits and control values
-    auto inCtrlQubits = adaptor.getInCtrlQubits();
-    auto inCtrlValues = adaptor.getInCtrlValues();
-
-    // Convert to SmallVector for manipulation
+    // Separate positive and negative control qubits
     SmallVector<Value> inPosCtrlQubitsVec;
     SmallVector<Value> inNegCtrlQubitsVec;
 
-    // Derive positive and negative control qubits from existing control qubits
     for (size_t i = 0; i < inCtrlQubits.size(); ++i) {
       if (inCtrlValues[i]) {
         inPosCtrlQubitsVec.emplace_back(inCtrlQubits[i]);
@@ -306,45 +285,41 @@ struct ConvertQuantumGlobalPhase final
     }
 
     // Create the parameter attributes
-    // GPhase has a single parameter
     SmallVector<double> staticParamsVec;
     SmallVector<bool> paramsMaskVec;
     SmallVector<Value> finalParamValues;
 
-    // If the parameter is a constant, make it static
-    if (auto constOp = param.getDefiningOp<arith::ConstantOp>()) {
+    // Check if parameter is a compile-time constant
+    if (auto constOp = param.getDefiningOp<ConstantOp>()) {
       if (auto floatAttr = dyn_cast<FloatAttr>(constOp.getValue())) {
         staticParamsVec.push_back(floatAttr.getValueAsDouble());
         paramsMaskVec.push_back(true);
       } else {
-        // Dynamic parameter
         finalParamValues.push_back(param);
         paramsMaskVec.push_back(false);
       }
     } else {
-      // Dynamic parameter
       finalParamValues.push_back(param);
       paramsMaskVec.push_back(false);
     }
 
-    auto staticParams =
+    const auto staticParams =
         DenseF64ArrayAttr::get(rewriter.getContext(), staticParamsVec);
-    auto paramsMask =
+    const auto paramsMask =
         DenseBoolArrayAttr::get(rewriter.getContext(), paramsMaskVec);
 
-    // Create the mqtopt.gphase operation
-    auto gphaseOp = rewriter.create<opt::GPhaseOp>(
-        op.getLoc(), TypeRange{}, // out_qubits - empty for NoTarget
-        ValueRange(inPosCtrlQubitsVec).getTypes(), // pos_ctrl_out_qubits
-        ValueRange(inNegCtrlQubitsVec).getTypes(), // neg_ctrl_out_qubits
-        staticParams, paramsMask,
-        finalParamValues,                // params
-        ValueRange{},                    // in_qubits - empty for NoTarget
-        ValueRange(inPosCtrlQubitsVec),  // pos_ctrl_in_qubits
-        ValueRange(inNegCtrlQubitsVec)); // neg_ctrl_in_qubits
+    // Create the new operation
+    auto mqtoptOp = rewriter.create<opt::GPhaseOp>(
+        op.getLoc(), TypeRange{},                   // out_qubits
+        ValueRange(inPosCtrlQubitsVec).getTypes(),  // pos_ctrl_out_qubits
+        ValueRange(inNegCtrlQubitsVec).getTypes(),  // neg_ctrl_out_qubits
+        staticParams, paramsMask, finalParamValues, // params
+        ValueRange{},                               // in_qubits
+        ValueRange(inPosCtrlQubitsVec),             // pos_ctrl_in_qubits
+        ValueRange(inNegCtrlQubitsVec));            // neg_ctrl_in_qubits
 
     // Replace the original with the new operation
-    rewriter.replaceOp(op, gphaseOp);
+    rewriter.replaceOp(op, mqtoptOp);
     return success();
   }
 };
@@ -357,17 +332,16 @@ struct ConvertQuantumCustomOp final
   matchAndRewrite(catalyst::quantum::CustomOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Extract operand(s) and attribute(s)
-    auto gateName = op.getGateName();
-    auto paramsValues = adaptor.getParams();
-    auto inQubits = adaptor.getInQubits();
-    auto inCtrlQubits = adaptor.getInCtrlQubits();
-    auto inCtrlValues = adaptor.getInCtrlValues();
+    const auto gateName = op.getGateName();
+    const auto paramsValues = adaptor.getParams();
+    const auto inQubits = adaptor.getInQubits();
+    const auto inCtrlQubits = adaptor.getInCtrlQubits();
+    const auto inCtrlValues = adaptor.getInCtrlValues();
 
-    // Convert to SmallVector for manipulation
+    // Separate positive and negative control qubits
     SmallVector<Value> inPosCtrlQubitsVec;
     SmallVector<Value> inNegCtrlQubitsVec;
 
-    // Derive positive and negative control qubits from existing control qubits
     for (size_t i = 0; i < inCtrlQubits.size(); ++i) {
       if (inCtrlValues[i]) {
         inPosCtrlQubitsVec.emplace_back(inCtrlQubits[i]);
@@ -376,16 +350,15 @@ struct ConvertQuantumCustomOp final
       }
     }
 
+    // Process parameters (static vs dynamic)
     SmallVector<bool> paramsMaskVec;
     SmallVector<double> staticParamsVec;
     SmallVector<Value> finalParamValues;
 
-    // Read attributes
     auto maskAttr = op->getAttrOfType<DenseBoolArrayAttr>("params_mask");
     auto staticParamsAttr =
         op->getAttrOfType<DenseF64ArrayAttr>("static_params");
 
-    // Total length of combined parameter list
     size_t totalParams = 0;
     if (maskAttr) {
       totalParams = maskAttr.size();
@@ -395,13 +368,11 @@ struct ConvertQuantumCustomOp final
                         : paramsValues.size();
     }
 
-    // Pointers to step through static/dynamic values
     size_t staticIdx = 0;
     size_t dynamicIdx = 0;
 
-    // Build final mask + values in order
     for (size_t i = 0; i < totalParams; ++i) {
-      bool const isStatic = (maskAttr ? maskAttr[i] : false);
+      const bool isStatic = (maskAttr ? maskAttr[i] : false);
 
       paramsMaskVec.emplace_back(isStatic);
 
@@ -415,9 +386,9 @@ struct ConvertQuantumCustomOp final
       }
     }
 
-    auto staticParams =
+    const auto staticParams =
         DenseF64ArrayAttr::get(rewriter.getContext(), staticParamsVec);
-    auto paramsMask =
+    const auto paramsMask =
         DenseBoolArrayAttr::get(rewriter.getContext(), paramsMaskVec);
 
     // Create the new operation
@@ -611,8 +582,7 @@ struct CatalystQuantumToMQTOpt final
     target.addLegalDialect<mlir::arith::ArithDialect>();
     target.addIllegalDialect<catalyst::quantum::QuantumDialect>();
 
-    // Mark operations legal, that have no equivalent in the target dialect
-    // TODO: how to handle them properly?
+    // Mark operations legal that have no equivalent in the target dialect
     target.addLegalOp<
         catalyst::quantum::DeviceInitOp, catalyst::quantum::DeviceReleaseOp,
         catalyst::quantum::NamedObsOp, catalyst::quantum::ExpvalOp,
@@ -623,58 +593,42 @@ struct CatalystQuantumToMQTOpt final
     const CatalystQuantumToMQTOptTypeConverter typeConverter(context);
 
     patterns
-        .add<ConvertQuantumAlloc, ConvertQuantumDealloc, ConvertQuantumExtract,
-             ConvertQuantumMeasure, ConvertQuantumInsert,
+        .add<ConvertQuantumAlloc, ConvertQuantumDealloc, ConvertQuantumMeasure,
+             ConvertQuantumExtract, ConvertQuantumInsert,
              ConvertQuantumGlobalPhase, ConvertQuantumCustomOp>(typeConverter,
                                                                 context);
 
-    // Boilerplate code to prevent "unresolved materialization" errors when the
-    // IR contains ops with signature or operand/result types not yet rewritten:
-    // https://www.jeremykun.com/2023/10/23/mlir-dialect-conversion
+    // Type conversion boilerplate to handle function signatures and control
+    // flow See: https://www.jeremykun.com/2023/10/23/mlir-dialect-conversion
 
-    // Rewrites func.func signatures to use the converted types.
-    // Needed so that the converted argument/result types match expectations
-    // in callers, bodies, and return ops.
+    // Convert func.func signatures to use the converted types
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
         patterns, typeConverter);
 
-    // Mark func.func as dynamically legal if:
-    // - the signature types are legal under the type converter
-    // - all block arguments in the function body are type-converted
+    // Mark func.func as legal only if signature and body types are converted
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
       return typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
     });
 
-    // Converts return ops (func.return) to match the new function result types.
-    // Required when the function result types are changed by the converter.
+    // Convert return ops to match the new function result types
     populateReturnOpTypeConversionPattern(patterns, typeConverter);
 
-    // Legal only if the return operand types match the converted function
-    // result types.
+    // Mark func.return as legal only if operand types match converted types
     target.addDynamicallyLegalOp<func::ReturnOp>(
         [&](const func::ReturnOp op) { return typeConverter.isLegal(op); });
 
-    // Rewrites call sites (func.call) to use the converted argument and result
-    // types. Needed so that calls into rewritten functions pass/receive correct
-    // types.
+    // Convert call sites to use the converted argument and result types
     populateCallOpTypeConversionPattern(patterns, typeConverter);
 
-    // Legal only if operand/result types are all type-converted correctly.
+    // Mark func.call as legal only if operand and result types are converted
     target.addDynamicallyLegalOp<func::CallOp>(
         [&](const func::CallOp op) { return typeConverter.isLegal(op); });
 
-    // Rewrites control-flow ops like cf.br, cf.cond_br, etc.
-    // Ensures block argument types are consistent after conversion.
-    // Required for any dialects or passes that use CFG-based control flow.
+    // Convert control-flow ops (cf.br, cf.cond_br, etc.)
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
-    // Fallback: mark any unhandled op as dynamically legal if:
-    // - it's not a return or branch-like op (i.e., doesn't require special
-    // handling), or
-    // - it passes the legality checks for branch ops or return ops
-    // This is crucial to avoid blocking conversion for unknown ops that don't
-    // require specific operand type handling.
+    // Mark unknown ops as legal if they don't require type conversion
     target.markUnknownOpDynamicallyLegal([&](Operation* op) {
       return isNotBranchOpInterfaceOrReturnLikeOp(op) ||
              isLegalForBranchOpInterfaceTypeConversionPattern(op,

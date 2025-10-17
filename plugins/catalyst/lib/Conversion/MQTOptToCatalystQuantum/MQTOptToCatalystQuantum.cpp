@@ -10,24 +10,22 @@
 
 #include "mlir/Conversion/MQTOptToCatalystQuantum/MQTOptToCatalystQuantum.h"
 
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/IR/BuiltinTypes.h"
 
 #include <Quantum/IR/QuantumDialect.h>
 #include <Quantum/IR/QuantumOps.h>
 #include <cmath>
 #include <cstddef>
-#include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/TypeRange.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LogicalResult.h>
@@ -108,20 +106,19 @@ extractOperands(OpAdaptor adaptor, ConversionPatternRewriter& rewriter,
 class MQTOptToCatalystQuantumTypeConverter final : public TypeConverter {
 public:
   explicit MQTOptToCatalystQuantumTypeConverter(MLIRContext* ctx) {
-    // Identity conversion: Allow all types to pass through unmodified if
-    // needed.
+    // Identity conversion for types that don't need transformation
     addConversion([](const Type type) { return type; });
 
-    // Convert source MemRefType<QubitType> to target QuregType
+    // Convert MemRef of MQTOpt QubitType to Catalyst QuregType
     addConversion([ctx](MemRefType memrefType) -> Type {
       if (auto qubitType =
               dyn_cast<opt::QubitType>(memrefType.getElementType())) {
         return catalyst::quantum::QuregType::get(ctx);
       }
-      return memrefType; // Pass through non-qubit memrefs
+      return memrefType;
     });
 
-    // Convert source QubitType to target QubitType
+    // Convert MQTOpt QubitType to Catalyst QubitType
     addConversion([ctx](opt::QubitType /*type*/) -> Type {
       return catalyst::quantum::QubitType::get(ctx);
     });
@@ -1332,53 +1329,37 @@ struct MQTOptToCatalystQuantum final
     patterns.add<ConvertMQTOptSimpleGate<opt::XXplusYYOp>>(typeConverter,
                                                            context);
 
-    // Boilerplate code to prevent "unresolved materialization" errors when the
-    // IR contains ops with signature or operand/result types not yet rewritten:
-    // https://www.jeremykun.com/2023/10/23/mlir-dialect-conversion
+    // Type conversion boilerplate to handle function signatures and control
+    // flow See: https://www.jeremykun.com/2023/10/23/mlir-dialect-conversion
 
-    // Rewrites func.func signatures to use the converted types.
-    // Needed so that the converted argument/result types match expectations
-    // in callers, bodies, and return ops.
+    // Convert func.func signatures to use the converted types
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
         patterns, typeConverter);
 
-    // Mark func.func as dynamically legal if:
-    // - the signature types are legal under the type converter
-    // - all block arguments in the function body are type-converted
+    // Mark func.func as legal only if signature and body types are converted
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
       return typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
     });
 
-    // Converts return ops (func.return) to match the new function result types.
-    // Required when the function result types are changed by the converter.
+    // Convert return ops to match the new function result types
     populateReturnOpTypeConversionPattern(patterns, typeConverter);
 
-    // Legal only if the return operand types match the converted function
-    // result types.
+    // Mark func.return as legal only if operand types match converted types
     target.addDynamicallyLegalOp<func::ReturnOp>(
         [&](const func::ReturnOp op) { return typeConverter.isLegal(op); });
 
-    // Rewrites call sites (func.call) to use the converted argument and result
-    // types. Needed so that calls into rewritten functions pass/receive correct
-    // types.
+    // Convert call sites to use the converted argument and result types
     populateCallOpTypeConversionPattern(patterns, typeConverter);
 
-    // Legal only if operand/result types are all type-converted correctly.
+    // Mark func.call as legal only if operand and result types are converted
     target.addDynamicallyLegalOp<func::CallOp>(
         [&](const func::CallOp op) { return typeConverter.isLegal(op); });
 
-    // Rewrites control-flow ops like cf.br, cf.cond_br, etc.
-    // Ensures block argument types are consistent after conversion.
-    // Required for any dialects or passes that use CFG-based control flow.
+    // Convert control-flow ops (cf.br, cf.cond_br, etc.)
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
-    // Fallback: mark any unhandled op as dynamically legal if:
-    // - it's not a return or branch-like op (i.e., doesn't require special
-    // handling), or
-    // - it passes the legality checks for branch ops or return ops
-    // This is crucial to avoid blocking conversion for unknown ops that don't
-    // require specific operand type handling.
+    // Mark unknown ops as legal if they don't require type conversion
     target.markUnknownOpDynamicallyLegal([&](Operation* op) {
       return isNotBranchOpInterfaceOrReturnLikeOp(op) ||
              isLegalForBranchOpInterfaceTypeConversionPattern(op,
