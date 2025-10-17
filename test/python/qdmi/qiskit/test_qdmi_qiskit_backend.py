@@ -53,18 +53,17 @@ def na_backend() -> QiskitBackend:
     raise RuntimeError(msg)
 
 
-def test_backend_instantiation() -> None:
+def test_backend_instantiation(na_backend: QiskitBackend) -> None:
     """Backend exposes capabilities hash and target qubit count."""
-    backend = QiskitBackend()
-    assert backend.capabilities_hash
-    assert backend.target.num_qubits > 0
+    assert na_backend.capabilities_hash
+    assert na_backend.target.num_qubits > 0
 
 
-def test_single_circuit_run_counts() -> None:
+def test_single_circuit_run_counts(na_backend: QiskitBackend) -> None:
     """Running a circuit yields counts with specified shots.
 
     Note:
-        This test allows for non-deterministic results (e.g., noise on real devices).
+        This test uses the NA device which supports the CZ gate.
         It validates that all measurement outcomes are valid binary strings and that
         the total number of shots matches the requested amount.
     """
@@ -72,8 +71,7 @@ def test_single_circuit_run_counts() -> None:
     qc.cz(0, 1)
     qc.measure(0, 0)
     qc.measure(1, 1)
-    backend = QiskitBackend()
-    job = backend.run(qc, shots=256)
+    job = na_backend.run(qc, shots=256)
     counts = job.get_counts()
 
     # Verify total shots
@@ -136,55 +134,49 @@ def test_backend_default_options() -> None:
     assert options.shots == 1024
 
 
-def test_backend_run_with_shots_option() -> None:
+def test_backend_run_with_shots_option(na_backend: QiskitBackend) -> None:
     """Backend run should accept shots option."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=500)
+    job = na_backend.run(qc, shots=500)
     result = job.result()
     assert sum(result.get_counts().values()) == 500
 
 
-def test_backend_run_with_invalid_shots_type() -> None:
+def test_backend_run_with_invalid_shots_type(na_backend: QiskitBackend) -> None:
     """Backend run should raise TranslationError for invalid shots type."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
     with pytest.raises(TranslationError, match="Invalid 'shots' value"):
-        backend.run(qc, shots="invalid")
+        na_backend.run(qc, shots="invalid")
 
 
-def test_backend_run_with_zero_shots() -> None:
+def test_backend_run_with_zero_shots(na_backend: QiskitBackend) -> None:
     """Backend run should raise TranslationError for shots < 1."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
     with pytest.raises(TranslationError, match="'shots' must be >= 1"):
-        backend.run(qc, shots=0)
+        na_backend.run(qc, shots=0)
 
 
-def test_backend_run_with_negative_shots() -> None:
+def test_backend_run_with_negative_shots(na_backend: QiskitBackend) -> None:
     """Backend run should raise TranslationError for negative shots."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
     with pytest.raises(TranslationError, match="'shots' must be >= 1"):
-        backend.run(qc, shots=-100)
+        na_backend.run(qc, shots=-100)
 
 
-def test_backend_run_multiple_circuits() -> None:
+def test_backend_run_multiple_circuits(na_backend: QiskitBackend) -> None:
     """Backend run should handle multiple circuits."""
-    backend = QiskitBackend()
-
     qc1 = QuantumCircuit(2, 2)
     qc1.cz(0, 1)
     qc1.measure([0, 1], [0, 1])
@@ -193,7 +185,7 @@ def test_backend_run_multiple_circuits() -> None:
     qc2.cz(0, 1)
     qc2.measure([0, 1], [0, 1])
 
-    job = backend.run([qc1, qc2], shots=100)
+    job = na_backend.run([qc1, qc2], shots=100)
     result = job.result()
 
     assert len(result.results) == 2
@@ -240,52 +232,48 @@ def test_backend_circuit_with_parameter_expression() -> None:
         backend.run(qc)
 
 
-def test_backend_circuit_with_barrier() -> None:
+def test_backend_circuit_with_barrier(na_backend: QiskitBackend) -> None:
     """Backend should handle circuits with barriers."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.barrier()
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     result = job.result()
     assert result.success
 
 
-def test_backend_circuit_with_single_qubit() -> None:
+def test_backend_circuit_with_single_qubit(na_backend: QiskitBackend) -> None:
     """Backend should handle single-qubit circuits."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(1, 1)
     qc.ry(1.5708, 0)
     qc.measure(0, 0)
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     result = job.result()
     assert result.success
 
 
-def test_backend_circuit_with_no_measurements() -> None:
+def test_backend_circuit_with_no_measurements(na_backend: QiskitBackend) -> None:
     """Backend should handle circuits without measurements."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     result = job.result()
     assert result.success
 
 
-def test_backend_target_operation_names() -> None:
+def test_backend_target_operation_names(na_backend: QiskitBackend) -> None:
     """Backend target should expose operation names."""
-    backend = QiskitBackend()
-    op_names = backend.target.operation_names
+    op_names = na_backend.target.operation_names
 
     # Check for measure if device provides it
-    if "measure" in backend._capabilities.operations:  # noqa: SLF001
+    if "measure" in na_backend._capabilities.operations:  # noqa: SLF001
         assert "measure" in op_names
 
-    # Should have at least some operations from the device
+    # NA device should have at least some of these operations
     assert "cz" in op_names or "ry" in op_names or "rz" in op_names
 
 
@@ -308,50 +296,46 @@ def test_backend_version() -> None:
     assert hasattr(backend, "backend_version")
 
 
-def test_backend_circuit_name_preserved() -> None:
+def test_backend_circuit_name_preserved(na_backend: QiskitBackend) -> None:
     """Backend should preserve circuit name in metadata."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2, name="my_circuit")
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     result = job.result()
     assert result.results[0].header["name"] == "my_circuit"
 
 
-def test_backend_unnamed_circuit() -> None:
+def test_backend_unnamed_circuit(na_backend: QiskitBackend) -> None:
     """Backend should handle circuits without names."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     result = job.result()
     # Should have a default name
     assert "name" in result.results[0].header
 
 
-def test_backend_result_metadata_includes_circuit_name() -> None:
+def test_backend_result_metadata_includes_circuit_name(na_backend: QiskitBackend) -> None:
     """Backend result metadata should include circuit name."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     result = job.result()
     assert "circuit_name" in result.results[0].metadata
 
 
-def test_backend_result_metadata_includes_capabilities_hash() -> None:
+def test_backend_result_metadata_includes_capabilities_hash(na_backend: QiskitBackend) -> None:
     """Backend result metadata should include capabilities hash."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     result = job.result()
     assert "capabilities_hash" in result.results[0].metadata

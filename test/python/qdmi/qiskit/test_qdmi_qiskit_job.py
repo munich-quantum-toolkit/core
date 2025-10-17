@@ -22,28 +22,49 @@ if _qiskit_present:
     from qiskit import QuantumCircuit
     from qiskit.providers import JobStatus
 
+    from mqt.core import fomac
     from mqt.core.qdmi.qiskit import QiskitBackend
 
 
-def test_job_status() -> None:
+@pytest.fixture
+def na_backend() -> QiskitBackend:
+    """Fixture providing a QiskitBackend configured with the NA device.
+
+    Returns:
+        QiskitBackend instance configured with the MQT NA Default QDMI Device.
+
+    Raises:
+        RuntimeError: If the MQT NA Default QDMI Device is not found.
+
+    Note:
+        This fixture is used for tests that rely on specific NA device characteristics.
+        In the future, these tests should be generalized or parameterized across device types.
+    """
+    devices_list = list(fomac.devices())
+    for idx, device in enumerate(devices_list):
+        if device.name() == "MQT NA Default QDMI Device":
+            return QiskitBackend(device_index=idx)
+    msg = "MQT NA Default QDMI Device not found"
+    raise RuntimeError(msg)
+
+
+def test_job_status(na_backend: QiskitBackend) -> None:
     """Job should report DONE status immediately."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     assert job.status() == JobStatus.DONE
 
 
-def test_job_result() -> None:
+def test_job_result(na_backend: QiskitBackend) -> None:
     """Job result should contain experiment results for each circuit."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     result = job.result()
 
     assert result.success is True
@@ -52,36 +73,33 @@ def test_job_result() -> None:
     assert result.results[0].success is True
 
 
-def test_job_result_with_timeout() -> None:
+def test_job_result_with_timeout(na_backend: QiskitBackend) -> None:
     """Job result should accept timeout parameter (even though it's unused)."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=50)
+    job = na_backend.run(qc, shots=50)
     result = job.result(timeout=10)
 
     assert result.success is True
     assert result.results[0].shots == 50
 
 
-def test_job_get_counts_default() -> None:
+def test_job_get_counts_default(na_backend: QiskitBackend) -> None:
     """get_counts() without arguments should return counts for first circuit."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     counts = job.get_counts()
 
     assert sum(counts.values()) == 100
 
 
-def test_job_get_counts_by_index() -> None:
+def test_job_get_counts_by_index(na_backend: QiskitBackend) -> None:
     """get_counts(idx) should return counts for the specified circuit index."""
-    backend = QiskitBackend()
     qc1 = QuantumCircuit(2, 2)
     qc1.cz(0, 1)
     qc1.measure([0, 1], [0, 1])
@@ -90,7 +108,7 @@ def test_job_get_counts_by_index() -> None:
     qc2.ry(1.5708, 0)
     qc2.measure([0, 1], [0, 1])
 
-    job = backend.run([qc1, qc2], shots=100)
+    job = na_backend.run([qc1, qc2], shots=100)
     counts0 = job.get_counts(0)
     counts1 = job.get_counts(1)
 
@@ -98,9 +116,8 @@ def test_job_get_counts_by_index() -> None:
     assert sum(counts1.values()) == 100
 
 
-def test_job_get_counts_by_circuit_object() -> None:
+def test_job_get_counts_by_circuit_object(na_backend: QiskitBackend) -> None:
     """get_counts(circuit) should return counts for that specific circuit."""
-    backend = QiskitBackend()
     qc1 = QuantumCircuit(2, 2)
     qc1.cz(0, 1)
     qc1.measure([0, 1], [0, 1])
@@ -109,15 +126,14 @@ def test_job_get_counts_by_circuit_object() -> None:
     qc2.ry(1.5708, 0)
     qc2.measure([0, 1], [0, 1])
 
-    job = backend.run([qc1, qc2], shots=100)
+    job = na_backend.run([qc1, qc2], shots=100)
     counts = job.get_counts(qc2)
 
     assert sum(counts.values()) == 100
 
 
-def test_job_get_counts_circuit_not_found() -> None:
+def test_job_get_counts_circuit_not_found(na_backend: QiskitBackend) -> None:
     """get_counts() should raise ValueError if circuit is not in the job."""
-    backend = QiskitBackend()
     qc1 = QuantumCircuit(2, 2)
     qc1.cz(0, 1)
     qc1.measure([0, 1], [0, 1])
@@ -126,26 +142,24 @@ def test_job_get_counts_circuit_not_found() -> None:
     qc2.ry(1.5708, 0)
     qc2.measure([0, 1], [0, 1])
 
-    job = backend.run(qc1, shots=100)
+    job = na_backend.run(qc1, shots=100)
 
     with pytest.raises(ValueError, match="Circuit not found in job"):
         job.get_counts(qc2)
 
 
-def test_job_submit_noop() -> None:
+def test_job_submit_noop(na_backend: QiskitBackend) -> None:
     """submit() should be a no-op since execution is synchronous."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     job.submit()  # Should not raise
 
 
-def test_job_multiple_circuits() -> None:
+def test_job_multiple_circuits(na_backend: QiskitBackend) -> None:
     """Job with multiple circuits should have results for each."""
-    backend = QiskitBackend()
     circuits = []
     for _i in range(3):
         qc = QuantumCircuit(2, 2)
@@ -153,7 +167,7 @@ def test_job_multiple_circuits() -> None:
         qc.measure([0, 1], [0, 1])
         circuits.append(qc)
 
-    job = backend.run(circuits, shots=50)
+    job = na_backend.run(circuits, shots=50)
     result = job.result()
 
     assert len(result.results) == 3
@@ -161,14 +175,13 @@ def test_job_multiple_circuits() -> None:
         assert exp_result.shots == 50
 
 
-def test_job_result_metadata() -> None:
+def test_job_result_metadata(na_backend: QiskitBackend) -> None:
     """Job result should include metadata from backend execution."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     result = job.result()
 
     # Check that metadata is included

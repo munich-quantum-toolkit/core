@@ -21,7 +21,30 @@ pytestmark = pytest.mark.skipif(not _qiskit_present, reason="qiskit not installe
 if _qiskit_present:
     from qiskit import QuantumCircuit
 
+    from mqt.core import fomac
     from mqt.core.qdmi.qiskit import QiskitBackend
+
+
+@pytest.fixture
+def na_backend() -> QiskitBackend:
+    """Fixture providing a QiskitBackend configured with the NA device.
+
+    Returns:
+        QiskitBackend instance configured with the MQT NA Default QDMI Device.
+
+    Raises:
+        RuntimeError: If the MQT NA Default QDMI Device is not found.
+
+    Note:
+        This fixture is used for tests that rely on specific NA device characteristics.
+        In the future, these tests should be generalized or parameterized across device types.
+    """
+    devices_list = list(fomac.devices())
+    for idx, device in enumerate(devices_list):
+        if device.name() == "MQT NA Default QDMI Device":
+            return QiskitBackend(device_index=idx)
+    msg = "MQT NA Default QDMI Device not found"
+    raise RuntimeError(msg)
 
 
 def test_gate_mapping_to_qiskit_gates() -> None:
@@ -51,16 +74,14 @@ def test_gate_mapping_to_qiskit_gates() -> None:
     assert gate is None
 
 
-def test_backend_supports_cz_gate() -> None:
-    """Test that the backend can execute CZ gate circuits (supported by mock device)."""
-    backend = QiskitBackend()
-
-    # The mock device supports CZ
+def test_backend_supports_cz_gate(na_backend: QiskitBackend) -> None:
+    """Test that the backend can execute CZ gate circuits (supported by NA device)."""
+    # The NA device supports CZ
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = backend.run(qc, shots=100)
+    job = na_backend.run(qc, shots=100)
     counts = job.get_counts()
     assert sum(counts.values()) == 100
 
