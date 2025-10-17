@@ -82,10 +82,11 @@ class TestZoneSiteFiltering:
 
     def test_zone_sites_filtered_from_capabilities(self, na_backend: QiskitBackend, na_device: fomac.Device) -> None:  # noqa: PLR6301
         """Verify zone sites are not counted as qubits in capabilities."""
-        # Get raw site data from device
-        all_sites = na_device.sites()
-        zone_sites = [s for s in all_sites if s.is_zone()]
-        non_zone_sites = [s for s in all_sites if not s.is_zone()]
+        # Get raw site data from device (materialize to avoid iterator exhaustion)
+        all_sites = list(na_device.sites())
+        # Treat only explicit True as a zone; anything else is non-zone
+        zone_sites = [s for s in all_sites if s.is_zone() is True]
+        non_zone_sites = [s for s in all_sites if s.is_zone() is not True]
 
         # Verify device has zone sites (our test device has 3)
         assert len(zone_sites) > 0, "Test device should have zone sites"
@@ -155,7 +156,7 @@ class TestZoneSiteFiltering:
     def test_device_has_expected_zone_configuration(self, na_device: fomac.Device) -> None:  # noqa: PLR6301
         """Verify the NA device has the expected zone configuration."""
         # This test documents the expected structure of our NA test device
-        all_sites = na_device.sites()
+        all_sites = list(na_device.sites())
         zone_sites = [s for s in all_sites if s.is_zone()]
 
         # Our NA test device should have 3 zones:
