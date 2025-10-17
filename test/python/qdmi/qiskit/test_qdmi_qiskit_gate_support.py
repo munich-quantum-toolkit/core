@@ -245,11 +245,15 @@ def test_get_operation_qargs_single_qubit() -> None:
     assert all(len(qarg) == 1 for qarg in qargs)
 
 
-def test_get_operation_qargs_two_qubit_with_coupling_map() -> None:
-    """Test _get_operation_qargs for two-qubit operations with coupling map."""
+def test_get_operation_qargs_two_qubit_with_coupling_map_fallback() -> None:
+    """Test _get_operation_qargs for two-qubit operations with coupling map fallback.
+
+    When an operation has sites=None, it should fall back to using the device's
+    full coupling map (all physical connections).
+    """
     backend = QiskitBackend()
 
-    # If device has coupling map, should use it
+    # If device has coupling map, should use it as fallback when sites=None
     if backend._capabilities.coupling_map:  # noqa: SLF001
         from mqt.core.qdmi.qiskit.capabilities import DeviceOperationInfo
 
@@ -264,13 +268,18 @@ def test_get_operation_qargs_two_qubit_with_coupling_map() -> None:
             idling_fidelity=None,
             is_zoned=None,
             mean_shuttling_speed=None,
-            sites=None,
+            sites=None,  # No specific sites - should use device coupling map
         )
 
         qargs = backend._get_operation_qargs(op_info)  # noqa: SLF001
 
-        # Should match coupling map
+        # Should match the full device coupling map
         assert all(len(qarg) == 2 for qarg in qargs)
+
+        # Verify it returns the device's coupling map
+        device_coupling_map = backend._capabilities.coupling_map  # noqa: SLF001
+        assert len(qargs) == len(device_coupling_map)
+        assert set(qargs) == {(int(pair[0]), int(pair[1])) for pair in device_coupling_map}
 
 
 def test_get_operation_qargs_with_specific_sites() -> None:
@@ -301,3 +310,76 @@ def test_get_operation_qargs_with_specific_sites() -> None:
     assert (0,) in qargs
     assert (1,) in qargs
     assert (2,) in qargs
+
+
+def test_get_operation_qargs_two_qubit_operation_with_subset_of_coupling_map() -> None:
+    """Test that two-qubit operations can specify their own subset of the device coupling map.
+
+    This addresses the scenario where a device has a coupling map describing all physical
+    connections, but individual operations (e.g., CZ vs CX) are only supported on subsets
+    of those connections.
+
+    Example: Device has coupling map {(0,1), (1,2), (2,3), (3,0), (0,3), (3,2), (2,1), (1,0)}
+    but CZ is only supported on {(0,1), (1,2), (2,3), (3,2), (2,1), (1,0)} and CX only on
+    {(0,3), (3,0)}.
+    """
+    backend = QiskitBackend()
+
+    from mqt.core.qdmi.qiskit.capabilities import DeviceOperationInfo
+
+    # Two-qubit operation with specific coupling pairs (subset of device coupling map)
+    # This represents e.g., a CZ gate that's only available on specific edges
+    cz_pairs = ((0, 1), (1, 2), (2, 3), (3, 2), (2, 1), (1, 0))
+
+    op_info = DeviceOperationInfo(
+        name="cz",
+        qubits_num=2,
+        parameters_num=0,
+        duration=None,
+        fidelity=None,
+        interaction_radius=None,
+        blocking_radius=None,
+        idling_fidelity=None,
+        is_zoned=None,
+        mean_shuttling_speed=None,
+        sites=cz_pairs,  # Specific coupling pairs for this operation
+    )
+
+    qargs = backend._get_operation_qargs(op_info)  # noqa: SLF001
+
+    # Should return exactly the specified coupling pairs, not the full device coupling map
+    assert len(qargs) == len(cz_pairs)
+    assert all(len(qarg) == 2 for qarg in qargs)
+
+    # Verify all specified pairs are present
+    for pair in cz_pairs:
+        assert pair in qargs
+
+    # Verify no extra pairs beyond what was specified
+    assert set(qargs) == set(cz_pairs)
+
+    # Now test another operation with a different subset (e.g., CX)
+    cx_pairs = ((0, 3), (3, 0))
+
+    cx_op_info = DeviceOperationInfo(
+        name="cx",
+        qubits_num=2,
+        parameters_num=0,
+        duration=None,
+        fidelity=None,
+        interaction_radius=None,
+        blocking_radius=None,
+        idling_fidelity=None,
+        is_zoned=None,
+        mean_shuttling_speed=None,
+        sites=cx_pairs,
+    )
+
+    cx_qargs = backend._get_operation_qargs(cx_op_info)  # noqa: SLF001
+
+    # Should return exactly the CX-specific pairs
+    assert len(cx_qargs) == len(cx_pairs)
+    assert set(cx_qargs) == set(cx_pairs)
+
+    # Verify the two operations have different coupling maps
+    assert set(qargs) != set(cx_qargs)
