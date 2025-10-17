@@ -272,6 +272,8 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         Returns:
             Sequence of qubit index tuples this operation can act on.
         """
+        from itertools import combinations
+
         qubits_num = op_info.qubits_num if op_info.qubits_num is not None else 1
         num_qubits = self._capabilities.num_qubits
 
@@ -316,8 +318,8 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             # Otherwise all pairs
             return [(i, j) for i in range(num_qubits) for j in range(i + 1, num_qubits)]
 
-        # Multi-qubit operations - just use first few valid combinations
-        return [tuple(range(qubits_num))]
+        # Multi-qubit operations (3 or more qubits) - generate all combinations
+        return list(combinations(range(num_qubits), qubits_num))
 
     def run(self, run_input: QuantumCircuit | list[QuantumCircuit], **options: Any) -> QiskitJob:  # noqa: ANN401
         """Run circuits on the backend.

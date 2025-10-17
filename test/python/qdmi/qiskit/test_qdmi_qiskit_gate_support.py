@@ -383,3 +383,81 @@ def test_get_operation_qargs_two_qubit_operation_with_subset_of_coupling_map() -
 
     # Verify the two operations have different coupling maps
     assert set(qargs) != set(cx_qargs)
+
+
+def test_get_operation_qargs_multi_qubit_generates_all_combinations() -> None:
+    """Test that multi-qubit operations (3+ qubits) generate all possible combinations.
+
+    This verifies that the fallback for multi-qubit operations properly advertises
+    the full capability by generating all combinations of qubits, not just the first
+    contiguous qubits (e.g., for a 3-qubit operation on a 5-qubit device, it should
+    generate all C(5,3) = 10 combinations, not just (0,1,2)).
+    """
+    backend = QiskitBackend()
+
+    from mqt.core.qdmi.qiskit.capabilities import DeviceOperationInfo
+
+    # 3-qubit operation without specific sites - should generate all combinations
+    op_info = DeviceOperationInfo(
+        name="ccx",  # Toffoli gate as example
+        qubits_num=3,
+        parameters_num=0,
+        duration=None,
+        fidelity=None,
+        interaction_radius=None,
+        blocking_radius=None,
+        idling_fidelity=None,
+        is_zoned=None,
+        mean_shuttling_speed=None,
+        sites=None,  # No specific sites - should generate all combinations
+    )
+
+    qargs = backend._get_operation_qargs(op_info)  # noqa: SLF001
+
+    # Should generate all 3-qubit combinations
+    num_qubits = backend._capabilities.num_qubits  # noqa: SLF001
+    expected_count = 0
+    if num_qubits >= 3:
+        # Calculate C(num_qubits, 3)
+        from math import comb
+
+        expected_count = comb(num_qubits, 3)
+
+    assert len(qargs) == expected_count
+    assert all(len(qarg) == 3 for qarg in qargs)
+
+    # Verify we get different combinations, not just (0,1,2)
+    if num_qubits >= 4:
+        # Should have (0,1,2), (0,1,3), (0,2,3), (1,2,3), etc.
+        assert (0, 1, 2) in qargs
+        assert (0, 1, 3) in qargs
+        assert (0, 2, 3) in qargs
+        assert (1, 2, 3) in qargs
+
+    # Verify no duplicates
+    assert len(qargs) == len(set(qargs))
+
+    # Test with 4-qubit operation if device has enough qubits
+    if num_qubits >= 4:
+        op_info_4q = DeviceOperationInfo(
+            name="test_4q",
+            qubits_num=4,
+            parameters_num=0,
+            duration=None,
+            fidelity=None,
+            interaction_radius=None,
+            blocking_radius=None,
+            idling_fidelity=None,
+            is_zoned=None,
+            mean_shuttling_speed=None,
+            sites=None,
+        )
+
+        qargs_4q = backend._get_operation_qargs(op_info_4q)  # noqa: SLF001
+        from math import comb
+
+        expected_4q_count = comb(num_qubits, 4)
+
+        assert len(qargs_4q) == expected_4q_count
+        assert all(len(qarg) == 4 for qarg in qargs_4q)
+        assert len(qargs_4q) == len(set(qargs_4q))  # No duplicates
