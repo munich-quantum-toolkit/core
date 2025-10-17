@@ -37,35 +37,53 @@ if _qiskit_present:
 
 
 @pytest.fixture
-def backend() -> QiskitBackend:
-    """Create a QiskitBackend instance for testing.
+def na_backend() -> QiskitBackend:
+    """Fixture providing a QiskitBackend configured with the NA device.
 
     Returns:
-        QiskitBackend instance for testing.
+        QiskitBackend instance configured with the MQT NA Default QDMI Device.
+
+    Raises:
+        RuntimeError: If the MQT NA Default QDMI Device is not found.
+
+    Note:
+        This fixture is used for tests that rely on specific NA device characteristics.
+        These tests verify site handling, zone filtering, and QDMI specification compliance
+        specific to the NA device structure (100 qubits + 3 zone sites).
     """
-    return QiskitBackend(device_index=0)
+    devices_list = list(fomac.devices())
+    for idx, device in enumerate(devices_list):
+        if device.name() == "MQT NA Default QDMI Device":
+            return QiskitBackend(device_index=idx)
+    msg = "MQT NA Default QDMI Device not found"
+    raise RuntimeError(msg)
 
 
 @pytest.fixture
-def device() -> fomac.Device:
-    """Get the FoMaC device for direct inspection.
+def na_device() -> fomac.Device:
+    """Get the NA FoMaC device for direct inspection.
 
     Returns:
-        The FoMaC device at index 0.
+        The MQT NA Default QDMI Device.
+
+    Raises:
+        RuntimeError: If the MQT NA Default QDMI Device is not found.
     """
     devices_list = list(fomac.devices())
-    if not devices_list:
-        pytest.skip("No FoMaC devices available")
-    return devices_list[0]
+    for device in devices_list:
+        if device.name() == "MQT NA Default QDMI Device":
+            return device
+    msg = "MQT NA Default QDMI Device not found"
+    raise RuntimeError(msg)
 
 
 class TestZoneSiteFiltering:
     """Tests for zone site filtering and exclusion from qubit counts."""
 
-    def test_zone_sites_filtered_from_capabilities(self, backend: QiskitBackend, device: fomac.Device) -> None:  # noqa: PLR6301
+    def test_zone_sites_filtered_from_capabilities(self, na_backend: QiskitBackend, na_device: fomac.Device) -> None:  # noqa: PLR6301
         """Verify zone sites are not counted as qubits in capabilities."""
         # Get raw site data from device
-        all_sites = device.sites()
+        all_sites = na_device.sites()
         zone_sites = [s for s in all_sites if s.is_zone()]
         non_zone_sites = [s for s in all_sites if not s.is_zone()]
 
@@ -73,7 +91,7 @@ class TestZoneSiteFiltering:
         assert len(zone_sites) > 0, "Test device should have zone sites"
 
         # Verify capabilities only includes non-zone sites
-        capabilities = backend._capabilities  # noqa: SLF001
+        capabilities = na_backend._capabilities  # noqa: SLF001
         assert len(capabilities.sites) == len(non_zone_sites), (
             f"Capabilities should only include non-zone sites. "
             f"Expected {len(non_zone_sites)}, got {len(capabilities.sites)}"
@@ -96,16 +114,16 @@ class TestZoneSiteFiltering:
             f"number of non-zone sites ({len(non_zone_sites)})"
         )
 
-    def test_zone_sites_not_in_operation_sites(self, backend: QiskitBackend, device: fomac.Device) -> None:  # noqa: PLR6301
+    def test_zone_sites_not_in_operation_sites(self, na_backend: QiskitBackend, na_device: fomac.Device) -> None:  # noqa: PLR6301
         """Verify operation sites only reference logical qubits, not zone sites.
 
         After remapping, operation sites should only contain indices in the range [0, num_qubits),
         which are logical qubit indices. Zone sites are filtered out during extraction.
         """
-        num_qubits = backend._capabilities.num_qubits  # noqa: SLF001
+        num_qubits = na_backend._capabilities.num_qubits  # noqa: SLF001
 
         # Get the actual number of sites including zones from the device
-        all_sites_count = len(list(device.sites()))
+        all_sites_count = len(list(na_device.sites()))
 
         # Verify that all_sites_count > num_qubits (i.e., there are zone sites)
         assert all_sites_count > num_qubits, (
@@ -113,7 +131,7 @@ class TestZoneSiteFiltering:
         )
 
         # Check all operation sites in capabilities
-        for op_name, op_info in backend._capabilities.operations.items():  # noqa: SLF001
+        for op_name, op_info in na_backend._capabilities.operations.items():  # noqa: SLF001
             if op_info.sites is not None:
                 # Flatten sites to check all indices
                 if op_info.sites and isinstance(op_info.sites[0], tuple):
@@ -134,18 +152,18 @@ class TestZoneSiteFiltering:
                         f"Zone sites should not appear in remapped operation sites."
                     )
 
-    def test_device_has_expected_zone_configuration(self, device: fomac.Device) -> None:  # noqa: PLR6301
-        """Verify the test device has the expected zone configuration."""
-        # This test documents the expected structure of our test device
-        all_sites = device.sites()
+    def test_device_has_expected_zone_configuration(self, na_device: fomac.Device) -> None:  # noqa: PLR6301
+        """Verify the NA device has the expected zone configuration."""
+        # This test documents the expected structure of our NA test device
+        all_sites = na_device.sites()
         zone_sites = [s for s in all_sites if s.is_zone()]
 
-        # Our test device should have 3 zones:
+        # Our NA test device should have 3 zones:
         # - 1 for global single-qubit 'ry' operation
         # - 1 for global multi-qubit 'cz' operation
         # - 1 for shuttling unit
         assert len(zone_sites) == 3, (
-            f"Test device should have exactly 3 zone sites, found {len(zone_sites)}. "
+            f"NA test device should have exactly 3 zone sites, found {len(zone_sites)}. "
             f"This test may need updating if device configuration changed."
         )
 
@@ -157,21 +175,21 @@ class TestZoneSiteFiltering:
 class TestSiteIndexRemapping:
     """Tests for site index remapping to logical qubit range."""
 
-    def test_site_indices_in_logical_range(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
+    def test_site_indices_in_logical_range(self, na_backend: QiskitBackend) -> None:  # noqa: PLR6301
         """Verify all site indices in capabilities are in range [0, num_qubits)."""
-        num_qubits = backend._capabilities.num_qubits  # noqa: SLF001
+        num_qubits = na_backend._capabilities.num_qubits  # noqa: SLF001
 
         # Check all site indices
-        for site_info in backend._capabilities.sites:  # noqa: SLF001
+        for site_info in na_backend._capabilities.sites:  # noqa: SLF001
             assert 0 <= site_info.index < num_qubits, (
                 f"Site index {site_info.index} is out of logical qubit range [0, {num_qubits})"
             )
 
-    def test_operation_site_indices_in_valid_range(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
+    def test_operation_site_indices_in_valid_range(self, na_backend: QiskitBackend) -> None:  # noqa: PLR6301
         """Verify all operation site indices are in valid logical qubit range."""
-        num_qubits = backend._capabilities.num_qubits  # noqa: SLF001
+        num_qubits = na_backend._capabilities.num_qubits  # noqa: SLF001
 
-        for op_name, op_info in backend._capabilities.operations.items():  # noqa: SLF001
+        for op_name, op_info in na_backend._capabilities.operations.items():  # noqa: SLF001
             if op_info.sites is not None:
                 # Check based on structure
                 if op_info.sites and isinstance(op_info.sites[0], tuple):
@@ -190,10 +208,10 @@ class TestSiteIndexRemapping:
                             f"Operation '{op_name}' has site index {idx} out of valid range [0, {num_qubits})"
                         )
 
-    def test_coupling_map_indices_in_valid_range(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
+    def test_coupling_map_indices_in_valid_range(self, na_backend: QiskitBackend) -> None:  # noqa: PLR6301
         """Verify coupling map indices are in valid logical qubit range."""
-        num_qubits = backend._capabilities.num_qubits  # noqa: SLF001
-        coupling_map = backend._capabilities.coupling_map  # noqa: SLF001
+        num_qubits = na_backend._capabilities.num_qubits  # noqa: SLF001
+        coupling_map = na_backend._capabilities.coupling_map  # noqa: SLF001
 
         if coupling_map is not None:
             for idx0, idx1 in coupling_map:
@@ -204,7 +222,7 @@ class TestSiteIndexRemapping:
 class TestOperationSiteStructure:
     """Tests for operation site structure according to QDMI specification."""
 
-    def test_local_multiqubit_operation_has_tuple_structure(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
+    def test_local_multiqubit_operation_has_tuple_structure(self, na_backend: QiskitBackend) -> None:  # noqa: PLR6301
         """Verify local multi-qubit operations have tuple-of-tuples structure.
 
         According to QDMI specification:
@@ -214,7 +232,7 @@ class TestOperationSiteStructure:
         # Find a local multi-qubit operation
         found_local_multiqubit = False
 
-        for op_name, op_info in backend._capabilities.operations.items():  # noqa: SLF001
+        for op_name, op_info in na_backend._capabilities.operations.items():  # noqa: SLF001
             # Local operations: not zoned, multi-qubit
             if not op_info.is_zoned and op_info.qubits_num is not None and op_info.qubits_num > 1:
                 found_local_multiqubit = True
@@ -241,14 +259,14 @@ class TestOperationSiteStructure:
                         f"found {len(site_tuple)}"
                     )
 
-        assert found_local_multiqubit, "Test device should have at least one local multi-qubit operation to test"
+        assert found_local_multiqubit, "NA test device should have at least one local multi-qubit operation to test"
 
-    def test_single_qubit_operation_has_flat_structure(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
+    def test_single_qubit_operation_has_flat_structure(self, na_backend: QiskitBackend) -> None:  # noqa: PLR6301
         """Verify single-qubit operations have flat tuple structure."""
         # Find single-qubit operations (local or global)
         found_single_qubit = False
 
-        for op_name, op_info in backend._capabilities.operations.items():  # noqa: SLF001
+        for op_name, op_info in na_backend._capabilities.operations.items():  # noqa: SLF001
             if op_info.qubits_num == 1 and op_info.sites is not None:
                 found_single_qubit = True
 
@@ -261,26 +279,26 @@ class TestOperationSiteStructure:
                     f"but first element is {type(op_info.sites[0])}"
                 )
 
-        assert found_single_qubit, "Test device should have at least one single-qubit operation to test"
+        assert found_single_qubit, "NA test device should have at least one single-qubit operation to test"
 
-    def test_global_operations_identified_correctly(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
+    def test_global_operations_identified_correctly(self, na_backend: QiskitBackend) -> None:  # noqa: PLR6301
         """Verify global (zoned) operations are properly identified."""
         # Find global operations
         global_ops = {
             op_name: op_info
-            for op_name, op_info in backend._capabilities.operations.items()  # noqa: SLF001
+            for op_name, op_info in na_backend._capabilities.operations.items()  # noqa: SLF001
             if op_info.is_zoned
         }
 
-        # Our test device should have global 'ry' (single-qubit, global)
+        # Our NA test device should have global 'ry' (single-qubit, global)
         # and possibly global 'cz' (multi-qubit, global)
-        assert len(global_ops) > 0, "Test device should have at least one global operation"
+        assert len(global_ops) > 0, "NA test device should have at least one global operation"
 
         # Verify global operations have is_zoned = True
         for op_name, op_info in global_ops.items():
             assert op_info.is_zoned is True, f"Global operation '{op_name}' should have is_zoned=True"
 
-    def test_local_cz_operation_structure(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
+    def test_local_cz_operation_structure(self, na_backend: QiskitBackend) -> None:  # noqa: PLR6301
         """Verify the local 'cz' operation has correct structure.
 
         This is a regression test for the specific bug where local 'cz' operation
@@ -288,13 +306,13 @@ class TestOperationSiteStructure:
         """
         # Find local cz operation
         local_cz = None
-        for op_name, op_info in backend._capabilities.operations.items():  # noqa: SLF001
+        for op_name, op_info in na_backend._capabilities.operations.items():  # noqa: SLF001
             if op_name.lower() == "cz" and not op_info.is_zoned:
                 local_cz = op_info
                 break
 
         if local_cz is None:
-            pytest.skip("Test device doesn't have a local 'cz' operation")
+            pytest.skip("NA test device doesn't have a local 'cz' operation")
 
         # Verify structure
         assert local_cz.sites is not None, "Local 'cz' should have sites defined"
@@ -305,7 +323,7 @@ class TestOperationSiteStructure:
         # Verify we have the expected number of valid pairs
         # (not all possible pairs, but device-specific valid combinations)
         num_pairs = len(local_cz.sites)
-        num_qubits = backend._capabilities.num_qubits  # noqa: SLF001
+        num_qubits = na_backend._capabilities.num_qubits  # noqa: SLF001
         max_possible_pairs = num_qubits * (num_qubits - 1) // 2
 
         assert num_pairs > 0, "Should have at least one valid 'cz' pair"
@@ -317,58 +335,56 @@ class TestOperationSiteStructure:
 class TestBackendQubitCount:
     """Tests for backend qubit count correctness."""
 
-    def test_backend_num_qubits_matches_device_spec(self, backend: QiskitBackend, device: fomac.Device) -> None:  # noqa: PLR6301
+    def test_backend_num_qubits_matches_device_spec(self, na_backend: QiskitBackend, na_device: fomac.Device) -> None:  # noqa: PLR6301
         """Verify backend reports correct qubit count from device specification.
 
         This is a regression test for the bug where backend.target.num_qubits
         reported 103 instead of 100 due to zone sites being counted.
         """
-        device_qubits = device.qubits_num()
-        backend_qubits = backend.target.num_qubits
+        device_qubits = na_device.qubits_num()
+        backend_qubits = na_backend.target.num_qubits
 
         assert backend_qubits == device_qubits, (
             f"Backend should report {device_qubits} qubits (from device spec), but reports {backend_qubits}"
         )
 
-    def test_target_num_qubits_equals_capabilities_num_qubits(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
+    def test_target_num_qubits_equals_capabilities_num_qubits(self, na_backend: QiskitBackend) -> None:  # noqa: PLR6301
         """Verify backend.target.num_qubits matches capabilities.num_qubits."""
-        capabilities_qubits = backend._capabilities.num_qubits  # noqa: SLF001
-        target_qubits = backend.target.num_qubits
+        capabilities_qubits = na_backend._capabilities.num_qubits  # noqa: SLF001
+        target_qubits = na_backend.target.num_qubits
 
         assert target_qubits == capabilities_qubits, (
             f"Target num_qubits ({target_qubits}) should match capabilities num_qubits ({capabilities_qubits})"
         )
 
-    def test_num_qubits_matches_site_count(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
+    def test_num_qubits_matches_site_count(self, na_backend: QiskitBackend) -> None:  # noqa: PLR6301
         """Verify number of qubits matches number of sites in capabilities."""
-        num_qubits = backend._capabilities.num_qubits  # noqa: SLF001
-        num_sites = len(backend._capabilities.sites)  # noqa: SLF001
+        num_qubits = na_backend._capabilities.num_qubits  # noqa: SLF001
+        num_sites = len(na_backend._capabilities.sites)  # noqa: SLF001
 
         assert num_qubits == num_sites, (
             f"Number of qubits ({num_qubits}) should match number of sites ({num_sites}) in capabilities"
         )
 
-    def test_device_json_specifies_100_qubits(self, device: fomac.Device) -> None:  # noqa: PLR6301
-        """Verify the test device JSON specifies 100 qubits.
+    def test_device_json_specifies_100_qubits(self, na_device: fomac.Device) -> None:  # noqa: PLR6301
+        """Verify the NA device JSON specifies 100 qubits.
 
-        This test documents the expected configuration of our test device
+        This test documents the expected configuration of our NA test device
         and will fail if the device JSON is changed.
         """
-        device_name = device.name()
-        if device_name == "MQT NA Default QDMI Device":
-            expected_qubits = 100
-            actual_qubits = device.qubits_num()
+        expected_qubits = 100
+        actual_qubits = na_device.qubits_num()
 
-            assert actual_qubits == expected_qubits, (
-                f"Test device '{device_name}' should have {expected_qubits} qubits "
-                f"(as specified in json/na/device.json), found {actual_qubits}"
-            )
+        assert actual_qubits == expected_qubits, (
+            f"NA test device should have {expected_qubits} qubits "
+            f"(as specified in json/na/device.json), found {actual_qubits}"
+        )
 
 
 class TestQDMISpecificationCompliance:
     """Tests for QDMI specification compliance."""
 
-    def test_operation_sites_follow_qdmi_spec(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
+    def test_operation_sites_follow_qdmi_spec(self, na_backend: QiskitBackend) -> None:  # noqa: PLR6301
         """Verify operation sites follow QDMI specification.
 
         QDMI Specification for QDMI_OPERATION_PROPERTY_SITES:
@@ -377,7 +393,7 @@ class TestQDMISpecificationCompliance:
         - For global operations: returns a list of zone sites where the
           operation can be applied.
         """
-        for op_name, op_info in backend._capabilities.operations.items():  # noqa: SLF001
+        for op_name, op_info in na_backend._capabilities.operations.items():  # noqa: SLF001
             if op_info.sites is None:
                 # Operation applies to all qubits - this is valid
                 continue
@@ -403,9 +419,9 @@ class TestQDMISpecificationCompliance:
                     f"Single-qubit operation '{op_name}' should have flat tuple structure per QDMI specification"
                 )
 
-    def test_sites_property_type_consistency(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
+    def test_sites_property_type_consistency(self, na_backend: QiskitBackend) -> None:  # noqa: PLR6301
         """Verify sites property has consistent type throughout each operation."""
-        for op_name, op_info in backend._capabilities.operations.items():  # noqa: SLF001
+        for op_name, op_info in na_backend._capabilities.operations.items():  # noqa: SLF001
             if op_info.sites is None or len(op_info.sites) == 0:
                 continue
 
@@ -423,20 +439,22 @@ class TestQDMISpecificationCompliance:
 class TestRegressionPrevention:
     """Tests that explicitly check for the original bugs to prevent regression."""
 
-    def test_regression_zone_sites_not_counted_as_qubits(self, backend: QiskitBackend, device: fomac.Device) -> None:  # noqa: PLR6301
+    def test_regression_zone_sites_not_counted_as_qubits(  # noqa: PLR6301
+        self, na_backend: QiskitBackend, na_device: fomac.Device
+    ) -> None:
         """REGRESSION TEST: Verify zone sites are not counted as qubits.
 
         Original Bug: Backend reported 103 qubits instead of 100 because
         zone sites (3) were being counted along with regular qubit sites (100).
         """
         # Get zone site count
-        zone_count = len([s for s in device.sites() if s.is_zone()])
+        zone_count = len([s for s in na_device.sites() if s.is_zone()])
 
         # Get device spec qubit count
-        device_qubits = device.qubits_num()
+        device_qubits = na_device.qubits_num()
 
         # Get backend qubit count
-        backend_qubits = backend.target.num_qubits
+        backend_qubits = na_backend.target.num_qubits
 
         # Backend should NOT equal device_qubits + zone_count
         assert backend_qubits != device_qubits + zone_count, (
@@ -450,7 +468,7 @@ class TestRegressionPrevention:
             f"Backend should report {device_qubits} qubits (from device spec), but reports {backend_qubits}"
         )
 
-    def test_regression_local_multiqubit_ops_not_flat_list(self, backend: QiskitBackend) -> None:  # noqa: PLR6301
+    def test_regression_local_multiqubit_ops_not_flat_list(self, na_backend: QiskitBackend) -> None:  # noqa: PLR6301
         """REGRESSION TEST: Verify local multi-qubit operations don't return flat list.
 
         Original Bug: Local 'cz' operation returned a flat list of 1004 site indices
@@ -458,7 +476,7 @@ class TestRegressionPrevention:
         pairs instead of using device-specific valid combinations.
         """
         # Find local multi-qubit operations
-        for op_name, op_info in backend._capabilities.operations.items():  # noqa: SLF001
+        for op_name, op_info in na_backend._capabilities.operations.items():  # noqa: SLF001
             if not op_info.is_zoned and op_info.qubits_num and op_info.qubits_num > 1:
                 if op_info.sites is None:
                     continue
