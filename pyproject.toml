@@ -166,6 +166,8 @@ filterwarnings = [
   'ignore:.*``qiskit.circuit.instruction.Instruction.condition`` is deprecated as of qiskit 1.3.0.*:DeprecationWarning:',
   # QDMI Qiskit backend informational warnings
   'ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning:',
+  # QDMI device measurement operation warning
+  'ignore:Device does not define a measurement operation.*:UserWarning:',
 ]
 log_cli_level = "INFO"
 testpaths = ["test/python"]

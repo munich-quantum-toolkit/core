@@ -280,7 +280,12 @@ def test_backend_target_operation_names() -> None:
     """Backend target should expose operation names."""
     backend = QiskitBackend()
     op_names = backend.target.operation_names
-    assert "measure" in op_names
+
+    # Check for measure if device provides it
+    if "measure" in backend._capabilities.operations:  # noqa: SLF001
+        assert "measure" in op_names
+
+    # Should have at least some operations from the device
     assert "cz" in op_names or "ry" in op_names or "rz" in op_names
 
 

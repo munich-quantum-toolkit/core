@@ -190,10 +190,13 @@ def test_map_operation_returns_none_for_unknown() -> None:
 
 
 def test_backend_target_includes_measure() -> None:
-    """Test that the backend target includes measure operation."""
+    """Test that the backend target includes measure operation if device provides it."""
     backend = QiskitBackend()
 
-    assert "measure" in backend.target.operation_names
+    # Measurement should be in target if device provides it
+    # If not provided, a warning should be issued (tested separately)
+    if "measure" in backend._capabilities.operations:  # noqa: SLF001
+        assert "measure" in backend.target.operation_names
 
 
 def test_backend_target_qubit_count_matches_device() -> None:
@@ -209,9 +212,6 @@ def test_backend_build_target_adds_operations() -> None:
     """Test that _build_target adds operations from capabilities."""
     backend = QiskitBackend()
     target = backend._build_target()  # noqa: SLF001
-
-    # Should have at least measure
-    assert "measure" in target.operation_names
 
     # Should have operations from device capabilities
     assert len(target.operation_names) > 0

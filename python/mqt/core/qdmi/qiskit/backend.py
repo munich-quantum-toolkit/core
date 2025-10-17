@@ -122,13 +122,12 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
         target = Target(description=f"QDMI device: {self._capabilities.device_name}")
 
-        # Add measurement operation (always supported)
-        target.add_instruction(Measure(), {(i,): None for i in range(self._capabilities.num_qubits)})
-
         # Add operations from device capabilities
         for op_name, op_info in self._capabilities.operations.items():
-            # Skip measurement (already added)
+            # Handle measurement operation
             if op_name == "measure":
+                qargs = self._get_operation_qargs(op_info)
+                target.add_instruction(Measure(), dict.fromkeys(qargs))
                 continue
 
             # Map known operations to Qiskit gates
@@ -158,6 +157,14 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
                 target.add_instruction(gate, dict.fromkeys(qargs, props))
             else:
                 target.add_instruction(gate, dict.fromkeys(qargs))
+
+        # Warn if no measurement operation is defined
+        if "measure" not in self._capabilities.operations:
+            warnings.warn(
+                "Device does not define a measurement operation. This may limit practical usage.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         return target
 
