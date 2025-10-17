@@ -86,17 +86,24 @@ def test_backend_supports_cz_gate(na_backend: QiskitBackend) -> None:
     assert sum(counts.values()) == 100
 
 
-def test_map_operation_pauli_gates() -> None:
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        ("x", "XGate"),
+        ("y", "YGate"),
+        ("z", "ZGate"),
+        ("i", "IGate"),
+        ("id", "IGate"),
+    ],
+)
+def test_map_operation_pauli_gates(op: str, expected: str) -> None:
     """Test mapping of Pauli gates."""
     from qiskit.circuit.library import IGate, XGate, YGate, ZGate
 
     backend = QiskitBackend()
 
-    assert isinstance(backend._map_operation_to_gate("x"), XGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("y"), YGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("z"), ZGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("i"), IGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("id"), IGate)  # noqa: SLF001
+    expected_class = {"XGate": XGate, "YGate": YGate, "ZGate": ZGate, "IGate": IGate}[expected]
+    assert isinstance(backend._map_operation_to_gate(op), expected_class)  # noqa: SLF001
 
 
 def test_map_operation_phase_gates() -> None:
