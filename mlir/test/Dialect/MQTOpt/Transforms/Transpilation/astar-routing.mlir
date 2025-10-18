@@ -347,7 +347,7 @@ module {
 
             scf.yield %q0_3_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
         } else {
-            %q1_1_branch = mqtopt.i() %q1_0_branch: !mqtopt.Qubit
+            %q1_1_branch = mqtopt.i() %q1_0_branch : !mqtopt.Qubit
             %q1_2_branch, %q0_3_branch = mqtopt.x() %q1_1_branch ctrl %q0_2_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
             scf.yield %q0_3_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
