@@ -21,6 +21,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#330)._
 
 ### Added
 
+- ✨ Add A\*-search based routing algorithm to MLIR transpilation routines ([#1237]) ([**@MatthiasReumann**])
 - 👷 Enable testing on Python 3.14 ([#1246]) ([**@denialhaag**])
 - ✨ Add dedicated `PlacementPass` to MLIR transpilation routines ([#1232]) ([**@MatthiasReumann**])
 - ✨ Add an NA-specific FoMaC implementation ([#1223], [#1236]) ([**@ystade**], [**@burgholzer**])
@@ -211,6 +212,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1237]: https://github.com/munich-quantum-toolkit/core/pull/1237
 [#1263]: https://github.com/munich-quantum-toolkit/core/pull/1263
 [#1247]: https://github.com/munich-quantum-toolkit/core/pull/1247
 [#1246]: https://github.com/munich-quantum-toolkit/core/pull/1246

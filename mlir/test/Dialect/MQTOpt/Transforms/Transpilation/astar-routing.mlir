@@ -8,7 +8,7 @@
 
 // Instead of applying CHECKKs, the routing verifier pass ensures the validity of this program.
 
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=random}, route-sc{method=naive},verify-routing-sc)" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity}, route-sc{method=astar},verify-routing-sc)" -verify-diagnostics | FileCheck %s
 
 module {
     // CHECK-LABEL: func.func @entrySABRE
@@ -347,7 +347,7 @@ module {
 
             scf.yield %q0_3_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
         } else {
-            %q1_1_branch = mqtopt.i() %q1_0_branch: !mqtopt.Qubit
+            %q1_1_branch = mqtopt.i() %q1_0_branch : !mqtopt.Qubit
             %q1_2_branch, %q0_3_branch = mqtopt.x() %q1_1_branch ctrl %q0_2_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
             scf.yield %q0_3_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
