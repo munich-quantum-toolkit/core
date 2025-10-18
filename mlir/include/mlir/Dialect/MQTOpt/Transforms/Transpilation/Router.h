@@ -176,7 +176,7 @@ private:
 
   private:
     /**
-     * @brief Calculate the path cost.
+     * @brief Calculate the path cost for the A* search algorithm.
      *
      * The path cost function evaluates the weighted sum of the currently
      * required SWAPs and additionally added depth.
@@ -187,15 +187,17 @@ private:
     }
 
     /**
-     * @brief Calculate heuristic cost.
+     * @brief Calculate the heuristic cost for the A* search algorithm.
      *
-     * The heuristic cost function calculates the nearest neighbour costs.
-     * That is, the amount of SWAPs that a naive router would require.
-     * Gamma acts like a decay.
+     * Computes the minimal number of SWAPs required to route each gate in each
+     * layer. For each gate, this is determined by the shortest distance between
+     * its hardware qubits. Intuitively, this is the number of SWAPs that a
+     * naive router would insert to route the layers.
      *
-     * TODO: Similarly to the LightSABRE algorithm. It should be possible to
-     * calculate the heuristic in O(1) by only considering the change that the
-     * inserted SWAP causes.
+     *
+     * @todo Optimize to O(1) incremental updates by only recalculating costs
+     *       affected by the most recent SWAP, similar to the LightSABRE
+     *       algorithm approach.
      */
     [[nodiscard]] float h(const Layers& layers, const Architecture& arch,
                           const HeuristicWeights& weights) {
