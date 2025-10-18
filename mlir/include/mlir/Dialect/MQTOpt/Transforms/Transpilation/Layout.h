@@ -18,6 +18,7 @@
 #include <utility>
 
 namespace mqt::ir::opt {
+using namespace mlir;
 
 /**
  * @brief A qubit layout that maps program and hardware indices without storing
@@ -107,12 +108,12 @@ protected:
   /**
    * @brief Maps a program qubit index to its hardware index.
    */
-  mlir::SmallVector<QubitIndex> programToHardware_;
+  SmallVector<QubitIndex> programToHardware_;
 
   /**
    * @brief Maps a hardware qubit index to its program index.
    */
-  mlir::SmallVector<QubitIndex> hardwareToProgram_;
+  SmallVector<QubitIndex> hardwareToProgram_;
 };
 
 /**
@@ -133,7 +134,7 @@ public:
    * @param hw The hardware index.
    * @param q The SSA value associated with the indices.
    */
-  void add(QubitIndex prog, QubitIndex hw, mlir::Value q) {
+  void add(QubitIndex prog, QubitIndex hw, Value q) {
     ThinLayout::add(prog, hw);
     qubits_[hw] = q;
     valueToMapping_.try_emplace(q, prog, hw);
@@ -144,7 +145,7 @@ public:
    * @param q The SSA Value representing the qubit.
    * @return The hardware index where this qubit currently resides.
    */
-  [[nodiscard]] QubitIndex lookupHardwareIndex(const mlir::Value q) const {
+  [[nodiscard]] QubitIndex lookupHardwareIndex(const Value q) const {
     const auto it = valueToMapping_.find(q);
     assert(it != valueToMapping_.end() && "lookupHardwareIndex: unknown value");
     return it->second.hw;
@@ -156,7 +157,7 @@ public:
    * @return The SSA value currently representing the qubit at the hardware
    * location.
    */
-  [[nodiscard]] mlir::Value lookupHardwareValue(const QubitIndex hw) const {
+  [[nodiscard]] Value lookupHardwareValue(const QubitIndex hw) const {
     assert(hw < qubits_.size() &&
            "lookupHardwareValue: hardware index out of bounds");
     return qubits_[hw];
@@ -167,7 +168,7 @@ public:
    * @param q The SSA Value representing the qubit.
    * @return The program index where this qubit currently resides.
    */
-  [[nodiscard]] QubitIndex lookupProgramIndex(const mlir::Value q) const {
+  [[nodiscard]] QubitIndex lookupProgramIndex(const Value q) const {
     const auto it = valueToMapping_.find(q);
     assert(it != valueToMapping_.end() && "lookupProgramIndex: unknown value");
     return it->second.prog;
@@ -179,7 +180,7 @@ public:
    * @return The SSA value currently representing the qubit at the program
    * location.
    */
-  [[nodiscard]] mlir::Value lookupProgramValue(const QubitIndex prog) const {
+  [[nodiscard]] Value lookupProgramValue(const QubitIndex prog) const {
     assert(prog < this->programToHardware_.size() &&
            "lookupProgramValue: program index out of bounds");
     return qubits_[this->programToHardware_[prog]];
@@ -190,14 +191,14 @@ public:
    * @param q The SSA Value representing the qubit.
    * @return True if the layout contains the qubit, false otherwise.
    */
-  [[nodiscard]] bool contains(const mlir::Value q) const {
+  [[nodiscard]] bool contains(const Value q) const {
     return valueToMapping_.contains(q);
   }
 
   /**
    * @brief Replace an old SSA value with a new one.
    */
-  void remapQubitValue(const mlir::Value in, const mlir::Value out) {
+  void remapQubitValue(const Value in, const Value out) {
     const auto it = valueToMapping_.find(in);
     assert(it != valueToMapping_.end() &&
            "remapQubitValue: unknown input value");
@@ -216,7 +217,7 @@ public:
    * @brief Swap the locations of two program qubits. This is the effect of a
    * SWAP gate.
    */
-  void swap(const mlir::Value q0, const mlir::Value q1) {
+  void swap(const Value q0, const Value q1) {
     auto it0 = valueToMapping_.find(q0);
     auto it1 = valueToMapping_.find(q1);
     assert(it0 != valueToMapping_.end() && it1 != valueToMapping_.end() &&
@@ -233,16 +234,14 @@ public:
   /**
    * @brief Return the current layout.
    */
-  mlir::ArrayRef<QubitIndex> getCurrentLayout() const {
+  ArrayRef<QubitIndex> getCurrentLayout() const {
     return this->programToHardware_;
   }
 
   /**
    * @brief Return the SSA values for hardware indices from 0...nqubits.
    */
-  [[nodiscard]] mlir::ArrayRef<mlir::Value> getHardwareQubits() const {
-    return qubits_;
-  }
+  [[nodiscard]] ArrayRef<Value> getHardwareQubits() const { return qubits_; }
 
 private:
   struct QubitInfo {
@@ -253,11 +252,11 @@ private:
   /**
    * @brief Maps an SSA value to its `QubitInfo`.
    */
-  mlir::DenseMap<mlir::Value, QubitInfo> valueToMapping_;
+  DenseMap<Value, QubitInfo> valueToMapping_;
 
   /**
    * @brief Maps hardware qubit indices to SSA values.
    */
-  mlir::SmallVector<mlir::Value> qubits_;
+  SmallVector<Value> qubits_;
 };
 } // namespace mqt::ir::opt
