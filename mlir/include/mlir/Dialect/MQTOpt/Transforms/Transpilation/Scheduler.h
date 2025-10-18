@@ -93,7 +93,7 @@ struct ParallelOpScheduler final : SchedulerBase {
             break;
           }
 
-          mlir::TypeSwitch<mlir::Operation*>(user)
+          mlir::TypeSwitch<mlir::Operation*, void>(user)
               .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp op) {
                 /// This assumes that the first n results are the hardw. qubits.
                 head = op->getResult(layoutCopy.lookupHardwareIndex(head));
@@ -112,7 +112,7 @@ struct ParallelOpScheduler final : SchedulerBase {
                     break;
                   }
                 }
-                return true;
+                return;
               })
               .Case<UnitaryInterface>([&](UnitaryInterface op) {
                 if (mlir::isa<GPhaseOp>(op)) {
