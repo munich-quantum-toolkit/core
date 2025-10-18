@@ -1,0 +1,126 @@
+<!--
+ Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ Copyright (c) 2025 Munich Quantum Software Company GmbH
+ All rights reserved.
+
+ SPDX-License-Identifier: MIT
+
+ Licensed under the MIT License
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <defs>
+    <linearGradient id="quartzGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#C792EA;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#9B72CB;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7B52AB;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="quartzGrad2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#E8DAEF;stop-opacity:0.9" />
+      <stop offset="100%" style="stop-color:#9B72CB;stop-opacity:0.5" />
+    </linearGradient>
+    <linearGradient id="quartzGrad3" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#7B52AB;stop-opacity:0.7" />
+      <stop offset="100%" style="stop-color:#D7BDE2;stop-opacity:0.4" />
+    </linearGradient>
+    <radialGradient id="quartzRadial" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#E8DAEF;stop-opacity:0.12" />
+      <stop offset="100%" style="stop-color:#7B52AB;stop-opacity:0.03" />
+    </radialGradient>
+    <filter id="crystalGlow">
+      <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="circleClip">
+      <circle cx="200" cy="200" r="190"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#circleClip)">
+    <!-- Background -->
+    <circle cx="200" cy="200" r="190" fill="url(#quartzRadial)"/>
+
+    <!-- Vertical grid lines (positioned to avoid gates) -->
+    <line x1="55" y1="130" x2="55" y2="270" stroke="#9B72CB" stroke-width="2" opacity="0.2" stroke-dasharray="8,6"/>
+    <line x1="130" y1="130" x2="130" y2="270" stroke="#9B72CB" stroke-width="2" opacity="0.2" stroke-dasharray="8,6"/>
+    <line x1="210" y1="130" x2="210" y2="270" stroke="#9B72CB" stroke-width="2" opacity="0.2" stroke-dasharray="8,6"/>
+    <line x1="345" y1="130" x2="345" y2="270" stroke="#9B72CB" stroke-width="2" opacity="0.2" stroke-dasharray="8,6"/>
+
+    <!-- Three qubit reference lines -->
+    <line x1="40" y1="150" x2="360" y2="150" stroke="#9B72CB" stroke-width="4" opacity="0.5"/>
+    <line x1="40" y1="200" x2="360" y2="200" stroke="#9B72CB" stroke-width="4" opacity="0.55"/>
+    <line x1="40" y1="250" x2="360" y2="250" stroke="#9B72CB" stroke-width="4" opacity="0.5"/>
+
+    <!-- Reference point indicators (fixed references) -->
+    <rect x="33" y="143" width="14" height="14" fill="#7B52AB" opacity="0.7"
+          stroke="#C792EA" stroke-width="2" transform="rotate(45 40 150)"/>
+    <rect x="33" y="193" width="14" height="14" fill="#7B52AB" opacity="0.7"
+          stroke="#C792EA" stroke-width="2" transform="rotate(45 40 200)"/>
+    <rect x="33" y="243" width="14" height="14" fill="#7B52AB" opacity="0.7"
+          stroke="#C792EA" stroke-width="2" transform="rotate(45 40 250)"/>
+
+    <!-- Gate 1: Single qubit gate on q0 -->
+    <path d="M 82 133 L 113 133 L 118 138 L 118 162 L 113 167 L 82 167 L 77 162 L 77 138 Z"
+          fill="url(#quartzGrad2)" stroke="url(#quartzGrad1)" stroke-width="3"
+          opacity="0.88" filter="url(#crystalGlow)"/>
+    <line x1="82" y1="133" x2="88" y2="143" stroke="#C792EA" stroke-width="2" opacity="0.6"/>
+    <line x1="113" y1="133" x2="107" y2="143" stroke="#C792EA" stroke-width="2" opacity="0.6"/>
+    <circle cx="97.5" cy="150" r="4.5" fill="#E8DAEF" opacity="0.85"/>
+
+    <!-- Gate 2: Two-qubit gate connecting q0 and q1 -->
+    <path d="M 157 133 L 188 133 L 193 138 L 193 212 L 188 217 L 157 217 L 152 212 L 152 138 Z"
+          fill="url(#quartzGrad3)" stroke="url(#quartzGrad1)" stroke-width="3"
+          opacity="0.9" filter="url(#crystalGlow)"/>
+    <line x1="157" y1="133" x2="165" y2="148" stroke="#9B72CB" stroke-width="2" opacity="0.5"/>
+    <line x1="188" y1="133" x2="180" y2="148" stroke="#9B72CB" stroke-width="2" opacity="0.5"/>
+    <line x1="165" y1="148" x2="180" y2="148" stroke="#9B72CB" stroke-width="2" opacity="0.5"/>
+    <line x1="172.5" y1="148" x2="172.5" y2="202" stroke="#9B72CB" stroke-width="2" opacity="0.4"/>
+    <line x1="157" y1="217" x2="165" y2="202" stroke="#9B72CB" stroke-width="2" opacity="0.5"/>
+    <line x1="188" y1="217" x2="180" y2="202" stroke="#9B72CB" stroke-width="2" opacity="0.5"/>
+    <line x1="165" y1="202" x2="180" y2="202" stroke="#9B72CB" stroke-width="2" opacity="0.5"/>
+    <rect x="168" y="145" width="9" height="9" fill="#C792EA" opacity="0.8" transform="rotate(45 172.5 150)"/>
+    <circle cx="172.5" cy="150" r="2.5" fill="#E8DAEF" opacity="0.95"/>
+    <rect x="168" y="195" width="9" height="9" fill="#C792EA" opacity="0.8" transform="rotate(45 172.5 200)"/>
+    <circle cx="172.5" cy="200" r="2.5" fill="#E8DAEF" opacity="0.95"/>
+
+    <!-- Gate 3: Single qubit gate on q2 -->
+    <path d="M 232 233 L 263 233 L 268 238 L 268 262 L 263 267 L 232 267 L 227 262 L 227 238 Z"
+          fill="url(#quartzGrad2)" stroke="url(#quartzGrad1)" stroke-width="3"
+          opacity="0.88" filter="url(#crystalGlow)"/>
+    <line x1="232" y1="233" x2="238" y2="243" stroke="#C792EA" stroke-width="2" opacity="0.6"/>
+    <line x1="263" y1="233" x2="257" y2="243" stroke="#C792EA" stroke-width="2" opacity="0.6"/>
+    <circle cx="247.5" cy="250" r="4.5" fill="#E8DAEF" opacity="0.85"/>
+
+    <!-- Gate 4: Three-qubit gate (spanning all qubits) -->
+    <path d="M 292 133 L 323 133 L 328 138 L 328 262 L 323 267 L 292 267 L 287 262 L 287 138 Z"
+          fill="url(#quartzGrad3)" stroke="url(#quartzGrad1)" stroke-width="3"
+          opacity="0.92" filter="url(#crystalGlow)"/>
+    <line x1="292" y1="133" x2="300" y2="148" stroke="#9B72CB" stroke-width="2" opacity="0.5"/>
+    <line x1="323" y1="133" x2="315" y2="148" stroke="#9B72CB" stroke-width="2" opacity="0.5"/>
+    <line x1="300" y1="148" x2="315" y2="148" stroke="#9B72CB" stroke-width="2" opacity="0.5"/>
+    <line x1="307.5" y1="148" x2="307.5" y2="252" stroke="#9B72CB" stroke-width="2" opacity="0.4"/>
+    <line x1="292" y1="267" x2="300" y2="252" stroke="#9B72CB" stroke-width="2" opacity="0.5"/>
+    <line x1="323" y1="267" x2="315" y2="252" stroke="#9B72CB" stroke-width="2" opacity="0.5"/>
+    <line x1="300" y1="252" x2="315" y2="252" stroke="#9B72CB" stroke-width="2" opacity="0.5"/>
+    <rect x="303" y="145" width="9" height="9" fill="#C792EA" opacity="0.85" transform="rotate(45 307.5 150)"/>
+    <circle cx="307.5" cy="150" r="2.5" fill="#E8DAEF" opacity="0.98"/>
+    <rect x="303" y="195" width="9" height="9" fill="#C792EA" opacity="0.85" transform="rotate(45 307.5 200)"/>
+    <circle cx="307.5" cy="200" r="2.5" fill="#E8DAEF" opacity="0.98"/>
+    <rect x="303" y="245" width="9" height="9" fill="#C792EA" opacity="0.85" transform="rotate(45 307.5 250)"/>
+    <circle cx="307.5" cy="250" r="2.5" fill="#E8DAEF" opacity="0.98"/>
+
+    <!-- Sequential flow arrow (properly aligned) -->
+    <line x1="350" y1="200" x2="368" y2="200" stroke="#9B72CB" stroke-width="3.5" opacity="0.5" stroke-linecap="square"/>
+    <path d="M 358 193 L 368 200 L 358 207 Z" fill="#9B72CB" opacity="0.5"/>
+
+    <!-- Text label -->
+    <text x="200" y="345" font-family="Arial Black, Arial, sans-serif" font-size="48" font-weight="900"
+          fill="url(#quartzGrad1)" text-anchor="middle" letter-spacing="7">QUARTZ</text>
+  </g>
+
+  <!-- Circle border -->
+  <circle cx="200" cy="200" r="190" fill="none" stroke="url(#quartzGrad1)" stroke-width="2" opacity="0.5"/>
+</svg>
