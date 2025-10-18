@@ -119,17 +119,17 @@ def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
              clEnumValN(RoutingMethod::Naive, "naive", "Swap along shortest paths"),
              clEnumValN(RoutingMethod::AStar, "astar", "A*-search-based routing algorithm"))}]>,
     Option<"nlookahead", "nlookahead", "std::size_t", "1",
-           "qmap option: Number of lookahead steps (heuristic horizon)">,
+           "astar option: Number of lookahead steps (heuristic horizon)">,
     Option<"alpha", "alpha", "float", "1.0F",
-           "qmap option: The alpha factor in the cost function">,
+           "astar option: The alpha factor in the cost function">,
     Option<"beta", "beta", "float", "1.0F",
-           "qmap option: The beta factor in the cost function">,
+           "astar option: The beta factor in the cost function">,
     Option<"lambda", "lambda", "float", "0.5F",
-           "qmap option: The lambda factor in the cost function">
+           "astar option: The lambda factor in the cost function">
   ];
   let statistics = [
-    Statistic<"n_swaps", "n-additional-swaps", "The number of additional SWAPs">,
-    Statistic<"t_ms", "runtime-milliseconds", "The runtime in milliseconds">
+    Statistic<"numSwaps", "num-additional-swaps", "The number of additional SWAPs">,
+    Statistic<"msTime", "runtime-milliseconds", "The runtime in milliseconds">
   ];
 }
 
