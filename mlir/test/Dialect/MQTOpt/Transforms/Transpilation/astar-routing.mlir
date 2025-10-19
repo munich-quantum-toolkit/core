@@ -6,7 +6,7 @@
 //
 // Licensed under the MIT License
 
-// Instead of applying CHECKKs, the routing verifier pass ensures the validity of this program.
+// Instead of applying checks, the routing verifier pass ensures the validity of this program.
 
 // RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity}, route-sc{method=astar},verify-routing-sc)" -verify-diagnostics | FileCheck %s
 
@@ -94,8 +94,10 @@ module {
         %q0_3, %m0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         %q1_2, %m1_0 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-        mqtopt.deallocQubit %q0_3
-        mqtopt.deallocQubit %q1_2
+        %q0_4, %q1_3 = mqtopt.barrier() %q0_3, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
+
+        mqtopt.deallocQubit %q0_4
+        mqtopt.deallocQubit %q1_3
 
         return
     }
