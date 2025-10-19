@@ -71,25 +71,27 @@ matrix4x4 zgemm2(matrix4x4 a, matrix4x4 b) {
 }
 
 int zgemm_(char* transa, char* transb, integer* m, integer* n, integer* k,
-           doublecomplex* alpha, doublecomplex* a, integer* lda,
-           doublecomplex* b, integer* ldb, doublecomplex* beta,
-           doublecomplex* c__, integer* ldc);
+           doublecomplex* alpha, matrix4x4 a, integer* lda,
+           matrix4x4 b, integer* ldb, doublecomplex* beta,
+           matrix4x4& c__, integer* ldc);
 matrix4x4 zgemm(matrix4x4 a, matrix4x4 b) {
   qfp alpha{1.0, 0.0};
   qfp beta{1.0, 0.0};
   int dimension = 4;
-  matrix4x4 result;
-  zgemm_("n", "n", &dimension, &dimension, &dimension, &alpha, a.data(),
-         &dimension, b.data(), &dimension, &beta, result.data(), &dimension);
+  matrix4x4 result{};
+  // zgemm_("n", "n", &dimension, &dimension, &dimension, &alpha, a.data(),
+  //        &dimension, b.data(), &dimension, &beta, result.data(), &dimension);
+  zgemm_("N", "N", &dimension, &dimension, &dimension, &alpha, a,
+         &dimension, b, &dimension, &beta, result, &dimension);
   return result;
 }
 
 void d_cnjg(doublecomplex* r, doublecomplex* z) { *r = std::conj(*z); }
 
 /* Subroutine */ int zgemm_(char* transa, char* transb, integer* m, integer* n,
-                            integer* k, doublecomplex* alpha, doublecomplex* a,
-                            integer* lda, doublecomplex* b, integer* ldb,
-                            doublecomplex* beta, doublecomplex* c__,
+                            integer* k, doublecomplex* alpha, matrix4x4 a,
+                            integer* lda, matrix4x4 b, integer* ldb,
+                            doublecomplex* beta, matrix4x4& c__,
                             integer* ldc) {
   /* System generated locals */
   integer a_dim1, a_offset, b_dim1, b_offset, c_dim1, c_offset, i__1, i__2,
@@ -242,13 +244,13 @@ void d_cnjg(doublecomplex* r, doublecomplex* z) { *r = std::conj(*z); }
   /* Parameter adjustments */
   a_dim1 = *lda;
   a_offset = 1 + a_dim1;
-  a -= a_offset;
+  // a -= a_offset;
   b_dim1 = *ldb;
   b_offset = 1 + b_dim1;
-  b -= b_offset;
+  // b -= b_offset;
   c_dim1 = *ldc;
   c_offset = 1 + c_dim1;
-  c__ -= c_offset;
+  // c__ -= c_offset;
 
   /* Function Body */
   nota = lsame_(transa, "N");
@@ -346,7 +348,7 @@ void d_cnjg(doublecomplex* r, doublecomplex* z) { *r = std::conj(*z); }
           i__2 = *m;
           for (i__ = 1; i__ <= i__2; ++i__) {
             i__3 = i__ + j * c_dim1;
-            c__[i__3].real(0.), c__[i__3].imag(0.);
+            c__[i__3 - c_offset].real(0.), c__[i__3 - c_offset].imag(0.);
             /* L50: */
           }
         } else if (beta->real() != 1. || beta->imag() != 0.) {
@@ -354,36 +356,36 @@ void d_cnjg(doublecomplex* r, doublecomplex* z) { *r = std::conj(*z); }
           for (i__ = 1; i__ <= i__2; ++i__) {
             i__3 = i__ + j * c_dim1;
             i__4 = i__ + j * c_dim1;
-            z__1.real(beta->real() * c__[i__4].real() -
-                      beta->imag() * c__[i__4].imag()),
-                z__1.imag(beta->real() * c__[i__4].imag() +
-                          beta->imag() * c__[i__4].real());
-            c__[i__3].real(z__1.real()), c__[i__3].imag(z__1.imag());
+            z__1.real(beta->real() * c__[i__4 - c_offset].real() -
+                      beta->imag() * c__[i__4 - c_offset].imag()),
+                z__1.imag(beta->real() * c__[i__4 - c_offset].imag() +
+                          beta->imag() * c__[i__4 - c_offset].real());
+            c__[i__3 - c_offset].real(z__1.real()), c__[i__3 - c_offset].imag(z__1.imag());
             /* L60: */
           }
         }
         i__2 = *k;
         for (l = 1; l <= i__2; ++l) {
           i__3 = l + j * b_dim1;
-          if (b[i__3].real() != 0. || b[i__3].imag() != 0.) {
+          if (b[i__3 - b_offset].real() != 0. || b[i__3 - b_offset].imag() != 0.) {
             i__3 = l + j * b_dim1;
-            z__1.real(alpha->real() * b[i__3].real() -
-                      alpha->imag() * b[i__3].imag()),
-                z__1.imag(alpha->real() * b[i__3].imag() +
-                          alpha->imag() * b[i__3].real());
+            z__1.real(alpha->real() * b[i__3 - b_offset].real() -
+                      alpha->imag() * b[i__3 - b_offset].imag()),
+                z__1.imag(alpha->real() * b[i__3 - b_offset].imag() +
+                          alpha->imag() * b[i__3 - b_offset].real());
             temp.real(z__1.real()), temp.imag(z__1.imag());
             i__3 = *m;
             for (i__ = 1; i__ <= i__3; ++i__) {
               i__4 = i__ + j * c_dim1;
               i__5 = i__ + j * c_dim1;
               i__6 = i__ + l * a_dim1;
-              z__2.real(temp.real() * a[i__6].real() -
-                        temp.imag() * a[i__6].imag()),
-                  z__2.imag(temp.real() * a[i__6].imag() +
-                            temp.imag() * a[i__6].real());
-              z__1.real(c__[i__5].real() + z__2.real()),
-                  z__1.imag(c__[i__5].imag() + z__2.imag());
-              c__[i__4].real(z__1.real()), c__[i__4].imag(z__1.imag());
+              z__2.real(temp.real() * a[i__6 - a_offset].real() -
+                        temp.imag() * a[i__6 - a_offset].imag()),
+                  z__2.imag(temp.real() * a[i__6 - a_offset].imag() +
+                            temp.imag() * a[i__6 - a_offset].real());
+              z__1.real(c__[i__5 - c_offset].real() + z__2.real()),
+                  z__1.imag(c__[i__5 - c_offset].imag() + z__2.imag());
+              c__[i__4 - c_offset].real(z__1.real()), c__[i__4 - c_offset].imag(z__1.imag());
               /* L70: */
             }
           }
@@ -419,7 +421,7 @@ void d_cnjg(doublecomplex* r, doublecomplex* z) { *r = std::conj(*z); }
                       alpha->imag() * temp.imag()),
                 z__1.imag(alpha->real() * temp.imag() +
                           alpha->imag() * temp.real());
-            c__[i__3].real(z__1.real()), c__[i__3].imag(z__1.imag());
+            c__[i__3 - c_offset].real(z__1.real()), c__[i__3 - c_offset].imag(z__1.imag());
           } else {
             i__3 = i__ + j * c_dim1;
             z__2.real(alpha->real() * temp.real() -
@@ -427,13 +429,13 @@ void d_cnjg(doublecomplex* r, doublecomplex* z) { *r = std::conj(*z); }
                 z__2.imag(alpha->real() * temp.imag() +
                           alpha->imag() * temp.real());
             i__4 = i__ + j * c_dim1;
-            z__3.real(beta->real() * c__[i__4].real() -
-                      beta->imag() * c__[i__4].imag()),
-                z__3.imag(beta->real() * c__[i__4].imag() +
-                          beta->imag() * c__[i__4].real());
+            z__3.real(beta->real() * c__[i__4 - c_offset].real() -
+                      beta->imag() * c__[i__4 - c_offset].imag()),
+                z__3.imag(beta->real() * c__[i__4 - c_offset].imag() +
+                          beta->imag() * c__[i__4 - c_offset].real());
             z__1.real(z__2.real() + z__3.real()),
                 z__1.imag(z__2.imag() + z__3.imag());
-            c__[i__3].real(z__1.real()), c__[i__3].imag(z__1.imag());
+            c__[i__3 - c_offset].real(z__1.real()), c__[i__3 - c_offset].imag(z__1.imag());
           }
           /* L110: */
         }
@@ -879,7 +881,6 @@ static matrix4x4 transpose(const matrix4x4& matrix) {
 }
 
 int main() {
-
   matrix4x4 a = {qfp(0.3535533905932738, +0.35355339059327373),
                  qfp(-0.35355339059327373, +0.3535533905932738),
                  qfp(-0.35355339059327373, +0.3535533905932738),
@@ -899,5 +900,5 @@ int main() {
 
   // print(multiply(transpose(a), transpose(transpose(a))));
   // print(syrk(false, 1.0, transpose(a), 0.0));
-  print(zgemm2(transpose(a), a));
+  print(zgemm(transpose(a), a));
 }
