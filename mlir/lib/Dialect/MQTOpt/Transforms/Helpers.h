@@ -23,9 +23,11 @@ namespace mqt::ir::opt {
   using fp = long double;
   using qfp = std::complex<fp>;
   using diagonal4x4 = std::array<qfp, 4>;
+  using rdiagonal4x4 = std::array<fp, 4>;
   using vector2d = std::vector<qfp>;
   using matrix2x2 = std::array<qfp, 4>;
   using matrix4x4 = std::array<qfp, 16>;
+  using rmatrix4x4 = std::array<fp, 16>;
 } // namespace mqt::ir::opt
 
 namespace mqt::ir::opt::helpers {
