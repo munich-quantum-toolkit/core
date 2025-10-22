@@ -13,6 +13,7 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <memory>
@@ -62,6 +63,7 @@ public:
 
   /**
    * @brief Collect the shortest path between @p u and @p v.
+   * @returns The path from the destination (v) to source (u) qubit.
    */
   [[nodiscard]] llvm::SmallVector<std::size_t>
   shortestPathBetween(QubitIndex u, QubitIndex v) const;
