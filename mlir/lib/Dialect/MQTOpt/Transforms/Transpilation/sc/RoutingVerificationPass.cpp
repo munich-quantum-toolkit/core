@@ -117,9 +117,7 @@ WalkResult handleIf(scf::IfOp op, VerificationContext& ctx) {
  */
 WalkResult handleYield(scf::YieldOp op, VerificationContext& ctx) {
   if (isa<scf::ForOp>(op->getParentOp()) || isa<scf::IfOp>(op->getParentOp())) {
-    if (ctx.stack.size() < 2) {
-      return op->emitOpError() << "expected at least two elements on stack.";
-    }
+    assert(ctx.stack.size() >= 2 && "expected at least two elements on stack.");
 
     if (!llvm::equal(ctx.stack.top().getCurrentLayout(),
                      ctx.stack.getItemAtDepth(1).getCurrentLayout())) {
@@ -156,13 +154,14 @@ WalkResult handleUnitary(UnitaryInterface op, VerificationContext& ctx) {
     return WalkResult::advance();
   }
 
-  if (nacts > 2) {
-    if (isa<BarrierOp>(op)) {
-      for (const auto [in, out] : llvm::zip(inQubits, outQubits)) {
-        ctx.stack.top().remapQubitValue(in, out);
-      }
-      return WalkResult::advance();
+  if (isa<BarrierOp>(op)) {
+    for (const auto [in, out] : llvm::zip(inQubits, outQubits)) {
+      ctx.stack.top().remapQubitValue(in, out);
     }
+    return WalkResult::advance();
+  }
+
+  if (nacts > 2) {
     return op->emitOpError() << "acts on more than two qubits";
   }
 

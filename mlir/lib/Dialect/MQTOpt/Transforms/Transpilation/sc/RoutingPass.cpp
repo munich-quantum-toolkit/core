@@ -341,14 +341,15 @@ WalkResult handleUnitary(UnitaryInterface op, Mapper& mapper,
     return WalkResult::advance();
   }
 
+  if (isa<BarrierOp>(op)) {
+    for (const auto [in, out] : llvm::zip(inQubits, outQubits)) {
+      mapper.stack().top().remapQubitValue(in, out);
+    }
+    return WalkResult::advance();
+  }
+
   /// Expect two-qubit gate decomposition.
   if (nacts > 2) {
-    if (isa<BarrierOp>(op)) {
-      for (const auto [in, out] : llvm::zip(inQubits, outQubits)) {
-        mapper.stack().top().remapQubitValue(in, out);
-      }
-      return WalkResult::advance();
-    }
     return op->emitOpError() << "acts on more than two qubits";
   }
 
