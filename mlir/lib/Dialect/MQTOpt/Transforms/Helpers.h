@@ -40,7 +40,8 @@ constexpr qfp M_IM{0., -1.};
 namespace mqt::ir::opt::helpers {
 
 // TODO: remove
-template <std::size_t N> void print(std::array<std::complex<fp>, N> matrix, std::string s = "") {
+template <std::size_t N>
+void print(std::array<std::complex<fp>, N> matrix, std::string s = "") {
   int i{};
   if (!s.empty()) {
     llvm::errs() << "=== " << s << " ===\n";
@@ -54,7 +55,8 @@ template <std::size_t N> void print(std::array<std::complex<fp>, N> matrix, std:
   llvm::errs() << '\n';
 }
 
-template <std::size_t N> void print(std::array<fp, N> matrix, std::string s = "") {
+template <std::size_t N>
+void print(std::array<fp, N> matrix, std::string s = "") {
   int i{};
   if (!s.empty()) {
     llvm::errs() << "=== " << s << " ===\n";
@@ -375,7 +377,8 @@ auto submatrix(Container&& matrix, int rowStart, int columnStart, int numRows,
   std::vector<ValueType<Container>> result(numRows * numColumns);
   for (int i = 0; i < numColumns; ++i) {
     for (int j = 0; j < numRows; ++j) {
-      result[j * numColumns + i] = matrix[(rowStart + j) * n + (columnStart + i)];
+      result[j * numColumns + i] =
+          matrix[(rowStart + j) * n + (columnStart + i)];
     }
   }
   return result;

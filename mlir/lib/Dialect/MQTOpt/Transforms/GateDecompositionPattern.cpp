@@ -9,6 +9,7 @@
  */
 
 #include "Helpers.h"
+#include "d.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
@@ -24,8 +25,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <string>
-
-#include "d.h"
 
 namespace mqt::ir::opt {
 
@@ -48,7 +47,8 @@ struct GateDecompositionPattern final
       return mlir::failure();
     }
 
-    matrix4x4 unitaryMatrix = helpers::kroneckerProduct(identityGate, identityGate);
+    matrix4x4 unitaryMatrix =
+        helpers::kroneckerProduct(identityGate, identityGate);
     for (auto&& gate : series) {
       auto gateMatrix = getTwoQubitMatrix({.type = helpers::getQcType(gate),
                                            .parameter = {/*TODO*/},
@@ -329,10 +329,10 @@ struct GateDecompositionPattern final
 
   static std::tuple<matrix2x2, matrix2x2, fp>
   decompose_two_qubit_product_gate(matrix4x4 special_unitary) {
-      using helpers::dot;
-      using helpers::kroneckerProduct;
-      using helpers::transpose_conjugate;
-      using helpers::determinant;
+    using helpers::determinant;
+    using helpers::dot;
+    using helpers::kroneckerProduct;
+    using helpers::transpose_conjugate;
     // first quadrant
     matrix2x2 r = {special_unitary[0 * 4 + 0], special_unitary[0 * 4 + 1],
                    special_unitary[1 * 4 + 0], special_unitary[1 * 4 + 1]};
@@ -375,7 +375,7 @@ struct GateDecompositionPattern final
 
   static matrix4x4 magic_basis_transform(const matrix4x4& unitary,
                                          MagicBasisTransform direction) {
-      using helpers::dot;
+    using helpers::dot;
     constexpr matrix4x4 B_NON_NORMALIZED = {
         C_ONE,  IM,     C_ZERO, C_ZERO,  C_ZERO, C_ZERO, IM,     C_ONE,
         C_ZERO, C_ZERO, IM,     C_M_ONE, C_ONE,  M_IM,   C_ZERO, C_ZERO,
@@ -545,10 +545,10 @@ struct GateDecompositionPattern final
     static TwoQubitWeylDecomposition
     new_inner(matrix4x4 unitary_matrix, std::optional<fp> fidelity,
               std::optional<Specialization> _specialization) {
-      using helpers::dot;
       using helpers::determinant;
-      using helpers::transpose;
       using helpers::diagonal;
+      using helpers::dot;
+      using helpers::transpose;
       auto& u = unitary_matrix;
       auto det_u = determinant(u);
       auto det_pow = std::pow(det_u, static_cast<fp>(-0.25));
@@ -565,11 +565,11 @@ struct GateDecompositionPattern final
       helpers::print(m2);
 
       arma::Mat<qfp> U(4, 4);
-  for (int i = 0; i < 4; ++i) {
-    for (int j = 0; j < 4; ++j) {
-      U.at(j, i) = u_p[j * 4 + i];
-    }
-  }
+      for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+          U.at(j, i) = u_p[j * 4 + i];
+        }
+      }
       auto x = U.st() * U;
       std::cerr << "ARMA\n" << U.t() << "\n\n" << U << "\n\n" << x << std::endl;
 
@@ -1407,7 +1407,7 @@ struct GateDecompositionPattern final
     decomp0_inner(const TwoQubitWeylDecomposition& target) const {
       using helpers::dot;
       return {
-        dot(target.K1r, target.K2r),
+          dot(target.K1r, target.K2r),
           dot(target.K1l, target.K2l),
       };
     }

@@ -1,3 +1,13 @@
+/*
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
 #pragma once
 
 #include "Helpers.h"
@@ -140,7 +150,8 @@ void tridiagonalization_inplace(rmatrix4x4& mat, rdiagonal4x4& hCoeffs) {
     auto updatedMatrix = bottomRightCorner(mat, remainingSize, remainingSize);
     updatedMatrix = lowerSelfadjointView(updatedMatrix);
     updatedMatrix = rankUpdate(
-        updatedMatrix, helpers::submatrix(mat, n - remainingSize, i, remainingSize, 1),
+        updatedMatrix,
+        helpers::submatrix(mat, n - remainingSize, i, remainingSize, 1),
         std::vector<fp>{hCoeffs.begin() + (n - remainingSize), hCoeffs.end()},
         -1.0);
     // update bottom right corner
@@ -369,8 +380,8 @@ void householderSequenceEval(rmatrix4x4& m_vectors,
       llvm::copy(tmp2, matrix.begin());
 
       tmp2 = helpers::add(
-          bottom, helpers::multiply(-tau, helpers::multiply(essential, tmp,
-                                                            1)));
+          bottom,
+          helpers::multiply(-tau, helpers::multiply(essential, tmp, 1)));
       // insert all rows except first row
       llvm::copy(tmp2, matrix.begin() + n);
     }
