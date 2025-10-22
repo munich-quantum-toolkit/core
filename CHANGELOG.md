@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+### Added
+
+- ✨ Add A\*-search based routing algorithm to MLIR transpilation routines ([#1237]) ([**@MatthiasReumann**])
+
 ### Fixed
 
 - 🐛 Allow integer QASM version declarations ([#1269]) ([**@denialhaag**])
@@ -25,7 +29,6 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#330)._
 
 ### Added
 
-- ✨ Add A\*-search based routing algorithm to MLIR transpilation routines ([#1237]) ([**@MatthiasReumann**])
 - 👷 Enable testing on Python 3.14 ([#1246]) ([**@denialhaag**])
 - ✨ Add dedicated `PlacementPass` to MLIR transpilation routines ([#1232]) ([**@MatthiasReumann**])
 - ✨ Add an NA-specific FoMaC implementation ([#1223], [#1236]) ([**@ystade**], [**@burgholzer**])
