@@ -1745,21 +1745,21 @@ struct GateDecompositionPattern final
                                           const matrix2x2& unitaryMatrix,
                                           bool simplify,
                                           std::optional<fp> atol) {
-      auto [theta, phi, lamda, phase] =
+      auto [theta, phi, lambda, phase] =
           angles_from_unitary(unitaryMatrix, target_basis);
 
       switch (target_basis) {
       case EulerBasis::ZYZ:
-        return calculateRotationGates(theta, phi, lamda, phase, qc::RZ, qc::RY,
+        return calculateRotationGates(theta, phi, lambda, phase, qc::RZ, qc::RY,
                                       simplify, atol);
       case EulerBasis::ZXZ:
-        return calculateRotationGates(theta, phi, lamda, phase, qc::RZ, qc::RX,
+        return calculateRotationGates(theta, phi, lambda, phase, qc::RZ, qc::RX,
                                       simplify, atol);
       case EulerBasis::XZX:
-        return calculateRotationGates(theta, phi, lamda, phase, qc::RX, qc::RZ,
+        return calculateRotationGates(theta, phi, lambda, phase, qc::RX, qc::RZ,
                                       simplify, atol);
       case EulerBasis::XYX:
-        return calculateRotationGates(theta, phi, lamda, phase, qc::RX, qc::RY,
+        return calculateRotationGates(theta, phi, lambda, phase, qc::RX, qc::RY,
                                       simplify, atol);
       default:
         // TODO: allow other bases
