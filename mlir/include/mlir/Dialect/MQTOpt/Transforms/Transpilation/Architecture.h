@@ -10,7 +10,10 @@
 
 #pragma once
 
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
+
 #include <cstddef>
+#include <cstdint>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <memory>
@@ -22,9 +25,7 @@ namespace mqt::ir::opt {
 /**
  * @brief Enumerates the available target architectures.
  */
-enum class ArchitectureName : std::uint8_t {
-  MQTTest,
-};
+enum class ArchitectureName : std::uint8_t { MQTTest };
 
 /**
  * @brief A quantum accelerator's architecture.
@@ -32,7 +33,7 @@ enum class ArchitectureName : std::uint8_t {
  */
 class Architecture {
 public:
-  using CouplingMap = llvm::DenseSet<std::pair<std::size_t, std::size_t>>;
+  using CouplingMap = llvm::DenseSet<std::pair<QubitIndex, QubitIndex>>;
 
   explicit Architecture(std::string name, std::size_t nqubits,
                         CouplingMap couplingMap)
@@ -56,15 +57,26 @@ public:
   /**
    * @brief Return true if @p u and @p v are adjacent.
    */
-  [[nodiscard]] bool areAdjacent(std::size_t u, std::size_t v) const {
+  [[nodiscard]] bool areAdjacent(QubitIndex u, QubitIndex v) const {
     return couplingMap_.contains({u, v});
   }
 
   /**
    * @brief Collect the shortest path between @p u and @p v.
+   * @returns The path from the destination (v) to source (u) qubit.
    */
   [[nodiscard]] llvm::SmallVector<std::size_t>
-  shortestPathBetween(std::size_t u, std::size_t v) const;
+  shortestPathBetween(QubitIndex u, QubitIndex v) const;
+
+  /**
+   * @brief Return the length of the shortest path between @p u and @p v.
+   */
+  [[nodiscard]] std::size_t distanceBetween(QubitIndex u, QubitIndex v) const;
+
+  /**
+   * @brief Collect all neighbours of @p u.
+   */
+  [[nodiscard]] llvm::SmallVector<QubitIndex> neighboursOf(QubitIndex u) const;
 
 private:
   using Matrix = llvm::SmallVector<llvm::SmallVector<std::size_t>>;
