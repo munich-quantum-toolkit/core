@@ -25,7 +25,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <string>
 
-#include "b.h"
+#include "d.h"
 
 namespace mqt::ir::opt {
 
@@ -324,7 +324,7 @@ struct GateDecompositionPattern final
 
     auto [U, S] = self_adjoint_evd(A);
 
-    return {U, S};
+    return std::make_pair(U, S);
   }
 
   static std::tuple<matrix2x2, matrix2x2, fp>
@@ -564,6 +564,15 @@ struct GateDecompositionPattern final
       llvm::errs() << "===== M2 =====\n";
       helpers::print(m2);
 
+      arma::Mat<qfp> U(4, 4);
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
+      U.at(j, i) = u_p[j * 4 + i];
+    }
+  }
+      auto x = U.st() * U;
+      std::cerr << "ARMA\n" << U.t() << "\n\n" << U << "\n\n" << x << std::endl;
+
       // M2 is a symmetric complex matrix. We need to decompose it as M2 = P D
       // P^T where P ∈ SO(4), D is diagonal with unit-magnitude elements.
       //
@@ -603,7 +612,7 @@ struct GateDecompositionPattern final
         llvm::transform(m2, m2_real.begin(), [&](const qfp& val) {
           return rand_a * val.real() + rand_b * val.imag();
         });
-        auto p_inner_real = self_adjoint_eigen_lower(m2_real).first;
+        rmatrix4x4 p_inner_real = self_adjoint_eigen_lower(m2_real).first;
         matrix4x4 p_inner;
         llvm::transform(p_inner_real, p_inner.begin(),
                         [](auto&& x) { return qfp(x, 0.0); });
@@ -638,6 +647,7 @@ struct GateDecompositionPattern final
       std::array<fp, d.size()> d_real;
       llvm::transform(d, d_real.begin(),
                       [](auto&& x) { return -std::arg(x) / 2.0; });
+      helpers::print(d_real, "D_REAL");
       d_real[3] = -d_real[0] - d_real[1] - d_real[2];
       std::array<fp, 3> cs;
       for (std::size_t i = 0; i < cs.size(); ++i) {
@@ -680,6 +690,7 @@ struct GateDecompositionPattern final
       temp[1 * 4 + 1] = std::exp(IM * d_real[1]);
       temp[2 * 4 + 2] = std::exp(IM * d_real[2]);
       temp[3 * 4 + 3] = std::exp(IM * d_real[3]);
+      helpers::print(temp, "TEMP");
       auto k1 = magic_basis_transform(dot(dot(u_p, p), temp),
                                       MagicBasisTransform::Into);
       auto k2 = magic_basis_transform(transpose(p), MagicBasisTransform::Into);

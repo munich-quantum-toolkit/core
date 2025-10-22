@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
-set(LIBRARIES ${dialect_libs} MQT::CoreIR MQT::CoreDD)
+set(LIBRARIES ${dialect_libs} MQT::CoreIR MQT::CoreDD Armadillo::Armadillo)
 add_compile_options(-fexceptions)
 
 file(GLOB_RECURSE TRANSFORMS_SOURCES *.cpp)

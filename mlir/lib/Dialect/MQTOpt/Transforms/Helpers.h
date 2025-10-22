@@ -40,10 +40,27 @@ constexpr qfp M_IM{0., -1.};
 namespace mqt::ir::opt::helpers {
 
 // TODO: remove
-template <std::size_t N> void print(std::array<std::complex<fp>, N> matrix) {
+template <std::size_t N> void print(std::array<std::complex<fp>, N> matrix, std::string s = "") {
   int i{};
+  if (!s.empty()) {
+    llvm::errs() << "=== " << s << " ===\n";
+  }
   for (auto&& a : matrix) {
-    std::cerr << std::setprecision(50) << a.real() << 'i' << a.imag() << ' ';
+    std::cerr << std::setprecision(17) << a.real() << 'i' << a.imag() << ' ';
+    if (++i % 4 == 0) {
+      llvm::errs() << '\n';
+    }
+  }
+  llvm::errs() << '\n';
+}
+
+template <std::size_t N> void print(std::array<fp, N> matrix, std::string s = "") {
+  int i{};
+  if (!s.empty()) {
+    llvm::errs() << "=== " << s << " ===\n";
+  }
+  for (auto&& a : matrix) {
+    std::cerr << std::setprecision(17) << a << ' ';
     if (++i % 4 == 0) {
       llvm::errs() << '\n';
     }
