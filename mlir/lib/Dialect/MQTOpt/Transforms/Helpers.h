@@ -252,6 +252,8 @@ template <typename T>
   int rowsLhs = lhs.size() / columnsLhs;
   int rowsRhs = columnsLhs;
   int columnsRhs = rhs.size() / rowsRhs;
+  assert(rowsLhs * columnsLhs == lhs.size());
+  assert(rowsRhs * columnsRhs == rhs.size());
 
   std::vector<T> result(rowsLhs * columnsRhs, T{});
   for (int i = 0; i < rowsLhs; i++) {
@@ -364,15 +366,15 @@ auto submatrix(Container&& matrix, int rowStart, int columnStart, int numRows,
 
 template <typename Lhs, typename Rhs>
 auto assignSubmatrix(Lhs&& lhs, Rhs&& rhs, int rowStart, int columnStart,
-                     int rowSize, int columnSize) {
+                     int numRows, int numColumns) {
   const int n = std::sqrt(lhs.size());
-  assert((rowStart + rowSize) < n);
-  assert((columnStart + columnSize) < n);
-  assert(columnSize * rowSize == rhs.size());
+  assert((rowStart + numRows) <= n);
+  assert((columnStart + numColumns) <= n);
+  assert(numColumns * numRows == rhs.size());
 
-  for (int i = 0; i < columnSize; ++i) {
-    for (int j = 0; j < rowSize; ++j) {
-      lhs[(rowStart + j) * 4 + (columnStart + i)] = rhs[j * rowSize + i];
+  for (int i = 0; i < numColumns; ++i) {
+    for (int j = 0; j < numRows; ++j) {
+      lhs[(rowStart + j) * n + (columnStart + i)] = rhs[j * numColumns + i];
     }
   }
 }

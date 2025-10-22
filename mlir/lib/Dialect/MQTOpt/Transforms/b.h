@@ -335,12 +335,7 @@ void householderSequenceEval(rmatrix4x4& m_vectors,
                              int shift) {
   auto essentialVector = [&](const rmatrix4x4& vectors, int k) {
     int start = k + 1 + shift;
-    std::vector<fp> result;
-    result.reserve(4 - start);
-    for (int j = start; j < 4; ++j) {
-      result.push_back(vectors[j * 4 + k]);
-    }
-    return result;
+    return helpers::submatrix(vectors, start, k, 4 - start, 1);
   };
 
   auto applyThisOnTheLeft = [&](auto&& vectors, auto& dst) {
@@ -375,7 +370,7 @@ void householderSequenceEval(rmatrix4x4& m_vectors,
 
       tmp2 = helpers::add(
           bottom, helpers::multiply(-tau, helpers::multiply(essential, tmp,
-                                                            essential.size())));
+                                                            1)));
       // insert all rows except first row
       llvm::copy(tmp2, matrix.begin() + n);
     }
