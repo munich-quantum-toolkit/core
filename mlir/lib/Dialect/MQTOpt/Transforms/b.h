@@ -425,7 +425,7 @@ void householderSequenceEval(rmatrix4x4& m_vectors,
 }
 
 // https://docs.rs/faer/latest/faer/mat/generic/struct.Mat.html#method.self_adjoint_eigen
-static std::pair<rmatrix4x4, rdiagonal4x4> self_adjoint_evd(rmatrix4x4 matrix) {
+inline std::pair<rmatrix4x4, rdiagonal4x4> self_adjoint_evd(rmatrix4x4 matrix) {
 
   auto lowerTriangularView = [](auto matrix) {
     const int n = std::sqrt(matrix.size());
