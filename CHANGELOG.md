@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add A\*-search based routing algorithm to MLIR transpilation routines ([#1237]) ([**@MatthiasReumann**])
+- ✨ Add A\*-search-based routing algorithm to MLIR transpilation routines ([#1237]) ([**@MatthiasReumann**])
 
 ### Fixed
 
