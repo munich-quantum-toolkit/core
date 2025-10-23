@@ -45,7 +45,7 @@ struct VerificationContext {
   explicit VerificationContext(Architecture& arch) : arch(&arch) {}
 
   Architecture* arch;
-  LayoutStack<Layout<QubitIndex>> stack{};
+  LayoutStack<Layout> stack{};
 };
 
 /**
@@ -102,9 +102,9 @@ WalkResult handleIf(scf::IfOp op, VerificationContext& ctx) {
 
   /// Forward results for all hardware qubits.
   const auto results = op->getResults().take_front(ctx.arch->nqubits());
-  Layout<QubitIndex>& stateBeforeIf = ctx.stack.getItemAtDepth(IF_PARENT_DEPTH);
+  Layout& stateBeforeIf = ctx.stack.getItemAtDepth(IF_PARENT_DEPTH);
   for (const auto [hardwareIdx, res] : llvm::enumerate(results)) {
-    const Value q = stateBeforeIf.lookupHardware(hardwareIdx);
+    const Value q = stateBeforeIf.lookupHardwareValue(hardwareIdx);
     stateBeforeIf.remapQubitValue(q, res);
   }
 
@@ -116,8 +116,11 @@ WalkResult handleIf(scf::IfOp op, VerificationContext& ctx) {
  */
 WalkResult handleYield(scf::YieldOp op, VerificationContext& ctx) {
   if (isa<scf::ForOp>(op->getParentOp()) || isa<scf::IfOp>(op->getParentOp())) {
-    if (ctx.stack.size() < 2) {
-      return op->emitOpError() << "expected at least two elements on stack.";
+    assert(ctx.stack.size() >= 2 && "expected at least two elements on stack.");
+
+    if (!llvm::equal(ctx.stack.top().getCurrentLayout(),
+                     ctx.stack.getItemAtDepth(1).getCurrentLayout())) {
+      return op.emitOpError() << "layouts must match after restoration";
     }
 
     ctx.stack.pop();
@@ -150,6 +153,13 @@ WalkResult handleUnitary(UnitaryInterface op, VerificationContext& ctx) {
     return WalkResult::advance();
   }
 
+  if (isa<BarrierOp>(op)) {
+    for (const auto [in, out] : llvm::zip(inQubits, outQubits)) {
+      ctx.stack.top().remapQubitValue(in, out);
+    }
+    return WalkResult::advance();
+  }
+
   if (nacts > 2) {
     return op->emitOpError() << "acts on more than two qubits";
   }
@@ -157,7 +167,7 @@ WalkResult handleUnitary(UnitaryInterface op, VerificationContext& ctx) {
   const Value in0 = inQubits[0];
   const Value out0 = outQubits[0];
 
-  Layout<QubitIndex>& state = ctx.stack.top();
+  Layout& state = ctx.stack.top();
 
   if (nacts == 1) {
     state.remapQubitValue(in0, out0);
@@ -167,13 +177,17 @@ WalkResult handleUnitary(UnitaryInterface op, VerificationContext& ctx) {
   const Value in1 = inQubits[1];
   const Value out1 = outQubits[1];
 
-  const QubitIndex idx0 = state.lookupHardware(in0);
-  const QubitIndex idx1 = state.lookupHardware(in1);
+  const auto idx0 = state.lookupHardwareIndex(in0);
+  const auto idx1 = state.lookupHardwareIndex(in1);
 
   if (!ctx.arch->areAdjacent(idx0, idx1)) {
     return op->emitOpError() << "(" << idx0 << "," << idx1 << ")"
                              << " is not executable on target architecture '"
                              << ctx.arch->name() << "'";
+  }
+
+  if (isa<SWAPOp>(op)) {
+    state.swap(in0, in1);
   }
 
   state.remapQubitValue(in0, out0);
