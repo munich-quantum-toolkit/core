@@ -9,6 +9,16 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [3.3.1] - 2025-10-14
+
+### Fixed
+
+- 🐛 Ensure `spdlog` dependency can be found from `mqt-core` install ([#1263]) ([**@burgholzer**])
+
+## [3.3.0] - 2025-10-13
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#330)._
+
 ### Added
 
 - 👷 Enable testing on Python 3.14 ([#1246]) ([**@denialhaag**])
@@ -188,7 +198,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.2.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.1...HEAD
+[3.3.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.1
+[3.3.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.0
 [3.2.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.2.1
 [3.2.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.2.0
 [3.1.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.1.0
@@ -199,6 +211,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1263]: https://github.com/munich-quantum-toolkit/core/pull/1263
 [#1247]: https://github.com/munich-quantum-toolkit/core/pull/1247
 [#1246]: https://github.com/munich-quantum-toolkit/core/pull/1246
 [#1236]: https://github.com/munich-quantum-toolkit/core/pull/1236
