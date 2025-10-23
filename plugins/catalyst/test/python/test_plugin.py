@@ -16,6 +16,10 @@ works correctly.
 
 from __future__ import annotations
 
+import glob
+import os
+from pathlib import Path
+
 import catalyst
 import pennylane as qml
 from catalyst.passes import apply_pass
@@ -221,7 +225,12 @@ def test_ising_gates_roundtrip() -> None:
         catalyst.measure(0)
         catalyst.measure(1)
 
-    @qml.qjit(target="mlir", autograph=True)
+    custom_pipeline = [
+        ("to-mqtopt", ["builtin.module(catalystquantum-to-mqtopt)"]),
+        ("to-catalystquantum", ["builtin.module(mqtopt-to-catalystquantum)"]),
+    ]
+
+    @qml.qjit(target="mlir", pipelines=custom_pipeline, autograph=True, keep_intermediate=2)
     def module() -> None:
         return circuit()
 
@@ -229,6 +238,37 @@ def test_ising_gates_roundtrip() -> None:
     mlir_opt = module.mlir_opt
     assert mlir_opt
 
+    # Find the python directory where MLIR files are generated
+    # This works regardless of where pytest is run from (locally or CI)
+    test_file_dir = Path(__file__).parent
+    python_dir = test_file_dir.parent.parent / "python"
+    
+    # Read the intermediate MLIR files
+    mlir_to_mqtopt = python_dir / "3_to-mqtopt.mlir"
+    mlir_to_catalyst = python_dir / "4_MQTOptToCatalystQuantum.mlir"
+    
+    if not mlir_to_mqtopt.exists() or not mlir_to_catalyst.exists():
+        # Fallback: list what files actually exist for debugging
+        available_files = list(python_dir.glob("*.mlir"))
+        raise FileNotFoundError(
+            f"Expected MLIR files not found in {python_dir}.\n"
+            f"Available files: {[f.name for f in available_files]}"
+        )
+    
+    with open(mlir_to_mqtopt, "r") as f:
+        mlir_after_mqtopt = f.read()
+    with open(mlir_to_catalyst, "r") as f:
+        mlir_after_roundtrip = f.read()
+
+    # TODO: As with the lit CHECK tests, we can do some basic string checks here:
+    # assert ... in mlir_after_mqtopt 
+    # assert ... in mlir_after_roundtrip
+
+    # Remove all intermediate files created during the test
+    for mlir_file in python_dir.glob("*.mlir"):
+        mlir_file.unlink()
+
+    
 
 def test_mqtopt_roundtrip() -> None:
     """Execute the full roundtrip including MQT Core IR.
