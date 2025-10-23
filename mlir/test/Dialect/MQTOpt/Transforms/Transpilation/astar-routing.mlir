@@ -8,7 +8,7 @@
 
 // Instead of applying checks, the routing verifier pass ensures the validity of this program.
 
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=random}, route-sc{method=naive},verify-routing-sc)" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity}, route-sc{method=astar},verify-routing-sc)" -verify-diagnostics | FileCheck %s
 
 module {
     // CHECK-LABEL: func.func @entrySABRE
@@ -94,8 +94,10 @@ module {
         %q0_3, %m0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         %q1_2, %m1_0 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-        mqtopt.deallocQubit %q0_3
-        mqtopt.deallocQubit %q1_2
+        %q0_4, %q1_3 = mqtopt.barrier() %q0_3, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
+
+        mqtopt.deallocQubit %q0_4
+        mqtopt.deallocQubit %q1_3
 
         return
     }
@@ -347,7 +349,7 @@ module {
 
             scf.yield %q0_3_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
         } else {
-            %q1_1_branch = mqtopt.i() %q1_0_branch: !mqtopt.Qubit
+            %q1_1_branch = mqtopt.i() %q1_0_branch : !mqtopt.Qubit
             %q1_2_branch, %q0_3_branch = mqtopt.x() %q1_1_branch ctrl %q0_2_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
             scf.yield %q0_3_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit

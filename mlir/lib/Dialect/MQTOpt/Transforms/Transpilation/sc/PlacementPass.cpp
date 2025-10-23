@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <deque>
 #include <llvm/ADT/STLExtras.h>
@@ -115,7 +116,7 @@ struct PlacementContext {
   Architecture* arch;
   InitialPlacer* placer;
   HardwareIndexPool pool;
-  LayoutStack<Layout<QubitIndex>> stack{};
+  LayoutStack<Layout> stack{};
 };
 
 /**
@@ -250,11 +251,11 @@ WalkResult handleIf(scf::IfOp op, PlacementContext& ctx,
   ctx.stack.duplicateTop(); // Then
 
   /// Forward results for all hardware qubits.
-  Layout<QubitIndex>& stateBeforeIf = ctx.stack.getItemAtDepth(IF_PARENT_DEPTH);
+  Layout& layoutBeforeIf = ctx.stack.getItemAtDepth(IF_PARENT_DEPTH);
   for (std::size_t i = 0; i < qubits.size(); ++i) {
-    const Value in = stateBeforeIf.getHardwareQubits()[i];
+    const Value in = layoutBeforeIf.getHardwareQubits()[i];
     const Value out = ifOp->getResult(i);
-    stateBeforeIf.remapQubitValue(in, out);
+    layoutBeforeIf.remapQubitValue(in, out);
   }
 
   return WalkResult::advance();
@@ -296,7 +297,7 @@ WalkResult handleAlloc(AllocQubitOp op, PlacementContext& ctx,
 
   LLVM_DEBUG({ llvm::dbgs() << "handleAlloc: index= " << index << '\n'; });
 
-  const Value q = ctx.stack.top().lookupHardware(index);
+  const Value q = ctx.stack.top().lookupHardwareValue(index);
 
   /// Newly allocated?
   const Operation* defOp = q.getDefiningOp();
@@ -319,7 +320,7 @@ WalkResult handleAlloc(AllocQubitOp op, PlacementContext& ctx,
  */
 WalkResult handleDealloc(DeallocQubitOp op, PlacementContext& ctx,
                          PatternRewriter& rewriter) {
-  const std::size_t index = ctx.stack.top().lookupHardware(op.getQubit());
+  const std::size_t index = ctx.stack.top().lookupHardwareIndex(op.getQubit());
   ctx.pool.push_back(index);
   rewriter.eraseOp(op);
   return WalkResult::advance();
@@ -426,10 +427,14 @@ struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
     const auto arch = getArchitecture(ArchitectureName::MQTTest);
     const auto placer = getPlacer(*arch);
 
+    const auto start = std::chrono::steady_clock::now();
     if (PlacementContext ctx(*arch, *placer);
         failed(run(getOperation(), &getContext(), ctx))) {
       signalPassFailure();
     }
+    const auto end = std::chrono::steady_clock::now();
+    tms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+              .count();
   }
 
 private:
