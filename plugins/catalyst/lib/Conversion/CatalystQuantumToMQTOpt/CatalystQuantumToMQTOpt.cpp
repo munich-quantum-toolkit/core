@@ -139,8 +139,8 @@ struct ConvertQuantumMeasure final
     // Create the new operation
     // Note: quantum.measure returns (i1, !quantum.bit)
     //       mqtopt.measure returns (!mqtopt.Qubit, i1)
-    const auto mqtoptOp = rewriter.create<opt::MeasureOp>(
-        op.getLoc(), qubitType, bitType, inQubit);
+    auto mqtoptOp = rewriter.create<opt::MeasureOp>(op.getLoc(), qubitType,
+                                                    bitType, inQubit);
 
     // Replace with results in the correct order
     rewriter.replaceOp(op, {mqtoptOp.getResult(1), mqtoptOp.getResult(0)});
@@ -481,11 +481,9 @@ struct ConvertQuantumCustomOp final
       // second parameter
       SmallVector<Value> isingxyParams(finalParamValues.begin(),
                                        finalParamValues.end());
-      isingxyParams.push_back(rewriter
-                                  .create<arith::ConstantFloatOp>(
-                                      op.getLoc(), APFloat(3.141592653589793),
-                                      rewriter.getF64Type())
-                                  .getResult());
+      auto piAttr = rewriter.getF64FloatAttr(3.141592653589793);
+      isingxyParams.push_back(
+          rewriter.create<ConstantOp>(op.getLoc(), piAttr).getResult());
 
       SmallVector<double> isingxyStaticParams(staticParamsVec.begin(),
                                               staticParamsVec.end());

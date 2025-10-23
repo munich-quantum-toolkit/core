@@ -9,7 +9,7 @@
 [build-system]
 requires = [
   "scikit-build-core>=0.11.5",
-  "pennylane-catalyst~=0.12.0",
+  "pennylane-catalyst>0.12.0",
   # The following dependencies are needed whenever one wants to build with a pre-release version of Catalyst
   #  "pennylane>=0.42.0.dev68",
   #  "pennylane-lightning>=0.42.0.dev45",
@@ -39,16 +39,16 @@ classifiers = [
   "Programming Language :: C++",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
   "Typing :: Typed",
 ]
-requires-python = ">=3.10"
+# PennyLane Catalyst requires at least Python 3.11
+requires-python = ">=3.11"
 dependencies = [
-  "pennylane-catalyst~=0.12.0",
+  "pennylane-catalyst>0.12.0",
   # The following dependencies are needed whenever one wants to build with a pre-release version of Catalyst
   #  "pennylane>=0.42.0.dev68",
   #  "pennylane-lightning>=0.42.0.dev45",
@@ -66,7 +66,7 @@ test = [
   "pytest-cov>=6.1.1",
 ]
 catalyst = [
-  "pennylane-catalyst~=0.12.0",
+  "pennylane-catalyst>0.12.0",
   # The following dependencies are needed whenever one wants to build with a pre-release version of Catalyst
   #  "pennylane>=0.42.0.dev68",
   #  "pennylane-lightning>=0.42.0.dev45",
@@ -159,7 +159,7 @@ report.exclude_also = [
 [tool.mypy]
 files = ["python", "test"]
 mypy_path = ["$MYPY_CONFIG_FILE_DIR/python"]
-python_version = "3.10"
+python_version = "3.11"
 warn_unused_configs = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 strict = true

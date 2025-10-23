@@ -11,7 +11,7 @@
 include(FetchContent)
 
 if(DEFINED Python3_EXECUTABLE AND Python3_EXECUTABLE)
-  set(CATALYST_VERSION 0.12.0)
+  set(CATALYST_VERSION 0.13.0)
   # Check if the pennylane-catalyst package is installed in the python environment.
   execute_process(
     COMMAND "${Python3_EXECUTABLE}" -c "import catalyst; print(catalyst.__version__)"

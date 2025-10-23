@@ -62,7 +62,7 @@ mkdir -p ~/dev && cd ~/dev
 # Clone the exact LLVM revision Catalyst expects
 git clone https://github.com/llvm/llvm-project.git
 cd llvm-project
-git checkout 179d30f8c3fddd3c85056fd2b8e877a4a8513158
+git checkout f8cb7987c64dcffb72414a40560055cb717dbf74
 
 # Configure & build MLIR (Release is recommended)
 cmake -S llvm -B build_llvm -G Ninja \
@@ -95,7 +95,7 @@ uv venv .venv
 . .venv/bin/activate
 
 # Install Catalyst and build the plugin
-uv pip install pennylane-catalyst==0.12.0
+uv pip install pennylane-catalyst>0.12.0
 
 uv sync --verbose --active
   --config-settings=cmake.define.CMAKE_BUILD_TYPE=Release

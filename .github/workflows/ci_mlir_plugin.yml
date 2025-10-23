@@ -62,7 +62,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: llvm/llvm-project
-          ref: 179d30f8c3fddd3c85056fd2b8e877a4a8513158
+          ref: f8cb7987c64dcffb72414a40560055cb717dbf74
           path: llvm-project
 
       # Install LLVM
