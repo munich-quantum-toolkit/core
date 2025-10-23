@@ -109,8 +109,8 @@ struct AStarHeuristicRouter final : RouterBase {
       frontier.pop();
 
       /// Expand frontier with all neighbouring SWAPs in the current front.
-      if (const auto opt = expand(frontier, curr, layers, arch)) {
-        return opt.value();
+      if (const auto optSeq = expand(frontier, curr, layers, arch)) {
+        return optSeq.value();
       }
     }
 
@@ -226,11 +226,8 @@ private:
       for (const auto prog : {gate.first, gate.second}) {
         const auto hw0 = node.getLayout().getHardwareIndex(prog);
         for (const auto hw1 : arch.neighboursOf(hw0)) {
-          /// Ensure consistent hashing/comparison
-          /// TODO: This should be done automatically by a QubitIndexPair class.
-          const QubitIndexPair swap =
-              hw0 < hw1 ? QubitIndexPair{hw0, hw1} : QubitIndexPair{hw1, hw0};
-
+          /// Ensure consistent hashing/comparison.
+          const QubitIndexPair swap = std::minmax(hw0, hw1);
           if (visited.contains(swap)) {
             continue;
           }
