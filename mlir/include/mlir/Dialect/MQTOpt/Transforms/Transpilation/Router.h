@@ -103,13 +103,17 @@ struct AStarHeuristicRouter final : RouterBase {
     MinQueue frontier{};
     frontier.emplace(root);
 
+    /// Initialize closed set.
+    ClosedSet visited;
+    visited.insert(root.layout());
+
     /// Iterative searching and expanding.
     while (!frontier.empty()) {
       Node curr = frontier.top();
       frontier.pop();
 
       /// Expand frontier with all neighbouring SWAPs in the current front.
-      if (const auto optSeq = expand(frontier, curr, layers, arch)) {
+      if (const auto optSeq = expand(frontier, curr, visited, layers, arch)) {
         return optSeq.value();
       }
     }
@@ -164,7 +168,7 @@ private:
     /**
      * @brief Return a const reference to the node's layout.
      */
-    [[nodiscard]] const ThinLayout& getLayout() const { return layout_; }
+    [[nodiscard]] const ThinLayout& layout() const { return layout_; }
 
     [[nodiscard]] bool operator>(const Node& rhs) const { return f_ > rhs.f_; }
 
@@ -212,6 +216,7 @@ private:
     float f_{0};
   };
 
+  using ClosedSet = mlir::DenseSet<ThinLayout>;
   using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
 
   /**
@@ -219,16 +224,16 @@ private:
    * @returns SWAP sequence if a goal node is expanded. Otherwise: std::nullopt.
    */
   std::optional<RouterResult> expand(MinQueue& frontier, const Node& node,
-                                     const Layers& layers,
+                                     ClosedSet& visited, const Layers& layers,
                                      const Architecture& arch) const {
-    llvm::SmallDenseSet<QubitIndexPair, 16> visited{};
+    llvm::SmallDenseSet<QubitIndexPair, 16> swaps{};
     for (const QubitIndexPair gate : layers.front()) {
       for (const auto prog : {gate.first, gate.second}) {
-        const auto hw0 = node.getLayout().getHardwareIndex(prog);
+        const auto hw0 = node.layout().getHardwareIndex(prog);
         for (const auto hw1 : arch.neighboursOf(hw0)) {
           /// Ensure consistent hashing/comparison.
           const QubitIndexPair swap = std::minmax(hw0, hw1);
-          if (visited.contains(swap)) {
+          if (swaps.insert(swap).second) {
             continue;
           }
 
@@ -239,9 +244,12 @@ private:
             return child.getSequence();
           }
 
-          frontier.push(std::move(child));
+          /// Skip already visited permutations.
+          if (!visited.insert(child.layout()).second) {
+            continue;
+          }
 
-          visited.insert(swap);
+          frontier.push(std::move(child));
         }
       }
     }
