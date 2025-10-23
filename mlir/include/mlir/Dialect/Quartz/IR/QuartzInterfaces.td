@@ -19,7 +19,7 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
     let description = [{
         This interface provides a unified API for all operations that apply or
         produce a unitary transformation. This includes base gates, user-defined
-        gates, modified operations (control, inverse, power), and sequences.
+        gates, modifier operations (control, inverse, power), and sequences.
 
         The interface enables uniform introspection and composition capabilities
         across all unitary operations in the Quartz dialect.
@@ -30,8 +30,16 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
     let methods = [
         // Qubit accessors
         InterfaceMethod<
+            "Returns the number of qubits acted on by the unitary operation.",
+            "size_t", "getNumQubits", (ins)
+        >,
+        InterfaceMethod<
             "Returns the number of target qubits (excluding control qubits).",
             "size_t", "getNumTargets", (ins)
+        >,
+        InterfaceMethod<
+            "Returns the number of control qubits (both positive and negative).",
+            "size_t", "getNumControls", (ins)
         >,
         InterfaceMethod<
             "Returns the number of positive control qubits.",
@@ -40,6 +48,10 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         InterfaceMethod<
             "Returns the number of negative control qubits.",
             "size_t", "getNumNegControls", (ins)
+        >,
+        InterfaceMethod<
+            "Returns the i-th qubit (targets + controls combined).",
+            "::mlir::Value", "getQubit", (ins "size_t":$i)
         >,
         InterfaceMethod<
             "Returns the i-th target qubit.",
@@ -54,41 +66,25 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "::mlir::Value", "getNegControl", (ins "size_t":$i)
         >,
 
-        // Value semantics threading (identity in reference semantics)
-        InterfaceMethod<
-            "Returns the i-th input qubit (targets + controls combined).",
-            "::mlir::Value", "getInput", (ins "size_t":$i)
-        >,
-        InterfaceMethod<
-            "Returns the i-th output qubit (targets + controls combined). "
-            "In reference semantics, returns the same as getInput.",
-            "::mlir::Value", "getOutput", (ins "size_t":$i),
-            /*methodBody=*/"", /*defaultImplementation=*/[{
-                return $_op.getInput(i);
-            }]
-        >,
-        InterfaceMethod<
-            "Returns the output qubit corresponding to the given input qubit. "
-            "In reference semantics, returns the input itself.",
-            "::mlir::Value", "getOutputForInput", (ins "::mlir::Value":$input),
-            /*methodBody=*/"", /*defaultImplementation=*/[{
-                return input;
-            }]
-        >,
-        InterfaceMethod<
-            "Returns the input qubit corresponding to the given output qubit. "
-            "In reference semantics, returns the output itself.",
-            "::mlir::Value", "getInputForOutput", (ins "::mlir::Value":$output),
-            /*methodBody=*/"", /*defaultImplementation=*/[{
-                return output;
-            }]
-        >,
-
         // Parameter handling
         InterfaceMethod<
             "Returns the number of parameters.",
             "size_t", "getNumParams", (ins)
         >,
+        /// TODO: This is missing many convenience methods for handling parameters. Some inspiration is in the RFC
+
+        // Convenience methods
+        InterfaceMethod<
+            "Returns true if the operation has any control qubits, otherwise false.",
+            "bool", "isControlled", (ins),
+            [{ return getNumControls() > 0; }]
+        >,
+        InterfaceMethod<
+            "Returns true if the operation only acts on a single qubit.",
+            "bool", "isSingleQubit", (ins),
+            [{ return getNumQubits() == 1; }]
+        >,
+        /// TODO: I am fairly sure that there are quite some further convenience methods that would be helpful here, e.g., whether it is a two-qubit gate
 
         // Matrix extraction
         InterfaceMethod<
@@ -100,28 +96,15 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Returns std::nullopt if the operation is symbolic or dynamic.",
             "std::optional<::mlir::DenseElementsAttr>", "tryGetStaticMatrix", (ins)
         >,
-
-        // Modifier state
-        InterfaceMethod<
-            "Returns true if the operation is inverted.",
-            "bool", "isInverted", (ins),
-            /*methodBody=*/"", /*defaultImplementation=*/[{
-                return false;
-            }]
-        >,
-        InterfaceMethod<
-            "Returns the power exponent if applicable, otherwise std::nullopt.",
-            "std::optional<double>", "getPower", (ins),
-            /*methodBody=*/"", /*defaultImplementation=*/[{
-                return std::nullopt;
-            }]
-        >,
+        /// TODO: probably also worth to check with the RFC and compare
 
         // Identification
         InterfaceMethod<
             "Returns the base symbol/mnemonic of the operation.",
             "::llvm::StringRef", "getBaseSymbol", (ins)
         >,
+
+        /// TODO: I am fairly sure the RFC had some more functions here.
     ];
 }
 
