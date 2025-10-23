@@ -53,6 +53,7 @@ struct ReuseQubitsPattern final : mlir::OpRewritePattern<AllocQubitOp> {
       // If we reach the dealloc operation, we add it to the list of sinks.
       if (mlir::isa<DeallocQubitOp>(current)) {
         reachableSinks.insert(current);
+        continue;
       }
 
       if (auto yieldOp = mlir::dyn_cast<mlir::scf::YieldOp>(current)) {
