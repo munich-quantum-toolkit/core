@@ -78,7 +78,7 @@ endif()
 # cmake-format: off
 set(QDMI_VERSION 1.2.0
         CACHE STRING "QDMI version")
-set(QDMI_REV "65827beb71840b01f67bcb0958bfda19a8e5e277"
+set(QDMI_REV "2df009373838b9fad15f686ceec577c1306c794e"
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")
@@ -97,9 +97,28 @@ set(SPDLOG_VERSION
 set(SPDLOG_URL https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz)
 # Add position independent code for spdlog, this is required for python bindings on linux
 set(SPDLOG_BUILD_PIC ON)
+set(SPDLOG_SYSTEM_INCLUDES
+    ON
+    CACHE INTERNAL "Treat the library headers like system headers")
 cmake_dependent_option(SPDLOG_INSTALL "Install spdlog library" ON "MQT_CORE_INSTALL" OFF)
 FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
 list(APPEND FETCH_PACKAGES spdlog)
 
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
+
+# Patch for spdlog cmake files to be installed in a common cmake directory
+if(SPDLOG_INSTALL)
+  include(GNUInstallDirs)
+  install(
+    CODE "
+    file(GLOB SPDLOG_CMAKE_FILES
+      \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/cmake/spdlog/*\")
+    if(SPDLOG_CMAKE_FILES)
+      file(MAKE_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/cmake/spdlog\")
+      file(COPY \${SPDLOG_CMAKE_FILES}
+        DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/cmake/spdlog\")
+      file(REMOVE_RECURSE \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/cmake/spdlog\")
+    endif()
+  ")
+endif()
