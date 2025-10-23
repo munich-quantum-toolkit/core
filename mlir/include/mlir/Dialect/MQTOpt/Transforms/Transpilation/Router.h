@@ -69,13 +69,12 @@ struct NaiveRouter final : RouterBase {
  */
 struct HeuristicWeights {
   float alpha;
-  float beta;
   mlir::SmallVector<float> lambdas;
 
-  HeuristicWeights(const float alpha, const float beta, const float lambda,
+  HeuristicWeights(const float alpha, const float lambda,
                    const std::size_t nlookahead)
-      : alpha(alpha), beta(beta), lambdas(1 + nlookahead) {
-    lambdas[0] = 1.0;
+      : alpha(alpha), lambdas(1 + nlookahead) {
+    lambdas[0] = 1.;
     for (std::size_t i = 1; i < lambdas.size(); ++i) {
       lambdas[i] = lambdas[i - 1] * lambda;
     }
@@ -94,7 +93,7 @@ struct AStarHeuristicRouter final : RouterBase {
                                     const Architecture& arch) const override {
     /// Initialize queue.
     MinQueue frontier{};
-    expand(frontier, SearchNode(layout, arch.nqubits()), layers, arch);
+    expand(frontier, SearchNode(layout), layers, arch);
 
     /// Iterative searching and expanding.
     while (!frontier.empty()) {
@@ -117,8 +116,7 @@ private:
      * @brief Construct a root node with the given layout. Initialize the
      * sequence with an empty vector and set the cost to zero.
      */
-    SearchNode(ThinLayout layout, const std::size_t nqubits)
-        : layout_(std::move(layout)), depthBuckets_(nqubits) {}
+    explicit SearchNode(ThinLayout layout) : layout_(std::move(layout)) {}
 
     /**
      * @brief Construct a non-root node from its parent node. Apply the given
@@ -127,20 +125,12 @@ private:
     SearchNode(const SearchNode& parent, QubitIndexPair swap,
                const Layers& layers, const Architecture& arch,
                const HeuristicWeights& weights)
-        : seq_(parent.seq_), layout_(parent.layout_),
-          depthBuckets_(parent.depthBuckets_), ndepth_(parent.ndepth_) {
+        : seq_(parent.seq_), layout_(parent.layout_) {
       /// Apply node-specific swap to given layout.
       layout_.swap(layout_.getProgramIndex(swap.first),
                    layout_.getProgramIndex(swap.second));
       /// Add swap to sequence.
       seq_.push_back(swap);
-
-      /// Update degrees.
-      const uint16_t start =
-          std::max(depthBuckets_[swap.first], depthBuckets_[swap.second]);
-      const uint16_t finish = start + 1;
-      depthBuckets_[swap.first] = depthBuckets_[swap.second] = finish;
-      ndepth_ = std::max(ndepth_, finish);
 
       /// Evaluate cost function.
       f_ = g(weights) + h(layers, arch, weights); // NOLINT
@@ -178,12 +168,11 @@ private:
     /**
      * @brief Calculate the path cost for the A* search algorithm.
      *
-     * The path cost function evaluates the weighted sum of the currently
-     * required SWAPs and additionally added depth.
+     * The path cost function is the weighted sum of the currently required
+     * SWAPs.
      */
     [[nodiscard]] float g(const HeuristicWeights& weights) {
-      return (weights.alpha * static_cast<float>(seq_.size())) +
-             (weights.beta * static_cast<float>(ndepth_));
+      return (weights.alpha * static_cast<float>(seq_.size()));
     }
 
     /**
@@ -215,9 +204,6 @@ private:
 
     mlir::SmallVector<QubitIndexPair> seq_;
     ThinLayout layout_;
-
-    mlir::SmallVector<uint16_t> depthBuckets_;
-    uint16_t ndepth_{0};
 
     float f_{0};
   };
