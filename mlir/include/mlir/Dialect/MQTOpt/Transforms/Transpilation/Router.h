@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <mlir/Support/LLVM.h>
+#include <optional>
 #include <queue>
 #include <stdexcept>
 #include <utility>
@@ -27,7 +28,7 @@ namespace mqt::ir::opt {
 /**
  * @brief A vector of SWAPs.
  */
-using PlannerResult = mlir::SmallVector<QubitIndexPair>;
+using RouterResult = mlir::SmallVector<QubitIndexPair>;
 
 /**
  * @brief A planner determines the sequence of swaps required to route an array
@@ -35,17 +36,17 @@ of gates.
 */
 struct RouterBase {
   virtual ~RouterBase() = default;
-  [[nodiscard]] virtual PlannerResult route(const Layers&, const ThinLayout&,
-                                            const Architecture&) const = 0;
+  [[nodiscard]] virtual RouterResult route(const Layers&, const ThinLayout&,
+                                           const Architecture&) const = 0;
 };
 
 /**
  * @brief Use shortest path swapping to make one gate executable.
  */
 struct NaiveRouter final : RouterBase {
-  [[nodiscard]] PlannerResult route(const Layers& layers,
-                                    const ThinLayout& layout,
-                                    const Architecture& arch) const override {
+  [[nodiscard]] RouterResult route(const Layers& layers,
+                                   const ThinLayout& layout,
+                                   const Architecture& arch) const override {
     if (layers.size() != 1 || layers.front().size() != 1) {
       throw std::invalid_argument(
           "NaiveRouter expects exactly one layer with one gate");
@@ -88,43 +89,48 @@ struct AStarHeuristicRouter final : RouterBase {
   explicit AStarHeuristicRouter(HeuristicWeights weights)
       : weights_(std::move(weights)) {}
 
-  [[nodiscard]] PlannerResult route(const Layers& layers,
-                                    const ThinLayout& layout,
-                                    const Architecture& arch) const override {
+  [[nodiscard]] RouterResult route(const Layers& layers,
+                                   const ThinLayout& layout,
+                                   const Architecture& arch) const override {
+    Node root(layout);
+
+    /// Early exit. No SWAPs required:
+    if (root.isGoal(layers.front(), arch)) {
+      return {};
+    }
+
     /// Initialize queue.
     MinQueue frontier{};
-    expand(frontier, SearchNode(layout), layers, arch);
+    frontier.emplace(root);
 
     /// Iterative searching and expanding.
     while (!frontier.empty()) {
-      SearchNode curr = frontier.top();
+      Node curr = frontier.top();
       frontier.pop();
 
-      if (curr.isGoal(layers.front(), arch)) {
-        return curr.getSequence();
+      /// Expand frontier with all neighbouring SWAPs in the current front.
+      if (const auto opt = expand(frontier, curr, layers, arch)) {
+        return opt.value();
       }
-
-      expand(frontier, curr, layers, arch);
     }
 
     return {};
   }
 
 private:
-  struct SearchNode {
+  struct Node {
     /**
      * @brief Construct a root node with the given layout. Initialize the
      * sequence with an empty vector and set the cost to zero.
      */
-    explicit SearchNode(ThinLayout layout) : layout_(std::move(layout)) {}
+    explicit Node(ThinLayout layout) : layout_(std::move(layout)) {}
 
     /**
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node and evaluate the cost.
      */
-    SearchNode(const SearchNode& parent, QubitIndexPair swap,
-               const Layers& layers, const Architecture& arch,
-               const HeuristicWeights& weights)
+    Node(const Node& parent, QubitIndexPair swap, const Layers& layers,
+         const Architecture& arch, const HeuristicWeights& weights)
         : seq_(parent.seq_), layout_(parent.layout_) {
       /// Apply node-specific swap to given layout.
       layout_.swap(layout_.getProgramIndex(swap.first),
@@ -160,9 +166,7 @@ private:
      */
     [[nodiscard]] const ThinLayout& getLayout() const { return layout_; }
 
-    [[nodiscard]] bool operator>(const SearchNode& rhs) const {
-      return f_ > rhs.f_;
-    }
+    [[nodiscard]] bool operator>(const Node& rhs) const { return f_ > rhs.f_; }
 
   private:
     /**
@@ -208,21 +212,22 @@ private:
     float f_{0};
   };
 
-  using MinQueue =
-      std::priority_queue<SearchNode, std::vector<SearchNode>, std::greater<>>;
+  using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
 
   /**
-   * @brief Expand frontier with all possible neighbouring SWAPs in the current
-   * front.
+   * @brief Expand frontier with all neighbouring SWAPs in the current front.
+   * @returns SWAP sequence if a goal node is expanded. Otherwise: std::nullopt.
    */
-  void expand(MinQueue& frontier, const SearchNode& node, const Layers& layers,
-              const Architecture& arch) const {
+  std::optional<RouterResult> expand(MinQueue& frontier, const Node& node,
+                                     const Layers& layers,
+                                     const Architecture& arch) const {
     llvm::SmallDenseSet<QubitIndexPair, 16> visited{};
     for (const QubitIndexPair gate : layers.front()) {
       for (const auto prog : {gate.first, gate.second}) {
         const auto hw0 = node.getLayout().getHardwareIndex(prog);
         for (const auto hw1 : arch.neighboursOf(hw0)) {
           /// Ensure consistent hashing/comparison
+          /// TODO: This should be done automatically by a QubitIndexPair class.
           const QubitIndexPair swap =
               hw0 < hw1 ? QubitIndexPair{hw0, hw1} : QubitIndexPair{hw1, hw0};
 
@@ -230,11 +235,21 @@ private:
             continue;
           }
 
-          frontier.emplace(node, swap, layers, arch, weights_);
+          Node child(node, swap, layers, arch, weights_);
+
+          /// Early exit if child node is a goal node.
+          if (child.isGoal(layers.front(), arch)) {
+            return child.getSequence();
+          }
+
+          frontier.push(std::move(child));
+
           visited.insert(swap);
         }
       }
     }
+
+    return std::nullopt;
   }
 
   HeuristicWeights weights_;
