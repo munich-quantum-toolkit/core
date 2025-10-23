@@ -1,5 +1,3 @@
-[//]: # "TODO: Update the banners"
-
 [![PyPI](https://img.shields.io/pypi/v/mqt.core?logo=pypi&style=flat-square)](https://pypi.org/project/mqt.core/)
 ![OS](https://img.shields.io/badge/os-linux%20%7C%20macos%20%7C%20windows-blue?style=flat-square)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
@@ -11,19 +9,17 @@
 
 <p align="center">
   <a href="https://mqt.readthedocs.io">
-   <picture>
-     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/logo-mqt-dark.svg" width="60%">
-     <img src="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/logo-mqt-light.svg" width="60%" alt="MQT Logo">
-   </picture>
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/logo-mqt-dark.svg" width="60%">
+      <img src="https://raw.githubusercontent.com/munich-quantum-toolkit/.github/refs/heads/main/docs/_static/logo-mqt-light.svg" width="60%" alt="MQT Logo">
+    </picture>
   </a>
 </p>
 
 # MQT Core Catalyst MLIR Plugin
 
-This sub-package of MQT Core provides a [Catalyst](https://github.com/PennyLaneAI/catalyst) plugin for the [MLIR](https://mlir.llvm.org/) framework.
+This sub-package of MQT Core provides a [Catalyst](https://github.com/PennyLaneAI/catalyst) plugin based on [MLIR](https://mlir.llvm.org/).
 It allows you to use MQT Core's MLIR dialects and transformations within the Catalyst framework, enabling advanced quantum circuit optimizations and transformations.
-
-TODO: extend this section with more details about the Catalyst plugin, its features, and how to use it.
 
 If you have any questions, feel free to create a [discussion](https://github.com/munich-quantum-toolkit/core/discussions) or an [issue](https://github.com/munich-quantum-toolkit/core/issues) on [GitHub](https://github.com/munich-quantum-toolkit/core).
 
@@ -153,7 +149,7 @@ device = configure_device_for_mqt(device)
 
 ## System Requirements
 
-Building (and running) is continuously tested under Linux, MacOS, and Windows using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
+Building (and running) is continuously tested under Linux, macOS, and Windows using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
 However, the implementation should be compatible with any current C++ compiler supporting C++20 and a minimum CMake version of 3.24.
 
 MQT Core relies on some external dependencies:
