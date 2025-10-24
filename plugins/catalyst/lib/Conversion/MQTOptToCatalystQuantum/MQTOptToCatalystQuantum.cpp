@@ -170,7 +170,7 @@ struct ConvertMQTOptAlloc final : OpConversionPattern<memref::AllocOp> {
 
     // Replace with quantum alloc operation
     rewriter.replaceOpWithNewOp<catalyst::quantum::AllocOp>(op, resultType,
-                                                              size, nullptr);
+                                                            size, nullptr);
 
     return success();
   }
@@ -237,8 +237,7 @@ struct ConvertMQTOptLoad final : OpConversionPattern<memref::LoadOp> {
     }
 
     // Prepare the result type(s)
-    auto resultType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
+    auto resultType = catalyst::quantum::QubitType::get(rewriter.getContext());
 
     // Get index (assuming single index for 1D memref)
     auto indices = adaptor.getIndices();
@@ -283,13 +282,12 @@ struct ConvertMQTOptStore final : OpConversionPattern<memref::StoreOp> {
     }
 
     // Prepare the result type(s)
-    auto resultType =
-        catalyst::quantum::QuregType::get(rewriter.getContext());
+    auto resultType = catalyst::quantum::QuregType::get(rewriter.getContext());
 
     // Create the new operation
     rewriter.create<catalyst::quantum::InsertOp>(op.getLoc(), resultType,
-                                                   adaptor.getMemref(), index,
-                                                   nullptr, adaptor.getValue());
+                                                 adaptor.getMemref(), index,
+                                                 nullptr, adaptor.getValue());
 
     // Erase the original store operation (store has no results to replace)
     rewriter.eraseOp(op);
@@ -1152,6 +1150,119 @@ StringRef ConvertMQTOptSimpleGate<opt::RZZOp>::getGateName(
   return "IsingZZ";
 }
 
+template <>
+struct ConvertMQTOptSimpleGate<opt::XXminusYYOp> final
+    : OpConversionPattern<opt::XXminusYYOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(opt::XXminusYYOp op, opt::XXminusYYOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operands and control information.
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
+
+    // Gather parameters (phi, beta) handling static/dynamic mask
+    auto params = adaptor.getParams();
+    auto staticParams = op.getStaticParams();
+    auto paramMask = op.getParamsMask();
+
+    SmallVector<Value> paramValues;
+    size_t dynamicIdx = 0;
+    size_t staticIdx = 0;
+
+    for (size_t i = 0; i < 2; ++i) {
+      if (paramMask && (*paramMask)[i]) {
+        // Static parameter.
+        auto floatAttr = rewriter.getF64FloatAttr((*staticParams)[staticIdx++]);
+        paramValues.push_back(
+            rewriter.create<ConstantOp>(op.getLoc(), floatAttr));
+      } else {
+        // Dynamic parameter.
+        paramValues.push_back(params[dynamicIdx++]);
+      }
+    }
+
+    const Value phi = paramValues[0];  // First parameter.
+    const Value beta = paramValues[1]; // Second parameter.
+
+    // Create constant for pi.
+    auto pi = rewriter.create<ConstantOp>(op.getLoc(),
+                                          rewriter.getF64FloatAttr(M_PI));
+
+    // Compute beta - pi and pi - beta.
+    auto betaMinusPi = rewriter.create<SubFOp>(op.getLoc(), beta, pi);
+    auto piMinusBeta = rewriter.create<SubFOp>(op.getLoc(), pi, beta);
+
+    // Conjugation identity:
+    // XXminusYY = (X ⊗ I) · (XXplusYY) · (X ⊗ I)
+    // Apply X on qubit 0, then same decomposition as XXplusYY, then undo
+    // X.
+
+    // Pre-conjugation X on qubit 0 (respect original control semantics).
+    auto xPre = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(),
+        /*gate=*/"X",
+        /*in_qubits=*/ValueRange{extracted.inQubits[0]},
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
+
+    // Apply RZ(pi - beta) on qubit 1 (second qubit) using control output from
+    // X.
+    auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(),
+        /*gate=*/"RZ",
+        /*in_qubits=*/ValueRange{extracted.inQubits[1]},
+        /*in_ctrl_qubits=*/xPre.getOutCtrlQubits(),
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
+        /*params=*/ValueRange{piMinusBeta},
+        /*adjoint=*/false);
+
+    // Apply IsingXY(phi) on both qubits.
+    // Use outputs from xPre and rz1 as the inputs to IsingXY to preserve SSA
+    // flow.
+    auto isingxy = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(),
+        /*gate=*/"IsingXY",
+        /*in_qubits=*/ValueRange{xPre.getOutQubits()[0], rz1.getOutQubits()[0]},
+        /*in_ctrl_qubits=*/rz1.getOutCtrlQubits(),
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
+        /*params=*/ValueRange{phi},
+        /*adjoint=*/false);
+
+    // Apply RZ(beta - pi) on qubit 1 after IsingXY.
+    auto rz2 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(),
+        /*gate=*/"RZ",
+        /*in_qubits=*/ValueRange{isingxy.getOutQubits()[1]},
+        /*in_ctrl_qubits=*/isingxy.getOutCtrlQubits(),
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
+        /*params=*/ValueRange{betaMinusPi},
+        /*adjoint=*/false);
+
+    // Post-conjugation X on qubit 0 to undo the pre X.
+    auto xPost = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(),
+        /*gate=*/"X",
+        /*in_qubits=*/ValueRange{isingxy.getOutQubits()[0]},
+        /*in_ctrl_qubits=*/rz2.getOutCtrlQubits(),
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
+
+    // Final results: (q0_final, q1_final, controls...)
+    SmallVector<Value> finalResults;
+    finalResults.push_back(xPost.getOutQubits()[0]); // q0 after undo-X.
+    finalResults.push_back(rz2.getOutQubits()[0]);   // q1 after final RZ.
+    finalResults.append(xPost.getOutCtrlQubits().begin(),
+                        xPost.getOutCtrlQubits().end());
+
+    rewriter.replaceOp(op, finalResults);
+    return success();
+  }
+};
+
 // -- XXplusYY (IsingXY) - Special handling with decomposition
 template <>
 struct ConvertMQTOptSimpleGate<opt::XXplusYYOp> final
@@ -1342,6 +1453,8 @@ struct MQTOptToCatalystQuantum final
                                                            context);
     patterns.add<ConvertMQTOptSimpleGate<opt::XXplusYYOp>>(typeConverter,
                                                            context);
+    patterns.add<ConvertMQTOptSimpleGate<opt::XXminusYYOp>>(typeConverter,
+                                                            context);
 
     // Type conversion boilerplate to handle function signatures and control
     // flow See: https://www.jeremykun.com/2023/10/23/mlir-dialect-conversion
