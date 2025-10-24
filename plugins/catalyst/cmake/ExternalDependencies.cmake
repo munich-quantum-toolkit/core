@@ -73,10 +73,13 @@ if(DEFINED Python3_EXECUTABLE AND Python3_EXECUTABLE)
   endif()
 
 else()
-  message(
-    FATAL_ERROR
-      "Python executable is not defined. Please set the Python3_EXECUTABLE variable to the path of the Python interpreter."
-  )
+  find_package(Catalyst ${CATALYST_VERSION} QUIET)
+  if(NOT Catalyst_FOUND)
+    message(
+      FATAL_ERROR
+        "Python3 interpreter not found and Catalyst not discoverable. Either set Python3_EXECUTABLE for in-env detection or provide Catalyst via CMAKE_PREFIX_PATH."
+    )
+  endif()
 endif()
 
 # cmake-format: off
