@@ -14,7 +14,6 @@
 
 #include <Quantum/IR/QuantumDialect.h>
 #include <Quantum/IR/QuantumOps.h>
-#include <cmath>
 #include <cstddef>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -28,8 +27,21 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <utility>
+
+// Define math constants if not available
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+#ifndef M_PI_2
+#define M_PI_2 1.57079632679489661923
+#endif
+#ifndef M_PI_4
+#define M_PI_4 0.78539816339744830962
+#endif
 
 namespace mqt::ir::conversions {
 
@@ -158,7 +170,7 @@ struct ConvertMQTOptAlloc final : OpConversionPattern<memref::AllocOp> {
 
     // Replace with quantum alloc operation
     rewriter.replaceOpWithNewOp<catalyst::quantum::AllocOp>(op, resultType,
-                                                            size, nullptr);
+                                                              size, nullptr);
 
     return success();
   }
@@ -225,7 +237,8 @@ struct ConvertMQTOptLoad final : OpConversionPattern<memref::LoadOp> {
     }
 
     // Prepare the result type(s)
-    auto resultType = catalyst::quantum::QubitType::get(rewriter.getContext());
+    auto resultType =
+        catalyst::quantum::QubitType::get(rewriter.getContext());
 
     // Get index (assuming single index for 1D memref)
     auto indices = adaptor.getIndices();
@@ -270,12 +283,13 @@ struct ConvertMQTOptStore final : OpConversionPattern<memref::StoreOp> {
     }
 
     // Prepare the result type(s)
-    auto resultType = catalyst::quantum::QuregType::get(rewriter.getContext());
+    auto resultType =
+        catalyst::quantum::QuregType::get(rewriter.getContext());
 
     // Create the new operation
     rewriter.create<catalyst::quantum::InsertOp>(op.getLoc(), resultType,
-                                                 adaptor.getMemref(), index,
-                                                 nullptr, adaptor.getValue());
+                                                   adaptor.getMemref(), index,
+                                                   nullptr, adaptor.getValue());
 
     // Erase the original store operation (store has no results to replace)
     rewriter.eraseOp(op);
@@ -1174,8 +1188,8 @@ struct ConvertMQTOptSimpleGate<opt::XXplusYYOp> final
       }
     }
 
-    Value phi = paramValues[0];  // First parameter
-    Value beta = paramValues[1]; // Second parameter
+    const Value phi = paramValues[0];  // First parameter
+    const Value beta = paramValues[1]; // Second parameter
 
     // Create constants for pi
     auto pi = rewriter.create<ConstantOp>(op.getLoc(),

@@ -18,7 +18,7 @@ if(DEFINED Python3_EXECUTABLE AND Python3_EXECUTABLE)
     OUTPUT_STRIP_TRAILING_WHITESPACE
     OUTPUT_VARIABLE FOUND_CATALYST_VERSION)
   if(FOUND_CATALYST_VERSION)
-    message(STATUS "Found pennylane-catalyst ${CATALYST_VERSION} in python environment.")
+    message(STATUS "Found pennylane-catalyst ${FOUND_CATALYST_VERSION} in python environment.")
     # Check if the version is compatible.
     if(FOUND_CATALYST_VERSION VERSION_LESS ${CATALYST_VERSION})
       message(
