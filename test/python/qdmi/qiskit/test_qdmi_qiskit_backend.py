@@ -155,23 +155,13 @@ def test_backend_run_with_invalid_shots_type(na_backend: QiskitBackend) -> None:
         na_backend.run(qc, shots="invalid")
 
 
-def test_backend_run_with_zero_shots(na_backend: QiskitBackend) -> None:
-    """Backend run should raise TranslationError for shots < 1."""
-    qc = QuantumCircuit(2, 2)
-    qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
-
-    with pytest.raises(TranslationError, match="'shots' must be >= 1"):
-        na_backend.run(qc, shots=0)
-
-
 def test_backend_run_with_negative_shots(na_backend: QiskitBackend) -> None:
     """Backend run should raise TranslationError for negative shots."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    with pytest.raises(TranslationError, match="'shots' must be >= 1"):
+    with pytest.raises(TranslationError, match="'shots' must be >= 0"):
         na_backend.run(qc, shots=-100)
 
 

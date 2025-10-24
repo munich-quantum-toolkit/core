@@ -46,10 +46,10 @@ from qiskit import QuantumCircuit
 backend = QiskitBackend(device_index=0)
 
 # Create a simple circuit
-qc = QuantumCircuit(2, 2)
+qc = QuantumCircuit(2)
 qc.ry(1.5708, 0)  # π/2 rotation
 qc.cz(0, 1)
-qc.measure([0, 1], [0, 1])
+qc.measure_all()
 
 # Execute the circuit
 job = backend.run(qc, shots=1024)

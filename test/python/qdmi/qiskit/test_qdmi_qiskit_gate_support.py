@@ -21,30 +21,7 @@ pytestmark = pytest.mark.skipif(not _qiskit_present, reason="qiskit not installe
 if _qiskit_present:
     from qiskit import QuantumCircuit
 
-    from mqt.core import fomac
     from mqt.core.qdmi.qiskit import QiskitBackend
-
-
-@pytest.fixture
-def na_backend() -> QiskitBackend:
-    """Fixture providing a QiskitBackend configured with the NA device.
-
-    Returns:
-        QiskitBackend instance configured with the MQT NA Default QDMI Device.
-
-    Raises:
-        RuntimeError: If the MQT NA Default QDMI Device is not found.
-
-    Note:
-        This fixture is used for tests that rely on specific NA device characteristics.
-        In the future, these tests should be generalized or parameterized across device types.
-    """
-    devices_list = list(fomac.devices())
-    for idx, device in enumerate(devices_list):
-        if device.name() == "MQT NA Default QDMI Device":
-            return QiskitBackend(device_index=idx)
-    msg = "MQT NA Default QDMI Device not found"
-    raise RuntimeError(msg)
 
 
 def test_gate_mapping_to_qiskit_gates() -> None:
@@ -231,9 +208,8 @@ def test_backend_target_qubit_count_matches_device() -> None:
     """Test that backend target qubit count is based on device capabilities."""
     backend = QiskitBackend()
 
-    # Target qubit count should be at least the device num_qubits
-    # (may be higher if zones are included in the target)
-    assert backend.target.num_qubits >= backend._capabilities.num_qubits  # noqa: SLF001
+    # Target qubit count should match device num_qubits (zones filtered out)
+    assert backend.target.num_qubits == backend._capabilities.num_qubits  # noqa: SLF001
 
 
 def test_backend_build_target_adds_operations() -> None:

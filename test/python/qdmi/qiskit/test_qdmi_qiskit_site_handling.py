@@ -22,59 +22,20 @@ These tests ensure that:
 from __future__ import annotations
 
 import importlib.util
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from mqt.core import fomac
-
 _qiskit_present = importlib.util.find_spec("qiskit") is not None
 
+if TYPE_CHECKING:
+    from mqt.core import fomac
+
+    if _qiskit_present:
+        from mqt.core.qdmi.qiskit import QiskitBackend
+
+
 pytestmark = pytest.mark.skipif(not _qiskit_present, reason="qiskit not installed")
-
-if _qiskit_present:
-    from mqt.core.qdmi.qiskit import QiskitBackend
-
-
-@pytest.fixture
-def na_backend() -> QiskitBackend:
-    """Fixture providing a QiskitBackend configured with the NA device.
-
-    Returns:
-        QiskitBackend instance configured with the MQT NA Default QDMI Device.
-
-    Raises:
-        RuntimeError: If the MQT NA Default QDMI Device is not found.
-
-    Note:
-        This fixture is used for tests that rely on specific NA device characteristics.
-        These tests verify site handling, zone filtering, and QDMI specification compliance
-        specific to the NA device structure (100 qubits + 3 zone sites).
-    """
-    devices_list = list(fomac.devices())
-    for idx, device in enumerate(devices_list):
-        if device.name() == "MQT NA Default QDMI Device":
-            return QiskitBackend(device_index=idx)
-    msg = "MQT NA Default QDMI Device not found"
-    raise RuntimeError(msg)
-
-
-@pytest.fixture
-def na_device() -> fomac.Device:
-    """Get the NA FoMaC device for direct inspection.
-
-    Returns:
-        The MQT NA Default QDMI Device.
-
-    Raises:
-        RuntimeError: If the MQT NA Default QDMI Device is not found.
-    """
-    devices_list = list(fomac.devices())
-    for device in devices_list:
-        if device.name() == "MQT NA Default QDMI Device":
-            return device
-    msg = "MQT NA Default QDMI Device not found"
-    raise RuntimeError(msg)
 
 
 class TestZoneSiteFiltering:

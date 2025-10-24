@@ -178,87 +178,54 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         Returns:
             Qiskit gate instance or None if not mappable.
         """
-        from qiskit.circuit.library import (
-            CHGate,
-            CXGate,
-            CYGate,
-            CZGate,
-            DCXGate,
-            ECRGate,
-            HGate,
-            IGate,
-            PhaseGate,
-            RGate,
-            RXGate,
-            RXXGate,
-            RYGate,
-            RYYGate,
-            RZGate,
-            RZXGate,
-            RZZGate,
-            SdgGate,
-            SGate,
-            SwapGate,
-            SXdgGate,
-            SXGate,
-            TdgGate,
-            TGate,
-            U2Gate,
-            U3Gate,
-            XGate,
-            XXMinusYYGate,
-            XXPlusYYGate,
-            YGate,
-            ZGate,
-            iSwapGate,
-        )
+        import qiskit.circuit.library as qcl
 
         # Map known operations to Qiskit gates
         gate_map: dict[str, Instruction] = {
             # Single-qubit Pauli gates
-            "x": XGate(),
-            "y": YGate(),
-            "z": ZGate(),
-            "id": IGate(),
-            "i": IGate(),
+            "x": qcl.XGate(),
+            "y": qcl.YGate(),
+            "z": qcl.ZGate(),
+            "id": qcl.IGate(),
+            "i": qcl.IGate(),
             # Hadamard
-            "h": HGate(),
+            "h": qcl.HGate(),
             # Phase gates
-            "s": SGate(),
-            "sdg": SdgGate(),
-            "t": TGate(),
-            "tdg": TdgGate(),
-            "sx": SXGate(),
-            "sxdg": SXdgGate(),
-            "p": PhaseGate(Parameter("lambda")),
-            "phase": PhaseGate(Parameter("lambda")),
+            "s": qcl.SGate(),
+            "sdg": qcl.SdgGate(),
+            "t": qcl.TGate(),
+            "tdg": qcl.TdgGate(),
+            "sx": qcl.SXGate(),
+            "sxdg": qcl.SXdgGate(),
+            "p": qcl.PhaseGate(Parameter("lambda")),
+            "phase": qcl.PhaseGate(Parameter("lambda")),
             # Rotation gates (parametric)
-            "rx": RXGate(Parameter("theta")),
-            "ry": RYGate(Parameter("theta")),
-            "rz": RZGate(Parameter("phi")),
-            "r": RGate(Parameter("theta"), Parameter("phi")),
-            "prx": RGate(Parameter("theta"), Parameter("phi")),
+            "rx": qcl.RXGate(Parameter("theta")),
+            "ry": qcl.RYGate(Parameter("theta")),
+            "rz": qcl.RZGate(Parameter("phi")),
+            "r": qcl.RGate(Parameter("theta"), Parameter("phi")),
+            "prx": qcl.RGate(Parameter("theta"), Parameter("phi")),
             # Universal gates (parametric)
-            "u": U3Gate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            "u3": U3Gate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            "u2": U2Gate(Parameter("phi"), Parameter("lambda")),
+            "u": qcl.U3Gate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
+            "u3": qcl.U3Gate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
+            "u2": qcl.U2Gate(Parameter("phi"), Parameter("lambda")),
             # Two-qubit gates
-            "cx": CXGate(),
-            "cnot": CXGate(),
-            "cy": CYGate(),
-            "cz": CZGate(),
-            "ch": CHGate(),
-            "swap": SwapGate(),
-            "iswap": iSwapGate(),
-            "dcx": DCXGate(),
-            "ecr": ECRGate(),
+            "cx": qcl.CXGate(),
+            "cnot": qcl.CXGate(),
+            "cy": qcl.CYGate(),
+            "cz": qcl.CZGate(),
+            "ch": qcl.CHGate(),
+            "swap": qcl.SwapGate(),
+            "iswap": qcl.iSwapGate(),
+            "dcx": qcl.DCXGate(),
+            "ecr": qcl.ECRGate(),
             # Two-qubit gates (parametric)
-            "rxx": RXXGate(Parameter("theta")),
-            "ryy": RYYGate(Parameter("theta")),
-            "rzz": RZZGate(Parameter("theta")),
-            "rzx": RZXGate(Parameter("theta")),
-            "xx_plus_yy": XXPlusYYGate(Parameter("theta"), Parameter("beta")),
-            "xx_minus_yy": XXMinusYYGate(Parameter("theta"), Parameter("beta")),
+            "rxx": qcl.RXXGate(Parameter("theta")),
+            "ryy": qcl.RYYGate(Parameter("theta")),
+            "rzz": qcl.RZZGate(Parameter("theta")),
+            "rzx": qcl.RZXGate(Parameter("theta")),
+            "xx_plus_yy": qcl.XXPlusYYGate(Parameter("theta"), Parameter("beta")),
+            "xx_minus_yy": qcl.XXMinusYYGate(Parameter("theta"), Parameter("beta")),
         }
 
         return gate_map.get(op_name.lower())
@@ -350,16 +317,13 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         except Exception as exc:
             msg = f"Invalid 'shots' value: {shots_opt!r}"
             raise TranslationError(msg) from exc
-        if shots < 1:
-            msg = f"'shots' must be >= 1, got {shots}"
+        if shots < 0:
+            msg = f"'shots' must be >= 0, got {shots}"
             raise TranslationError(msg)
 
         # Translate and execute circuits
         try:
-            results = []
-            for circuit in circuits:
-                result = self._execute_circuit(circuit, shots=shots)
-                results.append(result)
+            results = [self._execute_circuit(circuit, shots=shots) for circuit in circuits]
 
             # Create and return job
             return QiskitJob(backend=self, circuits=circuits, results=results, shots=shots)
