@@ -391,7 +391,8 @@ TEST_F(CompilerPipelineTest, SingleQubitRegister) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+  ;
 
   const auto quartzExpected = buildQuartzIR(
       [](quartz::QuartzProgramBuilder& b) { b.allocQubitRegister(1, "q"); });
@@ -416,7 +417,8 @@ TEST_F(CompilerPipelineTest, MultiQubitRegister) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+  ;
 
   const auto quartzExpected = buildQuartzIR(
       [](quartz::QuartzProgramBuilder& b) { b.allocQubitRegister(3, "q"); });
@@ -442,7 +444,7 @@ TEST_F(CompilerPipelineTest, MultipleQuantumRegisters) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto quartzExpected =
       buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
@@ -472,7 +474,7 @@ TEST_F(CompilerPipelineTest, LargeQubitRegister) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 }
 
 // ##################################################
@@ -491,7 +493,7 @@ TEST_F(CompilerPipelineTest, SingleClassicalBitRegister) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     b.allocClassicalBitRegister(1, "c");
@@ -518,7 +520,7 @@ TEST_F(CompilerPipelineTest, MultiBitClassicalRegister) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     b.allocClassicalBitRegister(5, "c");
@@ -547,7 +549,7 @@ TEST_F(CompilerPipelineTest, MultipleClassicalRegisters) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     b.allocClassicalBitRegister(3, "c");
@@ -572,7 +574,7 @@ TEST_F(CompilerPipelineTest, LargeClassicalBitRegister) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 }
 
 // ##################################################
@@ -592,7 +594,7 @@ TEST_F(CompilerPipelineTest, SingleResetInSingleQubitCircuit) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     const auto q = b.allocQubitRegister(1, "q");
@@ -628,7 +630,7 @@ TEST_F(CompilerPipelineTest, ConsecutiveResetOperations) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     const auto q = b.allocQubitRegister(1, "q");
@@ -663,7 +665,7 @@ TEST_F(CompilerPipelineTest, SeparateResetsInTwoQubitSystem) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     const auto q = b.allocQubitRegister(2, "q");
@@ -699,7 +701,7 @@ TEST_F(CompilerPipelineTest, SingleMeasurementToSingleBit) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto q = b.allocQubitRegister(1);
@@ -737,7 +739,7 @@ TEST_F(CompilerPipelineTest, RepeatedMeasurementToSameBit) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto q = b.allocQubitRegister(1);
@@ -780,7 +782,7 @@ TEST_F(CompilerPipelineTest, RepeatedMeasurementOnSeparateBits) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto q = b.allocQubitRegister(1);
@@ -826,7 +828,7 @@ TEST_F(CompilerPipelineTest, MultipleClassicalRegistersAndMeasurements) {
 
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto q = b.allocQubitRegister(2);
