@@ -35,8 +35,8 @@ namespace {
  * @param stageNumber Current stage number
  * @param totalStages Total number of stages (for progress indication)
  */
-static void prettyPrintStage(ModuleOp module, const StringRef stageName,
-                             const int stageNumber, const int totalStages) {
+void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
+                      const int stageNumber, const int totalStages) {
   llvm::errs() << "\n";
   printBoxTop();
 

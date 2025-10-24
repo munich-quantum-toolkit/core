@@ -23,7 +23,7 @@ namespace {
 /**
  * @brief Trim trailing whitespace from a string
  */
-static std::string trimTrailingWhitespace(const std::string& str) {
+std::string trimTrailingWhitespace(const std::string& str) {
   const size_t end = str.find_last_not_of(" \t\r\n");
   return (end == std::string::npos) ? "" : str.substr(0, end + 1);
 }
@@ -71,10 +71,10 @@ std::vector<std::string> wrapLine(const std::string& line, const int maxWidth,
 
   // Detect leading whitespace (indentation) in the original line
   size_t leadingSpaces = 0;
-  for (size_t i = 0; i < line.size(); ++i) {
-    if (line[i] == ' ') {
+  for (const char c : line) {
+    if (c == ' ') {
       leadingSpaces++;
-    } else if (line[i] == '\t') {
+    } else if (c == '\t') {
       leadingSpaces += 4; // Count tabs as 4 spaces
     } else {
       break;

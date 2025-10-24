@@ -223,7 +223,7 @@ protected:
   /**
    * @brief Run canonicalization
    */
-  void runCanonicalizationPasses(ModuleOp module) const {
+  static void runCanonicalizationPasses(ModuleOp module) {
     PassManager pm(module.getContext());
     pm.addPass(createCanonicalizerPass());
     pm.addPass(createCSEPass());

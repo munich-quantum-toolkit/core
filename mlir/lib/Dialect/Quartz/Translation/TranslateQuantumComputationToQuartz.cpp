@@ -16,7 +16,6 @@
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/Quartz/Builder/QuartzProgramBuilder.h"
-#include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 
 #include <algorithm>
 #include <cstddef>

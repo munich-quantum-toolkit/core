@@ -261,14 +261,15 @@ void QIRProgramBuilder::generateOutputRecording() {
   auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
 
   // Group measurements by register
-  llvm::StringMap<SmallVector<std::pair<int64_t, Value>>> registerGroups;
+  llvm::StringMap<llvm::SmallVector<std::pair<int64_t, Value>>> registerGroups;
   for (const auto& [key, resultPtr] : registerResultMap) {
     const auto& [regName, regIdx] = key;
     registerGroups[regName].emplace_back(regIdx, resultPtr);
   }
 
   // Sort registers by name for deterministic output
-  SmallVector<std::pair<StringRef, SmallVector<std::pair<int64_t, Value>>>>
+  llvm::SmallVector<
+      std::pair<llvm::StringRef, llvm::SmallVector<std::pair<int64_t, Value>>>>
       sortedRegisters;
   for (auto& [name, measurements] : registerGroups) {
     sortedRegisters.emplace_back(name, std::move(measurements));

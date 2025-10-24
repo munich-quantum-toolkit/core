@@ -76,10 +76,10 @@ Value FluxProgramBuilder::staticQubit(const int64_t index) {
   return qubit;
 }
 
-SmallVector<Value>
+llvm::SmallVector<Value>
 FluxProgramBuilder::allocQubitRegister(const int64_t size,
                                        const StringRef name) {
-  SmallVector<Value> qubits;
+  llvm::SmallVector<Value> qubits;
   qubits.reserve(static_cast<size_t>(size));
 
   auto nameAttr = builder.getStringAttr(name);

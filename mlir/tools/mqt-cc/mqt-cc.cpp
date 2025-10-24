@@ -25,6 +25,7 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/AsmState.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/FileUtilities.h>
 #include <mlir/Support/LogicalResult.h>
@@ -37,30 +38,30 @@ using namespace mlir;
 namespace {
 
 // Command-line options
-const cl::opt<std::string> inputFilename(cl::Positional,
-                                         cl::desc("<input .mlir file>"),
-                                         cl::init("-"));
-
-const cl::opt<std::string> outputFilename("o", cl::desc("Output filename"),
-                                          cl::value_desc("filename"),
+const cl::opt<std::string> INPUT_FILENAME(cl::Positional,
+                                          cl::desc("<input .mlir file>"),
                                           cl::init("-"));
 
-const cl::opt<bool> convertToQIR("emit-qir",
-                                 cl::desc("Convert to QIR at the end"),
-                                 cl::init(false));
+const cl::opt<std::string> OUTPUT_FILENAME("o", cl::desc("Output filename"),
+                                           cl::value_desc("filename"),
+                                           cl::init("-"));
 
-const cl::opt<bool> enableTiming("mlir-timing",
-                                 cl::desc("Enable pass timing statistics"),
-                                 cl::init(false));
+const cl::opt<bool> CONVERT_TO_QIR("emit-qir",
+                                   cl::desc("Convert to QIR at the end"),
+                                   cl::init(false));
 
-const cl::opt<bool> enableStatistics("mlir-statistics",
-                                     cl::desc("Enable pass statistics"),
-                                     cl::init(false));
+const cl::opt<bool> ENABLE_TIMING("mlir-timing",
+                                  cl::desc("Enable pass timing statistics"),
+                                  cl::init(false));
+
+const cl::opt<bool> ENABLE_STATISTICS("mlir-statistics",
+                                      cl::desc("Enable pass statistics"),
+                                      cl::init(false));
 
 const cl::opt<bool>
-    printIRAfterAllStages("mlir-print-ir-after-all-stages",
-                          cl::desc("Print IR after each compiler stage"),
-                          cl::init(false));
+    PRINT_IR_AFTER_ALL_STAGES("mlir-print-ir-after-all-stages",
+                              cl::desc("Print IR after each compiler stage"),
+                              cl::init(false));
 
 /**
  * @brief Load and parse a .mlir file
@@ -83,17 +84,17 @@ OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename, MLIRContext* context) {
 /**
  * @brief Write the module to the output file
  */
-LogicalResult writeOutput(ModuleOp module, const StringRef filename) {
+mlir::LogicalResult writeOutput(ModuleOp module, const StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
     errs() << errorMessage << "\n";
-    return failure();
+    return mlir::failure();
   }
 
   module.print(output->os());
   output->keep();
-  return success();
+  return mlir::success();
 }
 
 } // namespace
@@ -119,18 +120,18 @@ int main(int argc, char** argv) {
   context.loadAllAvailableDialects();
 
   // Load the input .mlir file
-  const auto module = loadMLIRFile(inputFilename, &context);
+  const auto module = loadMLIRFile(INPUT_FILENAME, &context);
   if (!module) {
-    errs() << "Failed to load input file: " << inputFilename << "\n";
+    errs() << "Failed to load input file: " << INPUT_FILENAME << "\n";
     return 1;
   }
 
   // Configure the compiler pipeline
   QuantumCompilerConfig config;
-  config.convertToQIR = convertToQIR;
-  config.enableTiming = enableTiming;
-  config.enableStatistics = enableStatistics;
-  config.printIRAfterAllStages = printIRAfterAllStages;
+  config.convertToQIR = CONVERT_TO_QIR;
+  config.enableTiming = ENABLE_TIMING;
+  config.enableStatistics = ENABLE_STATISTICS;
+  config.printIRAfterAllStages = PRINT_IR_AFTER_ALL_STAGES;
 
   // Run the compilation pipeline
   if (const QuantumCompilerPipeline pipeline(config);
@@ -140,8 +141,8 @@ int main(int argc, char** argv) {
   }
 
   // Write the output
-  if (failed(writeOutput(module.get(), outputFilename))) {
-    errs() << "Failed to write output file: " << outputFilename << "\n";
+  if (writeOutput(module.get(), OUTPUT_FILENAME).failed()) {
+    errs() << "Failed to write output file: " << OUTPUT_FILENAME << "\n";
     return 1;
   }
 
