@@ -77,12 +77,12 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         InterfaceMethod<
             "Returns true if the operation has any control qubits, otherwise false.",
             "bool", "isControlled", (ins),
-            [{ return getNumControls() > 0; }]
+            [{ return getNumControls(impl, tablegen_opaque_val) > 0; }]
         >,
         InterfaceMethod<
             "Returns true if the operation only acts on a single qubit.",
             "bool", "isSingleQubit", (ins),
-            [{ return getNumQubits() == 1; }]
+            [{ return getNumQubits(impl, tablegen_opaque_val) == 1; }]
         >,
         /// TODO: I am fairly sure that there are quite some further convenience methods that would be helpful here, e.g., whether it is a two-qubit gate
 

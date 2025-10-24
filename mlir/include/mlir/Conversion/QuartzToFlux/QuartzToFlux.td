@@ -20,7 +20,6 @@ def QuartzToFlux : Pass<"quartz-to-flux"> {
 
   // Define dependent dialects
   let dependentDialects = [
-    "mlir::memref::MemRefDialect",
     "mlir::quartz::QuartzDialect",
     "mlir::flux::FluxDialect"
   ];
