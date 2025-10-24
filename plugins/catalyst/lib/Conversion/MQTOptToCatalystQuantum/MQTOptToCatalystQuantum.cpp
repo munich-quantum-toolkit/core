@@ -30,18 +30,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <numbers>
 #include <utility>
-
-// Define math constants if not available
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-#ifndef M_PI_2
-#define M_PI_2 1.57079632679489661923
-#endif
-#ifndef M_PI_4
-#define M_PI_4 0.78539816339744830962
-#endif
 
 namespace mqt::ir::conversions {
 
@@ -410,8 +400,8 @@ struct ConvertMQTOptSimpleGate<opt::VOp> final : OpConversionPattern<opt::VOp> {
     auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
 
     // V = RZ(π/2) RY(π/2) RZ(-π/2)
-    auto pi2 = rewriter.create<ConstantOp>(op.getLoc(),
-                                           rewriter.getF64FloatAttr(M_PI_2));
+    auto pi2 = rewriter.create<ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(std::numbers::pi / 2.0));
 
     // Create the decomposed operations
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
@@ -465,7 +455,7 @@ struct ConvertMQTOptSimpleGate<opt::VdgOp> final
 
     // V† = RZ(π/2) RY(-π/2) RZ(-π/2)
     auto negPi2 = rewriter.create<ConstantOp>(
-        op.getLoc(), rewriter.getF64FloatAttr(-M_PI_2));
+        op.getLoc(), rewriter.getF64FloatAttr(-std::numbers::pi / 2.0));
 
     // Create the decomposed operations
     auto rz1 = rewriter.create<catalyst::quantum::CustomOp>(
@@ -686,10 +676,10 @@ struct ConvertMQTOptSimpleGate<opt::UOp> final : OpConversionPattern<opt::UOp> {
     // https://docs.quantum.ibm.com/api/qiskit/0.24/qiskit.circuit.library.UGate
     // U(θ, φ, λ) = RZ(φ − π⁄2) ⋅ RX(π⁄2) ⋅ RZ(π − θ) ⋅ RX(π⁄2) ⋅ RZ(λ − π⁄2)
     // Note: The MQT UOp uses U(θ/2, φ, λ)
-    auto pi = rewriter.create<ConstantOp>(op.getLoc(),
-                                          rewriter.getF64FloatAttr(M_PI));
-    auto pi2 = rewriter.create<ConstantOp>(op.getLoc(),
-                                           rewriter.getF64FloatAttr(M_PI_2));
+    auto pi = rewriter.create<ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(std::numbers::pi));
+    auto pi2 = rewriter.create<ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(std::numbers::pi / 2.0));
 
     // Compute φ - π/2
     auto phiMinusPi2 = rewriter.create<SubFOp>(op.getLoc(), phi, pi2);
@@ -811,10 +801,10 @@ struct ConvertMQTOptSimpleGate<opt::U2Op> final
 
     // U2(φ, λ) = U(π/2, φ, λ) = RZ(φ − π⁄2) ⋅ RX(π⁄2) ⋅ RZ(3/4 π) ⋅ RX(π⁄2) ⋅
     // RZ(λ − π⁄2)
-    auto pi2 = rewriter.create<ConstantOp>(op.getLoc(),
-                                           rewriter.getF64FloatAttr(M_PI_2));
-    auto pi4 = rewriter.create<ConstantOp>(op.getLoc(),
-                                           rewriter.getF64FloatAttr(M_PI_4));
+    auto pi2 = rewriter.create<ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(std::numbers::pi / 2.0));
+    auto pi4 = rewriter.create<ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(std::numbers::pi / 4.0));
     auto three =
         rewriter.create<ConstantOp>(op.getLoc(), rewriter.getF64FloatAttr(3.0));
     auto pi34 = rewriter.create<MulFOp>(op.getLoc(), pi4, three);
@@ -1186,8 +1176,8 @@ struct ConvertMQTOptSimpleGate<opt::XXminusYYOp> final
     const Value beta = paramValues[1]; // Second parameter.
 
     // Create constant for pi.
-    auto pi = rewriter.create<ConstantOp>(op.getLoc(),
-                                          rewriter.getF64FloatAttr(M_PI));
+    auto pi = rewriter.create<ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(std::numbers::pi));
 
     // Compute beta - pi and pi - beta.
     auto betaMinusPi = rewriter.create<SubFOp>(op.getLoc(), beta, pi);
@@ -1303,8 +1293,8 @@ struct ConvertMQTOptSimpleGate<opt::XXplusYYOp> final
     const Value beta = paramValues[1]; // Second parameter
 
     // Create constants for pi
-    auto pi = rewriter.create<ConstantOp>(op.getLoc(),
-                                          rewriter.getF64FloatAttr(M_PI));
+    auto pi = rewriter.create<ConstantOp>(
+        op.getLoc(), rewriter.getF64FloatAttr(std::numbers::pi));
 
     // Compute beta - pi
     auto betaMinusPi = rewriter.create<SubFOp>(op.getLoc(), beta, pi);
