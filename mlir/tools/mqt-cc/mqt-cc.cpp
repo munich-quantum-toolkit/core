@@ -16,6 +16,7 @@
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/ToolOutputFile.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -26,32 +27,37 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/FileUtilities.h>
+#include <mlir/Support/LogicalResult.h>
+#include <string>
+#include <utility>
 
 using namespace llvm;
 using namespace mlir;
 
+namespace {
+
 // Command-line options
-static cl::opt<std::string> inputFilename(cl::Positional,
-                                          cl::desc("<input .mlir file>"),
+const cl::opt<std::string> inputFilename(cl::Positional,
+                                         cl::desc("<input .mlir file>"),
+                                         cl::init("-"));
+
+const cl::opt<std::string> outputFilename("o", cl::desc("Output filename"),
+                                          cl::value_desc("filename"),
                                           cl::init("-"));
 
-static cl::opt<std::string> outputFilename("o", cl::desc("Output filename"),
-                                           cl::value_desc("filename"),
-                                           cl::init("-"));
+const cl::opt<bool> convertToQIR("emit-qir",
+                                 cl::desc("Convert to QIR at the end"),
+                                 cl::init(false));
 
-static cl::opt<bool> convertToQIR("emit-qir",
-                                  cl::desc("Convert to QIR at the end"),
-                                  cl::init(false));
+const cl::opt<bool> enableTiming("mlir-timing",
+                                 cl::desc("Enable pass timing statistics"),
+                                 cl::init(false));
 
-static cl::opt<bool> enableTiming("mlir-timing",
-                                  cl::desc("Enable pass timing statistics"),
-                                  cl::init(false));
+const cl::opt<bool> enableStatistics("mlir-statistics",
+                                     cl::desc("Enable pass statistics"),
+                                     cl::init(false));
 
-static cl::opt<bool> enableStatistics("mlir-statistics",
-                                      cl::desc("Enable pass statistics"),
-                                      cl::init(false));
-
-static cl::opt<bool>
+const cl::opt<bool>
     printIRAfterAllStages("mlir-print-ir-after-all-stages",
                           cl::desc("Print IR after each compiler stage"),
                           cl::init(false));
@@ -59,8 +65,7 @@ static cl::opt<bool>
 /**
  * @brief Load and parse a .mlir file
  */
-static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
-                                          MLIRContext* context) {
+OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename, MLIRContext* context) {
   // Set up the input file
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
@@ -78,7 +83,7 @@ static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
 /**
  * @brief Write the module to the output file
  */
-static LogicalResult writeOutput(ModuleOp module, const StringRef filename) {
+LogicalResult writeOutput(ModuleOp module, const StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -91,8 +96,10 @@ static LogicalResult writeOutput(ModuleOp module, const StringRef filename) {
   return success();
 }
 
+} // namespace
+
 int main(int argc, char** argv) {
-  InitLLVM y(argc, argv);
+  const InitLLVM y(argc, argv);
 
   // Parse command-line options
   cl::ParseCommandLineOptions(argc, argv, "MQT Core Compiler Driver\n");
@@ -127,7 +134,7 @@ int main(int argc, char** argv) {
 
   // Run the compilation pipeline
   if (const QuantumCompilerPipeline pipeline(config);
-      failed(pipeline.runPipeline(module.get()))) {
+      pipeline.runPipeline(module.get()).failed()) {
     errs() << "Compilation pipeline failed\n";
     return 1;
   }

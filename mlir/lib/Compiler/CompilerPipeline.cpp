@@ -15,31 +15,17 @@
 #include "mlir/Conversion/QuartzToQIR/QuartzToQIR.h"
 #include "mlir/Support/PrettyPrinting.h"
 
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 #include <string>
 
 namespace mlir {
 
-void QuantumCompilerPipeline::addCleanupPasses(PassManager& pm) {
-  // Always run canonicalization and dead value removal
-  pm.addPass(createCanonicalizerPass());
-  pm.addPass(createRemoveDeadValuesPass());
-}
-
-void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
-  // Enable timing statistics if requested
-  if (config_.enableTiming) {
-    pm.enableTiming();
-  }
-
-  // Enable pass statistics if requested
-  if (config_.enableStatistics) {
-    pm.enableStatistics();
-  }
-}
+namespace {
 
 /**
  * @brief Pretty print IR with ASCII art borders and stage identifier
@@ -75,6 +61,26 @@ static void prettyPrintStage(ModuleOp module, const StringRef stageName,
   llvm::errs().flush();
 }
 
+} // namespace
+
+void QuantumCompilerPipeline::addCleanupPasses(PassManager& pm) {
+  // Always run canonicalization and dead value removal
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createRemoveDeadValuesPass());
+}
+
+void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
+  // Enable timing statistics if requested
+  if (config_.enableTiming) {
+    pm.enableTiming();
+  }
+
+  // Enable pass statistics if requested
+  if (config_.enableStatistics) {
+    pm.enableStatistics();
+  }
+}
+
 LogicalResult
 QuantumCompilerPipeline::runPipeline(ModuleOp module,
                                      CompilationRecord* record) const {
@@ -103,7 +109,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
 
   // Stage 1: Initial canonicalization
   addCleanupPasses(pm);
-  if (failed(pm.run(module))) {
+  if (pm.run(module).failed()) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
@@ -236,7 +242,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
 
     printBoxLine("✓ Compilation Complete");
 
-    std::string summaryLine =
+    const std::string summaryLine =
         "Successfully processed " + std::to_string(currentStage) + " stages";
     printBoxLine(summaryLine, 1); // Indent by 1 space
 

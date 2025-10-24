@@ -17,6 +17,8 @@
 #include <mlir/IR/DialectImplementation.h>
 // IWYU pragma: end_keep
 
+#include <mlir/Support/LogicalResult.h>
+
 using namespace mlir;
 using namespace mlir::quartz;
 

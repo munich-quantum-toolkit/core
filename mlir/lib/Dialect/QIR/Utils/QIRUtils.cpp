@@ -10,12 +10,19 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <cstdint>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/SymbolTable.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 #include <string>
 
 namespace mlir::qir {
@@ -44,7 +51,7 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
 
 void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
   OpBuilder builder(main.getBody());
-  SmallVector<Attribute> attributes;
+  llvm::SmallVector<Attribute> attributes;
 
   // Core QIR attributes
   attributes.emplace_back(builder.getStringAttr("entry_point"));

@@ -18,7 +18,9 @@
 #include "mlir/Dialect/Quartz/Translation/TranslateQuantumComputationToQuartz.h"
 #include "mlir/Support/PrettyPrinting.h"
 
+#include <functional>
 #include <gtest/gtest.h>
+#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -31,6 +33,8 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
+#include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 #include <sstream>
 #include <string>
@@ -223,7 +227,7 @@ protected:
     PassManager pm(module.getContext());
     pm.addPass(createCanonicalizerPass());
     pm.addPass(createCSEPass());
-    if (failed(pm.run(module))) {
+    if (pm.run(module).failed()) {
       llvm::errs() << "Failed to run canonicalization passes\n";
     }
   }
@@ -358,7 +362,7 @@ TEST_F(CompilerPipelineTest, EmptyCircuit) {
   ASSERT_TRUE(module);
 
   // Run compilation
-  ASSERT_TRUE(succeeded(runPipeline(module.get())));
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   // Verify all stages
   verifyAllStages({

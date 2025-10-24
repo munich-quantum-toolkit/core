@@ -18,6 +18,9 @@
 #include <mlir/IR/PatternMatch.h>
 // IWYU pragma: end_keep
 
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/Support/LogicalResult.h>
+
 using namespace mlir;
 using namespace mlir::flux;
 

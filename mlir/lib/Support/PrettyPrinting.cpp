@@ -10,6 +10,7 @@
 
 #include "mlir/Support/PrettyPrinting.h"
 
+#include <cstddef>
 #include <llvm/Support/raw_ostream.h>
 #include <sstream>
 #include <string>
@@ -17,8 +18,7 @@
 
 namespace mlir {
 
-constexpr auto TOTAL_WIDTH = 120;
-constexpr auto BORDER_WIDTH = 2; // "║ " on each side
+namespace {
 
 /**
  * @brief Trim trailing whitespace from a string
@@ -27,6 +27,11 @@ static std::string trimTrailingWhitespace(const std::string& str) {
   const size_t end = str.find_last_not_of(" \t\r\n");
   return (end == std::string::npos) ? "" : str.substr(0, end + 1);
 }
+
+} // namespace
+
+constexpr auto TOTAL_WIDTH = 120;
+constexpr auto BORDER_WIDTH = 2; // "║ " on each side
 
 int calculateDisplayWidth(const std::string& str) {
   auto displayWidth = 0;
@@ -187,7 +192,7 @@ std::vector<std::string> wrapLine(const std::string& line, const int maxWidth,
     // Add continuation indicator to all but the first and last lines
     for (size_t i = 1; i < wrapped.size(); ++i) {
       if (wrapped[i].find("↳") == std::string::npos) {
-        std::string indentStr(leadingSpaces, ' ');
+        const std::string indentStr(leadingSpaces, ' ');
         wrapped[i] = "↳ " + indentStr + wrapped[i].substr(leadingSpaces);
       }
     }
@@ -224,7 +229,8 @@ void printBoxLine(const std::string& text, const int indent,
                   llvm::raw_ostream& os) {
   // Content width = Total width - left border (2 chars) - right border (2
   // chars)
-  constexpr int contentWidth = TOTAL_WIDTH - 2 * BORDER_WIDTH; // "║ " and " ║"
+  constexpr int contentWidth =
+      TOTAL_WIDTH - (2 * BORDER_WIDTH); // "║ " and " ║"
 
   // Trim trailing whitespace before processing
   const std::string trimmedText = trimTrailingWhitespace(text);

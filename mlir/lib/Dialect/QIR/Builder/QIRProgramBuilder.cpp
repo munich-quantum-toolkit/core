@@ -12,11 +12,18 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringMap.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 #include <string>
 #include <utility>
 
@@ -123,8 +130,9 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
   return qubit;
 }
 
-SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
-  SmallVector<Value> qubits;
+llvm::SmallVector<Value>
+QIRProgramBuilder::allocQubitRegister(const int64_t size) {
+  llvm::SmallVector<Value> qubits;
   qubits.reserve(size);
 
   for (int64_t i = 0; i < size; ++i) {
