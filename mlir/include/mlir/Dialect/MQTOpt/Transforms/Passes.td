@@ -92,7 +92,7 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
 }
 
 def LiftMeasurementsPass : Pass<"lift-measurements", "mlir::ModuleOp"> {
-  let dependentDialects = [ "mlir::scf::SCFDialect" ];
+  let dependentDialects = [ "mlir::scf::SCFDialect", "mqt::ir::opt::MQTOptDialect" ];
   let summary = "This pass attempts to lift measurements as much as possible by replacing quantum operations with classical operations where possible.";
   let description = [{
     This pass consists of several patterns that attempt to push different structures of quantum gates below measurements.

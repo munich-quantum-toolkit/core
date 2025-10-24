@@ -11,6 +11,7 @@
 #pragma once
 
 #include "ir/QuantumComputation.hpp"
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <cstdint>
 #include <mlir/Dialect/SCF/IR/SCF.h>
