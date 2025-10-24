@@ -51,6 +51,7 @@ module {
     // CHECK: memref.store %[[CZZ_T]]#1, %[[ALLOC]][%[[C1_FINAL]]] : memref<3x!mqtopt.Qubit>
     // CHECK: %[[C2_FINAL:.*]] = arith.constant 2 : index
     // CHECK: memref.store %[[CZZ_C]], %[[ALLOC]][%[[C2_FINAL]]] : memref<3x!mqtopt.Qubit>
+    // CHECK: memref.dealloc %[[ALLOC]] : memref<3x!mqtopt.Qubit>
 
     // Prepare qubits
     %angle = arith.constant 3.000000e-01 : f64

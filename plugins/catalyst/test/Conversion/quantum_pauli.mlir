@@ -65,6 +65,7 @@ module {
     // CHECK: memref.store %[[C12]]#0, %[[ALLOC]][%[[C1]]] : memref<4x!mqtopt.Qubit>
     // CHECK: %[[C0:.*]] = arith.constant 0 : index
     // CHECK: memref.store %[[T12]], %[[ALLOC]][%[[C0]]] : memref<4x!mqtopt.Qubit>
+    // CHECK: memref.dealloc %[[ALLOC]] : memref<4x!mqtopt.Qubit>
 
     // Prepare qubits
     %qreg = quantum.alloc( 4) : !quantum.reg

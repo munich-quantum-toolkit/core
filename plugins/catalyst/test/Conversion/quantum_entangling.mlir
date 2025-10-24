@@ -48,7 +48,7 @@ module {
     // CHECK: memref.store %[[CECR_T]]#1, %[[ALLOC]][%[[C1_FINAL]]] : memref<3x!mqtopt.Qubit>
     // CHECK: %[[C2_FINAL:.*]] = arith.constant 2 : index
     // CHECK: memref.store %[[CECR_C]], %[[ALLOC]][%[[C2_FINAL]]] : memref<3x!mqtopt.Qubit>
-
+    // CHECK: memref.dealloc %[[ALLOC]] : memref<3x!mqtopt.Qubit>
 
     // Prepare qubits
     %qreg = quantum.alloc( 3) : !quantum.reg
