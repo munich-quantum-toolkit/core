@@ -89,6 +89,89 @@ struct AStarHeuristicRouter final : RouterBase {
   explicit AStarHeuristicRouter(HeuristicWeights weights)
       : weights_(std::move(weights)) {}
 
+private:
+  using ClosedSet = mlir::DenseSet<ThinLayout>;
+
+  struct Node {
+    mlir::SmallVector<QubitIndexPair> sequence;
+    ThinLayout layout;
+    float f;
+
+    /**
+     * @brief Construct a root node with the given layout. Initialize the
+     * sequence with an empty vector and set the cost to zero.
+     */
+    explicit Node(ThinLayout layout) : layout(std::move(layout)), f(0) {}
+
+    /**
+     * @brief Construct a non-root node from its parent node. Apply the given
+     * swap to the layout of the parent node and evaluate the cost.
+     */
+    Node(const Node& parent, QubitIndexPair swap, const Layers& layers,
+         const Architecture& arch, const HeuristicWeights& weights)
+        : sequence(parent.sequence), layout(parent.layout), f(0) {
+      /// Apply node-specific swap to given layout.
+      layout.swap(layout.getProgramIndex(swap.first),
+                  layout.getProgramIndex(swap.second));
+
+      /// Add swap to sequence.
+      sequence.push_back(swap);
+
+      /// Evaluate cost function.
+      f = g(weights) + h(layers, arch, weights); // NOLINT
+    }
+
+    /**
+     * @brief Return true if the current sequence of SWAPs makes all gates
+     * executable.
+     */
+    [[nodiscard]] bool isGoal(const mlir::ArrayRef<QubitIndexPair>& gates,
+                              const Architecture& arch) const {
+      return std::ranges::all_of(gates, [&](const QubitIndexPair gate) {
+        return arch.areAdjacent(layout.getHardwareIndex(gate.first),
+                                layout.getHardwareIndex(gate.second));
+      });
+    }
+
+    [[nodiscard]] bool operator>(const Node& rhs) const { return f > rhs.f; }
+
+  private:
+    /**
+     * @brief Calculate the path cost for the A* search algorithm.
+     *
+     * The path cost function is the weighted sum of the currently required
+     * SWAPs.
+     */
+    [[nodiscard]] float g(const HeuristicWeights& weights) {
+      return (weights.alpha * static_cast<float>(sequence.size()));
+    }
+
+    /**
+     * @brief Calculate the heuristic cost for the A* search algorithm.
+     *
+     * Computes the minimal number of SWAPs required to route each gate in each
+     * layer. For each gate, this is determined by the shortest distance between
+     * its hardware qubits. Intuitively, this is the number of SWAPs that a
+     * naive router would insert to route the layers.
+     */
+    [[nodiscard]] float h(const Layers& layers, const Architecture& arch,
+                          const HeuristicWeights& weights) const {
+      float nn{0};
+      for (const auto [i, layer] : llvm::enumerate(layers)) {
+        for (const auto [prog0, prog1] : layer) {
+          const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+          const std::size_t dist = arch.distanceBetween(hw0, hw1);
+          const std::size_t nswaps = dist < 2 ? 0 : dist - 2;
+          nn += weights.lambdas[i] * static_cast<float>(nswaps);
+        }
+      }
+      return nn;
+    }
+  };
+
+  using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
+
+public:
   [[nodiscard]] RouterResult route(const Layers& layers,
                                    const ThinLayout& layout,
                                    const Architecture& arch) const override {
@@ -105,7 +188,7 @@ struct AStarHeuristicRouter final : RouterBase {
 
     /// Initialize closed set.
     ClosedSet visited;
-    visited.insert(root.layout());
+    visited.insert(root.layout);
 
     /// Iterative searching and expanding.
     while (!frontier.empty()) {
@@ -122,130 +205,33 @@ struct AStarHeuristicRouter final : RouterBase {
   }
 
 private:
-  struct Node {
-    /**
-     * @brief Construct a root node with the given layout. Initialize the
-     * sequence with an empty vector and set the cost to zero.
-     */
-    explicit Node(ThinLayout layout) : layout_(std::move(layout)) {}
-
-    /**
-     * @brief Construct a non-root node from its parent node. Apply the given
-     * swap to the layout of the parent node and evaluate the cost.
-     */
-    Node(const Node& parent, QubitIndexPair swap, const Layers& layers,
-         const Architecture& arch, const HeuristicWeights& weights)
-        : seq_(parent.seq_), layout_(parent.layout_) {
-      /// Apply node-specific swap to given layout.
-      layout_.swap(layout_.getProgramIndex(swap.first),
-                   layout_.getProgramIndex(swap.second));
-      /// Add swap to sequence.
-      seq_.push_back(swap);
-
-      /// Evaluate cost function.
-      f_ = g(weights) + h(layers, arch, weights); // NOLINT
-    }
-
-    /**
-     * @brief Return true if the current sequence of SWAPs makes all gates
-     * executable.
-     */
-    [[nodiscard]] bool isGoal(const mlir::ArrayRef<QubitIndexPair>& gates,
-                              const Architecture& arch) const {
-      return std::ranges::all_of(gates, [&](const QubitIndexPair gate) {
-        return arch.areAdjacent(layout_.getHardwareIndex(gate.first),
-                                layout_.getHardwareIndex(gate.second));
-      });
-    }
-
-    /**
-     * @brief Return the sequence of SWAPs.
-     */
-    [[nodiscard]] mlir::SmallVector<QubitIndexPair> getSequence() const {
-      return seq_;
-    }
-
-    /**
-     * @brief Return a const reference to the node's layout.
-     */
-    [[nodiscard]] const ThinLayout& layout() const { return layout_; }
-
-    [[nodiscard]] bool operator>(const Node& rhs) const { return f_ > rhs.f_; }
-
-  private:
-    /**
-     * @brief Calculate the path cost for the A* search algorithm.
-     *
-     * The path cost function is the weighted sum of the currently required
-     * SWAPs.
-     */
-    [[nodiscard]] float g(const HeuristicWeights& weights) {
-      return (weights.alpha * static_cast<float>(seq_.size()));
-    }
-
-    /**
-     * @brief Calculate the heuristic cost for the A* search algorithm.
-     *
-     * Computes the minimal number of SWAPs required to route each gate in each
-     * layer. For each gate, this is determined by the shortest distance between
-     * its hardware qubits. Intuitively, this is the number of SWAPs that a
-     * naive router would insert to route the layers.
-     *
-     *
-     * @todo Optimize to O(1) incremental updates by only recalculating costs
-     *       affected by the most recent SWAP, similar to the LightSABRE
-     *       algorithm approach.
-     */
-    [[nodiscard]] float h(const Layers& layers, const Architecture& arch,
-                          const HeuristicWeights& weights) {
-      float nn{0};
-      for (const auto [i, layer] : llvm::enumerate(layers)) {
-        for (const auto [prog0, prog1] : layer) {
-          const auto [hw0, hw1] = layout_.getHardwareIndices(prog0, prog1);
-          const std::size_t dist = arch.distanceBetween(hw0, hw1);
-          const std::size_t nswaps = dist < 2 ? 0 : dist - 2;
-          nn += weights.lambdas[i] * static_cast<float>(nswaps);
-        }
-      }
-      return nn;
-    }
-
-    mlir::SmallVector<QubitIndexPair> seq_;
-    ThinLayout layout_;
-
-    float f_{0};
-  };
-
-  using ClosedSet = mlir::DenseSet<ThinLayout>;
-  using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
-
   /**
    * @brief Expand frontier with all neighbouring SWAPs in the current front.
    * @returns SWAP sequence if a goal node is expanded. Otherwise: std::nullopt.
    */
-  std::optional<RouterResult> expand(MinQueue& frontier, const Node& node,
+  std::optional<RouterResult> expand(MinQueue& frontier, const Node& parent,
                                      ClosedSet& visited, const Layers& layers,
                                      const Architecture& arch) const {
-    llvm::SmallDenseSet<QubitIndexPair, 16> swaps{};
+    llvm::SmallDenseSet<QubitIndexPair, 64> swaps{};
     for (const QubitIndexPair gate : layers.front()) {
       for (const auto prog : {gate.first, gate.second}) {
-        const auto hw0 = node.layout().getHardwareIndex(prog);
+        const auto hw0 = parent.layout.getHardwareIndex(prog);
         for (const auto hw1 : arch.neighboursOf(hw0)) {
           /// Ensure consistent hashing/comparison.
           const QubitIndexPair swap = std::minmax(hw0, hw1);
-          if (swaps.insert(swap).second) {
+          if (!swaps.insert(swap).second) {
             continue;
           }
 
-          Node child(node, swap, layers, arch, weights_);
+          Node child(parent, swap, layers, arch, weights_);
 
           /// Early exit if child node is a goal node.
           if (child.isGoal(layers.front(), arch)) {
-            return child.getSequence();
+            return child.sequence;
           }
 
           /// Skip already visited permutations.
-          if (!visited.insert(child.layout()).second) {
+          if (!visited.insert(child.layout).second) {
             continue;
           }
 
