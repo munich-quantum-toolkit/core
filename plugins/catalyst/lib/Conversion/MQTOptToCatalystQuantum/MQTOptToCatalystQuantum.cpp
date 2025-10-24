@@ -170,7 +170,7 @@ struct ConvertMQTOptAlloc final : OpConversionPattern<memref::AllocOp> {
 
     // Replace with quantum alloc operation
     rewriter.replaceOpWithNewOp<catalyst::quantum::AllocOp>(op, resultType,
-                                                              size, nullptr);
+                                                            size, nullptr);
 
     return success();
   }
@@ -237,8 +237,7 @@ struct ConvertMQTOptLoad final : OpConversionPattern<memref::LoadOp> {
     }
 
     // Prepare the result type(s)
-    auto resultType =
-        catalyst::quantum::QubitType::get(rewriter.getContext());
+    auto resultType = catalyst::quantum::QubitType::get(rewriter.getContext());
 
     // Get index (assuming single index for 1D memref)
     auto indices = adaptor.getIndices();
@@ -283,13 +282,12 @@ struct ConvertMQTOptStore final : OpConversionPattern<memref::StoreOp> {
     }
 
     // Prepare the result type(s)
-    auto resultType =
-        catalyst::quantum::QuregType::get(rewriter.getContext());
+    auto resultType = catalyst::quantum::QuregType::get(rewriter.getContext());
 
     // Create the new operation
     rewriter.create<catalyst::quantum::InsertOp>(op.getLoc(), resultType,
-                                                   adaptor.getMemref(), index,
-                                                   nullptr, adaptor.getValue());
+                                                 adaptor.getMemref(), index,
+                                                 nullptr, adaptor.getValue());
 
     // Erase the original store operation (store has no results to replace)
     rewriter.eraseOp(op);
