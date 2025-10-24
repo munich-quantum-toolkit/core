@@ -230,89 +230,6 @@ struct GateDecompositionPattern final
     return wrapped;
   }
 
-  // GPT generated
-  void tridiagonalize_inplace(rmatrix4x4& A) {
-    auto dot3 = [](auto&& a, auto&& b) {
-      return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    };
-    // Householder for column 0
-    {
-      auto x = std::array{A[1 * 4 + 0], A[8 + 0],
-                          A[12 + 0]}; // Elements [1,0], [2,0], [3,0]
-      auto norm_x = std::sqrt(dot3(x, x));
-      if (norm_x > 1e-12) {
-        auto sign = (x[0] >= 0) ? 1.0 : -1.0;
-        auto u0 = x[0] + sign * norm_x;
-        auto denom = std::sqrt(u0 * u0 + x[1] * x[1] + x[2] * x[2]);
-        auto v = std::array{u0 / denom, x[1] / denom, x[2] / denom};
-
-        // Apply H = I - 2vvᵀ to A from both sides: A := H A H
-        // Only affect rows and columns 1-3
-
-        // temp = A * v
-        std::array<fp, 3> temp = {0, 0, 0};
-        for (int i = 1; i < 4; ++i) {
-          for (int j = 1; j < 4; ++j) {
-            temp[i - 1] += A[i * 4 + j] * v[j - 1];
-          }
-        }
-
-        // w = 2 * (A*v - (vᵀ*A*v)*v)
-        auto alpha = dot3(v, temp);
-        std::array<fp, 3> w;
-        for (int i = 0; i < 3; ++i)
-          w[i] = 2.0 * (temp[i] - alpha * v[i]);
-
-        // Update A = A - v wᵀ - w vᵀ
-        for (int i = 1; i < 4; ++i) {
-          for (int j = i; j < 4; ++j) {
-            auto delta = v[i - 1] * w[j - 1] + w[i - 1] * v[j - 1];
-            A[i * 4 + j] -= delta;
-            if (i != j)
-              A[j * 4 + i] -= delta; // symmetry
-          }
-        }
-      }
-    }
-
-    // Householder for column 1 (submatrix 2x2 at bottom right)
-    {
-      auto x = std::array{A[10], A[15]}; // Elements [2,1], [3,1]
-      auto norm_x = std::sqrt(x[0] * x[0] + x[1] * x[1]);
-      if (norm_x > 1e-12) {
-        auto sign = (x[0] >= 0) ? 1.0 : -1.0;
-        auto u0 = x[0] + sign * norm_x;
-        auto denom = std::sqrt(u0 * u0 + x[1] * x[1]);
-        auto v = std::array{u0 / denom, x[1] / denom};
-
-        // temp = A * v
-        std::array<fp, 2> temp = {0, 0};
-        for (int i = 2; i < 4; ++i) {
-          for (int j = 2; j < 4; ++j) {
-            temp[i - 2] += A[i * 4 + j] * v[j - 2];
-          }
-        }
-
-        // w = 2 * (A*v - (vᵀ*A*v)*v)
-        auto alpha = v[0] * temp[0] + v[1] * temp[1];
-        std::array<fp, 2> w;
-        for (int i = 0; i < 2; ++i)
-          w[i] = 2.0 * (temp[i] - alpha * v[i]);
-
-        // Update A = A - v wᵀ - w vᵀ
-        for (int i = 2; i < 4; ++i) {
-          for (int j = i; j < 4; ++j) {
-            auto delta = v[i - 2] * w[j - 2] + w[i - 2] * v[j - 2];
-            A[i * 4 + j] -= delta;
-            if (i != j)
-              A[j * 4 + i] -= delta;
-          }
-        }
-      }
-    }
-
-    // Now A is tridiagonal
-  }
   // https://docs.rs/faer/latest/faer/mat/generic/struct.Mat.html#method.self_adjoint_eigen
   static std::pair<rmatrix4x4, rdiagonal4x4>
   self_adjoint_eigen_lower(rmatrix4x4 A) {
@@ -324,6 +241,14 @@ struct GateDecompositionPattern final
 
     auto [U, S] = self_adjoint_evd(A);
 
+    // TODO: not in original code
+    if (helpers::determinant(U) + 1.0 < std::numeric_limits<fp>::epsilon()) {
+      // if determinant of eigenvector matrix is -1.0, multiply first eigenvector by -1.0
+        for (int i = 0; i < 4; ++i) {
+          U[i * 4 + 0] *= -1.0;
+        }
+    }
+
     return std::make_pair(U, S);
   }
 
@@ -333,6 +258,7 @@ struct GateDecompositionPattern final
       using helpers::kroneckerProduct;
       using helpers::transpose_conjugate;
       using helpers::determinant;
+      helpers::print(special_unitary, "SPECIAL_UNITARY");
     // first quadrant
     matrix2x2 r = {special_unitary[0 * 4 + 0], special_unitary[0 * 4 + 1],
                    special_unitary[1 * 4 + 0], special_unitary[1 * 4 + 1]};
@@ -387,6 +313,7 @@ struct GateDecompositionPattern final
         C_ZERO,        qfp(0., -0.5), qfp(0., -0.5), C_ZERO,
         C_ZERO,        qfp(0.5, 0.),  qfp(-0.5, 0.), C_ZERO,
     };
+    helpers::print(unitary, "UNITARY in MAGIC BASIS TRANSFORM");
     if (direction == MagicBasisTransform::OutOf) {
       return dot(dot(B_NON_NORMALIZED_DAGGER, unitary), B_NON_NORMALIZED);
     }
@@ -564,14 +491,14 @@ struct GateDecompositionPattern final
       llvm::errs() << "===== M2 =====\n";
       helpers::print(m2);
 
-      arma::Mat<qfp> U(4, 4);
-  for (int i = 0; i < 4; ++i) {
-    for (int j = 0; j < 4; ++j) {
-      U.at(j, i) = u_p[j * 4 + i];
-    }
-  }
-      auto x = U.st() * U;
-      std::cerr << "ARMA\n" << U.t() << "\n\n" << U << "\n\n" << x << std::endl;
+      // arma::Mat<qfp> U(4, 4);
+  // for (int i = 0; i < 4; ++i) {
+    // for (int j = 0; j < 4; ++j) {
+      // U.at(j, i) = u_p[j * 4 + i];
+    // }
+  // }
+      // auto x = U.st() * U;
+      // std::cerr << "ARMA\n" << U.t() << "\n\n" << U << "\n\n" << x << std::endl;
 
       // M2 is a symmetric complex matrix. We need to decompose it as M2 = P D
       // P^T where P ∈ SO(4), D is diagonal with unit-magnitude elements.
@@ -652,8 +579,9 @@ struct GateDecompositionPattern final
       std::array<fp, 3> cs;
       for (std::size_t i = 0; i < cs.size(); ++i) {
         assert(i < d_real.size());
-        cs[i] = remEuclid((d_real[i] + d_real[3]) / 2.0, qc::PI_2);
+        cs[i] = remEuclid((d_real[i] + d_real[3]) / 2.0, qc::TAU);
       }
+      helpers::print(cs, "CS");
       decltype(cs) cstemp;
       llvm::transform(cs, cstemp.begin(), [](auto&& x) {
         auto tmp = remEuclid(x, qc::PI_2);
@@ -662,18 +590,21 @@ struct GateDecompositionPattern final
       std::array<std::size_t, cstemp.size()> order{0, 1, 2};
       llvm::stable_sort(order,
                         [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
-      std::tie(order[0], order[1], order[2]) = {order[1], order[2], order[0]};
-      std::tie(cs[0], cs[1], cs[2]) = {cs[order[0]], cs[order[1]],
+      helpers::print(order, "ORDER (1)");
+      std::tie(order[0], order[1], order[2]) = std::tuple{order[1], order[2], order[0]};
+      helpers::print(order, "ORDER (2)");
+      std::tie(cs[0], cs[1], cs[2]) = std::tuple{cs[order[0]], cs[order[1]],
                                        cs[order[2]]};
-      std::tie(d_real[0], d_real[1], d_real[2]) = {
+      std::tie(d_real[0], d_real[1], d_real[2]) = std::tuple{
           d_real[order[0]], d_real[order[1]], d_real[order[2]]};
+      helpers::print(d_real, "D_REAL (sorted)");
 
       // swap columns of p according to order
       constexpr auto P_ROW_LENGTH = 4;
       auto p_orig = p;
       for (std::size_t i = 0; i < order.size(); ++i) {
         for (std::size_t row = 0; row < P_ROW_LENGTH; ++row) {
-          std::swap(p[row * 3 + i], p_orig[row * 3 + order[i]]);
+          std::swap(p[row * P_ROW_LENGTH + i], p_orig[row * P_ROW_LENGTH + order[i]]);
         }
       }
 
@@ -691,6 +622,7 @@ struct GateDecompositionPattern final
       temp[2 * 4 + 2] = std::exp(IM * d_real[2]);
       temp[3 * 4 + 3] = std::exp(IM * d_real[3]);
       helpers::print(temp, "TEMP");
+      helpers::print(p, "P");
       auto k1 = magic_basis_transform(dot(dot(u_p, p), temp),
                                       MagicBasisTransform::Into);
       auto k2 = magic_basis_transform(transpose(p), MagicBasisTransform::Into);

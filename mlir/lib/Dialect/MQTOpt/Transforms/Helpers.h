@@ -68,6 +68,20 @@ template <std::size_t N> void print(std::array<fp, N> matrix, std::string s = ""
   llvm::errs() << '\n';
 }
 
+template <std::size_t N> void print(std::array<std::size_t, N> matrix, std::string s = "") {
+  int i{};
+  if (!s.empty()) {
+    llvm::errs() << "=== " << s << " ===\n";
+  }
+  for (auto&& a : matrix) {
+    std::cerr << a << ' ';
+    if (++i % 4 == 0) {
+      llvm::errs() << '\n';
+    }
+  }
+  llvm::errs() << '\n';
+}
+
 inline auto flatten(const dd::TwoQubitGateMatrix& matrix) {
   std::array<std::complex<fp>, 16> result;
   for (std::size_t i = 0; i < result.size(); ++i) {
@@ -453,11 +467,13 @@ inline auto transpose_conjugate(Container&& matrix) {
   return result;
 }
 
-inline qfp determinant(const matrix2x2& mat) {
+template<typename T>
+inline T determinant(const std::array<T, 4>& mat) {
   return mat[0] * mat[3] - mat[1] * mat[2];
 }
 
-inline qfp determinant(const std::array<qfp, 9>& mat) {
+template<typename T>
+inline T determinant(const std::array<T, 9>& mat) {
   return mat[0] * (mat[4] * mat[8] - mat[5] * mat[7]) -
          mat[1] * (mat[3] * mat[8] - mat[5] * mat[6]) +
          mat[2] * (mat[3] * mat[7] - mat[4] * mat[6]);
@@ -480,9 +496,10 @@ inline std::array<qfp, 9> get3x3Submatrix(const matrix4x4& mat,
   return result;
 }
 
-inline qfp determinant(const matrix4x4& mat) {
+template<typename T>
+inline T determinant(const std::array<T, 16>& mat) {
   auto [l, u, rowPermutations] = helpers::LUdecomposition(mat);
-  auto det = C_ONE;
+  T det = 1.0;
   for (int i = 0; i < 4; ++i) {
     det *= l[i * 4 + i];
   }
