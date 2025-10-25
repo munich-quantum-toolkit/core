@@ -505,7 +505,7 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
 private:
   [[nodiscard]] Mapper getMapper() {
     /// TODO: Configurable Architecture.
-    auto arch = getArchitecture(ArchitectureName::MQTTest);
+    auto arch = getArchitecture(ArchitectureName::IBMFalcon);
 
     switch (static_cast<RoutingMethod>(method)) {
     case RoutingMethod::Naive:
@@ -514,7 +514,7 @@ private:
                     std::make_unique<NaiveRouter>(), numSwaps);
     case RoutingMethod::AStar:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=astar\n"; });
-      const HeuristicWeights weights(alpha, beta, lambda, nlookahead);
+      const HeuristicWeights weights(alpha, lambda, nlookahead);
       return Mapper(std::move(arch),
                     std::make_unique<ParallelOpScheduler>(nlookahead),
                     std::make_unique<AStarHeuristicRouter>(weights), numSwaps);

@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 
+#include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -114,6 +115,9 @@ protected:
    * @brief Maps a hardware qubit index to its program index.
    */
   SmallVector<QubitIndex> hardwareToProgram_;
+
+private:
+  friend struct llvm::DenseMapInfo<ThinLayout>;
 };
 
 /**
@@ -260,3 +264,30 @@ private:
   SmallVector<Value> qubits_;
 };
 } // namespace mqt::ir::opt
+
+namespace llvm {
+template <> struct DenseMapInfo<mqt::ir::opt::ThinLayout> {
+  using Layout = mqt::ir::opt::ThinLayout;
+  using VectorInfo = DenseMapInfo<SmallVector<mqt::ir::opt::QubitIndex>>;
+
+  static Layout getEmptyKey() {
+    Layout layout(0);
+    layout.programToHardware_ = VectorInfo::getEmptyKey();
+    return layout;
+  }
+
+  static Layout getTombstoneKey() {
+    Layout layout(0);
+    layout.programToHardware_ = VectorInfo::getTombstoneKey();
+    return layout;
+  }
+
+  static unsigned getHashValue(const Layout& layout) {
+    return VectorInfo::getHashValue(layout.programToHardware_);
+  }
+
+  static bool isEqual(const Layout& lhs, const Layout& rhs) {
+    return VectorInfo::isEqual(lhs.programToHardware_, rhs.programToHardware_);
+  }
+};
+} // namespace llvm

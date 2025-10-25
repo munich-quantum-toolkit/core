@@ -39,6 +39,7 @@ using QubitIndex = uint32_t;
  * @brief Represents a pair of qubit indices.
  */
 using QubitIndexPair = std::pair<QubitIndex, QubitIndex>;
+
 /**
  * @brief Return true if the function contains "entry_point" in the passthrough
  * attribute.

@@ -220,7 +220,7 @@ WalkResult handleMeasure(MeasureOp op, VerificationContext& ctx) {
 struct RoutingVerificationPassSC final
     : impl::RoutingVerificationSCPassBase<RoutingVerificationPassSC> {
   void runOnOperation() override {
-    const auto arch = getArchitecture(ArchitectureName::MQTTest);
+    const auto arch = getArchitecture(ArchitectureName::IBMFalcon);
     VerificationContext ctx(*arch);
 
     const auto res =

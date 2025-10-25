@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <mlir/Support/LLVM.h>
+#include <optional>
 #include <queue>
 #include <stdexcept>
 #include <utility>
@@ -27,7 +28,7 @@ namespace mqt::ir::opt {
 /**
  * @brief A vector of SWAPs.
  */
-using PlannerResult = mlir::SmallVector<QubitIndexPair>;
+using RouterResult = mlir::SmallVector<QubitIndexPair>;
 
 /**
  * @brief A planner determines the sequence of swaps required to route an array
@@ -35,17 +36,17 @@ of gates.
 */
 struct RouterBase {
   virtual ~RouterBase() = default;
-  [[nodiscard]] virtual PlannerResult route(const Layers&, const ThinLayout&,
-                                            const Architecture&) const = 0;
+  [[nodiscard]] virtual RouterResult route(const Layers&, const ThinLayout&,
+                                           const Architecture&) const = 0;
 };
 
 /**
  * @brief Use shortest path swapping to make one gate executable.
  */
 struct NaiveRouter final : RouterBase {
-  [[nodiscard]] PlannerResult route(const Layers& layers,
-                                    const ThinLayout& layout,
-                                    const Architecture& arch) const override {
+  [[nodiscard]] RouterResult route(const Layers& layers,
+                                   const ThinLayout& layout,
+                                   const Architecture& arch) const override {
     if (layers.size() != 1 || layers.front().size() != 1) {
       throw std::invalid_argument(
           "NaiveRouter expects exactly one layer with one gate");
@@ -69,13 +70,12 @@ struct NaiveRouter final : RouterBase {
  */
 struct HeuristicWeights {
   float alpha;
-  float beta;
   mlir::SmallVector<float> lambdas;
 
-  HeuristicWeights(const float alpha, const float beta, const float lambda,
+  HeuristicWeights(const float alpha, const float lambda,
                    const std::size_t nlookahead)
-      : alpha(alpha), beta(beta), lambdas(1 + nlookahead) {
-    lambdas[0] = 1.0;
+      : alpha(alpha), lambdas(1 + nlookahead) {
+    lambdas[0] = 1.;
     for (std::size_t i = 1; i < lambdas.size(); ++i) {
       lambdas[i] = lambdas[i - 1] * lambda;
     }
@@ -89,61 +89,36 @@ struct AStarHeuristicRouter final : RouterBase {
   explicit AStarHeuristicRouter(HeuristicWeights weights)
       : weights_(std::move(weights)) {}
 
-  [[nodiscard]] PlannerResult route(const Layers& layers,
-                                    const ThinLayout& layout,
-                                    const Architecture& arch) const override {
-    /// Initialize queue.
-    MinQueue frontier{};
-    expand(frontier, SearchNode(layout, arch.nqubits()), layers, arch);
-
-    /// Iterative searching and expanding.
-    while (!frontier.empty()) {
-      SearchNode curr = frontier.top();
-      frontier.pop();
-
-      if (curr.isGoal(layers.front(), arch)) {
-        return curr.getSequence();
-      }
-
-      expand(frontier, curr, layers, arch);
-    }
-
-    return {};
-  }
-
 private:
-  struct SearchNode {
+  using ClosedSet = mlir::DenseSet<ThinLayout>;
+
+  struct Node {
+    mlir::SmallVector<QubitIndexPair> sequence;
+    ThinLayout layout;
+    float f;
+
     /**
      * @brief Construct a root node with the given layout. Initialize the
      * sequence with an empty vector and set the cost to zero.
      */
-    SearchNode(ThinLayout layout, const std::size_t nqubits)
-        : layout_(std::move(layout)), depthBuckets_(nqubits) {}
+    explicit Node(ThinLayout layout) : layout(std::move(layout)), f(0) {}
 
     /**
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node and evaluate the cost.
      */
-    SearchNode(const SearchNode& parent, QubitIndexPair swap,
-               const Layers& layers, const Architecture& arch,
-               const HeuristicWeights& weights)
-        : seq_(parent.seq_), layout_(parent.layout_),
-          depthBuckets_(parent.depthBuckets_), ndepth_(parent.ndepth_) {
+    Node(const Node& parent, QubitIndexPair swap, const Layers& layers,
+         const Architecture& arch, const HeuristicWeights& weights)
+        : sequence(parent.sequence), layout(parent.layout), f(0) {
       /// Apply node-specific swap to given layout.
-      layout_.swap(layout_.getProgramIndex(swap.first),
-                   layout_.getProgramIndex(swap.second));
-      /// Add swap to sequence.
-      seq_.push_back(swap);
+      layout.swap(layout.getProgramIndex(swap.first),
+                  layout.getProgramIndex(swap.second));
 
-      /// Update degrees.
-      const uint16_t start =
-          std::max(depthBuckets_[swap.first], depthBuckets_[swap.second]);
-      const uint16_t finish = start + 1;
-      depthBuckets_[swap.first] = depthBuckets_[swap.second] = finish;
-      ndepth_ = std::max(ndepth_, finish);
+      /// Add swap to sequence.
+      sequence.push_back(swap);
 
       /// Evaluate cost function.
-      f_ = g(weights) + h(layers, arch, weights); // NOLINT
+      f = g(weights) + h(layers, arch, weights); // NOLINT
     }
 
     /**
@@ -153,37 +128,22 @@ private:
     [[nodiscard]] bool isGoal(const mlir::ArrayRef<QubitIndexPair>& gates,
                               const Architecture& arch) const {
       return std::ranges::all_of(gates, [&](const QubitIndexPair gate) {
-        return arch.areAdjacent(layout_.getHardwareIndex(gate.first),
-                                layout_.getHardwareIndex(gate.second));
+        return arch.areAdjacent(layout.getHardwareIndex(gate.first),
+                                layout.getHardwareIndex(gate.second));
       });
     }
 
-    /**
-     * @brief Return the sequence of SWAPs.
-     */
-    [[nodiscard]] mlir::SmallVector<QubitIndexPair> getSequence() const {
-      return seq_;
-    }
-
-    /**
-     * @brief Return a const reference to the node's layout.
-     */
-    [[nodiscard]] const ThinLayout& getLayout() const { return layout_; }
-
-    [[nodiscard]] bool operator>(const SearchNode& rhs) const {
-      return f_ > rhs.f_;
-    }
+    [[nodiscard]] bool operator>(const Node& rhs) const { return f > rhs.f; }
 
   private:
     /**
      * @brief Calculate the path cost for the A* search algorithm.
      *
-     * The path cost function evaluates the weighted sum of the currently
-     * required SWAPs and additionally added depth.
+     * The path cost function is the weighted sum of the currently required
+     * SWAPs.
      */
     [[nodiscard]] float g(const HeuristicWeights& weights) {
-      return (weights.alpha * static_cast<float>(seq_.size())) +
-             (weights.beta * static_cast<float>(ndepth_));
+      return (weights.alpha * static_cast<float>(sequence.size()));
     }
 
     /**
@@ -193,18 +153,13 @@ private:
      * layer. For each gate, this is determined by the shortest distance between
      * its hardware qubits. Intuitively, this is the number of SWAPs that a
      * naive router would insert to route the layers.
-     *
-     *
-     * @todo Optimize to O(1) incremental updates by only recalculating costs
-     *       affected by the most recent SWAP, similar to the LightSABRE
-     *       algorithm approach.
      */
     [[nodiscard]] float h(const Layers& layers, const Architecture& arch,
-                          const HeuristicWeights& weights) {
+                          const HeuristicWeights& weights) const {
       float nn{0};
       for (const auto [i, layer] : llvm::enumerate(layers)) {
         for (const auto [prog0, prog1] : layer) {
-          const auto [hw0, hw1] = layout_.getHardwareIndices(prog0, prog1);
+          const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
           const std::size_t dist = arch.distanceBetween(hw0, hw1);
           const std::size_t nswaps = dist < 2 ? 0 : dist - 2;
           nn += weights.lambdas[i] * static_cast<float>(nswaps);
@@ -212,43 +167,80 @@ private:
       }
       return nn;
     }
-
-    mlir::SmallVector<QubitIndexPair> seq_;
-    ThinLayout layout_;
-
-    mlir::SmallVector<uint16_t> depthBuckets_;
-    uint16_t ndepth_{0};
-
-    float f_{0};
   };
 
-  using MinQueue =
-      std::priority_queue<SearchNode, std::vector<SearchNode>, std::greater<>>;
+  using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
 
+public:
+  [[nodiscard]] RouterResult route(const Layers& layers,
+                                   const ThinLayout& layout,
+                                   const Architecture& arch) const override {
+    Node root(layout);
+
+    /// Early exit. No SWAPs required:
+    if (root.isGoal(layers.front(), arch)) {
+      return {};
+    }
+
+    /// Initialize queue.
+    MinQueue frontier{};
+    frontier.emplace(root);
+
+    /// Initialize closed set.
+    ClosedSet visited;
+    visited.insert(root.layout);
+
+    /// Iterative searching and expanding.
+    while (!frontier.empty()) {
+      Node curr = frontier.top();
+      frontier.pop();
+
+      /// Expand frontier with all neighbouring SWAPs in the current front.
+      if (const auto optSeq = expand(frontier, curr, visited, layers, arch)) {
+        return optSeq.value();
+      }
+    }
+
+    return {};
+  }
+
+private:
   /**
-   * @brief Expand frontier with all possible neighbouring SWAPs in the current
-   * front.
+   * @brief Expand frontier with all neighbouring SWAPs in the current front.
+   * @returns SWAP sequence if a goal node is expanded. Otherwise: std::nullopt.
    */
-  void expand(MinQueue& frontier, const SearchNode& node, const Layers& layers,
-              const Architecture& arch) const {
-    llvm::SmallDenseSet<QubitIndexPair, 16> visited{};
+  std::optional<RouterResult> expand(MinQueue& frontier, const Node& parent,
+                                     ClosedSet& visited, const Layers& layers,
+                                     const Architecture& arch) const {
+    llvm::SmallDenseSet<QubitIndexPair, 64> swaps{};
     for (const QubitIndexPair gate : layers.front()) {
       for (const auto prog : {gate.first, gate.second}) {
-        const auto hw0 = node.getLayout().getHardwareIndex(prog);
+        const auto hw0 = parent.layout.getHardwareIndex(prog);
         for (const auto hw1 : arch.neighboursOf(hw0)) {
-          /// Ensure consistent hashing/comparison
-          const QubitIndexPair swap =
-              hw0 < hw1 ? QubitIndexPair{hw0, hw1} : QubitIndexPair{hw1, hw0};
-
-          if (visited.contains(swap)) {
+          /// Ensure consistent hashing/comparison.
+          const QubitIndexPair swap = std::minmax(hw0, hw1);
+          if (!swaps.insert(swap).second) {
             continue;
           }
 
-          frontier.emplace(node, swap, layers, arch, weights_);
-          visited.insert(swap);
+          Node child(parent, swap, layers, arch, weights_);
+
+          /// Early exit if child node is a goal node.
+          if (child.isGoal(layers.front(), arch)) {
+            return child.sequence;
+          }
+
+          /// Skip already visited permutations.
+          if (!visited.insert(child.layout).second) {
+            continue;
+          }
+
+          frontier.push(std::move(child));
         }
       }
     }
+
+    return std::nullopt;
   }
 
   HeuristicWeights weights_;

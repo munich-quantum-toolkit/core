@@ -122,8 +122,6 @@ def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
            "astar option: Number of lookahead steps (heuristic horizon)">,
     Option<"alpha", "alpha", "float", "1.0F",
            "astar option: The alpha factor in the cost function">,
-    Option<"beta", "beta", "float", "1.0F",
-           "astar option: The beta factor in the cost function">,
     Option<"lambda", "lambda", "float", "0.5F",
            "astar option: The lambda factor in the cost function">
   ];
