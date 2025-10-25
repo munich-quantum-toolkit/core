@@ -125,82 +125,95 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
       //===----------------------------------------------------------------===//
       if (shuttlingOp.hasTargetLocations()) {
         const auto& targetLocations = shuttlingOp.getTargetLocations();
-        for (std::size_t i = 0; i < opAtoms.size(); ++i) {
-          const auto* a = opAtoms[i];
-          for (std::size_t j = i + 1; j < opAtoms.size(); ++j) {
-            const auto* b = opAtoms[j];
-            if (a == b) {
-              ss << "Error in op number " << counter
-                 << " (two atoms identical)\n";
-              return {false, ss.str()};
-            }
+        for (const auto& atom : atoms_) {
+          if (const auto* a = atom.get(); currentlyShuttling.contains(a)) {
             const auto& s1 = currentLocations[a];
-            const auto& s2 = currentLocations[b];
-            const auto& e1 = targetLocations[i];
-            const auto& e2 = targetLocations[j];
-            if (e1 == e2) {
-              ss << "Error in op number " << counter
-                 << " (two end points identical)\n";
-              return {false, ss.str()};
+            auto e1 = s1;
+            for (std::size_t j = 0; j < targetLocations.size(); ++j) {
+              if (opAtoms[j] == a) {
+                e1 = targetLocations[j];
+                break;
+              }
             }
-            // Exp.:
-            //  o -----> o
-            //  o --> o
-            if (s1.x == s2.x && e1.x != e2.x) {
-              ss << "Error in op number " << counter
-                 << " (columns not preserved)\n";
-              return {false, ss.str()};
-            }
-            // Exp.:
-            // o   o
-            // |   |
-            // v   |
-            // o   v
-            //     o
-            if (s1.y == s2.y && e1.y != e2.y) {
-              ss << "Error in op number " << counter
-                 << " (rows not preserved)\n";
-              return {false, ss.str()};
-            }
-            // Exp.:
-            // o -------> o
-            //    o--> o
-            if (s1.x < s2.x && e1.x >= e2.x) {
-              ss << "Error in op number " << counter
-                 << " (column order not preserved)\n";
-              return {false, ss.str()};
-            }
-            // Exp.:
-            // o
-            // |  o
-            // |  |
-            // |  v
-            // v  o
-            // o
-            if (s1.y < s2.y && e1.y >= e2.y) {
-              ss << "Error in op number " << counter
-                 << " (row order not preserved)\n";
-              return {false, ss.str()};
-            }
-            // Exp.:
-            //    o--> o
-            // o -------> o
-            if (s1.x > s2.x && e1.x <= e2.x) {
-              ss << "Error in op number " << counter
-                 << " (column order not preserved)\n";
-              return {false, ss.str()};
-            }
-            // Exp.:
-            //   o
-            // o |
-            // | |
-            // v |
-            // o v
-            //   o
-            if (s1.y > s2.y && e1.y <= e2.y) {
-              ss << "Error in op number " << counter
-                 << " (row order not preserved)\n";
-              return {false, ss.str()};
+            for (std::size_t i = 0; i < opAtoms.size(); ++i) {
+              const auto* b = opAtoms[i];
+              for (std::size_t j = i + 1; j < opAtoms.size(); ++j) {
+                const auto* c = opAtoms[j];
+                if (b == c) {
+                  ss << "Error in op number " << counter
+                     << " (two atoms identical)\n";
+                  return {false, ss.str()};
+                }
+              }
+              if (a == b) {
+                break;
+              }
+              const auto& s2 = currentLocations[b];
+              const auto& e2 = targetLocations[i];
+              if (e1 == e2) {
+                ss << "Error in op number " << counter
+                   << " (two end points identical)\n";
+                return {false, ss.str()};
+              }
+              // Exp.:
+              //  o -----> o
+              //  o --> o
+              if (s1.x == s2.x && e1.x != e2.x) {
+                ss << "Error in op number " << counter
+                   << " (columns not preserved)\n";
+                return {false, ss.str()};
+              }
+              // Exp.:
+              // o   o
+              // |   |
+              // v   |
+              // o   v
+              //     o
+              if (s1.y == s2.y && e1.y != e2.y) {
+                ss << "Error in op number " << counter
+                   << " (rows not preserved)\n";
+                return {false, ss.str()};
+              }
+              // Exp.:
+              // o -------> o
+              //    o--> o
+              if (s1.x < s2.x && e1.x >= e2.x) {
+                ss << "Error in op number " << counter
+                   << " (column order not preserved)\n";
+                return {false, ss.str()};
+              }
+              // Exp.:
+              // o
+              // |  o
+              // |  |
+              // |  v
+              // v  o
+              // o
+              if (s1.y < s2.y && e1.y >= e2.y) {
+                ss << "Error in op number " << counter
+                   << " (row order not preserved)\n";
+                return {false, ss.str()};
+              }
+              // Exp.:
+              //    o--> o
+              // o -------> o
+              if (s1.x > s2.x && e1.x <= e2.x) {
+                ss << "Error in op number " << counter
+                   << " (column order not preserved)\n";
+                return {false, ss.str()};
+              }
+              // Exp.:
+              //   o
+              // o |
+              // | |
+              // v |
+              // o v
+              //   o
+              if (s1.y > s2.y && e1.y <= e2.y) {
+                ss << "Error in op number " << counter
+                   << " (row order not preserved)\n";
+                return {false, ss.str()};
+              }
             }
           }
         }
