@@ -13,6 +13,9 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-gen)
 if(NOT TARGET ${TARGET_NAME})
 
   # Add library for device generation
+  #
+  # Note: We use a static library here to avoid issues with RPATH and finding the executable during
+  # the build process in Python builds
   add_library(${TARGET_NAME} STATIC)
   add_library(MQT::CoreQDMINaDeviceGen ALIAS ${TARGET_NAME})
 
@@ -27,7 +30,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC nlohmann_json::nlohmann_json
-    PRIVATE spdlog::spdlog)
+    PRIVATE spdlog::spdlog MQT::ProjectOptions MQT::ProjectWarnings)
 
   # set versioning information
   set_target_properties(
@@ -38,6 +41,9 @@ if(NOT TARGET ${TARGET_NAME})
 
   # set c++ standard
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
+
+  # add to list of MQT core targets
+  set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${TARGET_NAME})
 
   # Make version available
   target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
@@ -104,7 +110,7 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Generate prefixed QDMI headers
   generate_prefixed_qdmi_headers(${QDMI_PREFIX})
-  file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_na_qdmi/**.hpp)
+  file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_na_qdmi/**.h)
 
   # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Device.cpp)

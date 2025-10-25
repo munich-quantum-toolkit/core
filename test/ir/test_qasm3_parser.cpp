@@ -1549,7 +1549,32 @@ TEST_F(Qasm3ParserTest, ImportQasmGateExpectStatement) {
       qasm3::CompilerError);
 }
 
-TEST_F(Qasm3ParserTest, ImportQasmGateVersionDeclaration) {
+TEST_F(Qasm3ParserTest, ImportQasmGateVersionFloat) {
+  const std::string testfile = "OPENQASM 3.0;\n";
+  EXPECT_NO_THROW(std::ignore = qasm3::Importer::imports(testfile));
+}
+
+TEST_F(Qasm3ParserTest, ImportQasmGateVersionInteger) {
+  const std::string testfile = "OPENQASM 3;\n";
+  EXPECT_NO_THROW(std::ignore = qasm3::Importer::imports(testfile));
+}
+
+TEST_F(Qasm3ParserTest, ImportQasmGateVersionNotValid) {
+  const std::string testfile = "OPENQASM three;\n";
+  EXPECT_THROW(
+      {
+        try {
+          const auto qc = qasm3::Importer::imports(testfile);
+        } catch (const qasm3::CompilerError& e) {
+          EXPECT_EQ(e.message,
+                    "Version declaration must be a float or integer literal.");
+          throw;
+        }
+      },
+      qasm3::CompilerError);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasmGateVersionNotAtBeginning) {
   const std::string testfile = "qubit q;\n"
                                "OPENQASM 3.0;\n";
   EXPECT_THROW(
@@ -2473,4 +2498,11 @@ TEST_F(Qasm3ParserTest, TokenKindTimingLiteralMicrosecondsInteger) {
   const auto token = scanner.next();
   EXPECT_EQ(token.kind, qasm3::Token::Kind::TimingLiteral);
   EXPECT_DOUBLE_EQ(token.valReal, 1.0e-6);
+}
+
+TEST_F(Qasm3ParserTest, LargeLayoutParsing) {
+  const auto qc = QuantumComputation(1024);
+  const auto qasm = qc.toQASM();
+  const auto qc2 = qasm3::Importer::imports(qasm);
+  EXPECT_EQ(qc, qc2);
 }

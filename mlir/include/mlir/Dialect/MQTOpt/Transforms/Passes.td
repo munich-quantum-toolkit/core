@@ -11,6 +11,10 @@
 
 include "mlir/Pass/PassBase.td"
 
+//===----------------------------------------------------------------------===//
+// Round-Trip Passes
+//===----------------------------------------------------------------------===//
+
 def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
   let summary = "This pass performs a round trip to MQT Core's QuantumComputation and back";
   let description = [{
@@ -25,6 +29,10 @@ def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
     - Unitary operations may also use any number of (positive) controls.
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// Optimization Passes
+//===----------------------------------------------------------------------===//
 
 def GateElimination : Pass<"gate-elimination", "mlir::ModuleOp"> {
   let summary = "This pass searches for consecutive applications of gates and their inverses and cancels them.";
@@ -80,6 +88,55 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   let summary = "This pass attempts to push down operations into branches for possible optimizations.";
   let description = [{
     This pass searches for branch instructions and attempts to push instructions from previous branches into them.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// Transpilation Passes For Superconducting Devices
+//===----------------------------------------------------------------------===//
+
+def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
+  let summary = "This pass maps dynamic qubits to static qubits on superconducting quantum devices using initial placement strategies.";
+  let options = [
+    Option<"strategy", "strategy", "PlacementStrategy", "PlacementStrategy::Random",
+           "The initial placement strategy to use.", [{llvm::cl::values(
+             clEnumValN(PlacementStrategy::Random, "random", "Random placement"),
+             clEnumValN(PlacementStrategy::Identity, "identity", "Identity placement"))}]>
+  ];
+  let statistics = [
+    Statistic<"tms", "runtime-milliseconds", "The runtime in milliseconds">
+  ];
+}
+
+def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
+  let summary = "This pass ensures that a program meets the connectivity constraints of a given architecture.";
+  let description = [{
+    This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.
+  }];
+  let options = [
+    Option<"method", "method", "RoutingMethod", "RoutingMethod::AStar",
+           "The routing method to use.", [{llvm::cl::values(
+             clEnumValN(RoutingMethod::Naive, "naive", "Swap along shortest paths"),
+             clEnumValN(RoutingMethod::AStar, "astar", "A*-search-based routing algorithm"))}]>,
+    Option<"nlookahead", "nlookahead", "std::size_t", "1",
+           "astar option: Number of lookahead steps (heuristic horizon)">,
+    Option<"alpha", "alpha", "float", "1.0F",
+           "astar option: The alpha factor in the cost function">,
+    Option<"beta", "beta", "float", "1.0F",
+           "astar option: The beta factor in the cost function">,
+    Option<"lambda", "lambda", "float", "0.5F",
+           "astar option: The lambda factor in the cost function">
+  ];
+  let statistics = [
+    Statistic<"numSwaps", "num-additional-swaps", "The number of additional SWAPs">,
+    Statistic<"msTime", "runtime-milliseconds", "The runtime in milliseconds">
+  ];
+}
+
+def RoutingVerificationSCPass : Pass<"verify-routing-sc", "mlir::ModuleOp"> {
+  let summary = "This pass verifies that a program meets the connectivity constraints of a given architecture.";
+  let description = [{
+    This pass ensures that all two-qubit gates are executable on the target's architecture.
   }];
 }
 

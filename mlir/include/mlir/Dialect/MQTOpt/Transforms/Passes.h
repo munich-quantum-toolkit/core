@@ -12,6 +12,7 @@
 
 #include "ir/QuantumComputation.hpp"
 
+#include <cstdint>
 #include <mlir/Pass/Pass.h>
 
 namespace mlir {
@@ -21,6 +22,10 @@ class RewritePatternSet;
 } // namespace mlir
 
 namespace mqt::ir::opt {
+
+enum class PlacementStrategy : std::uint8_t { Random, Identity };
+
+enum class RoutingMethod : std::uint8_t { Naive, AStar };
 
 #define GEN_PASS_DECL
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc" // IWYU pragma: export
