@@ -11,7 +11,11 @@
 #pragma once
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <optional>
+#include <string>
 
 // Suppress warnings about ambiguous reversed operators in MLIR
 // (see https://github.com/llvm/llvm-project/issues/45853)
@@ -42,6 +46,20 @@
 //===----------------------------------------------------------------------===//
 // Interfaces
 //===----------------------------------------------------------------------===//
+
+struct ParameterDescriptor {
+  bool isStatic;
+  std::optional<double> constantValue;
+  mlir::Value valueOperand;
+};
+
+struct CanonicalDescriptor {
+  std::string baseSymbol;
+  mlir::ValueRange orderedParams;
+  mlir::ValueRange posControls;
+  mlir::ValueRange negControls;
+  // TODO: Add modifier states
+};
 
 #include "mlir/Dialect/Quartz/IR/QuartzInterfaces.h.inc" // IWYU pragma: export
 

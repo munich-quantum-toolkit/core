@@ -71,7 +71,11 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Returns the number of parameters.",
             "size_t", "getNumParams", (ins)
         >,
-        /// TODO: This is missing many convenience methods for handling parameters. Some inspiration is in the RFC
+        InterfaceMethod<
+            "Returns the i-th parameter.",
+            "ParameterDescriptor", "getParameter", (ins "size_t":$i)
+        >,
+        /// TODO: Add convenience methods as necessary
 
         // Convenience methods
         InterfaceMethod<
@@ -96,15 +100,19 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Returns std::nullopt if the operation is symbolic or dynamic.",
             "std::optional<::mlir::DenseElementsAttr>", "tryGetStaticMatrix", (ins)
         >,
-        /// TODO: probably also worth to check with the RFC and compare
+
+        // Modifier state
+        /// TODO: Implement interface methods to query modifier state
 
         // Identification
         InterfaceMethod<
             "Returns the base symbol/mnemonic of the operation.",
             "::llvm::StringRef", "getBaseSymbol", (ins)
         >,
-
-        /// TODO: I am fairly sure the RFC had some more functions here.
+        InterfaceMethod<
+            "Returns the canonical descriptor of the operation. This can be used for equivalence testing.",
+            "CanonicalDescriptor", "getCanonicalDescriptor", (ins)
+        >,
     ];
 }
 
