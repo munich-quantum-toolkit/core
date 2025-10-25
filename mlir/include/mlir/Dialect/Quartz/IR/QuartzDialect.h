@@ -47,6 +47,8 @@
 // Interfaces
 //===----------------------------------------------------------------------===//
 
+namespace mlir::quartz {
+
 struct ParameterDescriptor {
   bool isStatic;
   std::optional<double> constantValue;
@@ -60,6 +62,8 @@ struct CanonicalDescriptor {
   mlir::ValueRange negControls;
   // TODO: Add modifier states
 };
+
+} // namespace mlir::quartz
 
 #include "mlir/Dialect/Quartz/IR/QuartzInterfaces.h.inc" // IWYU pragma: export
 

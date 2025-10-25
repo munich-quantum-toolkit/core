@@ -73,7 +73,7 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         >,
         InterfaceMethod<
             "Returns the i-th parameter.",
-            "ParameterDescriptor", "getParameter", (ins "size_t":$i)
+            "::mlir::quartz::ParameterDescriptor", "getParameter", (ins "size_t":$i)
         >,
         /// TODO: Add convenience methods as necessary
 
@@ -111,7 +111,7 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         >,
         InterfaceMethod<
             "Returns the canonical descriptor of the operation. This can be used for equivalence testing.",
-            "CanonicalDescriptor", "getCanonicalDescriptor", (ins)
+            "::mlir::quartz::CanonicalDescriptor", "getCanonicalDescriptor", (ins)
         >,
     ];
 }
