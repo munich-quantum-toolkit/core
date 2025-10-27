@@ -392,7 +392,6 @@ TEST_F(CompilerPipelineTest, SingleQubitRegister) {
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
   ASSERT_TRUE(runPipeline(module.get()).succeeded());
-  ;
 
   const auto quartzExpected = buildQuartzIR(
       [](quartz::QuartzProgramBuilder& b) { b.allocQubitRegister(1, "q"); });
@@ -418,7 +417,6 @@ TEST_F(CompilerPipelineTest, MultiQubitRegister) {
   const auto module = importQuantumCircuit(qc);
   ASSERT_TRUE(module);
   ASSERT_TRUE(runPipeline(module.get()).succeeded());
-  ;
 
   const auto quartzExpected = buildQuartzIR(
       [](quartz::QuartzProgramBuilder& b) { b.allocQubitRegister(3, "q"); });
