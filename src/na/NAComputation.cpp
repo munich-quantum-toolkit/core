@@ -133,6 +133,7 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
         }
         // 2) Precompute end map and detect duplicates once
         std::unordered_set<const Atom*> seen;
+        seen.reserve(opAtoms.size());
         std::unordered_map<const Atom*, Location> endOf;
         endOf.reserve(opAtoms.size());
         for (std::size_t i = 0; i < opAtoms.size(); ++i) {

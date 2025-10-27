@@ -252,7 +252,7 @@ TEST(NAComputation, GetPositionOfAtomAfterOperation) {
   EXPECT_EQ(qc.getLocationOfAtomAfterOperation(atom0, qc[2]), (Location{1, 1}));
 }
 
-TEST(NAComputation, CheckAODCOnstraintsOfNonMovingAtoms) {
+TEST(NAComputation, NonMovingAtomsViolateRowOrderConstraint) {
   auto qc = NAComputation();
   const auto& atom0 = qc.emplaceBackAtom("atom0");
   qc.emplaceInitialLocation(atom0, 0, 0);
@@ -261,6 +261,9 @@ TEST(NAComputation, CheckAODCOnstraintsOfNonMovingAtoms) {
   qc.emplaceBack<LoadOp>(std::vector{&atom0, &atom1});
   qc.emplaceBack<MoveOp>(atom0, Location{.x = 4, .y = 4});
   qc.emplaceBack<StoreOp>(std::vector{&atom0, &atom1});
-  EXPECT_FALSE(qc.validate().first);
+  const auto [ok, msg] = qc.validate();
+  EXPECT_FALSE(ok);
+  // Optional: verify row-preservation is the cause triggered here
+  EXPECT_NE(msg.find("rows not preserved"), std::string::npos);
 }
 } // namespace na
