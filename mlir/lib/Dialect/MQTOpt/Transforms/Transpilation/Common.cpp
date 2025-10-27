@@ -20,7 +20,6 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Value.h>
 #include <utility>
-#include <vector>
 
 namespace mqt::ir::opt {
 namespace {
@@ -48,34 +47,39 @@ bool isEntryPoint(mlir::func::FuncOp op) {
   });
 }
 
-/**
- * @brief Check if a unitary acts on two qubits.
- * @param u A unitary.
- * @returns True iff the qubit gate acts on two qubits.
- */
 bool isTwoQubitGate(UnitaryInterface u) {
-  return u.getAllInQubits().size() == 2;
+  return (u.getInQubits().size() + u.getPosCtrlInQubits().size() +
+          u.getNegCtrlInQubits().size()) == 2;
 }
 
-/**
- * @brief Return input qubit pair for a two-qubit unitary.
- * @param u A two-qubit unitary.
- * @return Pair of SSA values consisting of the first and second in-qubits.
- */
 [[nodiscard]] std::pair<mlir::Value, mlir::Value> getIns(UnitaryInterface op) {
   assert(isTwoQubitGate(op));
-  const std::vector<mlir::Value> inQubits = op.getAllInQubits();
-  return {inQubits[0], inQubits[1]};
+
+  const auto target = op.getInQubits();
+  const auto targetSize = target.size();
+
+  if (targetSize == 2) {
+    return {target[0], target[1]};
+  }
+
+  const auto posCtrl = op.getPosCtrlInQubits();
+  return (posCtrl.size() == 1)
+             ? std::pair{target[0], posCtrl[0]}
+             : std::pair{target[0], op.getNegCtrlInQubits()[0]};
 }
 
-/**
- * @brief Return output qubit pair for a two-qubit unitary.
- * @param u A two-qubit unitary.
- * @return Pair of SSA values consisting of the first and second out-qubits.
- */
 [[nodiscard]] std::pair<mlir::Value, mlir::Value> getOuts(UnitaryInterface op) {
   assert(isTwoQubitGate(op));
-  const std::vector<mlir::Value> outQubits = op.getAllOutQubits();
-  return {outQubits[0], outQubits[1]};
+  const auto target = op.getOutQubits();
+  const auto targetSize = target.size();
+
+  if (targetSize == 2) {
+    return {target[0], target[1]};
+  }
+
+  const auto posCtrl = op.getPosCtrlOutQubits();
+  return (posCtrl.size() == 1)
+             ? std::pair{target[0], posCtrl[0]}
+             : std::pair{target[0], op.getNegCtrlOutQubits()[0]};
 }
 } // namespace mqt::ir::opt
