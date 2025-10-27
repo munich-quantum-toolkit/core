@@ -252,19 +252,19 @@ def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface]> {
         size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
         size_t getNumPosControls() const;
         size_t getNumNegControls() const;
-        ::mlir::Value getQubit(size_t i) const;
-        ::mlir::Value getTarget(size_t i);
-        ::mlir::Value getPosControl(size_t i) const;
-        ::mlir::Value getNegControl(size_t i) const;
-        ::mlir::Value getInput(size_t i);
-        ::mlir::Value getOutput(size_t i);
-        ::mlir::Value getInputForOutput(::mlir::Value output);
-        ::mlir::Value getOutputForInput(::mlir::Value input);
+        Value getQubit(size_t i) const;
+        Value getTarget(size_t i);
+        Value getPosControl(size_t i) const;
+        Value getNegControl(size_t i) const;
+        Value getInput(size_t i);
+        Value getOutput(size_t i);
+        Value getInputForOutput(::mlir::Value output);
+        Value getOutputForInput(::mlir::Value input);
         size_t getNumParams() const { return 0; }
-        ::mlir::flux::ParameterDescriptor getParameter(size_t i) const;
+        ParameterDescriptor getParameter(size_t i) const;
         bool hasStaticUnitary() const { return true; }
-        ::mlir::DenseElementsAttr tryGetStaticMatrix();
-        ::llvm::StringRef getBaseSymbol() const { return "x"; }
+        DenseElementsAttr tryGetStaticMatrix();
+        StringRef getBaseSymbol() const { return "x"; }
     }];
 }
 
