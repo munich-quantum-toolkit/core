@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 set(DIALECT_NAME "Quartz")
-set(DIALECT_NAME_UPPER "FLUX")
+set(DIALECT_NAME_UPPER "QUARTZ")
 
 add_mlir_dialect(QuartzOps quartz)
 add_mlir_interface(QuartzInterfaces)
