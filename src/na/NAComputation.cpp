@@ -125,37 +125,40 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
       //===----------------------------------------------------------------===//
       if (shuttlingOp.hasTargetLocations()) {
         const auto& targetLocations = shuttlingOp.getTargetLocations();
-        // Check for duplicate atoms in the operation
-        for (std::size_t i = 0; i < opAtoms.size(); ++i) {
-          const auto* a = opAtoms[i];
-          for (std::size_t j = i + 1; j < opAtoms.size(); ++j) {
-            const auto* b = opAtoms[j];
-            if (a == b) {
-              ss << "Error in op number " << counter
-                 << " (two atoms identical)\n";
-              return {false, ss.str()};
-            }
-          }
+        // 1) Guard: one-to-one mapping between atoms and targets
+        if (opAtoms.size() != targetLocations.size()) {
+          ss << "Error in op number " << counter
+             << " (atoms/targets size mismatch)\n";
+          return {false, ss.str()};
         }
-        // Check constraints between all loaded atoms and atoms in this
-        // operation
+        // 2) Precompute end map and detect duplicates once
+        std::unordered_set<const Atom*> seen;
+        std::unordered_map<const Atom*, Location> endOf;
+        endOf.reserve(opAtoms.size());
+        for (std::size_t i = 0; i < opAtoms.size(); ++i) {
+          const auto* b = opAtoms[i];
+          if (!seen.emplace(b).second) {
+            ss << "Error in op number " << counter
+               << " (two atoms identical)\n";
+            return {false, ss.str()};
+          }
+          endOf.emplace(b, targetLocations[i]);
+        }
+        // 3) Validate against all loaded atoms, including non-moving ones
         for (const auto& atom : atoms_) {
           if (const auto* a = atom.get(); currentlyShuttling.contains(a)) {
-            const auto& s1 = currentLocations[a];
-            auto e1 = s1;
-            for (std::size_t j = 0; j < targetLocations.size(); ++j) {
-              if (opAtoms[j] == a) {
-                e1 = targetLocations[j];
-                break;
-              }
-            }
+            const auto& s1 = currentLocations.at(a);
+            const auto it1 = endOf.find(a);
+            const Location& e1 = (it1 != endOf.end()) ? it1->second : s1;
+
             for (std::size_t i = 0; i < opAtoms.size(); ++i) {
               const auto* b = opAtoms[i];
               if (a == b) {
-                break;
+                continue; // skip self
               }
-              const auto& s2 = currentLocations[b];
-              const auto& e2 = targetLocations[i];
+              const auto& s2 = currentLocations.at(b);
+              const Location& e2 = targetLocations[i];
+
               if (e1 == e2) {
                 ss << "Error in op number " << counter
                    << " (two end points identical)\n";
@@ -223,6 +226,7 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
             }
           }
         }
+        // 4) Update current locations
         for (std::size_t i = 0; i < opAtoms.size(); ++i) {
           currentLocations[opAtoms[i]] = targetLocations[i];
         }
