@@ -116,11 +116,17 @@ LogicalResult MeasureOp::verify() {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-size_t XOp::getNumPosControls() { llvm_unreachable("Not implemented yet"); }
+size_t XOp::getNumPosControls() const {
+  llvm_unreachable("Not implemented yet");
+}
 
-size_t XOp::getNumNegControls() { llvm_unreachable("Not implemented yet"); }
+size_t XOp::getNumNegControls() const {
+  llvm_unreachable("Not implemented yet");
+}
 
-Value XOp::getQubit(size_t /*i*/) { llvm_unreachable("Not implemented yet"); }
+Value XOp::getQubit(size_t /*i*/) const {
+  llvm_unreachable("Not implemented yet");
+}
 
 Value XOp::getTarget(size_t i) {
   if (i != 0) {
@@ -129,15 +135,15 @@ Value XOp::getTarget(size_t i) {
   return getQubitIn();
 }
 
-Value XOp::getPosControl(size_t /*i*/) {
+Value XOp::getPosControl(size_t /*i*/) const {
   llvm_unreachable("Not implemented yet");
 }
 
-Value XOp::getNegControl(size_t /*i*/) {
+Value XOp::getNegControl(size_t /*i*/) const {
   llvm_unreachable("Not implemented yet");
 }
 
-ParameterDescriptor XOp::getParameter(size_t /*i*/) {
+ParameterDescriptor XOp::getParameter(size_t /*i*/) const {
   llvm_unreachable("XOp has no parameters");
 }
 
@@ -147,7 +153,7 @@ DenseElementsAttr XOp::tryGetStaticMatrix() {
   return DenseElementsAttr::get(type, llvm::ArrayRef({0.0, 1.0, 1.0, 0.0}));
 }
 
-CanonicalDescriptor XOp::getCanonicalDescriptor() {
+CanonicalDescriptor XOp::getCanonicalDescriptor() const {
   return CanonicalDescriptor{
       .baseSymbol = "x",
       .orderedParams = {},

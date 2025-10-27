@@ -248,24 +248,24 @@ def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface]> {
 
     let extraClassDeclaration = [{
         size_t getNumQubits() { return getNumTargets() + getNumControls(); }
-        size_t getNumTargets() { return 1; }
+        size_t getNumTargets() const { return 1; }
         size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
-        size_t getNumPosControls();
-        size_t getNumNegControls();
-        ::mlir::Value getQubit(size_t i);
+        size_t getNumPosControls() const;
+        size_t getNumNegControls() const;
+        ::mlir::Value getQubit(size_t i) const;
         ::mlir::Value getTarget(size_t i);
-        ::mlir::Value getPosControl(size_t i);
-        ::mlir::Value getNegControl(size_t i);
+        ::mlir::Value getPosControl(size_t i) const;
+        ::mlir::Value getNegControl(size_t i) const;
         ::mlir::Value getInput(size_t i);
         ::mlir::Value getOutput(size_t i);
         ::mlir::Value getInputForOutput(::mlir::Value output);
         ::mlir::Value getOutputForInput(::mlir::Value input);
-        size_t getNumParams() { return 0; }
-        ::mlir::flux::ParameterDescriptor getParameter(size_t i);
-        bool hasStaticUnitary() { return true; }
+        size_t getNumParams() const { return 0; }
+        ::mlir::flux::ParameterDescriptor getParameter(size_t i) const;
+        bool hasStaticUnitary() const { return true; }
         ::mlir::DenseElementsAttr tryGetStaticMatrix();
-        ::llvm::StringRef getBaseSymbol() { return "x"; }
-        ::mlir::flux::CanonicalDescriptor getCanonicalDescriptor();
+        ::llvm::StringRef getBaseSymbol() const { return "x"; }
+        ::mlir::flux::CanonicalDescriptor getCanonicalDescriptor() const;
     }];
 }
 
