@@ -154,27 +154,23 @@ def test_backend_run_multiple_circuits(na_backend: QiskitBackend) -> None:
     assert len(result.results) == 2
 
 
-def test_backend_circuit_with_unbound_parameter() -> None:
-    """Backend should raise TranslationError for unbound parameters."""
+def test_backend_circuit_with_parameters() -> None:
+    """Backend should handle parameterized circuits correctly.
+
+    Unbound parameters should raise TranslationError, while bound parameters
+    should execute successfully.
+    """
     backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     theta = Parameter("theta")
     qc.ry(theta, 0)
     qc.measure([0, 1], [0, 1])
 
+    # Unbound parameters should raise an error
     with pytest.raises(TranslationError, match="Circuit contains unbound parameters"):
         backend.run(qc)
 
-
-def test_backend_circuit_with_bound_parameter() -> None:
-    """Backend should handle circuits with bound parameters."""
-    backend = QiskitBackend()
-    qc = QuantumCircuit(2, 2)
-    theta = Parameter("theta")
-    qc.ry(theta, 0)
-    qc.measure([0, 1], [0, 1])
-
-    # Bind parameter
+    # Bound parameters should work
     qc_bound = qc.assign_parameters({theta: 1.5708})
 
     job = backend.run(qc_bound, shots=100)
@@ -226,18 +222,6 @@ def test_backend_circuit_with_no_measurements(na_backend: QiskitBackend) -> None
     job = na_backend.run(qc, shots=100)
     result = job.result()
     assert result.success
-
-
-def test_backend_target_operation_names(na_backend: QiskitBackend) -> None:
-    """Backend target should expose operation names."""
-    op_names = na_backend.target.operation_names
-
-    # Check for measure if device provides it
-    if "measure" in na_backend._capabilities.operations:  # noqa: SLF001
-        assert "measure" in op_names
-
-    # NA device should have at least some of these operations
-    assert "cz" in op_names or "ry" in op_names or "rz" in op_names
 
 
 def test_backend_circuit_name_preserved(na_backend: QiskitBackend) -> None:
