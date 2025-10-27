@@ -77,12 +77,12 @@ def Flux_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "::mlir::Value", "getOutput", (ins "size_t":$i)
         >,
         InterfaceMethod<
-            "Returns the output qubit corresponding to the given input qubit.",
-            "::mlir::Value", "getOutputForInput", (ins "::mlir::Value":$input)
-        >,
-        InterfaceMethod<
             "Returns the input qubit corresponding to the given output qubit.",
             "::mlir::Value", "getInputForOutput", (ins "::mlir::Value":$output)
+        >,
+        InterfaceMethod<
+            "Returns the output qubit corresponding to the given input qubit.",
+            "::mlir::Value", "getOutputForInput", (ins "::mlir::Value":$input)
         >,
 
         // Parameter handling

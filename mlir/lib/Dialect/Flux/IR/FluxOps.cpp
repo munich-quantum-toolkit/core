@@ -110,6 +110,72 @@ LogicalResult MeasureOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// Unitary Operations
+//===----------------------------------------------------------------------===//
+
+size_t XOp::getNumPosControls() { llvm_unreachable("Not implemented yet"); }
+
+size_t XOp::getNumNegControls() { llvm_unreachable("Not implemented yet"); }
+
+Value XOp::getQubit(size_t i) { llvm_unreachable("Not implemented yet"); }
+
+Value XOp::getTarget(size_t i) {
+  if (i != 0) {
+    llvm_unreachable("XOp has only one target qubit");
+  }
+  return getQubitIn();
+}
+
+Value XOp::getPosControl(size_t i) { llvm_unreachable("Not implemented yet"); }
+
+Value XOp::getNegControl(size_t i) { llvm_unreachable("Not implemented yet"); }
+
+Value XOp::getInput(size_t i) {
+  if (i != 0) {
+    llvm_unreachable("XOp has only one input qubit");
+  }
+  return getQubitIn();
+}
+
+Value XOp::getOutput(size_t i) {
+  if (i != 0) {
+    llvm_unreachable("XOp has only one output qubit");
+  }
+  return getQubitOut();
+}
+
+Value XOp::getInputForOutput(Value output) {
+  if (output != getQubitOut()) {
+    llvm_unreachable("Given output is not the XOp's output");
+  }
+  return getQubitIn();
+}
+
+Value XOp::getOutputForInput(Value input) {
+  if (input != getQubitIn()) {
+    llvm_unreachable("Given input is not the XOp's input");
+  }
+  return getQubitOut();
+}
+
+ParameterDescriptor XOp::getParameter(size_t i) {
+  llvm_unreachable("XOp has no parameters");
+}
+
+DenseElementsAttr XOp::tryGetStaticMatrix() {
+  auto* ctx = getContext();
+  auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
+  return DenseElementsAttr::get(type, llvm::ArrayRef({0.0, 1.0, 1.0, 0.0}));
+}
+
+CanonicalDescriptor XOp::getCanonicalDescriptor() {
+  return CanonicalDescriptor{
+      .baseSymbol = "x",
+      .orderedParams = {},
+  };
+}
+
+//===----------------------------------------------------------------------===//
 // Canonicalization Patterns
 //===----------------------------------------------------------------------===//
 

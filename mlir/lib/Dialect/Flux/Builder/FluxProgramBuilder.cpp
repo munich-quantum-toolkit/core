@@ -166,6 +166,24 @@ Value FluxProgramBuilder::reset(Value qubit) {
   return qubitOut;
 }
 
+//===----------------------------------------------------------------------===//
+// Unitary Operations
+//===----------------------------------------------------------------------===//
+
+Value FluxProgramBuilder::x(Value qubit) {
+  auto xOp = builder.create<XOp>(loc, qubit);
+  const auto qubitOut = xOp.getQubitOut();
+
+  // Update tracking
+  updateQubitTracking(qubit, qubitOut);
+
+  return qubitOut;
+}
+
+//===----------------------------------------------------------------------===//
+// Deallocation
+//===----------------------------------------------------------------------===//
+
 FluxProgramBuilder& FluxProgramBuilder::dealloc(Value qubit) {
   validateQubitValue(qubit);
   validQubits.erase(qubit);
@@ -174,6 +192,10 @@ FluxProgramBuilder& FluxProgramBuilder::dealloc(Value qubit) {
 
   return *this;
 }
+
+//===----------------------------------------------------------------------===//
+// Finalization
+//===----------------------------------------------------------------------===//
 
 OwningOpRef<ModuleOp> FluxProgramBuilder::finalize() {
   // Automatically deallocate all remaining valid qubits

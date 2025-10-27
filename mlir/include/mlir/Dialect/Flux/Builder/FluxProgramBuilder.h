@@ -234,6 +234,34 @@ public:
    */
   Value reset(Value qubit);
 
+  //===--------------------------------------------------------------------===//
+  // Unitary Operations
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Apply the X gate to a qubit
+   *
+   * @details
+   * Consumes the input qubit and produces a new output qubit SSA value.
+   * The input is validated and tracking is updated.
+   *
+   * @param qubit Input qubit (must be valid/unconsumed)
+   * @return Output qubit value
+   *
+   * @par Example:
+   * ```c++
+   * q = builder.x(q);
+   * ```
+   * ```mlir
+   * %q_out = flux.x %q : !flux.qubit -> !flux.qubit
+   * ```
+   */
+  Value x(Value qubit);
+
+  //===--------------------------------------------------------------------===//
+  // Deallocation
+  //===--------------------------------------------------------------------===//
+
   /**
    * @brief Explicitly deallocate a qubit
    *

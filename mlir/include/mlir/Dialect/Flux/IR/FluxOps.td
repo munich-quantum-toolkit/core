@@ -9,6 +9,7 @@
 #ifndef FluxOPS
 #define FluxOPS
 
+include "mlir/Dialect/Flux/IR/FluxInterfaces.td"
 include "mlir/IR/BuiltinTypeInterfaces.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/IR/EnumAttr.td"
@@ -234,6 +235,38 @@ def ResetOp : FluxOp<"reset", [Idempotent, SameOperandsAndResultType]> {
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
     let hasCanonicalizer = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// Unitray Operations
+//===----------------------------------------------------------------------===//
+
+def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface]> {
+    let arguments = (ins QubitType:$qubit_in);
+    let results = (outs QubitType:$qubit_out);
+    let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+
+    let extraClassDeclaration = [{
+        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
+        size_t getNumTargets() { return 1; }
+        size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
+        size_t getNumPosControls();
+        size_t getNumNegControls();
+        ::mlir::Value getQubit(size_t i);
+        ::mlir::Value getTarget(size_t i);
+        ::mlir::Value getPosControl(size_t i);
+        ::mlir::Value getNegControl(size_t i);
+        ::mlir::Value getInput(size_t i);
+        ::mlir::Value getOutput(size_t i);
+        ::mlir::Value getInputForOutput(::mlir::Value output);
+        ::mlir::Value getOutputForInput(::mlir::Value input);
+        size_t getNumParams() { return 0; }
+        ::mlir::flux::ParameterDescriptor getParameter(size_t i);
+        bool hasStaticUnitary() { return true; }
+        ::mlir::DenseElementsAttr tryGetStaticMatrix();
+        ::llvm::StringRef getBaseSymbol() { return "x"; }
+        ::mlir::flux::CanonicalDescriptor getCanonicalDescriptor();
+    }];
 }
 
 #endif // FluxOPS

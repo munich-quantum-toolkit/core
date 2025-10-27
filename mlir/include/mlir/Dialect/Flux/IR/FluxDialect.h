@@ -58,8 +58,7 @@ struct ParameterDescriptor {
 struct CanonicalDescriptor {
   std::string baseSymbol;
   mlir::ValueRange orderedParams;
-  mlir::ValueRange posControls;
-  mlir::ValueRange negControls;
+  // TODO: Add controls
   // TODO: Add modifier states
 };
 
