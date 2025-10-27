@@ -9,6 +9,7 @@
 #ifndef QUARTZ_OPS
 #define QUARTZ_OPS
 
+include "mlir/Dialect/Quartz/IR/QuartzInterfaces.td"
 include "mlir/IR/BuiltinTypeInterfaces.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/IR/EnumAttr.td"
@@ -221,6 +222,34 @@ def ResetOp : QuartzOp<"reset"> {
 
     let arguments = (ins Arg<QubitType, "the qubit to reset", [MemRead, MemWrite]>:$qubit);
     let assemblyFormat = "$qubit attr-dict `:` type($qubit)";
+}
+
+//===----------------------------------------------------------------------===//
+// Unitray Operations
+//===----------------------------------------------------------------------===//
+
+def XOp : QuartzOp<"x", traits = [Quartz_UnitaryOpInterface]> {
+    let arguments = (ins QubitType:$qubit_in);
+    let results = (outs);
+    let assemblyFormat = "$qubit_in attr-dict";
+
+    let extraClassDeclaration = [{
+        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
+        size_t getNumTargets() { return 1; }
+        size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
+        size_t getNumPosControls();
+        size_t getNumNegControls();
+        ::mlir::Value getQubit(size_t i);
+        ::mlir::Value getTarget(size_t i);
+        ::mlir::Value getPosControl(size_t i);
+        ::mlir::Value getNegControl(size_t i);
+        size_t getNumParams() { return 0; }
+        ::mlir::quartz::ParameterDescriptor getParameter(size_t i);
+        bool hasStaticUnitary() { return true; }
+        ::mlir::DenseElementsAttr tryGetStaticMatrix();
+        ::llvm::StringRef getBaseSymbol() { return "x"; }
+        ::mlir::quartz::CanonicalDescriptor getCanonicalDescriptor();
+    }];
 }
 
 #endif // QUARTZ_OPS

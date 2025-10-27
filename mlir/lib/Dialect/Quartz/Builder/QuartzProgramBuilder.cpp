@@ -97,6 +97,10 @@ QuartzProgramBuilder::allocClassicalBitRegister(int64_t size, StringRef name) {
   return allocatedClassicalRegisters.emplace_back(name, size);
 }
 
+//===----------------------------------------------------------------------===//
+// Measurement and Reset
+//===----------------------------------------------------------------------===//
+
 Value QuartzProgramBuilder::measure(Value qubit) {
   auto measureOp = builder.create<MeasureOp>(loc, qubit);
   return measureOp.getResult();
@@ -116,6 +120,19 @@ QuartzProgramBuilder& QuartzProgramBuilder::reset(Value qubit) {
   return *this;
 }
 
+//===----------------------------------------------------------------------===//
+// Unitary Operations
+//===----------------------------------------------------------------------===//
+
+QuartzProgramBuilder& QuartzProgramBuilder::x(Value qubit) {
+  builder.create<XOp>(loc, qubit);
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// Deallocation
+//===----------------------------------------------------------------------===//
+
 QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
   // Check if the qubit is in the tracking set
   if (!allocatedQubits.erase(qubit)) {
@@ -131,6 +148,10 @@ QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
 
   return *this;
 }
+
+//===----------------------------------------------------------------------===//
+// Finalization
+//===----------------------------------------------------------------------===//
 
 OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
   // Automatically deallocate all remaining allocated qubits

@@ -223,6 +223,30 @@ public:
    */
   QuartzProgramBuilder& reset(Value qubit);
 
+  //===--------------------------------------------------------------------===//
+  // Unitry Operations
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Apply the X gate to a qubit
+   *
+   * @param qubit The target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.x(q);
+   * ```
+   * ```mlir
+   * quartz.x %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& x(Value qubit);
+
+  //===--------------------------------------------------------------------===//
+  // Deallocation
+  //===--------------------------------------------------------------------===//
+
   /**
    * @brief Explicitly deallocate a qubit
    *
