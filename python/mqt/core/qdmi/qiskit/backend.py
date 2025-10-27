@@ -235,6 +235,9 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
         Returns:
             Sequence of qubit index tuples this operation can act on.
+
+        Raises:
+            ValueError: If multi-qubit operation sites are improperly structured.
         """
         from itertools import combinations
 
@@ -253,20 +256,13 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             if qubits_num == 1:
                 return [(site,) for site in op_info.sites]
 
-            # Fallback for multi-qubit operations without proper tuple structure
-            # (shouldn't happen, but keep for safety)
-            if qubits_num == 2:
-                site_indices = list(op_info.sites)
-                pairs: list[tuple[int, int]] = [
-                    (site_indices[i], site_indices[j])
-                    for i in range(len(site_indices))
-                    for j in range(i + 1, len(site_indices))
-                ]
-                cm = self._capabilities.coupling_map
-                if cm:
-                    cm_set = {(int(a), int(b)) for (a, b) in cm}
-                    pairs = [p for p in pairs if p in cm_set or (p[1], p[0]) in cm_set]
-                return pairs
+            # Multi-qubit operations must have sites as tuple of tuples
+            msg = (
+                f"Multi-qubit operation '{op_info.name}' (qubits_num={qubits_num}) "
+                f"has improperly structured sites (expected tuple of tuples). "
+                "This indicates a device capability specification error."
+            )
+            raise ValueError(msg)
 
         # Generate all possible qubit combinations
         if qubits_num == 1:
