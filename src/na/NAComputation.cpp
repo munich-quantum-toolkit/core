@@ -136,13 +136,13 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
         std::unordered_map<const Atom*, Location> endOf;
         endOf.reserve(opAtoms.size());
         for (std::size_t i = 0; i < opAtoms.size(); ++i) {
-          const auto* b = opAtoms[i];
+          const auto* b = opAtoms.at(i);
           if (!seen.emplace(b).second) {
             ss << "Error in op number " << counter
                << " (two atoms identical)\n";
             return {false, ss.str()};
           }
-          endOf.emplace(b, targetLocations[i]);
+          endOf.emplace(b, targetLocations.at(i));
         }
         // 3) Validate against all loaded atoms, including non-moving ones
         for (const auto& atom : atoms_) {
@@ -152,12 +152,12 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
             const Location& e1 = (it1 != endOf.end()) ? it1->second : s1;
 
             for (std::size_t i = 0; i < opAtoms.size(); ++i) {
-              const auto* b = opAtoms[i];
+              const auto* b = opAtoms.at(i);
               if (a == b) {
                 continue; // skip self
               }
               const auto& s2 = currentLocations.at(b);
-              const Location& e2 = targetLocations[i];
+              const Location& e2 = targetLocations.at(i);
 
               if (e1 == e2) {
                 ss << "Error in op number " << counter
@@ -228,7 +228,7 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
         }
         // 4) Update current locations
         for (std::size_t i = 0; i < opAtoms.size(); ++i) {
-          currentLocations[opAtoms[i]] = targetLocations[i];
+          currentLocations.at(opAtoms.at(i)) = targetLocations.at(i);
         }
       }
       if (shuttlingOp.is<StoreOp>()) {
