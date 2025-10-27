@@ -21,22 +21,16 @@ These tests ensure that:
 
 from __future__ import annotations
 
-import importlib.util
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
-_qiskit_present = importlib.util.find_spec("qiskit") is not None
-
 if TYPE_CHECKING:
     from mqt.core import fomac
-
-    if _qiskit_present:
-        from mqt.core.qdmi.qiskit import QiskitBackend
+    from mqt.core.qdmi.qiskit import QiskitBackend
 
 
 pytestmark = [
-    pytest.mark.skipif(not _qiskit_present, reason="qiskit not installed"),
     pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
     pytest.mark.filterwarnings("ignore:Device does not define a measurement operation.*:UserWarning"),
 ]

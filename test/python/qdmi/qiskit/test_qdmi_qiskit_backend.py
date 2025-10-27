@@ -10,12 +10,14 @@
 
 from __future__ import annotations
 
-import importlib.util
 from typing import TYPE_CHECKING
 
 import pytest
+from qiskit import QuantumCircuit
+from qiskit.circuit import Parameter
 
 from mqt.core.qdmi.qiskit import (
+    QiskitBackend,
     TranslationError,
     UnsupportedOperationError,
 )
@@ -23,19 +25,11 @@ from mqt.core.qdmi.qiskit import (
 if TYPE_CHECKING:
     from mqt.core import fomac
 
-_qiskit_present = importlib.util.find_spec("qiskit") is not None
 
 pytestmark = [
-    pytest.mark.skipif(not _qiskit_present, reason="qiskit not installed"),
     pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
     pytest.mark.filterwarnings("ignore:Device does not define a measurement operation.*:UserWarning"),
 ]
-
-if _qiskit_present:
-    from qiskit import QuantumCircuit
-    from qiskit.circuit import Parameter
-
-    from mqt.core.qdmi.qiskit import QiskitBackend
 
 
 def test_backend_instantiation(na_backend: QiskitBackend) -> None:

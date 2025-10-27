@@ -10,16 +10,12 @@
 
 from __future__ import annotations
 
-import importlib.util
-from typing import TYPE_CHECKING, NoReturn
+from typing import NoReturn
 
 import pytest
 
-_qiskit_present = importlib.util.find_spec("qiskit") is not None
-
-if TYPE_CHECKING or _qiskit_present:
-    from mqt.core import fomac
-    from mqt.core.qdmi.qiskit import QiskitBackend
+from mqt.core import fomac
+from mqt.core.qdmi.qiskit import QiskitBackend
 
 
 def _get_na_device_index() -> int:
