@@ -297,7 +297,7 @@ def test_backend_result_metadata_includes_capabilities_hash(na_backend: QiskitBa
 
 
 def test_job_status(na_backend: QiskitBackend) -> None:
-    """Job should report DONE status immediately."""
+    """Job should be in DONE status after backend.run() completes."""
     from qiskit.providers import JobStatus
 
     qc = QuantumCircuit(2, 2)
@@ -305,6 +305,22 @@ def test_job_status(na_backend: QiskitBackend) -> None:
     qc.measure([0, 1], [0, 1])
 
     job = na_backend.run(qc, shots=100)
+    assert job.status() == JobStatus.DONE
+
+
+def test_job_submit_noop_when_already_done(na_backend: QiskitBackend) -> None:
+    """Calling submit() on a completed job is idempotent."""
+    from qiskit.providers import JobStatus
+
+    qc = QuantumCircuit(2, 2)
+    qc.cz(0, 1)
+    qc.measure([0, 1], [0, 1])
+
+    job = na_backend.run(qc, shots=100)
+    assert job.status() == JobStatus.DONE
+
+    # Calling submit again should be safe
+    job.submit()
     assert job.status() == JobStatus.DONE
 
 
@@ -324,7 +340,7 @@ def test_job_result_success_and_shots(na_backend: QiskitBackend) -> None:
 
 
 def test_job_result_with_timeout(na_backend: QiskitBackend) -> None:
-    """Job result should accept timeout parameter (even though it's unused)."""
+    """Job result should accept timeout parameter."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
@@ -399,13 +415,13 @@ def test_job_get_counts_circuit_not_found(na_backend: QiskitBackend) -> None:
 
 
 def test_job_submit_noop(na_backend: QiskitBackend) -> None:
-    """submit() should be a no-op since execution is synchronous."""
+    """Calling submit() on a job should not raise an error."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
     job = na_backend.run(qc, shots=100)
-    job.submit()  # Should not raise
+    job.submit()
 
 
 def test_backend_warns_on_unmappable_operation(monkeypatch: pytest.MonkeyPatch) -> None:

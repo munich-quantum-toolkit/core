@@ -285,23 +285,17 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         return list(combinations(range(num_qubits), qubits_num))
 
     def run(self, run_input: QuantumCircuit | list[QuantumCircuit], **options: Any) -> QiskitJob:  # noqa: ANN401
-        """Run circuits on the backend.
+        """Execute circuits on the backend.
 
         Args:
-            run_input: Single circuit or list of circuits to execute.
-            **options: Backend execution options (e.g., shots).
+            run_input: Circuit(s) to execute.
+            **options: Execution options (e.g., shots).
 
         Returns:
-            QiskitJob object wrapping the execution.
+            Job handle for the execution.
 
         Raises:
-            TranslationError: If circuit translation fails.
-
-        Note:
-            This base implementation returns deterministic zero-state counts.
-            For actual device execution, subclass this backend and override
-            ``_submit_to_device()`` to interface with your QDMI device's
-            job submission mechanism.
+            TranslationError: If circuit translation or execution fails.
         """
         # Normalize input to list
         circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
@@ -317,65 +311,31 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             msg = f"'shots' must be >= 0, got {shots}"
             raise TranslationError(msg)
 
-        # Translate and execute circuits
-        try:
-            results = [self._execute_circuit(circuit, shots=shots) for circuit in circuits]
+        # Execute circuits
+        results = [self._execute_circuit(circuit, shots=shots) for circuit in circuits]
 
-            # Create and return job
-            return QiskitJob(backend=self, circuits=circuits, results=results, shots=shots)
-
-        except Exception as exc:
-            if isinstance(exc, (UnsupportedOperationError, TranslationError)):
-                raise
-            msg = f"Circuit execution failed: {exc}"
-            raise TranslationError(msg) from exc
+        # Create and submit job
+        job = QiskitJob(backend=self, circuits=circuits, results=results, shots=shots)
+        job.submit()
+        return job
 
     def _submit_to_device(self, circuit: QuantumCircuit, shots: int) -> dict[str, Any]:
-        """Submit circuit to actual QDMI device (extension point).
+        """Submit circuit to device for execution.
 
-        This method should be overridden by subclasses to implement actual
-        device submission. The base implementation returns deterministic
-        zero-state counts for demonstration purposes.
+        Override this method to implement actual device submission.
+        Default returns zero-state counts.
 
         Args:
             circuit: Circuit to execute.
             shots: Number of shots.
 
         Returns:
-            Result dictionary with counts and metadata.
-
-        Example:
-            To implement actual device execution, override this method::
-
-                class MyVendorBackend(QiskitBackend):
-                    def _submit_to_device(self, circuit, shots):
-                        # Serialize to OpenQASM (let Qiskit handle this)
-                        from qiskit import qasm3
-                        qasm3_str = qasm3.dumps(circuit)
-
-                        # Submit to your device
-                        job = self._device.submit_job(
-                            program=qasm3_str,
-                            program_format=YourProgramFormat.QASM3,
-                            num_shots=shots
-                        )
-
-                        # Wait for results
-                        job.wait()
-                        counts = job.get_counts()
-
-                        return {
-                            "counts": counts,
-                            "shots": shots,
-                            "success": True,
-                            "metadata": {"job_id": job.id}
-                        }
+            Dictionary with 'counts', 'shots', 'success', and 'metadata' keys.
         """
-        # Default implementation: return deterministic zero-state counts
+        # Default: return zero-state counts
         num_clbits = circuit.num_clbits
         zero_state = "0" * num_clbits
         counts = {zero_state: shots}
-
         return {
             "counts": counts,
             "shots": shots,

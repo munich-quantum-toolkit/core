@@ -6,9 +6,9 @@
 #
 # Licensed under the MIT License
 
-"""QDMI Qiskit Job wrapper.
+"""QDMI Qiskit Job implementation.
 
-Provides a Qiskit JobV1-compatible wrapper for QDMI execution results.
+Provides a Qiskit JobV1-compatible wrapper for QDMI job execution and results.
 """
 
 from __future__ import annotations
@@ -28,16 +28,13 @@ __all__ = ["QiskitJob"]
 
 
 class QiskitJob(JobV1):  # type: ignore[misc]
-    """A Qiskit Job wrapper for QDMI execution results.
-
-    This job represents a completed synchronous execution (blocking semantics).
-    Asynchronous job futures are explicitly deferred per the design plan.
+    """Qiskit job for QDMI backend execution.
 
     Args:
-        backend: The backend this job ran on.
-        circuits: List of circuits executed.
-        results: List of result dictionaries from circuit execution.
-        shots: Number of shots used.
+        backend: The backend this job runs on.
+        circuits: Circuits to execute.
+        results: Execution results for each circuit.
+        shots: Number of shots per circuit.
     """
 
     def __init__(
@@ -47,17 +44,17 @@ class QiskitJob(JobV1):  # type: ignore[misc]
         results: list[dict[str, Any]],
         shots: int,
     ) -> None:
-        """Initialize the job with execution results."""
+        """Initialize the job."""
         super().__init__(backend, str(id(self)))
         self._backend = backend
         self._circuits = circuits
         self._results = results
         self._shots = shots
-        self._status = JobStatus.DONE
+        self._status = JobStatus.INITIALIZING
 
     def submit(self) -> None:
-        """Submit the job (no-op since execution is synchronous)."""
-        # Job already executed in backend.run()
+        """Transition job to completed state."""
+        self._status = JobStatus.DONE
 
     def result(self, timeout: float | None = None) -> Result:  # noqa: ARG002
         """Return the result object.
@@ -102,7 +99,7 @@ class QiskitJob(JobV1):  # type: ignore[misc]
         """Return the job status.
 
         Returns:
-            JobStatus.DONE (execution is synchronous).
+            The job status.
         """
         return self._status
 
