@@ -234,6 +234,13 @@ TEST_F(NAComputationValidateAODConstraints, RowPreserving4) {
       std::vector{Location{.x = 0, .y = 1}, Location{.x = 2, .y = 2}});
   EXPECT_FALSE(qc.validate().first);
 }
+TEST_F(NAComputationValidateAODConstraints, RowPreserving5) {
+  qc.emplaceBack<LoadOp>(std::vector{atom1, atom2});
+  qc.emplaceBack<StoreOp>(
+      std::vector{atom1, atom2},
+      std::vector{Location{.x = 2, .y = 2}, Location{.x = 0, .y = 1}});
+  EXPECT_FALSE(qc.validate().first);
+}
 TEST_F(NAComputationValidateAODConstraints, StoreStoredAtom) {
   qc.emplaceBack<LoadOp>(*atom1);
   qc.emplaceBack<StoreOp>(*atom1);
