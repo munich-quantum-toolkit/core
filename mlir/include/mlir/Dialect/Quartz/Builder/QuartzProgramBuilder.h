@@ -243,6 +243,24 @@ public:
    */
   QuartzProgramBuilder& x(Value qubit);
 
+  /**
+   * @brief Apply the RX gate to a qubit
+   *
+   * @param angle Rotation angle
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.rx(1.0, q);
+   * ```
+   * ```mlir
+   * quartz.rx(1.0) %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& rx(double angle, Value qubit);
+  QuartzProgramBuilder& rx(Value angle, Value qubit);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//

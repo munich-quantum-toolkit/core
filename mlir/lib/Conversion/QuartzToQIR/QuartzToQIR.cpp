@@ -414,6 +414,42 @@ struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
   }
 };
 
+// Temporary implementation of RXOp conversion
+struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(RXOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto* ctx = getContext();
+
+    // Create QIR function signature: (!llvm.ptr, f64) -> void
+    const auto qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx),
+        {LLVM::LLVMPointerType::get(ctx), Float64Type::get(ctx)});
+
+    // Get or create function declaration
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_RX, qirSignature);
+
+    auto angle = op.getParameter(0);
+    Value angleValue;
+    if (angle.isStatic) {
+      auto angleStatic = rewriter.getFloatAttr(rewriter.getF64Type(),
+                                               angle.constantValue.value());
+      angleValue = rewriter.create<LLVM::ConstantOp>(op.getLoc(), angleStatic)
+                       .getResult();
+    } else {
+      angleValue = angle.valueOperand;
+    }
+
+    // Replace with call to RX
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(
+        op, fnDecl, ValueRange{adaptor.getQubitIn(), angleValue});
+    return success();
+  }
+};
+
 } // namespace
 
 /**
@@ -740,6 +776,7 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzMeasureQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzResetQIR>(typeConverter, ctx);
       quartzPatterns.add<ConvertQuartzXQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzRXQIR>(typeConverter, ctx, &state);
 
       // Gate operations will be added here as the dialect expands
 

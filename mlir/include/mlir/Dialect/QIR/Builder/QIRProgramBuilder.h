@@ -242,6 +242,24 @@ public:
    */
   QIRProgramBuilder& x(const Value qubit);
 
+  /**
+   * @brief Apply the RX gate to a qubit
+   *
+   * @param angle Rotation angle
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.rx(1.0, q);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__rx__body(%q, %c) : (!llvm.ptr, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& rx(double angle, const Value qubit);
+  QIRProgramBuilder& rx(Value angle, const Value qubit);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//

@@ -180,6 +180,28 @@ Value FluxProgramBuilder::x(Value qubit) {
   return qubitOut;
 }
 
+Value FluxProgramBuilder::rx(Value angle, Value qubit) {
+  auto rxOp = builder.create<RXOp>(loc, qubit, /*angle_static=*/nullptr, angle);
+  const auto qubitOut = rxOp.getQubitOut();
+
+  // Update tracking
+  updateQubitTracking(qubit, qubitOut);
+
+  return qubitOut;
+}
+
+Value FluxProgramBuilder::rx(double angle, Value qubit) {
+  auto angleAttr = builder.getF64FloatAttr(angle);
+  auto rxOp =
+      builder.create<RXOp>(loc, qubit, angleAttr, /*angle_dynamic=*/nullptr);
+  const auto qubitOut = rxOp.getQubitOut();
+
+  // Update tracking
+  updateQubitTracking(qubit, qubitOut);
+
+  return qubitOut;
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//

@@ -16,6 +16,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -360,13 +361,47 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
   LogicalResult
   matchAndRewrite(quartz::XOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto& quartzQubit = op.getQubitIn();
+    const auto& quartzQubit = op.getQubit(0);
 
     // Get the latest Flux qubit value from the state map
     const Value fluxQubit = getState().qubitMap[quartzQubit];
 
     // Create flux.x operation (consumes input, produces output)
     auto fluxOp = rewriter.create<flux::XOp>(op.getLoc(), fluxQubit);
+
+    // Update mapping: the Quartz qubit now corresponds to the output qubit
+    getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
+
+    // Replace the Quartz operation with the Flux operation
+    rewriter.replaceOp(op, fluxOp.getResult());
+
+    return success();
+  }
+};
+
+// Temporary implementation of RXOp conversion
+struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(quartz::RXOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto& quartzQubit = op.getQubitIn();
+
+    // Get the latest Flux qubit value from the state map
+    const Value fluxQubit = getState().qubitMap[quartzQubit];
+
+    auto angle = op.getParameter(0);
+    FloatAttr angleStatic = nullptr;
+    if (angle.isStatic) {
+      angleStatic = rewriter.getFloatAttr(rewriter.getF64Type(),
+                                          angle.constantValue.value());
+    }
+    Value angleDynamic = angle.valueOperand;
+
+    // Create flux.rx operation (consumes input, produces output)
+    auto fluxOp = rewriter.create<flux::RXOp>(op.getLoc(), fluxQubit,
+                                              angleStatic, angleDynamic);
 
     // Update mapping: the Quartz qubit now corresponds to the output qubit
     getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
@@ -422,6 +457,7 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     patterns.add<ConvertQuartzMeasureOp>(typeConverter, context, &state);
     patterns.add<ConvertQuartzResetOp>(typeConverter, context, &state);
     patterns.add<ConvertQuartzXOp>(typeConverter, context, &state);
+    patterns.add<ConvertQuartzRXOp>(typeConverter, context, &state);
 
     // Conversion of quartz types in func.func signatures
     // Note: This currently has limitations with signature changes

@@ -258,14 +258,45 @@ def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface]> {
         Value getNegControl(size_t i) const;
         Value getInput(size_t i);
         Value getOutput(size_t i);
-        Value getInputForOutput(::mlir::Value output);
-        Value getOutputForInput(::mlir::Value input);
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
         size_t getNumParams() const { return 0; }
         ParameterDescriptor getParameter(size_t i) const;
         bool hasStaticUnitary() const { return true; }
         DenseElementsAttr tryGetStaticMatrix();
         StringRef getBaseSymbol() const { return "x"; }
     }];
+}
+
+def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface]> {
+    let arguments = (ins QubitType:$qubit_in,
+                     OptionalAttr<F64Attr>:$angle_static,
+                     Optional<F64>:$angle_dynamic);
+    let results = (outs QubitType:$qubit_out);
+    let assemblyFormat = "`(` ($angle_static^)? ($angle_dynamic^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+
+    let extraClassDeclaration = [{
+        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
+        size_t getNumTargets() const { return 1; }
+        size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
+        size_t getNumPosControls() const { return 0; }
+        size_t getNumNegControls() const { return 0; }
+        Value getQubit(size_t i);
+        Value getTarget(size_t i);
+        Value getPosControl(size_t i) const;
+        Value getNegControl(size_t i) const;
+        Value getInput(size_t i);
+        Value getOutput(size_t i);
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+        size_t getNumParams() const { return 1; }
+        ParameterDescriptor getParameter(size_t i);
+        bool hasStaticUnitary();
+        DenseElementsAttr tryGetStaticMatrix();
+        StringRef getBaseSymbol() const { return "rx"; }
+    }];
+
+    let hasVerifier = 1;
 }
 
 #endif // FluxOPS

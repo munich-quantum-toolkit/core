@@ -222,10 +222,18 @@ void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 // Temporary implementation of XOp translation
 void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
             const llvm::SmallVector<Value>& qubits) {
-  for (const auto& target : operation.getTargets()) {
-    const Value qubit = qubits[target];
-    builder.x(qubit);
-  }
+  const auto& target = operation.getTargets()[0];
+  const Value qubit = qubits[target];
+  builder.x(qubit);
+}
+
+// Temporary implementation of RXOp translation
+void addRXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+             const llvm::SmallVector<Value>& qubits) {
+  const auto angle = operation.getParameter()[0];
+  const auto& target = operation.getTargets()[0];
+  const Value qubit = qubits[target];
+  builder.rx(angle, qubit);
 }
 
 /**
@@ -261,6 +269,9 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::X:
       addXOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::RX:
+      addRXOp(builder, *operation, qubits);
       break;
     default:
       // Unsupported operation - skip for now

@@ -129,6 +129,17 @@ QuartzProgramBuilder& QuartzProgramBuilder::x(Value qubit) {
   return *this;
 }
 
+QuartzProgramBuilder& QuartzProgramBuilder::rx(double angle, Value qubit) {
+  auto angleAttr = builder.getF64FloatAttr(angle);
+  builder.create<RXOp>(loc, qubit, angleAttr, /*angle_dynamic=*/nullptr);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::rx(Value angle, Value qubit) {
+  builder.create<RXOp>(loc, qubit, /*angle_static=*/nullptr, angle);
+  return *this;
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//
