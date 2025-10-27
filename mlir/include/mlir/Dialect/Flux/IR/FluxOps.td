@@ -238,7 +238,7 @@ def ResetOp : FluxOp<"reset", [Idempotent, SameOperandsAndResultType]> {
 }
 
 //===----------------------------------------------------------------------===//
-// Unitray Operations
+// Unitary Operations
 //===----------------------------------------------------------------------===//
 
 def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface]> {
