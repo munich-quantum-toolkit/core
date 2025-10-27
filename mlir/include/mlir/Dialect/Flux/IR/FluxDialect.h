@@ -55,13 +55,6 @@ struct ParameterDescriptor {
   mlir::Value valueOperand;
 };
 
-struct CanonicalDescriptor {
-  std::string baseSymbol;
-  mlir::ValueRange orderedParams;
-  // TODO: Add controls
-  // TODO: Add modifier states
-};
-
 } // namespace mlir::flux
 
 #include "mlir/Dialect/Flux/IR/FluxInterfaces.h.inc" // IWYU pragma: export

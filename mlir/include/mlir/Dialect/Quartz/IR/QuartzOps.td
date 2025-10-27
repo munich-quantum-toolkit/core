@@ -247,7 +247,6 @@ def XOp : QuartzOp<"x", traits = [Quartz_UnitaryOpInterface]> {
         bool hasStaticUnitary() const { return true; }
         ::mlir::DenseElementsAttr tryGetStaticMatrix();
         ::llvm::StringRef getBaseSymbol() const { return "x"; }
-        ::mlir::quartz::CanonicalDescriptor getCanonicalDescriptor() const;
     }];
 }
 

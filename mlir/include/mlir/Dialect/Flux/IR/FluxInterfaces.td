@@ -128,10 +128,6 @@ def Flux_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Returns the base symbol/mnemonic of the operation.",
             "::llvm::StringRef", "getBaseSymbol", (ins)
         >,
-        InterfaceMethod<
-            "Returns the canonical descriptor of the operation. This can be used for equivalence testing.",
-            "::mlir::flux::CanonicalDescriptor", "getCanonicalDescriptor", (ins)
-        >,
     ];
 }
 

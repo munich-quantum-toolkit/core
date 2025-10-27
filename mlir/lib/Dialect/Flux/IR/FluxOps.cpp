@@ -183,13 +183,6 @@ DenseElementsAttr XOp::tryGetStaticMatrix() {
   return DenseElementsAttr::get(type, llvm::ArrayRef({0.0, 1.0, 1.0, 0.0}));
 }
 
-CanonicalDescriptor XOp::getCanonicalDescriptor() const {
-  return CanonicalDescriptor{
-      .baseSymbol = "x",
-      .orderedParams = {},
-  };
-}
-
 //===----------------------------------------------------------------------===//
 // Canonicalization Patterns
 //===----------------------------------------------------------------------===//

@@ -55,13 +55,6 @@ struct ParameterDescriptor {
   mlir::Value valueOperand;
 };
 
-struct CanonicalDescriptor {
-  std::string baseSymbol;
-  mlir::ValueRange orderedParams;
-  // TODO: Add controls
-  // TODO: Add modifier states
-};
-
 } // namespace mlir::quartz
 
 #include "mlir/Dialect/Quartz/IR/QuartzInterfaces.h.inc" // IWYU pragma: export

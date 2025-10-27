@@ -152,10 +152,3 @@ DenseElementsAttr XOp::tryGetStaticMatrix() {
   auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
   return DenseElementsAttr::get(type, llvm::ArrayRef({0.0, 1.0, 1.0, 0.0}));
 }
-
-CanonicalDescriptor XOp::getCanonicalDescriptor() const {
-  return CanonicalDescriptor{
-      .baseSymbol = "x",
-      .orderedParams = {},
-  };
-}
