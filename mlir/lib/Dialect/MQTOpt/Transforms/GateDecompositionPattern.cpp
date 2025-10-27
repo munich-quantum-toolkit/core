@@ -9,6 +9,7 @@
  */
 
 #include "Helpers.h"
+#include "g.h"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
@@ -24,8 +25,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <string>
-
-#include "d.h"
 
 namespace mqt::ir::opt {
 
