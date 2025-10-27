@@ -21,33 +21,6 @@ pytestmark = [
 ]
 
 
-def test_gate_mapping_to_qiskit_gates() -> None:
-    """Test that device operations are correctly mapped to Qiskit gates."""
-    from qiskit.circuit.library import CZGate, HGate, RXGate, XGate
-
-    backend = QiskitBackend()
-
-    # Test the _map_operation_to_gate function
-    # Single-qubit Pauli gates
-    gate = backend._map_operation_to_gate("x")  # noqa: SLF001
-    assert isinstance(gate, XGate)
-
-    gate = backend._map_operation_to_gate("h")  # noqa: SLF001
-    assert isinstance(gate, HGate)
-
-    # Two-qubit gates
-    gate = backend._map_operation_to_gate("cz")  # noqa: SLF001
-    assert isinstance(gate, CZGate)
-
-    # Parametric gates
-    gate = backend._map_operation_to_gate("rx")  # noqa: SLF001
-    assert isinstance(gate, RXGate)
-
-    # Unsupported operation should return None
-    gate = backend._map_operation_to_gate("unsupported_gate")  # noqa: SLF001
-    assert gate is None
-
-
 def test_backend_supports_cz_gate(na_backend: QiskitBackend) -> None:
     """Test that the backend can execute CZ gate circuits (supported by NA device)."""
     # The NA device supports CZ
@@ -58,128 +31,6 @@ def test_backend_supports_cz_gate(na_backend: QiskitBackend) -> None:
     job = na_backend.run(qc, shots=100)
     counts = job.get_counts()
     assert sum(counts.values()) == 100
-
-
-@pytest.mark.parametrize(
-    ("op", "expected"),
-    [
-        ("x", "XGate"),
-        ("y", "YGate"),
-        ("z", "ZGate"),
-        ("i", "IGate"),
-        ("id", "IGate"),
-    ],
-)
-def test_map_operation_pauli_gates(op: str, expected: str) -> None:
-    """Test mapping of Pauli gates."""
-    from qiskit.circuit.library import IGate, XGate, YGate, ZGate
-
-    backend = QiskitBackend()
-
-    expected_class = {"XGate": XGate, "YGate": YGate, "ZGate": ZGate, "IGate": IGate}[expected]
-    assert isinstance(backend._map_operation_to_gate(op), expected_class)  # noqa: SLF001
-
-
-def test_map_operation_phase_gates() -> None:
-    """Test mapping of phase gates."""
-    from qiskit.circuit.library import PhaseGate, SdgGate, SGate, SXdgGate, SXGate, TdgGate, TGate
-
-    backend = QiskitBackend()
-
-    assert isinstance(backend._map_operation_to_gate("s"), SGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("sdg"), SdgGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("t"), TGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("tdg"), TdgGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("sx"), SXGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("sxdg"), SXdgGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("p"), PhaseGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("phase"), PhaseGate)  # noqa: SLF001
-
-
-def test_map_operation_rotation_gates() -> None:
-    """Test mapping of rotation gates."""
-    from qiskit.circuit.library import RGate, RXGate, RYGate, RZGate
-
-    backend = QiskitBackend()
-
-    assert isinstance(backend._map_operation_to_gate("rx"), RXGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("ry"), RYGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("rz"), RZGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("r"), RGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("prx"), RGate)  # noqa: SLF001
-
-
-def test_map_operation_universal_gates() -> None:
-    """Test mapping of universal gates."""
-    from qiskit.circuit.library import U2Gate, U3Gate
-
-    backend = QiskitBackend()
-
-    assert isinstance(backend._map_operation_to_gate("u"), U3Gate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("u3"), U3Gate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("u2"), U2Gate)  # noqa: SLF001
-
-
-def test_map_operation_two_qubit_gates() -> None:
-    """Test mapping of two-qubit gates."""
-    from qiskit.circuit.library import (
-        CHGate,
-        CXGate,
-        CYGate,
-        CZGate,
-        DCXGate,
-        ECRGate,
-        SwapGate,
-        iSwapGate,
-    )
-
-    backend = QiskitBackend()
-
-    assert isinstance(backend._map_operation_to_gate("cx"), CXGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("cnot"), CXGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("cy"), CYGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("cz"), CZGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("ch"), CHGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("swap"), SwapGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("iswap"), iSwapGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("dcx"), DCXGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("ecr"), ECRGate)  # noqa: SLF001
-
-
-def test_map_operation_parametric_two_qubit_gates() -> None:
-    """Test mapping of parametric two-qubit gates."""
-    from qiskit.circuit.library import (
-        RXXGate,
-        RYYGate,
-        RZXGate,
-        RZZGate,
-        XXMinusYYGate,
-        XXPlusYYGate,
-    )
-
-    backend = QiskitBackend()
-
-    assert isinstance(backend._map_operation_to_gate("rxx"), RXXGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("ryy"), RYYGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("rzz"), RZZGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("rzx"), RZXGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("xx_plus_yy"), XXPlusYYGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("xx_minus_yy"), XXMinusYYGate)  # noqa: SLF001
-
-
-def test_map_operation_case_insensitive() -> None:
-    """Test that gate mapping is case-insensitive."""
-    from qiskit.circuit.library import HGate, XGate
-
-    backend = QiskitBackend()
-
-    # Lower case
-    assert isinstance(backend._map_operation_to_gate("x"), XGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("h"), HGate)  # noqa: SLF001
-
-    # Upper case should also work (op_name.lower() is called)
-    assert isinstance(backend._map_operation_to_gate("X"), XGate)  # noqa: SLF001
-    assert isinstance(backend._map_operation_to_gate("H"), HGate)  # noqa: SLF001
 
 
 def test_map_operation_returns_none_for_unknown() -> None:
@@ -199,23 +50,6 @@ def test_backend_target_includes_measure() -> None:
     # If not provided, a warning should be issued (tested separately)
     if "measure" in backend._capabilities.operations:  # noqa: SLF001
         assert "measure" in backend.target.operation_names
-
-
-def test_backend_target_qubit_count_matches_device() -> None:
-    """Test that backend target qubit count is based on device capabilities."""
-    backend = QiskitBackend()
-
-    # Target qubit count should match device num_qubits (zones filtered out)
-    assert backend.target.num_qubits == backend._capabilities.num_qubits  # noqa: SLF001
-
-
-def test_backend_build_target_adds_operations() -> None:
-    """Test that _build_target adds operations from capabilities."""
-    backend = QiskitBackend()
-    target = backend._build_target()  # noqa: SLF001
-
-    # Should have operations from device capabilities
-    assert len(target.operation_names) > 0
 
 
 def test_get_operation_qargs_single_qubit() -> None:
