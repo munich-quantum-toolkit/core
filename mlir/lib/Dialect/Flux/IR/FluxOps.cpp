@@ -18,7 +18,12 @@
 #include <mlir/IR/PatternMatch.h>
 // IWYU pragma: end_keep
 
+#include <cstddef>
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
@@ -117,7 +122,7 @@ size_t XOp::getNumPosControls() { llvm_unreachable("Not implemented yet"); }
 
 size_t XOp::getNumNegControls() { llvm_unreachable("Not implemented yet"); }
 
-Value XOp::getQubit(size_t i) { llvm_unreachable("Not implemented yet"); }
+Value XOp::getQubit(size_t /*i*/) { llvm_unreachable("Not implemented yet"); }
 
 Value XOp::getTarget(size_t i) {
   if (i != 0) {
@@ -126,9 +131,13 @@ Value XOp::getTarget(size_t i) {
   return getQubitIn();
 }
 
-Value XOp::getPosControl(size_t i) { llvm_unreachable("Not implemented yet"); }
+Value XOp::getPosControl(size_t /*i*/) {
+  llvm_unreachable("Not implemented yet");
+}
 
-Value XOp::getNegControl(size_t i) { llvm_unreachable("Not implemented yet"); }
+Value XOp::getNegControl(size_t /*i*/) {
+  llvm_unreachable("Not implemented yet");
+}
 
 Value XOp::getInput(size_t i) {
   if (i != 0) {
@@ -158,7 +167,7 @@ Value XOp::getOutputForInput(Value input) {
   return getQubitOut();
 }
 
-ParameterDescriptor XOp::getParameter(size_t i) {
+ParameterDescriptor XOp::getParameter(size_t /*i*/) {
   llvm_unreachable("XOp has no parameters");
 }
 
