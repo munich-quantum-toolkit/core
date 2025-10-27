@@ -52,6 +52,9 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         capabilities_hash: SHA256 hash of the device capabilities snapshot.
     """
 
+    # Class-level counter for generating unique circuit names
+    _circuit_counter = 0
+
     def __init__(self, device_index: int = 0) -> None:
         """Initialize the backend with a FoMaC device.
 
@@ -416,6 +419,15 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         # Submit circuit to device
         result = self._submit_to_device(circuit, shots)
         result.setdefault("metadata", {})
-        result["metadata"]["circuit_name"] = circuit.name or "circuit"
+
+        # Generate unique circuit name - use provided name or generate one with counter
+        if circuit.name:
+            circuit_name = circuit.name
+        else:
+            # Generate unique name using class-level counter (similar to Qiskit's approach)
+            QiskitBackend._circuit_counter += 1
+            circuit_name = f"circuit-{QiskitBackend._circuit_counter}"
+
+        result["metadata"]["circuit_name"] = circuit_name
 
         return result

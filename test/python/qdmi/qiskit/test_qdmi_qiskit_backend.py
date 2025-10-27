@@ -247,6 +247,33 @@ def test_backend_unnamed_circuit(na_backend: QiskitBackend) -> None:
     assert "name" in result.results[0].header
 
 
+def test_backend_unnamed_circuits_get_unique_names(na_backend: QiskitBackend) -> None:
+    """Multiple unnamed circuits should get unique generated names."""
+    # Create three unnamed circuits
+    circuits = []
+    for _ in range(3):
+        qc = QuantumCircuit(2, 2)
+        qc.cz(0, 1)
+        qc.measure([0, 1], [0, 1])
+        circuits.append(qc)
+
+    job = na_backend.run(circuits, shots=100)
+    result = job.result()
+
+    # Extract circuit names from metadata
+    circuit_names = [exp_result.metadata["circuit_name"] for exp_result in result.results]
+
+    # All names should be unique
+    assert len(circuit_names) == len(set(circuit_names))
+
+    # Names should follow the pattern "circuit-N"
+    for name in circuit_names:
+        assert name.startswith("circuit-")
+        # Extract the number and verify it's an integer
+        counter_part = name.split("-")[1]
+        assert counter_part.isdigit()
+
+
 def test_backend_result_metadata_includes_circuit_name(na_backend: QiskitBackend) -> None:
     """Backend result metadata should include circuit name."""
     qc = QuantumCircuit(2, 2)
