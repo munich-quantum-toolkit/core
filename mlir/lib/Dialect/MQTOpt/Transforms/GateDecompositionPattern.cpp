@@ -48,7 +48,8 @@ struct GateDecompositionPattern final
       return mlir::failure();
     }
 
-    matrix4x4 unitaryMatrix = helpers::kroneckerProduct(identityGate, identityGate);
+    matrix4x4 unitaryMatrix =
+        helpers::kroneckerProduct(identityGate, identityGate);
     for (auto&& gate : series) {
       auto gateMatrix = getTwoQubitMatrix({.type = helpers::getQcType(gate),
                                            .parameter = {/*TODO*/},
@@ -60,6 +61,7 @@ struct GateDecompositionPattern final
     auto sequence = decomposer.twoQubitDecompose(
         unitaryMatrix, DEFAULT_FIDELITY, true, std::nullopt);
     if (!sequence) {
+      llvm::errs() << "NO SEQUENCE GENERATED!\n";
       return mlir::failure();
     }
 
@@ -150,6 +152,24 @@ struct GateDecompositionPattern final
         mlir::ValueRange{});
   }
 
+  template <typename OpType>
+  static OpType createGate(mlir::PatternRewriter& rewriter,
+                           mlir::Location location, mlir::ValueRange inQubits,
+                           mlir::ValueRange ctrlQubits,
+                           std::vector<fp> parameters) {
+    mlir::SmallVector<mlir::Value> parameterValues;
+    for (auto&& parameter : parameters) {
+      auto parameterValue = rewriter.create<mlir::arith::ConstantOp>(
+          location, rewriter.getF64Type(), rewriter.getF64FloatAttr(parameter));
+      parameterValues.push_back(parameterValue);
+    }
+
+    return rewriter.create<OpType>(
+        location, inQubits.getType(), ctrlQubits.getType(), mlir::TypeRange{},
+        mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{}, parameterValues,
+        inQubits, ctrlQubits, mlir::ValueRange{});
+  }
+
   struct QubitGateSequence {
     struct Gate {
       qc::OpType type{qc::I};
@@ -163,11 +183,40 @@ struct GateDecompositionPattern final
   using TwoQubitGateSequence = QubitGateSequence;
 
   static void applySeries(mlir::PatternRewriter& rewriter,
-                          const llvm::SmallVector<UnitaryInterface>& series,
+                          llvm::SmallVector<UnitaryInterface>& series,
                           const TwoQubitGateSequence& sequence) {
+    auto location = series[0]->getLoc();
+    auto inQubits = series[0].getAllInQubits();
     if (sequence.globalPhase != 0.0) {
-      createOneParameterGate<GPhaseOp>(rewriter, series[0]->getLoc(),
-                                       sequence.globalPhase, {});
+      createOneParameterGate<GPhaseOp>(rewriter, location, sequence.globalPhase,
+                                       {});
+    }
+
+    std::cerr << "GATE SEQUENCE!: " << std::flush;
+    for (auto&& gate : sequence.gates) {
+      if (gate.type == qc::X) {
+        mlir::SmallVector<mlir::Value, 1> inCtrlQubits;
+        if (gate.qubit_id.size() > 1) {
+          inCtrlQubits.push_back(inQubits[gate.qubit_id[1]]);
+        }
+        createGate<XOp>(rewriter, location, {inQubits[0]}, inCtrlQubits,
+                        gate.parameter);
+      }
+      if (gate.type == qc::RX) {
+        mlir::SmallVector<mlir::Value, 2> qubits;
+        for (auto&& x : gate.qubit_id) {
+          qubits.push_back(inQubits[x]);
+        }
+        createGate<XOp>(rewriter, location, qubits, {}, gate.parameter);
+      }
+      if (gate.type == qc::RY) {
+      }
+      if (gate.type == qc::RZ) {
+      }
+    }
+
+    for (auto&& op : series) {
+      rewriter.replaceOp(op, op.getAllInQubits());
     }
   }
 
@@ -359,6 +408,12 @@ struct GateDecompositionPattern final
     if (basis == EulerBasis::XYX) {
       return params_xyx_inner(matrix);
     }
+    if (basis == EulerBasis::ZYZ) {
+      return params_zyz_inner(matrix);
+    }
+    if (basis == EulerBasis::ZXZ) {
+      return params_zxz_inner(matrix);
+    }
     throw std::invalid_argument{"Unknown EulerBasis for angles_from_unitary"};
   }
 
@@ -380,20 +435,21 @@ struct GateDecompositionPattern final
     return {theta, phi, lam, phase};
   }
 
+  static std::array<fp, 4> params_zxz_inner(const matrix2x2& matrix) {
+    auto [theta, phi, lam, phase] = params_zyz_inner(matrix);
+    return {theta, phi + qc::PI / 2., lam - qc::PI / 2., phase};
+  }
+
   static std::array<fp, 4> params_xyx_inner(const matrix2x2& matrix) {
     auto mat_zyz = std::array{
-        static_cast<fp>(0.5) *
-            (matrix.at(0 * 2 + 0) + matrix.at(0 * 2 + 1 * 2 * 2) +
-             matrix.at(1 * 2 + 0) + matrix.at(1 * 2 + 1)),
-        static_cast<fp>(0.5) *
-            (matrix.at(0 * 2 + 0) - matrix.at(0 * 2 + 1 * 2 * 2) +
-             matrix.at(1 * 2 + 0) - matrix.at(1 * 2 + 1)),
-        static_cast<fp>(0.5) *
-            (matrix.at(0 * 2 + 0) + matrix.at(0 * 2 + 1 * 2 * 2) -
-             matrix.at(1 * 2 + 0) - matrix.at(1 * 2 + 1)),
-        static_cast<fp>(0.5) *
-            (matrix.at(0 * 2 + 0) - matrix.at(0 * 2 + 1 * 2 * 2) -
-             matrix.at(1 * 2 + 0) + matrix.at(1 * 2 + 1)),
+        static_cast<fp>(0.5) * (matrix.at(0 * 2 + 0) + matrix.at(0 * 2 + 1) +
+                                matrix.at(1 * 2 + 0) + matrix.at(1 * 2 + 1)),
+        static_cast<fp>(0.5) * (matrix.at(0 * 2 + 0) - matrix.at(0 * 2 + 1) +
+                                matrix.at(1 * 2 + 0) - matrix.at(1 * 2 + 1)),
+        static_cast<fp>(0.5) * (matrix.at(0 * 2 + 0) + matrix.at(0 * 2 + 1) -
+                                matrix.at(1 * 2 + 0) - matrix.at(1 * 2 + 1)),
+        static_cast<fp>(0.5) * (matrix.at(0 * 2 + 0) - matrix.at(0 * 2 + 1) -
+                                matrix.at(1 * 2 + 0) + matrix.at(1 * 2 + 1)),
     };
     auto [theta, phi, lam, phase] = params_zyz_inner(mat_zyz);
     auto new_phi = mod2pi(phi + qc::PI, 0.);
@@ -472,10 +528,10 @@ struct GateDecompositionPattern final
     static TwoQubitWeylDecomposition
     new_inner(matrix4x4 unitary_matrix, std::optional<fp> fidelity,
               std::optional<Specialization> _specialization) {
-      using helpers::dot;
       using helpers::determinant;
-      using helpers::transpose;
       using helpers::diagonal;
+      using helpers::dot;
+      using helpers::transpose;
       auto& u = unitary_matrix;
       auto det_u = determinant(u);
       auto det_pow = std::pow(det_u, static_cast<fp>(-0.25));
@@ -591,12 +647,13 @@ struct GateDecompositionPattern final
       llvm::stable_sort(order,
                         [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
       helpers::print(order, "ORDER (1)");
-      std::tie(order[0], order[1], order[2]) = std::tuple{order[1], order[2], order[0]};
+      std::tie(order[0], order[1], order[2]) =
+          std::tuple{order[1], order[2], order[0]};
       helpers::print(order, "ORDER (2)");
-      std::tie(cs[0], cs[1], cs[2]) = std::tuple{cs[order[0]], cs[order[1]],
-                                       cs[order[2]]};
-      std::tie(d_real[0], d_real[1], d_real[2]) = std::tuple{
-          d_real[order[0]], d_real[order[1]], d_real[order[2]]};
+      std::tie(cs[0], cs[1], cs[2]) =
+          std::tuple{cs[order[0]], cs[order[1]], cs[order[2]]};
+      std::tie(d_real[0], d_real[1], d_real[2]) =
+          std::tuple{d_real[order[0]], d_real[order[1]], d_real[order[2]]};
       helpers::print(d_real, "D_REAL (sorted)");
 
       // swap columns of p according to order
@@ -604,7 +661,8 @@ struct GateDecompositionPattern final
       auto p_orig = p;
       for (std::size_t i = 0; i < order.size(); ++i) {
         for (std::size_t row = 0; row < P_ROW_LENGTH; ++row) {
-          std::swap(p[row * P_ROW_LENGTH + i], p_orig[row * P_ROW_LENGTH + order[i]]);
+          std::swap(p[row * P_ROW_LENGTH + i],
+                    p_orig[row * P_ROW_LENGTH + order[i]]);
         }
       }
 
@@ -1339,7 +1397,7 @@ struct GateDecompositionPattern final
     decomp0_inner(const TwoQubitWeylDecomposition& target) const {
       using helpers::dot;
       return {
-        dot(target.K1r, target.K2r),
+          dot(target.K1r, target.K2r),
           dot(target.K1l, target.K2l),
       };
     }
