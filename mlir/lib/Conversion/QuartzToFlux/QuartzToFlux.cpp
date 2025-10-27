@@ -353,6 +353,31 @@ struct ConvertQuartzResetOp final
   }
 };
 
+// Temporary implementation of XOp conversion
+struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(quartz::XOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto& quartzQubit = op.getQubitIn();
+
+    // Get the latest Flux qubit value from the state map
+    const Value fluxQubit = getState().qubitMap[quartzQubit];
+
+    // Create flux.x operation (consumes input, produces output)
+    auto fluxOp = rewriter.create<flux::XOp>(op.getLoc(), fluxQubit);
+
+    // Update mapping: the Quartz qubit now corresponds to the output qubit
+    getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
+
+    // Replace the Quartz operation with the Flux operation
+    rewriter.replaceOp(op, fluxOp.getResult());
+
+    return success();
+  }
+};
+
 /**
  * @brief Pass implementation for Quartz-to-Flux conversion
  *
@@ -396,6 +421,7 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     patterns.add<ConvertQuartzStaticOp>(typeConverter, context, &state);
     patterns.add<ConvertQuartzMeasureOp>(typeConverter, context, &state);
     patterns.add<ConvertQuartzResetOp>(typeConverter, context, &state);
+    patterns.add<ConvertQuartzXOp>(typeConverter, context, &state);
 
     // Conversion of quartz types in func.func signatures
     // Note: This currently has limitations with signature changes

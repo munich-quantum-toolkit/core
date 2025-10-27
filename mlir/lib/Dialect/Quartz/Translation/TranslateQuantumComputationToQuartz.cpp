@@ -219,6 +219,15 @@ void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
   }
 }
 
+// Temporary implementation of XOp translation
+void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+            const llvm::SmallVector<Value>& qubits) {
+  for (const auto& target : operation.getTargets()) {
+    const Value qubit = qubits[target];
+    builder.x(qubit);
+  }
+}
+
 /**
  * @brief Translates operations from QuantumComputation to Quartz dialect
  *
@@ -249,6 +258,9 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::Reset:
       addResetOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::X:
+      addXOp(builder, *operation, qubits);
       break;
     default:
       // Unsupported operation - skip for now
