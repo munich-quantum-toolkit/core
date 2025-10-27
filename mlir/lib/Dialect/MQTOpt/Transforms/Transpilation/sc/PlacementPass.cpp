@@ -378,8 +378,22 @@ LogicalResult run(ModuleOp module, MLIRContext* mlirCtx,
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(curr);
 
+    /// TypeSwitch performs sequential dyn_cast checks.
+    /// Hence, always put most frequent ops first.
+
     const auto res =
         TypeSwitch<Operation*, WalkResult>(curr)
+            /// mqtopt Dialect
+            .Case<UnitaryInterface>(
+                [&](UnitaryInterface op) { return handleUnitary(op, ctx); })
+            .Case<AllocQubitOp>(
+                [&](AllocQubitOp op) { return handleAlloc(op, ctx, rewriter); })
+            .Case<DeallocQubitOp>([&](DeallocQubitOp op) {
+              return handleDealloc(op, ctx, rewriter);
+            })
+            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, ctx); })
+            .Case<MeasureOp>(
+                [&](MeasureOp op) { return handleMeasure(op, ctx); })
             /// built-in Dialect
             .Case<ModuleOp>(
                 [&](ModuleOp /* op */) { return WalkResult::advance(); })
@@ -395,17 +409,6 @@ LogicalResult run(ModuleOp module, MLIRContext* mlirCtx,
                 [&](scf::IfOp op) { return handleIf(op, ctx, rewriter); })
             .Case<scf::YieldOp>(
                 [&](scf::YieldOp op) { return handleYield(op, ctx, rewriter); })
-            /// mqtopt Dialect
-            .Case<AllocQubitOp>(
-                [&](AllocQubitOp op) { return handleAlloc(op, ctx, rewriter); })
-            .Case<DeallocQubitOp>([&](DeallocQubitOp op) {
-              return handleDealloc(op, ctx, rewriter);
-            })
-            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, ctx); })
-            .Case<MeasureOp>(
-                [&](MeasureOp op) { return handleMeasure(op, ctx); })
-            .Case<UnitaryInterface>(
-                [&](UnitaryInterface op) { return handleUnitary(op, ctx); })
             /// Skip the rest.
             .Default([](auto) { return WalkResult::skip(); });
 

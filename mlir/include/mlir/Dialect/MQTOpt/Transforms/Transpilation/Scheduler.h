@@ -14,6 +14,9 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
+#include "llvm/Support/Casting.h"
+
+#include <array>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -62,20 +65,21 @@ struct SequentialOpScheduler final : SchedulerBase {
  */
 struct ParallelOpScheduler final : SchedulerBase {
   explicit ParallelOpScheduler(const std::size_t nlookahead)
-      : nlookahead_(nlookahead) {}
+      : nlayers_(1 + nlookahead) {}
 
   [[nodiscard]] Layers schedule(UnitaryInterface op,
                                 const Layout& layout) const override {
+    Layers layers(nlayers_);
     Layout layoutCopy(layout);
-    Layers layers(1 + nlookahead_);
 
     const auto* region = op->getParentRegion();
-    const auto qubits = layoutCopy.getHardwareQubits();
-    const auto nqubits = qubits.size();
 
     for (Layer& layer : layers) {
       mlir::DenseSet<mlir::Operation*> seenTwoQubit;
       mlir::SmallVector<UnitaryInterface> readyTwoQubit;
+
+      const auto qubits = layoutCopy.getHardwareQubits();
+      const auto nqubits = qubits.size();
 
       /// The maximum amount of two-qubit gates in a layer is nqubits / 2.
       /// Assuming sparsity we half this value: nqubits / (2 * 2)
@@ -93,30 +97,19 @@ struct ParallelOpScheduler final : SchedulerBase {
             break;
           }
 
+          /// TypeSwitch performs sequential dyn_cast checks.
+          /// Hence, always put most frequent ops first.
+
           mlir::TypeSwitch<mlir::Operation*, void>(user)
-              .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp op) {
-                /// This assumes that the first n results are the hardw. qubits.
-                head = op->getResult(layoutCopy.lookupHardwareIndex(head));
-              })
-              .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
-                /// This assumes that the first n results are the hardw. qubits.
-                head = op->getResult(layoutCopy.lookupHardwareIndex(head));
-              })
-              .Case<ResetOp>([&](ResetOp op) { head = op.getOutQubit(); })
-              .Case<MeasureOp>([&](MeasureOp op) { head = op.getOutQubit(); })
-              .Case<BarrierOp>([&](BarrierOp op) {
-                for (const auto [in, out] :
-                     llvm::zip_equal(op.getInQubits(), op.getOutQubits())) {
-                  if (in == head) {
-                    head = out;
-                    break;
-                  }
-                }
-                return;
-              })
               .Case<UnitaryInterface>([&](UnitaryInterface op) {
-                if (mlir::isa<GPhaseOp>(op)) {
-                  stop = true;
+                if (mlir::isa<BarrierOp>(op)) {
+                  for (const auto [in, out] :
+                       llvm::zip_equal(op.getInQubits(), op.getOutQubits())) {
+                    if (in == head) {
+                      head = out;
+                      break;
+                    }
+                  }
                   return;
                 }
 
@@ -132,6 +125,16 @@ struct ParallelOpScheduler final : SchedulerBase {
 
                 head = op.getOutQubits().front();
               })
+              .Case<ResetOp>([&](ResetOp op) { head = op.getOutQubit(); })
+              .Case<MeasureOp>([&](MeasureOp op) { head = op.getOutQubit(); })
+              .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp op) {
+                /// This assumes that the first n results are the hardw. qubits.
+                head = op->getResult(layoutCopy.lookupHardwareIndex(head));
+              })
+              .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
+                /// This assumes that the first n results are the hardw. qubits.
+                head = op->getResult(layoutCopy.lookupHardwareIndex(head));
+              })
               .Default([&](mlir::Operation*) { stop = true; });
 
           if (prev != head) {
@@ -141,13 +144,20 @@ struct ParallelOpScheduler final : SchedulerBase {
         }
       }
 
+      if (readyTwoQubit.empty()) {
+        break;
+      }
+
       for (const UnitaryInterface op : readyTwoQubit) {
         const auto [in0, in1] = getIns(op);
         const auto [out0, out1] = getOuts(op);
-        layer.emplace_back(layoutCopy.lookupProgramIndex(in0),
-                           layoutCopy.lookupProgramIndex(in1));
         layoutCopy.remapQubitValue(in0, out0);
         layoutCopy.remapQubitValue(in1, out1);
+
+        layer.emplace_back(layoutCopy.lookupProgramIndex(out0),
+                           layoutCopy.lookupProgramIndex(out1));
+
+        // skipTwoQubitBlock(out0, out1, layoutCopy, region);
       }
     }
 
@@ -166,6 +176,62 @@ struct ParallelOpScheduler final : SchedulerBase {
   }
 
 private:
+  static void skipTwoQubitBlock(const Value q0, const Value q1, Layout& layout,
+                                const Region* region) {
+
+    std::array<Value, 2> current{q0, q1};
+    while (true) {
+      std::array<UnitaryInterface, 2> gates{};
+
+      for (const auto [i, tail] : llvm::enumerate(current)) {
+        Value head = tail;
+
+        while (!head.use_empty()) {
+          mlir::Operation* user = getUserInRegion(head, region);
+          if (user == nullptr) {
+            break;
+          }
+
+          auto gate = mlir::dyn_cast<UnitaryInterface>(user);
+          if (!gate) {
+            break;
+          }
+
+          if (llvm::isa<BarrierOp>(gate)) {
+            break;
+          }
+
+          if (isTwoQubitGate(gate)) {
+            gates[i] = gate;
+            break;
+          }
+
+          head = gate.getOutQubits().front();
+        }
+
+        if (tail != head) {
+          layout.remapQubitValue(tail, head);
+        }
+      }
+
+      if (gates[0] == nullptr || gates[1] == nullptr) {
+        break;
+      }
+
+      if (gates[0] != gates[1]) {
+        break;
+      }
+
+      LLVM_DEBUG(llvm::dbgs()
+                 << "skipTwoQubitBlock: skip= " << gates[0]->getName() << '\n');
+      const auto [in0, in1] = getIns(gates[0]);
+      const auto [out0, out1] = getOuts(gates[0]);
+      layout.remapQubitValue(in0, out0);
+      layout.remapQubitValue(in1, out1);
+      current = {out0, out1};
+    }
+  }
+
   static mlir::Operation* getUserInRegion(const mlir::Value v,
                                           const mlir::Region* region) {
     for (mlir::Operation* user : v.getUsers()) {
@@ -176,6 +242,6 @@ private:
     return nullptr;
   }
 
-  std::size_t nlookahead_ = 1;
+  std::size_t nlayers_;
 };
 } // namespace mqt::ir::opt

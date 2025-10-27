@@ -445,8 +445,19 @@ LogicalResult route(ModuleOp module, MLIRContext* ctx, Mapper& mapper) {
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(curr);
 
+    /// TypeSwitch performs sequential dyn_cast checks.
+    /// Hence, always put most frequent ops first.
+
     const auto res =
         TypeSwitch<Operation*, WalkResult>(curr)
+            /// mqtopt Dialect
+            .Case<UnitaryInterface>([&](UnitaryInterface op) {
+              return handleUnitary(op, mapper, rewriter);
+            })
+            .Case<QubitOp>([&](QubitOp op) { return handleQubit(op, mapper); })
+            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, mapper); })
+            .Case<MeasureOp>(
+                [&](MeasureOp op) { return handleMeasure(op, mapper); })
             /// built-in Dialect
             .Case<ModuleOp>([&]([[maybe_unused]] ModuleOp op) {
               return WalkResult::advance();
@@ -463,14 +474,6 @@ LogicalResult route(ModuleOp module, MLIRContext* ctx, Mapper& mapper) {
             .Case<scf::IfOp>([&](scf::IfOp op) { return handleIf(op, mapper); })
             .Case<scf::YieldOp>([&](scf::YieldOp op) {
               return handleYield(op, mapper, rewriter);
-            })
-            /// mqtopt Dialect
-            .Case<QubitOp>([&](QubitOp op) { return handleQubit(op, mapper); })
-            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, mapper); })
-            .Case<MeasureOp>(
-                [&](MeasureOp op) { return handleMeasure(op, mapper); })
-            .Case<UnitaryInterface>([&](UnitaryInterface op) {
-              return handleUnitary(op, mapper, rewriter);
             })
             /// Skip the rest.
             .Default([](auto) { return WalkResult::skip(); });
