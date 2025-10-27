@@ -463,8 +463,7 @@ template <typename Container> auto conjugate(Container matrix) {
 template <typename Container>
 inline auto transpose_conjugate(Container&& matrix) {
   auto result = transpose(matrix);
-  result = conjugate(matrix);
-  return result;
+  return conjugate(result);
 }
 
 template<typename T>
