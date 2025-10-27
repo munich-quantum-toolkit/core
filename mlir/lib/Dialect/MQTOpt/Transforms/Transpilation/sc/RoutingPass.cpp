@@ -492,14 +492,9 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
 
   void runOnOperation() override {
     Mapper mapper = getMapper();
-
-    const auto start = std::chrono::steady_clock::now();
     if (failed(route(getOperation(), &getContext(), mapper))) {
       signalPassFailure();
     }
-    const auto end = std::chrono::steady_clock::now();
-    msTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
-                 .count();
   }
 
 private:

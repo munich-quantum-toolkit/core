@@ -126,8 +126,7 @@ def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
            "astar option: The lambda factor in the cost function">
   ];
   let statistics = [
-    Statistic<"numSwaps", "num-additional-swaps", "The number of additional SWAPs">,
-    Statistic<"msTime", "runtime-milliseconds", "The runtime in milliseconds">
+    Statistic<"numSwaps", "num-additional-swaps", "The number of additional SWAPs">
   ];
 }
 
