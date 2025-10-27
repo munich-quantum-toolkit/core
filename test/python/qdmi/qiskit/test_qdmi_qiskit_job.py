@@ -16,7 +16,11 @@ import pytest
 
 _qiskit_present = importlib.util.find_spec("qiskit") is not None
 
-pytestmark = pytest.mark.skipif(not _qiskit_present, reason="qiskit not installed")
+pytestmark = [
+    pytest.mark.skipif(not _qiskit_present, reason="qiskit not installed"),
+    pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
+    pytest.mark.filterwarnings("ignore:Device does not define a measurement operation.*:UserWarning"),
+]
 
 if _qiskit_present:
     from qiskit import QuantumCircuit

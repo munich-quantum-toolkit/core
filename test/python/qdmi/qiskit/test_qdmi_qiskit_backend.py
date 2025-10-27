@@ -21,7 +21,11 @@ from mqt.core.qdmi.qiskit import (
 
 _qiskit_present = importlib.util.find_spec("qiskit") is not None
 
-pytestmark = pytest.mark.skipif(not _qiskit_present, reason="qiskit not installed")
+pytestmark = [
+    pytest.mark.skipif(not _qiskit_present, reason="qiskit not installed"),
+    pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
+    pytest.mark.filterwarnings("ignore:Device does not define a measurement operation.*:UserWarning"),
+]
 
 if _qiskit_present:
     from qiskit import QuantumCircuit
@@ -304,3 +308,151 @@ def test_backend_result_metadata_includes_capabilities_hash(na_backend: QiskitBa
     job = na_backend.run(qc, shots=100)
     result = job.result()
     assert "capabilities_hash" in result.results[0].metadata
+
+
+def test_backend_warns_on_unmappable_operation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Backend should warn when device operation cannot be mapped to a Qiskit gate."""
+    import warnings
+
+    from mqt.core.qdmi.qiskit.capabilities import DeviceCapabilities, DeviceOperationInfo
+
+    # Create a mock capabilities object with an unmappable operation
+    mock_capabilities = DeviceCapabilities(
+        device_name="Test Device",
+        device_version="1.0",
+        library_version="1.0",
+        num_qubits=2,
+        duration_unit=None,
+        duration_scale_factor=None,
+        length_unit=None,
+        length_scale_factor=None,
+        min_atom_distance=None,
+        status="active",
+        sites=[],
+        coupling_map=[(0, 1)],
+        capabilities_hash="0" * 64,
+        signature="test_sig",
+        operations={
+            "cz": DeviceOperationInfo(
+                name="cz",
+                qubits_num=2,
+                parameters_num=0,
+                duration=None,
+                fidelity=None,
+                interaction_radius=None,
+                blocking_radius=None,
+                idling_fidelity=None,
+                is_zoned=None,
+                mean_shuttling_speed=None,
+                sites=None,
+            ),
+            "custom_unmappable_gate": DeviceOperationInfo(
+                name="custom_unmappable_gate",
+                qubits_num=1,
+                parameters_num=0,
+                duration=None,
+                fidelity=None,
+                interaction_radius=None,
+                blocking_radius=None,
+                idling_fidelity=None,
+                is_zoned=None,
+                mean_shuttling_speed=None,
+                sites=None,
+            ),
+            "measure": DeviceOperationInfo(
+                name="measure",
+                qubits_num=1,
+                parameters_num=0,
+                duration=None,
+                fidelity=None,
+                interaction_radius=None,
+                blocking_radius=None,
+                idling_fidelity=None,
+                is_zoned=None,
+                mean_shuttling_speed=None,
+                sites=None,
+            ),
+        },
+    )
+
+    # Monkeypatch extract_capabilities in the backend module to return the mock
+    from mqt.core.qdmi.qiskit import backend as backend_module
+
+    def mock_extract_capabilities(device: fomac.Device) -> DeviceCapabilities:  # noqa: ARG001
+        return mock_capabilities
+
+    monkeypatch.setattr(backend_module, "extract_capabilities", mock_extract_capabilities)
+
+    # Creating backend should trigger warning about unmappable operation
+    # Use warnings.catch_warnings to bypass module-level filterwarnings
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        QiskitBackend(device_index=0)
+
+        # Check that the warning was raised
+        assert len(w) > 0, "Expected at least one warning to be raised"
+        warning_messages = [str(warning.message) for warning in w]
+        assert any(
+            "custom_unmappable_gate" in msg and "cannot be mapped to a Qiskit gate" in msg for msg in warning_messages
+        ), f"Expected warning about custom_unmappable_gate, got: {warning_messages}"
+
+
+def test_backend_warns_on_missing_measurement_operation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Backend should warn when device does not define a measurement operation."""
+    import warnings
+
+    from mqt.core.qdmi.qiskit.capabilities import DeviceCapabilities, DeviceOperationInfo
+
+    # Create a mock capabilities object without a measure operation
+    mock_capabilities = DeviceCapabilities(
+        device_name="Test Device",
+        device_version="1.0",
+        library_version="1.0",
+        num_qubits=2,
+        duration_unit=None,
+        duration_scale_factor=None,
+        length_unit=None,
+        length_scale_factor=None,
+        min_atom_distance=None,
+        status="active",
+        sites=[],
+        coupling_map=[(0, 1)],
+        capabilities_hash="0" * 64,
+        signature="test_sig",
+        operations={
+            "cz": DeviceOperationInfo(
+                name="cz",
+                qubits_num=2,
+                parameters_num=0,
+                duration=None,
+                fidelity=None,
+                interaction_radius=None,
+                blocking_radius=None,
+                idling_fidelity=None,
+                is_zoned=None,
+                mean_shuttling_speed=None,
+                sites=None,
+            ),
+        },
+    )
+
+    # Monkeypatch extract_capabilities in the backend module to return the mock
+    from mqt.core.qdmi.qiskit import backend as backend_module
+
+    def mock_extract_capabilities(device: fomac.Device) -> DeviceCapabilities:  # noqa: ARG001
+        return mock_capabilities
+
+    monkeypatch.setattr(backend_module, "extract_capabilities", mock_extract_capabilities)
+
+    # Creating backend should trigger warning about missing measurement operation
+    # Use warnings.catch_warnings to bypass module-level filterwarnings
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        QiskitBackend(device_index=0)
+
+        # Check that the warning was raised
+        assert len(w) > 0, "Expected at least one warning to be raised"
+        warning_messages = [str(warning.message) for warning in w]
+        assert any("does not define a measurement operation" in msg for msg in warning_messages), (
+            f"Expected warning about missing measurement operation, got: {warning_messages}"
+        )
