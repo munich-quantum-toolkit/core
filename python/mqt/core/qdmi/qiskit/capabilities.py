@@ -169,41 +169,50 @@ def _compute_device_signature(device: fomac.Device) -> str:
     return json.dumps(signature_obj, sort_keys=True, separators=(",", ":"))
 
 
-def _safe_site_info(s: fomac.Device.Site) -> DeviceSiteInfo | None:
-    """Safely build a DeviceSiteInfo for a site or return None on failure.
+def _build_site_info(s: fomac.Device.Site) -> DeviceSiteInfo:
+    """Build a DeviceSiteInfo for a site.
+
+    Args:
+        s: Site from FoMaC device.
 
     Returns:
-        A populated DeviceSiteInfo instance, or ``None`` if extraction failed.
+        A populated DeviceSiteInfo instance.
+
+    Raises:
+        Any exception from accessing site properties, indicating a device specification issue.
     """
-    try:
-        return DeviceSiteInfo(
-            index=s.index(),
-            name=s.name(),
-            x=s.x_coordinate(),
-            y=s.y_coordinate(),
-            z=s.z_coordinate(),
-            is_zone=s.is_zone(),
-            x_extent=s.x_extent(),
-            y_extent=s.y_extent(),
-            z_extent=s.z_extent(),
-            module_index=s.module_index(),
-            submodule_index=s.submodule_index(),
-            t1=s.t1(),
-            t2=s.t2(),
-        )
-    except Exception:  # noqa: BLE001
-        return None
+    return DeviceSiteInfo(
+        index=s.index(),
+        name=s.name(),
+        x=s.x_coordinate(),
+        y=s.y_coordinate(),
+        z=s.z_coordinate(),
+        is_zone=s.is_zone(),
+        x_extent=s.x_extent(),
+        y_extent=s.y_extent(),
+        z_extent=s.z_extent(),
+        module_index=s.module_index(),
+        submodule_index=s.submodule_index(),
+        t1=s.t1(),
+        t2=s.t2(),
+    )
 
 
-def _safe_operation_info(op: fomac.Device.Operation) -> DeviceOperationInfo | None:
-    """Safely build a DeviceOperationInfo for an operation or return None.
+def _build_operation_info(op: fomac.Device.Operation) -> DeviceOperationInfo:
+    """Build a DeviceOperationInfo for an operation.
 
     Interprets the sites list according to QDMI specification:
     - For local multi-qubit operations: returns tuples of site combinations
     - For single-qubit and global operations: returns individual sites
 
+    Args:
+        op: Operation from FoMaC device.
+
     Returns:
-        A populated DeviceOperationInfo instance, or ``None`` if extraction failed.
+        A populated DeviceOperationInfo instance.
+
+    Raises:
+        Any exception from accessing operation properties, indicating a device specification issue.
     """
     name = op.name()
     site_list = op.sites()
@@ -305,19 +314,17 @@ def extract_capabilities(device: fomac.Device) -> DeviceCapabilities:
 
     site_infos: list[DeviceSiteInfo] = []
     for s in non_zone_sites:
-        site_info = _safe_site_info(s)
-        if site_info is not None:
-            # Remap the index to the logical qubit index
-            site_info.index = site_index_to_qubit_index[s.index()]
-            site_infos.append(site_info)
+        site_info = _build_site_info(s)
+        # Remap the index to the logical qubit index
+        site_info.index = site_index_to_qubit_index[s.index()]
+        site_infos.append(site_info)
 
     op_infos: dict[str, DeviceOperationInfo] = {}
     for op in device.operations():
-        op_info = _safe_operation_info(op)
-        if op_info is not None:
-            # Remap site indices in operations to logical qubit indices
-            op_info = _remap_operation_sites(op_info, site_index_to_qubit_index)
-            op_infos[op_info.name] = op_info
+        op_info = _build_operation_info(op)
+        # Remap site indices in operations to logical qubit indices
+        op_info = _remap_operation_sites(op_info, site_index_to_qubit_index)
+        op_infos[op_info.name] = op_info
 
     cm = device.coupling_map()
     coupling_indices_list = None
