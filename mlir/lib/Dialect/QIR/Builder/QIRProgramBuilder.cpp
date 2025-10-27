@@ -227,6 +227,32 @@ QIRProgramBuilder& QIRProgramBuilder::reset(const Value qubit) {
   return *this;
 }
 
+//===----------------------------------------------------------------------===//
+// Unitary Operations
+//===----------------------------------------------------------------------===//
+
+QIRProgramBuilder& QIRProgramBuilder::x(const Value qubit) {
+  // Save current insertion point
+  const OpBuilder::InsertionGuard insertGuard(builder);
+
+  // Insert in body block (before branch)
+  builder.setInsertionPoint(bodyBlock->getTerminator());
+
+  // Create x call
+  const auto qirSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()),
+      LLVM::LLVMPointerType::get(builder.getContext()));
+  auto fnDecl =
+      getOrCreateFunctionDeclaration(builder, module, QIR_X, qirSignature);
+  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit});
+
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// Deallocation
+//===----------------------------------------------------------------------===//
+
 QIRProgramBuilder& QIRProgramBuilder::dealloc(const Value qubit) {
   allocatedQubits.erase(qubit);
 
@@ -246,6 +272,10 @@ QIRProgramBuilder& QIRProgramBuilder::dealloc(const Value qubit) {
 
   return *this;
 }
+
+//===----------------------------------------------------------------------===//
+// Finalization
+//===----------------------------------------------------------------------===//
 
 void QIRProgramBuilder::generateOutputRecording() {
   if (registerResultMap.empty()) {

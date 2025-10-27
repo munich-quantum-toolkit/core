@@ -230,7 +230,7 @@ public:
   /**
    * @brief Apply the X gate to a qubit
    *
-   * @param qubit The target qubit
+   * @param qubit Input qubit
    * @return Reference to this builder for method chaining
    *
    * @par Example:

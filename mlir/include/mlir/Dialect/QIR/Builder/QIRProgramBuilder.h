@@ -222,6 +222,30 @@ public:
    */
   QIRProgramBuilder& reset(Value qubit);
 
+  //===--------------------------------------------------------------------===//
+  // Unitary Operations
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Apply the X gate to a qubit
+   *
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.x(q);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& x(const Value qubit);
+
+  //===--------------------------------------------------------------------===//
+  // Deallocation
+  //===--------------------------------------------------------------------===//
+
   /**
    * @brief Explicitly deallocate a qubit
    *

@@ -126,57 +126,6 @@ struct QuartzToQIRTypeConverter final : LLVMTypeConverter {
 namespace {
 
 /**
- * @brief Converts quartz.static operation to QIR inttoptr
- *
- * @details
- * Converts a static qubit reference to an LLVM pointer by creating a constant
- * with the qubit index and converting it to a pointer. The pointer is cached
- * in the lowering state for reuse.
- *
- * @par Example:
- * ```mlir
- * %q0 = quartz.static 0 : !quartz.qubit
- * ```
- * becomes:
- * ```mlir
- * %c0 = llvm.mlir.constant(0 : i64) : i64
- * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
- * ```
- */
-struct ConvertQuartzStaticQIR final : StatefulOpConversionPattern<StaticOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(StaticOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto* ctx = getContext();
-    const auto index = op.getIndex();
-
-    // Get or create a pointer to the qubit
-    if (getState().ptrMap.contains(index)) {
-      // Reuse existing pointer
-      rewriter.replaceOp(op, getState().ptrMap.at(index));
-    } else {
-      // Create constant and inttoptr operations
-      const auto constantOp = rewriter.create<LLVM::ConstantOp>(
-          op.getLoc(), rewriter.getI64IntegerAttr(index));
-      const auto intToPtrOp = rewriter.replaceOpWithNewOp<LLVM::IntToPtrOp>(
-          op, LLVM::LLVMPointerType::get(ctx), constantOp->getResult(0));
-
-      // Cache for reuse
-      getState().ptrMap.try_emplace(index, intToPtrOp->getResult(0));
-    }
-
-    // Track maximum qubit index
-    if (index >= getState().numQubits) {
-      getState().numQubits = index + 1;
-    }
-
-    return success();
-  }
-};
-
-/**
  * @brief Converts quartz.alloc operation to QIR qubit_allocate
  *
  * @details
@@ -263,40 +212,52 @@ struct ConvertQuartzDeallocQIR final : OpConversionPattern<DeallocOp> {
 };
 
 /**
- * @brief Converts quartz.reset operation to QIR reset
+ * @brief Converts quartz.static operation to QIR inttoptr
  *
  * @details
- * Converts qubit reset to a call to the QIR __quantum__qis__reset__body
- * function, which resets a qubit to the |0⟩ state.
+ * Converts a static qubit reference to an LLVM pointer by creating a constant
+ * with the qubit index and converting it to a pointer. The pointer is cached
+ * in the lowering state for reuse.
  *
  * @par Example:
  * ```mlir
- * quartz.reset %q : !quartz.qubit
+ * %q0 = quartz.static 0 : !quartz.qubit
  * ```
  * becomes:
  * ```mlir
- * llvm.call @__quantum__qis__reset__body(%q) : (!llvm.ptr) -> ()
+ * %c0 = llvm.mlir.constant(0 : i64) : i64
+ * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
  * ```
  */
-struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertQuartzStaticQIR final : StatefulOpConversionPattern<StaticOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(ResetOp op, OpAdaptor adaptor,
+  matchAndRewrite(StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
+    const auto index = op.getIndex();
 
-    // Create QIR function signature: (ptr) -> void
-    const auto qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
+    // Get or create a pointer to the qubit
+    if (getState().ptrMap.contains(index)) {
+      // Reuse existing pointer
+      rewriter.replaceOp(op, getState().ptrMap.at(index));
+    } else {
+      // Create constant and inttoptr operations
+      const auto constantOp = rewriter.create<LLVM::ConstantOp>(
+          op.getLoc(), rewriter.getI64IntegerAttr(index));
+      const auto intToPtrOp = rewriter.replaceOpWithNewOp<LLVM::IntToPtrOp>(
+          op, LLVM::LLVMPointerType::get(ctx), constantOp->getResult(0));
 
-    // Get or create function declaration
-    const auto fnDecl =
-        getOrCreateFunctionDeclaration(rewriter, op, QIR_RESET, qirSignature);
+      // Cache for reuse
+      getState().ptrMap.try_emplace(index, intToPtrOp->getResult(0));
+    }
 
-    // Replace with call to reset
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
-                                              adaptor.getOperands());
+    // Track maximum qubit index
+    if (index >= getState().numQubits) {
+      getState().numQubits = index + 1;
+    }
+
     return success();
   }
 };
@@ -386,6 +347,69 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
 
     rewriter.eraseOp(op);
 
+    return success();
+  }
+};
+
+/**
+ * @brief Converts quartz.reset operation to QIR reset
+ *
+ * @details
+ * Converts qubit reset to a call to the QIR __quantum__qis__reset__body
+ * function, which resets a qubit to the |0⟩ state.
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.reset %q : !quartz.qubit
+ * ```
+ * becomes:
+ * ```mlir
+ * llvm.call @__quantum__qis__reset__body(%q) : (!llvm.ptr) -> ()
+ * ```
+ */
+struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ResetOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto* ctx = getContext();
+
+    // Create QIR function signature: (ptr) -> void
+    const auto qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
+
+    // Get or create function declaration
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_RESET, qirSignature);
+
+    // Replace with call to reset
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
+                                              adaptor.getOperands());
+    return success();
+  }
+};
+
+// Temporary implementation of XOp conversion
+struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(XOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto* ctx = getContext();
+
+    // Create QIR function signature: (ptr) -> void
+    const auto qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
+
+    // Get or create function declaration
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_X, qirSignature);
+
+    // Replace with call to X
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
+                                              adaptor.getOperands());
     return success();
   }
 };
@@ -710,11 +734,12 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       target.addIllegalDialect<QuartzDialect>();
 
       // Add conversion patterns for Quartz operations
-      quartzPatterns.add<ConvertQuartzStaticQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzAllocQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzDeallocQIR>(typeConverter, ctx);
-      quartzPatterns.add<ConvertQuartzResetQIR>(typeConverter, ctx);
+      quartzPatterns.add<ConvertQuartzStaticQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzMeasureQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzResetQIR>(typeConverter, ctx);
+      quartzPatterns.add<ConvertQuartzXQIR>(typeConverter, ctx, &state);
 
       // Gate operations will be added here as the dialect expands
 

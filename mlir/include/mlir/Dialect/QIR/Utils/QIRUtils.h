@@ -26,6 +26,7 @@ static constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
 static constexpr auto QIR_ARRAY_RECORD_OUTPUT =
     "__quantum__rt__array_record_output";
 static constexpr auto QIR_RESET = "__quantum__qis__reset__body";
+static constexpr auto QIR_X = "__quantum__qis__x__body";
 
 /**
  * @brief State object for tracking QIR metadata during conversion
