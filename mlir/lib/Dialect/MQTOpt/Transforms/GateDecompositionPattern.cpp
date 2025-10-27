@@ -696,7 +696,7 @@ struct GateDecompositionPattern final
         auto tmp = remEuclid(x, qc::PI_2);
         return std::min(tmp, qc::PI_2 - tmp);
       });
-      std::array<std::size_t, cstemp.size()> order{0, 1, 2};
+      std::array<std::size_t, cstemp.size()> order{2, 1, 0}; // TODO: needs to be adjusted depending on eigenvector order in eigen decomposition algorithm?
       llvm::stable_sort(order,
                         [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
       helpers::print(order, "ORDER (1)");
