@@ -859,4 +859,40 @@ TEST_F(CompilerPipelineTest, MultipleClassicalRegistersAndMeasurements) {
   });
 }
 
+// ##################################################
+// # Temporary Unit Tests
+// ##################################################
+
+TEST_F(CompilerPipelineTest, X) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(1, "q");
+  qc.x(0);
+
+  const auto module = importQuantumCircuit(qc);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto quartzExpected =
+      buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+        auto q = b.allocQubitRegister(1, "q");
+        b.x(q[0]);
+      });
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1, "q");
+    b.x(q[0]);
+  });
+  const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1);
+    b.x(q[0]);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartzExpected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .optimization = fluxExpected.get(),
+      .quartzConversion = quartzExpected.get(),
+      .qirConversion = qirExpected.get(),
+  });
+}
+
 } // namespace
