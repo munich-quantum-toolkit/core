@@ -356,65 +356,54 @@ struct GateDecompositionPattern final
 
   static std::tuple<matrix2x2, matrix2x2, fp>
   decompose_two_qubit_product_gate(matrix4x4 special_unitary) {
-    using helpers::determinant;
-    using helpers::dot;
-    using helpers::kroneckerProduct;
-    using helpers::transpose_conjugate;
-    helpers::print(special_unitary, "SPECIAL_UNITARY");
-
-    auto* it = llvm::max_element(special_unitary, [](auto&& a, auto&& b) {
-      return std::abs(a) < std::abs(b);
-    });
-    if (it == special_unitary.end()) {
-      throw std::runtime_error{
-          "No maximal element in decompose_two_qubit_product_gate!"};
+      using helpers::dot;
+      using helpers::kroneckerProduct;
+      using helpers::transpose_conjugate;
+      using helpers::determinant;
+      helpers::print(special_unitary, "SPECIAL_UNITARY");
+    // first quadrant
+    matrix2x2 r = {special_unitary[0 * 4 + 0], special_unitary[0 * 4 + 1],
+                   special_unitary[1 * 4 + 0], special_unitary[1 * 4 + 1]};
+    auto det_r = determinant(r);
+    if (std::abs(det_r) < 0.1) {
+      // third quadrant
+      r = {special_unitary[2 * 4 + 0], special_unitary[2 * 4 + 1],
+           special_unitary[3 * 4 + 0], special_unitary[3 * 4 + 1]};
+      det_r = determinant(r);
     }
-    auto pos = std::distance(special_unitary.begin(), it);
-    int i = pos % 4;
-    int j = pos / 4;
+    if (std::abs(det_r) < 0.1) {
+      throw std::runtime_error{
+          "decompose_two_qubit_product_gate: unable to decompose: det_r < 0.1"};
+    }
+    llvm::transform(r, r.begin(),
+                    [&](auto&& x) { return x / std::sqrt(det_r); });
+    // transpose with complex conjugate of each element
+    matrix2x2 r_t_conj = transpose_conjugate(r);
 
-    auto u1_set = [](int i) {
-      if (i % 2 == 0) {
-        return std::make_pair(0, 2);
-      }
-      return std::make_pair(1, 3);
-    };
+    auto temp = kroneckerProduct(identityGate, r_t_conj);
+    temp = dot(special_unitary, temp);
 
-    auto u2_set = [](int i) {
-      if (i < 2) {
-        return std::make_pair(0, 1);
-      }
-      return std::make_pair(2, 3);
-    };
+    // [[a, b, c, d],
+    //  [e, f, g, h], => [[a, c],
+    //  [i, j, k, l],     [i, k]]
+    //  [m, n, o, p]]
+    matrix2x2 l = {temp[0 * 4 + 0], temp[0 * 4 + 2], temp[2 * 4 + 0],
+                   temp[2 * 4 + 2]};
+    auto det_l = determinant(l);
+    if (std::abs(det_l) < 0.9) {
+      throw std::runtime_error{
+          "decompose_two_qubit_product_gate: unable to decompose: detL < 0.9"};
+    }
+    llvm::transform(l, l.begin(),
+                    [&](auto&& x) { return x / std::sqrt(det_l); });
+    auto phase = std::arg(det_l) / 2.;
 
-    auto to_su = [](auto&& u) {
-      return helpers::multiply(std::pow(qfp(determinant(u)), -0.25), u);
-    };
-
-    matrix2x2 u1;
-    u1[0 * 2 + 0] = special_unitary[u1_set(i).first * 4 + u1_set(j).first];
-    u1[0 * 2 + 1] = special_unitary[u1_set(i).first * 4 + u1_set(j).second];
-    u1[1 * 2 + 0] = special_unitary[u1_set(i).second * 4 + u1_set(j).first];
-    u1[1 * 2 + 1] = special_unitary[u1_set(i).second * 4 + u1_set(j).second];
-    matrix2x2 u2;
-    u1[0 * 2 + 0] = special_unitary[u2_set(i).first * 4 + u2_set(j).first];
-    u1[0 * 2 + 1] = special_unitary[u2_set(i).first * 4 + u2_set(j).second];
-    u1[1 * 2 + 0] = special_unitary[u2_set(i).second * 4 + u2_set(j).first];
-    u1[1 * 2 + 1] = special_unitary[u2_set(i).second * 4 + u2_set(j).second];
-
-    u1 = to_su(u1);
-    u2 = to_su(u2);
-
-    std::cerr << i << ',' << j << std::endl;
-    auto phase = special_unitary[i * 4 + j] /
-                 (u1[(i / 2) * 2 + (j / 2)] * u2[(i % 2) * 2 + (j % 2)]);
-
-    return {u1, u2, phase.real()}; // TODO: return only real part?
+    return {l, r, phase};
   }
 
   static matrix4x4 magic_basis_transform(const matrix4x4& unitary,
                                          MagicBasisTransform direction) {
-    using helpers::dot;
+      using helpers::dot;
     constexpr matrix4x4 B_NON_NORMALIZED = {
         C_ONE,  IM,     C_ZERO, C_ZERO,  C_ZERO, C_ZERO, IM,     C_ONE,
         C_ZERO, C_ZERO, IM,     C_M_ONE, C_ONE,  M_IM,   C_ZERO, C_ZERO,
