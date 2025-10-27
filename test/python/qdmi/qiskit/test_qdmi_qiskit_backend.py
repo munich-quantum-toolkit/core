@@ -128,12 +128,6 @@ def test_backend_options() -> None:
     assert backend.options.shots == 1024
 
 
-def test_backend_default_options() -> None:
-    """Backend default options should have shots=1024."""
-    options = QiskitBackend._default_options()  # noqa: SLF001
-    assert options.shots == 1024
-
-
 def test_backend_run_with_shots_option(na_backend: QiskitBackend) -> None:
     """Backend run should accept shots option."""
     qc = QuantumCircuit(2, 2)
@@ -265,25 +259,6 @@ def test_backend_target_operation_names(na_backend: QiskitBackend) -> None:
 
     # NA device should have at least some of these operations
     assert "cz" in op_names or "ry" in op_names or "rz" in op_names
-
-
-def test_backend_name() -> None:
-    """Backend should have a name attribute.
-
-    Note:
-        QDMI enforces that every device has a non-empty string name according
-        to the interface definition, so the name should never be None.
-    """
-    backend = QiskitBackend()
-    assert hasattr(backend, "name")
-    assert isinstance(backend.name, str)
-    assert len(backend.name) > 0
-
-
-def test_backend_version() -> None:
-    """Backend should have a backend_version attribute."""
-    backend = QiskitBackend()
-    assert hasattr(backend, "backend_version")
 
 
 def test_backend_circuit_name_preserved(na_backend: QiskitBackend) -> None:

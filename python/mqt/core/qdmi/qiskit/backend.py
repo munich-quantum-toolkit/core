@@ -153,10 +153,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
                 )
 
             # Add to target
-            if props is not None:
-                target.add_instruction(gate, dict.fromkeys(qargs, props))
-            else:
-                target.add_instruction(gate, dict.fromkeys(qargs))
+            target.add_instruction(gate, dict.fromkeys(qargs, props))
 
         # Warn if no measurement operation is defined
         if "measure" not in self._capabilities.operations:
