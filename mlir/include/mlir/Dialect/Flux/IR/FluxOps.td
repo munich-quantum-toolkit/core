@@ -250,9 +250,9 @@ def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface]> {
         size_t getNumQubits() { return getNumTargets() + getNumControls(); }
         size_t getNumTargets() const { return 1; }
         size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
-        size_t getNumPosControls() const;
-        size_t getNumNegControls() const;
-        Value getQubit(size_t i) const;
+        size_t getNumPosControls() const { return 0; }
+        size_t getNumNegControls() const { return 0; }
+        Value getQubit(size_t i);
         Value getTarget(size_t i);
         Value getPosControl(size_t i) const;
         Value getNegControl(size_t i) const;

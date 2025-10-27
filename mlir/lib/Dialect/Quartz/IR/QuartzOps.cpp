@@ -116,16 +116,11 @@ LogicalResult MeasureOp::verify() {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-size_t XOp::getNumPosControls() const {
-  llvm_unreachable("Not implemented yet");
-}
-
-size_t XOp::getNumNegControls() const {
-  llvm_unreachable("Not implemented yet");
-}
-
-Value XOp::getQubit(size_t /*i*/) const {
-  llvm_unreachable("Not implemented yet");
+Value XOp::getQubit(size_t i) {
+  if (i != 0) {
+    llvm_unreachable("XOp has only one qubit");
+  }
+  return getQubitIn();
 }
 
 Value XOp::getTarget(size_t i) {
@@ -136,15 +131,15 @@ Value XOp::getTarget(size_t i) {
 }
 
 Value XOp::getPosControl(size_t /*i*/) const {
-  llvm_unreachable("Not implemented yet");
+  llvm_unreachable("XOp does not have controls");
 }
 
 Value XOp::getNegControl(size_t /*i*/) const {
-  llvm_unreachable("Not implemented yet");
+  llvm_unreachable("XOp does not have controls");
 }
 
 ParameterDescriptor XOp::getParameter(size_t /*i*/) const {
-  llvm_unreachable("XOp has no parameters");
+  llvm_unreachable("XOp does not have parameters");
 }
 
 DenseElementsAttr XOp::tryGetStaticMatrix() {
