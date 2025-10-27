@@ -125,6 +125,20 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
       //===----------------------------------------------------------------===//
       if (shuttlingOp.hasTargetLocations()) {
         const auto& targetLocations = shuttlingOp.getTargetLocations();
+        // Check for duplicate atoms in the operation
+        for (std::size_t i = 0; i < opAtoms.size(); ++i) {
+          const auto* a = opAtoms[i];
+          for (std::size_t j = i + 1; j < opAtoms.size(); ++j) {
+            const auto* b = opAtoms[j];
+            if (a == b) {
+              ss << "Error in op number " << counter
+                 << " (two atoms identical)\n";
+              return {false, ss.str()};
+            }
+          }
+        }
+        // Check constraints between all loaded atoms and atoms in this
+        // operation
         for (const auto& atom : atoms_) {
           if (const auto* a = atom.get(); currentlyShuttling.contains(a)) {
             const auto& s1 = currentLocations[a];
@@ -137,14 +151,6 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
             }
             for (std::size_t i = 0; i < opAtoms.size(); ++i) {
               const auto* b = opAtoms[i];
-              for (std::size_t j = i + 1; j < opAtoms.size(); ++j) {
-                const auto* c = opAtoms[j];
-                if (b == c) {
-                  ss << "Error in op number " << counter
-                     << " (two atoms identical)\n";
-                  return {false, ss.str()};
-                }
-              }
               if (a == b) {
                 break;
               }

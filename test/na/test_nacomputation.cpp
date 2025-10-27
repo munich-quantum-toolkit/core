@@ -251,4 +251,16 @@ TEST(NAComputation, GetPositionOfAtomAfterOperation) {
   EXPECT_EQ(qc.getLocationOfAtomAfterOperation(atom0, qc[0]), (Location{0, 0}));
   EXPECT_EQ(qc.getLocationOfAtomAfterOperation(atom0, qc[2]), (Location{1, 1}));
 }
+
+TEST(NAComputation, CheckAODCOnstraintsOfNonMovingAtoms) {
+  auto qc = NAComputation();
+  const auto& atom0 = qc.emplaceBackAtom("atom0");
+  qc.emplaceInitialLocation(atom0, 0, 0);
+  const auto& atom1 = qc.emplaceBackAtom("atom1");
+  qc.emplaceInitialLocation(atom1, 3, 0);
+  qc.emplaceBack<LoadOp>(std::vector{&atom0, &atom1});
+  qc.emplaceBack<MoveOp>(atom0, Location{.x = 4, .y = 4});
+  qc.emplaceBack<StoreOp>(std::vector{&atom0, &atom1});
+  EXPECT_FALSE(qc.validate().first);
+}
 } // namespace na
