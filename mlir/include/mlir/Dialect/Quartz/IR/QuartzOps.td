@@ -225,7 +225,7 @@ def ResetOp : QuartzOp<"reset"> {
 }
 
 //===----------------------------------------------------------------------===//
-// Unitray Operations
+// Unitary Operations
 //===----------------------------------------------------------------------===//
 
 def XOp : QuartzOp<"x", traits = [Quartz_UnitaryOpInterface]> {
