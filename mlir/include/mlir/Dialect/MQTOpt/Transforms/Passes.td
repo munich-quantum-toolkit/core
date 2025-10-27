@@ -100,7 +100,7 @@ def LiftMeasurementsPass : Pass<"lift-measurements", "mlir::ModuleOp"> {
 }
 
 def ReuseQubitsPass : Pass<"reuse-qubits", "mlir::ModuleOp"> {
-  let dependentDialects = [ "mlir::scf::SCFDialect" ];
+  let dependentDialects = [ "mlir::scf::SCFDialect", "mqt::ir::opt::MQTOptDialect" ];
   let summary = "Reduce the number of required qubits by reusing existing ones that are no longer used.";
   let description = [{
     This pass performs qubit reuse, searching for qubits that are first referenced after the final reference to a different qubit.

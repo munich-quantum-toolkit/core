@@ -10,12 +10,15 @@
 
 #pragma once
 
-#include "ir/QuantumComputation.hpp"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <cstdint>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Pass/Pass.h>
+
+namespace qc {
+class QuantumComputation;
+}
 
 namespace mlir {
 
