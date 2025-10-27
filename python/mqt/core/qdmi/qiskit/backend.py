@@ -37,7 +37,7 @@ __all__ = ["QiskitBackend"]
 class QiskitBackend(BackendV2):  # type: ignore[misc]
     """A Qiskit BackendV2 adapter for QDMI devices via FoMaC.
 
-    This backend provides neutral QASM3-based program submission to QDMI devices.
+    This backend provides OpenQASM-based program submission to QDMI devices.
     It automatically introspects device capabilities and constructs a Target
     object with supported operations.
 
@@ -350,7 +350,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
                 class MyVendorBackend(QiskitBackend):
                     def _submit_to_device(self, circuit, shots):
-                        # Serialize to QASM3 (let Qiskit handle this)
+                        # Serialize to OpenQASM (let Qiskit handle this)
                         from qiskit import qasm3
                         qasm3_str = qasm3.dumps(circuit)
 
