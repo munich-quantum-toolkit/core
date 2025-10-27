@@ -116,7 +116,7 @@ from mqt.core.qdmi.qiskit import (
 
 
 def custom_gate_translator(ctx: InstructionContext) -> list[ProgramInstruction]:
-    """Translate a custom gate to neutral IR."""
+    """Translate a custom gate."""
     return [
         ProgramInstruction(
             name="my_gate",

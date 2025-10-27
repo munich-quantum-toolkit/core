@@ -27,7 +27,7 @@ class UnsupportedOperationError(QDMIQiskitError):
 
 
 class TranslationError(QDMIQiskitError):
-    """Raised when translation of a frontend instruction to neutral IR fails."""
+    """Raised when translation of a frontend instruction fails."""
 
 
 class CapabilityMismatchError(QDMIQiskitError):
