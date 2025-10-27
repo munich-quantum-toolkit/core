@@ -43,7 +43,7 @@ struct GateDecompositionPattern final
     auto series = getTwoQubitSeries(op);
     llvm::errs() << "SERIES SIZE: " << series.size() << '\n';
 
-    if (series.size() <= 3) {
+    if (series.size() < 3) {
       return mlir::failure();
     }
 
@@ -185,37 +185,91 @@ struct GateDecompositionPattern final
                           llvm::SmallVector<UnitaryInterface>& series,
                           const TwoQubitGateSequence& sequence) {
     auto location = series[0]->getLoc();
-    auto inQubits = series[0].getAllInQubits();
+    std::vector<mlir::Value> inQubits(2);
+    auto&& firstInQubist = series[0].getAllInQubits();
+    if (firstInQubist.size() == 2) {
+      inQubits[0] = firstInQubist[0];
+      inQubits[1] = firstInQubist[1];
+    } else {
+      // TODO
+    }
     if (sequence.globalPhase != 0.0) {
       createOneParameterGate<GPhaseOp>(rewriter, location, sequence.globalPhase,
                                        {});
     }
 
     std::cerr << "GATE SEQUENCE!: " << std::flush;
+    UnitaryInterface lastGate = series[0];
     for (auto&& gate : sequence.gates) {
       if (gate.type == qc::X) {
         mlir::SmallVector<mlir::Value, 1> inCtrlQubits;
         if (gate.qubit_id.size() > 1) {
           inCtrlQubits.push_back(inQubits[gate.qubit_id[1]]);
         }
-        createGate<XOp>(rewriter, location, {inQubits[0]}, inCtrlQubits,
-                        gate.parameter);
+        lastGate = createGate<XOp>(rewriter, location, {inQubits[0]},
+                                        inCtrlQubits, gate.parameter);
+        if (gate.qubit_id.size() == 2) {
+          inQubits = lastGate.getAllOutQubits();
+        } else if (gate.qubit_id.size() == 1) {
+          inQubits[gate.qubit_id[0]] =
+              lastGate.getAllOutQubits()[0];
+        } else {
+          throw std::logic_error{"Invalid number of qubit IDs!"};
+        }
       }
       if (gate.type == qc::RX) {
         mlir::SmallVector<mlir::Value, 2> qubits;
         for (auto&& x : gate.qubit_id) {
           qubits.push_back(inQubits[x]);
         }
-        createGate<XOp>(rewriter, location, qubits, {}, gate.parameter);
+        lastGate =
+            createGate<RXOp>(rewriter, location, qubits, {}, gate.parameter);
+        if (gate.qubit_id.size() == 2) {
+          inQubits = lastGate.getAllOutQubits();
+        } else if (gate.qubit_id.size() == 1) {
+          inQubits[gate.qubit_id[0]] =
+              lastGate.getAllOutQubits()[0];
+        } else {
+          throw std::logic_error{"Invalid number of qubit IDs!"};
+        }
       }
       if (gate.type == qc::RY) {
+        mlir::SmallVector<mlir::Value, 2> qubits;
+        for (auto&& x : gate.qubit_id) {
+          qubits.push_back(inQubits[x]);
+        }
+        lastGate =
+            createGate<RZOp>(rewriter, location, qubits, {}, gate.parameter);
+        if (gate.qubit_id.size() == 2) {
+          inQubits = lastGate.getAllOutQubits();
+        } else if (gate.qubit_id.size() == 1) {
+          inQubits[gate.qubit_id[0]] =
+              lastGate.getAllOutQubits()[0];
+        } else {
+          throw std::logic_error{"Invalid number of qubit IDs!"};
+        }
       }
       if (gate.type == qc::RZ) {
+        mlir::SmallVector<mlir::Value, 2> qubits;
+        for (auto&& x : gate.qubit_id) {
+          qubits.push_back(inQubits[x]);
+        }
+        lastGate =
+            createGate<RZOp>(rewriter, location, qubits, {}, gate.parameter);
+        if (gate.qubit_id.size() == 2) {
+          inQubits = lastGate.getAllOutQubits();
+        } else if (gate.qubit_id.size() == 1) {
+          inQubits[gate.qubit_id[0]] =
+              lastGate.getAllOutQubits()[0];
+        } else {
+          throw std::logic_error{"Invalid number of qubit IDs!"};
+        }
       }
     }
 
-    for (auto&& op : series) {
-      rewriter.replaceOp(op, op.getAllInQubits());
+    rewriter.replaceAllOpUsesWith(series.back(), inQubits);
+    for (auto&& op : llvm::reverse(series)) {
+      rewriter.eraseOp(op);
     }
   }
 
