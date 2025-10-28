@@ -1034,7 +1034,7 @@ protected:
     return module;
   }
 
-  std::string captureIR(ModuleOp module) {
+  static std::string captureIR(ModuleOp module) {
     std::string result;
     llvm::raw_string_ostream os(result);
     module.print(os);

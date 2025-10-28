@@ -324,11 +324,10 @@ public:
   OwningOpRef<ModuleOp> finalize();
 
   OpBuilder builder;
+  ModuleOp module;
   Location loc;
 
 private:
-  ModuleOp module;
-
   /// Track allocated qubits for automatic deallocation
   llvm::DenseSet<Value> allocatedQubits;
 

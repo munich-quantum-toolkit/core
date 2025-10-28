@@ -347,6 +347,7 @@ public:
   OwningOpRef<ModuleOp> finalize();
 
   OpBuilder builder;
+  ModuleOp module;
   Location loc;
 
 private:
@@ -367,8 +368,6 @@ private:
    * @param outputQubit New output qubit being produced
    */
   void updateQubitTracking(Value inputQubit, Value outputQubit);
-
-  ModuleOp module;
 
   /// Track valid (unconsumed) qubit SSA values for linear type enforcement.
   /// Only values present in this set are valid for use in operations.

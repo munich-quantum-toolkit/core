@@ -325,10 +325,10 @@ public:
   OwningOpRef<ModuleOp> finalize();
 
   OpBuilder builder;
+  ModuleOp module;
   Location loc;
 
 private:
-  ModuleOp module;
   LLVM::LLVMFuncOp mainFunc;
 
   /// Entry block: constants and initialization
