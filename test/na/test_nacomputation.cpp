@@ -233,11 +233,6 @@ TEST_F(NAComputationValidateAODConstraints, RowPreserving4) {
       std::vector{atom2, atom3},
       std::vector{Location{.x = 1, .y = 3}, Location{.x = 0, .y = 2}});
   EXPECT_FALSE(qc.validate().first);
-
-  // qc.emplaceInitialLocation(*atom0, 0, 0);
-  // qc.emplaceInitialLocation(*atom1, 1, 2);
-  // qc.emplaceInitialLocation(*atom2, 1, 0);
-  // qc.emplaceInitialLocation(*atom3, 0, 2);
 }
 TEST_F(NAComputationValidateAODConstraints, StoreStoredAtom) {
   qc.emplaceBack<LoadOp>(*atom2);
