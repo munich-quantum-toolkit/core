@@ -433,19 +433,19 @@ struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
         getOrCreateFunctionDeclaration(rewriter, op, QIR_RX, qirSignature);
 
     auto angle = op.getParameter(0);
-    Value angleValue;
-    if (angle.isStatic) {
-      auto angleStatic = rewriter.getFloatAttr(rewriter.getF64Type(),
-                                               angle.constantValue.value());
-      angleValue = rewriter.create<LLVM::ConstantOp>(op.getLoc(), angleStatic)
-                       .getResult();
+    Value angleOperand;
+    if (angle.isStatic()) {
+      auto angleAttr = angle.getValueAttr();
+      auto constantOp =
+          rewriter.create<LLVM::ConstantOp>(op.getLoc(), angleAttr);
+      angleOperand = constantOp.getResult();
     } else {
-      angleValue = angle.valueOperand;
+      angleOperand = angle.getValueOperand();
     }
 
     // Replace with call to RX
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(
-        op, fnDecl, ValueRange{adaptor.getQubitIn(), angleValue});
+        op, fnDecl, ValueRange{adaptor.getQubitIn(), angleOperand});
     return success();
   }
 };

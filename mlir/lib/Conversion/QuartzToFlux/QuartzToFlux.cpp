@@ -392,16 +392,12 @@ struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
     const Value fluxQubit = getState().qubitMap[quartzQubit];
 
     auto angle = op.getParameter(0);
-    FloatAttr angleStatic = nullptr;
-    if (angle.isStatic) {
-      angleStatic = rewriter.getFloatAttr(rewriter.getF64Type(),
-                                          angle.constantValue.value());
-    }
-    Value angleDynamic = angle.valueOperand;
+    auto angleAttr = angle.getValueAttr();
+    auto angleOperand = angle.getValueOperand();
 
     // Create flux.rx operation (consumes input, produces output)
-    auto fluxOp = rewriter.create<flux::RXOp>(op.getLoc(), fluxQubit,
-                                              angleStatic, angleDynamic);
+    auto fluxOp = rewriter.create<flux::RXOp>(op.getLoc(), fluxQubit, angleAttr,
+                                              angleOperand);
 
     // Update mapping: the Quartz qubit now corresponds to the output qubit
     getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();

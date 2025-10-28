@@ -264,16 +264,12 @@ struct ConvertFluxRXOp final : OpConversionPattern<flux::RXOp> {
     const auto& quartzQubit = adaptor.getQubitIn();
 
     auto angle = op.getParameter(0);
-    FloatAttr angleStatic = nullptr;
-    if (angle.isStatic) {
-      angleStatic = rewriter.getFloatAttr(rewriter.getF64Type(),
-                                          angle.constantValue.value());
-    }
-    Value angleDynamic = angle.valueOperand;
+    auto angleAttr = angle.getValueAttr();
+    auto angleOperand = angle.getValueOperand();
 
     // Create quartz.rx (in-place operation, no result)
-    rewriter.create<quartz::RXOp>(op.getLoc(), quartzQubit, angleStatic,
-                                  angleDynamic);
+    rewriter.create<quartz::RXOp>(op.getLoc(), quartzQubit, angleAttr,
+                                  angleOperand);
 
     // Replace the output qubit with the same quartz reference
     rewriter.replaceOp(op, quartzQubit);

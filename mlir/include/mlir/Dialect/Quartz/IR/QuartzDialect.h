@@ -50,9 +50,27 @@
 namespace mlir::quartz {
 
 struct ParameterDescriptor {
-  bool isStatic;
-  std::optional<double> constantValue;
+  mlir::FloatAttr valueAttr;
   mlir::Value valueOperand;
+
+  ParameterDescriptor(mlir::FloatAttr attr = nullptr,
+                      mlir::Value operand = nullptr) {
+    assert(!(attr && operand) && "Cannot have both static and dynamic values");
+    valueAttr = attr;
+    valueOperand = operand;
+  }
+
+  bool isStatic() const { return valueAttr != nullptr; }
+  bool isDynamic() const { return valueOperand != nullptr; }
+
+  double getValueDouble() const {
+    if (isDynamic()) {
+      llvm_unreachable("Cannot get double value from dynamic parameter");
+    }
+    return valueAttr.getValueAsDouble();
+  }
+  mlir::FloatAttr getValueAttr() const { return valueAttr; }
+  mlir::Value getValueOperand() const { return valueOperand; }
 };
 
 } // namespace mlir::quartz

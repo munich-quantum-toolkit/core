@@ -178,13 +178,7 @@ ParameterDescriptor RXOp::getParameter(size_t i) {
   if (i != 0) {
     llvm_unreachable("RXOp has only one parameter");
   }
-  return ParameterDescriptor{
-      .isStatic = getAngleStatic().has_value(),
-      .constantValue = getAngleStatic().has_value()
-                           ? std::optional<double>(
-                                 getAngleStatic().value().convertToDouble())
-                           : std::nullopt,
-      .valueOperand = getAngleDynamic()};
+  return ParameterDescriptor(getAngleStaticAttr(), getAngleDynamic());
 }
 
 bool RXOp::hasStaticUnitary() { return getAngleStatic().has_value(); }
