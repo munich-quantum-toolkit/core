@@ -19,6 +19,7 @@
 #include "na/operations/StoreOp.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <map>
 #include <sstream>
@@ -145,18 +146,23 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
           }
           endOf.emplace(b, targetLocations.at(i));
         }
+        std::unordered_map<const Atom*, size_t> opAtomToIndex;
+        std::ranges::for_each(opAtoms,
+                              [&opAtomToIndex, n = 0UL](const auto* a) mutable {
+                                opAtomToIndex.emplace(a, n++);
+                              });
         // 3) Validate against all loaded atoms, including non-moving ones
         for (const auto& atom : atoms_) {
           if (const auto* a = atom.get(); currentlyShuttling.contains(a)) {
             const auto& s1 = currentLocations.at(a);
             const auto it1 = endOf.find(a);
             const Location& e1 = (it1 != endOf.end()) ? it1->second : s1;
-
-            for (std::size_t i = 0; i < opAtoms.size(); ++i) {
+            const auto it2 = opAtomToIndex.find(a);
+            for (std::size_t i = it2 == opAtomToIndex.end() ? 0
+                                                            : it2->second + 1;
+                 i < opAtoms.size(); ++i) {
               const auto* b = opAtoms.at(i);
-              if (a == b) {
-                continue; // skip self
-              }
+              assert(a != b);
               const auto& s2 = currentLocations.at(b);
               const Location& e2 = targetLocations.at(i);
 
