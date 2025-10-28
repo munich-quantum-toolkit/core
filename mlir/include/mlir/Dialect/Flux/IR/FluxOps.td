@@ -296,6 +296,19 @@ def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface]> {
         StringRef getBaseSymbol() const { return "rx"; }
     }];
 
+    let builders = [
+        OpBuilder<(ins "Value":$qubit_in, "double":$angle_double), [{
+            auto angle_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), angle_double);
+            build($_builder, $_state, QubitType::get($_builder.getContext()), qubit_in, angle_attr, nullptr);
+        }]>,
+        OpBuilder<(ins "Value":$qubit_in, "FloatAttr":$angle_attr), [{
+            build($_builder, $_state, QubitType::get($_builder.getContext()), qubit_in, angle_attr, nullptr);
+        }]>,
+        OpBuilder<(ins "Value":$qubit_in, "Value":$angle_operand), [{
+            build($_builder, $_state, QubitType::get($_builder.getContext()), qubit_in, nullptr, angle_operand);
+        }]>,
+    ];
+
     let hasVerifier = 1;
 }
 
