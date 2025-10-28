@@ -252,9 +252,9 @@ def XOp : QuartzOp<"x", traits = [Quartz_UnitaryOpInterface]> {
 
 def RXOp : QuartzOp<"rx", traits = [Quartz_UnitaryOpInterface]> {
     let arguments = (ins QubitType:$qubit_in,
-                     OptionalAttr<F64Attr>:$angle_static,
-                     Optional<F64>:$angle_dynamic);
-    let assemblyFormat = "`(` ($angle_static^)? ($angle_dynamic^)? `)` $qubit_in attr-dict";
+                     OptionalAttr<F64Attr>:$theta_attr,
+                     Optional<F64>:$theta_operand);
+    let assemblyFormat = "`(` ($theta_attr^)? ($theta_operand^)? `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
         size_t getNumQubits() { return getNumTargets() + getNumControls(); }
@@ -274,15 +274,15 @@ def RXOp : QuartzOp<"rx", traits = [Quartz_UnitaryOpInterface]> {
     }];
 
     let builders = [
-        OpBuilder<(ins "Value":$qubit_in, "double":$angle_double), [{
-            auto angle_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), angle_double);
-            build($_builder, $_state, qubit_in, angle_attr, nullptr);
+        OpBuilder<(ins "Value":$qubit_in, "double":$theta_double), [{
+            auto theta_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), theta_double);
+            build($_builder, $_state, qubit_in, theta_attr, nullptr);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "FloatAttr":$angle_attr), [{
-            build($_builder, $_state, qubit_in, angle_attr, nullptr);
+        OpBuilder<(ins "Value":$qubit_in, "FloatAttr":$theta_attr), [{
+            build($_builder, $_state, qubit_in, theta_attr, nullptr);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "Value":$angle_operand), [{
-            build($_builder, $_state, qubit_in, nullptr, angle_operand);
+        OpBuilder<(ins "Value":$qubit_in, "Value":$theta_operand), [{
+            build($_builder, $_state, qubit_in, nullptr, theta_operand);
         }]>,
     ];
 

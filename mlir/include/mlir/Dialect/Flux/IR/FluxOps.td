@@ -270,10 +270,10 @@ def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface]> {
 
 def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface]> {
     let arguments = (ins QubitType:$qubit_in,
-                     OptionalAttr<F64Attr>:$angle_static,
-                     Optional<F64>:$angle_dynamic);
+                     OptionalAttr<F64Attr>:$theta_attr,
+                     Optional<F64>:$theta_operand);
     let results = (outs QubitType:$qubit_out);
-    let assemblyFormat = "`(` ($angle_static^)? ($angle_dynamic^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+    let assemblyFormat = "`(` ($theta_attr^)? ($theta_operand^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
         size_t getNumQubits() { return getNumTargets() + getNumControls(); }
@@ -297,15 +297,15 @@ def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface]> {
     }];
 
     let builders = [
-        OpBuilder<(ins "Value":$qubit_in, "double":$angle_double), [{
-            auto angle_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), angle_double);
-            build($_builder, $_state, QubitType::get($_builder.getContext()), qubit_in, angle_attr, nullptr);
+        OpBuilder<(ins "Value":$qubit_in, "double":$theta_double), [{
+            auto theta_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), theta_double);
+            build($_builder, $_state, QubitType::get($_builder.getContext()), qubit_in, theta_attr, nullptr);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "FloatAttr":$angle_attr), [{
-            build($_builder, $_state, QubitType::get($_builder.getContext()), qubit_in, angle_attr, nullptr);
+        OpBuilder<(ins "Value":$qubit_in, "FloatAttr":$theta_attr), [{
+            build($_builder, $_state, QubitType::get($_builder.getContext()), qubit_in, theta_attr, nullptr);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "Value":$angle_operand), [{
-            build($_builder, $_state, QubitType::get($_builder.getContext()), qubit_in, nullptr, angle_operand);
+        OpBuilder<(ins "Value":$qubit_in, "Value":$theta_operand), [{
+            build($_builder, $_state, QubitType::get($_builder.getContext()), qubit_in, nullptr, theta_operand);
         }]>,
     ];
 

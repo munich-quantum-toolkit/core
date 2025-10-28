@@ -259,13 +259,13 @@ public:
   Value x(Value qubit);
 
   /**
-   * @brief Apply the RX gate to a qubit with a static angle
+   * @brief Apply the RX gate to a qubit
    *
    * @details
    * Consumes the input qubit and produces a new output qubit SSA value.
    * The input is validated and tracking is updated.
    *
-   * @param angle Rotation angle
+   * @param theta Rotation angle
    * @param qubit Input qubit (must be valid/unconsumed)
    * @return Output qubit value
    *
@@ -277,8 +277,8 @@ public:
    * flux.rx(1.0) %q : !flux.qubit -> !flux.qubit
    * ```
    */
-  Value rx(double angle, Value qubit);
-  Value rx(Value angle, Value qubit);
+  Value rx(double theta, Value qubit);
+  Value rx(Value theta, Value qubit);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

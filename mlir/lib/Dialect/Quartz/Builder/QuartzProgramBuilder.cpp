@@ -129,13 +129,13 @@ QuartzProgramBuilder& QuartzProgramBuilder::x(Value qubit) {
   return *this;
 }
 
-QuartzProgramBuilder& QuartzProgramBuilder::rx(double angle, Value qubit) {
-  builder.create<RXOp>(loc, qubit, angle);
+QuartzProgramBuilder& QuartzProgramBuilder::rx(double theta, Value qubit) {
+  builder.create<RXOp>(loc, qubit, theta);
   return *this;
 }
 
-QuartzProgramBuilder& QuartzProgramBuilder::rx(Value angle, Value qubit) {
-  builder.create<RXOp>(loc, qubit, angle);
+QuartzProgramBuilder& QuartzProgramBuilder::rx(Value theta, Value qubit) {
+  builder.create<RXOp>(loc, qubit, theta);
   return *this;
 }
 

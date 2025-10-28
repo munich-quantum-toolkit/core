@@ -181,10 +181,10 @@ ParameterDescriptor RXOp::getParameter(size_t i) {
   if (i != 0) {
     llvm_unreachable("RXOp has only one parameter");
   }
-  return {getAngleStaticAttr(), getAngleDynamic()};
+  return {getThetaAttrAttr(), getThetaOperand()};
 }
 
-bool RXOp::hasStaticUnitary() { return getAngleStatic().has_value(); }
+bool RXOp::hasStaticUnitary() { return getThetaAttr().has_value(); }
 
 DenseElementsAttr RXOp::tryGetStaticMatrix() {
   if (!hasStaticUnitary()) {
@@ -192,16 +192,16 @@ DenseElementsAttr RXOp::tryGetStaticMatrix() {
   }
   auto* ctx = getContext();
   auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
-  const auto angle = getAngleStatic().value().convertToDouble();
-  const std::complex<double> c(cos(angle / 2), 0);
-  const std::complex<double> s(0, -sin(angle / 2));
+  const auto theta = getThetaAttr().value().convertToDouble();
+  const std::complex<double> c(cos(theta / 2), 0);
+  const std::complex<double> s(0, -sin(theta / 2));
   return DenseElementsAttr::get(type, llvm::ArrayRef({c, s, s, c}));
 }
 
 LogicalResult RXOp::verify() {
-  if (getAngleStatic().has_value() && getAngleDynamic())
-    return emitOpError("cannot specify both static and dynamic angle");
-  if (!getAngleStatic().has_value() && !getAngleDynamic())
-    return emitOpError("must specify either static or dynamic angle");
+  if (getThetaAttr().has_value() && getThetaOperand())
+    return emitOpError("cannot specify both static and dynamic theta");
+  if (!getThetaAttr().has_value() && !getThetaOperand())
+    return emitOpError("must specify either static or dynamic theta");
   return success();
 }

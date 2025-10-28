@@ -246,7 +246,7 @@ public:
   /**
    * @brief Apply the RX gate to a qubit
    *
-   * @param angle Rotation angle
+   * @param theta Rotation angle
    * @param qubit Input qubit
    * @return Reference to this builder for method chaining
    *
@@ -258,8 +258,8 @@ public:
    * quartz.rx(1.0) %q : !quartz.qubit
    * ```
    */
-  QuartzProgramBuilder& rx(double angle, Value qubit);
-  QuartzProgramBuilder& rx(Value angle, Value qubit);
+  QuartzProgramBuilder& rx(double theta, Value qubit);
+  QuartzProgramBuilder& rx(Value theta, Value qubit);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

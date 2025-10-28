@@ -263,13 +263,13 @@ struct ConvertFluxRXOp final : OpConversionPattern<flux::RXOp> {
     // OpAdaptor provides the already type-converted input qubit
     const auto& quartzQubit = adaptor.getQubitIn();
 
-    auto angle = op.getParameter(0);
-    auto angleAttr = angle.getValueAttr();
-    auto angleOperand = angle.getValueOperand();
+    const auto& theta = op.getParameter(0);
+    const auto& thetaAttr = theta.getValueAttr();
+    const auto& thetaOperand = theta.getValueOperand();
 
     // Create quartz.rx (in-place operation, no result)
-    rewriter.create<quartz::RXOp>(op.getLoc(), quartzQubit, angleAttr,
-                                  angleOperand);
+    rewriter.create<quartz::RXOp>(op.getLoc(), quartzQubit, thetaAttr,
+                                  thetaOperand);
 
     // Replace the output qubit with the same quartz reference
     rewriter.replaceOp(op, quartzQubit);

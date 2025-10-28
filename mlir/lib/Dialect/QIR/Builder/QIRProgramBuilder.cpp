@@ -251,7 +251,7 @@ QIRProgramBuilder& QIRProgramBuilder::x(const Value qubit) {
   return *this;
 }
 
-QIRProgramBuilder& QIRProgramBuilder::rx(Value angle, const Value qubit) {
+QIRProgramBuilder& QIRProgramBuilder::rx(Value theta, const Value qubit) {
   // Save current insertion point
   const OpBuilder::InsertionGuard insertGuard(builder);
 
@@ -265,17 +265,17 @@ QIRProgramBuilder& QIRProgramBuilder::rx(Value angle, const Value qubit) {
        Float64Type::get(builder.getContext())});
   auto fnDecl =
       getOrCreateFunctionDeclaration(builder, module, QIR_RX, qirSignature);
-  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit, angle});
+  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit, theta});
 
   return *this;
 }
 
-QIRProgramBuilder& QIRProgramBuilder::rx(double angle, const Value qubit) {
-  // Create constant for angle
-  auto angleConst =
-      builder.create<LLVM::ConstantOp>(loc, builder.getF64FloatAttr(angle));
+QIRProgramBuilder& QIRProgramBuilder::rx(double theta, const Value qubit) {
+  // Create constant for theta
+  auto thetaConst =
+      builder.create<LLVM::ConstantOp>(loc, builder.getF64FloatAttr(theta));
 
-  return rx(angleConst.getResult(), qubit);
+  return rx(thetaConst.getResult(), qubit);
 }
 
 //===----------------------------------------------------------------------===//

@@ -230,10 +230,10 @@ void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 // Temporary implementation of RXOp translation
 void addRXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
              const llvm::SmallVector<Value>& qubits) {
-  const auto angle = operation.getParameter()[0];
+  const auto& theta = operation.getParameter()[0];
   const auto& target = operation.getTargets()[0];
   const Value qubit = qubits[target];
-  builder.rx(angle, qubit);
+  builder.rx(theta, qubit);
 }
 
 /**

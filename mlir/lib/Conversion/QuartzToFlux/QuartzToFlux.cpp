@@ -281,7 +281,7 @@ struct ConvertQuartzMeasureOp final
     const auto& quartzQubit = op.getQubit();
 
     // Get the latest Flux qubit value from the state map
-    const Value fluxQubit = getState().qubitMap[quartzQubit];
+    const auto& fluxQubit = getState().qubitMap[quartzQubit];
 
     // Create flux.measure operation (returns both output qubit and bit result)
     auto fluxOp = rewriter.create<flux::MeasureOp>(
@@ -335,7 +335,7 @@ struct ConvertQuartzResetOp final
     const auto& quartzQubit = op.getQubit();
 
     // Get the latest Flux qubit value from the state map
-    const Value fluxQubit = getState().qubitMap[quartzQubit];
+    const auto& fluxQubit = getState().qubitMap[quartzQubit];
 
     // Create flux.reset operation (consumes input, produces output)
     auto fluxOp =
@@ -363,7 +363,7 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
     const auto& quartzQubit = op.getQubit(0);
 
     // Get the latest Flux qubit value from the state map
-    const Value fluxQubit = getState().qubitMap[quartzQubit];
+    const auto& fluxQubit = getState().qubitMap[quartzQubit];
 
     // Create flux.x operation (consumes input, produces output)
     auto fluxOp = rewriter.create<flux::XOp>(op.getLoc(), fluxQubit);
@@ -388,15 +388,15 @@ struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
     const auto& quartzQubit = op.getQubitIn();
 
     // Get the latest Flux qubit value from the state map
-    const Value fluxQubit = getState().qubitMap[quartzQubit];
+    const auto fluxQubit = getState().qubitMap[quartzQubit];
 
-    auto angle = op.getParameter(0);
-    auto angleAttr = angle.getValueAttr();
-    auto angleOperand = angle.getValueOperand();
+    const auto& theta = op.getParameter(0);
+    const auto& thetaAttr = theta.getValueAttr();
+    const auto& thetaOperand = theta.getValueOperand();
 
     // Create flux.rx operation (consumes input, produces output)
-    auto fluxOp = rewriter.create<flux::RXOp>(op.getLoc(), fluxQubit, angleAttr,
-                                              angleOperand);
+    auto fluxOp = rewriter.create<flux::RXOp>(op.getLoc(), fluxQubit, thetaAttr,
+                                              thetaOperand);
 
     // Update mapping: the Quartz qubit now corresponds to the output qubit
     getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();

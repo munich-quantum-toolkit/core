@@ -180,8 +180,8 @@ Value FluxProgramBuilder::x(Value qubit) {
   return qubitOut;
 }
 
-Value FluxProgramBuilder::rx(Value angle, Value qubit) {
-  auto rxOp = builder.create<RXOp>(loc, qubit, angle);
+Value FluxProgramBuilder::rx(Value theta, Value qubit) {
+  auto rxOp = builder.create<RXOp>(loc, qubit, theta);
   const auto qubitOut = rxOp.getQubitOut();
 
   // Update tracking
@@ -190,8 +190,8 @@ Value FluxProgramBuilder::rx(Value angle, Value qubit) {
   return qubitOut;
 }
 
-Value FluxProgramBuilder::rx(double angle, Value qubit) {
-  auto rxOp = builder.create<RXOp>(loc, qubit, angle);
+Value FluxProgramBuilder::rx(double theta, Value qubit) {
+  auto rxOp = builder.create<RXOp>(loc, qubit, theta);
   const auto qubitOut = rxOp.getQubitOut();
 
   // Update tracking

@@ -245,7 +245,7 @@ public:
   /**
    * @brief Apply the RX gate to a qubit
    *
-   * @param angle Rotation angle
+   * @param theta Rotation angle
    * @param qubit Input qubit
    * @return Reference to this builder for method chaining
    *
@@ -257,8 +257,8 @@ public:
    * llvm.call @__quantum__qis__rx__body(%q, %c) : (!llvm.ptr, f64) -> ()
    * ```
    */
-  QIRProgramBuilder& rx(double angle, const Value qubit);
-  QIRProgramBuilder& rx(Value angle, const Value qubit);
+  QIRProgramBuilder& rx(double theta, const Value qubit);
+  QIRProgramBuilder& rx(Value theta, const Value qubit);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

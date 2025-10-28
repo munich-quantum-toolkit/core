@@ -434,20 +434,20 @@ struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
     const auto fnDecl =
         getOrCreateFunctionDeclaration(rewriter, op, QIR_RX, qirSignature);
 
-    auto angle = op.getParameter(0);
-    Value angleOperand;
-    if (angle.isStatic()) {
-      auto angleAttr = angle.getValueAttr();
+    const auto& theta = op.getParameter(0);
+    Value thetaOperand;
+    if (theta.isStatic()) {
+      const auto& thetaAttr = theta.getValueAttr();
       auto constantOp =
-          rewriter.create<LLVM::ConstantOp>(op.getLoc(), angleAttr);
-      angleOperand = constantOp.getResult();
+          rewriter.create<LLVM::ConstantOp>(op.getLoc(), thetaAttr);
+      thetaOperand = constantOp.getResult();
     } else {
-      angleOperand = angle.getValueOperand();
+      thetaOperand = theta.getValueOperand();
     }
 
     // Replace with call to RX
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(
-        op, fnDecl, ValueRange{adaptor.getQubitIn(), angleOperand});
+        op, fnDecl, ValueRange{adaptor.getQubitIn(), thetaOperand});
     return success();
   }
 };
