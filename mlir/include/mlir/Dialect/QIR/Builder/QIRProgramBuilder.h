@@ -324,11 +324,12 @@ public:
    */
   OwningOpRef<ModuleOp> finalize();
 
-private:
   OpBuilder builder;
+  Location loc;
+
+private:
   ModuleOp module;
   LLVM::LLVMFuncOp mainFunc;
-  Location loc;
 
   /// Entry block: constants and initialization
   Block* entryBlock{};

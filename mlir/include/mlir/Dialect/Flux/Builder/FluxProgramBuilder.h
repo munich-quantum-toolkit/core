@@ -346,6 +346,9 @@ public:
    */
   OwningOpRef<ModuleOp> finalize();
 
+  OpBuilder builder;
+  Location loc;
+
 private:
   //===--------------------------------------------------------------------===//
   // Linear Type Tracking Helpers
@@ -365,9 +368,7 @@ private:
    */
   void updateQubitTracking(Value inputQubit, Value outputQubit);
 
-  OpBuilder builder;
   ModuleOp module;
-  Location loc;
 
   /// Track valid (unconsumed) qubit SSA values for linear type enforcement.
   /// Only values present in this set are valid for use in operations.
