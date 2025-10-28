@@ -11,6 +11,7 @@
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Conversion/QuartzToFlux/QuartzToFlux.h"
+#include "mlir/Conversion/QuartzToQIR/QuartzToQIR.h"
 #include "mlir/Dialect/Flux/Builder/FluxProgramBuilder.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
@@ -1065,6 +1066,31 @@ TEST_F(SimpleConversionTest, RXQuartzToFlux) {
   });
 
   EXPECT_TRUE(verify("Quartz to Flux", fluxResult, fluxExpected.get()));
+}
+
+TEST_F(SimpleConversionTest, RXQuartzToQIR) {
+  auto module = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto thetaAttr = b.builder.getF64FloatAttr(1.0);
+    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
+    auto q = b.allocQubitRegister(1, "q");
+    b.rx(thetaOperand, q[0]);
+  });
+
+  PassManager pm(module.get().getContext());
+  pm.addPass(createQuartzToQIR());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createRemoveDeadValuesPass());
+  ASSERT_TRUE(pm.run(module.get()).succeeded());
+
+  // const auto qirResult = captureIR(module.get());
+  // const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
+  //   auto thetaAttr = b.builder.getF64FloatAttr(1.0);
+  //   auto thetaOperand = b.builder.create<LLVM::ConstantOp>(b.loc, thetaAttr);
+  //   auto q = b.allocQubitRegister(1);
+  //   b.rx(thetaOperand, q[0]);
+  // });
+
+  // EXPECT_TRUE(verify("Quartz to QIR", qirResult, qirExpected.get()));
 }
 
 } // namespace
