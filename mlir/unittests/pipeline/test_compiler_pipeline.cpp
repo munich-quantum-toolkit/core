@@ -10,6 +10,7 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
+#include "mlir/Conversion/QuartzToFlux/QuartzToFlux.h"
 #include "mlir/Dialect/Flux/Builder/FluxProgramBuilder.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
@@ -860,7 +861,7 @@ TEST_F(CompilerPipelineTest, MultipleClassicalRegistersAndMeasurements) {
 }
 
 // ##################################################
-// # Temporary Unit Tests
+// # Temporary Unitary Operation Tests
 // ##################################################
 
 TEST_F(CompilerPipelineTest, X) {
@@ -957,6 +958,113 @@ TEST_F(CompilerPipelineTest, U2) {
       .quartzConversion = quartzExpected.get(),
       .qirConversion = qirExpected.get(),
   });
+}
+
+// ##################################################
+// # Temporary Simple Conversion Tests
+// ##################################################
+
+class SimpleConversionTest : public testing::Test {
+protected:
+  std::unique_ptr<MLIRContext> context;
+
+  void SetUp() override {
+    // Register all dialects needed for the full compilation pipeline
+    DialectRegistry registry;
+    registry
+        .insert<quartz::QuartzDialect, flux::FluxDialect, arith::ArithDialect,
+                cf::ControlFlowDialect, func::FuncDialect,
+                memref::MemRefDialect, scf::SCFDialect, LLVM::LLVMDialect>();
+
+    context = std::make_unique<MLIRContext>();
+    context->appendDialectRegistry(registry);
+    context->loadAllAvailableDialects();
+  }
+
+  /**
+   * @brief Run canonicalization
+   */
+  static void runCanonicalizationPasses(ModuleOp module) {
+    PassManager pm(module.getContext());
+    pm.addPass(createCanonicalizerPass());
+    pm.addPass(createCSEPass());
+    if (pm.run(module).failed()) {
+      llvm::errs() << "Failed to run canonicalization passes\n";
+    }
+  }
+
+  /**
+   * @brief Build expected Quartz IR programmatically and run canonicalization
+   */
+  [[nodiscard]] OwningOpRef<ModuleOp> buildQuartzIR(
+      const std::function<void(quartz::QuartzProgramBuilder&)>& buildFunc)
+      const {
+    quartz::QuartzProgramBuilder builder(context.get());
+    builder.initialize();
+    buildFunc(builder);
+    auto module = builder.finalize();
+    runCanonicalizationPasses(module.get());
+    return module;
+  }
+
+  /**
+   * @brief Build expected Flux IR programmatically and run canonicalization
+   */
+  [[nodiscard]] OwningOpRef<ModuleOp> buildFluxIR(
+      const std::function<void(flux::FluxProgramBuilder&)>& buildFunc) const {
+    flux::FluxProgramBuilder builder(context.get());
+    builder.initialize();
+    buildFunc(builder);
+    auto module = builder.finalize();
+    runCanonicalizationPasses(module.get());
+    return module;
+  }
+
+  /**
+   * @brief Build expected QIR programmatically and run canonicalization
+   */
+  [[nodiscard]] OwningOpRef<ModuleOp> buildQIR(
+      const std::function<void(qir::QIRProgramBuilder&)>& buildFunc) const {
+    qir::QIRProgramBuilder builder(context.get());
+    builder.initialize();
+    buildFunc(builder);
+    auto module = builder.finalize();
+    runCanonicalizationPasses(module.get());
+    return module;
+  }
+
+  std::string captureIR(ModuleOp module) {
+    std::string result;
+    llvm::raw_string_ostream os(result);
+    module.print(os);
+    os.flush();
+    return result;
+  }
+};
+
+TEST_F(SimpleConversionTest, RXQuartzToFlux) {
+  auto module = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto thetaAttr = b.builder.getF64FloatAttr(1.0);
+    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
+    auto q = b.allocQubitRegister(1, "q");
+    b.rx(thetaOperand, q[0]);
+  });
+
+  PassManager pm(module.get().getContext());
+  pm.addPass(createQuartzToFlux());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createRemoveDeadValuesPass());
+  ASSERT_TRUE(pm.run(module.get()).succeeded());
+
+  const auto fluxResult = captureIR(module.get());
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto thetaAttr = b.builder.getF64FloatAttr(1.0);
+    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
+    auto q = b.allocQubitRegister(1, "q");
+    b.rx(thetaOperand, q[0]);
+  });
+
+  EXPECT_TRUE(verify("Quartz to Flux", fluxResult, fluxExpected.get()));
 }
 
 } // namespace
