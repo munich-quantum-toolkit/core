@@ -234,19 +234,19 @@ def XOp : QuartzOp<"x", traits = [Quartz_UnitaryOpInterface]> {
 
     let extraClassDeclaration = [{
         size_t getNumQubits() { return getNumTargets() + getNumControls(); }
-        size_t getNumTargets() const { return 1; }
+        static size_t getNumTargets() { return 1; }
         size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
-        size_t getNumPosControls() const { return 0; }
-        size_t getNumNegControls() const { return 0; }
+        static size_t getNumPosControls() { return 0; }
+        static size_t getNumNegControls() { return 0; }
         Value getQubit(size_t i);
         Value getTarget(size_t i);
-        Value getPosControl(size_t i) const;
-        Value getNegControl(size_t i) const;
-        size_t getNumParams() const { return 0; }
-        ParameterDescriptor getParameter(size_t i) const;
-        bool hasStaticUnitary() const { return true; }
+        static Value getPosControl(size_t i);
+        static Value getNegControl(size_t i);
+        static size_t getNumParams() { return 0; }
+        static ParameterDescriptor getParameter(size_t i);
+        static bool hasStaticUnitary() { return true; }
         DenseElementsAttr tryGetStaticMatrix();
-        StringRef getBaseSymbol() const { return "x"; }
+        static StringRef getBaseSymbol() { return "x"; }
     }];
 }
 
@@ -258,19 +258,19 @@ def RXOp : QuartzOp<"rx", traits = [Quartz_UnitaryOpInterface]> {
 
     let extraClassDeclaration = [{
         size_t getNumQubits() { return getNumTargets() + getNumControls(); }
-        size_t getNumTargets() const { return 1; }
+        static size_t getNumTargets() { return 1; }
         size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
-        size_t getNumPosControls() const { return 0; }
-        size_t getNumNegControls() const { return 0; }
+        static size_t getNumPosControls() { return 0; }
+        static size_t getNumNegControls() { return 0; }
         Value getQubit(size_t i);
         Value getTarget(size_t i);
-        Value getPosControl(size_t i) const;
-        Value getNegControl(size_t i) const;
-        size_t getNumParams() const { return 1; }
+        static Value getPosControl(size_t i);
+        static Value getNegControl(size_t i);
+        static size_t getNumParams() { return 1; }
         ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
-        StringRef getBaseSymbol() const { return "rx"; }
+        static StringRef getBaseSymbol() { return "rx"; }
     }];
 
     let builders = [

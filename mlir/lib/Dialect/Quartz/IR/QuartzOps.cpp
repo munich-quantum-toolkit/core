@@ -135,15 +135,15 @@ Value XOp::getTarget(size_t i) {
   return getQubitIn();
 }
 
-Value XOp::getPosControl(size_t /*i*/) const {
+Value XOp::getPosControl(size_t /*i*/) {
   llvm_unreachable("XOp does not have controls");
 }
 
-Value XOp::getNegControl(size_t /*i*/) const {
+Value XOp::getNegControl(size_t /*i*/) {
   llvm_unreachable("XOp does not have controls");
 }
 
-ParameterDescriptor XOp::getParameter(size_t /*i*/) const {
+ParameterDescriptor XOp::getParameter(size_t /*i*/) {
   llvm_unreachable("XOp does not have parameters");
 }
 
@@ -169,11 +169,11 @@ Value RXOp::getTarget(size_t i) {
   return getQubitIn();
 }
 
-Value RXOp::getPosControl(size_t /*i*/) const {
+Value RXOp::getPosControl(size_t /*i*/) {
   llvm_unreachable("RXOp does not have controls");
 }
 
-Value RXOp::getNegControl(size_t /*i*/) const {
+Value RXOp::getNegControl(size_t /*i*/) {
   llvm_unreachable("RXOp does not have controls");
 }
 
