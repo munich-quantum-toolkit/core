@@ -289,4 +289,68 @@ def RXOp : QuartzOp<"rx", traits = [Quartz_UnitaryOpInterface]> {
     let hasVerifier = 1;
 }
 
+def U2Op : QuartzOp<"u2", traits = [Quartz_UnitaryOpInterface, AttrSizedOperandSegments]> {
+    let arguments = (ins QubitType:$qubit_in,
+                     OptionalAttr<F64Attr>:$phi_attr,
+                     Optional<F64>:$phi_operand,
+                     OptionalAttr<F64Attr>:$lambda_attr,
+                     Optional<F64>:$lambda_operand);
+    let assemblyFormat = "`(` ($phi_attr^)? ($phi_operand^)? `,` ($lambda_attr^)? ($lambda_operand^)? `)` $qubit_in attr-dict";
+
+    let extraClassDeclaration = [{
+        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
+        static size_t getNumTargets() { return 1; }
+        size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
+        static size_t getNumPosControls() { return 0; }
+        static size_t getNumNegControls() { return 0; }
+        Value getQubit(size_t i);
+        Value getTarget(size_t i);
+        static Value getPosControl(size_t i);
+        static Value getNegControl(size_t i);
+        static size_t getNumParams() { return 2; }
+        ParameterDescriptor getParameter(size_t i);
+        bool hasStaticUnitary();
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "u2"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit_in, "double":$phi_double, "double":$lambda_double), [{
+            auto phi_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), phi_double);
+            auto lambda_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), lambda_double);
+            build($_builder, $_state, qubit_in, phi_attr, nullptr, lambda_attr, nullptr);
+        }]>,
+        OpBuilder<(ins "Value":$qubit_in, "double":$phi_double, "FloatAttr":$lambda_attr), [{
+            auto phi_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), phi_double);
+            build($_builder, $_state, qubit_in, phi_attr, nullptr, lambda_attr, nullptr);
+        }]>,
+        OpBuilder<(ins "Value":$qubit_in, "double":$phi_double, "Value":$lambda_operand), [{
+            auto phi_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), phi_double);
+            build($_builder, $_state, qubit_in, phi_attr, nullptr, nullptr, lambda_operand);
+        }]>,
+        OpBuilder<(ins "Value":$qubit_in, "FloatAttr":$phi_attr, "double":$lambda_double), [{
+            auto lambda_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), lambda_double);
+            build($_builder, $_state, qubit_in, phi_attr, nullptr, lambda_attr, nullptr);
+        }]>,
+        OpBuilder<(ins "Value":$qubit_in, "FloatAttr":$phi_attr, "FloatAttr":$lambda_attr), [{
+            build($_builder, $_state, qubit_in, phi_attr, nullptr, lambda_attr, nullptr);
+        }]>,
+        OpBuilder<(ins "Value":$qubit_in, "FloatAttr":$phi_attr, "Value":$lambda_operand), [{
+            build($_builder, $_state, qubit_in, phi_attr, nullptr, nullptr, lambda_operand);
+        }]>,
+        OpBuilder<(ins "Value":$qubit_in, "Value":$phi_operand, "double":$lambda_double), [{
+            auto lambda_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), lambda_double);
+            build($_builder, $_state, qubit_in, nullptr, phi_operand, lambda_attr, nullptr);
+        }]>,
+        OpBuilder<(ins "Value":$qubit_in, "Value":$phi_operand, "FloatAttr":$lambda_attr), [{
+            build($_builder, $_state, qubit_in, nullptr, phi_operand, lambda_attr, nullptr);
+        }]>,
+        OpBuilder<(ins "Value":$qubit_in, "Value":$phi_operand, "Value":$lambda_operand), [{
+            build($_builder, $_state, qubit_in, nullptr, phi_operand, nullptr, lambda_operand);
+        }]>,
+    ];
+
+    let hasVerifier = 1;
+}
+
 #endif // QUARTZ_OPS

@@ -452,6 +452,54 @@ struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
   }
 };
 
+// Temporary implementation of U2Op conversion
+struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(U2Op op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto* ctx = getContext();
+
+    // Create QIR function signature: (!llvm.ptr, f64, f64) -> void
+    const auto qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx),
+        {LLVM::LLVMPointerType::get(ctx), Float64Type::get(ctx),
+         Float64Type::get(ctx)});
+
+    // Get or create function declaration
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_U2, qirSignature);
+
+    const auto& phi = op.getParameter(0);
+    Value phiOperand;
+    if (phi.isStatic()) {
+      const auto& phiAttr = phi.getValueAttr();
+      auto constantOp = rewriter.create<LLVM::ConstantOp>(op.getLoc(), phiAttr);
+      phiOperand = constantOp.getResult();
+    } else {
+      phiOperand = phi.getValueOperand();
+    }
+
+    const auto& lambda = op.getParameter(1);
+    Value lambdaOperand;
+    if (lambda.isStatic()) {
+      const auto& lambdaAttr = lambda.getValueAttr();
+      auto constantOp =
+          rewriter.create<LLVM::ConstantOp>(op.getLoc(), lambdaAttr);
+      lambdaOperand = constantOp.getResult();
+    } else {
+      lambdaOperand = lambda.getValueOperand();
+    }
+
+    // Replace with call to U2
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(
+        op, fnDecl,
+        ValueRange{adaptor.getQubitIn(), phiOperand, lambdaOperand});
+    return success();
+  }
+};
+
 } // namespace
 
 /**
@@ -779,6 +827,7 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzResetQIR>(typeConverter, ctx);
       quartzPatterns.add<ConvertQuartzXQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzRXQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzU2QIR>(typeConverter, ctx, &state);
 
       // Gate operations will be added here as the dialect expands
 

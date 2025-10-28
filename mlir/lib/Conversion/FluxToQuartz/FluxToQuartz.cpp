@@ -278,6 +278,35 @@ struct ConvertFluxRXOp final : OpConversionPattern<flux::RXOp> {
   }
 };
 
+// Temporary implementation of U2Op conversion
+struct ConvertFluxU2Op final : OpConversionPattern<flux::U2Op> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(flux::U2Op op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // OpAdaptor provides the already type-converted input qubit
+    const auto& quartzQubit = adaptor.getQubitIn();
+
+    const auto& phi = op.getParameter(0);
+    const auto& phiAttr = phi.getValueAttr();
+    const auto& phiOperand = phi.getValueOperand();
+
+    const auto& lambda = op.getParameter(1);
+    const auto& lambdaAttr = lambda.getValueAttr();
+    const auto& lambdaOperand = lambda.getValueOperand();
+
+    // Create quartz.u2 (in-place operation, no result)
+    rewriter.create<quartz::U2Op>(op.getLoc(), quartzQubit, phiAttr, phiOperand,
+                                  lambdaAttr, lambdaOperand);
+
+    // Replace the output qubit with the same quartz reference
+    rewriter.replaceOp(op, quartzQubit);
+
+    return success();
+  }
+};
+
 /**
  * @brief Pass implementation for Flux-to-Quartz conversion
  *
@@ -329,6 +358,7 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
     patterns.add<ConvertFluxResetOp>(typeConverter, context);
     patterns.add<ConvertFluxXOp>(typeConverter, context);
     patterns.add<ConvertFluxRXOp>(typeConverter, context);
+    patterns.add<ConvertFluxU2Op>(typeConverter, context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes

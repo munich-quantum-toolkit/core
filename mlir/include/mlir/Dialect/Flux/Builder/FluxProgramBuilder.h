@@ -280,6 +280,31 @@ public:
   Value rx(double theta, Value qubit);
   Value rx(Value theta, Value qubit);
 
+  /**
+   * @brief Apply the U2 gate to a qubit
+   *
+   * @details
+   * Consumes the input qubit and produces a new output qubit SSA value.
+   * The input is validated and tracking is updated.
+   *
+   * @param phi Rotation angle
+   * @param lambda Rotation angle
+   * @param qubit Input qubit (must be valid/unconsumed)
+   * @return Output qubit value
+   *
+   * @par Example:
+   * ```c++
+   * builder.u2(1.0, 0.5, q);
+   * ```
+   * ```mlir
+   * flux.u2(1.0, 0.5) %q : !flux.qubit -> !flux.qubit
+   * ```
+   */
+  Value u2(double phi, double lambda, Value qubit);
+  Value u2(double phi, Value lambda, Value qubit);
+  Value u2(Value phi, double lambda, Value qubit);
+  Value u2(Value phi, Value lambda, Value qubit);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//

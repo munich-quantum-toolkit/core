@@ -261,6 +261,27 @@ public:
   QuartzProgramBuilder& rx(double theta, Value qubit);
   QuartzProgramBuilder& rx(Value theta, Value qubit);
 
+  /**
+   * @brief Apply the U2 gate to a qubit
+   *
+   * @param phi Rotation angle
+   * @param lambda Rotation angle
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.u2(1.0, 0.5, q);
+   * ```
+   * ```mlir
+   * quartz.u2(1.0, 0.5) %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& u2(double phi, double lambda, Value qubit);
+  QuartzProgramBuilder& u2(Value phi, double lambda, Value qubit);
+  QuartzProgramBuilder& u2(double phi, Value lambda, Value qubit);
+  QuartzProgramBuilder& u2(Value phi, Value lambda, Value qubit);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//

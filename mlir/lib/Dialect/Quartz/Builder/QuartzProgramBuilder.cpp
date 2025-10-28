@@ -133,9 +133,29 @@ QuartzProgramBuilder& QuartzProgramBuilder::rx(double theta, Value qubit) {
   builder.create<RXOp>(loc, qubit, theta);
   return *this;
 }
-
 QuartzProgramBuilder& QuartzProgramBuilder::rx(Value theta, Value qubit) {
   builder.create<RXOp>(loc, qubit, theta);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::u2(double phi, double lambda,
+                                               Value qubit) {
+  builder.create<U2Op>(loc, qubit, phi, lambda);
+  return *this;
+}
+QuartzProgramBuilder& QuartzProgramBuilder::u2(double phi, Value lambda,
+                                               Value qubit) {
+  builder.create<U2Op>(loc, qubit, phi, lambda);
+  return *this;
+}
+QuartzProgramBuilder& QuartzProgramBuilder::u2(Value phi, double lambda,
+                                               Value qubit) {
+  builder.create<U2Op>(loc, qubit, phi, lambda);
+  return *this;
+}
+QuartzProgramBuilder& QuartzProgramBuilder::u2(Value phi, Value lambda,
+                                               Value qubit) {
+  builder.create<U2Op>(loc, qubit, phi, lambda);
   return *this;
 }
 

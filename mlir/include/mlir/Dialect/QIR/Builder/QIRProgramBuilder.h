@@ -260,6 +260,28 @@ public:
   QIRProgramBuilder& rx(double theta, const Value qubit);
   QIRProgramBuilder& rx(Value theta, const Value qubit);
 
+  /**
+   * @brief Apply the U2 gate to a qubit
+   *
+   * @param phi Rotation angle
+   * @param lambda Rotation angle
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.u2(1.0, 0.5, q);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__u2__body(%q, %c1, %c2) : (!llvm.ptr, f64, f64)
+   * -> ()
+   * ```
+   */
+  QIRProgramBuilder& u2(double phi, double lambda, const Value qubit);
+  QIRProgramBuilder& u2(double phi, Value lambda, const Value qubit);
+  QIRProgramBuilder& u2(Value phi, double lambda, const Value qubit);
+  QIRProgramBuilder& u2(Value phi, Value lambda, const Value qubit);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//

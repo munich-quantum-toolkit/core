@@ -242,7 +242,7 @@ ParameterDescriptor RXOp::getParameter(size_t i) {
   return {getThetaAttrAttr(), getThetaOperand()};
 }
 
-bool RXOp::hasStaticUnitary() { return getThetaAttr().has_value(); }
+bool RXOp::hasStaticUnitary() { return getParameter(0).isStatic(); }
 
 DenseElementsAttr RXOp::tryGetStaticMatrix() {
   if (!hasStaticUnitary()) {
@@ -251,9 +251,9 @@ DenseElementsAttr RXOp::tryGetStaticMatrix() {
   auto* ctx = getContext();
   auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
   const auto theta = getThetaAttr().value().convertToDouble();
-  const std::complex<double> c(cos(theta / 2), 0);
-  const std::complex<double> s(0, -sin(theta / 2));
-  return DenseElementsAttr::get(type, llvm::ArrayRef({c, s, s, c}));
+  const std::complex<double> m0(std::cos(theta / 2), 0);
+  const std::complex<double> m1(0, -std::sin(theta / 2));
+  return DenseElementsAttr::get(type, llvm::ArrayRef({m0, m1, m1, m0}));
 }
 
 LogicalResult RXOp::verify() {
@@ -261,6 +261,100 @@ LogicalResult RXOp::verify() {
     return emitOpError("cannot specify both static and dynamic theta");
   if (!getThetaAttr().has_value() && !getThetaOperand())
     return emitOpError("must specify either static or dynamic theta");
+  return success();
+}
+
+// U2Op
+
+Value U2Op::getQubit(size_t i) {
+  if (i != 0) {
+    llvm_unreachable("U2Op has only one qubit");
+  }
+  return getQubitIn();
+}
+
+Value U2Op::getTarget(size_t i) {
+  if (i != 0) {
+    llvm_unreachable("U2Op has only one target qubit");
+  }
+  return getQubitIn();
+}
+
+Value U2Op::getPosControl(size_t /*i*/) {
+  llvm_unreachable("U2Op does not have controls");
+}
+
+Value U2Op::getNegControl(size_t /*i*/) {
+  llvm_unreachable("U2Op does not have controls");
+}
+
+Value U2Op::getInput(size_t i) {
+  if (i != 0) {
+    llvm_unreachable("U2Op has only one input qubit");
+  }
+  return getQubitIn();
+}
+
+Value U2Op::getOutput(size_t i) {
+  if (i != 0) {
+    llvm_unreachable("U2Op has only one output qubit");
+  }
+  return getQubitOut();
+}
+
+Value U2Op::getInputForOutput(Value output) {
+  if (output != getQubitOut()) {
+    llvm_unreachable("Given output is not the U2Op's output");
+  }
+  return getQubitIn();
+}
+
+Value U2Op::getOutputForInput(Value input) {
+  if (input != getQubitIn()) {
+    llvm_unreachable("Given input is not the U2Op's input");
+  }
+  return getQubitOut();
+}
+
+ParameterDescriptor U2Op::getParameter(size_t i) {
+  if (i == 0) {
+    return {getPhiAttrAttr(), getPhiOperand()};
+  }
+  if (i == 1) {
+    return {getLambdaAttrAttr(), getLambdaOperand()};
+  }
+  llvm_unreachable("U2Op has only two parameters");
+}
+
+bool U2Op::hasStaticUnitary() {
+  return (getParameter(0).isStatic() && getParameter(1).isStatic());
+}
+
+DenseElementsAttr U2Op::tryGetStaticMatrix() {
+  if (!hasStaticUnitary()) {
+    return nullptr;
+  }
+  auto* ctx = getContext();
+  auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
+  const auto phi = getPhiAttr().value().convertToDouble();
+  const auto lambda = getLambdaAttr().value().convertToDouble();
+  const std::complex<double> I(0.0, 1.0);
+  const std::complex<double> m00(1.0, 0.0);
+  const std::complex<double> m01 = -std::exp(I * lambda);
+  const std::complex<double> m10 = -std::exp(I * phi);
+  const std::complex<double> m11 = std::exp(I * (phi + lambda));
+  return DenseElementsAttr::get(type, llvm::ArrayRef({m00, m01, m10, m11}));
+}
+
+LogicalResult U2Op::verify() {
+  if (getPhiAttr().has_value() && getPhiOperand())
+    return emitOpError("cannot specify both static and dynamic phi");
+  if (!getPhiAttr().has_value() && !getPhiOperand())
+    return emitOpError("must specify either static or dynamic phi");
+  if (getLambdaAttr().has_value() && getLambdaOperand())
+    return emitOpError("cannot specify both static and dynamic lambda");
+  if (!getLambdaAttr().has_value() && !getLambdaOperand())
+    return emitOpError("must specify either static or dynamic lambda");
   return success();
 }
 

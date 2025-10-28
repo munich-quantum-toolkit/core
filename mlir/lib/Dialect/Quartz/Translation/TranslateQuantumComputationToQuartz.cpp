@@ -236,6 +236,16 @@ void addRXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
   builder.rx(theta, qubit);
 }
 
+// Temporary implementation of U2Op translation
+void addU2Op(QuartzProgramBuilder& builder, const qc::Operation& operation,
+             const llvm::SmallVector<Value>& qubits) {
+  const auto& phi = operation.getParameter()[0];
+  const auto& lambda = operation.getTargets()[1];
+  const auto& target = operation.getTargets()[0];
+  const Value qubit = qubits[target];
+  builder.u2(phi, lambda, qubit);
+}
+
 /**
  * @brief Translates operations from QuantumComputation to Quartz dialect
  *
@@ -272,6 +282,9 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::RX:
       addRXOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::U2:
+      addU2Op(builder, *operation, qubits);
       break;
     default:
       // Unsupported operation - skip for now
