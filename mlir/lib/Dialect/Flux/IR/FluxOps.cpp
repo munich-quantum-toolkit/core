@@ -250,7 +250,7 @@ DenseElementsAttr RXOp::tryGetStaticMatrix() {
   }
   auto* ctx = getContext();
   auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
-  const auto theta = getThetaAttr().value().convertToDouble();
+  const auto& theta = getThetaAttr().value().convertToDouble();
   const std::complex<double> m0(std::cos(theta / 2), 0);
   const std::complex<double> m1(0, -std::sin(theta / 2));
   return DenseElementsAttr::get(type, llvm::ArrayRef({m0, m1, m1, m0}));
@@ -336,13 +336,13 @@ DenseElementsAttr U2Op::tryGetStaticMatrix() {
   }
   auto* ctx = getContext();
   auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
-  const auto phi = getPhiAttr().value().convertToDouble();
-  const auto lambda = getLambdaAttr().value().convertToDouble();
-  const std::complex<double> I(0.0, 1.0);
+  const auto& phi = getPhiAttr().value().convertToDouble();
+  const auto& lambda = getLambdaAttr().value().convertToDouble();
+  const std::complex<double> i(0.0, 1.0);
   const std::complex<double> m00(1.0, 0.0);
-  const std::complex<double> m01 = -std::exp(I * lambda);
-  const std::complex<double> m10 = -std::exp(I * phi);
-  const std::complex<double> m11 = std::exp(I * (phi + lambda));
+  const std::complex<double> m01 = -std::exp(i * lambda);
+  const std::complex<double> m10 = -std::exp(i * phi);
+  const std::complex<double> m11 = std::exp(i * (phi + lambda));
   return DenseElementsAttr::get(type, llvm::ArrayRef({m00, m01, m10, m11}));
 }
 
