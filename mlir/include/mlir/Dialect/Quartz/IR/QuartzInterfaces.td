@@ -51,19 +51,19 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         >,
         InterfaceMethod<
             "Returns the i-th qubit (targets + controls combined).",
-            "::mlir::Value", "getQubit", (ins "size_t":$i)
+            "Value", "getQubit", (ins "size_t":$i)
         >,
         InterfaceMethod<
             "Returns the i-th target qubit.",
-            "::mlir::Value", "getTarget", (ins "size_t":$i)
+            "Value", "getTarget", (ins "size_t":$i)
         >,
         InterfaceMethod<
             "Returns the i-th positive control qubit.",
-            "::mlir::Value", "getPosControl", (ins "size_t":$i)
+            "Value", "getPosControl", (ins "size_t":$i)
         >,
         InterfaceMethod<
             "Returns the i-th negative control qubit.",
-            "::mlir::Value", "getNegControl", (ins "size_t":$i)
+            "Value", "getNegControl", (ins "size_t":$i)
         >,
 
         // Parameter handling
@@ -73,7 +73,7 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         >,
         InterfaceMethod<
             "Returns the i-th parameter.",
-            "::mlir::quartz::ParameterDescriptor", "getParameter", (ins "size_t":$i)
+            "ParameterDescriptor", "getParameter", (ins "size_t":$i)
         >,
         /// TODO: Add convenience methods as necessary
 
@@ -98,11 +98,8 @@ def Quartz_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         InterfaceMethod<
             "Attempts to extract the static unitary matrix. "
             "Returns std::nullopt if the operation is symbolic or dynamic.",
-            "std::optional<::mlir::DenseElementsAttr>", "tryGetStaticMatrix", (ins)
+            "std::optional<DenseElementsAttr>", "tryGetStaticMatrix", (ins)
         >,
-
-        // Modifier state
-        /// TODO: Implement interface methods to query modifier state
 
         // Identification
         InterfaceMethod<
