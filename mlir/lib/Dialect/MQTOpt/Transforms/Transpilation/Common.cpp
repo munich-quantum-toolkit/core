@@ -47,9 +47,9 @@ bool isEntryPoint(mlir::func::FuncOp op) {
   });
 }
 
-bool isTwoQubitGate(UnitaryInterface u) {
-  return (u.getInQubits().size() + u.getPosCtrlInQubits().size() +
-          u.getNegCtrlInQubits().size()) == 2;
+bool isTwoQubitGate(UnitaryInterface op) {
+  return (op.getInQubits().size() + op.getPosCtrlInQubits().size() +
+          op.getNegCtrlInQubits().size()) == 2;
 }
 
 [[nodiscard]] std::pair<mlir::Value, mlir::Value> getIns(UnitaryInterface op) {
@@ -81,5 +81,15 @@ bool isTwoQubitGate(UnitaryInterface u) {
   return (posCtrl.size() == 1)
              ? std::pair{target[0], posCtrl[0]}
              : std::pair{target[0], op.getNegCtrlOutQubits()[0]};
+}
+
+[[nodiscard]] mlir::Operation* getUserInRegion(mlir::Value v,
+                                               mlir::Region* region) {
+  for (mlir::Operation* user : v.getUsers()) {
+    if (user->getParentRegion() == region) {
+      return user;
+    }
+  }
+  return nullptr;
 }
 } // namespace mqt::ir::opt
