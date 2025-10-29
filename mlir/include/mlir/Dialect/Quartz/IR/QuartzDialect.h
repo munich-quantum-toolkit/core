@@ -53,6 +53,10 @@ template <typename ConcreteType>
 class TargetArityTrait
     : public mlir::OpTrait::TraitBase<ConcreteType, TargetArityTrait> {};
 
+template <typename ConcreteType>
+class ParameterArityTrait
+    : public mlir::OpTrait::TraitBase<ConcreteType, ParameterArityTrait> {};
+
 struct ParameterDescriptor {
   mlir::FloatAttr valueAttr;
   mlir::Value valueOperand;

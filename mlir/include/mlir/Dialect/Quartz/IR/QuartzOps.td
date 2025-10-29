@@ -293,31 +293,55 @@ def TwoTarget : TargetArityTrait {
     }];
 }
 
+class ParameterArityTrait : NativeOpTrait<"ParameterArityTrait"> {
+    let cppNamespace = "::mlir::quartz";
+}
+
+def ZeroParameter : ParameterArityTrait {
+    let extraConcreteClassDeclaration = [{
+        size_t getNumParams() { return 0; }
+
+        ParameterDescriptor getParameter(size_t i) {
+            llvm_unreachable("Operation does not have parameters");
+        }
+
+        bool hasStaticUnitary() { return true; }
+    }];
+}
+
+def OneParameter : ParameterArityTrait {
+    let extraConcreteClassDeclaration = [{
+        size_t getNumParams() { return 1; }
+    }];
+}
+
+def TwoParameter : ParameterArityTrait {
+    let extraConcreteClassDeclaration = [{
+        size_t getNumParams() { return 2; }
+    }];
+}
+
 //===----------------------------------------------------------------------===//
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-def XOp : QuartzOp<"x", traits = [Quartz_UnitaryOpInterface, OneTarget]> {
+def XOp : QuartzOp<"x", traits = [Quartz_UnitaryOpInterface, OneTarget, ZeroParameter]> {
     let arguments = (ins QubitType:$qubit_in);
     let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        static size_t getNumParams() { return 0; }
-        static ParameterDescriptor getParameter(size_t i);
-        static bool hasStaticUnitary() { return true; }
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "x"; }
     }];
 }
 
-def RXOp : QuartzOp<"rx", traits = [Quartz_UnitaryOpInterface, OneTarget]> {
+def RXOp : QuartzOp<"rx", traits = [Quartz_UnitaryOpInterface, OneTarget, OneParameter]> {
     let arguments = (ins QubitType:$qubit_in,
                      OptionalAttr<F64Attr>:$theta_attr,
                      Optional<F64>:$theta_operand);
     let assemblyFormat = "`(` ($theta_attr^)? ($theta_operand^)? `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        static size_t getNumParams() { return 1; }
         ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
@@ -340,7 +364,7 @@ def RXOp : QuartzOp<"rx", traits = [Quartz_UnitaryOpInterface, OneTarget]> {
     let hasVerifier = 1;
 }
 
-def U2Op : QuartzOp<"u2", traits = [Quartz_UnitaryOpInterface, OneTarget, AttrSizedOperandSegments]> {
+def U2Op : QuartzOp<"u2", traits = [Quartz_UnitaryOpInterface, OneTarget, TwoParameter, AttrSizedOperandSegments]> {
     let arguments = (ins QubitType:$qubit_in,
                      OptionalAttr<F64Attr>:$phi_attr,
                      Optional<F64>:$phi_operand,
@@ -349,7 +373,6 @@ def U2Op : QuartzOp<"u2", traits = [Quartz_UnitaryOpInterface, OneTarget, AttrSi
     let assemblyFormat = "`(` ($phi_attr^)? ($phi_operand^)? `,` ($lambda_attr^)? ($lambda_operand^)? `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        static size_t getNumParams() { return 2; }
         ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
@@ -395,14 +418,11 @@ def U2Op : QuartzOp<"u2", traits = [Quartz_UnitaryOpInterface, OneTarget, AttrSi
     let hasVerifier = 1;
 }
 
-def SWAPOp : QuartzOp<"swap", traits = [Quartz_UnitaryOpInterface, TwoTarget]> {
+def SWAPOp : QuartzOp<"swap", traits = [Quartz_UnitaryOpInterface, TwoTarget, ZeroParameter]> {
     let arguments = (ins QubitType:$qubit0_in, QubitType:$qubit1_in);
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
-        static size_t getNumParams() { return 0; }
-        static ParameterDescriptor getParameter(size_t i);
-        static bool hasStaticUnitary() { return true; }
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "swap"; }
     }];

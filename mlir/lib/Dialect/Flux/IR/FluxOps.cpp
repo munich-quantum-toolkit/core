@@ -123,10 +123,6 @@ LogicalResult MeasureOp::verify() {
 
 // XOp
 
-ParameterDescriptor XOp::getParameter(size_t /*i*/) {
-  llvm_unreachable("XOp does not have parameters");
-}
-
 DenseElementsAttr XOp::tryGetStaticMatrix() {
   auto* ctx = getContext();
   auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
@@ -209,10 +205,6 @@ LogicalResult U2Op::verify() {
 }
 
 // SWAPOp
-
-ParameterDescriptor SWAPOp::getParameter(size_t /*i*/) {
-  llvm_unreachable("SWAPOp does not have parameters");
-}
 
 DenseElementsAttr SWAPOp::tryGetStaticMatrix() {
   auto* ctx = getContext();

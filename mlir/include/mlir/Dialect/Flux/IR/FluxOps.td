@@ -365,25 +365,50 @@ def TwoTarget : TargetArityTrait {
     }];
 }
 
+class ParameterArityTrait : NativeOpTrait<"ParameterArityTrait"> {
+    let cppNamespace = "::mlir::flux";
+}
+
+def ZeroParameter : ParameterArityTrait {
+    let extraConcreteClassDeclaration = [{
+        size_t getNumParams() { return 0; }
+
+        ParameterDescriptor getParameter(size_t i) {
+            llvm_unreachable("Operation does not have parameters");
+        }
+
+        bool hasStaticUnitary() { return true; }
+    }];
+}
+
+def OneParameter : ParameterArityTrait {
+    let extraConcreteClassDeclaration = [{
+        size_t getNumParams() { return 1; }
+    }];
+}
+
+def TwoParameter : ParameterArityTrait {
+    let extraConcreteClassDeclaration = [{
+        size_t getNumParams() { return 2; }
+    }];
+}
+
 //===----------------------------------------------------------------------===//
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface, OneTarget]> {
+def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface, OneTarget, ZeroParameter]> {
     let arguments = (ins QubitType:$qubit_in);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static size_t getNumParams() { return 0; }
-        static ParameterDescriptor getParameter(size_t i);
-        static bool hasStaticUnitary() { return true; }
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "x"; }
     }];
 }
 
-def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface, OneTarget]> {
+def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface, OneTarget, OneParameter]> {
     let arguments = (ins QubitType:$qubit_in,
                      OptionalAttr<F64Attr>:$theta_attr,
                      Optional<F64>:$theta_operand);
@@ -391,7 +416,6 @@ def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface, OneTarget]> {
     let assemblyFormat = "`(` ($theta_attr^)? ($theta_operand^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static size_t getNumParams() { return 1; }
         ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
@@ -414,7 +438,7 @@ def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface, OneTarget]> {
     let hasVerifier = 1;
 }
 
-def U2Op : FluxOp<"u2", traits = [Flux_UnitaryOpInterface, OneTarget, AttrSizedOperandSegments]> {
+def U2Op : FluxOp<"u2", traits = [Flux_UnitaryOpInterface, OneTarget, TwoParameter, AttrSizedOperandSegments]> {
     let arguments = (ins QubitType:$qubit_in,
                      OptionalAttr<F64Attr>:$phi_attr,
                      Optional<F64>:$phi_operand,
@@ -424,7 +448,6 @@ def U2Op : FluxOp<"u2", traits = [Flux_UnitaryOpInterface, OneTarget, AttrSizedO
     let assemblyFormat = "`(` ($phi_attr^)? ($phi_operand^)? `,` ($lambda_attr^)? ($lambda_operand^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static size_t getNumParams() { return 2; }
         ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
@@ -470,15 +493,12 @@ def U2Op : FluxOp<"u2", traits = [Flux_UnitaryOpInterface, OneTarget, AttrSizedO
     let hasVerifier = 1;
 }
 
-def SWAPOp : FluxOp<"swap", traits = [Flux_UnitaryOpInterface, TwoTarget]> {
+def SWAPOp : FluxOp<"swap", traits = [Flux_UnitaryOpInterface, TwoTarget, ZeroParameter]> {
     let arguments = (ins QubitType:$qubit0_in, QubitType:$qubit1_in);
     let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        static size_t getNumParams() { return 0; }
-        static ParameterDescriptor getParameter(size_t i);
-        static bool hasStaticUnitary() { return true; }
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "x"; }
     }];
