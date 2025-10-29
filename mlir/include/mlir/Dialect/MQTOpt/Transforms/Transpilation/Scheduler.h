@@ -235,6 +235,9 @@ private:
     return std::nullopt;
   }
 
+  /**
+   * @returns Pair of Values after two-qubit block.
+   */
   static ValuePair advanceTwoQubitBlock(const ValuePair outs, Layout& layout,
                                         Region* region) {
     std::array<Value, 2> heads{outs.first, outs.second};

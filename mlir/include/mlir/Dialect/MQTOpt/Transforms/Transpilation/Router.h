@@ -205,11 +205,10 @@ public:
       /// Don't revisit layouts that were discovered with a lower depth.
       const auto [it, inserted] =
           visited.try_emplace(curr.layout, curr.depth());
-      if (!inserted && it->second <= curr.depth()) {
-        continue;
-      }
-
       if (!inserted) {
+        if (it->second <= curr.depth()) {
+          continue;
+        }
         it->second = curr.sequence.size();
       }
 
@@ -223,7 +222,6 @@ public:
 private:
   /**
    * @brief Expand frontier with all neighbouring SWAPs in the current front.
-   * @returns SWAP sequence if a goal node is expanded. Otherwise: std::nullopt.
    */
   void expand(MinQueue& frontier, const Node& parent, const Layers& layers,
               const Architecture& arch) const {
