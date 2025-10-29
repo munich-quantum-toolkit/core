@@ -503,7 +503,7 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
 private:
   [[nodiscard]] Mapper getMapper() {
     /// TODO: Configurable Architecture.
-    auto arch = getArchitecture(ArchitectureName::IBMFalcon);
+    auto arch = getArchitecture(ArchitectureName::MQTTest);
 
     switch (static_cast<RoutingMethod>(method)) {
     case RoutingMethod::Naive:

@@ -427,7 +427,7 @@ struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
   using PlacementPassSCBase::PlacementPassSCBase;
 
   void runOnOperation() override {
-    const auto arch = getArchitecture(ArchitectureName::IBMFalcon);
+    const auto arch = getArchitecture(ArchitectureName::MQTTest);
     const auto placer = getPlacer(*arch);
 
     if (PlacementContext ctx(*arch, *placer);
