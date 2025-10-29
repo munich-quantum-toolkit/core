@@ -19,6 +19,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <vector>
 
 namespace mlir::flux {
 
@@ -325,7 +326,7 @@ public:
    * !flux.qubit, !flux.qubit
    * ```
    */
-  ValueRange swap(Value qubit0, Value qubit1);
+  std::vector<Value> swap(Value qubit0, Value qubit1);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

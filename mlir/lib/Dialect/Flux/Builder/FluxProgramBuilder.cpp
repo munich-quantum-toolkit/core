@@ -26,6 +26,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <utility>
+#include <vector>
 
 namespace mlir::flux {
 
@@ -236,7 +237,7 @@ Value FluxProgramBuilder::u2(Value phi, Value lambda, Value qubit) {
   return qubitOut;
 }
 
-ValueRange FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
+std::vector<Value> FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
   auto swapOp = builder.create<SWAPOp>(loc, qubit0, qubit1);
   const auto& qubit0Out = swapOp.getQubit0Out();
   const auto& qubit1Out = swapOp.getQubit1Out();
