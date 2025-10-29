@@ -121,23 +121,6 @@ LogicalResult MeasureOp::verify() {
 
 // XOp
 
-Value XOp::getQubit(size_t i) {
-  if (i == 0) {
-    return getQubitIn();
-  }
-  llvm_unreachable("XOp has one input qubit");
-}
-
-Value XOp::getTarget(size_t i) { return getQubit(i); }
-
-Value XOp::getPosControl(size_t /*i*/) {
-  llvm_unreachable("XOp does not have controls");
-}
-
-Value XOp::getNegControl(size_t /*i*/) {
-  llvm_unreachable("XOp does not have controls");
-}
-
 ParameterDescriptor XOp::getParameter(size_t /*i*/) {
   llvm_unreachable("XOp does not have parameters");
 }
@@ -149,23 +132,6 @@ DenseElementsAttr XOp::tryGetStaticMatrix() {
 }
 
 // RXOp
-
-Value RXOp::getQubit(size_t i) {
-  if (i == 0) {
-    return getQubitIn();
-  }
-  llvm_unreachable("RXOp has one input qubit");
-}
-
-Value RXOp::getTarget(size_t i) { return getQubit(i); }
-
-Value RXOp::getPosControl(size_t /*i*/) {
-  llvm_unreachable("RXOp does not have controls");
-}
-
-Value RXOp::getNegControl(size_t /*i*/) {
-  llvm_unreachable("RXOp does not have controls");
-}
 
 ParameterDescriptor RXOp::getParameter(size_t i) {
   if (i == 0) {
@@ -197,23 +163,6 @@ LogicalResult RXOp::verify() {
 }
 
 // U2Op
-
-Value U2Op::getQubit(size_t i) {
-  if (i == 0) {
-    return getQubitIn();
-  }
-  llvm_unreachable("SWAPOp has one input qubit");
-}
-
-Value U2Op::getTarget(size_t i) { return getQubit(i); }
-
-Value U2Op::getPosControl(size_t /*i*/) {
-  llvm_unreachable("U2Op does not have controls");
-}
-
-Value U2Op::getNegControl(size_t /*i*/) {
-  llvm_unreachable("U2Op does not have controls");
-}
 
 ParameterDescriptor U2Op::getParameter(size_t i) {
   if (i == 0) {
@@ -258,26 +207,6 @@ LogicalResult U2Op::verify() {
 }
 
 // SWAPOp
-
-Value SWAPOp::getQubit(size_t i) {
-  if (i == 0) {
-    return getQubit0In();
-  }
-  if (i == 1) {
-    return getQubit1In();
-  }
-  llvm_unreachable("SWAPOp has two input qubits");
-}
-
-Value SWAPOp::getTarget(size_t i) { return getQubit(i); }
-
-Value SWAPOp::getPosControl(size_t /*i*/) {
-  llvm_unreachable("SWAPOp does not have controls");
-}
-
-Value SWAPOp::getNegControl(size_t /*i*/) {
-  llvm_unreachable("SWAPOp does not have controls");
-}
 
 ParameterDescriptor SWAPOp::getParameter(size_t /*i*/) {
   llvm_unreachable("SWAPOp does not have parameters");

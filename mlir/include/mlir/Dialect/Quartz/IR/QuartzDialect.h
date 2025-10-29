@@ -49,6 +49,10 @@
 
 namespace mlir::quartz {
 
+template <typename ConcreteType>
+class TargetArityTrait
+    : public mlir::OpTrait::TraitBase<ConcreteType, TargetArityTrait> {};
+
 struct ParameterDescriptor {
   mlir::FloatAttr valueAttr;
   mlir::Value valueOperand;
