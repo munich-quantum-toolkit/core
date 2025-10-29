@@ -186,19 +186,17 @@ public:
     MinQueue frontier{};
     frontier.emplace(root);
 
-    /// Initialize closed set.
-    ClosedSet visited;
-    visited.insert(root.layout);
-
     /// Iterative searching and expanding.
     while (!frontier.empty()) {
       Node curr = frontier.top();
       frontier.pop();
 
-      /// Expand frontier with all neighbouring SWAPs in the current front.
-      if (const auto optSeq = expand(frontier, curr, visited, layers, arch)) {
-        return optSeq.value();
+      if (curr.isGoal(layers.front(), arch)) {
+        return curr.sequence;
       }
+
+      /// Expand frontier with all neighbouring SWAPs in the current front.
+      expand(frontier, curr, layers, arch);
     }
 
     return {};
@@ -209,9 +207,8 @@ private:
    * @brief Expand frontier with all neighbouring SWAPs in the current front.
    * @returns SWAP sequence if a goal node is expanded. Otherwise: std::nullopt.
    */
-  std::optional<RouterResult> expand(MinQueue& frontier, const Node& parent,
-                                     ClosedSet& visited, const Layers& layers,
-                                     const Architecture& arch) const {
+  void expand(MinQueue& frontier, const Node& parent, const Layers& layers,
+              const Architecture& arch) const {
     llvm::SmallDenseSet<QubitIndexPair, 64> swaps{};
     for (const QubitIndexPair gate : layers.front()) {
       for (const auto prog : {gate.first, gate.second}) {
@@ -223,24 +220,10 @@ private:
             continue;
           }
 
-          Node child(parent, swap, layers, arch, weights_);
-
-          /// Early exit if child node is a goal node.
-          if (child.isGoal(layers.front(), arch)) {
-            return child.sequence;
-          }
-
-          /// Skip already visited permutations.
-          if (!visited.insert(child.layout).second) {
-            continue;
-          }
-
-          frontier.push(std::move(child));
+          frontier.emplace(parent, swap, layers, arch, weights_);
         }
       }
     }
-
-    return std::nullopt;
   }
 
   HeuristicWeights weights_;
