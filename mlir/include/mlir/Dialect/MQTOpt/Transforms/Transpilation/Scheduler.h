@@ -267,7 +267,7 @@ private:
       heads = {out0, out1};
     }
 
-    return heads;
+    return {heads[0], heads[1]};
   }
 
   std::size_t nlayers_;
