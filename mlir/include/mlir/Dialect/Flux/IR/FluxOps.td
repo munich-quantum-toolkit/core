@@ -241,11 +241,11 @@ def ResetOp : FluxOp<"reset", [Idempotent, SameOperandsAndResultType]> {
 // Traits
 //===----------------------------------------------------------------------===//
 
-class OneTargetTrait : NativeOpTrait<"OneTargetTrait"> {
+class TargetArityTrait : NativeOpTrait<"TargetArityTrait"> {
     let cppNamespace = "::mlir::flux";
 }
 
-def OneTarget : OneTargetTrait {
+def OneTarget : TargetArityTrait {
     let extraConcreteClassDeclaration = [{
         size_t getNumQubits() { return 1; }
         size_t getNumTargets() { return 1; }
@@ -299,11 +299,7 @@ def OneTarget : OneTargetTrait {
     }];
 }
 
-class TwoTargetTrait : NativeOpTrait<"TwoTargetTrait"> {
-    let cppNamespace = "::mlir::flux";
-}
-
-def TwoTarget : TwoTargetTrait {
+def TwoTarget : TargetArityTrait {
     let extraConcreteClassDeclaration = [{
         size_t getNumQubits() { return 2; }
         size_t getNumTargets() { return 2; }

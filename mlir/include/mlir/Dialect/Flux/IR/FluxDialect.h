@@ -50,12 +50,8 @@
 namespace mlir::flux {
 
 template <typename ConcreteType>
-class OneTargetTrait
-    : public mlir::OpTrait::TraitBase<ConcreteType, OneTargetTrait> {};
-
-template <typename ConcreteType>
-class TwoTargetTrait
-    : public mlir::OpTrait::TraitBase<ConcreteType, TwoTargetTrait> {};
+class TargetArityTrait
+    : public mlir::OpTrait::TraitBase<ConcreteType, TargetArityTrait> {};
 
 struct ParameterDescriptor {
   mlir::FloatAttr valueAttr;
