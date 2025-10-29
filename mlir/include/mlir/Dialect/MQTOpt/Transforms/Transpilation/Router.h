@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <mlir/Support/LLVM.h>
-#include <optional>
 #include <queue>
 #include <stdexcept>
 #include <utility>
@@ -28,7 +27,7 @@ namespace mqt::ir::opt {
 /**
  * @brief A vector of SWAPs.
  */
-using RouterResult = mlir::SmallVector<QubitIndexPair>;
+using RouterResult = SmallVector<QubitIndexPair>;
 
 /**
  * @brief A planner determines the sequence of swaps required to route an array
@@ -53,7 +52,7 @@ struct NaiveRouter final : RouterBase {
     }
 
     /// This assumes an avg. of 16 SWAPs per gate.
-    mlir::SmallVector<QubitIndexPair, 16> swaps;
+    SmallVector<QubitIndexPair, 16> swaps;
     for (const auto [prog0, prog1] : layers.front()) {
       const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
       const auto path = arch.shortestPathBetween(hw0, hw1);
@@ -70,7 +69,7 @@ struct NaiveRouter final : RouterBase {
  */
 struct HeuristicWeights {
   float alpha;
-  mlir::SmallVector<float> lambdas;
+  SmallVector<float> lambdas;
 
   HeuristicWeights(const float alpha, const float lambda,
                    const std::size_t nlookahead)
@@ -90,10 +89,10 @@ struct AStarHeuristicRouter final : RouterBase {
       : weights_(std::move(weights)) {}
 
 private:
-  using ClosedSet = mlir::DenseSet<ThinLayout>;
+  using ClosedMap = DenseMap<ThinLayout, std::size_t>;
 
   struct Node {
-    mlir::SmallVector<QubitIndexPair> sequence;
+    SmallVector<QubitIndexPair> sequence;
     ThinLayout layout;
     float f;
 
@@ -125,13 +124,18 @@ private:
      * @brief Return true if the current sequence of SWAPs makes all gates
      * executable.
      */
-    [[nodiscard]] bool isGoal(const mlir::ArrayRef<QubitIndexPair>& gates,
+    [[nodiscard]] bool isGoal(const ArrayRef<QubitIndexPair>& gates,
                               const Architecture& arch) const {
       return std::ranges::all_of(gates, [&](const QubitIndexPair gate) {
         return arch.areAdjacent(layout.getHardwareIndex(gate.first),
                                 layout.getHardwareIndex(gate.second));
       });
     }
+
+    /**
+     * @returns The depth in the search tree.
+     */
+    [[nodiscard]] std::size_t depth() const { return sequence.size(); }
 
     [[nodiscard]] bool operator>(const Node& rhs) const { return f > rhs.f; }
 
@@ -142,8 +146,8 @@ private:
      * The path cost function is the weighted sum of the currently required
      * SWAPs.
      */
-    [[nodiscard]] float g(const HeuristicWeights& weights) {
-      return (weights.alpha * static_cast<float>(sequence.size()));
+    [[nodiscard]] float g(const HeuristicWeights& weights) const {
+      return (weights.alpha * static_cast<float>(depth()));
     }
 
     /**
@@ -186,6 +190,9 @@ public:
     MinQueue frontier{};
     frontier.emplace(root);
 
+    /// Initialize visited map.
+    ClosedMap visited;
+
     /// Iterative searching and expanding.
     while (!frontier.empty()) {
       Node curr = frontier.top();
@@ -193,6 +200,17 @@ public:
 
       if (curr.isGoal(layers.front(), arch)) {
         return curr.sequence;
+      }
+
+      /// Don't revisit layouts that were discovered with a lower depth.
+      const auto [it, inserted] =
+          visited.try_emplace(curr.layout, curr.depth());
+      if (!inserted && it->second <= curr.depth()) {
+        continue;
+      }
+
+      if (!inserted) {
+        it->second = curr.sequence.size();
       }
 
       /// Expand frontier with all neighbouring SWAPs in the current front.
