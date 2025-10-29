@@ -107,6 +107,11 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "bool", "isSingleQubit", (ins),
             [{ return getNumQubits(impl, tablegen_opaque_val) == 1; }]
         >,
+        InterfaceMethod<
+            "Returns true if the operation acts on two qubits.",
+            "bool", "isTwoQubit", (ins),
+            [{ return getNumQubits(impl, tablegen_opaque_val) == 2; }]
+        >,
         /// TODO: Add more convenience methods as necessary
 
         // Matrix extraction
