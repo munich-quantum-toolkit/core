@@ -15,7 +15,7 @@ include "mlir/IR/OpBase.td"
 // UnitaryOpInterface
 //===----------------------------------------------------------------------===//
 
-def Flux_UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
+def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
     let description = [{
         This interface provides a unified API for all operations that apply or
         produce a unitary transformation in the Flux dialect. This includes base

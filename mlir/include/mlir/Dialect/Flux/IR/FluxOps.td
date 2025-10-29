@@ -397,7 +397,7 @@ def TwoParameter : ParameterArityTrait {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface, OneTarget, ZeroParameter]> {
+def XOp : FluxOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]> {
     let arguments = (ins QubitType:$qubit_in);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -408,7 +408,7 @@ def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface, OneTarget, ZeroParamete
     }];
 }
 
-def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface, OneTarget, OneParameter]> {
+def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> {
     let arguments = (ins QubitType:$qubit_in,
                      OptionalAttr<F64Attr>:$theta_attr,
                      Optional<F64>:$theta_operand);
@@ -438,7 +438,7 @@ def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface, OneTarget, OneParamet
     let hasVerifier = 1;
 }
 
-def U2Op : FluxOp<"u2", traits = [Flux_UnitaryOpInterface, OneTarget, TwoParameter, AttrSizedOperandSegments]> {
+def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter, AttrSizedOperandSegments]> {
     let arguments = (ins QubitType:$qubit_in,
                      OptionalAttr<F64Attr>:$phi_attr,
                      Optional<F64>:$phi_operand,
@@ -493,7 +493,7 @@ def U2Op : FluxOp<"u2", traits = [Flux_UnitaryOpInterface, OneTarget, TwoParamet
     let hasVerifier = 1;
 }
 
-def SWAPOp : FluxOp<"swap", traits = [Flux_UnitaryOpInterface, TwoTarget, ZeroParameter]> {
+def SWAPOp : FluxOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParameter]> {
     let arguments = (ins QubitType:$qubit0_in, QubitType:$qubit1_in);
     let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";

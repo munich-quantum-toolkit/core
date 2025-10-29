@@ -325,7 +325,7 @@ def TwoParameter : ParameterArityTrait {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-def XOp : QuartzOp<"x", traits = [Quartz_UnitaryOpInterface, OneTarget, ZeroParameter]> {
+def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]> {
     let arguments = (ins QubitType:$qubit_in);
     let assemblyFormat = "$qubit_in attr-dict";
 
@@ -335,7 +335,7 @@ def XOp : QuartzOp<"x", traits = [Quartz_UnitaryOpInterface, OneTarget, ZeroPara
     }];
 }
 
-def RXOp : QuartzOp<"rx", traits = [Quartz_UnitaryOpInterface, OneTarget, OneParameter]> {
+def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> {
     let arguments = (ins QubitType:$qubit_in,
                      OptionalAttr<F64Attr>:$theta_attr,
                      Optional<F64>:$theta_operand);
@@ -364,7 +364,7 @@ def RXOp : QuartzOp<"rx", traits = [Quartz_UnitaryOpInterface, OneTarget, OnePar
     let hasVerifier = 1;
 }
 
-def U2Op : QuartzOp<"u2", traits = [Quartz_UnitaryOpInterface, OneTarget, TwoParameter, AttrSizedOperandSegments]> {
+def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter, AttrSizedOperandSegments]> {
     let arguments = (ins QubitType:$qubit_in,
                      OptionalAttr<F64Attr>:$phi_attr,
                      Optional<F64>:$phi_operand,
@@ -418,7 +418,7 @@ def U2Op : QuartzOp<"u2", traits = [Quartz_UnitaryOpInterface, OneTarget, TwoPar
     let hasVerifier = 1;
 }
 
-def SWAPOp : QuartzOp<"swap", traits = [Quartz_UnitaryOpInterface, TwoTarget, ZeroParameter]> {
+def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParameter]> {
     let arguments = (ins QubitType:$qubit0_in, QubitType:$qubit1_in);
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict";
 
