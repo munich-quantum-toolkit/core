@@ -128,7 +128,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         // Identification
         InterfaceMethod<
             "Returns the base symbol/mnemonic of the operation.",
-            "::llvm::StringRef", "getBaseSymbol", (ins)
+            "StringRef", "getBaseSymbol", (ins)
         >,
     ];
 }
