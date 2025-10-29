@@ -282,6 +282,23 @@ public:
   QuartzProgramBuilder& u2(double phi, Value lambda, Value qubit);
   QuartzProgramBuilder& u2(Value phi, Value lambda, Value qubit);
 
+  /**
+   * @brief Apply the SWAP gate to two qubits
+   *
+   * @param qubit0 Input qubit
+   * @param qubit1 Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.swap(q0, q1);
+   * ```
+   * ```mlir
+   * quartz.swap %q0, %q1 : !quartz.qubit, !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& swap(Value qubit0, Value qubit1);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//

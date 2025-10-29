@@ -246,6 +246,14 @@ void addU2Op(QuartzProgramBuilder& builder, const qc::Operation& operation,
   builder.u2(phi, lambda, qubit);
 }
 
+// Temporary implementation of SWAPOp translation
+void addSWAPOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+               const llvm::SmallVector<Value>& qubits) {
+  const auto& qubit0 = qubits[operation.getTargets()[0]];
+  const auto& qubit1 = qubits[operation.getTargets()[1]];
+  builder.swap(qubit0, qubit1);
+}
+
 /**
  * @brief Translates operations from QuantumComputation to Quartz dialect
  *
@@ -285,6 +293,9 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::U2:
       addU2Op(builder, *operation, qubits);
+      break;
+    case qc::OpType::SWAP:
+      addSWAPOp(builder, *operation, qubits);
       break;
     default:
       // Unsupported operation - skip for now

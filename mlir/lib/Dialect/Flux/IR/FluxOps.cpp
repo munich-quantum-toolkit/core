@@ -358,6 +358,72 @@ LogicalResult U2Op::verify() {
   return success();
 }
 
+// SWAPOp
+
+Value SWAPOp::getQubit(size_t i) {
+  if (i == 0) {
+    return getQubit0In();
+  }
+  if (i == 1) {
+    return getQubit1In();
+  }
+  llvm_unreachable("SWAPOp only has two input qubits");
+}
+
+Value SWAPOp::getTarget(size_t i) { return getQubit(i); }
+
+Value SWAPOp::getPosControl(size_t /*i*/) {
+  llvm_unreachable("SWAPOp does not have controls");
+}
+
+Value SWAPOp::getNegControl(size_t /*i*/) {
+  llvm_unreachable("SWAPOp does not have controls");
+}
+
+Value SWAPOp::getInput(size_t i) { return getQubit(i); }
+
+Value SWAPOp::getOutput(size_t i) {
+  if (i == 0) {
+    return getQubit0Out();
+  }
+  if (i == 1) {
+    return getQubit1Out();
+  }
+  llvm_unreachable("SWAPOp only has two output qubits");
+}
+
+Value SWAPOp::getInputForOutput(Value output) {
+  if (output == getQubit0Out()) {
+    return getQubit0In();
+  }
+  if (output == getQubit1Out()) {
+    return getQubit1In();
+  }
+  llvm_unreachable("Given qubit is not an output of the SWAPOp");
+}
+
+Value SWAPOp::getOutputForInput(Value input) {
+  if (input == getQubit0In()) {
+    return getQubit0Out();
+  }
+  if (input == getQubit1In()) {
+    return getQubit1Out();
+  }
+  llvm_unreachable("Given qubit is not an input of the SWAPOp");
+}
+
+ParameterDescriptor SWAPOp::getParameter(size_t /*i*/) {
+  llvm_unreachable("SWAPOp does not have parameters");
+}
+
+DenseElementsAttr SWAPOp::tryGetStaticMatrix() {
+  auto* ctx = getContext();
+  const auto& type = RankedTensorType::get({4, 4}, Float64Type::get(ctx));
+  return DenseElementsAttr::get(
+      type, llvm::ArrayRef({1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0,
+                            0.0, 0.0, 0.0, 0.0, 0.0, 1.0}));
+}
+
 //===----------------------------------------------------------------------===//
 // Canonicalization Patterns
 //===----------------------------------------------------------------------===//

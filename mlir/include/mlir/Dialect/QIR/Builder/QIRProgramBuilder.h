@@ -282,6 +282,24 @@ public:
   QIRProgramBuilder& u2(Value phi, double lambda, const Value qubit);
   QIRProgramBuilder& u2(Value phi, Value lambda, const Value qubit);
 
+  /**
+   * @brief Apply the SWAP gate to two qubits
+   *
+   * @param qubit0 Input qubit
+   * @param qubit1 Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.swap(q0, q1);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__swap__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) ->
+   * ()
+   * ```
+   */
+  QIRProgramBuilder& swap(const Value qubit0, const Value qubit1);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//

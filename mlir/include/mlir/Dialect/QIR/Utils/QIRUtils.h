@@ -29,6 +29,7 @@ static constexpr auto QIR_RESET = "__quantum__qis__reset__body";
 static constexpr auto QIR_X = "__quantum__qis__x__body";
 static constexpr auto QIR_RX = "__quantum__qis__rx__body";
 static constexpr auto QIR_U2 = "__quantum__qis__u2__body";
+static constexpr auto QIR_SWAP = "__quantum__qis__swap__body";
 
 /**
  * @brief State object for tracking QIR metadata during conversion

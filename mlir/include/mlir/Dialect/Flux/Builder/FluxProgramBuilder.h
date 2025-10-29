@@ -305,6 +305,28 @@ public:
   Value u2(Value phi, double lambda, Value qubit);
   Value u2(Value phi, Value lambda, Value qubit);
 
+  /**
+   * @brief Apply the SWAP gate to two qubits
+   *
+   * @details
+   * Consumes the input qubits and produces new output qubit SSA values.
+   * The inputs are validated and the tracking is updated.
+   *
+   * @param qubit0 Input qubit (must be valid/unconsumed)
+   * @param qubit1 Input qubit (must be valid/unconsumed)
+   * @return Output qubit value
+   *
+   * @par Example:
+   * ```c++
+   * {q0_out, q1_out} = builder.swap(q0_in, q1_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out = flux.swap %q0_in, %q1_in : !flux.qubit, !flux.qubit ->
+   * !flux.qubit, !flux.qubit
+   * ```
+   */
+  ValueRange swap(Value qubit0, Value qubit1);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//

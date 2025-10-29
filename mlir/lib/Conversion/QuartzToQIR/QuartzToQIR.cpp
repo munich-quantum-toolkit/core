@@ -500,6 +500,31 @@ struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
   }
 };
 
+// Temporary implementation of SWAPOp conversion
+struct ConvertQuartzSWAPQIR final : StatefulOpConversionPattern<SWAPOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(SWAPOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto* ctx = getContext();
+
+    // Create QIR function signature: (ptr, ptr) -> void
+    const auto qirSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx),
+        {LLVM::LLVMPointerType::get(ctx), LLVM::LLVMPointerType::get(ctx)});
+
+    // Get or create function declaration
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_SWAP, qirSignature);
+
+    // Replace with call to SWAP
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
+                                              adaptor.getOperands());
+    return success();
+  }
+};
+
 } // namespace
 
 /**
@@ -828,6 +853,7 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzXQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzRXQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzU2QIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzSWAPQIR>(typeConverter, ctx, &state);
 
       // Gate operations will be added here as the dialect expands
 

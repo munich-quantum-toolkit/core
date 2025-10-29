@@ -236,6 +236,18 @@ Value FluxProgramBuilder::u2(Value phi, Value lambda, Value qubit) {
   return qubitOut;
 }
 
+ValueRange FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
+  auto swapOp = builder.create<SWAPOp>(loc, qubit0, qubit1);
+  const auto& qubit0Out = swapOp.getQubit0Out();
+  const auto& qubit1Out = swapOp.getQubit1Out();
+
+  // Update tracking
+  updateQubitTracking(qubit0, qubit0Out);
+  updateQubitTracking(qubit1, qubit1Out);
+
+  return {qubit0Out, qubit1Out};
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//

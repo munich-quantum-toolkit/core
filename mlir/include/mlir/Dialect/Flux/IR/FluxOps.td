@@ -381,4 +381,31 @@ def U2Op : FluxOp<"u2", traits = [Flux_UnitaryOpInterface, AttrSizedOperandSegme
     let hasVerifier = 1;
 }
 
+def SWAPOp : FluxOp<"swap", traits = [Flux_UnitaryOpInterface]> {
+    let arguments = (ins QubitType:$qubit0_in, QubitType:$qubit1_in);
+    let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
+    let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
+
+    let extraClassDeclaration = [{
+        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
+        static size_t getNumTargets() { return 2; }
+        size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
+        static size_t getNumPosControls() { return 0; }
+        static size_t getNumNegControls() { return 0; }
+        Value getQubit(size_t i);
+        Value getTarget(size_t i);
+        static Value getPosControl(size_t i);
+        static Value getNegControl(size_t i);
+        Value getInput(size_t i);
+        Value getOutput(size_t i);
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+        static size_t getNumParams() { return 0; }
+        static ParameterDescriptor getParameter(size_t i);
+        static bool hasStaticUnitary() { return true; }
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "x"; }
+    }];
+}
+
 #endif // FluxOPS

@@ -159,6 +159,11 @@ QuartzProgramBuilder& QuartzProgramBuilder::u2(Value phi, Value lambda,
   return *this;
 }
 
+QuartzProgramBuilder& QuartzProgramBuilder::swap(Value qubit0, Value qubit1) {
+  builder.create<SWAPOp>(loc, qubit0, qubit1);
+  return *this;
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//

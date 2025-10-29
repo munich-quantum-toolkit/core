@@ -271,3 +271,37 @@ LogicalResult U2Op::verify() {
     return emitOpError("must specify either static or dynamic lambda");
   return success();
 }
+
+// SWAPOp
+
+Value SWAPOp::getQubit(size_t i) {
+  if (i == 0) {
+    return getQubit0In();
+  }
+  if (i == 1) {
+    return getQubit1In();
+  }
+  llvm_unreachable("SWAPOp only has two input qubits");
+}
+
+Value SWAPOp::getTarget(size_t i) { return getQubit(i); }
+
+Value SWAPOp::getPosControl(size_t /*i*/) {
+  llvm_unreachable("SWAPOp does not have controls");
+}
+
+Value SWAPOp::getNegControl(size_t /*i*/) {
+  llvm_unreachable("SWAPOp does not have controls");
+}
+
+ParameterDescriptor SWAPOp::getParameter(size_t /*i*/) {
+  llvm_unreachable("SWAPOp does not have parameters");
+}
+
+DenseElementsAttr SWAPOp::tryGetStaticMatrix() {
+  auto* ctx = getContext();
+  const auto& type = RankedTensorType::get({4, 4}, Float64Type::get(ctx));
+  return DenseElementsAttr::get(
+      type, llvm::ArrayRef({1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0,
+                            0.0, 0.0, 0.0, 0.0, 0.0, 1.0}));
+}

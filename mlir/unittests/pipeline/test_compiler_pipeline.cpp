@@ -961,6 +961,38 @@ TEST_F(CompilerPipelineTest, U2) {
   });
 }
 
+TEST_F(CompilerPipelineTest, SWAP) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(2, "q");
+  qc.swap(0, 1);
+
+  const auto module = importQuantumCircuit(qc);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto quartzExpected =
+      buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+        auto q = b.allocQubitRegister(2, "q");
+        b.swap(q[0], q[1]);
+      });
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto q = b.allocQubitRegister(2, "q");
+    b.swap(q[0], q[1]);
+  });
+  const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto q = b.allocQubitRegister(2);
+    b.swap(q[0], q[1]);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartzExpected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .optimization = fluxExpected.get(),
+      .quartzConversion = quartzExpected.get(),
+      .qirConversion = qirExpected.get(),
+  });
+}
+
 // ##################################################
 // # Temporary Simple Conversion Tests
 // ##################################################

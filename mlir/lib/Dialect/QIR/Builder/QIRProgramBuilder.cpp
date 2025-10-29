@@ -324,6 +324,26 @@ QIRProgramBuilder& QIRProgramBuilder::u2(Value phi, double lambda,
   return u2(phi, lambdaConst.getResult(), qubit);
 }
 
+QIRProgramBuilder& QIRProgramBuilder::swap(const Value qubit0,
+                                           const Value qubit1) {
+  // Save current insertion point
+  const OpBuilder::InsertionGuard insertGuard(builder);
+
+  // Insert in body block (before branch)
+  builder.setInsertionPoint(bodyBlock->getTerminator());
+
+  // Create x call
+  const auto qirSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()),
+      {LLVM::LLVMPointerType::get(builder.getContext()),
+       LLVM::LLVMPointerType::get(builder.getContext())});
+  auto fnDecl =
+      getOrCreateFunctionDeclaration(builder, module, QIR_SWAP, qirSignature);
+  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit0, qubit1});
+
+  return *this;
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//

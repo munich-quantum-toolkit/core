@@ -353,4 +353,26 @@ def U2Op : QuartzOp<"u2", traits = [Quartz_UnitaryOpInterface, AttrSizedOperandS
     let hasVerifier = 1;
 }
 
+def SWAPOp : QuartzOp<"swap", traits = [Quartz_UnitaryOpInterface]> {
+    let arguments = (ins QubitType:$qubit0_in, QubitType:$qubit1_in);
+    let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict";
+
+    let extraClassDeclaration = [{
+        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
+        static size_t getNumTargets() { return 2; }
+        size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
+        static size_t getNumPosControls() { return 0; }
+        static size_t getNumNegControls() { return 0; }
+        Value getQubit(size_t i);
+        Value getTarget(size_t i);
+        static Value getPosControl(size_t i);
+        static Value getNegControl(size_t i);
+        static size_t getNumParams() { return 0; }
+        static ParameterDescriptor getParameter(size_t i);
+        static bool hasStaticUnitary() { return true; }
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "swap"; }
+    }];
+}
+
 #endif // QUARTZ_OPS
