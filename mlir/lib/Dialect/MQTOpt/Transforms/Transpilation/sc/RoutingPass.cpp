@@ -18,7 +18,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
 #include <cassert>
-#include <chrono>
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -183,7 +182,8 @@ private:
     for (const auto [hw0, hw1] : swaps) {
       const Value in0 = stack().top().lookupHardwareValue(hw0);
       const Value in1 = stack().top().lookupHardwareValue(hw1);
-      const auto [prog0, prog1] = stack().top().getProgramIndices(hw0, hw1);
+      [[maybe_unused]] const auto [prog0, prog1] =
+          stack().top().getProgramIndices(hw0, hw1);
 
       LLVM_DEBUG({
         llvm::dbgs() << llvm::format(
