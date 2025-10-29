@@ -172,7 +172,7 @@ Value FluxProgramBuilder::reset(Value qubit) {
 
 Value FluxProgramBuilder::x(Value qubit) {
   auto xOp = builder.create<XOp>(loc, qubit);
-  const auto qubitOut = xOp.getQubitOut();
+  const auto& qubitOut = xOp.getQubitOut();
 
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
@@ -182,7 +182,7 @@ Value FluxProgramBuilder::x(Value qubit) {
 
 Value FluxProgramBuilder::rx(Value theta, Value qubit) {
   auto rxOp = builder.create<RXOp>(loc, qubit, theta);
-  const auto qubitOut = rxOp.getQubitOut();
+  const auto& qubitOut = rxOp.getQubitOut();
 
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
@@ -191,7 +191,7 @@ Value FluxProgramBuilder::rx(Value theta, Value qubit) {
 }
 Value FluxProgramBuilder::rx(double theta, Value qubit) {
   auto rxOp = builder.create<RXOp>(loc, qubit, theta);
-  const auto qubitOut = rxOp.getQubitOut();
+  const auto& qubitOut = rxOp.getQubitOut();
 
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
@@ -201,7 +201,7 @@ Value FluxProgramBuilder::rx(double theta, Value qubit) {
 
 Value FluxProgramBuilder::u2(double phi, double lambda, Value qubit) {
   auto u2Op = builder.create<U2Op>(loc, qubit, phi, lambda);
-  const auto qubitOut = u2Op.getQubitOut();
+  const auto& qubitOut = u2Op.getQubitOut();
 
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
@@ -210,7 +210,7 @@ Value FluxProgramBuilder::u2(double phi, double lambda, Value qubit) {
 }
 Value FluxProgramBuilder::u2(double phi, Value lambda, Value qubit) {
   auto u2Op = builder.create<U2Op>(loc, qubit, phi, lambda);
-  const auto qubitOut = u2Op.getQubitOut();
+  const auto& qubitOut = u2Op.getQubitOut();
 
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
@@ -219,7 +219,7 @@ Value FluxProgramBuilder::u2(double phi, Value lambda, Value qubit) {
 }
 Value FluxProgramBuilder::u2(Value phi, double lambda, Value qubit) {
   auto u2Op = builder.create<U2Op>(loc, qubit, phi, lambda);
-  const auto qubitOut = u2Op.getQubitOut();
+  const auto& qubitOut = u2Op.getQubitOut();
 
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
@@ -228,7 +228,7 @@ Value FluxProgramBuilder::u2(Value phi, double lambda, Value qubit) {
 }
 Value FluxProgramBuilder::u2(Value phi, Value lambda, Value qubit) {
   auto u2Op = builder.create<U2Op>(loc, qubit, phi, lambda);
-  const auto qubitOut = u2Op.getQubitOut();
+  const auto& qubitOut = u2Op.getQubitOut();
 
   // Update tracking
   updateQubitTracking(qubit, qubitOut);

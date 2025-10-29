@@ -243,17 +243,17 @@ public:
    *
    * @details
    * Consumes the input qubit and produces a new output qubit SSA value.
-   * The input is validated and tracking is updated.
+   * The input is validated and the tracking is updated.
    *
    * @param qubit Input qubit (must be valid/unconsumed)
-   * @return Output qubit value
+   * @return Output qubit
    *
    * @par Example:
    * ```c++
-   * q = builder.x(q);
+   * q_out = builder.x(q_in);
    * ```
    * ```mlir
-   * %q_out = flux.x %q : !flux.qubit -> !flux.qubit
+   * %q_out = flux.x %q_in : !flux.qubit -> !flux.qubit
    * ```
    */
   Value x(Value qubit);
@@ -263,18 +263,18 @@ public:
    *
    * @details
    * Consumes the input qubit and produces a new output qubit SSA value.
-   * The input is validated and tracking is updated.
+   * The input is validated and the tracking is updated.
    *
    * @param theta Rotation angle
    * @param qubit Input qubit (must be valid/unconsumed)
-   * @return Output qubit value
+   * @return Output qubit
    *
    * @par Example:
    * ```c++
-   * builder.rx(1.0, q);
+   * q_out = builder.rx(1.0, q_in);
    * ```
    * ```mlir
-   * flux.rx(1.0) %q : !flux.qubit -> !flux.qubit
+   * %q_out = flux.rx(1.0) %q_in : !flux.qubit -> !flux.qubit
    * ```
    */
   Value rx(double theta, Value qubit);
@@ -285,19 +285,19 @@ public:
    *
    * @details
    * Consumes the input qubit and produces a new output qubit SSA value.
-   * The input is validated and tracking is updated.
+   * The input is validated and the tracking is updated.
    *
    * @param phi Rotation angle
    * @param lambda Rotation angle
    * @param qubit Input qubit (must be valid/unconsumed)
-   * @return Output qubit value
+   * @return Output qubit
    *
    * @par Example:
    * ```c++
-   * builder.u2(1.0, 0.5, q);
+   * q_out = builder.u2(1.0, 0.5, q_in);
    * ```
    * ```mlir
-   * flux.u2(1.0, 0.5) %q : !flux.qubit -> !flux.qubit
+   * %q_out = flux.u2(1.0, 0.5) %q_in : !flux.qubit -> !flux.qubit
    * ```
    */
   Value u2(double phi, double lambda, Value qubit);
@@ -314,7 +314,7 @@ public:
    *
    * @param qubit0 Input qubit (must be valid/unconsumed)
    * @param qubit1 Input qubit (must be valid/unconsumed)
-   * @return Output qubit value
+   * @return Output qubits
    *
    * @par Example:
    * ```c++

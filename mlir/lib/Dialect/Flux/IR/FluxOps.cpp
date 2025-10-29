@@ -124,18 +124,13 @@ LogicalResult MeasureOp::verify() {
 // XOp
 
 Value XOp::getQubit(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("XOp has only one qubit");
+  if (i == 0) {
+    return getQubitIn();
   }
-  return getQubitIn();
+  llvm_unreachable("XOp has one input qubit");
 }
 
-Value XOp::getTarget(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("XOp has only one target qubit");
-  }
-  return getQubitIn();
-}
+Value XOp::getTarget(size_t i) { return getQubit(i); }
 
 Value XOp::getPosControl(size_t /*i*/) {
   llvm_unreachable("XOp does not have controls");
@@ -145,32 +140,27 @@ Value XOp::getNegControl(size_t /*i*/) {
   llvm_unreachable("XOp does not have controls");
 }
 
-Value XOp::getInput(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("XOp has only one input qubit");
-  }
-  return getQubitIn();
-}
+Value XOp::getInput(size_t i) { return getQubit(i); }
 
 Value XOp::getOutput(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("XOp has only one output qubit");
+  if (i == 0) {
+    return getQubitOut();
   }
-  return getQubitOut();
+  llvm_unreachable("XOp has one output qubit");
 }
 
 Value XOp::getInputForOutput(Value output) {
-  if (output != getQubitOut()) {
-    llvm_unreachable("Given output is not the XOp's output");
+  if (output == getQubitOut()) {
+    return getQubitIn();
   }
-  return getQubitIn();
+  llvm_unreachable("Given qubit is not an output of the XOp");
 }
 
 Value XOp::getOutputForInput(Value input) {
-  if (input != getQubitIn()) {
-    llvm_unreachable("Given input is not the XOp's input");
+  if (input == getQubitIn()) {
+    return getQubitOut();
   }
-  return getQubitOut();
+  llvm_unreachable("Given qubit is not an input of the XOp");
 }
 
 ParameterDescriptor XOp::getParameter(size_t /*i*/) {
@@ -186,18 +176,13 @@ DenseElementsAttr XOp::tryGetStaticMatrix() {
 // RXOp
 
 Value RXOp::getQubit(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("RXOp has only one qubit");
+  if (i == 0) {
+    return getQubitIn();
   }
-  return getQubitIn();
+  llvm_unreachable("RXOp has one input qubit");
 }
 
-Value RXOp::getTarget(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("RXOp has only one target qubit");
-  }
-  return getQubitIn();
-}
+Value RXOp::getTarget(size_t i) { return getQubit(i); }
 
 Value RXOp::getPosControl(size_t /*i*/) {
   llvm_unreachable("RXOp does not have controls");
@@ -207,39 +192,34 @@ Value RXOp::getNegControl(size_t /*i*/) {
   llvm_unreachable("RXOp does not have controls");
 }
 
-Value RXOp::getInput(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("RXOp has only one input qubit");
-  }
-  return getQubitIn();
-}
+Value RXOp::getInput(size_t i) { return getQubit(i); }
 
 Value RXOp::getOutput(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("RXOp has only one output qubit");
+  if (i == 0) {
+    return getQubitOut();
   }
-  return getQubitOut();
+  llvm_unreachable("RXOp has one output qubit");
 }
 
 Value RXOp::getInputForOutput(Value output) {
-  if (output != getQubitOut()) {
-    llvm_unreachable("Given output is not the RXOp's output");
+  if (output == getQubitOut()) {
+    return getQubitIn();
   }
-  return getQubitIn();
+  llvm_unreachable("Given qubit is not an output of the RXOp");
 }
 
 Value RXOp::getOutputForInput(Value input) {
-  if (input != getQubitIn()) {
-    llvm_unreachable("Given input is not the RXOp's input");
+  if (input == getQubitIn()) {
+    return getQubitOut();
   }
-  return getQubitOut();
+  llvm_unreachable("Given qubit is not an input of the RXOp");
 }
 
 ParameterDescriptor RXOp::getParameter(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("RXOp has only one parameter");
+  if (i == 0) {
+    return {getThetaAttrAttr(), getThetaOperand()};
   }
-  return {getThetaAttrAttr(), getThetaOperand()};
+  llvm_unreachable("RXOp has one parameter");
 }
 
 bool RXOp::hasStaticUnitary() { return getParameter(0).isStatic(); }
@@ -267,18 +247,13 @@ LogicalResult RXOp::verify() {
 // U2Op
 
 Value U2Op::getQubit(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("U2Op has only one qubit");
+  if (i == 0) {
+    return getQubitIn();
   }
-  return getQubitIn();
+  llvm_unreachable("U2Op has one input qubit");
 }
 
-Value U2Op::getTarget(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("U2Op has only one target qubit");
-  }
-  return getQubitIn();
-}
+Value U2Op::getTarget(size_t i) { return getQubit(i); }
 
 Value U2Op::getPosControl(size_t /*i*/) {
   llvm_unreachable("U2Op does not have controls");
@@ -288,32 +263,27 @@ Value U2Op::getNegControl(size_t /*i*/) {
   llvm_unreachable("U2Op does not have controls");
 }
 
-Value U2Op::getInput(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("U2Op has only one input qubit");
-  }
-  return getQubitIn();
-}
+Value U2Op::getInput(size_t i) { return getQubit(i); }
 
 Value U2Op::getOutput(size_t i) {
-  if (i != 0) {
-    llvm_unreachable("U2Op has only one output qubit");
+  if (i == 0) {
+    return getQubitOut();
   }
-  return getQubitOut();
+  llvm_unreachable("U2Op has one output qubit");
 }
 
 Value U2Op::getInputForOutput(Value output) {
-  if (output != getQubitOut()) {
-    llvm_unreachable("Given output is not the U2Op's output");
+  if (output == getQubitOut()) {
+    return getQubitIn();
   }
-  return getQubitIn();
+  llvm_unreachable("Given qubit is not an output of the U2Op");
 }
 
 Value U2Op::getOutputForInput(Value input) {
-  if (input != getQubitIn()) {
-    llvm_unreachable("Given input is not the U2Op's input");
+  if (input == getQubitIn()) {
+    return getQubitOut();
   }
-  return getQubitOut();
+  llvm_unreachable("Given qubit is not an input of the U2Op");
 }
 
 ParameterDescriptor U2Op::getParameter(size_t i) {
@@ -323,7 +293,7 @@ ParameterDescriptor U2Op::getParameter(size_t i) {
   if (i == 1) {
     return {getLambdaAttrAttr(), getLambdaOperand()};
   }
-  llvm_unreachable("U2Op has only two parameters");
+  llvm_unreachable("U2Op has two parameters");
 }
 
 bool U2Op::hasStaticUnitary() {
@@ -367,7 +337,7 @@ Value SWAPOp::getQubit(size_t i) {
   if (i == 1) {
     return getQubit1In();
   }
-  llvm_unreachable("SWAPOp only has two input qubits");
+  llvm_unreachable("SWAPOp has two input qubits");
 }
 
 Value SWAPOp::getTarget(size_t i) { return getQubit(i); }
@@ -389,7 +359,7 @@ Value SWAPOp::getOutput(size_t i) {
   if (i == 1) {
     return getQubit1Out();
   }
-  llvm_unreachable("SWAPOp only has two output qubits");
+  llvm_unreachable("SWAPOp has two output qubits");
 }
 
 Value SWAPOp::getInputForOutput(Value output) {

@@ -285,7 +285,7 @@ QIRProgramBuilder& QIRProgramBuilder::u2(Value phi, Value lambda,
   // Insert in body block (before branch)
   builder.setInsertionPoint(bodyBlock->getTerminator());
 
-  // Create r call
+  // Create u2 call
   const auto qirSignature = LLVM::LLVMFunctionType::get(
       LLVM::LLVMVoidType::get(builder.getContext()),
       {LLVM::LLVMPointerType::get(builder.getContext()),
@@ -332,7 +332,7 @@ QIRProgramBuilder& QIRProgramBuilder::swap(const Value qubit0,
   // Insert in body block (before branch)
   builder.setInsertionPoint(bodyBlock->getTerminator());
 
-  // Create x call
+  // Create swap call
   const auto qirSignature = LLVM::LLVMFunctionType::get(
       LLVM::LLVMVoidType::get(builder.getContext()),
       {LLVM::LLVMPointerType::get(builder.getContext()),

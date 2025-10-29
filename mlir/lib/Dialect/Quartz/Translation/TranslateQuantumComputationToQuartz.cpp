@@ -222,8 +222,7 @@ void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 // Temporary implementation of XOp translation
 void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
             const llvm::SmallVector<Value>& qubits) {
-  const auto& target = operation.getTargets()[0];
-  const Value qubit = qubits[target];
+  const auto& qubit = qubits[operation.getTargets()[0]];
   builder.x(qubit);
 }
 
@@ -231,8 +230,7 @@ void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 void addRXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
              const llvm::SmallVector<Value>& qubits) {
   const auto& theta = operation.getParameter()[0];
-  const auto& target = operation.getTargets()[0];
-  const Value qubit = qubits[target];
+  const auto& qubit = qubits[operation.getTargets()[0]];
   builder.rx(theta, qubit);
 }
 
@@ -240,9 +238,8 @@ void addRXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 void addU2Op(QuartzProgramBuilder& builder, const qc::Operation& operation,
              const llvm::SmallVector<Value>& qubits) {
   const auto& phi = operation.getParameter()[0];
-  const auto& lambda = operation.getTargets()[1];
-  const auto& target = operation.getTargets()[0];
-  const Value qubit = qubits[target];
+  const auto& lambda = operation.getParameter()[1];
+  const auto& qubit = qubits[operation.getTargets()[0]];
   builder.u2(phi, lambda, qubit);
 }
 
