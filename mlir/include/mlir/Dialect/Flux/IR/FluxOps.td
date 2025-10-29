@@ -247,11 +247,55 @@ class OneTargetTrait : NativeOpTrait<"OneTargetTrait"> {
 
 def OneTarget : OneTargetTrait {
     let extraConcreteClassDeclaration = [{
-        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
-        static size_t getNumTargets() { return 1; }
-        size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
-        static size_t getNumPosControls() { return 0; }
-        static size_t getNumNegControls() { return 0; }
+        size_t getNumQubits() { return 1; }
+        size_t getNumTargets() { return 1; }
+        size_t getNumControls() { return 0; }
+        size_t getNumPosControls() { return 0; }
+        size_t getNumNegControls() { return 0; }
+
+        Value getQubit(size_t i) {
+            if (i == 0) {
+                return getQubitIn();
+            }
+            llvm_unreachable("Operation has one input qubit");
+        }
+
+        Value getTarget(size_t i) {
+            return getQubit(i);
+        }
+
+        Value getPosControl(size_t i) {
+            llvm_unreachable("Operation does not have controls");
+        }
+
+        Value getNegControl(size_t i) {
+            llvm_unreachable("Operation does not have controls");
+        }
+
+        Value getInput(size_t i) {
+            return getQubit(i);
+        }
+
+        Value getOutput(size_t i) {
+            if (i == 0) {
+                return getQubitOut();
+            }
+            llvm_unreachable("Operation has one output qubit");
+        }
+
+        Value getInputForOutput(Value output) {
+            if (output == getQubitOut()) {
+                return getQubitIn();
+            }
+            llvm_unreachable("Given qubit is not an output of the operation");
+        }
+
+        Value getOutputForInput(Value input) {
+            if (input == getQubitIn()) {
+                return getQubitOut();
+            }
+            llvm_unreachable("Given qubit is not an input of the operation");
+        }
     }];
 }
 
@@ -261,11 +305,67 @@ class TwoTargetTrait : NativeOpTrait<"TwoTargetTrait"> {
 
 def TwoTarget : TwoTargetTrait {
     let extraConcreteClassDeclaration = [{
-        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
-        static size_t getNumTargets() { return 2; }
-        size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
-        static size_t getNumPosControls() { return 0; }
-        static size_t getNumNegControls() { return 0; }
+        size_t getNumQubits() { return 2; }
+        size_t getNumTargets() { return 2; }
+        size_t getNumControls() { return 0; }
+        size_t getNumPosControls() { return 0; }
+        size_t getNumNegControls() { return 0; }
+
+        Value getQubit(size_t i) {
+            if (i == 0) {
+                return getQubit0In();
+            }
+            if (i == 1) {
+                return getQubit1In();
+            }
+            llvm_unreachable("Operation has two input qubits");
+        }
+
+        Value getTarget(size_t i) {
+            return getQubit(i);
+        }
+
+        Value getPosControl(size_t i) {
+            llvm_unreachable("Operation does not have controls");
+        }
+
+        Value getNegControl(size_t i) {
+            llvm_unreachable("Operation does not have controls");
+        }
+
+        Value getInput(size_t i) {
+            return getQubit(i);
+        }
+
+        Value getOutput(size_t i) {
+            if (i == 0) {
+                return getQubit0Out();
+            }
+            if (i == 1) {
+                return getQubit1Out();
+            }
+            llvm_unreachable("Operation has two output qubits");
+        }
+
+        Value getInputForOutput(Value output) {
+            if (output == getQubit0Out()) {
+                return getQubit0In();
+            }
+            if (output == getQubit1Out()) {
+                return getQubit1In();
+            }
+            llvm_unreachable("Given qubit is not an output of the operation");
+        }
+
+        Value getOutputForInput(Value input) {
+            if (input == getQubit0In()) {
+                return getQubit0Out();
+            }
+            if (input == getQubit1In()) {
+                return getQubit1Out();
+            }
+            llvm_unreachable("Given qubit is not an input of the operation");
+        }
     }];
 }
 
@@ -279,14 +379,6 @@ def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface, OneTarget]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        Value getQubit(size_t i);
-        Value getTarget(size_t i);
-        static Value getPosControl(size_t i);
-        static Value getNegControl(size_t i);
-        Value getInput(size_t i);
-        Value getOutput(size_t i);
-        Value getInputForOutput(Value output);
-        Value getOutputForInput(Value input);
         static size_t getNumParams() { return 0; }
         static ParameterDescriptor getParameter(size_t i);
         static bool hasStaticUnitary() { return true; }
@@ -303,14 +395,6 @@ def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface, OneTarget]> {
     let assemblyFormat = "`(` ($theta_attr^)? ($theta_operand^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        Value getQubit(size_t i);
-        Value getTarget(size_t i);
-        static Value getPosControl(size_t i);
-        static Value getNegControl(size_t i);
-        Value getInput(size_t i);
-        Value getOutput(size_t i);
-        Value getInputForOutput(Value output);
-        Value getOutputForInput(Value input);
         static size_t getNumParams() { return 1; }
         ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
@@ -344,14 +428,6 @@ def U2Op : FluxOp<"u2", traits = [Flux_UnitaryOpInterface, OneTarget, AttrSizedO
     let assemblyFormat = "`(` ($phi_attr^)? ($phi_operand^)? `,` ($lambda_attr^)? ($lambda_operand^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        Value getQubit(size_t i);
-        Value getTarget(size_t i);
-        static Value getPosControl(size_t i);
-        static Value getNegControl(size_t i);
-        Value getInput(size_t i);
-        Value getOutput(size_t i);
-        Value getInputForOutput(Value output);
-        Value getOutputForInput(Value input);
         static size_t getNumParams() { return 2; }
         ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
@@ -404,14 +480,6 @@ def SWAPOp : FluxOp<"swap", traits = [Flux_UnitaryOpInterface, TwoTarget]> {
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        Value getQubit(size_t i);
-        Value getTarget(size_t i);
-        static Value getPosControl(size_t i);
-        static Value getNegControl(size_t i);
-        Value getInput(size_t i);
-        Value getOutput(size_t i);
-        Value getInputForOutput(Value output);
-        Value getOutputForInput(Value input);
         static size_t getNumParams() { return 0; }
         static ParameterDescriptor getParameter(size_t i);
         static bool hasStaticUnitary() { return true; }
