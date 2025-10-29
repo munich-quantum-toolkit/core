@@ -238,20 +238,47 @@ def ResetOp : FluxOp<"reset", [Idempotent, SameOperandsAndResultType]> {
 }
 
 //===----------------------------------------------------------------------===//
-// Unitary Operations
+// Traits
 //===----------------------------------------------------------------------===//
 
-def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface]> {
-    let arguments = (ins QubitType:$qubit_in);
-    let results = (outs QubitType:$qubit_out);
-    let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+class OneTargetTrait : NativeOpTrait<"OneTargetTrait"> {
+    let cppNamespace = "::mlir::flux";
+}
 
-    let extraClassDeclaration = [{
+def OneTarget : OneTargetTrait {
+    let extraConcreteClassDeclaration = [{
         size_t getNumQubits() { return getNumTargets() + getNumControls(); }
         static size_t getNumTargets() { return 1; }
         size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
         static size_t getNumPosControls() { return 0; }
         static size_t getNumNegControls() { return 0; }
+    }];
+}
+
+class TwoTargetTrait : NativeOpTrait<"TwoTargetTrait"> {
+    let cppNamespace = "::mlir::flux";
+}
+
+def TwoTarget : TwoTargetTrait {
+    let extraConcreteClassDeclaration = [{
+        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
+        static size_t getNumTargets() { return 2; }
+        size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
+        static size_t getNumPosControls() { return 0; }
+        static size_t getNumNegControls() { return 0; }
+    }];
+}
+
+//===----------------------------------------------------------------------===//
+// Unitary Operations
+//===----------------------------------------------------------------------===//
+
+def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface, OneTarget]> {
+    let arguments = (ins QubitType:$qubit_in);
+    let results = (outs QubitType:$qubit_out);
+    let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+
+    let extraClassDeclaration = [{
         Value getQubit(size_t i);
         Value getTarget(size_t i);
         static Value getPosControl(size_t i);
@@ -268,7 +295,7 @@ def XOp : FluxOp<"x", traits = [Flux_UnitaryOpInterface]> {
     }];
 }
 
-def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface]> {
+def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface, OneTarget]> {
     let arguments = (ins QubitType:$qubit_in,
                      OptionalAttr<F64Attr>:$theta_attr,
                      Optional<F64>:$theta_operand);
@@ -276,11 +303,6 @@ def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface]> {
     let assemblyFormat = "`(` ($theta_attr^)? ($theta_operand^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
-        static size_t getNumTargets() { return 1; }
-        size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
-        static size_t getNumPosControls() { return 0; }
-        static size_t getNumNegControls() { return 0; }
         Value getQubit(size_t i);
         Value getTarget(size_t i);
         static Value getPosControl(size_t i);
@@ -312,7 +334,7 @@ def RXOp : FluxOp<"rx", traits = [Flux_UnitaryOpInterface]> {
     let hasVerifier = 1;
 }
 
-def U2Op : FluxOp<"u2", traits = [Flux_UnitaryOpInterface, AttrSizedOperandSegments]> {
+def U2Op : FluxOp<"u2", traits = [Flux_UnitaryOpInterface, OneTarget, AttrSizedOperandSegments]> {
     let arguments = (ins QubitType:$qubit_in,
                      OptionalAttr<F64Attr>:$phi_attr,
                      Optional<F64>:$phi_operand,
@@ -322,11 +344,6 @@ def U2Op : FluxOp<"u2", traits = [Flux_UnitaryOpInterface, AttrSizedOperandSegme
     let assemblyFormat = "`(` ($phi_attr^)? ($phi_operand^)? `,` ($lambda_attr^)? ($lambda_operand^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
-        static size_t getNumTargets() { return 1; }
-        size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
-        static size_t getNumPosControls() { return 0; }
-        static size_t getNumNegControls() { return 0; }
         Value getQubit(size_t i);
         Value getTarget(size_t i);
         static Value getPosControl(size_t i);
@@ -381,17 +398,12 @@ def U2Op : FluxOp<"u2", traits = [Flux_UnitaryOpInterface, AttrSizedOperandSegme
     let hasVerifier = 1;
 }
 
-def SWAPOp : FluxOp<"swap", traits = [Flux_UnitaryOpInterface]> {
+def SWAPOp : FluxOp<"swap", traits = [Flux_UnitaryOpInterface, TwoTarget]> {
     let arguments = (ins QubitType:$qubit0_in, QubitType:$qubit1_in);
     let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
-        static size_t getNumTargets() { return 2; }
-        size_t getNumControls() { return getNumPosControls() + getNumNegControls(); }
-        static size_t getNumPosControls() { return 0; }
-        static size_t getNumNegControls() { return 0; }
         Value getQubit(size_t i);
         Value getTarget(size_t i);
         static Value getPosControl(size_t i);
