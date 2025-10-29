@@ -62,8 +62,8 @@ struct SequentialOpScheduler final : SchedulerBase {
 };
 
 /**
- * @brief A crawl scheduler "crawls" the DAG for all gates that can be executed
- * in parallel, i.e., they act on different qubits.
+ * @brief A parallel scheduler collects 1 + nlookahead layers of parallelly
+ * executable gates.
  */
 struct ParallelOpScheduler final : SchedulerBase {
   explicit ParallelOpScheduler(const std::size_t nlookahead)
@@ -88,13 +88,13 @@ struct ParallelOpScheduler final : SchedulerBase {
     llvm::SmallDenseSet<Operation*, 32> openTwoQubit;
 
     /// Vector of two-qubit gates seen twice.
-    SmallVector<Operation*, 32> readyTwoQubit;
+    SmallVector<UnitaryInterface, 32> readyTwoQubit;
+
+    Region* region = op->getParentRegion();
 
     while (!wl.empty() && layers.size() < nlayers_) {
       for (const Value q : wl) {
-        const auto opt =
-            advanceDefUseUntilTwoQubitGate(q, op->getParentRegion(), layout);
-
+        const auto opt = advanceToTwoQubitGate(q, region, layout);
         if (!opt) {
           continue;
         }
@@ -105,8 +105,6 @@ struct ParallelOpScheduler final : SchedulerBase {
           layout.remapQubitValue(q, qNext);
         }
 
-        /// If we've seen a two-qubit gate twice, we move it from "open" to
-        /// "ready".
         if (!openTwoQubit.insert(gate).second) {
           readyTwoQubit.push_back(gate);
           openTwoQubit.erase(gate);
@@ -123,15 +121,16 @@ struct ParallelOpScheduler final : SchedulerBase {
       layers.back().reserve(readyTwoQubit.size());
 
       for (const auto& op : readyTwoQubit) {
-        const UnitaryInterface u = dyn_cast<UnitaryInterface>(op);
-        const auto [in0, in1] = getIns(u);
-        const auto [out0, out1] = getOuts(u);
+        const auto [in0, in1] = getIns(op);
+
+        layers.back().emplace_back(layout.lookupProgramIndex(in0),
+                                   layout.lookupProgramIndex(in1));
+
+        const auto [out0, out1] =
+            advanceTwoQubitBlock(getOuts(op), layout, region);
 
         layout.remapQubitValue(in0, out0);
         layout.remapQubitValue(in1, out1);
-
-        layers.back().emplace_back(layout.lookupProgramIndex(out0),
-                                   layout.lookupProgramIndex(out1));
 
         if (!out0.use_empty()) {
           nextWl.push_back(out0);
@@ -162,11 +161,15 @@ struct ParallelOpScheduler final : SchedulerBase {
   }
 
 private:
-  static std::optional<std::pair<Value, Operation*>>
-  advanceDefUseUntilTwoQubitGate(const Value q, const Region* region,
-                                 const Layout& layout) {
+  using ValuePair = std::pair<Value, Value>;
+
+  /**
+   * @returns Next two-qubit gate on qubit wire, or std::nullopt if none exists.
+   */
+  static std::optional<std::pair<Value, UnitaryInterface>>
+  advanceToTwoQubitGate(const Value q, Region* region, const Layout& layout) {
     Value head = q;
-    Operation* twoQubitOp = nullptr;
+    UnitaryInterface twoQubitOp = nullptr;
     while (true) {
       if (head.use_empty()) { // No two-qubit gate found.
         return std::nullopt;
@@ -216,7 +219,7 @@ private:
             head = op->getResult(layout.lookupHardwareIndex(q));
           })
           .Case<scf::YieldOp>([&](scf::YieldOp) { endOfRegion = true; })
-          .Default([&](Operation* op) {
+          .Default([&]([[maybe_unused]] Operation* op) {
             LLVM_DEBUG({
               llvm::dbgs() << "unknown operation in def-use chain: ";
               op->dump();
@@ -232,13 +235,36 @@ private:
     return std::nullopt;
   }
 
-  static Operation* getUserInRegion(const Value v, const Region* region) {
-    for (Operation* user : v.getUsers()) {
-      if (user->getParentRegion() == region) {
-        return user;
+  static ValuePair advanceTwoQubitBlock(const ValuePair outs, Layout& layout,
+                                        Region* region) {
+    std::array<Value, 2> heads{outs.first, outs.second};
+    std::array<UnitaryInterface, 2> gates{};
+
+    while (true) {
+      /// Advance both input qubits to a two-qubit gate.
+      /// Exit: If none is found.
+      ///       If the two-qubit gates are not the same.
+      /// Otherwise, advance two-qubit gate and repeat process.
+      bool exit = false;
+      for (const auto [i, q] : llvm::enumerate(heads)) {
+        const auto opt = advanceToTwoQubitGate(q, region, layout);
+        if (!opt) {
+          exit = true;
+          break;
+        }
+        heads[i] = opt->first;
+        gates[i] = opt->second;
       }
+
+      if (exit || gates[0] != gates[1]) {
+        break;
+      }
+
+      const auto [out0, out1] = getOuts(gates[0]);
+      heads = {out0, out1};
     }
-    return nullptr;
+
+    return heads;
   }
 
   std::size_t nlayers_;
