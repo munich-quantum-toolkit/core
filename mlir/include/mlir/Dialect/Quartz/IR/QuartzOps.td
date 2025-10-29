@@ -242,7 +242,7 @@ def OneTarget : TargetArityTrait {
 
         Value getQubit(size_t i) {
             if (i == 0) {
-                return getQubitIn();
+                return getQubit();
             }
             llvm_unreachable("Operation has one input qubit");
         }
@@ -271,10 +271,10 @@ def TwoTarget : TargetArityTrait {
 
         Value getQubit(size_t i) {
             if (i == 0) {
-                return getQubit0In();
+                return getQubit0();
             }
             if (i == 1) {
-                return getQubit1In();
+                return getQubit1();
             }
             llvm_unreachable("Operation has two input qubits");
         }
@@ -326,8 +326,8 @@ def TwoParameter : ParameterArityTrait {
 //===----------------------------------------------------------------------===//
 
 def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]> {
-    let arguments = (ins QubitType:$qubit_in);
-    let assemblyFormat = "$qubit_in attr-dict";
+    let arguments = (ins QubitType:$qubit);
+    let assemblyFormat = "$qubit attr-dict";
 
     let extraClassDeclaration = [{
         DenseElementsAttr tryGetStaticMatrix();
@@ -336,10 +336,10 @@ def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]>
 }
 
 def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> {
-    let arguments = (ins QubitType:$qubit_in,
+    let arguments = (ins QubitType:$qubit,
                      OptionalAttr<F64Attr>:$theta_attr,
                      Optional<F64>:$theta_operand);
-    let assemblyFormat = "`(` ($theta_attr^)? ($theta_operand^)? `)` $qubit_in attr-dict";
+    let assemblyFormat = "`(` ($theta_attr^)? ($theta_operand^)? `)` $qubit attr-dict";
 
     let extraClassDeclaration = [{
         ParameterDescriptor getParameter(size_t i);
@@ -349,15 +349,15 @@ def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]
     }];
 
     let builders = [
-        OpBuilder<(ins "Value":$qubit_in, "double":$theta_double), [{
+        OpBuilder<(ins "Value":$qubit, "double":$theta_double), [{
             auto theta_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), theta_double);
-            build($_builder, $_state, qubit_in, theta_attr, nullptr);
+            build($_builder, $_state, qubit, theta_attr, nullptr);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "FloatAttr":$theta_attr), [{
-            build($_builder, $_state, qubit_in, theta_attr, nullptr);
+        OpBuilder<(ins "Value":$qubit, "FloatAttr":$theta_attr), [{
+            build($_builder, $_state, qubit, theta_attr, nullptr);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "Value":$theta_operand), [{
-            build($_builder, $_state, qubit_in, nullptr, theta_operand);
+        OpBuilder<(ins "Value":$qubit, "Value":$theta_operand), [{
+            build($_builder, $_state, qubit, nullptr, theta_operand);
         }]>,
     ];
 
@@ -365,12 +365,12 @@ def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]
 }
 
 def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter, AttrSizedOperandSegments]> {
-    let arguments = (ins QubitType:$qubit_in,
+    let arguments = (ins QubitType:$qubit,
                      OptionalAttr<F64Attr>:$phi_attr,
                      Optional<F64>:$phi_operand,
                      OptionalAttr<F64Attr>:$lambda_attr,
                      Optional<F64>:$lambda_operand);
-    let assemblyFormat = "`(` ($phi_attr^)? ($phi_operand^)? `,` ($lambda_attr^)? ($lambda_operand^)? `)` $qubit_in attr-dict";
+    let assemblyFormat = "`(` ($phi_attr^)? ($phi_operand^)? `,` ($lambda_attr^)? ($lambda_operand^)? `)` $qubit attr-dict";
 
     let extraClassDeclaration = [{
         ParameterDescriptor getParameter(size_t i);
@@ -380,38 +380,38 @@ def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter,
     }];
 
     let builders = [
-        OpBuilder<(ins "Value":$qubit_in, "double":$phi_double, "double":$lambda_double), [{
+        OpBuilder<(ins "Value":$qubit, "double":$phi_double, "double":$lambda_double), [{
             auto phi_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), phi_double);
             auto lambda_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), lambda_double);
-            build($_builder, $_state, qubit_in, phi_attr, nullptr, lambda_attr, nullptr);
+            build($_builder, $_state, qubit, phi_attr, nullptr, lambda_attr, nullptr);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "double":$phi_double, "FloatAttr":$lambda_attr), [{
+        OpBuilder<(ins "Value":$qubit, "double":$phi_double, "FloatAttr":$lambda_attr), [{
             auto phi_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), phi_double);
-            build($_builder, $_state, qubit_in, phi_attr, nullptr, lambda_attr, nullptr);
+            build($_builder, $_state, qubit, phi_attr, nullptr, lambda_attr, nullptr);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "double":$phi_double, "Value":$lambda_operand), [{
+        OpBuilder<(ins "Value":$qubit, "double":$phi_double, "Value":$lambda_operand), [{
             auto phi_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), phi_double);
-            build($_builder, $_state, qubit_in, phi_attr, nullptr, nullptr, lambda_operand);
+            build($_builder, $_state, qubit, phi_attr, nullptr, nullptr, lambda_operand);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "FloatAttr":$phi_attr, "double":$lambda_double), [{
+        OpBuilder<(ins "Value":$qubit, "FloatAttr":$phi_attr, "double":$lambda_double), [{
             auto lambda_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), lambda_double);
-            build($_builder, $_state, qubit_in, phi_attr, nullptr, lambda_attr, nullptr);
+            build($_builder, $_state, qubit, phi_attr, nullptr, lambda_attr, nullptr);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "FloatAttr":$phi_attr, "FloatAttr":$lambda_attr), [{
-            build($_builder, $_state, qubit_in, phi_attr, nullptr, lambda_attr, nullptr);
+        OpBuilder<(ins "Value":$qubit, "FloatAttr":$phi_attr, "FloatAttr":$lambda_attr), [{
+            build($_builder, $_state, qubit, phi_attr, nullptr, lambda_attr, nullptr);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "FloatAttr":$phi_attr, "Value":$lambda_operand), [{
-            build($_builder, $_state, qubit_in, phi_attr, nullptr, nullptr, lambda_operand);
+        OpBuilder<(ins "Value":$qubit, "FloatAttr":$phi_attr, "Value":$lambda_operand), [{
+            build($_builder, $_state, qubit, phi_attr, nullptr, nullptr, lambda_operand);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "Value":$phi_operand, "double":$lambda_double), [{
+        OpBuilder<(ins "Value":$qubit, "Value":$phi_operand, "double":$lambda_double), [{
             auto lambda_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), lambda_double);
-            build($_builder, $_state, qubit_in, nullptr, phi_operand, lambda_attr, nullptr);
+            build($_builder, $_state, qubit, nullptr, phi_operand, lambda_attr, nullptr);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "Value":$phi_operand, "FloatAttr":$lambda_attr), [{
-            build($_builder, $_state, qubit_in, nullptr, phi_operand, lambda_attr, nullptr);
+        OpBuilder<(ins "Value":$qubit, "Value":$phi_operand, "FloatAttr":$lambda_attr), [{
+            build($_builder, $_state, qubit, nullptr, phi_operand, lambda_attr, nullptr);
         }]>,
-        OpBuilder<(ins "Value":$qubit_in, "Value":$phi_operand, "Value":$lambda_operand), [{
-            build($_builder, $_state, qubit_in, nullptr, phi_operand, nullptr, lambda_operand);
+        OpBuilder<(ins "Value":$qubit, "Value":$phi_operand, "Value":$lambda_operand), [{
+            build($_builder, $_state, qubit, nullptr, phi_operand, nullptr, lambda_operand);
         }]>,
     ];
 
@@ -419,8 +419,8 @@ def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter,
 }
 
 def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParameter]> {
-    let arguments = (ins QubitType:$qubit0_in, QubitType:$qubit1_in);
-    let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict";
+    let arguments = (ins QubitType:$qubit0, QubitType:$qubit1);
+    let assemblyFormat = "$qubit0 `,` $qubit1 attr-dict";
 
     let extraClassDeclaration = [{
         DenseElementsAttr tryGetStaticMatrix();

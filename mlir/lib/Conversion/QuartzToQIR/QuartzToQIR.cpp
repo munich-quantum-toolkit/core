@@ -447,7 +447,7 @@ struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
 
     // Replace with call to RX
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(
-        op, fnDecl, ValueRange{adaptor.getQubitIn(), thetaOperand});
+        op, fnDecl, ValueRange{adaptor.getQubit(), thetaOperand});
     return success();
   }
 };
@@ -494,8 +494,7 @@ struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
 
     // Replace with call to U2
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(
-        op, fnDecl,
-        ValueRange{adaptor.getQubitIn(), phiOperand, lambdaOperand});
+        op, fnDecl, ValueRange{adaptor.getQubit(), phiOperand, lambdaOperand});
     return success();
   }
 };

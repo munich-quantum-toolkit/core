@@ -385,7 +385,7 @@ struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
   LogicalResult
   matchAndRewrite(quartz::RXOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto& quartzQubit = op.getQubitIn();
+    const auto& quartzQubit = op.getQubit();
 
     // Get the latest Flux qubit value from the state map
     const auto fluxQubit = getState().qubitMap[quartzQubit];
@@ -415,7 +415,7 @@ struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
   LogicalResult
   matchAndRewrite(quartz::U2Op op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto& quartzQubit = op.getQubitIn();
+    const auto& quartzQubit = op.getQubit();
 
     // Get the latest Flux qubit value from the state map
     const auto fluxQubit = getState().qubitMap[quartzQubit];
