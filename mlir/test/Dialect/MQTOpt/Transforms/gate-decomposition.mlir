@@ -96,10 +96,12 @@ module {
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
-    // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]]
+    // CHECK: mqtopt.gphase(%[[C0:.*]])
+    // CHECK: %[[Q0_1:.*]] = mqtopt.ry(%[[C1:.*]]) %[[Q0_0]]
+    // CHECK: %[[Q0_2:.*]] = mqtopt.rz(%[[C1]]) %[[Q0_1]]
 
-    // CHECK: mqtopt.deallocQubit %[[Q0_1]]
-    // CHECK: mqtopt.deallocQubit %[[Q1_1]]
+    // CHECK: mqtopt.deallocQubit %[[Q0_2]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_0]]
 
     %q0_0 = mqtopt.allocQubit
     %q1_0 = mqtopt.allocQubit
