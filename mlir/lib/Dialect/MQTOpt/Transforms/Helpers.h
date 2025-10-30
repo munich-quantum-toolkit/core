@@ -40,42 +40,48 @@ constexpr qfp M_IM{0., -1.};
 namespace mqt::ir::opt::helpers {
 
 // TODO: remove
-template <std::size_t N> void print(std::array<std::complex<fp>, N> matrix, std::string s = "") {
+template <std::size_t N> void print(std::array<std::complex<fp>, N> matrix, std::string s = "", bool force = false) {
+  if (!force) return;
   int i{};
+  int n = std::sqrt(N);
   if (!s.empty()) {
     llvm::errs() << "=== " << s << " ===\n";
   }
   for (auto&& a : matrix) {
     std::cerr << std::setprecision(17) << a.real() << 'i' << a.imag() << ' ';
-    if (++i % 4 == 0) {
+    if (++i % n == 0) {
       llvm::errs() << '\n';
     }
   }
   llvm::errs() << '\n';
 }
 
-template <std::size_t N> void print(std::array<fp, N> matrix, std::string s = "") {
+template <std::size_t N> void print(std::array<fp, N> matrix, std::string s = "", bool force = false) {
+  if (!force) return;
   int i{};
+  int n = std::sqrt(N);
   if (!s.empty()) {
     llvm::errs() << "=== " << s << " ===\n";
   }
   for (auto&& a : matrix) {
     std::cerr << std::setprecision(17) << a << ' ';
-    if (++i % 4 == 0) {
+    if (++i % n == 0) {
       llvm::errs() << '\n';
     }
   }
   llvm::errs() << '\n';
 }
 
-template <std::size_t N> void print(std::array<std::size_t, N> matrix, std::string s = "") {
+template <std::size_t N> void print(std::array<std::size_t, N> matrix, std::string s = "", bool force = false) {
+  if (!force) return;
   int i{};
+  int n = std::sqrt(N);
   if (!s.empty()) {
     llvm::errs() << "=== " << s << " ===\n";
   }
   for (auto&& a : matrix) {
     std::cerr << a << ' ';
-    if (++i % 4 == 0) {
+    if (++i % n == 0) {
       llvm::errs() << '\n';
     }
   }
@@ -83,7 +89,7 @@ template <std::size_t N> void print(std::array<std::size_t, N> matrix, std::stri
 }
 
 inline auto flatten(const dd::TwoQubitGateMatrix& matrix) {
-  std::array<std::complex<fp>, 16> result;
+  std::array<qfp, 16> result;
   for (std::size_t i = 0; i < result.size(); ++i) {
     result[i] = matrix[i / 4][i % 4];
   }
@@ -172,8 +178,8 @@ inline std::optional<fp> mlirValueToFp(mlir::Value value) {
   return std::nullopt;
 }
 
-[[nodiscard]] inline std::vector<fp> getParameters(UnitaryInterface op) {
-  std::vector<fp> parameters;
+[[nodiscard]] inline llvm::SmallVector<fp, 3> getParameters(UnitaryInterface op) {
+  llvm::SmallVector<fp, 3> parameters;
   for (auto&& param : op.getParams()) {
     if (auto value = helpers::mlirValueToFp(param)) {
       parameters.push_back(*value);
