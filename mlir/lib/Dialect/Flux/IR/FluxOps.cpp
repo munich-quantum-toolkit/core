@@ -153,8 +153,9 @@ DenseElementsAttr RXOp::tryGetStaticMatrix() {
 }
 
 LogicalResult RXOp::verify() {
-  if (!(getTheta().has_value() ^ getThetaDyn() != nullptr))
+  if (!(getTheta().has_value() ^ bool(getThetaDyn()))) {
     return emitOpError("must specify exactly one of static or dynamic theta");
+  }
   return success();
 }
 
@@ -191,10 +192,12 @@ DenseElementsAttr U2Op::tryGetStaticMatrix() {
 }
 
 LogicalResult U2Op::verify() {
-  if (!(getPhi().has_value() ^ getPhiDyn() != nullptr))
+  if (!(getPhi().has_value() ^ bool(getPhiDyn()))) {
     return emitOpError("must specify exactly one of static or dynamic phi");
-  if (!(getLambda().has_value() ^ getLambdaDyn() != nullptr))
+  }
+  if (!(getLambda().has_value() ^ bool(getLambdaDyn()))) {
     return emitOpError("must specify exactly one of static or dynamic lambda");
+  }
   return success();
 }
 
