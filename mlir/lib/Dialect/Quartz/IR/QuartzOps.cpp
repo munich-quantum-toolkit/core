@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h" // IWYU pragma: associated
+#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -17,7 +18,6 @@
 #include <mlir/IR/DialectImplementation.h>
 // IWYU pragma: end_keep
 
-#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <llvm/ADT/ArrayRef.h>
@@ -123,8 +123,9 @@ LogicalResult MeasureOp::verify() {
 
 DenseElementsAttr XOp::tryGetStaticMatrix() {
   auto* ctx = getContext();
-  auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
-  return DenseElementsAttr::get(type, llvm::ArrayRef({0.0, 1.0, 1.0, 0.0}));
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({2, 2}, complexType);
+  return DenseElementsAttr::get(type, mlir::utils::getMatrixX());
 }
 
 // RXOp
@@ -143,11 +144,10 @@ DenseElementsAttr RXOp::tryGetStaticMatrix() {
     return nullptr;
   }
   auto* ctx = getContext();
-  auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({2, 2}, complexType);
   const auto& theta = getTheta().value().convertToDouble();
-  const std::complex<double> m0(std::cos(theta / 2), 0);
-  const std::complex<double> m1(0, -std::sin(theta / 2));
-  return DenseElementsAttr::get(type, llvm::ArrayRef({m0, m1, m1, m0}));
+  return DenseElementsAttr::get(type, mlir::utils::getMatrixRX(theta));
 }
 
 LogicalResult RXOp::verify() {
@@ -178,15 +178,11 @@ DenseElementsAttr U2Op::tryGetStaticMatrix() {
     return nullptr;
   }
   auto* ctx = getContext();
-  auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({2, 2}, complexType);
   const auto& phi = getPhi().value().convertToDouble();
   const auto& lambda = getLambda().value().convertToDouble();
-  const std::complex<double> i(0.0, 1.0);
-  const std::complex<double> m00(1.0, 0.0);
-  const std::complex<double> m01 = -std::exp(i * lambda);
-  const std::complex<double> m10 = -std::exp(i * phi);
-  const std::complex<double> m11 = std::exp(i * (phi + lambda));
-  return DenseElementsAttr::get(type, llvm::ArrayRef({m00, m01, m10, m11}));
+  return DenseElementsAttr::get(type, mlir::utils::getMatrixU2(phi, lambda));
 }
 
 LogicalResult U2Op::verify() {
@@ -203,8 +199,7 @@ LogicalResult U2Op::verify() {
 
 DenseElementsAttr SWAPOp::tryGetStaticMatrix() {
   auto* ctx = getContext();
-  const auto& type = RankedTensorType::get({4, 4}, Float64Type::get(ctx));
-  return DenseElementsAttr::get(
-      type, llvm::ArrayRef({1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0,
-                            0.0, 0.0, 0.0, 0.0, 0.0, 1.0}));
+  const auto& type =
+      RankedTensorType::get({4, 4}, ComplexType::get(Float64Type::get(ctx)));
+  return DenseElementsAttr::get(type, mlir::utils::getMatrixSWAP());
 }
