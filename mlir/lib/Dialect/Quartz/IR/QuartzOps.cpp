@@ -20,6 +20,7 @@
 // IWYU pragma: end_keep
 
 #include <cstddef>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Types.h>

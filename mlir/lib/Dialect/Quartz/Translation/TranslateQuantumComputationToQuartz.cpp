@@ -12,6 +12,7 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "ir/Register.hpp"
+#include "ir/operations/Control.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
@@ -223,7 +224,7 @@ void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
             const llvm::SmallVector<Value>& qubits) {
   const auto& target = qubits[operation.getTargets()[0]];
-  if (operation.getControls().size() == 0) {
+  if (operation.getControls().empty()) {
     builder.x(target);
   } else {
     llvm::SmallVector<Value> controls;

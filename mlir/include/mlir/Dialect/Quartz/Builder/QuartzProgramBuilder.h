@@ -301,8 +301,9 @@ public:
   // Modifiers
   //===--------------------------------------------------------------------===//
 
-  QuartzProgramBuilder& ctrl(ValueRange controls,
-                             std::function<void(QuartzProgramBuilder&)> body);
+  QuartzProgramBuilder&
+  ctrl(ValueRange controls,
+       const std::function<void(QuartzProgramBuilder&)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

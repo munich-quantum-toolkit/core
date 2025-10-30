@@ -13,6 +13,7 @@
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 
 #include <cstdint>
+#include <functional>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
@@ -24,6 +25,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <variant>
 
 namespace mlir::quartz {
@@ -173,9 +175,9 @@ QuartzProgramBuilder& QuartzProgramBuilder::swap(Value qubit0, Value qubit1) {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-QuartzProgramBuilder&
-QuartzProgramBuilder::ctrl(ValueRange controls,
-                           std::function<void(QuartzProgramBuilder&)> body) {
+QuartzProgramBuilder& QuartzProgramBuilder::ctrl(
+    ValueRange controls,
+    const std::function<void(QuartzProgramBuilder&)>& body) {
   auto ctrlOp = builder.create<CtrlOp>(loc, controls);
 
   const mlir::OpBuilder::InsertionGuard guard(builder);
