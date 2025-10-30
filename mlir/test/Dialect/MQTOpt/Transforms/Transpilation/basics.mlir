@@ -8,10 +8,12 @@
 
 // Instead of applying checks, the routing verifier pass ensures the validity of this program.
 
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=random}, route-sc{method=naive},verify-routing-sc)" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity}, route-sc{method=naive},verify-routing-sc)" -verify-diagnostics | FileCheck --check-prefix=NAIVE %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity}, route-sc{method=astar},verify-routing-sc)" -verify-diagnostics | FileCheck --check-prefix=ASTAR %s
 
 module {
-    // CHECK-LABEL: func.func @entrySABRE
+    // NAIVE-LABEL: func.func @entrySABRE
+    // ASTAR-LABEL: func.func @entrySABRE
     func.func @entrySABRE() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -71,7 +73,8 @@ module {
         return
     }
 
-    // CHECK-LABEL: func.func @entryBell
+    // NAIVE-LABEL: func.func @entryBell
+    // ASTAR-LABEL: func.func @entryBell
     func.func @entryBell() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -94,13 +97,16 @@ module {
         %q0_3, %m0_0 = "mqtopt.measure"(%q0_2) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
         %q1_2, %m1_0 = "mqtopt.measure"(%q1_1) : (!mqtopt.Qubit) -> (!mqtopt.Qubit, i1)
 
-        mqtopt.deallocQubit %q0_3
-        mqtopt.deallocQubit %q1_2
+        %q0_4, %q1_3 = mqtopt.barrier() %q0_3, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
+
+        mqtopt.deallocQubit %q0_4
+        mqtopt.deallocQubit %q1_3
 
         return
     }
 
-    // CHECK-LABEL: func.func @entryBellLoop
+    // NAIVE-LABEL: func.func @entryBellLoop
+    // ASTAR-LABEL: func.func @entryBellLoop
     func.func @entryBellLoop() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -136,7 +142,8 @@ module {
         return
     }
 
-    // CHECK-LABEL: func.func @entryGHZ
+    // NAIVE-LABEL: func.func @entryGHZ
+    // ASTAR-LABEL: func.func @entryGHZ
     func.func @entryGHZ() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -185,6 +192,8 @@ module {
         return
     }
 
+    // NAIVE-LABEL: func.func @entryBranching
+    // ASTAR-LABEL: func.func @entryBranching
     func.func @entryBranching() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -223,7 +232,8 @@ module {
         return
     }
 
-    // CHECK-LABEL: func.func @entryAll
+    // NAIVE-LABEL: func.func @entryAll
+    // ASTAR-LABEL: func.func @entryAll
     func.func @entryAll() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -343,12 +353,12 @@ module {
 
         %q0_3_branch, %q1_2_branch = scf.if %m -> (!mqtopt.Qubit, !mqtopt.Qubit) {
             %q1_1_branch = mqtopt.x() %q1_0_branch : !mqtopt.Qubit
-            %q1_2_branch, %q0_3_branch = mqtopt.x() %q1_1_branch ctrl %q0_2_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            %q1_2_branch, %q0_3_branch = mqtopt.x() %q1_1_branch nctrl %q0_2_branch : !mqtopt.Qubit nctrl !mqtopt.Qubit
 
             scf.yield %q0_3_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
         } else {
-            %q1_1_branch = mqtopt.i() %q1_0_branch: !mqtopt.Qubit
-            %q1_2_branch, %q0_3_branch = mqtopt.x() %q1_1_branch ctrl %q0_2_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            %q1_1_branch = mqtopt.i() %q1_0_branch : !mqtopt.Qubit
+            %q0_3_branch, %q1_2_branch = mqtopt.swap() %q1_1_branch, %q0_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
 
             scf.yield %q0_3_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
         }
@@ -359,7 +369,8 @@ module {
         return
     }
 
-    // CHECK-LABEL: func.func @noEntryPoint
+    // NAIVE-LABEL: func.func @noEntryPoint
+    // ASTAR-LABEL: func.func @noEntryPoint
     func.func @noEntryPoint() {
         // CHECK: %[[ANY:.*]] = mqtopt.allocQubit
         %q0 = mqtopt.allocQubit
