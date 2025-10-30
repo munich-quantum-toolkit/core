@@ -229,7 +229,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Apply the X gate to a qubit
+   * @brief Apply an X gate to a qubit
    *
    * @param qubit Input qubit
    * @return Reference to this builder for method chaining
@@ -245,7 +245,7 @@ public:
   QuartzProgramBuilder& x(Value qubit);
 
   /**
-   * @brief Apply the RX gate to a qubit
+   * @brief Apply an RX gate to a qubit
    *
    * @param theta Rotation angle
    * @param qubit Input qubit
@@ -262,7 +262,7 @@ public:
   QuartzProgramBuilder& rx(std::variant<double, Value> theta, Value qubit);
 
   /**
-   * @brief Apply the U2 gate to a qubit
+   * @brief Apply a U2 gate to a qubit
    *
    * @param phi Rotation angle
    * @param lambda Rotation angle
@@ -281,7 +281,7 @@ public:
                            std::variant<double, Value> lambda, Value qubit);
 
   /**
-   * @brief Apply the SWAP gate to two qubits
+   * @brief Apply a SWAP gate to two qubits
    *
    * @param qubit0 Input qubit
    * @param qubit1 Input qubit

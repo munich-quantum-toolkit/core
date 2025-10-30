@@ -241,7 +241,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Apply the X gate to a qubit
+   * @brief Apply an X gate to a qubit
    *
    * @details
    * Consumes the input qubit and produces a new output qubit SSA value.
@@ -261,7 +261,7 @@ public:
   Value x(Value qubit);
 
   /**
-   * @brief Apply the RX gate to a qubit
+   * @brief Apply an RX gate to a qubit
    *
    * @details
    * Consumes the input qubit and produces a new output qubit SSA value.
@@ -282,7 +282,7 @@ public:
   Value rx(std::variant<double, Value> theta, Value qubit);
 
   /**
-   * @brief Apply the U2 gate to a qubit
+   * @brief Apply a U2 gate to a qubit
    *
    * @details
    * Consumes the input qubit and produces a new output qubit SSA value.
@@ -305,7 +305,7 @@ public:
            Value qubit);
 
   /**
-   * @brief Apply the SWAP gate to two qubits
+   * @brief Apply a SWAP gate to two qubits
    *
    * @details
    * Consumes the input qubits and produces new output qubit SSA values.

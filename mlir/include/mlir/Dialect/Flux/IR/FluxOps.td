@@ -398,6 +398,16 @@ def TwoParameter : ParameterArityTrait {
 //===----------------------------------------------------------------------===//
 
 def XOp : FluxOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]> {
+    let summary = "Apply an X gate to a qubit";
+    let description = [{
+        Applies an X gate to a qubit and returns the transformed qubit.
+
+        Example:
+        ```mlir
+        %q_out = flux.x %q_in : !flux.qubit -> !flux.qubit
+        ```
+    }];
+
     let arguments = (ins QubitType:$qubit_in);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
@@ -409,6 +419,17 @@ def XOp : FluxOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]> {
 }
 
 def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> {
+    let summary = "Apply an RX gate to a qubit";
+    let description = [{
+        Applies an RX gate to a qubit and returns the transformed qubit.
+        The angle theta can be provided as a static attribute or as a dynamic operand.
+
+        Example:
+        ```mlir
+        %q_out = flux.rx(%theta) %q_in : !flux.qubit -> !flux.qubit
+        ```
+    }];
+
     let arguments = (ins QubitType:$qubit_in,
                      OptionalAttr<F64Attr>:$theta,
                      Optional<F64>:$theta_dyn);
@@ -439,6 +460,17 @@ def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> 
 }
 
 def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter, AttrSizedOperandSegments]> {
+    let summary = "Apply a U2 gate to a qubit";
+    let description = [{
+        Applies a U2 gate to a qubit and returns the transformed qubit.
+        The angles phi and lambda can be provided as static attributes or as dynamic operands.
+
+        Example:
+        ```mlir
+        %q_out = flux.u2(%phi, %lambda) %q_in : !flux.qubit -> !flux.qubit
+        ```
+    }];
+
     let arguments = (ins QubitType:$qubit_in,
                      OptionalAttr<F64Attr>:$phi,
                      Optional<F64>:$phi_dyn,
@@ -494,6 +526,16 @@ def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter, A
 }
 
 def SWAPOp : FluxOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParameter]> {
+    let summary = "Apply a SWAP gate to two qubits";
+    let description = [{
+        Applies a SWAP gate to two qubits and returns the transformed qubits.
+
+        Example:
+        ```mlir
+        %q0_out, %q1_out = flux.swap %q0_in, %q1_in : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+        ```
+    }];
+
     let arguments = (ins QubitType:$qubit0_in, QubitType:$qubit1_in);
     let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";

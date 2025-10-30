@@ -326,6 +326,16 @@ def TwoParameter : ParameterArityTrait {
 //===----------------------------------------------------------------------===//
 
 def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]> {
+    let summary = "Apply an X gate to a qubit";
+    let description = [{
+        Applies an X gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        quartz.x %q : !flux.qubit
+        ```
+    }];
+
     let arguments = (ins QubitType:$qubit);
     let assemblyFormat = "$qubit attr-dict";
 
@@ -336,6 +346,17 @@ def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]>
 }
 
 def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> {
+    let summary = "Apply an RX gate to a qubit";
+    let description = [{
+        Applies an RX gate to a qubit, modifying it in place.
+        The angle theta can be provided as a static attribute or as a dynamic operand.
+
+        Example:
+        ```mlir
+        quartz.rx(%theta) %q : !flux.qubit
+        ```
+    }];
+
     let arguments = (ins QubitType:$qubit,
                      OptionalAttr<F64Attr>:$theta,
                      Optional<F64>:$theta_dyn);
@@ -365,6 +386,17 @@ def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]
 }
 
 def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter, AttrSizedOperandSegments]> {
+    let summary = "Apply a U2 gate to a qubit";
+    let description = [{
+        Applies a U2 gate to a qubit, modifying it in place.
+        The angles phi and lambda can be provided as static attributes or as dynamic operands.
+
+        Example:
+        ```mlir
+        quartz.u2(%phi, %lambda) %q : !flux.qubit
+        ```
+    }];
+
     let arguments = (ins QubitType:$qubit,
                      OptionalAttr<F64Attr>:$phi,
                      Optional<F64>:$phi_dyn,
@@ -419,6 +451,16 @@ def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter,
 }
 
 def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParameter]> {
+    let summary = "Apply a SWAP gate to two qubits";
+    let description = [{
+        Applies a SWAP gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        quartz.swap %q0, %q1 : !flux.qubit, !flux.qubit
+        ```
+    }];
+
     let arguments = (ins QubitType:$qubit0, QubitType:$qubit1);
     let assemblyFormat = "$qubit0 `,` $qubit1 attr-dict";
 
