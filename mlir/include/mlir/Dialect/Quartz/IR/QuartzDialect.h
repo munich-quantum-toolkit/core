@@ -61,6 +61,7 @@ public:
     size_t getNumControls() { return 0; }
     size_t getNumPosControls() { return 0; }
     size_t getNumNegControls() { return 0; }
+
     Value getPosControl(size_t i) {
       llvm_unreachable("Operation does not have controls");
     }

@@ -247,26 +247,26 @@ class TargetArityTrait<int n> : ParamNativeOpTrait<"TargetArityTrait", !cast<str
 
 def OneTarget : TargetArityTrait<1> {
     let extraConcreteClassDeclaration = [{
-        Value getQubit(size_t i) {
+        Value getInputQubit(size_t i) {
             if (i == 0) {
                 return getQubitIn();
             }
             llvm_unreachable("Operation has one input qubit");
         }
 
-        Value getTarget(size_t i) {
-            return getQubit(i);
-        }
-
-        Value getInput(size_t i) {
-            return getQubit(i);
-        }
-
-        Value getOutput(size_t i) {
+        Value getOutputQubit(size_t i) {
             if (i == 0) {
                 return getQubitOut();
             }
             llvm_unreachable("Operation has one output qubit");
+        }
+
+        Value getInputTarget(size_t i) {
+            return getInputQubit(i);
+        }
+
+        Value getOutputTarget(size_t i) {
+            return getOutputQubit(i);
         }
 
         Value getInputForOutput(Value output) {
@@ -287,25 +287,16 @@ def OneTarget : TargetArityTrait<1> {
 
 def TwoTarget : TargetArityTrait<2> {
     let extraConcreteClassDeclaration = [{
-        Value getQubit(size_t i) {
+        Value getInputQubit(size_t i) {
             if (i == 0) {
                 return getQubit0In();
             }
             if (i == 1) {
                 return getQubit1In();
             }
-            llvm_unreachable("Operation has two input qubits");
         }
 
-        Value getTarget(size_t i) {
-            return getQubit(i);
-        }
-
-        Value getInput(size_t i) {
-            return getQubit(i);
-        }
-
-        Value getOutput(size_t i) {
+        Value getOutputQubit(size_t i) {
             if (i == 0) {
                 return getQubit0Out();
             }
@@ -313,6 +304,14 @@ def TwoTarget : TargetArityTrait<2> {
                 return getQubit1Out();
             }
             llvm_unreachable("Operation has two output qubits");
+        }
+
+        Value getInputTarget(size_t i) {
+            return getInputQubit(i);
+        }
+
+        Value getOutputTarget(size_t i) {
+            return getOutputQubit(i);
         }
 
         Value getInputForOutput(Value output) {

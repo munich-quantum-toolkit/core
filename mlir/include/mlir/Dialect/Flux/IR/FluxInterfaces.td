@@ -51,30 +51,36 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "size_t", "getNumNegControls", (ins)
         >,
         InterfaceMethod<
-            "Returns the i-th qubit (targets + controls combined).",
-            "Value", "getQubit", (ins "size_t":$i)
-        >,
-        InterfaceMethod<
-            "Returns the i-th target input qubit.",
-            "Value", "getTarget", (ins "size_t":$i)
-        >,
-        InterfaceMethod<
-            "Returns the i-th positive control input qubit.",
-            "Value", "getPosControl", (ins "size_t":$i)
-        >,
-        InterfaceMethod<
-            "Returns the i-th negative control input qubit.",
-            "Value", "getNegControl", (ins "size_t":$i)
-        >,
-
-        // Value semantics threading
-        InterfaceMethod<
             "Returns the i-th input qubit (targets + controls combined).",
-            "Value", "getInput", (ins "size_t":$i)
+            "Value", "getInputQubit", (ins "size_t":$i)
         >,
         InterfaceMethod<
             "Returns the i-th output qubit (targets + controls combined).",
-            "Value", "getOutput", (ins "size_t":$i)
+            "Value", "getOutputQubit", (ins "size_t":$i)
+        >,
+        InterfaceMethod<
+            "Returns the i-th target input qubit.",
+            "Value", "getInputTarget", (ins "size_t":$i)
+        >,
+        InterfaceMethod<
+            "Returns the i-th target output qubit.",
+            "Value", "getOutputTarget", (ins "size_t":$i)
+        >,
+        InterfaceMethod<
+            "Returns the i-th positive control input qubit.",
+            "Value", "getInputPosControl", (ins "size_t":$i)
+        >,
+        InterfaceMethod<
+            "Returns the i-th positive control output qubit.",
+            "Value", "getOutputPosControl", (ins "size_t":$i)
+        >,
+        InterfaceMethod<
+            "Returns the i-th negative control input qubit.",
+            "Value", "getInputNegControl", (ins "size_t":$i)
+        >,
+        InterfaceMethod<
+            "Returns the i-th negative control output qubit.",
+            "Value", "getOutputNegControl", (ins "size_t":$i)
         >,
         InterfaceMethod<
             "Returns the input qubit corresponding to the given output qubit.",
