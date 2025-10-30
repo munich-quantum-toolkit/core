@@ -345,12 +345,12 @@ module {
 
         %q0_3_branch, %q1_2_branch = scf.if %m -> (!mqtopt.Qubit, !mqtopt.Qubit) {
             %q1_1_branch = mqtopt.x() %q1_0_branch : !mqtopt.Qubit
-            %q1_2_branch, %q0_3_branch = mqtopt.x() %q1_1_branch ctrl %q0_2_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            %q1_2_branch, %q0_3_branch = mqtopt.x() %q1_1_branch nctrl %q0_2_branch : !mqtopt.Qubit nctrl !mqtopt.Qubit
 
             scf.yield %q0_3_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
         } else {
             %q1_1_branch = mqtopt.i() %q1_0_branch : !mqtopt.Qubit
-            %q1_2_branch, %q0_3_branch = mqtopt.x() %q1_1_branch ctrl %q0_2_branch : !mqtopt.Qubit ctrl !mqtopt.Qubit
+            %q0_3_branch, %q1_2_branch = mqtopt.swap() %q1_1_branch, %q0_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
 
             scf.yield %q0_3_branch, %q1_2_branch : !mqtopt.Qubit, !mqtopt.Qubit
         }

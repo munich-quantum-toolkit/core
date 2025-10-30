@@ -54,7 +54,6 @@ bool isTwoQubitGate(UnitaryInterface op) {
 
 [[nodiscard]] ValuePair getIns(UnitaryInterface op) {
   assert(isTwoQubitGate(op));
-
   const auto target = op.getInQubits();
   const auto targetSize = target.size();
 
