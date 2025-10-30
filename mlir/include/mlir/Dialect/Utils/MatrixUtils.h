@@ -31,10 +31,10 @@ inline llvm::ArrayRef<std::complex<double>> getMatrixRX(double theta) {
 
 inline llvm::ArrayRef<std::complex<double>> getMatrixU2(double phi,
                                                         double lambda) {
-  const std::complex<double> m00(1.0, 0.0);
-  const std::complex<double> m01 = -std::exp(1i * lambda);
-  const std::complex<double> m10 = -std::exp(1i * phi);
-  const std::complex<double> m11 = std::exp(1i * (phi + lambda));
+  const std::complex<double> m00(1.0 / std::sqrt(2), 0.0);
+  const std::complex<double> m01 = -std::exp(1i * lambda) / std::sqrt(2);
+  const std::complex<double> m10 = std::exp(1i * phi) / std::sqrt(2);
+  const std::complex<double> m11 = std::exp(1i * (phi + lambda)) / std::sqrt(2);
   return {m00, m01, m10, m11};
 }
 
