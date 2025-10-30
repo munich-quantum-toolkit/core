@@ -51,13 +51,35 @@
 
 namespace mlir::flux {
 
-template <typename ConcreteType>
-class TargetArityTrait
-    : public mlir::OpTrait::TraitBase<ConcreteType, TargetArityTrait> {};
+template <size_t n> class TargetArityTrait {
+public:
+  template <typename ConcreteType>
+  class Impl : public mlir::OpTrait::TraitBase<ConcreteType, Impl> {
+  public:
+    size_t getNumQubits() { return n; }
+    size_t getNumTargets() { return n; }
+    size_t getNumControls() { return 0; }
+    size_t getNumPosControls() { return 0; }
+    size_t getNumNegControls() { return 0; }
 
-template <typename ConcreteType>
-class ParameterArityTrait
-    : public mlir::OpTrait::TraitBase<ConcreteType, ParameterArityTrait> {};
+    Value getPosControl(size_t i) {
+      llvm_unreachable("Operation does not have controls");
+    }
+
+    Value getNegControl(size_t i) {
+      llvm_unreachable("Operation does not have controls");
+    }
+  };
+};
+
+template <size_t n> class ParameterArityTrait {
+public:
+  template <typename ConcreteType>
+  class Impl : public mlir::OpTrait::TraitBase<ConcreteType, Impl> {
+  public:
+    size_t getNumParams() { return n; }
+  };
+};
 
 } // namespace mlir::flux
 

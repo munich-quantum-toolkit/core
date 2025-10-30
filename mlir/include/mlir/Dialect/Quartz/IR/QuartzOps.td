@@ -228,18 +228,12 @@ def ResetOp : QuartzOp<"reset"> {
 // Traits
 //===----------------------------------------------------------------------===//
 
-class TargetArityTrait : NativeOpTrait<"TargetArityTrait"> {
+class TargetArityTrait<int n> : ParamNativeOpTrait<"TargetArityTrait", !cast<string>(n)> {
     let cppNamespace = "::mlir::quartz";
 }
 
-def OneTarget : TargetArityTrait {
+def OneTarget : TargetArityTrait<1> {
     let extraConcreteClassDeclaration = [{
-        size_t getNumQubits() { return 1; }
-        size_t getNumTargets() { return 1; }
-        size_t getNumControls() { return 0; }
-        size_t getNumPosControls() { return 0; }
-        size_t getNumNegControls() { return 0; }
-
         Value getQubit(size_t i) {
             if (i == 0) {
                 return getQubit();
@@ -250,25 +244,11 @@ def OneTarget : TargetArityTrait {
         Value getTarget(size_t i) {
             return getQubit(i);
         }
-
-        Value getPosControl(size_t i) {
-            llvm_unreachable("Operation does not have controls");
-        }
-
-        Value getNegControl(size_t i) {
-            llvm_unreachable("Operation does not have controls");
-        }
     }];
 }
 
-def TwoTarget : TargetArityTrait {
+def TwoTarget : TargetArityTrait<2> {
     let extraConcreteClassDeclaration = [{
-        size_t getNumQubits() { return 2; }
-        size_t getNumTargets() { return 2; }
-        size_t getNumControls() { return 0; }
-        size_t getNumPosControls() { return 0; }
-        size_t getNumNegControls() { return 0; }
-
         Value getQubit(size_t i) {
             if (i == 0) {
                 return getQubit0();
@@ -282,25 +262,15 @@ def TwoTarget : TargetArityTrait {
         Value getTarget(size_t i) {
             return getQubit(i);
         }
-
-        Value getPosControl(size_t i) {
-            llvm_unreachable("Operation does not have controls");
-        }
-
-        Value getNegControl(size_t i) {
-            llvm_unreachable("Operation does not have controls");
-        }
     }];
 }
 
-class ParameterArityTrait : NativeOpTrait<"ParameterArityTrait"> {
+class ParameterArityTrait<int n> : ParamNativeOpTrait<"ParameterArityTrait", !cast<string>(n)> {
     let cppNamespace = "::mlir::quartz";
 }
 
-def ZeroParameter : ParameterArityTrait {
+def ZeroParameter : ParameterArityTrait<0> {
     let extraConcreteClassDeclaration = [{
-        size_t getNumParams() { return 0; }
-
         ::mlir::utils::ParameterDescriptor getParameter(size_t i) {
             llvm_unreachable("Operation does not have parameters");
         }
@@ -309,17 +279,11 @@ def ZeroParameter : ParameterArityTrait {
     }];
 }
 
-def OneParameter : ParameterArityTrait {
-    let extraConcreteClassDeclaration = [{
-        size_t getNumParams() { return 1; }
-    }];
-}
+def OneParameter : ParameterArityTrait<1>;
 
-def TwoParameter : ParameterArityTrait {
-    let extraConcreteClassDeclaration = [{
-        size_t getNumParams() { return 2; }
-    }];
-}
+def TwoParameter : ParameterArityTrait<2>;
+
+def ThreeParameter : ParameterArityTrait<2>;
 
 //===----------------------------------------------------------------------===//
 // Unitary Operations
