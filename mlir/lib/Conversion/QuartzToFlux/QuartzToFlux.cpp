@@ -360,7 +360,7 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
   LogicalResult
   matchAndRewrite(quartz::XOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto& quartzQubit = op.getQubit(0);
+    const auto& quartzQubit = op.getQubit();
 
     // Get the latest Flux qubit value from the state map
     const auto& fluxQubit = getState().qubitMap[quartzQubit];
