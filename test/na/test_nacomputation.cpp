@@ -133,9 +133,9 @@ class NAComputationValidateAODConstraints : public ::testing::Test {
 protected:
   NAComputation qc;
   const Atom* atom0 = nullptr;
-  const Atom* atom3 = nullptr;
-  const Atom* atom2 = nullptr;
   const Atom* atom1 = nullptr;
+  const Atom* atom2 = nullptr;
+  const Atom* atom3 = nullptr;
 
   auto SetUp() -> void override {
     atom0 = &qc.emplaceBackAtom("atom0");

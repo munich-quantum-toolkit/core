@@ -147,10 +147,10 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
           endOf.emplace(b, targetLocations.at(i));
         }
         std::unordered_map<const Atom*, size_t> opAtomToIndex;
-        std::ranges::for_each(opAtoms,
-                              [&opAtomToIndex, n = 0UL](const auto* a) mutable {
-                                opAtomToIndex.emplace(a, n++);
-                              });
+        opAtomToIndex.reserve(opAtoms.size());
+        for (std::size_t i = 0; i < opAtoms.size(); ++i) {
+          opAtomToIndex.emplace(opAtoms[i], i);
+        }
         // 3) Validate against all loaded atoms, including non-moving ones
         for (const auto& atom : atoms_) {
           if (const auto* a = atom.get(); currentlyShuttling.contains(a)) {
