@@ -102,6 +102,7 @@ struct ParallelOpScheduler final : SchedulerBase {
         const auto& [qNext, gate] = opt.value();
 
         if (q != qNext) {
+          LLVM_DEBUG(llvm::dbgs() << "remap!\n");
           layout.remapQubitValue(q, qNext);
         }
 
@@ -120,24 +121,63 @@ struct ParallelOpScheduler final : SchedulerBase {
       layers.emplace_back();
       layers.back().reserve(readyTwoQubit.size());
 
+      /// At this point all qubit values are remapped to the input of a
+      /// two-qubit gate: "value.user == two-qubit-gate".
+      ///
+      /// We release the ready two-qubit gates by forwarding their inputs
+      /// to their outputs. Then, we advance to the end of its two-qubit block.
+      /// Intuitively, whenever a gate in readyTwoQubit is routed, all one and
+      /// two-qubit gates acting on the same qubits are executable as well.
+
       for (const auto& op : readyTwoQubit) {
-        const auto [in0, in1] = getIns(op);
+        /// Release.
+        const ValuePair ins = getIns(op);
+        const ValuePair outs = getOuts(op);
+        layers.back().emplace_back(layout.lookupProgramIndex(ins.first),
+                                   layout.lookupProgramIndex(ins.second));
+        layout.remapQubitValue(ins.first, outs.first);
+        layout.remapQubitValue(ins.second, outs.second);
 
-        layers.back().emplace_back(layout.lookupProgramIndex(in0),
-                                   layout.lookupProgramIndex(in1));
+        /// Advance two-qubit block.
+        std::array<UnitaryInterface, 2> gates;
+        std::array<Value, 2> heads{outs.first, outs.second};
 
-        const auto [out0, out1] =
-            advanceTwoQubitBlock(getOuts(op), layout, region);
+        while (true) {
+          bool stop = false;
+          for (const auto [i, q] : llvm::enumerate(heads)) {
+            const auto opt = advanceToTwoQubitGate(q, region, layout);
+            if (!opt) {
+              heads[i] = nullptr;
+              stop = true;
+              break;
+            }
 
-        layout.remapQubitValue(in0, out0);
-        layout.remapQubitValue(in1, out1);
+            const auto& [qNext, gate] = opt.value();
 
-        if (!out0.use_empty()) {
-          nextWl.push_back(out0);
+            if (q != qNext) {
+              layout.remapQubitValue(q, qNext);
+            }
+
+            heads[i] = qNext;
+            gates[i] = gate;
+          }
+
+          if (stop || gates[0] != gates[1]) {
+            break;
+          }
+
+          const ValuePair ins = getIns(gates[0]);
+          const ValuePair outs = getOuts(gates[0]);
+          layout.remapQubitValue(ins.first, outs.first);
+          layout.remapQubitValue(ins.second, outs.second);
+          heads = {outs.first, outs.second};
         }
 
-        if (!out1.use_empty()) {
-          nextWl.push_back(out1);
+        /// Initialize next worklist.
+        for (const auto q : heads) {
+          if (q != nullptr && !q.use_empty()) {
+            nextWl.push_back(q);
+          }
         }
       }
 
@@ -161,22 +201,15 @@ struct ParallelOpScheduler final : SchedulerBase {
   }
 
 private:
-  using ValuePair = std::pair<Value, Value>;
-
   /**
    * @returns Next two-qubit gate on qubit wire, or std::nullopt if none exists.
    */
   static std::optional<std::pair<Value, UnitaryInterface>>
   advanceToTwoQubitGate(const Value q, Region* region, const Layout& layout) {
     Value head = q;
-    UnitaryInterface twoQubitOp = nullptr;
     while (true) {
       if (head.use_empty()) { // No two-qubit gate found.
         return std::nullopt;
-      }
-
-      if (twoQubitOp != nullptr) { // Two-qubit gate found.
-        return std::make_pair(head, twoQubitOp);
       }
 
       Operation* user = getUserInRegion(head, region);
@@ -185,6 +218,8 @@ private:
       }
 
       bool endOfRegion = false;
+      std::optional<UnitaryInterface> twoQubitOp;
+
       TypeSwitch<Operation*>(user)
           /// MQT
           /// BarrierOp is a UnitaryInterface, however, requires special care.
@@ -201,17 +236,15 @@ private:
           .Case<UnitaryInterface>([&](UnitaryInterface op) {
             if (isTwoQubitGate(op)) {
               twoQubitOp = op;
-              return;
+              return; // Found a two-qubit gate, stop advancing head.
             }
-
+            // Otherwise, advance head.
             head = op.getOutQubits().front();
           })
           .Case<ResetOp>([&](ResetOp op) { head = op.getOutQubit(); })
           .Case<MeasureOp>([&](MeasureOp op) { head = op.getOutQubit(); })
           /// SCF
-          /// The scf functions assume that the first n results are the
-          /// hardw. qubits. We can use 'q' to get the hardware index
-          /// because the def-use chain keeps the index constant.
+          /// The scf funcs assume that the first n results are the hw qubits.
           .Case<scf::ForOp>([&](scf::ForOp op) {
             head = op->getResult(layout.lookupHardwareIndex(q));
           })
@@ -227,47 +260,16 @@ private:
             llvm_unreachable("unknown operation in def-use chain");
           });
 
+      if (twoQubitOp) { // Two-qubit gate found.
+        return std::make_pair(head, *twoQubitOp);
+      }
+
       if (endOfRegion) {
         return std::nullopt;
       }
     }
 
     return std::nullopt;
-  }
-
-  /**
-   * @returns Pair of Values after two-qubit block.
-   */
-  static ValuePair advanceTwoQubitBlock(const ValuePair outs, Layout& layout,
-                                        Region* region) {
-    std::array<Value, 2> heads{outs.first, outs.second};
-    std::array<UnitaryInterface, 2> gates{};
-
-    while (true) {
-      /// Advance both input qubits to a two-qubit gate.
-      /// Exit: If none is found.
-      ///       If the two-qubit gates are not the same.
-      /// Otherwise, advance two-qubit gate and repeat process.
-      bool exit = false;
-      for (const auto [i, q] : llvm::enumerate(heads)) {
-        const auto opt = advanceToTwoQubitGate(q, region, layout);
-        if (!opt) {
-          exit = true;
-          break;
-        }
-        heads[i] = opt->first;
-        gates[i] = opt->second;
-      }
-
-      if (exit || gates[0] != gates[1]) {
-        break;
-      }
-
-      const auto [out0, out1] = getOuts(gates[0]);
-      heads = {out0, out1};
-    }
-
-    return {heads[0], heads[1]};
   }
 
   std::size_t nlayers_;
