@@ -19,6 +19,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <variant>
 
 namespace mlir::quartz {
 
@@ -258,8 +259,7 @@ public:
    * quartz.rx(1.0) %q : !quartz.qubit
    * ```
    */
-  QuartzProgramBuilder& rx(double theta, Value qubit);
-  QuartzProgramBuilder& rx(Value theta, Value qubit);
+  QuartzProgramBuilder& rx(std::variant<double, Value> theta, Value qubit);
 
   /**
    * @brief Apply the U2 gate to a qubit
@@ -277,10 +277,8 @@ public:
    * quartz.u2(1.0, 0.5) %q : !quartz.qubit
    * ```
    */
-  QuartzProgramBuilder& u2(double phi, double lambda, Value qubit);
-  QuartzProgramBuilder& u2(Value phi, double lambda, Value qubit);
-  QuartzProgramBuilder& u2(double phi, Value lambda, Value qubit);
-  QuartzProgramBuilder& u2(Value phi, Value lambda, Value qubit);
+  QuartzProgramBuilder& u2(std::variant<double, Value> phi,
+                           std::variant<double, Value> lambda, Value qubit);
 
   /**
    * @brief Apply the SWAP gate to two qubits

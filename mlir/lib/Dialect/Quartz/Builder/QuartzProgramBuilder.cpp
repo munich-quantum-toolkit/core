@@ -24,6 +24,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <variant>
 
 namespace mlir::quartz {
 
@@ -129,33 +130,37 @@ QuartzProgramBuilder& QuartzProgramBuilder::x(Value qubit) {
   return *this;
 }
 
-QuartzProgramBuilder& QuartzProgramBuilder::rx(double theta, Value qubit) {
-  builder.create<RXOp>(loc, qubit, theta);
-  return *this;
-}
-QuartzProgramBuilder& QuartzProgramBuilder::rx(Value theta, Value qubit) {
-  builder.create<RXOp>(loc, qubit, theta);
+QuartzProgramBuilder&
+QuartzProgramBuilder::rx(std::variant<double, Value> theta, Value qubit) {
+  if (std::holds_alternative<double>(theta)) {
+    builder.create<RXOp>(loc, qubit, std::get<double>(theta));
+  } else {
+    builder.create<RXOp>(loc, qubit, std::get<Value>(theta));
+  }
   return *this;
 }
 
-QuartzProgramBuilder& QuartzProgramBuilder::u2(double phi, double lambda,
-                                               Value qubit) {
-  builder.create<U2Op>(loc, qubit, phi, lambda);
-  return *this;
-}
-QuartzProgramBuilder& QuartzProgramBuilder::u2(double phi, Value lambda,
-                                               Value qubit) {
-  builder.create<U2Op>(loc, qubit, phi, lambda);
-  return *this;
-}
-QuartzProgramBuilder& QuartzProgramBuilder::u2(Value phi, double lambda,
-                                               Value qubit) {
-  builder.create<U2Op>(loc, qubit, phi, lambda);
-  return *this;
-}
-QuartzProgramBuilder& QuartzProgramBuilder::u2(Value phi, Value lambda,
-                                               Value qubit) {
-  builder.create<U2Op>(loc, qubit, phi, lambda);
+QuartzProgramBuilder&
+QuartzProgramBuilder::u2(std::variant<double, Value> phi,
+                         std::variant<double, Value> lambda, Value qubit) {
+  FloatAttr phiAttr = nullptr;
+  Value phiValue = nullptr;
+  if (std::holds_alternative<double>(phi)) {
+    phiAttr = builder.getF64FloatAttr(std::get<double>(phi));
+  } else {
+    phiValue = std::get<Value>(phi);
+  }
+
+  FloatAttr lambdaAttr = nullptr;
+  Value lambdaValue = nullptr;
+  if (std::holds_alternative<double>(lambda)) {
+    lambdaAttr = builder.getF64FloatAttr(std::get<double>(lambda));
+  } else {
+    lambdaValue = std::get<Value>(lambda);
+  }
+
+  builder.create<U2Op>(loc, qubit, phiAttr, phiValue, lambdaAttr, lambdaValue);
+
   return *this;
 }
 

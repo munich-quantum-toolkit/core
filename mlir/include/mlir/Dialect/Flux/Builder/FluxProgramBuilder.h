@@ -19,6 +19,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <variant>
 #include <vector>
 
 namespace mlir::flux {
@@ -278,8 +279,7 @@ public:
    * %q_out = flux.rx(1.0) %q_in : !flux.qubit -> !flux.qubit
    * ```
    */
-  Value rx(double theta, Value qubit);
-  Value rx(Value theta, Value qubit);
+  Value rx(std::variant<double, Value> theta, Value qubit);
 
   /**
    * @brief Apply the U2 gate to a qubit
@@ -301,10 +301,8 @@ public:
    * %q_out = flux.u2(1.0, 0.5) %q_in : !flux.qubit -> !flux.qubit
    * ```
    */
-  Value u2(double phi, double lambda, Value qubit);
-  Value u2(double phi, Value lambda, Value qubit);
-  Value u2(Value phi, double lambda, Value qubit);
-  Value u2(Value phi, Value lambda, Value qubit);
+  Value u2(std::variant<double, Value> phi, std::variant<double, Value> lambda,
+           Value qubit);
 
   /**
    * @brief Apply the SWAP gate to two qubits

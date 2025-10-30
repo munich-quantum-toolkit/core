@@ -20,6 +20,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <variant>
 
 namespace mlir::qir {
 
@@ -257,8 +258,7 @@ public:
    * llvm.call @__quantum__qis__rx__body(%q, %c) : (!llvm.ptr, f64) -> ()
    * ```
    */
-  QIRProgramBuilder& rx(double theta, const Value qubit);
-  QIRProgramBuilder& rx(Value theta, const Value qubit);
+  QIRProgramBuilder& rx(std::variant<double, Value> theta, const Value qubit);
 
   /**
    * @brief Apply the U2 gate to a qubit
@@ -277,10 +277,8 @@ public:
    * -> ()
    * ```
    */
-  QIRProgramBuilder& u2(double phi, double lambda, const Value qubit);
-  QIRProgramBuilder& u2(double phi, Value lambda, const Value qubit);
-  QIRProgramBuilder& u2(Value phi, double lambda, const Value qubit);
-  QIRProgramBuilder& u2(Value phi, Value lambda, const Value qubit);
+  QIRProgramBuilder& u2(std::variant<double, Value> phi,
+                        std::variant<double, Value> lambda, const Value qubit);
 
   /**
    * @brief Apply the SWAP gate to two qubits

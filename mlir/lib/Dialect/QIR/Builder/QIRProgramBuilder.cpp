@@ -251,12 +251,24 @@ QIRProgramBuilder& QIRProgramBuilder::x(const Value qubit) {
   return *this;
 }
 
-QIRProgramBuilder& QIRProgramBuilder::rx(Value theta, const Value qubit) {
+QIRProgramBuilder& QIRProgramBuilder::rx(std::variant<double, Value> theta,
+                                         const Value qubit) {
   // Save current insertion point
   const OpBuilder::InsertionGuard insertGuard(builder);
 
   // Insert in body block (before branch)
   builder.setInsertionPoint(bodyBlock->getTerminator());
+
+  Value thetaOperand;
+  if (std::holds_alternative<double>(theta)) {
+    thetaOperand =
+        builder
+            .create<LLVM::ConstantOp>(
+                loc, builder.getF64FloatAttr(std::get<double>(theta)))
+            .getResult();
+  } else {
+    thetaOperand = std::get<Value>(theta);
+  }
 
   // Create rx call
   const auto qirSignature = LLVM::LLVMFunctionType::get(
@@ -265,25 +277,42 @@ QIRProgramBuilder& QIRProgramBuilder::rx(Value theta, const Value qubit) {
        Float64Type::get(builder.getContext())});
   auto fnDecl =
       getOrCreateFunctionDeclaration(builder, module, QIR_RX, qirSignature);
-  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit, theta});
+  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit, thetaOperand});
 
   return *this;
 }
-QIRProgramBuilder& QIRProgramBuilder::rx(double theta, const Value qubit) {
-  // Create constant for theta
-  auto thetaConst =
-      builder.create<LLVM::ConstantOp>(loc, builder.getF64FloatAttr(theta));
 
-  return rx(thetaConst.getResult(), qubit);
-}
-
-QIRProgramBuilder& QIRProgramBuilder::u2(Value phi, Value lambda,
+QIRProgramBuilder& QIRProgramBuilder::u2(std::variant<double, Value> phi,
+                                         std::variant<double, Value> lambda,
                                          const Value qubit) {
   // Save current insertion point
   const OpBuilder::InsertionGuard insertGuard(builder);
 
   // Insert in body block (before branch)
   builder.setInsertionPoint(bodyBlock->getTerminator());
+
+  Value phiOperand;
+  if (std::holds_alternative<double>(phi)) {
+    phiOperand = builder
+                     .create<LLVM::ConstantOp>(
+                         loc, builder.getF64FloatAttr(std::get<double>(phi)))
+                     .getResult();
+  } else {
+    phiOperand = std::get<Value>(phi);
+    ;
+  }
+
+  Value lambdaOperand;
+  if (std::holds_alternative<double>(lambda)) {
+    lambdaOperand =
+        builder
+            .create<LLVM::ConstantOp>(
+                loc, builder.getF64FloatAttr(std::get<double>(lambda)))
+            .getResult();
+  } else {
+    lambdaOperand = std::get<Value>(lambda);
+    ;
+  }
 
   // Create u2 call
   const auto qirSignature = LLVM::LLVMFunctionType::get(
@@ -293,35 +322,10 @@ QIRProgramBuilder& QIRProgramBuilder::u2(Value phi, Value lambda,
        Float64Type::get(builder.getContext())});
   auto fnDecl =
       getOrCreateFunctionDeclaration(builder, module, QIR_U2, qirSignature);
-  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit, phi, lambda});
+  builder.create<LLVM::CallOp>(loc, fnDecl,
+                               ValueRange{qubit, phiOperand, lambdaOperand});
 
   return *this;
-}
-QIRProgramBuilder& QIRProgramBuilder::u2(double phi, double lambda,
-                                         const Value qubit) {
-  // Create constants for phi and lambda
-  auto phiConst =
-      builder.create<LLVM::ConstantOp>(loc, builder.getF64FloatAttr(phi));
-  auto lambdaConst =
-      builder.create<LLVM::ConstantOp>(loc, builder.getF64FloatAttr(lambda));
-
-  return u2(phiConst.getResult(), lambdaConst.getResult(), qubit);
-}
-QIRProgramBuilder& QIRProgramBuilder::u2(double phi, Value lambda,
-                                         const Value qubit) {
-  // Create constant for phi
-  auto phiConst =
-      builder.create<LLVM::ConstantOp>(loc, builder.getF64FloatAttr(phi));
-
-  return u2(phiConst.getResult(), lambda, qubit);
-}
-QIRProgramBuilder& QIRProgramBuilder::u2(Value phi, double lambda,
-                                         const Value qubit) {
-  // Create constant for lambda
-  auto lambdaConst =
-      builder.create<LLVM::ConstantOp>(loc, builder.getF64FloatAttr(lambda));
-
-  return u2(phi, lambdaConst.getResult(), qubit);
 }
 
 QIRProgramBuilder& QIRProgramBuilder::swap(const Value qubit0,
