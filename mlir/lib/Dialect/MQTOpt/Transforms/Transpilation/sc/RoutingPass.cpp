@@ -377,6 +377,9 @@ WalkResult handleUnitary(UnitaryInterface op, Mapper& mapper,
 
   if (isa<SWAPOp>(op)) {
     mapper.stack().top().swap(execIn0, execIn1);
+    mapper.historyStack().top().push_back(
+        {mapper.stack().top().lookupHardwareIndex(execIn0),
+         mapper.stack().top().lookupHardwareIndex(execIn1)});
   }
 
   mapper.stack().top().remapQubitValue(execIn0, execOut0);
