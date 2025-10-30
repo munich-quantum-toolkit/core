@@ -353,7 +353,18 @@ struct ConvertQuartzResetOp final
   }
 };
 
-// Temporary implementation of XOp conversion
+/**
+ * @brief Converts quartz.x to flux.x
+ *
+ * @details
+ * Example transformation:
+ * ```mlir
+ * quartz.x %q : !quartz.qubit
+ * // becomes (where %q maps to %q_in):
+ * %q_out = flux.x %q_in : !flux.qubit -> !flux.qubit
+ * // state updated: %q now maps to %q_out
+ * ```
+ */
 struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -378,7 +389,17 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
   }
 };
 
-// Temporary implementation of RXOp conversion
+/**
+ * @brief Converts quartz.rx to flux.rx
+ *
+ * @details
+ * Example transformation:
+ * ```mlir
+ * quartz.rx(%theta) %q : !quartz.qubit
+ * // becomes (where %q maps to %q_in):
+ * %q_out = flux.rx(%theta) %q_in : !flux.qubit -> !flux.qubit
+ * // state updated: %q now maps to %q_out
+ */
 struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -407,7 +428,18 @@ struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
   }
 };
 
-// Temporary implementation of U2Op conversion
+/**
+ * @brief Converts quartz.u2 to flux.u2
+ *
+ * @details
+ * Example transformation:
+ * ```mlir
+ * quartz.u2(%phi, %lambda) %q : !quartz.qubit
+ * // becomes (where %q maps to %q_in):
+ * %q_out = flux.u2(%phi, %lambda) %q_in : !flux.qubit -> !flux.qubit
+ * // state updated: %q now maps to %q_out
+ * ```
+ */
 struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -439,7 +471,19 @@ struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
   }
 };
 
-// Temporary implementation of SWAPOp conversion
+/**
+ * @brief Converts quartz.swap to flux.swap
+ *
+ * @details
+ * Example transformation:
+ * ```mlir
+ * quartz.swap %q0, %q1 : !quartz.qubit, !quartz.qubit
+ * // becomes (where {%q0, %q1} map to {%q0_in, %q1_in}):
+ * %q0_out, %q1_out = flux.swap %q0_in, %q1_in : !flux.qubit, !flux.qubit ->
+ * !flux.qubit, !flux.qubit
+ * // state updated: {%q0, %q1} now map to {%q0_out, %q1_out}
+ * ```
+ */
 struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 

@@ -392,7 +392,17 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
   }
 };
 
-// Temporary implementation of XOp conversion
+/**
+ * @brief Converts quartz.x operation to QIR x
+ *
+ * @details
+ * Example transformation:
+ * ```mlir
+ * quartz.x %q : !quartz.qubit
+ * // becomes:
+ * llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
+ * ```
+ */
 struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -416,7 +426,17 @@ struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
   }
 };
 
-// Temporary implementation of RXOp conversion
+/**
+ * @brief Converts quartz.rx operation to QIR RX
+ *
+ * @details
+ * Example transformation:
+ * ```mlir
+ * quartz.rx %q(%theta) : !quartz.qubit
+ * // becomes:
+ * llvm.call @__quantum__qis__rx__body(%q, %theta) : (!llvm.ptr, f64) -> ()
+ * ```
+ */
 struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -450,7 +470,18 @@ struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
   }
 };
 
-// Temporary implementation of U2Op conversion
+/**
+ * @brief Converts quartz.u2 operation to QIR U2
+ *
+ * @details
+ * Example transformation:
+ * ```mlir
+ * quartz.u2 %q(%phi, %lambda) : !quartz.qubit
+ * // becomes:
+ * llvm.call @__quantum__qis__u2__body(%q, %phi, %lambda) : (!llvm.ptr, f64,
+ * f64) -> ()
+ * ```
+ */
 struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -494,7 +525,18 @@ struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
   }
 };
 
-// Temporary implementation of SWAPOp conversion
+/**
+ * @brief Converts quartz.swap operation to QIR SWAP
+ *
+ * @details
+ * Example transformation:
+ * ```mlir
+ * quartz.swap %q1, %q2 : !quartz.qubit, !quartz.qubit
+ * // becomes:
+ * llvm.call @__quantum__qis__swap__body(%q1, %q2) : (!llvm.ptr, !llvm.ptr) ->
+ * ()
+ * ```
+ */
 struct ConvertQuartzSWAPQIR final : StatefulOpConversionPattern<SWAPOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 

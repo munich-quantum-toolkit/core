@@ -233,7 +233,18 @@ struct ConvertFluxResetOp final : OpConversionPattern<flux::ResetOp> {
   }
 };
 
-// Temporary implementation of XOp conversion
+/**
+ * @brief Converts flux.x to quartz.x
+ *
+ * @details
+ * Example transformation:
+ * ```mlir
+ * %q_out = flux.x %q_in : !flux.qubit -> !flux.qubit
+ * // becomes:
+ * quartz.x %q : !quartz.qubit
+ * // %q_out uses are replaced with %q
+ * ```
+ */
 struct ConvertFluxXOp final : OpConversionPattern<flux::XOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -253,7 +264,18 @@ struct ConvertFluxXOp final : OpConversionPattern<flux::XOp> {
   }
 };
 
-// Temporary implementation of RXOp conversion
+/**
+ * @brief Converts flux.rx to quartz.rx
+ *
+ * @details
+ * Example transformation:
+ * ```mlir
+ * %q_out = flux.rx(%theta) %q_in : !flux.qubit -> !flux.qubit
+ * // becomes:
+ * quartz.rx(%theta) %q : !quartz.qubit
+ * // %q_out uses are replaced with %q
+ * ```
+ */
 struct ConvertFluxRXOp final : OpConversionPattern<flux::RXOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -276,7 +298,18 @@ struct ConvertFluxRXOp final : OpConversionPattern<flux::RXOp> {
   }
 };
 
-// Temporary implementation of U2Op conversion
+/**
+ * @brief Converts flux.u2 to quartz.u2
+ *
+ * @details
+ * Example transformation:
+ * ```mlir
+ * %q_out = flux.u2(%phi, %lambda) %q_in : !flux.qubit -> !flux.qubit
+ * // becomes:
+ * quartz.u2(%phi, %lambda) %q : !quartz.qubit
+ * // %q_out uses are replaced with %q
+ * ```
+ */
 struct ConvertFluxU2Op final : OpConversionPattern<flux::U2Op> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -303,7 +336,18 @@ struct ConvertFluxU2Op final : OpConversionPattern<flux::U2Op> {
   }
 };
 
-// Temporary implementation of SWAPOp conversion
+/**
+ * @brief Converts flux.swap to quartz.swap
+ *
+ * @details
+ * Example transformation:
+ * ```mlir
+ * %q0_out, %q1_out = flux.swap %q0_in, %q1_in : !flux.qubit, !flux.qubit
+ * // becomes:
+ * quartz.swap %q0, %q1 : !quartz.qubit, !quartz.qubit
+ * // {%q0_out, %q1_out} uses are replaced with {%q0, %q1}
+ * ```
+ */
 struct ConvertFluxSWAPOp final : OpConversionPattern<flux::SWAPOp> {
   using OpConversionPattern::OpConversionPattern;
 
