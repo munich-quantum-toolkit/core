@@ -92,7 +92,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         >,
         InterfaceMethod<
             "Returns the i-th parameter.",
-            "ParameterDescriptor", "getParameter", (ins "size_t":$i)
+            "::mlir::utils::ParameterDescriptor", "getParameter", (ins "size_t":$i)
         >,
         /// TODO: Add convenience methods as necessary
 

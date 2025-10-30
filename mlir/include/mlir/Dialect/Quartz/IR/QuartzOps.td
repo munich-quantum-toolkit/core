@@ -301,7 +301,7 @@ def ZeroParameter : ParameterArityTrait {
     let extraConcreteClassDeclaration = [{
         size_t getNumParams() { return 0; }
 
-        ParameterDescriptor getParameter(size_t i) {
+        ::mlir::utils::ParameterDescriptor getParameter(size_t i) {
             llvm_unreachable("Operation does not have parameters");
         }
 
@@ -342,7 +342,7 @@ def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]
     let assemblyFormat = "`(` ($theta^)? (`` $theta_dyn^)? `)` $qubit attr-dict";
 
     let extraClassDeclaration = [{
-        ParameterDescriptor getParameter(size_t i);
+        ::mlir::utils::ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rx"; }
@@ -373,7 +373,7 @@ def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter,
     let assemblyFormat = "`(` ($phi^)? (`` $phi_dyn^)? `,` ($lambda^)? ($lambda_dyn^)? `)` $qubit attr-dict";
 
     let extraClassDeclaration = [{
-        ParameterDescriptor getParameter(size_t i);
+        ::mlir::utils::ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "u2"; }

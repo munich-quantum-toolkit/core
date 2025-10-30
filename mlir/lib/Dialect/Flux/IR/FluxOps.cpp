@@ -31,6 +31,7 @@
 
 using namespace mlir;
 using namespace mlir::flux;
+using namespace mlir::utils;
 
 //===----------------------------------------------------------------------===//
 // Dialect
@@ -127,7 +128,7 @@ DenseElementsAttr XOp::tryGetStaticMatrix() {
   auto* ctx = getContext();
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({2, 2}, complexType);
-  return DenseElementsAttr::get(type, mlir::utils::getMatrixX());
+  return DenseElementsAttr::get(type, getMatrixX());
 }
 
 // RXOp
@@ -149,7 +150,7 @@ DenseElementsAttr RXOp::tryGetStaticMatrix() {
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({2, 2}, complexType);
   const auto& theta = getTheta().value().convertToDouble();
-  return DenseElementsAttr::get(type, mlir::utils::getMatrixRX(theta));
+  return DenseElementsAttr::get(type, getMatrixRX(theta));
 }
 
 LogicalResult RXOp::verify() {
@@ -184,7 +185,7 @@ DenseElementsAttr U2Op::tryGetStaticMatrix() {
   const auto& type = RankedTensorType::get({2, 2}, complexType);
   const auto& phi = getPhi().value().convertToDouble();
   const auto& lambda = getLambda().value().convertToDouble();
-  return DenseElementsAttr::get(type, mlir::utils::getMatrixU2(phi, lambda));
+  return DenseElementsAttr::get(type, getMatrixU2(phi, lambda));
 }
 
 LogicalResult U2Op::verify() {
@@ -203,7 +204,7 @@ DenseElementsAttr SWAPOp::tryGetStaticMatrix() {
   auto* ctx = getContext();
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({4, 4}, complexType);
-  return DenseElementsAttr::get(type, mlir::utils::getMatrixSWAP());
+  return DenseElementsAttr::get(type, getMatrixSWAP());
 }
 
 //===----------------------------------------------------------------------===//

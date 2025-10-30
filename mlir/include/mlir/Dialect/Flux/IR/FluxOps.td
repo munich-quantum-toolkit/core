@@ -373,7 +373,7 @@ def ZeroParameter : ParameterArityTrait {
     let extraConcreteClassDeclaration = [{
         size_t getNumParams() { return 0; }
 
-        ParameterDescriptor getParameter(size_t i) {
+        ::mlir::utils::ParameterDescriptor getParameter(size_t i) {
             llvm_unreachable("Operation does not have parameters");
         }
 
@@ -416,7 +416,7 @@ def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> 
     let assemblyFormat = "`(` ($theta^)? (`` $theta_dyn^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        ParameterDescriptor getParameter(size_t i);
+        ::mlir::utils::ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rx"; }
@@ -448,7 +448,7 @@ def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter, A
     let assemblyFormat = "`(` ($phi^)? (`` $phi_dyn^)? `,` ($lambda^)? ($lambda_dyn^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        ParameterDescriptor getParameter(size_t i);
+        ::mlir::utils::ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "u2"; }

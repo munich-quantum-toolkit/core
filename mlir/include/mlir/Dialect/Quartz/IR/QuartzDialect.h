@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/Utils/ParameterDescriptor.h"
+
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
@@ -56,30 +58,6 @@ class TargetArityTrait
 template <typename ConcreteType>
 class ParameterArityTrait
     : public mlir::OpTrait::TraitBase<ConcreteType, ParameterArityTrait> {};
-
-struct ParameterDescriptor {
-  mlir::FloatAttr valueAttr;
-  mlir::Value valueOperand;
-
-  ParameterDescriptor(mlir::FloatAttr attr = nullptr,
-                      mlir::Value operand = nullptr) {
-    assert(!(attr && operand) && "Cannot have both static and dynamic values");
-    valueAttr = attr;
-    valueOperand = operand;
-  }
-
-  bool isStatic() const { return valueAttr != nullptr; }
-  bool isDynamic() const { return valueOperand != nullptr; }
-
-  double getValueDouble() const {
-    if (isDynamic()) {
-      llvm_unreachable("Cannot get double value from dynamic parameter");
-    }
-    return valueAttr.getValueAsDouble();
-  }
-  mlir::FloatAttr getValueAttr() const { return valueAttr; }
-  mlir::Value getValueOperand() const { return valueOperand; }
-};
 
 } // namespace mlir::quartz
 
