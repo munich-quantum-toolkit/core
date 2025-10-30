@@ -237,7 +237,7 @@ Value FluxProgramBuilder::u2(Value phi, Value lambda, Value qubit) {
   return qubitOut;
 }
 
-std::vector<Value> FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
+std::pair<Value, Value> FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
   auto swapOp = builder.create<SWAPOp>(loc, qubit0, qubit1);
   const auto& qubit0Out = swapOp.getQubit0Out();
   const auto& qubit1Out = swapOp.getQubit1Out();

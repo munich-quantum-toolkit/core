@@ -326,7 +326,7 @@ public:
    * !flux.qubit, !flux.qubit
    * ```
    */
-  std::vector<Value> swap(Value qubit0, Value qubit1);
+  std::pair<Value, Value> swap(Value qubit0, Value qubit1);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
