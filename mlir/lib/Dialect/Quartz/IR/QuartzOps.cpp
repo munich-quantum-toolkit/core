@@ -151,10 +151,8 @@ DenseElementsAttr RXOp::tryGetStaticMatrix() {
 }
 
 LogicalResult RXOp::verify() {
-  if (getTheta().has_value() && getThetaDyn())
-    return emitOpError("cannot specify both static and dynamic theta");
-  if (!getTheta().has_value() && !getThetaDyn())
-    return emitOpError("must specify either static or dynamic theta");
+  if (!(getTheta().has_value() ^ getThetaDyn() != nullptr))
+    return emitOpError("must specify exactly one of static or dynamic theta");
   return success();
 }
 
@@ -191,14 +189,10 @@ DenseElementsAttr U2Op::tryGetStaticMatrix() {
 }
 
 LogicalResult U2Op::verify() {
-  if (getPhi().has_value() && getPhiDyn())
-    return emitOpError("cannot specify both static and dynamic phi");
-  if (!getPhi().has_value() && !getPhiDyn())
-    return emitOpError("must specify either static or dynamic phi");
-  if (getLambda().has_value() && getLambdaDyn())
-    return emitOpError("cannot specify both static and dynamic lambda");
-  if (!getLambda().has_value() && !getLambdaDyn())
-    return emitOpError("must specify either static or dynamic lambda");
+  if (!(getPhi().has_value() ^ getPhiDyn() != nullptr))
+    return emitOpError("must specify exactly one of static or dynamic phi");
+  if (!(getLambda().has_value() ^ getLambdaDyn() != nullptr))
+    return emitOpError("must specify exactly one of static or dynamic lambda");
   return success();
 }
 
