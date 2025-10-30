@@ -36,6 +36,11 @@ constexpr std::size_t IF_PARENT_DEPTH = 2UL;
 using QubitIndex = uint32_t;
 
 /**
+ * @brief A pair of SSA Values.
+ */
+using ValuePair = std::pair<mlir::Value, mlir::Value>;
+
+/**
  * @brief Represents a pair of qubit indices.
  */
 using QubitIndexPair = std::pair<QubitIndex, QubitIndex>;
@@ -58,14 +63,14 @@ using QubitIndexPair = std::pair<QubitIndex, QubitIndex>;
  * @param op A two-qubit unitary.
  * @return Pair of SSA values consisting of the first and second in-qubits.
  */
-[[nodiscard]] std::pair<mlir::Value, mlir::Value> getIns(UnitaryInterface op);
+[[nodiscard]] ValuePair getIns(UnitaryInterface op);
 
 /**
  * @brief Return output qubit pair for a two-qubit unitary.
  * @param op A two-qubit unitary.
  * @return Pair of SSA values consisting of the first and second out-qubits.
  */
-[[nodiscard]] std::pair<mlir::Value, mlir::Value> getOuts(UnitaryInterface op);
+[[nodiscard]] ValuePair getOuts(UnitaryInterface op);
 
 /**
  * @brief Return the first user of a value in a given region.

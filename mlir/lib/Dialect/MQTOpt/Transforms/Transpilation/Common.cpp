@@ -52,7 +52,7 @@ bool isTwoQubitGate(UnitaryInterface op) {
           op.getNegCtrlInQubits().size()) == 2;
 }
 
-[[nodiscard]] std::pair<mlir::Value, mlir::Value> getIns(UnitaryInterface op) {
+[[nodiscard]] ValuePair getIns(UnitaryInterface op) {
   assert(isTwoQubitGate(op));
 
   const auto target = op.getInQubits();
@@ -68,7 +68,7 @@ bool isTwoQubitGate(UnitaryInterface op) {
              : std::pair{target[0], op.getNegCtrlInQubits()[0]};
 }
 
-[[nodiscard]] std::pair<mlir::Value, mlir::Value> getOuts(UnitaryInterface op) {
+[[nodiscard]] ValuePair getOuts(UnitaryInterface op) {
   assert(isTwoQubitGate(op));
   const auto target = op.getOutQubits();
   const auto targetSize = target.size();
