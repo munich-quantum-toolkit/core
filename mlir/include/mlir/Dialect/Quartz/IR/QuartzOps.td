@@ -339,7 +339,7 @@ def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]
     let arguments = (ins QubitType:$qubit,
                      OptionalAttr<F64Attr>:$theta,
                      Optional<F64>:$theta_dyn);
-    let assemblyFormat = "`(` ($theta^)? ($theta_dyn^)? `)` $qubit attr-dict";
+    let assemblyFormat = "`(` ($theta^)? (`` $theta_dyn^)? `)` $qubit attr-dict";
 
     let extraClassDeclaration = [{
         ParameterDescriptor getParameter(size_t i);
@@ -370,7 +370,7 @@ def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter,
                      Optional<F64>:$phi_dyn,
                      OptionalAttr<F64Attr>:$lambda,
                      Optional<F64>:$lambda_dyn);
-    let assemblyFormat = "`(` ($phi^)? ($phi_dyn^)? `,` ($lambda^)? ($lambda_dyn^)? `)` $qubit attr-dict";
+    let assemblyFormat = "`(` ($phi^)? (`` $phi_dyn^)? `,` ($lambda^)? ($lambda_dyn^)? `)` $qubit attr-dict";
 
     let extraClassDeclaration = [{
         ParameterDescriptor getParameter(size_t i);
