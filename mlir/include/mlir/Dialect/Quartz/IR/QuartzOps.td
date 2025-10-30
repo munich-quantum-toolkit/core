@@ -14,6 +14,7 @@ include "mlir/IR/BuiltinTypeInterfaces.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
+include "mlir/IR/RegionKindInterface.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -431,6 +432,38 @@ def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParam
     let extraClassDeclaration = [{
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "swap"; }
+    }];
+}
+
+//===----------------------------------------------------------------------===//
+// Modifiers
+//===----------------------------------------------------------------------===//
+
+def YieldOp : QuartzOp<"yield", traits = [Terminator]> {
+    let assemblyFormat = "attr-dict";
+}
+
+def CtrlOp : QuartzOp<"ctrl", traits = [UnitaryOpInterface]> {
+    let arguments = (ins Variadic<QubitType>:$controls);
+    let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "`(` $controls `)` $body attr-dict";
+
+    let extraClassDeclaration = [{
+        UnitaryOpInterface getBodyUnitary();
+        size_t getNumQubits();
+        size_t getNumTargets();
+        size_t getNumControls();
+        size_t getNumPosControls();
+        size_t getNumNegControls();
+        Value getQubit(size_t i);
+        Value getTarget(size_t i);
+        Value getPosControl(size_t i);
+        Value getNegControl(size_t i);
+        size_t getNumParams();
+        ::mlir::utils::ParameterDescriptor getParameter(size_t i);
+        bool hasStaticUnitary();
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 }
 

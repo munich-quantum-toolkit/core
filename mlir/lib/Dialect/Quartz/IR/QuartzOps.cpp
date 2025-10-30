@@ -203,3 +203,71 @@ DenseElementsAttr SWAPOp::tryGetStaticMatrix() {
       RankedTensorType::get({4, 4}, ComplexType::get(Float64Type::get(ctx)));
   return DenseElementsAttr::get(type, getMatrixSWAP());
 }
+
+//===----------------------------------------------------------------------===//
+// Modifiers
+//===----------------------------------------------------------------------===//
+
+UnitaryOpInterface CtrlOp::getBodyUnitary() {
+  return llvm::dyn_cast<UnitaryOpInterface>(&getBody().front().front());
+}
+
+size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
+
+size_t CtrlOp::getNumTargets() {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.getNumTargets();
+}
+
+size_t CtrlOp::getNumControls() { return getNumPosControls(); }
+
+size_t CtrlOp::getNumPosControls() { return getControls().size(); }
+
+size_t CtrlOp::getNumNegControls() {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.getNumNegControls();
+}
+
+Value CtrlOp::getQubit(size_t i) {
+  if (i < getNumTargets()) {
+    return getTarget(i);
+  }
+  if (getNumTargets() <= i && i < getNumPosControls()) {
+    return getPosControl(i - getNumTargets());
+  }
+  if (getNumTargets() + getNumPosControls() <= i && i < getNumQubits()) {
+    return getNegControl(i - getNumTargets() - getNumPosControls());
+  }
+  llvm_unreachable("Invalid qubit index");
+}
+
+Value CtrlOp::getTarget(size_t i) {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.getTarget(i);
+}
+
+Value CtrlOp::getPosControl(size_t i) { return getControls()[i]; }
+
+Value CtrlOp::getNegControl(size_t i) {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.getNegControl(i);
+}
+
+size_t CtrlOp::getNumParams() {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.getNumParams();
+}
+
+bool CtrlOp::hasStaticUnitary() {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.hasStaticUnitary();
+}
+
+ParameterDescriptor CtrlOp::getParameter(size_t i) {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.getParameter(i);
+}
+
+DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
+  llvm_unreachable("Not implemented yet"); // TODO
+}

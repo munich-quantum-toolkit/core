@@ -222,8 +222,21 @@ void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 // Temporary implementation of XOp translation
 void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
             const llvm::SmallVector<Value>& qubits) {
-  const auto& qubit = qubits[operation.getTargets()[0]];
-  builder.x(qubit);
+  const auto& target = qubits[operation.getTargets()[0]];
+  if (operation.getControls().size() == 0) {
+    builder.x(target);
+  } else {
+    llvm::SmallVector<Value> controls;
+    for (const auto& [control, type] : operation.getControls()) {
+      if (type == qc::Control::Type::Neg) {
+        continue;
+      }
+      controls.push_back(qubits[control]);
+    }
+    builder.ctrl(controls, [target](QuartzProgramBuilder& bodyBuilder) {
+      bodyBuilder.x(target);
+    });
+  }
 }
 
 // Temporary implementation of RXOp translation

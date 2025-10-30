@@ -170,6 +170,24 @@ QuartzProgramBuilder& QuartzProgramBuilder::swap(Value qubit0, Value qubit1) {
 }
 
 //===----------------------------------------------------------------------===//
+// Modifiers
+//===----------------------------------------------------------------------===//
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::ctrl(ValueRange controls,
+                           std::function<void(QuartzProgramBuilder&)> body) {
+  auto ctrlOp = builder.create<CtrlOp>(loc, controls);
+
+  const mlir::OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(&ctrlOp.getBody().emplaceBlock());
+
+  body(*this);
+  builder.create<YieldOp>(loc);
+
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//
 

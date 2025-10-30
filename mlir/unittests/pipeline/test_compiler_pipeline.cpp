@@ -1157,4 +1157,26 @@ TEST_F(SimpleConversionTest, RXQuartzToQIR) {
   // EXPECT_TRUE(verify("Quartz to QIR", qirResult, qirExpected.get()));
 }
 
+TEST_F(SimpleConversionTest, CX) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(2, "q");
+  qc.cx(0, 1);
+
+  const auto module = translateQuantumComputationToQuartz(context.get(), qc);
+  ASSERT_TRUE(module);
+  runCanonicalizationPasses(module.get());
+  const auto moduleIR = captureIR(module.get());
+
+  const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    b.ctrl(q0, [q1](quartz::QuartzProgramBuilder& bodyBuilder) {
+      bodyBuilder.x(q1);
+    });
+  });
+
+  EXPECT_TRUE(verify("Translation", moduleIR, expected.get()));
+}
+
 } // namespace
