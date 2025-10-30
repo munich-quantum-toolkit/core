@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/Flux/IR/FluxDialect.h" // IWYU pragma: associated
 #include "mlir/Dialect/Utils/MatrixUtils.h"
+#include "mlir/Dialect/Utils/ParameterDescriptor.h"
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -19,9 +20,7 @@
 #include <mlir/IR/PatternMatch.h>
 // IWYU pragma: end_keep
 
-#include <complex>
 #include <cstddef>
-#include <llvm/ADT/ArrayRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -154,7 +153,7 @@ DenseElementsAttr RXOp::tryGetStaticMatrix() {
 }
 
 LogicalResult RXOp::verify() {
-  if (!(getTheta().has_value() ^ bool(getThetaDyn()))) {
+  if (getTheta().has_value() == (getThetaDyn() != nullptr)) {
     return emitOpError("must specify exactly one of static or dynamic theta");
   }
   return success();
@@ -189,10 +188,10 @@ DenseElementsAttr U2Op::tryGetStaticMatrix() {
 }
 
 LogicalResult U2Op::verify() {
-  if (!(getPhi().has_value() ^ bool(getPhiDyn()))) {
+  if (getPhi().has_value() == (getPhiDyn() != nullptr)) {
     return emitOpError("must specify exactly one of static or dynamic phi");
   }
-  if (!(getLambda().has_value() ^ bool(getLambdaDyn()))) {
+  if (getLambda().has_value() == (getLambdaDyn() != nullptr)) {
     return emitOpError("must specify exactly one of static or dynamic lambda");
   }
   return success();

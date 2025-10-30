@@ -28,6 +28,7 @@
 #include <mlir/IR/Value.h>
 #include <string>
 #include <utility>
+#include <variant>
 
 namespace mlir::qir {
 

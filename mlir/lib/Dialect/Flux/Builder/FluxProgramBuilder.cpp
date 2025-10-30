@@ -26,7 +26,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <utility>
-#include <vector>
+#include <variant>
 
 namespace mlir::flux {
 
