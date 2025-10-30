@@ -263,13 +263,11 @@ struct ConvertFluxRXOp final : OpConversionPattern<flux::RXOp> {
     // OpAdaptor provides the already type-converted input qubit
     const auto& quartzQubit = adaptor.getQubitIn();
 
-    const auto& theta = op.getParameter(0);
-    const auto& thetaAttr = theta.getValueAttr();
-    const auto& thetaOperand = theta.getValueOperand();
+    const auto& theta = op.getThetaAttr();
+    const auto& thetaDyn = op.getThetaDyn();
 
     // Create quartz.rx (in-place operation, no result)
-    rewriter.create<quartz::RXOp>(op.getLoc(), quartzQubit, thetaAttr,
-                                  thetaOperand);
+    rewriter.create<quartz::RXOp>(op.getLoc(), quartzQubit, theta, thetaDyn);
 
     // Replace the output qubit with the same quartz reference
     rewriter.replaceOp(op, quartzQubit);
@@ -288,17 +286,15 @@ struct ConvertFluxU2Op final : OpConversionPattern<flux::U2Op> {
     // OpAdaptor provides the already type-converted input qubit
     const auto& quartzQubit = adaptor.getQubitIn();
 
-    const auto& phi = op.getParameter(0);
-    const auto& phiAttr = phi.getValueAttr();
-    const auto& phiOperand = phi.getValueOperand();
+    const auto& phi = op.getPhiAttr();
+    const auto& phiDyn = op.getPhiDyn();
 
-    const auto& lambda = op.getParameter(1);
-    const auto& lambdaAttr = lambda.getValueAttr();
-    const auto& lambdaOperand = lambda.getValueOperand();
+    const auto& lambda = op.getLambdaAttr();
+    const auto& lambdaDyn = op.getLambdaDyn();
 
     // Create quartz.u2 (in-place operation, no result)
-    rewriter.create<quartz::U2Op>(op.getLoc(), quartzQubit, phiAttr, phiOperand,
-                                  lambdaAttr, lambdaOperand);
+    rewriter.create<quartz::U2Op>(op.getLoc(), quartzQubit, phi, phiDyn, lambda,
+                                  lambdaDyn);
 
     // Replace the output qubit with the same quartz reference
     rewriter.replaceOp(op, quartzQubit);
