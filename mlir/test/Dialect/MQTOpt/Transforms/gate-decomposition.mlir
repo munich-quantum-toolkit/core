@@ -9,7 +9,7 @@
 // RUN: quantum-opt %s -split-input-file --gate-decomposition | FileCheck %s
 
 // -----
-// This test checks if two-qubit consecutive controlled self-inverses are canceled correctly.
+// This test checks if an even number of CNOT gates will be cancelled out.
 
 module {
   // CHECK-LABEL: func.func @testEvenNegationSeries
@@ -65,6 +65,9 @@ module {
   }
 }
 
+// -----
+// This test checks if an odd number of CNOT gates will be reduced to a single CNOT.
+
 module {
   // CHECK-LABEL: func.func @testOddNegationSeries
   func.func @testOddNegationSeries() {
@@ -89,6 +92,9 @@ module {
     return
   }
 }
+
+// -----
+// This test checks if a two-qubit series containing a single-qubit gate is decomposed correctly.
 
 module {
   // CHECK-LABEL: func.func @testSeriesOneQubitOpInbetween
@@ -117,16 +123,21 @@ module {
   }
 }
 
+// -----
+// This test checks if a two-qubit series starting on a single-qubit gate is decomposed correctly.
+
 module {
   // CHECK-LABEL: func.func @testSeriesStartingOneQubitOp
   func.func @testSeriesStartingOneQubitOp() {
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
-    // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]]
+    // CHECK: mqtopt.gphase(%[[C0:.*]])
+    // CHECK: %[[Q0_1:.*]] = mqtopt.ry(%[[C1:.*]]) %[[Q0_0]]
+    // CHECK: %[[Q0_2:.*]] = mqtopt.rz(%[[C1]]) %[[Q0_1]]
 
-    // CHECK: mqtopt.deallocQubit %[[Q0_1]]
-    // CHECK: mqtopt.deallocQubit %[[Q1_1]]
+    // CHECK: mqtopt.deallocQubit %[[Q0_2]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_0]]
 
     %q0_0 = mqtopt.allocQubit
     %q1_0 = mqtopt.allocQubit
@@ -142,16 +153,21 @@ module {
   }
 }
 
+// -----
+// This test checks if a two-qubit series ending on a single-qubit gate is decomposed correctly.
+
 module {
   // CHECK-LABEL: func.func @testSeriesEndingOneQubitOp
   func.func @testSeriesEndingOneQubitOp() {
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
-    // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[Q0_0]]
+    // CHECK: mqtopt.gphase(%[[C0:.*]])
+    // CHECK: %[[Q0_1:.*]] = mqtopt.ry(%[[C1:.*]]) %[[Q0_0]]
+    // CHECK: %[[Q0_2:.*]] = mqtopt.rz(%[[C1]]) %[[Q0_1]]
 
-    // CHECK: mqtopt.deallocQubit %[[Q0_1]]
-    // CHECK: mqtopt.deallocQubit %[[Q1_1]]
+    // CHECK: mqtopt.deallocQubit %[[Q0_2]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_0]]
 
     %q0_0 = mqtopt.allocQubit
     %q1_0 = mqtopt.allocQubit
@@ -162,6 +178,48 @@ module {
 
     mqtopt.deallocQubit %q0_3
     mqtopt.deallocQubit %q1_2
+
+    return
+  }
+}
+
+// -----
+// This test checks if an interrupted series is ignored correctly.
+
+module {
+  // CHECK-LABEL: func.func @testInterruptedSeries
+  func.func @testInterruptedSeries() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q2_0:.*]] = mqtopt.allocQubit
+
+    // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]]
+    // CHECK: %[[Q1_2:.*]], %[[Q0_2:.*]] = mqtopt.x() %[[Q1_1]] ctrl %[[Q0_1]]
+    // CHECK: %[[Q0_3:.*]], %[[Q2_1:.*]] = mqtopt.x() %[[Q0_2]] ctrl %[[Q2_0]]
+    // CHECK: %[[Q1_3:.*]], %[[Q0_4:.*]] = mqtopt.x() %[[Q1_2]] ctrl %[[Q0_3]]
+    // CHECK: %[[Q0_5:.*]], %[[Q1_4:.*]] = mqtopt.x() %[[Q0_4]] ctrl %[[Q1_3]]
+
+    // CHECK-NOT: mqtopt.ry
+    // CHECK-NOT: mqtopt.rz
+    // CHECK-NOT: mqtopt.gphase(%[[ANY:.*]])
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_5]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_4]]
+    // CHECK: mqtopt.deallocQubit %[[Q2_1]]
+
+    %q0_0 = mqtopt.allocQubit
+    %q1_0 = mqtopt.allocQubit
+    %q2_0 = mqtopt.allocQubit
+
+    %q0_1, %q1_1 = mqtopt.x() %q0_0 ctrl %q1_0: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q1_2, %q0_2 = mqtopt.x() %q1_1 ctrl %q0_1: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_3, %q2_1 = mqtopt.x() %q0_2 ctrl %q2_0: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q1_3, %q0_4 = mqtopt.x() %q1_2 ctrl %q0_3: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_5, %q1_4 = mqtopt.x() %q0_4 ctrl %q1_3: !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_5
+    mqtopt.deallocQubit %q1_4
+    mqtopt.deallocQubit %q2_1
 
     return
   }
