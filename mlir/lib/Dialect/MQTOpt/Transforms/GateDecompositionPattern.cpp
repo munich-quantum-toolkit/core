@@ -59,7 +59,7 @@ struct GateDecompositionPattern final
       auto gateMatrix =
           getTwoQubitMatrix({.type = helpers::getQcType(gate.op),
                              .parameter = helpers::getParameters(gate.op),
-                             .qubit_id = gate.qubit_id});
+                             .qubit_id = gate.qubitIds});
       unitaryMatrix = helpers::multiply(unitaryMatrix, gateMatrix);
     }
 
@@ -88,7 +88,7 @@ struct GateDecompositionPattern final
 
     struct Gate {
       UnitaryInterface op;
-      llvm::SmallVector<std::uint8_t, 2> qubit_id;
+      llvm::SmallVector<std::uint8_t, 2> qubitIds;
     };
     llvm::SmallVector<Gate, 8> gates;
 
@@ -102,12 +102,10 @@ struct GateDecompositionPattern final
         }
 
         if (helpers::isSingleQubitOperation(userUnitary)) {
-          result.appendSingleQubitGate(userUnitary);
-          return true;
+          return result.appendSingleQubitGate(userUnitary);
         }
         if (helpers::isTwoQubitOperation(userUnitary)) {
-          result.appendTwoQubitGate(userUnitary);
-          return true;
+          return result.appendTwoQubitGate(userUnitary);
         }
         return false;
       };
@@ -130,7 +128,7 @@ struct GateDecompositionPattern final
     }
 
   private:
-    TwoQubitSeries(UnitaryInterface initialOperation) {
+    explicit TwoQubitSeries(UnitaryInterface initialOperation) {
       auto&& in = initialOperation.getAllInQubits();
       auto&& out = initialOperation->getResults();
       if (helpers::isSingleQubitOperation(initialOperation)) {
@@ -303,7 +301,7 @@ struct GateDecompositionPattern final
           qubits.push_back(inQubits[x]);
         }
         auto newGate =
-            createGate<RZOp>(rewriter, location, qubits, {}, gate.parameter);
+            createGate<RYOp>(rewriter, location, qubits, {}, gate.parameter);
         updateInQubits(gate, newGate);
       } else if (gate.type == qc::RZ) {
         mlir::SmallVector<mlir::Value, 2> qubits;
