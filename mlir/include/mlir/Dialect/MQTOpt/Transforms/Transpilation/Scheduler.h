@@ -102,7 +102,6 @@ struct ParallelOpScheduler final : SchedulerBase {
         const auto& [qNext, gate] = opt.value();
 
         if (q != qNext) {
-          LLVM_DEBUG(llvm::dbgs() << "remap!\n");
           layout.remapQubitValue(q, qNext);
         }
 
