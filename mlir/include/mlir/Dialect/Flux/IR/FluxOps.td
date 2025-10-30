@@ -416,6 +416,8 @@ def XOp : FluxOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]> {
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "x"; }
     }];
+
+    let hasCanonicalizer = 1;
 }
 
 def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> {
@@ -456,6 +458,7 @@ def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> 
         }]>,
     ];
 
+    let hasCanonicalizer = 1;
     let hasVerifier = 1;
 }
 

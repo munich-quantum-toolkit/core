@@ -211,10 +211,10 @@ DenseElementsAttr SWAPOp::tryGetStaticMatrix() {
 //===----------------------------------------------------------------------===//
 
 namespace {
+
 /**
- * @class RemoveAllocDeallocPair
- * @brief A class designed to identify and remove matching allocation and
- * deallocation pairs without operations between them.
+ * @brief Remove matching allocation and deallocation pairs without operations
+ * between them.
  */
 struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -234,6 +234,9 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
   }
 };
 
+/**
+ * @brief Remove reset operations that immediately follow an allocation.
+ */
 struct RemoveResetAfterAlloc final : OpRewritePattern<ResetOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -250,6 +253,63 @@ struct RemoveResetAfterAlloc final : OpRewritePattern<ResetOp> {
     return success();
   }
 };
+
+/**
+ * @brief Remove subsequent X operations on the same qubit.
+ */
+struct RemoveSubsequentX final : OpRewritePattern<XOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(XOp xOp,
+                                PatternRewriter& rewriter) const override {
+    auto prevOp = xOp.getQubitIn().getDefiningOp<XOp>();
+
+    // Check if the predecessor is an XOp
+    if (!prevOp) {
+      return failure();
+    }
+
+    // Remove both XOps
+    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+    rewriter.replaceOp(xOp, xOp.getQubitIn());
+    return success();
+  }
+};
+
+/**
+ * @brief Merge subsequent RX operations on the same qubit by adding their
+ * angles.
+ */
+struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(RXOp rxOp,
+                                PatternRewriter& rewriter) const override {
+    auto prevOp = rxOp.getQubitIn().getDefiningOp<RXOp>();
+
+    // Check if the predecessor is an RXOp
+    if (!prevOp) {
+      return failure();
+    }
+
+    // Check if both RXOps have static angles
+    const auto& theta = prevOp.getParameter(0);
+    const auto& prevTheta = rxOp.getParameter(0);
+    if (!theta.isStatic() || !prevTheta.isStatic()) {
+      return failure();
+    }
+
+    // Merge the two RXOps
+    const auto newTheta = theta.getValueDouble() + prevTheta.getValueDouble();
+    auto newOp =
+        rewriter.create<RXOp>(rxOp.getLoc(), rxOp.getQubitIn(), newTheta);
+
+    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+    rewriter.replaceOp(rxOp, newOp.getResult());
+    return success();
+  }
+};
+
 } // namespace
 
 void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
@@ -260,4 +320,14 @@ void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
 void ResetOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                           MLIRContext* context) {
   results.add<RemoveResetAfterAlloc>(context);
+}
+
+void XOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                      MLIRContext* context) {
+  results.add<RemoveSubsequentX>(context);
+}
+
+void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                       MLIRContext* context) {
+  results.add<MergeSubsequentRX>(context);
 }
