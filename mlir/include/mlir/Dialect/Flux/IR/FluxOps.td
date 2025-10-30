@@ -410,10 +410,10 @@ def XOp : FluxOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]> {
 
 def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> {
     let arguments = (ins QubitType:$qubit_in,
-                     OptionalAttr<F64Attr>:$theta_attr,
-                     Optional<F64>:$theta_operand);
+                     OptionalAttr<F64Attr>:$theta,
+                     Optional<F64>:$theta_dyn);
     let results = (outs QubitType:$qubit_out);
-    let assemblyFormat = "`(` ($theta_attr^)? ($theta_operand^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+    let assemblyFormat = "`(` ($theta^)? ($theta_dyn^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
         ParameterDescriptor getParameter(size_t i);
@@ -440,12 +440,12 @@ def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> 
 
 def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter, AttrSizedOperandSegments]> {
     let arguments = (ins QubitType:$qubit_in,
-                     OptionalAttr<F64Attr>:$phi_attr,
-                     Optional<F64>:$phi_operand,
-                     OptionalAttr<F64Attr>:$lambda_attr,
-                     Optional<F64>:$lambda_operand);
+                     OptionalAttr<F64Attr>:$phi,
+                     Optional<F64>:$phi_dyn,
+                     OptionalAttr<F64Attr>:$lambda,
+                     Optional<F64>:$lambda_dyn);
     let results = (outs QubitType:$qubit_out);
-    let assemblyFormat = "`(` ($phi_attr^)? ($phi_operand^)? `,` ($lambda_attr^)? ($lambda_operand^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+    let assemblyFormat = "`(` ($phi^)? ($phi_dyn^)? `,` ($lambda^)? ($lambda_dyn^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
         ParameterDescriptor getParameter(size_t i);

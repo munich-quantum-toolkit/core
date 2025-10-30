@@ -133,7 +133,7 @@ DenseElementsAttr XOp::tryGetStaticMatrix() {
 
 ParameterDescriptor RXOp::getParameter(size_t i) {
   if (i == 0) {
-    return {getThetaAttrAttr(), getThetaOperand()};
+    return {getThetaAttr(), getThetaDyn()};
   }
   llvm_unreachable("RXOp has one parameter");
 }
@@ -146,16 +146,16 @@ DenseElementsAttr RXOp::tryGetStaticMatrix() {
   }
   auto* ctx = getContext();
   auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
-  const auto& theta = getThetaAttr().value().convertToDouble();
+  const auto& theta = getTheta().value().convertToDouble();
   const std::complex<double> m0(std::cos(theta / 2), 0);
   const std::complex<double> m1(0, -std::sin(theta / 2));
   return DenseElementsAttr::get(type, llvm::ArrayRef({m0, m1, m1, m0}));
 }
 
 LogicalResult RXOp::verify() {
-  if (getThetaAttr().has_value() && getThetaOperand())
+  if (getTheta().has_value() && getThetaDyn())
     return emitOpError("cannot specify both static and dynamic theta");
-  if (!getThetaAttr().has_value() && !getThetaOperand())
+  if (!getTheta().has_value() && !getThetaDyn())
     return emitOpError("must specify either static or dynamic theta");
   return success();
 }
@@ -164,10 +164,10 @@ LogicalResult RXOp::verify() {
 
 ParameterDescriptor U2Op::getParameter(size_t i) {
   if (i == 0) {
-    return {getPhiAttrAttr(), getPhiOperand()};
+    return {getPhiAttr(), getPhiDyn()};
   }
   if (i == 1) {
-    return {getLambdaAttrAttr(), getLambdaOperand()};
+    return {getLambdaAttr(), getLambdaDyn()};
   }
   llvm_unreachable("U2Op has two parameters");
 }
@@ -182,8 +182,8 @@ DenseElementsAttr U2Op::tryGetStaticMatrix() {
   }
   auto* ctx = getContext();
   auto type = RankedTensorType::get({2, 2}, Float64Type::get(ctx));
-  const auto& phi = getPhiAttr().value().convertToDouble();
-  const auto& lambda = getLambdaAttr().value().convertToDouble();
+  const auto& phi = getPhi().value().convertToDouble();
+  const auto& lambda = getLambda().value().convertToDouble();
   const std::complex<double> i(0.0, 1.0);
   const std::complex<double> m00(1.0, 0.0);
   const std::complex<double> m01 = -std::exp(i * lambda);
@@ -193,13 +193,13 @@ DenseElementsAttr U2Op::tryGetStaticMatrix() {
 }
 
 LogicalResult U2Op::verify() {
-  if (getPhiAttr().has_value() && getPhiOperand())
+  if (getPhi().has_value() && getPhiDyn())
     return emitOpError("cannot specify both static and dynamic phi");
-  if (!getPhiAttr().has_value() && !getPhiOperand())
+  if (!getPhi().has_value() && !getPhiDyn())
     return emitOpError("must specify either static or dynamic phi");
-  if (getLambdaAttr().has_value() && getLambdaOperand())
+  if (getLambda().has_value() && getLambdaDyn())
     return emitOpError("cannot specify both static and dynamic lambda");
-  if (!getLambdaAttr().has_value() && !getLambdaOperand())
+  if (!getLambda().has_value() && !getLambdaDyn())
     return emitOpError("must specify either static or dynamic lambda");
   return success();
 }
