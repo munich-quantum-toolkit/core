@@ -234,9 +234,7 @@ void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
       }
       controls.push_back(qubits[control]);
     }
-    builder.ctrl(controls, [target](QuartzProgramBuilder& bodyBuilder) {
-      bodyBuilder.x(target);
-    });
+    builder.ctrl(controls, [&](auto& builder) { builder.x(target); });
   }
 }
 

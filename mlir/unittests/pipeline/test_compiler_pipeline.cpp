@@ -1171,9 +1171,7 @@ TEST_F(SimpleConversionTest, CX) {
     auto reg = b.allocQubitRegister(2, "q");
     auto q0 = reg[0];
     auto q1 = reg[1];
-    b.ctrl(q0, [q1](quartz::QuartzProgramBuilder& bodyBuilder) {
-      bodyBuilder.x(q1);
-    });
+    b.ctrl(q0, [&](auto& b) { b.x(q1); });
   });
 
   EXPECT_TRUE(verify("Translation", moduleIR, expected.get()));
