@@ -435,7 +435,8 @@ struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
 
     const auto arch = getArchitecture(archName);
     if (!arch) {
-      emitError(UnknownLoc::get(&getContext()), "unsupported architecture");
+      emitError(UnknownLoc::get(&getContext()))
+          << "unsupported architecture '" << archName << "'";
       signalPassFailure();
       return;
     }
