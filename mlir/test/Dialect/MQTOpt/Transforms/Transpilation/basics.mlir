@@ -74,8 +74,7 @@ module {
         return
     }
 
-    // NAIVE-LABEL: func.func @entryBell
-    // ASTAR-LABEL: func.func @entryBell
+    // CHECK-LABEL: func.func @entryBell
     func.func @entryBell() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -106,8 +105,7 @@ module {
         return
     }
 
-    // NAIVE-LABEL: func.func @entryBellLoop
-    // ASTAR-LABEL: func.func @entryBellLoop
+    // CHECK-LABEL: func.func @entryBellLoop
     func.func @entryBellLoop() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -143,8 +141,7 @@ module {
         return
     }
 
-    // NAIVE-LABEL: func.func @entryGHZ
-    // ASTAR-LABEL: func.func @entryGHZ
+    // CHECK-LABEL: func.func @entryGHZ
     func.func @entryGHZ() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -193,8 +190,7 @@ module {
         return
     }
 
-    // NAIVE-LABEL: func.func @entryBranching
-    // ASTAR-LABEL: func.func @entryBranching
+    // CHECK-LABEL: func.func @entryBranching
     func.func @entryBranching() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -233,8 +229,7 @@ module {
         return
     }
 
-    // NAIVE-LABEL: func.func @entryAll
-    // ASTAR-LABEL: func.func @entryAll
+    // CHECK-LABEL: func.func @entryAll
     func.func @entryAll() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -370,8 +365,7 @@ module {
         return
     }
 
-    // NAIVE-LABEL: func.func @noEntryPoint
-    // ASTAR-LABEL: func.func @noEntryPoint
+    // CHECK-LABEL: func.func @noEntryPoint
     func.func @noEntryPoint() {
         // CHECK: %[[ANY:.*]] = mqtopt.allocQubit
         %q0 = mqtopt.allocQubit
