@@ -21,6 +21,7 @@
 // IWYU pragma: end_keep
 
 #include <cstddef>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -274,12 +275,12 @@ Value CtrlOp::getOutputNegControl(size_t i) {
 }
 
 Value CtrlOp::getInputForOutput(Value output) {
-  for (auto i = 0; i < getNumPosControls(); ++i) {
+  for (size_t i = 0; i < getNumPosControls(); ++i) {
     if (output == getControlsOut()[i]) {
       return getControlsIn()[i];
     }
   }
-  for (auto i = 0; i < getNumTargets(); ++i) {
+  for (size_t i = 0; i < getNumTargets(); ++i) {
     if (output == getTargetsOut()[i]) {
       return getTargetsIn()[i];
     }
@@ -288,12 +289,12 @@ Value CtrlOp::getInputForOutput(Value output) {
 }
 
 Value CtrlOp::getOutputForInput(Value input) {
-  for (auto i = 0; i < getNumPosControls(); ++i) {
+  for (size_t i = 0; i < getNumPosControls(); ++i) {
     if (input == getControlsIn()[i]) {
       return getControlsOut()[i];
     }
   }
-  for (auto i = 0; i < getNumTargets(); ++i) {
+  for (size_t i = 0; i < getNumTargets(); ++i) {
     if (input == getTargetsIn()[i]) {
       return getTargetsOut()[i];
     }

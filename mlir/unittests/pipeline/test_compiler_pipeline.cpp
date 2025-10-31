@@ -1186,11 +1186,11 @@ TEST_F(SimpleConversionTest, CX) {
 
   const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
-    auto q0_0 = reg[0];
-    auto q1_0 = reg[1];
-    b.ctrl({q0_0}, {q1_0}, [&](auto& b) {
-      auto q1_1 = b.x(q1_0);
-      return SmallVector<Value>{q1_1};
+    auto q0a = reg[0];
+    auto q1a = reg[1];
+    b.ctrl({q0a}, {q1a}, [&](auto& b) {
+      auto q1b = b.x(q1a);
+      return SmallVector<Value>{q1b};
     });
   });
 

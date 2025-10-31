@@ -526,7 +526,7 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(quartz::CtrlOp op, OpAdaptor adaptor,
+  matchAndRewrite(quartz::CtrlOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     // Get Flux controls from state map
     const auto& quartzControls = op.getControls();
@@ -539,7 +539,7 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
     // Get Flux targets from state map
     SmallVector<Value> fluxTargets;
     fluxTargets.reserve(op.getNumTargets());
-    for (auto i = 0; i < op.getNumTargets(); ++i) {
+    for (size_t i = 0; i < op.getNumTargets(); ++i) {
       const auto& quartzTarget = op.getTarget(i);
       fluxTargets.push_back(getState().qubitMap[quartzTarget]);
     }
@@ -550,18 +550,18 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
 
     // Clone the body region from Quartz to Flux
     IRMapping regionMap;
-    for (auto i = 0; i < op.getNumTargets(); ++i) {
+    for (size_t i = 0; i < op.getNumTargets(); ++i) {
       regionMap.map(op.getTarget(i), fluxTargets[i]);
     }
     rewriter.cloneRegionBefore(op.getBody(), fluxOp.getBody(),
                                fluxOp.getBody().end(), regionMap);
 
     // Update state map
-    for (auto i = 0; i < op.getNumPosControls(); ++i) {
+    for (size_t i = 0; i < op.getNumPosControls(); ++i) {
       const auto& quartzControl = quartzControls[i];
       getState().qubitMap[quartzControl] = fluxOp.getControlsOut()[i];
     }
-    for (auto i = 0; i < op.getNumTargets(); ++i) {
+    for (size_t i = 0; i < op.getNumTargets(); ++i) {
       const auto& quartzTarget = op.getTarget(i);
       getState().qubitMap[quartzTarget] = fluxOp.getTargetsOut()[i];
     }
@@ -578,15 +578,16 @@ struct ConvertQuartzYieldOp final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(quartz::YieldOp op, OpAdaptor adaptor,
+  matchAndRewrite(quartz::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto ctrlOp = dyn_cast<flux::CtrlOp>(op->getParentOp());
     auto unitaryOp = ctrlOp.getBodyUnitary();
 
     SmallVector<Value> targets;
     targets.reserve(unitaryOp.getNumTargets());
-    for (auto i = 0; i < unitaryOp.getNumTargets(); ++i) {
-      auto yield = rewriter.getRemappedValue(unitaryOp.getOutputTarget(i));
+    for (size_t i = 0; i < unitaryOp.getNumTargets(); ++i) {
+      const auto& yield =
+          rewriter.getRemappedValue(unitaryOp.getOutputTarget(i));
       targets.push_back(yield);
     }
 
