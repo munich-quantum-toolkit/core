@@ -27,6 +27,41 @@ namespace py = pybind11;
 using namespace py::literals;
 
 PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
+  // Job class
+  auto job = py::class_<fomac::FoMaC::Job>(m, "Job");
+  job.def("check", &fomac::FoMaC::Job::check);
+  job.def("wait", &fomac::FoMaC::Job::wait);
+  job.def("cancel", &fomac::FoMaC::Job::cancel);
+  job.def("get_counts", &fomac::FoMaC::Job::getCounts);
+  job.def_property_readonly("id", &fomac::FoMaC::Job::getId);
+  job.def_property_readonly("num_shots", &fomac::FoMaC::Job::getNumShots);
+
+  // JobStatus enum
+  py::native_enum<QDMI_Job_Status>(m, "JobStatus", "enum.Enum",
+                                   "Enumeration of job status.")
+      .value("CREATED", QDMI_JOB_STATUS_CREATED)
+      .value("SUBMITTED", QDMI_JOB_STATUS_SUBMITTED)
+      .value("QUEUED", QDMI_JOB_STATUS_QUEUED)
+      .value("RUNNING", QDMI_JOB_STATUS_RUNNING)
+      .value("DONE", QDMI_JOB_STATUS_DONE)
+      .value("CANCELED", QDMI_JOB_STATUS_CANCELED)
+      .value("FAILED", QDMI_JOB_STATUS_FAILED)
+      .export_values()
+      .finalize();
+
+  // ProgramFormat enum
+  py::native_enum<QDMI_Program_Format>(m, "ProgramFormat", "enum.Enum",
+                                       "Enumeration of program formats.")
+      .value("QASM2", QDMI_PROGRAM_FORMAT_QASM2)
+      .value("QASM3", QDMI_PROGRAM_FORMAT_QASM3)
+      .value("QIR_BASE_STRING", QDMI_PROGRAM_FORMAT_QIRBASESTRING)
+      .value("QIR_BASE_MODULE", QDMI_PROGRAM_FORMAT_QIRBASEMODULE)
+      .value("QIR_ADAPTIVE_STRING", QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING)
+      .value("QIR_ADAPTIVE_MODULE", QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)
+      .value("CALIBRATION", QDMI_PROGRAM_FORMAT_CALIBRATION)
+      .export_values()
+      .finalize();
+
   auto device = py::class_<fomac::FoMaC::Device>(m, "Device");
 
   py::native_enum<QDMI_Device_Status>(device, "Status", "enum.Enum",
@@ -122,6 +157,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   device.def("duration_scale_factor",
              &fomac::FoMaC::Device::getDurationScaleFactor);
   device.def("min_atom_distance", &fomac::FoMaC::Device::getMinAtomDistance);
+  device.def("submit_job", &fomac::FoMaC::Device::submitJob, "program"_a,
+             "program_format"_a, "num_shots"_a, "timeout"_a = 60.0);
   device.def("__repr__", [](const fomac::FoMaC::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });

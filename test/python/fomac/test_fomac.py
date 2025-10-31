@@ -10,11 +10,14 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from mqt.core.fomac import Device, devices
+
+if TYPE_CHECKING:
+    from mqt.core.fomac import Job
 
 
 @pytest.fixture(params=devices())
@@ -367,3 +370,137 @@ def test_operation_mean_shuttling_speed(device_and_operation: tuple[Device, Devi
     if mss is not None:
         assert isinstance(mss, int)
         assert mss > 0
+
+
+def test_device_submit_job_returns_valid_job(device: Device) -> None:
+    """Test that submit_job creates a Job object with valid properties."""
+    from mqt.core.fomac import Job, ProgramFormat
+
+    qasm3_program = """
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+h q[0];
+cx q[0], q[1];
+c = measure q;
+"""
+
+    job = device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
+    assert isinstance(job, Job)
+
+    # Job should have a non-empty ID
+    assert len(job.id) > 0
+
+    # Num shots should match request
+    assert job.num_shots == 100
+
+
+def test_device_submit_job_preserves_num_shots(device: Device) -> None:
+    """Test that different shot counts are correctly preserved."""
+    from mqt.core.fomac import ProgramFormat
+
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+"""
+
+    # Submit jobs with different shot counts
+    job1 = device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+    job2 = device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
+    job3 = device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=1000)
+
+    assert job1.num_shots == 10
+    assert job2.num_shots == 100
+    assert job3.num_shots == 1000
+
+
+@pytest.fixture
+def submitted_job(device: Device) -> Job:
+    """Fixture that provides a submitted job for testing.
+
+    Returns:
+        A submitted job with 10 shots.
+    """
+    from mqt.core.fomac import ProgramFormat
+
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+"""
+    return device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+
+
+def test_job_ids_are_unique(device: Device) -> None:
+    """Test that different jobs have unique IDs."""
+    from mqt.core.fomac import ProgramFormat
+
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+"""
+
+    job1 = device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+    job2 = device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+
+    assert job1.id != job2.id
+
+
+def test_job_status_progresses(submitted_job: Job) -> None:
+    """Test that job status progresses to completion."""
+    from mqt.core.fomac import JobStatus
+
+    initial_status = submitted_job.check()
+    assert isinstance(initial_status, JobStatus)
+
+    # Wait for completion
+    submitted_job.wait()
+
+    # After waiting, status should be DONE or FAILED
+    final_status = submitted_job.check()
+    assert final_status in {JobStatus.DONE, JobStatus.FAILED}
+
+
+def test_job_get_counts_returns_valid_histogram(submitted_job: Job) -> None:
+    """Test that job get_counts() returns valid measurement results."""
+    # Wait for job to complete
+    submitted_job.wait()
+
+    # Get counts
+    counts = submitted_job.get_counts()
+    assert isinstance(counts, dict)
+    assert len(counts) > 0
+
+    # For a single qubit, all keys should be "0" or "1"
+    for key in counts:
+        assert isinstance(key, str)
+        assert len(key) == 1
+        assert key in {"0", "1"}
+
+    # All values should be positive integers
+    for value in counts.values():
+        assert isinstance(value, int)
+        assert value > 0
+
+    # Verify total counts match num_shots
+    total_counts = sum(counts.values())
+    assert total_counts == submitted_job.num_shots
+
+
+def test_job_get_counts_is_consistent(submitted_job: Job) -> None:
+    """Test that multiple get_counts() calls return consistent results."""
+    # Wait for job to complete
+    submitted_job.wait()
+
+    # Get counts multiple times
+    counts1 = submitted_job.get_counts()
+    counts2 = submitted_job.get_counts()
+
+    # Results should be identical
+    assert counts1 == counts2
