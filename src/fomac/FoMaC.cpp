@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <map>
 #include <optional>
 #include <qdmi/client.h>
 #include <sstream>
@@ -438,7 +439,7 @@ auto FoMaC::Device::submitJob(const std::string& program,
 }
 
 auto FoMaC::Job::check() const -> QDMI_Job_Status {
-  QDMI_Job_Status status;
+  QDMI_Job_Status status{};
   throwIfError(QDMI_job_check(job_, &status), "Checking job status");
   return status;
 }
