@@ -147,6 +147,6 @@ std::unique_ptr<Architecture> getArchitecture(const std::string& name) {
     return std::make_unique<Architecture>("IBM-Falcon", 127, couplingMap);
   }
 
-  throw std::invalid_argument("Unsupported architecture.");
+  return nullptr;
 }
 }; // namespace mqt::ir::opt

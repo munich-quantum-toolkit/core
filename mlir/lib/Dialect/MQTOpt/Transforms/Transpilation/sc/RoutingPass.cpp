@@ -25,7 +25,6 @@
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/Format.h>
-#include <llvm/Support/LogicalResult.h>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -33,6 +32,7 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -503,16 +503,21 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
       return;
     }
 
-    Mapper mapper = getMapper();
+    auto arch = getArchitecture(archName);
+    if (!arch) {
+      emitError(UnknownLoc::get(&getContext()), "Unsupported architecture.");
+      signalPassFailure();
+      return;
+    }
+
+    Mapper mapper = getMapper(std::move(arch));
     if (failed(route(getOperation(), &getContext(), mapper))) {
       signalPassFailure();
     }
   }
 
 private:
-  [[nodiscard]] Mapper getMapper() {
-    auto arch = getArchitecture(archName);
-
+  [[nodiscard]] Mapper getMapper(std::unique_ptr<Architecture> arch) {
     switch (static_cast<RoutingMethod>(method)) {
     case RoutingMethod::Naive:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=naive\n"; });

@@ -24,13 +24,13 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/LogicalResult.h>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
@@ -434,6 +434,12 @@ struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
     }
 
     const auto arch = getArchitecture(archName);
+    if (!arch) {
+      emitError(UnknownLoc::get(&getContext()), "Unsupported architecture.");
+      signalPassFailure();
+      return;
+    }
+
     const auto placer = getPlacer(*arch);
 
     if (PlacementContext ctx(*arch, *placer);
@@ -453,7 +459,7 @@ private:
       std::random_device rd;
       const std::size_t seed = rd();
       LLVM_DEBUG({
-        llvm::dbgs() << "getPlacer: random placement with seed = " << seed
+        llvm::dbgs() << "getPlacer: random placement with seed =" << seed
                      << '\n';
       });
       return std::make_unique<RandomPlacer>(arch.nqubits(),
