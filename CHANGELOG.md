@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add A\*-search-based routing algorithm to MLIR transpilation routines ([#1237]) ([**@MatthiasReumann**])
+- ✨ Add A\*-search-based routing algorithm to MLIR transpilation routines ([#1237], [#1271]) ([**@MatthiasReumann**])
 
 ### Fixed
 
@@ -219,6 +219,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1271]: https://github.com/munich-quantum-toolkit/core/pull/1271
 [#1237]: https://github.com/munich-quantum-toolkit/core/pull/1237
 [#1269]: https://github.com/munich-quantum-toolkit/core/pull/1269
 [#1263]: https://github.com/munich-quantum-toolkit/core/pull/1263
