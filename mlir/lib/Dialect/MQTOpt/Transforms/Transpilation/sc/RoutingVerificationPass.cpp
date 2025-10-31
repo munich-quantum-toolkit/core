@@ -235,7 +235,7 @@ struct RoutingVerificationPassSC final
 
     auto arch = getArchitecture(archName);
     if (!arch) {
-      emitError(UnknownLoc::get(&getContext()), "Unsupported architecture.");
+      emitError(UnknownLoc::get(&getContext()), "unsupported architecture");
       signalPassFailure();
       return;
     }

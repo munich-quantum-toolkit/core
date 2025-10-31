@@ -505,7 +505,7 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
 
     auto arch = getArchitecture(archName);
     if (!arch) {
-      emitError(UnknownLoc::get(&getContext()), "Unsupported architecture.");
+      emitError(UnknownLoc::get(&getContext()), "unsupported architecture");
       signalPassFailure();
       return;
     }
