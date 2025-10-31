@@ -8,12 +8,13 @@
 
 // Instead of applying checks, the routing verifier pass ensures the validity of this program.
 
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity}, route-sc{method=naive},verify-routing-sc)" -verify-diagnostics | FileCheck --check-prefix=NAIVE %s
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity}, route-sc{method=astar},verify-routing-sc)" -verify-diagnostics | FileCheck --check-prefix=ASTAR %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity arch=MQTTest}, route-sc{method=naive arch=MQTTest},verify-routing-sc{arch=MQTTest})" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity arch=MQTTest}, route-sc{method=astar arch=MQTTest},verify-routing-sc{arch=MQTTest})" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity arch=IBMFalcon}, route-sc{method=naive arch=IBMFalcon},verify-routing-sc{arch=IBMFalcon})" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity arch=IBMFalcon}, route-sc{method=astar arch=IBMFalcon},verify-routing-sc{arch=IBMFalcon})" -verify-diagnostics | FileCheck %s
 
 module {
-    // NAIVE-LABEL: func.func @entrySABRE
-    // ASTAR-LABEL: func.func @entrySABRE
+    // CHECK-LABEL: func.func @entrySABRE
     func.func @entrySABRE() attributes {passthrough = ["entry_point"]} {
 
         //
