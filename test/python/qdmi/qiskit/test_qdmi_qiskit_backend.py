@@ -17,8 +17,8 @@ from qiskit import QuantumCircuit
 from qiskit.circuit import Parameter
 
 from mqt.core.qdmi.qiskit import (
+    CircuitValidationError,
     QiskitBackend,
-    TranslationError,
     UnsupportedOperationError,
 )
 
@@ -46,7 +46,7 @@ def test_single_circuit_run_counts(na_backend: QiskitBackend) -> None:
     qc.measure(0, 0)
     qc.measure(1, 1)
     job = na_backend.run(qc, shots=256)
-    counts = job.get_counts()
+    counts = job.result().get_counts()
 
     # Verify total shots
     assert sum(counts.values()) == 256
@@ -114,67 +114,50 @@ def test_backend_run_with_shots_option(na_backend: QiskitBackend) -> None:
 
 
 def test_backend_run_with_invalid_shots_type(na_backend: QiskitBackend) -> None:
-    """Backend run should raise TranslationError for invalid shots type."""
+    """Backend run should raise CircuitValidationError for invalid shots type."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    with pytest.raises(TranslationError, match="Invalid 'shots' value"):
+    with pytest.raises(CircuitValidationError, match="Invalid 'shots' value"):
         na_backend.run(qc, shots="invalid")
 
 
 def test_backend_run_with_negative_shots(na_backend: QiskitBackend) -> None:
-    """Backend run should raise TranslationError for negative shots."""
+    """Backend run should raise CircuitValidationError for negative shots."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    with pytest.raises(TranslationError, match="'shots' must be >= 0"):
+    with pytest.raises(CircuitValidationError, match="'shots' must be >= 0"):
         na_backend.run(qc, shots=-100)
 
 
-def test_backend_run_multiple_circuits(na_backend: QiskitBackend) -> None:
-    """Backend run should handle multiple circuits."""
-    qc1 = QuantumCircuit(2, 2)
-    qc1.cz(0, 1)
-    qc1.measure([0, 1], [0, 1])
-
-    qc2 = QuantumCircuit(2, 2)
-    qc2.cz(0, 1)
-    qc2.measure([0, 1], [0, 1])
-
-    job = na_backend.run([qc1, qc2], shots=100)
-    result = job.result()
-
-    assert len(result.results) == 2
-
-
-def test_backend_circuit_with_parameters() -> None:
+def test_backend_circuit_with_parameters(na_backend: QiskitBackend) -> None:
     """Backend should handle parameterized circuits correctly.
 
-    Unbound parameters should raise TranslationError, while bound parameters
+    Unbound parameters should raise CircuitValidationError, while bound parameters
     should execute successfully.
     """
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     theta = Parameter("theta")
     qc.ry(theta, 0)
     qc.measure([0, 1], [0, 1])
 
     # Unbound parameters should raise an error
-    with pytest.raises(TranslationError, match="Circuit contains unbound parameters"):
-        backend.run(qc)
+    with pytest.raises(CircuitValidationError, match="Circuit contains unbound parameters"):
+        na_backend.run(qc)
 
     # Bound parameters should work
     qc_bound = qc.assign_parameters({theta: 1.5708})
 
-    job = backend.run(qc_bound, shots=100)
+    job = na_backend.run(qc_bound, shots=100)
     result = job.result()
     assert result.success
 
 
 def test_backend_circuit_with_parameter_expression() -> None:
-    """Backend should raise TranslationError for unbound parameter expressions."""
+    """Backend should raise CircuitValidationError for unbound parameter expressions."""
     backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     theta = Parameter("theta")
@@ -182,7 +165,7 @@ def test_backend_circuit_with_parameter_expression() -> None:
     qc.ry(theta + phi, 0)  # Parameter expression
     qc.measure([0, 1], [0, 1])
 
-    with pytest.raises(TranslationError, match="Circuit contains unbound parameters"):
+    with pytest.raises(CircuitValidationError, match="Circuit contains unbound parameters"):
         backend.run(qc)
 
 
@@ -242,42 +225,15 @@ def test_backend_unnamed_circuit(na_backend: QiskitBackend) -> None:
     assert "name" in result.results[0].header
 
 
-def test_backend_unnamed_circuits_get_unique_names(na_backend: QiskitBackend) -> None:
-    """Multiple unnamed circuits should get unique generated names."""
-    # Create three unnamed circuits
-    circuits = []
-    for _ in range(3):
-        qc = QuantumCircuit(2, 2)
-        qc.cz(0, 1)
-        qc.measure([0, 1], [0, 1])
-        circuits.append(qc)
-
-    job = na_backend.run(circuits, shots=100)
-    result = job.result()
-
-    # Extract circuit names from metadata
-    circuit_names = [exp_result.metadata["circuit_name"] for exp_result in result.results]
-
-    # All names should be unique
-    assert len(circuit_names) == len(set(circuit_names))
-
-    # Names should follow the pattern "circuit-N"
-    for name in circuit_names:
-        assert name.startswith("circuit-")
-        # Extract the number and verify it's an integer
-        counter_part = name.split("-")[1]
-        assert counter_part.isdigit()
-
-
 def test_backend_result_metadata_includes_circuit_name(na_backend: QiskitBackend) -> None:
-    """Backend result metadata should include circuit name."""
-    qc = QuantumCircuit(2, 2)
+    """Backend result should include circuit name in header."""
+    qc = QuantumCircuit(2, 2, name="my_test_circuit")
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
     job = na_backend.run(qc, shots=100)
     result = job.result()
-    assert "circuit_name" in result.results[0].metadata
+    assert result.results[0].header["name"] == "my_test_circuit"
 
 
 def test_job_status(na_backend: QiskitBackend) -> None:
@@ -292,20 +248,17 @@ def test_job_status(na_backend: QiskitBackend) -> None:
     assert job.status() == JobStatus.DONE
 
 
-def test_job_submit_noop_when_already_done(na_backend: QiskitBackend) -> None:
-    """Calling submit() on a completed job is idempotent."""
-    from qiskit.providers import JobStatus
-
+def test_job_submit_raises_not_implemented(na_backend: QiskitBackend) -> None:
+    """Calling submit() on a job raises NotImplementedError."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
     job = na_backend.run(qc, shots=100)
-    assert job.status() == JobStatus.DONE
 
-    # Calling submit again should be safe
-    job.submit()
-    assert job.status() == JobStatus.DONE
+    # Calling submit should raise NotImplementedError
+    with pytest.raises(NotImplementedError, match="Job submission logic must be implemented"):
+        job.submit()
 
 
 def test_job_result_success_and_shots(na_backend: QiskitBackend) -> None:
@@ -330,82 +283,33 @@ def test_job_result_with_timeout(na_backend: QiskitBackend) -> None:
     qc.measure([0, 1], [0, 1])
 
     job = na_backend.run(qc, shots=50)
-    result = job.result(timeout=10)
+    result = job.result()
 
     assert result.success is True
     assert result.results[0].shots == 50
 
 
 def test_job_get_counts_default(na_backend: QiskitBackend) -> None:
-    """get_counts() without arguments should return counts for first circuit."""
+    """result().get_counts() without arguments should return counts for first circuit."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
     job = na_backend.run(qc, shots=100)
-    counts = job.get_counts()
+    counts = job.result().get_counts()
 
     assert sum(counts.values()) == 100
 
 
-def test_job_get_counts_by_index(na_backend: QiskitBackend) -> None:
-    """get_counts(idx) should return counts for the specified circuit index."""
-    qc1 = QuantumCircuit(2, 2)
-    qc1.cz(0, 1)
-    qc1.measure([0, 1], [0, 1])
-
-    qc2 = QuantumCircuit(2, 2)
-    qc2.ry(1.5708, 0)
-    qc2.measure([0, 1], [0, 1])
-
-    job = na_backend.run([qc1, qc2], shots=100)
-    counts0 = job.get_counts(0)
-    counts1 = job.get_counts(1)
-
-    assert sum(counts0.values()) == 100
-    assert sum(counts1.values()) == 100
-
-
-def test_job_get_counts_by_circuit_object(na_backend: QiskitBackend) -> None:
-    """get_counts(circuit) should return counts for that specific circuit."""
-    qc1 = QuantumCircuit(2, 2)
-    qc1.cz(0, 1)
-    qc1.measure([0, 1], [0, 1])
-
-    qc2 = QuantumCircuit(2, 2)
-    qc2.ry(1.5708, 0)
-    qc2.measure([0, 1], [0, 1])
-
-    job = na_backend.run([qc1, qc2], shots=100)
-    counts = job.get_counts(qc2)
-
-    assert sum(counts.values()) == 100
-
-
-def test_job_get_counts_circuit_not_found(na_backend: QiskitBackend) -> None:
-    """get_counts() should raise ValueError if circuit is not in the job."""
-    qc1 = QuantumCircuit(2, 2)
-    qc1.cz(0, 1)
-    qc1.measure([0, 1], [0, 1])
-
-    qc2 = QuantumCircuit(2, 2)  # Different circuit not in job
-    qc2.ry(1.5708, 0)
-    qc2.measure([0, 1], [0, 1])
-
-    job = na_backend.run(qc1, shots=100)
-
-    with pytest.raises(ValueError, match="Circuit not found in job"):
-        job.get_counts(qc2)
-
-
-def test_job_submit_noop(na_backend: QiskitBackend) -> None:
-    """Calling submit() on a job should not raise an error."""
+def test_job_submit_raises_error(na_backend: QiskitBackend) -> None:
+    """Calling submit() on a job should raise NotImplementedError."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
     job = na_backend.run(qc, shots=100)
-    job.submit()
+    with pytest.raises(NotImplementedError, match="Job submission logic must be implemented"):
+        job.submit()
 
 
 def test_backend_warns_on_unmappable_operation(monkeypatch: pytest.MonkeyPatch) -> None:

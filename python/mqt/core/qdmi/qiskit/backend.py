@@ -16,19 +16,25 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING, Any
 
-from qiskit.circuit import Measure, Parameter, QuantumCircuit
+from qiskit.circuit import Measure, Parameter
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import Target
 
 from mqt.core import fomac
 
-from .exceptions import TranslationError, UnsupportedOperationError
+from .exceptions import (
+    CircuitValidationError,
+    JobSubmissionError,
+    TranslationError,
+    UnsupportedFormatError,
+    UnsupportedOperationError,
+)
 from .job import QiskitJob
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from qiskit.circuit import Instruction
+    from qiskit.circuit import Instruction, QuantumCircuit
 
 __all__ = ["QiskitBackend"]
 
@@ -106,9 +112,11 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         """Return default backend options.
 
         Returns:
-            Default Options with shots=1024.
+            Default Options with shots=1024 and program_format=QASM3.
         """
-        return Options(shots=1024)
+        from mqt.core import fomac
+
+        return Options(shots=1024, program_format=fomac.ProgramFormat.QASM3)
 
     def _build_target(self) -> Target:
         """Construct a Qiskit Target from device capabilities.
@@ -258,150 +266,129 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         site_list = op.sites()
         is_zoned = op.is_zoned()
 
-        if site_list is not None:
-            # Extract and remap site indices to logical qubit indices
-            raw_indices = [s.index() for s in site_list]
-
-            # Filter out zone sites and remap to logical qubit indices
-            remapped_indices: list[int] = [
-                self._site_index_to_qubit_index[idx] for idx in raw_indices if idx in self._site_index_to_qubit_index
-            ]
-
-            # For local multi-qubit operations, the flat list represents consecutive pairs
-            # due to reinterpret_cast from vector<pair<Site, Site>> to vector<Site>
-            if not is_zoned and qubits_num > 1:
-                # Group consecutive elements into tuples of size qubits_num
-                if len(remapped_indices) % qubits_num == 0:
-                    site_tuples: list[tuple[int, ...]] = [
-                        tuple(remapped_indices[i : i + qubits_num]) for i in range(0, len(remapped_indices), qubits_num)
-                    ]
-                    return site_tuples
-                # Fallback: treat as flat list if not evenly divisible
-                if qubits_num == 1:
-                    return [(idx,) for idx in sorted(set(remapped_indices))]
-                # Multi-qubit operations must have properly structured sites
-                msg = (
-                    f"Multi-qubit operation '{op.name()}' (qubits_num={qubits_num}) "
-                    f"has improperly structured sites (expected pairs). "
-                    "This indicates a device capability specification error."
-                )
-                raise ValueError(msg)
-
-            # For single-qubit and global operations, use flat list
+        # If operation is zoned or has no site list, generate all possible combinations
+        if site_list is None or is_zoned:
+            # Generate all possible qubit combinations
             if qubits_num == 1:
-                return [(idx,) for idx in sorted(set(remapped_indices))]
+                return [(i,) for i in range(num_qubits)]
+            if qubits_num == 2:
+                # Use coupling map if available
+                coupling_map = self._device.coupling_map()
+                if coupling_map:
+                    # Remap coupling map to qubit indices
+                    remapped_coupling: list[tuple[int, ...]] = []
+                    for pair in coupling_map:
+                        idx0, idx1 = pair[0].index(), pair[1].index()
+                        if idx0 in self._site_index_to_qubit_index and idx1 in self._site_index_to_qubit_index:
+                            remapped_coupling.append((
+                                self._site_index_to_qubit_index[idx0],
+                                self._site_index_to_qubit_index[idx1],
+                            ))
+                    if remapped_coupling:
+                        return remapped_coupling
+                # Otherwise all pairs
+                return [(i, j) for i in range(num_qubits) for j in range(i + 1, num_qubits)]
 
-            msg = (
-                f"Multi-qubit operation '{op.name()}' (qubits_num={qubits_num}) "
-                f"has improperly structured sites (expected pairs). "
-                f"This indicates a device capability specification error."
-            )
-            raise ValueError(msg)
+            # Multi-qubit operations (3 or more qubits) - generate all combinations
+            return list(combinations(range(num_qubits), qubits_num))
 
-        # Generate all possible qubit combinations
+        # Extract and remap site indices to qubit indices
+        raw_indices = [s.index() for s in site_list]
+
+        # Filter out zone sites and remap to qubit indices
+        remapped_indices: list[int] = [
+            self._site_index_to_qubit_index[idx] for idx in raw_indices if idx in self._site_index_to_qubit_index
+        ]
+
+        # For single-qubit operations, use flat list
         if qubits_num == 1:
-            return [(i,) for i in range(num_qubits)]
-        if qubits_num == 2:
-            # Use coupling map if available
-            coupling_map = self._device.coupling_map()
-            if coupling_map:
-                # Remap coupling map to logical qubit indices
-                remapped_coupling: list[tuple[int, ...]] = []
-                for pair in coupling_map:
-                    idx0, idx1 = pair[0].index(), pair[1].index()
-                    if idx0 in self._site_index_to_qubit_index and idx1 in self._site_index_to_qubit_index:
-                        remapped_coupling.append((
-                            self._site_index_to_qubit_index[idx0],
-                            self._site_index_to_qubit_index[idx1],
-                        ))
-                if remapped_coupling:
-                    return remapped_coupling
-            # Otherwise all pairs
-            return [(i, j) for i in range(num_qubits) for j in range(i + 1, num_qubits)]
+            return [(idx,) for idx in sorted(set(remapped_indices))]
 
-        # Multi-qubit operations (3 or more qubits) - generate all combinations
-        return list(combinations(range(num_qubits), qubits_num))
+        # For multi-qubit operations, the flat list represents consecutive pairs
+        # due to reinterpret_cast from vector<pair<Site, Site>> to vector<Site>
+        # Group consecutive elements into tuples of size qubits_num
+        if len(remapped_indices) % qubits_num == 0:
+            site_tuples: list[tuple[int, ...]] = [
+                tuple(remapped_indices[i : i + qubits_num]) for i in range(0, len(remapped_indices), qubits_num)
+            ]
+            return site_tuples
 
-    def run(self, run_input: QuantumCircuit | list[QuantumCircuit], **options: Any) -> QiskitJob:  # noqa: ANN401
-        """Execute circuits on the backend.
+        # Fallback: if not evenly divisible, something is wrong
+        msg = (
+            f"Multi-qubit operation '{op.name()}' (qubits_num={qubits_num}) "
+            f"has improperly structured sites (expected {len(remapped_indices)} to be divisible by {qubits_num}). "
+            "This indicates a device capability specification error."
+        )
+        raise ValueError(msg)
+
+    @staticmethod
+    def _convert_circuit(circuit: QuantumCircuit, program_format: fomac.ProgramFormat) -> str:
+        """Convert a quantum circuit to the specified program format.
 
         Args:
-            run_input: Circuit(s) to execute.
-            **options: Execution options (e.g., shots).
+            circuit: The quantum circuit to convert.
+            program_format: The target program format.
+
+        Returns:
+            String representation of the circuit in the specified format.
+
+        Raises:
+            UnsupportedFormatError: If the program format is not supported.
+            TranslationError: If conversion fails.
+        """
+        from mqt.core import fomac
+
+        # Check for supported formats first
+        if program_format not in {fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3}:
+            msg = f"Unsupported program format: {program_format}"
+            raise UnsupportedFormatError(msg)
+
+        try:
+            if program_format == fomac.ProgramFormat.QASM2:
+                from qiskit import qasm2
+
+                return str(qasm2.dumps(circuit))
+            # Must be QASM3 at this point
+            from qiskit import qasm3
+
+            return str(qasm3.dumps(circuit))
+        except Exception as exc:
+            msg = f"Failed to convert circuit to {program_format}: {exc}"
+            raise TranslationError(msg) from exc
+
+    def run(self, run_input: QuantumCircuit, **options: Any) -> QiskitJob:  # noqa: ANN401
+        """Execute a circuit on the backend.
+
+        Args:
+            run_input: Circuit to execute.
+            **options: Execution options (e.g., shots, program_format).
 
         Returns:
             Job handle for the execution.
 
         Raises:
-            TranslationError: If circuit translation or execution fails.
+            CircuitValidationError: If circuit validation fails (e.g., invalid shots, unbound parameters).
+            UnsupportedOperationError: If circuit contains unsupported operations.
+            JobSubmissionError: If job submission to the device fails.
         """
-        # Normalize input to list
-        circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
+        circuit = run_input
 
-        # Update options
+        # Get shots option
         shots_opt = options.get("shots", self._options.shots)
         try:
             shots = int(shots_opt)
         except Exception as exc:
             msg = f"Invalid 'shots' value: {shots_opt!r}"
-            raise TranslationError(msg) from exc
+            raise CircuitValidationError(msg) from exc
         if shots < 0:
             msg = f"'shots' must be >= 0, got {shots}"
-            raise TranslationError(msg)
+            raise CircuitValidationError(msg)
 
-        # Execute circuits
-        results = [self._execute_circuit(circuit, shots=shots) for circuit in circuits]
-
-        # Create and submit job
-        job = QiskitJob(backend=self, circuits=circuits, results=results, shots=shots)
-        job.submit()
-        return job
-
-    def _submit_to_device(self, circuit: QuantumCircuit, shots: int) -> dict[str, Any]:  # noqa: PLR6301
-        """Submit circuit to device for execution.
-
-        Override this method to implement actual device submission.
-        Default returns zero-state counts.
-
-        Args:
-            circuit: Circuit to execute.
-            shots: Number of shots.
-
-        Returns:
-            Dictionary with 'counts', 'shots', 'success', and 'metadata' keys.
-        """
-        # Default: return zero-state counts
-        num_clbits = circuit.num_clbits
-        zero_state = "0" * num_clbits
-        counts = {zero_state: shots}
-        return {
-            "counts": counts,
-            "shots": shots,
-            "success": True,
-            "metadata": {
-                "simulation": True,
-            },
-        }
-
-    def _execute_circuit(self, circuit: QuantumCircuit, shots: int) -> dict[str, Any]:
-        """Execute a single circuit and return result dictionary.
-
-        Args:
-            circuit: Circuit to execute.
-            shots: Number of shots.
-
-        Returns:
-            Result dictionary with counts and metadata.
-
-        Raises:
-            TranslationError: If circuit contains unbound parameters or invalid configuration.
-            UnsupportedOperationError: If circuit contains unsupported operations.
-        """
         # Validate circuit has no unbound parameters
         if circuit.parameters:
             param_names = ", ".join(sorted(p.name for p in circuit.parameters))
             msg = f"Circuit contains unbound parameters: {param_names}"
-            raise TranslationError(msg)
+            raise CircuitValidationError(msg)
 
         # Validate operations are supported
         allowed_ops = {op.name() for op in self._device.operations()}
@@ -413,18 +400,26 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
                 msg = f"Unsupported operation: '{op_name}'"
                 raise UnsupportedOperationError(msg)
 
-        # Submit circuit to device
-        result = self._submit_to_device(circuit, shots)
-        result.setdefault("metadata", {})
+        # Get program format from options
+        program_format = options.get("program_format", self._options.program_format)
 
-        # Generate unique circuit name - use provided name or generate one with counter
-        if circuit.name:
-            circuit_name = circuit.name
-        else:
-            # Generate unique name using class-level counter (similar to Qiskit's approach)
+        # Convert circuit to specified program format
+        program_str = self._convert_circuit(circuit, program_format)
+
+        # Submit job to QDMI device
+        try:
+            qdmi_job = self._device.submit_job(
+                program=program_str,
+                program_format=program_format,
+                num_shots=shots,
+            )
+        except Exception as exc:
+            msg = f"Failed to submit job to device: {exc}"
+            raise JobSubmissionError(msg) from exc
+
+        # Create and return Qiskit job wrapper
+        circuit_name = circuit.name or f"circuit-{QiskitBackend._circuit_counter}"
+        if not circuit.name:
             QiskitBackend._circuit_counter += 1
-            circuit_name = f"circuit-{QiskitBackend._circuit_counter}"
 
-        result["metadata"]["circuit_name"] = circuit_name
-
-        return result
+        return QiskitJob(backend=self, job=qdmi_job, circuit_name=circuit_name)

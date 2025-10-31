@@ -11,9 +11,11 @@
 from __future__ import annotations
 
 __all__ = [
-    "CapabilityMismatchError",
+    "CircuitValidationError",
+    "JobSubmissionError",
     "QDMIQiskitError",
     "TranslationError",
+    "UnsupportedFormatError",
     "UnsupportedOperationError",
 ]
 
@@ -27,8 +29,16 @@ class UnsupportedOperationError(QDMIQiskitError):
 
 
 class TranslationError(QDMIQiskitError):
-    """Raised when translation of a frontend instruction fails."""
+    """Raised when translation/conversion of a circuit to a program format fails."""
 
 
-class CapabilityMismatchError(QDMIQiskitError):
-    """Raised when device capabilities do not match assumed backend configuration."""
+class CircuitValidationError(QDMIQiskitError):
+    """Raised when a circuit fails validation (e.g., unbound parameters, invalid options)."""
+
+
+class JobSubmissionError(QDMIQiskitError):
+    """Raised when job submission to the QDMI device fails."""
+
+
+class UnsupportedFormatError(QDMIQiskitError):
+    """Raised when an unsupported program format is requested."""

@@ -29,7 +29,7 @@ def test_backend_supports_cz_gate(na_backend: QiskitBackend) -> None:
     qc.measure([0, 1], [0, 1])
 
     job = na_backend.run(qc, shots=100)
-    counts = job.get_counts()
+    counts = job.result().get_counts()
     assert sum(counts.values()) == 100
 
 

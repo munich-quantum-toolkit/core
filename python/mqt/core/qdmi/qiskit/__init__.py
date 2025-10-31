@@ -26,9 +26,11 @@ except ImportError:
     _BACKEND_AVAILABLE = False
 
 from .exceptions import (
-    CapabilityMismatchError,
+    CircuitValidationError,
+    JobSubmissionError,
     QDMIQiskitError,
     TranslationError,
+    UnsupportedFormatError,
     UnsupportedOperationError,
 )
 
@@ -36,10 +38,12 @@ if TYPE_CHECKING:  # pragma: no cover
     from types import ModuleType
 
 __all__ = [
-    "CapabilityMismatchError",
+    "CircuitValidationError",
+    "JobSubmissionError",
     "QDMIQiskitError",
     "QiskitNotAvailableError",
     "TranslationError",
+    "UnsupportedFormatError",
     "UnsupportedOperationError",
     "is_available",
     "require_qiskit",
