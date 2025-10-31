@@ -327,6 +327,14 @@ public:
   std::pair<Value, Value> swap(Value qubit0, Value qubit1);
 
   //===--------------------------------------------------------------------===//
+  // Modifiers
+  //===--------------------------------------------------------------------===//
+
+  std::pair<SmallVector<Value>, SmallVector<Value>>
+  ctrl(SmallVector<Value> controls, SmallVector<Value> targets,
+       const std::function<SmallVector<Value>(FluxProgramBuilder&)>& body);
+
+  //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//
 
@@ -372,6 +380,8 @@ public:
   Location loc;
 
 private:
+  bool inRegion = false;
+
   //===--------------------------------------------------------------------===//
   // Linear Type Tracking Helpers
   //===--------------------------------------------------------------------===//

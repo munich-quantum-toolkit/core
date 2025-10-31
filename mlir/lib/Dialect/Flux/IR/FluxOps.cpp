@@ -207,6 +207,120 @@ DenseElementsAttr SWAPOp::tryGetStaticMatrix() {
 }
 
 //===----------------------------------------------------------------------===//
+// Modifiers
+//===----------------------------------------------------------------------===//
+
+UnitaryOpInterface CtrlOp::getBodyUnitary() {
+  return llvm::dyn_cast<UnitaryOpInterface>(&getBody().front().front());
+}
+
+size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
+
+size_t CtrlOp::getNumTargets() { return getTargetsIn().size(); }
+
+size_t CtrlOp::getNumControls() {
+  return getNumPosControls() + getNumNegControls();
+}
+
+size_t CtrlOp::getNumPosControls() { return getControlsIn().size(); }
+
+size_t CtrlOp::getNumNegControls() {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.getNumNegControls();
+}
+
+Value CtrlOp::getInputQubit(size_t i) {
+  if (i < getNumTargets()) {
+    return getInputTarget(i);
+  }
+  if (getNumTargets() <= i && i < getNumPosControls()) {
+    return getInputPosControl(i - getNumTargets());
+  }
+  if (getNumTargets() + getNumPosControls() <= i && i < getNumQubits()) {
+    return getInputNegControl(i - getNumTargets() - getNumPosControls());
+  }
+  llvm_unreachable("Invalid qubit index");
+}
+
+Value CtrlOp::getOutputQubit(size_t i) {
+  if (i < getNumTargets()) {
+    return getOutputTarget(i);
+  }
+  if (getNumTargets() <= i && i < getNumPosControls()) {
+    return getOutputPosControl(i - getNumTargets());
+  }
+  if (getNumTargets() + getNumPosControls() <= i && i < getNumQubits()) {
+    return getOutputNegControl(i - getNumTargets() - getNumPosControls());
+  }
+  llvm_unreachable("Invalid qubit index");
+}
+
+Value CtrlOp::getInputTarget(size_t i) { return getTargetsIn()[i]; }
+
+Value CtrlOp::getOutputTarget(size_t i) { return getTargetsOut()[i]; }
+
+Value CtrlOp::getInputPosControl(size_t i) { return getControlsIn()[i]; }
+
+Value CtrlOp::getOutputPosControl(size_t i) { return getControlsOut()[i]; }
+
+Value CtrlOp::getInputNegControl(size_t i) {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.getInputNegControl(i);
+}
+
+Value CtrlOp::getOutputNegControl(size_t i) {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.getOutputNegControl(i);
+}
+
+Value CtrlOp::getInputForOutput(Value output) {
+  for (auto i = 0; i < getNumPosControls(); ++i) {
+    if (output == getControlsOut()[i]) {
+      return getControlsIn()[i];
+    }
+  }
+  for (auto i = 0; i < getNumTargets(); ++i) {
+    if (output == getTargetsOut()[i]) {
+      return getTargetsIn()[i];
+    }
+  }
+  llvm_unreachable("Given qubit is not an output of the operation");
+}
+
+Value CtrlOp::getOutputForInput(Value input) {
+  for (auto i = 0; i < getNumPosControls(); ++i) {
+    if (input == getControlsIn()[i]) {
+      return getControlsOut()[i];
+    }
+  }
+  for (auto i = 0; i < getNumTargets(); ++i) {
+    if (input == getTargetsIn()[i]) {
+      return getTargetsOut()[i];
+    }
+  }
+  llvm_unreachable("Given qubit is not an input of the operation");
+}
+
+size_t CtrlOp::getNumParams() {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.getNumParams();
+}
+
+bool CtrlOp::hasStaticUnitary() {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.hasStaticUnitary();
+}
+
+ParameterDescriptor CtrlOp::getParameter(size_t i) {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.getParameter(i);
+}
+
+DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
+  llvm_unreachable("Not implemented yet"); // TODO
+}
+
+//===----------------------------------------------------------------------===//
 // Canonicalization Patterns
 //===----------------------------------------------------------------------===//
 

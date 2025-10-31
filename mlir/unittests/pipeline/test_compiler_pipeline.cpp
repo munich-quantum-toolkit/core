@@ -1162,19 +1162,39 @@ TEST_F(SimpleConversionTest, CX) {
   qc.addQubitRegister(2, "q");
   qc.cx(0, 1);
 
-  const auto module = translateQuantumComputationToQuartz(context.get(), qc);
-  ASSERT_TRUE(module);
-  runCanonicalizationPasses(module.get());
-  const auto moduleIR = captureIR(module.get());
+  const auto quartz = translateQuantumComputationToQuartz(context.get(), qc);
+  ASSERT_TRUE(quartz);
+  runCanonicalizationPasses(quartz.get());
+  const auto quartzIR = captureIR(quartz.get());
 
-  const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+  const auto quartzExpected =
+      buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+        auto reg = b.allocQubitRegister(2, "q");
+        auto q0 = reg[0];
+        auto q1 = reg[1];
+        b.ctrl(q0, [&](auto& b) { b.x(q1); });
+      });
+
+  EXPECT_TRUE(verify("Translation", quartzIR, quartzExpected.get()));
+
+  PassManager pm(quartz.get().getContext());
+  pm.addPass(createQuartzToFlux());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createRemoveDeadValuesPass());
+  ASSERT_TRUE(pm.run(quartz.get()).succeeded());
+  const auto fluxIR = captureIR(quartz.get());
+
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
-    auto q0 = reg[0];
-    auto q1 = reg[1];
-    b.ctrl(q0, [&](auto& b) { b.x(q1); });
+    auto q0_0 = reg[0];
+    auto q1_0 = reg[1];
+    b.ctrl({q0_0}, {q1_0}, [&](auto& b) {
+      auto q1_1 = b.x(q1_0);
+      return SmallVector<Value>{q1_1};
+    });
   });
 
-  EXPECT_TRUE(verify("Translation", moduleIR, expected.get()));
+  EXPECT_TRUE(verify("Quartz to Flux", fluxIR, fluxExpected.get()));
 }
 
 } // namespace

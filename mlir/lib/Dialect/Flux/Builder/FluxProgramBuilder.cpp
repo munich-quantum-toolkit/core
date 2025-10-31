@@ -176,7 +176,9 @@ Value FluxProgramBuilder::x(Value qubit) {
   const auto& qubitOut = xOp.getQubitOut();
 
   // Update tracking
-  updateQubitTracking(qubit, qubitOut);
+  if (!inRegion) {
+    updateQubitTracking(qubit, qubitOut);
+  }
 
   return qubitOut;
 }
@@ -236,6 +238,38 @@ std::pair<Value, Value> FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
   updateQubitTracking(qubit1, qubit1Out);
 
   return {qubit0Out, qubit1Out};
+}
+
+//===----------------------------------------------------------------------===//
+// Modifiers
+//===----------------------------------------------------------------------===//
+
+std::pair<SmallVector<Value>, SmallVector<Value>> FluxProgramBuilder::ctrl(
+    SmallVector<Value> controls, SmallVector<Value> targets,
+    const std::function<SmallVector<Value>(FluxProgramBuilder&)>& body) {
+  auto ctrlOp = builder.create<CtrlOp>(loc, controls, targets);
+
+  const mlir::OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(&ctrlOp.getBody().emplaceBlock());
+
+  inRegion = true;
+  auto targetsYield = body(*this);
+  inRegion = false;
+
+  builder.create<YieldOp>(loc, targetsYield);
+
+  // Update tracking
+  const auto& controlsOut = ctrlOp.getControlsOut();
+  for (const auto& [control, controlOut] : llvm::zip(controls, controlsOut)) {
+    updateQubitTracking(control, controlOut);
+  }
+
+  const auto& targetsOut = ctrlOp.getTargetsOut();
+  for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
+    updateQubitTracking(target, targetOut);
+  }
+
+  return {controlsOut, targetsOut};
 }
 
 //===----------------------------------------------------------------------===//

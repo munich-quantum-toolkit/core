@@ -512,4 +512,51 @@ def SWAPOp : FluxOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParamet
     }];
 }
 
+//===----------------------------------------------------------------------===//
+// Modifiers
+//===----------------------------------------------------------------------===//
+
+def YieldOp : FluxOp<"yield", traits = [Terminator]> {
+    let arguments = (ins Variadic<QubitType>:$targets);
+    let assemblyFormat = "$targets attr-dict";
+}
+
+def CtrlOp : FluxOp<"ctrl", traits = [UnitaryOpInterface, AttrSizedOperandSegments, AttrSizedResultSegments]> {
+    let arguments = (ins Variadic<QubitType>:$controls_in, Variadic<QubitType>:$targets_in);
+    let results = (outs Variadic<QubitType>:$controls_out, Variadic<QubitType>:$targets_out);
+    let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "`(` $controls_in `_` $targets_in `)` $body attr-dict `:` type($controls_in) `_` type($targets_in) `->` type($controls_out) `_` type($targets_out)";
+
+    let extraClassDeclaration = [{
+        UnitaryOpInterface getBodyUnitary();
+        size_t getNumQubits();
+        size_t getNumTargets();
+        size_t getNumControls();
+        size_t getNumPosControls();
+        size_t getNumNegControls();
+        Value getInputQubit(size_t i);
+        Value getOutputQubit(size_t i);
+        Value getInputTarget(size_t i);
+        Value getOutputTarget(size_t i);
+        Value getInputPosControl(size_t i);
+        Value getOutputPosControl(size_t i);
+        Value getInputNegControl(size_t i);
+        Value getOutputNegControl(size_t i);
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+        size_t getNumParams();
+        ::mlir::utils::ParameterDescriptor getParameter(size_t i);
+        bool hasStaticUnitary();
+        static DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "ctrl"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "ValueRange":$controls_in, "ValueRange":$targets_in), [{
+            auto qubit_type = QubitType::get($_builder.getContext());
+            build($_builder, $_state, qubit_type, qubit_type, controls_in, targets_in);
+        }]>,
+    ];
+}
+
 #endif // FluxOPS

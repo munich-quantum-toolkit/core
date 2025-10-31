@@ -16,6 +16,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -373,14 +374,23 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
                   ConversionPatternRewriter& rewriter) const override {
     const auto& quartzQubit = op.getQubit();
 
-    // Get the latest Flux qubit value from the state map
-    const auto& fluxQubit = getState().qubitMap[quartzQubit];
+    auto inRegion = dyn_cast<flux::CtrlOp>(op->getParentOp()) != nullptr;
+
+    // Get the latest Flux qubit
+    Value fluxQubitIn;
+    if (inRegion) {
+      fluxQubitIn = rewriter.getRemappedValue(quartzQubit);
+    } else {
+      fluxQubitIn = getState().qubitMap[quartzQubit];
+    }
 
     // Create flux.x operation (consumes input, produces output)
-    auto fluxOp = rewriter.create<flux::XOp>(op.getLoc(), fluxQubit);
+    auto fluxOp = rewriter.create<flux::XOp>(op.getLoc(), fluxQubitIn);
 
-    // Update mapping: the Quartz qubit now corresponds to the output qubit
-    getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
+    // Update state map
+    if (!inRegion) {
+      getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
+    }
 
     // Replace the Quartz operation with the Flux operation
     rewriter.replaceOp(op, fluxOp.getResult());
@@ -418,7 +428,7 @@ struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
     auto fluxOp =
         rewriter.create<flux::RXOp>(op.getLoc(), fluxQubit, theta, thetaDyn);
 
-    // Update mapping: the Quartz qubit now corresponds to the output qubit
+    // Update state map: the Quartz qubit now corresponds to the output qubit
     getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
 
     // Replace the Quartz operation with the Flux operation
@@ -461,7 +471,7 @@ struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
     auto fluxOp = rewriter.create<flux::U2Op>(op.getLoc(), fluxQubit, phi,
                                               phiDyn, lambda, lambdaDyn);
 
-    // Update mapping: the Quartz qubit now corresponds to the output qubit
+    // Update state map: the Quartz qubit now corresponds to the output qubit
     getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
 
     // Replace the Quartz operation with the Flux operation
@@ -501,12 +511,86 @@ struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
     auto fluxOp =
         rewriter.create<flux::SWAPOp>(op.getLoc(), fluxQubit0, fluxQubit1);
 
-    // Update mapping: the Quartz qubit now corresponds to the output qubit
+    // Update state map: the Quartz qubit now corresponds to the output qubit
     getState().qubitMap[quartzQubit0] = fluxOp.getQubit0Out();
     getState().qubitMap[quartzQubit1] = fluxOp.getQubit1Out();
 
     // Replace the Quartz operation with the Flux operation
     rewriter.replaceOp(op, fluxOp.getOperands());
+
+    return success();
+  }
+};
+
+struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(quartz::CtrlOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Get Flux controls from state map
+    const auto& quartzControls = op.getControls();
+    SmallVector<Value> fluxControls;
+    fluxControls.reserve(quartzControls.size());
+    for (const auto& quartzControl : quartzControls) {
+      fluxControls.push_back(getState().qubitMap[quartzControl]);
+    }
+
+    // Get Flux targets from state map
+    SmallVector<Value> fluxTargets;
+    fluxTargets.reserve(op.getNumTargets());
+    for (auto i = 0; i < op.getNumTargets(); ++i) {
+      const auto& quartzTarget = op.getTarget(i);
+      fluxTargets.push_back(getState().qubitMap[quartzTarget]);
+    }
+
+    // Create flux.ctrl operation
+    auto fluxOp =
+        rewriter.create<flux::CtrlOp>(op.getLoc(), fluxControls, fluxTargets);
+
+    // Clone the body region from Quartz to Flux
+    IRMapping regionMap;
+    for (auto i = 0; i < op.getNumTargets(); ++i) {
+      regionMap.map(op.getTarget(i), fluxTargets[i]);
+    }
+    rewriter.cloneRegionBefore(op.getBody(), fluxOp.getBody(),
+                               fluxOp.getBody().end(), regionMap);
+
+    // Update state map
+    for (auto i = 0; i < op.getNumPosControls(); ++i) {
+      const auto& quartzControl = quartzControls[i];
+      getState().qubitMap[quartzControl] = fluxOp.getControlsOut()[i];
+    }
+    for (auto i = 0; i < op.getNumTargets(); ++i) {
+      const auto& quartzTarget = op.getTarget(i);
+      getState().qubitMap[quartzTarget] = fluxOp.getTargetsOut()[i];
+    }
+
+    // Replace the Quartz operation with the Flux operation
+    rewriter.replaceOp(op, fluxOp.getOperands());
+
+    return success();
+  }
+};
+
+struct ConvertQuartzYieldOp final
+    : StatefulOpConversionPattern<quartz::YieldOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(quartz::YieldOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto ctrlOp = dyn_cast<flux::CtrlOp>(op->getParentOp());
+    auto unitaryOp = ctrlOp.getBodyUnitary();
+
+    SmallVector<Value> targets;
+    targets.reserve(unitaryOp.getNumTargets());
+    for (auto i = 0; i < unitaryOp.getNumTargets(); ++i) {
+      auto yield = rewriter.getRemappedValue(unitaryOp.getOutputTarget(i));
+      targets.push_back(yield);
+    }
+
+    rewriter.replaceOpWithNewOp<flux::YieldOp>(op, targets);
 
     return success();
   }
@@ -559,6 +643,8 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     patterns.add<ConvertQuartzRXOp>(typeConverter, context, &state);
     patterns.add<ConvertQuartzU2Op>(typeConverter, context, &state);
     patterns.add<ConvertQuartzSWAPOp>(typeConverter, context, &state);
+    patterns.add<ConvertQuartzCtrlOp>(typeConverter, context, &state);
+    patterns.add<ConvertQuartzYieldOp>(typeConverter, context, &state);
 
     // Conversion of quartz types in func.func signatures
     // Note: This currently has limitations with signature changes
