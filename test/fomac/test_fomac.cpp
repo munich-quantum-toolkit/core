@@ -286,6 +286,136 @@ TEST_P(OperationTest, MeanShuttlingSpeed) {
   EXPECT_NO_THROW(std::ignore = operation.getMeanShuttlingSpeed());
 }
 
+// Job submission tests
+TEST_P(DeviceTest, SubmitJobReturnsValidJob) {
+  // Create a simple QASM3 program
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+h q[0];
+cx q[0], q[1];
+c = measure q;
+)";
+
+  // Submit job and verify returned object has valid properties
+  const auto job =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
+
+  // Job ID should be non-empty
+  EXPECT_FALSE(job.getId().empty());
+
+  // Num shots should match what was requested
+  EXPECT_EQ(job.getNumShots(), 100);
+
+  // Status should be a valid initial state (CREATED or SUBMITTED)
+  const auto status = job.getStatus();
+  EXPECT_TRUE(status == QDMI_JOB_STATUS_CREATED ||
+              status == QDMI_JOB_STATUS_SUBMITTED ||
+              status == QDMI_JOB_STATUS_RUNNING);
+}
+
+TEST_P(DeviceTest, SubmitJobPreservesNumShots) {
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+)";
+
+  // Test with different shot counts to verify they're preserved
+  const auto job1 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  EXPECT_EQ(job1.getNumShots(), 10);
+
+  const auto job2 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
+  EXPECT_EQ(job2.getNumShots(), 100);
+
+  const auto job3 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 1000);
+  EXPECT_EQ(job3.getNumShots(), 1000);
+}
+
+class JobTest : public DeviceTest {
+protected:
+  FoMaC::Job job;
+
+  JobTest() : job(createTestJob()) {}
+
+  FoMaC::Job createTestJob() {
+    const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+)";
+    return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  }
+};
+
+TEST_P(JobTest, IdIsUnique) {
+  // Create another job and verify IDs are different
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+)";
+  const auto job2 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+
+  EXPECT_NE(job.getId(), job2.getId());
+}
+
+TEST_P(JobTest, StatusProgresses) {
+  // Get initial status
+  const auto initialStatus = job.getStatus();
+
+  // Wait for completion
+  job.wait();
+
+  // After waiting, status should be DONE or ERROR
+  const auto finalStatus = job.getStatus();
+  EXPECT_TRUE(finalStatus == QDMI_JOB_STATUS_DONE ||
+              finalStatus == QDMI_JOB_STATUS_ERROR);
+}
+
+TEST_P(JobTest, GetCountsReturnsValidHistogram) {
+  // Wait for job to complete
+  job.wait();
+
+  // Get counts
+  const auto counts = job.getCounts();
+  EXPECT_FALSE(counts.empty());
+
+  // All keys should be valid binary strings of length 1 (single qubit)
+  for (const auto& [key, value] : counts) {
+    EXPECT_EQ(key.length(), 1);
+    EXPECT_TRUE(key == "0" || key == "1");
+    EXPECT_GT(value, 0);
+  }
+
+  // Verify total counts match num_shots
+  size_t totalCounts = 0;
+  for (const auto& [key, value] : counts) {
+    totalCounts += value;
+  }
+  EXPECT_EQ(totalCounts, job.getNumShots());
+}
+
+TEST_P(JobTest, MultipleGetCountsCalls) {
+  // Wait for job to complete
+  job.wait();
+
+  // Get counts multiple times and verify they're consistent
+  const auto counts1 = job.getCounts();
+  const auto counts2 = job.getCounts();
+
+  EXPECT_EQ(counts1, counts2);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
     DeviceTest,
@@ -319,6 +449,20 @@ INSTANTIATE_TEST_SUITE_P(
     OperationTest,
     // Test suite name
     OperationTest,
+    // Parameters to test with
+    testing::ValuesIn(FoMaC::getDevices()),
+    [](const testing::TestParamInfo<FoMaC::Device>& paramInfo) {
+      auto name = paramInfo.param.getName();
+      // Replace spaces with underscores for valid test names
+      std::ranges::replace(name, ' ', '_');
+      return name;
+    });
+
+INSTANTIATE_TEST_SUITE_P(
+    // Custom instantiation name
+    JobTest,
+    // Test suite name
+    JobTest,
     // Parameters to test with
     testing::ValuesIn(FoMaC::getDevices()),
     [](const testing::TestParamInfo<FoMaC::Device>& paramInfo) {

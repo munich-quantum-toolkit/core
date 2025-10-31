@@ -405,6 +405,107 @@ auto FoMaC::Device::getMinAtomDistance() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_DEVICE_PROPERTY_MINATOMDISTANCE);
 }
+
+auto FoMaC::Device::submitJob(const std::string& program,
+                              QDMI_Program_Format format, size_t numShots,
+                              double timeout) const -> Job {
+  QDMI_Job job = nullptr;
+  throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
+
+  // Set program format
+  throwIfError(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
+                                      sizeof(format), &format),
+               "Setting program format");
+
+  // Set program
+  throwIfError(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAM,
+                                      program.size(), program.c_str()),
+               "Setting program");
+
+  // Set number of shots
+  throwIfError(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
+                                      sizeof(numShots), &numShots),
+               "Setting number of shots");
+
+  // Submit the job
+  throwIfError(QDMI_job_submit(job), "Submitting job");
+
+  // Wait for the job to finish
+  const auto timeoutSeconds = static_cast<size_t>(timeout);
+  throwIfError(QDMI_job_wait(job, timeoutSeconds), "Waiting for job");
+
+  return Job{job};
+}
+
+auto FoMaC::Job::check() const -> QDMI_Job_Status {
+  QDMI_Job_Status status;
+  throwIfError(QDMI_job_check(job_, &status), "Checking job status");
+  return status;
+}
+
+auto FoMaC::Job::wait() const -> void {
+  throwIfError(QDMI_job_wait(job_, 0), "Waiting for job");
+}
+
+auto FoMaC::Job::cancel() const -> void {
+  throwIfError(QDMI_job_cancel(job_), "Cancelling job");
+}
+
+auto FoMaC::Job::getId() const -> std::string {
+  size_t size = 0;
+  throwIfError(
+      QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_ID, 0, nullptr, &size),
+      "Querying job ID size");
+  std::string id(size - 1, '\0');
+  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_ID, size,
+                                       id.data(), nullptr),
+               "Querying job ID");
+  return id;
+}
+
+auto FoMaC::Job::getNumShots() const -> size_t {
+  size_t numShots = 0;
+  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_SHOTSNUM,
+                                       sizeof(numShots), &numShots, nullptr),
+               "Querying number of shots");
+  return numShots;
+}
+
+auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
+  // Get the histogram keys
+  size_t keysSize = 0;
+  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr,
+                                    &keysSize),
+               "Querying histogram keys size");
+  std::string keys(keysSize - 1, '\0');
+  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, keysSize,
+                                    keys.data(), nullptr),
+               "Querying histogram keys");
+
+  // Get the histogram values
+  size_t valuesSize = 0;
+  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_VALUES, 0,
+                                    nullptr, &valuesSize),
+               "Querying histogram values size");
+  std::vector<size_t> values(valuesSize / sizeof(size_t));
+  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_VALUES,
+                                    valuesSize, values.data(), nullptr),
+               "Querying histogram values");
+
+  // Parse the keys (comma-separated)
+  std::map<std::string, size_t> counts;
+  std::istringstream keysStream(keys);
+  std::string key;
+  size_t idx = 0;
+  while (std::getline(keysStream, key, ',')) {
+    if (idx < values.size()) {
+      counts[key] = values[idx];
+      ++idx;
+    }
+  }
+  return counts;
+}
+
 FoMaC::FoMaC() {
   QDMI_session_alloc(&session_);
   QDMI_session_init(session_);
