@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add A\*-search-based routing algorithm to MLIR transpilation routines ([#1237]) ([**@MatthiasReumann**])
+- ✨ Add A\*-search-based routing algorithm to MLIR transpilation routines ([#1237], [#1271]) ([**@MatthiasReumann**])
 
 ### Fixed
 
@@ -221,11 +221,12 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#1276]: https://github.com/munich-quantum-toolkit/core/pull/1276
-[#1237]: https://github.com/munich-quantum-toolkit/core/pull/1237
+[#1271]: https://github.com/munich-quantum-toolkit/core/pull/1271
 [#1269]: https://github.com/munich-quantum-toolkit/core/pull/1269
 [#1263]: https://github.com/munich-quantum-toolkit/core/pull/1263
 [#1247]: https://github.com/munich-quantum-toolkit/core/pull/1247
 [#1246]: https://github.com/munich-quantum-toolkit/core/pull/1246
+[#1237]: https://github.com/munich-quantum-toolkit/core/pull/1237
 [#1236]: https://github.com/munich-quantum-toolkit/core/pull/1236
 [#1235]: https://github.com/munich-quantum-toolkit/core/pull/1235
 [#1232]: https://github.com/munich-quantum-toolkit/core/pull/1232
@@ -233,8 +234,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1223]: https://github.com/munich-quantum-toolkit/core/pull/1223
 [#1211]: https://github.com/munich-quantum-toolkit/core/pull/1211
 [#1210]: https://github.com/munich-quantum-toolkit/core/pull/1210
-[#1207]: https://github.com/munich-quantum-toolkit/core/pull/1207
 [#1209]: https://github.com/munich-quantum-toolkit/core/pull/1209
+[#1207]: https://github.com/munich-quantum-toolkit/core/pull/1207
 [#1186]: https://github.com/munich-quantum-toolkit/core/pull/1186
 [#1181]: https://github.com/munich-quantum-toolkit/core/pull/1181
 [#1180]: https://github.com/munich-quantum-toolkit/core/pull/1180

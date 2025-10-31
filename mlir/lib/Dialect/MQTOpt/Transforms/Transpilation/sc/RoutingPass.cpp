@@ -18,7 +18,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
 #include <cassert>
-#include <chrono>
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -183,7 +182,8 @@ private:
     for (const auto [hw0, hw1] : swaps) {
       const Value in0 = stack().top().lookupHardwareValue(hw0);
       const Value in1 = stack().top().lookupHardwareValue(hw1);
-      const auto [prog0, prog1] = stack().top().getProgramIndices(hw0, hw1);
+      [[maybe_unused]] const auto [prog0, prog1] =
+          stack().top().getProgramIndices(hw0, hw1);
 
       LLVM_DEBUG({
         llvm::dbgs() << llvm::format(
@@ -377,6 +377,9 @@ WalkResult handleUnitary(UnitaryInterface op, Mapper& mapper,
 
   if (isa<SWAPOp>(op)) {
     mapper.stack().top().swap(execIn0, execIn1);
+    mapper.historyStack().top().push_back(
+        {mapper.stack().top().lookupHardwareIndex(execIn0),
+         mapper.stack().top().lookupHardwareIndex(execIn1)});
   }
 
   mapper.stack().top().remapQubitValue(execIn0, execOut0);
@@ -445,8 +448,19 @@ LogicalResult route(ModuleOp module, MLIRContext* ctx, Mapper& mapper) {
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(curr);
 
+    /// TypeSwitch performs sequential dyn_cast checks.
+    /// Hence, always put most frequent ops first.
+
     const auto res =
         TypeSwitch<Operation*, WalkResult>(curr)
+            /// mqtopt Dialect
+            .Case<UnitaryInterface>([&](UnitaryInterface op) {
+              return handleUnitary(op, mapper, rewriter);
+            })
+            .Case<QubitOp>([&](QubitOp op) { return handleQubit(op, mapper); })
+            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, mapper); })
+            .Case<MeasureOp>(
+                [&](MeasureOp op) { return handleMeasure(op, mapper); })
             /// built-in Dialect
             .Case<ModuleOp>([&]([[maybe_unused]] ModuleOp op) {
               return WalkResult::advance();
@@ -463,14 +477,6 @@ LogicalResult route(ModuleOp module, MLIRContext* ctx, Mapper& mapper) {
             .Case<scf::IfOp>([&](scf::IfOp op) { return handleIf(op, mapper); })
             .Case<scf::YieldOp>([&](scf::YieldOp op) {
               return handleYield(op, mapper, rewriter);
-            })
-            /// mqtopt Dialect
-            .Case<QubitOp>([&](QubitOp op) { return handleQubit(op, mapper); })
-            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, mapper); })
-            .Case<MeasureOp>(
-                [&](MeasureOp op) { return handleMeasure(op, mapper); })
-            .Case<UnitaryInterface>([&](UnitaryInterface op) {
-              return handleUnitary(op, mapper, rewriter);
             })
             /// Skip the rest.
             .Default([](auto) { return WalkResult::skip(); });
@@ -492,14 +498,9 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
 
   void runOnOperation() override {
     Mapper mapper = getMapper();
-
-    const auto start = std::chrono::steady_clock::now();
     if (failed(route(getOperation(), &getContext(), mapper))) {
       signalPassFailure();
     }
-    const auto end = std::chrono::steady_clock::now();
-    msTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
-                 .count();
   }
 
 private:
@@ -514,7 +515,7 @@ private:
                     std::make_unique<NaiveRouter>(), numSwaps);
     case RoutingMethod::AStar:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=astar\n"; });
-      const HeuristicWeights weights(alpha, beta, lambda, nlookahead);
+      const HeuristicWeights weights(alpha, lambda, nlookahead);
       return Mapper(std::move(arch),
                     std::make_unique<ParallelOpScheduler>(nlookahead),
                     std::make_unique<AStarHeuristicRouter>(weights), numSwaps);

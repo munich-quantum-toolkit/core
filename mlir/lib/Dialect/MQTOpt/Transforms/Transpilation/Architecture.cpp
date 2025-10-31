@@ -48,7 +48,7 @@ Architecture::shortestPathBetween(QubitIndex u, QubitIndex v) const {
 }
 
 void Architecture::floydWarshallWithPathReconstruction() {
-  for (const auto& [u, v] : couplingMap_) {
+  for (const auto& [u, v] : couplingSet_) {
     dist_[u][v] = 1;
     prev_[u][v] = u;
   }
@@ -73,15 +73,15 @@ void Architecture::floydWarshallWithPathReconstruction() {
   }
 }
 
-[[nodiscard]] llvm::SmallVector<QubitIndex>
-Architecture::neighboursOf(QubitIndex u) const {
-  llvm::SmallVector<QubitIndex> n;
-  for (const auto [i, j] : couplingMap_) {
-    if (i == u) {
-      n.push_back(j);
-    }
+void Architecture::collectNeighbours() {
+  for (const auto& [u, v] : couplingSet_) {
+    neighbours_[u].push_back(v);
   }
-  return n;
+}
+
+[[nodiscard]] llvm::SmallVector<QubitIndex, 4>
+Architecture::neighboursOf(QubitIndex u) const {
+  return neighbours_[u];
 }
 
 std::unique_ptr<Architecture> getArchitecture(const ArchitectureName& name) {
@@ -93,7 +93,7 @@ std::unique_ptr<Architecture> getArchitecture(const ArchitectureName& name) {
     // |    |
     // 4 -- 5
 
-    const Architecture::CouplingMap couplingMap{
+    const Architecture::CouplingSet couplingMap{
         {0, 1}, {1, 0}, {0, 2}, {2, 0}, {1, 3}, {3, 1}, {2, 3},
         {3, 2}, {2, 4}, {4, 2}, {3, 5}, {5, 3}, {4, 5}, {5, 4}};
 
