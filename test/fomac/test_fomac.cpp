@@ -11,6 +11,7 @@
 #include "fomac/FoMaC.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <gtest/gtest.h>
 #include <new>
 #include <qdmi/client.h>
@@ -374,10 +375,10 @@ TEST_P(JobTest, StatusProgresses) {
   // Wait for completion
   job.wait();
 
-  // After waiting, status should be DONE or ERROR
+  // After waiting, status should be DONE or FAILED
   const auto finalStatus = job.check();
   EXPECT_TRUE(finalStatus == QDMI_JOB_STATUS_DONE ||
-              finalStatus == QDMI_JOB_STATUS_ERROR);
+              finalStatus == QDMI_JOB_STATUS_FAILED);
 }
 
 TEST_P(JobTest, GetCountsReturnsValidHistogram) {
