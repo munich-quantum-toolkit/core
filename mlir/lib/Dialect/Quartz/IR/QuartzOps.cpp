@@ -220,7 +220,9 @@ size_t CtrlOp::getNumTargets() {
   return unitaryOp.getNumTargets();
 }
 
-size_t CtrlOp::getNumControls() { return getNumPosControls(); }
+size_t CtrlOp::getNumControls() {
+  return getNumPosControls() + getNumNegControls();
+}
 
 size_t CtrlOp::getNumPosControls() { return getControls().size(); }
 

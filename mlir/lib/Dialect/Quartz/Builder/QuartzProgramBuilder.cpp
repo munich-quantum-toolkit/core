@@ -184,6 +184,7 @@ QuartzProgramBuilder& QuartzProgramBuilder::ctrl(
   builder.setInsertionPointToStart(&ctrlOp.getBody().emplaceBlock());
 
   body(*this);
+
   builder.create<YieldOp>(loc);
 
   return *this;
