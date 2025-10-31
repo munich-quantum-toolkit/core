@@ -24,6 +24,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/LogicalResult.h>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -427,7 +428,12 @@ struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
   using PlacementPassSCBase::PlacementPassSCBase;
 
   void runOnOperation() override {
-    const auto arch = getArchitecture(ArchitectureName::MQTTest);
+    if (preflight().failed()) {
+      signalPassFailure();
+      return;
+    }
+
+    const auto arch = getArchitecture(archName);
     const auto placer = getPlacer(*arch);
 
     if (PlacementContext ctx(*arch, *placer);
@@ -454,6 +460,15 @@ private:
                                             std::mt19937_64(seed));
     }
     llvm_unreachable("Unknown strategy");
+  }
+
+  LogicalResult preflight() {
+    if (archName.empty()) {
+      return emitError(UnknownLoc::get(&getContext()),
+                       "required option 'arch' not provided");
+    }
+
+    return success();
   }
 };
 } // namespace

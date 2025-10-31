@@ -14,11 +14,14 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
+#include "mlir/IR/Diagnostics.h"
 
 #include <cassert>
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/LogicalResult.h>
+#include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -43,9 +46,10 @@ using namespace mlir;
  * @brief The necessary datastructures for verification.
  */
 struct VerificationContext {
-  explicit VerificationContext(Architecture& arch) : arch(&arch) {}
+  explicit VerificationContext(std::unique_ptr<Architecture> arch)
+      : arch(std::move(arch)) {}
 
-  Architecture* arch;
+  std::unique_ptr<Architecture> arch;
   LayoutStack<Layout> stack{};
 };
 
@@ -219,10 +223,16 @@ WalkResult handleMeasure(MeasureOp op, VerificationContext& ctx) {
  */
 struct RoutingVerificationPassSC final
     : impl::RoutingVerificationSCPassBase<RoutingVerificationPassSC> {
-  void runOnOperation() override {
-    const auto arch = getArchitecture(ArchitectureName::MQTTest);
-    VerificationContext ctx(*arch);
+  using RoutingVerificationSCPassBase<
+      RoutingVerificationPassSC>::RoutingVerificationSCPassBase;
 
+  void runOnOperation() override {
+    if (preflight().failed()) {
+      signalPassFailure();
+      return;
+    }
+
+    VerificationContext ctx(getArchitecture(archName));
     const auto res =
         getOperation()->walk<WalkOrder::PreOrder>([&](Operation* op) {
           return TypeSwitch<Operation*, WalkResult>(op)
@@ -259,6 +269,16 @@ struct RoutingVerificationPassSC final
     if (res.wasInterrupted()) {
       signalPassFailure();
     }
+  }
+
+private:
+  LogicalResult preflight() {
+    if (archName.empty()) {
+      return emitError(UnknownLoc::get(&getContext()),
+                       "required option 'arch' not provided");
+    }
+
+    return success();
   }
 };
 } // namespace

@@ -23,11 +23,6 @@
 namespace mqt::ir::opt {
 
 /**
- * @brief Enumerates the available target architectures.
- */
-enum class ArchitectureName : std::uint8_t { MQTTest, IBMFalcon };
-
-/**
  * @brief A quantum accelerator's architecture.
  * @details Computes all-shortest paths at construction.
  */
@@ -110,6 +105,6 @@ private:
 /**
  * @brief Get architecture by its name.
  */
-std::unique_ptr<Architecture> getArchitecture(const ArchitectureName& name);
+std::unique_ptr<Architecture> getArchitecture(const std::string& name);
 
 }; // namespace mqt::ir::opt

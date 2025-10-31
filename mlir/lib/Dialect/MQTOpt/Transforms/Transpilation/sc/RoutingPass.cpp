@@ -25,6 +25,7 @@
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/Format.h>
+#include <llvm/Support/LogicalResult.h>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -497,6 +498,11 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
   using RoutingPassSCBase<RoutingPassSC>::RoutingPassSCBase;
 
   void runOnOperation() override {
+    if (preflight().failed()) {
+      signalPassFailure();
+      return;
+    }
+
     Mapper mapper = getMapper();
     if (failed(route(getOperation(), &getContext(), mapper))) {
       signalPassFailure();
@@ -505,8 +511,7 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
 
 private:
   [[nodiscard]] Mapper getMapper() {
-    /// TODO: Configurable Architecture.
-    auto arch = getArchitecture(ArchitectureName::MQTTest);
+    auto arch = getArchitecture(archName);
 
     switch (static_cast<RoutingMethod>(method)) {
     case RoutingMethod::Naive:
@@ -522,6 +527,15 @@ private:
     }
 
     llvm_unreachable("Unknown method");
+  }
+
+  LogicalResult preflight() {
+    if (archName.empty()) {
+      return emitError(UnknownLoc::get(&getContext()),
+                       "required option 'arch' not provided");
+    }
+
+    return success();
   }
 };
 

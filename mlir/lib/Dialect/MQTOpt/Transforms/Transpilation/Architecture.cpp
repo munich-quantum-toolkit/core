@@ -84,22 +84,16 @@ Architecture::neighboursOf(QubitIndex u) const {
   return neighbours_[u];
 }
 
-std::unique_ptr<Architecture> getArchitecture(const ArchitectureName& name) {
-  switch (name) {
-  case ArchitectureName::MQTTest: {
-    // 0 -- 1
-    // |    |
-    // 2 -- 3
-    // |    |
-    // 4 -- 5
-
+std::unique_ptr<Architecture> getArchitecture(const std::string& name) {
+  if (name == "MQTTest") {
     const Architecture::CouplingSet couplingMap{
         {0, 1}, {1, 0}, {0, 2}, {2, 0}, {1, 3}, {3, 1}, {2, 3},
         {3, 2}, {2, 4}, {4, 2}, {3, 5}, {5, 3}, {4, 5}, {5, 4}};
 
     return std::make_unique<Architecture>("MQT-Test", 6, couplingMap);
   }
-  case ArchitectureName::IBMFalcon: {
+
+  if (name == "IBMFalcon") {
     const Architecture::CouplingSet couplingMap{
         {0, 1},     {0, 14},    {1, 0},     {1, 2},     {2, 1},     {2, 3},
         {3, 2},     {3, 4},     {4, 3},     {4, 5},     {4, 15},    {5, 4},
@@ -151,7 +145,6 @@ std::unique_ptr<Architecture> getArchitecture(const ArchitectureName& name) {
         {126, 112}, {126, 125}};
 
     return std::make_unique<Architecture>("IBM-Falcon", 127, couplingMap);
-  }
   }
 
   throw std::invalid_argument("Unsupported architecture.");
