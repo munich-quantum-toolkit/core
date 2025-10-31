@@ -309,11 +309,9 @@ c = measure q;
   // Num shots should match what was requested
   EXPECT_EQ(job.getNumShots(), 100);
 
-  // Status should be a valid initial state (CREATED or SUBMITTED)
-  const auto status = job.getStatus();
-  EXPECT_TRUE(status == QDMI_JOB_STATUS_CREATED ||
-              status == QDMI_JOB_STATUS_SUBMITTED ||
-              status == QDMI_JOB_STATUS_RUNNING);
+  // Status should be a valid initial state (CREATED)
+  const auto status = job.check();
+  EXPECT_TRUE(status == QDMI_JOB_STATUS_CREATED);
 }
 
 TEST_P(DeviceTest, SubmitJobPreservesNumShots) {
@@ -371,13 +369,13 @@ c[0] = measure q[0];
 
 TEST_P(JobTest, StatusProgresses) {
   // Get initial status
-  const auto initialStatus = job.getStatus();
+  const auto initialStatus = job.check();
 
   // Wait for completion
   job.wait();
 
   // After waiting, status should be DONE or ERROR
-  const auto finalStatus = job.getStatus();
+  const auto finalStatus = job.check();
   EXPECT_TRUE(finalStatus == QDMI_JOB_STATUS_DONE ||
               finalStatus == QDMI_JOB_STATUS_ERROR);
 }
