@@ -369,10 +369,7 @@ c[0] = measure q[0];
 }
 
 TEST_P(JobTest, StatusProgresses) {
-  // Get initial status
-  const auto initialStatus = job.check();
-
-  // Wait for completion
+  // Wait for job to complete
   job.wait();
 
   // After waiting, status should be DONE or FAILED
