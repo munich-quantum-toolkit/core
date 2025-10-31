@@ -14,6 +14,7 @@
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/IRMapping.h>
@@ -374,7 +375,7 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
                   ConversionPatternRewriter& rewriter) const override {
     const auto& quartzQubit = op.getQubit();
 
-    auto inRegion = dyn_cast<flux::CtrlOp>(op->getParentOp()) != nullptr;
+    auto inRegion = llvm::isa<flux::CtrlOp>(op->getParentOp());
 
     // Get the latest Flux qubit
     Value fluxQubitIn;
