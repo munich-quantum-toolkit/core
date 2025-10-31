@@ -101,7 +101,9 @@ def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
     Option<"strategy", "strategy", "PlacementStrategy", "PlacementStrategy::Random",
            "The initial placement strategy to use.", [{llvm::cl::values(
              clEnumValN(PlacementStrategy::Random, "random", "Random placement"),
-             clEnumValN(PlacementStrategy::Identity, "identity", "Identity placement"))}]>
+             clEnumValN(PlacementStrategy::Identity, "identity", "Identity placement"))}]>,
+    Option<"archName", "arch", "std::string", "",
+           "The name of the targeted architecture.">,
   ];
 }
 
@@ -115,6 +117,8 @@ def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
            "The routing method to use.", [{llvm::cl::values(
              clEnumValN(RoutingMethod::Naive, "naive", "Swap along shortest paths"),
              clEnumValN(RoutingMethod::AStar, "astar", "A*-search-based routing algorithm"))}]>,
+    Option<"archName", "arch", "std::string", "",
+           "The name of the targeted architecture.">,
     Option<"nlookahead", "nlookahead", "std::size_t", "1",
            "astar option: Number of lookahead steps (heuristic horizon)">,
     Option<"alpha", "alpha", "float", "1.0F",
@@ -132,6 +136,10 @@ def RoutingVerificationSCPass : Pass<"verify-routing-sc", "mlir::ModuleOp"> {
   let description = [{
     This pass ensures that all two-qubit gates are executable on the target's architecture.
   }];
+  let options = [
+    Option<"archName", "arch", "std::string", "",
+           "The name of the targeted architecture.">
+  ];
 }
 
 #endif // MQTO_PASSES

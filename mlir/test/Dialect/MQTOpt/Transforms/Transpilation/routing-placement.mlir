@@ -6,7 +6,7 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file --placement-sc="strategy=identity" -verify-diagnostics
+// RUN: quantum-opt %s -split-input-file --placement-sc="strategy=identity arch=MQTTest" -verify-diagnostics
 
 
 module {

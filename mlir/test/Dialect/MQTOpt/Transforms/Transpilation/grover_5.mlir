@@ -8,7 +8,10 @@
 
 // Instead of applying checks, the routing verifier pass ensures the validity of this program.
 
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity}, route-sc{method=astar},verify-routing-sc)" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity arch=MQTTest}, route-sc{method=naive arch=MQTTest},verify-routing-sc{arch=MQTTest})" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity arch=MQTTest}, route-sc{method=astar arch=MQTTest},verify-routing-sc{arch=MQTTest})" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity arch=IBMFalcon}, route-sc{method=naive arch=IBMFalcon},verify-routing-sc{arch=IBMFalcon})" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity arch=IBMFalcon}, route-sc{method=astar arch=IBMFalcon},verify-routing-sc{arch=IBMFalcon})" -verify-diagnostics | FileCheck %s
 
 module {
   // CHECK-LABEL: func.func @main

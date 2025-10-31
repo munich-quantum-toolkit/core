@@ -8,12 +8,13 @@
 
 // Instead of applying checks, the routing verifier pass ensures the validity of this program.
 
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity}, route-sc{method=naive},verify-routing-sc)" -verify-diagnostics | FileCheck --check-prefix=NAIVE %s
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity}, route-sc{method=astar},verify-routing-sc)" -verify-diagnostics | FileCheck --check-prefix=ASTAR %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity arch=MQTTest}, route-sc{method=naive arch=MQTTest},verify-routing-sc{arch=MQTTest})" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity arch=MQTTest}, route-sc{method=astar arch=MQTTest},verify-routing-sc{arch=MQTTest})" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity arch=IBMFalcon}, route-sc{method=naive arch=IBMFalcon},verify-routing-sc{arch=IBMFalcon})" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(placement-sc{strategy=identity arch=IBMFalcon}, route-sc{method=astar arch=IBMFalcon},verify-routing-sc{arch=IBMFalcon})" -verify-diagnostics | FileCheck %s
 
 module {
-    // NAIVE-LABEL: func.func @entrySABRE
-    // ASTAR-LABEL: func.func @entrySABRE
+    // CHECK-LABEL: func.func @entrySABRE
     func.func @entrySABRE() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -73,8 +74,7 @@ module {
         return
     }
 
-    // NAIVE-LABEL: func.func @entryBell
-    // ASTAR-LABEL: func.func @entryBell
+    // CHECK-LABEL: func.func @entryBell
     func.func @entryBell() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -105,8 +105,7 @@ module {
         return
     }
 
-    // NAIVE-LABEL: func.func @entryBellLoop
-    // ASTAR-LABEL: func.func @entryBellLoop
+    // CHECK-LABEL: func.func @entryBellLoop
     func.func @entryBellLoop() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -142,8 +141,7 @@ module {
         return
     }
 
-    // NAIVE-LABEL: func.func @entryGHZ
-    // ASTAR-LABEL: func.func @entryGHZ
+    // CHECK-LABEL: func.func @entryGHZ
     func.func @entryGHZ() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -192,8 +190,7 @@ module {
         return
     }
 
-    // NAIVE-LABEL: func.func @entryBranching
-    // ASTAR-LABEL: func.func @entryBranching
+    // CHECK-LABEL: func.func @entryBranching
     func.func @entryBranching() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -232,8 +229,7 @@ module {
         return
     }
 
-    // NAIVE-LABEL: func.func @entryAll
-    // ASTAR-LABEL: func.func @entryAll
+    // CHECK-LABEL: func.func @entryAll
     func.func @entryAll() attributes {passthrough = ["entry_point"]} {
 
         //
@@ -369,8 +365,7 @@ module {
         return
     }
 
-    // NAIVE-LABEL: func.func @noEntryPoint
-    // ASTAR-LABEL: func.func @noEntryPoint
+    // CHECK-LABEL: func.func @noEntryPoint
     func.func @noEntryPoint() {
         // CHECK: %[[ANY:.*]] = mqtopt.allocQubit
         %q0 = mqtopt.allocQubit

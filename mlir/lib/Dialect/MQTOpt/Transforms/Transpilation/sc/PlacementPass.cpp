@@ -30,6 +30,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
@@ -427,7 +428,19 @@ struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
   using PlacementPassSCBase::PlacementPassSCBase;
 
   void runOnOperation() override {
-    const auto arch = getArchitecture(ArchitectureName::MQTTest);
+    if (preflight().failed()) {
+      signalPassFailure();
+      return;
+    }
+
+    const auto arch = getArchitecture(archName);
+    if (!arch) {
+      emitError(UnknownLoc::get(&getContext()))
+          << "unsupported architecture '" << archName << "'";
+      signalPassFailure();
+      return;
+    }
+
     const auto placer = getPlacer(*arch);
 
     if (PlacementContext ctx(*arch, *placer);
@@ -447,13 +460,22 @@ private:
       std::random_device rd;
       const std::size_t seed = rd();
       LLVM_DEBUG({
-        llvm::dbgs() << "getPlacer: random placement with seed = " << seed
+        llvm::dbgs() << "getPlacer: random placement with seed =" << seed
                      << '\n';
       });
       return std::make_unique<RandomPlacer>(arch.nqubits(),
                                             std::mt19937_64(seed));
     }
     llvm_unreachable("Unknown strategy");
+  }
+
+  LogicalResult preflight() {
+    if (archName.empty()) {
+      return emitError(UnknownLoc::get(&getContext()),
+                       "required option 'arch' not provided");
+    }
+
+    return success();
   }
 };
 } // namespace

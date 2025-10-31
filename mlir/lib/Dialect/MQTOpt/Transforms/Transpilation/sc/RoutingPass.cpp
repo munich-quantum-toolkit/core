@@ -32,6 +32,7 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -497,17 +498,27 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
   using RoutingPassSCBase<RoutingPassSC>::RoutingPassSCBase;
 
   void runOnOperation() override {
-    Mapper mapper = getMapper();
+    if (preflight().failed()) {
+      signalPassFailure();
+      return;
+    }
+
+    auto arch = getArchitecture(archName);
+    if (!arch) {
+      emitError(UnknownLoc::get(&getContext()))
+          << "unsupported architecture '" << archName << "'";
+      signalPassFailure();
+      return;
+    }
+
+    Mapper mapper = getMapper(std::move(arch));
     if (failed(route(getOperation(), &getContext(), mapper))) {
       signalPassFailure();
     }
   }
 
 private:
-  [[nodiscard]] Mapper getMapper() {
-    /// TODO: Configurable Architecture.
-    auto arch = getArchitecture(ArchitectureName::MQTTest);
-
+  [[nodiscard]] Mapper getMapper(std::unique_ptr<Architecture> arch) {
     switch (static_cast<RoutingMethod>(method)) {
     case RoutingMethod::Naive:
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=naive\n"; });
@@ -522,6 +533,15 @@ private:
     }
 
     llvm_unreachable("Unknown method");
+  }
+
+  LogicalResult preflight() {
+    if (archName.empty()) {
+      return emitError(UnknownLoc::get(&getContext()),
+                       "required option 'arch' not provided");
+    }
+
+    return success();
   }
 };
 
