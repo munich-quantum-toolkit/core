@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -84,17 +85,17 @@ Architecture::neighboursOf(QubitIndex u) const {
   return neighbours_[u];
 }
 
-std::unique_ptr<Architecture> getArchitecture(const std::string& name) {
+std::unique_ptr<Architecture> getArchitecture(const llvm::StringRef name) {
   if (name == "MQTTest") {
-    const Architecture::CouplingSet couplingMap{
+    static const Architecture::CouplingSet COUPLING{
         {0, 1}, {1, 0}, {0, 2}, {2, 0}, {1, 3}, {3, 1}, {2, 3},
         {3, 2}, {2, 4}, {4, 2}, {3, 5}, {5, 3}, {4, 5}, {5, 4}};
 
-    return std::make_unique<Architecture>("MQT-Test", 6, couplingMap);
+    return std::make_unique<Architecture>("MQT-Test", 6, COUPLING);
   }
 
   if (name == "IBMFalcon") {
-    const Architecture::CouplingSet couplingMap{
+    static const Architecture::CouplingSet COUPLING{
         {0, 1},     {0, 14},    {1, 0},     {1, 2},     {2, 1},     {2, 3},
         {3, 2},     {3, 4},     {4, 3},     {4, 5},     {4, 15},    {5, 4},
         {5, 6},     {6, 5},     {6, 7},     {7, 6},     {7, 8},     {8, 7},
@@ -144,7 +145,7 @@ std::unique_ptr<Architecture> getArchitecture(const std::string& name) {
         {123, 122}, {123, 124}, {124, 123}, {124, 125}, {125, 124}, {125, 126},
         {126, 112}, {126, 125}};
 
-    return std::make_unique<Architecture>("IBM-Falcon", 127, couplingMap);
+    return std::make_unique<Architecture>("IBM-Falcon", 127, COUPLING);
   }
 
   return nullptr;

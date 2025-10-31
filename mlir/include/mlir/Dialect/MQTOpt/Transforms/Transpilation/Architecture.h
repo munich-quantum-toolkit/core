@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -105,6 +106,6 @@ private:
 /**
  * @brief Get architecture by its name.
  */
-std::unique_ptr<Architecture> getArchitecture(const std::string& name);
+std::unique_ptr<Architecture> getArchitecture(llvm::StringRef name);
 
 }; // namespace mqt::ir::opt
