@@ -193,6 +193,7 @@ void __quantum__qis__r__body(Qubit* qubit, const double theta,
   runtime.apply<qc::R>(theta, phi, qubit);
 }
 
+// prx is an alias for the R gate
 void __quantum__qis__prx__body(Qubit* qubit, const double theta,
                                const double phi) {
   auto& runtime = qir::Runtime::getInstance();
