@@ -54,6 +54,10 @@ TEST_F(SymbolicTest, Gates) {
   symQc.cp(xMonom, 1, 0);
   symQc.p(xMonom, 0);
 
+  symQc.mcr(xMonom, yMonom, {1, 2_nc}, 0);
+  symQc.cr(xMonom, yMonom, 1, 0);
+  symQc.r(xMonom, yMonom, 0);
+
   symQc.mcrx(xMonom, {1, 2_nc}, 0);
   symQc.crx(xMonom, 1, 0);
   symQc.rx(xMonom, 0);
@@ -107,6 +111,10 @@ TEST_F(SymbolicTest, Gates) {
   qc.mcp(xVal, {1, 2_nc}, 0);
   qc.cp(xVal, 1, 0);
   qc.p(xVal, 0);
+
+  qc.mcr(xVal, yVal, {1, 2_nc}, 0);
+  qc.cr(xVal, yVal, 1, 0);
+  qc.r(xVal, yVal, 0);
 
   qc.mcrx(xVal, {1, 2_nc}, 0);
   qc.crx(xVal, 1, 0);

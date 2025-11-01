@@ -32,8 +32,9 @@ HANDLE_OP_TYPE(14, SXdg, OpTypeInv, "sxdg")
 HANDLE_OP_TYPE(15, RX, OpTypeNone, "rx")
 HANDLE_OP_TYPE(16, RY, OpTypeNone, "ry")
 HANDLE_OP_TYPE(17, RZ, OpTypeDiag, "rz")
+HANDLE_OP_TYPE(41, R, OpTypeNone, "r")
 HANDLE_OP_TYPE(18, SWAP, OpTypeNone, "swap")
-HANDLE_OP_TYPE(19, iSWAP, OpTypeNone,   "iswap")
+HANDLE_OP_TYPE(19, iSWAP, OpTypeNone, "iswap")
 HANDLE_OP_TYPE(19, iSWAPdg, OpTypeInv, "iswapdg")
 HANDLE_OP_TYPE(20, Peres, OpTypeNone, "peres")
 HANDLE_OP_TYPE(20, Peresdg, OpTypeInv, "peresdg")
@@ -68,7 +69,7 @@ HANDLE_OP_TYPE(38, AodActivate, 0, "aod_activate")
 HANDLE_OP_TYPE(39, AodDeactivate, 0, "aod_deactivate")
 HANDLE_OP_TYPE(40, AodMove, 0, "aod_move")
 
-LAST_OP_TYPE(41)
+LAST_OP_TYPE(42)
 
 
 #undef OpTypeInv

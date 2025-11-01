@@ -185,6 +185,13 @@ class OpType(Enum):
     See Also:
         :meth:`mqt.core.ir.QuantumComputation.reset`
     """
+    r = ...
+    r"""
+    An :math:`R` gate.
+
+    See Also:
+        :meth:`mqt.core.ir.QuantumComputation.r`
+    """
     rx = ...
     r"""
     An :math:`R_x` gate.

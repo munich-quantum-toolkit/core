@@ -48,6 +48,7 @@ void registerOptype(const py::module& m) {
       .value("rx", qc::OpType::RX)
       .value("ry", qc::OpType::RY)
       .value("rz", qc::OpType::RZ)
+      .value("r", qc::OpType::R)
       .value("swap", qc::OpType::SWAP)
       .value("iswap", qc::OpType::iSWAP)
       .value("iswapdg", qc::OpType::iSWAPdg)

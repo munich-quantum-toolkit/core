@@ -292,6 +292,7 @@ module {
         // CHECK: mqtref.rx(%[[c_0]]) %[[q_0]]
         // CHECK: mqtref.ry(%[[c_0]]) %[[q_0]]
         // CHECK: mqtref.rz(%[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.r(%[[c_0]], %[[c_0]]) %[[q_0]]
 
         %i0 = arith.constant 0 : index
         %qreg = memref.alloc() : memref<1x!mqtopt.Qubit>
@@ -304,8 +305,9 @@ module {
         %q4 = mqtopt.rx(%cst) %q3 : !mqtopt.Qubit
         %q5 = mqtopt.ry(%cst) %q4 : !mqtopt.Qubit
         %q6 = mqtopt.rz(%cst) %q5 : !mqtopt.Qubit
+        %q7 = mqtopt.r(%cst, %cst) %q6 : !mqtopt.Qubit
 
-        memref.store %q6, %qreg[%i0] : memref<1x!mqtopt.Qubit>
+        memref.store %q7, %qreg[%i0] : memref<1x!mqtopt.Qubit>
         memref.dealloc %qreg : memref<1x!mqtopt.Qubit>
 
         return

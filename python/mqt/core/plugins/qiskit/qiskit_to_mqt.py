@@ -132,6 +132,7 @@ _NATIVELY_SUPPORTED_GATES = frozenset({
     "tdg",
     "p",
     "u1",
+    "r",
     "rx",
     "ry",
     "rz",
@@ -264,6 +265,9 @@ def _emplace_operation(
         if num_controls > 2:
             qargs = qargs[: -num_controls + 2]
         return _add_operation(qc, OpType.x, qargs, params, qubit_map)
+
+    if name in {"r", "prx"}:
+        return _add_operation(qc, OpType.r, qargs, params, qubit_map)
 
     if name in {"rx", "crx", "mcrx"}:
         return _add_operation(qc, OpType.rx, qargs, params, qubit_map)

@@ -58,7 +58,7 @@ protected:
 INSTANTIATE_TEST_SUITE_P(
     Parameters, DDFunctionality,
     testing::Values(GPhase, I, H, X, Y, Z, S, Sdg, T, Tdg, SX, SXdg, V, Vdg, U,
-                    U2, P, RX, RY, RZ, Peres, Peresdg, SWAP, iSWAP, iSWAPdg,
+                    U2, P, R, RX, RY, RZ, Peres, Peresdg, SWAP, iSWAP, iSWAPdg,
                     DCX, ECR, RXX, RYY, RZZ, RZX, XXminusYY, XXplusYY),
     [](const testing::TestParamInfo<DDFunctionality::ParamType>& inf) {
       const auto gate = inf.param;
@@ -82,6 +82,7 @@ TEST_P(DDFunctionality, StandardOpBuildInverseBuild) {
     op = StandardOperation(0, gate, std::vector{dist(mt), dist(mt), dist(mt)});
     break;
   case U2:
+  case R:
     op = StandardOperation(0, gate, std::vector{dist(mt), dist(mt)});
     break;
   case RX:
@@ -138,6 +139,7 @@ TEST_P(DDFunctionality, ControlledStandardOpBuildInverseBuild) {
                            std::vector{dist(mt), dist(mt), dist(mt)});
     break;
   case U2:
+  case R:
     op = StandardOperation(0, 1, gate, std::vector{dist(mt), dist(mt)});
     break;
   case RX:
@@ -195,6 +197,7 @@ TEST_P(DDFunctionality, ControlledStandardNegOpBuildInverseBuild) {
                            std::vector{dist(mt), dist(mt), dist(mt)});
     break;
   case U2:
+  case R:
     op = StandardOperation(Controls{0_nc}, 1, gate,
                            std::vector{dist(mt), dist(mt)});
     break;
@@ -273,8 +276,14 @@ TEST_F(DDFunctionality, BuildCircuit) {
   qc.cxx_minus_yy(theta, beta, 2, 0, 1);
   qc.xx_plus_yy(theta, beta, 0, 1);
   qc.cxx_plus_yy(theta, beta, 2, 0, 1);
+  qc.r(theta, beta, 0);
+  qc.cr(theta, beta, 2, 0);
+  qc.mcr(theta, beta, {2, 3}, 0);
 
   // invert the circuit above
+  qc.mcr(-theta, beta, {2, 3}, 0);
+  qc.cr(-theta, beta, 2, 0);
+  qc.r(-theta, beta, 0);
   qc.cxx_plus_yy(-theta, beta, 2, 0, 1);
   qc.xx_plus_yy(-theta, beta, 0, 1);
   qc.cxx_minus_yy(-theta, beta, 2, 0, 1);

@@ -178,6 +178,16 @@ def SXdgOp : UnitaryOp<"sxdg", [OneTarget, NoParameter]> {
     }];
 }
 
+def ROp : UnitaryOp<"r", [OneTarget, TwoParameters]> {
+  let summary = "R operation";
+
+  let description = [{
+      This class represents a R gate. It takes a qubit and a variadic
+      list of positive/negative controls as an input. Additionally, it accepts
+      two parameters indicating the degree of the rotation angles.
+  }];
+}
+
 def RXOp : UnitaryOp<"rx", [OneTarget, OneParameter]> {
     let summary = "RX operation";
 

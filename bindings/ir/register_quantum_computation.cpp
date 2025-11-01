@@ -345,6 +345,7 @@ void registerQuantumComputation(py::module& m) {
          py::arg(#param1), "controls"_a, "target"_a);
 
   DEFINE_SINGLE_TARGET_TWO_PARAMETER_OPERATION(u2, phi, lambda_)
+  DEFINE_SINGLE_TARGET_TWO_PARAMETER_OPERATION(r, theta, phi)
 
 #define DEFINE_SINGLE_TARGET_THREE_PARAMETER_OPERATION(op, param0, param1,     \
                                                        param2)                 \
