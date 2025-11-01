@@ -305,6 +305,12 @@ auto main(int argc, char* argv[]) -> int {
       "__quantum__qis__tdg__body",
       reinterpret_cast<void*>(&__quantum__qis__tdg__body));
   llvm::sys::DynamicLibrary::AddSymbol(
+      "__quantum__qis__r__body",
+      reinterpret_cast<void*>(&__quantum__qis__r__body));
+  llvm::sys::DynamicLibrary::AddSymbol(
+      "__quantum__qis__prx__body",
+      reinterpret_cast<void*>(&__quantum__qis__prx__body));
+  llvm::sys::DynamicLibrary::AddSymbol(
       "__quantum__qis__rx__body",
       reinterpret_cast<void*>(&__quantum__qis__rx__body));
   llvm::sys::DynamicLibrary::AddSymbol(
