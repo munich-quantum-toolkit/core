@@ -1681,7 +1681,7 @@ struct CliffordBlock {
   }
 
   /**
-   * @brief Check if repostion is needed to keep block valid
+   * @brief Check if reposition is needed to keep block valid
    * @param used Qubits used by the gate
    * @param lastNonClifford Map of qubits to last non-Clifford operation
    */
