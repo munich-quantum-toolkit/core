@@ -12,11 +12,11 @@
 
 #include <algorithm>
 #include <array>
-#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 
 namespace qc {
 std::string toString(const OpType opType) {
@@ -154,9 +154,9 @@ static_assert(std::ranges::is_sorted(OP_NAME_TO_TYPE.cbegin(),
 } // namespace
 
 OpType opTypeFromString(const std::string_view opType) {
-  const auto it = std::ranges::lower_bound(
+  const auto* const it = std::ranges::lower_bound(
       OP_NAME_TO_TYPE, opType, {}, &std::pair<std::string_view, OpType>::first);
-  if (it != OP_NAME_TO_TYPE.end() && it->first == opType) {
+  if (it != nullptr && it->first == opType) {
     return it->second;
   }
   throw std::invalid_argument("Unsupported operation type: " +
