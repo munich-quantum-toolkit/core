@@ -65,6 +65,18 @@ GateMatrix rzMat(const fp lambda) {
                      {std::cos(lambda / 2.), std::sin(lambda / 2.)}}};
 }
 
+GateMatrix rMat(const fp theta, const fp phi) {
+  const auto cosTheta = std::cos(theta / 2.);
+  const auto sinTheta = std::sin(theta / 2.);
+  const auto sinPhi = std::sin(phi);
+  const auto cosPhi = std::cos(phi);
+  const std::complex<fp> diag = {cosTheta, 0.};
+  const std::complex<fp> m01 = {-sinTheta * sinPhi, -sinTheta * cosPhi};
+  const std::complex<fp> m10 = {sinTheta * sinPhi, -sinTheta * cosPhi};
+
+  return GateMatrix{diag, m01, m10, diag};
+}
+
 TwoQubitGateMatrix rxxMat(const fp theta) {
   const auto cosTheta = std::cos(theta / 2.);
   const auto sinTheta = std::sin(theta / 2.);
@@ -183,6 +195,8 @@ GateMatrix opToSingleQubitGateMatrix(const qc::OpType t,
     return ryMat(params.at(0));
   case qc::RZ:
     return rzMat(params.at(0));
+  case qc::R:
+    return rMat(params.at(0), params.at(1));
   default:
     throw std::invalid_argument("Invalid single-qubit gate type");
   }
