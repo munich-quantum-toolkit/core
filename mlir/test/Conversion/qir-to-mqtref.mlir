@@ -572,6 +572,7 @@ module {
         // CHECK: mqtref.rx(%[[c_0]]) %[[q_0]]
         // CHECK: mqtref.ry(%[[c_0]]) %[[q_0]]
         // CHECK: mqtref.rz(%[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.r(%[[c_0]], %[[c_1]]) %[[q_0]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c2 = llvm.mlir.constant(1.000000e-01 : f64) : f64
@@ -588,6 +589,7 @@ module {
         llvm.call @__quantum__qis__rx__body(%q0, %c2) : (!llvm.ptr, f64) -> ()
         llvm.call @__quantum__qis__ry__body(%q0, %c2) : (!llvm.ptr, f64) -> ()
         llvm.call @__quantum__qis__rz__body(%q0, %c2) : (!llvm.ptr, f64) -> ()
+        llvm.call @__quantum__qis__r__body(%q0, %c2, %c3) : (!llvm.ptr, f64, f64) -> ()
         llvm.br ^bb2
       ^bb2:
         llvm.call @__quantum__rt__qubit_release(%q0) : (!llvm.ptr) -> ()
@@ -602,6 +604,7 @@ module {
     llvm.func @__quantum__qis__rx__body(!llvm.ptr, f64)
     llvm.func @__quantum__qis__ry__body(!llvm.ptr, f64)
     llvm.func @__quantum__qis__rz__body(!llvm.ptr, f64)
+    llvm.func @__quantum__qis__r__body(!llvm.ptr, f64, f64)
     llvm.func @__quantum__rt__initialize(!llvm.ptr)
     llvm.func @__quantum__rt__qubit_allocate() -> !llvm.ptr
     llvm.func @__quantum__rt__qubit_release(!llvm.ptr) -> ()
@@ -623,6 +626,7 @@ module {
         // CHECK: mqtref.rx(%[[c_0]]) %[[q_0]]
         // CHECK: mqtref.ry(%[[c_0]]) %[[q_0]]
         // CHECK: mqtref.rz(%[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.r(%[[c_0]], %[[c_1]]) %[[q_0]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c2 = llvm.mlir.constant(1.000000e-01 : f64) : f64
@@ -638,6 +642,7 @@ module {
         llvm.call @__quantum__qis__rx__body(%0, %c2) : (!llvm.ptr, f64) -> ()
         llvm.call @__quantum__qis__ry__body(%0, %c2) : (!llvm.ptr, f64) -> ()
         llvm.call @__quantum__qis__rz__body(%0, %c2) : (!llvm.ptr, f64) -> ()
+        llvm.call @__quantum__qis__r__body(%0, %c2, %c3) : (!llvm.ptr, f64, f64) -> ()
 
         llvm.br ^bb2
       ^bb2:
@@ -652,6 +657,7 @@ module {
     llvm.func @__quantum__qis__rx__body(!llvm.ptr, f64)
     llvm.func @__quantum__qis__ry__body(!llvm.ptr, f64)
     llvm.func @__quantum__qis__rz__body(!llvm.ptr, f64)
+    llvm.func @__quantum__qis__r__body(!llvm.ptr, f64, f64)
     llvm.func @__quantum__rt__initialize(!llvm.ptr)
 }
 

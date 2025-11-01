@@ -408,6 +408,7 @@ module {
         // CHECK: %[[Q_4:.*]] = mqtopt.rx(%[[C0_F64]]) %[[Q_3]] : !mqtopt.Qubit
         // CHECK: %[[Q_5:.*]] = mqtopt.ry(%[[C0_F64]]) %[[Q_4]] : !mqtopt.Qubit
         // CHECK: %[[Q_6:.*]] = mqtopt.rz(%[[C0_F64]]) %[[Q_5]] : !mqtopt.Qubit
+        // CHECK: %[[Q_7:.*]] = mqtopt.r(%[[C0_F64]], %[[C0_F64]] static [] mask [false, false]) %[[Q_6]] : !mqtopt.Qubit
 
         %i0 = arith.constant 0 : index
         %qreg = memref.alloc() : memref<1x!mqtopt.Qubit>
@@ -420,8 +421,9 @@ module {
         %q_4 = mqtopt.rx(%c0_f64) %q_3 : !mqtopt.Qubit
         %q_5 = mqtopt.ry(%c0_f64) %q_4 : !mqtopt.Qubit
         %q_6 = mqtopt.rz(%c0_f64) %q_5 : !mqtopt.Qubit
+        %q_7 = mqtopt.r(%c0_f64, %c0_f64 static [] mask [false, false]) %q_6 : !mqtopt.Qubit
 
-        memref.store %q_6, %qreg[%i0] : memref<1x!mqtopt.Qubit>
+        memref.store %q_7, %qreg[%i0] : memref<1x!mqtopt.Qubit>
         memref.dealloc %qreg : memref<1x!mqtopt.Qubit>
 
         return
@@ -440,6 +442,7 @@ module {
         // CHECK: %[[Q_4:.*]] = mqtopt.rx(%[[C0_F64]]) %[[Q_3]] : !mqtopt.Qubit
         // CHECK: %[[Q_5:.*]] = mqtopt.ry(%[[C0_F64]]) %[[Q_4]] : !mqtopt.Qubit
         // CHECK: %[[Q_6:.*]] = mqtopt.rz(%[[C0_F64]]) %[[Q_5]] : !mqtopt.Qubit
+        // CHECK: %[[Q_7:.*]] = mqtopt.r(%[[C0_F64]], %[[C0_F64]] static [] mask [false, false]) %[[Q_6]] : !mqtopt.Qubit
 
         %q_0 = mqtopt.qubit 0
 
@@ -450,6 +453,7 @@ module {
         %q_4 = mqtopt.rx(%c0_f64) %q_3 : !mqtopt.Qubit
         %q_5 = mqtopt.ry(%c0_f64) %q_4 : !mqtopt.Qubit
         %q_6 = mqtopt.rz(%c0_f64) %q_5 : !mqtopt.Qubit
+        %q_7 = mqtopt.r(%c0_f64, %c0_f64 static [] mask [false, false]) %q_6 : !mqtopt.Qubit
 
         return
     }
@@ -468,6 +472,7 @@ module {
         // CHECK: %[[Q0_4:.*]], %[[Q1_4:.*]] = mqtopt.rx(%[[C0_F64]]) %[[Q0_3]] ctrl %[[Q1_3]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
         // CHECK: %[[Q0_5:.*]], %[[Q1_5:.*]] = mqtopt.ry(%[[C0_F64]]) %[[Q0_4]] ctrl %[[Q1_4]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
         // CHECK: %[[Q0_6:.*]], %[[Q1_6:.*]] = mqtopt.rz(%[[C0_F64]]) %[[Q0_5]] ctrl %[[Q1_5]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q0_7:.*]], %[[Q1_7:.*]] = mqtopt.r(%[[C0_F64]], %[[C0_F64]]) %[[Q0_6]] ctrl %[[Q1_6]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
         %i1 = arith.constant 1 : index
         %i0 = arith.constant 0 : index
@@ -482,8 +487,9 @@ module {
         %q0_4, %q1_4 = mqtopt.rx(%c0_f64) %q0_3 ctrl %q1_3 : !mqtopt.Qubit ctrl !mqtopt.Qubit
         %q0_5, %q1_5 = mqtopt.ry(%c0_f64) %q0_4 ctrl %q1_4 : !mqtopt.Qubit ctrl !mqtopt.Qubit
         %q0_6, %q1_6 = mqtopt.rz(%c0_f64) %q0_5 ctrl %q1_5 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_7, %q1_7 = mqtopt.r(%c0_f64, %c0_f64) %q0_6 ctrl %q1_6 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
-        memref.store %q0_6, %qreg[%i0] : memref<2x!mqtopt.Qubit>
+        memref.store %q0_7, %qreg[%i0] : memref<2x!mqtopt.Qubit>
         memref.store %q1_0, %qreg[%i1] : memref<2x!mqtopt.Qubit>
         memref.dealloc %qreg : memref<2x!mqtopt.Qubit>
 
@@ -503,6 +509,7 @@ module {
         // CHECK: %[[Q0_4:.*]], %[[Q1_4:.*]] = mqtopt.rx(%[[C0_F64]]) %[[Q0_3]] ctrl %[[Q1_3]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
         // CHECK: %[[Q0_5:.*]], %[[Q1_5:.*]] = mqtopt.ry(%[[C0_F64]]) %[[Q0_4]] ctrl %[[Q1_4]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
         // CHECK: %[[Q0_6:.*]], %[[Q1_6:.*]] = mqtopt.rz(%[[C0_F64]]) %[[Q0_5]] ctrl %[[Q1_5]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        // CHECK: %[[Q0_7:.*]], %[[Q1_7:.*]] = mqtopt.r(%[[C0_F64]], %[[C0_F64]]) %[[Q0_6]] ctrl %[[Q1_6]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
         %q0_0 = mqtopt.qubit 0
         %q1_0 = mqtopt.qubit 1
@@ -514,6 +521,7 @@ module {
         %q0_4, %q1_4 = mqtopt.rx(%c0_f64) %q0_3 ctrl %q1_3 : !mqtopt.Qubit ctrl !mqtopt.Qubit
         %q0_5, %q1_5 = mqtopt.ry(%c0_f64) %q0_4 ctrl %q1_4 : !mqtopt.Qubit ctrl !mqtopt.Qubit
         %q0_6, %q1_6 = mqtopt.rz(%c0_f64) %q0_5 ctrl %q1_5 : !mqtopt.Qubit ctrl !mqtopt.Qubit
+        %q0_7, %q1_7 = mqtopt.r(%c0_f64, %c0_f64) %q0_6 ctrl %q1_6 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
         return
     }

@@ -310,6 +310,7 @@ module {
         // CHECK: %[[q_3:.*]] = mqtopt.rx(%[[c_0]]) %[[q_2]] : !mqtopt.Qubit
         // CHECK: %[[q_4:.*]] = mqtopt.ry(%[[c_0]]) %[[q_3]] : !mqtopt.Qubit
         // CHECK: %[[q_5:.*]] = mqtopt.rz(%[[c_0]]) %[[q_4]] : !mqtopt.Qubit
+        // CHECK: %[[q_6:.*]] = mqtopt.r(%[[c_0]], %[[c_0]]) %[[q_5]] : !mqtopt.Qubit
 
         %cst = arith.constant 3.000000e-01 : f64
 
@@ -323,6 +324,7 @@ module {
         mqtref.rx(%cst) %q0
         mqtref.ry(%cst) %q0
         mqtref.rz(%cst) %q0
+        mqtref.r(%cst, %cst) %q0
 
         return
     }
