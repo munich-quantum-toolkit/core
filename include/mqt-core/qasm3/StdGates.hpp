@@ -49,42 +49,97 @@ const std::string QE1LIB = "gate rccx a, b, c {\n"
 const std::map<std::string, std::shared_ptr<Gate>> STANDARD_GATES = {
     // gates from which all other gates can be constructed.
     {"gphase",
-     std::make_shared<StandardGate>(StandardGate({0, 0, 1, qc::GPhase}))},
-    {"U", std::make_shared<StandardGate>(StandardGate({0, 1, 3, qc::U}))},
+     std::make_shared<StandardGate>(StandardGate({.nControls = 0,
+                                                  .nTargets = 0,
+                                                  .nParameters = 1,
+                                                  .type = qc::GPhase}))},
+    {"U",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 3, .type = qc::U}))},
 
     // natively supported gates
-    {"p", std::make_shared<StandardGate>(StandardGate({0, 1, 1, qc::P}))},
-    {"u1", std::make_shared<StandardGate>(StandardGate({0, 1, 1, qc::P}))},
-    {"phase", std::make_shared<StandardGate>(StandardGate({0, 1, 1, qc::P}))},
-    {"cphase", std::make_shared<StandardGate>(StandardGate({1, 1, 1, qc::P}))},
-    {"cp", std::make_shared<StandardGate>(StandardGate({1, 1, 1, qc::P}))},
+    {"p",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 1, .type = qc::P}))},
+    {"u1",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 1, .type = qc::P}))},
+    {"phase",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 1, .type = qc::P}))},
+    {"cphase",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 1, .nParameters = 1, .type = qc::P}))},
+    {"cp",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 1, .nParameters = 1, .type = qc::P}))},
 
-    {"id", std::make_shared<StandardGate>(StandardGate({0, 1, 0, qc::I}))},
-    {"u2", std::make_shared<StandardGate>(StandardGate({0, 1, 2, qc::U2}))},
-    {"u3", std::make_shared<StandardGate>(StandardGate({0, 1, 3, qc::U}))},
-    {"u", std::make_shared<StandardGate>(StandardGate({0, 1, 3, qc::U}))},
+    {"id",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 0, .type = qc::I}))},
+    {"u2",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 2, .type = qc::U2}))},
+    {"u3",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 3, .type = qc::U}))},
+    {"u",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 3, .type = qc::U}))},
 
-    {"x", std::make_shared<StandardGate>(StandardGate({0, 1, 0, qc::X}))},
-    {"cx", std::make_shared<StandardGate>(StandardGate({1, 1, 0, qc::X}))},
-    {"CX", std::make_shared<StandardGate>(StandardGate({1, 1, 0, qc::X}))},
-    {"ccx", std::make_shared<StandardGate>(StandardGate({2, 1, 0, qc::X}))},
-    {"c3x", std::make_shared<StandardGate>(StandardGate({3, 1, 0, qc::X}))},
-    {"c4x", std::make_shared<StandardGate>(StandardGate({4, 1, 0, qc::X}))},
+    {"x",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 0, .type = qc::X}))},
+    {"cx",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 1, .nParameters = 0, .type = qc::X}))},
+    {"CX",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 1, .nParameters = 0, .type = qc::X}))},
+    {"ccx",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 2, .nTargets = 1, .nParameters = 0, .type = qc::X}))},
+    {"c3x",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 3, .nTargets = 1, .nParameters = 0, .type = qc::X}))},
+    {"c4x",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 4, .nTargets = 1, .nParameters = 0, .type = qc::X}))},
 
-    {"rx", std::make_shared<StandardGate>(StandardGate({0, 1, 1, qc::RX}))},
-    {"crx", std::make_shared<StandardGate>(StandardGate({1, 1, 1, qc::RX}))},
+    {"rx",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 1, .type = qc::RX}))},
+    {"crx",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 1, .nParameters = 1, .type = qc::RX}))},
 
-    {"y", std::make_shared<StandardGate>(StandardGate({0, 1, 0, qc::Y}))},
-    {"cy", std::make_shared<StandardGate>(StandardGate({1, 1, 0, qc::Y}))},
+    {"y",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 0, .type = qc::Y}))},
+    {"cy",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 1, .nParameters = 0, .type = qc::Y}))},
 
-    {"ry", std::make_shared<StandardGate>(StandardGate({0, 1, 1, qc::RY}))},
-    {"cry", std::make_shared<StandardGate>(StandardGate({1, 1, 1, qc::RY}))},
+    {"ry",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 1, .type = qc::RY}))},
+    {"cry",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 1, .nParameters = 1, .type = qc::RY}))},
 
-    {"z", std::make_shared<StandardGate>(StandardGate({0, 1, 0, qc::Z}))},
-    {"cz", std::make_shared<StandardGate>(StandardGate({1, 1, 0, qc::Z}))},
+    {"z",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 0, .type = qc::Z}))},
+    {"cz",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 1, .nParameters = 0, .type = qc::Z}))},
 
-    {"rz", std::make_shared<StandardGate>(StandardGate({0, 1, 1, qc::RZ}))},
-    {"crz", std::make_shared<StandardGate>(StandardGate({1, 1, 1, qc::RZ}))},
+    {"rz",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 1, .type = qc::RZ}))},
+    {"crz",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 1, .nParameters = 1, .type = qc::RZ}))},
 
     {"r",
      std::make_shared<StandardGate>(StandardGate(
@@ -96,38 +151,82 @@ const std::map<std::string, std::shared_ptr<Gate>> STANDARD_GATES = {
      std::make_shared<StandardGate>(StandardGate(
          {.nControls = 1, .nTargets = 1, .nParameters = 2, .type = qc::R}))},
 
-    {"h", std::make_shared<StandardGate>(StandardGate({0, 1, 0, qc::H}))},
-    {"ch", std::make_shared<StandardGate>(StandardGate({1, 1, 0, qc::H}))},
+    {"h",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 0, .type = qc::H}))},
+    {"ch",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 1, .nParameters = 0, .type = qc::H}))},
 
-    {"s", std::make_shared<StandardGate>(StandardGate({0, 1, 0, qc::S}))},
-    {"sdg", std::make_shared<StandardGate>(StandardGate({0, 1, 0, qc::Sdg}))},
+    {"s",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 0, .type = qc::S}))},
+    {"sdg",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 0, .type = qc::Sdg}))},
 
-    {"t", std::make_shared<StandardGate>(StandardGate({0, 1, 0, qc::T}))},
-    {"tdg", std::make_shared<StandardGate>(StandardGate({0, 1, 0, qc::Tdg}))},
+    {"t",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 0, .type = qc::T}))},
+    {"tdg",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 0, .type = qc::Tdg}))},
 
-    {"sx", std::make_shared<StandardGate>(StandardGate({0, 1, 0, qc::SX}))},
-    {"sxdg", std::make_shared<StandardGate>(StandardGate({0, 1, 0, qc::SXdg}))},
+    {"sx",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 0, .type = qc::SX}))},
+    {"sxdg",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 1, .nParameters = 0, .type = qc::SXdg}))},
     {"c3sqrtx",
-     std::make_shared<StandardGate>(StandardGate({3, 1, 0, qc::SXdg}))},
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 3, .nTargets = 1, .nParameters = 0, .type = qc::SXdg}))},
 
-    {"swap", std::make_shared<StandardGate>(StandardGate({0, 2, 0, qc::SWAP}))},
+    {"swap",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 2, .nParameters = 0, .type = qc::SWAP}))},
     {"cswap",
-     std::make_shared<StandardGate>(StandardGate({1, 2, 0, qc::SWAP}))},
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 2, .nParameters = 0, .type = qc::SWAP}))},
 
     {"iswap",
-     std::make_shared<StandardGate>(StandardGate({0, 2, 0, qc::iSWAP}))},
+     std::make_shared<StandardGate>(StandardGate({.nControls = 0,
+                                                  .nTargets = 2,
+                                                  .nParameters = 0,
+                                                  .type = qc::iSWAP}))},
     {"iswapdg",
-     std::make_shared<StandardGate>(StandardGate({0, 2, 0, qc::iSWAPdg}))},
+     std::make_shared<StandardGate>(StandardGate({.nControls = 0,
+                                                  .nTargets = 2,
+                                                  .nParameters = 0,
+                                                  .type = qc::iSWAPdg}))},
 
-    {"rxx", std::make_shared<StandardGate>(StandardGate({0, 2, 1, qc::RXX}))},
-    {"ryy", std::make_shared<StandardGate>(StandardGate({0, 2, 1, qc::RYY}))},
-    {"rzz", std::make_shared<StandardGate>(StandardGate({0, 2, 1, qc::RZZ}))},
-    {"rzx", std::make_shared<StandardGate>(StandardGate({0, 2, 1, qc::RZX}))},
-    {"dcx", std::make_shared<StandardGate>(StandardGate({0, 2, 0, qc::DCX}))},
-    {"ecr", std::make_shared<StandardGate>(StandardGate({0, 2, 0, qc::ECR}))},
+    {"rxx",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 2, .nParameters = 1, .type = qc::RXX}))},
+    {"ryy",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 2, .nParameters = 1, .type = qc::RYY}))},
+    {"rzz",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 2, .nParameters = 1, .type = qc::RZZ}))},
+    {"rzx",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 2, .nParameters = 1, .type = qc::RZX}))},
+    {"dcx",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 2, .nParameters = 0, .type = qc::DCX}))},
+    {"ecr",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 0, .nTargets = 2, .nParameters = 0, .type = qc::ECR}))},
     {"xx_minus_yy",
-     std::make_shared<StandardGate>(StandardGate({0, 2, 2, qc::XXminusYY}))},
+     std::make_shared<StandardGate>(StandardGate({.nControls = 0,
+                                                  .nTargets = 2,
+                                                  .nParameters = 2,
+                                                  .type = qc::XXminusYY}))},
     {"xx_plus_yy",
-     std::make_shared<StandardGate>(StandardGate({0, 2, 2, qc::XXplusYY}))},
+     std::make_shared<StandardGate>(StandardGate({.nControls = 0,
+                                                  .nTargets = 2,
+                                                  .nParameters = 2,
+                                                  .type = qc::XXplusYY}))},
 };
 } // namespace qasm3
