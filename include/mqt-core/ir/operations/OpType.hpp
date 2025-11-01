@@ -14,6 +14,7 @@
 #include <istream>
 #include <ostream>
 #include <string>
+#include <string_view>
 
 namespace qc {
 
@@ -101,7 +102,7 @@ inline std::ostream& operator<<(std::ostream& out, const OpType opType) {
   return out << toString(opType);
 }
 
-[[nodiscard]] OpType opTypeFromString(const std::string& opType);
+[[nodiscard]] OpType opTypeFromString(std::string_view opType);
 
 inline std::istream& operator>>(std::istream& in, OpType& opType) {
   std::string opTypeStr;
