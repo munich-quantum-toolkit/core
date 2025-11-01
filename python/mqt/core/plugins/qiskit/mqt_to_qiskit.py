@@ -26,6 +26,7 @@ from qiskit.circuit.library import (
     HGate,
     IGate,
     PhaseGate,
+    RGate,
     RXGate,
     RXXGate,
     RYGate,
@@ -178,6 +179,7 @@ def _add_standard_operation(circ: QuantumCircuit, op: StandardOperation, qubit_m
 
     gate_map_two_param: dict[OpType, type] = {
         OpType.u2: U2Gate,
+        OpType.r: RGate,
         OpType.xx_plus_yy: XXPlusYYGate,
         OpType.xx_minus_yy: XXMinusYYGate,
     }

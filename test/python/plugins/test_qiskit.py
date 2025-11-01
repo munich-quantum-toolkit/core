@@ -378,6 +378,7 @@ def test_operations() -> None:
     qc.sx(0)
     qc.csx(0, 1)
     qc.sxdg(0)
+    qc.r(0.5, 0.5, 0)
     qc.rx(0.5, 0)
     qc.crx(0.5, 0, 1)
     qc.ry(0.5, 0)
