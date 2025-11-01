@@ -490,7 +490,7 @@ module {
         %q0_7, %q1_7 = mqtopt.r(%c0_f64, %c0_f64) %q0_6 ctrl %q1_6 : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
         memref.store %q0_7, %qreg[%i0] : memref<2x!mqtopt.Qubit>
-        memref.store %q1_0, %qreg[%i1] : memref<2x!mqtopt.Qubit>
+        memref.store %q1_7, %qreg[%i1] : memref<2x!mqtopt.Qubit>
         memref.dealloc %qreg : memref<2x!mqtopt.Qubit>
 
         return
