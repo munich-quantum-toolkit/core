@@ -71,8 +71,8 @@ GateMatrix rzMat(const fp lambda) {
  * @param phi The rotation axis angle φ.
  * @return The gate matrix for the R(θ, φ) rotation.
  *
- * @details The R(θ, φ) gate is defined as R(θ, φ) = exp(-i*θ/2*(cos(φ)X + sin(φ)Y)),
- * which results in the matrix:
+ * @details The R(θ, φ) gate is defined as R(θ, φ) = exp(-i*θ/2*(cos(φ)X +
+ * sin(φ)Y)), which results in the matrix:
  * [[cos(θ/2), -i*e^(-iφ)*sin(θ/2)],
  *  [-i*e^(iφ)*sin(θ/2), cos(θ/2)]]
  */
