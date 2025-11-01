@@ -154,9 +154,11 @@ static_assert(std::ranges::is_sorted(OP_NAME_TO_TYPE.cbegin(),
 } // namespace
 
 OpType opTypeFromString(const std::string_view opType) {
-  const auto* const it = std::ranges::lower_bound(
+  // clang-tidy produces a false-positive that produces a Windows compile error
+  // when accepted. NOLINTNEXTLINE(*-qualified-auto)
+  const auto it = std::ranges::lower_bound(
       OP_NAME_TO_TYPE, opType, {}, &std::pair<std::string_view, OpType>::first);
-  if (it != nullptr && it->first == opType) {
+  if (it != OP_NAME_TO_TYPE.end() && it->first == opType) {
     return it->second;
   }
   throw std::invalid_argument("Unsupported operation type: " +
