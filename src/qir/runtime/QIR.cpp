@@ -196,7 +196,7 @@ void __quantum__qis__r__body(Qubit* qubit, const double theta,
 void __quantum__qis__prx__body(Qubit* qubit, const double theta,
                                const double phi) {
   auto& runtime = qir::Runtime::getInstance();
-  runtime.apply<qc::RX>(phi, theta, qubit);
+  runtime.apply<qc::R>(theta, phi, qubit);
 }
 
 void __quantum__qis__rx__body(Qubit* qubit, const double phi) {
