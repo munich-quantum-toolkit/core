@@ -126,6 +126,7 @@ public:
       {"rzz", "RZZOp"}, {"rzx", "RZXOp"}, {"u1", "POp"}};
 
   inline static const llvm::StringMap<StringRef> DOUBLE_ROTATION_GATES = {
+      {"r", "ROp"},
       {"u2", "U2Op"},
       {"xx_minus_yy", "XXminusYYOp"},
       {"xx_plus_yy", "XXplusYYOp"}};
@@ -349,6 +350,7 @@ struct ConvertQIRCall final : StatefulOpConversionPattern<LLVM::CallOp> {
     ADD_CONVERT_ROTATION_GATE(POp)
     ADD_CONVERT_ROTATION_GATE(UOp)
     ADD_CONVERT_ROTATION_GATE(U2Op)
+    ADD_CONVERT_ROTATION_GATE(ROp)
     ADD_CONVERT_ROTATION_GATE(RXOp)
     ADD_CONVERT_ROTATION_GATE(RYOp)
     ADD_CONVERT_ROTATION_GATE(RZOp)

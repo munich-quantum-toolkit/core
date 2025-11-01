@@ -513,6 +513,7 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
     ADD_OP_CASE(P)
     ADD_OP_CASE(SX)
     ADD_OP_CASE(SXdg)
+    ADD_OP_CASE(R)
     ADD_OP_CASE(RX)
     ADD_OP_CASE(RY)
     ADD_OP_CASE(RZ)
