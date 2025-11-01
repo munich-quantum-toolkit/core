@@ -116,6 +116,8 @@ void __quantum__qis__sqrtx__body(Qubit*);
 void __quantum__qis__sqrtxdg__body(Qubit*);
 void __quantum__qis__t__body(Qubit*);
 void __quantum__qis__tdg__body(Qubit*);
+void __quantum__qis__r__body(Qubit*, double, double);
+void __quantum__qis__prx__body(Qubit*, double, double);
 void __quantum__qis__rx__body(Qubit*, double);
 void __quantum__qis__ry__body(Qubit*, double);
 void __quantum__qis__rz__body(Qubit*, double);
