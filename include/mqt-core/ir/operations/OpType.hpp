@@ -90,6 +90,7 @@ std::string shortName(OpType opType);
   case RX:
   case RY:
   case RZ:
+  case R:
     return true;
   default:
     return false;
