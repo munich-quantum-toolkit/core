@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Final
 # Conditional backend import (optional dependency)
 try:
     from .backend import QiskitBackend
+    from .provider import QDMIProvider
 
     _BACKEND_AVAILABLE = True
 except ImportError:
@@ -50,6 +51,7 @@ __all__ = [
 ]
 if _BACKEND_AVAILABLE:
     __all__ += [
+        "QDMIProvider",
         "QiskitBackend",
     ]
 
@@ -94,7 +96,7 @@ def __getattr__(name: str) -> object:  # pragma: no cover - dynamic fallback
         QiskitNotAvailableError: If backend requested when qiskit missing.
         AttributeError: For any other unknown attribute.
     """
-    if name == "QiskitBackend" and not _BACKEND_AVAILABLE:
-        msg = "'QiskitBackend' requires the optional qiskit dependency. Install with 'pip install mqt-core[qiskit]'"
+    if name in {"QiskitBackend", "QDMIProvider"} and not _BACKEND_AVAILABLE:
+        msg = f"'{name}' requires the optional qiskit dependency. Install with 'pip install mqt-core[qiskit]'"
         raise QiskitNotAvailableError(msg)
     raise AttributeError(name)

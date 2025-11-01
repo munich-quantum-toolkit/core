@@ -20,8 +20,6 @@ from qiskit.circuit import Measure, Parameter
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import Target
 
-from mqt.core import fomac
-
 from .exceptions import (
     CircuitValidationError,
     JobSubmissionError,
@@ -36,6 +34,8 @@ if TYPE_CHECKING:
 
     from qiskit.circuit import Instruction, QuantumCircuit
 
+    from mqt.core import fomac
+
 __all__ = ["QiskitBackend"]
 
 
@@ -46,45 +46,41 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
     It automatically introspects device capabilities and constructs a Target
     object with supported operations.
 
-    Args:
-        device_index: Index of the device to use from fomac.devices() (default: 0).
+    Backends should be obtained through :class:`~mqt.core.qdmi.qiskit.QDMIProvider`
+    rather than instantiated directly.
 
-    Raises:
-        RuntimeError: If no FoMaC devices are available.
-        IndexError: If device_index is out of range.
+    Args:
+        device: FoMaC device to wrap.
+        provider: The provider instance that created this backend.
+
+    Examples:
+        Get a backend through the provider:
+
+        >>> from mqt.core.qdmi.qiskit import QDMIProvider
+        >>> provider = QDMIProvider()
+        >>> backend = provider.get_backend("MQT NA Default QDMI Device")
     """
 
     # Class-level counter for generating unique circuit names
     _circuit_counter = 0
 
-    def __init__(self, device_index: int = 0) -> None:
+    def __init__(self, device: fomac.Device, provider: Any | None = None) -> None:  # noqa: ANN401
         """Initialize the backend with a FoMaC device.
 
         Args:
-            device_index: Index of the device to use from fomac.devices() (default: 0).
-
-        Raises:
-            RuntimeError: If no FoMaC devices are available.
-            IndexError: If device_index is out of range.
+            device: FoMaC device instance.
+            provider: Provider instance that created this backend.
         """
-        # Get the device from FoMaC
-        devices_list = list(fomac.devices())
-        if not devices_list:
-            msg = "No FoMaC devices available"
-            raise RuntimeError(msg)
-        if device_index < 0 or device_index >= len(devices_list):
-            msg = f"Device index {device_index} out of range (available: {len(devices_list)})"
-            raise IndexError(msg)
-
-        self._device = devices_list[device_index]
+        self._device = device
+        self._provider = provider
 
         # Filter non-zone sites for qubit indexing
         all_sites = sorted(self._device.sites(), key=lambda x: x.index())
         self._non_zone_sites = [s for s in all_sites if not s.is_zone()]
         self._site_index_to_qubit_index = {s.index(): i for i, s in enumerate(self._non_zone_sites)}
 
-        # Initialize parent with device name
-        super().__init__(name=self._device.name())
+        # Initialize parent with device name and provider
+        super().__init__(name=self._device.name(), provider=provider)
 
         # Build Target from device
         self._target = self._build_target()
@@ -96,6 +92,11 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
     def target(self) -> Target:
         """Return the Target describing backend capabilities."""
         return self._target
+
+    @property
+    def provider(self) -> Any | None:  # noqa: ANN401
+        """Return the provider that created this backend."""
+        return self._provider
 
     @property
     def max_circuits(self) -> int | None:

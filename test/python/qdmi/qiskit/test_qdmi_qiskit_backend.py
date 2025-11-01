@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from qiskit import QuantumCircuit
@@ -18,9 +18,11 @@ from qiskit.circuit import Parameter
 
 from mqt.core.qdmi.qiskit import (
     CircuitValidationError,
-    QiskitBackend,
     UnsupportedOperationError,
 )
+
+if TYPE_CHECKING:
+    from mqt.core.qdmi.qiskit import QiskitBackend
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
@@ -28,24 +30,18 @@ pytestmark = [
 ]
 
 
-def test_backend_instantiation(na_backend: QiskitBackend) -> None:
+def test_backend_instantiation(mock_backend: QiskitBackend) -> None:
     """Backend exposes target qubit count."""
-    assert na_backend.target.num_qubits > 0
+    assert mock_backend.target.num_qubits > 0
 
 
-def test_single_circuit_run_counts(na_backend: QiskitBackend) -> None:
-    """Running a circuit yields counts with specified shots.
-
-    Note:
-        This test uses the NA device which supports the CZ gate.
-        It validates that all measurement outcomes are valid binary strings and that
-        the total number of shots matches the requested amount.
-    """
+def test_single_circuit_run_counts(mock_backend: QiskitBackend) -> None:
+    """Running a circuit yields counts with specified shots."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure(0, 0)
     qc.measure(1, 1)
-    job = na_backend.run(qc, shots=256)
+    job = mock_backend.run(qc, shots=256)
     counts = job.result().get_counts()
 
     # Verify total shots
@@ -57,83 +53,86 @@ def test_single_circuit_run_counts(na_backend: QiskitBackend) -> None:
         assert all(bit in {"0", "1"} for bit in key)
 
 
-def test_unsupported_operation(na_backend: QiskitBackend) -> None:
-    """Unsupported operation raises the expected error type.
-
-    Note:
-        This test uses the NA device, which doesn't support 'x' gates.
-        TODO: Generalize this test to work with different device types or parameterize
-        across devices with known unsupported operations.
-    """
+def test_unsupported_operation(mock_backend: QiskitBackend) -> None:
+    """Unsupported operation raises UnsupportedOperationError."""
     qc = QuantumCircuit(1, 1)
-    qc.x(0)  # 'x' not supported by NA device capabilities
+    qc.x(0)  # 'x' not supported by mock device
     qc.measure(0, 0)
     with pytest.raises(UnsupportedOperationError):
-        na_backend.run(qc)
+        mock_backend.run(qc)
 
 
-def test_backend_device_index() -> None:
-    """Backend can be instantiated with device index 0."""
-    backend = QiskitBackend(device_index=0)
+def test_backend_via_provider() -> None:
+    """Backend can be obtained through provider."""
+    from mqt.core.qdmi.qiskit import QDMIProvider
+
+    provider = QDMIProvider()
+    backend = provider.get_backend("MQT NA Default QDMI Device")
     assert backend.target.num_qubits > 0
+    assert backend.provider is provider
 
 
-def test_backend_invalid_device_index() -> None:
-    """Backend should raise IndexError for invalid device index."""
-    with pytest.raises(IndexError, match=r"Device index .* out of range"):
-        QiskitBackend(device_index=999)
+def test_provider_get_backend_by_name() -> None:
+    """Provider can get backend by name."""
+    from mqt.core.qdmi.qiskit import QDMIProvider
+
+    provider = QDMIProvider()
+    backend = provider.get_backend("MQT NA Default QDMI Device")
+    assert backend.name == "MQT NA Default QDMI Device"
 
 
-def test_backend_negative_device_index() -> None:
-    """Backend should raise IndexError for negative device index."""
-    with pytest.raises(IndexError, match=r"Device index .* out of range"):
-        QiskitBackend(device_index=-1)
+def test_provider_backends_list() -> None:
+    """Provider can list all backends."""
+    from mqt.core.qdmi.qiskit import QDMIProvider
+
+    provider = QDMIProvider()
+    backends = provider.backends()
+    assert len(backends) > 0
+    assert all(hasattr(b, "target") for b in backends)
 
 
-def test_backend_max_circuits() -> None:
+def test_backend_max_circuits(mock_backend: QiskitBackend) -> None:
     """Backend max_circuits should return None (no limit)."""
-    backend = QiskitBackend()
-    assert backend.max_circuits is None
+    assert mock_backend.max_circuits is None
 
 
-def test_backend_options() -> None:
+def test_backend_options(mock_backend: QiskitBackend) -> None:
     """Backend options should be accessible."""
-    backend = QiskitBackend()
-    assert backend.options.shots == 1024
+    assert mock_backend.options.shots == 1024
 
 
-def test_backend_run_with_shots_option(na_backend: QiskitBackend) -> None:
+def test_backend_run_with_shots_option(mock_backend: QiskitBackend) -> None:
     """Backend run should accept shots option."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = na_backend.run(qc, shots=500)
+    job = mock_backend.run(qc, shots=500)
     result = job.result()
     assert sum(result.get_counts().values()) == 500
 
 
-def test_backend_run_with_invalid_shots_type(na_backend: QiskitBackend) -> None:
+def test_backend_run_with_invalid_shots_type(mock_backend: QiskitBackend) -> None:
     """Backend run should raise CircuitValidationError for invalid shots type."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
     with pytest.raises(CircuitValidationError, match="Invalid 'shots' value"):
-        na_backend.run(qc, shots="invalid")
+        mock_backend.run(qc, shots="invalid")
 
 
-def test_backend_run_with_negative_shots(na_backend: QiskitBackend) -> None:
+def test_backend_run_with_negative_shots(mock_backend: QiskitBackend) -> None:
     """Backend run should raise CircuitValidationError for negative shots."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
     with pytest.raises(CircuitValidationError, match="'shots' must be >= 0"):
-        na_backend.run(qc, shots=-100)
+        mock_backend.run(qc, shots=-100)
 
 
-def test_backend_circuit_with_parameters(na_backend: QiskitBackend) -> None:
+def test_backend_circuit_with_parameters(mock_backend: QiskitBackend) -> None:
     """Backend should handle parameterized circuits correctly.
 
     Unbound parameters should raise CircuitValidationError, while bound parameters
@@ -146,19 +145,18 @@ def test_backend_circuit_with_parameters(na_backend: QiskitBackend) -> None:
 
     # Unbound parameters should raise an error
     with pytest.raises(CircuitValidationError, match="Circuit contains unbound parameters"):
-        na_backend.run(qc)
+        mock_backend.run(qc)
 
     # Bound parameters should work
     qc_bound = qc.assign_parameters({theta: 1.5708})
 
-    job = na_backend.run(qc_bound, shots=100)
+    job = mock_backend.run(qc_bound, shots=100)
     result = job.result()
     assert result.success
 
 
-def test_backend_circuit_with_parameter_expression() -> None:
+def test_backend_circuit_with_parameter_expression(mock_backend: QiskitBackend) -> None:
     """Backend should raise CircuitValidationError for unbound parameter expressions."""
-    backend = QiskitBackend()
     qc = QuantumCircuit(2, 2)
     theta = Parameter("theta")
     phi = Parameter("phi")
@@ -166,77 +164,77 @@ def test_backend_circuit_with_parameter_expression() -> None:
     qc.measure([0, 1], [0, 1])
 
     with pytest.raises(CircuitValidationError, match="Circuit contains unbound parameters"):
-        backend.run(qc)
+        mock_backend.run(qc)
 
 
-def test_backend_circuit_with_barrier(na_backend: QiskitBackend) -> None:
+def test_backend_circuit_with_barrier(mock_backend: QiskitBackend) -> None:
     """Backend should handle circuits with barriers."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.barrier()
     qc.measure([0, 1], [0, 1])
 
-    job = na_backend.run(qc, shots=100)
+    job = mock_backend.run(qc, shots=100)
     result = job.result()
     assert result.success
 
 
-def test_backend_circuit_with_single_qubit(na_backend: QiskitBackend) -> None:
+def test_backend_circuit_with_single_qubit(mock_backend: QiskitBackend) -> None:
     """Backend should handle single-qubit circuits."""
     qc = QuantumCircuit(1, 1)
     qc.ry(1.5708, 0)
     qc.measure(0, 0)
 
-    job = na_backend.run(qc, shots=100)
+    job = mock_backend.run(qc, shots=100)
     result = job.result()
     assert result.success
 
 
-def test_backend_circuit_with_no_measurements(na_backend: QiskitBackend) -> None:
+def test_backend_circuit_with_no_measurements(mock_backend: QiskitBackend) -> None:
     """Backend should handle circuits without measurements."""
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
 
-    job = na_backend.run(qc, shots=100)
+    job = mock_backend.run(qc, shots=100)
     result = job.result()
     assert result.success
 
 
-def test_backend_circuit_name_preserved(na_backend: QiskitBackend) -> None:
+def test_backend_circuit_name_preserved(mock_backend: QiskitBackend) -> None:
     """Backend should preserve circuit name in metadata."""
     qc = QuantumCircuit(2, 2, name="my_circuit")
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = na_backend.run(qc, shots=100)
+    job = mock_backend.run(qc, shots=100)
     result = job.result()
     assert result.results[0].header["name"] == "my_circuit"
 
 
-def test_backend_unnamed_circuit(na_backend: QiskitBackend) -> None:
+def test_backend_unnamed_circuit(mock_backend: QiskitBackend) -> None:
     """Backend should handle circuits without names."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = na_backend.run(qc, shots=100)
+    job = mock_backend.run(qc, shots=100)
     result = job.result()
     # Should have a default name
     assert "name" in result.results[0].header
 
 
-def test_backend_result_metadata_includes_circuit_name(na_backend: QiskitBackend) -> None:
+def test_backend_result_metadata_includes_circuit_name(mock_backend: QiskitBackend) -> None:
     """Backend result should include circuit name in header."""
     qc = QuantumCircuit(2, 2, name="my_test_circuit")
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = na_backend.run(qc, shots=100)
+    job = mock_backend.run(qc, shots=100)
     result = job.result()
     assert result.results[0].header["name"] == "my_test_circuit"
 
 
-def test_job_status(na_backend: QiskitBackend) -> None:
+def test_job_status(mock_backend: QiskitBackend) -> None:
     """Job should be in DONE status after backend.run() completes."""
     from qiskit.providers import JobStatus
 
@@ -244,30 +242,30 @@ def test_job_status(na_backend: QiskitBackend) -> None:
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = na_backend.run(qc, shots=100)
+    job = mock_backend.run(qc, shots=100)
     assert job.status() == JobStatus.DONE
 
 
-def test_job_submit_raises_not_implemented(na_backend: QiskitBackend) -> None:
+def test_job_submit_raises_not_implemented(mock_backend: QiskitBackend) -> None:
     """Calling submit() on a job raises NotImplementedError."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = na_backend.run(qc, shots=100)
+    job = mock_backend.run(qc, shots=100)
 
     # Calling submit should raise NotImplementedError
-    with pytest.raises(NotImplementedError, match="Job submission logic must be implemented"):
+    with pytest.raises(NotImplementedError, match="You should never have to submit jobs"):
         job.submit()
 
 
-def test_job_result_success_and_shots(na_backend: QiskitBackend) -> None:
+def test_job_result_success_and_shots(mock_backend: QiskitBackend) -> None:
     """Job result should contain success status and shot count for each circuit."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = na_backend.run(qc, shots=100)
+    job = mock_backend.run(qc, shots=100)
     result = job.result()
 
     assert result.success is True
@@ -276,84 +274,56 @@ def test_job_result_success_and_shots(na_backend: QiskitBackend) -> None:
     assert result.results[0].success is True
 
 
-def test_job_result_with_timeout(na_backend: QiskitBackend) -> None:
+def test_job_result_with_timeout(mock_backend: QiskitBackend) -> None:
     """Job result should accept timeout parameter."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = na_backend.run(qc, shots=50)
+    job = mock_backend.run(qc, shots=50)
     result = job.result()
 
     assert result.success is True
     assert result.results[0].shots == 50
 
 
-def test_job_get_counts_default(na_backend: QiskitBackend) -> None:
+def test_job_get_counts_default(mock_backend: QiskitBackend) -> None:
     """result().get_counts() without arguments should return counts for first circuit."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = na_backend.run(qc, shots=100)
+    job = mock_backend.run(qc, shots=100)
     counts = job.result().get_counts()
 
     assert sum(counts.values()) == 100
 
 
-def test_job_submit_raises_error(na_backend: QiskitBackend) -> None:
+def test_job_submit_raises_error(mock_backend: QiskitBackend) -> None:
     """Calling submit() on a job should raise NotImplementedError."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
-    job = na_backend.run(qc, shots=100)
-    with pytest.raises(NotImplementedError, match="Job submission logic must be implemented"):
+    job = mock_backend.run(qc, shots=100)
+    with pytest.raises(NotImplementedError, match="You should never have to submit jobs"):
         job.submit()
 
 
 def test_backend_warns_on_unmappable_operation(monkeypatch: pytest.MonkeyPatch) -> None:
     """Backend should warn when device operation cannot be mapped to a Qiskit gate."""
     import warnings
-    from unittest.mock import MagicMock
+
+    from test.python.qdmi.qiskit.conftest import MockQDMIDevice
 
     from mqt.core import fomac
 
-    # Create mock operations
-    mock_cz_op = MagicMock()
-    mock_cz_op.name.return_value = "cz"
-    mock_cz_op.qubits_num.return_value = 2
-    mock_cz_op.parameters_num.return_value = 0
-    mock_cz_op.duration.return_value = None
-    mock_cz_op.fidelity.return_value = None
-    mock_cz_op.sites.return_value = None
-    mock_cz_op.is_zoned.return_value = False
-
-    mock_unmappable_op = MagicMock()
-    mock_unmappable_op.name.return_value = "custom_unmappable_gate"
-    mock_unmappable_op.qubits_num.return_value = 1
-    mock_unmappable_op.parameters_num.return_value = 0
-    mock_unmappable_op.duration.return_value = None
-    mock_unmappable_op.fidelity.return_value = None
-    mock_unmappable_op.sites.return_value = None
-    mock_unmappable_op.is_zoned.return_value = False
-
-    mock_measure_op = MagicMock()
-    mock_measure_op.name.return_value = "measure"
-    mock_measure_op.qubits_num.return_value = 1
-    mock_measure_op.parameters_num.return_value = 0
-    mock_measure_op.duration.return_value = None
-    mock_measure_op.fidelity.return_value = None
-    mock_measure_op.sites.return_value = None
-    mock_measure_op.is_zoned.return_value = False
-
-    # Create mock device
-    mock_device = MagicMock()
-    mock_device.name.return_value = "Test Device"
-    mock_device.qubits_num.return_value = 2
-    mock_device.sites.return_value = []
-    mock_device.operations.return_value = [mock_cz_op, mock_unmappable_op, mock_measure_op]
-    mock_device.coupling_map.return_value = None
+    # Create mock device with an unmappable operation
+    mock_device = MockQDMIDevice(
+        name="Test Device",
+        num_qubits=2,
+        operations=["cz", "custom_unmappable_gate", "measure"],
+    )
 
     # Monkeypatch fomac.devices to return mock device
     def mock_devices() -> list[Any]:
@@ -364,7 +334,10 @@ def test_backend_warns_on_unmappable_operation(monkeypatch: pytest.MonkeyPatch) 
     # Creating backend should trigger warning about unmappable operation
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        QiskitBackend(device_index=0)
+        from mqt.core.qdmi.qiskit import QDMIProvider
+
+        provider = QDMIProvider()
+        provider.get_backend("Test Device")
 
         # Check that the warning was raised
         assert len(w) > 0, "Expected at least one warning to be raised"
@@ -377,27 +350,17 @@ def test_backend_warns_on_unmappable_operation(monkeypatch: pytest.MonkeyPatch) 
 def test_backend_warns_on_missing_measurement_operation(monkeypatch: pytest.MonkeyPatch) -> None:
     """Backend should warn when device does not define a measurement operation."""
     import warnings
-    from unittest.mock import MagicMock
+
+    from test.python.qdmi.qiskit.conftest import MockQDMIDevice
 
     from mqt.core import fomac
 
-    # Create mock operation (only cz, no measure)
-    mock_cz_op = MagicMock()
-    mock_cz_op.name.return_value = "cz"
-    mock_cz_op.qubits_num.return_value = 2
-    mock_cz_op.parameters_num.return_value = 0
-    mock_cz_op.duration.return_value = None
-    mock_cz_op.fidelity.return_value = None
-    mock_cz_op.sites.return_value = None
-    mock_cz_op.is_zoned.return_value = False
-
-    # Create mock device
-    mock_device = MagicMock()
-    mock_device.name.return_value = "Test Device"
-    mock_device.qubits_num.return_value = 2
-    mock_device.sites.return_value = []
-    mock_device.operations.return_value = [mock_cz_op]  # No measure operation
-    mock_device.coupling_map.return_value = None
+    # Create mock device without measure operation
+    mock_device = MockQDMIDevice(
+        name="Test Device",
+        num_qubits=2,
+        operations=["cz"],  # No measure operation
+    )
 
     # Monkeypatch fomac.devices to return mock device
     def mock_devices() -> list[Any]:
@@ -408,7 +371,10 @@ def test_backend_warns_on_missing_measurement_operation(monkeypatch: pytest.Monk
     # Creating backend should trigger warning about missing measurement operation
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        QiskitBackend(device_index=0)
+        from mqt.core.qdmi.qiskit import QDMIProvider
+
+        provider = QDMIProvider()
+        provider.get_backend("Test Device")
 
         # Check that the warning was raised
         assert len(w) > 0, "Expected at least one warning to be raised"
