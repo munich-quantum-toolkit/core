@@ -16,7 +16,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <utility>
 
 namespace qc {
 std::string toString(const OpType opType) {
