@@ -380,6 +380,17 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
       addZSpider(diag, target, qubits,
                  parseParam(op.get(), 0) + PiRational(1, 2));
       break;
+    case qc::OpType::R:
+      addZSpider(diag, target, qubits,
+                 parseParam(op.get(), 1) - PiRational(1, 2));
+      addXSpider(diag, target, qubits, PiExpression(PiRational(1, 2)));
+      addZSpider(diag, target, qubits,
+                 parseParam(op.get(), 0) + PiRational(1, 1));
+      addXSpider(diag, target, qubits, PiExpression(PiRational(1, 2)));
+      addZSpider(diag, target, qubits,
+                 -(parseParam(op.get(), 1) - PiRational(1, 2)) +
+                     PiRational(3, 1));
+      break;
     case qc::OpType::U:
       addZSpider(diag, target, qubits, parseParam(op.get(), 2));
       addXSpider(diag, target, qubits, PiExpression(PiRational(1, 2)));
@@ -647,6 +658,7 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
 
   if (!op->isControlled()) {
     switch (op->getType()) {
+    case qc::OpType::R:
     case qc::OpType::Z:
     case qc::OpType::RZ:
     case qc::OpType::P:
