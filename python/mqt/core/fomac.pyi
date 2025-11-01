@@ -11,8 +11,50 @@ from enum import Enum
 
 __all__ = [
     "Device",
+    "Job",
+    "JobStatus",
+    "ProgramFormat",
     "devices",
 ]
+
+class JobStatus(Enum):
+    """Enumeration of job status."""
+
+    CREATED = ...
+    SUBMITTED = ...
+    QUEUED = ...
+    RUNNING = ...
+    DONE = ...
+    CANCELED = ...
+    FAILED = ...
+
+class ProgramFormat(Enum):
+    """Enumeration of program formats."""
+
+    QASM2 = ...
+    QASM3 = ...
+    QIR_BASE_STRING = ...
+    QIR_BASE_MODULE = ...
+    QIR_ADAPTIVE_STRING = ...
+    QIR_ADAPTIVE_MODULE = ...
+    CALIBRATION = ...
+
+class Job:
+    """A job represents a submitted quantum program execution."""
+    def check(self) -> JobStatus:
+        """Returns the current status of the job."""
+    def wait(self) -> None:
+        """Waits for the job to complete."""
+    def cancel(self) -> None:
+        """Cancels the job."""
+    def get_counts(self) -> dict[str, int]:
+        """Returns the measurement counts from the job."""
+    @property
+    def id(self) -> str:
+        """Returns the job ID."""
+    @property
+    def num_shots(self) -> int:
+        """Returns the number of shots for the job."""
 
 class Device:
     """A device represents a quantum device with its properties and capabilities."""
@@ -116,6 +158,8 @@ class Device:
         """Returns the scale factor for duration used by the device."""
     def min_atom_distance(self) -> int | None:
         """Returns the minimum atom distance on the device."""
+    def submit_job(self, program: str, program_format: ProgramFormat, num_shots: int, timeout: float = 60.0) -> Job:
+        """Submits a job to the device."""
     def __eq__(self, other: object) -> bool:
         """Checks if two devices are equal."""
     def __ne__(self, other: object) -> bool:
