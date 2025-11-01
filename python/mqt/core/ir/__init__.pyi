@@ -1003,7 +1003,7 @@ class QuantumComputation(MutableSequence[Operation]):
             :meth:`sxdg`
         """
 
-    def r(self, theta: float, phi: float, q: int) -> None:
+    def r(self, theta: float | Expression, phi: float | Expression, q: int) -> None:
         r"""Apply an :math:`R(\theta, \phi)` gate.
 
         .. math::
@@ -1017,7 +1017,7 @@ class QuantumComputation(MutableSequence[Operation]):
             q: The target qubit
         """
 
-    def cr(self, theta: float, phi: float, control: Control | int, target: int) -> None:
+    def cr(self, theta: float | Expression, phi: float | Expression, control: Control | int, target: int) -> None:
         r"""Apply a controlled :math:`R(\theta, \phi)` gate.
 
         Args:
@@ -1030,7 +1030,9 @@ class QuantumComputation(MutableSequence[Operation]):
             :meth:`r`
         """
 
-    def mcr(self, theta: float, phi: float, controls: set[Control | int], target: int) -> None:
+    def mcr(
+        self, theta: float | Expression, phi: float | Expression, controls: set[Control | int], target: int
+    ) -> None:
         r"""Apply a multi-controlled :math:`R(\theta, \phi)` gate.
 
         Args:
