@@ -114,6 +114,7 @@ OpType opTypeFromString(const std::string& opType) {
       {"cry", OpType::RY},
       {"rz", OpType::RZ},
       {"crz", OpType::RZ},
+      {"prx", OpType::R},
       {"r", OpType::R},
       {"cr", OpType::R},
       {"swap", OpType::SWAP},
