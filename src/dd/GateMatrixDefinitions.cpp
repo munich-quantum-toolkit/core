@@ -65,6 +65,10 @@ GateMatrix rzMat(const fp lambda) {
                      {std::cos(lambda / 2.), std::sin(lambda / 2.)}}};
 }
 
+// R(θ, φ) = exp(-i*θ/2*(cos(φ)X + sin(φ)Y))
+// Results in the matrix:
+// [[cos(θ/2), -i*e^(-iφ)*sin(θ/2)],
+//  [-i*e^(iφ)*sin(θ/2), cos(θ/2)]]
 GateMatrix rMat(const fp theta, const fp phi) {
   const auto cosTheta = std::cos(theta / 2.);
   const auto sinTheta = std::sin(theta / 2.);
