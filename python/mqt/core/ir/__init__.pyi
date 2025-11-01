@@ -1003,6 +1003,46 @@ class QuantumComputation(MutableSequence[Operation]):
             :meth:`sxdg`
         """
 
+    def r(self, theta: float, phi: float, q: int) -> None:
+        r"""Apply an :math:`R(\theta, \phi)` gate.
+
+        .. math::
+            R(\theta, \phi) = e^{-i\frac{\theta}{2}(\cos(\phi)X+\sin(\phi)Y)}
+            = \begin{pmatrix} \cos(\theta/2) & -i e^{-i\phi} \sin(\theta/2) \\
+            -i e^{i\phi} \sin(\theta/2) & \cos(\theta/2) \end{pmatrix}
+
+        Args:
+            theta: The rotation angle :math:`\theta`
+            phi: The angle specifying the rotation axis given by :math:`\cos(\phi)X+\sin(\phi)Y`
+            q: The target qubit
+        """
+
+    def cr(self, theta: float, phi: float, control: Control | int, target: int) -> None:
+        r"""Apply a controlled :math:`R(\theta, \phi)` gate.
+
+        Args:
+            theta: The rotation angle :math:`\theta`
+            phi: The angle specifying the rotation axis given by :math:`\cos(\phi)X+\sin(\phi)Y`
+            control: The control qubit
+            target: The target qubit
+
+        See Also:
+            :meth:`r`
+        """
+
+    def mcr(self, theta: float, phi: float, controls: set[Control | int], target: int) -> None:
+        r"""Apply a multi-controlled :math:`R(\theta, \phi)` gate.
+
+        Args:
+            theta: The rotation angle :math:`\theta`
+            phi: The angle specifying the rotation axis given by :math:`\cos(\phi)X+\sin(\phi)Y`
+            controls: The control qubits
+            target: The target qubit
+
+        See Also:
+            :meth:`r`
+        """
+
     def rx(self, theta: float | Expression, q: int) -> None:
         r"""Apply an :math:`R_x(\theta)` gate.
 
