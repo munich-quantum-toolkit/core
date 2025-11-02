@@ -227,7 +227,13 @@ auto Device::sessionFree(MQT_DDSIM_QDMI_Device_Session session) -> void {
 }
 auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                            void* value, size_t* sizeRet) const -> QDMI_STATUS {
-  if ((value != nullptr && size == 0) || prop >= QDMI_DEVICE_PROPERTY_MAX) {
+  if ((value != nullptr && size == 0) ||
+      (prop >= QDMI_DEVICE_PROPERTY_MAX &&
+       prop != QDMI_DEVICE_PROPERTY_CUSTOM1 &&
+       prop != QDMI_DEVICE_PROPERTY_CUSTOM2 &&
+       prop != QDMI_DEVICE_PROPERTY_CUSTOM3 &&
+       prop != QDMI_DEVICE_PROPERTY_CUSTOM4 &&
+       prop != QDMI_DEVICE_PROPERTY_CUSTOM5)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name_.c_str(), prop, size,
@@ -510,12 +516,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::cancel() -> QDMI_STATUS {
     return QDMI_SUCCESS;
   }
 
-  if (status_ != QDMI_JOB_STATUS_CANCELED) {
+  if (jobHandle_.valid()) {
     // Note: There is no direct way to cancel a running std::async task.
     // We can only wait for its completion here.
     jobHandle_.wait();
-    status_ = QDMI_JOB_STATUS_CANCELED;
   }
+  status_ = QDMI_JOB_STATUS_CANCELED;
   return QDMI_SUCCESS;
 }
 // NOLINTNEXTLINE(readability-non-const-parameter)
