@@ -10,19 +10,15 @@
 
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <algorithm>
 #include <complex>
 #include <cstddef>
-#include <cstdint>
-#include <fstream>
-#include <functional>
+#include <cstring>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_set>
-#include <utility>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -897,7 +893,7 @@ TEST_F(DDSIMQDMISpecificationTest, QuerySiteProperty) {
 }
 
 TEST_F(DDSIMQDMISpecificationTest, QueryOperationProperty) {
-  const MQT_DDSIM_QDMI_Operation operation = queryOperations(session).front();
+  MQT_DDSIM_QDMI_Operation operation = queryOperations(session).front();
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
                 nullptr, operation, 0, nullptr, 0, nullptr,
                 QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, nullptr),

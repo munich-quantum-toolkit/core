@@ -30,7 +30,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <future>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <numeric>
@@ -39,10 +41,10 @@
 #include <utility>
 
 namespace {
-constexpr uintptr_t offset = 0x10000U;
+constexpr uintptr_t OFFSET = 0x10000U;
 template <typename T, std::size_t N> constexpr std::array<T, N> iotaArray() {
   std::array<T, N> result{};
-  std::iota(result.begin(), result.end(), offset);
+  std::iota(result.begin(), result.end(), OFFSET);
   return result;
 }
 
@@ -349,7 +351,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const auto id =
-      static_cast<size_t>(reinterpret_cast<uintptr_t>(site) - offset);
+      static_cast<size_t>(reinterpret_cast<uintptr_t>(site) - OFFSET);
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, size_t, id, prop, size,
                             value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
