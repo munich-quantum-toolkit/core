@@ -343,8 +343,12 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
     }
 
     // Remove the AllocOp and the DeallocOp
+    llvm::errs() << "Removing AllocOp...\n";
     rewriter.eraseOp(allocOp);
+    llvm::errs() << "Removed AllocOp\n";
+    llvm::errs() << "Removing DeallocOp...\n";
     rewriter.eraseOp(deallocOp);
+    llvm::errs() << "Removed DeallocOp\n";
     return success();
   }
 };
