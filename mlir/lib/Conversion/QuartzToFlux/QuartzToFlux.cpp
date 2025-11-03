@@ -374,15 +374,16 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
   LogicalResult
   matchAndRewrite(quartz::XOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto& quartzQubit = op.getQubit();
-
     auto inRegion = llvm::isa<flux::CtrlOp>(op->getParentOp());
 
     // Get the latest Flux qubit
-    Value fluxQubitIn;
+    Value quartzQubit = nullptr;
+    Value fluxQubitIn = nullptr;
     if (inRegion) {
+      quartzQubit = op->getOperand(0);
       fluxQubitIn = rewriter.getRemappedValue(quartzQubit);
     } else {
+      quartzQubit = op.getQubit();
       fluxQubitIn = getState().qubitMap[quartzQubit];
     }
 
