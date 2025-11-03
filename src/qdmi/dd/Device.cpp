@@ -35,6 +35,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <numeric>
 #include <ranges>
 #include <string>
@@ -278,10 +279,12 @@ auto Device::setStatus(const QDMI_Device_Status status) -> void {
   status_ = status;
 }
 auto Device::increaseRunningJobs() -> void {
+  const std::lock_guard<std::mutex> lock(mutex_);
   ++runningJobs_;
   setStatus(QDMI_DEVICE_STATUS_BUSY);
 }
 auto Device::decreaseRunningJobs() -> void {
+  const std::lock_guard<std::mutex> lock(mutex_);
   --runningJobs_;
   if (runningJobs_ == 0) {
     setStatus(QDMI_DEVICE_STATUS_IDLE);

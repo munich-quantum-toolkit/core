@@ -18,12 +18,13 @@
 #include "dd/Package.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <future>
+#include <limits>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <random>
 #include <string>
 #include <unordered_map>
@@ -53,7 +54,10 @@ class Device final {
       std::uniform_int_distribution<>(0, std::numeric_limits<int>::max());
 
   /// The number of running jobs.
-  std::atomic<size_t> runningJobs_ = 0;
+  size_t runningJobs_ = 0;
+
+  /// A mutex for synchronizing access to runningJobs_.
+  std::mutex mutex_;
 
   /// @brief Private constructor to enforce the singleton pattern.
   Device();
