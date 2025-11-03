@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mlir/Dialect/Utils/ParameterArityTrait.h"
 #include "mlir/Dialect/Utils/ParameterDescriptor.h"
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
@@ -69,15 +70,6 @@ public:
     Value getNegControl(size_t i) {
       llvm::report_fatal_error("Operation does not have controls");
     }
-  };
-};
-
-template <size_t n> class ParameterArityTrait {
-public:
-  template <typename ConcreteType>
-  class Impl : public mlir::OpTrait::TraitBase<ConcreteType, Impl> {
-  public:
-    size_t getNumParams() { return n; }
   };
 };
 

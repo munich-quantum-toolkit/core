@@ -337,7 +337,7 @@ def TwoTarget : TargetArityTrait<2> {
 }
 
 class ParameterArityTrait<int n> : ParamNativeOpTrait<"ParameterArityTrait", !cast<string>(n)> {
-    let cppNamespace = "::mlir::flux";
+    let cppNamespace = "::mlir::utils";
 }
 
 def ZeroParameter : ParameterArityTrait<0> {
