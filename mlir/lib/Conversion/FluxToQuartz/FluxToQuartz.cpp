@@ -406,22 +406,7 @@ struct ConvertFluxYieldOp final : OpConversionPattern<flux::YieldOp> {
   LogicalResult
   matchAndRewrite(flux::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto ctrlOp = dyn_cast<quartz::CtrlOp>(op->getParentOp());
-    auto unitaryOp = ctrlOp.getBodyUnitary();
-
-    SmallVector<Value> targets;
-    targets.reserve(unitaryOp.getNumTargets());
-    for (size_t i = 0; i < unitaryOp.getNumTargets(); ++i) {
-      const auto& yield = rewriter.getRemappedValue(unitaryOp.getTarget(i));
-      targets.push_back(yield);
-    }
-
-    // Create quartz.yield
-    rewriter.create<quartz::YieldOp>(op.getLoc());
-
-    // Replace the output qubit with the same quartz references
-    rewriter.replaceOp(op, targets);
-
+    rewriter.replaceOpWithNewOp<quartz::YieldOp>(op);
     return success();
   }
 };
