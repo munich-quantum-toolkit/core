@@ -135,7 +135,7 @@ ParameterDescriptor RXOp::getParameter(size_t i) {
   if (i == 0) {
     return {getThetaAttr(), getThetaDyn()};
   }
-  emitError("RXOp has one parameter");
+  llvm::report_fatal_error("RXOp has one parameter");
 }
 
 bool RXOp::hasStaticUnitary() { return getParameter(0).isStatic(); }
@@ -167,7 +167,7 @@ ParameterDescriptor U2Op::getParameter(size_t i) {
   if (i == 1) {
     return {getLambdaAttr(), getLambdaDyn()};
   }
-  emitError("U2Op has two parameters");
+  llvm::report_fatal_error("U2Op has two parameters");
 }
 
 bool U2Op::hasStaticUnitary() {
@@ -241,7 +241,7 @@ Value CtrlOp::getQubit(size_t i) {
   if (getNumTargets() + getNumPosControls() <= i && i < getNumQubits()) {
     return getNegControl(i - getNumTargets() - getNumPosControls());
   }
-  emitError("Invalid qubit index");
+  llvm::report_fatal_error("Invalid qubit index");
 }
 
 Value CtrlOp::getTarget(size_t i) {
@@ -272,5 +272,5 @@ ParameterDescriptor CtrlOp::getParameter(size_t i) {
 }
 
 DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
-  emitError("Not implemented yet"); // TODO
+  llvm::report_fatal_error("Not implemented yet"); // TODO
 }

@@ -239,7 +239,7 @@ def OneTarget : TargetArityTrait<1> {
             if (i == 0) {
                 return getQubit();
             }
-            emitError("Operation has one input qubit");
+            llvm::report_fatal_error("Operation has one input qubit");
         }
 
         Value getTarget(size_t i) {
@@ -257,7 +257,7 @@ def TwoTarget : TargetArityTrait<2> {
             if (i == 1) {
                 return getQubit1();
             }
-            emitError("Operation has two input qubits");
+            llvm::report_fatal_error("Operation has two input qubits");
         }
 
         Value getTarget(size_t i) {
@@ -273,7 +273,7 @@ class ParameterArityTrait<int n> : ParamNativeOpTrait<"ParameterArityTrait", !ca
 def ZeroParameter : ParameterArityTrait<0> {
     let extraConcreteClassDeclaration = [{
         ::mlir::utils::ParameterDescriptor getParameter(size_t i) {
-            emitError("Operation does not have parameters");
+            llvm::report_fatal_error("Operation does not have parameters");
         }
 
         bool hasStaticUnitary() { return true; }

@@ -137,7 +137,7 @@ ParameterDescriptor RXOp::getParameter(size_t i) {
   if (i == 0) {
     return {getThetaAttr(), getThetaDyn()};
   }
-  emitError("RXOp has one parameter");
+  llvm::report_fatal_error("RXOp has one parameter");
 }
 
 bool RXOp::hasStaticUnitary() { return getParameter(0).isStatic(); }
@@ -169,7 +169,7 @@ ParameterDescriptor U2Op::getParameter(size_t i) {
   if (i == 1) {
     return {getLambdaAttr(), getLambdaDyn()};
   }
-  emitError("U2Op has two parameters");
+  llvm::report_fatal_error("U2Op has two parameters");
 }
 
 bool U2Op::hasStaticUnitary() {
@@ -240,7 +240,7 @@ Value CtrlOp::getInputQubit(size_t i) {
   if (getNumTargets() + getNumPosControls() <= i && i < getNumQubits()) {
     return getInputNegControl(i - getNumTargets() - getNumPosControls());
   }
-  emitError("Invalid qubit index");
+  llvm::report_fatal_error("Invalid qubit index");
 }
 
 Value CtrlOp::getOutputQubit(size_t i) {
@@ -253,7 +253,7 @@ Value CtrlOp::getOutputQubit(size_t i) {
   if (getNumTargets() + getNumPosControls() <= i && i < getNumQubits()) {
     return getOutputNegControl(i - getNumTargets() - getNumPosControls());
   }
-  emitError("Invalid qubit index");
+  llvm::report_fatal_error("Invalid qubit index");
 }
 
 Value CtrlOp::getInputTarget(size_t i) { return getTargetsIn()[i]; }
@@ -285,7 +285,7 @@ Value CtrlOp::getInputForOutput(Value output) {
       return getTargetsIn()[i];
     }
   }
-  emitError("Given qubit is not an output of the operation");
+  llvm::report_fatal_error("Given qubit is not an output of the operation");
 }
 
 Value CtrlOp::getOutputForInput(Value input) {
@@ -299,7 +299,7 @@ Value CtrlOp::getOutputForInput(Value input) {
       return getTargetsOut()[i];
     }
   }
-  emitError("Given qubit is not an input of the operation");
+  llvm::report_fatal_error("Given qubit is not an input of the operation");
 }
 
 size_t CtrlOp::getNumParams() {
@@ -318,7 +318,7 @@ ParameterDescriptor CtrlOp::getParameter(size_t i) {
 }
 
 DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
-  emitError("Not implemented yet"); // TODO
+  llvm::report_fatal_error("Not implemented yet"); // TODO
 }
 
 //===----------------------------------------------------------------------===//
