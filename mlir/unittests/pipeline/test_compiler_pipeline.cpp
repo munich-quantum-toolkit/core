@@ -1124,10 +1124,8 @@ TEST_F(SimpleConversionTest, RXQuartzToFlux) {
 
   const auto fluxResult = captureIR(module.get());
   const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto thetaAttr = b.builder.getF64FloatAttr(1.0);
-    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
     auto q = b.allocQubitRegister(1, "q");
-    b.rx(thetaOperand, q[0]);
+    b.rx(1.0, q[0]);
   });
 
   EXPECT_TRUE(verify("Quartz to Flux", fluxResult, fluxExpected.get()));
@@ -1170,11 +1168,9 @@ TEST_F(SimpleConversionTest, RXSimplifyAttrValue) {
   const auto fluxInitIR = captureIR(fluxInit.get());
 
   const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto thetaAttr = b.builder.getF64FloatAttr(1.5);
-    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
     auto reg = b.allocQubitRegister(1, "q");
     auto q0 = reg[0];
-    b.rx(thetaOperand, q0);
+    b.rx(1.5, q0);
   });
 
   EXPECT_TRUE(verify("Flux Canonicalization", fluxInitIR, fluxOpt.get()));
@@ -1192,11 +1188,9 @@ TEST_F(SimpleConversionTest, RXSimplifyValueAttr) {
   const auto fluxInitIR = captureIR(fluxInit.get());
 
   const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto thetaAttr = b.builder.getF64FloatAttr(1.5);
-    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
     auto reg = b.allocQubitRegister(1, "q");
     auto q0 = reg[0];
-    b.rx(thetaOperand, q0);
+    b.rx(1.5, q0);
   });
 
   EXPECT_TRUE(verify("Flux Canonicalization", fluxInitIR, fluxOpt.get()));
@@ -1218,11 +1212,9 @@ TEST_F(SimpleConversionTest, RXSimplifyValueValue) {
   const auto fluxInitIR = captureIR(fluxInit.get());
 
   const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto thetaAttr = b.builder.getF64FloatAttr(1.5);
-    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
     auto reg = b.allocQubitRegister(1, "q");
     auto q0 = reg[0];
-    b.rx(thetaOperand, q0);
+    b.rx(1.5, q0);
   });
 
   EXPECT_TRUE(verify("Flux Canonicalization", fluxInitIR, fluxOpt.get()));

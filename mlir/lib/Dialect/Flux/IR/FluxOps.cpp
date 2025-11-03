@@ -444,6 +444,31 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
   }
 };
 
+struct ConstantFoldingRX final : OpRewritePattern<RXOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(RXOp rxOp,
+                                PatternRewriter& rewriter) const override {
+    if (!rxOp.getThetaDyn()) {
+      return failure();
+    }
+
+    auto constantOp = rxOp.getThetaDyn().getDefiningOp<arith::ConstantOp>();
+    if (!constantOp) {
+      return failure();
+    }
+
+    const auto& thetaAttr = dyn_cast<FloatAttr>(constantOp.getValue());
+    if (!thetaAttr) {
+      return failure();
+    }
+
+    rewriter.replaceOpWithNewOp<RXOp>(rxOp, rxOp.getQubitIn(), thetaAttr);
+
+    return success();
+  }
+};
+
 } // namespace
 
 void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
@@ -463,5 +488,5 @@ void XOp::getCanonicalizationPatterns(RewritePatternSet& results,
 
 void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<MergeSubsequentRX>(context);
+  results.add<MergeSubsequentRX, ConstantFoldingRX>(context);
 }
