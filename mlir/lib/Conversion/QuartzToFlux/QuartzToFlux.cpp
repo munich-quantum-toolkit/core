@@ -388,15 +388,12 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
     }
 
     // Create flux.x operation (consumes input, produces output)
-    auto fluxOp = rewriter.create<flux::XOp>(op.getLoc(), fluxQubitIn);
+    auto fluxOp = rewriter.replaceOpWithNewOp<flux::XOp>(op, fluxQubitIn);
 
     // Update state map
     if (!inRegion) {
       getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
     }
-
-    // Replace the Quartz operation with the Flux operation
-    rewriter.replaceOp(op, fluxOp.getResult());
 
     return success();
   }
@@ -429,13 +426,10 @@ struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
 
     // Create flux.rx operation (consumes input, produces output)
     auto fluxOp =
-        rewriter.create<flux::RXOp>(op.getLoc(), fluxQubit, theta, thetaDyn);
+        rewriter.replaceOpWithNewOp<flux::RXOp>(op, fluxQubit, theta, thetaDyn);
 
     // Update state map: the Quartz qubit now corresponds to the output qubit
     getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
-
-    // Replace the Quartz operation with the Flux operation
-    rewriter.replaceOp(op, fluxOp.getResult());
 
     return success();
   }
@@ -471,14 +465,11 @@ struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
     const auto& lambdaDyn = op.getLambdaDyn();
 
     // Create flux.u2 operation (consumes input, produces output)
-    auto fluxOp = rewriter.create<flux::U2Op>(op.getLoc(), fluxQubit, phi,
-                                              phiDyn, lambda, lambdaDyn);
+    auto fluxOp = rewriter.replaceOpWithNewOp<flux::U2Op>(
+        op, fluxQubit, phi, phiDyn, lambda, lambdaDyn);
 
     // Update state map: the Quartz qubit now corresponds to the output qubit
     getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
-
-    // Replace the Quartz operation with the Flux operation
-    rewriter.replaceOp(op, fluxOp.getResult());
 
     return success();
   }
@@ -512,14 +503,11 @@ struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
 
     // Create flux.swap operation (consumes input, produces output)
     auto fluxOp =
-        rewriter.create<flux::SWAPOp>(op.getLoc(), fluxQubit0, fluxQubit1);
+        rewriter.replaceOpWithNewOp<flux::SWAPOp>(op, fluxQubit0, fluxQubit1);
 
     // Update state map: the Quartz qubit now corresponds to the output qubit
     getState().qubitMap[quartzQubit0] = fluxOp.getQubit0Out();
     getState().qubitMap[quartzQubit1] = fluxOp.getQubit1Out();
-
-    // Replace the Quartz operation with the Flux operation
-    rewriter.replaceOp(op, fluxOp.getOperands());
 
     return success();
   }
@@ -548,8 +536,8 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
     }
 
     // Create flux.ctrl operation
-    auto fluxOp =
-        rewriter.create<flux::CtrlOp>(op.getLoc(), fluxControls, fluxTargets);
+    auto fluxOp = rewriter.replaceOpWithNewOp<flux::CtrlOp>(op, fluxControls,
+                                                            fluxTargets);
 
     // Clone the body region from Quartz to Flux
     IRMapping regionMap;
@@ -568,9 +556,6 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
       const auto& quartzTarget = op.getTarget(i);
       getState().qubitMap[quartzTarget] = fluxOp.getTargetsOut()[i];
     }
-
-    // Replace the Quartz operation with the Flux operation
-    rewriter.replaceOp(op, fluxOp.getOperands());
 
     return success();
   }
