@@ -13,7 +13,6 @@
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 
-#include <cstddef>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
