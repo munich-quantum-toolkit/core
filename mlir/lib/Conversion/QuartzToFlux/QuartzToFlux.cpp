@@ -590,9 +590,7 @@ struct ConvertQuartzYieldOp final
     }
 
     // Create quartz.yield
-    rewriter.create<flux::YieldOp>(op.getLoc(), targets);
-
-    rewriter.eraseOp(op);
+    rewriter.replaceOpWithNewOp<flux::YieldOp>(op, targets);
 
     return success();
   }
