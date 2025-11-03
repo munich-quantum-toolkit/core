@@ -122,30 +122,32 @@ void replaceAllUsesInRegionAndChildrenExcept(Value oldValue, Value newValue,
 
 class Mapper {
 public:
-  explicit Mapper(std::unique_ptr<Architecture> arch,
-                  std::unique_ptr<SchedulerBase> scheduler,
+  explicit Mapper(std::unique_ptr<SchedulerBase> scheduler,
                   std::unique_ptr<RouterBase> router, Pass::Statistic& numSwaps)
-      : arch_(std::move(arch)), scheduler_(std::move(scheduler)),
-        router_(std::move(router)), numSwaps_(&numSwaps) {}
+      : scheduler_(std::move(scheduler)), router_(std::move(router)),
+        numSwaps_(&numSwaps) {}
 
   /**
    * @returns true iff @p op is executable on the targeted architecture.
    */
-  [[nodiscard]] bool isExecutable(UnitaryInterface op) {
+  [[nodiscard]] static bool isExecutable(UnitaryInterface op,
+                                         const Architecture& arch,
+                                         const Layout& layout) {
     const auto [in0, in1] = getIns(op);
-    return arch().areAdjacent(stack().top().lookupHardwareIndex(in0),
-                              stack().top().lookupHardwareIndex(in1));
+    return arch.areAdjacent(layout.lookupHardwareIndex(in0),
+                            layout.lookupHardwareIndex(in1));
   }
 
   /**
    * @brief Insert SWAPs such that the gates provided by the scheduler are
    * executable.
    */
-  void map(UnitaryInterface op, PatternRewriter& rewriter) {
-    const auto layers = scheduler_->schedule(op, stack().top());
-    const auto swaps = router_->route(layers, stack().top(), arch());
-    insert(swaps, op->getLoc(), rewriter);
-    historyStack_.top().append(swaps.begin(), swaps.end());
+  void map(UnitaryInterface op, const Architecture& arch, Layout& layout,
+           SmallVector<QubitIndexPair>& history, PatternRewriter& rewriter) {
+    const auto layers = scheduler_->schedule(op, layout);
+    const auto swaps = router_->route(layers, layout, arch);
+    insert(swaps, op->getLoc(), layout, rewriter);
+    history.append(swaps.begin(), swaps.end());
   }
 
   /**
@@ -155,10 +157,67 @@ public:
    *
    * @todo Remove SWAP history and use advanced strategies.
    */
-  void restore(Location location, PatternRewriter& rewriter) {
-    const auto swaps = llvm::to_vector(llvm::reverse(historyStack_.top()));
-    insert(swaps, location, rewriter);
+  void restore(Location location, const SmallVector<QubitIndexPair>& history,
+               Layout& layout, PatternRewriter& rewriter) {
+    const auto swaps = llvm::to_vector(llvm::reverse(history));
+    insert(swaps, location, layout, rewriter);
   }
+
+private:
+  void insert(ArrayRef<QubitIndexPair> swaps, Location location, Layout& layout,
+              PatternRewriter& rewriter) {
+    for (const auto [hw0, hw1] : swaps) {
+      const Value in0 = layout.lookupHardwareValue(hw0);
+      const Value in1 = layout.lookupHardwareValue(hw1);
+      [[maybe_unused]] const auto [prog0, prog1] =
+          layout.getProgramIndices(hw0, hw1);
+
+      LLVM_DEBUG({
+        llvm::dbgs() << llvm::format(
+            "route: swap= p%d:h%d, p%d:h%d <- p%d:h%d, p%d:h%d\n", prog1, hw0,
+            prog0, hw1, prog0, hw0, prog1, hw1);
+      });
+
+      auto swap = createSwap(location, in0, in1, rewriter);
+      const auto [out0, out1] = getOuts(swap);
+
+      rewriter.setInsertionPointAfter(swap);
+      replaceAllUsesInRegionAndChildrenExcept(
+          in0, out1, swap->getParentRegion(), swap, rewriter);
+      replaceAllUsesInRegionAndChildrenExcept(
+          in1, out0, swap->getParentRegion(), swap, rewriter);
+
+      layout.swap(in0, in1);
+      layout.remapQubitValue(in0, out0);
+      layout.remapQubitValue(in1, out1);
+
+      (*numSwaps_)++;
+    }
+  }
+
+  std::unique_ptr<SchedulerBase> scheduler_;
+  std::unique_ptr<RouterBase> router_;
+
+  Pass::Statistic* numSwaps_;
+};
+
+struct RoutingDriver {
+  RoutingDriver(std::unique_ptr<Mapper>& mapper,
+                std::unique_ptr<Architecture>& arch)
+      : mapper_(std::move(mapper)), arch_(std::move(arch)) {}
+
+  LogicalResult route(ModuleOp module);
+
+private:
+  WalkResult handleFunc([[maybe_unused]] func::FuncOp op);
+  WalkResult handleReturn([[maybe_unused]] func::ReturnOp op);
+  WalkResult handleFor(scf::ForOp op);
+  WalkResult handleIf(scf::IfOp op);
+  WalkResult handleYield(scf::YieldOp op, PatternRewriter& rewriter);
+  WalkResult handleQubit(QubitOp op);
+  WalkResult handleUnitary(UnitaryInterface op, PatternRewriter& rewriter);
+  WalkResult handleReset(ResetOp op);
+  WalkResult handleMeasure(MeasureOp op);
 
   /**
    * @returns reference to the stack object.
@@ -177,61 +236,33 @@ public:
    */
   [[nodiscard]] Architecture& arch() const { return *arch_; }
 
-private:
-  void insert(ArrayRef<QubitIndexPair> swaps, Location location,
-              PatternRewriter& rewriter) {
-    for (const auto [hw0, hw1] : swaps) {
-      const Value in0 = stack().top().lookupHardwareValue(hw0);
-      const Value in1 = stack().top().lookupHardwareValue(hw1);
-      [[maybe_unused]] const auto [prog0, prog1] =
-          stack().top().getProgramIndices(hw0, hw1);
+  /**
+   * @returns reference to mapper object.
+   */
+  [[nodiscard]] Mapper& mapper() const { return *mapper_; }
 
-      LLVM_DEBUG({
-        llvm::dbgs() << llvm::format(
-            "route: swap= p%d:h%d, p%d:h%d <- p%d:h%d, p%d:h%d\n", prog1, hw0,
-            prog0, hw1, prog0, hw0, prog1, hw1);
-      });
-
-      auto swap = createSwap(location, in0, in1, rewriter);
-      const auto [out0, out1] = getOuts(swap);
-
-      rewriter.setInsertionPointAfter(swap);
-      replaceAllUsesInRegionAndChildrenExcept(
-          in0, out1, swap->getParentRegion(), swap, rewriter);
-      replaceAllUsesInRegionAndChildrenExcept(
-          in1, out0, swap->getParentRegion(), swap, rewriter);
-
-      stack().top().swap(in0, in1);
-      stack().top().remapQubitValue(in0, out0);
-      stack().top().remapQubitValue(in1, out1);
-
-      (*numSwaps_)++;
-    }
-  }
-
-  std::unique_ptr<Architecture> arch_;
-  std::unique_ptr<SchedulerBase> scheduler_;
-  std::unique_ptr<RouterBase> router_;
+  SmallVector<Operation*> ops_;
 
   LayoutStack<Layout> stack_{};
   LayoutStack<SmallVector<QubitIndexPair>> historyStack_{};
 
-  Pass::Statistic* numSwaps_;
+  std::unique_ptr<Mapper> mapper_;
+  std::unique_ptr<Architecture> arch_;
 };
 
 /**
  * @brief Push new state onto the stack.
  */
-WalkResult handleFunc([[maybe_unused]] func::FuncOp op, Mapper& mapper) {
-  assert(mapper.stack().empty() && "handleFunc: stack must be empty");
+WalkResult RoutingDriver::handleFunc([[maybe_unused]] func::FuncOp op) {
+  assert(stack().empty() && "handleFunc: stack must be empty");
 
   LLVM_DEBUG({
     llvm::dbgs() << "handleFunc: entry_point= " << op.getSymName() << '\n';
   });
 
   /// Function body state.
-  mapper.stack().emplace(mapper.arch().nqubits());
-  mapper.historyStack().emplace();
+  stack().emplace(arch().nqubits());
+  historyStack().emplace();
 
   return WalkResult::advance();
 }
@@ -240,28 +271,28 @@ WalkResult handleFunc([[maybe_unused]] func::FuncOp op, Mapper& mapper) {
  * @brief Indicates the end of a region defined by a function. Consequently,
  * we pop the region's state from the stack.
  */
-WalkResult handleReturn(Mapper& mapper) {
-  mapper.stack().pop();
-  mapper.historyStack().pop();
+WalkResult RoutingDriver::handleReturn([[maybe_unused]] func::ReturnOp op) {
+  stack().pop();
+  historyStack().pop();
   return WalkResult::advance();
 }
 
 /**
  * @brief Push new state for the loop body onto the stack.
  */
-WalkResult handleFor(scf::ForOp op, Mapper& mapper) {
+WalkResult RoutingDriver::handleFor(scf::ForOp op) {
   /// Loop body state.
-  mapper.stack().duplicateTop();
-  mapper.historyStack().emplace();
+  stack().duplicateTop();
+  historyStack().emplace();
 
   /// Forward out-of-loop and in-loop values.
-  const auto initArgs = op.getInitArgs().take_front(mapper.arch().nqubits());
-  const auto results = op.getResults().take_front(mapper.arch().nqubits());
-  const auto iterArgs =
-      op.getRegionIterArgs().take_front(mapper.arch().nqubits());
+  const auto nqubits = arch().nqubits();
+  const auto initArgs = op.getInitArgs().take_front(nqubits);
+  const auto results = op.getResults().take_front(nqubits);
+  const auto iterArgs = op.getRegionIterArgs().take_front(nqubits);
   for (const auto [arg, res, iter] : llvm::zip(initArgs, results, iterArgs)) {
-    mapper.stack().getItemAtDepth(FOR_PARENT_DEPTH).remapQubitValue(arg, res);
-    mapper.stack().top().remapQubitValue(arg, iter);
+    stack().getItemAtDepth(FOR_PARENT_DEPTH).remapQubitValue(arg, res);
+    stack().top().remapQubitValue(arg, iter);
   }
 
   return WalkResult::advance();
@@ -270,16 +301,16 @@ WalkResult handleFor(scf::ForOp op, Mapper& mapper) {
 /**
  * @brief Push two new states for the then and else branches onto the stack.
  */
-WalkResult handleIf(scf::IfOp op, Mapper& mapper) {
+WalkResult RoutingDriver::handleIf(scf::IfOp op) {
   /// Prepare stack.
-  mapper.stack().duplicateTop(); /// Else.
-  mapper.stack().duplicateTop(); /// Then.
-  mapper.historyStack().emplace();
-  mapper.historyStack().emplace();
+  stack().duplicateTop(); /// Else.
+  stack().duplicateTop(); /// Then.
+  historyStack().emplace();
+  historyStack().emplace();
 
   /// Forward out-of-if values.
-  const auto results = op->getResults().take_front(mapper.arch().nqubits());
-  Layout& layoutBeforeIf = mapper.stack().getItemAtDepth(IF_PARENT_DEPTH);
+  const auto results = op->getResults().take_front(arch().nqubits());
+  Layout& layoutBeforeIf = stack().getItemAtDepth(IF_PARENT_DEPTH);
   for (const auto [hw, res] : llvm::enumerate(results)) {
     const Value q = layoutBeforeIf.lookupHardwareValue(hw);
     layoutBeforeIf.remapQubitValue(q, res);
@@ -301,16 +332,17 @@ WalkResult handleIf(scf::IfOp op, Mapper& mapper) {
  * a 'for' of 'if' region always requires 2 * #(SWAPs required for region)
  * additional SWAPS.
  */
-WalkResult handleYield(scf::YieldOp op, Mapper& mapper,
-                       PatternRewriter& rewriter) {
+WalkResult RoutingDriver::handleYield(scf::YieldOp op,
+                                      PatternRewriter& rewriter) {
   if (!isa<scf::ForOp>(op->getParentOp()) &&
       !isa<scf::IfOp>(op->getParentOp())) {
     return WalkResult::skip();
   }
 
-  mapper.restore(op->getLoc(), rewriter);
-  mapper.stack().pop();
-  mapper.historyStack().pop();
+  mapper().restore(op->getLoc(), historyStack().top(), stack().top(), rewriter);
+
+  stack().pop();
+  historyStack().pop();
 
   return WalkResult::advance();
 }
@@ -321,9 +353,9 @@ WalkResult handleYield(scf::YieldOp op, Mapper& mapper,
  *
  * Thanks to the placement pass, we can apply the identity layout here.
  */
-WalkResult handleQubit(QubitOp op, Mapper& mapper) {
+WalkResult RoutingDriver::handleQubit(QubitOp op) {
   const std::size_t index = op.getIndex();
-  mapper.stack().top().add(index, index, op.getQubit());
+  stack().top().add(index, index, op.getQubit());
   return WalkResult::advance();
 }
 
@@ -331,8 +363,8 @@ WalkResult handleQubit(QubitOp op, Mapper& mapper) {
  * @brief Ensures the executability of two-qubit gates on the given target
  * architecture by inserting SWAPs.
  */
-WalkResult handleUnitary(UnitaryInterface op, Mapper& mapper,
-                         PatternRewriter& rewriter) {
+WalkResult RoutingDriver::handleUnitary(UnitaryInterface op,
+                                        PatternRewriter& rewriter) {
   const std::vector<Value> inQubits = op.getAllInQubits();
   const std::vector<Value> outQubits = op.getAllOutQubits();
   const std::size_t nacts = inQubits.size();
@@ -344,7 +376,7 @@ WalkResult handleUnitary(UnitaryInterface op, Mapper& mapper,
 
   if (isa<BarrierOp>(op)) {
     for (const auto [in, out] : llvm::zip(inQubits, outQubits)) {
-      mapper.stack().top().remapQubitValue(in, out);
+      stack().top().remapQubitValue(in, out);
     }
     return WalkResult::advance();
   }
@@ -356,35 +388,34 @@ WalkResult handleUnitary(UnitaryInterface op, Mapper& mapper,
 
   /// Single-qubit: Forward mapping.
   if (nacts == 1) {
-    mapper.stack().top().remapQubitValue(inQubits[0], outQubits[0]);
+    stack().top().remapQubitValue(inQubits[0], outQubits[0]);
     return WalkResult::advance();
   }
 
-  if (!mapper.isExecutable(op)) {
-    mapper.map(op, rewriter);
+  if (!Mapper::isExecutable(op, arch(), stack().top())) {
+    mapper().map(op, arch(), stack().top(), historyStack().top(), rewriter);
   }
 
   const auto [execIn0, execIn1] = getIns(op);
   const auto [execOut0, execOut1] = getOuts(op);
 
   LLVM_DEBUG({
-    llvm::dbgs() << llvm::format(
-        "handleUnitary: gate= p%d:h%d, p%d:h%d\n",
-        mapper.stack().top().lookupProgramIndex(execIn0),
-        mapper.stack().top().lookupHardwareIndex(execIn0),
-        mapper.stack().top().lookupProgramIndex(execIn1),
-        mapper.stack().top().lookupHardwareIndex(execIn1));
+    llvm::dbgs() << llvm::format("handleUnitary: gate= p%d:h%d, p%d:h%d\n",
+                                 stack().top().lookupProgramIndex(execIn0),
+                                 stack().top().lookupHardwareIndex(execIn0),
+                                 stack().top().lookupProgramIndex(execIn1),
+                                 stack().top().lookupHardwareIndex(execIn1));
   });
 
   if (isa<SWAPOp>(op)) {
-    mapper.stack().top().swap(execIn0, execIn1);
-    mapper.historyStack().top().push_back(
-        {mapper.stack().top().lookupHardwareIndex(execIn0),
-         mapper.stack().top().lookupHardwareIndex(execIn1)});
+    stack().top().swap(execIn0, execIn1);
+    historyStack().top().push_back(
+        {stack().top().lookupHardwareIndex(execIn0),
+         stack().top().lookupHardwareIndex(execIn1)});
   }
 
-  mapper.stack().top().remapQubitValue(execIn0, execOut0);
-  mapper.stack().top().remapQubitValue(execIn1, execOut1);
+  stack().top().remapQubitValue(execIn0, execOut0);
+  stack().top().remapQubitValue(execIn1, execOut1);
 
   return WalkResult::advance();
 }
@@ -392,16 +423,16 @@ WalkResult handleUnitary(UnitaryInterface op, Mapper& mapper,
 /**
  * @brief Update layout.
  */
-WalkResult handleReset(ResetOp op, Mapper& mapper) {
-  mapper.stack().top().remapQubitValue(op.getInQubit(), op.getOutQubit());
+WalkResult RoutingDriver::handleReset(ResetOp op) {
+  stack().top().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
 
 /**
  * @brief Update layout.
  */
-WalkResult handleMeasure(MeasureOp op, Mapper& mapper) {
-  mapper.stack().top().remapQubitValue(op.getInQubit(), op.getOutQubit());
+WalkResult RoutingDriver::handleMeasure(MeasureOp op) {
+  stack().top().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
 
@@ -427,21 +458,17 @@ WalkResult handleMeasure(MeasureOp op, Mapper& mapper) {
  * custom driver would be required in any case, which adds unnecessary code to
  * maintain.
  */
-LogicalResult route(ModuleOp module, MLIRContext* ctx, Mapper& mapper) {
-  PatternRewriter rewriter(ctx);
-
-  /// Prepare work-list.
-  SmallVector<Operation*> worklist;
+LogicalResult RoutingDriver::route(ModuleOp module) {
   for (const auto func : module.getOps<func::FuncOp>()) {
     if (!isEntryPoint(func)) {
       continue; // Ignore non entry_point functions for now.
     }
-    func->walk<WalkOrder::PreOrder>(
-        [&](Operation* op) { worklist.push_back(op); });
+    func->walk<WalkOrder::PreOrder>([&](Operation* op) { ops_.push_back(op); });
   }
 
-  /// Iterate work-list.
-  for (Operation* curr : worklist) {
+  PatternRewriter rewriter(module->getContext());
+
+  for (Operation* curr : ops_) {
     if (curr == nullptr) {
       continue; // Skip erased ops.
     }
@@ -456,29 +483,25 @@ LogicalResult route(ModuleOp module, MLIRContext* ctx, Mapper& mapper) {
         TypeSwitch<Operation*, WalkResult>(curr)
             /// mqtopt Dialect
             .Case<UnitaryInterface>([&](UnitaryInterface op) {
-              return handleUnitary(op, mapper, rewriter);
+              return handleUnitary(op, rewriter);
             })
-            .Case<QubitOp>([&](QubitOp op) { return handleQubit(op, mapper); })
-            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, mapper); })
-            .Case<MeasureOp>(
-                [&](MeasureOp op) { return handleMeasure(op, mapper); })
+            .Case<QubitOp>([&](QubitOp op) { return handleQubit(op); })
+            .Case<ResetOp>([&](ResetOp op) { return handleReset(op); })
+            .Case<MeasureOp>([&](MeasureOp op) { return handleMeasure(op); })
             /// built-in Dialect
             .Case<ModuleOp>([&]([[maybe_unused]] ModuleOp op) {
               return WalkResult::advance();
             })
             /// func Dialect
-            .Case<func::FuncOp>(
-                [&](func::FuncOp op) { return handleFunc(op, mapper); })
+            .Case<func::FuncOp>([&](func::FuncOp op) { return handleFunc(op); })
             .Case<func::ReturnOp>([&]([[maybe_unused]] func::ReturnOp op) {
-              return handleReturn(mapper);
+              return handleReturn(op);
             })
             /// scf Dialect
-            .Case<scf::ForOp>(
-                [&](scf::ForOp op) { return handleFor(op, mapper); })
-            .Case<scf::IfOp>([&](scf::IfOp op) { return handleIf(op, mapper); })
-            .Case<scf::YieldOp>([&](scf::YieldOp op) {
-              return handleYield(op, mapper, rewriter);
-            })
+            .Case<scf::ForOp>([&](scf::ForOp op) { return handleFor(op); })
+            .Case<scf::IfOp>([&](scf::IfOp op) { return handleIf(op); })
+            .Case<scf::YieldOp>(
+                [&](scf::YieldOp op) { return handleYield(op, rewriter); })
             /// Skip the rest.
             .Default([](auto) { return WalkResult::skip(); });
 
@@ -503,6 +526,7 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
       return;
     }
 
+    auto mapper = getMapper();
     auto arch = getArchitecture(archName);
     if (!arch) {
       emitError(UnknownLoc::get(&getContext()))
@@ -511,25 +535,29 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
       return;
     }
 
-    Mapper mapper = getMapper(std::move(arch));
-    if (failed(route(getOperation(), &getContext(), mapper))) {
+    RoutingDriver driver(mapper, arch);
+
+    if (failed(driver.route(getOperation()))) {
       signalPassFailure();
     }
   }
 
 private:
-  [[nodiscard]] Mapper getMapper(std::unique_ptr<Architecture> arch) {
+  [[nodiscard]] std::unique_ptr<Mapper> getMapper() {
     switch (static_cast<RoutingMethod>(method)) {
-    case RoutingMethod::Naive:
+    case RoutingMethod::Naive: {
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=naive\n"; });
-      return Mapper(std::move(arch), std::make_unique<SequentialOpScheduler>(),
-                    std::make_unique<NaiveRouter>(), numSwaps);
-    case RoutingMethod::AStar:
+      return std::make_unique<Mapper>(std::make_unique<SequentialOpScheduler>(),
+                                      std::make_unique<NaiveRouter>(),
+                                      numSwaps);
+    }
+    case RoutingMethod::AStar: {
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=astar\n"; });
       const HeuristicWeights weights(alpha, lambda, nlookahead);
-      return Mapper(std::move(arch),
-                    std::make_unique<ParallelOpScheduler>(nlookahead),
-                    std::make_unique<AStarHeuristicRouter>(weights), numSwaps);
+      return std::make_unique<Mapper>(
+          std::make_unique<ParallelOpScheduler>(nlookahead),
+          std::make_unique<AStarHeuristicRouter>(weights), numSwaps);
+    }
     }
 
     llvm_unreachable("Unknown method");
