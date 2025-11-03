@@ -414,13 +414,13 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
       return failure();
     }
 
-    // Merge the two RXOps
+    // Compute and set new theta
     const auto newTheta = theta.getValueDouble() + prevTheta.getValueDouble();
-    auto newOp =
-        rewriter.create<RXOp>(rxOp.getLoc(), rxOp.getQubitIn(), newTheta);
+    rxOp.setThetaAttr(rewriter.getF64FloatAttr(static_cast<double>(newTheta)));
 
+    // Trivialize previous RXOp
     rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-    rewriter.replaceOp(rxOp, newOp.getResult());
+
     return success();
   }
 };
