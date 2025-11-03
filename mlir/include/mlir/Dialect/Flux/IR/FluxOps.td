@@ -547,7 +547,7 @@ def CtrlOp : FluxOp<"ctrl", traits = [UnitaryOpInterface, AttrSizedOperandSegmen
         size_t getNumParams();
         ::mlir::utils::ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
-        DenseElementsAttr tryGetStaticMatrix();
+        static DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 

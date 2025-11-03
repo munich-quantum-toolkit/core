@@ -462,7 +462,7 @@ def CtrlOp : QuartzOp<"ctrl", traits = [UnitaryOpInterface]> {
         size_t getNumParams();
         ::mlir::utils::ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
-        DenseElementsAttr tryGetStaticMatrix();
+        static DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 }
