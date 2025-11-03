@@ -23,6 +23,7 @@
 #include <cstddef>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Types.h>
@@ -407,19 +408,37 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
       return failure();
     }
 
-    // Check if both RXOps have static angles
+    // Compute and set new theta
     const auto& theta = prevOp.getParameter(0);
     const auto& prevTheta = rxOp.getParameter(0);
-    if (!theta.isStatic() || !prevTheta.isStatic()) {
+    if (theta.isStatic() && prevTheta.isStatic()) {
+      const auto& newTheta =
+          theta.getValueDouble() + prevTheta.getValueDouble();
+      rxOp.setThetaAttr(rewriter.getF64FloatAttr(newTheta));
+    } else if (theta.isStatic() && prevTheta.isDynamic()) {
+      auto constantOp = rewriter.create<arith::ConstantOp>(
+          rxOp.getLoc(), rewriter.getF64FloatAttr(theta.getValueDouble()));
+      auto newTheta = rewriter.create<arith::AddFOp>(
+          rxOp.getLoc(), constantOp.getResult(), prevTheta.getValueOperand());
+      rxOp->setOperand(1, newTheta.getResult());
+    } else if (theta.isDynamic() && prevTheta.isStatic()) {
+      auto constantOp = rewriter.create<arith::ConstantOp>(
+          rxOp.getLoc(), rewriter.getF64FloatAttr(prevTheta.getValueDouble()));
+      auto newTheta = rewriter.create<arith::AddFOp>(
+          rxOp.getLoc(), theta.getValueOperand(), constantOp.getResult());
+      rewriter.replaceOpWithNewOp<RXOp>(rxOp, rxOp.getQubitIn(),
+                                        newTheta.getResult());
+    } else if (theta.isDynamic() && prevTheta.isDynamic()) {
+      auto newTheta = rewriter.create<arith::AddFOp>(
+          rxOp.getLoc(), theta.getValueOperand(), prevTheta.getValueOperand());
+      rxOp->setOperand(1, newTheta.getResult());
+    } else {
       return failure();
     }
 
-    // Compute and set new theta
-    const auto newTheta = theta.getValueDouble() + prevTheta.getValueDouble();
-    rxOp.setThetaAttr(rewriter.getF64FloatAttr(static_cast<double>(newTheta)));
-
     // Trivialize previous RXOp
     rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+    llvm::errs() << "Trivialized previous RXOp\n";
 
     return success();
   }

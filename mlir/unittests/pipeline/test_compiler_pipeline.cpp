@@ -1158,6 +1158,76 @@ TEST_F(SimpleConversionTest, RXQuartzToQIR) {
   // EXPECT_TRUE(verify("Quartz to QIR", qirResult, qirExpected.get()));
 }
 
+TEST_F(SimpleConversionTest, RXSimplifyAttrValue) {
+  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto thetaAttr = b.builder.getF64FloatAttr(1.0);
+    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
+    auto reg = b.allocQubitRegister(1, "q");
+    auto q0 = reg[0];
+    auto q1 = b.rx(0.5, q0);
+    b.rx(thetaOperand, q1);
+  });
+  const auto fluxInitIR = captureIR(fluxInit.get());
+
+  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto thetaAttr = b.builder.getF64FloatAttr(1.5);
+    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
+    auto reg = b.allocQubitRegister(1, "q");
+    auto q0 = reg[0];
+    b.rx(thetaOperand, q0);
+  });
+
+  EXPECT_TRUE(verify("Flux Canonicalization", fluxInitIR, fluxOpt.get()));
+}
+
+TEST_F(SimpleConversionTest, RXSimplifyValueAttr) {
+  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto thetaAttr = b.builder.getF64FloatAttr(1.0);
+    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
+    auto reg = b.allocQubitRegister(1, "q");
+    auto q0 = reg[0];
+    auto q1 = b.rx(thetaOperand, q0);
+    b.rx(0.5, q1);
+  });
+  const auto fluxInitIR = captureIR(fluxInit.get());
+
+  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto thetaAttr = b.builder.getF64FloatAttr(1.5);
+    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
+    auto reg = b.allocQubitRegister(1, "q");
+    auto q0 = reg[0];
+    b.rx(thetaOperand, q0);
+  });
+
+  EXPECT_TRUE(verify("Flux Canonicalization", fluxInitIR, fluxOpt.get()));
+}
+
+TEST_F(SimpleConversionTest, RXSimplifyValueValue) {
+  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto thetaAttr10 = b.builder.getF64FloatAttr(1.0);
+    auto thetaOperand10 =
+        b.builder.create<arith::ConstantOp>(b.loc, thetaAttr10);
+    auto thetaAttr05 = b.builder.getF64FloatAttr(0.5);
+    auto thetaOperand05 =
+        b.builder.create<arith::ConstantOp>(b.loc, thetaAttr05);
+    auto reg = b.allocQubitRegister(1, "q");
+    auto q0 = reg[0];
+    auto q1 = b.rx(thetaOperand10, q0);
+    b.rx(thetaOperand05, q1);
+  });
+  const auto fluxInitIR = captureIR(fluxInit.get());
+
+  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto thetaAttr = b.builder.getF64FloatAttr(1.5);
+    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
+    auto reg = b.allocQubitRegister(1, "q");
+    auto q0 = reg[0];
+    b.rx(thetaOperand, q0);
+  });
+
+  EXPECT_TRUE(verify("Flux Canonicalization", fluxInitIR, fluxOpt.get()));
+}
+
 TEST_F(SimpleConversionTest, CX) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(2, "q");
