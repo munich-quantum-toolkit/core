@@ -438,7 +438,6 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
 
     // Trivialize previous RXOp
     rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-    llvm::errs() << "Trivialized previous RXOp\n";
 
     return success();
   }
@@ -458,7 +457,7 @@ struct ConstantFoldingRX final : OpRewritePattern<RXOp> {
       return failure();
     }
 
-    const auto& thetaAttr = dyn_cast<FloatAttr>(constantOp.getValue());
+    const auto& thetaAttr = llvm::dyn_cast<FloatAttr>(constantOp.getValue());
     if (!thetaAttr) {
       return failure();
     }
