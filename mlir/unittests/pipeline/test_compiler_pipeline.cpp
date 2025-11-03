@@ -1178,16 +1178,12 @@ TEST_F(SimpleConversionTest, CX) {
 
   EXPECT_TRUE(verify("Translation", quartzIRInit, quartzExpected.get()));
 
-  llvm::errs() << "Converting Quartz to Flux...\n";
-
   PassManager pm(module.get().getContext());
   pm.addPass(createQuartzToFlux());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createRemoveDeadValuesPass());
   ASSERT_TRUE(pm.run(module.get()).succeeded());
   const auto fluxIR = captureIR(module.get());
-
-  llvm::errs() << "Converted Quartz to Flux\n";
 
   const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
@@ -1201,16 +1197,12 @@ TEST_F(SimpleConversionTest, CX) {
 
   EXPECT_TRUE(verify("Quartz to Flux", fluxIR, fluxExpected.get()));
 
-  llvm::errs() << "Converting Flux to Quartz...\n";
-
   pm.clear();
   pm.addPass(createFluxToQuartz());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createRemoveDeadValuesPass());
   ASSERT_TRUE(pm.run(module.get()).succeeded());
   const auto quartzIRConv = captureIR(module.get());
-
-  llvm::errs() << "Converted Flux to Quartz\n";
 
   EXPECT_TRUE(verify("Flux to Quartz", quartzIRConv, quartzExpected.get()));
 }
