@@ -201,7 +201,8 @@ QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
     // deallocated
     llvm::errs() << "Error: Attempting to deallocate a qubit that was not "
                     "allocated or has already been deallocated\n";
-    llvm_unreachable("Double deallocation or invalid qubit deallocation");
+    llvm::report_fatal_error(
+        "Double deallocation or invalid qubit deallocation");
   }
 
   // Create the DeallocOp

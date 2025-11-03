@@ -57,7 +57,8 @@ public:
    */
   double getValueDouble() const {
     if (isDynamic()) {
-      llvm_unreachable("Cannot get double value from dynamic parameter");
+      llvm::report_fatal_error(
+          "Cannot get double value from dynamic parameter");
     }
     return valueAttr.getValueAsDouble();
   }

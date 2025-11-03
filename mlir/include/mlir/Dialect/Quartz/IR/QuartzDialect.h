@@ -63,11 +63,11 @@ public:
     size_t getNumNegControls() { return 0; }
 
     Value getPosControl(size_t i) {
-      llvm_unreachable("Operation does not have controls");
+      llvm::report_fatal_error("Operation does not have controls");
     }
 
     Value getNegControl(size_t i) {
-      llvm_unreachable("Operation does not have controls");
+      llvm::report_fatal_error("Operation does not have controls");
     }
   };
 };

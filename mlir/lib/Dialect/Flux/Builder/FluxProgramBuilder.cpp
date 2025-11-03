@@ -113,7 +113,7 @@ void FluxProgramBuilder::validateQubitValue(const Value qubit) const {
     llvm::errs() << "Error: Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
                  << "or was never created through this builder.\n";
-    llvm_unreachable(
+    llvm::report_fatal_error(
         "Invalid qubit value used (either consumed or not tracked)");
   }
 }

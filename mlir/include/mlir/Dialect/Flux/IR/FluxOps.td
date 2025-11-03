@@ -251,14 +251,14 @@ def OneTarget : TargetArityTrait<1> {
             if (i == 0) {
                 return getQubitIn();
             }
-            llvm_unreachable("Operation has one input qubit");
+            emitError("Operation has one input qubit");
         }
 
         Value getOutputQubit(size_t i) {
             if (i == 0) {
                 return getQubitOut();
             }
-            llvm_unreachable("Operation has one output qubit");
+            emitError("Operation has one output qubit");
         }
 
         Value getInputTarget(size_t i) {
@@ -273,14 +273,14 @@ def OneTarget : TargetArityTrait<1> {
             if (output == getQubitOut()) {
                 return getQubitIn();
             }
-            llvm_unreachable("Given qubit is not an output of the operation");
+            emitError("Given qubit is not an output of the operation");
         }
 
         Value getOutputForInput(Value input) {
             if (input == getQubitIn()) {
                 return getQubitOut();
             }
-            llvm_unreachable("Given qubit is not an input of the operation");
+            emitError("Given qubit is not an input of the operation");
         }
     }];
 }
@@ -303,7 +303,7 @@ def TwoTarget : TargetArityTrait<2> {
             if (i == 1) {
                 return getQubit1Out();
             }
-            llvm_unreachable("Operation has two output qubits");
+            emitError("Operation has two output qubits");
         }
 
         Value getInputTarget(size_t i) {
@@ -321,7 +321,7 @@ def TwoTarget : TargetArityTrait<2> {
             if (output == getQubit1Out()) {
                 return getQubit1In();
             }
-            llvm_unreachable("Given qubit is not an output of the operation");
+            emitError("Given qubit is not an output of the operation");
         }
 
         Value getOutputForInput(Value input) {
@@ -331,7 +331,7 @@ def TwoTarget : TargetArityTrait<2> {
             if (input == getQubit1In()) {
                 return getQubit1Out();
             }
-            llvm_unreachable("Given qubit is not an input of the operation");
+            emitError("Given qubit is not an input of the operation");
         }
     }];
 }
@@ -343,7 +343,7 @@ class ParameterArityTrait<int n> : ParamNativeOpTrait<"ParameterArityTrait", !ca
 def ZeroParameter : ParameterArityTrait<0> {
     let extraConcreteClassDeclaration = [{
         ::mlir::utils::ParameterDescriptor getParameter(size_t i) {
-            llvm_unreachable("Operation does not have parameters");
+            emitError("Operation does not have parameters");
         }
 
         bool hasStaticUnitary() { return true; }
@@ -547,7 +547,7 @@ def CtrlOp : FluxOp<"ctrl", traits = [UnitaryOpInterface, AttrSizedOperandSegmen
         size_t getNumParams();
         ::mlir::utils::ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
-        static DenseElementsAttr tryGetStaticMatrix();
+        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 

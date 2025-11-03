@@ -239,7 +239,7 @@ def OneTarget : TargetArityTrait<1> {
             if (i == 0) {
                 return getQubit();
             }
-            llvm_unreachable("Operation has one input qubit");
+            emitError("Operation has one input qubit");
         }
 
         Value getTarget(size_t i) {
@@ -257,7 +257,7 @@ def TwoTarget : TargetArityTrait<2> {
             if (i == 1) {
                 return getQubit1();
             }
-            llvm_unreachable("Operation has two input qubits");
+            emitError("Operation has two input qubits");
         }
 
         Value getTarget(size_t i) {
@@ -273,7 +273,7 @@ class ParameterArityTrait<int n> : ParamNativeOpTrait<"ParameterArityTrait", !ca
 def ZeroParameter : ParameterArityTrait<0> {
     let extraConcreteClassDeclaration = [{
         ::mlir::utils::ParameterDescriptor getParameter(size_t i) {
-            llvm_unreachable("Operation does not have parameters");
+            emitError("Operation does not have parameters");
         }
 
         bool hasStaticUnitary() { return true; }
@@ -462,7 +462,7 @@ def CtrlOp : QuartzOp<"ctrl", traits = [UnitaryOpInterface]> {
         size_t getNumParams();
         ::mlir::utils::ParameterDescriptor getParameter(size_t i);
         bool hasStaticUnitary();
-        static DenseElementsAttr tryGetStaticMatrix();
+        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 }
