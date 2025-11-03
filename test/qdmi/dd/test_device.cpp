@@ -821,6 +821,52 @@ TEST_F(DDSIMQDMIJobSpecificationTest, GetProbsSparseValuesBufferTooSmall) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
+TEST_F(DDSIMQDMIJobSpecificationTest, SubmitIncorrectProgramSampling) {
+  constexpr auto program = "Definitely not OpenQASM";
+  ASSERT_EQ(
+      MQT_DDSIM_QDMI_device_job_set_parameter(
+          job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM, strlen(program) + 1, program),
+      QDMI_SUCCESS)
+      << "Failed to set program.";
+  constexpr size_t shots = 1024U;
+  ASSERT_EQ(
+      MQT_DDSIM_QDMI_device_job_set_parameter(
+          job, QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM, sizeof(size_t), &shots),
+      QDMI_SUCCESS)
+      << "Failed to set shots.";
+  auto status = MQT_DDSIM_QDMI_device_job_submit(job);
+  ASSERT_EQ(status, QDMI_SUCCESS);
+  status = MQT_DDSIM_QDMI_device_job_wait(job, 0);
+  ASSERT_EQ(status, QDMI_SUCCESS);
+
+  auto jobStatus = QDMI_JOB_STATUS_DONE;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(job, &jobStatus), QDMI_SUCCESS);
+  ASSERT_EQ(jobStatus, QDMI_JOB_STATUS_FAILED);
+}
+
+TEST_F(DDSIMQDMIJobSpecificationTest, SubmitIncorrectProgramStatevec) {
+  constexpr auto program = "Definitely not OpenQASM";
+  ASSERT_EQ(
+      MQT_DDSIM_QDMI_device_job_set_parameter(
+          job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM, strlen(program) + 1, program),
+      QDMI_SUCCESS)
+      << "Failed to set program.";
+  constexpr size_t shots = 0U;
+  ASSERT_EQ(
+      MQT_DDSIM_QDMI_device_job_set_parameter(
+          job, QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM, sizeof(size_t), &shots),
+      QDMI_SUCCESS)
+      << "Failed to set shots.";
+  auto status = MQT_DDSIM_QDMI_device_job_submit(job);
+  ASSERT_EQ(status, QDMI_SUCCESS);
+  status = MQT_DDSIM_QDMI_device_job_wait(job, 0);
+  ASSERT_EQ(status, QDMI_SUCCESS);
+
+  auto jobStatus = QDMI_JOB_STATUS_DONE;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(job, &jobStatus), QDMI_SUCCESS);
+  ASSERT_EQ(jobStatus, QDMI_JOB_STATUS_FAILED);
+}
+
 TEST_F(DDSIMQDMISpecificationTest, QueryDeviceProperty) {
   MQT_DDSIM_QDMI_Device_Session uninitializedSession = nullptr;
   ASSERT_EQ(MQT_DDSIM_QDMI_device_session_alloc(&uninitializedSession),
