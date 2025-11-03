@@ -368,6 +368,63 @@ struct ConvertFluxSWAPOp final : OpConversionPattern<flux::SWAPOp> {
   }
 };
 
+struct ConvertFluxCtrlOp final : OpConversionPattern<flux::CtrlOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(flux::CtrlOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Get Quartz controls
+    const auto& quartzControls = adaptor.getControlsIn();
+
+    // Get Quartz targets
+    const auto& quartzTargets = adaptor.getTargetsIn();
+
+    // Create quartz.ctrl operation
+    auto fluxOp = rewriter.create<quartz::CtrlOp>(op.getLoc(), quartzControls);
+
+    // Clone the body region from Flux to Quartz
+    rewriter.cloneRegionBefore(op.getBody(), fluxOp.getBody(),
+                               fluxOp.getBody().end());
+
+    SmallVector<Value> quartzQubits;
+    quartzQubits.reserve(quartzControls.size() + quartzTargets.size());
+    quartzQubits.append(quartzControls.begin(), quartzControls.end());
+    quartzQubits.append(quartzTargets.begin(), quartzTargets.end());
+
+    // Replace the output qubits with the same quartz references
+    rewriter.replaceOp(op, quartzQubits);
+
+    return success();
+  }
+};
+
+struct ConvertFluxYieldOp final : OpConversionPattern<flux::YieldOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(flux::YieldOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto ctrlOp = dyn_cast<quartz::CtrlOp>(op->getParentOp());
+    auto unitaryOp = ctrlOp.getBodyUnitary();
+
+    SmallVector<Value> targets;
+    targets.reserve(unitaryOp.getNumTargets());
+    for (size_t i = 0; i < unitaryOp.getNumTargets(); ++i) {
+      const auto& yield = rewriter.getRemappedValue(unitaryOp.getTarget(i));
+      targets.push_back(yield);
+    }
+
+    // Create quartz.yield
+    rewriter.create<quartz::YieldOp>(op.getLoc());
+
+    // Replace the output qubit with the same quartz references
+    rewriter.replaceOp(op, targets);
+
+    return success();
+  }
+};
+
 /**
  * @brief Pass implementation for Flux-to-Quartz conversion
  *
@@ -421,6 +478,8 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
     patterns.add<ConvertFluxRXOp>(typeConverter, context);
     patterns.add<ConvertFluxU2Op>(typeConverter, context);
     patterns.add<ConvertFluxSWAPOp>(typeConverter, context);
+    patterns.add<ConvertFluxCtrlOp>(typeConverter, context);
+    patterns.add<ConvertFluxYieldOp>(typeConverter, context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes

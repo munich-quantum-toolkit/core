@@ -10,6 +10,7 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
+#include "mlir/Conversion/FluxToQuartz/FluxToQuartz.h"
 #include "mlir/Conversion/QuartzToFlux/QuartzToFlux.h"
 #include "mlir/Conversion/QuartzToQIR/QuartzToQIR.h"
 #include "mlir/Dialect/Flux/Builder/FluxProgramBuilder.h"
@@ -1162,10 +1163,10 @@ TEST_F(SimpleConversionTest, CX) {
   qc.addQubitRegister(2, "q");
   qc.cx(0, 1);
 
-  const auto quartz = translateQuantumComputationToQuartz(context.get(), qc);
-  ASSERT_TRUE(quartz);
-  runCanonicalizationPasses(quartz.get());
-  const auto quartzIR = captureIR(quartz.get());
+  const auto module = translateQuantumComputationToQuartz(context.get(), qc);
+  ASSERT_TRUE(module);
+  runCanonicalizationPasses(module.get());
+  const auto quartzIRInit = captureIR(module.get());
 
   const auto quartzExpected =
       buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
@@ -1175,14 +1176,14 @@ TEST_F(SimpleConversionTest, CX) {
         b.ctrl(q0, [&](auto& b) { b.x(q1); });
       });
 
-  EXPECT_TRUE(verify("Translation", quartzIR, quartzExpected.get()));
+  EXPECT_TRUE(verify("Translation", quartzIRInit, quartzExpected.get()));
 
-  PassManager pm(quartz.get().getContext());
+  PassManager pm(module.get().getContext());
   pm.addPass(createQuartzToFlux());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createRemoveDeadValuesPass());
-  ASSERT_TRUE(pm.run(quartz.get()).succeeded());
-  const auto fluxIR = captureIR(quartz.get());
+  ASSERT_TRUE(pm.run(module.get()).succeeded());
+  const auto fluxIR = captureIR(module.get());
 
   const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
@@ -1195,6 +1196,15 @@ TEST_F(SimpleConversionTest, CX) {
   });
 
   EXPECT_TRUE(verify("Quartz to Flux", fluxIR, fluxExpected.get()));
+
+  pm.clear();
+  pm.addPass(createFluxToQuartz());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createRemoveDeadValuesPass());
+  ASSERT_TRUE(pm.run(module.get()).succeeded());
+  const auto quartzIRConv = captureIR(module.get());
+
+  EXPECT_TRUE(verify("Flux to Quartz", quartzIRConv, quartzExpected.get()));
 }
 
 } // namespace
