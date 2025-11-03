@@ -395,8 +395,7 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
       getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
     }
 
-    // Replace the Quartz operation with the Flux operation
-    rewriter.replaceOp(op, fluxOp.getResult());
+    rewriter.eraseOp(op);
 
     return success();
   }
@@ -434,8 +433,7 @@ struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
     // Update state map: the Quartz qubit now corresponds to the output qubit
     getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
 
-    // Replace the Quartz operation with the Flux operation
-    rewriter.replaceOp(op, fluxOp.getResult());
+    rewriter.eraseOp(op);
 
     return success();
   }
@@ -477,8 +475,7 @@ struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
     // Update state map: the Quartz qubit now corresponds to the output qubit
     getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
 
-    // Replace the Quartz operation with the Flux operation
-    rewriter.replaceOp(op, fluxOp.getResult());
+    rewriter.eraseOp(op);
 
     return success();
   }
@@ -518,8 +515,7 @@ struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
     getState().qubitMap[quartzQubit0] = fluxOp.getQubit0Out();
     getState().qubitMap[quartzQubit1] = fluxOp.getQubit1Out();
 
-    // Replace the Quartz operation with the Flux operation
-    rewriter.replaceOp(op, fluxOp.getOperands());
+    rewriter.eraseOp(op);
 
     return success();
   }
@@ -569,8 +565,7 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
       getState().qubitMap[quartzTarget] = fluxOp.getTargetsOut()[i];
     }
 
-    // Replace the Quartz operation with the Flux operation
-    rewriter.replaceOp(op, fluxOp.getOperands());
+    rewriter.eraseOp(op);
 
     return success();
   }
