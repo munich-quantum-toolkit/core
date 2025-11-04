@@ -255,7 +255,10 @@ struct GateDecompositionPattern final
   static void applySeries(mlir::PatternRewriter& rewriter,
                           TwoQubitSeries& series,
                           const TwoQubitGateSequence& sequence) {
-    auto location = series.gates.back().op->getLoc();
+    auto& lastSeriesOp = series.gates.back().op;
+    auto location = lastSeriesOp->getLoc();
+    rewriter.setInsertionPointAfter(lastSeriesOp);
+
     if (sequence.globalPhase != 0.0) {
       createOneParameterGate<GPhaseOp>(rewriter, location, sequence.globalPhase,
                                        {});
