@@ -200,38 +200,39 @@ def test_backend_circuit_with_no_measurements(mock_backend: QiskitBackend) -> No
     assert result.success
 
 
-def test_backend_circuit_name_preserved(mock_backend: QiskitBackend) -> None:
-    """Backend should preserve circuit name in metadata."""
+def test_backend_named_circuit_results_queryable_by_name(mock_backend: QiskitBackend) -> None:
+    """Backend should preserve circuit name and allow querying results by name."""
     qc = QuantumCircuit(2, 2, name="my_circuit")
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
     job = mock_backend.run(qc, shots=100)
     result = job.result()
+
+    # Circuit name should be preserved in metadata
     assert result.results[0].header["name"] == "my_circuit"
 
+    # Should be able to query results by circuit name
+    counts = result.get_counts("my_circuit")
+    assert sum(counts.values()) == 100
 
-def test_backend_unnamed_circuit(mock_backend: QiskitBackend) -> None:
-    """Backend should handle circuits without names."""
+
+def test_backend_unnamed_circuit_results_queryable_by_generated_name(mock_backend: QiskitBackend) -> None:
+    """Backend should generate a name for unnamed circuits and allow querying results by it."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
 
     job = mock_backend.run(qc, shots=100)
     result = job.result()
-    # Should have a default name
+
+    # Should have a generated name
     assert "name" in result.results[0].header
+    circuit_name = result.results[0].header["name"]
 
-
-def test_backend_result_metadata_includes_circuit_name(mock_backend: QiskitBackend) -> None:
-    """Backend result should include circuit name in header."""
-    qc = QuantumCircuit(2, 2, name="my_test_circuit")
-    qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
-
-    job = mock_backend.run(qc, shots=100)
-    result = job.result()
-    assert result.results[0].header["name"] == "my_test_circuit"
+    # Should be able to query results by the generated name
+    counts = result.get_counts(circuit_name)
+    assert sum(counts.values()) == 100
 
 
 def test_job_status(mock_backend: QiskitBackend) -> None:
