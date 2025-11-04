@@ -1269,4 +1269,34 @@ TEST_F(SimpleConversionTest, CX) {
   EXPECT_TRUE(verify("Flux to Quartz", quartzIRConv, quartzExpected.get()));
 }
 
+TEST_F(SimpleConversionTest, CXMerge) {
+  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(3, "q");
+    auto q0a = reg[0];
+    auto q1a = reg[1];
+    auto q2a = reg[2];
+    b.ctrl({q0a}, {q1a, q2a}, [&](auto& b) {
+      auto q12b = b.ctrl({q1a}, {q2a}, [&](auto& b) {
+        auto q2b = b.x(q2a);
+        return SmallVector<Value>{q2b};
+      });
+      return SmallVector<Value>{q12b.first[0], q12b.second[0]};
+    });
+  });
+  const auto fluxInitIR = captureIR(fluxInit.get());
+
+  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(3, "q");
+    auto q0a = reg[0];
+    auto q1a = reg[1];
+    auto q2a = reg[2];
+    b.ctrl({q0a, q1a}, {q2a}, [&](auto& b) {
+      auto q2b = b.x(q2a);
+      return SmallVector<Value>{q2b};
+    });
+  });
+
+  EXPECT_TRUE(verify("Flux Canonicalization", fluxInitIR, fluxOpt.get()));
+}
+
 } // namespace

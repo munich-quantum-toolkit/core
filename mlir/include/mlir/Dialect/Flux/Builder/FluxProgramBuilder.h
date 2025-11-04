@@ -380,7 +380,7 @@ public:
   Location loc;
 
 private:
-  bool inRegion = false;
+  int inRegion = 0;
 
   //===--------------------------------------------------------------------===//
   // Linear Type Tracking Helpers

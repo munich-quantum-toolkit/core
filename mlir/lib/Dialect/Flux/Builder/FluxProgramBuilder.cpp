@@ -178,7 +178,7 @@ Value FluxProgramBuilder::x(Value qubit) {
   const auto& qubitOut = xOp.getQubitOut();
 
   // Update tracking
-  if (!inRegion) {
+  if (inRegion == 0) {
     updateQubitTracking(qubit, qubitOut);
   }
 
@@ -232,21 +232,23 @@ std::pair<SmallVector<Value>, SmallVector<Value>> FluxProgramBuilder::ctrl(
   const mlir::OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPointToStart(&ctrlOp.getBody().emplaceBlock());
 
-  inRegion = true;
+  inRegion++;
   auto targetsYield = body(*this);
-  inRegion = false;
+  inRegion--;
 
   builder.create<YieldOp>(loc, targetsYield);
 
-  // Update tracking
   const auto& controlsOut = ctrlOp.getControlsOut();
-  for (const auto& [control, controlOut] : llvm::zip(controls, controlsOut)) {
-    updateQubitTracking(control, controlOut);
-  }
-
   const auto& targetsOut = ctrlOp.getTargetsOut();
-  for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
-    updateQubitTracking(target, targetOut);
+
+  // Update tracking
+  if (inRegion == 0) {
+    for (const auto& [control, controlOut] : llvm::zip(controls, controlsOut)) {
+      updateQubitTracking(control, controlOut);
+    }
+    for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
+      updateQubitTracking(target, targetOut);
+    }
   }
 
   return {controlsOut, targetsOut};

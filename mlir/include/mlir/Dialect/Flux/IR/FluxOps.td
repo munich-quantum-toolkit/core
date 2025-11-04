@@ -433,9 +433,13 @@ def CtrlOp : FluxOp<"ctrl", traits = [UnitaryOpInterface, AttrSizedOperandSegmen
     let builders = [
         OpBuilder<(ins "ValueRange":$controls_in, "ValueRange":$targets_in), [{
             auto qubit_type = QubitType::get($_builder.getContext());
-            build($_builder, $_state, qubit_type, qubit_type, controls_in, targets_in);
+            SmallVector<Type> control_types(controls_in.size(), qubit_type);
+            SmallVector<Type> target_types(targets_in.size(), qubit_type);
+            build($_builder, $_state, TypeRange(control_types), TypeRange(target_types), controls_in, targets_in);
         }]>,
     ];
+
+    let hasCanonicalizer = 1;
 }
 
 #endif // FluxOPS

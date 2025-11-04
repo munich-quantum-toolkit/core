@@ -556,6 +556,46 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
   }
 };
 
+struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp ctrlOp,
+                                PatternRewriter& rewriter) const override {
+    auto bodyUnitary = ctrlOp.getBodyUnitary();
+    auto bodyCtrlOp = llvm::dyn_cast<CtrlOp>(bodyUnitary.getOperation());
+
+    // Check if the body unitary is a CtrlOp
+    if (!bodyCtrlOp) {
+      return failure();
+    }
+
+    // Merge controls
+    SmallVector<Value> newControls;
+    newControls.append(ctrlOp.getControlsIn().begin(),
+                       ctrlOp.getControlsIn().end());
+    for (auto control : bodyCtrlOp.getControlsIn()) {
+      if (llvm::is_contained(newControls, control)) {
+        continue;
+      }
+      newControls.push_back(control);
+    }
+
+    // Create new CtrlOp
+    auto newCtrlOp = rewriter.create<CtrlOp>(ctrlOp.getLoc(), newControls,
+                                             bodyCtrlOp.getTargetsIn());
+
+    // Clone block
+    rewriter.cloneRegionBefore(bodyCtrlOp.getBody(), newCtrlOp.getBody(),
+                               newCtrlOp.getBody().end());
+
+    // Replace CtrlOps
+    rewriter.eraseOp(bodyCtrlOp);
+    rewriter.replaceOp(ctrlOp, newCtrlOp.getResults());
+
+    return success();
+  }
+};
+
 } // namespace
 
 void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
@@ -576,4 +616,9 @@ void XOp::getCanonicalizationPatterns(RewritePatternSet& results,
 void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<MergeSubsequentRX>(context);
+}
+
+void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                         MLIRContext* context) {
+  results.add<MergeNestedCtrl>(context);
 }
