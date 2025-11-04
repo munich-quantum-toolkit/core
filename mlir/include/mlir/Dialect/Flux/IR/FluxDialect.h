@@ -10,10 +10,10 @@
 
 #pragma once
 
-#include "mlir/Dialect/Utils/ParameterArityTrait.h"
 #include "mlir/Dialect/Utils/ParameterDescriptor.h"
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
@@ -56,7 +56,7 @@ namespace mlir::flux {
 template <size_t n> class TargetArityTrait {
 public:
   template <typename ConcreteType>
-  class Impl : public mlir::OpTrait::TraitBase<ConcreteType, Impl> {
+  class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
   public:
     size_t getNumQubits() { return n; }
     size_t getNumTargets() { return n; }
@@ -134,6 +134,22 @@ public:
       default:
         llvm::report_fatal_error("Unsupported number of qubits");
       }
+    }
+  };
+};
+
+LogicalResult foldParameterArityTrait(Operation* op);
+
+template <size_t n> class ParameterArityTrait {
+public:
+  template <typename ConcreteType>
+  class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
+  public:
+    size_t getNumParams() { return n; }
+
+    static LogicalResult foldTrait(Operation* op, ArrayRef<Attribute> operands,
+                                   SmallVectorImpl<OpFoldResult>& results) {
+      return foldParameterArityTrait(op);
     }
   };
 };

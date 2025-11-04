@@ -100,6 +100,10 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Returns the i-th parameter.",
             "::mlir::utils::ParameterDescriptor", "getParameter", (ins "size_t":$i)
         >,
+        InterfaceMethod<
+            "For the i-th parameter, replace the operand with an attribute.",
+            "void", "replaceOperandWithAttr", (ins "size_t":$i, "FloatAttr":$attr)
+        >,
         /// TODO: Add convenience methods as necessary
 
         // Convenience methods

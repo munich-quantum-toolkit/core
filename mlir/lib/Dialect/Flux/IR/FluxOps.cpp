@@ -69,6 +69,46 @@ void FluxDialect::initialize() {
 #include "mlir/Dialect/Flux/IR/FluxInterfaces.cpp.inc"
 
 //===----------------------------------------------------------------------===//
+// Traits
+//===----------------------------------------------------------------------===//
+
+namespace mlir::flux {
+
+LogicalResult foldParameterArityTrait(Operation* op) {
+  auto concreteOp = llvm::dyn_cast<UnitaryOpInterface>(op);
+  if (!concreteOp) {
+    return failure();
+  }
+
+  LogicalResult succeeded = failure();
+  for (size_t i = 0; i < concreteOp.getNumParams(); ++i) {
+    const auto& parameter = concreteOp.getParameter(i);
+
+    if (parameter.isStatic()) {
+      continue;
+    }
+
+    auto constantOp =
+        parameter.getValueOperand().getDefiningOp<arith::ConstantOp>();
+    if (!constantOp) {
+      continue;
+    }
+
+    const auto& thetaAttr = llvm::dyn_cast<FloatAttr>(constantOp.getValue());
+    if (!thetaAttr) {
+      continue;
+    }
+
+    concreteOp.replaceOperandWithAttr(i, thetaAttr);
+    succeeded = success();
+  }
+
+  return succeeded;
+}
+
+} // namespace mlir::flux
+
+//===----------------------------------------------------------------------===//
 // Operations
 //===----------------------------------------------------------------------===//
 
@@ -143,6 +183,15 @@ ParameterDescriptor RXOp::getParameter(size_t i) {
   llvm::report_fatal_error("RXOp has one parameter");
 }
 
+void RXOp::replaceOperandWithAttr(size_t i, FloatAttr attr) {
+  if (i == 0) {
+    getOperation()->setAttr("theta", attr);
+    getOperation()->eraseOperand(1);
+    return;
+  }
+  llvm::report_fatal_error("RXOp has one parameter");
+}
+
 bool RXOp::hasStaticUnitary() { return getParameter(0).isStatic(); }
 
 DenseElementsAttr RXOp::tryGetStaticMatrix() {
@@ -171,29 +220,6 @@ void RXOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
         thetaAttr, thetaOperand);
 }
 
-OpFoldResult RXOp::fold(FoldAdaptor adaptor) {
-  const auto& theta = getParameter(0);
-
-  if (theta.isStatic()) {
-    return nullptr;
-  }
-
-  auto constantOp = theta.getValueOperand().getDefiningOp<arith::ConstantOp>();
-  if (!constantOp) {
-    return nullptr;
-  }
-
-  const auto& thetaAttr = llvm::dyn_cast<FloatAttr>(constantOp.getValue());
-  if (!thetaAttr) {
-    return nullptr;
-  }
-
-  getOperation()->setAttr("theta", thetaAttr);
-  getOperation()->eraseOperand(1);
-
-  return nullptr;
-}
-
 LogicalResult RXOp::verify() {
   if (getTheta().has_value() == (getThetaDyn() != nullptr)) {
     return emitOpError("must specify exactly one of static or dynamic theta");
@@ -211,6 +237,20 @@ ParameterDescriptor U2Op::getParameter(size_t i) {
     return {getLambdaAttr(), getLambdaDyn()};
   }
   llvm::report_fatal_error("U2Op has two parameters");
+}
+
+void U2Op::replaceOperandWithAttr(size_t i, FloatAttr attr) {
+  if (i == 0) {
+    getOperation()->setAttr("phi", attr);
+    getOperation()->eraseOperand(1);
+    return;
+  }
+  if (i == 1) {
+    getOperation()->setAttr("lambda", attr);
+    getOperation()->eraseOperand(3);
+    return;
+  }
+  llvm::report_fatal_error("U2Op has two parameter");
 }
 
 bool U2Op::hasStaticUnitary() {
@@ -375,14 +415,19 @@ size_t CtrlOp::getNumParams() {
   return unitaryOp.getNumParams();
 }
 
-bool CtrlOp::hasStaticUnitary() {
-  auto unitaryOp = getBodyUnitary();
-  return unitaryOp.hasStaticUnitary();
-}
-
 ParameterDescriptor CtrlOp::getParameter(size_t i) {
   auto unitaryOp = getBodyUnitary();
   return unitaryOp.getParameter(i);
+}
+
+void CtrlOp::replaceOperandWithAttr(size_t i, FloatAttr attr) {
+  auto unitaryOp = getBodyUnitary();
+  unitaryOp.replaceOperandWithAttr(i, attr);
+}
+
+bool CtrlOp::hasStaticUnitary() {
+  auto unitaryOp = getBodyUnitary();
+  return unitaryOp.hasStaticUnitary();
 }
 
 DenseElementsAttr CtrlOp::tryGetStaticMatrix() {

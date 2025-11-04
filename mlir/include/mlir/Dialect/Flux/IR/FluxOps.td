@@ -250,7 +250,7 @@ def OneTarget : TargetArityTrait<1>;
 def TwoTarget : TargetArityTrait<2>;
 
 class ParameterArityTrait<int n> : ParamNativeOpTrait<"ParameterArityTrait", !cast<string>(n)> {
-    let cppNamespace = "::mlir::utils";
+    let cppNamespace = "::mlir::flux";
 }
 
 def ZeroParameter : ParameterArityTrait<0> {
@@ -260,6 +260,10 @@ def ZeroParameter : ParameterArityTrait<0> {
         }
 
         bool hasStaticUnitary() { return true; }
+
+        void replaceOperandWithAttr(size_t i, FloatAttr attr) {
+            llvm::report_fatal_error("Operation does not have parameters");
+        }
     }];
 }
 
@@ -316,6 +320,7 @@ def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> 
 
     let extraClassDeclaration = [{
         ::mlir::utils::ParameterDescriptor getParameter(size_t i);
+        void replaceOperandWithAttr(size_t i, FloatAttr attr);
         bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rx"; }
@@ -326,7 +331,6 @@ def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> 
     ];
 
     let hasCanonicalizer = 1;
-    let hasFolder = 1;
     let hasVerifier = 1;
 }
 
@@ -352,6 +356,7 @@ def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter, A
 
     let extraClassDeclaration = [{
         ::mlir::utils::ParameterDescriptor getParameter(size_t i);
+        void replaceOperandWithAttr(size_t i, FloatAttr attr);
         bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "u2"; }
@@ -419,6 +424,7 @@ def CtrlOp : FluxOp<"ctrl", traits = [UnitaryOpInterface, AttrSizedOperandSegmen
         Value getOutputForInput(Value input);
         size_t getNumParams();
         ::mlir::utils::ParameterDescriptor getParameter(size_t i);
+        void replaceOperandWithAttr(size_t i, FloatAttr attr);
         bool hasStaticUnitary();
         static DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ctrl"; }
