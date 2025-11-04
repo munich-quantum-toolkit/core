@@ -60,7 +60,7 @@ struct GateDecompositionPattern final
           getTwoQubitMatrix({.type = helpers::getQcType(gate.op),
                              .parameter = helpers::getParameters(gate.op),
                              .qubit_id = gate.qubitIds});
-      unitaryMatrix = helpers::multiply(unitaryMatrix, gateMatrix);
+      unitaryMatrix = helpers::multiply(gateMatrix, unitaryMatrix);
     }
 
     auto decomposer = TwoQubitBasisDecomposer::new_inner();
