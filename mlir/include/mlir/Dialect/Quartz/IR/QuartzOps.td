@@ -379,10 +379,28 @@ def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParam
 //===----------------------------------------------------------------------===//
 
 def YieldOp : QuartzOp<"yield", traits = [Terminator]> {
+    let summary = "Yield from a modifier region";
+    let description = [{
+        Terminates a modifier region, yielding control back to the enclosing operation.
+    }];
+
     let assemblyFormat = "attr-dict";
 }
 
 def CtrlOp : QuartzOp<"ctrl", traits = [UnitaryOpInterface]> {
+    let summary = "Apply a controlled operation";
+    let description = [{
+        Modifier to make an operation controlled by one or more control qubits.
+
+        Example:
+        ```mlir
+        quartz.ctrl(%q0) {
+          quartz.x %q1
+          quartz.yield
+        }
+        ```
+    }];
+
     let arguments = (ins Variadic<QubitType>:$controls);
     let regions = (region SizedRegion<1>:$body);
     let assemblyFormat = "`(` $controls `)` $body attr-dict";

@@ -395,11 +395,30 @@ def SWAPOp : FluxOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParamet
 //===----------------------------------------------------------------------===//
 
 def YieldOp : FluxOp<"yield", traits = [Terminator]> {
+    let summary = "Yield from a modifier region";
+    let description = [{
+        Terminates a modifier region, yielding control back to the enclosing operation.
+    }];
+
     let arguments = (ins Variadic<QubitType>:$targets);
     let assemblyFormat = "$targets attr-dict";
 }
 
 def CtrlOp : FluxOp<"ctrl", traits = [UnitaryOpInterface, AttrSizedOperandSegments, AttrSizedResultSegments]> {
+    let summary = "Apply a controlled operation";
+    let description = [{
+        Modifier to make an operation controlled by one or more control qubits.
+        The transformed qubits are returned.
+
+        Example:
+        ```mlir
+        %controls_out, %targets_out = flux.ctrl({%q0_in}, {%q1_in}) {
+          %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
+          flux.yield %q1_res
+        } : {!flux.qubit}, {!flux.qubit} -> {!flux.qubit}, {!flux.qubit}
+        ```
+    }];
+
     let arguments = (ins Variadic<QubitType>:$controls_in, Variadic<QubitType>:$targets_in);
     let results = (outs Variadic<QubitType>:$controls_out, Variadic<QubitType>:$targets_out);
     let regions = (region SizedRegion<1>:$body);
