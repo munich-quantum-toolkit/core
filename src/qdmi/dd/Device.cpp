@@ -248,7 +248,7 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_LIBRARYVERSION, QDMI_VERSION, prop,
                       size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_STATUS, QDMI_Device_Status,
-                            status_, prop, size, value, sizeRet)
+                            status_.load(), prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum_,
                             prop, size, value, sizeRet)
   // This device never needs calibration
@@ -276,17 +276,15 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
 
 auto Device::generateUniqueID() -> int { return dis_(rng_); }
 auto Device::setStatus(const QDMI_Device_Status status) -> void {
-  status_ = status;
+  status_.store(status);
 }
 auto Device::increaseRunningJobs() -> void {
-  const std::scoped_lock<std::mutex> lock(mutex_);
-  ++runningJobs_;
-  setStatus(QDMI_DEVICE_STATUS_BUSY);
+  if (const auto prev = runningJobs_.fetch_add(1); prev == 0) {
+    setStatus(QDMI_DEVICE_STATUS_BUSY);
+  }
 }
 auto Device::decreaseRunningJobs() -> void {
-  const std::scoped_lock<std::mutex> lock(mutex_);
-  --runningJobs_;
-  if (runningJobs_ == 0) {
+  if (const auto prev = runningJobs_.fetch_sub(1); prev == 1) {
     setStatus(QDMI_DEVICE_STATUS_IDLE);
   }
 }
@@ -414,7 +412,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
        param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM5)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (status_ != QDMI_JOB_STATUS_CREATED) {
+  if (status_.load() != QDMI_JOB_STATUS_CREATED) {
     return QDMI_ERROR_BADSTATE;
   }
   switch (param) {
@@ -473,20 +471,20 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
   return QDMI_ERROR_NOTSUPPORTED;
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
-  if (status_ != QDMI_JOB_STATUS_CREATED) {
+  if (status_.load() != QDMI_JOB_STATUS_CREATED) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  status_ = QDMI_JOB_STATUS_SUBMITTED;
+  status_.store(QDMI_JOB_STATUS_SUBMITTED);
   if (numShots_ > 0) {
     jobHandle_ = std::async(std::launch::async, [this]() {
       qdmi::dd::Device::get().increaseRunningJobs();
-      status_ = QDMI_JOB_STATUS_RUNNING;
+      status_.store(QDMI_JOB_STATUS_RUNNING);
       try {
         const auto qc = qasm3::Importer::imports(program_);
         counts_ = dd::sample(qc, numShots_);
-        status_ = QDMI_JOB_STATUS_DONE;
+        status_.store(QDMI_JOB_STATUS_DONE);
       } catch (const std::exception& e) {
-        status_ = QDMI_JOB_STATUS_FAILED;
+        status_.store(QDMI_JOB_STATUS_FAILED);
         std::cerr << "Error: " << e.what() << '\n';
       }
       qdmi::dd::Device::get().decreaseRunningJobs();
@@ -495,15 +493,15 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
     jobHandle_ = std::async(std::launch::async, [this]() {
       try {
         qdmi::dd::Device::get().increaseRunningJobs();
-        status_ = QDMI_JOB_STATUS_RUNNING;
+        status_.store(QDMI_JOB_STATUS_RUNNING);
         auto qc = qasm3::Importer::imports(program_);
         qc::CircuitOptimizer::removeFinalMeasurements(qc);
         const auto nqubits = qc.getNqubits();
         dd_ = std::make_unique<dd::Package>(nqubits);
         stateVecDD_ = dd::simulate(qc, dd::makeZeroState(nqubits, *dd_), *dd_);
-        status_ = QDMI_JOB_STATUS_DONE;
+        status_.store(QDMI_JOB_STATUS_DONE);
       } catch (const std::exception& e) {
-        status_ = QDMI_JOB_STATUS_FAILED;
+        status_.store(QDMI_JOB_STATUS_FAILED);
         std::cerr << "Error: " << e.what() << '\n';
       }
       qdmi::dd::Device::get().decreaseRunningJobs();
@@ -512,12 +510,13 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   return QDMI_SUCCESS;
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::cancel() -> QDMI_STATUS {
-  if (status_ == QDMI_JOB_STATUS_DONE || status_ == QDMI_JOB_STATUS_FAILED) {
+  const auto s = status_.load();
+  if (s == QDMI_JOB_STATUS_DONE || s == QDMI_JOB_STATUS_FAILED) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
 
-  if (status_ == QDMI_JOB_STATUS_CREATED) {
-    status_ = QDMI_JOB_STATUS_CANCELED;
+  if (s == QDMI_JOB_STATUS_CREATED) {
+    status_.store(QDMI_JOB_STATUS_CANCELED);
     return QDMI_SUCCESS;
   }
 
@@ -526,7 +525,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::cancel() -> QDMI_STATUS {
     // We can only wait for its completion here.
     jobHandle_.wait();
   }
-  status_ = QDMI_JOB_STATUS_CANCELED;
+  status_.store(QDMI_JOB_STATUS_CANCELED);
   return QDMI_SUCCESS;
 }
 // NOLINTNEXTLINE(readability-non-const-parameter)
@@ -535,24 +534,25 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::check(QDMI_Job_Status* status) const
   if (status == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  *status = status_;
+  *status = status_.load();
   return QDMI_SUCCESS;
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::wait(const size_t timeout) const
     -> QDMI_STATUS {
-  if (status_ == QDMI_JOB_STATUS_DONE || status_ == QDMI_JOB_STATUS_CANCELED ||
-      status_ == QDMI_JOB_STATUS_FAILED) {
+  const auto s = status_.load();
+  if (s == QDMI_JOB_STATUS_DONE || s == QDMI_JOB_STATUS_CANCELED ||
+      s == QDMI_JOB_STATUS_FAILED) {
     return QDMI_SUCCESS;
   }
-  if (!jobHandle_.valid() || (status_ != QDMI_JOB_STATUS_SUBMITTED &&
-                              status_ != QDMI_JOB_STATUS_QUEUED &&
-                              status_ != QDMI_JOB_STATUS_RUNNING)) {
+  if (!jobHandle_.valid() ||
+      (s != QDMI_JOB_STATUS_SUBMITTED && s != QDMI_JOB_STATUS_QUEUED &&
+       s != QDMI_JOB_STATUS_RUNNING)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
 
   if (timeout > 0) {
-    if (const auto status = jobHandle_.wait_for(std::chrono::seconds(timeout));
-        status == std::future_status::timeout) {
+    if (const auto st = jobHandle_.wait_for(std::chrono::seconds(timeout));
+        st == std::future_status::timeout) {
       return QDMI_ERROR_TIMEOUT;
     }
   } else {
@@ -608,9 +608,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
                                                       void* data,
                                                       size_t* sizeRet)
     -> QDMI_STATUS {
-  if (stateVec_.empty()) {
-    stateVec_ = stateVecDD_.getVector();
-  }
+  std::call_once(stateVecOnce_,
+                 [this]() { stateVec_ = stateVecDD_.getVector(); });
   const size_t reqSize = stateVec_.size() * 2 * sizeof(double);
   if (data != nullptr) {
     if (size < reqSize) {
@@ -626,9 +625,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
     const QDMI_Job_Result result, const size_t size, void* data,
     size_t* sizeRet) -> QDMI_STATUS {
-  if (stateVecSparse_.empty()) {
-    stateVecSparse_ = stateVecDD_.getSparseVector();
-  }
+  std::call_once(stateVecSparseOnce_,
+                 [this]() { stateVecSparse_ = stateVecDD_.getSparseVector(); });
   const size_t numQubits = stateVecDD_.p->v + 1;
   switch (result) {
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS:
@@ -723,7 +721,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
                                                   const size_t size, void* data,
                                                   size_t* sizeRet)
     -> QDMI_STATUS {
-  if (status_ != QDMI_JOB_STATUS_DONE || (data != nullptr && size == 0) ||
+  if (status_.load() != QDMI_JOB_STATUS_DONE ||
+      (data != nullptr && size == 0) ||
       (result >= QDMI_JOB_RESULT_MAX && result != QDMI_JOB_RESULT_CUSTOM1 &&
        result != QDMI_JOB_RESULT_CUSTOM2 && result != QDMI_JOB_RESULT_CUSTOM3 &&
        result != QDMI_JOB_RESULT_CUSTOM4 &&

@@ -18,6 +18,7 @@
 #include "dd/Package.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <future>
@@ -39,7 +40,7 @@ class Device final {
   size_t qubitsNum_ = 0;
 
   /// The status of the device.
-  QDMI_Device_Status status_ = QDMI_DEVICE_STATUS_OFFLINE;
+  std::atomic<QDMI_Device_Status> status_{QDMI_DEVICE_STATUS_OFFLINE};
 
   /// The list of device sessions.
   std::unordered_map<MQT_DDSIM_QDMI_Device_Session,
@@ -54,10 +55,7 @@ class Device final {
       std::uniform_int_distribution<>(0, std::numeric_limits<int>::max());
 
   /// The number of running jobs.
-  size_t runningJobs_ = 0;
-
-  /// A mutex for synchronizing access to runningJobs_.
-  std::mutex mutex_;
+  std::atomic<size_t> runningJobs_{0};
 
   /// @brief Private constructor to enforce the singleton pattern.
   Device();
@@ -194,7 +192,7 @@ private:
   int id_ = 0;
 
   /// The status of the job
-  QDMI_Job_Status status_ = QDMI_JOB_STATUS_CREATED;
+  std::atomic<QDMI_Job_Status> status_{QDMI_JOB_STATUS_CREATED};
 
   /// The program format
   QDMI_Program_Format format_ = QDMI_PROGRAM_FORMAT_QASM3;
@@ -224,6 +222,10 @@ private:
   /// The sparse state vector for the job (only available if no mid-circuit
   /// measurements are used).
   dd::SparseCVec stateVecSparse_;
+
+  /// One-time flags to lazily materialize vectors in a thread-safe way
+  std::once_flag stateVecOnce_;
+  std::once_flag stateVecSparseOnce_;
 
   /// Translate counts to QDMI histogram
   auto getHistogram(QDMI_Job_Result result, size_t size, void* data,

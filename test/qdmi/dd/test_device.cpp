@@ -10,6 +10,7 @@
 
 #include "mqt_ddsim_qdmi/device.h"
 
+#include <atomic>
 #include <complex>
 #include <cstddef>
 #include <cstring>
@@ -18,6 +19,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -858,6 +860,107 @@ TEST_F(DDSIMQDMIJobSpecificationTest, GetProbsSparseValuesBufferTooSmall) {
                 job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, buffer.size(),
                 buffer.data(), nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
+}
+
+TEST_F(DDSIMQDMIJobSpecificationTest, ConcurrentStatevectorReads) {
+  constexpr size_t shots = 0U;
+  ASSERT_EQ(
+      MQT_DDSIM_QDMI_device_job_set_parameter(
+          job, QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM, sizeof(size_t), &shots),
+      QDMI_SUCCESS)
+      << "Failed to set shots.";
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(job), QDMI_SUCCESS);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(job, 0), QDMI_SUCCESS);
+
+  size_t stateSize = 0;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0, nullptr, &stateSize),
+            QDMI_SUCCESS);
+
+  auto worker = [this, stateSize]() {
+    std::vector<double> buf(stateSize / sizeof(double));
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                  job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, stateSize, buf.data(),
+                  nullptr),
+              QDMI_SUCCESS);
+  };
+
+  std::thread t1(worker);
+  std::thread t2(worker);
+  std::thread t3(worker);
+  std::thread t4(worker);
+  t1.join();
+  t2.join();
+  t3.join();
+  t4.join();
+}
+
+TEST_F(DDSIMQDMIJobSpecificationTest, ConcurrentHistogramReads) {
+  constexpr size_t shots = 1024U;
+  ASSERT_EQ(
+      MQT_DDSIM_QDMI_device_job_set_parameter(
+          job, QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM, sizeof(size_t), &shots),
+      QDMI_SUCCESS)
+      << "Failed to set shots.";
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(job), QDMI_SUCCESS);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(job, 0), QDMI_SUCCESS);
+
+  size_t keysSize = 0;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, &keysSize),
+            QDMI_SUCCESS);
+  size_t valsSize = 0;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                job, QDMI_JOB_RESULT_HIST_VALUES, 0, nullptr, &valsSize),
+            QDMI_SUCCESS);
+
+  auto keysWorker = [this, keysSize]() {
+    std::string buf(keysSize - 1, '\0');
+    EXPECT_EQ(
+        MQT_DDSIM_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_HIST_KEYS,
+                                              keysSize, buf.data(), nullptr),
+        QDMI_SUCCESS);
+  };
+  auto valsWorker = [this, valsSize]() {
+    std::vector<size_t> v(valsSize / sizeof(size_t));
+    EXPECT_EQ(
+        MQT_DDSIM_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_HIST_VALUES,
+                                              valsSize, v.data(), nullptr),
+        QDMI_SUCCESS);
+  };
+
+  std::thread t1(keysWorker);
+  std::thread t2(keysWorker);
+  std::thread t3(valsWorker);
+  std::thread t4(valsWorker);
+  t1.join();
+  t2.join();
+  t3.join();
+  t4.join();
+}
+
+TEST_F(DDSIMQDMIJobSpecificationTest, ConcurrentCheckDuringRun) {
+  // Set a reasonably large number of shots to increase runtime slightly
+  size_t shots = 4096U;
+  ASSERT_EQ(
+      MQT_DDSIM_QDMI_device_job_set_parameter(
+          job, QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM, sizeof(size_t), &shots),
+      QDMI_SUCCESS);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(job), QDMI_SUCCESS);
+
+  std::atomic<bool> done{false};
+  std::thread poller([&]() {
+    QDMI_Job_Status s = QDMI_JOB_STATUS_CREATED;
+    while (!done.load()) {
+      ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(job, &s), QDMI_SUCCESS);
+      if (s == QDMI_JOB_STATUS_DONE || s == QDMI_JOB_STATUS_FAILED) {
+        break;
+      }
+    }
+  });
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(job, 0), QDMI_SUCCESS);
+  done.store(true);
+  poller.join();
 }
 
 TEST_F(DDSIMQDMIJobSpecificationTest, SubmitIncorrectProgramSampling) {
