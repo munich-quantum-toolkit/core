@@ -49,10 +49,10 @@ class QDMIProvider:
         """Initialize the QDMI provider."""
 
     def backends(self, name: str | None = None) -> list[QiskitBackend]:
-        """Return all available backends, optionally filtered by name.
+        """Return all available backends, optionally filtered by name substring.
 
         Args:
-            name: If provided, return only the backend with this exact name.
+            name: If provided, return only backends whose name contains this substring.
 
         Returns:
             List of QiskitBackend instances. Empty list if name specified but not found.
@@ -63,18 +63,19 @@ class QDMIProvider:
             >>> provider = QDMIProvider()
             >>> all_backends = provider.backends()
 
-            Get a specific backend by name:
+            Filter backends by name substring:
 
-            >>> backends = provider.backends(name="MQT NA Default QDMI Device")
+            >>> backends = provider.backends(name="NA")  # matches "MQT NA Default QDMI Device"
+            >>> backends = provider.backends(name="QDMI")  # matches all devices with "QDMI" in name
         """
         from .backend import QiskitBackend
 
         # Get all devices from FoMaC
         devices = list(fomac.devices())
 
-        # Filter by name if specified
+        # Filter by name substring if specified
         if name is not None:
-            devices = [d for d in devices if d.name() == name]
+            devices = [d for d in devices if name in d.name()]
 
         # Create backend instances
         return [QiskitBackend(device=device, provider=self) for device in devices]

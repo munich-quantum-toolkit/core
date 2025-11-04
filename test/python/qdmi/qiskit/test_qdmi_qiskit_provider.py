@@ -21,23 +21,38 @@ pytestmark = [
 
 
 def test_provider_backends_filter_by_name() -> None:
-    """Provider can filter backends by name."""
+    """Provider can filter backends by name substring."""
     provider = QDMIProvider()
 
     # Get all backends first
     all_backends = provider.backends()
     assert len(all_backends) > 0
 
-    # Get specific backend by name
+    # Filter by full name (should still match)
     backend_name = all_backends[0].name
     filtered = provider.backends(name=backend_name)
 
-    assert len(filtered) == 1
-    assert filtered[0].name == backend_name
+    assert len(filtered) >= 1
+    assert any(b.name == backend_name for b in filtered)
+
+
+def test_provider_backends_filter_by_substring() -> None:
+    """Provider can filter backends by name substring."""
+    provider = QDMIProvider()
+
+    # Filter by "QDMI" substring (should match "MQT NA Default QDMI Device")
+    filtered = provider.backends(name="QDMI")
+    assert len(filtered) > 0
+    assert all("QDMI" in b.name for b in filtered)
+
+    # Filter by "NA" substring
+    filtered_na = provider.backends(name="NA")
+    assert len(filtered_na) > 0
+    assert all("NA" in b.name for b in filtered_na)
 
 
 def test_provider_backends_filter_nonexistent_name() -> None:
-    """Provider returns empty list for non-existent name."""
+    """Provider returns empty list for non-existent name substring."""
     provider = QDMIProvider()
     backends = provider.backends(name="NonExistentDevice")
     assert backends == []
