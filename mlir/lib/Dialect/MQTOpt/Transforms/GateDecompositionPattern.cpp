@@ -70,7 +70,7 @@ struct GateDecompositionPattern final
       llvm::errs() << "NO SEQUENCE GENERATED!\n";
       return mlir::failure();
     }
-    if (sequence->gates.size() >= series.gates.size()) {
+    if (sequence->gates.size() >= series.complexity) {
       // TODO: add more sophisticated metric to determine complexity of
       // series/sequence
       llvm::errs() << "SEQUENCE LONGER THAN INPUT!\n";
@@ -83,6 +83,7 @@ struct GateDecompositionPattern final
   }
 
   struct TwoQubitSeries {
+    std::size_t complexity{0};
     std::array<mlir::Value, 2> inQubits;
     std::array<mlir::Value, 2> outQubits;
 
@@ -135,10 +136,12 @@ struct GateDecompositionPattern final
         inQubits = {in[0], mlir::Value{}};
         outQubits = {out[0], mlir::Value{}};
         gates.push_back({initialOperation, {0}});
+        complexity += 1;
       } else if (helpers::isTwoQubitOperation(initialOperation)) {
         inQubits = {in[0], in[1]};
         outQubits = {out[0], out[1]};
         gates.push_back({initialOperation, {0, 1}});
+        complexity += 2;
       }
     }
 
@@ -156,6 +159,7 @@ struct GateDecompositionPattern final
       *it = nextGate->getResult(0);
 
       gates.push_back({nextGate, {qubitId}});
+      complexity += 1;
       return true;
     }
 
@@ -191,6 +195,7 @@ struct GateDecompositionPattern final
           std::distance(outQubits.begin(), secondQubitIt);
 
       gates.push_back({nextGate, {firstQubitId, secondQubitId}});
+      complexity += 2;
       return true;
     }
   };
