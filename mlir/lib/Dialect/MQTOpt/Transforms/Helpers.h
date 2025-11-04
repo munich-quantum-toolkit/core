@@ -16,6 +16,7 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <algorithm>
+#include <eigen3/Eigen/Core>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Operation.h>
 
@@ -271,15 +272,31 @@ template <typename Container>
 template <typename T, std::size_t N>
 [[nodiscard]] inline auto multiply(const std::array<T, N>& lhs,
                                    const std::array<T, N>& rhs) {
-  std::array<T, N> result{};
-  const int n = std::sqrt(lhs.size());
-  for (int i = 0; i < n; i++) {
-    for (int j = 0; j < n; j++) {
-      for (int k = 0; k < n; k++) {
-        result[i * n + j] += lhs[i * n + k] * rhs[k * n + j];
-      }
+  const int n = std::sqrt(N);
+  Eigen::Matrix<T, n, n> lhsEigen;
+  Eigen::Matrix<T, n, n> rhsEigen;
+  for (int i = 0; i < n; ++i) {
+    for (int j = 0; j < n; ++j) {
+      lhsEigen(j, i) = lhs[j * n + i];
+      rhsEigen(j, i) = rhs[j * n + i];
     }
   }
+  auto r = lhsEigen * rhsEigen;
+  std::array<T, N> result{};
+  for (int i = 0; i < n; ++i) {
+    for (int j = 0; j < n; ++j) {
+      result[j * n + i] = r(j, i);
+    }
+  }
+  // std::array<T, N> result{};
+  // const int n = std::sqrt(N);
+  // for (int i = 0; i < n; i++) {
+  //   for (int j = 0; j < n; j++) {
+  //     for (int k = 0; k < n; k++) {
+  //       result[i * n + j] += lhs[i * n + k] * rhs[k * n + j];
+  //     }
+  //   }
+  // }
   return result;
 }
 
@@ -472,63 +489,16 @@ inline auto transpose_conjugate(Container&& matrix) {
   return conjugate(result);
 }
 
-template<typename T>
-inline T determinant(const std::array<T, 4>& mat) {
-  return mat[0] * mat[3] - mat[1] * mat[2];
-}
-
-template<typename T>
-inline T determinant(const std::array<T, 9>& mat) {
-  return mat[0] * (mat[4] * mat[8] - mat[5] * mat[7]) -
-         mat[1] * (mat[3] * mat[8] - mat[5] * mat[6]) +
-         mat[2] * (mat[3] * mat[7] - mat[4] * mat[6]);
-}
-
-inline std::array<qfp, 9> get3x3Submatrix(const matrix4x4& mat,
-                                          int rowToBeRemoved,
-                                          int columnToBeRemoved) {
-  std::array<std::complex<fp>, 9> result;
-  int subIndex = 0;
-  for (int i = 0; i < 4; ++i) {
-    if (i != rowToBeRemoved) {
-      for (int j = 0; j < 4; ++j) {
-        if (j != columnToBeRemoved) {
-          result[subIndex++] = mat[i * 4 + j];
-        }
-      }
+template<typename T, std::size_t N>
+inline T determinant(const std::array<T, N>& mat) {
+  const int n = std::sqrt(N);
+  Eigen::Matrix<T, n, n> matEigen;
+  for (int i = 0; i < n; ++i) {
+    for (int j = 0; j < n; ++j) {
+      matEigen(j, i) = mat[j * n + i];
     }
   }
-  return result;
-}
-
-template<typename T>
-inline T determinant(const std::array<T, 16>& mat) {
-  auto [l, u, rowPermutations] = helpers::LUdecomposition(mat);
-  T det = 1.0;
-  for (int i = 0; i < 4; ++i) {
-    det *= l[i * 4 + i];
-  }
-
-  if (rowPermutations % 2 != 0) {
-    det = -det;
-  }
-  return det;
-
-  // auto det = -C_ZERO;
-  // for (int column = 0; column < 4; ++column) {
-  //   auto submatrix = get3x3Submatrix(mat, 0, column);
-  //   auto subDet = determinant(submatrix);
-  //   auto tmp = mat[0 * 4 + column] * subDet;
-  //   if (column % 2 == 0 &&
-  //       tmp !=
-  //           C_ZERO) { // TODO: better way to get negative 0.0 in
-  //           determinant?
-  //     det += tmp;
-  //   } else if (tmp != -C_ZERO) {
-  //     det -= tmp;
-  //   }
-  // }
-  // return det;
+  return matEigen.determinant();
 }
 
 template <typename T>
