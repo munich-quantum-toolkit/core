@@ -138,6 +138,16 @@ public:
   };
 };
 
+/**
+ * @brief Replace an operand parameter with an attribute
+ *
+ * @details
+ * This function tries replace an operand parameter of with an attribute,
+ * if the operand is defined by a constant operation.
+ * The function is called by the foldTrait method of the ParameterArityTrait.
+ *
+ * @param op The operation to fold
+ */
 LogicalResult foldParameterArityTrait(Operation* op);
 
 template <size_t n> class ParameterArityTrait {
