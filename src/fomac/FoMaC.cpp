@@ -480,6 +480,11 @@ auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr,
                                     &keysSize),
                "Querying histogram keys size");
+
+  if (keysSize == 0) {
+    return {}; // Empty histogram
+  }
+
   std::string keys(keysSize - 1, '\0');
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, keysSize,
                                     keys.data(), nullptr),
@@ -490,6 +495,12 @@ auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_VALUES, 0,
                                     nullptr, &valuesSize),
                "Querying histogram values size");
+
+  if (valuesSize % sizeof(size_t) != 0) {
+    throw std::runtime_error(
+        "Invalid histogram values size: not a multiple of size_t");
+  }
+
   std::vector<size_t> values(valuesSize / sizeof(size_t));
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_VALUES,
                                     valuesSize, values.data(), nullptr),
@@ -506,6 +517,11 @@ auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
       ++idx;
     }
   }
+
+  if (idx != values.size()) {
+    throw std::runtime_error("Histogram key/value count mismatch");
+  }
+
   return counts;
 }
 
