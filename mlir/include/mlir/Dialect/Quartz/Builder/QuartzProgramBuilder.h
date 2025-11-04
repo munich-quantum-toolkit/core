@@ -303,6 +303,24 @@ public:
   // Modifiers
   //===--------------------------------------------------------------------===//
 
+  /**
+   * @brief Apply a controlled operation
+   *
+   * @param controls Control qubits
+   * @param body Function that builds the body containing the target operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ctrl(q0, [&](auto& b) { b.x(q1); });
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.x %q1
+   *   quartz.yield
+   * }
+   * ```
+   */
   QuartzProgramBuilder&
   ctrl(ValueRange controls,
        const std::function<void(QuartzProgramBuilder&)>& body);

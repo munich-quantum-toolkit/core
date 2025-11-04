@@ -330,6 +330,28 @@ public:
   // Modifiers
   //===--------------------------------------------------------------------===//
 
+  /**
+   * @brief Apply a controlled operation
+   *
+   * @param controls Control qubits
+   * @param targets Target qubits
+   * @param body Function that builds the body containing the target operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * controls_out, targets_out = builder.ctrl(q0_in, q1_in, [&](auto& b) {
+   *   auto q1_res = b.x(q1_in);
+   *   return SmallVector<Value>{q1_res};
+   * });
+   * ```
+   * ```mlir
+   * %controls_out, %targets_out = flux.ctrl({%q0_in}, {%q1_in}) {
+   *   %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q1_res
+   * } : {!flux.qubit}, {!flux.qubit} -> {!flux.qubit}, {!flux.qubit}
+   * ```
+   */
   std::pair<SmallVector<Value>, SmallVector<Value>>
   ctrl(SmallVector<Value> controls, SmallVector<Value> targets,
        const std::function<SmallVector<Value>(FluxProgramBuilder&)>& body);
