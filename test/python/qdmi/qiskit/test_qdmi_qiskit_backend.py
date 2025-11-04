@@ -310,16 +310,16 @@ def test_job_submit_raises_error(mock_backend: QiskitBackend) -> None:
         job.submit()
 
 
-def test_backend_warns_on_unmappable_operation(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_backend_warns_on_unmappable_operation(
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[Any]
+) -> None:
     """Backend should warn when device operation cannot be mapped to a Qiskit gate."""
     import warnings
-
-    from test.python.qdmi.qiskit.conftest import MockQDMIDevice
 
     from mqt.core import fomac
 
     # Create mock device with an unmappable operation
-    mock_device = MockQDMIDevice(
+    mock_device = mock_qdmi_device_factory(
         name="Test Device",
         num_qubits=2,
         operations=["cz", "custom_unmappable_gate", "measure"],
@@ -347,16 +347,16 @@ def test_backend_warns_on_unmappable_operation(monkeypatch: pytest.MonkeyPatch) 
         ), f"Expected warning about custom_unmappable_gate, got: {warning_messages}"
 
 
-def test_backend_warns_on_missing_measurement_operation(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_backend_warns_on_missing_measurement_operation(
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[Any]
+) -> None:
     """Backend should warn when device does not define a measurement operation."""
     import warnings
-
-    from test.python.qdmi.qiskit.conftest import MockQDMIDevice
 
     from mqt.core import fomac
 
     # Create mock device without measure operation
-    mock_device = MockQDMIDevice(
+    mock_device = mock_qdmi_device_factory(
         name="Test Device",
         num_qubits=2,
         operations=["cz"],  # No measure operation

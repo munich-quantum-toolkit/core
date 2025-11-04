@@ -290,6 +290,28 @@ class MockQDMIDeviceWrapper:
 
 
 @pytest.fixture
+def mock_qdmi_device_factory() -> type[MockQDMIDevice]:
+    """Factory fixture for creating custom MockQDMIDevice instances.
+
+    Returns:
+        The MockQDMIDevice class that can be called to create instances.
+
+    Note:
+        Use this fixture when you need to create custom mock device instances
+        with specific configurations (operations, coupling maps, etc.) for testing.
+
+    Example:
+        def test_custom_device(mock_qdmi_device_factory):
+            device = mock_qdmi_device_factory(
+                name="Custom Device",
+                num_qubits=2,
+                operations=["h", "cx"]
+            )
+    """
+    return MockQDMIDevice
+
+
+@pytest.fixture
 def mock_qdmi_device() -> MockQDMIDevice:
     """Fixture providing a generic mock QDMI device for unit tests.
 
@@ -325,28 +347,3 @@ def mock_backend(mock_qdmi_device: MockQDMIDevice, monkeypatch: pytest.MonkeyPat
     # Use provider pattern
     provider = QDMIProvider()
     return provider.get_backend("Mock QDMI Device")
-
-
-@pytest.fixture
-def mock_na_device() -> MockQDMIDeviceWrapper:
-    """Fixture providing a mock-wrapped NA device for testing.
-
-    Returns:
-        MockQDMIDeviceWrapper wrapping the MQT NA Default QDMI Device.
-
-    Note:
-        This fixture provides a device that supports mock job execution,
-        allowing tests to run without actual hardware or simulator support.
-    """
-    # Find NA device by name
-    devices_list = list(fomac.devices())
-    na_device = None
-    for device in devices_list:
-        if device.name() == "MQT NA Default QDMI Device":
-            na_device = device
-            break
-
-    if na_device is None:
-        pytest.skip("MQT NA Default QDMI Device not found in environment")
-
-    return MockQDMIDeviceWrapper(na_device)
